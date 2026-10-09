@@ -26,52 +26,50 @@ type Json = any;
 // The legend for the above, on the page, because a reader cannot see the
 // comment this file opens the section with and a table whose columns shift
 // meaning between rows has to say so where the rows are.
-const COLUMN_LEGEND =
-  '<table><tr><th>Column</th><th>A JWT</th><th>A SAML assertion</th><th>A ' +
-  'Kerberos ticket</th></tr><tr><td>Contents</td><td>every credential the ' +
-  'reply carried, in the order they were minted — one row, however many that ' +
-  'is</td><td colspan="2">one credential: these protocols issue one thing ' +
-  'per act, so the cell is the kind and nothing ' +
-  'else</td></tr><tr><td>State</td><td>the state every member shares, or ' +
-  '<em>mixed</em> when they differ — which they usually do, since an access ' +
-  'token and the refresh token beside it have very different lifetimes. ' +
-  'Hover for the breakdown</td><td colspan="2">the one credential\'s own ' +
-  'state</td></tr><tr><td>Expires</td><td>the first member to go, then the ' +
-  'last — a set comes apart before it is finished, and the earlier instant ' +
-  'is the one a refused call is about</td><td colspan="2">its ' +
-  '<code>NotOnOrAfter</code> / its ' +
-  '<code>endtime</code></td></tr><tr><td>User</td><td><code>username</code>, ' +
-  'as typed at the sign-in screen</td><td colspan="2">nothing: each of these ' +
-  'has one name, and it is in ' +
-  'Subject</td></tr><tr><td>Subject</td><td><code>sub</code></td><td>the ' +
-  '<code>NameID</code></td><td>the client principal, ' +
-  '<code>name@REALM</code></td></tr><tr><td>Client, audience or ' +
-  'service</td><td><code>client_id</code> (or <code>azp</code>, or the ' +
-  '<code>aud</code>)</td><td>the <code>AudienceRestriction</code>, or ' +
-  '<em>unrestricted</em> when WS-Trust was given no ' +
-  '<code>AppliesTo</code></td><td>the service the ticket is for; hover for ' +
-  'the realm that issued it</td></tr><tr><td>Detail</td><td>the ACCESS ' +
-  'TOKEN\'s <code>scope</code>. The refresh token beside it deliberately ' +
-  'carries a different one — what was <em>authorized</em>, rather than what ' +
-  'this token can do — so the two disagree by design, and the set page shows ' +
-  'each. A scope that became the audience is not on either</td><td>whether ' +
-  'the signature was written — an assertion that failed to sign still went ' +
-  'out</td><td>the enc-type it was sealed with</td></tr><tr><td>Presented ' +
-  'as</td><td>Bearer, or DPoP when <code>cnf.jkt</code> binds it to a ' +
-  'key</td><td>bearer <code>SubjectConfirmation</code>; there is no ' +
-  'holder-of-key form here</td><td>in a TGS-REQ (a TGT) or an AP-REQ (a ' +
-  'service ticket)</td></tr><tr><td>jti, ID or set</td><td>a set of one ' +
-  'shows the <code>jti</code> and opens that credential\'s lineage; a group ' +
-  'shows the <em>set id</em> and opens the set. The set id is this ' +
-  'service\'s own handle on a reply — it is in no token, no client ever sees ' +
-  'it, and it is not a claim</td><td>the <code>ID</code> / ' +
-  '<code>AssertionID</code></td><td>none exists — a ticket has no identifier ' +
-  'to quote, and the KDC keeps no handle on one</td></tr><tr><td>the ' +
-  'button</td><td>Revoke, or <strong>Revoke set</strong> on a group, which ' +
-  'sends every revocable member through the same act one at a time. Nothing ' +
-  'new is written: it is the same set of revoked <code>jti</code>s ' +
-  '<code>/oauth2/revoke</code> writes to</td><td colspan="2">there is none, ' +
-  'and there is nothing it could do — see above</td></tr></table>';
+//
+// A function of the page's translator since #539: the legend is words, one
+// message per cell, so the table's markup stays here.
+const columnLegend = function (t): string {
+  const two = '<td colspan="2">';
+  return '<table><tr><th>' + t.html('consoleTokens.legendThColumn') +
+    '</th><th>' + t.html('consoleTokens.legendThJwt') + '</th><th>' +
+    t.html('consoleTokens.legendThSaml') + '</th><th>' +
+    t.html('consoleTokens.legendThTicket') + '</th></tr><tr><td>' +
+    t.html('consoleTokens.legendContents') + '</td><td>' +
+    t.html('consoleTokens.legendContentsJwt') + '</td>' + two +
+    t.html('consoleTokens.legendContentsOther') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendState') + '</td><td>' +
+    t.html('consoleTokens.legendStateJwt') + '</td>' + two +
+    t.html('consoleTokens.legendStateOther') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendExpires') + '</td><td>' +
+    t.html('consoleTokens.legendExpiresJwt') + '</td>' + two +
+    t.html('consoleTokens.legendExpiresOther') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendUser') + '</td><td>' +
+    t.html('consoleTokens.legendUserJwt') + '</td>' + two +
+    t.html('consoleTokens.legendUserOther') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendSubject') + '</td><td><code>sub</code>' +
+    '</td><td>' + t.html('consoleTokens.legendSubjectSaml') + '</td><td>' +
+    t.html('consoleTokens.legendSubjectTicket') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendParty') + '</td><td>' +
+    t.html('consoleTokens.legendPartyJwt') + '</td><td>' +
+    t.html('consoleTokens.legendPartySaml') + '</td><td>' +
+    t.html('consoleTokens.legendPartyTicket') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendDetail') + '</td><td>' +
+    t.html('consoleTokens.legendDetailJwt') + '</td><td>' +
+    t.html('consoleTokens.legendDetailSaml') + '</td><td>' +
+    t.html('consoleTokens.legendDetailTicket') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendPresented') + '</td><td>' +
+    t.html('consoleTokens.legendPresentedJwt') + '</td><td>' +
+    t.html('consoleTokens.legendPresentedSaml') + '</td><td>' +
+    t.html('consoleTokens.legendPresentedTicket') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendJti') + '</td><td>' +
+    t.html('consoleTokens.legendJtiJwt') + '</td><td>' +
+    t.html('consoleTokens.legendJtiSaml') + '</td><td>' +
+    t.html('consoleTokens.legendJtiTicket') + '</td></tr><tr><td>' +
+    t.html('consoleTokens.legendButton') + '</td><td>' +
+    t.html('consoleTokens.legendButtonJwt') + '</td>' + two +
+    t.html('consoleTokens.legendButtonOther') + '</td></tr></table>';
+};
 
 /**
  * Draws Tokens from the answer of `GET /admin-api/tokens`: every issuance this
@@ -89,6 +87,11 @@ class TokensPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6); a kind, a
+    // family's label and a credential's own state come from the view and
+    // are drawn as they come. A link carries an href, which a message may
+    // not, so a sentence around one is split with the anchor in the code.
+    const t = ctx.t;
     const wantedFamily = json.filter.family || '';
     const wantedKind = json.filter.kind || '';
     const wantedState = json.filter.state || '';
@@ -118,12 +121,12 @@ class TokensPage {
     // it was clicked on rather than the top of everything.
     const listView = Object.assign({}, filterParams, { page: paging.page });
     const rows = shown.map(function (set) {
-      return TokensPage.issuedSetRow(set, backRow, listView);
+      return TokensPage.issuedSetRow(t, set, backRow, listView);
     }).join('');
 
     const familyOptions = ['<option value=""' +
-        (wantedFamily ? '' : ' selected') + '>any ' +
-        'family</option>']
+        (wantedFamily ? '' : ' selected') + '>' +
+        t.html('consoleTokens.anyFamily') + '</option>']
       .concat(json.families.map(function (entry) {
         return '<option value="' + kit.esc(entry.family) + '"' +
                (entry.family === wantedFamily ? ' selected' : '') + '>' +
@@ -137,8 +140,7 @@ class TokensPage {
     // family — which they would, being two hand-written lists of the same
     // nine strings.
     const kindOptions = '<option value=""' + (wantedKind ? '' : ' selected') +
-        '>any ' +
-        'kind</option>' +
+        '>' + t.html('consoleTokens.anyKind') + '</option>' +
       json.families.map(function (entry) {
         return '<optgroup label="' + kit.esc(entry.label) + '">' +
                entry.kinds.map(function (k) {
@@ -148,92 +150,44 @@ class TokensPage {
                  kit.esc(k) + '</option>';
         }).join('') + '</optgroup>';
       }).join('');
+    // The value is the filter's own word and stays; what the option SAYS is
+    // the page's, one message per state.
+    const stateLabels = {
+      '': t.text('consoleTokens.anyState'),
+      'valid': t.text('consoleTokens.stateValid'),
+      'expired': t.text('consoleTokens.stateExpired'),
+      'revoked': t.text('consoleTokens.stateRevoked'),
+      'not yet valid': t.text('consoleTokens.stateNotYetValid'),
+      'no expiry stated': t.text('consoleTokens.stateNoExpiry')
+    };
     const stateOptions = ['', 'valid', 'expired', 'revoked', 'not yet valid',
                           'no ' +
         'expiry stated']
       .map(function (s) {
         return '<option value="' + kit.esc(s) + '"' +
                (s === wantedState ? ' selected' : '') + '>' +
-               kit.esc(s || 'any state') + '</option>';
+               kit.esc(stateLabels[s]) + '</option>';
       }).join('');
     const perOptions = kit.perPageOptions(paging.perPage);
 
-    const inner = kit.note('Everything this service has issued and still ' +
-      'remembers: ' +
-      'every JWT, every SAML assertion — whether WS-Trust issued it or a ' +
-      'WS-Federation sign-in did — and every Kerberos ticket the KDC ' +
-      'minted, in one table, newest first. One table rather than three ' +
-      'because a WS-Federation sign-in that produced an ID Token and a ' +
-      'SAML 1.1 assertion is <em>one event</em>, and three tables would ' +
-      'leave it to be reassembled by comparing timestamps.') +
-      kit.note('<strong>One row is one issuance, not one ' +
-      'credential.</strong> OAuth 2.0 and OIDC are the only protocols here ' +
-      'that hand back several credentials at once — redeeming an ' +
-      'authorization code returns an access token, a refresh token and an ' +
-      'ID Token in a single reply, and <code>response_type=id_token ' +
-      'token</code> returns two in one fragment — so those are drawn as ' +
-      'one row saying what it contains, with a link to the set. Every ' +
-      'other family issues one credential per act, so a SAML assertion, a ' +
-      'Kerberos ticket and a SPIFFE SVID are each a <em>set of one</em> ' +
-      'and look exactly as they always did. The grouping comes from an ' +
-      'identifier the <em>issuer</em> stated at the moment it built the ' +
-      'reply, never from guessing that two rows near each other in time ' +
-      'belong together: two people redeeming two codes at the same client ' +
-      'in the same millisecond produce six credentials that agree on every ' +
-      'column below, and a table that merged them would report a reply ' +
-      'nobody ever received.') +
-      kit.note('<strong>Refreshing makes a new set beside the old one, ' +
-      'not a bigger one.</strong> A set is one <em>response</em>: it has ' +
-      'one issued instant and one grant, which a row that grew all ' +
-      'afternoon could not have. What joins the generations of a grant is ' +
-      'the refresh lineage, and that is drawn — as a picture, back to the ' +
-      'issuance the whole line rests on — on each credential\'s own page.') +
-      kit.note('Only the JWTs can be invalidated. Revoking one here is ' +
-      'the SAME operation RFC 7009\'s <code>/oauth2/revoke</code> performs ' +
-      '— there is one set of revoked <code>jti</code>s in this service, ' +
-      'not one per page. So a token revoked here immediately introspects ' +
-      'as inactive at <code>/oauth2/introspect</code>, is refused by ' +
-      '<code>/oauth2/userinfo</code> with <code>invalid_token</code>, and ' +
-      'fails the refresh grant with <code>invalid_grant</code>. Two sets ' +
-      'would each look correct on their own and never see each other, ' +
-      'which is a debugging session with no error message anywhere in it.') +
-      kit.note('<strong>An assertion, a ticket and an SVID have a button ' +
-      'since 2026-09-05, and pressing it changes nothing out ' +
-      'there.</strong> That is not a contradiction and the distinction is ' +
-      'the whole of what this row means: <em>what this service knows</em> ' +
-      'and <em>what a relying party will honour</em> are two different ' +
-      'claims. Nothing consults this service when one of these is ' +
-      'presented — an assertion is valid because its signature verifies ' +
-      'and its <code>Conditions</code> hold, a ticket because the service ' +
-      'it names can decrypt it with a key it already has, an SVID because ' +
-      'it chains to a bundle — so a revocation here reaches none of them ' +
-      'and never will. What it does is record that <em>this identity ' +
-      'provider has disowned the credential</em>, which is what a sign-out ' +
-      'has to be able to say, what CAEP can carry to a receiver that ' +
-      'subscribed, and what SAML Single Logout can carry for an assertion ' +
-      'issued through a browser profile. A WS-Trust assertion has neither ' +
-      'channel and the mark is the whole of what exists for it — which is ' +
-      'exactly why it is worth having, because otherwise the answer to ' +
-      '"did you sign them out" would depend on which endpoint issued the ' +
-      'credential. The button says <em>(record only)</em> and its tooltip ' +
-      'says this again, so it cannot be pressed by somebody who thinks it ' +
-      'did more.') +
+    const inner = kit.note(t.html('consoleTokens.leadEverything')) +
+      kit.note(t.html('consoleTokens.leadOneRow')) +
+      kit.note(t.html('consoleTokens.leadRefreshing')) +
+      kit.note(t.html('consoleTokens.leadOnlyJwts')) +
+      kit.note(t.html('consoleTokens.leadAssertionButton')) +
 
-      '<h2>Invalidate</h2>' +
+      '<h2>' + t.html('consoleTokens.hInvalidate') + '</h2>' +
       '<form method="post" action="/admin/tokens">' +
         '<input type="hidden" name="action" value="revoke">' +
         '<input type="hidden" name="back" value="' + kit.esc(backFilter) +
-        '"><div class="formrow"><label for="target">A jti, or paste the ' +
-        'whole token</label><input type="text" id="target" name="target" ' +
-        'size="60" placeholder="jti, or eyJhbGciOi..."><button ' +
-        'class="danger">Revoke</button></div></form>' +
-      kit.note('Pasting a token is read for its <code>jti</code> and the ' +
-      'signature is not checked, which is safe: a forged token yields a ' +
-      'jti this service never issued, and revoking one of those ' +
-      'invalidates nothing. To undo a revocation, use the Restore button ' +
-      'in the table — a NON-SPEC operation no real authorization server ' +
-      'can offer, kept because otherwise getting back to a working token ' +
-      'means restarting this service.') +
+        '"><div class="formrow"><label for="target">' +
+        t.html('consoleTokens.labelTarget') +
+        '</label><input type="text" id="target" name="target" ' +
+        'size="60" placeholder="' +
+        kit.esc(t.text('consoleTokens.placeholderTarget')) + '"><button ' +
+        'class="danger">' + t.html('consoleTokens.revoke') +
+        '</button></div></form>' +
+      kit.note(t.html('consoleTokens.pasting')) +
       '<div class="formrow">' +
         ['access_token', 'id_token', 'refresh_token'].map(function (kind) {
           return '<form method="post" action="/admin/tokens" ' +
@@ -242,38 +196,46 @@ class TokensPage {
             kit.esc(kind) + '">' +
             '<input type="hidden" name="back" value="' +
             kit.esc(backFilter) + '">' +
-            '<button class="danger">Revoke every ' + kit.esc(kind) +
+            '<button class="danger">' +
+            t.html('consoleTokens.revokeEvery', { kind: kind }) +
             '</button></form>';
         }).join(' ') +
         '<form method="post" action="/admin/tokens" class="inline">' +
         '<input type="hidden" name="action" value="revoke-all">' +
         '<input type="hidden" name="back" value="' + kit.esc(backFilter) +
-        '"><button class="danger">Revoke everything</button></form>' +
+        '"><button class="danger">' +
+        t.html('consoleTokens.revokeEverything') + '</button></form>' +
       '</div>' +
       '<form method="post" action="/admin/tokens">' +
         '<input type="hidden" name="action" value="revoke-subject">' +
         '<input type="hidden" name="back" value="' + kit.esc(backFilter) +
-        '"><div class="formrow"><label for="subject">Everything for one ' +
-        'subject or username</label><input type="text" id="subject" ' +
-        'name="subject" size="40" placeholder="alice, or ' +
-        'urn:uuid:…"><button ' +
-        'class="danger">Revoke</button></div></form><h2>What has been ' +
-        'issued</h2>' +
+        '"><div class="formrow"><label for="subject">' +
+        t.html('consoleTokens.labelSubject') +
+        '</label><input type="text" id="subject" ' +
+        'name="subject" size="40" placeholder="' +
+        kit.esc(t.text('consoleTokens.placeholderSubject')) + '"><button ' +
+        'class="danger">' + t.html('consoleTokens.revoke') +
+        '</button></div></form><h2>' + t.html('consoleTokens.hIssued') +
+        '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
       // result, and the clamp in pagingOf() would then quietly move them
       // again.
       '<form method="get" action="/admin/tokens"><div class="formrow">' +
-        '<label for="family">Family</label><select id="family" ' +
+        '<label for="family">' + t.html('consoleTokens.labelFamily') +
+        '</label><select id="family" ' +
         'name="family">' +
       familyOptions +
         '</select>' +
-        '<label for="kind">Kind</label><select id="kind" name="kind">' +
+        '<label for="kind">' + t.html('consoleTokens.labelKind') +
+        '</label><select id="kind" name="kind">' +
       kindOptions + '</select><label ' +
-        'for="state">State</label><select id="state" ' +
+        'for="state">' + t.html('consoleTokens.labelState') +
+        '</label><select id="state" ' +
         'name="state">' + stateOptions + '</select><label ' +
-        'for="per">Per page</label><select id="per" ' +
+        'for="per">' + t.html('consoleTokens.labelPer') +
+        '</label><select id="per" ' +
         'name="per">' + perOptions + '</select>' +
         // The session filter rides as a HIDDEN input rather than as a fourth
         // select: it is not a choice out of a short list, it is one session
@@ -284,111 +246,73 @@ class TokensPage {
             kit.esc(wantedSession) +
             '">'
           : '') +
-        '<button class="secondary">Filter</button>' +
+        '<button class="secondary">' + t.html('consoleTokens.filter') +
+        '</button>' +
         (wantedFamily || wantedKind || wantedState || wantedSession
-          ? ' <a href="/admin/tokens">clear</a>' : '') +
+          ? ' <a href="/admin/tokens">' + t.html('consoleTokens.clear') +
+            '</a>' : '') +
       '</div></form>' +
       (wantedSession
-        ? kit.note('Narrowed to what was issued on the browser sign-on ' +
-          'session <code>' + kit.esc(wantedSession) + '</code>, which is ' +
-          'how <a href="' + kit.esc('/admin/sessions') +
-          '">Sessions</a> links here. ' +
-          'Only credentials issued UNDER a session carry one, so an ' +
-          'assertion, a Kerberos ticket, a token from either direct grant ' +
-          'and anything an RFC 8693 exchange produced are absent by ' +
-          'construction rather than missing &mdash; that is a fact about ' +
-          'the credential and not a gap in the recording. <a href="' +
+        ? kit.note(t.html('consoleTokens.sessionBefore',
+                          { session: wantedSession }) +
+          '<a href="' + kit.esc('/admin/sessions') +
+          '">' + t.html('consoleTokens.sessionsLink') + '</a>' +
+          t.html('consoleTokens.sessionAfter') + '<a href="' +
           kit.esc('/admin/tokens' +
             kit.queryWith({ family: wantedFamily, kind: wantedKind,
                         state: wantedState }, {})) +
-          '">Show every session\'s</a>.')
+          '">' + t.html('consoleTokens.everySession') + '</a>.')
         : '') +
       // Family and Kind are ANDed, like any two filters, so a contradictory
       // pair (Kerberos tickets, id_token) matches nothing. Said here rather
       // than prevented, because the alternative is a page that silently
       // ignores one of the two selects the reader can see it obeying.
-      kit.note('Family and Kind narrow together: choosing a family and a ' +
-      'kind from a different one matches nothing, which is what an empty ' +
-      'table below then means.') +
+      kit.note(t.html('consoleTokens.familyAndKind')) +
       // WHAT A FILTER MEANS NOW THAT A ROW IS A SET, said on the page because
       // it is the one behaviour a reader would otherwise call a bug: asking
       // for id_token and being shown an access token too looks like the
       // filter being ignored until somebody explains that the row IS the
       // reply.
-      kit.note('<strong>A filter matches a set when any credential in it ' +
-      'matches.</strong> Asking for <code>id_token</code> answers with the ' +
-      'replies that <em>contain</em> an ID Token — the access token and ' +
-      'the refresh token that came back with it are still on the row, ' +
-      'because they are part of the same reply. The same goes for State: a ' +
-      'set holding an expired access token and a valid refresh token is ' +
-      'found by both, and its State column reads <em>mixed</em> rather ' +
-      'than picking one.') +
+      kit.note(t.html('consoleTokens.filterMatchesSet')) +
       nav.head +
-      '<table><tr><th>Contents</th><th>State</th><th>User</th><th>Subject' +
-      '</th>' +
-      '<th>Client, audience or service</th><th>Detail</th><th>Presented ' +
-      'as</th><th>Issued</th><th>Expires</th><th>jti, ID or ' +
-      'set</th><th></th></tr>' +
-      (rows || '<tr><td colspan="11">Nothing matches.</td></tr>') +
+      '<table><tr><th>' + t.html('consoleTokens.thContents') + '</th><th>' +
+      t.html('consoleTokens.thState') + '</th><th>' +
+      t.html('consoleTokens.thUser') + '</th><th>' +
+      t.html('consoleTokens.thSubject') + '</th>' +
+      '<th>' + t.html('consoleTokens.thParty') + '</th><th>' +
+      t.html('consoleTokens.thDetail') + '</th><th>' +
+      t.html('consoleTokens.thPresented') + '</th><th>' +
+      t.html('consoleTokens.thIssued') + '</th><th>' +
+      t.html('consoleTokens.thExpires') + '</th><th>' +
+      t.html('consoleTokens.thJtiOrSet') + '</th><th></th></tr>' +
+      (rows || '<tr><td colspan="11">' +
+        t.html('consoleTokens.nothingMatches') + '</td></tr>') +
       '</table>' +
       nav.foot +
-      kit.note(json.matched + ' set(s) match, holding ' +
-                json.matchedCredentials +
-      ' credential(s)' +
+      kit.note(t.html('consoleTokens.matched', {
+          sets: json.matched, credentials: json.matchedCredentials }) +
       (paging.pages > 1 ?
-       ', of which sets ' + paging.firstRow + '&ndash;' + paging.lastRow +
-                          ' are on this page (' + paging.page + ' of ' +
-                          paging.pages + ')' : '') +
-      '; ' + json.heldSets + ' set(s) over ' + json.held + ' ' +
-          'credential(s) held in total — ' +
+       t.html('consoleTokens.setsOnPage', {
+         first: paging.firstRow, last: paging.lastRow, page: paging.page,
+         pages: paging.pages }) : '') +
+      t.html('consoleTokens.heldInTotal', {
+        sets: json.heldSets, credentials: json.held }) +
       json.families.map(function (entry) {
         return (heldByFamily[entry.family] || 0) + ' ' +
                kit.esc(entry.label);
       }).join(', ') +
-      '. <strong>The per-family figures are credentials, not ' +
-      'sets</strong>, so that they agree with the count on <a ' +
-      'href="/admin/metrics">the metrics page</a> — two pages of one ' +
-      'console disagreeing about how much has been issued is worse than ' +
-      'one line carrying both units and saying which is which. Paging is ' +
-      'by SET, so a page is a whole number of replies rather than a ' +
-      'boundary drawn through the middle of one. Newest first, so page 1 ' +
-      'is what somebody is most likely to be debugging. Only the claims ' +
-      'and the facts below are kept, never the signed token, the assertion ' +
-      'XML or the ticket: a page rendering a thousand live credentials in ' +
-      'a form a browser will display is a page that leaks them, and the ' +
-      '<code>jti</code> is all any button here needs.') +
+      t.html('consoleTokens.perFamilyBefore') + '<a ' +
+      'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
+      '</a>' + t.html('consoleTokens.perFamilyAfter')) +
 
-      '<h3>What each column means</h3>' +
-      kit.note('Three families in one table, so most columns answer a ' +
-      'slightly different question depending on the row. Rather than leave ' +
-      'that to be inferred:') +
-      COLUMN_LEGEND +
-      kit.note('OID4VCI credentials are <strong>not</strong> in this ' +
-      'table. They are recorded and counted on <a ' +
-      'href="/admin/metrics">the metrics page</a> and listed nowhere. That ' +
-      'is a gap rather than a principle — a credential is as much an ' +
-      'issued artifact as an assertion is — and it is named here so that ' +
-      '"everything this service has issued" above is read as the three ' +
-      'families it says and not as four.') +
+      '<h3>' + t.html('consoleTokens.hColumns') + '</h3>' +
+      kit.note(t.html('consoleTokens.columnsLead')) +
+      columnLegend(t) +
+      kit.note(t.html('consoleTokens.oid4vciBefore') + '<a ' +
+      'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
+      '</a>' + t.html('consoleTokens.oid4vciAfter')) +
 
-      kit.note('Paging is <code>?page=</code> and <code>?per=</code> (at ' +
-        'most ' +
-      kit.MAX_ROWS +
-      ' sets a page), and both work with <code>?format=json</code> — where ' +
-      'the reply carries <code>page</code>, <code>pages</code> and ' +
-      '<code>matched</code>, so a test can walk the whole list without ' +
-      'guessing when it has reached the end. <strong>Those three count ' +
-      'SETS</strong>, which is what this list is; ' +
-      '<code>matchedCredentials</code> and <code>held</code> are the same ' +
-      'figures in credentials. The sets are in <code>sets</code>, each ' +
-      'carrying its <code>members</code> — and <code>issued</code> is the ' +
-      'same members flattened, so a caller written against the older ' +
-      'per-credential shape reads exactly what it read and the two cannot ' +
-      'disagree, because one is built out of the other. Every button on ' +
-      'this page acts on a <code>jti</code> or a <code>setKey</code> and ' +
-      'never on a row number, so a revocation between two clicks cannot ' +
-      'make the wrong token the target — the most it can do is shift a row ' +
-      'onto another page.');
+      kit.note(t.html('consoleTokens.pagingJson', { max: kit.MAX_ROWS }));
 
     return inner;
   }
@@ -398,24 +322,25 @@ class TokensPage {
    *
    * Most cells are drawn from the set's first member.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @param backRow - the list state its form posts as `back`
    * @param listView - the list state carried into its identifier link
    * @returns a <tr> as HTML
    */
-  static issuedSetRow(set, backRow, listView) {
+  static issuedSetRow(t, set, backRow, listView) {
     const first = set.members[0];
-    return '<tr><td>' + TokensPage.contentsCell(set) + '</td>' +
-      TokensPage.setStateCell(set) +
-      '<td>' + TokensPage.userCell(first) + '</td>' +
+    return '<tr><td>' + TokensPage.contentsCell(t, set) + '</td>' +
+      TokensPage.setStateCell(t, set) +
+      '<td>' + TokensPage.userCell(t, first) + '</td>' +
       '<td>' + TokensPage.subjectCell(first) + '</td>' +
-      '<td>' + TokensPage.partyCell(first) + '</td>' +
-      '<td>' + TokensPage.detailCell(first) + '</td>' +
-      '<td>' + TokensPage.presentedCell(first) + '</td>' +
+      '<td>' + TokensPage.partyCell(t, first) + '</td>' +
+      '<td>' + TokensPage.detailCell(t, first) + '</td>' +
+      '<td>' + TokensPage.presentedCell(t, first) + '</td>' +
       '<td>' + kit.esc(kit.whenText(set.issuedAt)) + '</td>' +
-      '<td>' + TokensPage.setExpiryCell(set) + '</td>' +
-      '<td>' + TokensPage.setIdentifierCell(set, listView) + '</td>' +
-      '<td>' + TokensPage.setActionCell(set, backRow) + '</td></tr>';
+      '<td>' + TokensPage.setExpiryCell(t, set) + '</td>' +
+      '<td>' + TokensPage.setIdentifierCell(t, set, listView) + '</td>' +
+      '<td>' + TokensPage.setActionCell(t, set, backRow) + '</td></tr>';
   }
 
   // WHAT THE SET CONTAINS, which is the column that used to be Kind. A set of
@@ -425,18 +350,19 @@ class TokensPage {
   /**
    * Draws what an issued set contains, in the order it was issued.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @returns the set's kinds, and its size when grouped, as HTML
    */
-  static contentsCell(set) {
+  static contentsCell(t, set) {
     if (!set.grouped) {
       return kit.esc(set.kinds[0] || '—');
     }
     return '<strong title="' +
-      kit.esc(set.size + ' credentials came back in one reply' +
-               (set.grant ? ', from the ' + set.grant + ' grant' : '') +
-               '. Every one of them is on the set page, with its own ' +
-               'identifier, its own expiry and its own button.') + '">' +
+      kit.esc(t.text('consoleTokens.contentsTitle', { n: set.size }) +
+               (set.grant ? t.text('consoleTokens.contentsGrant',
+                                   { grant: set.grant }) : '') +
+               t.text('consoleTokens.contentsTitleEnd')) + '">' +
       kit.esc(set.kinds.join(' + ')) + '</strong>' +
       ' <span class="state-none">(' + set.size + ')</span>';
   }
@@ -452,26 +378,24 @@ class TokensPage {
    * Signed or unsigned for an assertion, the enc-type for a ticket, and
    * the scope for a token.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @returns the cell's content as HTML
    */
-  static detailCell(record) {
+  static detailCell(t, record) {
     if (record.family === 'assertion') {
       if (record.signed === false) {
         return '<span class="state-revoked" title="' +
-          kit.esc('Signing threw and the assertion went out unsigned rather ' +
-                   'than not at all, so that a relying party can reject it ' +
-                   'for the right reason. The log line says what failed.') +
-          '">unsigned</span>';
+          kit.esc(t.text('consoleTokens.unsignedTitle')) +
+          '">' + t.html('consoleTokens.unsigned') + '</span>';
       }
       return '<span title="' +
-        kit.esc('An enveloped XML signature over the assertion, its ' +
-                 'reference naming the ID (SAML 2.0) or the AssertionID ' +
-                 '(SAML 1.1).') + '">signed</span>';
+        kit.esc(t.text('consoleTokens.signedTitle')) + '">' +
+        t.html('consoleTokens.signed') + '</span>';
     }
     if (record.family === 'ticket') {
-      return '<code title="' + kit.esc('The enc-type the ticket and its ' +
-                                        'session key were sealed with.') +
+      return '<code title="' +
+        kit.esc(t.text('consoleTokens.etypeTitle')) +
         '">' + kit.esc(record.etype || '—') + '</code>';
     }
     return kit.esc(record.scope || '—');
@@ -484,21 +408,18 @@ class TokensPage {
    * The audience of an assertion (or "unrestricted"), the service of a
    * ticket, or the client_id of a token.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @returns the cell's content as HTML
    */
-  static partyCell(record) {
+  static partyCell(t, record) {
     if (record.family === 'assertion') {
       if (record.audience) {
         return kit.shortened(record.audience, 30);
       }
       return '<span class="state-none" title="' +
-        kit.esc('This assertion carries no AudienceRestriction — WS-Trust ' +
-                 'was asked to Issue with no AppliesTo. Any relying party ' +
-                 'may accept it, which is the thing an audience restriction ' +
-                 'exists to prevent, so it is named here rather than shown ' +
-                 'as a dash.') +
-        '">unrestricted</span>';
+        kit.esc(t.text('consoleTokens.unrestrictedTitle')) +
+        '">' + t.html('consoleTokens.unrestricted') + '</span>';
     }
     if (record.family === 'ticket') {
       // The realm recorded with a ticket is the realm that ANSWERED, which
@@ -507,7 +428,8 @@ class TokensPage {
       // name as though it were part of the principal — which is what it would
       // look like, since a Kerberos principal is written service/host@REALM.
       return '<code title="' + kit.esc(String(record.service || '') +
-        (record.realm ? ' — issued by the ' + record.realm + ' KDC' : '')) +
+        (record.realm ? t.text('consoleTokens.issuedByKdc',
+                               { realm: record.realm }) : '')) +
         '">' +
         kit.esc(record.service || '—') + '</code>';
     }
@@ -522,34 +444,27 @@ class TokensPage {
    * bearer for an assertion, TGS-REQ or AP-REQ for a ticket, and DPoP or
    * Bearer for a token.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @returns the cell's content as HTML
    */
-  static presentedCell(record) {
+  static presentedCell(t, record) {
     if (record.family === 'assertion') {
       return '<span title="' +
-        kit.esc('Both builders write a bearer SubjectConfirmation: whoever ' +
-                 'holds the assertion may present it. There is no ' +
-                 'holder-of-key confirmation here, so there is nothing for ' +
-                 'this column to distinguish between.') + '">bearer</span>';
+        kit.esc(t.text('consoleTokens.bearerTitle')) + '">bearer</span>';
     }
     if (record.family === 'ticket') {
       if (record.kind === 'Kerberos TGT') {
         return '<span title="' +
-          kit.esc('A TGT goes back to the KDC in a TGS-REQ to get a service ' +
-                   'ticket. It is never presented to a service, which is why ' +
-                   'it is the Kerberos session rather than one use of ' +
-                   'one.') + '">TGS-REQ</span>';
+          kit.esc(t.text('consoleTokens.tgsReqTitle')) +
+          '">TGS-REQ</span>';
       }
       return '<span title="' +
-        kit.esc('A service ticket is presented to the service it names, in ' +
-                 'an AP-REQ — over raw Kerberos, or wrapped in SPNEGO over ' +
-                 'HTTP.') + '">AP-REQ</span>';
+        kit.esc(t.text('consoleTokens.apReqTitle')) + '">AP-REQ</span>';
     }
     if (record.jkt) {
       return '<span title="' +
-        kit.esc('Bound to a key: cnf.jkt is in the token and a DPoP proof ' +
-                 'over that key has to accompany it.') + '">DPoP</span>';
+        kit.esc(t.text('consoleTokens.dpopTitle')) + '">DPoP</span>';
     }
     return 'Bearer';
   }
@@ -570,19 +485,18 @@ class TokensPage {
    * A set of one draws its member's action cell; a set with nothing
    * revocable gets a dash.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @param backRow - the list state to return to, posted as `back`
    * @returns the form, or the dash, as HTML
    */
-  static setActionCell(set, backRow) {
+  static setActionCell(t, set, backRow) {
     if (!set.grouped) {
-      return TokensPage.actionCell(set.members[0], backRow);
+      return TokensPage.actionCell(t, set.members[0], backRow);
     }
     if (!set.revocableCount) {
       return '<span class="state-none" title="' +
-        kit.esc('Nothing in this set can be revoked: only access tokens, ID ' +
-                 'Tokens and refresh tokens can be, and the others are ' +
-                 'replies rather than credentials or carry no jti to act on.') +
+        kit.esc(t.text('consoleTokens.setNothingRevocable')) +
                  '">—</span>';
     }
     const allRevoked = set.revokedCount >= set.revocableCount;
@@ -593,13 +507,11 @@ class TokensPage {
       '<input type="hidden" name="back" value="' + kit.esc(backRow) + '">' +
       '<button class="' + (allRevoked ? 'secondary' : 'danger') + '" title="' +
       kit.esc(allRevoked
-        ? 'Un-revoke every revocable credential in this set. NON-SPEC — no ' +
-               'real authorization server can undo a revocation.'
-        : 'Revoke the ' + set.revocableCount + ' revocable credential(s) in ' +
-               'this set in one act. Each one is revoked exactly as its own ' +
-               'button would revoke it, into the same set of revoked jtis ' +
-               'RFC 7009\'s /oauth2/revoke writes to.') + '">' +
-      (allRevoked ? 'Restore set' : 'Revoke set') + '</button></form>';
+        ? t.text('consoleTokens.restoreSetTitle')
+        : t.text('consoleTokens.revokeSetTitle',
+                 { n: set.revocableCount })) + '">' +
+      (allRevoked ? t.html('consoleTokens.restoreSet')
+                  : t.html('consoleTokens.revokeSet')) + '</button></form>';
   }
 
   // WHEN THE SET COMES APART, and when it is finished. Two instants because the
@@ -609,10 +521,11 @@ class TokensPage {
   /**
    * Draws when a set's first member expires, and its last if different.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @returns the expiry text or range as HTML, or a dash
    */
-  static setExpiryCell(set) {
+  static setExpiryCell(t, set) {
     if (!set.expiresAtMs) {
       return '—';
     }
@@ -620,11 +533,9 @@ class TokensPage {
       return kit.esc(kit.whenText(set.expiresAtMs));
     }
     return '<span title="' +
-      kit.esc('The members of this set expire at different times. The first ' +
-        'goes at ' +
-               kit.whenText(set.expiresAtMs) + ' and the last at ' +
-               kit.whenText(set.lastExpiresAtMs) +
-               '; the set page says which is which.') +
+      kit.esc(t.text('consoleTokens.expiryRangeTitle', {
+        first: kit.whenText(set.expiresAtMs),
+        last: kit.whenText(set.lastExpiresAtMs) })) +
       '">' + kit.esc(kit.whenText(set.expiresAtMs)) + ' &rarr; ' +
       kit.esc(kit.whenText(set.lastExpiresAtMs)) + '</span>';
   }
@@ -641,23 +552,21 @@ class TokensPage {
    *
    * A set of one draws its member's identifier cell instead.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @param listView - the tokens page's list state, carried into the link
    * @returns the cell's content as HTML
    */
-  static setIdentifierCell(set, listView) {
+  static setIdentifierCell(t, set, listView) {
     if (!set.grouped) {
-      return TokensPage.identifierCell(set.members[0], listView);
+      return TokensPage.identifierCell(t, set.members[0], listView);
     }
     return '<a href="' +
       kit.esc('/admin/tokens/set' +
                kit.queryWith(listView || {}, { id: set.setKey })) +
       '" title="' +
-      kit.esc('The ' + set.size + ' credentials this one reply carried, ' +
-               'each with its own identifier, expiry and button — and a link ' +
-               'on to where each of them came from. The set id is this ' +
-               'service\'s own handle on the reply: it is in no token, no ' +
-               'client ever sees it, and it is not a claim.') + '">set ' +
+      kit.esc(t.text('consoleTokens.setLinkTitle', { n: set.size })) +
+      '">' + t.html('consoleTokens.setPrefix') +
       // NOT kit.esc()'d: kit.shortened() returns MARKUP — a <code> carrying the
       // whole
       // value in its title, so a truncated identifier can still be read — which
@@ -678,10 +587,11 @@ class TokensPage {
    * A set whose members disagree reads `mixed`, with the counts per state
    * in its tooltip.
    *
+   * @param t - the page's translator (#539)
    * @param set - a set from stats.issuedSets()
    * @returns a <td> as HTML
    */
-  static setStateCell(set) {
+  static setStateCell(t, set) {
     if (set.state !== 'mixed') {
       return '<td class="' + TokensPage.stateClass(set.state) + '">' +
              kit.esc(set.state) +
@@ -691,14 +601,9 @@ class TokensPage {
       return set.states[state] + ' ' + state;
     });
     return '<td class="state-none" title="' +
-      kit.esc('The members of this set are not all in the same state: ' +
-               parts.join(', ') + '. That is the ordinary case rather than a ' +
-               'fault — an access token and the refresh token issued with it ' +
-               'have very different lifetimes — so this column reports the ' +
-               'disagreement instead of picking one. The set page has each ' +
-               'member and its own state. Filtering by a state finds a set ' +
-               'when ANY member holds it.') +
-      '">mixed</td>';
+      kit.esc(t.text('consoleTokens.mixedTitle',
+                     { parts: parts.join(', ') })) +
+      '">' + t.html('consoleTokens.mixed') + '</td>';
   }
 
   /**
@@ -725,18 +630,16 @@ class TokensPage {
    * Only a JWT carries a username beside its sub; the other families get a
    * dash with a tooltip saying why.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @returns the cell's content as HTML
    */
-  static userCell(record) {
+  static userCell(t, record) {
     if (record.family === 'token') {
       return kit.esc(record.username || '—');
     }
     return '<span class="state-none" title="' +
-      kit.esc('A SAML assertion names a Subject and a Kerberos ticket names ' +
-               'a client principal. Neither carries a second, human-readable ' +
-               'name beside it the way a JWT carries username beside sub, so ' +
-               'the one name it has is in the Subject column.') +
+      kit.esc(t.text('consoleTokens.userNoneTitle')) +
       '">—</span>';
   }
 
@@ -766,17 +669,15 @@ class TokensPage {
    * in this service's own record and nothing else; a record with no jti
    * gets a dash instead of a form.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @param backRow - the list state to return to, posted as `back`
    * @returns the form, or the dash, as HTML
    */
-  static actionCell(record, backRow) {
+  static actionCell(t, record, backRow) {
     if (!record.revocable) {
       return '<span class="state-none" title="' +
-        kit.esc('This one carries no jti to act on — a signed UserInfo ' +
-                 'response has none, and the WS-Trust JWT is signed directly ' +
-                 'rather than through signJwt(). There is nothing to name in ' +
-                 'a revocation.') + '">—</span>';
+        kit.esc(t.text('consoleTokens.noJtiTitle')) + '">—</span>';
     }
     const recordOnly = record.revocationReach === 'record-only';
     const target = recordOnly
@@ -789,34 +690,21 @@ class TokensPage {
     const action = recordOnly ? verb + '-artifact' : verb;
     const title = recordOnly
       ? (record.revoked
-          ? 'Take this service\'s disavowal back. NON-SPEC, like every ' +
-            'restore here.'
-          : 'Mark it revoked IN THIS SERVICE\'S OWN RECORD, which is the ' +
-            'whole of what this can do and is worth doing. THE HOLDER WILL ' +
-            'NOT BE TOLD BY THIS BUTTON: a relying party validates a SAML ' +
-            'assertion\'s signature and its Conditions and asks nobody, a ' +
-            'Kerberos service decrypts a ticket with a key it already has, ' +
-            'and an X509-SVID chains to a bundle — so this credential goes ' +
-            'on working out there until it expires. What the mark buys is ' +
-            'that a global logout can say what it disowned, that CAEP can ' +
-            'transmit it to a receiver that subscribed, and that SAML Single ' +
-            'Logout can carry it for an assertion that came from a browser ' +
-            'profile. A WS-Trust assertion has neither channel, and the mark ' +
-            'is all there is.')
+          ? t.text('consoleTokens.restoreArtifactTitle')
+          : t.text('consoleTokens.revokeArtifactTitle'))
       : (record.revoked
-          ? 'Un-revoke it. NON-SPEC — no real authorization server can undo ' +
-            'a revocation.'
-          : 'Revoke it. Introspection immediately reports it inactive, ' +
-            'UserInfo refuses it with invalid_token, and the refresh grant ' +
-            'fails with invalid_grant.');
+          ? t.text('consoleTokens.restoreTokenTitle')
+          : t.text('consoleTokens.revokeTokenTitle'));
     return '<form method="post" action="/admin/tokens" class="inline">' +
       '<input type="hidden" name="action" value="' + kit.esc(action) + '">' +
       target +
       '<input type="hidden" name="back" value="' + kit.esc(backRow) + '">' +
       '<button class="' + (record.revoked ? 'secondary' : 'danger') +
       '" title="' + kit.esc(title) + '">' +
-      (record.revoked ? 'Restore' : 'Revoke') +
-      (recordOnly ? ' (record only)' : '') + '</button></form>';
+      (record.revoked ? t.html('consoleTokens.restore')
+                      : t.html('consoleTokens.revoke')) +
+      (recordOnly ? t.html('consoleTokens.recordOnly') : '') +
+      '</button></form>';
   }
 
   // The handle the row can be quoted by — and for one family there is none,
@@ -840,37 +728,25 @@ class TokensPage {
    * A Kerberos ticket, or a record with no identifier, gets a dash with a
    * tooltip instead of a link.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @param listView - the tokens page's list state, carried into the link
    * @returns the cell's content as HTML
    */
-  static identifierCell(record, listView) {
+  static identifierCell(t, record, listView) {
     if (record.family === 'ticket') {
       return '<span class="state-none" title="' +
-        kit.esc('A Kerberos ticket carries no identifier anybody can quote: ' +
-                 'no jti, no ID. It is named by its client, its service and ' +
-                 'when it was issued — the columns to the left — and the KDC ' +
-                 'keeps no handle on it either, because the KDC is stateless ' +
-                 'and the ticket is the state. With no identifier there is ' +
-                 'nothing to look a lineage up BY either, which is why this ' +
-                 'row has no link where the others do.') + '">—</span>';
+        kit.esc(t.text('consoleTokens.ticketNoIdTitle')) + '">—</span>';
     }
     if (!record.identifier) {
       return '<span class="state-none" title="' +
-        kit.esc('This one carries no identifier — the signed UserInfo ' +
-                 'response has no jti, and the WS-Trust JWT is signed ' +
-                 'directly rather than through signJwt(). Nothing can be ' +
-                 'looked up by a name that does not exist.') + '">—</span>';
+        kit.esc(t.text('consoleTokens.noIdTitle')) + '">—</span>';
     }
     return '<a href="' +
       kit.esc('/admin/tokens/credential' +
                kit.queryWith(listView || {}, { id: record.identifier })) +
       '" title="' +
-      kit.esc('Where this credential came from: who it was issued to, in ' +
-               'whose name, to reach what — and, if it came out of a token ' +
-               'exchange, the credential handed in to get it and every ' +
-               'generation behind that, back to the issuance the whole line ' +
-               'rests on.') + '">' +
+      kit.esc(t.text('consoleTokens.lineageTitle')) + '">' +
       kit.shortened(record.identifier, 12) + '</a>';
   }
 
@@ -896,22 +772,23 @@ class TokensPage {
    * @returns the body as HTML
    */
   static setBody(ctx, json) {
+    // The page's words are its translator's (#539 phase 6); the refusal the
+    // view carries (`why`) and a credential's own values are drawn as they
+    // come.
+    const t = ctx.t;
     const set = json.set;
     const listView = kit.listViewOf('/admin/tokens', ctx.query);
     const upHref = '/admin/tokens' + kit.queryWith(listView, {});
     const back = kit.note('<a class="btn" href="' + kit.esc(upHref) +
-      '">&larr; Back to the tokens table</a>');
+      '">' + t.html('consoleTokens.backToTable') + '</a>');
 
     if (!set) {
       const inner = back +
-        kit.note('<strong>' + kit.esc(json.why) + '</strong> This ' +
-        'page draws the credentials that came back in ONE reply, and the ' +
-        'way to it is the link in the last column of <a ' +
-        'href="' + kit.esc(upHref) + '">the tokens ' +
-        'table</a> on any row that shows more than one. A row showing a ' +
-        'single credential links to that credential\'s own lineage ' +
-        'instead, because for one credential this page would be a click ' +
-        'that added nothing.');
+        kit.note('<strong>' + kit.esc(json.why) + '</strong> ' +
+        t.html('consoleTokens.noSetBefore') + '<a ' +
+        'href="' + kit.esc(upHref) + '">' +
+        t.html('consoleTokens.noSetLink') + '</a>' +
+        t.html('consoleTokens.noSetAfter'));
       return inner;
     }
 
@@ -925,128 +802,116 @@ class TokensPage {
       { id: set.setKey }),
                               { from: 'set' });
     const memberRows = set.members.map(function (record) {
-      return TokensPage.issuedRow(record, backRow, listView);
+      return TokensPage.issuedRow(t, record, backRow, listView);
     }).join('');
 
     // The grant, spelled as the console spells it everywhere else. Empty for
     // anything minted where nothing states how — which cannot happen for a
     // GROUP, since only the two OAuth issuance sites group, but can for a set
     // of one.
-    const grantText = set.grant || 'not stated';
+    const grantText = set.grant || t.text('consoleTokens.notStated');
 
     const inner = back +
       kit.note('<strong>' + (set.grouped
-        ? kit.esc(set.size + ' credentials came back in one reply') +
-          ', from the <code>' + kit.esc(grantText) + '</code> grant.'
-        : 'One credential, issued on its own.') +
-      '</strong> This is that reply, member by member — each with its own ' +
-      'identifier, its own expiry and its own button, which is what the ' +
-      'tokens table drew before it started grouping. The columns mean what ' +
-      '<a href="' + kit.esc(upHref) + '">its legend</a> says they mean.') +
+        ? t.html('consoleTokens.setGrouped',
+                 { n: set.size, grant: grantText })
+        : t.html('consoleTokens.setOfOne')) +
+      '</strong> ' + t.html('consoleTokens.setLeadBefore') +
+      '<a href="' + kit.esc(upHref) + '">' +
+      t.html('consoleTokens.setLeadLink') + '</a>' +
+      t.html('consoleTokens.setLeadAfter')) +
 
-      '<h2>The issuance</h2>' +
+      '<h2>' + t.html('consoleTokens.hIssuance') + '</h2>' +
       '<table>' +
-      '<tr><th>Set</th><td><code>' + kit.esc(set.setId || set.setKey) +
+      '<tr><th>' + t.html('consoleTokens.rowSet') + '</th><td><code>' +
+      kit.esc(set.setId || set.setKey) +
       '</code>' +
         (set.setId
-          ? ' <span class="state-none">— this service\'s own handle on the ' +
-            'reply. It is in no token, no client ever sees it, and it is ' +
-            'not a claim: it exists so that a console page can say which ' +
-            'credentials arrived together, which nothing in the protocol ' +
-            'records.</span>'
-          : ' <span class="state-none">— a set of one has no issuance id, ' +
-            'so this is the row\'s own handle in the issued ' +
-            'register.</span>') + '</td></tr><tr><th>Contents</th><td>' +
+          ? ' <span class="state-none">' +
+            t.html('consoleTokens.setIdNote') + '</span>'
+          : ' <span class="state-none">' +
+            t.html('consoleTokens.setKeyNote') + '</span>') +
+      '</td></tr><tr><th>' + t.html('consoleTokens.thContents') +
+      '</th><td>' +
       kit.esc(set.kinds.join(' ' +
-                '+ ')) + '</td></tr><tr><th>State</th><td>' +
+                '+ ')) + '</td></tr><tr><th>' +
+      t.html('consoleTokens.thState') + '</th><td>' +
                 kit.esc(set.state) +
         (set.state === 'mixed'
           ? ' <span class="state-none">— ' +
             kit.esc(Object.keys(set.states).map(function (state) {
               return set.states[state] + ' ' + state;
             }).join(', ')) +
-            '. The ordinary case rather than a fault: an access token and ' +
-            'the refresh token issued with it have very different ' +
-            'lifetimes.</span>'
+            t.html('consoleTokens.mixedNote') + '</span>'
           : '') + '</td></tr>' +
-      '<tr><th>Grant</th><td>' + kit.esc(grantText) + '</td></tr>' +
-      '<tr><th>User</th><td>' + TokensPage.userCell(set.members[0]) +
+      '<tr><th>' + t.html('consoleTokens.rowGrant') + '</th><td>' +
+      kit.esc(grantText) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleTokens.thUser') + '</th><td>' +
+      TokensPage.userCell(t, set.members[0]) +
         '</td></tr>' +
-      '<tr><th>Subject</th><td>' + TokensPage.subjectCell(set.members[0]) +
-      '</td></tr><tr><th>Client</th><td>' +
-        TokensPage.partyCell(set.members[0]) +
-      '</td></tr><tr><th>Session</th><td>' + (set.sessionId
+      '<tr><th>' + t.html('consoleTokens.thSubject') + '</th><td>' +
+      TokensPage.subjectCell(set.members[0]) +
+      '</td></tr><tr><th>' + t.html('consoleTokens.rowClient') +
+      '</th><td>' +
+        TokensPage.partyCell(t, set.members[0]) +
+      '</td></tr><tr><th>' + t.html('consoleTokens.rowSession') +
+      '</th><td>' + (set.sessionId
         ? '<a href="' + kit.esc('/admin/tokens' +
             kit.queryWith({ session: set.sessionId }, {})) + '"><code>' +
           kit.esc(set.sessionId) + '</code></a>' +
           (set.sessionAuthenticated ? ''
-            : ' <span class="state-revoked">— nobody had authenticated on ' +
-              'that session when this was issued.</span>')
-        : '<span class="state-none">none — this was issued with no browser ' +
-          'sign-on session behind it, which is true of both direct grants, ' +
-          'a pre-authorized code, every token exchange, and every ' +
-          'assertion and ticket. A fact about the credential rather than a ' +
-          'gap in the recording.</span>') +
-          '</td></tr><tr><th>Issued</th><td>' +
+            : ' <span class="state-revoked">' +
+              t.html('consoleTokens.sessionUnauthenticated') + '</span>')
+        : '<span class="state-none">' +
+          t.html('consoleTokens.noSession') + '</span>') +
+          '</td></tr><tr><th>' + t.html('consoleTokens.thIssued') +
+          '</th><td>' +
       kit.esc(kit.whenText(set.issuedAt)) +
-      '</td></tr><tr><th>Expires</th><td>' +
-      TokensPage.setExpiryCell(set) + '</td></tr></table>' +
+      '</td></tr><tr><th>' + t.html('consoleTokens.thExpires') +
+      '</th><td>' +
+      TokensPage.setExpiryCell(t, set) + '</td></tr></table>' +
 
       (set.grouped && set.revocableCount
-        ? '<h2>Invalidate the whole set</h2>' +
-          kit.note('One act rather than one click per credential, and it ' +
-          'writes nowhere new: each member goes through the same ' +
-          'revocation <code>/oauth2/revoke</code> performs, one at a time. ' +
-          'What it saves is the mistake of revoking two of three and ' +
-          'believing the grant is dead — a refresh token left behind mints ' +
-          'a new access token, which is the whole reason a reply is worth ' +
-          'being one row. ' +
+        ? '<h2>' + t.html('consoleTokens.hInvalidateSet') + '</h2>' +
+          kit.note(t.html('consoleTokens.invalidateSetLead') +
           (set.size > set.revocableCount
-            ? 'Only ' + set.revocableCount + ' of the ' + set.size + ' can ' +
-              'be revoked; the rest are left alone.'
-            : 'All ' + set.size + ' can be revoked.')) +
+            ? t.html('consoleTokens.onlySomeRevocable',
+                     { n: set.revocableCount, size: set.size })
+            : t.html('consoleTokens.allRevocable', { size: set.size }))) +
           '<div class="formrow">' +
           '<form method="post" action="/admin/tokens" class="inline">' +
             '<input type="hidden" name="action" value="revoke-set">' +
             '<input type="hidden" name="set" value="' + kit.esc(set.setKey) +
             '"><input type="hidden" name="back" value="' + kit.esc(backRow) +
-            '"><button class="danger">Revoke this set</button></form> ' +
+            '"><button class="danger">' +
+            t.html('consoleTokens.revokeThisSet') + '</button></form> ' +
           '<form method="post" action="/admin/tokens" class="inline">' +
             '<input type="hidden" name="action" value="restore-set">' +
             '<input type="hidden" name="set" value="' + kit.esc(set.setKey) +
             '"><input type="hidden" name="back" value="' + kit.esc(backRow) +
-            '"><button class="secondary">Restore this set</button></form>' +
+            '"><button class="secondary">' +
+            t.html('consoleTokens.restoreThisSet') + '</button></form>' +
           '</div>' +
-          kit.note('Restore is <strong>NON-SPEC</strong> and no real ' +
-          'authorization server can offer it — a resource server may ' +
-          'already have cached the refusal. It is here because getting ' +
-          'back to a working token otherwise means restarting this service.')
+          kit.note(t.html('consoleTokens.restoreNonSpec'))
         : '') +
 
-      '<h2>' + (set.grouped ? 'The ' + set.size + ' credentials' : 'The ' +
-          'credential') +
-      '</h2><table><tr><th>Kind</th><th>State</th><th>User</th><th>Subject' +
-      '</th>' +
-      '<th>Client, audience or service</th><th>Detail</th><th>Presented ' +
-      'as</th><th>Issued</th><th>Expires</th><th>jti or ' +
-      'ID</th><th></th></tr>' +
+      '<h2>' + (set.grouped
+        ? t.html('consoleTokens.hCredentials', { n: set.size })
+        : t.html('consoleTokens.hCredential')) +
+      '</h2><table><tr><th>' + t.html('consoleTokens.labelKind') +
+      '</th><th>' + t.html('consoleTokens.thState') + '</th><th>' +
+      t.html('consoleTokens.thUser') + '</th><th>' +
+      t.html('consoleTokens.thSubject') + '</th>' +
+      '<th>' + t.html('consoleTokens.thParty') + '</th><th>' +
+      t.html('consoleTokens.thDetail') + '</th><th>' +
+      t.html('consoleTokens.thPresented') + '</th><th>' +
+      t.html('consoleTokens.thIssued') + '</th><th>' +
+      t.html('consoleTokens.thExpires') + '</th><th>' +
+      t.html('consoleTokens.thJtiOrId') + '</th><th></th></tr>' +
       memberRows + '</table>' +
-      kit.note('In the order they were minted. Every identifier is a link ' +
-      'to where that credential came from — who it was issued to, in whose ' +
-      'name, to reach what, and every generation behind it if a token ' +
-      'exchange or a refresh produced it. <strong>That lineage is a ' +
-      'different relation from this page</strong>: this is what arrived ' +
-      '<em>together</em>, and that is what one credential descends ' +
-      '<em>from</em>. Refreshing this set produces a new set beside it, ' +
-      'not a fourth member of it, and the lineage is what joins the two.') +
+      kit.note(t.html('consoleTokens.membersNote')) +
       (set.grouped
-        ? kit.note('<strong>The Detail column will disagree with itself ' +
-          'here, and that is by design.</strong> An access token\'s ' +
-          '<code>scope</code> is what that token can do; the refresh token ' +
-          'beside it carries what was <em>authorized</em>, which is wider ' +
-          'whenever a scope became the audience — see the tokens page. A ' +
-          'set that reported one scope would be hiding the one place the ' +
-          'two halves of a grant deliberately differ.')
+        ? kit.note(t.html('consoleTokens.detailDisagrees'))
         : '');
 
     return inner;
@@ -1055,25 +920,26 @@ class TokensPage {
   /**
    * Draws one row of the tokens table for a single credential.
    *
+   * @param t - the page's translator (#539)
    * @param record - an issued-credential row from admin_stats
    * @param backRow - the list state its form posts as `back`
    * @param listView - the list state carried into its identifier link
    * @returns a <tr> as HTML
    */
-  static issuedRow(record, backRow, listView) {
+  static issuedRow(t, record, backRow, listView) {
     return '<tr><td>' + kit.esc(record.kind) + '</td>' +
       '<td class="' + TokensPage.stateClass(record.state) + '">' +
       kit.esc(record.state) +
-      '</td><td>' + TokensPage.userCell(record) + '</td><td>' +
+      '</td><td>' + TokensPage.userCell(t, record) + '</td><td>' +
       TokensPage.subjectCell(record) +
-      '</td><td>' + TokensPage.partyCell(record) + '</td><td>' +
-      TokensPage.detailCell(record) +
-      '</td><td>' + TokensPage.presentedCell(record) + '</td><td>' +
+      '</td><td>' + TokensPage.partyCell(t, record) + '</td><td>' +
+      TokensPage.detailCell(t, record) +
+      '</td><td>' + TokensPage.presentedCell(t, record) + '</td><td>' +
       kit.esc(kit.whenText(record.issuedAt)) + '</td><td>' +
       kit.esc(record.expiresAtMs ? kit.whenText(record.expiresAtMs) : '—') +
       '</td><td>' +
-      TokensPage.identifierCell(record, listView) + '</td><td>' +
-      TokensPage.actionCell(record, backRow) + '</td></tr>';
+      TokensPage.identifierCell(t, record, listView) + '</td><td>' +
+      TokensPage.actionCell(t, record, backRow) + '</td></tr>';
   }
 }
 

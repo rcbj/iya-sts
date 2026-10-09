@@ -1,0 +1,14 @@
+{
+  "halves": "每組都有<strong>兩半</strong>。<em>{noun, select, attribute {手寫屬性} other {手寫聲明}}</em>是某人在此寫下的名稱和值，對所有人相同，除非其中帶有 <code>{placeholder}</code>。<em>目錄屬性</em>從下面的目錄中剔選，其值就是此人位於 <code>ou=users</code> 下的項目所寫的內容——因此 <code>ldapmodify</code> 會改變下一個{carrier, select, saml {斷言} userinfo {UserInfo 回應} other {權杖}}，指向本服務的 LDAP 用戶端和依賴方看到的是同一個人。這是值得測試的一半，在有這個目錄之前，只有可驗證憑證能做到這一點。",
+  "carriesNone": "不攜帶任何目錄屬性。請剔選一些並按「更新」。",
+  "tickedNote": "剔選的方塊將成為此組的全部選擇：取消剔選就是移除屬性的方式。",
+  "bothImmediate": "兩者都會立即生效——本頁沒有指令碼，所以它們是表單提交，而不是剔選上面核取方塊的方式。",
+  "typedWins": "名稱衝突時，上面的手寫聲明和上面剔選的目錄屬性都優先於此聲明：那些是在本頁上針對本服務命名的，而此聲明來自一個設定和一個目錄。",
+  "selectionsB": "上剔選——也獨立於",
+  "typedSameName": "<strong>同名的手寫{family, select, saml {屬性} other {聲明}}優先。</strong>在也剔選了 <code>mail</code> 的組中手寫 <code>email</code> 的人表達了明確的意圖，具體的勝過一般的。在斷言中，這必須是篩選而不是覆寫：兩個同名的 <code>&lt;Attribute&gt;</code> 元素會讓依賴方讀取產生器先輸出的那個。",
+  "protocolWinsSaml": "<strong>而通訊協定自身的屬性優先於兩者</strong>，最好在斷言中發現之前就知道這一點。SAML 2.0 斷言依登入設定 <code>name</code>，WS-Federation 斷言設定整個身分聲明清單，因此剔選 <code>cn</code>、<code>givenName</code>、<code>sn</code>、<code>uid</code> 或 <code>mail</code> 可能不會改變依賴方看到的任何內容。這條規則不是本頁定的：設定的屬性會被新增到斷言中，絕不會取代其中的內容，因為依賴方所依賴的屬性若能被網頁表單取代，就會在某個與本頁毫不相干的地方破壞登入。",
+  "protocolWinsJwt": "<strong>而通訊協定自身的聲明優先於兩者</strong>，最好在權杖上發現之前就知道這一點。ID Token 總是攜帶依登入建立的 <code>name</code>、<code>given_name</code>、<code>family_name</code>、<code>preferred_username</code> 和 <code>email</code>，因此<em>在該組</em>剔選 <code>cn</code>、<code>givenName</code>、<code>sn</code>、<code>uid</code> 或 <code>mail</code> 不會改變用戶端看到的任何內容——同樣這五個會進入存取權杖（通訊協定不在其中設定任何一個），並且來自目錄。這條規則不新，也不是本頁定的：設定的聲明會被新增到權杖中，絕不會取代其中的內容，因為依賴方所依賴的聲明若能被網頁表單取代，就會在某個與本頁毫不相干的地方破壞登入。",
+  "replaceNote": "測試需要的表單。以 JSON 提交相同內容即可得到 JSON。這只會取代<em>手寫</em>的{family, select, saml {屬性} other {聲明}}；上面剔選的目錄屬性是單獨的操作（<code>attributes</code>），不受影響。",
+  "pacNothing": "無：沒有任何列或剔選的屬性對此人有值，且此人沒有全領域角色。",
+  "pacTick": "剔選某個屬性，即可在每個 TGT 中以 <code>string</code> 聲明攜帶此人項目上該屬性的<strong>所有值</strong>，名稱為 <code>ad://ext/&lt;attribute&gt;:&lt;hex&gt;</code>，與同名的列相同。項目中沒有該屬性就不攜帶聲明：不會虛構任何內容。上面聲明 ID 相同的列或角色聲明優先。在有人剔選之前，不會剔選任何內容。"
+}

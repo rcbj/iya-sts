@@ -40,153 +40,123 @@ class SsfPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
 
     const tiles = '<div class="tiles">' +
-      kit.tile(json.streamDetail ? json.streamDetail.length : 0, 'streams') +
+      kit.tile(json.streamDetail ? json.streamDetail.length : 0,
+        t.text('consoleSsf.tile.stream')) +
       kit.tile((json.streamDetail || []).filter(function (row) {
         return row.status === 'enabled';
-      }).length, 'enabled') +
+      }).length,
+        t.text('consoleSsf.tile.enabled')) +
       kit.tile((json.streamDetail || []).reduce(function (n, row) {
         return n + row.counters.delivered;
-      }, 0), 'events delivered') +
+      }, 0),
+        t.text('consoleSsf.tile.delivered')) +
       kit.tile((json.streamDetail || []).reduce(function (n, row) {
         return n + row.counters.failed;
-      }, 0), 'deliveries refused') +
+      }, 0),
+        t.text('consoleSsf.tile.refused')) +
       kit.tile((json.streamDetail || []).reduce(function (n, row) {
         return n + row.queue.length;
-      }, 0), 'waiting') +
+      }, 0),
+        t.text('consoleSsf.tile.waiting')) +
       kit.tile((json.streamDetail || []).filter(function (row) {
         return row.dead;
-      }).length, 'dead streams') +
+      }).length,
+        t.text('consoleSsf.tile.deadStreams')) +
       kit.tile((json.streamDetail || []).reduce(function (n, row) {
         return n + (row.deadLetters || []).length;
-      }, 0), 'dead letters') +
-      kit.tile((json.receivedDetail || []).length, 'received here') +
+      }, 0),
+        t.text('consoleSsf.tile.deadLetters')) +
+      kit.tile((json.receivedDetail || []).length,
+        t.text('consoleSsf.tile.received')) +
       '</div>';
 
     const receivedRows = (json.receivedDetail || []).length
       ? json.receivedDetail.slice(0, 25).map(function (row) {
           return '<tr><td class="sub">' + kit.esc(row.at) + '</td><td>' +
-            kit.esc(row.summary ? row.summary.name : '(unreadable)') +
+            kit.esc(row.summary ? row.summary.name
+              : t.text('consoleSsf.received.unreadable')) +
             '</td>' +
             '<td><code>' + kit.esc(row.summary ? row.summary.jti : '') +
             '</code></td>' +
             '<td class="' + (row.verified ? 'state-valid' : 'sub') + '">' +
-            kit.esc(row.verified ? 'verified' : 'not verified here') +
+            kit.esc(row.verified ? t.text('consoleSsf.received.verified')
+              : t.text('consoleSsf.received.notVerified')) +
             '</td>' +
             '<td class="' + (row.correctMediaType ? 'sub' : 'state-invalid') +
-            '"><code>' + kit.esc(row.contentType || '(none)') +
+            '"><code>' + kit.esc(row.contentType ||
+              t.text('consoleSsf.received.none')) +
             '</code></td></tr>';
         }).join('')
-      : '<tr><td colspan="5">Nothing has been pushed at this ' +
-        'service.</td></tr>';
+      : '<tr><td colspan="5">' + t.html('consoleSsf.received.nothing') +
+        '</td></tr>';
 
     const inner = (!json.installed
-        ? '<div class="err"><strong>Shared Signals is not loaded in this ' +
-          'process.</strong> The module registers no routes here, so there ' +
-          'is nothing to report. Everything else on this console is ' +
-          'unaffected.</div>'
+        ? '<div class="err">' + t.html('consoleSsf.notLoaded') + '</div>'
         : '') +
       (json.installed && !json.enabled
-        ? kit.warn('<strong>SSF is turned off</strong> ' +
-          '(<code>ssf.enabled</code>). The routes are still registered and ' +
-          'answer <code>501</code> rather than <code>404</code>, because ' +
-          'the feature being off and the URL being wrong are different ' +
-          'sentences to a client. The transmitter metadata still answers, ' +
-          'so a receiver can discover that this service speaks SSF and is ' +
-          'not currently doing it. Turn it back on in the settings at the ' +
-          'foot of this page.')
+        ? kit.warn(t.html('consoleSsf.off'))
         : '') +
 
-      kit.note('The <strong>Shared Signals Framework</strong> (OpenID SSF ' +
-      '1.0, final 2 September 2025) is the one protocol family here that ' +
-      'TALKS BACK. Every other family answers a request; this one delivers ' +
-      'an event nobody asked for, at the moment it happens, to somebody ' +
-      'who agreed in advance to be told. What it solves is that SAML and ' +
-      'OpenID Connect authenticate at ONE INSTANT and the relying party ' +
-      'then holds a session for hours whatever happens next.') +
+      kit.note(t.html('consoleSsf.intro')) +
 
-      kit.warn('<strong>SSF is the pipe and not the vocabulary.</strong> ' +
-      'It defines how two parties agree a stream, who the events are about ' +
-      '(RFC 9493), what they travel in (RFC 8417) and how they get there ' +
-      '(RFC 8935 push, RFC 8936 poll) &mdash; and exactly TWO events of ' +
-      'its own, both about the pipe. The vocabularies are ' +
-      '<strong>CAEP</strong> (what happened to a session) and ' +
-      '<strong>RISC</strong> (what happened to an account). <strong>CAEP ' +
-      'is implemented</strong> &mdash; its eight session event types ' +
-      'travel on the streams below, and <a href="/admin/caep">its own ' +
-      'page</a> carries the settings, the catalogue and the by-hand emit ' +
-      'form while <a href="/admin/caep-sessions">CAEP sessions</a> counts ' +
-      'what has been said about whom. RISC is the third part and is not ' +
-      'here yet. What changed with CAEP is the sentence this page used to ' +
-      'carry next: this service DOES now generate an event on its own, ' +
-      'when a session starts, is presented or ends. ' +
-      '<code>caep.autoEmit</code> puts the old behaviour back.') +
+      // Two links in the paragraph: the words around them are messages of
+      // their own (#539).
+      kit.warn(t.html('consoleSsf.pipe.before') +
+      '<a href="/admin/caep">' + t.html('consoleSsf.pipe.ownPage') + '</a>' +
+      t.html('consoleSsf.pipe.middle') +
+      '<a href="/admin/caep-sessions">' +
+      t.html('consoleSsf.pipe.caepSessions') + '</a>' +
+      t.html('consoleSsf.pipe.after')) +
 
       tiles +
 
       (json.installed
-        ? '<h2>Discovery</h2>' +
-          kit.note('Everything a receiver needs is at <code>' +
-          kit.esc(json.metadataUrl || '') + '</code>, which is ' +
-          '<strong>never gated</strong>: a receiver has to be able to read ' +
-          'what the endpoints are before it can authenticate to one. The ' +
-          'issuer is <code>' + kit.esc(json.issuer || '') + '</code> and ' +
-          'every SET is signed with <code>' +
-          kit.esc(json.signingAlgorithm || '') + '</code>.') +
-          kit.note('That algorithm is <code>ssf.signingAlgorithm</code> ' +
-          'and it reaches the whole table, <strong>post-quantum ' +
-          'included</strong> &mdash; ML-DSA at three sizes, SLH-DSA at ' +
-          'two, and the six composite ML-DSA + traditional ones &mdash; ' +
-          'because a SET is signed through the same signer every other JWT ' +
-          'here goes through. This is the document most worth signing that ' +
-          'way: it records that something HAPPENED, RFC 8417 section 4.1.4 ' +
-          'forbids it to expire, and it is therefore read long after it ' +
-          'was written.')
+        ? '<h2>' + t.html('consoleSsf.discovery.heading') + '</h2>' +
+          kit.note(t.html('consoleSsf.discovery.where', {
+            url: json.metadataUrl || '', issuer: json.issuer || '',
+            alg: json.signingAlgorithm || '' })) +
+          kit.note(t.html('consoleSsf.discovery.algorithm'))
         : '') +
 
       (json.installed
-        ? '<h2>Streams</h2>' +
+        ? '<h2>' + t.html('consoleSsf.streams.heading') + '</h2>' +
           ((json.streamDetail || []).length
             ? json.streamDetail.map(function (row) {
-              return SsfPage.ssfStreamCard(row, json);
+              return SsfPage.ssfStreamCard(row, json, t);
             }).join('')
-            : kit.note('No streams. A receiver creates one by POSTing a ' +
-              'Stream Configuration to <code>' +
-              kit.esc((json.metadata &&
-                        json.metadata.configuration_endpoint) ||
-                       '/ssf/stream') + '</code>. There is deliberately no ' +
-              '&ldquo;create a stream&rdquo; form here: a stream carries a ' +
-              'delivery endpoint THIS SERVICE WILL DIAL, and the one place ' +
-              'that URL may come from is a receiver that authenticated and ' +
-              'asked &mdash; see <code>ssf/ssf_http.ts</code>.'))
+            : kit.note(t.html('consoleSsf.streams.none', {
+              endpoint: (json.metadata &&
+                         json.metadata.configuration_endpoint) ||
+                        '/ssf/stream' })))
         : '') +
 
       (json.installed
-        ? '<h2>Pushed at this service</h2>' +
-          kit.note('The roles reversed. <code>POST /ssf/receive</code> ' +
-          'accepts a Security Event Token pushed AT this service, which is ' +
-          'what a client acting as the TRANSMITTER sends to. It accepts ' +
-          'one whose signature does not verify and reports why &mdash; a ' +
-          'receiver that refused could not show anybody what arrived, ' +
-          'which is the question being asked. ' +
-          '<code>ssf.receiveRequireSignature</code> turns the 400 on.') +
-          '<table><tr><th>When</th><th>Event</th><th>jti</th>' +
-          '<th>Signature</th><th>Content-Type</th></tr>' + receivedRows +
+        ? '<h2>' + t.html('consoleSsf.pushed.heading') + '</h2>' +
+          kit.note(t.html('consoleSsf.pushed.note')) +
+          '<table><tr><th>' + t.html('consoleSsf.th.when') + '</th><th>' +
+          t.html('consoleSsf.th.event') + '</th><th>jti</th>' +
+          '<th>' + t.html('consoleSsf.th.signature') +
+          '</th><th>Content-Type</th></tr>' + receivedRows +
           '</table>' +
           '<form method="post" action="/admin/ssf"><div class="formrow">' +
           '<input type="hidden" name="action" value="clear-received">' +
-          '<button class="secondary">Clear what has been received</button>' +
+          '<button class="secondary">' +
+          t.html('consoleSsf.pushed.clear') + '</button>' +
           '</div></form>'
         : '') +
 
-      SettingsForms.forms(json.settings, '/admin/ssf') +
+      SettingsForms.forms(json.settings, '/admin/ssf', undefined, t) +
 
-      kit.note('<a href="/ssf">What this is, for a person</a> &middot; ' +
-      '<a href="/admin/ssf?format=json">this page as JSON</a> &middot; ' +
-      '<a href="/admin-api/ssf">the same over the management API</a> ' +
-      '&middot; <a href="/admin/applications">the receivers, as ' +
-      'applications</a>');
+      kit.note('<a href="/ssf">' + t.html('consoleSsf.foot.person') +
+      '</a> &middot; ' +
+      '<a href="/admin/ssf?format=json">' + t.html('consoleSsf.foot.json') +
+      '</a> &middot; ' +
+      '<a href="/admin-api/ssf">' + t.html('consoleSsf.foot.api') + '</a> ' +
+      '&middot; <a href="/admin/applications">' +
+      t.html('consoleSsf.foot.receivers') + '</a>');
 
     return inner;
   }
@@ -198,31 +168,35 @@ class SsfPage {
    * @param row - the stream as the SSF reporter describes it
    * @param json - the page's view, whose `statuses` and `eventTypes` are
    *   the two menus
+   * @param t - the page's translator (#539)
    * @returns the card as HTML
    */
-  static ssfStreamCard(row, json) {
+  static ssfStreamCard(row, json, t) {
     const subjects = row.subjects.length
       ? row.subjects.map(function (one) {
           return '<tr><td>' + kit.esc(one.text) + '</td><td>' +
-            (one.verified ? 'verified' : 'unverified') + '</td><td ' +
+            (one.verified ? t.html('consoleSsf.card.verified')
+              : t.html('consoleSsf.card.unverified')) + '</td><td ' +
               'class="sub">' +
             kit.esc(one.addedAt) + '</td></tr>';
         }).join('')
-      : '<tr><td colspan="3">No subjects. What that MEANS is ' +
-        '<code>default_subjects</code> on the transmitter metadata: with ALL ' +
-        'this stream is about everybody, with NONE about nobody.</td></tr>';
+      : '<tr><td colspan="3">' + t.html('consoleSsf.card.noSubjects') +
+        '</td></tr>';
     const queue = row.queue.length
       ? row.queue.map(function (one) {
           return '<tr><td><code>' + kit.esc(one.jti) + '</code></td><td>' +
             kit.esc(one.summary.name) + '</td><td class="sub">' +
             kit.esc(one.queuedAt) + '</td><td class="sub">' +
-            kit.esc(one.deliveredAt || 'not yet') + '</td></tr>';
+            kit.esc(one.deliveredAt || t.text('consoleSsf.card.notYet')) +
+            '</td></tr>';
         }).join('')
-      : '<tr><td colspan="4">Nothing waiting.</td></tr>';
+      : '<tr><td colspan="4">' + t.html('consoleSsf.card.nothingWaiting') +
+        '</td></tr>';
     const history = row.log.slice(0, 12).map(function (one) {
       return '<tr><td class="sub">' + kit.esc(one.at) + '</td><td>' +
         kit.esc(one.kind) + '</td><td>' + kit.esc(one.text) + '</td></tr>';
-    }).join('') || '<tr><td colspan="3">Nothing recorded yet.</td></tr>';
+    }).join('') || '<tr><td colspan="3">' +
+      t.html('consoleSsf.card.nothingRecorded') + '</td></tr>';
     // THE DEAD-LETTER QUEUE (2026-09-14): what could not be delivered, newest
     // first, with the reason. The first twenty-five; the JSON has them all.
     const dead = row.deadLetters || [];
@@ -234,74 +208,92 @@ class SsfPage {
             kit.esc(one.deadAt) + '</td><td>' + kit.esc(one.reason) +
             (one.errorCode ? ' <code>' + kit.esc(one.errorCode) + '</code>' :
              '') +
-            '</td><td class="sub">' + (one.signed ? 'signed' : 'not signed') +
+            '</td><td class="sub">' + (one.signed
+              ? t.html('consoleSsf.card.signed')
+              : t.html('consoleSsf.card.notSigned')) +
             '</td></tr>';
         }).join('') + (dead.length > 25
-          ? '<tr><td colspan="5">&hellip; and ' + (dead.length - 25) +
-            ' more, in this page\'s JSON.</td></tr>' : '')
-      : '<tr><td colspan="5">Nothing undeliverable.</td></tr>';
+          ? '<tr><td colspan="5">' +
+            t.html('consoleSsf.card.more', { n: dead.length - 25 }) +
+            '</td></tr>' : '')
+      : '<tr><td colspan="5">' +
+        t.html('consoleSsf.card.nothingUndeliverable') + '</td></tr>';
 
     // The heading carries an id so Monitoring → Shared Signals → Dead letters
     // can link each stream row straight to this card, where its controls are.
     return '<h3 id="stream-' + kit.esc(row.stream_id) + '"><code>' +
       kit.esc(row.stream_id) + '</code> &mdash; ' +
       kit.esc(row.status) + (row.dead
-        ? ' <span class="state-invalid">&mdash; DEAD</span>' : '') + '</h3>' +
+        ? ' <span class="state-invalid">' + t.html('consoleSsf.card.dead') +
+          '</span>' : '') + '</h3>' +
       (row.dead
-        ? '<p class="state-invalid">Declared dead at ' +
-          kit.esc(row.deadSince) +
-          ': its pushes all failed for <code>ssf.deadStreamTimeoutS</code>. ' +
-          'Nothing is pushed to it; its SETs go to the dead-letter queue, ' +
-          'and one is pushed as a probe at ' +
-          kit.esc(row.nextProbeAt || 'the next ' +
-          'sweep') + '. Last failure: ' + kit.esc(row.deadReason) + '</p>'
+        ? '<p class="state-invalid">' +
+          t.html('consoleSsf.card.declaredDead', {
+            since: row.deadSince,
+            probe: row.nextProbeAt || t.text('consoleSsf.card.nextSweep') }) +
+          // The failure is the view's own words, in English (#539).
+          kit.esc(row.deadReason) + '</p>'
         : '') +
       '<table class="key">' +
-      '<tr><th>Issuer</th><td><code>' + kit.esc(row.iss) +
+      '<tr><th>' + t.html('consoleSsf.card.issuer') + '</th><td><code>' +
+      kit.esc(row.iss) +
       '</code></td></tr>' +
-      '<tr><th>Audience</th><td><code>' +
+      '<tr><th>' + t.html('consoleSsf.card.audience') + '</th><td><code>' +
       kit.esc(Array.isArray(row.aud) ? row.aud.join(', ') : row.aud) +
       '</code></td></tr>' +
-      '<tr><th>Delivery</th><td><code>' + kit.esc(row.delivery.method) +
+      '<tr><th>' + t.html('consoleSsf.card.delivery') + '</th><td><code>' +
+      kit.esc(row.delivery.method) +
       '</code>' + (row.delivery.endpoint_url
         ? ' &rarr; <code>' + kit.esc(row.delivery.endpoint_url) + '</code>'
         : '') + '</td></tr>' +
-      '<tr><th>Delivers</th><td>' + (row.events_delivered.length
+      '<tr><th>' + t.html('consoleSsf.card.delivers') + '</th><td>' +
+      (row.events_delivered.length
         ? row.events_delivered.map(function (uri) {
             return '<code>' + kit.esc(uri) + '</code>';
           }).join('<br>')
-        : 'nothing &mdash; the intersection of what the receiver asked for ' +
-          'and what this transmitter supports is empty') + '</td></tr>' +
-      '<tr><th>Created</th><td class="sub">' + kit.esc(row.createdAt) + ' ' +
-        'by ' +
-      kit.esc(row.createdBy || '(unauthenticated)') + '</td></tr>' +
-      '<tr><th>Counters</th><td>' + row.counters.queued + ' queued, ' +
-      row.counters.delivered + ' delivered, ' + row.counters.failed +
-      ' failed, ' + row.counters.acknowledged + ' acknowledged, ' +
-      row.counters.receiverErrors + ' refused by the receiver</td></tr>' +
+        : t.html('consoleSsf.card.deliversNothing')) + '</td></tr>' +
+      '<tr><th>' + t.html('consoleSsf.card.created') +
+      '</th><td class="sub">' +
+      t.html('consoleSsf.card.createdBy', {
+        at: row.createdAt,
+        by: row.createdBy || t.text('consoleSsf.card.unauthenticated') }) +
+      '</td></tr>' +
+      '<tr><th>' + t.html('consoleSsf.card.counters') + '</th><td>' +
+      t.html('consoleSsf.card.countersText', {
+        queued: row.counters.queued, delivered: row.counters.delivered,
+        failed: row.counters.failed, acknowledged: row.counters.acknowledged,
+        refused: row.counters.receiverErrors }) + '</td></tr>' +
       (row.lastPushError
-        ? '<tr><th>Last push</th><td class="state-invalid">' +
+        ? '<tr><th>' + t.html('consoleSsf.card.lastPush') +
+          '</th><td class="state-invalid">' +
           kit.esc(row.lastPushError) + '</td></tr>'
         : '') +
       '</table>' +
-      '<h4>Subjects</h4>' +
-      '<table><tr><th>Subject</th><th>State</th><th>Added</th></tr>' +
+      '<h4>' + t.html('consoleSsf.card.subjects') + '</h4>' +
+      '<table><tr><th>' + t.html('consoleSsf.th.subject') + '</th><th>' +
+      t.html('consoleSsf.th.state') + '</th><th>' +
+      t.html('consoleSsf.th.added') + '</th></tr>' +
       subjects + '</table>' +
-      '<h4>Waiting to be delivered</h4>' +
-      '<table><tr><th>jti</th><th>Event</th><th>Queued</th><th>Delivered</th>' +
+      '<h4>' + t.html('consoleSsf.card.waiting') + '</h4>' +
+      '<table><tr><th>jti</th><th>' + t.html('consoleSsf.th.event') +
+      '</th><th>' + t.html('consoleSsf.th.queued') + '</th><th>' +
+      t.html('consoleSsf.th.delivered') + '</th>' +
       '</tr>' + queue + '</table>' +
-      '<h4>Dead letters</h4>' +
-      kit.note('SETs that could not be delivered, with the reason, kept for ' +
-                '<code>ssf.deadLetterRetentionS</code> and then deleted. ' +
-                'Nothing resends them. <a href="' +
+      '<h4>' + t.html('consoleSsf.card.deadLetters') + '</h4>' +
+      // The link is markup a message cannot carry (#539).
+      kit.note(t.html('consoleSsf.card.deadNote') + ' <a href="' +
                 kit.esc('/admin/ssf/dead-letters' +
                 kit.queryWith({}, { dlstream: row.stream_id })) +
-                '#find-dlq">Every ' +
-                'one, counted and searchable</a>.') +
-      '<table><tr><th>jti</th><th>Event</th><th>Dead since</th><th>Why</th>' +
+                '#find-dlq">' + t.html('consoleSsf.card.deadLink') +
+                '</a>.') +
+      '<table><tr><th>jti</th><th>' + t.html('consoleSsf.th.event') +
+      '</th><th>' + t.html('consoleSsf.th.deadSince') + '</th><th>' +
+      t.html('consoleSsf.th.why') + '</th>' +
       '<th></th></tr>' + deadRows + '</table>' +
-      '<h4>What has happened on this stream</h4>' +
-      '<table><tr><th>When</th><th>What</th><th>Detail</th></tr>' + history +
+      '<h4>' + t.html('consoleSsf.card.history') + '</h4>' +
+      '<table><tr><th>' + t.html('consoleSsf.th.when') + '</th><th>' +
+      t.html('consoleSsf.th.what') + '</th><th>' +
+      t.html('consoleSsf.th.detail') + '</th></tr>' + history +
       '</table>' +
       (row.dead
         ? '<form method="post" action="/admin/ssf"><div class="formrow">' +
@@ -309,7 +301,7 @@ class SsfPage {
           kit.esc(row.stream_id) +
           '">' +
           '<input type="hidden" name="action" value="revive">' +
-          '<button>Revive this stream</button>' +
+          '<button>' + t.html('consoleSsf.card.revive') + '</button>' +
           '</div></form>'
         : '') +
       (dead.length
@@ -318,7 +310,8 @@ class SsfPage {
           kit.esc(row.stream_id) +
           '">' +
           '<input type="hidden" name="action" value="clear-dead-letters">' +
-          '<button class="secondary">Drop its dead letters</button>' +
+          '<button class="secondary">' + t.html('consoleSsf.card.dropDead') +
+          '</button>' +
           '</div></form>'
         : '') +
       // A TRANSMITTER-INITIATED VERIFICATION EVENT (#144, SSF 1.0 section
@@ -330,7 +323,8 @@ class SsfPage {
           kit.esc(row.stream_id) +
           '">' +
           '<input type="hidden" name="action" value="verify">' +
-          '<button class="secondary">Send a verification event</button>' +
+          '<button class="secondary">' + t.html('consoleSsf.card.verify') +
+          '</button>' +
           '</div></form>'
         : '') +
       '<form method="post" action="/admin/ssf"><div class="formrow">' +
@@ -338,42 +332,46 @@ class SsfPage {
       kit.esc(row.stream_id) +
       '"><input type="hidden" name="action" value="status"><label ' +
       'for="status-' + kit.esc(row.stream_id) +
-      '">Set the status</label>' +
+      '">' + t.html('consoleSsf.card.setTheStatus') + '</label>' +
       '<select id="status-' + kit.esc(row.stream_id) + '" name="status">' +
       (json.statuses || []).map(function (one) {
         return '<option value="' + kit.esc(one) + '"' +
           (one === row.status ? ' selected' : '') + '>' + kit.esc(one) +
           '</option>';
       }).join('') + '</select>' +
-      '<input type="text" name="reason" size="28" placeholder="reason (shown ' +
-      'to the receiver)">' +
-      '<button>Set status</button>' +
+      '<input type="text" name="reason" size="28" placeholder="' +
+      kit.esc(t.text('consoleSsf.card.reasonPlaceholder')) + '">' +
+      '<button>' + t.html('consoleSsf.card.setStatus') + '</button>' +
       '</div></form>' +
       '<form method="post" action="/admin/ssf"><div class="formrow">' +
       '<input type="hidden" name="stream_id" value="' +
       kit.esc(row.stream_id) +
       '"><input type="hidden" name="action" value="transmit"><label ' +
       'for="type-' + kit.esc(row.stream_id) +
-      '">Transmit an event</label>' +
+      '">' + t.html('consoleSsf.card.transmitAnEvent') + '</label>' +
       '<select id="type-' + kit.esc(row.stream_id) + '" name="type">' +
       (json.eventTypes || [])
         .map(function (one) {
           return '<option value="' + kit.esc(one.uri) + '">' +
                  kit.esc(one.name) +
-            (one.offered ? '' : ' (not offered)') + '</option>';
+            (one.offered ? '' : t.html('consoleSsf.card.notOffered')) +
+            '</option>';
         }).join('') + '</select>' +
       '<input type="text" name="payload" size="30" value="{}" ' +
-      'placeholder="the event payload, as JSON">' +
+      'placeholder="' + kit.esc(t.text('consoleSsf.card.payloadPlaceholder')) +
+      '">' +
       '<input type="text" name="subject" size="30" ' +
-      'placeholder="sub_id, as JSON — optional">' +
-      '<button>Transmit</button>' +
+      'placeholder="' + kit.esc(t.text('consoleSsf.card.subjectPlaceholder')) +
+      '">' +
+      '<button>' + t.html('consoleSsf.card.transmit') + '</button>' +
       '</div></form>' +
       '<form method="post" action="/admin/ssf"><div class="formrow">' +
       '<input type="hidden" name="stream_id" value="' +
       kit.esc(row.stream_id) +
       '">' +
       '<input type="hidden" name="action" value="delete">' +
-      '<button class="secondary">Delete this stream</button>' +
+      '<button class="secondary">' + t.html('consoleSsf.card.delete') +
+      '</button>' +
       '</div></form>';
   }
 }

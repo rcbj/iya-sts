@@ -45,6 +45,10 @@
 // a page drawn here must be the page the console drew.
 // ---------------------------------------------------------------------------
 
+// THE CONSOLE'S TRANSLATOR (#539 phase 5): a `web_` module, as everything
+// here may require.
+import webMessages = require('./web_messages');
+
 // About one rendered line of `.note` text in this console's content column.
 // The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters
 // than this; the number is deliberately under that, because the test worth
@@ -738,9 +742,10 @@ class WebKit {
    *
    * @param value - the value to draw; a dash when null or empty
    * @param keep - the character limit (CLIP_CHARS when not given)
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the clipped value as HTML
    */
-  static clipped(value, keep) {
+  static clipped(value, keep, t = webMessages.WebTranslator.fallback()) {
     const text = String(value == null ? '' : value);
     const limit = keep || CLIP_CHARS;
     if (!text) {
@@ -753,8 +758,9 @@ class WebKit {
       '">' +
       '<code>' + WebKit.esc(text.slice(0, limit)) + '&hellip;</code>' +
       '<span class="full"><code>' + WebKit.esc(text) + '</code>' +
-      '<span class="hint">' + text.length + ' characters &mdash; click the ' +
-      'value to select it all, then copy</span></span></span>';
+      '<span class="hint">' +
+      t.html('consoleKit.clipped.hint', { n: text.length }) +
+      '</span></span></span>';
   }
 
   // One attribute's values, clipped, one per line. Written once because four
@@ -765,9 +771,11 @@ class WebKit {
    *
    * @param values - one value or an array of them
    * @param keep - optional; the character limit passed to clipped()
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the values as one inline-block column of HTML
    */
-  static clippedValues(values, keep?) {
+  static clippedValues(values, keep?,
+                       t = webMessages.WebTranslator.fallback()) {
     const self = this;
     const list = Array.isArray(values) ? values : [values];
     if (!list.length) {
@@ -783,7 +791,7 @@ class WebKit {
     // has the opposite failure: five values of forty characters is a line
     // nothing can align.)
     return '<span class="vals">' + list.map(function (one) {
-      return self.clipped(one, keep);
+      return self.clipped(one, keep, t);
     }).join('<br>') + '</span>';
   }
 
@@ -830,9 +838,11 @@ class WebKit {
    * @param path - the page the links point at
    * @param params - the page parameters every link carries
    * @param pg - the list's paging object from pagingOf()
+   * @param t - optional; the translator (#539), the default when left out
    * @returns an object whose head and foot are each the control as HTML
    */
-  static pageNavPair(path, params, pg) {
+  static pageNavPair(path, params, pg,
+                     t = webMessages.WebTranslator.fallback()) {
     const self = this;
     if (pg.pages <= 1) {
       return { head: '', foot: '' };
@@ -855,12 +865,16 @@ class WebKit {
                     '') + '>' + label + '</a>';
     }
     const out = [];
+    const first = t.html('consoleKit.pager.first');
+    const prev = t.html('consoleKit.pager.prev');
+    const next = t.html('consoleKit.pager.next');
+    const last = t.html('consoleKit.pager.last');
     if (pg.page > 1) {
-      out.push(link(1, '&laquo; first', 'The newest rows'));
-      out.push(link(pg.page - 1, '&lsaquo; prev'));
+      out.push(link(1, first, t.text('consoleKit.pager.first.title')));
+      out.push(link(pg.page - 1, prev));
     } else {
-      out.push('<span class="off">&laquo; first</span><span ' +
-               'class="off">&lsaquo; prev</span>');
+      out.push('<span class="off">' + first + '</span><span ' +
+               'class="off">' + prev + '</span>');
     }
     const from = Math.max(1, Math.min(pg.page - 3, pg.pages - 6));
     const to = Math.min(pg.pages, Math.max(pg.page + 3, 7));
@@ -869,16 +883,16 @@ class WebKit {
                link(n, String(n)));
     }
     if (pg.page < pg.pages) {
-      out.push(link(pg.page + 1, 'next &rsaquo;'));
-      out.push(link(pg.pages, 'last &raquo;', 'The oldest rows still held'));
+      out.push(link(pg.page + 1, next));
+      out.push(link(pg.pages, last, t.text('consoleKit.pager.last.title')));
     } else {
-      out.push('<span class="off">next &rsaquo;</span><span class="off">last ' +
-               '&raquo;</span>');
+      out.push('<span class="off">' + next + '</span><span class="off">' +
+               last + '</span>');
     }
-    out.push('<span class="where">page ' + pg.page + ' of ' + pg.pages + ' — ' +
-             pg.noun + ' ' +
-             pg.firstRow + '&ndash;' + pg.lastRow + ' of ' + pg.total +
-             '</span>');
+    // `noun` is the caller's word for the rows, drawn as it was given.
+    out.push('<span class="where">' + t.html('consoleKit.pager.where', {
+      page: pg.page, pages: pg.pages, noun: pg.noun, first: pg.firstRow,
+      last: pg.lastRow, total: pg.total }) + '</span>');
     const inner = out.join('') + '</div>';
     return {
       head: '<div class="pagenav" id="' + WebKit.esc(anchor) + '">' + inner,
@@ -928,9 +942,10 @@ class WebKit {
    * A size that is not one of the offered choices is added to the list.
    *
    * @param perPage - the page size in use, which is marked selected
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the <option> elements as HTML
    */
-  static perPageOptions(perPage) {
+  static perPageOptions(perPage, t = webMessages.WebTranslator.fallback()) {
     const choices = [25, WebKit.DEFAULT_PER_PAGE, 100, WebKit.MAX_ROWS];
     if (choices.indexOf(perPage) < 0) {
       choices.push(perPage);
@@ -939,7 +954,7 @@ class WebKit {
     return choices.map(function (n) {
       return '<option value="' + n + '"' + (n === perPage ? ' selected' : '') +
              '>' +
-             n + ' rows</option>';
+             t.html('consoleKit.perPage.rows', { n: n }) + '</option>';
     }).join('');
   }
 
@@ -971,9 +986,11 @@ class WebKit {
    * @param perPage - the page size in use
    * @param extraNote - optional; a sentence added to the form's note
    * @param carry - optional; the list filter to carry as hidden inputs
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the form as HTML
    */
-  static perPageForm(path, key, value, perPage, extraNote?, carry?) {
+  static perPageForm(path, key, value, perPage, extraNote?, carry?,
+                     t = webMessages.WebTranslator.fallback()) {
     const carried = Object.keys(carry || {}).map(function (name) {
       return '<input type="hidden" name="' + WebKit.esc(name) + '" value="' +
              WebKit.esc(carry[name]) + '">';
@@ -982,14 +999,16 @@ class WebKit {
       'class="formrow"><input type="hidden" ' +
       'name="' + WebKit.esc(key) + '" value="' + WebKit.esc(value) + '">' +
       carried +
-      '<label for="per"' + WebKit.tip('How many rows each table below ' +
-        'shows on a page.') + '>Rows per table</label>' +
-      '<select id="per" name="per"' + WebKit.tip('How many rows each table ' +
-        'below shows on a page.') + '>' + WebKit.perPageOptions(perPage) +
-      '</select><button class="secondary"' + WebKit.tip('Redraw the tables ' +
-        'at this size, each from its first page.') + '>Apply</button>' +
-      WebKit.note('Every table below is paged separately and they share this ' +
-      'size. Changing it starts each of them at its first page.' +
+      '<label for="per"' + WebKit.tip(t.text('consoleKit.perPage.tip')) +
+      '>' + t.html('consoleKit.perPage.label') + '</label>' +
+      '<select id="per" name="per"' +
+      WebKit.tip(t.text('consoleKit.perPage.tip')) + '>' +
+      WebKit.perPageOptions(perPage, t) +
+      '</select><button class="secondary"' +
+      WebKit.tip(t.text('consoleKit.perPage.apply.tip')) + '>' +
+      t.html('consoleKit.perPage.apply') + '</button>' +
+      // `extraNote` is the caller's sentence, drawn as it was given.
+      WebKit.note(t.html('consoleKit.perPage.note') +
       (extraNote ? ' ' + extraNote : '')) +
       '</div></form>';
     return html;
@@ -1006,12 +1025,14 @@ class WebKit {
    * Draws a hidden Copy button for a value, which `/admin/copy.js` reveals.
    *
    * @param value - the text the button copies
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the markup
    */
-  static copyButton(value) {
+  static copyButton(value, t = webMessages.WebTranslator.fallback()) {
     return ' <button type="button" class="copybtn" hidden data-copy="' +
-      WebKit.esc(String(value == null ? '' : value)) + '" title="Copy ' +
-      'to the clipboard">Copy</button>';
+      WebKit.esc(String(value == null ? '' : value)) + '" title="' +
+      WebKit.esc(t.text('consoleKit.copy.title')) + '">' +
+      t.html('consoleKit.copy') + '</button>';
   }
 
   // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
@@ -1142,9 +1163,10 @@ class WebKit {
    *
    * @param spec - the path, query, param, pageParam, label, placeholder
    *   and what of the search
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the form, and the optional note under it, as HTML
    */
-  static sectionSearchForm(spec) {
+  static sectionSearchForm(spec, t = webMessages.WebTranslator.fallback()) {
     const esc = WebKit.esc;
     const query = spec.query || {};
     const wanted = WebKit.queryOne(query, spec.param).trim();
@@ -1165,12 +1187,13 @@ class WebKit {
       esc(spec.param) +
           '" size="32" value="' + esc(wanted) + '" placeholder="' +
           esc(spec.placeholder) + '">' +
-        '<button class="secondary">Search</button>' +
+        '<button class="secondary">' + t.html('consoleKit.search') +
+        '</button>' +
         (wanted
           ? ' <a href="' +
             esc(spec.path + WebKit.queryWith(carried, {})) + '#' +
             esc(anchor) +
-            '">clear</a>'
+            '">' + t.html('consoleKit.clear') + '</a>'
           : '') +
       '</div></form>' +
       // OUTSIDE the form rather than in it. A note() longer than a line is a
@@ -1189,29 +1212,33 @@ class WebKit {
    * to one decimal place in minutes, hours or days above.
    *
    * @param seconds - the number of seconds
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the phrase, or "no allowance at all" for zero
    */
-  static humanSeconds(seconds) {
+  static humanSeconds(seconds, t = webMessages.WebTranslator.fallback()) {
+    // TEXT, as it always was: the callers escape it. The plural is chosen by
+    // the number and the number drawn as it was (`shown`), so the English is
+    // the old phrase for every value.
     const n = Number(seconds) || 0;
     if (n === 0) {
-      return 'no allowance at all';
+      return t.text('consoleKit.seconds.none');
     }
     if (n < 60) {
-      return n + ' second' + (n === 1 ? '' : 's');
+      return t.text('consoleKit.seconds.seconds', { n: n, shown: n });
     }
     if (n < 3600) {
       const minutes = n / 60;
-      return (Number.isInteger(minutes) ? minutes : minutes.toFixed(1)) +
-             ' minute' + (minutes === 1 ? '' : 's');
+      return t.text('consoleKit.seconds.minutes', { n: minutes,
+        shown: Number.isInteger(minutes) ? minutes : minutes.toFixed(1) });
     }
     if (n < 86400) {
       const hours = n / 3600;
-      return (Number.isInteger(hours) ? hours : hours.toFixed(1)) +
-             ' hour' + (hours === 1 ? '' : 's');
+      return t.text('consoleKit.seconds.hours', { n: hours,
+        shown: Number.isInteger(hours) ? hours : hours.toFixed(1) });
     }
     const days = n / 86400;
-    return (Number.isInteger(days) ? days :
-            days.toFixed(1)) + ' day' + (days === 1 ? '' : 's');
+    return t.text('consoleKit.seconds.days', { n: days,
+      shown: Number.isInteger(days) ? days : days.toFixed(1) });
   }
 
   // Does one catalogue entry match what was typed? Case-insensitive, over
@@ -1267,9 +1294,10 @@ class WebKit {
    *
    * @param spec - here, param, fromParam, label, placeholder, entries,
    *   selectedKey and nothing, as the comment above describes
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the form, the pane and its paging note as HTML
    */
-  static chooserPane(spec) {
+  static chooserPane(spec, t = webMessages.WebTranslator.fallback()) {
     const esc = WebKit.esc;
     const query = (spec.here && spec.here.query) || {};
     const path = (spec.here && spec.here.path) || '';
@@ -1374,25 +1402,25 @@ class WebKit {
         : '<p class="none">' + esc(spec.nothing) + '</p>') +
       '</div>';
 
-    const noun = wanted
-      ? (matchedCount === 1 ? 'match' : 'matches')
-      : 'in the list';
+    // Whether a search was typed decides "match(es)" or "in the list".
+    const counted = { n: matchedCount, from: from + 1,
+                      to: from + shown.length,
+                      searched: wanted ? 'yes' : 'no' };
     const count = matchedCount
       ? (matchedCount > WebKit.CHOOSER_HITS
-          ? 'Showing ' + (from + 1) + '&ndash;' + (from + shown.length) +
-            ' of ' + matchedCount + ' ' + noun + '. '
-          : matchedCount + ' ' + noun + '. ')
+          ? t.html('consoleKit.chooser.showing', counted)
+          : t.html('consoleKit.chooser.count', counted))
       : '';
     const more = [];
     if (from > 0) {
-      more.push(pageLink(from - WebKit.CHOOSER_HITS, '&larr; previous ' +
-        WebKit.CHOOSER_HITS,
-        'The twenty before these'));
+      more.push(pageLink(from - WebKit.CHOOSER_HITS,
+        t.html('consoleKit.chooser.previous', { n: WebKit.CHOOSER_HITS }),
+        t.text('consoleKit.chooser.previous.title')));
     }
     if (from + WebKit.CHOOSER_HITS < matchedCount) {
       more.push(pageLink(from + WebKit.CHOOSER_HITS,
-                         'next ' + WebKit.CHOOSER_HITS + ' &rarr;',
-        'The twenty after these'));
+        t.html('consoleKit.chooser.next', { n: WebKit.CHOOSER_HITS }),
+        t.text('consoleKit.chooser.next.title')));
     }
 
     return '<form method="get" id="' + esc(anchor) +
@@ -1403,11 +1431,12 @@ class WebKit {
         '</label><input type="text" id="' + esc(spec.param) + '" name="' +
           esc(spec.param) + '" size="32" value="' + esc(wanted) +
           '" placeholder="' + esc(spec.placeholder) + '">' +
-        '<button class="secondary">Search</button>' +
+        '<button class="secondary">' + t.html('consoleKit.search') +
+        '</button>' +
         (wanted
           ? ' <a href="' + esc(path + WebKit.queryWith(carried, {})) + '#' +
             esc(anchor) +
-            '">clear</a>'
+            '">' + t.html('consoleKit.clear') + '</a>'
           : '') +
       '</div></form>' +
       pane +
@@ -1597,24 +1626,33 @@ class WebKit {
    *   and `protocols`, the families a cell's labels are named from;
    *   `views` (#500), the cell is classed `fg-adv` unless `row.simple`, so
    *   its form's simple / advanced switch (`viewSwitch()`) can hide it
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the cell as HTML
    */
-  static fieldGridCell(row, values, options) {
+  static fieldGridCell(row, values, options,
+                       t = webMessages.WebTranslator.fallback()) {
     const opts = options || {};
     const name = 'field.' + row.attribute;
     const id = 'fg-' + row.attribute;
     const held = values[row.attribute] || [];
     const first = held.length ? String(held[0]) : '';
     const hint = WebKit.tip(row.what || row.attribute);
+    // `row.what`, `row.example` and the described default are the server's,
+    // drawn as they came; the words around them are translated (#539). The
+    // two values FOLLOW their words rather than being parameters: `t.text()`
+    // strips anything shaped like a tag, and an example can be markup
+    // (`samlSpMetadata`'s is an <md:EntityDescriptor>).
+    const eg = t.text('consoleKit.grid.example');
     const defaultText = row.described
-      ? 'default — currently ' + row.described.text : '';
+      ? t.text('consoleKit.grid.default') + row.described.text : '';
+    const notSet = t.text('consoleKit.grid.notSet');
     // THE GUIDANCE IN AN EMPTY BOX (rcbj, 2026-10-01): an example of a valid
     // value, as a placeholder — grey, and gone as soon as somebody types — and
     // for a setting override the default beside it. `applications.
     // fieldExample()` is the one table of them.
     const guidance = row.example
-      ? 'e.g. ' + row.example + (defaultText ? ' (' + defaultText + ')' : '')
-      : (defaultText || 'not set');
+      ? eg + row.example + (defaultText ? ' (' + defaultText + ')' : '')
+      : (defaultText || notSet);
     let control = '';
     // A VALUE THAT IS NOT ONE OF THE CHOICES (an older write, an
     // ldapmodify) is still offered, marked, so a save does not drop it
@@ -1626,7 +1664,8 @@ class WebKit {
     };
     const outside = function (choices, value) {
       return choices.indexOf(value) < 0
-        ? ' <span class="state-none">(not one of the allowed values)</span>'
+        ? ' <span class="state-none">' + t.html('consoleKit.grid.outside') +
+          '</span>'
         : '';
     };
     if (row.type === 'array' && row.choices && row.choices.length) {
@@ -1646,24 +1685,29 @@ class WebKit {
         return '<div class="fg-item"><input type="text" id="' +
           WebKit.esc(id + '-' + n) + '" name="' + WebKit.esc(name + '.' + n) +
           '" value="' + WebKit.esc(value) + '"' + hint +
-          (row.example ? ' placeholder="' + WebKit.esc('e.g. ' + row.example) +
-                         '"' : '') + ' aria-label="' +
-          WebKit.esc(row.attribute + ' value ' + (n + 1)) + '">' +
+          (row.example
+            ? ' placeholder="' + WebKit.esc(eg + row.example) +
+              '"' : '') + ' aria-label="' +
+          WebKit.esc(t.text('consoleKit.grid.valueN',
+                            { attribute: row.attribute, n: n + 1 })) + '">' +
           '<button type="submit" class="secondary fg-drop" name="drop" ' +
           'value="' + WebKit.esc(row.attribute + '.' + n) + '" formaction="' +
           WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
             '" formnovalidate ' +
-          'title="Delete this ' +
-          'value" aria-label="Delete value ' + (n + 1) + ' of ' +
-          WebKit.esc(row.attribute) + '">' + WebKit.trashIcon() +
+          'title="' + WebKit.esc(t.text('consoleKit.grid.delete')) +
+          '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.deleteN',
+            { n: n + 1, attribute: row.attribute })) + '">' +
+          WebKit.trashIcon() +
           '</button></div>';
       }).join('') +
-      (held.length ? '' : '<span class="state-none">no values</span>') +
+      (held.length ? '' : '<span class="state-none">' +
+        t.html('consoleKit.grid.noValues') + '</span>') +
       '<button type="submit" class="secondary fg-grow" name="grow" value="' +
       WebKit.esc(row.attribute) + '" formaction="' +
       WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
-      '" formnovalidate title="Add a value" aria-label="Add a value to ' +
-      WebKit.esc(row.attribute) + '">+</button></div>';
+      '" formnovalidate title="' + WebKit.esc(t.text('consoleKit.grid.add')) +
+      '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.addTo',
+        { attribute: row.attribute })) + '">+</button></div>';
     } else if (row.type === 'boolean') {
       const upper = first.toUpperCase();
       const radio = function (value, label) {
@@ -1676,7 +1720,7 @@ class WebKit {
         ' aria-label="' + WebKit.esc(row.attribute) + '">' +
         radio('TRUE', 'true') +
         radio('FALSE', 'false') +
-        radio('', defaultText || 'not set') + '</div>';
+        radio('', defaultText || notSet) + '</div>';
     } else if (row.type === 'enum') {
       // ONE VALUE FROM A CLOSED SET is a radio per value, and a last one for
       // none (the setting's default, for an override), the boolean's shape.
@@ -1690,7 +1734,7 @@ class WebKit {
         }).join('') +
         '<label class="fg-radio"><input type="radio" name="' +
         WebKit.esc(name) + '" value=""' + (first === '' ? ' checked' : '') +
-        '>' + WebKit.esc(defaultText || 'not set') + '</label></div>';
+        '>' + WebKit.esc(defaultText || notSet) + '</label></div>';
     } else if (row.long) {
       control = '<textarea id="' + WebKit.esc(id) + '" name="' +
         WebKit.esc(name) + '" rows="3"' + hint + ' placeholder="' +
@@ -1709,15 +1753,12 @@ class WebKit {
           ? ' <button type="submit" class="secondary" name="action" ' +
             'value="generate-secret" formaction="' +
             WebKit.esc(opts.generateSecret) + '" formnovalidate' +
-            WebKit.tip('Mint a client secret the way POST /oauth2/register ' +
-                     'does and put it in this box. Nothing is written until ' +
-                     'the application is created. Everything else you have ' +
-                     'typed on this page is kept.') +
-            '>Generate Secret</button>'
+            WebKit.tip(t.text('consoleKit.grid.generate.tip')) +
+            '>' + t.html('consoleKit.grid.generate') + '</button>'
           : '');
     }
     const labels = row.forText !== undefined ? String(row.forText)
-      : row.everyFamily ? 'every protocol'
+      : row.everyFamily ? t.text('consoleKit.grid.everyProtocol')
       : row.families.map(function (family) {
         const known = (opts.protocols || []).filter(function (one) {
           return one.id === family;
@@ -1743,7 +1784,7 @@ class WebKit {
     if (searchKind) {
       control += WebKit.fieldSearchOf(row.attribute, searchKind,
                                       (opts.finds || {})[row.attribute],
-                                      opts.redraw);
+                                      opts.redraw, t);
     }
     // The cell's id is what "+" and the bin come back to (withReturnAnchors()).
     return '<div id="fgc-' + WebKit.esc(row.attribute) + '" class="fg-cell' +
@@ -1768,8 +1809,9 @@ class WebKit {
         : '<label class="fg-name" for="' + WebKit.esc(id) + '"' + hint +
           '><code>' + WebKit.esc(row.attribute) + '</code></label>') +
       '<span class="fg-for">' + WebKit.esc(labels) +
-      (row.type === 'array' ? ' &middot; a list' : '') +
-      (row.sensitive ? ' &middot; a credential' : '') + '</span>' +
+      (row.type === 'array' ? t.html('consoleKit.grid.aList') : '') +
+      (row.sensitive ? t.html('consoleKit.grid.aCredential') : '') +
+      '</span>' +
       control +
       // #488: a value the service will not use as written, said beside the
       // field that holds it — the page data's `fieldWarnings`, one line each.
@@ -1794,9 +1836,11 @@ class WebKit {
    *   applications, one value), what the search finds
    * @param found - the last search's results for this list, or nothing
    * @param redraw - the route the grid's round trips post to
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the search as HTML
    */
-  static fieldSearchOf(attribute, kind, found, redraw) {
+  static fieldSearchOf(attribute, kind, found, redraw,
+                       t = webMessages.WebTranslator.fallback()) {
     // `parties` (#461) is `appMayAct`'s: ONE value, a person's or another
     // application's DN, searched as either kind (a toggle — each page of
     // five is then one list operation's page) and chosen to REPLACE it.
@@ -1805,6 +1849,10 @@ class WebKit {
       ? 'applications' : 'people';
     const noun = kind === 'groups' ? 'group'
       : parties && which === 'people' ? 'person' : 'application';
+    // THE WORDS ARE MESSAGES (#539): the noun and the kind are `select`
+    // parameters, so a translation says each case whole.
+    const searched = kind === 'groups' ? 'groups'
+      : parties ? 'parties' : 'applications';
     const action = WebKit.esc(redraw + '#fgc-' + attribute);
     const button = function (name, value, label, tipText, cls?, off?) {
       return '<button type="submit" class="secondary ' + (cls || '') +
@@ -1813,25 +1861,10 @@ class WebKit {
         WebKit.tip(tipText) + (off ? ' disabled' : '') + '>' +
         WebKit.esc(label) + '</button>';
     };
-    const boxTip = kind === 'groups'
-      ? 'Type part of a group\'s DN or name and press Find (or Enter): ' +
-        'the realm\'s groups are matched as the Groups page\'s filter ' +
-        'matches them, ' + WebKit.FIND_PER_PAGE + ' to a page, leaving ' +
-        'out the groups this list already holds.'
-      : parties
-        ? 'Type part of a username, or of an application\'s identifier or ' +
-          'name, and press Find (or Enter): People are matched as the ' +
-          'Users page\'s filter matches them, Applications as the ' +
-          'Applications page\'s, ' + WebKit.FIND_PER_PAGE + ' to a page, ' +
-          'leaving out this application itself, which may not name itself.'
-        : 'Type part of an application\'s identifier or name and press ' +
-          'Find (or Enter): the realm\'s applications are matched as the ' +
-          'Applications page\'s filter matches them, ' +
-          WebKit.FIND_PER_PAGE + ' to a page, leaving out this application ' +
-          'itself, which this list may not name, and the applications it ' +
-          'already holds.';
-    const placeholder = kind === 'groups' ? 'Find a group'
-      : parties ? 'Find a person or an application' : 'Find an application';
+    const boxTip = t.text('consoleKit.find.boxTip',
+                          { kind: searched, n: WebKit.FIND_PER_PAGE });
+    const placeholder = t.text('consoleKit.find.placeholder',
+                               { kind: searched });
     const kindRadio = function (value, label, tipText) {
       return '<label class="fg-radio"' + WebKit.tip(tipText) + '>' +
         '<input type="radio" name="fgkind.' + WebKit.esc(attribute) +
@@ -1840,26 +1873,26 @@ class WebKit {
     };
     const kinds = parties
       ? '<div class="fg-bool fg-kinds" role="radiogroup" aria-label="' +
-        WebKit.esc('What to find for ' + attribute) + '">' +
-        kindRadio('people', 'people', 'Find a PERSON of this realm, by ' +
-                  'username (GET /admin-api/users). Their entry\'s DN is ' +
-                  'what is stored.') +
-        kindRadio('applications', 'applications', 'Find another ' +
-                  'APPLICATION of this realm, by identifier or name (GET ' +
-                  '/admin-api/applications). Its entry\'s DN is what is ' +
-                  'stored.') + '</div>'
+        WebKit.esc(t.text('consoleKit.find.what', { attribute: attribute })) +
+        '">' +
+        kindRadio('people', t.text('consoleKit.find.people'),
+                  t.text('consoleKit.find.people.tip')) +
+        kindRadio('applications', t.text('consoleKit.find.applications'),
+                  t.text('consoleKit.find.applications.tip')) + '</div>'
       : '';
+    // The placeholder was drawn unescaped and still is, through esc(): it
+    // holds no character esc() changes in English.
     const box = kinds + '<div class="fg-item fg-findrow"><input ' +
       'type="search" id="fgq-' + WebKit.esc(attribute) + '" name="fgfind.' +
       WebKit.esc(attribute) + '" data-fg-find="' + WebKit.esc(attribute) +
       '" value="' + WebKit.esc(found ? found.query : '') + '" ' +
-      'placeholder="' + placeholder + '" aria-label="' +
-      WebKit.esc(placeholder + ' for ' + attribute) + '"' +
-      WebKit.tip(boxTip) + '>' +
-      button('fgsearch', attribute, 'Find',
-             'Search the realm\'s ' + (parties ? 'people or applications, ' +
-             'as ticked above,' : noun + 's') + ' for what is in the box. ' +
-             'An empty box lists them all. Nothing is saved.', 'fg-findbtn') +
+      'placeholder="' + WebKit.esc(placeholder) + '" aria-label="' +
+      WebKit.esc(t.text('consoleKit.find.for', { placeholder: placeholder,
+                                                attribute: attribute })) +
+      '"' + WebKit.tip(boxTip) + '>' +
+      button('fgsearch', attribute, t.text('consoleKit.find.find'),
+             t.text('consoleKit.find.find.tip', { kind: searched }),
+             'fg-findbtn') +
       '</div>';
     if (!found) {
       return '<div class="fg-find">' + box + '</div>';
@@ -1867,27 +1900,28 @@ class WebKit {
     // AN ADD PUTS A VALUE IN A LIST; A USE REPLACES THE ONE VALUE (#461).
     const pick = function (one) {
       if (!one.value) {
-        return '<span class="state-none"' + WebKit.tip('This identity has ' +
-          'no entry in this realm\'s directory, so there is no DN to name ' +
-          'it by.') + '>no entry</span>';
+        return '<span class="state-none"' +
+          WebKit.tip(t.text('consoleKit.find.noEntry.tip')) + '>' +
+          t.html('consoleKit.find.noEntry') + '</span>';
       }
       return parties
-        ? button('fgadd', attribute + '|' + one.value, 'Use',
-                 'Make ' + one.value + ' the value of ' + attribute + ', ' +
-                 'in place of what the box holds. It is written when you ' +
-                 'press this tab\'s Save.', 'fg-add')
-        : button('fgadd', attribute + '|' + one.value, 'Add',
-                 'Put ' + one.value + ' in this list, as a new box. It ' +
-                 'is written when you press this tab\'s Save.', 'fg-add');
+        ? button('fgadd', attribute + '|' + one.value,
+                 t.text('consoleKit.find.use'),
+                 t.text('consoleKit.find.use.tip',
+                        { value: one.value, attribute: attribute }), 'fg-add')
+        : button('fgadd', attribute + '|' + one.value,
+                 t.text('consoleKit.find.add'),
+                 t.text('consoleKit.find.add.tip', { value: one.value }),
+                 'fg-add');
     };
     const rows = found.failed
+      // A FAILURE, and failures stay English (#539).
       ? '<span class="state-none">The search could not be run: /admin-api ' +
         'did not answer it.</span>'
       : !found.rows.length
         ? '<span class="state-none fg-none">' + (found.query
-          ? 'No matches for &ldquo;' + WebKit.esc(found.query) +
-            '&rdquo;. Try fewer letters, or another part of the name.'
-          : 'No other ' + noun + ' to offer here.') + '</span>'
+          ? t.html('consoleKit.find.noMatches', { query: found.query })
+          : t.html('consoleKit.find.noOther', { noun: noun })) + '</span>'
         : found.rows.map(function (one) {
           return '<div class="fg-hit"><span class="fg-hit-name">' +
             (one.kind
@@ -1900,19 +1934,24 @@ class WebKit {
         }).join('');
     const pager = found.failed || found.pages <= 1 ? ''
       : '<div class="fg-pager">' +
-        button('fgsearch', attribute + '|' + (found.page - 1), 'Previous',
-               'The previous ' + WebKit.FIND_PER_PAGE + ' results.',
+        button('fgsearch', attribute + '|' + (found.page - 1),
+               t.text('consoleKit.find.previous'),
+               t.text('consoleKit.find.previous.tip',
+                      { n: WebKit.FIND_PER_PAGE }),
                'fg-prev', found.page <= 1) +
-        '<span class="fg-pageof">page ' + found.page + ' of ' +
-        found.pages + ' &middot; ' + found.matched + ' found</span>' +
-        button('fgsearch', attribute + '|' + (found.page + 1), 'Next',
-               'The next ' + WebKit.FIND_PER_PAGE + ' results.',
+        '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
+          page: found.page, pages: found.pages, matched: found.matched }) +
+        '</span>' +
+        button('fgsearch', attribute + '|' + (found.page + 1),
+               t.text('consoleKit.find.next'),
+               t.text('consoleKit.find.next.tip',
+                      { n: WebKit.FIND_PER_PAGE }),
                'fg-next', found.page >= found.pages) + '</div>';
     // AN EMPTY QUERY (#462) lists every one, and says how to narrow it —
     // the cell stays open on it as on any other search, results or none.
     const hint = found.failed || found.query ? ''
-      : '<span class="state-none fg-hint">Type something in the box to ' +
-        'search; an empty box lists every ' + noun + '.</span>';
+      : '<span class="state-none fg-hint">' +
+        t.html('consoleKit.find.hint', { noun: noun }) + '</span>';
     return '<div class="fg-find">' + box + '<div class="fg-found" ' +
       'aria-live="polite"><input type="hidden" name="fgpage.' +
       WebKit.esc(attribute) + '" value="' + found.page + '">' + hint + rows +
@@ -2004,22 +2043,28 @@ class WebKit {
    * @param advanced - true to draw it on the advanced view
    * @param hidden - how many fields the simplified view hides
    * @param held - how many of those hold a value
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the switch as HTML
    */
-  static viewSwitch(label, advanced, hidden, held) {
+  static viewSwitch(label, advanced, hidden, held,
+                    t = webMessages.WebTranslator.fallback()) {
     return '<div class="formrow fg-view fg-switch" role="radiogroup" ' +
-      'aria-label="' + WebKit.esc('Which fields of ' + label) + '">' +
-      '<label class="fg-radio"' + WebKit.tip('The fields usually filled ' +
-        'in. The others keep their values and are saved as they are.') +
+      'aria-label="' + WebKit.esc(t.text('consoleKit.view.which',
+                                         { label: label })) + '">' +
+      '<label class="fg-radio"' +
+      WebKit.tip(t.text('consoleKit.view.simple.tip')) +
       '><input type="radio" name="view" value="simple"' +
-      (advanced ? '' : ' checked') + '> Simplified view</label>' +
-      '<label class="fg-radio"' + WebKit.tip('Every field this tab has.') +
+      (advanced ? '' : ' checked') + '> ' +
+      t.html('consoleKit.view.simple') + '</label>' +
+      '<label class="fg-radio"' +
+      WebKit.tip(t.text('consoleKit.view.advanced.tip')) +
       '><input type="radio" name="view" value="advanced"' +
-      (advanced ? ' checked' : '') + '> Advanced view (every field)</label>' +
-      '<span class="sub fg-simple-only">' + hidden + ' more field' +
-      (hidden === 1 ? '' : 's') + ' in the advanced view' +
-      (held ? ', ' + held + ' of ' + (hidden === 1 ? 'it' : 'them') +
-              ' holding a value' : '') + '.</span></div>';
+      (advanced ? ' checked' : '') + '> ' +
+      t.html('consoleKit.view.advanced') + '</label>' +
+      '<span class="sub fg-simple-only">' +
+      t.html('consoleKit.view.hidden', { n: hidden }) +
+      (held ? t.html('consoleKit.view.held', { n: hidden, held: held })
+            : '') + '.</span></div>';
   }
 
   /**
@@ -2029,9 +2074,11 @@ class WebKit {
    * @param groups - the field groups, in drawing order (`id`, `label`)
    * @param values - the grid's values by attribute
    * @param options - `fieldGridCell()`'s options, `protocols` among them
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the grid as HTML
    */
-  static fieldGridOf(typed, groups, values, options) {
+  static fieldGridOf(typed, groups, values, options,
+                     t = webMessages.WebTranslator.fallback()) {
     return groups.map(function (group) {
       const mine = typed.filter(function (row) {
         return row.group === group.id;
@@ -2063,7 +2110,7 @@ class WebKit {
       });
       const cellsOf = function (rows) {
         return rows.map(function (row) {
-          return WebKit.fieldGridCell(row, values, options);
+          return WebKit.fieldGridCell(row, values, options, t);
         });
       };
       const cells = cellsOf(plain);
@@ -2150,17 +2197,20 @@ class WebKit {
    *
    * @param what - what is mailed, as the sentence names it
    * @param available - optional; whether the realm has a mail transport
+   * @param t - optional; the translator (#539), the default when left out
    * @returns the box or the note as HTML
    */
-  static mailLinkBox(what, available?) {
+  static mailLinkBox(what, available?,
+                     t = webMessages.WebTranslator.fallback()) {
+    // `what` is the caller's phrase, drawn as it was given.
     if (!available) {
-      return WebKit.note('This realm has no mail transport ' +
-        '(<a href="/admin/mail">Mail</a>), so ' + WebKit.esc(what) + ' is ' +
-        'shown to you to pass on.');
+      return WebKit.note(t.html('consoleKit.mail.none') +
+        '<a href="/admin/mail">' + t.html('consoleKit.mail.link') + '</a>' +
+        t.html('consoleKit.mail.noneAfter', { what: what }));
     }
     return '<div class="formrow"><label><input type="checkbox" ' +
-      'name="deliver" value="mail" checked> mail ' + WebKit.esc(what) +
-      ' to the address on their entry, and do not show it to me</label>' +
+      'name="deliver" value="mail" checked> ' +
+      t.html('consoleKit.mail.box', { what: what }) + '</label>' +
       '</div>';
   }
 
@@ -2284,14 +2334,50 @@ class WebKit {
    *
    * @param query - the page's query parameters, by name
    * @param write - whether the reader may write
-   * @returns `{ query, write }`, the query copied and `write` a boolean
+   * @param t - the page's translator (#539 phase 5): the runtime's, built
+   *   from `GET /admin-api/console`'s `locale`; without one, the default
+   *   (English in node, set by `common/i18n.ts`; key-drawing in a browser)
+   * @returns `{ query, write, t }`, the query copied and `write` a boolean
    */
-  static context(query?, write?) {
+  static context(query?, write?, t?) {
     const copy = {};
     Object.keys(query || {}).forEach(function (name) {
       copy[name] = query[name];
     });
-    return { query: copy, write: write === true };
+    return { query: copy, write: write === true,
+             t: t || webMessages.WebTranslator.fallback() };
+  }
+
+  // THE CONSOLE'S LANGUAGE CHOOSER (#539 phase 5). A `<select>` and NO
+  // `<form>`: the console is a script, so a change is posted through the
+  // API (`web_runtime.ts`), and a form here would move every
+  // `document.forms[N]` the console's browser job counts by. The first
+  // option follows the browser; the rest are the offered locales, each in
+  // its own language.
+  /**
+   * Draws the console's language chooser.
+   *
+   * @param t - the page's translator
+   * @param locale - `GET /admin-api/console`'s `locale` member
+   * @returns the chooser as HTML, or '' when nothing is offered
+   */
+  static languageChooser(t, locale) {
+    const offered = (locale && locale.offered) || [];
+    if (!offered.length) {
+      return '';
+    }
+    const current = String(t.locale || '').toLowerCase();
+    return '<label class="langpick"><span>' +
+      t.html('console.shell.language') + '</span> <select ' +
+      'id="console-language" data-console-language="1">' +
+      '<option value="">' + t.html('console.shell.browserLanguage') +
+      '</option>' +
+      offered.map(function (one) {
+        return '<option value="' + WebKit.esc(one.tag) + '" lang="' +
+          WebKit.esc(one.tag) + '"' +
+          (String(one.tag).toLowerCase() === current ? ' selected' : '') +
+          '>' + WebKit.esc(one.name) + '</option>';
+      }).join('') + '</select></label>';
   }
 
   /**

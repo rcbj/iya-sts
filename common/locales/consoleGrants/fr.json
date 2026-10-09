@@ -1,0 +1,17 @@
+{
+  "scopeFor": " pour {resource}",
+  "details": "{n} détail(s) d’autorisation",
+  "claims": "claims {claims}",
+  "revoke": "Révoquer",
+  "none": "Aucun client ne détient d’autorisation dans ce domaine. Une autorisation est créée par une demande d’autorisation portant <code>grant_management_action=create</code>.",
+  "note": "<strong>Grant Management for OAuth 2.0.</strong> Un client confidentiel nomme ce qu’une personne l’a autorisé à faire — en créant une autorisation, en y fusionnant davantage ou en la remplaçant par des demandes d’autorisation ordinaires — et la lit ou la révoque à <code>{path}</code> avec les portées <code>grant_management_query</code> et <code>grant_management_revoke</code>. Une autorisation existe dès que ses jetons sont réclamés, et expire avec le dernier d’entre eux. La révoquer ici revient au DELETE d’un client : chaque jeton d’actualisation qui en relève est refusé sur chaque nœud, et chaque jeton que ce domaine y a enregistré est révoqué. Ce que la personne a ACCEPTÉ se trouve dans ",
+  "consentLink": "Consentement",
+  "noteEnd": ".",
+  "colClient": "Client",
+  "colSubject": "Sujet",
+  "colScopes": "Portées",
+  "colGeneration": "Génération",
+  "colCreated": "Créée / mise à jour",
+  "colExpires": "Expire",
+  "colTokens": "Jetons détenus"
+}

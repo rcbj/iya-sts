@@ -1830,6 +1830,36 @@ class AdminViews {
       }),
       schema: module.SCHEMA
     };
+    // A KIND WITH NAMED PROFILES (#535, the passkey policy): each named
+    // profile of this realm, with its rows and its selectors, in precedence
+    // order, for the console's forms and the API.
+    if (Array.isArray(module.SELECTORS)) {
+      // WHICH SELECTORS the kind's named profiles carry (#539): the passkey
+      // policy's three, or the locale policy's applications alone, so the
+      // console draws the controls the kind has and no others.
+      (out as any).selectors = module.SELECTORS.map(function (one) {
+        return one.key;
+      });
+      (out as any).named = module.list().filter(function (one) {
+        return one.name !== module.DEFAULT_PROFILE;
+      }).map(function (one) {
+        return {
+          name: one.name, dn: one.dn, description: one.description,
+          selectApplications: one.selectApplications || [],
+          selectGroups: one.selectGroups || [],
+          precedence: one.precedence,
+          rules: module.describe(one),
+          fields: module.FIELDS.map(function (field) {
+            return { key: field.key, attribute: field.attribute,
+                     label: field.label, type: field.type, min: field.min,
+                     max: field.max, values: field.values,
+                     unit: field.unit || '', default: field.dflt,
+                     value: one[field.key], source: one.sources[field.key],
+                     what: field.what };
+          })
+        };
+      });
+    }
     log.debug("Leaving AdminViews.policyKindMember().");
     return out;
   }
@@ -8071,11 +8101,7 @@ class AdminViews {
             String(fields.samlObservedSigningCertificate || ''),
           signedRequestsRequired: requestSignature.requiresSignedRequests(
             fields),
-          metadata: self.consumedMetadataOf(fields, identifier),
-          // Whether the identity provider names itself per service
-          // provider, which the page's first row explains (#446).
-          perApplicationEntityId:
-            !!config.value('saml2.perApplicationEntityId')
+          metadata: self.consumedMetadataOf(fields, identifier)
       });
       }())
     };
@@ -8231,7 +8257,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml2.slugOf(identifier),
-      idpEntityId: saml2.idpEntityIdFor(identifier),
+      idpEntityId: saml2.idpEntityId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       sloUrl: where.slo,
@@ -8370,11 +8396,7 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles,
-          // Whether the identity provider names itself per relying party,
-          // which the page's first row explains (#446).
-          perApplicationProviderId:
-            !!config.value('saml11.perApplicationProviderId')
+          profiles: profiles
       });
       }())
     };
@@ -8447,7 +8469,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml11.slugOf(identifier),
-      idpProviderId: saml11.providerIdFor(identifier),
+      idpProviderId: saml11.providerId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       responderUrl: where.responder
@@ -9227,6 +9249,9 @@ class AdminViews {
           return Object.assign({ stored: stored },
                                applications.authorizationDetailsTypeOf(stored));
         }),
+      // THE SCOPE CLAIMS TAB (2026-10-09): each permission this resource
+      // server exposes and the catalogue attributes it maps.
+      permissionClaims: self.applicationPermissionClaimsState(row),
       grantsUncataloguedAccess: mode.grantsUncataloguedAccess(),
       acceptsUnregisteredAddresses: mode.acceptsUnregisteredAddresses(),
       protocolRows: applications.PROTOCOL_IDS.map(function (id) {
@@ -10030,6 +10055,54 @@ class AdminViews {
     log.debug("Leaving AdminViews.applicationClaimSelections(). " +
               sets.length + " set(s)" + (credential ? " and credentials."
                                                     : "."));
+    return out;
+  }
+
+  // THE CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09): its
+  // Scope claims tab, as data. Each permission it exposes with the
+  // catalogue attributes mapped to it (none is `[]`), the mappings held for
+  // permissions it no longer exposes (which map nothing), and the catalogue
+  // the boxes are drawn from.
+  /**
+   * Answers a resource server's permission-to-claims mappings.
+   *
+   * @param row - the application's view
+   * @returns `{ permissions, stale, catalogue }`
+   */
+  applicationPermissionClaimsState(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPermissionClaimsState().");
+    const permissions = applications.permissionsOf(row);
+    const exposed = permissions.map(function (one) { return one.name; });
+    const held = claimAttributes.permissionClaimsOf(row, exposed);
+    let stale = [];
+    try {
+      const raw = [].concat((row.fields || {})[
+        claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE] || [])[0];
+      const parsed = raw ? JSON.parse(String(raw)) : {};
+      stale = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Object.keys(parsed).filter(function (name) {
+          return exposed.indexOf(name) < 0;
+        }) : [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPermissionClaimsState(): " +
+                ((e && e.message) || e));
+      // Unreadable: permissionClaimsOf() has said so, and nothing is mapped.
+      stale = [];
+    }
+    const out = {
+      permissions: permissions.map(function (one) {
+        return { name: one.name, description: one.description, id: one.id,
+                 attributes: held[one.name] || [] };
+      }),
+      stale: stale,
+      catalogue: vcClaims.VC_ATTRIBUTES.map(function (one) {
+        return { ldap: one.ldap, claim: one.claim.join('.'),
+                 label: one.label };
+      })
+    };
+    log.debug("Leaving AdminViews.applicationPermissionClaimsState(). " +
+              out.permissions.length + " permission(s).");
     return out;
   }
 
@@ -12240,6 +12313,10 @@ class AdminViews {
                                                            : [],
                  discoverable: typeof one.discoverable === 'boolean'
                    ? one.discoverable : null,
+                 // THE DEVICE SERIAL A TRUSTED ENTERPRISE ATTESTATION NAMED
+                 // (#532), or null.
+                 deviceSerial: (one.attestation &&
+                                one.attestation.deviceSerial) || null,
                  // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
                  withoutUsername: credentials.withoutUsername(one) };
       }),
@@ -12880,6 +12957,8 @@ export = {
   applicationRolesState: slot.forward('applicationRolesState'),
   applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
   applicationClaimsState: slot.forward('applicationClaimsState'),
+  applicationPermissionClaimsState:
+    slot.forward('applicationPermissionClaimsState'),
   applicationTokenLifetimesState: slot.forward('applicationTokenLifetimesState'),
   attributeClaimChoices: slot.forward('attributeClaimChoices'),
   attributeClaimPreview: slot.forward('attributeClaimPreview'),

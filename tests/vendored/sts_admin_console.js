@@ -1328,9 +1328,12 @@ async function typeTheSignIn(driver, username) {
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
-  const button = await driver.findElement(
-      By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
-               "//button"));
+  // THE PASSWORD FORM'S OWN BUTTON, not the page's first: since #539 the
+  // screen carries a language chooser, a form of its own with a submit
+  // button drawn above this one.
+  const button = await secret.findElement(
+      By.xpath("ancestor::form//button[@type='submit' or not(@type)] | " +
+               "ancestor::form//input[@type='submit']"));
   await button.click();
   // Through the authorization endpoint and the callback to a drawn page. An
   // administrator is OFFERED a second factor on the way since #246; this
@@ -4531,9 +4534,10 @@ async function theDelegationPageDefinesAndGrants(driver) {
   if (pickHref) {
     await open(driver, pickHref);
     // Two `grant-permission` forms are on this page; the resource half's is
-    // the one carrying `page`.
+    // the one carrying `resource` (it carried `page` too until 2026-10-08,
+    // when that dead field was dropped — b9f88f3e).
     ownGrant = await formIndexPostingWithField(driver, "grant-permission",
-                                               "input[name=page]");
+                                               "input[name=resource]");
   }
   check("and, once picked, grants its permission to that client",
         function () {

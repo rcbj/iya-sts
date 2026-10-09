@@ -2541,6 +2541,20 @@ const SPECS: Spec[] = [
               'covered: counter-based HOTP as an authentication mechanism — ' +
               'nothing here holds a counter that advances on use, because ' +
               'the only caller is the time-based construction below.' },
+  // #539 (2026-10-09): the language a page is drawn in. Two RFCs that make
+  // up BCP 47, one row, because nothing here uses either without the other.
+  { id: 'bcp47', name: 'BCP 47 — RFC 5646 Tags for Identifying Languages ' +
+                       'and RFC 4647 Matching of Language Tags',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/info/bcp47',
+    coverage: 'partial: every tag is canonicalised and checked for being ' +
+              'well-formed by Intl (RFC 5646), and a reader\'s list is ' +
+              'matched against the catalogs by RFC 4647 section 3.4 lookup ' +
+              'with the script made explicit (likely subtags), so zh-HK ' +
+              'never falls to Simplified Chinese. NOT the extended filtering ' +
+              'of section 3.3.2, and no extension or private-use subtag ' +
+              'chooses a catalog. Refusals and error text are English in ' +
+              'every locale, by design.' },
   { id: 'rfc6238', name: 'RFC 6238 — TOTP: Time-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6238',
@@ -4818,6 +4832,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'control characters; an empty name restores the default (the ' +
           'provider\'s or the group\'s). Audited; no CAEP event, because a ' +
           'name says nothing about what the key proves.' },
+  { path: '/portal/language', group: 'User portal',
+    name: 'Set or remove the language on your own entry',
+    specs: [],
+    effect: 'writes or removes preferredLanguage on the person\'s entry',
+    what: 'NON-SPEC (#539). The Overview\'s Language and region card posts ' +
+          'here: signed in, CSRF, and the USERNAME from the session, ' +
+          '/portal/remove-key\'s rule. A BCP 47 tag a catalog answers is ' +
+          'written to preferredLanguage (RFC 2798 section 2.7) through the ' +
+          'person editor and set as the language chooser\'s cookie; an ' +
+          'empty one removes the attribute, so the browser\'s ' +
+          'Accept-Language decides again. A tag no catalog answers is ' +
+          'refused (STS-I18N-0008). Answers 303 to /portal?done=language.' },
   { path: '/portal/mfa', group: 'User portal',
     name: 'Your authenticator app',
     specs: ['rfc6238', 'rfc4226'],
@@ -5145,6 +5171,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
+  { path: '/admin-api/console/language',
+    group: 'Admin console API',
+    name: 'The console\'s language, for yourself', specs: ['bcp47'],
+    what: 'NON-SPEC. The console\'s language chooser (#539): writes the ' +
+          'signed-in person\'s own preferredLanguage, or removes it for ' +
+          'an empty lang, and answers the console\'s catalogs in the ' +
+          'language now in force. Needs the console role alone. GET ' +
+          '/admin-api/console carries the same data as its `locale` ' +
+          'member.' },
   { path: '/admin-api/console/api-explorer',
     group: 'Admin console API',
     name: 'What the console\'s explorer reads', specs: [],
@@ -6855,11 +6890,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/wstrust', group: 'Management API', name: 'WS-Trust ' +
       'settings',
     specs: ['ws-trust', 'openapi'],
-    what: 'GET /admin/wstrust over JSON: the one wstrust.* setting, and ' +
+    what: 'GET /admin/wstrust over JSON: the wstrust.* settings, and ' +
           'where the rest of a WS-Trust response is configured — the ' +
-          'assertion is built by the SAML modules, so its Issuer is ' +
-          'saml.issuer and its attributes are /admin-api/saml-attributes. ' +
-          'Read-only.' },
+          'assertion is built by the SAML modules, so its attributes are ' +
+          '/admin-api/saml-attributes. Its Issuer is the realm\'s OAuth ' +
+          'issuer (#523). Read-only.' },
   { path: '/admin-api/wsfed', group: 'Management API', name: 'WS-Federation ' +
       'settings',
     specs: ['ws-federation', 'openapi'],
@@ -7218,22 +7253,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'AD FS\'s path because WS-Federation names none and that is where ' +
           'relying parties look. The signature is the FIRST child of ' +
           'EntityDescriptor, where the SAML metadata schema requires it. ' +
-          'There is deliberately no IDPSSODescriptor: this service has no ' +
-          'SAML 2.0 Web SSO profile, and advertising one would be a relying ' +
-          'party\'s first configuration attempt and its first 404.' },
+          'Since #524 it is the WS-Federation VIEW of the realm\'s one ' +
+          'entity: the SAML IDPSSODescriptor and AttributeAuthorityDescriptor ' +
+          '(SAML 2.0 and 1.1) beside the WS-Federation role. ' +
+          '/saml2/metadata and /saml11/metadata serve the same document ' +
+          'without that role, whose xsi:type a SAML-only validator cannot ' +
+          'resolve.' },
   { path: '/wsfed/metadata/:rp', group: 'WS-Federation',
     name: 'Federation metadata for ONE relying party',
     specs: ['ws-federation', 'xmldsig', 'saml11', 'saml2'],
     what: 'THE SAME DOCUMENT, PER APPLICATION (#494): its entityID is the ' +
-          'name this registered relying party\'s assertions are issued ' +
-          'under — <entityID>:<application> while ' +
-          'saml2.perApplicationEntityId is on, the name SAML 2.0 SSO and ' +
-          'WS-Trust give the same application — so a relying party is ' +
-          'configured from a document naming its own issuer. The segment is ' +
+          'realm\'s one issuer, its OAuth issuer, as everywhere (#523). ' +
+          'The segment is ' +
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
-          '(STS-WSFED-0019): an unregistered wtrealm is issued under the ' +
-          'shared entityID, which the shared document publishes. no-store.' },
+          '(STS-WSFED-0019). no-store.' },
   { path: '/wsfed/rp', group: 'WS-Federation', name: 'Mock relying party ' +
                                                      '(not a spec endpoint)',
     specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig'],
@@ -7271,18 +7305,16 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/saml2/metadata/:sp', group: 'SAML 2.0',
     name: 'Identity provider metadata for ONE service provider',
     specs: ['saml2-metadata', 'xmldsig'],
-    what: 'THE SAME DOCUMENT, PER APPLICATION: a distinct identity provider ' +
-          'entityID and endpoints scoped to that service provider, which is ' +
-          'what Okta and Ping publish. IN DEVELOPMENT IT 404s FOR NOTHING — ' +
+    what: 'THE SAME DOCUMENT, PER APPLICATION: endpoints scoped to that ' +
+          'service provider, under the realm\'s one entityID, its OAuth ' +
+          'issuer (#523). IN DEVELOPMENT IT 404s FOR NOTHING — ' +
           'an entityID nobody registered is registered BY THE ASK, so a ' +
           'service provider can be pointed here before anything is ' +
           'provisioned. IN PRODUCT (#112) it is a 404 for anything that is ' +
           'not a registered SAML 2.0 service provider, and so is every ' +
           'other {sp} path (STS-SAML-0082). The segment ' +
           'is the percent-encoded entityID, or a slug (app-<12 hex>) where ' +
-          'the entityID is not safe in a path. saml2.perApplicationEntityId ' +
-          'turns the separate entityID off; the endpoints stay ' +
-          'per-application.' },
+          'the entityID is not safe in a path.' },
   { path: '/saml2/sso', group: 'SAML 2.0', name: 'Single Sign-On service',
     specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
@@ -7457,9 +7489,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying party (STS-SAML-0083). The segment is the ' +
           'percent-encoded identifier or a slug, and the slug is THE SAME ' +
           'ONE /saml2 uses — one application has one handle across both ' +
-          'profiles, or the console would show one entry as two. ' +
-          'saml11.perApplicationProviderId turns the separate providerID ' +
-          'off; the endpoints stay per-application.' },
+          'profiles, or the console would show one entry as two. The ' +
+          'providerID is the realm\'s one issuer (#523).' },
   { path: '/saml11/sso', group: 'SAML 1.1', name: 'Inter-site transfer service',
     specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
     effect: 'starts a browser sign-on session — the SAME session OAuth 2.0 / ' +
@@ -8030,7 +8061,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'and a password-only sign-in records amr ["pwd"] and acr "1". A ' +
           'returned userHandle must be the one the key was created under ' +
           '(Level 3 section 7.2 step 6) — 64 random bytes per person since ' +
-          '#474, never the username. Where webauthn.usernameless is on, the ' +
+          '#474, never the username. Where the passkey policy\'s ' +
+          'allowUsernameless is on (#527), the ' +
           'sign-in screen itself (POST /authn/login, action=passkey) takes a ' +
           'discoverable credential with no username: the handle names the ' +
           'account, user verification is required, and the session records ' +
@@ -8107,6 +8139,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'checks the browser binding, the token\'s scrypt hash, the expiry ' +
           'and the single-use claim, and signs in. Opened in another browser ' +
           'it spends nothing and says where to open it.' },
+  { path: '/authn/language', group: 'Authentication',
+    name: 'Language chooser',
+    specs: ['bcp47', 'oidc'],
+    effect: 'sets the chooser cookie, writes a signed-in person\'s ' +
+            'preferredLanguage, and returns to the page with a 303',
+    what: 'THE LANGUAGE CHOOSER (#539, 2026-10-09). Every user-facing page ' +
+          'carries a form posting `lang` and `return` here; a tag no catalog ' +
+          'answers is refused (STS-I18N-0008), `return` is held to a local ' +
+          'path, and a signed-in person\'s own preferredLanguage is written ' +
+          'too, because it outranks the cookie. A page\'s language is ' +
+          'ui_locales, then preferredLanguage, then this cookie, then ' +
+          'Accept-Language, then the locale policy\'s default.' },
   { path: '/authn/password-change', group: 'Authentication',
     name: 'Forced password change step',
     specs: ['oidc'],
@@ -10135,7 +10179,7 @@ class StsMetadata {
         stamped: APP_VERSION.stamped === true
       },
       issuer: base,
-      wsTrustIssuer: IssuerNames.wstrustIssuer(),
+      wsTrustIssuer: IssuerNames.issuer(),
       port: port,
       testDouble: true,
       endpoints: report.rows.map(function (r) {

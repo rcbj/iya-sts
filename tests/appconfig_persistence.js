@@ -104,11 +104,10 @@ const log = require('bunyan').createLogger({ name: 'appconfig_persistence',
 // nothing else in this directory touches.
 const PROCESS_KEY = 'krb5.clockSkew';
 
-// And the one it drives on a realm. `saml.issuer` is seeded onto every realm at
-// creation — every realm gets its own so that two realms cannot mint assertions
-// their audiences could not tell apart — so what is asserted is that a CHANGE
-// to it is written, which is a different claim from the seed being written.
-const REALM_KEY = 'saml.issuer';
+// And the one it drives on a realm: a string `runtime: true` setting a realm
+// may override. It was `saml.issuer`, a seeded one, until #523 retired it;
+// what is asserted is that a CHANGE is written to the realm's row.
+const REALM_KEY = 'saml.organizationName';
 
 function run(t) {
   t.log.info('Entering run().');

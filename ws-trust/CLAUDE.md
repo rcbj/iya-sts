@@ -80,10 +80,21 @@ leaves the slot empty and the party is drawn from `presented`, as before.
 **Both are authorized by the delegation policy since #108 (2026-09-23)**, and
 the row names what allowed it in the same field where a Kerberos row names an
 attribute on an account — see the next section. **The composite fact IS in
-an `ActAs` token since #186.** A SAML assertion names every party that acted,
-one `<del:Delegate>` each, least to most recent, in its SAML V2.0 Condition
-for Delegation Restriction. A JWT names them in RFC 8693's nested `act`
-claim (#476). An `OnBehalfOf` token adds nobody, and keeps whatever chain
+an `ActAs` token since #186.** A SAML 2.0 assertion names every party that
+acted, one `<del:Delegate>` each, least to most recent, in its SAML V2.0
+Condition for Delegation Restriction. A JWT names them in RFC 8693's nested
+`act` claim (#476). **A SAML 1.1 assertion names them in an attribute
+(#522, rcbj 2026-10-08)**, because SAML 1.1 has no Delegation Restriction
+(the SAML V2.0 condition derives from SAML 2.0's `ConditionAbstractType`
+and does not validate in SAML 1.1): `AttributeName="delegates"`,
+`AttributeNamespace="urn:iya:sts:delegation"`, one `AttributeValue` per
+party in the same order, signed with the assertion. A condition of this
+service's own was the alternative and was not chosen: a SAML 1.1 relying
+party treats an assertion with a condition it does not understand as
+Indeterminate, where an attribute it does not know is ignored.
+`delegatedDelegates()` reads the attribute back, so a chain of SAML 1.1
+tokens keeps it (`buildSaml11Token()`). Until #522 a SAML 1.1 token named
+nobody and the register was the only record. An `OnBehalfOf` token adds nobody, and keeps whatever chain
 the presented token carried. The act's note says which of these the issued
 token does, in that token's vocabulary (`actNote()`, #478). Until #478 the
 note and this paragraph still said no `ActAs` token carried the fact, "a gap
@@ -177,8 +188,8 @@ fault. Each refusal names its code at the place it refuses:
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
 | `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
-| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007`, `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
-| `ExpiredData` | `0006`, in either seat, and a delegated JWT's `0027` (#477) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `ExpiredData` | `0006`, in either seat, and a JWT's `0027` in either seat (#477, #519) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
 
 **Not used, and why**: `InvalidSecurityToken` is "Security token has been
@@ -264,8 +275,8 @@ what to present:**
   `/admin/delegation` can now name what a JWT exchange produced.
 * **`?encrypt=1` honours `saml2.encryptionAlgorithm` / `saml2.keyTransportAlgorithm`**,
   answered for the AppliesTo as `/saml2` answers them for a service provider.
-* **`wstrust.issuer` and `saml.issuer` disagreeing is SAID** — on `GET /sts` and
-  in the startup log — rather than reconciled, because the split is deliberate.
+* ~~`wstrust.issuer` and `saml.issuer` disagreeing is SAID~~ — **both retired
+  by #523**: there is one name, so nothing can disagree (below).
 
 `tests/saml_family_hardcoded.js` section E pins all of it in process.
 
@@ -510,50 +521,41 @@ the requester's.
 application, in both modes. The #473 chain jobs assert all of it at every
 hop.
 
-## THE NAMES IT SIGNS UNDER ARE THE SAML ENTITYID (#480, #494, 2026-10-06)
+## ONE ISSUER PER REALM: THE REALM'S OAUTH ISSUER, IN EVERY TOKEN (#523, 2026-10-08)
 
-rcbj: "Align with SAML entityID" (#480, product only), then on #494 "in
-development as well as product", with the placeholder dropped from
-`env/docker-tests.js` and `env/test.js` so the suites run the rule. Three
-settings name this service outside the SAML browser profile: `saml.issuer`
-(a WS-Trust or WS-Federation assertion's Issuer), `wstrust.issuer` (the
-STS's name on GET /sts) and `wsfed.entityId` (the FederationMetadata
-entityID). Each shipped the development placeholder `urn:wstrust:mock:sts`;
-since #494 their shipped default is EMPTY, meaning "the entityID".
+rcbj, on #523: "Shouldn't we have consistency between OAuth2 Token Exchange
+JWT Access Token iss claim and WS-Trust Issue RST OBO/ActAs Issuer
+elements?" — and then, for every protocol, "The OAuth issuer URL", with no
+override. It replaced #480/#494's rule, under which a SAML assertion from
+this STS carried the SAML 2.0 entityID (`urn:sts:idp:<sp>` per registered
+application) while a JWT from the SAME request carried the OAuth issuer: one
+STS, one request, two names.
 
-`common/issuer_names.ts` reads all three, and every reader goes through it.
-The rules, in order, the same in both modes (`mode.namesIssuersByEntityId()`
-and its `issuer-names` requirement were retired by #494, no shim):
+* **A SAML 2.0 Issuer, a SAML 1.1 Issuer and a JWT's `iss` are one string**,
+  `oauthIssuer(base)` — which now asks `common/issuer_names.ts`'s
+  `issuer(base)` — read at the request's base and handed to `buildToken()`
+  as `jwtIssuer` for all three token types, so the three cannot be read at
+  different bases. It is the name SAML SSO and WS-Federation publish as
+  their entityID, and what `GET /sts` reports on its one `Issuer:` line.
+* **Not the AppliesTo's.** The Issuer says who ISSUED; who ASKED is the
+  delegation's own record — the last `del:Delegate` (SAML 2.0), the
+  `delegates` attribute (SAML 1.1, #522), `act` (JWT). An OnBehalfOf token
+  names nobody, as before.
+* **Nothing to refuse for want of a name.** `STS-WSTRUST-0029` (product,
+  no entityID) is retired; the OAuth issuer is never empty.
+* **The IdP audiences of #519** — what a caller's own credential may be
+  addressed to besides its registered audience — are that issuer and
+  `<base>/sts` (`idpAudiences()`).
+* `wstrust.issuer`, `saml.issuer`, `issuerDisagreement()` and the startup
+  `warnAtStartup()` are gone; `wire()` is kept, empty, as the root's hook.
+* **Pin `global.publicBaseUrl`** in a deployment: unpinned, the issuer is
+  the host a request arrived on, and a relying party configured from one
+  host's name refuses a token issued under another.
 
-* **A value somebody set wins.** That means a realm value, a runtime
-  override, the environment or the operator's appconfig. A realm's SEEDED
-  `urn:<domain>:sts` is not somebody's choice, and is read as a default.
-* **Otherwise the realm's `saml2.entityId`**, what `/saml2/metadata`
-  publishes — per application for a REGISTERED one, below.
-* **No name at all** only in product with `saml2.entityId` emptied:
-  a SAML token is then refused (`STS-WSTRUST-0029`) as SAML SSO refuses
-  (`STS-SAML-0004`); a JWT is unaffected.
-
-**Per application, one name across three protocols (#494).** The SAML SSO
-profile names itself to each service provider by `<entityID>:<sp>` where
-`saml2.perApplicationEntityId` is on (`saml2_sso.idpEntityIdFor()`), in the
-assertion's Issuer and in `/saml2/metadata/{sp}`. A WS-Trust assertion,
-SAML 2.0 or SAML 1.1, whose AppliesTo a REGISTERED application answers to
-(`appliesToApplication()`: `forAppliesTo()`, then the entry of that very
-identifier) carries THAT application's entityID, keyed by its registry
-identifier; WS-Federation does the same for a registered `wtrealm`, and
-publishes it at `/wsfed/metadata/{rp}` (`../ws-federation/CLAUDE.md`). SSO's
-function decides all of it, so the three cannot differ.
-
-**"Registered" is `appRegisteredBy`** — an administrator, RFC 7591, an
-OpenID Federation or this service's seeding. `handleRst()`'s own `seen()`
-files every AppliesTo it issues for; counting that entry would give the
-second token for an unregistered AppliesTo a different Issuer from the
-first. An AppliesTo nobody registered carries the shared entityID, on every
-request. Until #494 any entry counted, which is that bug, in product.
-
-`wstrust.issuer` and `wsfed.entityId`'s shared form have no per-application
-reading on GET /sts: the STS has one name.
+`tests/issuer_names.js` holds it in process (U3: SAML 2.0, SAML 1.1 and JWT
+alike, both modes); `kit.samlIssuerFor()` holds every chain job's
+assertions to the authorization server metadata's `issuer`, which the
+application's `/saml2/metadata/{sp}` and `/wsfed/metadata/{rp}` must name too.
 
 ## An application nobody registered gets nothing, in product (#496, 2026-10-06)
 
@@ -563,10 +565,10 @@ but its protocol's own "unknown application" error — and **an RST with no
 behind `mode.issuesToUnregisteredApplications()` (the
 `unregistered-applications` row on `/admin/mode`):
 
-* **"Registered" is the #494 word above**: `appRegisteredBy` on the entry
+* **"Registered" is #494's word**: `appRegisteredBy` on the entry
   `appliesToApplication()` resolves the AppliesTo to, through
   `IssuerNames.registeredApplication()`. So the application refused and the
-  one whose entityID an issued assertion would carry are one; an entry a
+  one the registry files the issuance under are one; an entry a
   development `seen()` filed is a sighting and is refused like no entry, so a
   realm switched from development keeps nothing development learnt.
 * **`wst:InvalidScope`, `STS-WSTRUST-0030`** for an unregistered AppliesTo;
@@ -596,6 +598,91 @@ nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.
 
 **A JWT's `iss` is not one of these.** It is the realm's OAuth issuer
 (#476's exceptions, above; rcbj kept it on #494).
+
+## ANY TOKEN TYPE IN ANY SEAT, AND AN APPLICATION AS ITSELF (#519, 2026-10-08)
+
+rcbj: "maximum flexibility in supported input / output token types for the
+WS-Trust protocol". An RST has three seats that take a token, and each takes
+SAML 2.0, SAML 1.1 and JWT:
+
+| Seat | What it takes |
+|---|---|
+| the requester's credential, `wsse:Security` | a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in |
+| `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477) |
+| `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476) |
+
+**THE REQUESTER'S JWT** is read by `readOwnJwt()`, the one function the
+delegated JWT goes through too, so the two seats cannot disagree about what
+"a JWT this STS issued" means: in product verified with this realm's own key,
+within `exp` / `nbf`, the realm's OAuth issuer (#480), and a subject this
+realm knows. Its refusals are the requester's — `wst:FailedAuthentication`,
+`wst:ExpiredData` for an expired one — under the delegated JWT's codes
+(`0026`–`0028`). An accepted one is a credential issued earlier, so a SAML
+assertion issued on it states PreviousSession, as on an assertion. A JWT
+inside OnBehalfOf / ActAs is NOT read as the requester's
+(`insideAnotherPartysToken()`), and `homeNameOf()` reads its `sub` to place
+the request in a deployment of cells.
+
+**AN APPLICATION AUTHENTICATES AS ITSELF, WITH ITS CLIENT SECRETS** (rcbj: "I
+don't really want to use a user object service account along side the
+application object. it's redundant"). A UsernameToken whose Username names
+NO person and names an application — by identifier, else by client_id — is
+checked against that application's unexpired client secrets
+(`applicationSecretCredential()`), in product; development believes it, as
+it believes a person's password, except the reserved `invalid`. A wrong
+secret is the fault a wrong password gets (`0003`), for the enumeration
+rule. **A person of the name is asked first**, so a service account (#221)
+beside an application of its name authenticates exactly as before: service
+accounts are still supported, and the application path is for a tier that
+has none. **WS-Trust only**: the other password-only doors (LDAP bind, SCIM
+and SSF Basic, EST) still read people alone.
+
+* **An application's own token is about the application.** A JWT for it
+  names it by its client subject — `urn:sts:client:<client_id>` where the
+  token endpoint does (RFC 9700 mode, which product implies), bare
+  otherwise, as an `act` entry names it — and `client_id` its own; so
+  `0017` does not refuse it. A SAML assertion's NameID is its identifier.
+  Presented back as the credential, either is read to the application
+  (`applicationNamedBy()`), and the delegation policy reads the APPLICATION
+  entry, as it always did for a service account.
+* **Recorded as a client** (`recordAuthentication({ isClient })`), which is
+  what keeps the directory from making a person of its name in development
+  (`ldap.autocreateUsers`). Without it, the first token an application asked
+  for would have grown exactly the service account this exists to avoid.
+* **The act names the token the requester presented.** A delegation act's
+  `WS-Security credential` row carries the identifier (assertion `ID` /
+  `AssertionID`, JWT `jti`) of a token presented as the credential, so the
+  register can follow the token a tier was issued for itself to the act it
+  was spent on.
+
+**A TOKEN AS THE CREDENTIAL IS ADDRESSED TO ITS HOLDER OR TO THE IdP**
+(rcbj, 2026-10-08: "A caller's credential AppliesTo element can either be
+the audience registered in the application object or a generic audience that
+references the IdP"). In product, an assertion or a JWT presented in
+`wsse:Security` is accepted only when one of its audiences is
+(`credentialAudienceProblem()`):
+
+* an audience its holder's APPLICATION registers — the subject's
+  application by identifier or client_id (a service account is the
+  application of its name), the audience resolving to it through the
+  AppliesTo lookup (`appliesToApplication()`); this is the token a tier was
+  issued for itself; or
+* one of the names this IdP answers to (`idpAudiences()`): the WS-Trust
+  issuer name GET /sts reports, the realm's SAML entityID, the realm's OAuth
+  issuer, and the `/sts` address at the request's base.
+
+Anything else is `STS-WSTRUST-0032`, `wst:FailedAuthentication`. It closes
+what was open before #519 for an assertion credential too: a tier holding a
+token about a person, addressed to the tier, was authenticated AS that
+person by presenting it. A person who wants a credential of their own asks
+for one addressed to the IdP. **An RST whose AppliesTo is one of the IdP's
+names is issued in product**, beside #496's registered applications
+(`unregisteredApplication()`): the IdP is not an application and is not
+unregistered. Development verifies no credential and enforces none of it.
+
+`tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
+modes; `tests/vendored/sts_wstrust_own_token_chain.js` drives the four-tier
+chain on each tier's own token in every type, and the 36-request matrix.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

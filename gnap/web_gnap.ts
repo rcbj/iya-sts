@@ -52,11 +52,14 @@ class GnapPage {
                                    .replace(/\.\d+Z$/, 'Z') : '—';
   }
 
-  static list(values: unknown[] | null | undefined): string {
+  // A static helper with no render context: its caller hands it the page's
+  // translator (#539), for the one word it draws.
+  static list(values: unknown[] | null | undefined, t: Json): string {
     const esc = kit.esc;
     return (values || []).length ? (values || []).map(function (one) {
       return '<code>' + esc(one) + '</code>';
-    }).join(' ') : '<span class="sub">none</span>';
+    }).join(' ') : '<span class="sub">' + t.html('consoleGnap.none') +
+                   '</span>';
   }
 
   // THE TWO PAGES' BODIES (#446), each one method so that it can be one
@@ -70,10 +73,11 @@ class GnapPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const esc = kit.esc;
     const list = function (values) {
-      return self.list(values);
+      return self.list(values, t);
     };
     const when = function (seconds) {
       return self.when(seconds);
@@ -100,9 +104,9 @@ class GnapPage {
           (caps.key_rotation_supported === undefined ? '—' :
            esc(caps.key_rotation_supported)) + '</td></tr>';
       }).join('')
-      : '<tr><td colspan="7" class="sub">No named authorization server ' +
-        'exists in this realm yet; the default one answers at ' +
-        '<code>' + esc(json.endpoints.grant) + '</code>.</td></tr>';
+      : '<tr><td colspan="7" class="sub">' +
+        t.html('consoleGnap.noNamedServer',
+               { endpoint: json.endpoints.grant }) + '</td></tr>';
     const stateLinks = ['all'].concat(json.grants.states)
       .map(function (state) {
         const on = (state === 'all' &&
@@ -124,11 +128,13 @@ class GnapPage {
       // still be revoked (#432 phase 7).
       const control = grant.state === 'finalized' &&
         !(grant.finalization && grant.finalization.reason === 'issued')
-        ? '<span class="sub">finalized</span>'
+        ? '<span class="sub">' + t.html('consoleGnap.finalized') +
+          '</span>'
         : '<form method="post" action="/admin/gnap"><input type="hidden" ' +
           'name="action" value="revoke-grant"><input type="hidden" ' +
           'name="grant" value="' + esc(grant.id) + '">' +
-          '<button type="submit" class="danger">Revoke</button></form>';
+          '<button type="submit" class="danger">' +
+          t.html('consoleGnap.revoke') + '</button></form>';
       // The reason a finalized grant ended (#432 phase 7).
       return '<tr><td><code>' + esc(grant.id) + '</code></td><td>' +
         esc(grant.state) +
@@ -141,19 +147,22 @@ class GnapPage {
         (grant.resourceOwner ?
          '<code>' + esc(grant.resourceOwner) + '</code>' :
          '<span ' +
-            'class="sub">none</span>') + '</td><td><code>' + esc(
+            'class="sub">' + t.html('consoleGnap.none') + '</span>') +
+        '</td><td><code>' + esc(
                 grant.authorizationServer) + '</code></td><td>' +
         (grant.interaction ? list(grant.interaction.modes) +
           (grant.interaction.finish ?
            '<div class="sub">finish: ' + esc(grant.interaction.finish) +
            '</div>' : '')
-          : '<span class="sub">none</span>') + '</td>' +
+          : '<span class="sub">' + t.html('consoleGnap.none') + '</span>') +
+        '</td>' +
         '<td class="num">' + grant.tokens + '</td><td>' + esc(
             when(grant.updatedAt)) + '</td><td>' + control + '</td></tr>';
-    }).join('') : '<tr><td colspan="9" class="sub">No grants' +
-                  (json.grants.state ? ' ' +
-        'in the ' +
-      esc(json.grants.state) + ' state' : '') + ' in this realm.</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="sub">' +
+                  (json.grants.state
+                    ? t.html('consoleGnap.noGrantsInState',
+                             { state: json.grants.state })
+                    : t.html('consoleGnap.noGrants')) + '</td></tr>';
     const resourceNav = kit.pageNavPair('/admin/gnap', ctx.query,
                                           Object.assign(
                                               {},
@@ -168,52 +177,43 @@ class GnapPage {
         '</code></td><td><code>' + esc(JSON.stringify(
             row.access)) + '</code></td><td>' +
         list(row.tokenFormats) + '</td><td>' +
-        (row.introspectionRequired ? 'yes' : 'no') + '</td><td>' +
+        (row.introspectionRequired ? t.html('consoleGnap.yes')
+                                   : t.html('consoleGnap.no')) + '</td><td>' +
         esc(when(row.createdAt)) + '</td><td><form method="post" ' +
         'action="/admin/gnap"><input type="hidden" name="action" ' +
         'value="delete-resource-set"><input type="hidden" ' +
         'name="reference" ' +
         'value="' + esc(row.reference) + '"><button ' +
-        'type="submit" class="danger">Delete</button></form></td></tr>';
-    }).join('') : '<tr><td colspan="7" class="sub">No resource server ' +
-      'has registered a resource set in this realm (RFC 9767 section ' +
-      '3.4).</td></tr>';
+        'type="submit" class="danger">' + t.html('consoleGnap.delete') +
+        '</button></form></td></tr>';
+    }).join('') : '<tr><td colspan="7" class="sub">' +
+      t.html('consoleGnap.noResourceSets') + '</td></tr>';
     const material = json.verificationMaterial;
     const caps = json.capabilities;
     const inner =
-      kit.note('<strong>GNAP (RFC 9635) and its resource server ' +
-        'connections ' +
-        '(RFC 9767), one authorization server per trust realm.</strong> A ' +
-        'client instance proves a key at the grant endpoint, a resource ' +
-        'owner ' +
-        'approves in a browser through the one sign-in screen, and the ' +
-        'tokens ' +
-        'are released at the continuation URI in any of the five RFC 9767 ' +
-        'formats. ' +
-        (json.enabled ? '' :
-         '<strong>GNAP is turned off in this realm.</strong>')) +
-      kit.warn('<strong>A key proof is verified in every mode.</strong> ' +
-        'An ' +
-        'unsigned or wrongly signed request is refused whatever ' +
-        '<code>global.mode</code> says, because a token bound to a key ' +
-        'nobody ' +
-        'proved holding is bound to nothing. What is mode-gated is what ' +
-        'happens to a proved key this service has never seen (development ' +
-        'makes an application entry for it; product refuses it) and to an ' +
-        'unregistered finish URI.') +
-      '<h2>Endpoints</h2><table class="kv">' + endpointRows +
-      '</table><h2>Authorization ' +
-      'servers</h2><p class="sub">Each named authorization server is also ' +
-      'a ' +
-      'GNAP authorization server at <code>/{id}/gnap</code>. Its ' +
-      'discovery ' +
-      'members are overridden or removed on <a ' +
-      'href="/admin/authorization-servers">Authorization servers</a>, and ' +
-      'what ' +
-      'it publishes is what its grant endpoint ' +
-      'enforces.</p><table><thead><tr><th>Server</th><th>Grant ' +
-      'endpoint</th><th>Start modes</th><th>Finish</th><th>Key ' +
-      'proofs</th><th>Token formats</th><th>Key rotation</th></tr>' +
+      kit.note(t.html('consoleGnap.intro') +
+        (json.enabled ? '' : t.html('consoleGnap.turnedOff'))) +
+      kit.warn(t.html('consoleGnap.keyProofWarn')) +
+      '<h2>' + t.html('consoleGnap.endpoints') + '</h2><table class="kv">' +
+      endpointRows +
+      '</table><h2>' + t.html('consoleGnap.authorizationServers') +
+      '</h2><p class="sub">' +
+      // The path's `{id}` is a parameter's value rather than message text: a
+      // catalog message cannot carry a literal brace (#539). The link is
+      // markup a message cannot carry either, so its sentence is the words
+      // before it, the link's text and the words after.
+      t.html('consoleGnap.namedServersAt', { path: '/{id}/gnap' }) + ' ' +
+      t.html('consoleGnap.discoveryOverriddenOn') + ' <a ' +
+      'href="/admin/authorization-servers">' +
+      t.html('consoleGnap.authorizationServersLink') + '</a>' +
+      t.html('consoleGnap.publishesWhatEnforces') +
+      '</p><table><thead><tr><th>' + t.html('consoleGnap.thServer') +
+      '</th><th>' + t.html('consoleGnap.thGrantEndpoint') + '</th><th>' +
+      t.html('consoleGnap.thStartModes') + '</th><th>' +
+      t.html('consoleGnap.thFinish') + '</th><th>' +
+      t.html('consoleGnap.thKeyProofs') + '</th><th>' +
+      t.html('consoleGnap.thTokenFormats') + '</th><th>' +
+      t.html('consoleGnap.thKeyRotation') + '</th></tr>' +
       '</thead>' +
       '<tbody><tr><td><code>default</code></td><td>' +
       '<code>' + esc(caps.grant_request_endpoint) +
@@ -223,45 +223,57 @@ class GnapPage {
       list(caps.key_proofs_supported) + '</td><td>' +
       list(caps.token_formats_supported) + '</td><td>' +
       esc(caps.key_rotation_supported) + '</td></tr>' + capabilityRows +
-      '</tbody></table><h2>Token ' +
-      'formats</h2><table class="kv"><tr><th>jwt-signed</th><td>RS256, ' +
-      'verified against <code>' +
-      esc(material ? material.jwt.jwks_uri : '') +
-      '</code></td></tr><tr><th>jwt-encrypted</th><td>Nested in a JWE: to ' +
-      'the ' +
-      'resource server\'s <code>gnapJweKey</code>, or to this ' +
-      'authorization ' +
-      'server (introspect it)</td></tr><tr><th>macaroon</th><td>' +
-      'HMAC-SHA256 ' +
-      'under a root key per resource server, carried sealed as ' +
-      '<code>gnapMacaroonKey</code> on its ' +
-      'entry</td></tr><tr><th>biscuit</th><td>Ed25519 root key ' +
-      '<code>' + esc(material ? material.biscuit.root_public_key : '') +
-      '</code></td></tr>' +
-      '<tr><th>zcap</th><td>Ed25519Signature2020 delegation from <code>' +
-      esc(material ? material.zcap.controller :
-          '') + '</code></td></tr></table><h2 ' +
-      'id="list-grantsPage">Grants</h2><p ' +
-      'class="sub">' + stateLinks + ' — ' + json.grants.paging.total +
-      ' grant(s)</p>' + grantNav.head +
-      '<table><thead><tr><th>Grant</th><th>State</th><th>Client</th><th>' +
-      'Resource owner</th><th>Server</th><th>Interaction</th>' +
-      '<th>Tokens</th>' +
-      '<th>Updated</th><th></th></tr></thead><tbody>' + grantRows +
+      '</tbody></table><h2>' + t.html('consoleGnap.tokenFormats') +
+      '</h2><table class="kv"><tr><th>jwt-signed</th><td>' +
+      t.html('consoleGnap.jwtSigned',
+             { uri: material ? material.jwt.jwks_uri : '' }) +
+      '</td></tr><tr><th>jwt-encrypted</th><td>' +
+      t.html('consoleGnap.jwtEncrypted') +
+      '</td></tr><tr><th>macaroon</th><td>' +
+      t.html('consoleGnap.macaroon') +
+      '</td></tr><tr><th>biscuit</th><td>' +
+      t.html('consoleGnap.biscuit',
+             { key: material ? material.biscuit.root_public_key : '' }) +
+      '</td></tr>' +
+      '<tr><th>zcap</th><td>' +
+      t.html('consoleGnap.zcap',
+             { controller: material ? material.zcap.controller : '' }) +
+      '</td></tr></table><h2 ' +
+      'id="list-grantsPage">' + t.html('consoleGnap.grants') + '</h2><p ' +
+      'class="sub">' + stateLinks + ' — ' +
+      t.html('consoleGnap.grantCount', { n: json.grants.paging.total }) +
+      '</p>' + grantNav.head +
+      '<table><thead><tr><th>' + t.html('consoleGnap.thGrant') +
+      '</th><th>' + t.html('consoleGnap.thState') + '</th><th>' +
+      t.html('consoleGnap.thClient') + '</th><th>' +
+      t.html('consoleGnap.thResourceOwner') + '</th><th>' +
+      t.html('consoleGnap.thServer') + '</th><th>' +
+      t.html('consoleGnap.thInteraction') + '</th>' +
+      '<th>' + t.html('consoleGnap.thTokens') + '</th>' +
+      '<th>' + t.html('consoleGnap.thUpdated') +
+      '</th><th></th></tr></thead><tbody>' + grantRows +
       '</tbody></table>' + grantNav.foot +
-      '<h2 id="list-resourcesPage">Registered resource sets</h2>' +
+      '<h2 id="list-resourcesPage">' +
+      t.html('consoleGnap.registeredResourceSets') + '</h2>' +
       resourceNav.head +
-      '<table><thead><tr><th>Reference</th><th>Resource server</th><th>' +
-      'Access</th><th>Formats</th><th>Introspection</th>' +
-      '<th>Registered</th><th>' +
+      '<table><thead><tr><th>' + t.html('consoleGnap.thReference') +
+      '</th><th>' + t.html('consoleGnap.thResourceServer') + '</th><th>' +
+      t.html('consoleGnap.thAccess') + '</th><th>' +
+      t.html('consoleGnap.thFormats') + '</th><th>' +
+      t.html('consoleGnap.thIntrospection') + '</th>' +
+      '<th>' + t.html('consoleGnap.thRegistered') + '</th><th>' +
       '</th></tr></thead><tbody>' + resourceRows +
       '</tbody></table>' + resourceNav.foot +
-      '<h2>Settings</h2>' + SettingsForms.forms(json.settings, '/admin/gnap') +
+      '<h2>' + t.html('consoleGnap.settings') + '</h2>' +
+      SettingsForms.forms(json.settings, '/admin/gnap', undefined, t) +
       '<p class="links"><a href="/admin/gnap?format=json">JSON</a> · ' +
       '<code>GET ' +
-      '/admin-api/gnap</code> · <a href="/admin/gnap/monitor">GNAP grants ' +
-      '(monitoring)</a> · <a href="/admin/applications/new">New ' +
-      'application</a> · <a href="/admin/error-codes">Error codes</a></p>';
+      '/admin-api/gnap</code> · <a href="/admin/gnap/monitor">' +
+      t.html('consoleGnap.linkMonitor') + '</a> · <a ' +
+      'href="/admin/applications/new">' +
+      t.html('consoleGnap.linkNewApplication') + '</a> · <a ' +
+      'href="/admin/error-codes">' + t.html('consoleGnap.linkErrorCodes') +
+      '</a></p>';
     return inner;
   }
 
@@ -273,25 +285,30 @@ class GnapPage {
    * @returns the body as HTML
    */
   static monitorBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const esc = kit.esc;
     const list = function (values) {
-      return self.list(values);
+      return self.list(values, t);
     };
     const when = function (seconds) {
       return self.when(seconds);
     };
-    const t = json.totals;
+    // `totals`, not `t`, since #539: `t` is the page's translator, always.
+    const totals = json.totals;
     const tiles = '<div class="tiles">' +
-      kit.tile(json.applications, 'applications') +
-      kit.tile(t.grants, 'grant requests') +
-      kit.tile(t.approved, 'approved') +
-      kit.tile(t.denied, 'denied') +
-      kit.tile(t.tokens, 'tokens issued') +
-      kit.tile(t.rotations + t.keyRotations, 'rotations') +
-      kit.tile(t.tokenRevocations + t.revoked, 'revocations') +
-      kit.tile(t.proofFailures, 'failed proofs') +
-      kit.tile(t.introspections, 'introspections') +
+      kit.tile(json.applications, t.text('consoleGnap.tileApplications')) +
+      kit.tile(totals.grants, t.text('consoleGnap.tileGrantRequests')) +
+      kit.tile(totals.approved, t.text('consoleGnap.tileApproved')) +
+      kit.tile(totals.denied, t.text('consoleGnap.tileDenied')) +
+      kit.tile(totals.tokens, t.text('consoleGnap.tileTokensIssued')) +
+      kit.tile(totals.rotations + totals.keyRotations,
+               t.text('consoleGnap.tileRotations')) +
+      kit.tile(totals.tokenRevocations + totals.revoked,
+               t.text('consoleGnap.tileRevocations')) +
+      kit.tile(totals.proofFailures, t.text('consoleGnap.tileFailedProofs')) +
+      kit.tile(totals.introspections,
+               t.text('consoleGnap.tileIntrospections')) +
       '</div>';
     const formatRow = Object.keys(json.tokensByFormat)
       .map(function (format) {
@@ -340,47 +357,52 @@ class GnapPage {
         'class="num">' + c.introspections + ' / ' + c.registrations +
         ' / ' +
         c.derivations + '</td><td>' + (errors || '<span ' +
-            'class="sub">none</span>') + '</td><td>' + esc(
+            'class="sub">' + t.html('consoleGnap.none') + '</span>') +
+        '</td><td>' + esc(
                 row.lastAt || '—') + '<div ' +
                 'class="sub">' + esc(row.lastEvent || '') +
                 '</div></td></tr>';
-    }).join('') : '<tr><td colspan="14" class="sub">No application in ' +
-                  'this realm uses GNAP yet.</td></tr>';
+    }).join('') : '<tr><td colspan="14" class="sub">' +
+                  t.html('consoleGnap.noApplications') + '</td></tr>';
     const inner =
-      kit.note('<strong>What the applications using GNAP have ' +
-                 'done</strong>, ' +
-                 'counted since ' +
-        esc(json.since) + ' in this trust realm. An application is listed ' +
-        'when ' +
-        'it is declared for GNAP, when it has spoken it, or both — so an ' +
-        'entry ' +
-        'provisioned and never used shows here as idle.') +
+      kit.note(t.html('consoleGnap.monitorIntro', { since: json.since })) +
       tiles +
-      '<h2>Tokens by format</h2><table><thead><tr>' + Object.keys(
+      '<h2>' + t.html('consoleGnap.tokensByFormat') +
+      '</h2><table><thead><tr>' + Object.keys(
           json.tokensByFormat).map(function (f) {
         return '<th>' + esc(f) + '</th>';
       }).join('') + '</tr></thead><tbody><tr>' + formatRow +
       '</tr></tbody></table><h2 ' +
-      'id="list-page">Applications</h2>' + nav.head +
-      '<table><thead><tr><th>Application</th><th>Role</th><th>Grants ' +
-      'held<div ' +
-      'class="sub">pending / approved / finalized</div></th><th>Live ' +
-      'tokens</th><th>Requested</th><th>Approved</th><th>Denied</th>' +
-      '<th>Tokens ' +
-      'issued</th><th>Rotations</th><th>Revocations</th><th>Failed ' +
-      'proofs</th><th>RS calls<div class="sub">introspect / register / ' +
-      'derive</div></th><th>Errors returned</th><th>Last ' +
-      'activity</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      'id="list-page">' + t.html('consoleGnap.applications') + '</h2>' +
+      nav.head +
+      '<table><thead><tr><th>' + t.html('consoleGnap.thApplication') +
+      '</th><th>' + t.html('consoleGnap.thRole') + '</th><th>' +
+      t.html('consoleGnap.thGrantsHeld') + '<div ' +
+      'class="sub">' + t.html('consoleGnap.thGrantsHeldSub') +
+      '</div></th><th>' + t.html('consoleGnap.thLiveTokens') +
+      '</th><th>' + t.html('consoleGnap.thRequested') + '</th><th>' +
+      t.html('consoleGnap.thApproved') + '</th><th>' +
+      t.html('consoleGnap.thDenied') + '</th>' +
+      '<th>' + t.html('consoleGnap.thTokensIssued') + '</th><th>' +
+      t.html('consoleGnap.thRotations') + '</th><th>' +
+      t.html('consoleGnap.thRevocations') + '</th><th>' +
+      t.html('consoleGnap.thFailedProofs') + '</th><th>' +
+      t.html('consoleGnap.thRsCalls') + '<div class="sub">' +
+      t.html('consoleGnap.thRsCallsSub') + '</div></th><th>' +
+      t.html('consoleGnap.thErrorsReturned') + '</th><th>' +
+      t.html('consoleGnap.thLastActivity') +
+      '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       nav.foot +
-      kit.note('There is no reset. The counters start with the process ' +
-        'and ' +
-        'are per realm; the durable record of each act is the <a ' +
-        'href="/admin/audit">Audit log</a>.') +
+      // The link is markup a message cannot carry (#539), so the sentence
+      // is the words before it, the link's text, and the words after.
+      kit.note(t.html('consoleGnap.noReset') + '<a ' +
+        'href="/admin/audit">' + t.html('consoleGnap.auditLog') + '</a>' +
+        t.html('consoleGnap.noResetEnd')) +
       '<p class="links"><a href="/admin/gnap/monitor?format=json">JSON</a> ' +
       '· ' +
       '<code>GET /admin-api/gnap/monitor</code> · <a ' +
-      'href="/admin/gnap">GNAP ' +
-      'settings</a></p>';
+      'href="/admin/gnap">' + t.html('consoleGnap.linkSettings') +
+      '</a></p>';
     return inner;
   }
 }

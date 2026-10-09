@@ -1,0 +1,22 @@
+{
+  "logoAlt": "IYA STS — säkerhetstokentjänst",
+  "sub": "En tillåtande låtsastjänst för identitet som talar sexton protokollfamiljer. Den finns för att pröva KLIENTER.",
+  "version": "version {version}",
+  "warn": "Den kontrollerar inga lösenord, validerar inga åtkomsttoken och intygar inga arbetslaster. Lägg inte den här porten på en offentlig adress.",
+  "repoLabel": "Projektet på GitHub",
+  "repoNote": "Källkoden, README-filen och alla sexton familjerna i sin helhet.",
+  "issuesLabel": "Ärenden",
+  "issuesNote": "Det som är känt att vara fel, och var du säger till om det som inte är känt.",
+  "docsLabel": "Dokumentation",
+  "docsNote": "Webbplatsen på GitHub Pages: komma igång, konfiguration och det som medvetet inte kontrolleras.",
+  "consoleLabel": "Administrationskonsolen på den här instansen",
+  "consoleNote": "Allt som den här processen har gjort, och inställningarna som ändrar vad dess protokollslutpunkter gör.",
+  "consoleRoles": "Den kräver också en av två roller.",
+  "consoleOpen": "Den är öppen på den här instansen.",
+  "consoleMetadata": "Varje slutpunkt som tjänsten har registrerat listas där, på /admin/sts-metadata.",
+  "portalLabel": "Användarportalen på den här instansen",
+  "portalNote": "Kontosidorna för den som tittar på dem: hur hen loggar in i tjänsten, vad tjänsten har om hen och var den loggar in hen.",
+  "portalNoRole": "Den kräver ingen roll, och det är hela skillnaden mot konsolen ovan: varje sida handlar om den som tittar på den, så att säga vem du är är hela frågan.",
+  "signInProduct": "Du ombeds logga in, och den här instansen är i produktläge, så lösenordet kontrolleras mot kontot.",
+  "signInDevelopment": "Du ombeds logga in — vilket användarnamn som helst, och inget lösenord kontrolleras."
+}

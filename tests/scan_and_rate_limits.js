@@ -135,7 +135,10 @@ function run(t) {
           'the portal slices the registry at portal.applicationScanLimit — ' +
           'the page needs a signed-in session and a registry past the cap to ' +
           'reach over HTTP');
-  t.check(/esc\(String\(found\.limit\)\)/.test(portalSource),
+  // Since #539 the sentence is a catalog message, and t.html() escapes every
+  // value it is handed; what matters is that the value is the limit in force.
+  t.check(/limit: found\.limit \}/.test(portalSource) &&
+          /portal\.apps\.notLookedWhat/.test(portalSource),
           'and the sentence that says it stopped prints the number in force ' +
           'rather than the constant');
 

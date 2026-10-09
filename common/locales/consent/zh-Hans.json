@@ -1,0 +1,21 @@
+{
+  "title": "允许访问？— 模拟授权服务器",
+  "heading": "允许访问？",
+  "signedInAs": "已在 <code>{base}</code> 以 <code>{username}</code> 身份登录",
+  "asking": "<strong>{client}</strong> 正在请求代表您进行访问。",
+  "scope.permission": "{description} — 由 <code>{identifier}</code> 公开，访问令牌将发往 <code>{baseUri}</code>",
+  "scope.permissionNamed": "权限“{name}”",
+  "scope.ordinary": "普通范围：本服务不赋予它任何含义，会原样放入令牌的 scope 声明中",
+  "detail.understood": "由 <code>{resource}</code> 理解，访问令牌将发往 <code>{audience}</code>",
+  "detail.described": "{description} — 由 <code>{resource}</code> 理解，访问令牌将发往 <code>{audience}</code>",
+  "detailsNote": "此请求包含 <strong>{count, plural, other {# 项授权详情}}</strong>（RFC 9396）。每次都会询问您：“允许”仅针对本次请求，同意的正是所列内容。",
+  "already.summary": "您已为此应用同意的 {count} 个范围",
+  "already.global": "已在此应用的条目上为所有人同意（<code>oauthGlobalConsent</code>）— 从未询问过您",
+  "already.byYou": "由您同意",
+  "already.byYouAt": "由您于 {at} 同意",
+  "allow": "允许",
+  "deny": "拒绝",
+  "meta.allow": "“允许”会在您位于 <code>ou=users</code> 下的条目中为每个范围写入一个 <code>{attribute}</code> 值，此后不会再就这些范围询问您。“拒绝”会向应用返回 <code>access_denied</code>，且不记录任何内容。",
+  "meta.nothingIssued": "目前尚未签发任何内容。此页面由 <code>oauth2.consentRequired</code> 控制，默认开启；在 /admin/consent 可以查看并撤回在此作出的每一个答复。",
+  "meta.consentingFor": "同意的对象：<code>{protocol}</code>"
+}

@@ -1,0 +1,23 @@
+{
+  "heading": "Vos connexions récentes",
+  "sub": "Chaque connexion à votre compte est examinée pour voir à quel point elle paraît inhabituelle — d’où elle vient, et avec quoi — par rapport à vos connexions habituelles. Si l’une d’elles n’était pas vous, dites-le : toutes les sessions de votre compte sont aussitôt fermées, et vous devriez changer votre mot de passe.",
+  "none": "Aucune de vos connexions n’a été évaluée {days, plural, one {au cours du dernier jour} other {au cours des # derniers jours}}.",
+  "when": "Quand",
+  "from": "D’où",
+  "with": "Avec",
+  "through": "Par",
+  "risk": "Risque",
+  "wasItYou": "Était-ce vous ?",
+  "nowhere": "un lieu que les jeux de données ne nomment pas",
+  "deviceOn": "{family} sur {os}",
+  "noDevice": "un appareil sans nom",
+  "level": "{level, select, LOW {FAIBLE} MEDIUM {MOYEN} HIGH {ÉLEVÉ} UNSCORED {NON ÉVALUÉ} other {{level}}}",
+  "thisSession": "cette session",
+  "saidYes": "Vous avez indiqué que c’était vous.",
+  "saidNo": "<strong>Vous avez indiqué que ce n’était pas vous.</strong>",
+  "yes": "C’était moi",
+  "no": "Ce n’était pas moi",
+  "doneDenied": "Merci. Toutes les sessions de votre compte sont en cours de fermeture, y compris celle-ci, et les applications que vous utilisez en sont informées. Reconnectez-vous et changez votre mot de passe à {path}.",
+  "doneConfirmed": "Merci — enregistré comme étant vous.",
+  "doneConfirmedLow": "Merci — enregistré comme étant vous. Le risque de votre compte est revenu à faible."
+}

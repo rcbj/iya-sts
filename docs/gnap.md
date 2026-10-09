@@ -346,20 +346,34 @@ nothing is asked, and no subject information is released.
   catalogue](#access-types-and-the-issuance-policy) declares its type
   `derivableFrom` a type the original carries. Such a right is still put to
   the issuance policy and to the delegation question for its resource server.
-* **The chain of who derived it**, as RFC 8693 section 4.1's `act`: the
-  deriving resource server, with any earlier ones nested under it. Every
-  format carries it, in the part only this authorization server can write:
+* **The chain of who derived it**, as the OAuth2 Token Exchange act chain
+  (RFC 8693 section 4.1's `act`). It is this service's extension: neither
+  RFC 9635 nor RFC 9767 defines one. It follows the token exchange's rules
+  (#526):
+  * the deriving resource server is outermost, with any earlier ones nested
+    under it;
+  * the first derivation puts the **original client**, the client the
+    person's token was issued to, at the foot;
+  * every entry is `{"sub": "urn:sts:client:<identifier>", "iss": "<this
+    authorization server's grant endpoint>"}`, the GNAP token's own `iss`.
+
+  For example, two derivations give
+  `{"sub": "urn:sts:client:esb1", "iss": "…/gnap", "act": {"sub":
+  "urn:sts:client:apigw1", "iss": "…/gnap", "act": {"sub":
+  "urn:sts:client:webapp1", "iss": "…/gnap"}}}`. Every format carries it, in
+  the part only this authorization server can write:
 
   | Format | Where |
   |---|---|
   | `jwt-signed`, `jwt-encrypted` | the `act` claim |
   | `macaroon` | a `gnap:act=` caveat before the `gnap:access=` caveat; one appended after it is refused |
-  | `biscuit` | `actor(0, "<resource server>")` facts in the authority block, 0 the most recent |
+  | `biscuit` | `actor(i, "<subject>")` and `actor_iss(i, "<issuer>")` facts in the authority block, 0 the most recent |
   | `zcap` | the capability's `gnapActor` member, under its proof |
 
   Introspection returns it as `act`, and rotation keeps it.
-* **At most `gnap.maxDerivationDepth` links** (2 by default). A derivation past
-  it is refused in every mode.
+* **At most `gnap.maxDerivationDepth` derivations** (2 by default). The
+  original client's entry is not a derivation. A derivation past the limit is
+  refused in every mode.
 
 ## Access types and the issuance policy
 
@@ -817,7 +831,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.introspection` | `STS_GNAP_INTROSPECTION` | `true` | yes | RFC 9767 section 3.3 token introspection. |
 | `gnap.resourceRegistration` | `STS_GNAP_RESOURCE_REGISTRATION` | `true` | yes | RFC 9767 section 3.4 resource set registration. |
 | `gnap.tokenDerivation` | `STS_GNAP_TOKEN_DERIVATION` | `true` | yes | RFC 9767 section 4: a resource server exchanges a token it was given for one to a downstream resource server. |
-| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many resource servers a derived token's actor chain (`act`) may name. Each derivation adds the deriving resource server; one past this depth is refused in every mode. |
+| `gnap.maxDerivationDepth` | `STS_GNAP_MAX_DERIVATION_DEPTH` | `2` | yes | How many times a token may be derived: how many deriving resource servers its actor chain (`act`) may name, the original client at its foot not counted. One past this depth is refused in every mode. |
 | `gnap.pushFinish` | `STS_GNAP_PUSH_FINISH` | `true` | yes | The section 4.2.2 push finish; off makes no outbound request at all and stops advertising `push`. |
 | `gnap.pushAllowHttp` | `STS_GNAP_PUSH_ALLOW_HTTP` | `false` | yes | Allows a push to a plain `http` URI, logged as a warning: any host in development, a loopback address only in product (RFC 9635 section 2.5.2.1). |
 | `gnap.pushSkipTlsVerification` | `STS_GNAP_PUSH_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Pushes to an `https` URI whose certificate does not verify, logged on every push. Ignored in product mode, and refused on write there. |

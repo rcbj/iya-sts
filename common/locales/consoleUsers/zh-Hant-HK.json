@@ -1,0 +1,20 @@
+{
+  "newUserBody.emptyMiddle": "上的單一「Create」方塊的差別：那個按鈕會在輸入的任何使用者名稱背後虛構一個完整的人——姓名、電郵地址、出生日期、街道、國籍。這裡除非您按下製造它的按鈕，否則不會虛構任何內容。代價是：對沒有 <code>schacDateOfBirth</code> 的人斷言 <code>birthdate</code> 的已簽發認證，會在簽發時改用虛構值（<code>vc_claims.js</code> 這樣做，以免認證為空），因此在有人填入該屬性之前，認證與目錄會不一致。",
+  "newUserBody.saBefore": "剔選後，此人受本領域的",
+  "mfaSection.asksFor": " — 登入畫面會要求{factor, select, webauthn {安全金鑰} webauthnOrTotp {安全金鑰，並為身在未插入金鑰之電腦前的人提供驗證器應用程式作為替代} totp {其驗證器應用程式產生的驗證碼} emailLink {以電郵寄送的登入連結，這是他們持有的唯一第二因素} other {以電郵寄送的驗證碼，這是他們持有的唯一第二因素}}。僅憑密碼無法讓他們登入。",
+  "mfaSection.makeAppTitle": "為此人產生應用程式密碼，範圍限於剔選的入口，並只向您顯示一次。",
+  "mfaSection.shownOnce": "應用程式密碼<strong>只顯示一次</strong>——記下它，並透過您信任的管道交給他們。它是單一因素，只在剔選的入口被接受，從不在登入畫面被接受，CAEP <code>credential-change</code> 會說明它已被建立或撤銷。",
+  "mfaSection.recordTitle": "記錄此驗證，每個剔選宣告的值取自項目目前保有的值。",
+  "emailFactorBlock.heading": "電郵地址，以及以電郵作為第二因素",
+  "emailFactorBlock.factor": "電郵第二因素",
+  "emailFactorBlock.onNote": " — 在第一因素之後以電郵寄送{held}",
+  "emailFactorBlock.chosen": "已選擇（以電郵寄送{opted}），但<strong>未使用</strong>：{why}",
+  "emailFactorBlock.turnOffTip": "停止在此人的第一因素之後寄送電郵驗證碼或連結。在驗證原則允許的情況下，他們可以在 /portal/mfa 重新開啟。",
+  "emailFactorBlock.turnOff": "關閉其電郵第二因素",
+  "emailFactorBlock.setAddressTip": "將此地址儲存為其已驗證的電郵地址。若本領域能寄送郵件，會通知舊地址（如有）已變更。",
+  "personFieldsSection.mailHeading": "電郵地址",
+  "personFieldsSection.setMailTip": "將此地址儲存為其已驗證的電郵地址；會通知先前的地址已變更。",
+  "controls.compromisedTip": "當已知或懷疑密碼遭入侵時剔選：送出的 RISC 事件會是 credential-compromise，而不是一般的認證變更。",
+  "controls.compromisedNote": "當您重設密碼的原因正是<strong>密碼已遭入侵</strong>時請剔選：RISC 接收方也會收到 <code>credential-compromise</code>。重設連結一律會告知他們 <code>recovery-activated</code>。",
+  "controls.setSemanticsTitle": "寫入 stsDelegationSemantics 和 stsDefaultDelegationSemantics。不剔選任何項目則交由原則決定：對主體兩者皆允許，對行為者只允許委派。"
+}

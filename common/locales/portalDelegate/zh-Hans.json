@@ -1,0 +1,14 @@
+{
+  "heading": "谁可以代表您行事",
+  "sub": "您在此指定的应用或人员可以通过交换您的令牌（RFC 8693 令牌交换），以您的名义向本服务请求令牌。签发给您的每个访问令牌都会在其 <code>may_act</code> 声明中注明这一点，任何其他人对此类令牌的交换都会被拒绝。您只能指定一方。",
+  "currentPerson": "可以代表您行事的一方是 <code>{dn}</code>（一个人）。",
+  "currentApplication": "可以代表您行事的一方是 <code>{dn}</code>（一个应用）。",
+  "currentStale": "可以代表您行事的一方是 <code>{dn}</code>——它现在在此目录中不指向任何条目，因此您的令牌不带 <code>may_act</code>。",
+  "nobody": "您尚未指定任何人。您的访问令牌不带 <code>may_act</code> 声明。",
+  "notDelegated": "管理员已将您的账户标记为不可委托，因此无论您在此指定谁，都没有人可以代表您行事。",
+  "dnLabel": "对方的目录名称（DN）",
+  "name": "指定",
+  "clear": "不指定任何人",
+  "doneSet": "已设置您的代理人。",
+  "doneCleared": "您未指定任何人。"
+}

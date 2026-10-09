@@ -340,8 +340,8 @@ async function theSettingsAreOnTheirPages() {
           "are the reason it says CTAP anywhere", function () {
       assert.strictEqual(drawnWeb.status, 200,
         "/admin/webauthn answered " + drawnWeb.status);
-      assert.ok(/webauthn\.residentKey/.test(drawnWeb.text),
-        "the page has no webauthn.residentKey control on it.");
+      assert.ok(/webauthn\.credProps/.test(drawnWeb.text),
+        "the page has no webauthn.credProps control on it.");
       assert.ok(/webauthn\.authenticatorAttachment/.test(drawnWeb.text),
         "the page has no webauthn.authenticatorAttachment control on it.");
     });
@@ -401,9 +401,8 @@ async function theReportFollowsTheSettings() {
     // themselves, because what a console form posts IS a section's fields.
     await ok("/config/set-many",
       { "webauthn.userVerification": "required",
-        "webauthn.residentKey": "required",
         "webauthn.algorithms": "EdDSA" },
-      "set three webauthn settings");
+      "set two webauthn settings");
 
     const after = await get("/webauthn");
     check("USER VERIFICATION SET TO `required` FLIPS THE REPORT'S " +
@@ -424,9 +423,11 @@ async function theReportFollowsTheSettings() {
       assert.deepStrictEqual(offered, ["EdDSA"],
         "the report offers " + offered.join(", ") + " after being told EdDSA.");
     });
-    check("and the CTAP row moves with it", function () {
+    check("and the resident-key row reports the passkey policy's answer " +
+          "(#527): REQUIRED, usernameless sign-in being off by default",
+          function () {
       assert.strictEqual(after.body.status.residentKey, "required",
-        "the resident-key setting did not reach the report.");
+        "the report says " + after.body.status.residentKey + ".");
     });
 
     // THE FAILURE MODE THAT IS NOT AN ERROR: a name the verifier does not
@@ -470,8 +471,7 @@ async function theReportFollowsTheSettings() {
     // to reset, and what the report showed was a reset complaining about an
     // override that had never been made — which says nothing at all about the
     // request that was actually wrong.
-    await resetQuietly(["webauthn.userVerification", "webauthn.residentKey",
-                        "webauthn.algorithms"]);
+    await resetQuietly(["webauthn.userVerification", "webauthn.algorithms"]);
   }
 
   const totp = await get("/totp");

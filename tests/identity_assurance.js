@@ -38,6 +38,10 @@ const ldap = require('../ldap/ldap_server');
 const ida = require('../common/identity_assurance');
 const oauth2 = require('../oauth-oidc/oauth2');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'identity_assurance',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -342,8 +346,9 @@ function body(t) {
   const mfaData = JSON.parse(JSON.stringify(
     require('../admin-core/admin_views')
       .userDetailJson({ query: {}, headers: {} }, 'ida-alice').json.page.mfa));
-  const drawn = UsersPage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    { write: true }, '', mfaData);
+  const ctxOf = require('../admin-ui/web_kit').context;
+  const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: true }, '', mfaData);
   t.check(/<h3>Identity verifications<\/h3>/.test(drawn) &&
           /name="action" value="record-verification"/.test(drawn) &&
           /name="action" value="remove-verification"/.test(drawn) &&
@@ -351,8 +356,8 @@ function body(t) {
           /<option value="eidas">/.test(drawn),
           '8a. a person\'s page lists their verifications with a Remove ' +
           'each, and a form that records one');
-  const readOnly = UsersPage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    { write: false }, '', mfaData);
+  const readOnly = UsersPage.mfaSection(ctxOf({}, false).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: false }, '', mfaData);
   t.check(!/value="record-verification"/.test(readOnly) &&
           /needs <strong>Admin Write<\/strong>/.test(readOnly),
           '8b. and without Admin Write, no form');

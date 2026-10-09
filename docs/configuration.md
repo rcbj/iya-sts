@@ -22,7 +22,7 @@ Five levels, first match wins:
 
 1. **A runtime override** — set on the console page for that setting's protocol, or through `POST /admin-api/config/set`
 2. **The environment variable**
-3. **A legacy environment variable** — there is exactly one, `STS_ISSUER`
+3. **A legacy environment variable** — there is none since #523, when `STS_ISSUER` was retired
 4. **The appconfig file** named by `CONFIG_FILE`
 5. **`env/defaults.js`** — the default appconfig file that 4 is unioned on top of
 
@@ -95,23 +95,22 @@ back to and not what any stack here runs on. See its own section below.
 environment variable, its default and whether it can be changed without a
 restart.
 
-`STS_ISSUER` is the one legacy level because it used to be a single value serving
-as the SAML assertion issuer, the WS-Trust token issuer AND the WS-Federation
-entityID. Those are three different things that happened to share a default — an
-entityID names an identity provider, an Issuer names whoever signed an assertion
-— so they are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, all three
-still fed by `STS_ISSUER` when it is set. `saml.issuer` is the `<saml:Issuer>` of
-every SAML assertion (WS-Federation's included, since the same two functions
-build them); `wstrust.issuer` is the name this STS publishes on GET /sts;
-`wsfed.entityId` is the `entityID` in the federation metadata. **Unset — the
-default, in either mode (#480, #494) — all three are the realm's SAML 2.0
-entityID**, so an assertion's Issuer and the metadata a relying party reads
-agree. A token to a REGISTERED application (a WS-Trust AppliesTo, a
-WS-Federation wtrealm) carries that application's own entityID,
-`<entityID>:<application>` while `saml2.perApplicationEntityId` is on — the
-name SAML SSO gives the same application, published in `/saml2/metadata/{sp}`
-and `/wsfed/metadata/{rp}`. An address nobody registered gets the shared one.
-The `iss` of a WS-Trust JWT is the realm's OAuth 2.0 issuer in every mode.
+**There is one issuer per realm, and it is not a setting (#523).** The
+`<saml:Issuer>` of every SAML 2.0 and SAML 1.1 assertion (SAML SSO,
+WS-Federation and WS-Trust alike), the `entityID` of the identity provider
+metadata (`/saml2/metadata`, `/saml11/metadata` and the WS-Federation
+document), the name `GET /sts` publishes and the `iss` of every JWT are one
+string: the realm's OAuth 2.0 issuer, what
+`/.well-known/oauth-authorization-server` publishes. It follows the public
+base URL, so **pin `global.publicBaseUrl` in a deployment**: an unpinned
+service names itself by whatever host a request arrived on, and a relying
+party configured from one name refuses tokens issued under another.
+
+`STS_ISSUER`, `saml.issuer`, `saml2.entityId`, `saml2.perApplicationEntityId`,
+`saml11.providerId`, `saml11.perApplicationProviderId`, `wstrust.issuer` and
+`wsfed.entityId` were retired with it. A start that still names one of them,
+in the appconfig file or the environment, is refused and says so
+(`STS-CORE-0105`).
 
 ### An environment variable is a string, and the table knows what to do with it
 
@@ -1782,7 +1781,6 @@ what its api may dial.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `saml.issuer` | `STS_SAML_ISSUER`<br>or `STS_ISSUER` | *(empty)* | yes | The <saml:Issuer> of every SAML 2.0 assertion and the Issuer attribute of every SAML 1.1 one that WS-Trust and WS-Federation build (the SAML SSO profile names itself by saml2.entityId), and what /wsfed/rp checks a presented assertion against. Unset, in either mode (#480, #494), it is the realm's SAML 2.0 entityID - and for a token to a REGISTERED application (a WS-Trust AppliesTo, a WS-Federation wtrealm) that application's own entityID, <entityID>:<application> where saml2.perApplicationEntityId is on, the name SAML SSO and /saml2/metadata/{sp} give it. An address nobody registered gets the shared entityID. Set, it is every assertion's Issuer. |
 | `saml.clockSkewS` | `STS_SAML_CLOCK_SKEW_S` | `0` | yes | How far to widen the validity window of every assertion this service ISSUES, at both ends: Conditions/NotBefore is backdated by this many seconds and NotOnOrAfter is extended by it. Both builders apply it, so it reaches SAML 2.0, SAML 1.1, WS-Trust and WS-Federation alike. IssueInstant and the authentication instant are NOT moved — those state when something happened. 0 to 300; 0 is what this service always did. It is NOT `oauth2.clockSkewS`, which is the tolerance applied when this service READS a document back. |
 | `saml.signatureAlgorithm` | `STS_SAML_SIGNATURE_ALGORITHM` | `rsa-sha256` | yes | The SignatureMethod of every XML signature this service makes on a SAML assertion, response, LogoutRequest/Response, SAML or WS-Federation metadata and a signed federated AuthnRequest, and the Redirect binding's `SigAlg`: `rsa-sha256`, `rsa-sha384`, `rsa-sha512`, or the broken `rsa-sha1`. `rsa-sha1` is development mode only: product signs with `rsa-sha256` instead and refuses setting it (#181). **In a realm with `keys.signerModel = hybrid-groups` (#68)** it may also be `ecdsa-sha256` or `ecdsa-sha384` (the XML signer group's P-256 or P-384 key) or `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` or `slh-dsa-sha2-128s` (the group's post-quantum keys, each with its own certificate, under the W3C xmldsig-more **draft** identifiers — few service providers verify them yet). Elsewhere, or before that key is certified, the realm signs `rsa-sha256` and says so once. |
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`. Inclusive c14n is not offered: an assertion is signed standalone and embedded, and inclusive c14n would fail at every relying party. |
@@ -1793,15 +1791,12 @@ what its api may dial.
 
 ### SAML 2.0
 
-These are their own group and `saml.issuer` above is deliberately not one of
-them: that setting names whoever SIGNED an assertion and is shared with WS-Trust
-and WS-Federation, while every row here governs how this service behaves as an
-identity provider in a browser profile.
+These are their own group, apart from the SAML group above: that group governs
+the assertions WS-Trust and WS-Federation share, while every row here governs
+how this service behaves as an identity provider in a browser profile.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `saml2.entityId` | `STS_SAML2_ENTITY_ID` | `urn:sts:idp` | yes | The entityID this identity provider publishes in its SAML 2.0 metadata, and the <saml:Issuer> of every Response and Assertion the Web Browser SSO profile issues. It is NOT the SAML issuer above, which is a setting of its own; but where saml.issuer, wstrust.issuer and wsfed.entityId are unset (#494, both modes), they are this entityID - per application for a registered one, as here - so WS-Trust and WS-Federation sign under the name this metadata publishes. |
-| `saml2.perApplicationEntityId` | `STS_SAML2_PER_APPLICATION_ENTITY_ID` | `true` | yes | ON by default, and it is what makes the metadata at /saml2/metadata/{sp} UNIQUE PER APPLICATION: the identity provider names itself <entityID>:{sp} in that document and in everything it issues to that service provider, the way Okta and Ping give each application its own identity provider. OFF makes every document carry the entityID above and differ only in its endpoint URLs, which is what a service provider library that keys its trust store off the entityID expects. Both are real deployments, which is why it is a setting and not a decision. It governs WS-Trust and WS-Federation too (#494): a registered application gets the same <entityID>:{sp} as the Issuer of a WS-Trust or WS-Federation assertion, and in its own /wsfed/metadata/{rp}, unless saml.issuer or wsfed.entityId is set. |
 | `saml2.assertionLifetimeMin` | `STS_SAML2_ASSERTION_LIFETIME_MIN` | `60` | yes | How long an issued assertion is valid for: it becomes Conditions/NotOnOrAfter and the bearer SubjectConfirmationData/NotOnOrAfter alike. Set it to 1 to watch a service provider refuse a stale assertion, which is the check most of them get wrong. |
 | `saml2.signAssertion` | `STS_SAML2_SIGN_ASSERTION` | `true` | yes | Sign the <saml:Assertion> itself. ON by default because a service provider that verifies anything verifies this, and because an assertion that travels on its own — out of an ArtifactResponse, say — has nothing else carrying a signature. Turning it OFF is a test case rather than a mistake: a service provider that accepts an unsigned assertion has a hole, and this is how to find out. Off is development mode only: product signs every assertion, and turning it off is refused, here and per application (#181). |
 | `saml2.signResponse` | `STS_SAML2_SIGN_RESPONSE` | `true` | yes | Sign the <samlp:Response> around the assertion as well, which is what AD FS and Keycloak do by default. Both signatures are ordinary: the response is signed AFTER the assertion inside it, so the assertion's own signature is part of what the response signature covers. On the HTTP Redirect binding this ALSO controls the query-string signature of section 3.4.4.1, which is the one a redirect response is really verified by. |
@@ -1827,9 +1822,9 @@ identity provider in a browser profile.
 
 ### SAML 1.1
 
-These nine are a group of their own for the reason the SAML 2.0 nine are, and for
-one more besides. The shared reason: `saml.issuer` above names whoever SIGNED an
-assertion and is read by WS-Trust and WS-Federation, while every row here governs
+These are a group of their own for the reason the SAML 2.0 rows are, and for
+one more besides. The shared reason: the SAML group above governs the assertions
+WS-Trust and WS-Federation share, while every row here governs
 how this service behaves as an identity provider in a browser profile. The reason
 peculiar to this group: **SAML 1.1 and SAML 2.0 are different specifications
 rather than two dialects**, and a shared set of rows would make `signResponse`
@@ -1840,8 +1835,6 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `saml11.providerId` | `STS_SAML11_PROVIDER_ID` | `urn:sts:idp:saml11` | yes | What this identity provider calls itself in the SAML 1.1 browser profiles: the `Issuer` ATTRIBUTE of every assertion they issue, the `entityID` of the metadata document at /saml11/metadata, and the string whose SHA-1 becomes the SourceID inside every type 0x0001 artifact. SAML 1.1 calls it a providerID and SAML 2.0 metadata calls the same thing an entityID; they are one value and this row is it. It is deliberately NOT saml2.entityId — a relying party that trusts this service for 1.1 and not for 2.0 is the ordinary case, and one value would make that unexpressible. |
-| `saml11.perApplicationProviderId` | `STS_SAML11_PER_APPLICATION_PROVIDER_ID` | `true` | yes | Give every relying party its own providerID — `{providerID}:{slug}` — and its own endpoints under the same path segment, which is what /saml11/metadata/{rp} publishes. Turn it off for a relying party whose trust store is keyed off the providerID and which is surprised to meet a new one per application. THE ENDPOINTS STAY PER-APPLICATION either way, because that is what makes the documents worth having separately. It also changes every artifact this service mints: the SourceID is a hash of the providerID, so turning this off makes one SourceID where there were many. |
 | `saml11.assertionLifetimeMin` | `STS_SAML11_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the browser profiles' assertions are valid for, in the NotBefore and NotOnOrAfter of <saml:Conditions>. It is separate from the WS-Federation lifetime for the same reason the SAML 2.0 one is: a browser profile assertion is consumed within seconds of being issued and a short lifetime here is a realistic test, where the same value would make a WS-Federation session expire while somebody was reading it. |
 | `saml11.signAssertion` | `STS_SAML11_SIGN_ASSERTION` | `true` | yes | Sign the <saml:Assertion> itself, with ds:Signature as its LAST child and the reference naming AssertionID — which is where the 1.1 schema puts it and is not where SAML 2.0 does. ON by default because the Browser/POST profile REQUIRES a signed assertion (saml-profile-1.1 section 4.2.1.4): the assertion passes through the browser, so nothing else authenticates it. Turning it off is a test case rather than a mistake — a relying party that accepts it anyway has a hole in it, and this is how somebody finds that out. Off is development mode only: product signs every assertion, and turning it off is refused, here and per relying party (#181). |
 | `saml11.signResponse` | `STS_SAML11_SIGN_RESPONSE` | `true` | yes | Sign the <samlp:Response> around the assertion as well, with the reference naming ResponseID. Real identity providers differ here and both are worth exercising, which is why it is a setting: the profile requires the RESPONSE to be signed in Browser/POST and says nothing about it for the assertion pulled back over the artifact channel, where the SOAP exchange is what a relying party is trusting. Off is development mode only: Browser/POST requires a signed Response, so product always signs it and refuses turning it off (#181). |
@@ -1857,7 +1850,6 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `wstrust.issuer` | `STS_WSTRUST_ISSUER`<br>or `STS_ISSUER` | *(empty)* | yes | The name this STS publishes on GET /sts. Unset, in either mode (#480, #494), it is the realm's SAML 2.0 entityID. A SAML assertion this STS issues carries saml.issuer - for a registered AppliesTo, that application's own entityID - and a JWT the realm's OAuth 2.0 issuer, the one /.well-known/oauth-authorization-server publishes, which GET /sts names on a line of its own. When this and saml.issuer differ GET /sts says so and the process logs it at startup. |
 | `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | How long an issued or renewed token is valid for when the RST carries no `wst:Lifetime`. |
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling on a requested `wst:Lifetime`, in both modes; the RSTR states what was issued. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The `alg` of the JWT token type: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`, with the key's `kid` in the header. |
@@ -1867,7 +1859,6 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
-| `wsfed.entityId` | `STS_WSFED_ENTITY_ID`<br>or `STS_ISSUER` | *(empty)* | yes | The entityID in the federation metadata at /FederationMetadata/2007-06/FederationMetadata.xml. Unset, in either mode (#480, #494), it is the realm's SAML 2.0 entityID, and a registered relying party's own document, /wsfed/metadata/{rp}, names that application's entityID - the Issuer of the assertions it is sent - so the metadata and the SAML issuer agree unless one of them is set. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
 
 ### TLS
@@ -2190,10 +2181,8 @@ client author asks this service for a ceremony of a particular shape — with
 | `webauthn.attestationAndroidSoftwareKeys` | `STS_WEBAUTHN_ATTESTATION_ANDROID_SOFTWARE` | `false` | yes | Read an `android-key` statement's origin and purpose from the software- and hardware-enforced lists, not the hardware list alone. **WARNING**: a key only Android's software vouches for may have been made by malware. |
 | `webauthn.timeoutMs` | `STS_WEBAUTHN_TIMEOUT_MS` | `60000` | yes | The `timeout` in the options handed to the browser. It is a HINT and clients may clamp it. The pending step this service holds expires on its own five-minute clock regardless, so a longer timeout buys a ceremony that succeeds in the browser and is then refused here. |
 | `webauthn.authenticatorAttachment` | `STS_WEBAUTHN_ATTACHMENT` | `any` | yes | Which kind of authenticator may answer — `platform` (Touch ID, Windows Hello, a screen lock) or `cross-platform` (a roaming CTAP2 key over USB, NFC or BLE). `any` sends no preference at all, because the options dictionary has no value meaning one. It is a FILTER IN THE BROWSER and not a check here. |
-| `webauthn.residentKey` | `STS_WEBAUTHN_RESIDENT_KEY` | `discouraged` | yes | Whether the credential is stored ON the authenticator — a CTAP2 *resident key*, which is what a passkey is and what a usernameless sign-in needs. `discouraged` is the default because a resident key consumes one of the small number of slots a roaming authenticator has and cannot always be deleted from it. It decides the sign-in screen's ceremony and *Use a security key*; **a passkey (*Create a passkey*) always asks `required`** (#474), because that is what `webauthn.usernameless` signs in with. |
 | `webauthn.credProps` | `STS_WEBAUTHN_CRED_PROPS` | `true` | yes | Asks the browser to report whether the credential it made is actually discoverable. It is the only way to find out — `residentKey: "preferred"` may or may not produce one and nothing in the attestation says which. The answer is recorded beside the key and decides nothing. |
 | `webauthn.primaryAllowed` | `STS_WEBAUTHN_PRIMARY_ALLOWED` | `true` | yes | Whether a key may be the ONLY credential on an account — a passwordless sign-in. Off, keys still work as a second factor. **It does not disable a primary key somebody already holds**: an operator flipping a switch must not lock somebody out of their own account. |
-| `webauthn.usernameless` | `STS_WEBAUTHN_USERNAMELESS` | `false` | yes | Offers a passkey sign-in with NO username (#474): the sign-in screen's *Sign in with a passkey* button and the username field's autofill (conditional mediation) ask the browser for any discoverable credential, and the user handle it returns names the account. **User verification is required and checked** whatever `webauthn.userVerification` says, and the session is `amr ["hwk","user"]`, `acr "mfa"`. Only a primary passkey registered since #474 answers it — one registered before was made under the username and works only where the username is typed. Off by default; it also needs `webauthn.enabled` and `webauthn.primaryAllowed`. |
 | `webauthn.mfaAllowed` | `STS_WEBAUTHN_MFA_ALLOWED` | `true` | yes | Whether a key may be enrolled as a second factor beside a password. With this and the authentication policy's TOTP row both off, this service offers no second factor at all, which is a supported configuration and is what it did before either existed. An enrolled `mfa` key goes on being demanded. |
 | `webauthn.maxKeysPerPerson` | `STS_WEBAUTHN_MAX_KEYS` | `10` | yes | How many security keys one person may hold. Several is the ordinary case and the specification expects it — an assertion NAMES the credential that produced it, so there is none of the ambiguity two shared secrets would have. It refuses the ENROLMENT and never an authentication. |
 
@@ -2519,7 +2508,6 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 | `mail.transport` | `STS_MAIL_TRANSPORT` | `default` | yes | How a message this service sends leaves it. |
 | `mail.from` | `STS_MAIL_FROM` | *(empty)* | yes | The address every message is sent from. |
 | `mail.fromName` | `STS_MAIL_FROM_NAME` | *(empty)* | yes | The display name beside the From address. |
-| `mail.defaultLanguage` | `STS_MAIL_DEFAULT_LANGUAGE` | `en` | yes | The language a message is written in when the recipient's entry names no preferredLanguage this realm has a template for. |
 | `mail.smtpPreset` | `STS_MAIL_SMTP_PRESET` | `custom` | yes | A known relay, which fills in the host (and port) when mail.smtpHost is empty. |
 | `mail.smtpHost` | `STS_MAIL_SMTP_HOST` | *(empty)* | yes | The relay's host name. |
 | `mail.smtpPort` | `STS_MAIL_SMTP_PORT` | `587` | yes | The relay's port: 587 for STARTTLS (submission), 465 for implicit TLS (submissions, RFC 8314). |

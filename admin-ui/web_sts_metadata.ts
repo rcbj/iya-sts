@@ -57,6 +57,7 @@ class StsMetadataPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
     const esc = kit.esc;
     const byId = {};
     json.specifications.forEach(function (one) {
@@ -65,44 +66,33 @@ class StsMetadataPage {
     const base = json.issuer;
     const rows = json.rows;
 
-    let html = '<p class="lead">Every protocol this service speaks, every ' +
-      'endpoint it registers and every specification it implements. The ' +
-      'endpoint list is read from the running Express router on each ' +
-      'request, not from a list kept by hand, so it cannot claim an endpoint ' +
-      'that is not there or miss one that is. Issuer identifier <code>' +
-      esc(base) + '</code>; WS-Trust issuer <code>' +
-      esc(json.wsTrustIssuer) + '</code>.' +
+    // The lead is several messages (#539), one per clause the view decides
+    // on, each carrying the spaces and punctuation it always had.
+    let html = '<p class="lead">' + t.html('consoleStsMetadata.lead.intro',
+      { issuer: base, wsTrustIssuer: json.wsTrustIssuer }) +
       // The build, in the lead paragraph rather than only in the console's
       // footer, because this is the page somebody reads to answer "what does
       // this service do" and the honest form of that answer names a release.
       // The footer says it on every page; this is the one page where it is
       // part of the subject rather than provenance in the margin.
-      ' This is <strong>iya-sts ' + esc(json.version) + '</strong>' +
-      (json.build.commit ? ', built from commit <code>' +
-       esc(json.build.commit) + '</code>' : '') +
-      (json.build.stamped ? '' : ' — computed at startup rather than ' +
-       'stamped into a build, so this process is a checkout rather than an ' +
-       'artifact') +
-      '. It is listening on port ' + esc(json.port) +
+      t.html('consoleStsMetadata.lead.version', { version: json.version }) +
+      (json.build.commit ? t.html('consoleStsMetadata.lead.commit',
+                                  { commit: json.build.commit }) : '') +
+      (json.build.stamped ? ''
+        : t.html('consoleStsMetadata.lead.unstamped')) +
+      t.html('consoleStsMetadata.lead.port', { port: json.port }) +
       // The scheme, said out loud, because the issuer above and every endpoint
       // below are built from the URL this request arrived on — so they follow
       // the socket by themselves, and a reader comparing this page against a
       // configuration file needs to know which socket that was. It is also the
       // one requirement RFC 9700 mode cannot settle with a check.
       (json.https
-        ? ' over <strong>HTTPS</strong> (global.https' +
+        ? t.html('consoleStsMetadata.lead.https') +
           (json.rfc9700
-            ? ', which RFC 9700 mode turns on — section 2.1 says an ' +
-              'authorization response must not be sent over an unencrypted ' +
-              'connection'
+            ? t.html('consoleStsMetadata.lead.rfc9700')
             : '') +
-          '), with the same certificate LDAPS 636 serves, issued under this ' +
-          'service\'s own Root. It is regenerated on every start unless ' +
-          'tls.certificateFile supplies one, so fetch it from ' +
-          '<code>/tls/server-certificate</code> and trust it — without ' +
-          'verification the first time, since there is no plain port left ' +
-          'to fetch it from.'
-        : ' over plain HTTP.') + '</p>';
+          t.html('consoleStsMetadata.lead.httpsRest')
+        : t.html('consoleStsMetadata.lead.http')) + '</p>';
 
     // -----------------------------------------------------------------------
     // THE DOWNLOAD CONTROL, AT THE TOP BECAUSE IT IS ABOUT THE WHOLE PAGE.
@@ -116,20 +106,17 @@ class StsMetadataPage {
     // gate.
     // -----------------------------------------------------------------------
     html += '<p><a class="btn" href="/admin/sts-metadata?format=json" ' +
-      'download="sts-metadata.json" title="The whole of this page as JSON: ' +
-      'every protocol, every endpoint, every specification, and the drift ' +
-      'report">Download all of this as JSON</a> <span class="why">' +
-      esc(rows.length) + ' endpoints, ' + esc(json.protocols.length) +
-      ' protocol families, ' + esc(json.specifications.length) +
-      ' specifications</span></p>';
+      'download="sts-metadata.json" title="' +
+      esc(t.text('consoleStsMetadata.download.title')) + '">' +
+      t.html('consoleStsMetadata.download.link') + '</a> <span class="why">' +
+      t.html('consoleStsMetadata.download.counts',
+             { rows: rows.length, protocols: json.protocols.length,
+               specs: json.specifications.length }) + '</span></p>';
 
-    html += '<h2 id="protocols">Protocols this service speaks</h2>' +
-      '<p class="lead">Thirteen families. The count on each card is how many ' +
-      'rows that family has in the tables below, and it is not a measure of ' +
-      'how much of the protocol is here: <strong>four of these live mostly ' +
-      'on a raw socket and two register no route at all</strong>, and this ' +
-      'page is built by walking the Express router. Where that is the case ' +
-      'the card says where the protocol really is.</p>' +
+    html += '<h2 id="protocols">' +
+      t.html('consoleStsMetadata.protocols.heading') + '</h2>' +
+      '<p class="lead">' + t.html('consoleStsMetadata.protocols.lead') +
+      '</p>' +
       '<div class="protos">' +
       json.protocols.map(function (p) {
         const target = p.groups.length
@@ -145,18 +132,14 @@ class StsMetadataPage {
                      : '') +
           '<div class="c">' +
           (p.endpoints
-            ? esc(p.endpoints) + ' endpoint(s) below'
-            : 'no endpoint of its own') +
+            ? t.html('consoleStsMetadata.protocols.endpoints',
+                     { n: p.endpoints })
+            : t.html('consoleStsMetadata.protocols.noEndpoint')) +
           ' &middot; ' + specs + '</div></div>';
       }).join('') + '</div>';
 
-    html += '<p class="lead"><strong>This is a test double.</strong> It ' +
-      'signs everything with a key generated fresh at each start, it never ' +
-      'checks ' +
-      'a password, and it does not validate access tokens issued by a ' +
-      'separate authorization server. The <em>coverage</em> column below ' +
-      'says where each specification is implemented in full and where the ' +
-      'shape is right but the enforcement is deliberately absent.</p>';
+    html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
+      '</p>';
 
     // -----------------------------------------------------------------------
     // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the
@@ -176,23 +159,17 @@ class StsMetadataPage {
     // -----------------------------------------------------------------------
     const namedServers = json.namedServers;
     if (namedServers.length) {
-      html += '<h2>Authorization servers</h2>' +
-        '<p class="lead">This process publishes <strong>' +
-        (namedServers.length + 1) +
-        '</strong> authorization servers, and only the endpoint PATTERN is ' +
-        'on the list below — the walk that builds this page sees ' +
-        '<code>/:as/oauth2/…</code> as one route however many names have ' +
-        'been served through it. Each has its own metadata, its own ' +
-        'capabilities and its own issuer, and <strong>what its document ' +
-        'advertises is what its endpoints do</strong>. A name that has never ' +
-        'been asked for is not here: a name becomes an authorization server ' +
-        'BY being asked for, with the same capabilities the default one has, ' +
-        'so the set of possible ones is every string and the set of real ' +
-        'ones is this.</p><table><thead><tr><th class="p">Authorization ' +
-        'server</th><th>Metadata</th><th>Endpoints</th><th class="s">Asked ' +
-        'for</th></tr></thead><tbody><tr><td><code>' +
-        esc(json.defaultServerId) + '</code><div class="why">the ' +
-        'unprefixed endpoints</div></td><td><a ' +
+      html += '<h2>' + t.html('consoleStsMetadata.as.heading') + '</h2>' +
+        '<p class="lead">' + t.html('consoleStsMetadata.as.lead',
+          { n: namedServers.length + 1 }) +
+        '</p><table><thead><tr><th class="p">' +
+        t.html('consoleStsMetadata.as.thServer') + '</th><th>' +
+        t.html('consoleStsMetadata.as.thMetadata') + '</th><th>' +
+        t.html('consoleStsMetadata.as.thEndpoints') + '</th><th class="s">' +
+        t.html('consoleStsMetadata.as.thAskedFor') +
+        '</th></tr></thead><tbody><tr><td><code>' +
+        esc(json.defaultServerId) + '</code><div class="why">' +
+        t.html('consoleStsMetadata.as.unprefixed') + '</div></td><td><a ' +
         'href="/.well-known/oauth-authorization-server" target="_blank" ' +
         'rel="noopener noreferrer"><code>' +
         '/.well-known/oauth-authorization-server</code></a><br><a ' +
@@ -200,12 +177,15 @@ class StsMetadataPage {
         'rel="noopener noreferrer"><code>' +
         '/.well-known/openid-configuration</code></a></td><td><code>' +
         '/oauth2/authorize</code><br><code>/oauth2/token</code></td><td>' +
-        'always</td></tr>' +
+        t.html('consoleStsMetadata.as.always') + '</td></tr>' +
         namedServers.map(function (one) {
           return '<tr><td><code>' + esc(one.id) + '</code>' +
             (one.autoCreated
-              ? '<div class="why">created by being asked for</div>'
-              : '<div class="why">configured here</div>') + '</td>' +
+              ? '<div class="why">' +
+                t.html('consoleStsMetadata.as.autoCreated') + '</div>'
+              : '<div class="why">' +
+                t.html('consoleStsMetadata.as.configured') + '</div>') +
+            '</td>' +
             '<td><a href="' + esc(one.urls.oauth) + '" target="_blank" ' +
             'rel="noopener ' +
             'noreferrer"><code>' + esc(one.urls.oauth) + '</code></a><br>' +
@@ -214,14 +194,13 @@ class StsMetadataPage {
             'noreferrer"><code>' + esc(one.urls.oidc) + '</code></a></td>' +
             '<td><code>' + esc(one.urls.authorize) + '</code><br><code>' +
             esc(one.urls.token) + '</code></td>' +
-            '<td>' + esc(one.seen) + ' time(s)</td></tr>';
+            '<td>' + t.html('consoleStsMetadata.as.times',
+                            { n: one.seen }) + '</td></tr>';
         }).join('') +
         '</tbody></table><p class="lead"><a ' +
-        'href="/admin/authorization-servers">Configure them</a> — what a ' +
-        'profile publishes is what that authorization server enforces, so ' +
-        'narrowing <code>code_challenge_methods_supported</code> there ' +
-        'refuses the other method at that server\'s own authorization ' +
-        'endpoint and nowhere else.</p>';
+        'href="/admin/authorization-servers">' +
+        t.html('consoleStsMetadata.as.configure') + '</a>' +
+        t.html('consoleStsMetadata.as.configureRest') + '</p>';
     }
 
     // Drift, if any. Shown at the top because it is the thing a reader most
@@ -288,19 +267,20 @@ class StsMetadataPage {
       }
       html += '</ul></div>';
     } else {
-      html += '<div class="ok">Every registered route is described, every ' +
-        'description matches a registered route (' + rows.length +
-        ' endpoints), and every one of the ' + json.protocols.length +
-        ' protocol families above names a group that is here and a ' +
-        'specification that exists.</div>';
+      html += '<div class="ok">' + t.html('consoleStsMetadata.inStep',
+        { rows: rows.length, protocols: json.protocols.length }) + '</div>';
     }
 
     StsMetadataPage.groupsOf(rows, json.groupOrder).forEach(function (group) {
       html += '<h2 id="' + esc(StsMetadataPage.groupAnchor(group)) + '">' +
         esc(group) +
-        '</h2><table><thead><tr><th class="p">Path</th><th>Methods</th><th ' +
-        'class="n">Name</th><th>What it is</th><th ' +
-        'class="s">Specifications</th></tr></thead><tbody>';
+        '</h2><table><thead><tr><th class="p">' +
+        t.html('consoleStsMetadata.th.path') + '</th><th>' +
+        t.html('consoleStsMetadata.th.methods') + '</th><th ' +
+        'class="n">' + t.html('consoleStsMetadata.th.name') + '</th><th>' +
+        t.html('consoleStsMetadata.th.what') + '</th><th ' +
+        'class="s">' + t.html('consoleStsMetadata.th.specs') +
+        '</th></tr></thead><tbody>';
       rows.filter(function (r) {
         return r.group === group;
       })
@@ -308,7 +288,8 @@ class StsMetadataPage {
           return a.path < b.path ? -1 : (a.path > b.path ? 1 : 0);
         })
         .forEach(function (r) {
-          html += '<tr><td class="p">' + StsMetadataPage.pathCell(r) + '</td>' +
+          html += '<tr><td class="p">' + StsMetadataPage.pathCell(r, t) +
+            '</td>' +
             '<td class="m">' + esc(r.methods.join(', ')) + '</td>' +
             '<td class="n">' +
             (r.documented === false
@@ -322,15 +303,19 @@ class StsMetadataPage {
             // one behind its first sentence; see the block above it in
             // ../admin-ui/admin.ts.
             '<td>' + kit.note(esc(r.what)) + '</td>' +
-            '<td class="s">' + StsMetadataPage.specLinks(r.specs, byId) +
+            '<td class="s">' +
+            StsMetadataPage.specLinks(r.specs, byId) +
             '</td></tr>';
         });
       html += '</tbody></table>';
     });
 
-    html += '<h2 id="specifications">Specifications implemented</h2>' +
-      '<table><thead><tr><th class="n">Specification</th>' +
-      '<th>Published by</th><th>Coverage in this mock</th></tr></thead>' +
+    html += '<h2 id="specifications">' +
+      t.html('consoleStsMetadata.specs.heading') + '</h2>' +
+      '<table><thead><tr><th class="n">' +
+      t.html('consoleStsMetadata.specs.thSpec') + '</th>' +
+      '<th>' + t.html('consoleStsMetadata.specs.thWhere') + '</th><th>' +
+      t.html('consoleStsMetadata.specs.thCoverage') + '</th></tr></thead>' +
       '<tbody>';
     json.specifications.forEach(function (s) {
       html += '<tr id="spec-' + esc(s.id) + '"><td class="n"><a href="' +
@@ -342,19 +327,8 @@ class StsMetadataPage {
     });
     html += '</tbody></table>';
 
-    html += kit.note('Machine-readable: <code>' + esc(base) +
-      '/admin/sts-metadata?format=json</code>, which is what the button at ' +
-      'the top hands you as a file. It is behind the console gate like the ' +
-      'page, so a program fetching it signs in at <code>/authn/login</code> ' +
-      'first, or reads the same service through <code>/admin-api</code>, ' +
-      'which is not gated. This document is not a specification-defined ' +
-      'discovery document &mdash; for those, see ' +
-      '<code>/.well-known/openid-configuration</code>, ' +
-      '<code>/.well-known/oauth-authorization-server</code>, ' +
-      '<code>/.well-known/openid-credential-issuer</code>, ' +
-      '<code>/.well-known/jwt-vc-issuer</code>, ' +
-      '<code>/.well-known/did.json</code> and ' +
-      '<code>/.well-known/did-configuration.json</code>.');
+    html += kit.note(t.html('consoleStsMetadata.machineReadable',
+                            { base: base }));
     return html;
   }
 
@@ -410,21 +384,29 @@ class StsMetadataPage {
   // So the ones that work become links and the rest say why not. The reason
   // is worth showing rather than hiding: "POST only" is the single most useful
   // thing to know about an endpoint you were about to click.
-  static linkabilityOf(row) {
+  //
+  // `t` is the page's translator (#539); a reason is plain text, escaped
+  // where it is drawn.
+  static linkabilityOf(row, t) {
     const methods = row.methods || [];
     if (methods.indexOf('GET') === -1) {
       return { linkable: false,
                reason: methods.length === 1
-                 ? methods[0] + ' only'
-                 : 'no GET (' + methods.join(', ') + ')' };
+                 ? t.text('consoleStsMetadata.reason.only',
+                          { method: methods[0] })
+                 : t.text('consoleStsMetadata.reason.noGet',
+                          { methods: methods.join(', ') }) };
     }
     if (row.path.indexOf(':') !== -1) {
       const name = (/:([A-Za-z0-9_]+)/.exec(row.path) || [])[0] ||
-        'a parameter';
-      return { linkable: false, reason: 'takes ' + name };
+        t.text('consoleStsMetadata.reason.aParameter');
+      return { linkable: false,
+               reason: t.text('consoleStsMetadata.reason.takes',
+                              { name: name }) };
     }
     if (row.path.indexOf('*') !== -1) {
-      return { linkable: false, reason: 'wildcard' };
+      return { linkable: false,
+               reason: t.text('consoleStsMetadata.reason.wildcard') };
     }
     return { linkable: true, reason: '' };
   }
@@ -437,15 +419,16 @@ class StsMetadataPage {
   // without this document having to know which. They open in a new tab so the
   // index survives the click, which matters because most of these return a
   // document to read and compare against the row it came from.
-  static pathCell(row) {
-    const link = StsMetadataPage.linkabilityOf(row);
+  static pathCell(row, t) {
+    const link = StsMetadataPage.linkabilityOf(row, t);
     if (!link.linkable) {
       return '<code>' + kit.esc(row.path) + '</code> <span class="why" ' +
-             'title="This path is listed because it is registered, but it ' +
-             'cannot be followed from a browser.">' +
+             'title="' +
+             kit.esc(t.text('consoleStsMetadata.path.unfollowable')) + '">' +
              kit.esc(link.reason) + '</span>';
     }
-    const title = 'GET ' + row.path + ' in a new tab' +
+    const title = t.text('consoleStsMetadata.path.newTab',
+                         { path: row.path }) +
                   (row.effect ? ' — ' + row.effect : '');
     return '<a href="' + kit.esc(row.path) + '" target="_blank" ' +
            'rel="noopener noreferrer" title="' +
@@ -458,6 +441,8 @@ class StsMetadataPage {
 
   // Called once per table row and per protocol card, so no entering/leaving
   // pair — the exception `groupAnchor()` states.
+  // The drift flag for an unknown id stays English (#539: a problem report),
+  // so this draws no words of its own and takes no translator.
   static specLinks(ids, byId) {
     if (!ids || !ids.length) {
       return '<span class="none">&mdash;</span>';

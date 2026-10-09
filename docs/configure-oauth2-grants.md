@@ -91,11 +91,12 @@ The same registration behaves differently in the two modes (`global.mode`):
   phone offline_access`, plus the realm's OpenID4VCI scopes. This service's
   own protected scopes (`admin:*`, `scim:*`, the Shared Signals and debugger
   scopes) must be listed in **both** modes.
-* **`oauthGrantType` does not restrict an application an administrator
-  created.** The token endpoint holds a client to its `grant_types` only when
-  the client registered itself dynamically (RFC 7591). The recipes still set
-  `oauthGrantType`, because it records what the client is for and shows on
-  its page.
+* **`oauthGrantType` restricts the client, in both modes.** The token
+  endpoint refuses any grant the list does not name with `unauthorized_client`,
+  whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
+  an administrator. A client whose list omits `refresh_token` is issued no
+  refresh token. An empty list restricts nothing. What a client has actually
+  used is recorded separately, in `oauthGrantTypeObserved`.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
   each client on `/oauth2/consent` the first time. Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.

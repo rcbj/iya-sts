@@ -17,12 +17,13 @@
 // credential does.
 //
 // **ALL OF IT IN A THROWAWAY REALM OF ITS OWN**, because the suite runs jobs
-// side by side (the main, bulk and conformance lanes): `webauthn.usernameless`
+// side by side (the main, bulk and conformance lanes): the passkey policy's
+// `allowUsernameless` (#527; the setting `webauthn.usernameless` until then)
 // changes what `/authn/login` draws, and turned on in the DEFAULT realm it
-// would be on for every job loading that screen meanwhile. A realm's setting
-// is its own. The realm is left behind afterwards, as every job's is.
+// would be on for every job loading that screen meanwhile. A realm's own
+// policy is its own. The realm is left behind afterwards, as every job's is.
 //
-// The setting is off at first (G), then on for the rest:
+// It is off at first (G), then on for the rest:
 //
 //   A. the page created the credential under a minted 64-byte handle, never
 //      the username's bytes, and the person's key list says it signs in with
@@ -35,7 +36,12 @@
 //   E. one under a handle nobody holds is refused;
 //   F. the real button with the script blocked is told it needs JavaScript;
 //   G. with the setting at its default, off, nothing is drawn and the door
-//      refuses — asserted first.
+//      refuses — asserted first;
+//   H. SYNCED PASSKEYS (#528): a key whose authenticator data sets BE
+//      registers while the passkey policy's `backupEligibility` is `allow`;
+//      under `disallow` it signs nobody in (STS-AUTHN-0313, on an audit row)
+//      and a new one is not registered (STS-AUTHN-0312), each page saying
+//      why, while the device-bound key from A still signs in.
 // ===========================================================================
 
 const assert = require("assert");
@@ -173,9 +179,11 @@ function clientData(type, challenge) {
 }
 
 // Registration 0x45 (UP | UV | AT); an assertion 0x05 (UP | UV), or 0x01 —
-// user presence alone — where `uv` is false.
-function makeAuthenticator() {
+// user presence alone — where `uv` is false. `synced` (#528) adds BE and BS
+// (0x18) to both, as a passkey in a password manager sets them.
+function makeAuthenticator(synced) {
   log.debug("Entering makeAuthenticator().");
+  const backup = synced ? 0x18 : 0;
   const pair = nodeCrypto.generateKeyPairSync("ec",
                                               { namedCurve: "prime256v1" });
   const jwk = pair.publicKey.export({ format: "jwk" });
@@ -194,7 +202,7 @@ function makeAuthenticator() {
       log.debug("Entering register().");
       userHandle = handle;
       const authData = authenticatorData({
-        flags: 0x45, signCount: signCount, attested: true,
+        flags: 0x45 | backup, signCount: signCount, attested: true,
         credentialId: credentialId, cose: coseKey(jwk) });
       const length = Buffer.alloc(2);
       length.writeUInt16BE(authData.length, 0);
@@ -222,7 +230,8 @@ function makeAuthenticator() {
       const o = opts || {};
       signCount += 1;
       const authData = authenticatorData({
-        flags: o.uv === false ? 0x01 : 0x05, signCount: signCount });
+        flags: (o.uv === false ? 0x01 : 0x05) | backup,
+        signCount: signCount });
       const cdj = clientData("webauthn.get", challenge);
       const signature = nodeCrypto.sign(
         "sha256", Buffer.concat([authData, sha256(cdj)]), pair.privateKey);
@@ -503,7 +512,8 @@ async function signingInWithNoUsername(authenticator) {
 // ---------------------------------------------------------------------------
 async function offByDefault(authenticator) {
   log.debug("Entering offByDefault().");
-  log.info("=== webauthn.usernameless off, its default ===");
+  log.info("=== the passkey policy's allowUsernameless off, its default " +
+           "===");
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
     attr(s.screen.text, "challenge") || "none"));
@@ -512,10 +522,115 @@ async function offByDefault(authenticator) {
     assert.ok(!/id="wa-passkey"/.test(s.screen.text),
       "the passkey button is drawn with the setting off.");
     assert.strictEqual(r.status, 200, "it answered " + r.status);
-    assert.ok(/webauthn\.usernameless/.test(r.text),
+    assert.ok(/allowUsernameless/.test(r.text),
       String(r.text).slice(0, 300));
   });
   log.debug("Leaving offByDefault().");
+}
+
+// ---------------------------------------------------------------------------
+// H. SYNCED PASSKEYS (#528).
+// ---------------------------------------------------------------------------
+// A person made and activated with a passkey; the activation's last answer.
+async function activatedWith(person, authenticator) {
+  log.debug("Entering activatedWith().");
+  await call("POST", "/users/create", {
+    username: person, invent: false, credential: "none",
+    attributes: { cn: "Synced " + person, givenName: "Synced", sn: person,
+                  mail: person + "@passkey-nouser.test" } });
+  const issued = await call("POST", "/users/issue-activation",
+                            { username: person });
+  const url = (issued.body && (issued.body.activationLink ||
+                               (issued.body.activationUrl
+                                 ? base + issued.body.activationUrl : ""))) ||
+              "";
+  assert.ok(issued.status === 200 && url, "issuing " + person + "'s " +
+    "activation link answered " + issued.status);
+  const b = browser();
+  const setup = await b.go("GET", url);
+  const token = hidden(setup.text, "token");
+  const armed = await b.go("POST", "/portal/activate",
+    form({ user: person, token: token, key_role: "primary",
+           kind: "passkey" }));
+  const done = await b.go("POST", "/portal/activate",
+    form({ user: person, token: token, key_role: "primary", step: "key",
+           enrolment_id: hidden(armed.text, "enrolment_id"),
+           credential: JSON.stringify(authenticator.register(
+             attr(armed.text, "challenge"), attr(armed.text, "userid"))) }));
+  log.debug("Leaving activatedWith().");
+  return done;
+}
+
+async function codeCount(code) {
+  log.debug("Entering codeCount().");
+  const r = await call("GET", "/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  const body = r.body && typeof r.body === "object" ? r.body : {};
+  log.debug("Leaving codeCount().");
+  return Number(body.matched || (body.rows || body.events || []).length || 0);
+}
+
+async function syncedPasskeys(deviceBound) {
+  log.debug("Entering syncedPasskeys().");
+  log.info("=== synced passkeys and the passkey policy's backupEligibility " +
+           "(#528) ===");
+  const syncedKey = makeAuthenticator(true);
+  const person = usernameFor("passkey-synced");
+  let done = await activatedWith(person, syncedKey);
+  check("WHILE backupEligibility IS allow (the default) A SYNCED PASSKEY " +
+        "REGISTERS", function () {
+    assert.ok(done.status === 200 && /Your account is ready/.test(done.text),
+      "the activation answered " + done.status + " " +
+      String(done.text).slice(0, 300));
+  });
+  const set = await call("POST", "/policies/save-passkey-policy",
+                         { allowUsernameless: true,
+                           securityKeyResidentKey: "required",
+                           backupEligibility: "disallow",
+                           enforcePinLength: false, minPinLength: 4,
+                           pinLengthOnlyIfSupported: false,
+                           enforceAttestationAtSignIn: false,
+                           passkeyHints: "client-device,hybrid",
+                           securityKeyHints: "security-key",
+                           signInHints: "none",
+                           enterpriseSerialAttribute: "",
+                           userDisplayName: "", rpNameExtras: "none",
+                           credentialLabel: "", aggregateDevices: true });
+  assert.ok(set.status === 200 && set.body && set.body.ok !== false,
+    "disallowing synced passkeys answered " + set.status + " " +
+    String(set.raw).slice(0, 300));
+  const before = await codeCount("STS-AUTHN-0313");
+  let s = await theSignInScreen();
+  let r = await withoutAUsername(s, syncedKey.assert(
+    attr(s.screen.text, "challenge", "wa-passkey")));
+  const after = await codeCount("STS-AUTHN-0313");
+  check("UNDER disallow THE SYNCED KEY REGISTERED BEFORE SIGNS NOBODY IN: " +
+        "the screen says why, and an audit row carries STS-AUTHN-0313",
+    function () {
+      assert.strictEqual(r.status, 200, "it answered " + r.status + " " +
+                         r.location);
+      assert.ok(/device-bound passkeys/.test(r.text),
+        String(r.text).slice(0, 400));
+      assert.ok(after > before, "no new STS-AUTHN-0313 row (" + before +
+                " then " + after + ").");
+    });
+  s = await theSignInScreen();
+  r = await withoutAUsername(s, deviceBound.assert(
+    attr(s.screen.text, "challenge", "wa-passkey")));
+  check("while the device-bound key from A still signs in", function () {
+    assert.ok(r.status === 302 || r.status === 303,
+      "it answered " + r.status + " " + String(r.text).slice(0, 300));
+  });
+  done = await activatedWith(usernameFor("passkey-synced2"),
+                             makeAuthenticator(true));
+  check("AND A NEW SYNCED PASSKEY IS NOT REGISTERED (STS-AUTHN-0312), the " +
+        "page saying why", function () {
+    assert.ok(!/Your account is ready/.test(done.text),
+      "the activation finished: " + String(done.text).slice(0, 300));
+    assert.ok(/device-bound passkeys/.test(done.text),
+      String(done.text).slice(0, 400));
+  });
+  log.debug("Leaving syncedPasskeys().");
 }
 
 async function test() {
@@ -531,13 +646,26 @@ async function test() {
   await registerThePasskey(authenticator);
   // OFF FIRST, which is the default; then on, in this realm alone.
   await offByDefault(authenticator);
-  const set = await call("POST", "/config/set-many",
-                         { "webauthn.usernameless": true });
+  // #527: the realm's own passkey policy, saved whole.
+  const set = await call("POST", "/policies/save-passkey-policy",
+                         { allowUsernameless: true,
+                           securityKeyResidentKey: "required",
+                           backupEligibility: "allow",
+                           enforcePinLength: false, minPinLength: 4,
+                           pinLengthOnlyIfSupported: false,
+                           enforceAttestationAtSignIn: false,
+                           passkeyHints: "client-device,hybrid",
+                           securityKeyHints: "security-key",
+                           signInHints: "none",
+                           enterpriseSerialAttribute: "",
+                           userDisplayName: "", rpNameExtras: "none",
+                           credentialLabel: "", aggregateDevices: true });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
-    "turning webauthn.usernameless on in " + REALM + " answered " +
-    set.status + " " + String(set.raw).slice(0, 300));
+    "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
+    "answered " + set.status + " " + String(set.raw).slice(0, 300));
   await signingInWithNoUsername(authenticator);
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  await syncedPasskeys(authenticator);
+  assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -550,8 +678,9 @@ program
   .description("Register a passkey through an activation link and sign in " +
       "with it and no username (#474): the minted user handle, the screen's " +
       "button, autofill and script, the session's amr and acr, user " +
-      "verification required, an unknown handle refused, and the setting " +
-      "off by default.")
+      "verification required, an unknown handle refused, the setting " +
+      "off by default, and synced passkeys refused under the passkey " +
+      "policy's backupEligibility (#528).")
   // Accepted and ignored: run-report.js passes --url to every job.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

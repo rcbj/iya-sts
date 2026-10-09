@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>本服務的每一項設定都位於它所設定之協定的頁面上。</strong>本頁是這些設定的索引——也是那 {mine} 列不屬於任何協定之設定的表單，它們描述的是處理程序本身，而不是它所使用的任何協定。在 2026-08-27 之前，全部 {total} 項都在這裡；改變的只是它們在哪裡「顯示」，它們的作用和讀取方式都沒有改變。",
+  "fourPlaces": "一個值可能來自四個地方，這些頁面上的 <em>Source</em> 欄會說明是哪一個：在頁面上設定的執行階段覆寫、環境變數、本處理程序啟動時使用的 appconfig 檔案（<code>{configFile}</code>），或 <code>{defaultsFile}</code>——前者疊加於其上的預設 appconfig 檔案。上層優先於下層，因此在容器上設定的環境變數仍然優先於檔案——正是這一點讓現有的每個部署無須變更即可繼續運作。",
+  "noFifthPlace": "<strong>沒有第五個地方。</strong>如果某項設定在兩個 appconfig 檔案中都沒有值，也沒有環境變數，本服務會依名稱指出它並拒絕啟動，而不是退回到埋在某個模組裡的常數。因此這些頁面上的每個值都能在某個檔案中找到——這正是 <em>Source</em> 欄值得一讀的原因。",
+  "survives": "<strong>變更在重新啟動後仍會保留。</strong>",
+  "fileLeftAlone": "檔案刻意保持不變：如果服務會編輯已簽入存放庫的檔案，就會把某次測試遺忘的變更永久留在那裡。",
+  "inMemory": "<strong>變更保存在記憶體中，重新啟動後就會消失。</strong>沒有任何東西會寫入 appconfig 檔案，這是刻意的：如果服務會編輯已簽入存放庫的檔案，就會把某次測試遺忘的變更永久留在那裡。",
+  "settingsHeading": "{total} 項設定，其中 {editable} 項可在本服務執行時變更",
+  "overridesInForce": "整個服務中有 {n} 項執行階段覆寫生效：",
+  "resetAll": "全部重設",
+  "noOverrides": "本服務中沒有任何執行階段覆寫生效：每個值都來自環境或兩個 appconfig 檔案之一。",
+  "resetAllHere": "<strong>「全部重設」只在這裡，不在任何協定頁面上</strong>，因為它會清除服務中的所有覆寫，而不只是下方的那些。如果從 Kerberos 頁面就能影響到這麼遠，那它將是本主控台中唯一一個在按下之處看不到影響範圍的控制項。",
+  "whereEdited": "每項設定在哪裡編輯",
+  "wholeTable": "完整的表格，依群組排列，順序與 <code>config.js</code> 中宣告的順序一致。<em>頁面</em>欄是該群組表單顯示的位置；計數針對整個群組，<em>已覆寫</em>表示其中目前有多少項有生效的執行階段覆寫。",
+  "thGroup": "群組",
+  "thSettings": "設定",
+  "thRestartOnly": "僅重新啟動時生效",
+  "thOverridden": "已覆寫",
+  "thPage": "頁面",
+  "pagesAnd": " 和 ",
+  "overJson": "完整表格的 JSON 形式——每一項設定，無論由哪個頁面編輯——位於 <code>/admin/config?format=json</code> 和 <code>GET /admin-api/config</code>；這些頁面上的四個動作是 <code>POST /admin-api/config/set</code>、<code>/set-many</code>、<code>/reset</code> 和 <code>/reset-all</code>。"
+}

@@ -159,6 +159,19 @@ function childMain() {
       }).length;
     };
 
+    // --- 0. the seeded surfaces are DECLARED for their protocol families
+    // (appAllowedProtocol), not only sighted in them.
+    // The management API is a client_credentials client: oauth2 alone.
+    [['sts-admin-console', ['oauth2', 'oidc']],
+     ['sts-user-portal', ['oauth2', 'oidc']],
+     ['sts-management-api', ['oauth2']]].forEach(function (pair) {
+      const families = applications.declaredFamiliesOf(
+        applications.get(pair[0])).sort();
+      note(JSON.stringify(families) === JSON.stringify(pair[1]),
+           '0. ' + pair[0] + ' is seeded declared for ' + pair[1].join(' and '),
+           JSON.stringify(families));
+    });
+
     // --- 1. as seeded: confidential, and nothing changed --------------------
     const seeded = applications.clientConfigOf(CONSOLE) || {};
     const unbound = await mintFor();
@@ -175,8 +188,9 @@ function childMain() {
          r.text.slice(0, 160));
 
     // --- declared public, in this child alone --------------------------------
-    // Through its registration document, which is where a seeded surface's
-    // method and grant types are held (`applications.registeredFlowsOf()`).
+    // Through its registration document, which writes a seeded surface's
+    // method and the grant types it is held to
+    // (`applications.declaredFlowsOf()`, #289).
     const document = Object.assign({}, applications.registrationOf(CONSOLE), {
       token_endpoint_auth_method: 'none',
       grant_types: ['authorization_code', 'refresh_token', 'password'] });
@@ -193,7 +207,7 @@ function childMain() {
          'precondition: the console\'s entry now declares a public client',
          !!made + ' ' + JSON.stringify((dropped || {}).errors || 'removed') +
          ' ' + JSON.stringify(declared.token_endpoint_auth_methods) + ' ' +
-         JSON.stringify(applications.registeredFlowsOf(CONSOLE)));
+         JSON.stringify(applications.declaredFlowsOf(CONSOLE)));
 
     // --- 2. no proof ---------------------------------------------------------
     let before = coded('STS-OAUTH-0943');

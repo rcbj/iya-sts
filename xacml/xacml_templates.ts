@@ -398,6 +398,83 @@ const TRANSFER_ATTRIBUTE = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PASSKEY QUESTIONS (#536). The passkey policy (#527-#535, Directory ->
+// Policies) is where a realm CONFIGURES how its passkeys behave; whether a
+// given passkey may be registered or may sign somebody in is DECIDED here,
+// by rcbj's rule that every authorization decision is a rule of the issuance
+// policy. `common/passkey_policy.ts` gathers the facts — the key's BE flag,
+// the minimum PIN length it reported, the device serial its attestation
+// named and whether the person holds it, what its recorded attestation and
+// the FIDO Metadata Service say — and the selected profile's rows, and asks:
+//
+//   * REGISTER_ACTION when `credentials.addKey()` is about to write a key;
+//   * USE_ACTION when a passkey has answered a sign-in (at the session's
+//     start, and at the two assertion doors for the attestation rules).
+//
+// The answer's passkey obligation carries VERDICT (`allow` / `refuse`), CODE
+// (the error code the door records — STS-AUTHN-0312 to 0317, 0320, 0321, the
+// codes those refusals had as code) and REASON (which rule, so the door
+// says the sentence it always said). A question carries only the facts one
+// door has, named in `urn:sts:xacml:passkey:facts`, and each rule fires only
+// on a question carrying its group. A document that answers without the
+// obligation — an override built before these rules — has not decided, and
+// the BUILT-IN rules are asked instead, so a rebuilt policy never silently
+// stops refusing.
+// ---------------------------------------------------------------------------
+/**
+ * The action-ids, attribute identifiers and obligation of the two passkey
+ * questions (#536).
+ */
+const PASSKEY_ATTRIBUTE = {
+  REGISTER_ACTION: 'register-passkey',
+  USE_ACTION: 'use-passkey',
+  FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
+  BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
+  MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
+  SERIAL: xacmlRequest.VOCABULARY.PASSKEY_SERIAL,
+  SERIAL_HELD: xacmlRequest.VOCABULARY.PASSKEY_SERIAL_HELD,
+  ATTESTATION_TRUSTED: xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_TRUSTED,
+  AAGUID: xacmlRequest.VOCABULARY.PASSKEY_AAGUID,
+  MODEL_LISTED: xacmlRequest.VOCABULARY.PASSKEY_MODEL_LISTED,
+  MODEL_COMPROMISED: xacmlRequest.VOCABULARY.PASSKEY_MODEL_COMPROMISED,
+  CERTIFICATION_RANK: xacmlRequest.VOCABULARY.PASSKEY_CERTIFICATION_RANK,
+  FIPS: xacmlRequest.VOCABULARY.PASSKEY_FIPS,
+  METADATA_UNCHECKED: xacmlRequest.VOCABULARY.PASSKEY_METADATA_UNCHECKED,
+  REQUIRED_RANK: xacmlRequest.VOCABULARY.PASSKEY_REQUIRED_RANK,
+  POLICY_PREFIX: xacmlRequest.VOCABULARY.PASSKEY_POLICY_PREFIX,
+  ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                      'webauthn.attestationPolicy',
+  ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                   'webauthn.attestationAllowedAaguids',
+  REQUIRE_FIPS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
+                'webauthn.attestationRequireFips',
+  OBLIGATION: 'urn:sts:xacml:obligation:passkey',
+  VERDICT: 'urn:sts:xacml:passkey-verdict',
+  CODE: 'urn:sts:xacml:passkey-code',
+  REASON: 'urn:sts:xacml:passkey-reason',
+  VERDICTS: ['allow', 'refuse'],
+  // The fact groups a question may carry.
+  GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation'],
+  // The reasons the built-in rules give, and the code each records, per
+  // action. A door words its refusal by the reason.
+  REASONS: {
+    'backup-eligible': { register: 'STS-AUTHN-0312', use: 'STS-AUTHN-0313' },
+    'pin-length': { register: 'STS-AUTHN-0314', use: 'STS-AUTHN-0315' },
+    'serial-missing': { register: 'STS-AUTHN-0321', use: '' },
+    'serial-not-held': { register: 'STS-AUTHN-0320', use: '' },
+    'attestation-unchecked': { register: '', use: 'STS-AUTHN-0317' },
+    'attestation-compromised': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-untrusted': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-aaguid': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-unlisted': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
+    'attestation-fips': { register: '', use: 'STS-AUTHN-0316' }
+  } as Record<string, { register: string; use: string }>,
+  // The certification levels in rank order, `none` first.
+  LEVELS: ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus']
+};
+
+// ---------------------------------------------------------------------------
 // WHO MAY ACT FOR WHOM, AND AS WHAT (#186). Two questions, asked by
 // `common/delegation_policy.ts` through `issuance_gate.checkExchange()` for
 // an RFC 8693 token exchange, a WS-Trust OnBehalfOf / ActAs and a Kerberos
@@ -1002,6 +1079,26 @@ const TEMPLATES: TemplateRow[] = [
               'the cell then asks the BUILT-IN policy instead, so the ' +
               'strict default is never switched off by rebuilding this ' +
               'document.' },
+      { name: 'decidePasskeys',
+        label: 'Decide which passkeys may be registered and used (#536)',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. When yes, the policy answers the two questions ' +
+              'a passkey is asked under the selected passkey policy: ' +
+              'register-passkey (refused when the realm takes only ' +
+              'device-bound passkeys and the key is backup eligible, when ' +
+              'it reports a minimum PIN shorter than the policy\'s or none ' +
+              'where one is required, or when the policy binds security ' +
+              'keys to the serials on the person\'s entry and the ' +
+              'attestation names none of theirs) and use-passkey (the same ' +
+              'backup-eligible and PIN rules at sign-in, and — while the ' +
+              'policy holds sign-ins to attestation — a model the FIDO ' +
+              'Metadata Service reports compromised, an untrusted ' +
+              'statement where trust is demanded, an AAGUID off the list, ' +
+              'a certification level or FIPS certification not met, or ' +
+              'metadata that could not be read). No leaves the rules out — ' +
+              'and the passkey doors then ask the BUILT-IN policy instead, ' +
+              'so the rules are never switched off by rebuilding this ' +
+              'document.' },
       { name: 'decideExchanges',
         label: 'Decide who may act for whom (#186)',
         dflt: 'yes', type: 'string',
@@ -1144,6 +1241,7 @@ const TEMPLATES: TemplateRow[] = [
       const decideScopes = B.yes(given.decideScopes, true);
       const decideGnapRights = B.yes(given.decideGnapRights, true);
       const decideTransfers = B.yes(given.decideTransfers, true);
+      const decidePasskeys = B.yes(given.decidePasskeys, true);
       const decideExchanges = B.yes(given.decideExchanges, true);
       const deviceExempt = B.listOf(given.deviceExempt === undefined
         ? 'sts-admin-console, sts-user-portal' : given.deviceExempt)
@@ -2109,6 +2207,215 @@ const TEMPLATES: TemplateRow[] = [
           advice: [] }] : [];
 
       // -------------------------------------------------------------------
+      // THE PASSKEY QUESTIONS (#536): `register-passkey` and `use-passkey`,
+      // each rule targeted at its action-id and firing only on a question
+      // that carries its fact group. See PASSKEY_ATTRIBUTE. In the order the
+      // passkey policy's refusals were asked as code — backup eligibility,
+      // the PIN length, the serial; and at sign-in the attestation rules in
+      // signInVerdict()'s order — so the first Deny is the refusal a person
+      // was always shown. Every Deny carries the code and the reason; one
+      // Permit per action carries `allow`.
+      // -------------------------------------------------------------------
+      const PK = PASSKEY_ATTRIBUTE;
+      const pkVerdict = function (on: string, value: string, code: string,
+                                  reason: string): any[] {
+        log.debug("Entering pkVerdict().");
+        const text = function (id: string, v: string): any {
+          log.debug("Entering text().");
+          log.debug("Leaving text().");
+          return { attributeId: id, category: null, issuer: null,
+                   expression: B.value(TYPE.STRING, v) };
+        };
+        const assignments = [text(PK.VERDICT, value)];
+        if (code) {
+          assignments.push(text(PK.CODE, code));
+        }
+        if (reason) {
+          assignments.push(text(PK.REASON, reason));
+        }
+        log.debug("Leaving pkVerdict().");
+        return [{ id: PK.OBLIGATION, on: on, assignments: assignments }];
+      };
+      const carries = function (group: string): any {
+        log.debug("Entering carries().");
+        log.debug("Leaving carries().");
+        return stringIs(env, PK.FACTS, group);
+      };
+      const pkSetting = function (row: string): string {
+        log.debug("Entering pkSetting().");
+        log.debug("Leaving pkSetting().");
+        return PK.POLICY_PREFIX + row;
+      };
+      const sizeIs = function (bagFn: string, bag: any, op: string): any {
+        log.debug("Entering sizeIs().");
+        log.debug("Leaving sizeIs().");
+        return B.apply(F1 + op, [B.apply(F1 + bagFn, [bag]),
+                                 B.value(TYPE.INTEGER, '0')]);
+      };
+      const intBag = function (category: string, id: string): any {
+        log.debug("Entering intBag().");
+        log.debug("Leaving intBag().");
+        return B.designator(category, id, TYPE.INTEGER);
+      };
+      const strBag = function (category: string, id: string): any {
+        log.debug("Entering strBag().");
+        log.debug("Leaving strBag().");
+        return B.designator(category, id, TYPE.STRING);
+      };
+      // An integer fact below another: false over an empty bag on either
+      // side, so an absent fact never compares.
+      const below = function (left: any, right: any): any {
+        log.debug("Entering below().");
+        log.debug("Leaving below().");
+        return B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'integer-less-than' },
+          left, right]);
+      };
+      const anyOf = function (args: any[]): any {
+        log.debug("Entering anyOf().");
+        log.debug("Leaving anyOf().");
+        return B.apply(F1 + 'or', args);
+      };
+      const R2 = model.CATEGORY.RESOURCE;
+      const reportedPin = intBag(R2, PK.MIN_PIN_LENGTH);
+      const aaguidList = strBag(env, PK.ALLOWED_AAGUIDS);
+      const requiredRank = intBag(env, PK.REQUIRED_RANK);
+      const serialBound = sizeIs('string-bag-size',
+                                 strBag(env,
+                                        pkSetting('enterpriseSerialAttribute')),
+                                 'integer-greater-than');
+      // Every setting that demands a TRUSTED statement (webauthn_policy.ts's
+      // `demandsTrust`, as a rule): require-trusted, an AAGUID list, a
+      // certification level, FIPS, or serials bound to the person.
+      const demandsTrust = anyOf([
+        stringIs(env, PK.ATTESTATION_POLICY, 'require-trusted'),
+        sizeIs('string-bag-size', aaguidList, 'integer-greater-than'),
+        sizeIs('integer-bag-size', requiredRank, 'integer-greater-than'),
+        fact(env, PK.REQUIRE_FIPS, true),
+        serialBound]);
+      // The attestation rules apply only while the passkey policy holds
+      // sign-ins to them, and only while the attestation policy is not off or
+      // something still demands trust — signInVerdict()'s early answer.
+      const attestationHeld = and([
+        carries('attestation'),
+        fact(env, pkSetting('enforceAttestationAtSignIn'), true),
+        anyOf([not(stringIs(env, PK.ATTESTATION_POLICY, 'off')),
+               demandsTrust])]);
+      const levelDemanded = anyOf([
+        sizeIs('integer-bag-size', requiredRank, 'integer-greater-than'),
+        fact(env, PK.REQUIRE_FIPS, true)]);
+      const pkRule = function (action: string, reason: string,
+                               description: string, condition: any): any {
+        log.debug("Entering pkRule().");
+        const stage = action === PK.REGISTER_ACTION ? 'register' : 'use';
+        const code = (PK.REASONS[reason] || { register: '', use: '' })[stage];
+        log.debug("Leaving pkRule().");
+        return { id: options.idBase + ':rule:passkey-' + stage + '-' + reason,
+                 effect: model.EFFECT.DENY, description: description,
+                 target: actionIs(action), condition: condition,
+                 obligations: pkVerdict(model.EFFECT.DENY, 'refuse', code,
+                                        reason),
+                 advice: [] };
+      };
+      const backupRule = function (action: string): any {
+        log.debug("Entering backupRule().");
+        log.debug("Leaving backupRule().");
+        return pkRule(action, 'backup-eligible',
+          'Refuse a passkey whose authenticator set the backup-eligible ' +
+          'flag where the passkey policy takes only device-bound ones ' +
+          '(backupEligibility disallow, #528).',
+          and([carries('backup-eligible'),
+               fact(R2, PK.BACKUP_ELIGIBLE, true),
+               stringIs(env, pkSetting('backupEligibility'), 'disallow')]));
+      };
+      const pinRule = function (action: string): any {
+        log.debug("Entering pinRule().");
+        log.debug("Leaving pinRule().");
+        return pkRule(action, 'pin-length',
+          'Refuse a passkey whose reported minimum PIN length is below the ' +
+          'passkey policy\'s, or that reported none unless the policy ' +
+          'accepts that (enforcePinLength, minPinLength, ' +
+          'pinLengthOnlyIfSupported, #529).',
+          and([carries('pin-length'),
+               fact(env, pkSetting('enforcePinLength'), true),
+               anyOf([
+                 and([sizeIs('integer-bag-size', reportedPin,
+                             'integer-equal'),
+                      not(fact(env, pkSetting('pinLengthOnlyIfSupported'),
+                               true))]),
+                 below(reportedPin,
+                       intBag(env, pkSetting('minPinLength')))])]));
+      };
+      const passkeyRules: any[] = decidePasskeys ? [
+        backupRule(PK.REGISTER_ACTION),
+        pinRule(PK.REGISTER_ACTION),
+        pkRule(PK.REGISTER_ACTION, 'serial-missing',
+          'Where the passkey policy binds security keys to the serials on ' +
+          'the person\'s entry (enterpriseSerialAttribute, #532), refuse a ' +
+          'key whose attestation names no serial.',
+          and([carries('serial'), serialBound,
+               sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
+                      'integer-equal')])),
+        pkRule(PK.REGISTER_ACTION, 'serial-not-held',
+          'And refuse one whose serial is not one of the person\'s.',
+          and([carries('serial'), serialBound,
+               sizeIs('string-bag-size', strBag(R2, PK.SERIAL),
+                      'integer-greater-than'),
+               not(fact(R2, PK.SERIAL_HELD, true))])),
+        { id: options.idBase + ':rule:passkey-register-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Register every other passkey.',
+          target: actionIs(PK.REGISTER_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] },
+        backupRule(PK.USE_ACTION),
+        pinRule(PK.USE_ACTION),
+        pkRule(PK.USE_ACTION, 'attestation-unchecked',
+          'While the passkey policy holds sign-ins to the attestation rules ' +
+          '(enforceAttestationAtSignIn, #530), refuse a passkey whose model ' +
+          'the FIDO Metadata Service could not be asked about: an unchecked ' +
+          'key is not a checked one.',
+          and([attestationHeld, fact(R2, PK.METADATA_UNCHECKED, true)])),
+        pkRule(PK.USE_ACTION, 'attestation-compromised',
+          'And one whose model the FIDO Metadata Service now reports ' +
+          'compromised.',
+          and([attestationHeld, fact(R2, PK.MODEL_COMPROMISED, true)])),
+        pkRule(PK.USE_ACTION, 'attestation-untrusted',
+          'And one registered without a trusted attestation where a ' +
+          'setting demands trust.',
+          and([attestationHeld, demandsTrust,
+               not(fact(R2, PK.ATTESTATION_TRUSTED, true))])),
+        pkRule(PK.USE_ACTION, 'attestation-aaguid',
+          'And one whose model is not on webauthn.attestationAllowedAaguids.',
+          and([attestationHeld,
+               sizeIs('string-bag-size', aaguidList, 'integer-greater-than'),
+               not(B.apply(F3 + 'any-of-any', [
+                 { kind: 'function', functionId: F1 + 'string-equal' },
+                 strBag(R2, PK.AAGUID), aaguidList]))])),
+        pkRule(PK.USE_ACTION, 'attestation-unlisted',
+          'And one whose model the metadata service does not list, where a ' +
+          'certification level or FIPS is required.',
+          and([attestationHeld, levelDemanded,
+               not(fact(R2, PK.MODEL_LISTED, true))])),
+        pkRule(PK.USE_ACTION, 'attestation-level',
+          'And one whose model is certified below ' +
+          'webauthn.attestationMinCertificationLevel.',
+          and([attestationHeld,
+               below(intBag(R2, PK.CERTIFICATION_RANK), requiredRank)])),
+        pkRule(PK.USE_ACTION, 'attestation-fips',
+          'And one whose model holds no FIPS 140 certification where ' +
+          'webauthn.attestationRequireFips is on.',
+          and([attestationHeld, fact(env, PK.REQUIRE_FIPS, true),
+               fact(R2, PK.MODEL_LISTED, true),
+               not(fact(R2, PK.FIPS, true))])),
+        { id: options.idBase + ':rule:passkey-use-allowed',
+          effect: model.EFFECT.PERMIT,
+          description: 'Let every other passkey sign somebody in.',
+          target: actionIs(PK.USE_ACTION), condition: null,
+          obligations: pkVerdict(model.EFFECT.PERMIT, 'allow', '', ''),
+          advice: [] }] : [];
+
+      // -------------------------------------------------------------------
       // WHO MAY ACT FOR WHOM (#186): the two exchange questions, each
       // targeted at its action-id. See EXCHANGE_ATTRIBUTE. Every fact test
       // is false over an empty bag, so an absent party never compares equal
@@ -2493,6 +2800,15 @@ const TEMPLATES: TemplateRow[] = [
                           'and another cell\'s residents are released to a ' +
                           'reader here only on the same terms.'
                         : '') +
+                     (decidePasskeys
+                        ? ' AND WHICH PASSKEYS MAY BE REGISTERED AND SIGN ' +
+                          'SOMEBODY IN (#536), under the selected passkey ' +
+                          'policy: backup eligibility, the minimum PIN ' +
+                          'length, a security key\'s serial bound to the ' +
+                          'person, and — where the policy holds sign-ins to ' +
+                          'them — the attestation rules against the FIDO ' +
+                          'Metadata Service as it is now.'
+                        : '') +
                      (decideExchanges
                         ? ' AND WHO MAY ACT FOR WHOM (#186), at an RFC 8693 ' +
                           'token exchange, a WS-Trust OnBehalfOf / ActAs and ' +
@@ -2506,6 +2822,7 @@ const TEMPLATES: TemplateRow[] = [
         combiningAlgId: decideRisk || refuseEmail || decideDevices ||
                         decideProtocols || decideMechanisms || decideMfa ||
                         decideScopes || decideTransfers ||
+                        decidePasskeys ||
                         decideExchanges || decideGnapRights
           ? model.RULE_ALG.ORDERED_DENY_OVERRIDES
           : model.RULE_ALG.DENY_UNLESS_PERMIT,
@@ -2523,6 +2840,7 @@ const TEMPLATES: TemplateRow[] = [
           .concat(scopeRules)
           .concat(gnapRightRules)
           .concat(transferRules)
+          .concat(passkeyRules)
           .concat(exchangeRules)
           .concat(decideRisk &&
                                                      protectedApp ? [{
@@ -3611,6 +3929,7 @@ class XacmlTemplates {
    * The transfer questions' action-ids and attribute identifiers (#98).
    */
   static readonly TRANSFER_ATTRIBUTE = TRANSFER_ATTRIBUTE;
+  static readonly PASSKEY_ATTRIBUTE = PASSKEY_ATTRIBUTE;
   static readonly EXCHANGE_ATTRIBUTE = EXCHANGE_ATTRIBUTE;
   /**
    * The risk-response action-ids.
@@ -3787,6 +4106,7 @@ export = {
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
+  PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,
   EXCHANGE_ATTRIBUTE: XacmlTemplates.EXCHANGE_ATTRIBUTE,
   RISK_RESPONSE: XacmlTemplates.RISK_RESPONSE,
   SIGNAL_ATTRIBUTE: XacmlTemplates.SIGNAL_ATTRIBUTE,

@@ -109,6 +109,11 @@ import audit = require('./audit');
 import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import MailTemplates = require('./mail_templates');
+// #539: the realm's default language. A leaf over the directory slot.
+import localePolicy = require('./locale_policy');
+// #539: a value given as a message or an instant is put into words in the
+// recipient's language (`resolveValues()`). A leaf: it requires nothing here.
+import i18n = require('./i18n');
 import mailTransports = require('./mail_transports');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -778,9 +783,17 @@ class Mail {
   // -------------------------------------------------------------------------
   // A REALM'S TEMPLATES
   // -------------------------------------------------------------------------
+  // #539: for each language in order, the realm's own wording, then the
+  // BUILT-IN TRANSLATION along that language's catalog chain — and before
+  // the built-in, the realm's own wording under any tag of that chain, so a
+  // realm that wrote `fr` still wins over the built-in French for a person
+  // who asked for `fr-CA` (a realm's words in a language always beat ours in
+  // it). `zh-tw` reaches `zh-Hant` here and never `zh`, which `languageOrder()`
+  // puts after it and which would be Simplified.
   /**
-   * Chooses the wording of a message: the realm's own in the first language it
-   * has, else the built-in English.
+   * Chooses the wording of a message: for each language in order, the realm's
+   * own, then the built-in translation in that language; else the built-in
+   * English.
    *
    * @param id - the message's id
    * @param languages - the languages to try, best first
@@ -800,6 +813,22 @@ class Mail {
       if (held) {
         log.debug("Leaving Mail.templateFor(). The realm's, " + languages[i]);
         return { spec: spec, parts: held, lang: languages[i], own: true };
+      }
+      const translated = MailTemplates.builtInFor(id, languages[i]);
+      if (translated) {
+        const chain = MailTemplates.chainFor(languages[i]);
+        for (let j = 0; j < chain.length; j++) {
+          const tag = chain[j].toLowerCase();
+          const ownInChain = own.get(id + ':' + tag);
+          if (ownInChain) {
+            log.debug("Leaving Mail.templateFor(). The realm's, " + tag);
+            return { spec: spec, parts: ownInChain, lang: tag, own: true };
+          }
+        }
+        log.debug("Leaving Mail.templateFor(). Built-in, " +
+                  translated.lang);
+        return { spec: spec, parts: translated.parts,
+                 lang: translated.lang, own: false };
       }
       if (languages[i] === 'en') {
         log.debug("Leaving Mail.templateFor(). Built-in.");
@@ -828,9 +857,12 @@ class Mail {
           langs.push(String(key).slice(at + 1));
         }
       });
+      // #539: the catalog tags with a built-in translation, beside the
+      // languages the realm has its own wording in.
       return { id: spec.id, title: spec.title, category: spec.category,
                values: MailTemplates.COMMON.concat(spec.values),
-               links: spec.links, languages: langs.sort() };
+               links: spec.links, languages: langs.sort(),
+               builtInLanguages: MailTemplates.builtInLanguages(spec.id) };
     });
     log.debug("Leaving Mail.listTemplates().");
     return out;
@@ -1214,6 +1246,106 @@ class Mail {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // VALUES THAT FOLLOW THE RECIPIENT'S LANGUAGE (#539). A caller that knows
+  // only what it wants said — "an administrator", an instant — cannot know
+  // the language: that is chosen per RECIPIENT, in `queueOne()`, and an
+  // administrator alert goes to several people in several. So such a value
+  // is handed over unresolved:
+  //
+  //   { i18n: 'mailValues.<key>', params: {...} }   a message of the
+  //       `mailValues` namespace (common/locales/mailValues/), ICU as every
+  //       other; only that namespace, so a caller cannot reach a page's words
+  //   { date: <ms or ISO> }                         an instant, in UTC with
+  //       the zone named (`Translator.date()`)
+  //
+  // Anything else is DATA (a name, an address, a username, a refusal's own
+  // English reason) and is left exactly as it was. A message's params are
+  // data too, put in as strings. A value that cannot be resolved renders
+  // empty rather than as `[object Object]`.
+  // -------------------------------------------------------------------------
+  /**
+   * Resolves every value given as a message or an instant into words in one
+   * language; every other value is left as it was.
+   *
+   * @param given - the caller's values
+   * @param lang - the language the template was chosen in, or a list,
+   * best first, ending with it
+   * @returns a new object of the values, each message and instant a string
+   */
+  resolveValues(given: Json, lang: string | string[]): Json {
+    const { log } = this.deps;
+    const langs = (Array.isArray(lang) ? lang : [lang])
+      .map(function (one: unknown): string {
+        return String(one || '');
+      }).filter(Boolean);
+    log.debug("Entering Mail.resolveValues(). " + langs.join(' '));
+    const out: Json = {};
+    let t: Json = null;
+    const translator = function (): Json {
+      log.debug("Entering translator().");
+      if (!t) {
+        t = i18n.translator(langs.length ? langs : ['en'], 'en');
+      }
+      log.debug("Leaving translator().");
+      return t;
+    };
+    Object.keys(given || {}).forEach(function (name: string): void {
+      const v = given[name];
+      if (!v || typeof v !== 'object' || Array.isArray(v)) {
+        out[name] = v;
+        return;
+      }
+      try {
+        if (typeof v.i18n === 'string' && /^mailValues\.[A-Za-z0-9_.-]+$/
+          .test(v.i18n)) {
+          const params: Json = {};
+          Object.keys(v.params || {}).forEach(function (p: string): void {
+            const one = v.params[p];
+            params[p] = one == null ? '' : one;
+          });
+          // `text()` strips anything shaped like a tag from the WHOLE
+          // result, parameters included, so a name such as `<b>x</b>` would
+          // lose characters. `mailValues` messages carry no markup, so the
+          // HTML form — the message as written, each parameter escaped — is
+          // taken and its escaping undone: the parameter arrives exactly as
+          // given, and the renderer escapes the whole value once.
+          out[name] = Mail.unescapeHtml(translator().html(v.i18n, params));
+        } else if (Object.prototype.hasOwnProperty.call(v, 'date') &&
+                   (typeof v.date === 'number' ||
+                    typeof v.date === 'string')) {
+          out[name] = translator().date(v.date);
+        } else {
+          out[name] = '';
+        }
+      } catch (e) {
+        log.debug("Caught in Mail.resolveValues(): " +
+                  ((e && e.message) || e));
+        // A value that cannot be put into words renders empty: the message
+        // still goes, and a fragment of JSON in it would be worse.
+        out[name] = '';
+      }
+    });
+    log.debug("Leaving Mail.resolveValues().");
+    return out;
+  }
+
+  // The inverse of `Html.esc()` (and `I18n.esc()`), `&amp;` last so that
+  // an escaped `&lt;` in the original is not undone twice.
+  /**
+   * Undoes HTML escaping of the five characters `Html.esc()` escapes.
+   *
+   * @param value - escaped text
+   * @returns the text as it was before escaping
+   */
+  static unescapeHtml(value: string): string {
+    helpers.log.debug("Entering Mail.unescapeHtml().");
+    helpers.log.debug("Leaving Mail.unescapeHtml().");
+    return String(value == null ? '' : value)
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  }
+
   // One recipient: every check, then the row. `former` is
   // `sendToFormerAddress()`'s address, and only that.
   private queueOne(req: SendRequest, spec: Json, username: string,
@@ -1274,10 +1406,26 @@ class Mail {
         this.setting('mail.rateWindowS') + ' seconds, the ceiling ' +
         '(mail.ratePerRecipient, mail.ratePerCategory)') };
     }
+    // The recipient's own language, then the realm's locale policy (#539),
+    // which replaced `mail.defaultLanguage`: one default for pages and mail.
     const languages = MailTemplates.languageOrder(who.language,
-      String(this.setting('mail.defaultLanguage') || 'en'));
+      String(localePolicy.defaultLocaleFor('') || 'en'));
     const chosen = this.templateFor(spec.id, languages);
-    const values: Json = Object.assign({}, req.values || {});
+    // #539: a value a caller gave as a message (`{ i18n }`) or an instant
+    // (`{ date }`) becomes words HERE, in the language the template was
+    // chosen in, and only then reaches the renderer — which escapes it as
+    // it escapes every other value. What the outbox row keeps is the
+    // rendered message, so the console shows what was sent.
+    // The recipient's own first preference leads when it is a form of the
+    // chosen language — `fr-CA` for a message chosen in `fr` — so a value
+    // reads that region's overlay and its date is written the way that
+    // region writes one; otherwise the chosen language alone.
+    const top = String(languages[0] || '');
+    const valueLangs = top && chosen.lang &&
+      top.split('-')[0].toLowerCase() ===
+        String(chosen.lang).split('-')[0].toLowerCase()
+      ? [top, chosen.lang] : [chosen.lang];
+    const values: Json = this.resolveValues(req.values || {}, valueLangs);
     values.realm = String((realms.current() && realms.current().name) ||
                           realmId);
     values.service = values.service ||
@@ -1298,9 +1446,12 @@ class Mail {
     const layout = this.templateFor(MailTemplates.LAYOUT_ID,
                                     [chosen.lang].concat(languages));
     const body = MailTemplates.render(chosen.parts, values);
+    // #539: the reason in the language the LAYOUT went out in, so the
+    // sentence that carries it is in one language.
     const rendered = layout
       ? MailTemplates.wrap(layout.parts, body, Object.assign({}, values, {
-          reason: cat2 ? cat2.reason : 'a message from this service'
+          reason: cat2 ? MailTemplates.reasonFor(cat2.id, layout.lang)
+            : 'a message from this service'
         }))
       : body;
     const at = now();

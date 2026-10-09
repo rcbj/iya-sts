@@ -88,6 +88,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalKerberosDeps {
@@ -127,123 +130,122 @@ class PortalKerberosPage {
                made: Json): string {
     const { log, shell } = this.ctx;
     log.debug("Entering PortalKerberosPage.page().");
+    const t = this.ctx.translatorFor(session);
     const who = String(session.user.username);
     const state = this.deps.personKeys().personKerberosState(who);
     const cards: string[] = [];
     if (made) {
-      cards.push(this.keytabCard(made));
+      cards.push(this.keytabCard(made, t));
     }
-    cards.push(this.stateCard(state));
+    cards.push(this.stateCard(state, t));
     if (state.kdc && state.person) {
-      cards.push(this.formCard(session, state));
+      cards.push(this.formCard(session, state, t));
     }
     log.debug("Leaving PortalKerberosPage.page().");
     return shell(this.PATH, session, message, error, cards.join(''));
   }
 
-  private stateCard(state: Json): string {
+  private stateCard(state: Json, t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalKerberosPage.stateCard().");
+    const heading = '<h2>' + t.html('portalKerberos.principalHeading') +
+      '</h2>';
     if (!state.kdc) {
       log.debug("Leaving PortalKerberosPage.stateCard(). No KDC.");
-      return '<div class="card"><h2>Your Kerberos principal</h2><p ' +
-        'class="sub">This part of the service has no Kerberos realm, so you ' +
-        'have no Kerberos principal here and there is no keytab to make.' +
-        '</p></div>';
+      return '<div class="card">' + heading + '<p class="sub">' +
+        t.html('portalKerberos.noKdc') + '</p></div>';
     }
     if (!state.person) {
       log.debug("Leaving PortalKerberosPage.stateCard(). Not a principal.");
-      return '<div class="card"><h2>Your Kerberos principal</h2><p ' +
-        'class="sub">Your account is not in this realm\'s directory, so it ' +
-        'is not a Kerberos principal here.</p></div>';
+      return '<div class="card">' + heading + '<p class="sub">' +
+        t.html('portalKerberos.notPrincipal') + '</p></div>';
     }
     const keys = state.keys;
-    const rows = '<tr><th>Principal</th><td><code>' + esc(state.principal) +
+    const rows = '<tr><th>' + t.html('portalKerberos.principal') +
+      '</th><td><code>' + esc(state.principal) +
       '</code></td></tr>' +
       (state.productKdc
-        ? '<tr><th>Key version (kvno)</th><td>' + (keys && keys.kvno != null
+        ? '<tr><th>' + t.html('portalKerberos.kvno') + '</th><td>' +
+          (keys && keys.kvno != null
             ? esc(String(keys.kvno)) + (keys.current ? ''
-                : ' — not from your current password yet; signing in once ' +
-                  'derives new keys')
-            : 'none yet — signing in once with your password derives ' +
-              'them') + '</td></tr>' +
-          '<tr><th>Encryption types</th><td>' + (keys
+                : t.html('portalKerberos.kvnoNotCurrent'))
+            : t.html('portalKerberos.kvnoNone')) + '</td></tr>' +
+          '<tr><th>' + t.html('portalKerberos.etypes') + '</th><td>' + (keys
             ? keys.etypes.map(function (one: Json) {
                 return '<code>' + esc(one.name) + '</code>';
               }).join(' ')
             : '—') + '</td></tr>'
-        : '<tr><th>Keys</th><td>This service is in development mode: its ' +
-          'KDC keys every user from one shared development password, not ' +
-          'from yours.</td></tr>') +
+        : '<tr><th>' + t.html('portalKerberos.keys') + '</th><td>' +
+          t.html('portalKerberos.devKeys') + '</td></tr>') +
       (state.disabled
-        ? '<tr><th>Account</th><td><strong>disabled</strong> — Kerberos ' +
-          'refuses it</td></tr>'
+        ? '<tr><th>' + t.html('portalKerberos.account') + '</th><td>' +
+          t.html('portalKerberos.disabled') + '</td></tr>'
         : '');
     log.debug("Leaving PortalKerberosPage.stateCard().");
-    return '<div class="card"><h2>Your Kerberos principal</h2>' +
+    return '<div class="card">' + heading +
       '<table>' + rows + '</table>' +
-      '<p class="note">Your keys come from your password: changing your ' +
-      'password moves the key version up by one and ends every keytab made ' +
-      'from the old one.</p></div>';
+      '<p class="note">' + t.html('portalKerberos.keysNote') + '</p></div>';
   }
 
-  private formCard(session: Json, state: Json): string {
-    const { log, esc, websecurity } = this.ctx;
+  private formCard(session: Json, state: Json, t: Json): string {
+    const { log, websecurity } = this.ctx;
     log.debug("Entering PortalKerberosPage.formCard().");
     if (state.disabled) {
       log.debug("Leaving PortalKerberosPage.formCard(). Disabled.");
-      return '<div class="card"><h2>Download a keytab</h2><p class="sub">' +
-        'Your account is disabled, so a keytab could not sign you in.</p>' +
-        '</div>';
+      return '<div class="card"><h2>' +
+        t.html('portalKerberos.downloadHeading') + '</h2><p class="sub">' +
+        t.html('portalKerberos.disabledNoKeytab') + '</p></div>';
     }
     log.debug("Leaving PortalKerberosPage.formCard().");
-    return '<div class="card"><h2>Download a keytab</h2>' +
-      '<p class="sub">A keytab lets a program sign in to Kerberos as you ' +
-      'without typing your password — <code>kinit -k -t &lt;file&gt; ' +
-      esc(state.principal) + '</code>. <strong>Anybody who has the file ' +
-      'can sign in as you</strong>, exactly as with your password: keep it ' +
-      'readable by you alone.</p>' +
+    // The command is a parameter (#539): it holds the principal, which is
+    // data, and `<file>`, which the parameter's escaping writes as text.
+    return '<div class="card"><h2>' +
+      t.html('portalKerberos.downloadHeading') + '</h2>' +
+      '<p class="sub">' + t.html('portalKerberos.downloadSub',
+        { command: 'kinit -k -t <file> ' + state.principal }) + '</p>' +
       '<form method="post" action="' + this.PATH + '">' +
       websecurity.field(session.id) +
       '<input type="hidden" name="action" value="keytab">' +
-      '<p><label>Your current password <input type="password" ' +
+      '<p><label>' + t.html('portalKerberos.currentPassword') +
+      ' <input type="password" ' +
       'name="current" autocomplete="current-password" required></label></p>' +
-      '<p><button type="submit">Make and download a keytab</button></p>' +
+      '<p><button type="submit">' + t.html('portalKerberos.make') +
+      '</button></p>' +
       '</form>' +
-      '<p class="note">It is made from the password you type, shown once on ' +
-      'the page that answers this form, and not kept. Nothing about your ' +
-      'account changes. It stops working when your password changes.</p>' +
+      '<p class="note">' + t.html('portalKerberos.downloadNote') + '</p>' +
       '</div>';
   }
 
-  private keytabCard(made: Json): string {
+  private keytabCard(made: Json, t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalKerberosPage.keytabCard().");
     log.debug("Leaving PortalKerberosPage.keytabCard().");
-    return '<div class="card"><h2>Your keytab</h2>' +
-      '<div class="err"><strong>Save it now.</strong> It is shown on this ' +
-      'page once and cannot be shown again — this service does not keep ' +
-      'it.</div>' +
-      '<table><tr><th>Principal</th><td><code>' + esc(made.principal) +
-      '</code></td></tr><tr><th>Key version (kvno)</th><td>' +
+    const file = String(made.keytabFilename);
+    // A warning, not a refusal, though it wears the error box's colour, so
+    // it is the catalog's (#539). The commands are parameters: the file
+    // name and the principal in them are data.
+    return '<div class="card"><h2>' + t.html('portalKerberos.keytabHeading') +
+      '</h2>' +
+      '<div class="err">' + t.html('portalKerberos.saveNow') + '</div>' +
+      '<table><tr><th>' + t.html('portalKerberos.principal') +
+      '</th><td><code>' + esc(made.principal) +
+      '</code></td></tr><tr><th>' + t.html('portalKerberos.kvno') +
+      '</th><td>' +
       esc(String(made.kvno)) + '</td></tr>' +
-      '<tr><th>Encryption types</th><td>' +
+      '<tr><th>' + t.html('portalKerberos.etypes') + '</th><td>' +
       made.etypes.map(function (etype: unknown) {
         return '<code>' + esc(String(etype)) + '</code>';
       }).join(' ') + '</td></tr></table>' +
       (made.source === 'development'
-        ? '<p class="note">This is a DEVELOPMENT service: the keytab holds ' +
-          'the key its KDC uses for you, which comes from the shared ' +
-          'development password rather than yours.</p>'
+        ? '<p class="note">' + t.html('portalKerberos.devKeytab') + '</p>'
         : '') +
       '<p><a class="btn" download="' + esc(made.keytabFilename) +
       '" href="data:application/octet-stream;base64,' + esc(made.keytab) +
-      '">Save ' + esc(made.keytabFilename) + '</a></p>' +
-      '<p class="note">Or paste the text below into <code>base64 -d &gt; ' +
-      esc(made.keytabFilename) + '</code>, then <code>klist -k -e ' +
-      esc(made.keytabFilename) + '</code> to see it and <code>kinit -k -t ' +
-      esc(made.keytabFilename) + ' ' + esc(made.principal) + '</code> to ' +
-      'use it.</p>' +
+      '">' + t.html('portalKerberos.save', { file: file }) + '</a></p>' +
+      '<p class="note">' + t.html('portalKerberos.pasteNote', {
+        decode: 'base64 -d > ' + file,
+        list: 'klist -k -e ' + file,
+        use: 'kinit -k -t ' + file + ' ' + made.principal }) + '</p>' +
       '<textarea readonly rows="6" name="keytab-base64">' + esc(made.keytab) +
       '</textarea></div>';
   }

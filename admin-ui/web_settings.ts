@@ -82,25 +82,37 @@ class SettingsForms {
    *
    * @param setting - the described setting
    * @param context - the settings block's `context`: the two file names
+   * @param t - the page's translator (#539); optional, the default when
+   *   omitted
    * @returns the phrase as plain text
    */
-  static sourceNote(setting, context) {
+  static sourceNote(setting, context, t?) {
+    // A STATIC HELPER HAS NO `ctx` (#539), so its caller hands it the page's
+    // translator; a caller that has not been given one yet gets the default.
+    t = t || kit.context().t;
+    // String() keeps a missing name drawn as it always was ("undefined"),
+    // where a message parameter would draw nothing.
     if (setting.source === 'override') {
-      return 'set here, ' + SettingsForms.overrideKept(context, setting.key);
+      return t.text('consoleSettings.source.override',
+        { kept: SettingsForms.overrideKept(context, setting.key, t) });
     }
     if (setting.source === 'env') {
-      return 'from ' + setting.env;
+      return t.text('consoleSettings.source.env', { env: String(setting.env) });
     }
     if (setting.source === 'env-legacy') {
-      return 'from ' + setting.legacyEnv + ' (the legacy variable)';
+      return t.text('consoleSettings.source.envLegacy',
+        { env: String(setting.legacyEnv) });
     }
     if (setting.source === 'appconfig') {
-      return 'from ' + (context.configFile || 'the appconfig file');
+      return t.text('consoleSettings.source.appconfig',
+        { file: context.configFile ||
+          t.text('consoleSettings.source.theAppconfigFile') });
     }
     if (setting.source === 'defaults') {
-      return 'from ' + context.defaultsFile + ' (the default appconfig file)';
+      return t.text('consoleSettings.source.defaults',
+        { file: String(context.defaultsFile) });
     }
-    return 'derived from another setting';
+    return t.text('consoleSettings.source.derived');
   }
 
   // WHERE AN OVERRIDE SET HERE IS HELD, IN TWO WORDS AND IN ONE SENTENCE
@@ -136,11 +148,14 @@ class SettingsForms {
    *
    * @param context - the settings block's `context`
    * @param key - the setting, when it is about one; optional
-   * @returns `kept in the store` or `in memory only`
+   * @param t - the page's translator (#539); optional
+   * @returns `kept in the store` or `in memory only`, as plain text
    */
-  static overrideKept(context, key?) {
-    return SettingsForms.keeps(context, key) ? 'kept in the store'
-      : 'in memory only';
+  static overrideKept(context, key?, t?) {
+    t = t || kit.context().t;
+    return SettingsForms.keeps(context, key)
+      ? t.text('consoleSettings.kept.store')
+      : t.text('consoleSettings.kept.memory');
   }
 
   /**
@@ -149,27 +164,31 @@ class SettingsForms {
    *
    * @param context - the settings block's `context`: the appconfig file,
    *   the two persistence facts, the mode and the ambient realm
+   * @param t - the page's translator (#539); optional
    * @returns the sentence as HTML
    */
-  static durability(context) {
+  static durability(context, t?) {
+    t = t || kit.context().t;
     const ctx = context || {};
-    const file = '<code>' + kit.esc(ctx.configFile || 'env/local.js') +
-                 '</code>';
+    const file = ctx.configFile || 'env/local.js';
+    // The link is markup a message cannot carry (#539), so the words on
+    // either side of it are messages of their own; the sentence's closing
+    // full stop stays here, after the link.
+    const persistence = '<a href="/admin/persistence">' +
+      t.html('consoleSettings.persistence') + '</a>.';
     if (SettingsForms.keeps(ctx)) {
-      return 'A change is written to the <code>persistence.mode=' +
-             kit.esc(String(ctx.persistenceMode)) + '</code> store' +
-             (ctx.inRealm
-               ? ' with the <code>' + kit.esc(String(ctx.realmId)) +
-                 '</code> realm\'s row'
-               : '') +
-             ' and kept across restarts; nothing rewrites ' + file +
-             '. See <a href="/admin/persistence">Persistence</a>.';
+      return (ctx.inRealm
+        ? t.html('consoleSettings.durability.keptRealm',
+          { mode: String(ctx.persistenceMode), realm: String(ctx.realmId),
+            file: file })
+        : t.html('consoleSettings.durability.kept',
+          { mode: String(ctx.persistenceMode), file: file })) +
+        persistence;
     }
-    return 'Changes are in memory and are gone on restart; to make one ' +
-           'stick, put it in ' + file + ' or the setting\'s environment ' +
-           'variable, or turn on a persistent store (<code>' +
-           (ctx.inRealm ? 'persistence.realms' : 'persistence.appconfig') +
-           '</code>) — see <a href="/admin/persistence">Persistence</a>.';
+    return t.html('consoleSettings.durability.memory',
+      { file: file,
+        store: ctx.inRealm ? 'persistence.realms' : 'persistence.appconfig' }) +
+      persistence;
   }
 
   // ---------------------------------------------------------------------------
@@ -197,9 +216,11 @@ class SettingsForms {
    *
    * @param setting - the described setting (`ordered`, `csvValues`)
    * @param id - the id the row's label points at, given to the first box
+   * @param t - the page's translator (#539); optional
    * @returns the control as HTML
    */
-  static orderedChoiceControl(setting, id) {
+  static orderedChoiceControl(setting, id, t?) {
+    t = t || kit.context().t;
     const chosen = String(setting.text || '').split(',')
       .map(function (one) { return one.trim(); })
       .filter(function (one) {
@@ -217,23 +238,25 @@ class SettingsForms {
         kit.esc(key + '.pick.' + value) + '" value="1"' +
         (n === 0 ? ' id="' + kit.esc(id) + '"' : '') +
         (picked ? ' checked' : '') + off + ' aria-label="' +
-        kit.esc('Request ' + value) + '"></td>' +
+        kit.esc(t.text('consoleSettings.ordered.requestValue',
+          { value: value })) + '"></td>' +
         '<td><input type="number" name="' +
         kit.esc(key + '.rank.' + value) + '" value="' + (n + 1) +
         '" min="1" max="' + setting.csvValues.length + '" step="1" ' +
         'style="width:4.5em"' + off + ' aria-label="' +
-        kit.esc('Preference of ' + value) + '"></td>' +
+        kit.esc(t.text('consoleSettings.ordered.preferenceOf',
+          { value: value })) + '"></td>' +
         '<td><code>' + kit.esc(value) + '</code></td>' +
         '<td class="sub">' + kit.esc(notes[value] || '') + '</td></tr>';
     }).join('');
     return '<input type="hidden" name="' + kit.esc(key + '.ordered') +
       '" value="1">' +
-      '<table class="cfg-ordered"><tr><th>Request</th><th>Order</th>' +
-      '<th>Value</th><th></th></tr>' + rows + '</table>' +
-      kit.note('Tick what is requested and number it: <strong>1 is the ' +
-        'most preferred</strong>, and an authenticator uses the first it ' +
-        'supports. A number on an unticked row is ignored; two rows with ' +
-        'the same number keep the order they are drawn in.');
+      '<table class="cfg-ordered"><tr><th>' +
+      t.html('consoleSettings.ordered.request') + '</th><th>' +
+      t.html('consoleSettings.ordered.order') + '</th>' +
+      '<th>' + t.html('consoleSettings.ordered.value') + '</th><th></th></tr>' +
+      rows + '</table>' +
+      kit.note(t.html('consoleSettings.ordered.note'));
   }
 
   /**
@@ -246,9 +269,11 @@ class SettingsForms {
    * @param setting - the described setting
    * @param from - the page the row is drawn on; not read by the row itself
    * @param context - the settings block's `context`
+   * @param t - the page's translator (#539); optional
    * @returns the table row as HTML
    */
-  static row(setting, from, context) {
+  static row(setting, from, context, t?) {
+    t = t || kit.context().t;
     const id = 'cfg-' + setting.key.replace(/\./g, '-');
     // The control carries the description as a tooltip, at the length a tooltip
     // holds. See the comment above the return.
@@ -257,7 +282,7 @@ class SettingsForms {
     // value — `orderedChoiceControl()` — rather than a text box.
     const input = setting.type === 'csv' && setting.ordered &&
                   Array.isArray(setting.csvValues)
-      ? SettingsForms.orderedChoiceControl(setting, id)
+      ? SettingsForms.orderedChoiceControl(setting, id, t)
       : setting.type === 'enum'
       ? '<select name="' + kit.esc(setting.key) + '" id="' + kit.esc(id) +
         '"' + hint +
@@ -268,7 +293,8 @@ class SettingsForms {
           // than as a blank line.
           return '<option value="' + kit.esc(option) + '"' +
             (option === setting.text ? ' selected' : '') + '>' +
-            kit.esc(option === '' ? '(empty — the default)' : option) +
+            kit.esc(option === ''
+              ? t.text('consoleSettings.row.emptyDefault') : option) +
                  '</option>';
         }).join('') + '</select>'
       : (setting.type === 'bool'
@@ -314,10 +340,11 @@ class SettingsForms {
     // `common/app.js`), so nothing here is relaxed to allow it.
     const reset = setting.overridden
       ? '<button class="secondary" formaction="/admin/config?reset=' +
-        kit.esc(encodeURIComponent(setting.key)) + '">Reset</button>'
+        kit.esc(encodeURIComponent(setting.key)) + '">' +
+        t.html('consoleSettings.row.reset') + '</button>'
       : '';
 
-    const source = kit.esc(SettingsForms.sourceNote(setting, context));
+    const source = kit.esc(SettingsForms.sourceNote(setting, context, t));
     const provenance = setting.overridden
       ? '<strong>' + source + '</strong>'
       : source;
@@ -329,8 +356,8 @@ class SettingsForms {
     // slowest possible way to find out.
     const restart = setting.editable
       ? ''
-      : kit.note('<strong>Restart to apply:</strong> ' +
-        kit.esc(setting.restartReason) + '.');
+      : kit.note('<strong>' + t.html('consoleSettings.row.restart') +
+        '</strong> ' + kit.esc(setting.restartReason) + '.');
 
     // THE DESCRIPTION IS THE TOOLTIP AND THERE IS NO LONGER A FOLD
     // (2026-09-05).
@@ -370,28 +397,32 @@ class SettingsForms {
    * @param group - the described settings group
    * @param from - optional; the page to return to after a save
    * @param context - the settings block's `context`
+   * @param t - the page's translator (#539); optional
    * @returns the heading and form as HTML
    */
-  static section(group, from, context) {
+  static section(group, from, context, t?) {
+    t = t || kit.context().t;
     const rows = group.settings.map(function (setting) {
-      return SettingsForms.row(setting, from, context);
+      return SettingsForms.row(setting, from, context, t);
     }).join('');
     const anyEditable = group.settings.some(function (
         setting) { return setting.editable; });
     const save = anyEditable
-      ? '<p><button>Save ' + kit.esc(group.group) + '</button> ' +
-        '<span class="note">Applies to the next token, assertion, ticket or ' +
-        'search — nothing already issued changes.</span></p>'
-      : kit.note('Every setting in this section is read at startup, so ' +
-        'there is nothing here to save. Change them in ' +
-        kit.esc(context.configFile || 'the appconfig file') + ' or in ' +
-        'the environment and restart.');
+      ? '<p><button>' + t.html('consoleSettings.section.save',
+        { group: group.group }) + '</button> ' +
+        '<span class="note">' + t.html('consoleSettings.section.applies') +
+        '</span></p>'
+      : kit.note(t.html('consoleSettings.section.readAtStartup',
+        { file: context.configFile ||
+          t.text('consoleSettings.source.theAppconfigFile') }));
     return '<h3>' + kit.esc(group.group) + '</h3>' +
       '<form method="post" action="/admin/config">' +
       '<input type="hidden" name="action" value="set-many">' +
       '<input type="hidden" name="from" value="' +
       kit.esc(from || '/admin/config') +
-      '"><table><tr><th>Setting</th><th>Value</th><th>Source</th><th></th>' +
+      '"><table><tr><th>' + t.html('consoleSettings.section.setting') +
+      '</th><th>' + t.html('consoleSettings.section.value') + '</th><th>' +
+      t.html('consoleSettings.section.source') + '</th><th></th>' +
       '</tr>' +
       rows + '</table>' + save + '</form>';
   }
@@ -407,21 +438,24 @@ class SettingsForms {
    * linking to each.
    *
    * @param others - the other pages, each `{ path, label }`
+   * @param t - the page's translator (#539); optional
    * @returns the sentence as HTML, or an empty string when no other page
    *   draws the group
    */
-  static sharedNote(others) {
+  static sharedNote(others, t?) {
+    t = t || kit.context().t;
     if (!others.length) {
       return '';
     }
-    return '<strong>These are the same settings ' +
+    // The links are markup a message cannot carry (#539): the words before,
+    // between and after them are messages, spaces included.
+    return '<strong>' + t.html('consoleSettings.shared.before') +
       others.map(function (other) {
         return '<a href="' + kit.esc(other.path) + '">' +
                kit.esc(other.label) + '</a>';
-      }).join(' and ') + ' draws.</strong> One setting, shown in both places ' +
-      'because it governs both: a value saved here is saved there. Nothing ' +
-      'is copied — both forms post to the same action against the same ' +
-      'override map.';
+      }).join(t.html('consoleSettings.shared.and')) +
+      t.html('consoleSettings.shared.after') + '</strong>' +
+      t.html('consoleSettings.shared.rest');
   }
 
   // The block itself.
@@ -435,10 +469,13 @@ class SettingsForms {
    * @param path - the page's path
    * @param only - optional; the names of the groups to draw, for a page that
    *   puts each of its groups on a tab of its own (/admin/listeners, #423)
+   * @param t - the page's translator (#539); optional, the default when
+   *   omitted — a page passes its `ctx.t`
    * @returns the block as HTML, or an empty string when the page owns no
    *   settings group (or none of `only`)
    */
-  static forms(settings, path, only?) {
+  static forms(settings, path, only?, t?) {
+    t = t || kit.context().t;
     const groups = (settings.groups || []).filter(function (group) {
       return !Array.isArray(only) || only.indexOf(group.group) >= 0;
     });
@@ -459,22 +496,23 @@ class SettingsForms {
 
     const shared = groups.map(function (group) {
       return SettingsForms.sharedNote(
-        (settings.sharedWith || {})[group.group] || []);
+        (settings.sharedWith || {})[group.group] || [], t);
     }).filter(Boolean).map(function (text) { return kit.note(text); })
       .join('');
 
-    const inner = '<h2>Settings</h2>' +
+    // The persistence link, which several sentences below end with; the
+    // full stop or clause after it is the message that follows (#539).
+    const persistence = '<a href="/admin/persistence">' +
+      t.html('consoleSettings.persistence') + '</a>';
 
-      kit.note('The appconfig rows that decide what this family does, on ' +
-      'the page for the family rather than on <a ' +
-      'href="/admin/config">Configuration</a>. They are the same settings, ' +
-      'written through the same function against the same override map — ' +
-      'this is a second DOOR onto them and not a second place they live, ' +
-      'which is the rule <a href="/admin/token-lifetimes">Token ' +
-      'lifetimes</a> was the first page here to apply. The <em>Source</em> ' +
-      'column says where each value came from: a runtime override set on a ' +
-      'page like this one, an environment variable, the appconfig file this ' +
-      'process was started with, or the default appconfig file under it.') +
+    const inner = '<h2>' + t.html('consoleSettings.forms.heading') + '</h2>' +
+
+      kit.note(t.html('consoleSettings.forms.lead1') +
+      '<a href="/admin/config">' + t.html('consoleSettings.configuration') +
+      '</a>' + t.html('consoleSettings.forms.lead2') +
+      '<a href="/admin/token-lifetimes">' +
+      t.html('consoleSettings.tokenLifetimes') + '</a>' +
+      t.html('consoleSettings.forms.lead3')) +
 
       shared +
 
@@ -503,70 +541,40 @@ class SettingsForms {
       // SINCE 2026-10-07 it asks `keeps()`, the replies' rule: inside a
       // non-default realm a value set here lands on the realm's row, so
       // `persistsRealms` decides it there and the note names the realm.
+      // The realm's clause is a whole second message rather than a piece
+      // spliced in (#539), so a translation can put it where its grammar
+      // wants it.
       (SettingsForms.keeps(context)
-        ? '<div class="ok"><strong>Changes here SURVIVE A RESTART.</strong> ' +
-          'This process is running with <code>persistence.mode=' +
-          kit.esc(context.persistenceMode) + '</code>, so a value set ' +
-          'here is written to the persistent store' +
-          (context.inRealm
-            ? ' with the <code>' + kit.esc(String(context.realmId)) +
-              '</code> realm\'s row'
-            : '') +
-          ' and applied again the ' +
-          'next time this service starts. It is still a runtime override ' +
-          'rather than a new layer — the same setting, the same override ' +
-          'map, put back through the same function — so <em>Reset</em> still ' +
-          'means "fall back to the file or the environment variable", and ' +
-          'the reset is written down too. Nothing rewrites ' +
-          '<code>' + kit.esc(configFile) + '</code>, ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently. See <a href="/admin/persistence">Persistence</a>.</div>'
-        : kit.warn('<strong>Changes here are in memory and are gone on ' +
-          'restart.</strong> Nothing writes to the appconfig file, ' +
-          'deliberately: a service that edited a file checked into a ' +
-          'repository would leave a test\'s forgotten change behind ' +
-          'permanently. To make something stick, put it in ' +
-          '<code>' + kit.esc(configFile) + '</code>, in ' +
-          'the setting\'s environment variable, or turn on a persistent ' +
-          'store' +
-          (context.inRealm
-            ? ' with <code>persistence.realms</code>, which keeps this ' +
-              'realm\'s own values on its row'
-            : '') +
-          ' — see <a href="/admin/persistence">Persistence</a>, which ' +
-          'is off by default.')) +
+        ? '<div class="ok">' + (context.inRealm
+          ? t.html('consoleSettings.forms.keptRealm',
+            { mode: context.persistenceMode, realm: String(context.realmId),
+              file: configFile })
+          : t.html('consoleSettings.forms.kept',
+            { mode: context.persistenceMode, file: configFile })) +
+          persistence + '.</div>'
+        : kit.warn((context.inRealm
+          ? t.html('consoleSettings.forms.memoryRealm', { file: configFile })
+          : t.html('consoleSettings.forms.memory', { file: configFile })) +
+          persistence + t.html('consoleSettings.forms.memoryEnd'))) +
 
       (fixed
-        ? kit.warn('<strong>' + kit.esc(String(fixed)) + ' of these ' +
-          kit.esc(String(all.length)) + ' cannot be changed while this ' +
-          'service runs.</strong> They are shown with their inputs disabled ' +
-          'and the reason beside each, rather than hidden: they were ' +
-          'consumed by the time this service was listening — a bound socket, ' +
-          'a certificate\'s names, the Kerberos principal database and its ' +
-          'long-term keys, the directory\'s base DN — and accepting a change ' +
-          'to one would do nothing and read as having worked.')
+        ? kit.warn(t.html('consoleSettings.forms.fixed',
+          { fixed: String(fixed), all: String(all.length) }))
         : '') +
 
       (overridden.length
-        ? '<div class="ok">' + kit.esc(String(overridden.length)) + ' of ' +
-          'these has a runtime override in ' +
-          'force: ' + kit.codeList(overridden) + '. Each ' +
-          'row\'s Reset puts it back to the value its file or environment ' +
-          'variable gives it.</div>'
+        ? '<div class="ok">' + t.html('consoleSettings.forms.overridden',
+          { n: String(overridden.length) }) + kit.codeList(overridden) +
+          t.html('consoleSettings.forms.overriddenEnd') + '</div>'
         : '') +
 
       groups.map(function (group) {
-        return SettingsForms.section(group, path, context);
+        return SettingsForms.section(group, path, context, t);
       }).join('') +
 
-      kit.note('<a href="/admin/config">Configuration</a> holds the whole ' +
-      'table — every setting this service has, whichever page edits it — and ' +
-      'the rows that belong to no protocol. The same settings over JSON are ' +
-      'at <code>' + kit.esc(path) + '?format=json</code> and ' +
-      '<code>GET /admin-api/config</code>; the four actions are ' +
-      '<code>POST /admin-api/config/set</code>, <code>/set-many</code>, ' +
-      '<code>/reset</code> and <code>/reset-all</code>.');
+      kit.note('<a href="/admin/config">' +
+      t.html('consoleSettings.configuration') + '</a>' +
+      t.html('consoleSettings.forms.tail', { path: path }));
 
     return inner;
   }

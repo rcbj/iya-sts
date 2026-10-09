@@ -71,6 +71,8 @@ interface PortalContext {
   esc(value: unknown): string;
   shell(path: string, session: Json, message: unknown, error: unknown,
         body: string): string;
+  // The portal's translator for a page drawn for this session (#539).
+  translatorFor(session: Json): any;
   send(res: Res, status: number, body: string): unknown;
   requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
   // error-code: none — the portal helper's type, not a call to it.
@@ -132,13 +134,37 @@ class PortalAppPasswordsPage {
     ctx.log.debug("Leaving PortalAppPasswordsPage.constructor().");
   }
 
-  private readable(when: unknown): string {
+  // A time a person reads, in their language (#539): `t.date()` gives it in
+  // UTC and says so, as the ISO text it replaces did. Answers TEXT, which the
+  // caller escapes.
+  private readable(when: unknown, t: Json): string {
     const { log } = this.ctx;
     log.debug("Entering PortalAppPasswordsPage.readable().");
     const at = new Date(Number(when || 0));
     log.debug("Leaving PortalAppPasswordsPage.readable().");
-    return !Number(when) || isNaN(at.getTime()) ? 'never'
-      : at.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+    return !Number(when) || isNaN(at.getTime())
+      ? t.text('portalAppPasswords.never')
+      : t.date(at);
+  }
+
+  // What speaks a door, in the reader's language (#539). The door table in
+  // `common/app_passwords.ts` keeps its English for the library's own use;
+  // the page names each key literally, so `tests/i18n_catalogs.js`'s scan
+  // sees them, and an id the table grows later falls back to that English.
+  // The door's LABEL is a protocol name and is drawn as it is.
+  private doorWhat(one: Json, t: Json): string {
+    const { log } = this.ctx;
+    log.debug("Entering PortalAppPasswordsPage.doorWhat().");
+    const known: { [id: string]: string } = {
+      ldap: t.text('portalAppPasswords.door.ldap'),
+      wstrust: t.text('portalAppPasswords.door.wstrust'),
+      scim: t.text('portalAppPasswords.door.scim'),
+      ssf: t.text('portalAppPasswords.door.ssf'),
+      est: t.text('portalAppPasswords.door.est')
+    };
+    log.debug("Leaving PortalAppPasswordsPage.doorWhat().");
+    return Object.prototype.hasOwnProperty.call(known, one.id)
+      ? known[one.id] : String(one.what);
   }
 
   private doorList(doors: string[]): string {
@@ -160,135 +186,154 @@ class PortalAppPasswordsPage {
     const { credentials } = this.deps;
     log.debug("Entering PortalAppPasswordsPage.page().");
     const who = String(session.user.username);
+    // THE LANGUAGE (#539): the portal's translator for this person; every
+    // card is drawn with it, and the error the shell draws stays English.
+    const t = this.ctx.translatorFor(session);
     const cards: string[] = [];
     if (fresh) {
-      cards.push(this.freshCard(fresh, who));
+      cards.push(this.freshCard(fresh, who, t));
     }
-    cards.push(this.doorsCard(credentials.passwordOnlyDoors(who)));
-    cards.push(this.listCard(credentials.appPasswordsOf(who), session));
-    cards.push(this.createCard(session));
+    cards.push(this.doorsCard(credentials.passwordOnlyDoors(who), t));
+    cards.push(this.listCard(credentials.appPasswordsOf(who), session, t));
+    cards.push(this.createCard(session, t));
     log.debug("Leaving PortalAppPasswordsPage.page().");
     return shell(this.PATH, session, message, error, cards.join(''));
   }
 
-  private freshCard(fresh: Fresh, who: string): string {
+  private freshCard(fresh: Fresh, who: string, t: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalAppPasswordsPage.freshCard().");
     log.debug("Leaving PortalAppPasswordsPage.freshCard().");
-    return '<div class="card"><h2>Your new app password</h2>' +
-      '<div class="err"><strong>Copy it now.</strong> It is shown on this ' +
-      'page once and cannot be shown again — this service keeps only a ' +
-      'hash of it.</div>' +
-      '<table><tr><th>App password</th><td><code class="app-password">' +
+    // The warning sits in the `err` box for its colour; it is an instruction,
+    // not a refusal, so it is translated.
+    return '<div class="card"><h2>' +
+      t.html('portalAppPasswords.fresh.heading') + '</h2>' +
+      '<div class="err">' + t.html('portalAppPasswords.fresh.copyNow') +
+      '</div>' +
+      '<table><tr><th>' + t.html('portalAppPasswords.th.appPassword') +
+      '</th><td><code class="app-password">' +
       esc(fresh.password) + '</code></td></tr>' +
-      '<tr><th>Name</th><td>' + esc(fresh.name) + '</td></tr>' +
-      '<tr><th>Accepted at</th><td>' + this.doorList(fresh.doors) +
-      '</td></tr><tr><th>Username</th><td><code>' + esc(who) +
+      '<tr><th>' + t.html('portalAppPasswords.th.name') + '</th><td>' +
+      esc(fresh.name) + '</td></tr>' +
+      '<tr><th>' + t.html('portalAppPasswords.th.acceptedAt') + '</th><td>' +
+      this.doorList(fresh.doors) +
+      '</td></tr><tr><th>' + t.html('portalAppPasswords.th.username') +
+      '</th><td><code>' + esc(who) +
       '</code></td></tr></table>' +
-      '<p class="note">Put it in the client in place of your password, ' +
-      'with your usual username. It works only at the doors above and ' +
-      'never at the sign-in screen. The dashes are optional.</p></div>';
+      '<p class="note">' + t.html('portalAppPasswords.fresh.note') +
+      '</p></div>';
   }
 
   // Which doors refuse this person's own password, said on the page that is
   // the answer to it.
-  private doorsCard(doors: Json): string {
+  private doorsCard(doors: Json, t: Json): string {
+    const self = this;
     const { log, esc } = this.ctx;
     const { appPasswords } = this.deps;
     log.debug("Entering PortalAppPasswordsPage.doorsCard().");
     const rows = appPasswords.DOORS.map(function (one) {
       const refused = doors.refused.indexOf(one.id) >= 0;
-      return '<tr><td>' + esc(one.label) + '</td><td>' + esc(one.what) +
+      return '<tr><td>' + esc(one.label) + '</td><td>' +
+        esc(self.doorWhat(one, t)) +
         '</td><td>' + (refused
-          ? '<strong>an app password only</strong>'
-          : 'your password, or an app password') + '</td></tr>';
+          ? '<strong>' + t.html('portalAppPasswords.doors.onlyApp') +
+            '</strong>'
+          : t.html('portalAppPasswords.doors.either')) + '</td></tr>';
     }).join('');
     const lead = !doors.secondFactor
-      ? 'You hold no second factor, so your own password is accepted at ' +
-        'these doors. An app password is still worth having: it is random, ' +
-        'it works only where you say, and revoking one does not change ' +
-        'your password.'
+      ? t.html('portalAppPasswords.doors.leadNoFactor')
       : !doors.applies
-        ? 'This service is in development mode and checks no password at ' +
-          'these doors. In product mode, because you use a second factor, ' +
-          'your own password would be refused there and an app password is ' +
-          'what you would use.'
-        : 'Because you use a second factor, your own password is refused at ' +
-          'the doors marked below — they cannot ask for the second factor. ' +
-          'Make an app password for each client that uses one of them.';
+        ? t.html('portalAppPasswords.doors.leadDevelopment')
+        : t.html('portalAppPasswords.doors.leadRefused');
     log.debug("Leaving PortalAppPasswordsPage.doorsCard().");
-    return '<div class="card"><h2>Where a password alone is asked for</h2>' +
-      '<p class="sub">' + esc(lead) + '</p><table><tr><th>Door</th>' +
-      '<th>What speaks it</th><th>What it accepts from you</th></tr>' +
+    return '<div class="card"><h2>' +
+      t.html('portalAppPasswords.doors.heading') + '</h2>' +
+      '<p class="sub">' + lead + '</p><table><tr><th>' +
+      t.html('portalAppPasswords.th.door') + '</th>' +
+      '<th>' + t.html('portalAppPasswords.th.whatSpeaks') + '</th><th>' +
+      t.html('portalAppPasswords.th.whatAccepts') + '</th></tr>' +
       rows + '</table></div>';
   }
 
-  private listCard(held: Json, session: Json): string {
+  private listCard(held: Json, session: Json, t: Json): string {
     const self = this;
     const { log, esc, websecurity } = this.ctx;
     const PATH = this.PATH;
     log.debug("Entering PortalAppPasswordsPage.listCard().");
+    const heading = '<h2>' + t.html('portalAppPasswords.list.heading') +
+      '</h2>';
     if (held.unreadable) {
+      // An error, and so English (#539).
       log.debug("Leaving PortalAppPasswordsPage.listCard(). Unreadable.");
-      return '<div class="card"><h2>Your app passwords</h2><div ' +
+      return '<div class="card">' + heading + '<div ' +
         'class="err">The app passwords on your account cannot be read, so ' +
         'none of them is accepted. Ask an administrator to look at your ' +
         'entry.</div></div>';
     }
     if (!held.passwords.length) {
       log.debug("Leaving PortalAppPasswordsPage.listCard(). None.");
-      return '<div class="card"><h2>Your app passwords</h2><p class="sub">' +
-        'You have none.</p></div>';
+      return '<div class="card">' + heading + '<p class="sub">' +
+        t.html('portalAppPasswords.list.none') + '</p></div>';
     }
     const csrf = websecurity.field(session.id);
     const rows = held.passwords.map(function (one) {
       return '<tr><td>' + esc(one.name) + '</td><td><code>' + esc(one.id) +
         '</code></td><td>' + self.doorList(one.doors) + '</td><td>' +
-        esc(self.readable(one.createdAt)) + '</td><td>' +
-        esc(self.readable(one.lastUsedAt)) +
+        esc(self.readable(one.createdAt, t)) + '</td><td>' +
+        esc(self.readable(one.lastUsedAt, t)) +
         (one.lastUsedAt && one.lastUsedDoor
           ? ' (' + self.doorList([one.lastUsedDoor]) + ')' : '') +
         '</td><td><form method="post" action="' + PATH + '">' + csrf +
         '<input type="hidden" name="action" value="revoke">' +
         '<input type="hidden" name="id" value="' + esc(one.id) + '">' +
-        '<button class="danger" type="submit">Revoke</button></form>' +
+        '<button class="danger" type="submit">' +
+        t.html('portalAppPasswords.list.revoke') + '</button></form>' +
         '</td></tr>';
     }).join('');
     log.debug("Leaving PortalAppPasswordsPage.listCard().");
-    return '<div class="card"><h2>Your app passwords</h2>' +
-      '<table><tr><th>Name</th><th>Id</th><th>Accepted at</th>' +
-      '<th>Made</th><th>Last used</th><th></th></tr>' + rows + '</table>' +
-      '<p class="note">Revoking one stops the client that holds it at its ' +
-      'next sign-in. The id is the first four characters of the password; ' +
-      'it is not secret.</p></div>';
+    return '<div class="card">' + heading +
+      '<table><tr><th>' + t.html('portalAppPasswords.th.name') + '</th><th>' +
+      t.html('portalAppPasswords.th.id') + '</th><th>' +
+      t.html('portalAppPasswords.th.acceptedAt') + '</th>' +
+      '<th>' + t.html('portalAppPasswords.th.made') + '</th><th>' +
+      t.html('portalAppPasswords.th.lastUsed') + '</th><th></th></tr>' +
+      rows + '</table>' +
+      '<p class="note">' + t.html('portalAppPasswords.list.note') +
+      '</p></div>';
   }
 
-  private createCard(session: Json): string {
+  private createCard(session: Json, t: Json): string {
     const { log, esc, websecurity } = this.ctx;
     const { appPasswords } = this.deps;
     log.debug("Entering PortalAppPasswordsPage.createCard().");
+    const heading = '<h2>' + t.html('portalAppPasswords.create.heading') +
+      '</h2>';
     if (!appPasswords.settings().enabled) {
       log.debug("Leaving PortalAppPasswordsPage.createCard(). Off.");
-      return '<div class="card"><h2>Make an app password</h2><p ' +
-        'class="sub">App passwords are turned off here, so a new one cannot ' +
-        'be made. The ones you have go on working.</p></div>';
+      return '<div class="card">' + heading + '<p ' +
+        'class="sub">' + t.html('portalAppPasswords.create.off') +
+        '</p></div>';
     }
     const boxes = appPasswords.DOORS.map(function (one) {
       return '<label><input type="checkbox" name="door_' + esc(one.id) +
         '" value="on"> ' + esc(one.label) + '</label> ';
     }).join('');
     log.debug("Leaving PortalAppPasswordsPage.createCard().");
-    return '<div class="card"><h2>Make an app password</h2>' +
+    return '<div class="card">' + heading +
       '<form method="post" action="' + this.PATH + '">' +
       websecurity.field(session.id) +
       '<input type="hidden" name="action" value="create">' +
-      '<p><label>Name <input type="text" name="name" maxlength="' +
+      '<p><label>' + t.html('portalAppPasswords.th.name') +
+      ' <input type="text" name="name" maxlength="' +
       appPasswords.MAX_NAME + '" required placeholder="' +
-      'which client it is for"></label></p>' +
-      '<fieldset><legend>Accepted at</legend>' + boxes + '</fieldset>' +
-      '<p><button type="submit">Make an app password</button></p></form>' +
-      '<p class="note">It is shown once, on the page that answers this ' +
-      'form. Choose only the doors the client needs.</p></div>';
+      esc(t.text('portalAppPasswords.create.namePlaceholder')) +
+      '"></label></p>' +
+      '<fieldset><legend>' + t.html('portalAppPasswords.th.acceptedAt') +
+      '</legend>' + boxes + '</fieldset>' +
+      '<p><button type="submit">' +
+      t.html('portalAppPasswords.create.button') + '</button></p></form>' +
+      '<p class="note">' + t.html('portalAppPasswords.create.note') +
+      '</p></div>';
   }
 
   // A refusal drawn on the page, with its code on the response.
@@ -449,8 +494,11 @@ class PortalAppPasswordsPage {
         reasonUser: 'You revoked the app password called "' +
                     gone.revoked.name + '".' });
       log.debug('Leaving POST ' + PATH + '. Revoked.');
+      // The success line in the reader's language (#539), put on the URL
+      // translated, as the English was: the GET draws `done` as it comes.
+      const t = ctx.translatorFor(session);
       res.status(303).set('Location', PATH + '?done=' +
-        encodeURIComponent('That app password is revoked.')).end();
+        encodeURIComponent(t.text('portalAppPasswords.done.revoked'))).end();
       return undefined;
     }
 

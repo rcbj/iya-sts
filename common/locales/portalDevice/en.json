@@ -1,0 +1,16 @@
+{
+  "request.heading": "Is this your device?",
+  "request.asks": "{client} asks to sign you in on a device showing the code {code}.",
+  "request.access": "Access: <code>{scope}</code>. Expires {when}.",
+  "request.noScope": "(none named)",
+  "request.warning": "<strong>Approve only a device in front of you</strong> that you started signing in yourself. Somebody who sent you this code is asking you to sign THEM in as you.",
+  "request.approve": "Approve",
+  "request.deny": "Deny",
+  "find.heading": "Sign in a device",
+  "find.sub": "A television, a console or a command line that shows a code and this address is asking you to sign in here instead (RFC 8628).",
+  "find.off": "Signing in this way is turned off here.",
+  "find.code": "The code the device shows",
+  "find.continue": "Continue",
+  "done.approved": "Approved: the device is signing you in.",
+  "done.denied": "Denied."
+}

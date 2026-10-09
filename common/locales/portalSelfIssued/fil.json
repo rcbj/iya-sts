@@ -1,0 +1,14 @@
+{
+  "heading": "Ang iyong mga self-issued ID",
+  "sub": "Puwede kang i-sign in ng isang wallet gamit ang ID Token na pinipirmahan nito gamit ang sarili nitong key (Self-Issued OpenID Provider v2). Walang nagsasagot para sa key na iyon, kaya ang tanging na-sign in nito ay ang taong nag-enroll nito rito.",
+  "subject": "Subject",
+  "label": "Label",
+  "enrolled": "Na-enroll",
+  "remove": "Alisin",
+  "none": "Wala ka pang na-enroll.",
+  "enrol": "Mag-enroll ng wallet",
+  "enrolNote": "Hihingan ang iyong wallet ng self-issued ID Token, at ie-enroll para sa iyo ang key na pumirma rito — pinatutunayan mong hawak mo ito; walang tina-type.",
+  "off": "Naka-off dito ang pag-sign in gamit ang self-issued ID, kaya walang wallet na mae-enroll mula sa pahinang ito. Mananatiling naka-enroll ang mga key sa itaas.",
+  "doneEnrolled": "Naka-enroll na ang key ng iyong wallet. Ito na ang magsa-sign in sa iyo mula ngayon.",
+  "doneRemoved": "Hindi ka na masa-sign in ng key na iyon."
+}

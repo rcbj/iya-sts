@@ -1,0 +1,3 @@
+{
+  "noDialOut": "<strong>沒有任何挑戰會向外連線。</strong>對於繫結項目所擁有的識別碼（已註冊的主機名稱、個人的電郵、項目本身），授權在建立時即為有效，帶有一個 <code>{challenge}</code> 挑戰；項目不擁有的識別碼會在 newOrder 時以 rejectedIdentifier 被拒絕。EAB MAC 在所有模式下都會驗證。"
+}

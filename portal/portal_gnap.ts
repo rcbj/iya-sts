@@ -89,6 +89,9 @@ interface PortalContext {
   audit: Json;
   errorCodes: Json;
   config: { value(key: string): any };
+  // The portal's translator for a page drawn for this session (#539
+  // phase 3): the portal's application and the person's own language.
+  translatorFor(session: Json): any;
 }
 
 interface PortalGnapDeps {
@@ -127,20 +130,23 @@ class PortalGnapPage {
     ctx.log.debug("Leaving PortalGnapPage.constructor().");
   }
 
-  // Epoch seconds as a reader writes a date.
-  private readable(seconds: unknown): string {
+  // Epoch seconds as a reader writes a date — in the reader's language and
+  // their locale's way of writing it (#539), in UTC and saying so.
+  private readable(seconds: unknown, t: Json): string {
     const { log } = this.ctx;
     log.debug("Entering PortalGnapPage.readable().");
     const n = Number(seconds);
     log.debug("Leaving PortalGnapPage.readable().");
     return n > 0
-      ? new Date(n * 1000).toISOString().replace('T', ' ')
-                                       .replace(/:\d\d(\.\d+)?Z$/, ' UTC')
+      ? t.date(n * 1000, { dateStyle: 'medium', timeStyle: 'short' }) +
+        ' UTC'
       : '—';
   }
 
   // One access right, in words: the type (or reference) and what it names,
-  // including any limits it carries.
+  // including any limits it carries. The dimension names (`actions`,
+  // `identifier`, `limits`) are RFC 9635's own field names, and stay as
+  // they are in every language (#539).
   private right(one: Json): string {
     const { log, esc } = this.ctx;
     log.debug("Entering PortalGnapPage.right().");
@@ -166,64 +172,76 @@ class PortalGnapPage {
       (parts.length ? ' — ' + esc(parts.join('; ')) : '');
   }
 
-  // What a finalized grant's reason means, for the person.
-  private ended(reason: string): string {
+  // What a finalized grant's reason means, for the person: the four this
+  // service writes in the catalog's words (#539), anything else as it came.
+  private ended(reason: string, t: Json): string {
     const { log } = this.ctx;
     log.debug("Entering PortalGnapPage.ended().");
-    const words: Record<string, string> = {
-      issued: 'finished: its tokens were issued and it can no longer be ' +
-              'changed',
-      revoked: 'revoked',
-      rejected: 'refused',
-      expired: 'expired'
-    };
     log.debug("Leaving PortalGnapPage.ended().");
-    return words[reason] || reason;
+    return t.text('portalGnap.ended', { reason: String(reason) });
   }
 
   private card(session: Json, row: Json, at: number): string {
     const { log, esc, websecurity } = this.ctx;
     const self = this;
     log.debug("Entering PortalGnapPage.card().");
+    const t = this.ctx.translatorFor(session);
     const state = row.finalization
-      ? 'Ended — ' + this.ended(row.finalization.reason) + ', ' +
-        this.readable(row.finalization.at)
-      : (row.state === 'approved' ? 'Active' : 'Waiting for approval');
+      ? t.text('portalGnap.stateEnded',
+               { reason: this.ended(row.finalization.reason, t),
+                 when: this.readable(row.finalization.at, t) })
+      : (row.state === 'approved' ? t.text('portalGnap.stateActive')
+                                  : t.text('portalGnap.stateWaiting'));
+    // `bearer` is RFC 9635's flag on the token and stays as written; the
+    // token's state (`live`, `rotated`, `revoked`, `expired`) is the
+    // catalog's.
     const tokens = row.tokens.length
-      ? '<table><tr><th>Token</th><th>Format</th><th>Expires</th>' +
-        '<th>State</th></tr>' + row.tokens.map(function (token: Json) {
+      ? '<table><tr><th>' + t.html('portalGnap.token') + '</th><th>' +
+        t.html('portalGnap.format') + '</th><th>' +
+        t.html('portalGnap.expires') + '</th><th>' +
+        t.html('portalGnap.tokenState') + '</th></tr>' +
+        row.tokens.map(function (token: Json) {
           return '<tr><td>' + esc(token.label || '—') + '</td><td><code>' +
             esc(token.format) + '</code>' +
             (token.bearer ? ' <span class="sub">bearer</span>' : '') +
-            '</td><td>' + esc(self.readable(token.expiresAt)) + '</td><td>' +
-            esc(token.state) + '</td></tr>';
+            '</td><td>' + esc(self.readable(token.expiresAt, t)) +
+            '</td><td>' +
+            t.html('portalGnap.tokenStateValue',
+                   { state: String(token.state) }) + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">No token was issued under it.</p>';
+      : '<p class="sub">' + t.html('portalGnap.noTokens') + '</p>';
     const revoke = row.revocable
       ? '<form method="post" action="' + esc(this.PATH) + '">' +
         websecurity.field(session.id) +
         '<input type="hidden" name="grant" value="' + esc(row.id) + '">' +
         '<input type="hidden" name="page" value="' + esc(String(at)) + '">' +
-        '<button type="submit" class="danger">Revoke this grant</button>' +
+        '<button type="submit" class="danger">' +
+        t.html('portalGnap.revoke') + '</button>' +
         '</form>'
       : '';
     log.debug("Leaving PortalGnapPage.card().");
     return '<div class="card"><h2>' + esc(row.clientName || row.client) +
       '</h2><p class="sub"><code>' + esc(row.client) + '</code> · ' +
       esc(state) + '</p>' +
-      '<p>' + (row.rightsAre === 'approved' ? 'May' : 'Asked to') + ':</p>' +
+      '<p>' + (row.rightsAre === 'approved' ? t.html('portalGnap.may')
+                                            : t.html('portalGnap.askedTo')) +
+      '</p>' +
       '<ul>' + (row.rights.map(function (one: Json) {
         return '<li>' + self.right(one) + '</li>';
-      }).join('') || '<li>nothing specific</li>') + '</ul>' +
+      }).join('') || '<li>' + t.html('portalGnap.nothingSpecific') +
+        '</li>') + '</ul>' +
       (row.subjectReleasedAt
-        ? '<p class="note">It was also told who you are, ' +
-          esc(this.readable(row.subjectReleasedAt)) + '.</p>'
+        ? '<p class="note">' + t.html('portalGnap.subjectReleased',
+            { when: this.readable(row.subjectReleasedAt, t) }) + '</p>'
         : '') +
       tokens +
-      '<p class="note">Granted ' + esc(this.readable(row.createdAt)) +
-      (row.finalization ? ''
-        : '; it can be renewed until ' +
-          esc(this.readable(row.grantExpiresAt))) + '.</p>' +
+      '<p class="note">' + (row.finalization
+        ? t.html('portalGnap.granted',
+                 { when: this.readable(row.createdAt, t) })
+        : t.html('portalGnap.grantedRenewable',
+                 { when: this.readable(row.createdAt, t),
+                   until: this.readable(row.grantExpiresAt, t) })) +
+      '</p>' +
       revoke + '</div>';
   }
 
@@ -232,6 +250,7 @@ class PortalGnapPage {
     const { log, esc, shell } = this.ctx;
     const self = this;
     log.debug("Entering PortalGnapPage.page().");
+    const t = this.ctx.translatorFor(session);
     // THE PERSON IS THE SESSION'S, and nothing else names them.
     const view = this.deps.gnapConsole().personGrantsView(
         String(session.user.username), { per: String(PER_PAGE),
@@ -242,32 +261,33 @@ class PortalGnapPage {
       ? view.rows.map(function (row: Json): string {
           return self.card(session, row, at);
         }).join('')
-      : '<div class="card"><p class="sub">You have given no application ' +
-        'access through GNAP. When one asks and you allow it, the grant ' +
-        'appears here.</p></div>';
+      : '<div class="card"><p class="sub">' + t.html('portalGnap.none') +
+        '</p></div>';
     const nav = paging.pages > 1
       ? '<p class="pagenav">' +
         (at > 1
           ? '<a href="' + esc(this.PATH + '?page=' + (at - 1)) +
-            '">Previous</a>'
-          : '<span class="off">Previous</span>') +
-        '<span class="here">Page ' + esc(String(at)) + ' of ' +
-        esc(String(paging.pages)) + '</span>' +
+            '">' + t.html('portalGnap.previous') + '</a>'
+          : '<span class="off">' + t.html('portalGnap.previous') +
+            '</span>') +
+        '<span class="here">' +
+        t.html('portalGnap.pageOf', { page: at, pages: paging.pages }) +
+        '</span>' +
         (at < paging.pages
-          ? '<a href="' + esc(this.PATH + '?page=' + (at + 1)) + '">Next</a>'
-          : '<span class="off">Next</span>') +
+          ? '<a href="' + esc(this.PATH + '?page=' + (at + 1)) + '">' +
+            t.html('portalGnap.next') + '</a>'
+          : '<span class="off">' + t.html('portalGnap.next') +
+            '</span>') +
         '</p>'
       : '';
+    // The view layer's note is English prose for the console; the portal
+    // draws the same sentence from its own catalog (#539).
     const cells = view.cells && view.cells.multiCell
-      ? '<p class="note">' + esc(view.cells.note) + '</p>' : '';
+      ? '<p class="note">' + t.html('portalGnap.cellsNote') + '</p>' : '';
     log.debug("Leaving PortalGnapPage.page(). Page " + at + ".");
     return shell(this.PATH, session, message, error,
-      '<div class="card"><p class="sub">The access you have given ' +
-      'applications through GNAP, each grant with what it allows and the ' +
-      'tokens the application holds under it. <strong>Revoking takes ' +
-      'effect at once</strong>: every token issued under the grant stops ' +
-      'working, the application cannot renew it or ask anything more of ' +
-      'it, and it has to ask you afresh.</p>' + cells + '</div>' +
+      '<div class="card"><p class="sub">' + t.html('portalGnap.sub') +
+      '</p>' + cells + '</div>' +
       body + nav);
   }
 
@@ -340,9 +360,11 @@ class PortalGnapPage {
     }
     const name = result.grant.clientName || result.grant.client;
     log.debug('Leaving POST ' + PATH + '. Revoked.');
+    // In the person's language (#539): the text rides the redirect, and
+    // the client's name is data, a parameter.
     res.redirect(303, PATH + '?page=' + at + '&done=' + encodeURIComponent(
-      'Revoked: ' + name + ' no longer has the access you gave it. It asks ' +
-      'you again next time.'));
+      ctx.translatorFor(session).text('portalGnap.doneRevoked',
+                                      { name: name })));
     return undefined;
   }
 

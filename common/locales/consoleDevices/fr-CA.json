@@ -1,0 +1,3 @@
+{
+  "registrationHtml.freshRequired": "Une attestation de clé TPM doit aussi être RÉCENTE : son extraData doit être un nonce de <code>{nonce}</code>, envoyé avec le témoin de cette réponse, sinon elle est refusée (STS-DEVICE-0050). "
+}

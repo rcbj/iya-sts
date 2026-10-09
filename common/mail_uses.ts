@@ -142,13 +142,66 @@ class MailUses {
     };
   }
 
-  // The time, as a person reads it in a message: UTC, to the minute.
+  // The time, UTC, to the minute: a dedup key's bucket now. What a MESSAGE
+  // says is `instant()`, put into words in the recipient's language by the
+  // mail channel (#539).
   private when(): string {
     const { log, now } = this.deps;
     log.debug("Entering MailUses.when().");
     log.debug("Leaving MailUses.when().");
     return new Date(now()).toISOString().replace('T', ' ').slice(0, 16) +
       ' UTC';
+  }
+
+  // -------------------------------------------------------------------------
+  // VALUES THAT FOLLOW THE RECIPIENT'S LANGUAGE (#539). A message is sent in
+  // the language of the person it goes to, which only `common/mail.ts`
+  // knows (per recipient, in `queueOne()`). So what this file wants SAID —
+  // "an administrator", a time — is handed over as a message of the
+  // `mailValues` catalog (common/locales/mailValues/) or an instant, and the
+  // channel puts it into words there. A name, an address, a username, and a
+  // reason a person or a refusal wrote, are data and stay as given.
+  // -------------------------------------------------------------------------
+  /**
+   * A value the mail channel puts into words in the recipient's language: a
+   * message of the `mailValues` catalog.
+   *
+   * @param key - the message's key under `mailValues.`
+   * @param params - its parameters, data
+   * @returns `{ i18n, params }`
+   */
+  static said(key: string, params?: Json): Json {
+    helpers.log.debug("Entering MailUses.said(). " + key);
+    helpers.log.debug("Leaving MailUses.said().");
+    return params ? { i18n: 'mailValues.' + key, params: params }
+                  : { i18n: 'mailValues.' + key };
+  }
+
+  // Now, as an instant the channel formats for the recipient.
+  private instant(): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering MailUses.instant().");
+    log.debug("Leaving MailUses.instant().");
+    return { date: now() };
+  }
+
+  // A value as a dedup key's part: a string as it is, a message or an
+  // instant as its JSON, which is deterministic for what this file builds.
+  /**
+   * Turns a value — a string, or a message or instant for the channel — into
+   * a deterministic string for a dedup key.
+   *
+   * @param value - the value
+   * @returns the string
+   */
+  static keyOf(value: unknown): string {
+    helpers.log.debug("Entering MailUses.keyOf().");
+    if (value && typeof value === 'object') {
+      helpers.log.debug("Leaving MailUses.keyOf(). JSON.");
+      return JSON.stringify(value);
+    }
+    helpers.log.debug("Leaving MailUses.keyOf().");
+    return String(value == null ? '' : value);
   }
 
   // -------------------------------------------------------------------------
@@ -296,7 +349,7 @@ class MailUses {
         // THE ADDRESS OWNER IS TOLD, once an hour at most: the name and the
         // address were right, so this is somebody who knows both.
         mail.send({ username: username, template: 'reset-refused-attempt',
-          values: { username: username, when: this.when() },
+          values: { username: username, when: this.instant() },
           dedupKey: 'reset-refused:' + this.when().slice(0, 13),
           via: via || 'the forgot-password form', actor: '' });
         log.debug("Leaving MailUses.requestReset(). Wrong recovery code.");
@@ -324,10 +377,8 @@ class MailUses {
     const sent = mail.send({
       username: username, template: 'password-reset',
       values: { username: username, requestedBy: needsCode
-                  ? 'you, or somebody who knew your account name, your ' +
-                    'address and one of your recovery codes'
-                  : 'you, or somebody who knew your account name, on the ' +
-                    'sign-in screen',
+                  ? MailUses.said('requestedBy.recoveryCode')
+                  : MailUses.said('requestedBy.signInScreen'),
                 expiresMinutes: String(config.value(
                   'security.passwordResetTtlMinutes')) },
       links: { link: RESET_PATH + '?user=' + encodeURIComponent(username) +
@@ -611,8 +662,10 @@ class MailUses {
       username: username,
       template: reset ? 'password-reset' : 'account-activation',
       values: { username: username,
-                requestedBy: 'an administrator' + (actor ? ' (' + actor + ')'
-                                                         : ''),
+                requestedBy: actor
+                  ? MailUses.said('requestedBy.administratorNamed',
+                                  { actor: actor })
+                  : MailUses.said('requestedBy.administrator'),
                 expiresMinutes: String(config.value(reset
                   ? 'security.passwordResetTtlMinutes'
                   : 'security.activationTtlMinutes')) },
@@ -661,11 +714,12 @@ class MailUses {
         log.debug("Leaving MailUses.notice(). Off, nobody, or no transport.");
         return out;
       }
-      const values = Object.assign({ username: username, when: this.when() },
+      const values = Object.assign({ username: username,
+                                     when: this.instant() },
                                    f.values || {});
       out = mail.send({
         username: username, template: kind, values: values,
-        dedupKey: f.dedupKey || (kind + ':' + String(values.how ||
+        dedupKey: f.dedupKey || (kind + ':' + MailUses.keyOf(values.how ||
                                  values.why || values.by || '')),
         via: f.via || 'a security notice', actor: f.actor || ''
       });
@@ -673,8 +727,8 @@ class MailUses {
         mail.send({
           toAdministrators: true, template: 'administrator-alert',
           values: { username: username, when: values.when,
-                    act: String(f.act || kind),
-                    why: String(values.why || '') },
+                    act: f.act || kind,
+                    why: values.why || '' },
           dedupKey: 'admin:' + kind + ':' + username,
           via: f.via || 'a security notice', actor: 'the service'
         });
@@ -712,19 +766,25 @@ class MailUses {
         String(notice.credentialType || 'password') === 'password' &&
         !notice.friendlyName) {
       out = this.notice('password-changed', username, {
-        values: { how: String(notice.reasonUser || notice.via ||
-                              'by ' + (notice.initiatingEntity || 'someone')) },
+        // `reasonUser` is CAEP's `reason_user`, a sentence the door that
+        // acted wrote in English for every receiver; it stays as written.
+        values: { how: notice.reasonUser || notice.via
+          ? String(notice.reasonUser || notice.via)
+          : MailUses.said('how.by', {
+              entity: String(notice.initiatingEntity || 'someone') }) },
         via: notice.via });
     } else if (act === 'credentialCompromised') {
       out = this.notice('credential-compromised', username, {
-        values: { what: String(notice.credentialType || 'password'),
+        values: { what: MailUses.said('credential.type', {
+                    type: String(notice.credentialType || 'password') }),
                   why: String(notice.reasonUser || '') },
-        bySystem: system, act: 'credential marked compromised',
+        bySystem: system,
+        act: MailUses.said('act.credentialCompromised'),
         via: notice.via });
     } else if (act === 'recoveryActivated' && !notice.mailed) {
       out = this.notice('recovery-started', username, {
-        values: { by: notice.initiatingEntity === 'user' ? 'you'
-                                                         : 'an administrator' },
+        values: { by: notice.initiatingEntity === 'user'
+          ? MailUses.said('by.you') : MailUses.said('by.administrator') },
         via: notice.via });
     }
     log.debug("Leaving MailUses.fromAccountSignal().");
@@ -743,8 +803,9 @@ class MailUses {
    * on the portal.
    *
    * @param username - the resource owner
-   * @param facts - `client` (the registered identifier), `rights` (a
-   *   sentence), `expiresMinutes`, `dedupKey`
+   * @param facts - `client` (the registered identifier), `rights` (the
+   *   access types asked for, data; empty says "access" in the person's
+   *   language), `expiresMinutes`, `dedupKey`
    * @returns what `send()` answered, or `{ ok: false, skipped }`
    */
   accessRequested(username: string, facts: Json): Json {
@@ -761,7 +822,8 @@ class MailUses {
       out = mail.send({
         username: username, template: 'access-request',
         values: { username: username, client: String(f.client || ''),
-                  rights: String(f.rights || 'access'),
+                  rights: f.rights ? String(f.rights)
+                    : MailUses.said('rights.access'),
                   expiresMinutes: String(f.expiresMinutes || '') },
         links: { link: '/portal/ciba' },
         dedupKey: String(f.dedupKey || ('access-request:' + username)),
@@ -794,7 +856,7 @@ class MailUses {
     log.debug("Leaving MailUses.accountDisabled().");
     return this.notice('account-disabled', username, {
       values: { why: String(why || '') }, bySystem: bySystem,
-      act: 'account disabled', via: 'account state' });
+      act: MailUses.said('act.accountDisabled'), via: 'account state' });
   }
 
   // An administrator ended a person's sessions.
@@ -803,15 +865,18 @@ class MailUses {
    *
    * @param username - the person
    * @param count - how many were ended
-   * @param by - who ended them
+   * @param by - who ended them: a name, or a `mailValues` message
+   * (`MailUses.said()`) the channel words in the person's language
    * @returns what `notice()` answered
    */
-  sessionsEnded(username: string, count: number, by: string): Json {
+  sessionsEnded(username: string, count: number, by: string | Json): Json {
     const { log } = this.deps;
     log.debug("Entering MailUses.sessionsEnded(). " + username);
     log.debug("Leaving MailUses.sessionsEnded().");
     return this.notice('sessions-ended', username, {
-      values: { count: String(count), by: String(by || 'an administrator') },
+      values: { count: String(count),
+                by: by && typeof by === 'object' ? by
+                  : by ? String(by) : MailUses.said('by.administrator') },
       dedupKey: 'sessions-ended:' + username, via: 'an administrator' });
   }
 
@@ -838,8 +903,8 @@ class MailUses {
     const out = mail.sendToFormerAddress({
       username: username, formerAddress: formerAddress,
       template: 'address-changed',
-      values: { username: username, when: this.when(),
-                address: newAddress || '(none)' },
+      values: { username: username, when: this.instant(),
+                address: newAddress || MailUses.said('address.none') },
       dedupKey: 'address-changed:' + formerAddress + '>' + newAddress,
       via: 'a directory change' });
     log.debug("Leaving MailUses.addressChanged().");
@@ -870,6 +935,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   RESET_ANSWER: MailUses.RESET_ANSWER,
   VERIFY_PATH: MailUses.VERIFY_PATH,
+  said: MailUses.said,
   resetOffered: slot.forward('resetOffered'),
   requestReset: slot.forward('requestReset'),
   resetNeedsRecoveryCode: slot.forward('resetNeedsRecoveryCode'),

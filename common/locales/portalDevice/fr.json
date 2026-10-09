@@ -1,0 +1,16 @@
+{
+  "request.heading": "Est-ce votre appareil ?",
+  "request.asks": "{client} demande à vous connecter sur un appareil qui affiche le code {code}.",
+  "request.access": "Accès : <code>{scope}</code>. Expire le {when}.",
+  "request.noScope": "(aucun indiqué)",
+  "request.warning": "<strong>N’approuvez qu’un appareil qui se trouve devant vous</strong> et dont vous avez vous-même lancé la connexion. Quelqu’un qui vous a envoyé ce code vous demande de LE connecter en votre nom.",
+  "request.approve": "Approuver",
+  "request.deny": "Refuser",
+  "find.heading": "Connecter un appareil",
+  "find.sub": "Un téléviseur, une console ou une ligne de commande qui affiche un code et cette adresse vous demande de vous connecter ici à sa place (RFC 8628).",
+  "find.off": "Ce mode de connexion est désactivé ici.",
+  "find.code": "Le code affiché par l’appareil",
+  "find.continue": "Continuer",
+  "done.approved": "Approuvé : l’appareil est en train de vous connecter.",
+  "done.denied": "Refusé."
+}

@@ -92,6 +92,21 @@
 //     `gnap.maxDerivationDepth` caps the chain (STS-GNAP-0782, every mode):
 //     each hop is a resource server further from anything the person
 //     approved.
+//   * **THE CHAIN BEGINS WITH THE ORIGINAL CLIENT, EVERY ENTRY CARRIES `iss`,
+//     AND AN ACTOR IS `urn:sts:client:<id>` (#526)** — the token exchange's
+//     rules (#443, #471; `oauth-oidc/CLAUDE.md`) in GNAP, rcbj's four
+//     decisions on #526. The first derivation of a token with no `act` nests
+//     that token's client instance under the deriving resource server (not
+//     when they are the same party), after a user-assertion impersonation
+//     too, since every derivation is a delegation. Every entry written here
+//     carries the GNAP authorization server's issuer, the token's own `iss`
+//     (the grant endpoint) — GNAP keeps its own issuer, so a GNAP and an
+//     OAuth JWT under the realm's one key stay apart by `iss` as well as
+//     `typ`. Entries copied from the original's chain keep theirs. The
+//     subject is `urn:sts:client:<instance identifier>` in every mode, the
+//     form the delegation register's map already resolves to the
+//     application. `gnap.maxDerivationDepth` counts DERIVATIONS: the
+//     original client's entry is not one.
 //
 // A LIBRARY (rule 3): no route and no store. It requires
 // `common/delegation_policy.ts` and `common/delegation.js`, both libraries
@@ -484,33 +499,66 @@ class GnapDelegation {
 
   // -------------------------------------------------------------------------
   // THE DERIVED TOKEN'S `act`: the deriving resource server outermost, the
-  // original token's chain under it. Refused past `gnap.maxDerivationDepth`
-  // (STS-GNAP-0782, in every mode — a bound, not a relationship).
+  // original token's chain under it — or, where the original carries none,
+  // the original client under it (#526). Refused past
+  // `gnap.maxDerivationDepth` derivations (STS-GNAP-0782, in every mode — a
+  // bound, not a relationship).
   // -------------------------------------------------------------------------
   /**
+   * The subject a client instance is named by as an actor (#526):
+   * `urn:sts:client:<identifier>`, the token exchange's form, in every mode.
+   *
+   * @param identifier - the client instance's identifier
+   * @returns the URN
+   */
+  static actorSubject(identifier: string): string {
+    return 'urn:sts:client:' + String(identifier || '');
+  }
+
+  /**
    * Builds a derived token's actor chain: the deriving resource server, then
-   * the original token's chain.
+   * the original token's chain, or the original client where it has none.
    *
    * @param rsId - the deriving resource server's identifier
    * @param originalAct - the original token's `act`, or null
+   * @param originalClient - the existing token's client instance: the
+   *   original client when the token carries no chain yet
+   * @param issuer - the GNAP authorization server's issuer, the derived
+   *   token's own `iss`
    * @returns `{ ok: true, act, depth }`, or a refusal past the cap
    */
-  actorChainFor(rsId: string, originalAct: Json): Json {
+  actorChainFor(rsId: string, originalAct: Json, originalClient: string,
+                issuer: string): Json {
     const { log, access } = this.deps;
     log.debug("Entering GnapDelegation.actorChainFor().");
+    const entry = function (identifier: string): Json {
+      return { sub: GnapDelegation.actorSubject(identifier),
+               iss: String(issuer) };
+    };
     const prior = access.actorChain(originalAct) || [];
-    const chain = [String(rsId)].concat(prior);
+    const client = String(originalClient || '');
+    // The derivations already made: the prior chain less its FOOT, which is
+    // always the original client — its own entry (#443's), or the client
+    // itself where it derived from its own token first and no entry was
+    // added; either way no step further from what the person approved.
+    const derivedBefore = Math.max(prior.length - 1, 0);
     const max = this.maxDepth();
-    if (chain.length > max) {
+    if (derivedBefore + 1 > max) {
       log.debug("Leaving GnapDelegation.actorChainFor(). Too deep.");
       return this.refusal(DEPTH_CODE, 'the token was itself derived ' +
-                          prior.length + ' time(s), and a derived token ' +
-                          'may carry at most ' + max + ' actor(s) ' +
+                          derivedBefore + ' time(s), and a token may be ' +
+                          'derived at most ' + max + ' time(s) ' +
                           '(gnap.maxDerivationDepth; RFC 9767 section 4).');
     }
+    // #443's rule in GNAP: a chain that begins here begins with the client
+    // the person's token was issued to, under the party now acting.
+    const tail = prior.length ? prior
+      : (client && client !== String(rsId) ? [entry(client)] : []);
+    const chain = [entry(rsId)].concat(tail);
     log.debug("Leaving GnapDelegation.actorChainFor(). Depth " +
-              chain.length + ".");
-    return { ok: true, act: access.nestActors(chain), depth: chain.length };
+              (derivedBefore + 1) + ", " + chain.length + " entries.");
+    return { ok: true, act: access.nestActors(chain),
+             depth: derivedBefore + 1 };
   }
 }
 

@@ -749,10 +749,9 @@ async function partnerOidc() {
   return { issuer: discovery.issuer, discovery: discovery, jwks: jwks };
 }
 
-// The IdP realm's SAML 2.0 metadata FOR one service provider: with
-// `saml2.perApplicationEntityId` the entityID differs per service provider, so
-// a document fetched without that name would name an issuer the assertions
-// will not carry.
+// The IdP realm's SAML 2.0 metadata FOR one service provider: its endpoints
+// are that service provider's own; its entityID is the realm's one issuer,
+// its OAuth issuer, since #523.
 async function partnerSaml(spEntityId) {
   log.debug("Entering partnerSaml().");
   const url = realmBase(IDP) + "/saml2/metadata/" +
@@ -1299,7 +1298,12 @@ async function samlFederation(world) {
     assert.ok(/<button[^>]*type="submit"/.test(outbound.page) &&
               !/<script/i.test(outbound.page),
       "the page should carry a submit button and no script");
-    const request = samlXml(formsIn(outbound.page)[0].fields.SAMLRequest);
+    // The form that CARRIES the request: since #539 a language chooser is
+    // drawn on the hand-off page too, ahead of it.
+    const carrier = formsIn(outbound.page).find(function (f) {
+      return "SAMLRequest" in f.fields;
+    }) || { fields: {} };
+    const request = samlXml(carrier.fields.SAMLRequest);
     assert.ok(request.indexOf("<saml:Issuer>" + world.ours.entityId +
                               "</saml:Issuer>") >= 0, request.slice(0, 300));
     assert.ok(request.indexOf("AssertionConsumerServiceURL=\"" + acs +
@@ -1352,7 +1356,9 @@ async function samlFederation(world) {
   // A FORGERY: right issuer, audience, recipient and InResponseTo, signed by
   // a key the relationship does not name, with that key's certificate inside.
   const begun = await beginAt(REL.saml);
-  const pending = formsIn(begun.r.body)[0] || { fields: {} };
+  const pending = formsIn(begun.r.body).find(function (f) {
+    return "SAMLRequest" in f.fields;
+  }) || { fields: {} };
   const requestId = (/ ID="([^"]+)"/.exec(samlXml(pending.fields.SAMLRequest))
                      || [])[1] || "_unknown";
   r = await postForm(begun.cookies, acs, {

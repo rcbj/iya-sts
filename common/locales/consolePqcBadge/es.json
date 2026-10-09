@@ -1,0 +1,14 @@
+{
+  "sentencePq": "Par de claves poscuántico: {label}",
+  "sentenceComposite": "Par de claves poscuántico compuesto: {label} — ambas mitades deben verificarse",
+  "sentenceKem": "Clave poscuántica de establecimiento de claves: {label} — no firma nada",
+  "sentenceHybrid": "Híbrida: una clave clásica cuyo certificado también lleva una {label}",
+  "sentenceOther": "Poscuántico: {label}",
+  "legendPq": " marca un par de claves que usa un algoritmo poscuántico",
+  "legendPqAfter": " — ML-DSA o SLH-DSA. ",
+  "legendComposite": " es una clave COMPUESTA: una sola clave con una mitad poscuántica y una mitad clásica, y ambas deben verificarse. ",
+  "legendKem": " es una clave poscuántica de ESTABLECIMIENTO de claves, que no firma nada. ",
+  "legendHybridLabel": "clave ML-DSA-65 alternativa",
+  "legendHybrid": " es una clave CLÁSICA cuyo certificado también lleva una clave poscuántica alternativa — la clave en sí no es poscuántica. Pasa el puntero sobre un icono para ver el algoritmo. Una clave sin icono es clásica (RSA, ECDSA o EdDSA). Lo que decide es el algoritmo de la propia clave, no la firma de su certificado: una clave ML-DSA certificada por una CA RSA se marca, y una clave RSA certificada por una CA ML-DSA no.",
+  "legendTitle": "Pares de claves poscuánticos"
+}

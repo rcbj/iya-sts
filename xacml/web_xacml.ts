@@ -97,28 +97,27 @@ class XacmlPage {
   // Policies page is where the argument lives. Two full copies of that argument
   // would be two things to keep in step, which is the failure this whole change
   // is about.
-  static serviceOwnEditorNote(rows: any[]): string {
+  static serviceOwnEditorNote(rows: any[], t: Json): string {
     const overridden = (rows || []).filter(function (one) {
       return one.entry;
     }).length;
+    // The link is markup a message cannot carry, so the sentence around it
+    // is two messages (#539).
     return kit.note(
-      '<p><strong>This chooser lists <code>ou=policies</code>, and two ' +
-      'policies that are deciding right now are not in it.</strong> The ' +
-      'issuance policy (what this service will issue) and the access policy ' +
-      '(who reaches the console, the User Portal, SCIM, the SPIRE Server ' +
-      'API) are BUILT IN — called at decision time rather than seeded — so ' +
-      'there is no stored document for this editor to open.</p><p>' +
+      '<p>' + t.html('consoleXacml.editorNote.lead') +
+      '</p><p>' +
       (overridden
-        ? 'One or more of them HAS an override in the repository, so it is ' +
-          'in the list above and opens here like any other policy. '
-        : 'Neither has an override yet. ') +
-      'Create one from its template on the ' +
-      '<a href="/admin/xacml/policies#service-own">Policies</a> page and it ' +
-      'appears here.</p>',
-      'Two policies are deciding and are not in this list');
+        ? t.html('consoleXacml.editorNote.overridden')
+        : t.html('consoleXacml.editorNote.none')) +
+      t.html('consoleXacml.editorNote.createBefore') +
+      '<a href="/admin/xacml/policies#service-own">' +
+      t.html('consoleXacml.link.policies') + '</a>' +
+      t.html('consoleXacml.editorNote.createAfter') + '</p>',
+      t.text('consoleXacml.editorNote.label'));
   }
 
-  static renderServiceOwnPolicies(rows: any[], writable: boolean): string {
+  static renderServiceOwnPolicies(rows: any[], writable: boolean,
+                                  t: Json): string {
     const self = this;
     const body = rows.map(function (row) {
       // WHERE THE DOCUMENT COMES FROM, in three states rather than two. "No
@@ -127,17 +126,18 @@ class XacmlPage {
       // second is the one somebody needs to see.
       let source;
       if (!row.ok) {
-        source = '<strong style="color:#b00">nothing is evaluated</strong>';
+        source = '<strong style="color:#b00">' +
+          t.html('consoleXacml.own.nothingEvaluated') + '</strong>';
       } else if (!row.builtIn) {
-        source = 'the repository entry <a href="/admin/xacml/editor?policy=' +
+        source = t.html('consoleXacml.own.repositoryEntry') +
+          ' <a href="/admin/xacml/editor?policy=' +
           encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
           '</code></a>';
       } else if (row.entry) {
-        source = 'the <strong>built-in</strong> document — the entry <code>' +
-          esc(row.name) + '</code> exists and is <em>disabled</em>';
+        source = t.html('consoleXacml.own.builtInDisabled', { name: row.name });
       } else {
-        source = 'the <strong>built-in</strong> document, from the <code>' +
-          esc(row.template) + '</code> template';
+        source = t.html('consoleXacml.own.builtInTemplate',
+          { template: row.template });
       }
       // The override is created through the SAME action the template forms
       // below use, prefilled with the name the setting already names — so a
@@ -150,48 +150,39 @@ class XacmlPage {
           self.hidden('action', 'create-from-template') +
           self.hidden('template', row.template) +
           self.hidden('name', row.name) +
-          '<button type="submit">Create an override</button></form>'
+          '<button type="submit">' +
+          t.html('consoleXacml.own.createOverride') + '</button></form>'
         : (row.entry
             ? '<a href="/admin/xacml/editor?policy=' +
-              encodeURIComponent(row.name) + '">Edit it</a>'
-            : '<span class="sub">read-only</span>');
+              encodeURIComponent(row.name) + '">' +
+              t.html('consoleXacml.own.editIt') + '</a>'
+            : '<span class="sub">' + t.html('consoleXacml.readOnly') +
+              '</span>');
       return '<tr><td><strong>' + esc(row.label) + '</strong>' +
-        '<div class="sub">named by <code>' + esc(row.setting) + '</code>: ' +
-        '<code>' + esc(row.name) + '</code></div></td>' +
-        '<td>' + esc(row.decides) + '<div class="sub">asked at ' +
+        '<div class="sub">' +
+        t.html('consoleXacml.own.namedBy', { setting: row.setting,
+                                            name: row.name }) +
+        '</div></td>' +
+        '<td>' + esc(row.decides) + '<div class="sub">' +
+        t.html('consoleXacml.own.askedAt') + ' ' +
         esc(row.asked).replace(/`([^`]+)`/g, '<code>$1</code>') +
         '</div></td>' +
         '<td>' + source + '</td>' +
         '<td>' + esc(row.effect) + '</td>' +
         '<td>' + make + '</td></tr>';
     }).join('');
-    return '<h2 id="service-own">What this service decides its own ' +
-      'boundaries with</h2>' +
+    return '<h2 id="service-own">' +
+      t.html('consoleXacml.own.heading') + '</h2>' +
       kit.warn(
-        '<p><strong>These two policies are IN FORCE and are not in the table ' +
-        'above.</strong> That table is <code>ou=policies</code>; these are ' +
-        'BUILT IN — the template is called at decision time rather than ' +
-        'seeded into the repository — so the editor has never listed them ' +
-        'and a reader looking only at the repository would conclude that ' +
-        'whatever is root there is what this service enforces. Usually it is ' +
-        'not: a seeded example policy decides nothing this service ' +
-        'does.</p><p><strong>They are built in rather than seeded on ' +
-        'purpose.</strong> <code>ou=policies</code> is per trust realm, so a ' +
-        'policy written once into the default realm leaves every realm ' +
-        'created afterwards unable to decide anything at all — and falling ' +
-        'back to the default realm\'s copy would couple two realms, which is ' +
-        'the one thing the realm design does not do. Called rather than ' +
-        'seeded, every realm has both of them out of the box with nothing to ' +
-        'delete.</p><p><strong>An override is an ordinary policy.</strong> ' +
-        'Create one from the same template, named whatever the setting says, ' +
-        'and it wins from the next request — it then appears in the table ' +
-        'above and in the editor like everything else. Neither is sent to a ' +
-        'remote PEP: <code>GET /xacml/pep/policies</code> carries the ' +
-        'policies about somebody ELSE\'s boundary, and these two are about ' +
-        'this service\'s own.</p>',
-        'Two policies decide here and are not in the repository') +
-      '<table><tr><th>Policy</th><th>What it decides</th>' +
-      '<th>Document in force</th><th>Right now</th><th></th></tr>' +
+        '<p>' + t.html('consoleXacml.own.warn1') +
+        '</p><p>' + t.html('consoleXacml.own.warn2') +
+        '</p><p>' + t.html('consoleXacml.own.warn3') +
+        '</p>',
+        t.text('consoleXacml.own.warnLabel')) +
+      '<table><tr><th>' + t.html('consoleXacml.th.policy') + '</th><th>' +
+      t.html('consoleXacml.th.decides') + '</th>' +
+      '<th>' + t.html('consoleXacml.th.inForce') + '</th><th>' +
+      t.html('consoleXacml.th.rightNow') + '</th><th></th></tr>' +
       body + '</table>';
   }
 
@@ -214,27 +205,19 @@ class XacmlPage {
   // empty `peps` array has exactly the ambiguity the page had.
   //
   // `where` is that function's answer.
-  static noPepsHere(where: any[]): string {
-    const shared = 'That does not mean none is running: registering is not ' +
-      'what lets a PEP enforce, and one that only ever pulls ' +
-      '<code>/xacml/pep/policies</code> works perfectly and never appears ' +
-      'here.';
+  static noPepsHere(where: any[], t: Json): string {
+    const shared = t.html('consoleXacml.noPeps.shared');
     if (!where.length) {
-      return 'No remote Policy Enforcement Point has registered, <strong>in ' +
-        'this realm or in any other</strong>. ' + shared;
+      return t.html('consoleXacml.noPeps.anywhere') + ' ' +
+        shared;
     }
     const list = where.map(function (one) {
       return '<a href="/realm/' + esc(one.id) + '/admin/xacml/peps"><code>' +
         esc(one.id) + '</code></a> (' + one.count + ')';
     }).join(', ');
-    return 'No remote Policy Enforcement Point has registered <strong>in ' +
-      'this realm</strong> &mdash; but ' + where.length + ' other realm' +
-      (where.length === 1 ? '' : 's') + ' hold' +
-      (where.length === 1 ? 's' : '') +
-      ' one: ' + list + '. <strong>The register is per realm</strong>, like ' +
-      'the policy repository it serves, so a PEP that registered against ' +
-      '<code>/realm/&lt;id&gt;</code> is listed there and nowhere ' +
-      'else. ' + shared;
+    return t.html('consoleXacml.noPeps.elsewhere', { n: where.length }) +
+      list + t.html('consoleXacml.noPeps.perRealm') +
+      ' ' + shared;
   }
 
   // A count that is a proportion of another, as "n (p%)". Zero of zero is drawn
@@ -252,11 +235,11 @@ class XacmlPage {
   // which is every REMOTE row, because a remote PEP reports what it ENFORCED
   // and the breakdown by PDP decision is known only to the process that
   // evaluated.
-  static decisionCells(row: any): string {
+  static decisionCells(row: any, t: Json): string {
     if (row.permit === null || row.permit === undefined) {
-      return '<td colspan="4" class="sub">not reported &mdash; a remote PEP ' +
-             'sends what it enforced, and only the process that EVALUATED ' +
-             'knows which of the four decisions each was</td>';
+      return '<td colspan="4" class="sub">' +
+             t.html('consoleXacml.monitor.notReported') +
+             '</td>';
     }
     return '<td class="num state-valid">' + row.permit + '</td>' +
       '<td class="num state-revoked">' + row.deny + '</td>' +
@@ -267,12 +250,12 @@ class XacmlPage {
   // The allowed/refused pair, or the EMPTY cell that says this asker never
   // enforced anything. `/xacml/pdp` is the one row that gets it, and the
   // distinction is the point: a zero would read as "it refused nothing".
-  static enforcementCells(row: any): string {
+  static enforcementCells(row: any, t: Json): string {
     const self = this;
     if (!row.enforces || row.allowed === null || row.allowed === undefined) {
-      return '<td colspan="2" class="sub">nothing was enforced here &mdash; ' +
-             'this service produced the decision and somebody else\'s PEP ' +
-             'acted on it, in their process</td>';
+      return '<td colspan="2" class="sub">' +
+             t.html('consoleXacml.monitor.notEnforced') +
+             '</td>';
     }
     return '<td class="num state-valid">' +
       self.share(row.allowed, row.decisions) +
@@ -281,55 +264,64 @@ class XacmlPage {
       '</td>';
   }
 
-  static monitorRow(row: any): string {
+  static monitorRow(row: any, t: Json): string {
     const self = this;
     const state = [];
     if (row.kind === 'remote') {
       state.push(row.remote.current
-        ? '<span title="This PEP reported holding the repository digest this ' +
-          'service has now.">current</span>'
-        : '<strong title="The sync token this PEP last reported is not the ' +
-          'one the repository has now. It converges on its next poll.">not ' +
-          'current</strong>');
-      state.push(row.remote.stale ? '<strong>stale</strong>' : 'live');
+        ? '<span title="' + esc(t.text('consoleXacml.pep.currentTip')) +
+          '">' + t.html('consoleXacml.pep.current') + '</span>'
+        : '<strong title="' + esc(t.text('consoleXacml.pep.notCurrentTip')) +
+          '">' + t.html('consoleXacml.pep.notCurrent') + '</strong>');
+      state.push(row.remote.stale
+        ? '<strong>' + t.html('consoleXacml.pep.stale') + '</strong>'
+        : t.html('consoleXacml.pep.live'));
       if (!row.remote.authenticated) {
-        state.push('<strong>unauthenticated</strong>');
+        state.push('<strong>' + t.html('consoleXacml.pep.unauthenticated') +
+                   '</strong>');
       }
     } else {
       // AN EMBEDDED PEP IS ALWAYS LIVE AND THAT IS NOT A REASSURANCE, it is a
       // tautology worth stating: it is compiled into this process, so it is
       // running exactly when this page is being drawn. There is nothing to be
       // stale about and no registration to have failed.
-      state.push('<span title="Compiled into this process. It is running ' +
-                 'because this page is.">in this process</span>');
+      state.push('<span title="' +
+        esc(t.text('consoleXacml.monitor.inProcessTip')) +
+                 '">' + t.html('consoleXacml.monitor.inProcess') + '</span>');
     }
     const counts = row.decisions
       ? esc(row.lastDecision || '') +
         (row.lastAllowed === null || row.lastAllowed === undefined
           ? ''
-          : ', ' + (row.lastAllowed ? 'allowed' : 'refused')) +
+          : ', ' + (row.lastAllowed ? t.html('consoleXacml.monitor.allowed')
+                                    : t.html('consoleXacml.monitor.refused'))) +
         '<div class="sub">' + esc(row.lastAt || '') + '</div>'
-      : '<span class="sub">nothing yet</span>';
+      : '<span class="sub">' + t.html('consoleXacml.monitor.nothingYet') +
+      '</span>';
     return '<tr><td><strong>' + esc(row.label) + '</strong>' +
       '<div class="sub">' + esc(row.kind) + ' &middot; <code>' +
       esc(row.where) + '</code></div>' +
       '<div class="sub">' + esc(row.guards) + '</div></td>' +
       '<td>' + state.join('<br>') +
       (row.kind === 'remote' && row.remote.policyCount !== null
-        ? '<div class="sub">holds ' + row.remote.policyCount + ' ' +
-            'policy/policies</div>'
+        ? '<div class="sub">' +
+          t.html('consoleXacml.monitor.holds', { n: row.remote.policyCount }) +
+          '</div>'
         : '') +
       '</td>' +
-      '<td>' + (row.bias ? esc(row.bias) : '<span class="sub">n/a</span>') +
+      '<td>' + (row.bias ? esc(row.bias)
+        : '<span class="sub">' + t.html('consoleXacml.monitor.na') +
+        '</span>') +
       (row.kind === 'remote'
-        ? '<div class="sub">reported by it</div>'
+        ? '<div class="sub">' + t.html('consoleXacml.monitor.reportedByIt') +
+        '</div>'
         : (row.id === 'protected'
             ? '<div class="sub"><code>xacml.pepBias</code></div>'
             : '')) +
       '</td>' +
       '<td class="num">' + row.decisions + '</td>' +
-      self.enforcementCells(row) +
-      self.decisionCells(row) +
+      self.enforcementCells(row, t) +
+      self.decisionCells(row, t) +
       '<td>' + counts + '</td></tr>';
   }
 
@@ -345,49 +337,36 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static overviewBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const tiles = '<div class="tiles">' +
-      kit.tile(json.policies, 'policies') +
-      kit.tile(json.enabledPolicies, 'enabled') +
-      kit.tile(json.root || '—', 'root policy') +
-      kit.tile(json.pepBias, 'PEP bias') +
-      kit.tile(json.pipAvailable ? 'yes' : 'no', 'PIP has the directory') +
+      kit.tile(json.policies, t.text('consoleXacml.tile.policies')) +
+      kit.tile(json.enabledPolicies, t.text('consoleXacml.tile.enabled')) +
+      kit.tile(json.root || '—', t.text('consoleXacml.tile.root')) +
+      kit.tile(json.pepBias, t.text('consoleXacml.tile.pepBias')) +
+      kit.tile(json.pipAvailable ? t.text('consoleXacml.yes')
+        : t.text('consoleXacml.no'),
+               t.text('consoleXacml.tile.pip')) +
       '</div>';
 
+    // The link is markup a message cannot carry (#539).
     const rootWarning = json.root ? '' : kit.warn(
-      'No policy is marked as the root, so <strong>every decision is ' +
-      'NotApplicable</strong>. A PDP evaluates one document and reaches ' +
-      'the rest through <code>PolicyIdReference</code>, so exactly one ' +
-      'policy in the repository is where evaluation starts. Choose one on ' +
-      'the <a href="/admin/xacml/policies">Policies</a> page.',
-      'There is no root policy');
+      t.html('consoleXacml.overview.noRootBefore') +
+      '<a href="/admin/xacml/policies">' +
+      t.html('consoleXacml.link.policies') +
+      '</a>' + t.html('consoleXacml.pagePeriod'),
+      t.text('consoleXacml.overview.noRootLabel'));
 
     const what = kit.note(
-      '<p>This service is a <strong>Policy Decision Point</strong>. It is ' +
-      'the only protocol family here that answers a question about ' +
-      'somebody else&rsquo;s boundary: every other one authenticates or ' +
-      'provisions a person, and this one is handed a subject who was ' +
-      'authenticated somewhere else and asked whether they may.</p>' +
-      '<p>Policies live in <code>ou=policies</code> in the embedded ' +
-      'directory. That container <em>is</em> the repository rather than a ' +
-      'copy of one, so an <code>ldapmodify</code> there changes what the ' +
-      'PDP decides on the next request — and a policy survives a restart ' +
-      'whenever <code>persistence.mode</code> is not ' +
-      '<code>memory</code>.</p><p>The <strong>PIP</strong> reads ' +
-      'attributes off the subject&rsquo;s own directory entry, so a policy ' +
-      'can grant on <code>employeeType</code> ' +
-      'without the caller having to assert it. What the REQUEST carries ' +
-      'wins over the directory, because a PEP asserting an attribute is ' +
-      'describing that request while the directory is describing the ' +
-      'world.</p><p><code>xacml.pepBias</code> below is the <em>embedded ' +
-      'PEP&rsquo;s</em> decision and not the PDP&rsquo;s. Deny-biased and ' +
-      'permit-biased agree ' +
-      'on every Permit and every Deny and differ on Indeterminate and ' +
-      'NotApplicable — which is exactly the case nobody tests, and the ' +
-      'reason the setting is here to flip.</p>',
-      'What this page configures');
+      '<p>' + t.html('consoleXacml.overview.p1') +
+      '</p><p>' + t.html('consoleXacml.overview.p2') +
+      '</p><p>' + t.html('consoleXacml.overview.p3') +
+      '</p><p>' + t.html('consoleXacml.overview.p4') +
+      '</p>',
+      t.text('consoleXacml.overview.label'));
     return tiles + rootWarning + what +
-                  SettingsForms.forms(json.settings, '/admin/xacml');
+                  SettingsForms.forms(json.settings, '/admin/xacml',
+                                      undefined, t);
   }
 
   /**
@@ -398,6 +377,7 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static policiesBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const writable = ctx.write;
 
@@ -410,30 +390,37 @@ class XacmlPage {
         'action="/admin/xacml/policies" style="display:inline">' +
         self.hidden('action', row.enabled ? 'disable' : 'enable') +
         self.hidden('name', row.name) +
-        '<button type="submit">' + (row.enabled ? 'Disable' : 'Enable') +
+        '<button type="submit">' + (row.enabled
+          ? t.html('consoleXacml.policies.disable')
+          : t.html('consoleXacml.policies.enable')) +
         '</button></form> ' +
         (row.isRoot ? '' : '<form method="post" ' +
           'action="/admin/xacml/policies" style="display:inline">' +
           self.hidden('action', 'set-root') + self.hidden('name', row.name) +
-          '<button type="submit">Make root</button></form> ') +
+          '<button type="submit">' + t.html('consoleXacml.policies.makeRoot') +
+          '</button></form> ') +
         '<form method="post" action="/admin/xacml/policies" ' +
         'style="display:inline">' +
         self.hidden('action', 'delete') + self.hidden('name', row.name) +
-        '<button type="submit">Delete</button></form>'
-        : '<span class="sub">read-only</span>';
+        '<button type="submit">' + t.html('consoleXacml.policies.delete') +
+        '</button></form>'
+        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
       return '<tr><td><a href="/admin/xacml/editor?policy=' +
         encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
-        '</code></a>' + (row.isRoot ? ' <strong>(root)</strong>' : '') +
+        '</code></a>' + (row.isRoot
+          ? ' <strong>' + t.html('consoleXacml.policies.root') + '</strong>'
+          : '') +
         '</td><td><code>' + esc(row.policyId) + '</code>' + problems +
         '</td><td>' + esc(row.kind) + '</td><td>' +
         esc(String(row.combiningAlgId)
           .replace(/^urn:oasis:names:tc:xacml:[0-9.]+:function:/, '')
           .replace(/^.*combining-algorithm:/, '')) +
-        '</td><td>' + (row.enabled ? 'enabled' : '<em>disabled</em>') +
+        '</td><td>' + (row.enabled ? t.html('consoleXacml.policies.enabled')
+          : '<em>' + t.html('consoleXacml.policies.disabled') + '</em>') +
         '</td><td>' + actions + '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="6">The repository is empty, so every decision is ' +
-      'NotApplicable. Create one from a template below.</td></tr>';
+      '<tr><td colspan="6">' + t.html('consoleXacml.policies.empty') +
+      '</td></tr>';
 
     // THE TEMPLATE FORMS ARE DERIVED FROM `xacml_templates.ts`'s table.
     // Adding a template is a row there and nothing here — which is the
@@ -450,74 +437,55 @@ class XacmlPage {
         '<form method="post" action="/admin/xacml/policies">' +
         self.hidden('action', 'create-from-template') +
         self.hidden('template', one.id) +
-        '<table><tr><td>Name for the policy</td><td>' +
+        '<table><tr><td>' + t.html('consoleXacml.template.name') +
+        '</td><td>' +
         self.textField('name', one.id, 30) +
-        '</td><td class="sub">Names the directory entry. The PolicyId ' +
-        'inside the document is separate and may be any URI.</td></tr>' +
+        '</td><td class="sub">' + t.html('consoleXacml.template.nameHelp') +
+        '</td></tr>' +
         fields +
-        '</table><button type="submit">Create</button></form></details>';
+        '</table><button type="submit">' +
+        t.html('consoleXacml.template.create') +
+        '</button></form></details>';
     }).join('') : '';
 
     const body = kit.note(
-      '<p><code>ou=policies</code> in the embedded directory ' +
-      '<strong>is</strong> this table. An <code>ldapmodify</code> of ' +
-      '<code>xacmlPolicyDocument</code> changes what the PDP decides on ' +
-      'the next request, and <code>xacmlEnabled</code> takes a policy out ' +
-      'of the decision without deleting it.</p>' +
-      '<p><strong>Exactly one policy is the root.</strong> A PDP evaluates ' +
-      'one document and reaches the rest through ' +
-      '<code>PolicyIdReference</code>, so the root is where evaluation ' +
-      'starts. A repository with none decides nothing; one with two is ' +
-      'refused rather than resolved arbitrarily.</p><p>A policy that does ' +
-      'not type-check is shown in red here and was refused when it was ' +
-      'written — XACML is statically typed, so such a policy is wrong for ' +
-      'every request rather than for some.</p>',
-      'What this page is') +
-      '<table><tr><th>Name</th><th>PolicyId</th><th>Kind</th>' +
-      '<th>Combining</th><th>State</th><th>Actions</th></tr>' + rows +
+      '<p>' + t.html('consoleXacml.policies.p1') +
+      '</p><p>' + t.html('consoleXacml.policies.p2') +
+      '</p><p>' + t.html('consoleXacml.policies.p3') +
+      '</p>',
+      t.text('consoleXacml.whatThisPageIs')) +
+      '<table><tr><th>' + t.html('consoleXacml.th.name') +
+      '</th><th>PolicyId</th><th>' +
+      t.html('consoleXacml.th.kind') + '</th>' +
+      '<th>' + t.html('consoleXacml.th.combining') + '</th><th>' +
+      t.html('consoleXacml.th.state') + '</th><th>' +
+      t.html('consoleXacml.th.actions') +
+      '</th></tr>' + rows +
       '</table>' +
-      self.renderServiceOwnPolicies(json.serviceOwn, writable) +
+      self.renderServiceOwnPolicies(json.serviceOwn, writable, t) +
       (writable
-        ? '<h2>Import ALFA</h2>' + kit.note(
-            '<p>ALFA is the readable syntax for XACML. Paste one here and ' +
-            'it is parsed, converted and STORED AS XACML XML — the ' +
-            'repository holds one representation, because two would be two ' +
-            'things to keep in step.</p>' +
-            '<p>Every attribute must be DECLARED before it is used. That ' +
-            'is ALFA\'s own rule and it is the most useful refusal in the ' +
-            'parser: a typo in an attribute name is otherwise a policy ' +
-            'that quietly matches nothing, which looks exactly like a ' +
-            'policy that is working and denying you. Open any policy in ' +
-            'the editor to see the shape.</p>',
-            'What this accepts') +
+        ? '<h2>' + t.html('consoleXacml.alfa.heading') + '</h2>' + kit.note(
+            '<p>' + t.html('consoleXacml.alfa.p1') +
+            '</p><p>' + t.html('consoleXacml.alfa.p2') +
+            '</p>',
+            t.text('consoleXacml.alfa.label')) +
           '<form method="post" action="/admin/xacml/policies">' +
           self.hidden('action', 'import-alfa') +
-          '<p>Name ' + self.textField('name', 'imported', 24) + '</p>' +
+          '<p>' + t.html('consoleXacml.th.name') + ' ' +
+          self.textField('name', 'imported', 24) + '</p>' +
           '<textarea name="alfa" rows="14" cols="88" ' +
           'placeholder="namespace example { ... }"></textarea>' +
-          '<p><button type="submit">Import</button></p></form>'
+          '<p><button type="submit">' + t.html('consoleXacml.alfa.import') +
+          '</button></p></form>'
         : '') +
       (templateForms
-        ? '<h2>Create from a template</h2>' + kit.note(
-            '<p>A template is the first twenty clicks of the editor ' +
-            'already made: a working, valid, evaluable policy in a shape ' +
-            'people actually write. The editor takes it from there.</p>' +
-            '<p><strong><code>blank</code> is the exception and it is here ' +
-            'on purpose.</strong> It makes no argument and there is ' +
-            'nothing in it to read — an empty Policy, or an empty ' +
-            'PolicySet, which is the only way to create one of those here ' +
-            'without importing ALFA. It <em>denies every request</em> ' +
-            'until you put a rule in it, because deny-unless-permit over ' +
-            'nothing at all is a Deny. That is the direction a half-built ' +
-            'policy should fail in, and it is why building it before ' +
-            'making it the root is the right order.</p><p>RBAC asks ' +
-            '<em>what role do you hold</em>; ABAC asks <em>what is true ' +
-            'about you, this resource and right now</em>. The first is ' +
-            'what most deployments have and the second is what they wanted ' +
-            '— having both here, producing documents in the same language, ' +
-            'is the clearest way to see what the difference costs in ' +
-            'policy.</p>',
-            'What a template is') + templateForms
+        ? '<h2>' + t.html('consoleXacml.template.heading') + '</h2>' +
+          kit.note(
+            '<p>' + t.html('consoleXacml.template.p1') +
+            '</p><p>' + t.html('consoleXacml.template.p2') +
+            '</p><p>' + t.html('consoleXacml.template.p3') +
+            '</p>',
+            t.text('consoleXacml.template.label')) + templateForms
         : '');
     return body;
   }
@@ -530,24 +498,23 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static pepsBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const writable = ctx.write;
 
     const rows = json.peps.map(function (row) {
       const state = [];
       state.push(row.current
-        ? '<span title="This PEP reported holding the repository digest ' +
-          'this service has now.">current</span>'
-        : '<strong title="The sync token this PEP last reported is not the ' +
-          'one the repository has now. It converges on its next poll.">not ' +
-          'current</strong>');
+        ? '<span title="' + esc(t.text('consoleXacml.pep.currentTip')) +
+          '">' + t.html('consoleXacml.pep.current') + '</span>'
+        : '<strong title="' + esc(t.text('consoleXacml.pep.notCurrentTip')) +
+          '">' + t.html('consoleXacml.pep.notCurrent') + '</strong>');
       state.push(row.stale
-        ? '<strong title="Nothing has been heard from this PEP for longer ' +
-          'than xacml.pepStaleAfterS. It may still be enforcing — this ' +
-          'service cannot tell.">stale</strong>'
-        : 'live');
+        ? '<strong title="' + esc(t.text('consoleXacml.pep.staleTip')) +
+          '">' + t.html('consoleXacml.pep.stale') + '</strong>'
+        : t.html('consoleXacml.pep.live'));
       if (!row.enabled) {
-        state.push('<em>not nudged</em>');
+        state.push('<em>' + t.html('consoleXacml.pep.notNudged') + '</em>');
       }
       // THE AUTHENTICATION IS ON THE ROW AND NOT IN A FOOTNOTE. A
       // registration that proved nothing must not look the same as one that
@@ -555,9 +522,10 @@ class XacmlPage {
       // than inferred from whether a subject happens to be present.
       const who = row.authenticated
         ? '<code>' + esc(row.certificateSubject) + '</code>'
-        : '<strong>unauthenticated</strong><div class="sub">Registered ' +
-          'with no client certificate, which xacml.pepRequireCertificate ' +
-          'allowed. Nothing about this row is proven.</div>';
+        : '<strong>' + t.html('consoleXacml.pep.unauthenticated') +
+          '</strong><div class="sub">' +
+          t.html('consoleXacml.pep.unauthenticatedNote') +
+          '</div>';
       const notify = row.notifyUrl
         ? '<code>' + esc(row.notifyUrl) + '</code>' +
           (row.notifyProblem
@@ -568,8 +536,9 @@ class XacmlPage {
           (row.lastNotify
             ? '<div class="sub">' + esc(row.lastNotify) + '</div>'
             : '')
-        : '<span class="sub">none — never nudged, and it converges on its ' +
-          'own poll anyway</span>';
+        : '<span class="sub">' +
+          t.html('consoleXacml.pep.noNotify') +
+          '</span>';
       // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
       // and never whether the PEP is serving it: nothing on this page reaches
       // into another process, and the PEP's own GET / is where that is said.
@@ -579,24 +548,31 @@ class XacmlPage {
           '<div class="sub">' +
           esc(held.dnsNames.concat(held.ipAddresses).join(', ')) + '</div>' +
           '<div class="sub">' +
-          (held.expired ? '<strong>expired</strong> ' : '') +
-          'until ' + esc(held.notAfter) + '</div>'
-        : '<span class="sub">none issued</span>') +
+          (held.expired
+            ? '<strong>' + t.html('consoleXacml.pep.expired') + '</strong> '
+              : '') +
+          t.html('consoleXacml.pep.until', { at: held.notAfter }) + '</div>'
+        : '<span class="sub">' + t.html('consoleXacml.pep.noneIssued') +
+        '</span>') +
         (writable
           ? '<form method="post" action="/admin/xacml/peps">' +
             self.hidden('action', 'issue-pep-certificate') +
             self.hidden('name', row.name) +
-            '<div class="sub">More DNS names <input name="dnsNames" ' +
+            '<div class="sub">' + t.html('consoleXacml.pep.moreDns') +
+            ' <input name="dnsNames" ' +
             'size="18" placeholder="pep.example.test"></div>' +
-            '<div class="sub">IP addresses <input name="ipAddresses" ' +
+            '<div class="sub">' + t.html('consoleXacml.pep.ipAddresses') +
+            ' <input name="ipAddresses" ' +
             'size="14" placeholder="10.0.0.5"></div>' +
-            '<div class="sub">Key ' +
+            '<div class="sub">' + t.html('consoleXacml.pep.key') + ' ' +
             self.select('keyAlg', json.listenerCertificates.keyAlgorithms
               .map(function (one) {
                 return { value: one, label: one };
               }), json.listenerCertificates.defaultKeyAlg) + ' ' +
-            '<button type="submit">' + (held ? 'Reissue' : 'Issue') +
-            ' certificate</button></div></form>'
+            '<button type="submit">' + (held
+              ? t.html('consoleXacml.pep.reissue')
+              : t.html('consoleXacml.pep.issue')) +
+            '</button></div></form>'
           : '');
       const actions = writable
         ? '<form method="post" action="/admin/xacml/peps" ' +
@@ -604,109 +580,80 @@ class XacmlPage {
           self.hidden('action', row.enabled ? 'disable-pep' : 'enable-pep') +
           self.hidden('name', row.name) +
           '<button type="submit">' +
-          (row.enabled ? 'Stop nudging' : 'Nudge') +
+          (row.enabled ? t.html('consoleXacml.pep.stopNudging')
+                       : t.html('consoleXacml.pep.nudge')) +
           '</button></form> ' +
           '<form method="post" action="/admin/xacml/peps" ' +
           'style="display:inline">' +
           self.hidden('action', 'forget-pep') +
           self.hidden('name', row.name) +
-          '<button type="submit">Forget</button></form>'
-        : '<span class="sub">read-only</span>';
+          '<button type="submit">' + t.html('consoleXacml.pep.forget') +
+          '</button></form>'
+        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
       return '<tr><td><code>' + esc(row.name) + '</code>' +
-        (row.resource ? '<div class="sub">guards ' + esc(row.resource) +
+        (row.resource ? '<div class="sub">' +
+                        t.html('consoleXacml.pep.guards',
+                          { resource: row.resource }) +
                         '</div>' : '') +
         (row.version
           ? '<div class="sub">' + esc(row.version) + '</div>'
           : '') +
         '</td><td>' + who + '</td><td>' + state.join(', ') +
-        '<div class="sub">last seen ' + esc(row.lastSeen || 'never') +
-        '</div></td><td>' + esc(row.bias || 'not reported') +
-        '</td><td>' + row.decisions + ' decided, ' + row.allowed +
-        ' allowed, ' + row.refused + ' refused' +
+        '<div class="sub">' + t.html('consoleXacml.pep.lastSeen', {
+          at: row.lastSeen || t.text('consoleXacml.pep.never') }) +
+        '</div></td><td>' +
+        esc(row.bias || t.text('consoleXacml.pep.notReported')) +
+        '</td><td>' + t.html('consoleXacml.pep.counts', {
+          decisions: row.decisions, allowed: row.allowed,
+          refused: row.refused }) +
         (row.undischargeable
-          ? '<div class="sub">' + row.undischargeable +
-          ' of those refused for ' +
-            'an obligation it could not discharge</div>'
+          ? '<div class="sub">' +
+            t.html('consoleXacml.pep.undischargeable',
+              { n: row.undischargeable }) +
+            '</div>'
           : '') +
         '</td><td>' + notify + '</td><td>' + listener + '</td><td>' +
         actions +
         '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="8">' + self.noPepsHere(json.elsewhere) + '</td></tr>';
+      '<tr><td colspan="8">' + self.noPepsHere(json.elsewhere, t) +
+      '</td></tr>';
 
     const body = kit.note(
-      '<p>A <strong>remote</strong> Policy Enforcement Point runs in ' +
-      'another process, holds its own copy of this engine, ' +
-      '<strong>pulls</strong> the enabled policies from ' +
-      '<code>/xacml/pep/policies</code> and decides locally. That is the ' +
-      'point of having one: a PEP that asked this service per request ' +
-      'would be <code>POST /xacml/pdp</code> with a network hop in front ' +
-      'of every access decision.</p><p><strong>The pull is the ' +
-      'contract.</strong> When the repository changes this service also ' +
-      'POSTs a few bytes to each PEP that gave a notify URL, saying only ' +
-      'that something changed. That is an optimisation over the polling ' +
-      'interval and never a replacement for it &mdash; a nudge that is ' +
-      'refused, blocked or never delivered costs one polling interval and ' +
-      'nothing else, which is why the failure is worth showing here and ' +
-      'not worth alarming about.</p><p><strong>Nothing on this page ' +
-      'reaches into another process.</strong> &ldquo;Stop nudging&rdquo; ' +
-      'stops this service dialling that PEP; it does not stop it ' +
-      'enforcing, because it already holds the engine and the policy. ' +
-      '&ldquo;Forget&rdquo; removes the row. Neither takes a running ' +
-      'enforcement point out of service, and a console that implied ' +
-      'otherwise would be worse than one with no controls at ' +
-      'all.</p><p>Registering is <em>not</em> a permission. An ' +
-      'unregistered PEP can pull and enforce exactly as well; what a row ' +
-      'buys is this page and an address for the nudge.</p>',
-      'What this page is') +
-      '<p>The repository&rsquo;s sync token is <code>' +
-      esc(json.syncToken) + '</code>. ' + json.current + ' of ' +
-      json.peps.length + ' registered PEP(s) hold it; ' + json.stale +
-      ' have not been heard from for ' + json.staleAfterS + 's.</p>' +
+      '<p>' + t.html('consoleXacml.peps.p1') +
+      '</p><p>' + t.html('consoleXacml.peps.p2') +
+      '</p><p>' + t.html('consoleXacml.peps.p3') +
+      '</p><p>' + t.html('consoleXacml.peps.p4') +
+      '</p>',
+      t.text('consoleXacml.whatThisPageIs')) +
+      '<p>' + t.html('consoleXacml.peps.sync', {
+        token: json.syncToken, current: json.current,
+        total: json.peps.length, stale: json.stale,
+        after: json.staleAfterS }) + '</p>' +
       (json.enabled ? ''
-        : '<p><strong>Remote Policy Enforcement Points are turned ' +
-          'off</strong> ' +
-          '(<code>xacml.remotePeps</code>), so the three endpoints under ' +
-          '<code>/xacml/pep</code> answer 501 and nothing here is nudged. ' +
-          'The register below is untouched and comes back when it is ' +
-          'turned on.</p>') +
+        : '<p>' + t.html('consoleXacml.peps.off') +
+          '</p>') +
       (json.notify.on ? ''
-        : '<p><strong>The nudge is turned off</strong> ' +
-          '(<code>xacml.pepNotify</code>), so nothing below is dialled. ' +
-          'Every PEP still converges on its own poll &mdash; that is what ' +
-          'makes this safe to turn off.</p>') +
-      '<table><tr><th>PEP</th><th>Certificate</th><th>State</th>' +
-      '<th>Its bias</th><th>What it enforced</th><th>Notify</th>' +
-      '<th>HTTPS listener certificate</th>' +
-      '<th>Actions</th></tr>' + rows + '</table>' +
+        : '<p>' + t.html('consoleXacml.peps.notifyOff') +
+          '</p>') +
+      '<table><tr><th>PEP</th><th>' + t.html('consoleXacml.th.certificate') +
+      '</th><th>' + t.html('consoleXacml.th.state') + '</th>' +
+      '<th>' + t.html('consoleXacml.th.itsBias') + '</th><th>' +
+      t.html('consoleXacml.th.enforced') + '</th><th>' +
+      t.html('consoleXacml.th.notify') + '</th>' +
+      '<th>' + t.html('consoleXacml.th.listener') + '</th>' +
+      '<th>' + t.html('consoleXacml.th.actions') + '</th></tr>' + rows +
+      '</table>' +
       kit.note(
-        '<p>A remote PEP answers its own clients, and the column above is ' +
-        'the certificate it answers them with. It is issued by the ' +
-        '<strong>Remote PEP listeners</strong> Issuing CA of <em>this</em> ' +
-        'realm &mdash; the realm the PEP registered to &mdash; so a client ' +
-        'that installed this service&rsquo;s Root CA verifies it, and the ' +
-        'chain still says which realm vouched for that front door. It ' +
-        'names the PEP&rsquo;s registered name and the host of its notify ' +
-        'URL, plus whatever you add.</p><p><strong>The private key is ' +
-        'shown once</strong>, on the page that answers the button, and ' +
-        'this service keeps no copy. Write the two blocks to the files the ' +
-        'container reads (<code>PEP_HTTPS_CERT</code> and ' +
-        '<code>PEP_HTTPS_KEY</code>); it picks up a pair written after it ' +
-        'started, and reissuing supersedes the certificate it replaces on ' +
-        'the issuer&rsquo;s revocation list.</p>',
-        'The HTTPS listener certificate') +
+        '<p>' + t.html('consoleXacml.peps.cert1') +
+        '</p><p>' + t.html('consoleXacml.peps.cert2') +
+        '</p>',
+        t.text('consoleXacml.peps.certLabel')) +
       kit.note(
-        '<p>The decision counts are the PEP&rsquo;s own, reported by it, ' +
-        'cumulative in its process. This service did not see one of those ' +
-        'decisions &mdash; that is what a remote PEP is &mdash; so a PEP ' +
-        'that restarts makes its counts go down, which is honest rather ' +
-        'than broken.</p>' +
-        '<p>The bias column is likewise <em>reported</em>. ' +
-        '<code>xacml.pepBias</code> on the settings page governs the ' +
-        '<em>embedded</em> PEP at <code>/xacml/protected</code> and ' +
-        'nothing here; a control that appeared to set a remote PEP&rsquo;s ' +
-        'bias would silently do nothing.</p>',
-        'Where these numbers come from');
+        '<p>' + t.html('consoleXacml.peps.numbers1') +
+        '</p><p>' + t.html('consoleXacml.peps.numbers2') +
+        '</p>',
+        t.text('consoleXacml.peps.numbersLabel'));
     return body;
   }
 
@@ -718,6 +665,7 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static monitorBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const here = json.decisions.here;
     const there = json.decisions.remote;
@@ -735,12 +683,12 @@ class XacmlPage {
     // wants the figure should not have to add two numbers up in their head.
     // ---------------------------------------------------------------------
     const tiles = '<div class="tiles">' +
-      kit.tile(json.policies.total, 'policies') +
-      kit.tile(json.policies.enabled, 'enabled') +
-      kit.tile(json.peps.total, 'enforcement points') +
-      kit.tile(combined.decisions, 'decisions') +
-      kit.tile(combined.allowed, 'allows') +
-      kit.tile(combined.refused, 'declines') +
+      kit.tile(json.policies.total, t.text('consoleXacml.tile.policies')) +
+      kit.tile(json.policies.enabled, t.text('consoleXacml.tile.enabled')) +
+      kit.tile(json.peps.total, t.text('consoleXacml.tile.points')) +
+      kit.tile(combined.decisions, t.text('consoleXacml.tile.decisions')) +
+      kit.tile(combined.allowed, t.text('consoleXacml.tile.allows')) +
+      kit.tile(combined.refused, t.text('consoleXacml.tile.declines')) +
       '</div>';
 
     // THE FOUR COLUMNS ADD UP, AND THE FOURTH IS WHY. `allowed + refused` is
@@ -760,78 +708,42 @@ class XacmlPage {
         '<td class="sub">' + what + '</td></tr>';
     };
     const evidence =
-      '<h2>Where those figures come from</h2>' +
-      '<table><tr><th>Counted</th><th class="num">Decisions</th>' +
-      '<th class="num">Allowed</th><th class="num">Refused</th>' +
-      '<th class="num">Not enforced here</th>' +
-      '<th class="num">Refused on an obligation</th><th>What it ' +
-      'is</th></tr>' +
-      evidenceRow('Here', here,
-        'Decisions THIS process made, counted as it happened. Since ' +
-        esc(json.since) + '.') +
-      evidenceRow('Remote', there,
-        'What registered Policy Enforcement Points in OTHER processes ' +
-        'REPORT having done, on their heartbeats, cumulative in their own ' +
-        'memory. This service saw none of it &mdash; that is what a remote ' +
-        'PEP is &mdash; and a PEP that restarts makes this half go down.') +
-      evidenceRow('Combined', combined,
-        'The two rows added up. It is the figure a deployment wants and it ' +
-        'is <em>arithmetic over two different kinds of evidence</em> ' +
-        'rather than a measurement, which is why it is a row here and not ' +
-        'the only number on the page.') +
+      '<h2>' + t.html('consoleXacml.monitor.figuresHeading') + '</h2>' +
+      '<table><tr><th>' + t.html('consoleXacml.th.counted') +
+      '</th><th class="num">' + t.html('consoleXacml.th.decisions') + '</th>' +
+      '<th class="num">' + t.html('consoleXacml.th.allowed') +
+      '</th><th class="num">' + t.html('consoleXacml.th.refused') + '</th>' +
+      '<th class="num">' + t.html('consoleXacml.th.notEnforcedHere') + '</th>' +
+      '<th class="num">' + t.html('consoleXacml.th.refusedObligation') +
+      '</th><th>' + t.html('consoleXacml.th.whatItIs') + '</th></tr>' +
+      evidenceRow(t.html('consoleXacml.monitor.here'), here,
+        t.html('consoleXacml.monitor.hereWhat', { since: json.since })) +
+      evidenceRow(t.html('consoleXacml.monitor.remote'), there,
+        t.html('consoleXacml.monitor.remoteWhat')) +
+      evidenceRow(t.html('consoleXacml.monitor.combined'), combined,
+        t.html('consoleXacml.monitor.combinedWhat')) +
       '</table>' +
       kit.note(
-        '<p><strong>Allowed + refused + not-enforced = decisions</strong>, ' +
-        'on every row. The third column is the one that is easy to be ' +
-        'surprised by and it is not a failure: it counts the decisions ' +
-        '<code>POST /xacml/pdp</code> produced for somebody ELSE&rsquo;s ' +
-        'enforcement point. This service evaluated them and never saw what ' +
-        'was done with the answers, so counting them as allowed or refused ' +
-        'would be reporting an enforcement it was not present for.</p>',
-        'Why the three do not add to the total on their own');
+        '<p>' + t.html('consoleXacml.monitor.addUp') +
+        '</p>',
+        t.text('consoleXacml.monitor.addUpLabel'));
 
+    // The audit-log link is markup a message cannot carry (#539).
     const what = kit.note(
-      '<p>This is the only page in this family about ' +
-      '<strong>traffic</strong>. The others are about configuration ' +
-      '&mdash; what policies exist, what one of them says, what the PDP ' +
-      'would decide about a subject you type in. This one answers the ' +
-      'question you have when authorization is misbehaving: how many ' +
-      'decisions are being made, by which enforcement point, and how many ' +
-      'of them are refusals.</p><p><strong>&ldquo;Decisions&rdquo; and ' +
-      '&ldquo;allows&rdquo; are not two views of one tally.</strong> XACML ' +
-      'has FOUR decisions &mdash; Permit, Deny, NotApplicable, ' +
-      'Indeterminate &mdash; and a PEP has TWO outcomes. What maps between ' +
-      'them is the PEP&rsquo;s <em>bias</em>: a deny-biased PEP refuses a ' +
-      'NotApplicable and a permit-biased one allows it, from the same ' +
-      'decision on the same request. And an obligation a PEP cannot ' +
-      'discharge turns a Permit into a refusal (section 7.2) &mdash; the ' +
-      'one enforcement outcome that looks like a bug from the client side ' +
-      'and is the specification working. So <code>allowed</code> is not ' +
-      '<code>permit</code>, and both are drawn.</p><p><strong>The counters ' +
-      'are in memory and start when this process does.</strong> They are ' +
-      'observations, and this service persists nothing it observes; the ' +
-      'durable record of a refusal is the <a href="/admin/audit">audit ' +
-      'log</a>, which holds the reason as well as the count. They are also ' +
-      '<strong>per trust realm</strong>, like <code>ou=policies</code> ' +
-      'itself &mdash; this page is showing <strong>' +
-      esc(json.realm.name || json.realm.id) +
-      '</strong>, and a decision made ' +
-      'under another realm was made against another realm&rsquo;s ' +
-      'policies.</p><p><strong>There is no reset button</strong>, ' +
-      'deliberately: a console that could zero its own monitoring would ' +
-      'make every number here a number somebody might have zeroed. A ' +
-      'restart is what clears them.</p>',
-      'What this page is');
+      '<p>' + t.html('consoleXacml.monitor.p1') +
+      '</p><p>' + t.html('consoleXacml.monitor.p2') +
+      '</p><p>' + t.html('consoleXacml.monitor.p3before') +
+      '<a href="/admin/audit">' + t.html('consoleXacml.link.auditLog') +
+      '</a>' +
+      t.html('consoleXacml.monitor.p3after', {
+        realm: json.realm.name || json.realm.id }) +
+      '</p><p>' + t.html('consoleXacml.monitor.p4') +
+      '</p>',
+      t.text('consoleXacml.whatThisPageIs'));
 
     const off = json.enabled ? '' : kit.warn(
-      '<strong>The XACML family is switched off</strong> ' +
-      '(<code>xacml.enabled</code>), so nothing is being evaluated and ' +
-      'every figure below has stopped moving. The embedded PEPs answer ' +
-      'ALLOWED without asking the PDP &mdash; which is what keeps a ' +
-      'service with the family off a smaller service rather than a broken ' +
-      'one &mdash; and those allows are counted, because they are what ' +
-      'happened.',
-      'Nothing is being decided');
+      t.html('consoleXacml.monitor.off'),
+      t.text('consoleXacml.monitor.offLabel'));
 
     // ---------------------------------------------------------------------
     // SECTION TWO: EVERY ENFORCEMENT POINT.
@@ -852,37 +764,29 @@ class XacmlPage {
     // zero.
     // ---------------------------------------------------------------------
     const allRows = (json.rows as any[]).concat(json.remoteRows);
-    const table = '<h2>Every enforcement point</h2>' +
-      '<table><tr><th>Point</th><th>State</th><th>Bias</th>' +
-      '<th class="num">Decisions</th><th class="num">Allowed</th>' +
-      '<th class="num">Refused</th><th class="num">Permit</th>' +
+    const table = '<h2>' + t.html('consoleXacml.monitor.everyPoint') + '</h2>' +
+      '<table><tr><th>' + t.html('consoleXacml.th.point') + '</th><th>' +
+      t.html('consoleXacml.th.state') + '</th><th>' +
+      t.html('consoleXacml.th.bias') + '</th>' +
+      '<th class="num">' + t.html('consoleXacml.th.decisions') +
+      '</th><th class="num">' + t.html('consoleXacml.th.allowed') + '</th>' +
+      '<th class="num">' + t.html('consoleXacml.th.refused') +
+      '</th><th class="num">Permit</th>' +
       '<th class="num">Deny</th><th class="num">NotApplicable</th>' +
-      '<th class="num">Indeterminate</th><th>Last</th></tr>' +
+      '<th class="num">Indeterminate</th><th>' +
+      t.html('consoleXacml.th.last') +
+      '</th></tr>' +
       allRows.map(function (row) {
-        return self.monitorRow(row);
+        return self.monitorRow(row, t);
       }).join('') + '</table>' +
       kit.note(
-        '<p><strong>An embedded PEP is not &ldquo;registered&rdquo; and ' +
-        'cannot be.</strong> It is compiled into this process, so its ' +
-        'existence is a fact about the build rather than something it told ' +
-        'this service; there are exactly three and they are the catalogue ' +
-        'in <code>xacml_monitor.js</code>. A <em>remote</em> PEP registers ' +
-        'because it has no other way to be known about &mdash; and even ' +
-        'that is not a permission: an unregistered PEP can pull ' +
-        '<code>/xacml/pep/policies</code> and enforce perfectly, and never ' +
-        'appears here. So <strong>this list is every enforcement point ' +
-        'this service KNOWS ABOUT</strong>, which is a smaller claim than ' +
-        'every one that exists, and the difference cannot be closed from ' +
-        'this end.</p><p><strong>Only the demonstration PEP&rsquo;s bias ' +
-        'is settable.</strong> <code>xacml.pepBias</code> governs that ' +
-        'one. The issuance and access PEPs are deny-biased by construction ' +
-        '&mdash; an issuance or an access that was not permitted does not ' +
-        'happen &mdash; and a remote PEP&rsquo;s bias is <em>reported by ' +
-        'it</em>, because a control here that appeared to set another ' +
-        'process&rsquo;s bias would silently do nothing.</p><p>The remote ' +
-        'rows are a summary. <a href="/admin/xacml/peps">Remote PEPs</a> ' +
-        'has the sync tokens, the notify URLs, what happened to the last ' +
-        'nudge, and the controls.</p>' +
+        '<p>' + t.html('consoleXacml.monitor.list1') +
+        '</p><p>' + t.html('consoleXacml.monitor.list2') +
+        '</p><p>' + t.html('consoleXacml.monitor.list3before') +
+        '<a href="/admin/xacml/peps">' +
+        t.html('consoleXacml.link.remotePeps') + '</a>' +
+        t.html('consoleXacml.monitor.list3after') +
+        '</p>' +
         // WHERE THE REMOTE ROWS WOULD BE IF THEY ARE NOT HERE (2026-09-06).
         // The register is per realm and this page draws one realm, so a table
         // with no remote row in it has two causes; `noPepsHere()` on the
@@ -893,31 +797,20 @@ class XacmlPage {
         // telling where to look.
         (json.remoteRows.length
           ? ''
-          : '<p>' + self.noPepsHere(json.elsewhere) + '</p>'),
-        'What this list is, and what it is not') +
+          : '<p>' + self.noPepsHere(json.elsewhere, t) + '</p>'),
+        t.text('consoleXacml.monitor.listLabel')) +
       kit.note(
-        '<p>A refusal here is a policy decision and the reason is in the ' +
-        '<a href="/admin/audit">audit log</a>, not in this table: ' +
-        '<code>xacml.issuance.refused</code> for the issuance PEP, ' +
-        '<code>xacml.access.refused</code> for the access PEP and ' +
-        '<code>xacml.enforcement</code> for the demonstration one. This ' +
-        'page says how many; that log says who, what and why.</p><p>To ' +
-        'make a decision happen on purpose and watch it land here, use <a ' +
-        'href="/admin/xacml/decide">Try a decision</a> &mdash; but note ' +
-        'that the enforcement preview on that page is deliberately ' +
-        '<em>not</em> counted. It is a what-if rather than a request ' +
-        'anybody guarded, and counting it would make this page&rsquo;s ' +
-        'numbers grow every time somebody looked at it. <code>GET ' +
-        '/xacml/protected</code> is the endpoint that really ' +
-        'enforces.</p><p><strong>Drawing THIS page adds one to the access ' +
-        'PEP\'s count, and that is right rather than a measurement ' +
-        'artefact.</strong> <code>/admin</code> is one of the five gated ' +
-        'surfaces, so reading it is a real request that the access policy ' +
-        'really decided &mdash; the number would be wrong if it did not ' +
-        'move. It is the opposite case from the preview above, and the two ' +
-        'are worth telling apart: one is an access that happened, the ' +
-        'other is a question somebody typed.</p>',
-        'Where a refusal is explained');
+        '<p>' + t.html('consoleXacml.monitor.refusal1before') +
+        '<a href="/admin/audit">' + t.html('consoleXacml.link.auditLog') +
+        '</a>' +
+        t.html('consoleXacml.monitor.refusal1after') +
+        '</p><p>' + t.html('consoleXacml.monitor.refusal2before') +
+        '<a href="/admin/xacml/decide">' +
+        t.html('consoleXacml.link.tryDecision') +
+        '</a>' + t.html('consoleXacml.monitor.refusal2after') +
+        '</p><p>' + t.html('consoleXacml.monitor.refusal3') +
+        '</p>',
+        t.text('consoleXacml.monitor.refusalLabel'));
 
     // The title is the nav label rather than the bare word `Monitor`: this
     // page is drawn among Metrics, Sessions and Tokens now, where `Monitor`
@@ -933,22 +826,23 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static decideBody(ctx, json) {
+    const t = ctx.t;
     const self = this;
     const form = '<form method="get" action="/admin/xacml/decide">' +
-      '<table><tr><td>Subject</td><td>' +
+      '<table><tr><td>' + t.html('consoleXacml.decide.subject') + '</td><td>' +
       self.textField('subject', json.subject || 'alice', 24) +
-      '</td><td class="sub">A name, a DN or a certificate subject — all ' +
-      'three resolve the way they do everywhere else here. The PIP reads ' +
-      'this person&rsquo;s directory entry for any attribute the policy ' +
-      'asks for.</td></tr>' +
-      '<tr><td>Action</td><td>' +
+      '</td><td class="sub">' + t.html('consoleXacml.decide.subjectHelp') +
+      '</td></tr>' +
+      '<tr><td>' + t.html('consoleXacml.decide.action') + '</td><td>' +
       self.textField('action', json.action || 'GET', 24) +
-      '</td><td class="sub">Becomes the standard action-id ' +
-      'attribute.</td></tr><tr><td>Resource</td><td>' +
+      '</td><td class="sub">' + t.html('consoleXacml.decide.actionHelp') +
+      '</td></tr><tr><td>' + t.html('consoleXacml.decide.resource') +
+      '</td><td>' +
       self.textField('resource', json.resource || '', 40) +
-      '</td><td class="sub">Optional. Becomes resource-id, as an ' +
-      'anyURI.</td></tr></table>' +
-      '<button type="submit">Ask the PDP</button></form>';
+      '</td><td class="sub">' + t.html('consoleXacml.decide.resourceHelp') +
+      '</td></tr></table>' +
+      '<button type="submit">' + t.html('consoleXacml.decide.ask') +
+      '</button></form>';
 
     let answer = '';
     if (json.asked) {
@@ -956,24 +850,31 @@ class XacmlPage {
         ? json.applicablePolicies.map(function (one) {
             return '<code>' + esc(one.id) + '</code>';
           }).join(', ')
-        : '<em>none — nothing in the repository applied</em>';
+        : '<em>' + t.html('consoleXacml.decide.noneApplied') +
+          '</em>';
       answer = '<h2>' + esc(json.decision) + '</h2>' +
         '<div class="tiles">' +
-        kit.tile(json.decision, 'PDP decision') +
-        kit.tile(json.enforcement.allowed ? 'allowed' : 'refused',
-                   'the embedded PEP') +
-        kit.tile(json.enforcement.bias, 'PEP bias') +
+        kit.tile(json.decision, t.text('consoleXacml.tile.pdpDecision')) +
+        kit.tile(json.enforcement.allowed
+          ? t.text('consoleXacml.monitor.allowed')
+          : t.text('consoleXacml.monitor.refused'),
+                   t.text('consoleXacml.tile.embeddedPep')) +
+        kit.tile(json.enforcement.bias, t.text('consoleXacml.tile.pepBias')) +
         '</div>' +
         '<p>' + esc(json.enforcement.why) + '</p>' +
-        '<table><tr><th>Applicable policies</th><td>' + policies +
+        '<table><tr><th>' + t.html('consoleXacml.decide.applicable') +
+        '</th><td>' + policies +
         '</td></tr>' +
-        '<tr><th>Obligations</th><td>' +
+        '<tr><th>' + t.html('consoleXacml.decide.obligations') + '</th><td>' +
         (json.obligations.length ? json.obligations.map(esc).join(', ')
-                                 : '<em>none</em>') + '</td></tr>' +
-        '<tr><th>Advice</th><td>' +
+                                 : '<em>' + t.html('consoleXacml.none') +
+                                 '</em>') +
+        '</td></tr>' +
+        '<tr><th>' + t.html('consoleXacml.decide.advice') + '</th><td>' +
         (json.advice.length ? json.advice.map(esc).join(', ')
-                            : '<em>none</em>') + '</td></tr>' +
-        '<tr><th>Status</th><td><code>' +
+                            : '<em>' + t.html('consoleXacml.none') + '</em>') +
+        '</td></tr>' +
+        '<tr><th>' + t.html('consoleXacml.decide.status') + '</th><td><code>' +
         esc((json.status || {}).code || '') + '</code>' +
         ((json.status || {}).message
           ? '<div class="sub">' + esc(json.status.message) + '</div>' : '') +
@@ -981,19 +882,10 @@ class XacmlPage {
     }
 
     const explain = kit.note(
-      '<p>The <strong>decision</strong> is the PDP&rsquo;s and the ' +
-      '<strong>outcome</strong> is the PEP&rsquo;s, and this page shows ' +
-      'both because they are not the same answer. A deny-biased PEP ' +
-      'refuses an Indeterminate and a permit-biased one allows it; the two ' +
-      'agree on every Permit and every Deny. When somebody says a policy ' +
-      '&ldquo;is not working&rdquo;, it is nearly always because only one ' +
-      'of these two was being looked at.</p>' +
-      '<p>Nothing here asserts an attribute in the request beyond the ' +
-      'subject, the action and the resource — so anything else the policy ' +
-      'needs comes from the <strong>PIP</strong>, off that person&rsquo;s ' +
-      'directory entry. That is what makes this a test of the whole path ' +
-      'rather than of the engine alone.</p>',
-      'What you are looking at');
+      '<p>' + t.html('consoleXacml.decide.p1') +
+      '</p><p>' + t.html('consoleXacml.decide.p2') +
+      '</p>',
+      t.text('consoleXacml.decide.label'));
     return explain + form + answer;
   }
 
@@ -1007,6 +899,7 @@ class XacmlPage {
    * @returns the body as HTML
    */
   static editorBody(ctx: Json, json: Json): string {
+    const t = ctx.t;
     if (!json.policy) {
       // **AN EMPTY REPOSITORY IS NOT AN UNGATED SERVICE**, and this branch
       // used to imply that it was: "there is nothing to edit" on a service
@@ -1014,20 +907,17 @@ class XacmlPage {
       // request, by documents this page has never mentioned. The note goes
       // here as well as under the table for exactly that reason — it is the
       // branch where the wrong conclusion is easiest to draw.
-      return kit.warn('The repository is empty, so there is ' +
-                               'nothing to edit. <strong>Creating a ' +
-                               'policy happens on the <a ' +
-                               'href="/admin/xacml/policies">Policies</a> ' +
-                               'page</strong>, in one of three ways: from ' +
-                               'a template, by importing ALFA, or from the ' +
-                               '<code>blank</code> template — an empty ' +
-                               'document with nothing in it, which is the ' +
-                               'starting point for writing one here rather ' +
-                               'than editing one somebody else shaped. ' +
-                               'Come back to this page with it and every ' +
-                               'element goes in from the menus below.',
-                               'Nothing to edit') +
-                    XacmlPage.serviceOwnEditorNote(json.serviceOwn);
+      // The link sits inside a <strong>, so the sentence is split around
+      // it with the <strong> in the code (#539).
+      return kit.warn(t.html('consoleXacml.editor.emptyBefore') +
+                      ' <strong>' +
+                      t.html('consoleXacml.editor.creatingBefore') +
+                      ' <a href="/admin/xacml/policies">' +
+                      t.html('consoleXacml.link.policies') + '</a> ' +
+                      t.html('consoleXacml.editor.creatingPage') + '</strong>' +
+                      t.html('consoleXacml.editor.emptyAfter'),
+                      t.text('consoleXacml.editor.nothingLabel')) +
+                    XacmlPage.serviceOwnEditorNote(json.serviceOwn, t);
     }
 
     // The document parsed when the answer was built; a document that does
@@ -1035,12 +925,13 @@ class XacmlPage {
     const parsed = !json.problem;
 
     const chooser = '<form method="get" action="/admin/xacml/editor">' +
-      'Policy ' +
+      t.html('consoleXacml.th.policy') + ' ' +
         XacmlPage.select('policy', json.policies.map(function (one) {
         return { value: one, label: one };
       }), json.policy.name) +
-      ' <button type="submit">Open</button></form>' +
-      XacmlPage.serviceOwnEditorNote(json.serviceOwn);
+      ' <button type="submit">' + t.html('consoleXacml.editor.open') +
+      '</button></form>' +
+      XacmlPage.serviceOwnEditorNote(json.serviceOwn, t);
 
     // WHY THERE IS NO "NEW POLICY" BUTTON ON THIS PAGE, said on the page
     // rather than left to be wondered at. This editor applies ONE structural
@@ -1055,69 +946,45 @@ class XacmlPage {
     // button that makes another. Sending them to the same page for the same
     // reason is the whole of what this says.
     const whereToCreate = kit.note(
-      '<p>This editor changes a policy that <em>already exists</em>, and ' +
-      'the chooser above is every policy in the repository. ' +
-      '<strong>Creating one happens on the <a ' +
-      'href="/admin/xacml/policies">Policies</a> page</strong> — there is ' +
-      'no New button here, because every control on this page names a ' +
-      'stored document and a path inside it, and a policy nobody has ' +
-      'written yet has neither.</p><p>Three doors on that page: <strong>a ' +
-      'template</strong> (a working policy in a shape people actually ' +
-      'write, which is the first twenty clicks of this editor already ' +
-      'made), <strong>Import ALFA</strong> (paste the readable syntax and ' +
-      'it is stored as XACML XML), and the ' +
-      '<strong><code>blank</code></strong> template — a Policy with no ' +
-      'rules or a PolicySet with no policies, for writing one here from ' +
-      'nothing. A blank document <em>denies every request</em> until you ' +
-      'put something in it, because deny-unless-permit over no rules at ' +
-      'all is a Deny; that is the safe direction for a half-built policy ' +
-      'to fail in, but it is worth knowing before making one the root.</p>',
-      'Where a new policy comes from');
+      '<p>' + t.html('consoleXacml.editor.where1') +
+      ' <strong>' + t.html('consoleXacml.editor.creatingOne') + ' <a ' +
+      'href="/admin/xacml/policies">' + t.html('consoleXacml.link.policies') +
+      '</a> ' +
+      t.html('consoleXacml.editor.creatingPage') + '</strong>' +
+      t.html('consoleXacml.editor.where1after') +
+      '</p><p>' + t.html('consoleXacml.editor.where2') +
+      '</p>',
+      t.text('consoleXacml.editor.whereLabel'));
 
     const liveWarning = json.policy.enabled && json.policy.isRoot
       ? kit.warn(
-          'This policy is <strong>enabled and is the root</strong>, so it ' +
-          'is what the PDP is deciding with <em>right now</em>. There is ' +
-          'no draft state in this editor — the draft IS the stored policy, ' +
-          'and every change below takes effect on the next request. That ' +
-          'is deliberate: nothing can be lost by closing the browser, and ' +
-          'there is no second copy that could disagree with the stored ' +
-          'one. To work on it safely, disable it first on the ' +
-          '<a href="/admin/xacml/policies">Policies</a> page.',
-          'Editing is live')
+          t.html('consoleXacml.editor.liveBefore') +
+          '<a href="/admin/xacml/policies">' +
+          t.html('consoleXacml.link.policies') +
+          '</a>' + t.html('consoleXacml.pagePeriod'),
+          t.text('consoleXacml.editor.liveLabel'))
       : '';
 
     const xpathGap = json.xpathVersionGaps.length
+      // The list of names is markup built here, so the sentence is drawn
+      // around it (#539).
       ? kit.warn(
-          'This document holds an <code>AttributeSelector</code> or an ' +
-          '<code>xpathExpression</code> value, and ' +
           (json.xpathVersionGaps.length === 1
-             ? '<code>' + esc(json.xpathVersionGaps[0]) + '</code> declares'
-             : 'these declare') +
-          ' no <code>XPathVersion</code>' +
-          (json.xpathVersionGaps.length === 1 ? '' :
-             ': <code>' +
+             ? t.html('consoleXacml.xpath.one', {
+                 name: json.xpathVersionGaps[0] })
+             : t.html('consoleXacml.xpath.many') + ': <code>' +
              json.xpathVersionGaps.map(esc).join('</code>, <code>') +
              '</code>') +
-          '. Section 5.14 says the element MUST be present when a policy ' +
-          'uses one. <strong>Nothing here will refuse the ' +
-          'document</strong> — this PDP has one XPath engine and does not ' +
-          'choose a dialect by URI, so the decision is the same either way ' +
-          '— but a schema validator elsewhere will refuse it, and this is ' +
-          'the kind of defect that travels a long way before anybody finds ' +
-          'out. The field is on the policy\'s own row above: ' +
-          '<code>http://www.w3.org/TR/1999/REC-xpath-19991116</code> is ' +
-          'what the conformance suite uses.',
-          'No XPathVersion, and this document needs one')
+          t.html('consoleXacml.xpath.rest'),
+          t.text('consoleXacml.xpath.label'))
       : '';
 
     const problems = json.problems.length
       ? kit.warn('<ul><li>' + json.problems.map(esc).join('</li><li>') +
-                   '</li></ul><p>XACML is statically typed, so these are ' +
-                   'wrong for every request rather than for some. The ' +
-                   'policy is stored, but it will not load — the PDP ' +
-                   'reports Indeterminate and names the first problem.</p>',
-                   'This policy does not type-check')
+                   '</li></ul><p>' +
+                   t.html('consoleXacml.editor.typeCheck') +
+                   '</p>',
+                   t.text('consoleXacml.editor.typeCheckLabel'))
       : '';
 
     const rows = parsed ? json.tree.map(function (row) {
@@ -1129,14 +996,16 @@ class XacmlPage {
           XacmlPage.select('action', adds.map(function (one) {
             return { value: one.action, label: one.label };
           }), '') +
-          ' <button type="submit">Add</button></form>'
+          ' <button type="submit">' + t.html('consoleXacml.editor.add') +
+          '</button></form>'
         : '';
       const remove = ctx.write && row.options.removable
         ? '<form method="post" action="/admin/xacml/editor" class="inline">' +
           XacmlPage.hidden('policy', json.policy.name) +
           XacmlPage.hidden('path', row.path) +
           XacmlPage.hidden('action', 'remove') +
-          '<button type="submit">Remove</button></form>'
+          '<button type="submit">' + t.html('consoleXacml.editor.remove') +
+          '</button></form>'
         : '';
       const helps = adds.filter(function (one) { return one.help; })
         .map(function (one) {
@@ -1145,85 +1014,42 @@ class XacmlPage {
       return '<tr><td style="padding-left:' + (row.depth * 1.4) + 'rem">' +
         '<code>' + esc(row.label) + '</code>' +
         (row.detail ? '<div class="sub">' + esc(row.detail) + '</div>' : '') +
-        (ctx.write ? XacmlPage.editFormFor(json, row) : '') +
+        (ctx.write ? XacmlPage.editFormFor(json, row, t) : '') +
         (helps ? '<div class="sub">' + helps + '</div>' : '') +
         '</td><td class="sub">' + esc(row.kind) + '</td>' +
         '<td>' + menu + ' ' + remove + '</td></tr>';
     }).join('') : '';
 
     const explain = kit.note(
-      '<p>Each row is one element of the policy. The <strong>Add</strong> ' +
-      'dropdown beside it offers <em>exactly</em> what XACML allows at ' +
-      'that point and nothing else — a <code>Match</code> may only go ' +
-      'inside an alternative, a <code>Condition</code> only on a rule and ' +
-      'only one per rule, and the function list on a Match is the ' +
-      'two-argument boolean predicates rather than all 275 ' +
-      'functions.</p><p>Those menus are computed <strong>on the ' +
-      'server</strong>, by the same code that validates the policy, ' +
-      'against the real function library — so the editor cannot offer you ' +
-      'something that will then be refused. This console runs under ' +
-      '<code>script-src \'none\'</code> and has no JavaScript anywhere, ' +
-      'which is why every control is a form and every choice is a round ' +
-      'trip. The cost is real: a five-rule policy built by hand is perhaps ' +
-      'forty of them. The templates on the <a ' +
-      'href="/admin/xacml/policies">Policies</a> page are the first twenty ' +
-      'already made.</p><p>Every element you add arrives <em>complete and ' +
-      'valid</em> — a new rule has a Target and an Effect, a new Match has ' +
-      'a function, a value and an attribute. An editor that produced ' +
-      'half-built elements would hold a document that could not be saved, ' +
-      'and a document that cannot be saved cannot be evaluated, which is ' +
-      'when you most want to look at it.</p><p><strong>A ' +
-      '<code>PolicySet</code> is edited here too, and it holds policies ' +
-      'rather than rules.</strong> Its children may be a policy written ' +
-      'inline, a nested set, or a <code>PolicyIdReference</code> naming a ' +
-      'policy stored separately in this repository — which is how a PDP ' +
-      'reaches more than one document: the root is evaluated and ' +
-      'references are resolved when a decision is made. Its combining ' +
-      'algorithm comes from the <em>policy</em>-combining list, which is a ' +
-      'different set of URIs from the rule-combining one they are almost ' +
-      'spelt the same as.</p><p>The rest of the syntax is here as well: ' +
-      '<code>VariableDefinition</code> (named once, evaluated once per ' +
-      'request, visible to its own policy only), ' +
-      '<code>AttributeSelector</code> (an XPath over a request ' +
-      'category\u2019s content, with the namespace bindings its prefixes ' +
-      'need), <code>Function</code> as a value (what a higher-order ' +
-      'function such as <code>any-of</code> or <code>map</code> takes as ' +
-      'its first argument), the attribute assignments under an obligation, ' +
-      'and the optional attributes — <code>Version</code>, ' +
-      '<code>Issuer</code>, <code>MustBePresent</code>, ' +
-      '<code>ContextSelectorId</code>, <code>XPathVersion</code> and ' +
-      '<code>MaxDelegationDepth</code>.</p><p><strong>Two things are shown ' +
-      'and cannot be added.</strong> The four combiner-parameter elements ' +
-      'are drawn and removable, because a document may arrive carrying ' +
-      'them and an element you cannot see is one you cannot delete — but ' +
-      'there is no Add button, since section C of the specification says ' +
-      'none of the twelve standard combining algorithms takes a parameter, ' +
-      'and a control that provably changes no decision would be the first ' +
-      'such control on this console. <code>&lt;PolicyIssuer&gt;</code> is ' +
-      'not here at all: it belongs to the administrative delegation ' +
-      'profile, which this PDP does not implement, so a document carrying ' +
-      'one loses it here.</p>',
-      'How this editor works');
+      '<p>' + t.html('consoleXacml.how.p1') +
+      '</p><p>' + t.html('consoleXacml.how.p2before') + '<a ' +
+      'href="/admin/xacml/policies">' + t.html('consoleXacml.link.policies') +
+      '</a>' +
+      t.html('consoleXacml.how.p2after') +
+      '</p><p>' + t.html('consoleXacml.how.p3') +
+      '</p><p>' + t.html('consoleXacml.how.p4') +
+      '</p><p>' + t.html('consoleXacml.how.p5') +
+      '</p><p>' + t.html('consoleXacml.how.p6') +
+      '</p>',
+      t.text('consoleXacml.how.label'));
 
     const body = chooser + whereToCreate + liveWarning + problems + xpathGap +
       explain +
-      '<table><tr><th>Element</th><th>Kind</th><th>Add / remove</th></tr>' +
+      '<table><tr><th>' + t.html('consoleXacml.th.element') + '</th><th>' +
+      t.html('consoleXacml.th.kind') + '</th><th>' +
+      t.html('consoleXacml.th.addRemove') +
+      '</th></tr>' +
       rows + '</table>' +
-      '<details><summary>The same policy as ALFA</summary>' +
+      '<details><summary>' + t.html('consoleXacml.editor.asAlfa') +
+      '</summary>' +
       kit.note(
-        '<p>ALFA — the Abbreviated Language For Authorization — is the ' +
-        'third rendering of this policy and the one worth reading. Forty ' +
-        'lines of XML are eight of ALFA and the eight say the same ' +
-        'thing.</p><p>It is an OASIS <strong>Committee Specification ' +
-        'Draft</strong> rather than a ratified standard: there is no ' +
-        'conformance suite for it and no second implementation to disagree ' +
-        'with. So the contract here is the one that can actually be kept — ' +
-        '<em>anything this emits, it reads back, and the policy decides ' +
-        'identically either way</em> — and not that it reads every ALFA ' +
-        'document in the world.</p>',
-        'What ALFA is') +
+        '<p>' + t.html('consoleXacml.editor.alfa1') +
+        '</p><p>' + t.html('consoleXacml.editor.alfa2') +
+        '</p>',
+        t.text('consoleXacml.editor.alfaLabel')) +
       '<pre>' + esc(json.alfa || '') + '</pre></details>' +
-      '<details><summary>The document as stored</summary><pre>' +
+      '<details><summary>' + t.html('consoleXacml.editor.asStored') +
+      '</summary><pre>' +
       esc(json.document) + '</pre></details>';
 
     return body;
@@ -1242,7 +1068,7 @@ class XacmlPage {
   // function cannot disturb its attribute — and a person pressing Update under
   // "Reference" can see that the function is not part of what they are
   // changing.
-  static editFormFor(json: Json, row: Json): string {
+  static editFormFor(json: Json, row: Json, t: Json): string {
     if (!row.edit) {
       return '';
     }
@@ -1275,28 +1101,25 @@ class XacmlPage {
         XacmlPage.textField('maxDelegationDepth', node.maxDelegationDepth, 4) +
         ' XPathVersion ' +
         XacmlPage.textField('xpathVersion', node.xpathVersion, 44) +
-        ' <button type="submit">Update</button></form>' +
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
         '<div class="sub">' + esc(chosen.what || '') + '</div>' +
-        '<div class="sub">Version is dot-separated numbers. ' +
-        '<strong>MaxDelegationDepth is carried and not honoured</strong> — ' +
-        'this PDP implements no administrative delegation, so the attribute ' +
-        'survives a round trip and is read by nothing. XPathVersion belongs ' +
-        'in &lt;' + (row.kind === 'policySet' ? 'PolicySetDefaults'
-                                            : 'PolicyDefaults') + '&gt; and ' +
-        'the specification asks for it whenever the document holds an ' +
-        'AttributeSelector or an xpathExpression.</div>';
+        '<div class="sub">' +
+        t.html('consoleXacml.form.policyHelp', {
+          defaults: row.kind === 'policySet' ? 'PolicySetDefaults'
+                                             : 'PolicyDefaults' }) +
+        '</div>';
     }
 
     if (row.kind === 'reference') {
       return head + XacmlPage.hidden('action', 'edit-reference') +
         esc(node.kind) + ' ' + XacmlPage.textField('ref', node.ref, 44) +
         ' Version ' + XacmlPage.textField('version', node.version, 8) +
-        ' <button type="submit">Update</button></form><div class="sub">The ' +
-        'id of a policy stored <em>separately</em> in this repository. It is ' +
-        'resolved when a decision is made rather than when this document is ' +
-        'loaded, so naming one that does not exist yet is allowed — an ' +
-        'unresolved reference is reported on the decision. Leave Version ' +
-        'empty for no constraint.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.referenceHelp') +
+        '</div>';
     }
 
     if (row.kind === 'rule') {
@@ -1306,7 +1129,8 @@ class XacmlPage {
         ' RuleId ' + XacmlPage.textField('id', node.id, 36) +
         ' Description ' +
           XacmlPage.textField('description', node.description, 40) +
-        ' <button type="submit">Update</button></form>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>';
     }
 
     if (row.kind === 'variable') {
@@ -1316,16 +1140,15 @@ class XacmlPage {
         // variables to something with a description stuck on the end.
         'VariableId $' + XacmlPage.textField('variableId',
                                    String(row.path).split('.').pop(), 12) +
-        ' <button type="submit">Rename</button></form>' +
-        '<div class="sub">Every <code>VariableReference</code> naming it is ' +
-        'rewritten with it — a rename that left them behind would produce a ' +
-        'document that does not load, and the write would be refused. The ' +
-        'scope is <strong>this policy</strong>: a sibling policy in the same ' +
-        'set cannot see it.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.form.rename') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.variableHelp') +
+        '</div>';
       // The definition IS an expression, so the expression's own form follows —
       // one row, two forms, rather than a variable you can rename and whose
       // value you cannot reach.
-      return rename + XacmlPage.expressionForm(json, row, node);
+      return rename + XacmlPage.expressionForm(json, row, node, t);
     }
 
     if (row.kind === 'match') {
@@ -1335,20 +1158,24 @@ class XacmlPage {
       const test = head + XacmlPage.hidden('action', 'edit-match') +
         XacmlPage.select('matchId', menu, node.matchId) + ' ' +
         XacmlPage.textField('value', node.value.lexical, 18) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">The datatype follows the function — both sides ' +
-        'become ' + esc(row.edit.valueShortType) + '.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.matchType', {
+          type: row.edit.valueShortType }) + '</div>';
       const against = head + XacmlPage.hidden('action', 'edit-match') +
-        'against ' +
+        t.html('consoleXacml.form.against') + ' ' +
         XacmlPage.select('referenceKind',
-               [{ value: 'designator', label: 'an attribute' },
-                { value: 'selector', label: 'an XPath selector' }],
+               [{ value: 'designator',
+                  label: t.text('consoleXacml.form.anAttribute') },
+                { value: 'selector',
+                  label: t.text('consoleXacml.form.aSelector') }],
                selector ? 'selector' : 'designator') + ' ' +
         (selector ? 'Path ' + XacmlPage.textField('path', reference.path, 24)
                   : 'AttributeId ' +
                     XacmlPage.textField('attributeId',
                                         reference.attributeId, 24)) +
-        ' in ' +
+        ' ' + t.html('consoleXacml.form.in') + ' ' +
         XacmlPage.select('category',
                          json.menus.categories, reference.category) +
         (selector
@@ -1356,17 +1183,13 @@ class XacmlPage {
              XacmlPage.textField('contextSelectorId',
                             reference.contextSelectorId, 20)
            : ' Issuer ' + XacmlPage.textField('issuer', reference.issuer, 16)) +
-        ' must be present ' +
-        XacmlPage.yesNo('mustBePresent', reference.mustBePresent) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">A <code>Match</code> holds an ' +
-        '<code>AttributeDesignator</code> <em>or</em> an ' +
-        '<code>AttributeSelector</code> and never both. Switching the kind ' +
-        'redraws this form with the fields that kind takes. <strong>Must be ' +
-        'present</strong> is the difference between an absent attribute ' +
-        'being an empty bag and being Indeterminate — which is the ' +
-        'difference between a policy that quietly does not apply and one ' +
-        'that fails closed.</div>';
+        ' ' + t.html('consoleXacml.form.mustBePresent') + ' ' +
+        XacmlPage.yesNo('mustBePresent', reference.mustBePresent, t) +
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.matchHelp') +
+        '</div>';
       return test + against;
     }
 
@@ -1375,27 +1198,30 @@ class XacmlPage {
         'AttributeId ' +
           XacmlPage.textField('attributeId', node.attributeId, 30) +
         ' Category ' + XacmlPage.select('category',
-                              [{ value: '', label: '(none)' }]
+                              [{ value: '',
+                                 label: t.text('consoleXacml.form.noneParen') }]
                                 .concat(json.menus.categories),
                               node.category || '') +
         ' Issuer ' + XacmlPage.textField('issuer', node.issuer, 16) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">What the PEP is handed alongside the obligation. ' +
-        'Category and Issuer are optional and mean "this assignment is about ' +
-        'that category" — leave them empty for a plain named value. The ' +
-        'value itself is the expression below.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.assignmentHelp') +
+        '</div>';
     }
 
     if (row.kind === 'obligation') {
       return head + XacmlPage.hidden('action', 'edit-obligation') +
-        XacmlPage.textField('id', node.id, 40) + ' fires on ' +
+        XacmlPage.textField('id', node.id, 40) + ' ' +
+        t.html('consoleXacml.form.firesOn') + ' ' +
         XacmlPage.select('on', [{ value: 'Permit', label: 'Permit' },
                       { value: 'Deny', label: 'Deny' }], node.on) +
-        ' <button type="submit">Update</button></form>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>';
     }
 
     if (row.kind === 'expression') {
-      return XacmlPage.expressionForm(json, row, node);
+      return XacmlPage.expressionForm(json, row, node, t);
     }
     return '';
   }
@@ -1405,7 +1231,7 @@ class XacmlPage {
   // and the sixth kind (`variableRef`) is deliberately absent from both: its
   // whole content is which variable it names, and that is chosen by REPLACING
   // it from the Add menu, where the list of legal names is computed.
-  static expressionForm(json: Json, row: Json, node: Json): string {
+  static expressionForm(json: Json, row: Json, node: Json, t: Json): string {
     const head = '<form method="post" action="/admin/xacml/editor" ' +
       'class="inline">' + XacmlPage.hidden('policy', json.policy.name) +
       XacmlPage.hidden('path', row.path);
@@ -1413,37 +1239,39 @@ class XacmlPage {
     if (node.kind === 'value') {
       const xpath = node.type === json.menus.xpathType;
       return head + XacmlPage.hidden('action', 'edit-value') +
-        XacmlPage.textField('lexical', node.lexical, 24) + ' as ' +
+        XacmlPage.textField('lexical', node.lexical, 24) + ' ' +
+        t.html('consoleXacml.form.as') + ' ' +
         XacmlPage.select('type', json.menus.types, node.type) +
         (xpath
-           ? ' over ' +
+           ? ' ' + t.html('consoleXacml.form.over') + ' ' +
              XacmlPage.select('xpathCategory', json.menus.categories,
                                node.xpathCategory ||
                                  json.menus.resourceCategory)
            : '') +
-        ' <button type="submit">Update</button></form>' +
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
         (xpath
-           ? '<div class="sub">An <code>xpathExpression</code> value is an ' +
-             'XPath, and <code>XPathCategory</code> is the request category ' +
-             'it runs against. The prefix bindings it uses travel with the ' +
-             'document.</div>'
+           ? '<div class="sub">' +
+             t.html('consoleXacml.form.xpathHelp') +
+             '</div>'
            : '');
     }
 
     if (node.kind === 'designator') {
       return head + XacmlPage.hidden('action', 'edit-designator') +
-        XacmlPage.textField('attributeId', node.attributeId, 24) + ' in ' +
+        XacmlPage.textField('attributeId', node.attributeId, 24) + ' ' +
+        t.html('consoleXacml.form.in') + ' ' +
         XacmlPage.select('category', json.menus.categories, node.category) +
-        ' as ' +
+        ' ' + t.html('consoleXacml.form.as') + ' ' +
         XacmlPage.select('dataType', json.menus.types, node.dataType) +
         ' Issuer ' + XacmlPage.textField('issuer', node.issuer, 16) +
-        ' must be present ' + XacmlPage.yesNo('mustBePresent',
-          node.mustBePresent) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">An empty <strong>Issuer</strong> means ' +
-        '<em>any</em> issuer, which is not the same as an issuer whose name ' +
-        'is the empty string — so clearing the box removes the attribute ' +
-        'rather than writing one.</div>';
+        ' ' + t.html('consoleXacml.form.mustBePresent') + ' ' +
+        XacmlPage.yesNo('mustBePresent', node.mustBePresent, t) +
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.issuerHelp') +
+        '</div>';
     }
 
     if (node.kind === 'selector') {
@@ -1455,41 +1283,39 @@ class XacmlPage {
             esc(node.namespaces[prefix]) + '</code>';
         }).join(', ');
       return head + XacmlPage.hidden('action', 'edit-selector') +
-        'Path ' + XacmlPage.textField('path', node.path, 30) + ' over ' +
+        'Path ' + XacmlPage.textField('path', node.path, 30) + ' ' +
+        t.html('consoleXacml.form.over') + ' ' +
         XacmlPage.select('category', json.menus.categories, node.category) +
-        ' as ' +
+        ' ' + t.html('consoleXacml.form.as') + ' ' +
         XacmlPage.select('dataType', json.menus.types, node.dataType) +
         '<br>ContextSelectorId ' +
         XacmlPage.textField('contextSelectorId', node.contextSelectorId, 24) +
-        ' must be present ' + XacmlPage.yesNo('mustBePresent',
-          node.mustBePresent) +
-        ' &nbsp; namespace ' + XacmlPage.textField('namespacePrefix', '', 6) +
+        ' ' + t.html('consoleXacml.form.mustBePresent') + ' ' +
+        XacmlPage.yesNo('mustBePresent', node.mustBePresent, t) +
+        ' &nbsp; ' + t.html('consoleXacml.form.namespace') + ' ' +
+        XacmlPage.textField('namespacePrefix', '', 6) +
         ' = ' +
         XacmlPage.textField('namespaceUri', '', 30) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">An <code>AttributeSelector</code> runs an XPath ' +
-        'over the <code>&lt;Content&gt;</code> of a request category and ' +
-        'returns a <strong>bag</strong>, exactly as a designator does — so ' +
-        'most functions still need a <code>one-and-only</code> around it. ' +
-        '<code>ContextSelectorId</code> names an attribute holding the node ' +
-        'to start from; empty means the whole content.</div>' +
-        '<div class="sub">Namespace bindings' +
-        (bindings ? ': ' + bindings : ': none') + '. A prefix in the path ' +
-        'means nothing without one, and they travel with the document. Type ' +
-        'a prefix and a URI to add or change one; a prefix with an empty URI ' +
-        'removes it.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.selectorHelp') +
+        '</div>' +
+        '<div class="sub">' + t.html('consoleXacml.form.bindings') +
+        (bindings ? ': ' + bindings : ': ' + t.html('consoleXacml.none')) +
+        t.html('consoleXacml.form.bindingsHelp') +
+        '</div>';
     }
 
     if (node.kind === 'function') {
       return head + XacmlPage.hidden('action', 'edit-function') +
         XacmlPage.select('functionId',
                          json.menus.functions, node.functionId) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">Named here as a <strong>value</strong> rather than ' +
-        'applied — this is the first argument of a higher-order function ' +
-        'such as <code>any-of</code>, <code>all-of</code> or ' +
-        '<code>map</code>. Applying it instead is the commonest way to write ' +
-        'one of those wrongly.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.functionHelp') +
+        '</div>';
     }
 
     if (node.kind === 'apply') {
@@ -1498,7 +1324,8 @@ class XacmlPage {
                          json.menus.functions, node.functionId) +
         ' Description ' +
           XacmlPage.textField('description', node.description, 30) +
-        ' <button type="submit">Update</button></form>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>';
     }
 
     if (node.kind === 'variableRef') {
@@ -1509,20 +1336,20 @@ class XacmlPage {
       // reference to a variable belonging to a sibling policy cannot be chosen.
       const scope = row.edit.scope || [];
       if (!scope.length) {
-        return '<div class="sub">Names <code>$' + esc(node.variableId) +
-          '</code>, which this policy does not define — so the document will ' +
-          'not load. Add a variable definition to the policy, or replace ' +
-          'this expression from the Add menu.</div>';
+        return '<div class="sub">' +
+          t.html('consoleXacml.form.undefinedVariable', {
+            name: node.variableId }) +
+          '</div>';
       }
       return head + XacmlPage.hidden('action', 'set-expression-variable') +
         XacmlPage.select('variableId', scope.map(function (one) {
           return { value: one.id, label: '$' + one.id + '  — ' + one.detail };
         }), node.variableId) +
-        ' <button type="submit">Update</button></form>' +
-        '<div class="sub">Only the variables <strong>this policy</strong> ' +
-        'defines are offered. A VariableReference may not name one belonging ' +
-        'to a sibling policy in the same set — section 5.24 — and the ' +
-        'document would not load.</div>';
+        ' <button type="submit">' + t.html('consoleXacml.editor.update') +
+        '</button></form>' +
+        '<div class="sub">' +
+        t.html('consoleXacml.form.scopeHelp') +
+        '</div>';
     }
     return '';
   }
@@ -1533,11 +1360,14 @@ class XacmlPage {
    *
    * @param name - the field's name
    * @param value - whether it is yes
+   * @param t - the page's translator (#539): the option LABELS are words,
+   *   the values stay `false` and `true`
    * @returns the select as HTML
    */
-  static yesNo(name: string, value: unknown): string {
-    return XacmlPage.select(name, [{ value: 'false', label: 'no' },
-                         { value: 'true', label: 'yes' }],
+  static yesNo(name: string, value: unknown, t: Json): string {
+    return XacmlPage.select(name, [{ value: 'false',
+      label: t.text('consoleXacml.no') },
+                         { value: 'true', label: t.text('consoleXacml.yes') }],
                   value ? 'true' : 'false');
   }
 

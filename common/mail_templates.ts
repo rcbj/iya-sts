@@ -44,10 +44,32 @@
 // one category a person may decline. A realm may reword a template; it may
 // not move it to another category, because that is what decides whether a
 // person can refuse it.
+//
+// **5. THE BUILT-IN WORDING SHIPS IN EVERY CATALOG LANGUAGE (#539).** rcbj:
+// "ship default templates in the eight languages, picked by the existing
+// languageOrder(). A realm can still override any of them." English stays
+// here in `BUILT_IN`; every other language is DATA in `common/mail_locales/
+// <catalog tag>.json` — the tags of `common/locales/catalogs.json` — each an
+// object `{ templates: { <id>: { subject, text, html } }, layout: {...},
+// categories: { <id>: { reason } } }`. Not under `common/locales/`, whose
+// messages are ICU and would refuse `{{name}}`. A BASE file (`fr`) holds
+// every message; a regional OVERLAY (`fr-CA`) only what is worded
+// differently there ("courriel", "電郵"), the rest found in its base along
+// `i18n.chainFor()`'s chain, so `zh-TW` reads Traditional and `zh-HK` never
+// Simplified. Every translation keeps the four rules above:
+// `tests/mail_template_catalogs.js` holds each to `problem()` and to its
+// English placeholders. They were written by Claude and are unreviewed, as
+// the page catalogs are. MAIL IS NOT AN ERROR PAGE: rcbj's "errors stay
+// English" is about this service's refusals, and a security notice is
+// translated like every other message a person reads.
 // ===========================================================================
 
+import fs = require('fs');
+import path = require('path');
 import Html = require('./html');
 import helpers = require('./helpers');
+import i18n = require('./i18n');
+import errorCodes = require('./error_codes');
 
 type Json = any;
 
@@ -348,6 +370,14 @@ const FORBIDDEN_HTML: Array<[RegExp, string]> = [
 // #64: the id of the layout every message is wrapped in.
 const LAYOUT_ID = 'layout';
 
+// #539: the built-in translations, one file per catalog tag, read ONCE and
+// lazily — the first message that asks — and held for the process. A file
+// that cannot be read or parsed is logged and left out, never thrown: its
+// messages go out in the next language of the chain, English at the last,
+// which is better than a person getting no reset link at all.
+const LOCALES_DIR = path.join(__dirname, 'mail_locales');
+let localeFiles: { [tag: string]: Json } | null = null;
+
 /**
  * The mail channel's messages: the built-in template of every message this
  * service sends, the rules a realm's own template must keep, and the renderer.
@@ -404,6 +434,168 @@ class MailTemplates {
     return CATEGORIES.filter(function (one) {
       return one.id === id;
     })[0] || null;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BUILT-IN TRANSLATIONS (#539, header point 5).
+  // -------------------------------------------------------------------------
+  /**
+   * Reads `common/mail_locales/*.json` once, keyed by catalog tag. An
+   * unreadable file is logged (`STS-I18N-0001`) and left out.
+   *
+   * @returns every translation file, by catalog tag
+   */
+  static localeFiles(): { [tag: string]: Json } {
+    helpers.log.debug("Entering MailTemplates.localeFiles().");
+    if (localeFiles) {
+      helpers.log.debug("Leaving MailTemplates.localeFiles(). Cached.");
+      return localeFiles;
+    }
+    const out: { [tag: string]: Json } = {};
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(LOCALES_DIR).filter(function (name) {
+        return /\.json$/.test(name);
+      });
+    } catch (e) {
+      helpers.log.debug("Caught in MailTemplates.localeFiles(): " +
+                        ((e && e.message) || e));
+      helpers.log.error(errorCodes.tag('STS-I18N-0001') + 'mail: ' +
+                        LOCALES_DIR + ' could not be listed (' +
+                        ((e && e.message) || e) + '); every message goes ' +
+                        'out in English.');
+    }
+    names.forEach(function (name) {
+      const tag = name.replace(/\.json$/, '');
+      try {
+        const body = JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, name),
+                                                'utf8'));
+        if (!body || typeof body !== 'object') {
+          throw new Error('not an object');
+        }
+        out[tag] = body;
+      } catch (e) {
+        helpers.log.debug("Caught in MailTemplates.localeFiles(): " +
+                          ((e && e.message) || e));
+        helpers.log.error(errorCodes.tag('STS-I18N-0001') + 'mail: ' +
+                          'mail_locales/' + name + ' could not be read (' +
+                          ((e && e.message) || e) + '); its messages go ' +
+                          'out in the next language of the chain.');
+      }
+    });
+    localeFiles = out;
+    helpers.log.debug("Leaving MailTemplates.localeFiles(). " +
+                      Object.keys(out).join(','));
+    return out;
+  }
+
+  // The catalog tags to read for a language tag, most specific first, and
+  // never English (which is `BUILT_IN`): `zh-tw` is `zh-Hant`, `zh-hk` is
+  // `zh-Hant-HK` then `zh-Hant`, `de` is nothing.
+  /**
+   * Lists the translation files to read for a language tag, overlay first,
+   * English left out; empty when no catalog answers the tag.
+   *
+   * @param language - a language tag, in any case
+   * @returns catalog tags, most specific first
+   */
+  static chainFor(language: string): string[] {
+    helpers.log.debug("Entering MailTemplates.chainFor(). " + language);
+    const tag = i18n.canonical(language);
+    if (!tag) {
+      helpers.log.debug("Leaving MailTemplates.chainFor(). Not a tag.");
+      return [];
+    }
+    const found = i18n.chainFor(tag);
+    const out = found.matched ? found.chain.filter(function (one: string) {
+      return one !== i18n.SOURCE;
+    }) : [];
+    helpers.log.debug("Leaving MailTemplates.chainFor(). " + out.join(','));
+    return out;
+  }
+
+  /**
+   * Finds the built-in translation of a message (or of the layout) for a
+   * language: the first file along the language's chain that has it.
+   *
+   * @param id - the message's id, or `layout`
+   * @param language - a language tag, in any case
+   * @returns `{ parts, lang }` with `lang` the catalog tag that answered, or
+   * null for English, a language no catalog answers, or an unknown id
+   */
+  static builtInFor(id: string, language: string): Json {
+    helpers.log.debug("Entering MailTemplates.builtInFor(). " + id + " " +
+                      language);
+    if (!MailTemplates.builtIn(id)) {
+      helpers.log.debug("Leaving MailTemplates.builtInFor(). Unknown.");
+      return null;
+    }
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const parts = file && (id === LAYOUT_ID ? file.layout
+        : file.templates && file.templates[id]);
+      if (parts && typeof parts === 'object') {
+        helpers.log.debug("Leaving MailTemplates.builtInFor(). " + chain[i]);
+        return { parts: { subject: String(parts.subject || ''),
+                          text: String(parts.text || ''),
+                          html: String(parts.html || '') },
+                 lang: chain[i] };
+      }
+    }
+    helpers.log.debug("Leaving MailTemplates.builtInFor(). None.");
+    return null;
+  }
+
+  /**
+   * Lists the catalog tags a message has a built-in translation in (an
+   * overlay counts when its base has the message).
+   *
+   * @param id - the message's id, or `layout`
+   * @returns catalog tags, sorted
+   */
+  static builtInLanguages(id: string): string[] {
+    helpers.log.debug("Entering MailTemplates.builtInLanguages(). " + id);
+    const out = Object.keys(MailTemplates.localeFiles()).filter(
+      function (tag) {
+        const found = MailTemplates.builtInFor(id, tag);
+        return !!found;
+      }).sort();
+    helpers.log.debug("Leaving MailTemplates.builtInLanguages().");
+    return out;
+  }
+
+  // The layout's `{{reason}}` for a category in a language: the
+  // translation along the chain, else the English of `CATEGORIES`.
+  /**
+   * Says why a person received a message of a category, in a language: the
+   * words the layout finishes "because it is ..." with.
+   *
+   * @param id - the category's id
+   * @param language - the language the layout went out in
+   * @returns the reason
+   */
+  static reasonFor(id: string, language: string): string {
+    helpers.log.debug("Entering MailTemplates.reasonFor(). " + id + " " +
+                      language);
+    const cat = MailTemplates.category(id);
+    if (!cat) {
+      helpers.log.debug("Leaving MailTemplates.reasonFor(). Unknown.");
+      return 'a message from this service';
+    }
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const one = file && file.categories && file.categories[id];
+      if (one && typeof one.reason === 'string' && one.reason) {
+        helpers.log.debug("Leaving MailTemplates.reasonFor(). " + chain[i]);
+        return one.reason;
+      }
+    }
+    helpers.log.debug("Leaving MailTemplates.reasonFor(). English.");
+    return cat.reason;
   }
 
   // Every `{{name}}` in a piece of text.

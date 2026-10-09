@@ -65,6 +65,15 @@ const BACK = 'https://wf-back.example';
 const OTHER = 'https://wf-other.example';
 const DELEGATED_METHOD = 'OnBehalfOf / ActAs (delegated)';
 
+// THE IdP'S OWN NAME (#519): a token presented as the requester's
+// credential is addressed to its holder or to this IdP, and the realm's
+// WS-Trust issuer name is one of the names it answers to.
+function idpAudience() {
+  log.debug("Entering idpAudience().");
+  log.debug("Leaving idpAudience().");
+  return require('../common/issuer_names').issuer();
+}
+
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
   config.setOverride('global.mode', m);
@@ -200,7 +209,7 @@ function everyRefusal(t) {
   const signed = function (name, audience, opts) {
     log.debug("Entering signed().");
     log.debug("Leaving signed().");
-    return saml2.buildSamlAssertion(name, audience || 'https://sts.test', 5,
+    return saml2.buildSamlAssertion(name, audience || idpAudience(), 5,
                                     opts);
   };
   const unsigned = function (name) {
@@ -486,7 +495,7 @@ function usersRow(t) {
   const signed = function (name, audience) {
     log.debug("Entering signed().");
     log.debug("Leaving signed().");
-    return saml2.buildSamlAssertion(name, audience || 'https://sts.test', 5);
+    return saml2.buildSamlAssertion(name, audience || idpAudience(), 5);
   };
   const seenDelegated = function (name) {
     log.debug("Entering seenDelegated().");

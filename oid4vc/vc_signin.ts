@@ -160,8 +160,14 @@ import clusterClaims = require('../cluster/cluster_claims');
 import identityAssurance = require('../common/identity_assurance');
 // SIOPv2 (#129): an enrolment, when the browser collects one.
 import siop = require('./siop');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): the translator, and the English one
+// every refusal page keeps.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
 
 const { log, xmlEscape } = helpers;
+
+type Translator = ReturnType<typeof PageLocale.forPage>;
 
 // What the console and the audit log call a sign-in that came through here.
 const VIA = 'OpenID4VP (a wallet)';
@@ -471,13 +477,19 @@ class VcSignin {
 
   // Every page this door draws, in the sign-in screen's own look. `opts`
   // carries the refresh target (the QR page) or `scripted` (the wait page,
-  // the one this door relaxes the policy for).
+  // the one this door relaxes the policy for) — and, for a page drawn in the
+  // reader's language (#539), its translator and the path the language
+  // chooser returns to. A page drawn without one is a refusal, which stays
+  // English (`lang="en"`, no chooser), as every error here does.
   private page(res: any, status: number, title: string, body: string,
-               opts?: { refreshUrl?: string; scripted?: boolean }): void {
-    const { log, xmlEscape, authn, contentSecurityPolicy } = this.deps;
+               opts?: { refreshUrl?: string; scripted?: boolean;
+                        t?: Translator; returnTo?: string }): void {
+    const { log, xmlEscape, authn, contentSecurityPolicy, realms } = this.deps;
     const o = opts || {};
     log.debug("Entering VcSignin.page(). status=" + status);
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    const t = o.t;
+    const html = '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') + '><head><meta ' +
       'charset="utf-8">' +
       (o.refreshUrl
         ? '<meta http-equiv="refresh" content="' + this.pollSeconds() +
@@ -488,7 +500,13 @@ class VcSignin {
       'border-radius:8px}.checks{font-size:.8em;margin:8px 0;' +
       'padding-left:18px}.checks .bad{color:#b00020}' +
       'form.dcapi button{width:100%}' +
-      '</style></head><body><div class="card">' + body +
+      '</style></head><body><div class="card">' +
+      // The chooser is a form of its own, above the page's; the wait page's
+      // script finds its own form by id, so the two never meet.
+      (t ? PageLocale.chooser(t, realms.currentPrefix(),
+                              PageLocale.herePath(o.returnTo || '/'))
+         : '') +
+      body +
       '</div>' +
       (o.scripted ? '<script src="' + authn.WALLET_SCRIPT_PATH +
                     '"></script>' : '') +
@@ -503,20 +521,49 @@ class VcSignin {
     log.debug("Leaving VcSignin.page().");
   }
 
-  // The way back to the screen the person came from, when there is one.
-  private fallbackHtml(record: any): string {
+  // The English translator (#539), for the refusal pages: every error stays
+  // English, and the fragments a refusal shares with a translated page (the
+  // way back, the same-device link) are drawn from the one catalog so their
+  // English is written once.
+  private english(): Translator {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.english().");
+    log.debug("Leaving VcSignin.english().");
+    return i18n.translator(['en'], 'en');
+  }
+
+  // The translator for a page drawn for a waiting sign-in (#539): the
+  // pending record's application and `ui_locales`, as the sign-in screen it
+  // came from was drawn in, and — for an enrolment — the person enrolling.
+  private translatorFor(ctx: any, tx: any): Translator {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.translatorFor().");
+    const record = (ctx && ctx.record) || {};
+    const enrol = tx && tx.signIn && tx.signIn.enrol;
+    const t = PageLocale.forPage({
+      application: String(record.application || ''),
+      uiLocales: String(record.uiLocales || ''),
+      username: enrol ? String(enrol.username || '') : undefined
+    });
+    log.debug("Leaving VcSignin.translatorFor(). " + t.locale);
+    return t;
+  }
+
+  // The way back to the screen the person came from, when there is one. In
+  // the page's language where it passes its translator; English otherwise.
+  private fallbackHtml(record: any, translator?: Translator): string {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.fallbackHtml().");
+    const t = translator || this.english();
     if (!record) {
       log.debug("Leaving VcSignin.fallbackHtml(). Nothing to go back to.");
-      return '<p class="sub">Nothing is waiting for this sign-in, so there ' +
-        'is nothing to go back to. Start from the application you were ' +
-        'signing in to.</p>';
+      return '<p class="sub">' + t.html('wallet.fallback.nothing') + '</p>';
     }
     log.debug("Leaving VcSignin.fallbackHtml().");
     return '<p><a id="wallet-fallback" href="' + authn.LOGIN_PATH +
-      '?authn=' + encodeURIComponent(record.id) + '">Sign in another way' +
-      '</a> &mdash; the request that sent you here is still waiting.</p>';
+      '?authn=' + encodeURIComponent(record.id) + '">' +
+      t.html('wallet.fallback.another') + '</a> &mdash; ' +
+      t.html('wallet.fallback.stillWaiting') + '</p>';
   }
 
   private asked(req: any, res: any, where: string, schema: any): any {
@@ -722,23 +769,27 @@ class VcSignin {
   }
 
   // The same-device link, on the wait page and on the no-script answer.
-  private sameDeviceHtml(req: any, tx: any): string {
+  // In the page's language where it passes its translator (#539).
+  private sameDeviceHtml(req: any, tx: any, translator?: Translator): string {
     const { log, xmlEscape, verifier } = this.deps;
     log.debug("Entering VcSignin.sameDeviceHtml().");
+    const t = translator || this.english();
     const query = verifier.vpRequestQuery(req, tx);
     const sameDevice = String(tx.signIn.walletUrl || '') + '?' + query;
     log.debug("Leaving VcSignin.sameDeviceHtml().");
     return '<p><a class="fedbtn" id="wallet-open" href="' +
-      xmlEscape(sameDevice) + '">Open your wallet on this device<span>a ' +
-      'link, no script needed</span></a></p>';
+      xmlEscape(sameDevice) + '">' + t.html('wallet.sameDevice.open') +
+      '<span>' + t.html('wallet.sameDevice.note') + '</span></a></p>';
   }
 
   // The page while nothing has arrived: the Digital Credentials API button
   // (scripted), the same-device link, and — where it is on — a link to the
-  // QR page.
+  // QR page. Drawn in the reader's language (#539); the script's one message
+  // is a refusal, which stays English in the script itself.
   private waitingPage(req: any, res: any, ctx: any, tx: any): void {
-    const { log, xmlEscape, verifier } = this.deps;
+    const { log, xmlEscape, verifier, realms } = this.deps;
     log.debug("Entering VcSignin.waitingPage().");
+    const t = this.translatorFor(ctx, tx);
     const self = this.waitPathFor(ctx, tx.state);
     const seconds = Math.max(0, Math.round((tx.expires - Date.now()) / 1000));
     const dcRequest = verifier.dcApiRequestFor(tx);
@@ -754,78 +805,82 @@ class VcSignin {
                      xmlEscape(ctx.mfaId) + '">' : '') +
         '<input type="hidden" name="response" id="wallet-dcapi-response" ' +
         'value="">' +
-        '<button type="submit" class="fedbtn" id="wallet-dcapi">Use a ' +
-        'wallet on this or a nearby device<span>Digital Credentials API' +
-        '</span></button></form>' +
-        '<p class="sub" id="wallet-dcapi-missing" hidden>This browser has ' +
-        'no Digital Credentials API, so it cannot ask a wallet directly. ' +
-        'Use the link below' + (this.qrOffered() ? ', or the QR code' : '') +
-        '.</p>' +
+        '<button type="submit" class="fedbtn" id="wallet-dcapi">' +
+        t.html('wallet.wait.dcButton') +
+        // The API's name is a product name, and stays as it is.
+        '<span>Digital Credentials API</span></button></form>' +
+        '<p class="sub" id="wallet-dcapi-missing" hidden>' +
+        (this.qrOffered() ? t.html('wallet.wait.dcMissingQr')
+                          : t.html('wallet.wait.dcMissing')) + '</p>' +
         '<p class="err" id="wallet-dcapi-error" hidden></p>' +
-        '<noscript><p class="sub" id="wallet-noscript">Scripts are off, so ' +
-        'the button above cannot reach a wallet; the link below needs ' +
-        'none.</p></noscript>'
+        '<noscript><p class="sub" id="wallet-noscript">' +
+        t.html('wallet.wait.noscript') + '</p></noscript>'
       : '';
     const qrLink = tx.signIn.crossDevice
       ? '<p class="sub"><a id="wallet-qr-link" href="' + xmlEscape(self) +
-        '&amp;qr=1">Show a QR code instead</a> &mdash; for a wallet that ' +
-        'cannot be reached through this browser. Only use it for your own ' +
-        'phone: a QR code can be passed to somebody else, and whoever ' +
-        'scans it signs THIS browser in.</p>'
+        '&amp;qr=1">' + t.html('wallet.wait.qrLink') + '</a> &mdash; ' +
+        t.html('wallet.wait.qrLinkNote') + '</p>'
       : '';
     const selfIssued = tx.responseType === 'id_token';
-    const heading = ctx.enrol ? 'Enrol a wallet'
-      : selfIssued ? 'Sign in with a self-issued ID' : 'Sign in with a wallet';
+    const heading = ctx.enrol ? t.text('wallet.heading.enrol')
+      : selfIssued ? t.text('wallet.heading.selfIssued')
+        : t.text('wallet.heading.wallet');
+    const sub = ctx.enrol ? t.html('wallet.sub.enrol')
+      : selfIssued ? t.html('wallet.sub.selfIssued')
+        : ctx.mfaId ? t.html('wallet.sub.walletSecondFactor')
+          : t.html('wallet.sub.wallet');
     this.page(res, 200, heading,
-      '<h1>' + heading + '</h1>' +
-      '<p class="sub">' + (ctx.enrol
-        ? 'Your wallet will be asked for a self-issued ID Token (SIOPv2), ' +
-          'signed with its own key. That key is then enrolled for you, and ' +
-          'signs you in here from then on.'
-        : selfIssued
-          ? 'Your wallet will be asked for a self-issued ID Token (SIOPv2), ' +
-            'signed with a key you enrolled here.'
-          : 'Your wallet will be asked for a credential this ' +
-            'service issued to you, and shown exactly what is asked for ' +
-            'before anything is sent.' + (ctx.mfaId ? ' It is your second ' +
-            'factor: the credential must be yours.' : '')) + '</p>' +
-      dcHtml + this.sameDeviceHtml(req, tx) + qrLink +
-      '<p id="wallet-waiting">The request expires in ' + seconds +
-      ' seconds. If your wallet on this device does not bring you back, <a ' +
-      'id="wallet-check" href="' + xmlEscape(self) + '">check now</a>.</p>' +
-      this.fallbackHtml(ctx.record) +
-      '<div class="meta"><div>Signing in for: <code>' +
-      xmlEscape(ctx.record.protocol || '') + '</code></div><div>Verifier: ' +
-      '<code>' + xmlEscape(tx.clientId) + '</code></div></div>',
-      { scripted: !!dcRequest });
+      '<h1>' + xmlEscape(heading) + '</h1>' +
+      '<p class="sub">' + sub + '</p>' +
+      dcHtml + this.sameDeviceHtml(req, tx, t) + qrLink +
+      '<p id="wallet-waiting">' +
+      t.html('wallet.wait.expires', { seconds: seconds }) + ' ' +
+      t.html('wallet.wait.notBack') + ' <a ' +
+      'id="wallet-check" href="' + xmlEscape(self) + '">' +
+      t.html('wallet.wait.checkNow') + '</a>' + t.html('wallet.end') +
+      '</p>' +
+      this.fallbackHtml(ctx.record, t) +
+      '<div class="meta"><div>' +
+      t.html('wallet.wait.signingInFor',
+             { protocol: ctx.record.protocol || '' }) + '</div><div>' +
+      t.html('wallet.wait.verifier', { verifier: tx.clientId }) +
+      '</div></div>',
+      { scripted: !!dcRequest, t: t,
+        // A GET draws it, so the chooser comes back to the same address.
+        returnTo: realms.currentPrefix() + self });
     log.debug("Leaving VcSignin.waitingPage().");
   }
 
   // The QR page: no script, a server-drawn code, and a `<meta>` refresh as
-  // the poll.
+  // the poll. In the reader's language (#539), the security warning with it.
   private async qrPage(req: any, res: any, ctx: any, tx: any): Promise<void> {
     const { log, xmlEscape, verifier, realms, qrSvg } = this.deps;
     log.debug("Entering VcSignin.qrPage().");
+    const t = this.translatorFor(ctx, tx);
     const query = verifier.vpRequestQuery(req, tx);
     // SIOPv2's static `siopv2:` for an ID Token alone (#129).
     const svg = await qrSvg((tx.responseType === 'id_token' ? 'siopv2://?' :
                              'openid4vp://?') + query);
     const self = this.waitPathFor(ctx, tx.state) + '&qr=1';
     const seconds = Math.max(0, Math.round((tx.expires - Date.now()) / 1000));
-    this.page(res, 200, 'Sign in with a wallet',
-      '<h1>Scan with your wallet</h1>' +
-      '<img class="qr" id="wallet-qr" alt="OpenID4VP request QR code" ' +
+    this.page(res, 200, t.text('wallet.heading.wallet'),
+      '<h1>' + t.html('wallet.qr.heading') + '</h1>' +
+      '<img class="qr" id="wallet-qr" alt="' +
+      xmlEscape(t.text('wallet.qr.alt')) + '" ' +
       'src="data:image/svg+xml;base64,' +
       Buffer.from(svg, 'utf8').toString('base64') + '">' +
-      '<p class="err" id="wallet-qr-warning">Only scan this with your own ' +
-      'phone. Whoever scans it signs THIS browser in, so a code somebody ' +
-      'else showed you is a way for them to sign in as you.</p>' +
-      '<p id="wallet-waiting">Waiting for your wallet &mdash; this page ' +
-      'checks again every ' + this.pollSeconds() + ' seconds, and the ' +
-      'request expires in ' + seconds + ' seconds. <a href="' +
-      xmlEscape(self) + '">Check now</a>.</p>' +
-      this.fallbackHtml(ctx.record),
-      { refreshUrl: realms.href(self) });
+      // A warning the person must read before scanning, not a refusal: it is
+      // drawn in their language.
+      '<p class="err" id="wallet-qr-warning">' + t.html('wallet.qr.warning') +
+      '</p>' +
+      '<p id="wallet-waiting">' +
+      t.html('wallet.qr.waiting', { poll: this.pollSeconds(),
+                                    seconds: seconds }) + ' <a href="' +
+      xmlEscape(self) + '">' + t.html('wallet.qr.checkNow') + '</a>' +
+      t.html('wallet.end') + '</p>' +
+      this.fallbackHtml(ctx.record, t),
+      { refreshUrl: realms.href(self), t: t,
+        returnTo: realms.currentPrefix() + self });
     log.debug("Leaving VcSignin.qrPage().");
   }
 

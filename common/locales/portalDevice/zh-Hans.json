@@ -1,0 +1,16 @@
+{
+  "request.heading": "这是您的设备吗？",
+  "request.asks": "{client} 请求在显示代码 {code} 的设备上为您登录。",
+  "request.access": "访问权限：<code>{scope}</code>。过期时间：{when}。",
+  "request.noScope": "（未指定）",
+  "request.warning": "<strong>只批准就在您面前</strong>、由您本人发起登录的设备。如果有人把这个代码发给您，他是在请您以您的身份登录他的设备。",
+  "request.approve": "批准",
+  "request.deny": "拒绝",
+  "find.heading": "登录设备",
+  "find.sub": "一台显示代码和此地址的电视、游戏机或命令行，正请您改在这里登录（RFC 8628）。",
+  "find.off": "此处已关闭这种登录方式。",
+  "find.code": "设备上显示的代码",
+  "find.continue": "继续",
+  "done.approved": "已批准：设备正在为您登录。",
+  "done.denied": "已拒绝。"
+}

@@ -59,6 +59,10 @@ const pkiAdmin = require('../admin-ui/pki_admin');
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
 // what the harness's assertion logger reads.
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'pki_authoring',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -99,7 +103,9 @@ async function run(t) {
              'declared ===');
 
   const json = pkiAdmin.pkiView(undefined, authoring.defaultDraft(FORM));
-  const html = pkiAdmin.paneHtml(json, json.workbench.draft);
+  // The renderer takes the page's translator since #539; node's is English.
+  const html = pkiAdmin.paneHtml(json, json.workbench.draft,
+    require('../admin-ui/web_kit').context({}, true).t);
   const drawn = new Set();
   const matcher = /name="(pki_[A-Za-z0-9_]+)"/g;
   let hit;

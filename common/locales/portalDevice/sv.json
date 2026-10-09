@@ -1,0 +1,16 @@
+{
+  "request.heading": "Är det här din enhet?",
+  "request.asks": "{client} ber om att logga in dig på en enhet som visar koden {code}.",
+  "request.access": "Åtkomst: <code>{scope}</code>. Upphör {when}.",
+  "request.noScope": "(ingen angiven)",
+  "request.warning": "<strong>Godkänn bara en enhet som står framför dig</strong> och som du själv har börjat logga in på. Den som har skickat dig den här koden vill att du loggar in DEM som dig.",
+  "request.approve": "Godkänn",
+  "request.deny": "Neka",
+  "find.heading": "Logga in en enhet",
+  "find.sub": "En tv, en spelkonsol eller en kommandorad som visar en kod och den här adressen ber dig att logga in här i stället (RFC 8628).",
+  "find.off": "Den här inloggningsmetoden är avstängd här.",
+  "find.code": "Koden som enheten visar",
+  "find.continue": "Fortsätt",
+  "done.approved": "Godkänt: enheten loggar in dig.",
+  "done.denied": "Nekat."
+}

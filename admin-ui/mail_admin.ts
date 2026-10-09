@@ -215,7 +215,9 @@ class MailAdmin {
       }
       const sent = mail.send({ username: who, template: 'test-message',
         values: { username: actor || who,
-                  when: new Date().toISOString(),
+                  // #539: an instant, which the channel writes in the
+                  // recipient's language and names the zone of.
+                  when: { date: Date.now() },
                   transport: mail.effectiveTransport() },
         via: via, actor: actor });
       if (!sent.ok) {

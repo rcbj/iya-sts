@@ -1947,6 +1947,11 @@ class Scim {
             // it is passed rather than resolved because only this request
             // knows.
             actor: (req && req.scimAuth && req.scimAuth.principal) || '',
+            // THE PROVISIONING CLIENT (#539), whose locale policy gives the
+            // person a language where the resource names none. Only an
+            // OAuth caller has a client_id; any other scheme gets the
+            // realm's default profile.
+            application: (req && req.scimAuth && req.scimAuth.clientId) || '',
             note: 'provisioned over SCIM 2.0' +
                   ((req && req.scimAuth && req.scimAuth.scheme &&
                     req.scimAuth.scheme !== 'anonymous')
@@ -1975,6 +1980,19 @@ class Scim {
         const before = directory.readPerson(dn);
         const converted = scimMap.fromScimUser(data,
                                                before ? before.attributes : {});
+        // A LANGUAGE THE LOCALE POLICY GAVE THE NEW PERSON (#539) survives
+        // the merge where the resource names none: the merge replaces what
+        // SCIM maps, and an absent preferredLanguage would otherwise remove
+        // the one createUser() just wrote. Only on a create — an update that
+        // leaves it out is a client's removal, and is honoured.
+        if (!existing && before && !converted.attributes.preferredLanguage &&
+            !converted.attributes.preferredlanguage) {
+          const given = (before.attributes || {}).preferredlanguage ||
+                        (before.attributes || {}).preferredLanguage;
+          if (given && [].concat(given).length) {
+            converted.attributes.preferredLanguage = [].concat(given);
+          }
+        }
         if (converted.errors.length) {
           throw coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',

@@ -209,7 +209,7 @@ server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
-debugger's api is such an application while the debugger is embedded.
+debugger's api is such an application, seeded in every install.
 Anything else is `invalid_target` (RFC 8707 section 2): redirected to the
 client from the authorization endpoint, a 400 from PAR and from the token
 endpoint. Development mode accepts any absolute URI, as before.
@@ -483,6 +483,22 @@ does.
 * **The screen carries no script** — two buttons in a form.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
+
+#### What a person sees on `/portal/consents`
+
+The page lists what the person agreed each application may ask for, with a
+**Withdraw** button per scope and per application. Below that, under
+**Administrative consents**, it lists the scopes an application's global
+consent (`oauthGlobalConsent`) answered for them when they signed in to it.
+These were agreed for everybody by an administrator, so the person was never
+asked and cannot withdraw them there.
+
+A global consent is recorded on the person's entry (`oauthConsentApplied`) the
+first time it answers for them, once per application and scope. The section
+shows only the records whose global consent still stands, and leaves out a
+scope the person has also agreed to themselves, because that one is listed as
+theirs. A sign-in made before this record existed is not listed until the
+person signs in to that application again.
 
 #### Withdrawing consent
 
@@ -1118,8 +1134,13 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
 access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
-`preferred_username` for a person, and `auth_time`, `amr` and `acr` where an
-authentication is behind the grant. Every access token also carries a
+`username` for a person, and `auth_time`, `amr` and `acr` where an
+authentication is behind the grant. The `profile`, `email`, `address` and
+`phone` claims — `preferred_username` among them — are UserInfo's (OIDC Core
+section 5.4); an access token carries them only where the resource server it
+is for declares them and their scope was granted (#395, [Applications →
+Identity claims a resource server wants](applications.md#identity-claims-a-resource-server-wants-in-its-access-tokens)).
+Every access token also carries a
 `status` claim, `{ "status_list": { "idx", "uri" } }`
 ([Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/)
 section 6.1). It names the token's index in the realm's **access-token status

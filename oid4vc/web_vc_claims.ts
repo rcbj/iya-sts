@@ -39,66 +39,33 @@ class VcClaimsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // THE WORDS ARE THE CATALOG'S (#539): `consoleVcClaims`, whose English is
+    // exactly what this page drew before, so English output is unchanged.
+    const t = ctx.t;
 
-    const inner = kit.note('Which claims a Verifiable Credential issued by ' +
-      'this ' +
-      'service carries, <em>from now on</em>. Nothing already issued ' +
-      'changes — a credential is a signed document and this page cannot ' +
-      'reach inside one. It applies to all five OID4VCI configurations: ' +
-      'the SD-JWT VC, the <code>jwt_vc_json</code> W3C credential, the ' +
-      '<code>ldp_vc</code> one with a BBS proof, and the two whose only ' +
-      'difference is that the issuer names itself by DID.') +
+    const inner = kit.note(t.html('consoleVcClaims.intro')) +
 
-      kit.note('The list is of <strong>LDAP attribute types</strong> and ' +
-      'not of claim names, because this service has a directory and a ' +
-      'claim with a value nothing else can see is half a demonstration. A ' +
-      'selected attribute becomes the claim named beside it, and the value ' +
-      'is the one on that person\'s entry under <code>ou=users</code> — so ' +
-      'an LDAP client and an OID4VCI wallet pointed at this service are ' +
-      'shown the same person. Three rows are not RFC 4519/4524/2798: there ' +
-      'is no standard attribute type for a birthdate or a nationality, so ' +
-      'the SCHAC schema\'s names are borrowed rather than invented.') +
+      kit.note(t.html('consoleVcClaims.ldapTypes')) +
 
-      kit.warn('<strong>None of this is verified, and the values are ' +
-      'garbage on purpose.</strong> This service authenticates nobody — ' +
-      'the username typed at the sign-in screen is the identity in every ' +
-      'token and credential it issues — so there is no source of a real ' +
-      'birthdate here and there had better not be. What a person is ' +
-      'missing is invented from their username: the same invented person ' +
-      'every time, across restarts, so that two credentials issued a ' +
-      'minute apart describe one human being rather than two. A verifier ' +
-      'that believed any of it would be believing this page.') +
+      kit.warn(t.html('consoleVcClaims.garbage')) +
 
-      '<h2>The attributes</h2>' +
-      VcClaimsPage.vcAttributeTable(json) +
+      '<h2>' + t.html('consoleVcClaims.hAttributes') + '</h2>' +
+      VcClaimsPage.vcAttributeTable(json, t) +
 
-      '<h2>What a credential would carry</h2>' +
-      VcClaimsPage.vcPreviewSection(json) +
+      '<h2>' + t.html('consoleVcClaims.hPreview') + '</h2>' +
+      VcClaimsPage.vcPreviewSection(json, t) +
 
-      '<h2>Where a value comes from</h2>' +
-      kit.note('Three sources, in this order. <strong>The access ' +
-      'token</strong>, where it carries a claim of that name — that is a ' +
-      'statement this service already made about the person, from the ' +
-      'sign-in or from the <a href="/admin/claims">custom claims</a> page, ' +
-      'and a credential contradicting the token that authorised it would ' +
-      'be indefensible. Then <strong>the directory entry</strong>, which ' +
-      'is where the generated values live once an entry exists and also ' +
-      'where an <code>ldapmodify</code> lands: change <code>mail</code> on ' +
-      '<code>uid=alice,ou=users</code> and the next credential says so. ' +
-      'Then <strong>the generated persona</strong>, for a person with no ' +
-      'entry, or an entry without that attribute, or a directory that is ' +
-      'not running.') +
-      kit.note('Populating never overwrites. An attribute an entry ' +
-      'already carries is left exactly as it is — which is why the three ' +
-      'seeded people keep their names and only gain what they had nothing ' +
-      'for, and why a sweep run twice does nothing the second time.') +
+      '<h2>' + t.html('consoleVcClaims.hSources') + '</h2>' +
+      // Split at the link: a message carries no element with an attribute.
+      kit.note(t.html('consoleVcClaims.sources1') +
+      '<a href="/admin/claims">' + t.html('consoleVcClaims.customClaims') +
+      '</a>' + t.html('consoleVcClaims.sources2')) +
+      kit.note(t.html('consoleVcClaims.neverOverwrites')) +
 
-      '<h2>What these claims do not do</h2>' +
-      kit.note('Nothing reads them back. No access token, ID Token, SAML ' +
-      'assertion or Kerberos PAC carries a claim from this page, and no ' +
-      'endpoint makes a decision on one — it reaches a credential and ' +
-      'stops there. The <a href="/admin/users">users</a> page shows the ' +
-      'directory entry each of these values was written onto.');
+      '<h2>' + t.html('consoleVcClaims.hNotDo') + '</h2>' +
+      kit.note(t.html('consoleVcClaims.notDo1') +
+      '<a href="/admin/users">' + t.html('consoleVcClaims.users') + '</a>' +
+      t.html('consoleVcClaims.notDo2'));
 
     return inner;
   }
@@ -112,9 +79,10 @@ class VcClaimsPage {
    * under ou=users.
    *
    * @param previewUser - the username being previewed
+   * @param t - the page's translator (#539)
    * @returns the forms as HTML
    */
-  static vcAttributeTable(json) {
+  static vcAttributeTable(json, t) {
     const previewUser = json.preview.user;
 
     const rows = json.attributes.map(function (row) {
@@ -132,21 +100,28 @@ class VcClaimsPage {
     }).join('');
 
     return '<form method="post" action="/admin/vc"><input type="hidden" ' +
-      'name="action" value="select"><table><tr><th>In</th><th>LDAP ' +
-      'attribute</th><th>Defined by</th><th>Claim</th><th>ldp_vc ' +
-      'term</th><th>In a credential ' +
-      'for ' + kit.esc(previewUser) + '</th><th>Source</th></tr>' +
-      rows + '</table><div class="formrow"><button>Save this ' +
-      'selection</button><span class="note">Saving also populates the ' +
-      'directory: every person under <code>ou=users</code> gains the ' +
-      'attributes they are missing.</span></div></form><div ' +
+      'name="action" value="select"><table><tr><th>' +
+      t.html('consoleVcClaims.thIn') + '</th><th>' +
+      t.html('consoleVcClaims.thLdap') + '</th><th>' +
+      t.html('consoleVcClaims.thDefinedBy') + '</th><th>' +
+      t.html('consoleVcClaims.thClaim') + '</th><th>' +
+      t.html('consoleVcClaims.thLdpTerm') + '</th><th>' +
+      // t.text and kit.esc, not t.html: a username is data, and kit.esc is
+      // what drew it before (an apostrophe as &apos;, not &#39;).
+      kit.esc(t.text('consoleVcClaims.thInCredential',
+                     { user: previewUser })) +
+      '</th><th>' + t.html('consoleVcClaims.thSource') + '</th></tr>' +
+      rows + '</table><div class="formrow"><button>' +
+      t.html('consoleVcClaims.save') + '</button><span class="note">' +
+      t.html('consoleVcClaims.saveNote') + '</span></div></form><div ' +
       'class="formrow"><form method="post" action="/admin/vc" ' +
       'class="inline"><input type="hidden" name="action" ' +
-      'value="defaults"><button class="secondary">Restore the six default ' +
-      'claims</button></form> <form method="post" action="/admin/vc" ' +
+      'value="defaults"><button class="secondary">' +
+      t.html('consoleVcClaims.restore') + '</button></form> <form ' +
+      'method="post" action="/admin/vc" ' +
       'class="inline"><input type="hidden" name="action" ' +
-      'value="populate"><button class="secondary">Populate the directory ' +
-      'now</button></form></div>';
+      'value="populate"><button class="secondary">' +
+      t.html('consoleVcClaims.populate') + '</button></form></div>';
   }
 
   // What a credential for this person would actually assert, claim by claim. It
@@ -158,48 +133,45 @@ class VcClaimsPage {
    * claim, built by the function the issuer calls.
    *
    * @param previewUser - the username being previewed
+   * @param t - the page's translator (#539)
    * @returns the preview form, notes and table as HTML
    */
-  static vcPreviewSection(json) {
+  static vcPreviewSection(json, t) {
     const previewUser = json.preview.user;
     const built = json.preview.claims;
     const rows = built.report.map(function (item) {
       return '<tr><td><code>' + kit.esc(item.claim) + '</code></td>' +
         '<td><code>' + kit.esc(item.value) + '</code></td>' +
         '<td>' + kit.esc(item.source) + '</td>' +
-        '<td>' + (item.ldpTerm ? 'yes' : '<span class="state-none">no</span>') +
+        '<td>' + (item.ldpTerm ? t.html('consoleVcClaims.yes') :
+                  '<span class="state-none">' +
+                  t.html('consoleVcClaims.no') + '</span>') +
         '</td></tr>';
     }).join('');
     const omitted = json.ldpOmitted;
 
     return '<form method="get" action="/admin/vc"><div class="formrow">' +
-      '<label for="user">Preview the credential for</label>' +
+      '<label for="user">' + t.html('consoleVcClaims.previewFor') +
+      '</label>' +
       '<input type="text" id="user" name="user" size="20" value="' +
       kit.esc(previewUser) + '"><button ' +
-      'class="secondary">Show</button></div></form>' +
+      'class="secondary">' + t.html('consoleVcClaims.show') +
+      '</button></div></form>' +
       kit.note((built.entryFound
-        ? 'This person has an entry in the directory, so the values below ' +
-          'marked <em>directory</em> are what an LDAP client reads from it.'
-        : 'This person has no entry in the directory — nobody has ' +
-          'authenticated as them and nothing was added by hand — so every ' +
-          'value below is generated. It will be the same one next time: the ' +
-          'invented person is seeded from the username.')) +
-      '<table><tr><th>Claim</th><th>Value</th><th>From</th><th>In ' +
-      'ldp_vc</th></tr>' +
+        ? t.html('consoleVcClaims.entryFound')
+        : t.html('consoleVcClaims.entryMissing'))) +
+      '<table><tr><th>' + t.html('consoleVcClaims.thClaim') + '</th><th>' +
+      t.html('consoleVcClaims.thValue') + '</th><th>' +
+      t.html('consoleVcClaims.thFrom') + '</th><th>' +
+      t.html('consoleVcClaims.thInLdp') + '</th></tr>' +
       (rows ||
-       '<tr><td colspan="4">No attribute is selected, so a credential ' +
-               'carries nothing but its subject identifier. That is a ' +
-               'legitimate thing to test and is not a mistake this page will ' +
-               'correct.</td></tr>') + '</table>' +
+       '<tr><td colspan="4">' + t.html('consoleVcClaims.noneSelected') +
+       '</td></tr>') + '</table>' +
+      // The list of names is markup, so it stays in code; the verb agrees
+      // with how many there are through the message's plural.
       (omitted.length
         ? kit.note('<strong>' + kit.codeList(omitted) + '</strong> ' +
-          (omitted.length === 1 ? 'is selected and does' :
-           'are selected and do') +
-          ' not appear in an <code>ldp_vc</code> credential. That format is ' +
-          'signed over canonicalized JSON-LD, so it can only carry terms the ' +
-          'vendored context defines, and the context is vendored precisely ' +
-          'because editing it would invalidate every credential already ' +
-          'issued against it. The two JOSE-secured formats carry all of them.')
+          t.html('consoleVcClaims.ldpOmitted', { n: omitted.length }))
         : '');
   }
 

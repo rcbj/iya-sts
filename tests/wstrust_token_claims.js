@@ -72,6 +72,15 @@ const JWT = 'urn:ietf:params:oauth:token-type:jwt';
 const BACK = 'https://wc-back.example';
 const BASIC = 'urn:oasis:names:tc:SAML:2.0:attrname-format:basic';
 
+// THE IdP'S OWN NAME (#519): a token presented as the requester's
+// credential is addressed to its holder or to this IdP, and the realm's
+// WS-Trust issuer name is one of the names it answers to.
+function idpAudience() {
+  log.debug("Entering idpAudience().");
+  log.debug("Leaving idpAudience().");
+  return require('../common/issuer_names').issuer();
+}
+
 function inMode(m, fn) {
   log.debug("Entering inMode(). " + m);
   config.setOverride('global.mode', m);
@@ -191,7 +200,7 @@ function compare(t) {
       log.debug("Entering ask().");
       log.debug("Leaving ask().");
       return inMode(m, function () {
-        return wstrust.handleRst(rst(signed(requester, 'https://sts.test'),
+        return wstrust.handleRst(rst(signed(requester, idpAudience()),
                                      body, tokenType),
                                  'application/soap+xml');
       });
@@ -265,7 +274,7 @@ function compare(t) {
             expected + '" (admin:write is protected in every mode; ' +
             'api.undeclared is dropped in product)', JSON.stringify(own.scope));
     const plain = inMode(m, function () {
-      return wstrust.handleRst(rst(signed('wc-alice', 'https://sts.test'),
+      return wstrust.handleRst(rst(signed('wc-alice', idpAudience()),
                                    '', JWT).replace(BACK,
                                    'https://wc-plain.example'),
                                'application/soap+xml');

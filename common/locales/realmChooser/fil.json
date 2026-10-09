@@ -1,0 +1,10 @@
+{
+  "title": "Piliin ang iyong realm",
+  "heading": "Piliin ang iyong realm",
+  "lead": "Pumili ng realm para magpatuloy sa {surface, select, portal {iyong account} other {admin console}}. Wala nang iba pang magagamit dito hangga't hindi ka pumipili.",
+  "explain": "Higit sa isang trust realm ang hino-host ng serbisyong ito, at bawat isa ay may sariling mga tao at sariling mga administrator. Piliin ang realm na kinabibilangan mo, at hihilingin sa iyong mag-sign in doon.",
+  "realm": "Realm",
+  "continue": "Magpatuloy sa {surface, select, portal {iyong account} other {admin console}}",
+  "defaultRealm": "(ang default na realm)",
+  "idNote": "Masasabi sa iyo ng iyong administrator ang id ng iyong realm. Ang id ng default na realm ay <code>{id}</code>."
+}

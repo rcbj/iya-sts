@@ -396,7 +396,7 @@ function childMain() {
            r.text.slice(0, 200));
     }
 
-    // 3f. The password grant with openid: preferred_username, and UserInfo.
+    // 3f. The password grant with openid: the profile claims are UserInfo's.
     r = await token({ grant_type: 'password', username: 'r9-alice',
                       password: 'anything', scope: 'openid profile' });
     const access = r.json && r.json.access_token;
@@ -406,17 +406,26 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
     if (access) {
       const claims = part(access, 1);
-      note(claims.preferred_username === 'r9-alice' &&
+      // #395: `profile` asks for access to the profile claims, which OIDC
+      // Core 5.4 answers at UserInfo; a token for this service's own
+      // resource server carries none of them, `preferred_username` included
+      // (a resource server that wants one declares it —
+      // `tests/scope_claims.js`). `username` is this service's own claim.
+      note(claims.preferred_username === undefined &&
+           claims.username === 'r9-alice' &&
            claims.scope === 'openid profile',
-           '3g. section 2.2.2: the person\'s name is preferred_username, ' +
-           'and the scope is kept', JSON.stringify(claims));
+           '3g. section 2.2.2: no profile claim on a token for this ' +
+           'service\'s own resource server, the scope kept',
+           JSON.stringify(claims));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access } });
       // The person's `urn:uuid:<entryUUID>` since 2026-09-14.
       note(r.status === 200 && r.json.sub ===
              require(ROOT + '/common/helpers').subjectForName('r9-alice') &&
-           /^urn:uuid:/.test(r.json.sub),
-           '3h. UserInfo accepts it', r.status + ' ' + r.text.slice(0, 160));
+           /^urn:uuid:/.test(r.json.sub) &&
+           r.json.preferred_username === 'r9-alice',
+           '3h. UserInfo accepts it, and answers the profile claims',
+           r.status + ' ' + r.text.slice(0, 160));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access,
                                      host: 'localhost:' + port } });

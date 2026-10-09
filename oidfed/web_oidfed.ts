@@ -28,6 +28,14 @@ type Json = any;
 // The console's escaping, under the name the moved code calls it by.
 const esc = kit.esc;
 
+// An attribute value from a translated message (#539): escaped, but with the
+// apostrophe left as it is, because every attribute here is double-quoted
+// and the English placeholders were written with a bare one — esc() would
+// turn it into `&apos;` and change the page.
+const attr = function (text: string): string {
+  return esc(text).replace(/&apos;/g, '\'');
+};
+
 /**
  * Draws OpenID Federation from the answer of `GET /admin-api/oidfed`: this
  * realm as a federation entity — its configuration, keys, subordinates, the
@@ -41,10 +49,12 @@ class OidfedPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`); the default one
+   *   when a caller has none
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return OidfedPage.body(view);
+  static render(view: Json, ctx?: Json): string {
+    return OidfedPage.body(view, (ctx || kit.context()).t);
   }
 
   /**
@@ -103,28 +113,39 @@ class OidfedPage {
    * Draws the section about this realm as a federation entity.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionEntity(json: Json): string {
+  static sectionEntity(json: Json, t: Json): string {
     const self = this;
     const endpoints = Object.keys(json.endpoints).map(function (k: string) {
       return '<tr><th>' + esc(k) + '</th><td>' + self.code(json.endpoints[k]) +
              '</td></tr>';
     }).join('');
-    return '<h2>This realm as a federation entity</h2><table class="kv">' +
-      '<tr><th>Entity Identifier</th><td>' + this.code(json.entityId) +
-      '</td></tr><tr><th>Role</th><td><strong>' + esc(json.role) +
-      '</strong></td></tr><tr><th>Authority hints</th><td>' +
+    return '<h2>' + t.html('consoleOidfed.entityHeading') +
+      '</h2><table class="kv">' +
+      '<tr><th>' + t.html('consoleOidfed.entityIdentifier') + '</th><td>' +
+      this.code(json.entityId) +
+      '</td></tr><tr><th>' + t.html('consoleOidfed.role') +
+      '</th><td><strong>' + esc(json.role) +
+      '</strong></td></tr><tr><th>' + t.html('consoleOidfed.authorityHints') +
+      '</th><td>' +
       (json.authorityHints.length
         ? json.authorityHints.map(this.code.bind(this)).join('<br>')
-        : this.none('none — a Trust Anchor')) + '</td></tr>' +
-      '<tr><th>Every realm a subordinate of the default</th><td>' +
-      (json.realmsAreSubordinates ? 'yes' : 'no') + '</td></tr></table>' +
-      '<h3>Endpoints</h3><table class="kv">' + endpoints + '</table>' +
+        : this.none(t.text('consoleOidfed.noneTrustAnchor'))) +
+      '</td></tr>' +
+      '<tr><th>' + t.html('consoleOidfed.everyRealmSubordinate') +
+      '</th><td>' +
+      (json.realmsAreSubordinates ? t.html('consoleOidfed.yes')
+                                  : t.html('consoleOidfed.no')) +
+      '</td></tr></table>' +
+      '<h3>' + t.html('consoleOidfed.endpoints') +
+      '</h3><table class="kv">' + endpoints + '</table>' +
       (json.entityConfigurationProblem
         ? kit.warn(esc(json.entityConfigurationProblem)) : '') +
       (json.entityConfiguration
-        ? '<details><summary>The Entity Configuration\'s claims</summary>' +
+        ? '<details><summary>' +
+          t.html('consoleOidfed.entityConfigurationClaims') + '</summary>' +
           '<pre>' + esc(JSON.stringify(json.entityConfiguration, null, 2)) +
           '</pre></details>' : '');
   }
@@ -133,106 +154,122 @@ class OidfedPage {
    * Draws the Federation Entity Keys section.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionKeys(json: Json): string {
+  static sectionKeys(json: Json, t: Json): string {
     const self = this;
     const rows = json.keys.length ? json.keys.map(function (k: Json) {
       const control = k.state === 'retired' && !k.revokedAt
         ? self.form('revoke-key', self.hidden('kid', k.kid) +
             '<select name="reason"><option>superseded</option>' +
             '<option>compromised</option><option>unspecified</option>' +
-            '</select>', 'Revoke', true)
+            '</select>', t.text('consoleOidfed.revoke'), true)
         : '';
       return '<tr><td>' + self.code(k.kid) + '</td><td>' + esc(k.alg) +
-        '</td><td>' + esc(k.state) + (k.revokedAt ? ' (revoked: ' +
-        esc(k.revokedReason) + ')' : '') + '</td><td>' +
+        '</td><td>' + esc(k.state) + (k.revokedAt
+          ? t.html('consoleOidfed.revokedBecause',
+                   { reason: k.revokedReason })
+          : '') + '</td><td>' +
         esc(k.createdAt || '') + '</td><td>' + esc(k.publishedUntil || '') +
-        '</td><td>' + (k.sealed ? 'sealed' : 'not sealed') + '</td><td>' +
+        '</td><td>' + (k.sealed ? t.html('consoleOidfed.sealed')
+                                : t.html('consoleOidfed.notSealed')) +
+        '</td><td>' +
         control + '</td></tr>';
-    }).join('') : '<tr><td colspan="7" class="sub">No key yet; the first ' +
-      'statement this realm signs makes one.</td></tr>';
-    return '<h2>Federation Entity Keys</h2>' +
-      kit.note('The keys this realm signs its federation statements with, ' +
-        'kept apart from its protocol signing keys (3.1.1). A <em>next</em> ' +
-        'key is published before it signs; a <em>retired</em> one stays ' +
-        'published through <code>oidfed.keyOverlapDays</code> and is listed ' +
-        'at the Historical Keys endpoint for good (8.7). New keys are ' +
-        esc(json.signingAlg) + ' (<code>oidfed.signingAlg</code>).') +
-      '<table><thead><tr><th>kid</th><th>Algorithm</th><th>State</th>' +
-      '<th>Made</th><th>Published until</th><th>At rest</th><th></th></tr>' +
+    }).join('') : '<tr><td colspan="7" class="sub">' +
+      t.html('consoleOidfed.noKey') + '</td></tr>';
+    return '<h2>' + t.html('consoleOidfed.keysHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.keysNote', { alg: json.signingAlg })) +
+      '<table><thead><tr><th>kid</th><th>' +
+      t.html('consoleOidfed.thAlgorithm') + '</th><th>' +
+      t.html('consoleOidfed.thState') + '</th>' +
+      '<th>' + t.html('consoleOidfed.thMade') + '</th><th>' +
+      t.html('consoleOidfed.thPublishedUntil') + '</th><th>' +
+      t.html('consoleOidfed.thAtRest') + '</th><th></th></tr>' +
       '</thead><tbody>' + rows + '</tbody></table>' +
-      this.form('rotate-key', '', 'Rotate now') + ' ' +
+      this.form('rotate-key', '', t.text('consoleOidfed.rotateNow')) + ' ' +
+      // The word to type stays `compromised` in every language: it is what
+      // the server compares the confirmation with (#539).
       this.form('rotate-key', this.hidden('emergency', 'true') +
-        ' <input name="confirm" placeholder="type compromised" required>',
-        'Emergency rotation', true);
+        ' <input name="confirm" placeholder="' +
+        attr(t.text('consoleOidfed.typeCompromised')) + '" required>',
+        t.text('consoleOidfed.emergencyRotation'), true);
   }
 
   /**
    * Draws the subordinates section, with each one's history and controls.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionSubordinates(json: Json): string {
+  static sectionSubordinates(json: Json, t: Json): string {
     const self = this;
-    const reasonField = '<input name="reason" placeholder="reason" ' +
+    const reasonField = '<input name="reason" placeholder="' +
+                        attr(t.text('consoleOidfed.phReason')) + '" ' +
                         'size="18"> <input name="informationUri" ' +
-                        'placeholder="https://… (information)" size="18">';
+                        'placeholder="' +
+                        attr(t.text('consoleOidfed.phInformationUri')) +
+                        '" size="18">';
     const rows = json.subordinates.length
       ? json.subordinates.map(function (s: Json) {
         const who = self.hidden('entityId', s.entityId);
         const status = s.suspended
-          ? '<strong>suspended</strong> ' + esc(String(s.suspended.at || '')) +
+          ? t.html('consoleOidfed.suspendedAt',
+                   { at: String(s.suspended.at || '') }) +
             (s.suspended.reason ? ' — ' + esc(s.suspended.reason) : '')
-          : 'active';
+          : t.html('consoleOidfed.active');
         const acts = (s.suspended
           ? self.form('reinstate-subordinate', who + ' ' + reasonField,
-                      'Reinstate')
+                      t.text('consoleOidfed.reinstate'))
           : self.form('suspend-subordinate', who + ' ' + reasonField,
-                      'Suspend', true)) +
+                      t.text('consoleOidfed.suspend'), true)) +
           (s.implicit ? '' : ' ' + self.form('remove-subordinate',
-            who + ' ' + reasonField, 'Revoke', true));
+            who + ' ' + reasonField, t.text('consoleOidfed.revoke'), true));
+        // `constraints` is the statement's member, so it is not translated.
         return '<tr><td>' + self.code(s.entityId) + '</td><td>' +
-          (s.localRealm ? 'realm ' + self.code(s.localRealm) +
-                          (s.implicit ? ' (every realm)' : '')
+          (s.localRealm ? t.html('consoleOidfed.realmNamed',
+                                 { realm: s.localRealm }) +
+                          (s.implicit ? t.html('consoleOidfed.everyRealm')
+                                      : '')
                         : esc((s.kids || []).join(', '))) + '</td><td>' +
           esc((s.entityTypes || []).join(', ')) + '</td><td>' +
-          (s.metadataPolicy ? 'yes' : '') + (s.constraints ? ' constraints'
-                                                           : '') +
-          '</td><td>' + status + self.history(s.events) + '</td><td>' +
+          (s.metadataPolicy ? t.html('consoleOidfed.yes') : '') +
+          (s.constraints ? ' constraints' : '') +
+          '</td><td>' + status + self.history(s.events, t) + '</td><td>' +
           acts + '</td></tr>';
       }).join('')
-      : '<tr><td colspan="6" class="sub">This realm vouches for nobody; it ' +
-        'publishes no fetch or list endpoint.</td></tr>';
-    return '<h2>Subordinates</h2>' +
-      kit.note('The entities this realm issues Subordinate Statements ' +
-        'about (8.1): their keys, and the metadata, policy and constraints ' +
-        'the statement carries. Registering an entity VOUCHES for it — give ' +
-        'its JWK Set, or read it from its own Entity Configuration. A ' +
-        'SUSPENDED subordinate is issued no statement and listed nowhere ' +
-        'until it is reinstated, so no chain passes through it; REVOKING ' +
-        'one removes it. Every one of those acts, and every change to what ' +
-        'its statement carries, is kept in its history for good and ' +
-        'served by the subordinate events endpoint.') +
-      '<table><thead><tr><th>Entity</th><th>Keys</th><th>Types</th>' +
-      '<th>Policy</th><th>Status</th><th></th></tr></thead><tbody>' + rows +
-      '</tbody></table>' + this.sectionFormer(json) +
+      : '<tr><td colspan="6" class="sub">' +
+        t.html('consoleOidfed.noSubordinates') + '</td></tr>';
+    return '<h2>' + t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.subordinatesNote')) +
+      '<table><thead><tr><th>' + t.html('consoleOidfed.thEntity') +
+      '</th><th>' + t.html('consoleOidfed.thKeys') + '</th><th>' +
+      t.html('consoleOidfed.thTypes') + '</th>' +
+      '<th>' + t.html('consoleOidfed.thPolicy') + '</th><th>' +
+      t.html('consoleOidfed.thStatus') +
+      '</th><th></th></tr></thead><tbody>' + rows +
+      '</tbody></table>' + this.sectionFormer(json, t) +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-subordinate') +
       '<p><input name="entityId" placeholder="https://entity.example" ' +
       'required size="50"> <label><input type="checkbox" name="fetchJwks">' +
-      ' read its keys from its Entity Configuration</label> <label>' +
-      '<input type="checkbox" name="intermediate"> an Intermediate</label>' +
-      '</p><p><textarea name="jwks" rows="3" cols="80" placeholder="its JWK ' +
-      'Set, if not read"></textarea></p><p><textarea name="metadataPolicy" ' +
+      ' ' + t.html('consoleOidfed.fetchJwks') + '</label> <label>' +
+      '<input type="checkbox" name="intermediate"> ' +
+      t.html('consoleOidfed.anIntermediate') + '</label>' +
+      '</p><p><textarea name="jwks" rows="3" cols="80" placeholder="' +
+      attr(t.text('consoleOidfed.phJwks')) + '"></textarea></p>' +
+      '<p><textarea name="metadataPolicy" ' +
       'rows="3" cols="80" placeholder="metadata_policy (JSON)"></textarea>' +
       '</p><p><textarea name="constraints" rows="2" cols="80" ' +
       'placeholder="constraints (JSON)"></textarea></p>' +
-      '<p><input name="eventDescription" placeholder="what the history ' +
-      'records about it" size="40"> <input name="informationUri" ' +
-      'placeholder="https://… (information)" size="30"></p>' +
-      '<p><button type="submit">Register the subordinate</button></p></form>';
+      '<p><input name="eventDescription" placeholder="' +
+      attr(t.text('consoleOidfed.phEventDescription')) +
+      '" size="40"> <input name="informationUri" ' +
+      'placeholder="' + attr(t.text('consoleOidfed.phInformationUri')) +
+      '" size="30"></p>' +
+      '<p><button type="submit">' +
+      t.html('consoleOidfed.registerSubordinate') + '</button></p></form>';
   }
 
   // One subordinate's history (#137), folded: a <details> needs no script.
@@ -240,9 +277,10 @@ class OidfedPage {
    * Draws one subordinate's history, folded in a `<details>`.
    *
    * @param events - the subordinate's events
+   * @param t - the page's translator
    * @returns the markup
    */
-  static history(events: Json): string {
+  static history(events: Json, t: Json): string {
     const list: Json[] = Array.isArray(events) ? events : [];
     if (!list.length) {
       return '';
@@ -252,9 +290,12 @@ class OidfedPage {
         '</td><td><code>' + esc(e.event) + '</code></td><td>' +
         esc(e.event_description || '') +
         (e.information_uri ? ' <a href="' + esc(e.information_uri) +
-                             '">information</a>' : '') + '</td></tr>';
+                             '">' + t.html('consoleOidfed.information') +
+                             '</a>' : '') + '</td></tr>';
     }).join('');
-    return '<details><summary>History (' + list.length + ')</summary>' +
+    return '<details><summary>' +
+           t.html('consoleOidfed.historyCount', { n: list.length }) +
+           '</summary>' +
            '<table><tbody>' + rows + '</tbody></table></details>';
   }
 
@@ -263,9 +304,10 @@ class OidfedPage {
    * Draws the subordinates this realm revoked, whose histories it keeps.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionFormer(json: Json): string {
+  static sectionFormer(json: Json, t: Json): string {
     const self = this;
     const former: Json[] = json.formerSubordinates || [];
     if (!former.length) {
@@ -273,11 +315,16 @@ class OidfedPage {
     }
     const rows = former.map(function (f: Json): string {
       return '<tr><td>' + self.code(f.entityId) + '</td><td>' +
-        (f.localRealm ? 'realm ' + self.code(f.localRealm) + ', deleted'
-                      : 'revoked') + self.history(f.events) + '</td></tr>';
+        (f.localRealm ? t.html('consoleOidfed.realmDeleted',
+                               { realm: f.localRealm })
+                      : t.html('consoleOidfed.revoked')) +
+        self.history(f.events, t) + '</td></tr>';
     }).join('');
-    return '<h3>Former subordinates</h3><table><thead><tr><th>Entity</th>' +
-           '<th>History</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    return '<h3>' + t.html('consoleOidfed.formerHeading') +
+           '</h3><table><thead><tr><th>' +
+           t.html('consoleOidfed.thEntity') + '</th>' +
+           '<th>' + t.html('consoleOidfed.thHistory') +
+           '</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   // The Entity Collection (#136): the crawl kept, and Crawl now.
@@ -285,73 +332,81 @@ class OidfedPage {
    * Draws the Entity Collection section: the last crawl, and Crawl now.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionCollection(json: Json): string {
+  static sectionCollection(json: Json, t: Json): string {
     const c = json.collection || {};
     const crawl = c.crawl;
     const kept = crawl
-      ? '<table><tbody><tr><th>Crawled</th><td>' + esc(crawl.crawledAt) +
-        '</td></tr><tr><th>For</th><td>' + this.code(crawl.entityId) +
-        (crawl.forThisIdentifier ? '' : ' <strong>— not the identifier ' +
-                                        'this page was reached by, so the ' +
-                                        'endpoint does not answer from ' +
-                                        'it</strong>') +
-        '</td></tr><tr><th>Entities</th><td>' + esc(String(crawl.entities)) +
-        (crawl.truncated ? ' (stopped at a bound)' : '') + '</td></tr>' +
+      ? '<table><tbody><tr><th>' + t.html('consoleOidfed.crawled') +
+        '</th><td>' + esc(crawl.crawledAt) +
+        '</td></tr><tr><th>' + t.html('consoleOidfed.crawlFor') +
+        '</th><td>' + this.code(crawl.entityId) +
+        (crawl.forThisIdentifier ? '' : ' ' +
+                                        t.html('consoleOidfed.notThisId')) +
+        '</td></tr><tr><th>' + t.html('consoleOidfed.entities') +
+        '</th><td>' + esc(String(crawl.entities)) +
+        (crawl.truncated ? ' ' + t.html('consoleOidfed.stoppedAtBound')
+                         : '') + '</td></tr>' +
         (crawl.problems.length
-          ? '<tr><th>Left out</th><td><details><summary>' +
+          ? '<tr><th>' + t.html('consoleOidfed.leftOut') +
+            '</th><td><details><summary>' +
             esc(String(crawl.problems.length)) + '</summary><ul>' +
             crawl.problems.map(function (p: string): string {
               return '<li>' + esc(p) + '</li>';
             }).join('') + '</ul></details></td></tr>' : '') +
         '</tbody></table>'
-      : '<p class="sub">No crawl is kept; the collection endpoint answers ' +
-        'with what this service collects without fetching — its own ' +
-        'realms, and subordinates already resolved.</p>';
-    return '<h2>Entity Collection</h2>' +
-      kit.note('Every entity beneath this realm, for the collection ' +
-        'endpoint: each resolved to this realm before it is kept, and each ' +
-        'Intermediate outside this service asked for its list only once it ' +
-        'has — through the outbound policy, bounded by ' +
-        '<code>oidfed.collectionMaxEntities</code> and ' +
-        '<code>oidfed.collectionMaxFetches</code>. ' +
-        (c.jobOff ? 'The scheduled crawl is off: ' + esc(c.jobOff) + '.'
-                  : 'The scheduled crawl runs every ' +
-                    esc(String(c.crawlEveryS)) + ' s.')) +
-      kept + this.form('crawl-collection', '', 'Crawl now');
+      : '<p class="sub">' + t.html('consoleOidfed.noCrawl') + '</p>';
+    // `jobOff` is the view's own sentence, drawn as it comes (#539), and
+    // kept out of the message: a parameter's apostrophe is escaped as
+    // `&#39;` where esc() writes `&apos;`, which would change the page.
+    return '<h2>' + t.html('consoleOidfed.collectionHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.collectionNote') + ' ' +
+        (c.jobOff ? t.html('consoleOidfed.crawlOff') + esc(c.jobOff) +
+                    t.html('consoleOidfed.crawlOffEnd')
+                  : t.html('consoleOidfed.crawlEvery',
+                           { s: String(c.crawlEveryS) }))) +
+      kept + this.form('crawl-collection', '',
+                       t.text('consoleOidfed.crawlNow'));
   }
 
   /**
    * Draws the Trust Anchors section.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionAnchors(json: Json): string {
+  static sectionAnchors(json: Json, t: Json): string {
     const self = this;
     const rows = json.trustAnchors.map(function (a: Json) {
       return '<tr><td>' + self.code(a.entityId) + '</td><td>' +
-        (a.localRealm ? 'realm ' + self.code(a.localRealm)
+        (a.localRealm ? t.html('consoleOidfed.realmNamed',
+                               { realm: a.localRealm })
                       : esc((a.kids || []).join(', '))) + '</td><td>' +
         (a.localRealm ? '' : self.form('remove-trust-anchor',
-          self.hidden('entityId', a.entityId), 'Remove', true)) +
+          self.hidden('entityId', a.entityId),
+          t.text('consoleOidfed.remove'), true)) +
         '</td></tr>';
     }).join('');
-    return '<h2>Trust Anchors</h2>' +
-      kit.note('The entities a Trust Chain may END at (10.2), each with ' +
-        'the keys configured for it here — the one key material in a ' +
-        'federation that is trusted out of band.') +
-      '<table><thead><tr><th>Anchor</th><th>Keys</th><th></th></tr></thead>' +
-      '<tbody>' + (rows || '<tr><td colspan="3" class="sub">None.</td></tr>') +
+    return '<h2>' + t.html('consoleOidfed.anchorsHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.anchorsNote')) +
+      '<table><thead><tr><th>' + t.html('consoleOidfed.thAnchor') +
+      '</th><th>' + t.html('consoleOidfed.thKeys') +
+      '</th><th></th></tr></thead>' +
+      '<tbody>' + (rows || '<tr><td colspan="3" class="sub">' +
+                   t.html('consoleOidfed.noneRow') + '</td></tr>') +
       '</tbody></table>' +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-trust-anchor') +
       '<p><input name="entityId" placeholder="https://anchor.example" ' +
       'required size="50"> <label><input type="checkbox" name="fetchJwks">' +
-      ' read its keys from its Entity Configuration</label></p><p>' +
-      '<textarea name="jwks" rows="3" cols="80" placeholder="its JWK Set, ' +
-      'if not read"></textarea></p><p><button type="submit">Trust it' +
+      ' ' + t.html('consoleOidfed.fetchJwks') + '</label></p><p>' +
+      '<textarea name="jwks" rows="3" cols="80" placeholder="' +
+      attr(t.text('consoleOidfed.phJwks')) +
+      '"></textarea></p><p><button type="submit">' +
+      t.html('consoleOidfed.trustIt') +
       '</button></p></form>';
   }
 
@@ -359,80 +414,106 @@ class OidfedPage {
    * Draws the Trust Marks section.
    *
    * @param json - `oidfed.view()`'s answer
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionMarks(json: Json): string {
+  static sectionMarks(json: Json, t: Json): string {
     const self = this;
-    const types = json.markTypes.map(function (t: Json) {
-      return '<tr><td>' + self.code(t.type) + '</td><td>' + esc(t.lifetimeS) +
-        ' s</td><td>' + (t.delegation ? 'delegated' : '') + '</td><td>' +
-        self.form('issue-trust-mark', self.hidden('type', t.type) +
+    // `type`, not `t`, since #539: `t` is the page's translator, always.
+    const types = json.markTypes.map(function (type: Json) {
+      return '<tr><td>' + self.code(type.type) + '</td><td>' +
+        esc(type.lifetimeS) +
+        ' s</td><td>' +
+        (type.delegation ? t.html('consoleOidfed.delegated') : '') +
+        '</td><td>' +
+        self.form('issue-trust-mark', self.hidden('type', type.type) +
           ' <input name="sub" placeholder="https://entity.example" ' +
-          'required>', 'Issue') + ' ' +
-        self.form('remove-mark-type', self.hidden('type', t.type), 'Remove',
-                  true) + '</td></tr>';
+          'required>', t.text('consoleOidfed.issue')) + ' ' +
+        self.form('remove-mark-type', self.hidden('type', type.type),
+                  t.text('consoleOidfed.remove'), true) + '</td></tr>';
     }).join('');
     const issued = json.issuedMarks.map(function (m: Json) {
       return '<tr><td>' + self.code(m.type) + '</td><td>' + self.code(m.sub) +
         '</td><td>' + esc(m.status) + '</td><td>' + esc(m.expiresAt || '') +
         '</td><td>' + (m.status === 'revoked' ? '' :
-          self.form('revoke-trust-mark', self.hidden('id', m.id), 'Revoke',
-                    true)) + '</td></tr>';
+          self.form('revoke-trust-mark', self.hidden('id', m.id),
+                    t.text('consoleOidfed.revoke'), true)) + '</td></tr>';
     }).join('');
     const held = json.heldMarks.map(function (m: Json) {
       return '<tr><td>' + self.code(m.type) + '</td><td>' + self.code(m.iss) +
         '</td><td>' + esc(m.expiresAt || '') + '</td><td>' +
-        self.form('remove-held-mark', self.hidden('id', m.id), 'Remove',
-                  true) + '</td></tr>';
+        self.form('remove-held-mark', self.hidden('id', m.id),
+                  t.text('consoleOidfed.remove'), true) + '</td></tr>';
     }).join('');
     const policies = json.markPolicies.map(function (p: Json) {
       return '<tr><td>' + self.code(p.type) + '</td><td>' +
-        esc((p.issuers || []).join(', ') || 'anybody') + '</td><td>' +
+        esc((p.issuers || []).join(', ') ||
+            t.text('consoleOidfed.anybody')) + '</td><td>' +
         esc(p.owner || '') + '</td><td>' + self.form('remove-mark-policy',
-          self.hidden('type', p.type), 'Remove', true) + '</td></tr>';
+          self.hidden('type', p.type), t.text('consoleOidfed.remove'),
+          true) + '</td></tr>';
     }).join('');
     const empty = function (n: number): string {
-      return '<tr><td colspan="' + n + '" class="sub">None.</td></tr>';
+      return '<tr><td colspan="' + n + '" class="sub">' +
+             t.html('consoleOidfed.noneRow') + '</td></tr>';
     };
-    return '<h2>Trust Marks</h2>' +
-      kit.note('A Trust Mark is this realm\'s signed statement that an ' +
-        'entity meets a type\'s criteria (7). The types it issues, the marks ' +
-        'it has issued (their status is answered at the Trust Mark Status ' +
-        'endpoint), the marks issued TO it that its Entity Configuration ' +
-        'carries, and — as a Trust Anchor — who may issue a type.') +
-      '<h3>Types this realm issues</h3><table><thead><tr><th>Type</th>' +
-      '<th>Lifetime</th><th></th><th></th></tr></thead><tbody>' +
+    return '<h2>' + t.html('consoleOidfed.marksHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.marksNote')) +
+      '<h3>' + t.html('consoleOidfed.typesIssued') +
+      '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
+      '</th>' +
+      '<th>' + t.html('consoleOidfed.thLifetime') +
+      '</th><th></th><th></th></tr></thead><tbody>' +
       (types || empty(4)) + '</tbody></table>' +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-mark-type') +
       '<p><input name="type" placeholder="https://federation.example/marks/' +
       'x" required size="50"> <input name="lifetimeS" type="number" ' +
-      'min="60" placeholder="lifetime (s)"> <input name="logoUri" ' +
+      'min="60" placeholder="' + attr(t.text('consoleOidfed.phLifetime')) +
+      '"> <input name="logoUri" ' +
       'placeholder="logo_uri"> <input name="ref" placeholder="ref"></p>' +
-      '<p><textarea name="delegation" rows="2" cols="80" placeholder="a ' +
-      'trust-mark-delegation+jwt, when the type is owned by another ' +
-      'entity"></textarea></p><p><button type="submit">Issue this type' +
+      '<p><textarea name="delegation" rows="2" cols="80" placeholder="' +
+      attr(t.text('consoleOidfed.phDelegation')) +
+      '"></textarea></p><p><button type="submit">' +
+      t.html('consoleOidfed.issueThisType') +
       '</button></p></form>' +
-      '<h3>Issued</h3><table><thead><tr><th>Type</th><th>To</th><th>Status' +
-      '</th><th>Expires</th><th></th></tr></thead><tbody>' +
+      '<h3>' + t.html('consoleOidfed.issuedHeading') +
+      '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
+      '</th><th>' + t.html('consoleOidfed.thTo') + '</th><th>' +
+      t.html('consoleOidfed.thStatus') +
+      '</th><th>' + t.html('consoleOidfed.thExpires') +
+      '</th><th></th></tr></thead><tbody>' +
       (issued || empty(5)) + '</tbody></table>' +
-      '<h3>Carried by this realm</h3><table><thead><tr><th>Type</th>' +
-      '<th>Issuer</th><th>Expires</th><th></th></tr></thead><tbody>' +
+      '<h3>' + t.html('consoleOidfed.carriedHeading') +
+      '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
+      '</th>' +
+      '<th>' + t.html('consoleOidfed.thIssuer') + '</th><th>' +
+      t.html('consoleOidfed.thExpires') +
+      '</th><th></th></tr></thead><tbody>' +
       (held || empty(4)) + '</tbody></table>' +
       this.form('add-held-mark', '<input name="trustMark" size="60" ' +
-                'placeholder="a trust-mark+jwt issued to this realm" ' +
-                'required>', 'Carry it') +
-      '<h3>As a Trust Anchor: who may issue a type</h3><table><thead><tr>' +
-      '<th>Type</th><th>Issuers</th><th>Owner</th><th></th></tr></thead>' +
+                'placeholder="' + attr(t.text('consoleOidfed.phTrustMark')) +
+                '" required>', t.text('consoleOidfed.carryIt')) +
+      '<h3>' + t.html('consoleOidfed.policyHeading') +
+      '</h3><table><thead><tr>' +
+      '<th>' + t.html('consoleOidfed.thType') + '</th><th>' +
+      t.html('consoleOidfed.thIssuers') + '</th><th>' +
+      t.html('consoleOidfed.thOwner') +
+      '</th><th></th></tr></thead>' +
       '<tbody>' + (policies || empty(4)) + '</tbody></table>' +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'set-mark-policy') +
-      '<p><input name="type" placeholder="type" required size="40"> ' +
-      '<input name="issuers" placeholder="issuers, comma-separated (none: ' +
-      'anybody)" size="40"> <input name="ownerSub" placeholder="owner ' +
-      'entity"></p><p><textarea name="ownerJwks" rows="2" cols="80" ' +
-      'placeholder="the owner\'s JWK Set"></textarea></p><p><button ' +
-      'type="submit">Set the policy</button></p></form>';
+      '<p><input name="type" placeholder="' +
+      attr(t.text('consoleOidfed.phType')) + '" required size="40"> ' +
+      '<input name="issuers" placeholder="' +
+      attr(t.text('consoleOidfed.phIssuers')) +
+      '" size="40"> <input name="ownerSub" placeholder="' +
+      attr(t.text('consoleOidfed.phOwnerEntity')) +
+      '"></p><p><textarea name="ownerJwks" rows="2" cols="80" ' +
+      'placeholder="' + attr(t.text('consoleOidfed.phOwnerJwks')) +
+      '"></textarea></p><p><button ' +
+      'type="submit">' + t.html('consoleOidfed.setPolicy') +
+      '</button></p></form>';
   }
 
   /**
@@ -440,22 +521,19 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param extra - a resolution to show, if any
+   * @param t - the page's translator
    * @returns the markup
    */
-  static sectionResolve(json: Json, extra: Json): string {
+  static sectionResolve(json: Json, extra: Json, t: Json): string {
     const shown = extra ? '<pre>' + esc(JSON.stringify(extra, null, 2)) +
                           '</pre>' : '';
-    return '<h2>Resolve an entity</h2>' +
-      kit.note('Walks the entity\'s authority_hints up to one of this ' +
-        'realm\'s Trust Anchors, fetching what it must through the outbound ' +
-        'policy and bounded by <code>oidfed.maxAuthorityHints</code>, ' +
-        '<code>oidfed.maxChainDepth</code> and ' +
-        '<code>oidfed.maxFetchesPerResolution</code>; the result is what ' +
-        'the resolve endpoint then answers with (' +
-        esc(String(json.resolutions.length)) + ' held now).') +
+    return '<h2>' + t.html('consoleOidfed.resolveHeading') + '</h2>' +
+      kit.note(t.html('consoleOidfed.resolveNote',
+                      { n: String(json.resolutions.length) })) +
       this.form('resolve', '<input name="sub" placeholder="https://entity.' +
                 'example" required size="50"> <input name="trustAnchor" ' +
-                'placeholder="trust anchor (any)" size="40">', 'Resolve') +
+                'placeholder="' + attr(t.text('consoleOidfed.phTrustAnchor')) +
+                '" size="40">', t.text('consoleOidfed.resolve')) +
       shown;
   }
 
@@ -465,24 +543,26 @@ class OidfedPage {
    * Draws the page's body.
    *
    * @param json - the view, with `resolution` when one was just made
+   * @param t - the page's translator
    * @returns the body as HTML
    */
-  static body(json: Json): string {
+  static body(json: Json, t: Json): string {
     const inner =
-      kit.note('<strong>OpenID Federation 1.1 for this trust realm.' +
-        '</strong> Trust between entities that were never configured with ' +
-        'each other, through a chain of signed statements ending at a ' +
-        'Trust Anchor. This realm is a ' + esc(json.role) + '.') +
-      this.sectionEntity(json) + this.sectionKeys(json) +
-      this.sectionSubordinates(json) + this.sectionCollection(json) +
-      this.sectionAnchors(json) +
-      this.sectionMarks(json) + this.sectionResolve(json, json.resolution) +
+      kit.note(t.html('consoleOidfed.intro', { role: json.role })) +
+      this.sectionEntity(json, t) + this.sectionKeys(json, t) +
+      this.sectionSubordinates(json, t) + this.sectionCollection(json, t) +
+      this.sectionAnchors(json, t) +
+      this.sectionMarks(json, t) +
+      this.sectionResolve(json, json.resolution, t) +
       SettingsForms.forms(json.settings, '/admin/oidfed') +
       '<p class="links"><a href="/admin/oidfed?format=json">JSON</a> · ' +
       '<code>GET /admin-api/oidfed</code> · <a href="' +
-      esc(json.configurationUrl) + '">Entity Configuration</a> · ' +
-      '<a href="/admin/federation">Federation</a> · <a ' +
-      'href="/admin/error-codes">Error codes</a></p>';
+      esc(json.configurationUrl) + '">' +
+      t.html('consoleOidfed.linkEntityConfiguration') + '</a> · ' +
+      '<a href="/admin/federation">' + t.html('consoleOidfed.linkFederation') +
+      '</a> · <a ' +
+      'href="/admin/error-codes">' + t.html('consoleOidfed.linkErrorCodes') +
+      '</a></p>';
     return inner;
   }
 }

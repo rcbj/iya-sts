@@ -78,10 +78,15 @@ import authnPolicy = require('../common/authn_policy');
 import mailFactor = require('../common/mail_factor');
 import websecurity = require('../common/websecurity');
 import clusterClaims = require('../cluster/cluster_claims');
+// THE LANGUAGE a page is drawn in (#539): a library, requiring no route
+// module.
+import PageLocale = require('../common/page_locale');
 // THE SESSION, and the reason this file is below #8 in the require order.
 import authn = require('./authn');
 
 const { log, xmlEscape } = helpers;
+
+type Translator = ReturnType<typeof PageLocale.forPage>;
 
 // The cookie that ties a mailed link to the browser that asked for it.
 /**
@@ -374,20 +379,51 @@ class EmailFactor {
 
   // -------------------------------------------------------------------------
   // THE PAGES. The sign-in screen's own look (`authn.CARD_CSS`), no script.
+  //
+  // THE LANGUAGE (#539): the pages are drawn with the translator of the
+  // sign-in they belong to — its `ui_locales` and application, the chooser,
+  // the browser — and, on a SECOND factor only, the person's own
+  // `preferredLanguage`. A FIRST factor never reads the entry for it: the
+  // page is the decoy's too (see the header), and a page drawn in the
+  // account holder's language would say that the account exists. The END
+  // pages are refusals and stay English (rcbj's decision on #539), so they
+  // are drawn with no translator, `lang="en"` and no chooser.
   // -------------------------------------------------------------------------
-  private shell(title: string, body: string, refreshUrl?: string): string {
-    const { log, xmlEscape } = this.deps;
+  private translatorOf(step: any): Translator {
+    const { log } = this.deps;
+    log.debug("Entering EmailFactor.translatorOf().");
+    const record = (step && step.authn) || {};
+    const out = PageLocale.forPage({
+      application: record.application,
+      uiLocales: record.uiLocales,
+      username: step && !step.primary ? step.username : undefined });
+    log.debug("Leaving EmailFactor.translatorOf(). " + out.locale);
+    return out;
+  }
+
+  // `title` is already the page's text in its language; `returnTo` is the
+  // GET that draws the page again, for the language chooser.
+  private shell(t: Translator | null, title: string, body: string,
+                refreshUrl?: string, returnTo?: string): string {
+    const { log, xmlEscape, realms } = this.deps;
     log.debug("Entering EmailFactor.shell().");
     log.debug("Leaving EmailFactor.shell().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       (refreshUrl ? '<meta http-equiv="refresh" content="' + WAIT_REFRESH_S +
                     ';url=' + xmlEscape(refreshUrl) + '">' : '') +
-      '<title>' + xmlEscape(title) + ' — mock authentication service' +
+      '<title>' + xmlEscape(t
+        ? t.text('emailFactor.shell.title', { title: title })
+        : title + ' — mock authentication service') +
       '</title><style>' + authn.CARD_CSS +
       'input.code{font-size:1.4em;letter-spacing:.35em;text-align:center;' +
       'font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-      '</style></head><body><div class="card">' + body +
-      '</div></body></html>\n';
+      '</style></head><body><div class="card">' +
+      (t ? PageLocale.chooser(t, realms.currentPrefix(),
+                              PageLocale.herePath(returnTo || '/'))
+         : '') +
+      body + '</div></body></html>\n';
   }
 
   private send(res: any, status: number, html: string): void {
@@ -401,23 +437,44 @@ class EmailFactor {
 
   // Where the address is named, it is MASKED, and on a first factor it is not
   // named at all: the person typed only a name, and the page must not tell
-  // them whose address it is — or that there is one.
+  // them whose address it is — or that there is one. Answers the masked
+  // address, or '' on a first factor, whose pages say "the address on the
+  // account" in a message of their own (#539: the address is a parameter).
   private whereTo(step: any): string {
-    const { log, mailFactor, xmlEscape } = this.deps;
+    const { log, mailFactor } = this.deps;
     log.debug("Entering EmailFactor.whereTo().");
     if (step.primary) {
       log.debug("Leaving EmailFactor.whereTo(). A first factor.");
-      return 'the address on the account, if it has a verified one';
+      return '';
     }
     const status = mailFactor.status(step.username);
     log.debug("Leaving EmailFactor.whereTo().");
-    return '<code>' + xmlEscape(mailFactor.masked(status.address)) +
-           '</code>';
+    return String(mailFactor.masked(status.address) || '');
+  }
+
+  // The GET that draws a step's page again: the chooser's return path.
+  private stepPath(path: string, mfaId: string): string {
+    const { log, realms } = this.deps;
+    log.debug("Entering EmailFactor.stepPath().");
+    log.debug("Leaving EmailFactor.stepPath().");
+    return realms.currentPrefix() + path + '?mfa=' +
+      encodeURIComponent(mfaId);
+  }
+
+  // Who the step is for, under the heading.
+  private forWhom(t: Translator, step: any): string {
+    const { log } = this.deps;
+    log.debug("Entering EmailFactor.forWhom().");
+    log.debug("Leaving EmailFactor.forWhom().");
+    return '<p class="sub">' + (step.primary
+      ? t.html('emailFactor.signingInAs', { name: step.username })
+      : t.html('emailFactor.secondFactorFor', { name: step.username })) +
+      '</p>';
   }
 
   // The other factors a second-factor step can still be finished with, as
   // the other screens draw them.
-  private otherFactorsHtml(mfaId: string, step: any): string {
+  private otherFactorsHtml(t: Translator, mfaId: string, step: any): string {
     const { log, authn } = this.deps;
     log.debug("Entering EmailFactor.otherFactorsHtml().");
     if (step.primary) {
@@ -428,20 +485,20 @@ class EmailFactor {
     const asked = String(step.factor || '');
     let out = '';
     if (asked === 'totp' || step.alternate === 'totp') {
-      out += '<div><a href="/authn/totp' + q + '">Use your authenticator ' +
-             'app instead</a></div>';
+      out += '<div><a href="/authn/totp' + q + '">' +
+             t.html('emailFactor.other.totp') + '</a></div>';
     }
     if (asked === 'webauthn' || step.alternate === 'webauthn') {
-      out += '<div><a href="/authn/webauthn' + q + '">Use your security key ' +
-             'instead</a></div>';
+      out += '<div><a href="/authn/webauthn' + q + '">' +
+             t.html('emailFactor.other.securityKey') + '</a></div>';
     }
     if (asked === 'password' || step.passwordAlternate) {
-      out += '<div><a href="' + authn.PASSWORD_FACTOR_PATH + q + '">Use ' +
-             'your password instead</a></div>';
+      out += '<div><a href="' + authn.PASSWORD_FACTOR_PATH + q + '">' +
+             t.html('emailFactor.other.password') + '</a></div>';
     }
     if (step.backup) {
-      out += '<div><a href="' + authn.BACKUP_CODE_PATH + q + '">Use a ' +
-             'recovery code</a></div>';
+      out += '<div><a href="' + authn.BACKUP_CODE_PATH + q + '">' +
+             t.html('emailFactor.other.recoveryCode') + '</a></div>';
     }
     log.debug("Leaving EmailFactor.otherFactorsHtml().");
     return out;
@@ -453,91 +510,121 @@ class EmailFactor {
                   error: string): string {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering EmailFactor.askPage(). " + kind);
+    const t = this.translatorOf(step);
     const path = kind === 'code' ? authn.EMAIL_CODE_PATH
                                  : authn.EMAIL_LINK_PATH;
-    const out = this.shell('Email', '<h1>' + (kind === 'code'
-        ? 'Email me a code' : 'Email me a sign-in link') + '</h1>' +
-      '<p class="sub">Second factor for <code>' +
-      xmlEscape(step.username) + '</code></p>' +
+    const where = this.whereTo(step);
+    // Four sentences rather than one with two choices in it: the address
+    // is a parameter inside <code>, and "the address on the account" is
+    // prose a translator words as a whole.
+    const willSend = kind === 'code'
+      ? (where ? t.html('emailFactor.ask.codeTo', { address: where })
+               : t.html('emailFactor.ask.codeAccount'))
+      : (where ? t.html('emailFactor.ask.linkTo', { address: where })
+               : t.html('emailFactor.ask.linkAccount'));
+    const out = this.shell(t, t.text('emailFactor.ask.title'), '<h1>' +
+      (kind === 'code' ? t.html('emailFactor.ask.codeHeading')
+                       : t.html('emailFactor.ask.linkHeading')) + '</h1>' +
+      '<p class="sub">' + t.html('emailFactor.secondFactorFor',
+                                 { name: step.username }) + '</p>' +
       (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      '<p>A ' + (kind === 'code' ? 'six-digit code' : 'single-use link') +
-      ' will be sent to ' + this.whereTo(step) + '.</p>' +
+      '<p>' + willSend + '</p>' +
       '<form method="post" action="' + path + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="action" value="send">' +
-      '<button type="submit" id="email-send">Send it</button></form>' +
-      '<div class="meta">' + this.otherFactorsHtml(mfaId, step) + '</div>');
+      '<button type="submit" id="email-send">' +
+      t.html('emailFactor.ask.send') + '</button></form>' +
+      '<div class="meta">' + this.otherFactorsHtml(t, mfaId, step) +
+      '</div>', undefined, this.stepPath(path, mfaId));
     log.debug("Leaving EmailFactor.askPage().");
     return out;
   }
 
+  // `resent` draws the success line after a new code was mailed; an ERROR
+  // is drawn as it was given, in English.
   private codePage(mfaId: string, step: any, error: string,
-                   notice: string): string {
+                   resent: boolean): string {
     const { log, xmlEscape, authnPolicy } = this.deps;
     log.debug("Entering EmailFactor.codePage().");
+    const t = this.translatorOf(step);
     const settings = authnPolicy.emailSettings();
-    const out = this.shell('Your emailed code', '<h1>Check your email</h1>' +
-      '<p class="sub">' + (step.primary ? 'Signing in as ' : 'Second factor ' +
-        'for ') + '<code>' + xmlEscape(step.username) + '</code></p>' +
+    const where = this.whereTo(step);
+    const minutes = Math.round(settings.ttlS / 60);
+    const out = this.shell(t, t.text('emailFactor.code.title'), '<h1>' +
+      t.html('emailFactor.checkEmail') + '</h1>' + this.forWhom(t, step) +
       (error ? '<div class="err" id="email-error">' + xmlEscape(error) +
                '</div>' : '') +
-      (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
-      '<p>A six-digit code was sent to ' + this.whereTo(step) + '. It works ' +
-      'once, for ' + Math.round(settings.ttlS / 60) + ' minutes.</p>' +
+      (resent ? '<div class="ok">' + t.html('emailFactor.code.resent') +
+                '</div>' : '') +
+      '<p>' + (where
+        ? t.html('emailFactor.code.sentTo', { address: where,
+                                              minutes: minutes })
+        : t.html('emailFactor.code.sentAccount', { minutes: minutes })) +
+      '</p>' +
       '<form method="post" action="' + authn.EMAIL_CODE_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="action" value="verify">' +
-      '<label for="code">The code from the message</label>' +
+      '<label for="code">' + t.html('emailFactor.code.label') + '</label>' +
       '<input type="text" class="code" id="code" name="code" ' +
       'autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 -]*" ' +
       'maxlength="9" autofocus placeholder="000000">' +
-      '<button type="submit" id="email-code-submit">Sign in</button>' +
+      '<button type="submit" id="email-code-submit">' +
+      t.html('emailFactor.code.submit') + '</button>' +
       '</form>' +
       '<form method="post" action="' + authn.EMAIL_CODE_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="action" value="send">' +
       '<button type="submit" id="email-code-resend" class="secondary">' +
-      'Send a new code</button></form>' +
-      '<div class="meta"><div>A new code replaces the last one. Nobody from ' +
-      'this service will ever ask you for it.</div>' +
-      this.otherFactorsHtml(mfaId, step) + '</div>');
+      t.html('emailFactor.code.resend') + '</button></form>' +
+      '<div class="meta"><div>' + t.html('emailFactor.code.note') +
+      '</div>' + this.otherFactorsHtml(t, mfaId, step) + '</div>',
+      undefined, this.stepPath(authn.EMAIL_CODE_PATH, mfaId));
     log.debug("Leaving EmailFactor.codePage().");
     return out;
   }
 
+  // `resent` as on the code page.
   private waitPage(mfaId: string, step: any, error: string,
-                   notice: string): string {
+                   resent: boolean): string {
     const { log, xmlEscape, realms, authnPolicy } = this.deps;
     log.debug("Entering EmailFactor.waitPage().");
+    const t = this.translatorOf(step);
     const settings = authnPolicy.emailSettings();
-    const out = this.shell('Check your email', '<h1>Check your email</h1>' +
-      '<p class="sub">' + (step.primary ? 'Signing in as ' : 'Second factor ' +
-        'for ') + '<code>' + xmlEscape(step.username) + '</code></p>' +
+    const where = this.whereTo(step);
+    const minutes = Math.round(settings.ttlS / 60);
+    const out = this.shell(t, t.text('emailFactor.wait.title'), '<h1>' +
+      t.html('emailFactor.checkEmail') + '</h1>' + this.forWhom(t, step) +
       (error ? '<div class="err" id="email-error">' + xmlEscape(error) +
                '</div>' : '') +
-      (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
-      '<p>A sign-in link was sent to ' + this.whereTo(step) + '. <strong>' +
-      'Open it in this browser</strong> — it works only here, once, for ' +
-      Math.round(settings.ttlS / 60) + ' minutes.</p>' +
+      (resent ? '<div class="ok">' + t.html('emailFactor.wait.resent') +
+                '</div>' : '') +
+      '<p>' + (where
+        ? t.html('emailFactor.wait.sentTo', { address: where,
+                                              minutes: minutes })
+        : t.html('emailFactor.wait.sentAccount', { minutes: minutes })) +
+      '</p>' +
       '<form method="post" action="' + authn.EMAIL_LINK_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="action" value="send">' +
       '<button type="submit" id="email-link-resend" class="secondary">' +
-      'Send a new link</button></form>' +
-      '<div class="meta"><div>This page checks every ' + WAIT_REFRESH_S +
-      ' seconds. A new link replaces the last one.</div>' +
-      this.otherFactorsHtml(mfaId, step) + '</div>',
+      t.html('emailFactor.wait.resend') + '</button></form>' +
+      '<div class="meta"><div>' + t.html('emailFactor.wait.note',
+                                         { seconds: WAIT_REFRESH_S }) +
+      '</div>' + this.otherFactorsHtml(t, mfaId, step) + '</div>',
       realms.href(authn.EMAIL_LINK_PATH + '?mfa=' +
-                  encodeURIComponent(mfaId)));
+                  encodeURIComponent(mfaId)),
+      this.stepPath(authn.EMAIL_LINK_PATH, mfaId));
     log.debug("Leaving EmailFactor.waitPage().");
     return out;
   }
 
+  // A refusal: English, every word of it (#539), so no translator.
   private endPage(res: any, status: number, title: string,
                   sentence: string): void {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering EmailFactor.endPage().");
-    this.send(res, status, this.shell(title, '<h1>' + xmlEscape(title) +
+    this.send(res, status, this.shell(null, title, '<h1>' +
+      xmlEscape(title) +
       '</h1><div class="err" id="email-error">' + xmlEscape(sentence) +
       '</div><p class="meta">Start again from the application that sent ' +
       'you here.</p>'));
@@ -579,8 +666,8 @@ class EmailFactor {
       this.deps.errorCodes.mark(res, armed.code);
     }
     this.send(res, 200, kind === 'code'
-      ? this.codePage(mfaId, step, error, '')
-      : this.waitPage(mfaId, step, error, ''));
+      ? this.codePage(mfaId, step, error, false)
+      : this.waitPage(mfaId, step, error, false));
     log.debug("Leaving EmailFactor.beginSecondFactor().");
   }
 
@@ -656,8 +743,9 @@ class EmailFactor {
       errorCodes.mark(res, 'STS-AUTHN-0261');
     }
     await this.arm(req, res, mfaId, step, kind);
-    this.send(res, 200, kind === 'code' ? this.codePage(mfaId, step, '', '')
-                                        : this.waitPage(mfaId, step, '', ''));
+    this.send(res, 200, kind === 'code'
+      ? this.codePage(mfaId, step, '', false)
+      : this.waitPage(mfaId, step, '', false));
     log.debug("Leaving EmailFactor.beginFirstFactor().");
   }
 
@@ -787,7 +875,7 @@ class EmailFactor {
       return;
     }
     const armed = step.emailState && step.emailState.kind === 'code';
-    this.send(res, 200, armed ? this.codePage(mfaId, step, '', '')
+    this.send(res, 200, armed ? this.codePage(mfaId, step, '', false)
                               : this.askPage(mfaId, step, 'code', ''));
     log.debug("Leaving EmailFactor.handleCodeGet().");
   }
@@ -824,8 +912,7 @@ class EmailFactor {
         errorCodes.mark(res, armed.code);
       }
       this.send(res, 200, this.codePage(mfaId, step,
-        armed.ok ? '' : armed.why, armed.ok ? 'A new code is on its way.'
-                                            : ''));
+        armed.ok ? '' : armed.why, armed.ok));
       log.debug("Leaving EmailFactor.handleCodePost(). Sent.");
       return;
     }
@@ -840,14 +927,15 @@ class EmailFactor {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.send(res, 200, this.codePage(mfaId, step, allowed.detail, ''));
+      this.send(res, 200, this.codePage(mfaId, step, allowed.detail,
+                                        false));
       log.debug("Leaving EmailFactor.handleCodePost(). Rate limited.");
       return;
     }
     if (now() > state.expiresAt) {
       errorCodes.mark(res, 'STS-AUTHN-0265');
       this.send(res, 200, this.codePage(mfaId, step, 'That code has ' +
-        'expired. Send a new one.', ''));
+        'expired. Send a new one.', false));
       log.debug("Leaving EmailFactor.handleCodePost(). Expired.");
       return;
     }
@@ -860,7 +948,7 @@ class EmailFactor {
         this.endPage(res, 400, 'Too many wrong codes', 'This sign-in has ' +
                      'ended.');
       } else {
-        this.send(res, 200, this.codePage(mfaId, step, said, ''));
+        this.send(res, 200, this.codePage(mfaId, step, said, false));
       }
       log.debug("Leaving EmailFactor.handleCodePost(). Wrong.");
       return;
@@ -892,16 +980,19 @@ class EmailFactor {
     if (!step || !this.kindAllowedOn(step, 'link')) {
       // THE WAITING TAB, AFTER THE LINK WAS OPENED: the step is spent, and
       // the sign-in went on in the tab the link opened (D3).
-      this.send(res, 200, this.shell('Signed in elsewhere',
-        '<h1>Nothing is waiting here</h1><p id="email-done">If you opened ' +
-        'the link, the sign-in has continued in the tab it opened, and you ' +
-        'can close this one. If you did not, this sign-in has run out of ' +
-        'time; start again from the application that sent you here.</p>'));
+      // Not a refusal — the usual end of a waiting tab — so it is
+      // translated; there is no step left to say whose sign-in it was, so
+      // the person's own language is not read (#539).
+      const t = this.translatorOf(null);
+      this.send(res, 200, this.shell(t, t.text('emailFactor.elsewhere.title'),
+        '<h1>' + t.html('emailFactor.elsewhere.heading') +
+        '</h1><p id="email-done">' + t.html('emailFactor.elsewhere.body') +
+        '</p>', undefined, this.stepPath(authn.EMAIL_LINK_PATH, mfaId)));
       log.debug("Leaving EmailFactor.handleLinkGet(). No step.");
       return;
     }
     const armed = step.emailState && step.emailState.kind === 'link';
-    this.send(res, 200, armed ? this.waitPage(mfaId, step, '', '')
+    this.send(res, 200, armed ? this.waitPage(mfaId, step, '', false)
                               : this.askPage(mfaId, step, 'link', ''));
     log.debug("Leaving EmailFactor.handleLinkGet().");
   }
@@ -934,7 +1025,7 @@ class EmailFactor {
       errorCodes.mark(res, armed.code);
     }
     this.send(res, 200, this.waitPage(mfaId, step, armed.ok ? '' : armed.why,
-      armed.ok ? 'A new link is on its way.' : ''));
+      armed.ok));
     log.debug("Leaving EmailFactor.handleLinkPost().");
   }
 
@@ -974,16 +1065,22 @@ class EmailFactor {
       log.debug("Leaving EmailFactor.handleOpenGet(). Another browser.");
       return;
     }
-    this.send(res, 200, this.shell('Continue signing in',
-      '<h1>Continue signing in</h1><p class="sub">As <code>' +
-      xmlEscape(step.username) + '</code></p>' +
+    const t = this.translatorOf(step);
+    this.send(res, 200, this.shell(t, t.text('emailFactor.open.title'),
+      '<h1>' + t.html('emailFactor.open.heading') + '</h1>' +
+      '<p class="sub">' + t.html('emailFactor.open.as',
+                                 { name: step.username }) + '</p>' +
       '<form method="post" action="' + authn.EMAIL_LINK_OPEN_PATH + '">' +
       '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
       '<input type="hidden" name="t" value="' +
       xmlEscape(String(asked.value.t)) + '">' +
-      '<button type="submit" id="email-link-continue">Continue</button>' +
-      '</form><div class="meta"><div>If you did not ask to sign in, close ' +
-      'this page: nothing happens until Continue is pressed.</div></div>'));
+      '<button type="submit" id="email-link-continue">' +
+      t.html('emailFactor.open.continue') + '</button>' +
+      '</form><div class="meta"><div>' + t.html('emailFactor.open.note') +
+      '</div></div>', undefined,
+      // The GET that drew it: the mailed link itself, token and all — it is
+      // already in the hidden field above and in this browser's history.
+      this.deps.realms.currentPrefix() + authn.EMAIL_LINK_OPEN_PATH));
     log.debug("Leaving EmailFactor.handleOpenGet().");
   }
 

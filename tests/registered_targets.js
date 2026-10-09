@@ -179,7 +179,11 @@ function fixtures(t) {
       fields: { oauthClientId: 'rt-oauth',
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
-                oauthGrantType: ['authorization_code'] } }),
+                // T4c's exchange is declared too, or it would be refused
+                // for its grant type before the target check is reached
+                // and pass for the wrong reason (#289).
+                oauthGrantType: ['authorization_code',
+                  'urn:ietf:params:oauth:grant-type:token-exchange'] } }),
     applications.createApplication({ identifier: 'rt-gnap-rs',
       kind: 'gnap-resource-server', protocols: ['gnap'],
       fields: { gnapResourceServerUri: GNAP_RS } })

@@ -150,6 +150,9 @@ import serviceAccountPolicy = require('./service_account_policy');
 // answer: `/portal/keys` would have refused an eleventh key while
 // `/admin-api` allowed it, or the other way round, with nothing failing.
 import webauthnPolicy = require('../authn/webauthn_policy');
+// The passkey policy (#527, #528): a leaf over the directory, which
+// `webauthn_policy` above already requires.
+import passkeyPolicy = require('./passkey_policy');
 // THE VERIFIER, for the two-step key enrolment below. A LEAF on the same terms
 // as the policy module beside it — it registers nothing and requires only npm
 // packages, `common/crypto` and `common/helpers`, so it can neither move a
@@ -278,6 +281,7 @@ interface CredentialsDeps {
   serviceAccounts: typeof serviceAccounts;
   serviceAccountPolicy: typeof serviceAccountPolicy;
   webauthnPolicy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   webauthnVerifier: typeof webauthnVerifier;
   webauthnAttestation: typeof webauthnAttestation;
   errorCodes: typeof errorCodes;
@@ -375,6 +379,23 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
  * accepted unchecked; product mode verifies every one.
  */
 class Credentials {
+  /**
+   * The minimum PIN length a registration's authenticator reported (#529),
+   * CTAP 2.1 section 12.4's `minPinLength` extension output, or null where it
+   * reported none.
+   *
+   * @param verdict - `authn/webauthn.js`'s registration verdict
+   * @returns a whole number from 0 to 255, or null
+   */
+  static reportedMinPinLength(verdict: any): number | null {
+    helpers.log.debug("Entering Credentials.reportedMinPinLength().");
+    const ext = verdict && verdict.extensions;
+    const value = ext && typeof ext === 'object' ? ext.minPinLength : null;
+    helpers.log.debug("Leaving Credentials.reportedMinPinLength().");
+    return typeof value === 'number' && Number.isInteger(value) &&
+           value >= 0 && value <= 255 ? value : null;
+  }
+
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
   // (`01020304-0506-...`), from the 32 hex digits `authn/webauthn.js` parses
   // out of the attested credential data. All zeros — an authenticator that
@@ -744,6 +765,7 @@ class Credentials {
       serviceAccounts: serviceAccounts,
       serviceAccountPolicy: serviceAccountPolicy,
       webauthnPolicy: webauthnPolicy,
+      passkeyPolicy: passkeyPolicy,
       webauthnVerifier: webauthnVerifier,
       webauthnAttestation: webauthnAttestation,
       errorCodes: errorCodes,
@@ -3009,6 +3031,42 @@ class Credentials {
       return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                    { ok: false, errors: [allowed.why] });
     }
+    // A SYNCED PASSKEY WHERE THE REALM TAKES ONLY DEVICE-BOUND ONES (#528):
+    // the passkey policy's `backupEligibility`, asked of the authenticator
+    // data's BE flag, which both ceremony doors put on the record. Here for
+    // the role check's reason — the one writer — and ahead of the cap, so the
+    // answer names the rule rather than a count.
+    // THE PERSON'S PASSKEY POLICY (#535) where the door selected none.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
+    // minimum PIN length it reported (#529), and the device serial its
+    // trusted attestation named (#532) — the policy decides, in that order,
+    // under the selected passkey policy's rows. A flag the ceremony never
+    // read is not asked about.
+    const given = credential || {};
+    const facts: Record<string, any> = {
+      username: name,
+      minPinLength: given.minPinLength,
+      serial: (given.attestation || {}).deviceSerial
+    };
+    if (typeof given.backupEligible === 'boolean') {
+      facts.backupEligible = given.backupEligible;
+    }
+    const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
+    if (synced) {
+      const reason = synced.reason === 'pin-length' ? 'pin-length'
+        : (synced.reason === 'backup-eligible' ? 'backup-eligible'
+          : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                            : 'passkey-policy'));
+      log.info('credentials: a passkey was NOT enrolled for ' + name +
+               ' (' + synced.code + ', ' + reason + '): ' + synced.why);
+      log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
+                "policy.");
+      return coded(synced.code, { ok: false, reason: reason,
+                                  errors: [synced.why] });
+    }
     // HOW MANY. Several keys is the ordinary case and the specification expects
     // it — an assertion NAMES the credential that produced it, so there is none
     // of the ambiguity two shared secrets would have. The cap is here so that
@@ -3103,6 +3161,11 @@ class Credentials {
         ? credential.discoverable : null,
       userVerified: typeof credential.userVerified === 'boolean'
         ? credential.userVerified : null,
+      // THE MINIMUM PIN LENGTH THE KEY REPORTED (#529), CTAP 2.1 section
+      // 12.4, or null where it reported none: what the passkey policy holds
+      // every later sign-in to while it enforces a PIN length.
+      minPinLength: typeof credential.minPinLength === 'number'
+        ? credential.minPinLength : null,
       // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
       // hands back, and what `userHandleRefusal()` holds an assertion to.
       // Only a handle this service mints; a key written without one (before
@@ -3117,7 +3180,13 @@ class Credentials {
         ? String(credential.providerSource) : ''
     };
     if (!record.label) {
-      record.label = Credentials.defaultKeyName(record);
+      // THE PASSKEY POLICY'S LABEL FIRST (#533), with {provider} and {kind}
+      // filled in; else the provider's or the group's name, as before.
+      record.label = this.deps.passkeyPolicy.credentialLabelFor(
+        Credentials.keyProvider(record),
+        Credentials.keyGroup(record) === 'security-key' ? 'Security key'
+                                                        : 'Passkey') ||
+        Credentials.defaultKeyName(record);
     }
     let written = false;
     try {
@@ -3483,6 +3552,57 @@ class Credentials {
                 'revoked attestation of a security key of ' + username +
                 ' could not be recorded: ' + e.message);
       log.debug('Leaving Credentials.untrustKeyAttestation(). Threw.');
+      return false;
+    }
+  }
+
+  // A KEY THE ATTESTATION RULES NOW REFUSE AT SIGN-IN (#530): marked on its
+  // row once, so the Shared Signals credential-change it causes is sent once
+  // rather than at every attempt, and the key lists can say why it stopped.
+  /**
+   * Marks a key as refused at sign-in by the attestation rules in force.
+   *
+   * @param username - the person
+   * @param credentialId - the key's credential id
+   * @param code - the refusal's error code
+   * @param why - the refusal's sentence
+   * @returns true when the mark is new, false when it was already there or
+   *   could not be written
+   */
+  noteKeyAttestationRefused(username, credentialId, code, why) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.noteKeyAttestationRefused().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). No store.');
+      return false;
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter(function (one) {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found || (found.attestationRefused &&
+                   found.attestationRefused.why === String(why || ''))) {
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
+                'Nothing new.');
+      return false;
+    }
+    found.attestationRefused = { code: String(code || ''),
+                                 why: String(why || '').slice(0, 500),
+                                 at: Date.now() };
+    try {
+      const written = !!directory.replaceWebauthn(
+        String(username || '').trim(), keys.map(function (one) {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
+                written);
+      return written;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refused attestation of a passkey of ' + username +
+                ' could not be recorded: ' + e.message);
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
       return false;
     }
   }
@@ -7619,6 +7739,8 @@ class Credentials {
         backupState: !!(verdict.flags && verdict.flags.bs),
         transports: Credentials.transportsOf(credential),
         discoverable: Credentials.discoverableOf(credential),
+        // CTAP 2.1's minPinLength, as the key reported it (#529).
+        minPinLength: Credentials.reportedMinPinLength(verdict),
         // The handle the page created it under (#474).
         userHandle: held.userHandle
       }, held.role).then((stored) => {
@@ -9085,6 +9207,7 @@ export = {
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
+  noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),
   noteBootstrapPassword: slot.forward('noteBootstrapPassword'),
   mechanismsFor: slot.forward('mechanismsFor'),

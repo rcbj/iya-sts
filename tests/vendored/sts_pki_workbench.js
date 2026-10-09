@@ -265,6 +265,9 @@ function drawn(json) {
 // `/admin/pki` as the console opens it: the operation's answer, drawn.
 async function openPage() {
   log.debug("Entering openPage().");
+  // Every page this job draws is drawn by its own bundle, in the reader's
+  // language (#539): the translator is that bundle's default from here on.
+  await consoleClient.localize(consoleBundle());
   const answer = await consoleClient.page("/admin/pki", {});
   assert.strictEqual(answer.status, 200,
     "GET /admin-api/pki for the console answered " + answer.status + " " +

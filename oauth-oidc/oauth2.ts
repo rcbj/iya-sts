@@ -325,6 +325,10 @@ import consentScreen = require('./consent_screen');
 // because the slot answers "what did an administrator TICK" and this is the
 // other question: "what did the CLIENT ask for".
 import claimAttributes = require('../common/claim_attributes');
+// OIDC Core section 5.4's scope claims, the gate that releases one only when
+// its scope was granted, and how a resource server's declared claims combine
+// with the client's (#395). A library.
+import scopeClaims = require('../common/scope_claims');
 import identityAssurance = require('../common/identity_assurance');
 // THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
@@ -408,6 +412,10 @@ import clientJwks = require('./client_jwks');
 // A library: what "registered" means for an application (#494, #496). It
 // reaches the registry lazily, so this require closes no cycle.
 import IssuerNames = require('../common/issuer_names');
+// The catalogs (#539), for `ui_locales_supported`. A leaf.
+import i18n = require('../common/i18n');
+// The language of the pages drawn here for a browser (#539). A library.
+import PageLocale = require('../common/page_locale');
 // A library: what an RFC 8707 resource may name in product (#505). It reaches
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
@@ -1243,14 +1251,11 @@ const IDA_REGISTERED_CLAIMS = ['place_of_birth', 'nationalities',
                                'birth_middle_name', 'salutation', 'title',
                                'msisdn', 'also_known_as'];
 
-const USERINFO_SCOPE_CLAIMS = {
-  profile: ['name', 'family_name', 'given_name', 'middle_name', 'nickname',
-            'preferred_username', 'profile', 'picture', 'website', 'gender',
-            'birthdate', 'zoneinfo', 'locale', 'updated_at'],
-  email: ['email', 'email_verified'],
-  address: ['address'],
-  phone: ['phone_number', 'phone_number_verified']
-};
+// OIDC Core section 5.4's table, held in `common/scope_claims.ts` since #395
+// so the gate that keeps an ungranted claim out of every token reads the same
+// one this endpoint answers from.
+const USERINFO_SCOPE_CLAIMS: Record<string, string[]> =
+  scopeClaims.SCOPE_CLAIMS;
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: A CLAIMS REQUEST SENT TO THE USERINFO ENDPOINT ITSELF.
@@ -2111,13 +2116,16 @@ class OAuth2Server {
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
-      // One locale, because there is one: the login screen is the only UI this
-      // server renders and it is written in English. A request's ui_locales
-      // is accepted and answered in English, which section 3.1.2.1 permits
-      // ("An error SHOULD NOT result if some or all of the requested locales
-      // are not supported"). The list used to name four, which a client is
-      // entitled to read as "ask for fr-CA and you will get it".
-      ui_locales_supported: ['en-US'],
+      // THE LOCALES THE LANGUAGE CHOOSER OFFERS (#539), each answered by a
+      // catalog: a request's ui_locales naming one gets the sign-in and
+      // consent screens in it (`common/page_locale.ts`). A tag no catalog
+      // answers is passed over without an error, which section 3.1.2.1
+      // permits ("An error SHOULD NOT result if some or all of the requested
+      // locales are not supported"). Until #539 the list was `en-US` alone,
+      // because every page was English.
+      ui_locales_supported: i18n.offered().map(function (one) {
+        return one.tag;
+      }),
       op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
       op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
@@ -4022,14 +4030,13 @@ class OAuth2Server {
     if (opts.scope) {
       payload.scope = opts.scope;
     }
-    // Section 2.2.2: an identity attribute goes under its REGISTERED name where
-    // one exists, and `preferred_username` is OpenID Connect's for exactly what
-    // `username` holds. `username` stays — the token registry, SCIM's principal
-    // and the audit log read it. Neither is on a client_credentials token,
-    // where there is no end user to have a name.
-    if (opts.grant !== 'client_credentials' && user.preferred_username) {
-      payload.preferred_username = user.preferred_username;
-    }
+    // Section 2.2.2's `preferred_username` is NOT added here any more (#395).
+    // It is a `profile` claim, and it went into every person's access token
+    // whatever was granted; it now arrives as any other section 5.4 claim
+    // does — declared by the resource server the token is for, and only when
+    // `profile` was granted (resourceServerClaims(), below). `username` stays:
+    // it is this service's own claim, and the token registry, SCIM's
+    // principal and the audit log read it.
     // Section 2.2.1: WHEN the resource owner authenticated, and HOW. Only where
     // an authentication event is behind the grant — a session, carried on the
     // code, the refresh token or the implicit response — and never invented,
@@ -4155,11 +4162,39 @@ class OAuth2Server {
     // the second of two defences rather than the only one, which is the same
     // arrangement the console's reserved-name refusal has.
     // ---------------------------------------------------------------------
-    const payloadWithCustom = Object.assign(
-      stats.jwtClaims('access_token',
-                      self.customClaimContext(base, payload, user,
-                                              opts.grant)),
-      opts.assertionClaims || {}, payload);
+    // ---------------------------------------------------------------------
+    // AND THE RESOURCE SERVER'S OWN DECLARATION (#395), COMBINED WITH THE
+    // CLIENT'S CLAIMS AS IT CHOSE, AND THEN NOTHING THAT WAS NOT GRANTED.
+    //
+    // RFC 9068 section 2.2.2 leaves the identity claims of an access token
+    // to the authorization server, "based on the client, scope and
+    // resource". The client's are the set above (the realm's and the
+    // client's own, combined as the client chose). The resource's are
+    // resourceServerClaims(). The gate is last and covers both: a section
+    // 5.4 claim whose scope the GRANT did not include — `opts.granted_scope`,
+    // because RFC 9068's plan takes the OpenID Connect scopes off a token for
+    // an API while they stay granted — is not released, whichever layer
+    // offered it. The assertion's claims are not part of either set: they
+    // are a statement about THIS issuance, and stay above both.
+    // ---------------------------------------------------------------------
+    const granted = opts.granted_scope !== undefined ? opts.granted_scope
+                                                     : opts.scope;
+    const clientClaims = stats.jwtClaims('access_token',
+                                         self.customClaimContext(
+                                           base, payload, user, opts.grant));
+    const resourceLayer = opts.grant === 'client_credentials' ? null
+      : self.resourceServerClaims(payload.aud, user, granted);
+    const combined = resourceLayer
+      ? scopeClaims.combineResource(clientClaims, resourceLayer.claims,
+                                    resourceLayer.mode)
+      : clientClaims;
+    // A claim a GRANTED permission of the resource server maps is granted by
+    // that permission, a standard one included (rcbj, 2026-10-09).
+    scopeClaims.gate(combined, granted, 'access token',
+                     resourceLayer ? resourceLayer.grantedByPermission : []);
+    const payloadWithCustom = Object.assign(combined,
+                                            opts.assertionClaims || {},
+                                            payload);
     // A token granted no scope carries no scope claim, and the merge above is
     // the one way a layer beneath the protocol's could supply one: the protocol
     // layer wins by OVERWRITING, and a claim it deliberately left out has
@@ -4179,6 +4214,141 @@ class OAuth2Server {
                             algorithm: self.accessTokenAlg(opts.request) });
     log.debug("Leaving OAuth2Server.accessToken().");
     return token;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE RESOURCE SERVERS A TOKEN IS FOR WANT IN IT (#395, and the
+  // claims mapped to their own scopes, 2026-10-09).
+  //
+  // Each audience the token names is looked up as an application — by
+  // `oauthAudience`, then as a client_id or identifier, which is how a scope
+  // naming an API becomes its audience. It wants two kinds of claim:
+  //
+  //   * DECLARED (`oauthAccessTokenClaim`): OIDC Core 5.4 claims, each only
+  //     when the scope that covers it was granted;
+  //   * MAPPED TO ITS OWN SCOPES (`oauthPermissionClaims`): for each
+  //     permission it exposes that the grant includes — named by its whole
+  //     identifier, or by its bare name on a token for it alone — the
+  //     catalogue attributes mapped to it. GRANTING THE PERMISSION IS THE
+  //     GRANT of those claims (rcbj), so they are returned in
+  //     `grantedByPermission` for the gate to pass.
+  //
+  // NO AUDIENCE WANTING ANYTHING IS NO LAYER: the answer is null, and the
+  // client's claims go out as they are. Otherwise only what EVERY audience
+  // wants (rcbj, 2026-10-09) — an audience that wants nothing, this
+  // service's own resource server among them, leaves nothing — resolved for
+  // the person: the declared claims as UserInfo resolves them
+  // (claimsNamed()), the mapped ones from the directory through the
+  // catalogue. The mode is the wanting audiences'
+  // `oauthAccessTokenClaimsCombine`: theirs when they agree, `intersection`
+  // when they do not.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the identity claims the resource servers an access token is
+   * addressed to want — declared standard claims gated by the granted scope,
+   * and the claims mapped to their granted permissions — and how they
+   * combine with the client's, or null when no audience wants any.
+   *
+   * @param aud - the token's `aud`
+   * @param user - the person
+   * @param granted - the scope granted
+   * @returns `{ claims, mode, grantedByPermission }`, or null
+   */
+  resourceServerClaims(aud: Json, user: Json, granted: Json): Json {
+    const { log, applications, claimAttributes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.resourceServerClaims().");
+    const audiences = self.audienceList(aud);
+    const grantedValues = String(granted || '').split(/\s+/).filter(Boolean);
+    const wantedPer: string[][] = [];
+    const mappedPer: Json[] = [];
+    const modes: string[] = [];
+    let anyWanted = false;
+    audiences.forEach(function (one: string) {
+      let app: Json = null;
+      try {
+        // The permission base too: a scope naming one of its permissions
+        // makes the base the token's `aud` (audienceScopes()).
+        app = applications.forAudience(one) ||
+          applications.forPermissionBase(one) ||
+          applications.forClientId(one) || applications.get(one);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.resourceServerClaims(): " +
+                  ((e && e.message) || e));
+        // A registry that cannot answer is an audience that wants nothing:
+        // the intersection then releases nothing, which is the private
+        // answer.
+        app = null;
+      }
+      const declared = app && app.fields
+        ? [].concat(app.fields.oauthAccessTokenClaim || []).map(String)
+          .filter(function (name: string): boolean {
+            return scopeClaims.DECLARABLE_CLAIMS.indexOf(name) >= 0 &&
+              scopeClaims.grants(granted, scopeClaims.scopeOf(name));
+          })
+        : [];
+      // The catalogue attributes its GRANTED permissions map, by attribute.
+      const mapped: Json = {};
+      if (app) {
+        const permissions = applications.permissionsOf(app);
+        const byName = claimAttributes.permissionClaimsOf(app,
+          permissions.map(function (p: Json): string { return p.name; }));
+        permissions.forEach(function (p: Json) {
+          const asked = grantedValues.some(function (v: string): boolean {
+            return (p.id && v === p.id) ||
+              (audiences.length === 1 && v === p.name);
+          });
+          if (asked && byName[p.name]) {
+            byName[p.name].forEach(function (ldap: string) {
+              mapped[ldap.toLowerCase()] = ldap;
+            });
+          }
+        });
+      }
+      const mappedClaims = Object.keys(mapped).length && user &&
+        user.username
+        ? claimAttributes.claimsForAttributes(
+            Object.keys(mapped).map(function (k) { return mapped[k]; }),
+            user.username).claims
+        : {};
+      wantedPer.push(declared.concat(Object.keys(mappedClaims)));
+      mappedPer.push(mappedClaims);
+      if (declared.length || Object.keys(mapped).length) {
+        anyWanted = true;
+        modes.push(scopeClaims.modeOf(app.fields.oauthAccessTokenClaimsCombine,
+                                      scopeClaims.RESOURCE_MODES, 'union'));
+      }
+    });
+    if (!anyWanted) {
+      log.debug("Leaving OAuth2Server.resourceServerClaims(). No audience " +
+                "wants any.");
+      return null;
+    }
+    const wanted = scopeClaims.intersectDeclared(wantedPer);
+    const claims: Json = {};
+    const grantedByPermission: string[] = [];
+    // The mapped value first, from the first audience that maps it, then
+    // the declared claims resolved for any name no mapping answered.
+    wanted.forEach(function (name: string) {
+      for (let i = 0; i < mappedPer.length; i++) {
+        if (mappedPer[i][name] !== undefined) {
+          claims[name] = mappedPer[i][name];
+          grantedByPermission.push(name);
+          return;
+        }
+      }
+    });
+    const rest = wanted.filter(function (name: string): boolean {
+      return claims[name] === undefined;
+    });
+    if (rest.length) {
+      Object.assign(claims, self.claimsNamed(user, rest));
+    }
+    const mode = scopeClaims.agreedResourceMode(modes);
+    log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
+              Object.keys(claims).length + " claim(s), " + mode + ".");
+    return { claims: claims, mode: mode,
+             grantedByPermission: grantedByPermission };
   }
 
   private refreshToken(base: Json, opts: Json): Json {
@@ -4539,9 +4709,8 @@ class OAuth2Server {
    * @returns the claims
    */
   scopeClaimsOf(user: Json, scope: Json): Json {
-    const { log, hasScope, claimAttributes, errorCodes } = this.deps;
+    const { log, hasScope } = this.deps;
     log.debug("Entering OAuth2Server.scopeClaimsOf().");
-    const out: Json = {};
     const wanted: string[] = [];
     Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (name) {
       if (hasScope(scope, name)) {
@@ -4550,6 +4719,30 @@ class OAuth2Server {
         });
       }
     });
+    const out = this.claimsNamed(user, wanted);
+    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+              Object.keys(out).length + " claim(s).");
+    return out;
+  }
+
+  // The section 5.4 claims NAMED, resolved as scopeClaimsOf() always resolved
+  // them: what the person object holds first, the directory entry through the
+  // catalogue for the rest. Lifted out of that function by #395, for its
+  // second caller — a resource server's declared access-token claims, which
+  // name claims rather than scopes.
+  /**
+   * Resolves named OpenID Connect section 5.4 claims for a person: the person
+   * object first, then the directory entry. A claim neither holds is absent.
+   *
+   * @param user - the person
+   * @param wanted - the claim names
+   * @returns the claims
+   */
+  claimsNamed(user: Json, wanted: string[]): Json {
+    const { log, claimAttributes, errorCodes } = this.deps;
+    log.debug("Entering OAuth2Server.claimsNamed(). " + wanted.length +
+              " wanted.");
+    const out: Json = {};
     const missing: string[] = [];
     wanted.forEach(function (claim) {
       if (user && user[claim] !== undefined && user[claim] !== null &&
@@ -4572,7 +4765,7 @@ class OAuth2Server {
       } catch (e) {
         // The rule personFromDirectory() follows: a directory that threw must
         // not fail an issuance, and the claims are simply absent.
-        log.error(errorCodes.tag('STS-OAUTH-0181') + 'scopeClaimsOf(): the ' +
+        log.error(errorCodes.tag('STS-OAUTH-0181') + 'claimsNamed(): the ' +
                   'directory threw while being read for ' + user.username +
                   '\'s scope claims and they are omitted: ' + e.message);
       }
@@ -4596,7 +4789,7 @@ class OAuth2Server {
         out.phone_number_verified === undefined) {
       out.phone_number_verified = false;
     }
-    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+    log.debug("Leaving OAuth2Server.claimsNamed(). " +
               Object.keys(out).length + " claim(s).");
     return out;
   }
@@ -4638,7 +4831,9 @@ class OAuth2Server {
     // hash of the algorithm this token is SIGNED with (OIDC Core 3.1.3.6 and
     // 3.3.2.11), so it has to be known before they are. The refusal of an
     // unsupported one stays where it was, below.
-    const registered = applications.registrationOf(opts.client_id) || {};
+    // FROM THE ATTRIBUTES (#290), so a client the console created with no
+    // registration behind it is signed — and encrypted — as it says.
+    const registered: Json = applications.clientConfigOf(opts.client_id);
     // PS256 under FAPI 1.0 Advanced when the client registered none (section
     // 8.6, #139); RS256 otherwise, as Core section 3.1.3.7 says.
     const idAlg = String(registered.id_token_signed_response_alg ||
@@ -4797,8 +4992,16 @@ class OAuth2Server {
     // the two go to different readers (a client reads the ID Token, a resource
     // server reads the access token) and configuring them together would mean
     // never being able to test that a claim reached one and not the other.
+    // NOTHING THE GRANT DID NOT COVER (#395): a section 5.4 claim in the
+    // configured set — the realm's, or this client's own — goes in only when
+    // its scope was granted. The scope-driven layer above is gated by
+    // construction, and a claim the client NAMED in section 5.5's request,
+    // below, is its own grant and passes.
     const payloadWithCustom = Object.assign(
-      stats.jwtClaims('id_token', self.customClaimContext(base, payload, user)),
+      scopeClaims.gate(stats.jwtClaims('id_token',
+                                       self.customClaimContext(base, payload,
+                                                               user)),
+                       opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
     // AND THE ONE LAYER ABOVE ALL OF THEM: a claim THIS CLIENT asked for by
@@ -5323,6 +5526,9 @@ class OAuth2Server {
       grant_family: grantFamily || undefined,
       limits_grant: limitsGrant || undefined,
       scope: plan.scope,
+      // What was GRANTED, before the plan took the OpenID Connect scopes off
+      // a token for an API: what the scope gate reads (#395).
+      granted_scope: opts.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
       // give: a grant cannot widen itself by being renewed, and the refresh
@@ -8175,7 +8381,8 @@ class OAuth2Server {
                   self.authorizationReturnQuery(req, query),
         hint: String(user.username || ''),
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     // -----------------------------------------------------------------------
@@ -8204,7 +8411,8 @@ class OAuth2Server {
         forceMfa: roleAnswer.risk.factor === 'second-factor',
         forceKey: roleAnswer.risk.factor === 'security-key',
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     if (!roleAnswer.allowed) {
@@ -8406,7 +8614,8 @@ class OAuth2Server {
         // this says where it has been.
         appAuthorizationServer: self.profileOf(req),
         appRedirectUriObserved: redirectUri,
-        oauthResponseType: types.join(' '),
+        // What it ASKED for, apart from what it DECLARED (#289).
+        oauthResponseTypeObserved: types.join(' '),
         oauthScope: scope.split(/\s+/).filter(Boolean)
       }
     });
@@ -8547,6 +8756,8 @@ class OAuth2Server {
         user: user,
         client_id: String(query.client_id),
         scope: audiencePlan.scope,
+        // The scope granted, for the gate (#395) — see tokenSet().
+        granted_scope: scope,
         audience: self.audienceClaim(audiencePlan.audiences),
         session_id: sessionId, grant: flow,
         set_id: setId,
@@ -8608,6 +8819,24 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
   }
 
+  // THE LANGUAGE OF A PAGE THIS MODULE DRAWS FOR A BROWSER (#539): the
+  // form_post handoff and the RP-initiated sign-out pages. `ui_locales` first
+  // (OpenID Connect Core 1.0 section 3.1.2.1, RP-Initiated Logout 1.0
+  // section 2), then the person, the chooser's cookie, the browser and the
+  // client's locale policy — `common/page_locale.ts`'s order. The error
+  // pages are not drawn with it: every refusal stays English.
+  private pageTranslator(req: Req, application: string, uiLocales: string,
+                         username: string):
+                         ReturnType<typeof PageLocale.forPage> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.pageTranslator().");
+    const out = PageLocale.translatorFor(req, { application: application,
+                                                uiLocales: uiLocales,
+                                                username: username });
+    log.debug("Leaving OAuth2Server.pageTranslator(). " + out.locale);
+    return out;
+  }
+
   /**
    * Sends a `response_mode=form_post` page: the fields as hidden inputs, a real
    * submit button, and the one script that submits it.
@@ -8617,7 +8846,8 @@ class OAuth2Server {
    * @param fields - the response fields
    */
   formPostResponse(res: Res, redirectUri: Json, fields: Json): Json {
-    const { app, log, xmlEscape } = this.deps;
+    const { app, log, xmlEscape, sessionOf } = this.deps;
+    const self = this;
     log.debug("Entering OAuth2Server.formPostResponse(). fields=" +
               Object.keys(fields).join(', '));
     const inputs = Object.keys(fields).map(function (name) {
@@ -8633,30 +8863,41 @@ class OAuth2Server {
              xmlEscape(String(fields[name])) +
              '</code></div>';
     }).join('');
-    const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Returning to the client</title><style>' +
+    // THE LANGUAGE (#539): the authorization request's `ui_locales`, its
+    // client and the person signed in, as the sign-in and consent screens
+    // read them. NO LANGUAGE CHOOSER, unlike every other page converted: the
+    // page submits itself the moment it loads, and the only GET that would
+    // redraw it is the authorization request, which a second pass would
+    // answer with a second code (or refuse as a replay) rather than redraw.
+    const req: Req = res.req || {};
+    const held = (res.locals && res.locals.stsJarm) || {};
+    const session = sessionOf(req);
+    const t = self.pageTranslator(req,
+      String(held.clientId || (req.query || {}).client_id || ''),
+      String((req.query || {}).ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    const html = '<!doctype html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' +
+      xmlEscape(t.text('oauthPages.formPost.title')) + '</title><style>' +
       'body{font-family:system-ui,sans-serif;margin:2rem;max-width:52rem;' +
       'color:#222}code{font-family:ui-monospace,Menlo,monospace;' +
       'font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
       'border-radius:3px;word-break:break-all}.sub{color:#666}' +
       '.meta{margin-top:1.5rem;font-size:.9rem;color:#444}' +
       'button{font:inherit;padding:.4rem .9rem}</style></head><body>' +
-      '<h1>Returning to the ' +
-      'client</h1><p class="sub">OAuth 2.0 Form Post Response Mode — the ' +
-      'authorization response travels in a form POST rather than in a ' +
-      'redirect, so it never appears in a URL, in browser history or in a ' +
-      '<code>Referer</code> header (RFC 9700 section 4.3).</p><form ' +
+      '<h1>' + t.html('oauthPages.formPost.heading') + '</h1>' +
+      '<p class="sub">' + t.html('oauthPages.formPost.sub') + '</p><form ' +
       'method="post" action="' + xmlEscape(redirectUri) + '" ' +
           'id="oauth2-form">' + inputs +
-      '<div><button type="submit">Continue to the client</button></div>' +
+      '<div><button type="submit">' + t.html('oauthPages.formPost.continue') +
+      '</button></div>' +
       '</form>' +
-      '<div class="meta"><div>posting to: <code>' + xmlEscape(redirectUri) +
-      '</code></div>' +
+      '<div class="meta"><div>' +
+      t.html('oauthPages.formPost.postingTo', { uri: redirectUri }) +
+      '</div>' +
       rows +
-      '<div>The form submits itself from <code>/oauth2/autopost.js</code>. ' +
-      'It is a separate resource because this service sets <code>script-src ' +
-      '\'none\'</code> on every response and this page relaxes it to ' +
-      '<code>\'self\'</code>; with scripting off the button IS the mechanism.' +
+      '<div>' + t.html('oauthPages.formPost.scriptNote') +
       '</div></div><script ' +
       'src="/oauth2/autopost.js"></script></body></html>';
     // The same shape of exception the WebAuthn and WS-Federation pages take,
@@ -8999,7 +9240,8 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.jarmUrl(). " + mode);
     const held = (res.locals && res.locals.stsJarm) || {};
     const clientId = String(held.clientId || '');
-    const registered = applications.registrationOf(clientId) || {};
+    // From the attributes (#290), whether or not a registration made them.
+    const registered: Json = applications.clientConfigOf(clientId);
     log.debug("Leaving OAuth2Server.jarmUrl(). Signing.");
     return jarm.respond(fields, { clientId: clientId, issuer: issuer,
                                   registered: registered })
@@ -9263,9 +9505,10 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.authorizationReturnQuery().");
     const jar = req.stsJar;
-    // With the client's registered defaults (#120).
+    // With the client's registered defaults (#120), from its attributes
+    // (#290).
     const stepping = stepUp.requirementOf(q,
-      this.deps.applications.registrationOf(q.client_id)).present ||
+      this.deps.applications.clientConfigOf(q.client_id)).present ||
       this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
@@ -9956,19 +10199,21 @@ class OAuth2Server {
     // Note where this sits: above the session check, so it is answered on the
     // first pass and the person is never sent to sign in for a request that was
     // going to be refused when they came back.
-    // RFC 7591 SECTION 2 (#120, in every mode): a client that REGISTERED its
-    // response_types is held to them — unauthorized_client, RFC 6749 section
-    // 4.1.2.1's word for a client not allowed this method.
-    const registeredFlows = applications.registeredFlowsOf(q.client_id);
+    // RFC 7591 SECTION 2 (#120, in every mode): a client that DECLARED its
+    // response_types — by registering them or, since #289, by an
+    // administrator writing `oauthResponseType` — is held to them:
+    // unauthorized_client, RFC 6749 section 4.1.2.1's word for a client not
+    // allowed this method. An empty list restricts nothing.
+    const declaredFlows = applications.declaredFlowsOf(q.client_id);
     const askedType = String(q.response_type || '').split(/\s+/)
       .filter(Boolean).sort().join(' ');
-    if (registeredFlows && registeredFlows.response_types &&
-        registeredFlows.response_types.indexOf(askedType) < 0) {
+    if (declaredFlows && declaredFlows.response_types &&
+        declaredFlows.response_types.indexOf(askedType) < 0) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A response " +
-                "type the client did not register.");
+                "type the client did not declare.");
       return redirectable('STS-OAUTH-0597', 'unauthorized_client',
-        'Client "' + q.client_id + '" registered response_types ' +
-        JSON.stringify(registeredFlows.response_types) + ', and this ' +
+        'Client "' + q.client_id + '" declares response_types ' +
+        JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
     }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
@@ -10538,9 +10783,10 @@ class OAuth2Server {
     // and is answered `login_required`. `step_up.ts` decides all four.
     // -------------------------------------------------------------------------
     // OpenID Connect Registration section 2's default_max_age and
-    // default_acr_values apply where the request names neither (#120).
+    // default_acr_values apply where the request names neither (#120) — read
+    // from the client's attributes (#290), whoever set them.
     const stepUpNeed = stepUp.requirementOf(q,
-      applications.registrationOf(q.client_id));
+      applications.clientConfigOf(q.client_id));
     // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
     // access-type catalogue GNAP shares declares the level a right of a type
     // needs, and a grant of two types is a grant of both — so each is
@@ -10759,6 +11005,11 @@ class OAuth2Server {
             return decision.outstanding.indexOf(one) < 0;
           }),
           protocol: 'OAuth 2.0 / OIDC',
+          // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the consent
+          // screen is drawn in the languages the relying party asked for,
+          // as the sign-in screen is — from `q`, which for a request object
+          // is what was signed and not what is on the return path.
+          uiLocales: String(q.ui_locales || ''),
           details: [
             { label: 'client_id', value: q.client_id || '' },
             { label: 'scope', value: q.scope || '(none requested)' },
@@ -10778,6 +11029,16 @@ class OAuth2Server {
         stepUp.record(q.client_id, stepUpHonoured ? 'stepup.met_after_sign_in'
                                                   : 'stepup.met_by_session');
       }
+      // THE SCOPES A GLOBAL CONSENT ANSWERED FOR THIS PERSON (#537) are
+      // written down on their entry, the first time only, so
+      // `/portal/consents` can show them under Administrative consents. A
+      // scope they agreed to themselves is theirs and is not recorded here.
+      consent.noteApplied((session.user || {}).username, q.client_id,
+        (decision.scopes || []).filter(function (one: Json) {
+          return one.global && !one.consented;
+        }).map(function (one: Json) {
+          return one.scope;
+        }));
       return self.issueAuthorizationResponse(req, res, q, session.user,
                                              session.authTime, session,
                                              stepUpAssessed ? stepUpAssessed.acr
@@ -10871,6 +11132,10 @@ class OAuth2Server {
       // identifier exactly as a protocol presented it, and one this service has
       // never heard of simply has no entry, which is not an error.
       application: q.client_id || '',
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asks the sign-in screen to be drawn in. Honoured, where
+      // until #539 it was accepted and every page was English.
+      uiLocales: q.ui_locales || '',
       // Enterprise Extensions section 3.1 (#148): home-realm discovery.
       domainHint: q.domain_hint || ''
     }));
@@ -10886,14 +11151,22 @@ class OAuth2Server {
   // requiring that module from here would invert rule 5.
   // `head` is markup for the <head>, already escaped — the one caller that
   // passes it is the front-channel return's <meta> refresh (#122).
-  private logoutPage(inner: Json, head?: string): Json {
-    const { log } = this.deps;
+  // `t` is the page's translator (#539), and `title` the <title> as text; a
+  // refusal page passes neither and is drawn as it always was, in English.
+  private logoutPage(inner: Json, head?: string,
+                     t?: ReturnType<typeof PageLocale.forPage>,
+                     title?: string): Json {
+    const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutPage().");
     log.debug("Leaving OAuth2Server.logoutPage().");
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta ' +
+    return '<!doctype html><html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8"><meta ' +
       'name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>Signed ' +
-      'out</title>' + (head || '') +
+      'initial-scale=1"><title>' +
+      xmlEscape(title ||
+                (t ? t.text('oauthPages.signedOut.title') : 'Signed out')) +
+      '</title>' + (head || '') +
       '<style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;' +
@@ -10940,14 +11213,18 @@ class OAuth2Server {
 
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
   // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
+  // A page that is not a refusal passes its translator and the language
+  // chooser (#539), drawn above the heading; a refusal passes neither and
+  // stays English.
   private logoutAnswer(res: Res, status: number, title: string,
-                       body: string): Json {
+                       body: string,
+                       t?: ReturnType<typeof PageLocale.forPage>,
+                       chooser?: string): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutAnswer(). " + status);
     res.status(status).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.logoutPage('<h1>' + xmlEscape(title) + '</h1>' + body)
-         .replace('<title>Signed out</title>',
-                  '<title>' + xmlEscape(title) + '</title>'));
+       .send(this.logoutPage((chooser || '') + '<h1>' + xmlEscape(title) +
+                             '</h1>' + body, '', t, title));
     log.debug("Leaving OAuth2Server.logoutAnswer().");
     return undefined;
   }
@@ -11032,8 +11309,9 @@ class OAuth2Server {
   //      a cookie clear. The page has a real button and no script;
   //   5. only then the session ends, and the return carries `state`.
   //
-  // `ui_locales` is accepted and English is the only language this service
-  // has, so every page is `lang="en"`, which section 2 permits.
+  // `ui_locales` is honoured since #539 (section 2's "End-User's preferred
+  // languages and scripts for the user interface"): the confirmation and
+  // signed-out pages are drawn in it; a refusal stays English.
   // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
@@ -11154,12 +11432,26 @@ class OAuth2Server {
       String((req.headers || {}).cookie || ''));
     const confirmed = req.method === 'POST' && q.confirm === 'yes' &&
       String(q.confirm_for || '') === self.logoutConfirmFor(session);
+    // THE LANGUAGE (#539): RP-Initiated Logout 1.0 section 2's `ui_locales`,
+    // the client (named, or the id_token_hint's), and the person signed in.
+    // Built before the session ends, so the page after it still knows whose
+    // language it was.
+    const t = self.pageTranslator(req, clientId, String(q.ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    // The chooser on a page drawn once the request has been ACTED on returns
+    // to the front door: asking for the sign-out again would act again (a
+    // second pass of a declined one is a fresh confirmation, of a finished
+    // one a redirect to the client), not redraw the page.
+    const frontDoor = PageLocale.chooser(t, realms.currentPrefix(),
+                                         realms.currentPrefix() + '/');
     if (req.method === 'POST' && q.confirm === 'no') {
       log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
-      return self.logoutAnswer(res, 200, 'You are still signed in',
-        '<p>Nothing was ended.</p>' + (returnTo
-          ? '<p><a href="' + xmlEscape(returnTo) + '">Return to the ' +
-            'application</a></p>' : ''));
+      return self.logoutAnswer(res, 200,
+        t.text('oauthPages.logout.stillTitle'),
+        '<p>' + t.html('oauthPages.logout.nothingEnded') + '</p>' + (returnTo
+          ? '<p><a href="' + xmlEscape(returnTo) + '">' +
+            t.html('oauthPages.logout.returnToApp') + '</a></p>' : ''),
+        t, frontDoor);
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
@@ -11169,7 +11461,7 @@ class OAuth2Server {
       (!session && req.method === 'POST' && !cookiePresented));
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
-      return self.logoutConfirmPage(res, q, session, client);
+      return self.logoutConfirmPage(req, res, q, session, client, t);
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -11178,50 +11470,70 @@ class OAuth2Server {
     const backchannelMark = backchannel.mark();
     const ended = endSession(req, res);
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote);
+                             refusedNote, t, frontDoor);
   }
 
   // The page that asks (#124, #115). A real form that POSTs back here with
   // the request's own parameters and the value only this session's page can
   // carry; no script (the root CLAUDE.md: a form needs none).
-  private logoutConfirmPage(res: Res, q: Json, session: Json,
-                            client: Json): Json {
+  private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
+                            client: Json,
+                            t: ReturnType<typeof PageLocale.forPage>): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
-    const carried = ['post_logout_redirect_uri', 'client_id',
-                     'id_token_hint', 'state', 'logout_hint', 'ui_locales']
+    const names = ['post_logout_redirect_uri', 'client_id',
+                   'id_token_hint', 'state', 'logout_hint', 'ui_locales']
       .filter(function (name: string): boolean {
         return q[name] !== undefined && q[name] !== '';
-      }).map(function (name: string): string {
+      });
+    const carried = names.map(function (name: string): string {
         return '<input type="hidden" name="' + name + '" value="' +
                xmlEscape(String(q[name])) + '">';
       }).join('');
     const who = session && session.user ? session.user.username : '';
     const app = client && client.known
       ? (client.client_name || client.client_id) : (q.client_id || '');
+    // THE CHOOSER'S RETURN (#539): a GET of the same request redraws this
+    // page, since nothing has been ended yet. A page drawn by a POST (a
+    // cross-site form without the cookie) names the GET with the same
+    // parameters, which section 2 allows as well.
+    const query = new URLSearchParams();
+    names.forEach(function (name: string): void {
+      query.set(name, String(q[name]));
+    });
+    const chooser = PageLocale.chooser(t, realms.currentPrefix(),
+      PageLocale.herePath(realms.currentPrefix() + this.asPathOf(req) +
+                          '/oauth2/logout' +
+                          (names.length ? '?' + query.toString() : '')));
+    // Four sentences rather than one assembled from pieces: word order
+    // differs between the languages.
+    const params = { app: String(app), who: who };
+    const ask = app
+      ? (who ? t.html('oauthPages.logout.askAppWho', params)
+             : t.html('oauthPages.logout.askApp', params))
+      : (who ? t.html('oauthPages.logout.askWho', params)
+             : t.html('oauthPages.logout.ask'));
     log.debug("Leaving OAuth2Server.logoutConfirmPage().");
-    return this.logoutAnswer(res, 200, 'Sign out?',
-      '<p>' + (app
-        ? 'The application <code>' + xmlEscape(String(app)) + '</code> '
-        : 'An application ') + 'asked to sign you out' +
-      (who ? ' of <strong>' + xmlEscape(who) + '</strong>' : '') +
-      '. This ends your session here, and every application signed in ' +
-      'through it is told.</p>' +
+    return this.logoutAnswer(res, 200, t.text('oauthPages.logout.confirmTitle'),
+      '<p>' + ask + '</p>' +
       '<form method="post" action="logout">' + carried +
       '<input type="hidden" name="confirm_for" value="' +
       xmlEscape(this.logoutConfirmFor(session)) + '">' +
-      '<button type="submit" name="confirm" value="yes">Sign out</button> ' +
-      '<button type="submit" name="confirm" value="no">Stay signed in' +
-      '</button></form><p class="sub">Asked because the request did not ' +
-      'prove it came from an application you are signed in to with this ' +
-      'session (RP-Initiated Logout 1.0 section 2).</p>');
+      '<button type="submit" name="confirm" value="yes">' +
+      t.html('oauthPages.logout.signOut') + '</button> ' +
+      '<button type="submit" name="confirm" value="no">' +
+      t.html('oauthPages.logout.stay') +
+      '</button></form><p class="sub">' + t.html('oauthPages.logout.why') +
+      '</p>', t, chooser);
   }
 
   // After the session has ended: the front-channel page, the return, or a
   // page saying it is done.
   private logoutFinish(req: Req, res: Res, session: Json,
                        backchannelMark: Json, returnTo: string,
-                       refusedNote: string): Json {
+                       refusedNote: string,
+                       t: ReturnType<typeof PageLocale.forPage>,
+                       chooser: string): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
@@ -11241,29 +11553,27 @@ class OAuth2Server {
       // unregistered URI and then printed it as a link on its own sign-out
       // page would be splitting a hair at the reader's expense.
       const checked = returnTo;
-      const inner = '<h1>Signed out</h1><p class="sub">OpenID Connect ' +
-        'RP-Initiated Logout 1.0, with Front-Channel Logout 1.0</p><div ' +
+      // The front- and back-channel tables are those modules' own markup,
+      // and English (#539).
+      const inner = chooser + '<h1>' +
+        t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
+        t.html('oauthPages.signedOut.frontSub') + '</p><div ' +
         'class="ok">' + (session
-          ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-            'ended. It is the session WS-Federation and SAML 2.0 share, so ' +
-            'those are signed out too.'
-          : 'There was no session to end. The cookie has been cleared ' +
-            'anyway.') +
+          ? t.html('oauthPages.signedOut.frontEnded',
+                   { username: session.user.username })
+          : t.html('oauthPages.signedOut.frontNone')) +
         '</div>' + refusedNote +
         frontchannel.render(notifications) +
         backchannel.render(backchannelRows) +
         (checked
-          ? '<h2>Return to the relying party</h2><p><a href="' +
+          ? '<h2>' + t.html('oauthPages.signedOut.returnHeading') +
+            '</h2><p><a href="' +
             xmlEscape(checked) + '">' +
             xmlEscape(checked) + '</a></p><p class="sub">' +
             (waitS > 0
-              ? 'This page returns there by itself after ' + waitS +
-                ' second' + (waitS === 1 ? '' : 's') + ', once the ' +
-                'notifications above have had time to load; the link is ' +
-                'for a browser that does not follow a refresh.'
-              : 'A link and not a redirect: the notifications above load ' +
-                'with this page, and a 302 would abandon them before they ' +
-                'were sent.') + '</p>'
+              ? t.html('oauthPages.signedOut.returnAuto',
+                       { seconds: waitS })
+              : t.html('oauthPages.signedOut.returnLink')) + '</p>'
           : '');
       // SECTION 4's RETURN (#122, 2026-09-22). The specification has the
       // provider send the browser on to post_logout_redirect_uri once the
@@ -11280,7 +11590,7 @@ class OAuth2Server {
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner, refresh));
+         .send(self.logoutPage(inner, refresh, t));
       log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
@@ -11292,13 +11602,13 @@ class OAuth2Server {
       return res.redirect(302, returnTo);
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
-    return self.logoutAnswer(res, 200, 'Signed out',
+    return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
       '<div class="ok">' + (session
-        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-          'ended, and every application signed in through it is told.'
-        : 'There was no session to end.') + '</div>' + refusedNote +
+        ? t.html('oauthPages.signedOut.ended',
+                 { username: session.user.username })
+        : t.html('oauthPages.signedOut.none')) + '</div>' + refusedNote +
       backchannel.render(backchannel.deliveriesFor(
-        session ? [session.id] : [], backchannelMark)));
+        session ? [session.id] : [], backchannelMark)), t, chooser);
   }
 
   // ---------------------------------------------------------------------------
@@ -11763,8 +12073,13 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     const body: Json = {};
 
-    const configured = stats.jwtClaims(
-      'userinfo', self.customClaimContext(base, claims, user));
+    // Gated by the token's scope (#395): a section 5.4 claim in the
+    // configured set is answered only when its scope was granted. A token
+    // UserInfo accepts is for this service's own resource server, which keeps
+    // the OpenID Connect scopes on its scope claim (RFC 9068's plan).
+    const configured = scopeClaims.gate(
+      stats.jwtClaims('userinfo', self.customClaimContext(base, claims, user)),
+      claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
       log.debug("userinfoResponse(): " + Object.keys(configured).length +
@@ -11816,7 +12131,9 @@ class OAuth2Server {
     // client already did here, so the two features meet where they should:
     // register asking for a signed or encrypted response and this endpoint
     // starts producing one for that client. See protectUserinfo() above.
-    const registered = applications.registrationOf(claims.client_id) || {};
+    // Read from the ATTRIBUTES since #290, so a client the console or the
+    // management API configured is answered the same way.
+    const registered: Json = applications.clientConfigOf(claims.client_id);
     // A PROMISE CHAIN RATHER THAN AN `async` HANDLER, deliberately. Everything
     // above this line throws synchronously on a defect and express catches a
     // synchronous throw out of a handler; an `async function` turns every one
@@ -13238,7 +13555,11 @@ class OAuth2Server {
         counts: false,
         note: 'presented a Token Request',
         fields: Object.assign(
-          { oauthClientId: String(client.client_id), oauthGrantType: grant,
+          // The grant goes on as OBSERVED, never as oauthGrantType (#289):
+          // that list is what the client may use, and the check above
+          // reads it.
+          { oauthClientId: String(client.client_id),
+            oauthGrantTypeObserved: grant,
             appAuthorizationServer: self.profileOf(req) },
           // THE SCOPE, WHERE THIS REQUEST CARRIES ONE, and it is recorded here
           // as well as at the authorization endpoint because for three grants
@@ -13534,20 +13855,21 @@ class OAuth2Server {
       return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
     }
     // RFC 7591 SECTION 2 (#120, in every mode, rcbj's decision): a client
-    // that REGISTERED its grant_types is held to them. A client_id nobody
-    // registered, and a registration naming no list, are not.
-    const registeredFlows = client.client_id
-      ? applications.registeredFlowsOf(client.client_id) : null;
-    if (registeredFlows && registeredFlows.grant_types &&
-        registeredFlows.grant_types.indexOf(
+    // that DECLARED its grant_types is held to them — by registering them or,
+    // since #289, by an administrator writing `oauthGrantType`. A client_id
+    // that declares no list is not.
+    const declaredFlows = client.client_id
+      ? applications.declaredFlowsOf(client.client_id) : null;
+    if (declaredFlows && declaredFlows.grant_types &&
+        declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {
       log.debug("Leaving the token endpoint. A grant type the client did " +
-                "not register.");
+                "not declare.");
       errorCodes.mark(res, 'STS-OAUTH-0598');
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return self.oauthError(res, 400, 'unauthorized_client',
-        'Client "' + client.client_id + '" registered grant_types ' +
-        JSON.stringify(registeredFlows.grant_types) + ', and this request ' +
+        'Client "' + client.client_id + '" declares grant_types ' +
+        JSON.stringify(declaredFlows.grant_types) + ', and this request ' +
         'is the ' + String(body.grant_type || '') + ' grant (RFC 7591 ' +
         'section 2).');
     }
@@ -13860,16 +14182,16 @@ class OAuth2Server {
                  'the client redeeming it.');
         opts.withRefresh = false;
       }
-      // RFC 7591 SECTION 2 (#120): a client that registered its grant_types
-      // without `refresh_token` gets no refresh token — RECORDED AND NOT
-      // REFUSED, for 0298's reason. Issuing one it could never redeem (the
-      // grant is refused above, 0598) is the half a token set #34 refuses to
-      // hand out.
-      if (opts.withRefresh !== false && registeredFlows &&
-          registeredFlows.grant_types &&
-          registeredFlows.grant_types.indexOf('refresh_token') < 0) {
+      // RFC 7591 SECTION 2 (#120): a client that declared its grant_types
+      // (registered, or since #289 written by an administrator) without
+      // `refresh_token` gets no refresh token — RECORDED AND NOT REFUSED, for
+      // 0298's reason. Issuing one it could never redeem (the grant is
+      // refused above, 0598) is the half a token set #34 refuses to hand out.
+      if (opts.withRefresh !== false && declaredFlows &&
+          declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('refresh_token') < 0) {
         log.info(errorCodes.tag('STS-OAUTH-0600') + 'oauth2: "' +
-                 client.client_id + '" registered no refresh_token grant, ' +
+                 client.client_id + '" declares no refresh_token grant, ' +
                  'so the ' + grant + ' grant is answered with no refresh ' +
                  'token.');
         opts.withRefresh = false;
@@ -18109,13 +18431,13 @@ class OAuth2Server {
       return undefined;
     }
     const clientId = String(caller.clientId);
-    const flows = applications.registeredFlowsOf(clientId);
+    const flows = applications.declaredFlowsOf(clientId);
     if (flows && flows.grant_types && flows.grant_types.length &&
         flows.grant_types.indexOf(deviceAuthorization.GRANT_TYPE) < 0) {
       log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Not " +
-                "a registered grant.");
+                "a declared grant.");
       return refuse('STS-OAUTH-0692', 400, 'unauthorized_client', 'client "' +
-                    clientId + '" did not register the device_code grant ' +
+                    clientId + '" did not declare the device_code grant ' +
                     '(RFC 7591 section 2).');
     }
     const scope = String(body.scope || '').trim();
@@ -19295,6 +19617,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -19479,6 +19802,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -19697,6 +20021,11 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
+      // JARM, as the POST checks it (#284): until then an update could
+      // store an authorization_*_response_alg a registration refuses.
+      applications.jarmMetadataProblem(metadata) ||
+      self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||

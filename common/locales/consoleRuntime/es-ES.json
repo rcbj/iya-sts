@@ -1,0 +1,6 @@
+{
+  "reauth.text": "Vuelve a iniciar sesión para continuar. Esta página y lo que has escrito se quedan como están, y lo que has pulsado se envía en cuanto vuelvas.",
+  "reauth.finish": "Termina de iniciar sesión en la ventana que se ha abierto.",
+  "otherPerson.waiting": "Ha iniciado sesión otra persona, así que lo que esperaba en esta página no se envió.",
+  "otherPerson.typed": "Ha iniciado sesión otra persona, así que lo que se había escrito antes en esta página no se restauró."
+}

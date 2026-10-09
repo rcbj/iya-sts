@@ -682,10 +682,11 @@ so must `admin-ui/admin.ts`.
    `authorization_signed_response_alg` — RS256 by default, PS256 under
    Advanced, an HMAC keyed by the client secret — and encrypted where the
    client registered `authorization_encrypted_response_alg` / `_enc`, to its
-   inline `jwks`, exactly as an ID Token is. The three members live in
-   `appRegistrationJson`; `applications.jarmMetadataProblem()` owns the
-   grammar (`STS-REG-0179`) and `jarm.registrationKeyProblem()` the key
-   (`STS-REG-0180`). Discovery lists the four modes and the three
+   inline `jwks`, exactly as an ID Token is. The three members are
+   attributes since #290 (`oauthAuthorization*`, read through
+   `clientConfigOf()` — common/CLAUDE.md);
+   `applications.jarmMetadataProblem()` owns the grammar (`STS-REG-0179`)
+   and `jarm.registrationKeyProblem()` the key (`STS-REG-0180`). Discovery lists the four modes and the three
    `authorization_*_values_supported` members.
 
    **NOT DONE**: JARM for the device and CIBA flows (not built here). The
@@ -1292,6 +1293,14 @@ so must `admin-ui/admin.ts`.
    reversed the path-only audience match (see 3f), and `global.publicBaseUrl`
    is the answer for a service reached under several names. A token minted
    before `at+jwt` is refused once presented; access tokens live an hour.
+
+   **WHICH IDENTITY CLAIMS A TOKEN CARRIES (#395, `common/CLAUDE.md` 3cj).**
+   Section 2.2.2 leaves them to the authorization server; here they are
+   what the RESOURCE SERVER declares (`oauthAccessTokenClaim`,
+   `resourceServerClaims()`), combined with the client's set as it chose,
+   and only what the GRANT covered (`scopeClaims.gate()` over
+   `opts.granted_scope`). `preferred_username` is no longer added to every
+   person's token; `username` is.
 
    **WHAT A TOKEN MAY BE ADDRESSED TO — `audiencePlan()`, one decision behind
    `accessTokenPlan()` in `oauth2.ts`**, which classifies each scope value
@@ -2258,8 +2267,9 @@ re-authentication in between voids it. `SameSite=Lax` keeps the sign-on cookie
 off a cross-site POST, so such a POST is ASKED rather than answered — answering
 it would clear a cookie it never saw. No script: a button needs none.
 
-**NOT DONE**: `ui_locales` is accepted and every page is English, the only
-language here (section 2 permits that). `tests/rp_initiated_logout.js` holds
+**`ui_locales` is honoured on the sign-out pages since #539**: the
+confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
+and a refusal stays English. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/vendored/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
@@ -2270,7 +2280,7 @@ metadata and honoured little of it. rcbj's answers:
 | Asked | Chosen |
 |---|---|
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
-| `grant_types` / `response_types` | Enforced in every mode, for a registered client |
+| `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
 | `initiate_login_uri` | Validated, and launched from the user portal |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
@@ -2287,19 +2297,29 @@ required for the redirect grants (`0184`), the two signing algorithms
 an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
 section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
 
-**ENFORCEMENT READS `appRegistrationJson` ONLY** (`registeredFlowsOf()`),
-because `oauthGrantType` and `oauthResponseType` also record what a client
-was OBSERVED doing — a sighting is not a registration, and a client created
-by hand declares nothing and is not restricted. A response type not
-registered is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
+**ENFORCEMENT READS THE DECLARED LISTS, `oauthGrantType` AND
+`oauthResponseType`** (`declaredFlowsOf()`), for every client however they
+were written — a registration, the console, `/admin-api` (#289, rcbj
+2026-10-07). Until #289 it read `appRegistrationJson` only, because those two
+attributes also recorded what a client was OBSERVED doing, so a client created
+by hand was restricted by nothing it declared. The sightings moved to
+`oauthGrantTypeObserved` and `oauthResponseTypeObserved`, as
+`appRedirectUriObserved` sits beside `oauthRedirectUri`, and a registration or
+RFC 7592 update REPLACES the two declared lists (a `multi` field otherwise
+only adds), so an update that narrows `grant_types` narrows the client. **An
+empty list restricts nothing** (rcbj's answer). A response type not declared
+is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
 `vetAuthorizationRequest()`, so PAR asks it too); a grant is 400
-`unauthorized_client` (`0598`) above the grant switch — and a client that
-registered no `refresh_token` grant is issued no refresh token (`0600`,
-recorded in `issue()`, for #34's half-a-token-set reason).
+`unauthorized_client` (`0598`) above the grant switch, and the device
+authorization endpoint asks the same of `device_code` (`0692`) — and a client
+that declares grants without `refresh_token` is issued no refresh token
+(`0600`, recorded in `issue()`, for #34's half-a-token-set reason).
 
 **`default_acr_values` and `default_max_age`** are `step_up.ts`'s
-`requirementOf(query, registered)`, each overridden by the request's own —
-`acr_values` or an essential `acr` for the first, `max_age` for the second
+`requirementOf(query, clientConfigOf(...))` — attributes since #290
+(`oauthDefaultAcrValues`, `oauthDefaultMaxAge`) — each overridden by the
+request's own — `acr_values` or an essential `acr` for the first, `max_age`
+for the second
 (OpenID Connect Registration section 2). `require_auth_time` needs
 nothing new — `auth_time` is carried whenever a sign-in is behind the token.
 
@@ -3193,9 +3213,9 @@ produced is one good for a day and renewable.
    encapsulation — the signature inside may be ML-DSA or SLH-DSA, the JWE
    around it is what this service can encrypt with, and adding an ML-KEM family
    would be a change to every encrypted surface at once rather than to this
-   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`,
-   the members live in `appRegistrationJson` beside
-   `id_token_signed_response_alg`, which has no attribute either); this file
+   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`;
+   the members, and `id_token_signed_response_alg`, are attributes since
+   #290 — common/CLAUDE.md); this file
    owns the key and the envelope, taking `recipientKey()` from
    `introspection_jwt.ts` so all three encrypted responses pick a key the same
    way.
@@ -5244,7 +5264,7 @@ one definition of that phrase, shared with GNAP's locations
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names
   `applications.audienceNamesEntry()` reads. The embedded debugger's api is
-  one: `sts-debugger-api`, seeded registered while the debugger is embedded,
+  one: `sts-debugger-api`, seeded registered in every install (#541),
   under `urn:sts:debugger-api:`.
 
 Every target is compared whole, because it becomes an `aud` and every

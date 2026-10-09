@@ -1,0 +1,16 @@
+{
+  "request.heading": "這是您的裝置嗎？",
+  "request.asks": "{client} 要求在顯示代碼 {code} 的裝置上為您登入。",
+  "request.access": "存取權限：<code>{scope}</code>。到期時間：{when}。",
+  "request.noScope": "（未指定）",
+  "request.warning": "<strong>只核准就在您面前</strong>、由您本人發起登入的裝置。如果有人把這個代碼傳給您，對方是在請您以您的身分登入他的裝置。",
+  "request.approve": "核准",
+  "request.deny": "拒絕",
+  "find.heading": "登入裝置",
+  "find.sub": "一台顯示代碼和此網址的電視、遊戲機或命令列，正請您改在這裡登入（RFC 8628）。",
+  "find.off": "此處已關閉這種登入方式。",
+  "find.code": "裝置上顯示的代碼",
+  "find.continue": "繼續",
+  "done.approved": "已核准：裝置正在為您登入。",
+  "done.denied": "已拒絕。"
+}

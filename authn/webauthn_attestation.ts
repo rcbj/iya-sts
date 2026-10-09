@@ -107,6 +107,9 @@ import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
 import errorCodes = require('../common/error_codes');
 import webauthnPolicy = require('./webauthn_policy');
+// The passkey policy (#527), a leaf: since #536 it asks the issuance policy
+// whether a key's attestation still signs somebody in.
+import passkeyPolicy = require('../common/passkey_policy');
 
 const { log } = helpers;
 
@@ -185,6 +188,7 @@ interface WebauthnAttestationDeps {
   pki: typeof pki;
   errorCodes: typeof errorCodes;
   policy: typeof webauthnPolicy;
+  passkeyPolicy: typeof passkeyPolicy;
   now(): number;
   // The FIDO metadata, lazily: `risk/risk_datasets.ts` loads the risk store
   // and its terms, which a verifier has no business loading at require time.
@@ -235,6 +239,7 @@ class WebauthnAttestation {
       pki: pki,
       errorCodes: errorCodes,
       policy: webauthnPolicy,
+      passkeyPolicy: passkeyPolicy,
       now: function (): number {
         return Date.now();
       },
@@ -339,6 +344,21 @@ class WebauthnAttestation {
     }
     const recorded = Object.assign({}, base, {
       verified: true, type: statement.type });
+    // THE ATTESTATION KEY IDENTIFIER (#530), kept so a sign-in can find the
+    // model in the FIDO Metadata Service again for a statement that names no
+    // AAGUID (fido-u2f), as `modelOf()` does here.
+    const keyLeaf = WebauthnAttestation.leafOf(statement);
+    recorded.attestationKeyId = statement.acki ||
+      (keyLeaf ? this.deps.pki.attestationKeyIdentifier(keyLeaf) : '');
+    // THE DEVICE SERIAL AN ENTERPRISE ATTESTATION NAMES (#532), read off the
+    // attestation certificate and recorded on the key; the passkey policy
+    // binds it to the person in `credentials.addKey()`.
+    const serial = keyLeaf ? this.deps.pki.attestationDeviceSerial(keyLeaf)
+                           : null;
+    if (serial) {
+      recorded.deviceSerial = serial.serial;
+      recorded.deviceSerialSource = serial.source;
+    }
     // STEP 23: what the FIDO Metadata Service says about the model.
     const listed = await this.modelOf(statement, base.aaguid);
     if (listed) {
@@ -411,6 +431,152 @@ class WebauthnAttestation {
              (recorded.model ? ', ' + recorded.model : '') + ').');
     log.debug("Leaving WebauthnAttestation.assessUnder(). Accepted.");
     return { ok: true, attestation: recorded };
+  }
+
+  // =========================================================================
+  // AT SIGN-IN (#530): a registered key held to the rules in force NOW.
+  //
+  // Registration is the only time a statement is in hand, so what is checked
+  // here is what was RECORDED then — the AAGUID, whether the statement was
+  // trusted, the attestation key identifier — against today's settings and
+  // today's FIDO Metadata Service: the model's compromise, its certification
+  // level and FIPS. Three decisions, recorded on the ticket:
+  //
+  //   * A KEY WITH NO TRUSTED STATEMENT — `none`, self attestation, one the
+  //     policy did not verify, or one written before #105 — FAILS any rule
+  //     that demands trust, an AAGUID list included: an AAGUID nobody
+  //     vouched for is the authenticator's say-so.
+  //   * THE METADATA IS TODAY'S, so a model reported compromised after the
+  //     key was registered is refused, as #256 downgrades a revoked chain.
+  //   * A LOOKUP THAT THROWS REFUSES (STS-AUTHN-0317): the rule is on, and
+  //     an unchecked key is not a checked one.
+  //
+  // SINCE #536 THIS FILE GATHERS THE FACTS AND THE ISSUANCE POLICY DECIDES:
+  // `signInFacts()` reads the record and asks the metadata service,
+  // `signInVerdict()` hands them to the passkey policy's question, and the
+  // built-in rules (`xacml_templates.ts`'s passkey rules) refuse in the order
+  // above. The sentences stay here, because only this file knows the model's
+  // name and the setting that demanded trust; the policy picks which one by
+  // its reason. Never rejects.
+  // =========================================================================
+  /**
+   * The facts the passkey question's attestation rules are decided on (#536),
+   * and the sentence each refusal would carry.
+   *
+   * @param key - the key's row: its `aaguid` and its `attestation` record
+   * @param gather - whether to ask the FIDO Metadata Service (only while the
+   *   passkey policy holds sign-ins to the attestation rules: a lookup per
+   *   sign-in is the cost)
+   * @returns `{ facts, settings, sentences }`
+   */
+  async signInFacts(key: Json, gather: boolean): Promise<Json> {
+    const { log, policy, errorCodes } = this.deps;
+    log.debug("Entering WebauthnAttestation.signInFacts().");
+    const settings = policy.attestationSettings();
+    const rec = (key && key.attestation) || null;
+    const aaguid = String((rec && rec.aaguid) ||
+      WebauthnAttestation.aaguidString(key && key.aaguid) || '');
+    const facts: Json = {
+      verified: !!(rec && rec.verified === true),
+      trusted: !!(rec && rec.trusted === true),
+      aaguid: aaguid.toLowerCase().replace(/-/g, '')
+    };
+    const sentences: Json = {
+      'attestation-untrusted': 'This passkey was registered ' +
+        (rec && rec.verified ? 'with an attestation that does not chain ' +
+                               'to a trust anchor'
+                             : 'without an attestation this service ' +
+                               'verified') +
+        ', and this realm now requires a trusted one (' +
+        WebauthnAttestation.demandedBy(settings) + ').',
+      'attestation-aaguid': 'This passkey\'s model (AAGUID ' +
+        (aaguid || 'none') + ') is no longer one this realm allows ' +
+        '(webauthn.attestationAllowedAaguids).',
+      'attestation-unchecked': 'This passkey\'s attestation could not be ' +
+        'checked against this realm\'s rules. Try again.'
+    };
+    const requiredRank = LEVELS.indexOf(settings.minCertificationLevel);
+    const settingsFacts: Json = {
+      attestationPolicy: settings.policy,
+      allowedAaguids: settings.allowedAaguids,
+      requiredRank: requiredRank > 0 ? requiredRank : 0,
+      requireFips: settings.requireFips === true
+    };
+    if (gather) {
+      try {
+        const metadata = this.deps.metadata();
+        let listed = aaguid
+          ? await metadata.lookupAuthenticatorBy('aaguid', aaguid) : null;
+        if (!listed && rec && rec.attestationKeyId) {
+          listed = await metadata.lookupAuthenticatorBy('acki',
+                                                        rec.attestationKeyId);
+        }
+        const m = (listed && listed.model) || {};
+        facts.listed = !!listed;
+        facts.compromised = !!m.compromised;
+        if (listed) {
+          const held = String(m.certificationLevel || '')
+            .replace(/^FIDO_CERTIFIED_?/, '') ||
+            (m.certificationLevel ? 'L1' : 'none');
+          facts.rank = Math.max(0, LEVELS.indexOf(held));
+          facts.fips = (m.statusReports || []).some(function (r: Json) {
+            return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
+          });
+        }
+        sentences['attestation-compromised'] = 'The FIDO Metadata Service ' +
+          'now reports this passkey\'s model (' + (m.description ||
+          aaguid || 'unnamed') + ') as ' +
+          WebauthnAttestation.compromisedStatuses(m).join(', ') +
+          ', so it no longer signs anybody in here.';
+        const level = WebauthnAttestation.levelProblem(listed, settings);
+        sentences['attestation-unlisted'] = level;
+        sentences['attestation-level'] = level;
+        sentences['attestation-fips'] = level;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0317') + 'webauthn: holding a ' +
+                  'passkey\'s attestation to the rules at sign-in threw: ' +
+                  ((e && e.stack) || e));
+        facts.unchecked = true;
+      }
+    }
+    log.debug("Leaving WebauthnAttestation.signInFacts(). gathered=" +
+              gather + (facts.unchecked ? ', unchecked' : ''));
+    return { facts: facts, settings: settingsFacts, sentences: sentences };
+  }
+
+  /**
+   * Holds a registered key's recorded attestation to the attestation rules in
+   * force now, and the FIDO Metadata Service as it is now (#530) — as the
+   * issuance policy decides them (#536).
+   *
+   * @param key - the key's row: its `aaguid` and its `attestation` record
+   * @param opts - `{ username, enforced }`: whose key it is, and whether the
+   *   passkey policy holds sign-ins to these rules (true when omitted, so a
+   *   caller asking for the verdict gets the rules' answer)
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying an error code
+   */
+  async signInVerdict(key: Json, opts?: Json): Promise<Json> {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering WebauthnAttestation.signInVerdict().");
+    const given = opts || {};
+    const enforced = given.enforced === undefined ? true
+                                                  : given.enforced === true;
+    const found = await this.signInFacts(key, enforced);
+    const refused = this.deps.passkeyPolicy.refusalFor('sign-in', {
+      username: String(given.username || ''),
+      attestation: found.facts,
+      attestationSettings: found.settings,
+      attestationSentences: found.sentences,
+      enforceAttestation: enforced
+    });
+    if (!refused) {
+      log.debug("Leaving WebauthnAttestation.signInVerdict(). ok=true");
+      return { ok: true };
+    }
+    log.debug("Leaving WebauthnAttestation.signInVerdict(). ok=false " +
+              refused.code);
+    return errorCodes.mark({ ok: false, why: refused.why,
+                             reason: refused.reason }, refused.code);
   }
 
   // =========================================================================
@@ -1313,6 +1479,10 @@ class WebauthnAttestation {
     if (settings.requireFips) {
       why.push('webauthn.attestationRequireFips is on');
     }
+    if (settings.enterpriseSerialAttribute) {
+      why.push('the passkey policy binds security-key serials (' +
+               settings.enterpriseSerialAttribute + ')');
+    }
     log.debug("Leaving WebauthnAttestation.demandedBy().");
     return why.join('; ');
   }
@@ -1442,6 +1612,8 @@ export = {
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   assess: slot.forward('assess'),
+  signInVerdict: slot.forward('signInVerdict'),
+  signInFacts: slot.forward('signInFacts'),
   verifyStatement: slot.forward('verifyStatement'),
   FORMATS: FORMATS,
   sameKey: WebauthnAttestation.sameKey,

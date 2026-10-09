@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import webMessages = require('./web_messages');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 
@@ -86,22 +87,26 @@ class PqcBadgeView {
    * Returns the sentence the icon's tooltip and accessible name carry.
    *
    * @param info - a classification
+   * @param t - the page's translator (#539); the default (English in node)
+   *   when absent, which is what the server-side callers —
+   *   `common/pqc_support.ts`, `admin-ui/pqc_badge.ts` — draw with
    * @returns the sentence, or '' for none
    */
-  static sentence(info: PqcInfo | null | undefined): string {
+  static sentence(info: PqcInfo | null | undefined, t?: any): string {
     if (!info) {
       return '';
     }
+    t = t || webMessages.WebTranslator.fallback();
+    // Plain text, not markup: the caller escapes it into an attribute. The
+    // label and the standard are names, so they go in as parameters.
+    const label = { label: info.label };
     const text = ({
-      pq: 'Post-quantum key pair: ' + info.label,
-      composite: 'Composite post-quantum key pair: ' + info.label +
-                 ' — both halves must verify',
-      kem: 'Post-quantum key-establishment key: ' + info.label +
-           ' — it signs nothing',
-      hybrid: 'Hybrid: a classical key whose certificate carries an ' +
-              info.label
+      pq: t.text('consolePqcBadge.sentencePq', label),
+      composite: t.text('consolePqcBadge.sentenceComposite', label),
+      kem: t.text('consolePqcBadge.sentenceKem', label),
+      hybrid: t.text('consolePqcBadge.sentenceHybrid', label)
     } as Record<string, string>)[String(info.kind)] ||
-      'Post-quantum: ' + info.label;
+      t.text('consolePqcBadge.sentenceOther', label);
     return text + (info.standard ? ' (' + info.standard + ')' : '');
   }
 
@@ -111,15 +116,16 @@ class PqcBadgeView {
    * Draws the icon for a classification.
    *
    * @param info - a classification of a key
+   * @param t - the page's translator (#539); the default when absent
    * @returns the badge's markup, or '' where there is none
    */
-  static badge(info: PqcInfo | null | undefined): string {
+  static badge(info: PqcInfo | null | undefined, t?: any): string {
     const esc = kit.esc;
     if (!info || !WORDS[info.kind as PqcKind]) {
       return '';
     }
     const kind = info.kind as PqcKind;
-    const said = PqcBadgeView.sentence(info);
+    const said = PqcBadgeView.sentence(info, t);
     return '<span class="pqc-badge pqc-' + esc(kind) + '" role="img" ' +
       'aria-label="' + esc(said) + '" title="' + esc(said) + '" style="' +
       BASE_STYLE + KIND_STYLE[kind] + '">' + LATTICE +
@@ -133,34 +139,33 @@ class PqcBadgeView {
    * Draws the key a page shows once above its tables: what each of the four
    * marks means, drawn with the marks themselves.
    *
+   * @param t - the page's translator (#539); the default when absent
    * @returns the legend's markup
    */
-  static legend(): string {
+  static legend(t?: any): string {
+    t = t || webMessages.WebTranslator.fallback();
     const sample = function (kind: string, label: string,
                              standard: string): string {
       return PqcBadgeView.badge({ kind: kind, label: label,
-                                  standard: standard });
+                                  standard: standard }, t);
     };
+    // Each mark is markup a message cannot carry, so the sentences are cut
+    // where a mark stands and the marks are put back here, in order. The
+    // first sentence's <strong> spans the mark, so it is opened and closed
+    // in code around it.
     return kit.note(
-      '<strong>' + sample('pq', 'ML-DSA-65', 'FIPS 204') + ' marks a key ' +
-      'pair ' +
-      'that uses a post-quantum algorithm</strong> — ML-DSA or SLH-DSA. ' +
+      '<strong>' + sample('pq', 'ML-DSA-65', 'FIPS 204') +
+      t.html('consolePqcBadge.legendPq') + '</strong>' +
+      t.html('consolePqcBadge.legendPqAfter') +
       sample('composite', 'ML-DSA-44 + Ed25519',
-             'draft-ietf-lamps-pq-composite-sigs') + ' is a COMPOSITE: one ' +
-      'key ' +
-      'with a post-quantum half and a classical half, both of which must ' +
-      'verify. ' + sample('kem', 'ML-KEM-768', 'FIPS 203') + ' is a ' +
-      'post-quantum key-ESTABLISHMENT key, which signs nothing. ' +
-      sample('hybrid', 'alternative ML-DSA-65 key',
-             'X.509 (2019) clause 9.8') + ' is a CLASSICAL key whose ' +
-      'certificate also carries an alternative post-quantum key — the key ' +
-      'itself is not post-quantum. Hover an icon for the algorithm. A key ' +
-      'with ' +
-      'no icon is classical (RSA, ECDSA or EdDSA). What decides it is the ' +
-      'key\'s own algorithm, not the signature on its certificate: an ML-DSA ' +
-      'key certified by an RSA CA is marked, and an RSA key certified by an ' +
-      'ML-DSA CA is not.',
-      'Post-quantum key pairs');
+             'draft-ietf-lamps-pq-composite-sigs') +
+      t.html('consolePqcBadge.legendComposite') +
+      sample('kem', 'ML-KEM-768', 'FIPS 203') +
+      t.html('consolePqcBadge.legendKem') +
+      sample('hybrid', t.text('consolePqcBadge.legendHybridLabel'),
+             'X.509 (2019) clause 9.8') +
+      t.html('consolePqcBadge.legendHybrid'),
+      t.html('consolePqcBadge.legendTitle'));
   }
 }
 

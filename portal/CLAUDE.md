@@ -23,7 +23,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
 | `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
-| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`) |
+| `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`); and, under **Administrative consents**, the global consents that answered for them at sign-in, with no button (#537) |
 | `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
 | `/portal/certificates` | authenticated | **Certificates** — ACME / SCEP enrollment credentials and the certificates issued (2026-09-13) |
@@ -788,6 +788,30 @@ Three details worth keeping:
   `dropSession()`. The `portal.signout` row is the ACT and does not count them
   again — rule 3c, read as it is everywhere else here.
 
+## A Refresh button beside Sign out (2026-10-09, #538)
+
+Every signed-in page draws **Refresh** to the left of Sign out
+(`Portal.refreshForm()`, called by `shell()`). The portal runs no script, so it
+is a GET form, and what it reloads is decided on the server from the ambient
+request (`audit.currentRequest()`):
+
+* **a GET of the page's own path** reloads that path with the parameters a
+  portal page reads to draw itself — `page`, `per`, `<list>Page`, `stepup`,
+  `gnapstepup`, `enrolled`, `named` (`Portal.REFRESH_KEPT`) — so a paged list
+  comes back on the same page. **Nothing else is carried**: not `done`, the
+  one-time message a redirect after a write carries, which would announce the
+  write again, and not a parameter no page reads. Carrying the whole query drew
+  `?user=<somebody>` back into the page, which `sts_portal_sessions`' check that
+  a signed-in page never names another account caught in its first full run;
+* **a page drawn in answer to a POST** (a refused write re-drawn with its
+  reason) loads its own path afresh and carries nothing. The browser's own
+  reload would repeat the POST, which a Refresh button must not do;
+* **a request for another path, or none**, loads the page's path.
+
+It reads `req.url`, not `originalUrl`: `app.js` puts the realm prefix back on
+every root-relative form action, as it does for every other form on the page.
+`tests/portal_refresh.js` holds all of it.
+
 ## `beginAuthentication()` and not a bare redirect
 
 **THAT RULE IS NOW ONE LAYER DOWN AND STILL DECIDES THE SHAPE.** `oidc_rp.js`
@@ -1361,9 +1385,17 @@ withdrawal does; four things are this page's:
   on their entry is refused 400 (`STS-PORTAL-0085`), the `/portal/keys`
   credential id's arrangement. `manage-own`, CSRF on the POST, and the
   withdrawal audited as `consent.revoke` with the person as actor.
-* **A scope under GLOBAL consent is not listed**: nothing about the person was
-  written, and the override is the operator's configuration of the application.
-  The page says so in a sentence rather than drawing rows with no button.
+* **A scope under GLOBAL consent is listed apart, under Administrative
+  consents, with no button (#537).** The override is the operator's
+  configuration of the application, so it is not the person's to withdraw.
+  Until #537 nothing about the person was written, so the page could only say
+  so in a sentence. Now the authorization endpoint records each scope a global
+  consent answered for the person (`oauthConsentApplied`,
+  `consent.noteApplied()`, the first time only). The section draws the records
+  that still stand (`consent.appliedConsentsOf()`): the application still
+  carries the global consent, and the person has not also agreed to the scope
+  themselves. It is not paged, because global consent is configured on a
+  handful of applications. A sign-in made before #537 recorded nothing.
 * **No script, real forms**, paged by application (twenty per page). The
   console's and the API's counterpart of *Withdraw everything for this
   application* is `revoke-application-consent` (rule 7).
@@ -1482,8 +1514,8 @@ lesson is kept by sending *Create a passkey* with NO attachment, only hints
 (see *The passkey page*, above). The paragraph is kept for why.
 
 **AND `/portal/keys` ASKS WHERE THE KEY LIVES (2026-09-26).** The page asked for
-"a security key" and let the browser choose, and with `webauthn.residentKey` at
-`discouraged` Chrome and Edge offered a USB key or a phone and never the
+"a security key" and let the browser choose, and with `webauthn.residentKey` (the
+passkey policy's since #527) at `discouraged` Chrome and Edge offered a USB key or a phone and never the
 device's own authenticator — so nothing a person enrolled could be linked. The
 form now offers *Built into this device* (a platform authenticator and a
 discoverable credential, `preferred` unless the setting says `required`) and *A

@@ -1,0 +1,14 @@
+{
+  "heading": "Tus identificadores autoemitidos",
+  "sub": "Una billetera puede iniciar tu sesión con un ID Token que firma con su propia clave (Self-Issued OpenID Provider v2). Nadie responde por esa clave, así que solo inicia la sesión de la persona que la registró aquí.",
+  "subject": "Sujeto",
+  "label": "Etiqueta",
+  "enrolled": "Registrado",
+  "remove": "Quitar",
+  "none": "No has registrado ninguno.",
+  "enrol": "Registrar una billetera",
+  "enrolNote": "Se le pide a tu billetera un ID Token autoemitido, y la clave que lo firmó se registra para ti: demuestras que la posees; no se escribe nada.",
+  "off": "El inicio de sesión con un identificador autoemitido está desactivado aquí, así que no se puede registrar ninguna billetera desde esta página. Las claves de arriba siguen registradas.",
+  "doneEnrolled": "La clave de tu billetera está registrada. A partir de ahora inicia tu sesión.",
+  "doneRemoved": "Esa clave ya no inicia tu sesión."
+}

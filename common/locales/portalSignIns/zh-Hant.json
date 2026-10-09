@@ -1,0 +1,23 @@
+{
+  "heading": "您最近的登入",
+  "sub": "每次登入您的帳戶時，都會對照您平時的登入方式，檢查它看起來有多不尋常——來自哪裡、使用什麼裝置。如果其中有一次不是您本人，請告訴我們：您帳戶上的所有工作階段會立即結束，而且您應該變更密碼。",
+  "none": "過去 {days, plural, other {# 天}}內沒有評估過您的任何登入。",
+  "when": "時間",
+  "from": "來源",
+  "with": "裝置",
+  "through": "途徑",
+  "risk": "風險",
+  "wasItYou": "是您本人嗎？",
+  "nowhere": "資料集未標明的地點",
+  "deviceOn": "{os} 上的 {family}",
+  "noDevice": "未命名的裝置",
+  "level": "{level, select, LOW {低} MEDIUM {中} HIGH {高} UNSCORED {未評分} other {{level}}}",
+  "thisSession": "本次工作階段",
+  "saidYes": "您已確認這是您本人。",
+  "saidNo": "<strong>您已表示這不是您本人。</strong>",
+  "yes": "是我本人",
+  "no": "不是我",
+  "doneDenied": "謝謝。您帳戶上的所有工作階段（包括本次工作階段）正在結束，您使用的應用程式也正在收到通知。請重新登入，並在 {path} 變更您的密碼。",
+  "doneConfirmed": "謝謝——已記錄為您本人。",
+  "doneConfirmedLow": "謝謝——已記錄為您本人。您帳戶的風險已恢復為低。"
+}

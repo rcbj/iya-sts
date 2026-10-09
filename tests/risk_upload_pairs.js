@@ -24,6 +24,10 @@
 //      left as it was.
 // ===========================================================================
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({ name: 'risk_upload_pairs',
   level: process.env.LOG_LEVEL || 'info' });
 
@@ -69,7 +73,8 @@ module.exports = {
     const ConsoleRuntime = require('../admin-ui/web_runtime');
     const { view, catalogue } = catalogueView();
 
-    const select = RiskPage.pairSelect(view, 'risk-upload-pair');
+    const select = RiskPage.pairSelect(view, 'risk-upload-pair',
+      require('../admin-ui/web_kit').context({}, true).t);
     t.check(/name="dataset\|format"/.test(select) &&
             !/name="format"/.test(select) && !/name="dataset"/.test(select),
             'A1. one select, named dataset|format, and no separate pair');
@@ -87,7 +92,8 @@ module.exports = {
             Object.keys(catalogue).length,
             'A3. a group per dataset');
 
-    const guide = RiskPage.pairGuide(view);
+    const guide = RiskPage.pairGuide(view,
+      require('../admin-ui/web_kit').context({}, true).t);
     t.check(valid.every(function (pair) {
       const parts = pair.split('|');
       return guide.indexOf('<code>' + parts[0] + '</code>') >= 0 &&

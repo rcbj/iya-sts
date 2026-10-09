@@ -422,7 +422,7 @@ async function theRealmRegistryWorks() {
     description: "Created by tests/sts_admin_api_operations.js; LEFT IN " +
                  "PLACE on purpose, so a failed run can be read afterwards.",
     domain: REALM_DOMAIN,
-    overrides: { "saml2.entityId": "urn:test:" + REALM + ":idp" }
+    overrides: { "saml.organizationName": "Org " + REALM }
   }, "created the throwaway realm", true);
   assert.strictEqual(created.realm, REALM,
     "the create should name the realm it made.");
@@ -435,7 +435,7 @@ async function theRealmRegistryWorks() {
 
   // THE REALM'S DOMAIN (2026-09-18): on the row, rooting the realm's own
   // directory tree, and the base of the names seeded from it — except where
-  // the create's own overrides named one, which is the saml2.entityId above.
+  // the create's own overrides named one, which is saml.organizationName above.
   assert.strictEqual(row.domain, REALM_DOMAIN,
     "the create's `domain` should be on the row; it says " + row.domain);
   assert.strictEqual(row.baseDn, "dc=" + REALM_DOMAIN.split(".").join(",dc="),
@@ -446,9 +446,10 @@ async function theRealmRegistryWorks() {
   assert.strictEqual(realmSetting(row, "krb5.realm"),
     REALM_DOMAIN.toUpperCase(),
     "and its Kerberos realm should be the domain in capitals.");
-  assert.strictEqual(realmSetting(row, "saml11.providerId"),
-    "urn:" + REALM_DOMAIN + ":idp:saml11",
-    "and an entity id the create did not name should be a URN built from it.");
+  // #523: no SAML, WS-Trust or WS-Federation name is seeded any more —
+  // each is the realm's OAuth issuer, which is not a setting.
+  assert.strictEqual(realmSetting(row, "saml11.providerId"), undefined,
+    "no providerID should be seeded onto a realm since #523.");
   await refused("/realms/update", { id: REALM, domain: "moved." +
                                     REALM_DOMAIN },
     /fixed when the realm is created/, "a change of the realm's domain");
@@ -459,8 +460,8 @@ async function theRealmRegistryWorks() {
     /is already the/, "a second realm with the same domain");
   await refused("/realms/create", { id: REALM + "-bad", domain: "localhost" },
     /at least two labels/, "a domain of one label");
-  assert.strictEqual(realmSetting(row, "saml2.entityId"),
-    "urn:test:" + REALM + ":idp",
+  assert.strictEqual(realmSetting(row, "saml.organizationName"),
+    "Org " + REALM,
     "THE `overrides` FIELD OF createRealm MUST REACH THE REALM. It is " +
     "documented, exampled and validated, and the shared realmsAction() " +
     "dropped it for months while answering 200 — mgmt-api/CLAUDE.md records " +
@@ -477,31 +478,31 @@ async function theRealmRegistryWorks() {
   assert.strictEqual(config.body.realm, REALM,
     "the configuration read under /realm/" + REALM + " should say it is that " +
     "realm's; it said " + config.body.realm);
-  assert.strictEqual(settingValue(config.body, "saml2.entityId"),
-    "urn:test:" + REALM + ":idp",
+  assert.strictEqual(settingValue(config.body, "saml.organizationName"),
+    "Org " + REALM,
     "and the override the realm was created with should be the effective " +
-    "value of saml2.entityId inside it.");
+    "value of saml.organizationName inside it.");
 
   await ok("/realms/update", { id: REALM, description: "Updated by the test." },
     "updated the realm", true);
   assert.strictEqual((await realmRow()).description, "Updated by the test.",
     "`update` should change the description on the row.");
 
-  await ok("/realms/set", { id: REALM, key: "saml.issuer",
-                            value: "urn:test:" + REALM + ":issuer" },
+  await ok("/realms/set", { id: REALM, key: "saml.organizationName",
+                            value: "Set " + REALM },
     "set a realm setting", true);
-  assert.strictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":issuer",
+  assert.strictEqual(realmSetting(await realmRow(), "saml.organizationName"),
+    "Set " + REALM,
     "`set` should put the value on the realm's own settings.");
 
-  await ok("/realms/unset", { id: REALM, key: "saml.issuer" },
+  await ok("/realms/unset", { id: REALM, key: "saml.organizationName" },
     "unset a realm setting", true);
-  // `unset` puts the SEEDED value back rather than removing the row: six
-  // settings are seeded onto every realm at create time, because a realm whose
-  // issuer was the default realm's would mint assertions the two could not be
-  // told apart by. So what must change is the VALUE, not the row's presence.
-  assert.notStrictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":issuer",
+  // `unset` may put a SEEDED value back rather than remove the row, for the
+  // settings seeded onto every realm at create time; so what must change is
+  // the VALUE, not the row's presence.
+  assert.notStrictEqual(realmSetting(await realmRow(),
+                                     "saml.organizationName"),
+    "Set " + REALM,
     "`unset` should take the value this test set back off the realm; it is " +
     "still there.");
 
@@ -1804,6 +1805,94 @@ async function theObservedReturnAddressesAreDecided() {
            "then delivered to in product, and the second discarded; both " +
            "operations read back through the drill-down.");
   log.debug("Leaving theObservedReturnAddressesAreDecided().");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DECLARES IS WHAT A CLIENT MAY USE (#289, 2026-10-07).
+//
+// Until #289 `oauthGrantType` and `oauthResponseType` restricted only a client
+// that registered itself at /oauth2/register; on an entry made here they were
+// a record, and a sighting added to them whatever the client used. Now both
+// are declarations the endpoints hold every client to, in every mode, and the
+// sightings go to `oauthGrantTypeObserved` / `oauthResponseTypeObserved`,
+// which no door may write. Each refusal is told apart from the one the
+// request would meet without the rule: a made-up refresh token is
+// invalid_grant to a client allowed the grant, and a `code` request with PKCE
+// and a registered redirect is answered with a sign-in, not an error.
+// ---------------------------------------------------------------------------
+async function theDeclaredFlowsAreEnforced() {
+  log.debug("Entering theDeclaredFlowsAreEnforced().");
+  log.info("=== Applications: declared grant and response types are " +
+           "enforced (#289) ===");
+  const client = "declared-flows-" + REALM;
+  await ok("/applications/create", {
+    identifier: client, name: client, protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["client_credentials"],
+              oauthRedirectUri: [MINT_REDIRECT_URI],
+              oauthResponseType: ["code id_token"] }
+  }, "created a client declaring client_credentials and `code id_token`");
+  const token = function (params) {
+    return common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(Object.assign({ client_id: client,
+        client_secret: MINT_CLIENT_SECRET }, params)).toString()
+    });
+  };
+
+  const allowed = await token({ grant_type: "client_credentials" });
+  assert.strictEqual(allowed.status, 200,
+    "the declared grant should be answered; client_credentials answered " +
+    allowed.status + " " + String(allowed.raw).slice(0, 200));
+  const undeclared = await token({ grant_type: "refresh_token",
+                                   refresh_token: "not-a-refresh-token" });
+  assert.strictEqual(undeclared.status, 400,
+    "a grant the client did not declare should be refused with 400; the " +
+    "refresh_token grant answered " + undeclared.status);
+  assert.strictEqual((undeclared.body || {}).error, "unauthorized_client",
+    "and refused as unauthorized_client (RFC 6749 section 5.2), before the " +
+    "refresh token is read — invalid_grant here means oauthGrantType " +
+    "restricted nothing. It said " + String(undeclared.raw).slice(0, 200));
+
+  const pair = registry.pkce();
+  const asked = await fetch(base + "/realm/" + REALM + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: client,
+      redirect_uri: MINT_REDIRECT_URI, scope: "openid", state: "s-289",
+      code_challenge: pair.challenge,
+      code_challenge_method: pair.method }).toString(),
+    { redirect: "manual" });
+  const location = asked.headers.get("location") || "";
+  // TWO CORRECT ANSWERS, AND THE MODE DECIDES WHICH. With nobody signed in,
+  // RFC 9700 section 4.11.2 forbids redirecting an error, so in RFC 9700
+  // mode (which product mode implies) the authorization endpoint draws a 400
+  // page whose LINK carries the same redirect; outside it the error is a 302
+  // to the redirect URI. Either must name the client's own redirect URI and
+  // unauthorized_client (RFC 6749 section 4.1.2.1).
+  const page = location ? "" : await asked.text();
+  const link = (new RegExp('href="(' + MINT_REDIRECT_URI
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '[^"]*)"').exec(page) ||
+                [])[1] || "";
+  const target = location ||
+    (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
+  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+            /[?&#]error=unauthorized_client/.test(target),
+    "a response type the client did not declare should be sent back to its " +
+    "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +
+    "redirect or, with nobody signed in in RFC 9700 mode, by a page linking " +
+    "to it; the authorization endpoint answered " + asked.status + " " +
+    (location || page.replace(/\s+/g, " ")).slice(0, 300));
+
+  // The sightings are records, not declarations: no door writes them.
+  await refused("/applications/add",
+    { application: client, attribute: "oauthGrantTypeObserved",
+      value: "password" },
+    /oauthGrantTypeObserved|not editable|DERIVED/i,
+    "writing an observed grant type by hand");
+  await ok("/applications/forget", { application: client },
+           "forgot the client");
+  log.debug("Leaving theDeclaredFlowsAreEnforced().");
 }
 
 async function application(identifier) {
@@ -4967,7 +5056,7 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 
   const beforeRealm = await settleThenStatus(afterProcess);
   await ok("/realms/set",
-    { id: REALM, key: "saml.issuer", value: "urn:test:" + REALM + ":stored" },
+    { id: REALM, key: "saml.organizationName", value: "Stored " + REALM },
     "set a REALM setting to be persisted", true);
   const afterRealm = await settleThenStatus(beforeRealm);
   const wasRealm = comparable(beforeRealm, afterRealm);
@@ -4983,8 +5072,8 @@ async function theConfigurationChangeReachesTheStore(candidate) {
   assert.ok(afterRealm.realmsTracked >= 1,
     "and the store should be tracking at least this realm; it tracks " +
     afterRealm.realmsTracked);
-  assert.strictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":stored",
+  assert.strictEqual(realmSetting(await realmRow(), "saml.organizationName"),
+    "Stored " + REALM,
     "and the value that reached the store should be the one the registry " +
     "holds. The counters say a write happened; the registry row says it was " +
     "this write, which is the difference between a store that is working and " +
@@ -5528,6 +5617,7 @@ async function test() {
     await everyReadAnswersAboutThisRealm(doc);
     await theApplicationsRegistryRoundTrips();
     await theObservedReturnAddressesAreDecided();
+    await theDeclaredFlowsAreEnforced();
     await theDelegatedPermissionsRoundTrip();
     await theClaimSetDoorsRoundTrip();
     await theFederationRegisterRoundTrips();

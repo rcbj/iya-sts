@@ -136,6 +136,8 @@ import credentials = require('../common/credentials');
 // neither move a route nor close a cycle — and `credentials.js` above already
 // requires it, so this is a second reader of one module rather than a new edge.
 import webauthnPolicy = require('../authn/webauthn_policy');
+// The passkey policy (#528): whether this realm still takes a synced key.
+import passkeyPolicy = require('../common/passkey_policy');
 // The mechanism itself, for the settings this page prints and the otpauth URI
 // and QR code it draws. A LIBRARY (rule 3) that registers no route, and
 // `credentials.js` above already requires it — so this is a second reader of
@@ -187,6 +189,16 @@ import oidcRp = require('../common/oidc_rp');
 import realmChooser = require('../common/realm_chooser');
 // The realms, for where a sign-in link goes (`signInHref()`). A leaf here.
 import realms = require('../common/realms');
+// THE LANGUAGE OF A PORTAL PAGE (#539 phase 3). Libraries: the catalogs and
+// the request's language, with the chooser.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
+
+type Translator = InstanceType<typeof i18n.Translator>;
+
+// The portal's own client id (`sts-user-portal`), from the one table of the
+// hosted surfaces, so a locale policy profile naming it applies here (#539).
+const PORTAL_APPLICATION = String(oidcRp.SURFACES.portal.clientId);
 // The access-control gate. A LEAF (rule 3), armed by xacml/xacml_access_pep.ts
 // at 23c — before that line every check is allowed, which is what a process
 // without the XACML family does.
@@ -368,7 +380,8 @@ const CSS =
   // below, which is right there and wrong here.
   '.pagehead{display:flex;gap:12px;align-items:start;' +
   'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
-  'h1{margin:0}.pagehead form{margin:0}.pagehead ' +
+  'h1{margin:0}.pagehead form{margin:0}.pagehead .acts{display:flex;' +
+  'gap:8px;align-items:start}.pagehead ' +
   'button{margin-top:0}p.sub{color:#666;font-size:.9em;margin:0 0 ' +
   '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
   '4px}input[type=text],input[type=password]{width:100%;padding:9px ' +
@@ -564,7 +577,11 @@ const CSS =
 // there is no page behind it. It is a heading over the pages it groups.
 // ===========================================================================
 const NAV = [
-  { title: 'Your account',
+  // `key` names the section in the `portal` catalog (#539): its title and
+  // `what` are `portal.section.<key>.title` and `.what`; a page's label and
+  // heading are `portal.nav.<slug>.label` and `.heading`, its slug read from
+  // the path (`navSlug()`). The English here is the catalog's English.
+  { key: 'account', title: 'Your account',
     what: 'What this identity provider knows about you, and where you can ' +
           'use it.',
     items: [
@@ -607,7 +624,7 @@ const NAV = [
       { path: BASE + '/email', label: 'Email',
         heading: 'Your email address and messages' }
     ] },
-  { title: 'How you sign in',
+  { key: 'signIn', title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
     items: [
       { path: BASE + '/password', label: 'Password',
@@ -798,6 +815,15 @@ const REMOVE_KEY_FORM = vz.object({
 const RENAME_KEY_FORM = vz.object({
   credentialId: vt.opt(vt.base64url),
   label: vz.string().max(200).optional(),
+  csrf_token: vt.opt(vt.token)
+});
+
+// THE LANGUAGE ON THE PERSON'S OWN ENTRY (#539). One field, the tag — empty
+// for "use my browser's language", which removes the attribute — held to a
+// language tag's length here and to a catalog that answers it by the handler.
+// No username, this file's rule: the entry written is the session's.
+const LANGUAGE_FORM = vz.object({
+  lang: vz.string().max(64).optional(),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -1395,12 +1421,18 @@ class Portal {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  private page(title, inner, wide?) {
+  private page(title, inner, wide?, translator?: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.page().");
+    // `lang` and `dir` (#539): the page's translator. A page drawn without
+    // one is a page that was not translated — a refusal or an error page,
+    // which stay English by rcbj's decision on #539 — so it says `en`
+    // rather than claiming the language of a chooser it does not honour.
+    const t = translator || i18n.translator(['en']);
     log.debug("Leaving Portal.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + self.esc(title) + ' — IYA STS</title><style>' + CSS +
       '</style></head><body><div class="wrap' + (wide ? ' wide' : '') + '">' +
@@ -1456,27 +1488,82 @@ class Portal {
   // site: a renamed page would otherwise be renamed in the column and not in
   // the heading over it, and the two would be right for exactly as long as
   // nobody looked.
-  private headingFor(active) {
+  // THE PORTAL'S TRANSLATOR (#539 phase 3): the portal's own application,
+  // so a locale policy profile naming `sts-user-portal` applies, and the
+  // person signed in, whose own language ranks above the browser's. The
+  // sub-modules are handed this through their context, so the application
+  // id is spelled once.
+  /**
+   * Returns the translator a portal page is drawn with.
+   *
+   * @param session - the portal session, or null on a page nobody is signed
+   *   in for (activation, a password reset)
+   * @returns the translator
+   */
+  translatorFor(session?: any): Translator {
+    const { log } = this.deps;
+    log.debug("Entering Portal.translatorFor().");
+    const t = PageLocale.forPage({
+      application: PORTAL_APPLICATION,
+      username: session && session.user ? String(session.user.username || '')
+                                         : ''
+    });
+    log.debug("Leaving Portal.translatorFor(). " + t.locale);
+    return t;
+  }
+
+  /**
+   * The catalog slug of a portal page: its path after `/portal`, with `/`
+   * as `.`, and `overview` for `/portal` itself.
+   *
+   * @param path - the page's path
+   * @returns the slug
+   */
+  static navSlug(path: string): string {
+    const rest = String(path || '').slice(BASE.length).replace(/^\/+/, '');
+    return rest ? rest.replace(/\//g, '.') : 'overview';
+  }
+
+  private headingFor(active, t?: Translator) {
     const { log } = this.deps;
     log.debug("Entering Portal.headingFor().");
     const row =
         NAV_PAGES.filter(function (one) { return one.path === active; })[0];
     log.debug("Leaving Portal.headingFor().");
-    return row ? row.heading : 'Your account';
+    if (!t) {
+      return row ? row.heading : 'Your account';
+    }
+    // A composed key, so it is built first: the catalog test's scan reads
+    // only a literal key, quoted in the call, and the table is held to the
+    // catalog by its `portal` check instead.
+    const key = 'portal.nav.' + Portal.navSlug(row ? row.path : BASE) +
+      '.heading';
+    return t.text(key);
   }
 
-  private navBar(active) {
+  private navBar(active, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug('Entering Portal.navBar(). active=' + active);
-    const html = '<nav aria-label="Account pages">' +
+    // The keys are composed from the table (a section's `key`, a page's
+    // slug), so `tests/i18n_catalogs.js`'s scan cannot see them; its
+    // `portal` namespace check holds the table to the catalog instead.
+    const label = function (item) {
+      const key = 'portal.nav.' + Portal.navSlug(item.path) + '.label';
+      return t.html(key);
+    };
+    const html = '<nav aria-label="' +
+      self.esc(t.text('portal.shell.navAria')) + '">' +
       NAV.map(function (section) {
         const here = section.items.filter(function (item) {
           return item.path === active;
         }).length > 0;
+        const what = 'portal.section.' + section.key + '.what';
+        const title = 'portal.section.' + section.key + '.title';
         return '<div class="navsec' + (here ? ' open' : '') + '">' +
-          '<p class="navhead" title="' + self.esc(section.what) + '">' +
-          self.esc(section.title) + '</p><ul>' +
+          '<p class="navhead" title="' + self.esc(t.text(what)) + '">' +
+          t.html(title) +
+          '</p><ul>' +
           section.items.map(function (item) {
             if (item.path === active) {
               // A SPAN AND NOT A LINK, and no `autofocus` on it — see the
@@ -1485,15 +1572,91 @@ class Portal {
               // tells a screen reader the same thing the colour tells everybody
               // else.
               return '<li><span class="here" aria-current="page">' +
-                     self.esc(item.label) + '</span></li>';
+                     label(item) + '</span></li>';
             }
             return '<li><a href="' + self.esc(item.path) + '">' +
-                   self.esc(item.label) +
+                   label(item) +
                    '</a></li>';
           }).join('') + '</ul></div>';
       }).join('') + '</nav>';
     log.debug('Leaving Portal.navBar(). ' + NAV.length + ' section(s).');
     return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REFRESH BUTTON (#538), beside Sign out on every signed-in page. The
+  // portal runs no script, so it is a GET form, and what it reloads is
+  // decided here:
+  //
+  //   * a page drawn for a GET of its own path reloads that path with the
+  //     parameters a portal page reads to draw itself — the paging ones
+  //     (`page`, `per`, `<list>Page`) and the step markers (`stepup`,
+  //     `gnapstepup`, `enrolled`, `named`) — so a paged list comes back on
+  //     the same page. Nothing else is carried: not `done`, the one-time
+  //     message a redirect after a write carries, which would announce the
+  //     write again, and not a parameter no page reads. A query a link put on
+  //     the URL (`?user=somebody`) is otherwise drawn back into the page,
+  //     which `sts_portal_sessions` holds a signed-in page to never do;
+  //   * a page drawn in answer to a POST (a refused write re-drawn with its
+  //     reason) loads its own path afresh: repeating the POST is the browser's
+  //     own reload, and is exactly what a Refresh button must not do.
+  //
+  // The request is the ambient one (`audit.currentRequest()`); `req.url`, not
+  // `originalUrl`, because the realm prefix is put back on every root-relative
+  // action by `app.js`'s rewrite, as for every other form on the page.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the Refresh button: a GET form reloading the page it is on.
+   *
+   * @param active - the page's path
+   * @returns the form's HTML
+   */
+  // The parameters the Refresh button carries besides `<list>Page`.
+  static readonly REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup',
+                                  'enrolled', 'named'];
+
+  // THE PARAMETERS A SIGNED-IN PAGE IS DRAWN AGAIN WITH, for both the
+  // Refresh button and the language chooser's return path (#539): the paging
+  // ones and the step markers of a GET of the page's own path, and nothing
+  // else. Any other parameter is one no page reads, and carrying it would
+  // draw a value a link put on the URL — `?user=somebody` — back into the
+  // page (`sts_portal_sessions` holds a signed-in page to never do that).
+  keptParams(active): string[][] {
+    const { log, audit } = this.deps;
+    log.debug('Entering Portal.keptParams().');
+    const req = audit.currentRequest();
+    let fields: string[][] = [];
+    if (req && String(req.method || '').toUpperCase() === 'GET') {
+      const url = new URL(String(req.url || ''), 'http://portal.invalid');
+      if (url.pathname === active) {
+        fields = Array.from(url.searchParams.entries())
+          .filter(function (pair) {
+            return Portal.REFRESH_KEPT.indexOf(pair[0]) >= 0 ||
+              /^[a-z][A-Za-z]*Page$/.test(pair[0]);
+          });
+      }
+    }
+    log.debug('Leaving Portal.keptParams(). ' + fields.length +
+              ' parameter(s) kept.');
+    return fields;
+  }
+
+  refreshForm(active, translator?: Translator) {
+    const self = this;
+    const t = translator || this.translatorFor(null);
+    const { log } = this.deps;
+    log.debug('Entering Portal.refreshForm().');
+    const fields = self.keptParams(active);
+    log.debug('Leaving Portal.refreshForm(). ' + fields.length +
+              ' parameter(s) kept.');
+    return '<form method="get" action="' + self.esc(active) + '">' +
+      fields.map(function (pair) {
+        return '<input type="hidden" name="' + self.esc(pair[0]) +
+          '" value="' + self.esc(pair[1]) + '">';
+      }).join('') +
+      '<button class="secondary" title="' +
+      self.esc(t.text('portal.shell.refreshTitle')) +
+      '">' + t.html('portal.shell.refresh') + '</button></form>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1524,33 +1687,125 @@ class Portal {
     const self = this;
     const { log, websecurity } = this.deps;
     log.debug('Entering Portal.shell(). active=' + active);
-    const heading = self.headingFor(active);
+    const t = self.translatorFor(session);
+    const heading = self.headingFor(active, t);
     const csrf = websecurity.field(session.id);
     const html = self.page(heading,
       // THE HEADING AND THE SIGN OUT BUTTON IN ONE ROW, so that the control is
       // where a person looks for it — the top corner of the page they are on.
       // The wider sign-out is a card at the foot of the Overview page and says
       // which of the two reaches further; both are drawn, neither is quiet.
+      // THE LANGUAGE CHOOSER (#539) beside Refresh and Sign out: on every
+      // signed-in page, returning to the page it is on (or, after a POST, to
+      // that page's own path).
       '<header class="pagehead"><div><h1>' + self.esc(heading) + '</h1>' +
-      '<p class="who">Signed in as <strong>' +
-      self.esc(session.user.username) + '</strong></p></div>' +
+      '<p class="who">' + t.html('portal.shell.signedInAs',
+        { name: session.user.username }) + '</p></div>' +
+      // The chooser is the LAST of the three (#539): Refresh and Sign out keep
+      // the order `tests/portal_refresh.js` holds them to.
+      '<div class="acts">' + self.refreshForm(active, t) +
       '<form method="post" action="' + BASE + '/signout">' + csrf +
       '<button class="secondary" title="' +
-      self.esc('Ends this portal session and the sign-on session behind it — ' +
-          'this browser\'s sessions. It does not revoke tokens or tickets ' +
-          'already issued to applications; Sign out of everything, on the ' +
-          'Overview page, does.') +
-      '">Sign out</button></form></header>' +
+      self.esc(t.text('portal.shell.signOutTitle')) +
+      '">' + t.html('portal.shell.signOut') + '</button></form>' +
+      PageLocale.chooser(t, realms.currentPrefix(),
+        self.chooserReturn(active)) + '</div>' +
+      '</header>' +
       '<div class="shell">' +
-      '<div class="side"><div class="card">' + self.navBar(active) +
+      '<div class="side"><div class="card">' + self.navBar(active, t) +
       '</div></div>' +
       '<div class="main">' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
-      (message ? '<div class="ok">' + self.esc(message) + '</div>' : '') +
+      (message ? '<div class="ok">' + self.esc(self.doneText(t, message)) +
+                 '</div>' : '') +
       cards +
-      '</div></div>', true);
+      '</div></div>', true, t);
     log.debug('Leaving Portal.shell(). ' + heading + '.');
     return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SUCCESS MESSAGE, IN THE READER'S LANGUAGE (#539 phase 3).
+  //
+  // A write here answers 303 with what it did on the query string (`?done=`),
+  // in English, and the page it lands on reads it back. **The URL is left as
+  // it was** — tests, bookmarks and the Refresh button's rule all read it —
+  // and the sentence is translated where it is DRAWN, by recognising the
+  // English this file wrote: each one a literal key, its variable part (a
+  // count, a name) carried across as a parameter. `language` is the one
+  // `done` that is a word rather than a sentence, written by `POST
+  // /portal/language`.
+  //
+  // **A `done` this does not recognise is drawn as written**, which is what
+  // every page did before: a sub-module's own message, and the crafted
+  // `?done=<anything>` the PORTAL_QUERY note talks about, escaped as ever.
+  // ---------------------------------------------------------------------------
+  /**
+   * Translates a success message this file wrote, or answers it unchanged.
+   *
+   * @param t - the page's translator
+   * @param message - the `done` text
+   * @returns the message as text, unescaped
+   */
+  doneText(t: Translator, message): string {
+    const { log } = this.deps;
+    log.debug("Entering Portal.doneText().");
+    const said = String(message);
+    // [the English this file wrote, its translation]; the first match wins.
+    const fixed: Array<[string, string]> = [
+      ['language', t.text('portal.done.language')],
+      ['Your password is changed.', t.text('portal.done.password')],
+      ['Your authenticator app is removed.',
+       t.text('portal.done.totpRemoved')],
+      ['Email is now your second factor, after your password.',
+       t.text('portal.done.emailOn')],
+      ['Email is no longer a second factor for you.',
+       t.text('portal.done.emailOff')],
+      ['Your authenticator app is set up. You will be asked for a code the ' +
+       'next time you sign in.', t.text('portal.done.totpSetUp')],
+      ['Your authenticator app is set up. You will be asked for a code the ' +
+       'next time you sign in. You hold no recovery codes — generate a set ' +
+       'below, before you need it.', t.text('portal.done.totpSetUpNoCodes')],
+      ['Those codes were thrown away and never stored. Whatever you had ' +
+       'before is unchanged.', t.text('portal.done.codesDiscarded')],
+      ['That TLS client certificate is revoked. A browser presenting it is ' +
+       'refused from now on.', t.text('portal.done.tlsRevoked')],
+      ['Your passkey is ready. Create a second one on a different device ' +
+       'or a security key, so that losing this one is not a locked account.',
+       t.text('portal.done.passkeyOne')],
+      ['That passkey is removed. If it was saved in a password manager, ' +
+       'you can delete it there too.', t.text('portal.done.passkeyRemoved')],
+      ['You asked to stop sharing security events. It takes effect after ' +
+       'the waiting period, and you can cancel until then.',
+       t.text('portal.done.riscStopping')],
+      ['Security events about your account are shared.',
+       t.text('portal.done.riscShared')],
+      ['Done.', t.text('portal.done.done')]
+    ];
+    const exact = fixed.filter(function (pair) {
+      return pair[0] === said;
+    })[0];
+    let out = exact ? exact[1] : null;
+    // The four with a variable part: a count, a profile, a name.
+    let found = /^Your (\d+) recovery codes are saved\. Only their hashes are stored, so this service can never show them to you again — keep the copy you made\.$/.exec(said);
+    if (out === null && found) {
+      out = t.text('portal.done.codesSaved', { n: Number(found[1]) });
+    }
+    found = /^Your (RFC \d+) signing key is off\. Anything still signing with it will be refused from now on\.$/.exec(said);
+    if (out === null && found) {
+      out = t.text('portal.done.keyOff', { rfc: found[1] });
+    }
+    found = /^Your passkey is ready\. You hold (\d+) — if one is lost the others still sign you in\.$/.exec(said);
+    if (out === null && found) {
+      out = t.text('portal.done.passkeyMany', { n: Number(found[1]) });
+    }
+    found = /^Renamed to "([\s\S]*)"\.$/.exec(said);
+    if (out === null && found) {
+      out = t.text('portal.done.renamed', { name: found[1] });
+    }
+    log.debug("Leaving Portal.doneText(). " +
+              (out === null ? "Drawn as written." : "Translated."));
+    return out === null ? said : out;
   }
 
   // ---------------------------------------------------------------------------
@@ -1563,20 +1818,57 @@ class Portal {
   // they press the button are one rule. In development mode nothing is checked,
   // and the note says that rather than listing rules nobody applies.
   // ---------------------------------------------------------------------------
-  private passwordRulesNote(username) {
+  private passwordRulesNote(username, translator?: Translator) {
     const self = this;
     const { credentials, log } = this.deps;
     log.debug("Entering Portal.passwordRulesNote().");
+    const t = translator || self.translatorFor(null);
     const said = credentials.passwordRules(username);
+    // The rules themselves are `credentials.passwordRules()`' own phrases and
+    // go in as a parameter (#539): they are the policy's words, drawn as data.
     if (!said.enforced) {
       log.debug("Leaving Portal.passwordRulesNote().");
-      return '<p class="note">This service is in development mode and checks ' +
-             'no password, so any password is accepted here. In product mode ' +
-             'it must be ' + self.esc(said.rules.join(', ')) + '.</p>';
+      return '<p class="note">' + t.html('portal.rules.development',
+        { rules: said.rules.join(', ') }) + '</p>';
     }
     log.debug("Leaving Portal.passwordRulesNote().");
-    return '<p class="note">A password here must be ' +
-           self.esc(said.rules.join(', ')) + '.</p>';
+    return '<p class="note">' + t.html('portal.rules.enforced',
+      { rules: said.rules.join(', ') }) + '</p>';
+  }
+
+  // WHERE A SIGNED-IN PAGE'S LANGUAGE CHOOSER RETURNS TO: the page under the
+  // realm's prefix with the parameters `keptParams()` keeps — not the
+  // request's whole URL, which `PageLocale.herePath()` would give.
+  private chooserReturn(active: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Portal.chooserReturn().");
+    const kept = this.keptParams(active);
+    const query = kept.length ? '?' + new URLSearchParams(kept).toString()
+                              : '';
+    log.debug("Leaving Portal.chooserReturn().");
+    return realms.currentPrefix() + active + query;
+  }
+
+  // THE LANGUAGE CHOOSER ON A PAGE DRAWN FOR NOBODY (#539 phase 3): the
+  // activation and reset pages and the signed-out ones, which `shell()` never
+  // draws. It returns to `path` under the realm's prefix — the GET that
+  // redraws the page — or to the request's own URL where a GET drew it.
+  private nobodyChooser(t: Translator, path: string) {
+    const { log } = this.deps;
+    log.debug("Entering Portal.nobodyChooser().");
+    const prefix = realms.currentPrefix();
+    log.debug("Leaving Portal.nobodyChooser().");
+    return PageLocale.chooser(t, prefix, PageLocale.herePath(prefix + path));
+  }
+
+  // The GET that redraws an activation or reset page: the link's own path,
+  // user and token — which the page already carries in its form.
+  private linkPath(path: string, username, token) {
+    const { log } = this.deps;
+    log.debug("Entering Portal.linkPath().");
+    log.debug("Leaving Portal.linkPath().");
+    return path + '?user=' + encodeURIComponent(String(username || '')) +
+      '&token=' + encodeURIComponent(String(token || ''));
   }
 
   private activationForm(base, username, token, message, error) {
@@ -1584,12 +1876,16 @@ class Portal {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering Portal.activationForm().");
     const csrfless = ''; // the form carries the token instead; see below
+    // THE LANGUAGE (#539): nobody is signed in, so the portal's own — the
+    // chooser's cookie, the browser, the locale policy. Errors stay English.
+    const t = self.translatorFor(null);
     log.debug("Leaving Portal.activationForm().");
-    return self.page('Set up your account',
+    return self.page(t.text('portal.activate.title'),
       '<div class="card">' +
-      '<h1>Set up your account</h1>' +
-      '<p class="sub">You are setting up how <strong>' + self.esc(username) +
-      '</strong> will sign in to <code>' + self.esc(base) + '</code>.</p>' +
+      self.nobodyChooser(t, self.linkPath(ACTIVATE, username, token)) +
+      '<h1>' + t.html('portal.activate.title') + '</h1>' +
+      '<p class="sub">' + t.html('portal.activate.sub',
+        { name: username, base: base }) + '</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       (message ? '<div class="ok">' + self.esc(message) + '</div>' : '') +
       '<form method="post" action="' + ACTIVATE + '">' +
@@ -1602,31 +1898,33 @@ class Portal {
       // query string does.
       '<input type="hidden" name="user" value="' + self.esc(username) + '">' +
       '<input type="hidden" name="token" value="' + self.esc(token) +
-      '"><h2>1. A ' +
-      'password</h2><label for="password">Password</label><input ' +
+      '"><h2>' + t.html('portal.activate.passwordHeading') +
+      '</h2><label for="password">' + t.html('portal.activate.password') +
+      '</label><input ' +
       'type="password" id="password" name="password" ' +
-      'autocomplete="new-password"><label for="confirm">Confirm ' +
-      'it</label><input type="password" id="confirm" name="confirm" ' +
+      'autocomplete="new-password"><label for="confirm">' +
+      t.html('portal.activate.confirm') +
+      '</label><input type="password" id="confirm" name="confirm" ' +
       'autocomplete="new-password">' +
-      self.passwordRulesNote(username) +
-      '<p class="note">Leave both empty if you would rather sign in with a ' +
-      'passkey alone. You need at least one of the two.</p><h2>2. A ' +
-      'passkey</h2><p class="note">A passkey — on this device, your phone ' +
-      'or a security key — can be used INSTEAD of a password or as a ' +
-      'SECOND step after it.</p><label class="chk"><input type="radio" ' +
-      'name="key_role" value="none" checked> No passkey for now</label>' +
+      self.passwordRulesNote(username, t) +
+      '<p class="note">' + t.html('portal.activate.eitherNote') +
+      '</p><h2>' + t.html('portal.activate.passkeyHeading') +
+      '</h2><p class="note">' + t.html('portal.activate.passkeyNote') +
+      '</p><label class="chk"><input type="radio" ' +
+      'name="key_role" value="none" checked> ' +
+      t.html('portal.activate.roleNone') + '</label>' +
       '<label class="chk"><input type="radio" name="key_role" ' +
-      'value="primary"> Use a passkey instead of a password</label><label ' +
-      'class="chk"><input type="radio" name="key_role" value="mfa"> Use a ' +
-      'passkey as a second step, after the password above</label>' +
+      'value="primary"> ' + t.html('portal.activate.rolePrimary') +
+      '</label><label ' +
+      'class="chk"><input type="radio" name="key_role" value="mfa"> ' +
+      t.html('portal.activate.roleMfa') + '</label>' +
       // WHICH KIND, `/portal/keys`' two calls to action as radios
       // (`kindChoice()`), because this one form carries a password too.
       (webauthnPolicy.settings().enabled
-        ? self.kindChoice(webauthnPolicy.authenticatorKinds())
+        ? self.kindChoice(webauthnPolicy.authenticatorKinds(), t)
         : '') +
-      '<p class="note">Choosing a passkey takes you to one more screen ' +
-      'after this step, and your account is not set up until the passkey ' +
-      'is created.</p>' +
+      '<p class="note">' + t.html('portal.activate.passkeyStepNote') +
+      '</p>' +
       // ---------------------------------------------------------------
       // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
       // RADIO BUTTON, and that is the whole of what it says about itself:
@@ -1642,20 +1940,16 @@ class Portal {
       // does nothing is worse than an absent one. The door checks the
       // setting again regardless, because a form is markup.
       (totp.offered()
-        ? '<h2>3. An authenticator app</h2><label class="chk"><input ' +
-          'type="checkbox" name="totp" value="1"> Also set up an ' +
-          'authenticator app as a second factor</label><p class="note">A ' +
-          'six-digit code from Google Authenticator, Microsoft ' +
-          'Authenticator, Authy, 1Password, Bitwarden, Aegis, FreeOTP or any ' +
-          'other app that implements RFC 6238. <strong>It is a SECOND ' +
-          'factor</strong> — it works beside the password or passkey ' +
-          'above and never instead of one. Ticking this shows you a QR code ' +
-          'on the next step; your account is not set up until you type a ' +
-          'code back from it.</p>'
+        ? '<h2>' + t.html('portal.activate.totpHeading') +
+          '</h2><label class="chk"><input ' +
+          'type="checkbox" name="totp" value="1"> ' +
+          t.html('portal.activate.totpBox') + '</label><p class="note">' +
+          t.html('portal.activate.totpNote') + '</p>'
         : '') +
-      '<button type="submit">Continue</button>' +
+      '<button type="submit">' + t.html('portal.activate.continue') +
+      '</button>' +
       '</form>' +
-      '</div>');
+      '</div>', false, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -1674,29 +1968,35 @@ class Portal {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.activationTotpForm().");
+    const t = self.translatorFor(null);
     log.debug("Leaving Portal.activationTotpForm().");
-    return self.page('Set up your authenticator app',
+    return self.page(t.text('portal.activateTotp.title'),
       '<div class="card">' +
-      '<h1>Scan this with your authenticator app</h1>' +
-      '<p class="sub">Almost done. ' +
-      '<strong>' + self.esc(username) + '</strong> can sign in now; this ' +
-      'adds the second factor.</p>' +
+      // Drawn by a POST: the chooser returns to the link, whose GET draws the
+      // first step again — which the header above says is safe to repeat.
+      self.nobodyChooser(t, self.linkPath(ACTIVATE, username, token)) +
+      '<h1>' + t.html('portal.totp.scanHeading') + '</h1>' +
+      '<p class="sub">' + t.html('portal.activateTotp.sub',
+        { name: username }) + '</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       (enrolment.qr
         ? '<p><img src="' + self.esc(enrolment.qr) + '" width="240" ' +
-          'height="240" alt="QR code carrying this account\'s otpauth setup ' +
-          'URI"></p>'
+          'height="240" alt="' + self.esc(t.text('portal.totp.qrAlt')) +
+          '"></p>'
         : '') +
-      '<h2>Or type it in</h2>' +
+      '<h2>' + t.html('portal.totp.typeIt') + '</h2>' +
       '<table class="grid">' +
-      '<tr><th>Secret</th><td><code>' + self.esc(enrolment.grouped) +
-      '</code></td></tr><tr><th>Account</th><td><code>' + self.esc(username) +
-      '</code></td></tr><tr><th>Issuer</th><td>' + self.esc(enrolment.issuer) +
-      '</td></tr><tr><th>Algorithm</th><td>' +
-      self.esc('HMAC-' +
-          String(enrolment.algorithm).replace(/^SHA/, 'SHA-') + ', ' +
-          String(enrolment.digits) + ' digits, every ' +
-          String(enrolment.period) + ' seconds') + '</td></tr>' +
+      '<tr><th>' + t.html('portal.totp.secret') + '</th><td><code>' +
+      self.esc(enrolment.grouped) +
+      '</code></td></tr><tr><th>' + t.html('portal.totp.account') +
+      '</th><td><code>' + self.esc(username) +
+      '</code></td></tr><tr><th>' + t.html('portal.totp.issuer') +
+      '</th><td>' + self.esc(enrolment.issuer) +
+      '</td></tr><tr><th>' + t.html('portal.totp.algorithm') + '</th><td>' +
+      t.html('portal.totp.algorithmValue', {
+        alg: 'HMAC-' + String(enrolment.algorithm).replace(/^SHA/, 'SHA-'),
+        digits: String(enrolment.digits),
+        period: String(enrolment.period) }) + '</td></tr>' +
       '</table>' +
       '<form method="post" action="' + ACTIVATE + '">' +
       '<input type="hidden" name="user" value="' + self.esc(username) + '">' +
@@ -1707,17 +2007,15 @@ class Portal {
       // before this one is on the entry already).
       '<input type="hidden" name="key_role" value="' +
       self.esc(String(keyRole || 'none')) + '">' +
-      '<label for="code">The ' + self.esc(String(enrolment.digits)) +
-      '-digit code your app is showing now</label>' +
+      '<label for="code">' + t.html('portal.totp.codeLabel',
+        { digits: String(enrolment.digits) }) + '</label>' +
       '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
       'inputmode="numeric" ' +
       'maxlength="' + self.esc(String(enrolment.digits)) + '" ' +
       'placeholder="' + '0'.repeat(enrolment.digits) + '"><button ' +
-      'type="submit">Finish</button></form><p class="note">Nothing about the ' +
-      'authenticator is stored until this code checks out, and your ' +
-      'activation link is not used up until then either — so if you cannot ' +
-      'finish now, open the link again and leave the authenticator box ' +
-      'unticked.</p></div>');
+      'type="submit">' + t.html('portal.activateTotp.finish') +
+      '</button></form><p class="note">' +
+      t.html('portal.activateTotp.note') + '</p></div>', false, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -1754,6 +2052,7 @@ class Portal {
     const self = this;
     const { authn, log, webauthnPolicy } = this.deps;
     log.debug("Entering Portal.activationKeyForm().");
+    const t = self.translatorFor(null);
     // THE BASE IS THE ONE THE REQUEST ARRIVED ON, for `enrolBlock()`'s
     // reason: a realm's base carries a path and the RP ID is its host.
     const rpId = authn.rpIdOf(base);
@@ -1764,28 +2063,31 @@ class Portal {
       self.esc(pending.role) + '">' +
       (wantsTotp ? '<input type="hidden" name="totp" value="1">' : '');
     log.debug("Leaving Portal.activationKeyForm().");
-    return self.page('Create your passkey',
+    return self.page(t.text('portal.key.createHeading'),
       '<div class="card">' +
-      '<h1>' + (securityKey ? 'Use your security key'
-                            : 'Create your passkey') + '</h1>' +
-      '<p class="sub">Almost done. <strong>' + self.esc(username) +
-      '</strong> will sign in with this passkey ' +
+      // Drawn by a POST, as the authenticator step: the chooser returns to
+      // the link, which the note below says is safe to open again.
+      self.nobodyChooser(t, self.linkPath(ACTIVATE, username, token)) +
+      '<h1>' + (securityKey ? t.html('portal.key.useHeading')
+                            : t.html('portal.key.createHeading')) + '</h1>' +
+      '<p class="sub">' +
       (pending.role === 'primary'
-        ? 'and no password.' : 'as a second step, after the password.') +
+        ? t.html('portal.activateKey.subPrimary', { name: username })
+        : t.html('portal.activateKey.subMfa', { name: username })) +
       '</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       '<p class="note">' + (securityKey
-        ? 'Your browser is about to ask for your security key. Insert or ' +
-          'tap it when it asks.'
-        : 'Your browser is about to ask where to save your passkey — this ' +
-          'device (Touch ID, Face ID, Windows Hello or the screen lock), ' +
-          'your password manager, or your phone.') +
-      ' Your account is not set up, and this activation link is not used ' +
-      'up, until the passkey is created.</p>' +
+        ? t.html('portal.key.promptSecurityKey')
+        : t.html('portal.key.promptPasskey')) +
+      ' ' + t.html('portal.activateKey.notUntil') + '</p>' +
       '<div id="wa-data"' +
       ' data-challenge="' + self.esc(pending.challenge) + '"' +
       ' data-rpid="' + self.esc(rpId) + '"' +
       ' data-user="' + self.esc(username) + '"' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      ' data-display="' + self.esc(passkeyPolicy.displayNameFor(username,
+                                                                 username)) +
+      '"' +
       ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
       ' data-allow=""' +
       ' data-exclude="' + self.esc((pending.exclude || []).join(',')) + '"' +
@@ -1795,7 +2097,8 @@ class Portal {
       '"' +
       ' data-mode="create"></div>' +
       '<button id="wa-go" type="button">' + (securityKey
-        ? 'Register security key' : 'Create passkey') + '</button>' +
+        ? t.html('portal.key.register') : t.html('portal.key.create')) +
+      '</button>' +
       '<form method="post" action="' + ACTIVATE + '" id="wa-form">' + hidden +
       '<input type="hidden" name="step" value="key">' +
       '<input type="hidden" name="enrolment_id" value="' +
@@ -1803,11 +2106,10 @@ class Portal {
       '<input type="hidden" name="credential" id="wa-credential">' +
       // THE REAL BUTTON, `enrolBlock()`'s: with the script blocked it posts
       // a `key` step with no credential, answered by saying why.
-      '<button class="secondary">My browser did not ask &mdash; tell me ' +
-      'why</button></form>' +
-      '<p class="note">If you cannot create a passkey now, open your ' +
-      'activation link again and choose differently.</p></div>' +
-      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>');
+      '<button class="secondary">' + t.html('portal.key.didNotAsk') +
+      '</button></form>' +
+      '<p class="note">' + t.html('portal.activateKey.cannot') + '</p></div>' +
+      '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>', false, t);
   }
 
   // ---------------------------------------------------------------------------
@@ -2073,18 +2375,20 @@ class Portal {
     // are told why signing in comes first (enrolling one requires knowing who
     // is asking, and until they sign in nobody does).
     const next = self.signInHref();
+    // THE LANGUAGE (#539): nobody is signed in yet. The chooser returns to
+    // the portal, which is where the Sign in link below goes too — the link
+    // is spent, so there is no page of it to draw again.
+    const t = self.translatorFor(null);
     log.debug('Leaving Portal.finishActivation(). Set up; sending to sign in.');
-    return self.send(res, 200, self.page('Account ready',
-      '<div class="card"><h1>Your account is ready</h1>' +
+    return self.send(res, 200, self.page(t.text('portal.ready.title'),
+      '<div class="card">' + self.nobodyChooser(t, BASE) +
+      '<h1>' + t.html('portal.ready.heading') + '</h1>' +
       '<div class="ok">' +
-      self.esc(password ? 'Your password is set.' : 'Your account is set up.') +
-      ' This activation link has now been used and will not work again.</div>' +
+      (password ? t.html('portal.ready.okPassword')
+                : t.html('portal.ready.okSetUp')) + '</div>' +
       (warning ? '<div class="err">' + self.esc(warning) + '</div>' : '') +
       (withTotp
-        ? '<p><strong>Your authenticator app is set up.</strong> You will be ' +
-          'asked for a code every time you sign in, after your password — a ' +
-          'password alone will not get you in any more. The code you just ' +
-          'typed is spent, so wait for the next one.</p>'
+        ? '<p>' + t.html('portal.ready.totp') + '</p>'
         : '') +
       // ---------------------------------------------------------------------
       // THE RECOVERY CODES, ON THE ONE PAGE THIS PERSON WILL EVER SEE THEM
@@ -2103,7 +2407,8 @@ class Portal {
       // generated only on `/portal/mfa` (see the second-POST note in the
       // activation handler), so `recovery` is always empty and this branch
       // draws nothing. The prose inside it — "look at them again", "stored
-      // encrypted" — describes the arrangement before that date.
+      // encrypted" — describes the arrangement before that date, and is left
+      // untranslated (#539) for that reason: nothing draws it.
       (recovery && recovery.length
         ? '<h2>Your recovery codes</h2>' +
           '<p><strong>Keep these somewhere you can reach without the device ' +
@@ -2127,19 +2432,13 @@ class Portal {
       // the key would be enrolled at the sign-in screen on first use, which
       // product mode refuses for a key instead of a password.
       (keyRole === 'primary'
-        ? '<p><strong>Your passkey is ready and is how you sign ' +
-          'in.</strong> At the sign-in screen, type your username, tick ' +
-          '<em>Sign in with a passkey instead of a password</em> and leave ' +
-          'the password empty. Create a second passkey on your Passkeys ' +
-          'page once you are in, so that losing this one is not a locked ' +
-          'account.</p>'
+        ? '<p>' + t.html('portal.ready.keyPrimary') + '</p>'
         : '') +
       (keyRole === 'mfa'
-        ? '<p><strong>Your passkey is ready as a second step.</strong> ' +
-          'You will be asked for it every time you sign in, after your ' +
-          'password.</p>'
+        ? '<p>' + t.html('portal.ready.keyMfa') + '</p>'
         : '') +
-      '<p><a href="' + self.esc(next) + '">Sign in</a></p></div>'));
+      '<p><a href="' + self.esc(next) + '">' + t.html('portal.signIn') +
+      '</a></p></div>', false, t));
   }
 
   // A PAGE WITH NO NAVIGATION COLUMN, for the pages nobody is signed in to —
@@ -2152,27 +2451,29 @@ class Portal {
    *
    * @param title - the page's title
    * @param inner - the page's body
+   * @param translator - the page's translator, for its `lang` and `dir`
    * @returns the page's HTML
    */
-  bare(title, inner) {
+  bare(title, inner, translator?: Translator) {
     const { log } = this.deps;
     log.debug("Entering Portal.bare().");
     log.debug("Leaving Portal.bare().");
-    return this.page(title, inner);
+    // `translator` (#539): the page's own, for its `lang` and `dir`.
+    return this.page(title, inner, false, translator);
   }
 
   private resetPasswordForm(base, username, token, error) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.resetPasswordForm().");
+    const t = self.translatorFor(null);
     log.debug("Leaving Portal.resetPasswordForm().");
-    return self.page('Choose a new password',
+    return self.page(t.text('portal.reset.title'),
       '<div class="card">' +
-      '<h1>Choose a new password</h1>' +
-      '<p class="sub">You are choosing the password <strong>' +
-      self.esc(username) +
-      '</strong> signs in to <code>' + self.esc(base) + '</code> with. ' +
-      'Once it is set, no password you had before works.</p>' +
+      self.nobodyChooser(t, self.linkPath(RESET_PASSWORD, username, token)) +
+      '<h1>' + t.html('portal.reset.title') + '</h1>' +
+      '<p class="sub">' + t.html('portal.reset.sub',
+        { name: username, base: base }) + '</p>' +
       (error ? '<div class="err">' + self.esc(error) + '</div>' : '') +
       '<form method="post" action="' + RESET_PASSWORD + '">' +
       // THE TOKEN RIDES IN THE FORM, for the activation form's reason: nobody
@@ -2180,13 +2481,15 @@ class Portal {
       // it out of a referer and an access log.
       '<input type="hidden" name="user" value="' + self.esc(username) + '">' +
       '<input type="hidden" name="token" value="' + self.esc(token) + '">' +
-      '<label for="password">New password</label><input type="password" ' +
+      '<label for="password">' + t.html('portal.reset.password') +
+      '</label><input type="password" ' +
       'id="password" name="password" autocomplete="new-password">' +
-      '<label for="confirm">Type it again</label><input type="password" ' +
+      '<label for="confirm">' + t.html('portal.reset.again') +
+      '</label><input type="password" ' +
       'id="confirm" name="confirm" autocomplete="new-password">' +
-      self.passwordRulesNote(username) +
-      '<button type="submit">Set my password</button>' +
-      '</form></div>');
+      self.passwordRulesNote(username, t) +
+      '<button type="submit">' + t.html('portal.reset.submit') + '</button>' +
+      '</form></div>', false, t);
   }
 
   private refuseResetLink(res, status, code) {
@@ -2526,9 +2829,10 @@ class Portal {
       if (choice.error) {
         errorCodes.mark(res, 'STS-PORTAL-0074');
       }
-      self.send(res, choice.error ? 400 : 200, self.page('Choose your realm',
-        '<div class="card"><h1>Choose your realm</h1>' +
-        realmChooser.form(req, 'portal', choice.error) + '</div>'));
+      // A page of its own, not the portal's frame — the console's reason
+      // (`RealmChooser.page()`).
+      self.send(res, choice.error ? 400 : 200,
+                realmChooser.page(req, 'portal', choice.error));
       log.debug("Leaving Portal.requireSignIn(). The realm chooser.");
       return null;
     }
@@ -2669,10 +2973,14 @@ class Portal {
   // not know that learns it from the page, which is worth more here than
   // tidiness.
   // ===========================================================================
-  private directoryBlock(session, entry) {
+  private directoryBlock(session, entry, translator?: Translator) {
     const self = this;
     const { inetOrgPerson, log } = this.deps;
     log.debug('Entering Portal.directoryBlock().');
+    // The words around the entry are translated (#539); the attributes'
+    // labels, their classes' descriptions and the values are the schema's
+    // and the entry's, drawn as data.
+    const t = translator || self.translatorFor(session);
     if (!entry) {
       // NO DIRECTORY, OR NO ENTRY — and the two are worth telling apart,
       // because one is a process without `ldap/ldap_server.js` loaded and the
@@ -2687,8 +2995,10 @@ class Portal {
       // lost them altogether — a page showing LESS than it did before the
       // feature that was meant to show more.
       const fallback = [
-        session.user.email ? ['Email', session.user.email] : null,
-        session.user.name ? ['Name', session.user.name] : null
+        session.user.email
+          ? [t.text('portal.directory.email'), session.user.email] : null,
+        session.user.name
+          ? [t.text('portal.directory.name'), session.user.name] : null
       ].filter(Boolean);
       log.debug("Leaving Portal.directoryBlock().");
       return (fallback.length
@@ -2696,17 +3006,11 @@ class Portal {
             return '<tr><th>' + self.esc(pair[0]) + '</th><td>' +
               self.esc(pair[1]) +
                    '<div class="attr">' +
-                   self.esc('from your session rather than from a directory ' +
-                            'entry') +
+                   t.html('portal.directory.fromSession') +
                    '</div></td></tr>';
           }).join('') + '</table>'
         : '') +
-        '<p class="note">' +
-        self.esc('This service is not showing your directory entry. Either ' +
-            'it is running without its embedded directory, or nothing has ' +
-            'been written down about you yet — an account here gets an entry ' +
-            'the first time it authenticates or is provisioned. What is ' +
-            'above is what the sign-in itself carried.') + '</p>';
+        '<p class="note">' + t.html('portal.directory.notShowing') + '</p>';
     }
 
     const described = inetOrgPerson.describe(entry.attributes);
@@ -2717,14 +3021,17 @@ class Portal {
       log.debug("Entering row().");
       let value;
       if (one.secret) {
-        value = '<span class="set">set</span> <span class="sub">' +
-                self.esc('— a scrypt hash rather than the value, and never ' +
-                    'shown here') + '</span>';
+        value = '<span class="set">' + t.html('portal.directory.set') +
+                '</span> <span class="sub">' +
+                t.html('portal.directory.secret') + '</span>';
       } else if (one.binary) {
-        value = '<span class="set">set</span> <span class="sub">' +
-                self.esc('— ' + one.bytes + ' bytes of binary' +
-                    (one.count > 1 ? ' in ' + one.count + ' values' : '') +
-                    ', not shown') + '</span>';
+        value = '<span class="set">' + t.html('portal.directory.set') +
+                '</span> <span class="sub">' +
+                (one.count > 1
+                  ? t.html('portal.directory.binaryMany',
+                           { bytes: one.bytes, count: one.count })
+                  : t.html('portal.directory.binary', { bytes: one.bytes })) +
+                '</span>';
       } else if (one.count > 1) {
         // MULTI-VALUED IS THE ORDINARY CASE IN LDAP and a page that joined the
         // values with a comma would render a person with two email addresses as
@@ -2740,8 +3047,8 @@ class Portal {
                (one.note ? '. ' + one.note.replace(/\*\*/g, '') : '')) + '">' +
              self.esc(one.label) +
              (one.must ? ' <span class="must" title="' +
-               self.esc('The schema REQUIRES this attribute on every person.') +
-               '">required</span>' : '') +
+               self.esc(t.text('portal.directory.requiredTitle')) +
+               '">' + t.html('portal.directory.required') + '</span>' : '') +
              '</th><td>' + value +
              '<div class="attr"><code>' + self.esc(one.ldap) +
              '</code> &middot; ' + self.esc(one.rfc) + '</div></td></tr>';
@@ -2754,22 +3061,24 @@ class Portal {
              self.esc(klass.name + ' — ' + klass.rfc + ', OID ' +
                       klass.oid + '. ' + klass.what) + '">' +
              '<code>' + self.esc(klass.name) + '</code> ' +
-             '<span class="sub">' + self.esc(klass.held + ' of ' + klass.total +
-               ' set') + '</span></h3>' +
+             '<span class="sub">' + t.html('portal.directory.classHeld',
+               { held: klass.held, total: klass.total }) + '</span></h3>' +
              (set.length
                ? '<table>' + set.map(row).join('') + '</table>'
                : '<p class="note">' +
-                 self.esc('Nothing on your entry from this class.') + '</p>') +
+                 t.html('portal.directory.nothingFromClass') + '</p>') +
              (unset.length
                ? '<details><summary>' +
-                 self.esc('The other ' + unset.length + ' this class allows') +
+                 t.html('portal.directory.others', { n: unset.length }) +
                  '</summary><table>' + unset.map(function (one) {
                    return '<tr><th title="' +
                           self.esc(one.ldap + ' — ' + one.rfc) +
                           '">' + self.esc(one.label) +
-                          (one.must ? ' <span class="must">required</span>' :
+                          (one.must ? ' <span class="must">' +
+                           t.html('portal.directory.required') + '</span>' :
                            '') +
-                          '</th><td><span class="unset">not set</span>' +
+                          '</th><td><span class="unset">' +
+                          t.html('portal.directory.notSet') + '</span>' +
                           '<div class="attr"><code>' + self.esc(one.ldap) +
                           '</code> &middot; ' + self.esc(one.rfc) +
                           '</div></td></tr>';
@@ -2779,22 +3088,14 @@ class Portal {
 
     log.debug('Leaving Portal.directoryBlock(). ' + described.held + ' of ' +
               described.total + ' set.');
-    return '<h3 class="dirhead">Your directory entry</h3>' +
-      '<p class="note">' +
-      self.esc('Every attribute the schema this service files people under ' +
-          'allows — ' + described.held + ' of ' + described.total +
-          ' are set on your ' +
-          'entry. It is a fixed list read from the schema rather than a dump ' +
-          'of what your entry happens to carry, so a credential this service ' +
-          'stores beside these cannot appear here.') +
+    return '<h3 class="dirhead">' + t.html('portal.directory.heading') +
+      '</h3>' +
+      '<p class="note">' + t.html('portal.directory.every',
+        { held: described.held, total: described.total }) +
       ' <code>' + self.esc('objectClass: top, person, organizationalPerson, ' +
                       'inetOrgPerson') + '</code></p>' +
       sections +
-      '<p class="note">' +
-      self.esc('Nothing on this page can be edited here. These are written ' +
-          'by an operator, by SCIM, or over LDAP — this portal changes how ' +
-          'you AUTHENTICATE and not what this directory records about you.') +
-      '</p>';
+      '<p class="note">' + t.html('portal.directory.notEditable') + '</p>';
   }
 
   private overviewPage(session, message, error) {
@@ -2805,6 +3106,7 @@ class Portal {
     const mechanisms = credentials.mechanismsFor(username);
     const csrf = websecurity.field(session.id);
     const detail = stats.userDetail ? stats.userDetail(username) : null;
+    const t = self.translatorFor(session);
     // THE PERSON'S OWN ENTRY, from the session's name and no parameter. Null
     // where no directory is installed, which the block below says out loud
     // rather than drawing an empty table.
@@ -2814,97 +3116,161 @@ class Portal {
     // on the sign-on session and nowhere else (`authn.signOnFactsFor()`).
     const signOn = authn.signOnFactsFor(session);
 
+    // WHICH FACTOR, AND NOT MERELY WHETHER. There are two of them since
+    // 2026-09-10, they are asked for at different screens, and "required" on
+    // its own leaves somebody unable to guess what they will be asked for.
+    const secondFactor = !mechanisms.mfaRequired
+      ? t.html('portal.overview.notRequired')
+      : (mechanisms.secondFactor === 'webauthn'
+        ? (mechanisms.totp ? t.html('portal.overview.requiredPasskeyOrCode')
+                           : t.html('portal.overview.requiredPasskey'))
+        : t.html('portal.overview.requiredCode'));
+
     const html = self.shell(BASE, session, message, error,
       '<div class="card">' +
-      '<h2>You</h2>' +
-      '<p class="sub">What this identity provider knows about you, and how ' +
-      'you signed in to this page.</p><table>' +
-      '<tr><th>Username</th><td>' + self.esc(username) + '</td></tr>' +
-      '<tr><th>Subject</th><td><code>' + self.esc(session.user.sub || '') +
+      '<h2>' + t.html('portal.overview.you') + '</h2>' +
+      '<p class="sub">' + t.html('portal.overview.youSub') + '</p><table>' +
+      '<tr><th>' + t.html('portal.overview.username') + '</th><td>' +
+      self.esc(username) + '</td></tr>' +
+      '<tr><th>' + t.html('portal.overview.subject') + '</th><td><code>' +
+      self.esc(session.user.sub || '') +
         '</code></td></tr>' +
       (entry
-        ? '<tr><th>Directory entry</th><td><code>' + self.esc(entry.dn) +
+        ? '<tr><th>' + t.html('portal.overview.directoryEntry') +
+          '</th><td><code>' + self.esc(entry.dn) +
           '</code></td></tr>'
         : '') +
-      '<tr><th>Signed in</th><td>' +
+      '<tr><th>' + t.html('portal.overview.signedIn') + '</th><td>' +
         self.esc(new Date(signOn.startedAt).toISOString()) +
       '</td></tr>' +
       (signOn.authentications > 1
-        ? '<tr><th>Last authenticated</th><td>' +
-          self.esc(new Date(signOn.authTime).toISOString()) + ' (' +
-          signOn.authentications + ' authentications in this sign-in)' +
+        ? '<tr><th>' + t.html('portal.overview.lastAuthenticated') +
+          '</th><td>' +
+          self.esc(new Date(signOn.authTime).toISOString()) + ' ' +
+          t.html('portal.overview.authentications',
+                 { n: signOn.authentications }) +
           '</td></tr>'
         : '') +
-      '<tr><th>How</th><td>' +
-      self.esc(signOn.amr.join(', ') || 'unstated') +
+      '<tr><th>' + t.html('portal.overview.how') + '</th><td>' +
+      (signOn.amr.length ? self.esc(signOn.amr.join(', '))
+                         : t.html('portal.overview.unstated')) +
         ' (acr ' + self.esc(signOn.acr) + ')</td></tr>' +
-      '<tr><th>This session ends</th><td>' +
+      '<tr><th>' + t.html('portal.overview.sessionEnds') + '</th><td>' +
         self.esc(new Date(session.expires || 0).toISOString()) + '</td></tr>' +
       (detail
-        ? '<tr><th>Times you have signed in</th><td>' +
+        ? '<tr><th>' + t.html('portal.overview.timesSignedIn') + '</th><td>' +
           self.esc(String(detail.authentications || 0)) + '</td></tr>'
         : '') +
       '</table>' +
-      self.directoryBlock(session, entry) +
+      self.directoryBlock(session, entry, t) +
       '</div>' +
 
       '<div class="card">' +
-      '<h2>How you sign in</h2>' +
+      '<h2>' + t.html('portal.overview.howHeading') + '</h2>' +
       '<table>' +
-      '<tr><th>Password</th><td>' +
-        (mechanisms.password ? 'set' : '<em>none set</em>') +
-        ' — <a href="' + self.esc(BASE + '/password') + '">change ' +
-      'it</a></td></tr><tr><th>Passkeys</th><td>' +
+      '<tr><th>' + t.html('portal.overview.password') + '</th><td>' +
+        (mechanisms.password ? t.html('portal.overview.set')
+                             : '<em>' + t.html('portal.overview.noneSet') +
+                               '</em>') +
+        ' — <a href="' + self.esc(BASE + '/password') + '">' +
+      t.html('portal.overview.changeIt') + '</a></td></tr><tr><th>' +
+      t.html('portal.overview.passkeys') + '</th><td>' +
         (mechanisms.keys.length
-          ? self.esc(String(mechanisms.keys.length)) + ' registered'
-          : '<em>none yet</em>') +
-        ' — <a href="' + self.esc(BASE + '/keys') + '">see them</a></td></tr>' +
-      '<tr><th>Authenticator app</th><td>' +
+          ? t.html('portal.overview.registered',
+                   { n: mechanisms.keys.length })
+          : '<em>' + t.html('portal.overview.noneYet') + '</em>') +
+        ' — <a href="' + self.esc(BASE + '/keys') + '">' +
+        t.html('portal.overview.seeThem') + '</a></td></tr>' +
+      '<tr><th>' + t.html('portal.overview.authenticatorApp') + '</th><td>' +
         (mechanisms.totp
-          ? (mechanisms.totpUsable ? 'enrolled' : 'enrolled, but not readable')
-          : '<em>not set up</em>') +
-        ' — <a href="' + self.esc(BASE + '/mfa') + '">set it up</a></td></tr>' +
+          ? (mechanisms.totpUsable ? t.html('portal.overview.enrolled')
+                                   : t.html('portal.overview.unreadable'))
+          : '<em>' + t.html('portal.overview.notSetUp') + '</em>') +
+        ' — <a href="' + self.esc(BASE + '/mfa') + '">' +
+        t.html('portal.overview.setItUp') + '</a></td></tr>' +
       // THE WAY BACK (2026-09-10). It is reported as a COUNT rather than as a
       // yes, because the number is the whole of what a person needs from this
       // row: a set is issued once and is never topped up, so *3 of 10 left* is
       // an instruction and *issued* is not.
-      '<tr><th>Recovery codes</th><td>' +
+      '<tr><th>' + t.html('portal.overview.recoveryCodes') + '</th><td>' +
         (mechanisms.backupCodes && mechanisms.backupCodes.present
           ? (mechanisms.backupCodes.usable
-              ? self.esc(String(mechanisms.backupCodes.remaining) + ' of ' +
-                    String(mechanisms.backupCodes.total) + ' unused')
-              : 'issued, but not readable')
-          : '<em>none issued</em>') +
-        ' — <a href="' + self.esc(BASE + '/mfa') + '">see them</a></td></tr>' +
-      // WHICH FACTOR, AND NOT MERELY WHETHER. There are two of them since
-      // 2026-09-10, they are asked for at different screens, and "required" on
-      // its own leaves somebody unable to guess what they will be asked for.
-      '<tr><th>Second factor</th><td>' +
-        (mechanisms.mfaRequired
-          ? self.esc('required — a password alone will not sign you in. You ' +
-                'will be asked for ' +
-                (mechanisms.secondFactor === 'webauthn'
-                  ? 'your passkey' + (mechanisms.totp
-                      ? ', with a one-time code offered as the alternative'
-                      : '')
-                  : 'a code from your authenticator app') + '.')
-          : 'not required') + '</td></tr>' +
+              ? t.html('portal.overview.unused',
+                  { remaining: mechanisms.backupCodes.remaining,
+                    total: mechanisms.backupCodes.total })
+              : t.html('portal.overview.issuedUnreadable'))
+          : '<em>' + t.html('portal.overview.noneIssued') + '</em>') +
+        ' — <a href="' + self.esc(BASE + '/mfa') + '">' +
+        t.html('portal.overview.seeThem') + '</a></td></tr>' +
+      '<tr><th>' + t.html('portal.overview.secondFactor') + '</th><td>' +
+        secondFactor + '</td></tr>' +
       '</table>' +
       '</div>' +
 
+      self.languageCard(session, entry, csrf, t) +
+
       '<div class="card">' +
-      '<h2>Sign out of everything</h2>' +
+      '<h2>' + t.html('portal.overview.signOutAll') + '</h2>' +
       '<form method="post" action="/logout">' + csrf +
-      '<button class="secondary">Sign out of everything</button></form><p ' +
-      'class="note">Ends every session you hold here, in every protocol, and ' +
-      'tells the applications that can be told — access and refresh tokens, ' +
-      'Kerberos tickets, credential offers, LDAP binds, the lot. <strong>The ' +
-      'Sign out button at the top of every page is the narrower ' +
-      'one</strong>: it ends this browser\'s sessions and leaves what has ' +
-      'already been issued to applications alone. Two different acts, and ' +
-      'this is the one that reaches further.</p></div>');
+      '<button class="secondary">' + t.html('portal.overview.signOutAll') +
+      '</button></form><p ' +
+      'class="note">' + t.html('portal.overview.signOutAllNote') +
+      '</p></div>');
     log.debug('Leaving Portal.overviewPage().');
     return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE LANGUAGE ON THE PERSON'S OWN ACCOUNT (#539, rcbj: "a language field on
+  // the person's own profile").
+  //
+  // `preferredLanguage` (RFC 2798 section 2.7) on their own entry, which ranks
+  // above the chooser's cookie and the browser (`common/page_locale.ts`). The
+  // chooser in the header writes it as a side effect of choosing a language
+  // for the page; this card is where a person READS what their account says
+  // and can also take it off again — "Use my browser's language" removes the
+  // attribute, which the chooser cannot do.
+  //
+  // A real form, a real select and a real button, like every form here: the
+  // page runs no script. It posts to `POST /portal/language`, under the CSRF
+  // token every portal form carries. The locales are `i18n.offered()`, each
+  // by its own name, so a person who cannot read the page can still find
+  // their language in the list.
+  // ---------------------------------------------------------------------------
+  private languageCard(session, entry, csrf, t: Translator) {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering Portal.languageCard().');
+    const attributes = (entry && entry.attributes) || {};
+    const key = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === 'preferredlanguage';
+    })[0];
+    const held = key ? String([].concat(attributes[key])[0] || '') : '';
+    const offered = i18n.offered();
+    const mine = held.toLowerCase();
+    const named = offered.filter(function (one) {
+      return one.tag.toLowerCase() === mine;
+    })[0];
+    const options = '<option value=""' + (named ? '' : ' selected') + '>' +
+      t.html('portal.language.browser') + '</option>' +
+      offered.map(function (one) {
+        return '<option value="' + self.esc(one.tag) + '" lang="' +
+          self.esc(one.tag) + '"' + (one === named ? ' selected' : '') +
+          '>' + self.esc(one.name) + '</option>';
+      }).join('');
+    log.debug('Leaving Portal.languageCard(). ' + (held || 'none held'));
+    return '<div class="card" id="language">' +
+      '<h2>' + t.html('portal.language.heading') + '</h2>' +
+      '<p class="sub">' + (held
+        ? t.html('portal.language.current',
+                 { name: named ? named.name : held })
+        : t.html('portal.language.none')) + '</p>' +
+      '<form method="post" action="' + BASE + '/language">' + csrf +
+      '<label for="portal-language">' + t.html('portal.language.label') +
+      '</label><select id="portal-language" name="lang">' + options +
+      '</select><button type="submit">' + t.html('portal.language.save') +
+      '</button></form>' +
+      '<p class="note">' + t.html('portal.language.note') + '</p></div>';
   }
 
   // ---------------------------------------------------------------------------
@@ -2917,30 +3283,30 @@ class Portal {
     log.debug('Entering Portal.passwordPage().');
     const mechanisms = credentials.mechanismsFor(session.user.username);
     const csrf = websecurity.field(session.id);
+    const t = self.translatorFor(session);
 
     const html = self.shell(BASE + '/password', session, message, error,
       '<div class="card">' +
       '<p class="sub">' +
       (mechanisms.password
-        ? 'You have a password set.'
-        : 'You have NO password set. Setting one here needs the current one, ' +
-          'which you do not have — so a password is set through an ' +
-          'activation link from whoever administers this service, or at ' +
-          '<code>/portal/activate</code>.') +
+        ? t.html('portal.password.has')
+        : t.html('portal.password.none')) +
       '</p>' +
       '<form method="post" action="' + BASE + '/password">' + csrf +
-      '<label for="current">Your current password</label><input ' +
+      '<label for="current">' + t.html('portal.password.current') +
+      '</label><input ' +
       'type="password" id="current" name="current" ' +
-      'autocomplete="current-password"><label for="next">New ' +
-      'password</label><input type="password" id="next" name="next" ' +
-      'autocomplete="new-password"><label for="confirm">Confirm ' +
-      'it</label><input type="password" id="confirm" name="confirm" ' +
+      'autocomplete="current-password"><label for="next">' +
+      t.html('portal.password.new') + '</label><input type="password" ' +
+      'id="next" name="next" ' +
+      'autocomplete="new-password"><label for="confirm">' +
+      t.html('portal.password.confirm') +
+      '</label><input type="password" id="confirm" name="confirm" ' +
       'autocomplete="new-password">' +
-      self.passwordRulesNote(session.user.username) +
-      '<button type="submit">Change password</button></form><p ' +
-      'class="note">Your current password is required even though you are ' +
-      'already signed in: a session somebody left open on a shared machine ' +
-      'must not be enough to take the account over.</p></div>');
+      self.passwordRulesNote(session.user.username, t) +
+      '<button type="submit">' + t.html('portal.password.submit') +
+      '</button></form><p ' +
+      'class="note">' + t.html('portal.password.note') + '</p></div>');
     log.debug('Leaving Portal.passwordPage().');
     return html;
   }
@@ -2958,23 +3324,26 @@ class Portal {
   // chained to an anchor, "verified" where it was checked and anchored
   // nowhere, and "claimed" where nothing was checked — `/admin/users` draws
   // the same record for an operator.
-  private attestationText(att) {
+  private attestationText(att, t: Translator) {
     const { log } = this.deps;
     log.debug('Entering Portal.attestationText().');
-    let text = 'not verified (the authenticator\'s own claim)';
+    // Text, escaped once at the end: the model and the status are data.
+    let text = t.text('portal.attest.claimed');
     if (att && att.verified && att.trusted) {
-      text = (att.model ? att.model + ' — ' : '') + 'verified and trusted';
+      text = att.model
+        ? t.text('portal.attest.trustedModel', { model: att.model })
+        : t.text('portal.attest.trusted');
     } else if (att && att.verified) {
       text = att.type === 'none' || att.type === 'self'
-        ? 'no attestation sent (' + att.type + ')'
-        : 'verified, from an authenticator no trusted root vouches for';
+        ? t.text('portal.attest.noneSent', { type: att.type })
+        : t.text('portal.attest.unanchored');
     }
     // #256: Google's Android attestation status list on an android-key key.
     const r = att && att.format === 'android-key' ? att.androidRevocation
                                                   : null;
     if (r && (r.status === 'revoked' || r.status === 'suspended')) {
-      text += '; Google reports its attestation certificate ' +
-              String(r.status).toUpperCase();
+      text += t.text('portal.attest.google',
+                     { status: String(r.status).toUpperCase() });
     }
     log.debug('Leaving Portal.attestationText().');
     return this.esc(text);
@@ -3031,6 +3400,7 @@ class Portal {
     log.debug('Entering Portal.keysPage().');
     const mechanisms = credentials.mechanismsFor(session.user.username);
     const csrf = websecurity.field(session.id);
+    const t = self.translatorFor(session);
     const keys = mechanisms.keys;
     const devices = keys.filter(function (one) {
       return credentials.keyGroup(one) === 'device';
@@ -3047,19 +3417,18 @@ class Portal {
       return one.credentialId === String(named);
     })[0] : null;
     const nickname = fresh
-      ? '<div class="ok"><strong>' +
+      ? '<div class="ok">' +
         (credentials.keyGroup(fresh) === 'security-key'
-          ? 'Give your security key a nickname'
-          : 'Give your passkey a nickname') +
-        '</strong> so you know which one this is when you see it here ' +
-        'later.' + self.renameForm(fresh, csrf, true) + '</div>'
+          ? t.html('portal.keys.nicknameSecurityKey')
+          : t.html('portal.keys.nicknamePasskey')) +
+        self.renameForm(fresh, csrf, true, t) + '</div>'
       : '';
 
     const group = function (title, icon, list) {
       return list.length
         ? '<h2 class="pkgroup">' + icon + self.esc(title) + '</h2>' +
           '<ul class="pk">' + list.map(function (one) {
-            return self.passkeyRow(one, csrf);
+            return self.passkeyRow(one, csrf, t);
           }).join('') + '</ul>'
         : '';
     };
@@ -3068,27 +3437,20 @@ class Portal {
       '<div class="card">' +
       nickname +
       '<p class="sub">' + PORTAL_ICONS.passkey +
-      'Passkeys can be created and saved on your devices, like your phone ' +
-      'or laptop, or on security keys. A passkey is an encrypted digital ' +
-      'key you unlock with your fingerprint, face or screen lock; most are ' +
-      'saved to your password manager, so you can sign in on your other ' +
-      'devices too. On a security key, the key stays on that one small ' +
-      'device.</p>' +
-      self.learnMore(mechanisms, keys.length) +
+      t.html('portal.keys.intro') + '</p>' +
+      self.learnMore(mechanisms, keys.length, t) +
       (keys.length
-        ? group('Passkeys on your devices', PORTAL_ICONS.devices, devices) +
-          group('Passkeys on security keys', PORTAL_ICONS.securityKey,
-                securityKeys) +
+        ? group(t.text('portal.keys.onDevices'), PORTAL_ICONS.devices,
+                devices) +
+          group(t.text('portal.keys.onSecurityKeys'),
+                PORTAL_ICONS.securityKey, securityKeys) +
           '<p class="note">' +
           (mechanisms.mfaRequired
-            ? 'At least one of these is a second step after your password, ' +
-              'so a password alone will not sign you in.'
-            : 'None of these is a second step after your password.') +
-          ' You cannot remove your last way in — set another one first.</p>'
-        : '<p class="note"><strong>You have no passkeys yet.</strong> ' +
-          'Create one below, on this device or your phone, or use a ' +
-          'security key.</p>') +
-      self.enrolBlock(session, mechanisms, base) +
+            ? t.html('portal.keys.someSecond')
+            : t.html('portal.keys.noneSecond')) +
+          ' ' + t.html('portal.keys.lastWayIn') + '</p>'
+        : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
+      self.enrolBlock(session, mechanisms, base, t) +
       (pending ? '' : self.signalBlock(session, keys, base)) +
       '</div>');
     log.debug('Leaving Portal.keysPage(). ' + keys.length + ' key(s).');
@@ -3097,7 +3459,9 @@ class Portal {
 
   // ONE ROW OF THE PASSKEY LIST (#470): icon, name, provider, Created, Last
   // used, Rename and Remove, and a Details fold with everything technical.
-  private passkeyRow(one, csrf) {
+  // The dates stay ISO days: they are what a person quotes, and the words
+  // around them are translated (#539).
+  private passkeyRow(one, csrf, t: Translator) {
     const self = this;
     const { credentials, log } = this.deps;
     log.debug('Entering Portal.passkeyRow().');
@@ -3109,50 +3473,88 @@ class Portal {
       return new Date(Number(ms) || 0).toISOString().slice(0, 10);
     };
     const backup = one.backupEligible === true
-      ? (one.backupState === true ? 'backed up' : 'can be backed up, not yet')
-      : (one.backupEligible === false ? 'cannot be backed up'
-                                      : 'not recorded');
+      ? (one.backupState === true ? t.html('portal.keys.backedUp')
+                                  : t.html('portal.keys.canBackUp'))
+      : (one.backupEligible === false ? t.html('portal.keys.cannotBackUp')
+                                      : t.html('portal.keys.notRecorded'));
     const transports = Array.isArray(one.transports) && one.transports.length
-      ? one.transports.join(', ') : 'not reported';
+      ? self.esc(one.transports.join(', '))
+      : t.html('portal.keys.notReported');
     const html = '<li><span class="ico">' +
       (securityKey ? PORTAL_ICONS.securityKey : PORTAL_ICONS.devices) +
       '</span><div class="body"><div class="name">' + self.esc(name) +
       '</div><div class="meta">' +
       (provider && provider !== name ? self.esc(provider) + ' · ' : '') +
-      'Created ' + self.esc(day(one.enrolledAt)) + ' · ' +
-      (one.lastUsedAt ? 'Last used ' + self.esc(day(one.lastUsedAt))
-                      : 'Not used yet') +
-      ' · ' + (one.role === 'primary' ? 'instead of a password'
-                                      : 'second step after your password') +
+      t.html('portal.keys.created', { day: day(one.enrolledAt) }) + ' · ' +
+      (one.lastUsedAt
+        ? t.html('portal.keys.lastUsed', { day: day(one.lastUsedAt) })
+        : t.html('portal.keys.notUsed')) +
+      ' · ' + (one.role === 'primary' ? t.html('portal.keys.rolePrimary')
+                                      : t.html('portal.keys.roleMfa')) +
       '</div>' +
-      self.renameForm(one, csrf, false) +
-      '<details><summary>Details</summary><table>' +
-      '<tr><th>Used</th><td>' + self.esc(one.role === 'primary'
-        ? 'instead of a password (primary)'
-        : 'as a second step after your password (mfa)') + '</td></tr>' +
-      '<tr><th>Kind</th><td>' + self.esc(credentials.keyKind(one).text) +
+      // A SYNCED KEY THE REALM NO LONGER TAKES (#528): it is refused at
+      // sign-in, so the person is told here before they meet the refusal.
+      (passkeyPolicy.backupEligibleRefusal(one.backupEligible, 'sign-in')
+        ? '<div class="meta" id="passkey-synced-refused">' +
+          t.html('portal.keys.syncedRefused') + '</div>'
+        : '') +
+      // AND ONE THE ATTESTATION RULES REFUSED AT SIGN-IN (#530), as its row
+      // was marked, while the rule is still on. The reason is the refusal's
+      // own and stays English (#539); the advice after it is translated.
+      (one.attestationRefused && passkeyPolicy.enforcesAttestationAtSignIn()
+        ? '<div class="meta" id="passkey-attestation-refused">' +
+          self.esc(String(one.attestationRefused.why || 'This passkey no ' +
+                          'longer meets this service\'s rules.')) +
+          ' ' + t.html('portal.keys.removeAndRegister') + '</div>'
+        : '') +
+      // AND ONE WHOSE MINIMUM PIN THE REALM NO LONGER ACCEPTS (#529).
+      (passkeyPolicy.pinLengthRefusal(one.minPinLength, 'sign-in')
+        ? '<div class="meta" id="passkey-pin-refused">' +
+          self.esc(passkeyPolicy.pinLengthRefusal(one.minPinLength,
+                                                  'sign-in').why) + '</div>'
+        : '') +
+      self.renameForm(one, csrf, false, t) +
+      '<details><summary>' + t.html('portal.keys.details') +
+      '</summary><table>' +
+      '<tr><th>' + t.html('portal.keys.used') + '</th><td>' +
+      (one.role === 'primary' ? t.html('portal.keys.usedPrimary')
+                              : t.html('portal.keys.usedMfa')) +
       '</td></tr>' +
-      '<tr><th>Backup</th><td>' + self.esc(backup) + '</td></tr>' +
-      '<tr><th>Transports</th><td>' + self.esc(transports) + '</td></tr>' +
+      // The device serial an enterprise attestation named (#532).
+      (one.attestation && one.attestation.deviceSerial
+        ? '<tr><th>' + t.html('portal.keys.serial') + '</th><td>' +
+          self.esc(String(one.attestation.deviceSerial)) + '</td></tr>'
+        : '') +
+      '<tr><th>' + t.html('portal.keys.kind') + '</th><td>' +
+      self.esc(credentials.keyKind(one).text) +
+      '</td></tr>' +
+      '<tr><th>' + t.html('portal.keys.backup') + '</th><td>' + backup +
+      '</td></tr>' +
+      '<tr><th>' + t.html('portal.keys.transports') + '</th><td>' +
+      transports + '</td></tr>' +
       // WHETHER IT SIGNS IN WITH NO USERNAME (#474): a key from before the
       // user handle, a second-step key and one not stored on the
       // authenticator do not, and the person is told which.
-      '<tr><th>Without a username</th><td>' +
+      '<tr><th>' + t.html('portal.keys.withoutUsername') + '</th><td>' +
       self.esc(credentials.withoutUsername(one).text) + '</td></tr>' +
-      '<tr><th>Algorithm</th><td><code>' + self.esc(algorithm.text) +
-      '</code>' + (algorithm.postQuantum ? ' post-quantum' : '') +
-      (algorithm.insecure ? ' <strong>insecure</strong>' : '') +
+      '<tr><th>' + t.html('portal.keys.algorithm') + '</th><td><code>' +
+      self.esc(algorithm.text) +
+      '</code>' + (algorithm.postQuantum
+        ? ' ' + t.html('portal.keys.postQuantum') : '') +
+      (algorithm.insecure
+        ? ' <strong>' + t.html('portal.keys.insecure') + '</strong>' : '') +
       '</td></tr>' +
-      '<tr><th>Authenticator</th><td>' +
-      self.attestationText(one.attestation) + '</td></tr>' +
+      '<tr><th>' + t.html('portal.keys.authenticator') + '</th><td>' +
+      self.attestationText(one.attestation, t) + '</td></tr>' +
       '<tr><th>AAGUID</th><td><code>' +
       self.esc(String(one.aaguid || 'none')) + '</code></td></tr>' +
       '</table></details></div><div class="acts">' +
       '<form method="post" action="' + BASE + '/remove-key">' + csrf +
       '<input type="hidden" name="credentialId" value="' +
       self.esc(one.credentialId) + '">' +
-      '<button class="danger" aria-label="Remove ' + self.esc(name) +
-      '">Remove</button></form></div></li>';
+      '<button class="danger" aria-label="' +
+      self.esc(t.text('portal.keys.removeLabel', { name: name })) +
+      '">' + t.html('portal.keys.remove') + '</button></form></div></li>';
     log.debug('Leaving Portal.passkeyRow().');
     return html;
   }
@@ -3161,7 +3563,7 @@ class Portal {
   // script for it. `open` draws it unfolded, for the nickname prompt after
   // an enrolment. An empty name puts the default back
   // (`credentials.renameKey()`).
-  private renameForm(one, csrf, open) {
+  private renameForm(one, csrf, open, t: Translator) {
     const self = this;
     const { credentials, log } = this.deps;
     log.debug('Entering Portal.renameForm().');
@@ -3170,52 +3572,42 @@ class Portal {
     const form = '<form method="post" action="' + BASE + '/rename-key">' +
       csrf + '<input type="hidden" name="credentialId" value="' +
       self.esc(one.credentialId) + '"><label for="' + id + '">' +
-      (open ? 'Nickname' : 'New name') + '</label>' +
+      (open ? t.html('portal.keys.nickname') : t.html('portal.keys.newName')) +
+      '</label>' +
       '<input type="text" id="' + id + '" name="label" maxlength="60" ' +
       'value="' + self.esc(credentials.keyName(one)) + '">' +
-      '<button>Save</button></form>';
+      '<button>' + t.html('portal.keys.save') + '</button></form>';
     log.debug('Leaving Portal.renameForm().');
     return open ? form
-                : '<details><summary>Rename</summary>' + form + '</details>';
+                : '<details><summary>' + t.html('portal.keys.rename') +
+                  '</summary>' + form + '</details>';
   }
 
   // *LEARN MORE* (#470): the guidelines introduce passkeys gradually — the
   // benefit first, then a link for anyone who wants the rest. The rest here
   // is this service's own: the two roles a passkey can have, and the backup
   // rule, which are what the page's old notes said.
-  private learnMore(mechanisms, held) {
-    const self = this;
+  private learnMore(mechanisms, held, t: Translator) {
     const { log } = this.deps;
     log.debug('Entering Portal.learnMore().');
     log.debug('Leaving Portal.learnMore().');
-    return '<details><summary>Learn more</summary>' +
-      '<p class="note">A passkey here is either <strong>instead of your ' +
-      'password</strong> — it signs you in on its own — or <strong>a ' +
-      'second step after your password</strong>. You choose which when you ' +
-      'create it.</p>' +
-      '<p class="note">A passkey on your devices is usually saved to a ' +
-      'password manager (iCloud Keychain, Google Password Manager, ' +
-      '1Password and others), so it is there on your other devices too. A ' +
-      'passkey on a security key stays on that key, and a certified ' +
-      'security key is the strongest kind of sign-in there is.</p>' +
-      '<p class="note">To link a phone or computer on <a href="' + BASE +
-      '/devices">Devices</a>, create the passkey <strong>on that ' +
-      'device</strong>; a passkey on a security key identifies no device.' +
-      '</p>' +
+    return '<details><summary>' + t.html('portal.keys.learnMore') +
+      '</summary>' +
+      '<p class="note">' + t.html('portal.keys.learnRoles') + '</p>' +
+      '<p class="note">' + t.html('portal.keys.learnWhere') + '</p>' +
+      // The link to Devices is markup, so the sentence is two messages
+      // around it (#539).
+      '<p class="note">' + t.html('portal.keys.learnDevicesBefore') +
+      ' <a href="' + BASE + '/devices">' + t.html('portal.nav.devices.label') +
+      '</a>' + t.html('portal.keys.learnDevicesAfter') + '</p>' +
       (held > 1
-        ? '<p class="note"><strong>You hold ' + self.esc(String(held)) +
-          ', which is the point.</strong> If one is lost, the others still ' +
-          'sign you in — and you can remove the lost one here without ' +
-          'asking anybody.</p>'
+        ? '<p class="note">' + t.html('portal.keys.learnMany', { n: held }) +
+          '</p>'
         : (held === 1
-            ? '<p class="note"><strong>You hold one and no backup.</strong> ' +
-              'If it is lost, an operator has to clear it for you before you ' +
-              'can create another — there is deliberately no self-service ' +
-              'reset of a credential you cannot produce. Create a second ' +
-              'one now, on a different device or a security key.</p>'
+            ? '<p class="note">' + t.html('portal.keys.learnOne') + '</p>'
             : '')) +
-      (mechanisms.password ? '' : '<p class="note">You have no password. ' +
-        'A passkey used as a second step needs one.</p>') +
+      (mechanisms.password ? '' : '<p class="note">' +
+        t.html('portal.keys.learnNoPassword') + '</p>') +
       '</details>';
   }
 
@@ -3252,7 +3644,10 @@ class Portal {
         return one.credentialId;
       }).join(',')) + '"' +
       ' data-name="' + self.esc(username) + '"' +
-      ' data-display="' + self.esc(String(session.user.name || username)) +
+      ' data-display="' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      self.esc(passkeyPolicy.displayNameFor(username,
+        String(session.user.name || username))) +
       '"></div>' +
       '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
     log.debug('Leaving Portal.signalBlock().');
@@ -3332,7 +3727,7 @@ class Portal {
   // `/portal/activate` still asks with radios, because its one form carries
   // a password and a role as well; this is that choice in the same words.
   // ===========================================================================
-  private kindChoice(kinds) {
+  private kindChoice(kinds, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug('Entering Portal.kindChoice().');
@@ -3341,25 +3736,23 @@ class Portal {
       return '';
     }
     const rows = {
-      'passkey': ['A passkey on this device or your phone',
-                  'Touch ID, Face ID, Windows Hello, the screen lock or your ' +
-                  'password manager. Most passkeys are there on your other ' +
-                  'devices too.'],
-      'security-key': ['A security key',
-                       'A USB, NFC or Bluetooth key you carry. The passkey ' +
-                       'stays on the key.']
+      'passkey': [t.html('portal.kind.passkey'),
+                  t.html('portal.kind.passkeyWhat')],
+      'security-key': [t.html('portal.kind.securityKey'),
+                       t.html('portal.kind.securityKeyWhat')]
     };
     log.debug('Leaving Portal.kindChoice().');
-    return '<p class="sub"><strong>Which kind of passkey?</strong></p>' +
+    return '<p class="sub"><strong>' + t.html('portal.kind.which') +
+      '</strong></p>' +
       kinds.map(function (kind, i) {
         return '<label class="chk"><input type="radio" name="kind" ' +
           'value="' + self.esc(kind) + '"' + (i === 0 ? ' checked' : '') +
-          '> ' + self.esc(rows[kind][0]) + ' <span class="sub">' +
-          self.esc(rows[kind][1]) + '</span></label>';
+          '> ' + rows[kind][0] + ' <span class="sub">' +
+          rows[kind][1] + '</span></label>';
       }).join('');
   }
 
-  private enrolBlock(session, mechanisms, base) {
+  private enrolBlock(session, mechanisms, base, t: Translator) {
     const self = this;
     const { authn, credentials, log, webauthnPolicy, websecurity } = this.deps;
     log.debug('Entering Portal.enrolBlock().');
@@ -3370,17 +3763,14 @@ class Portal {
 
     if (!policy.enabled) {
       log.debug('Leaving Portal.enrolBlock(). Passkeys are switched off.');
-      return '<h2>Add a passkey</h2>' +
-        '<p class="note">Passkeys are switched off in this service, so no ' +
-        'new one can be created. Any passkey already on your account goes ' +
-        'on working.</p>';
+      return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
+        '<p class="note">' + t.html('portal.enrol.off') + '</p>';
     }
     if (mechanisms.keys.length >= policy.maxKeysPerPerson) {
       log.debug('Leaving Portal.enrolBlock(). At the cap.');
-      return '<h2>Add a passkey</h2>' +
-        '<p class="note">You hold ' + self.esc(String(mechanisms.keys.length)) +
-        ' passkeys, which is the most this service allows. Remove one ' +
-        'first.</p>';
+      return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
+        '<p class="note">' + t.html('portal.enrol.atCap',
+          { n: mechanisms.keys.length }) + '</p>';
     }
 
     // ---------------------------------------------------------------------
@@ -3397,23 +3787,21 @@ class Portal {
       const rpId = authn.rpIdOf(base);
       log.debug('Leaving Portal.enrolBlock(). A ceremony is armed.');
       const securityKey = pending.kind === 'security-key';
-      return '<h2>' + (securityKey ? 'Use your security key'
-                                   : 'Create your passkey') + '</h2>' +
+      return '<h2>' + (securityKey ? t.html('portal.key.useHeading')
+                                   : t.html('portal.key.createHeading')) +
+        '</h2>' +
         '<p class="note">' + (securityKey
-          ? 'Your browser is about to ask for your security key. Insert or ' +
-            'tap it when it asks. '
-          : 'Your browser is about to ask where to save your passkey — this ' +
-            'device (Touch ID, Face ID, Windows Hello or the screen lock), ' +
-            'your password manager, or your phone. ') +
-        '<strong>Use a DIFFERENT one from any already on your ' +
-        'account</strong> &mdash; the point of a backup is that it is not in ' +
-        'the same place as the original. One that is already registered ' +
-        'will refuse.</p><div id="wa-data"' +
+          ? t.html('portal.key.promptSecurityKey')
+          : t.html('portal.key.promptPasskey')) + ' ' +
+        t.html('portal.enrol.different') + '</p><div id="wa-data"' +
         ' data-challenge="' + self.esc(pending.challenge) + '"' +
         ' data-rpid="' + self.esc(rpId) + '"' +
         ' data-user="' + self.esc(username) + '"' +
         ' data-userid="' + self.esc(pending.userHandle || '') + '"' +
-        ' data-display="' + self.esc(String(session.user.name || username)) +
+        ' data-display="' +
+      // The name the prompt shows (#533), the policy's userDisplayName first.
+      self.esc(passkeyPolicy.displayNameFor(username,
+        String(session.user.name || username))) +
         '"' +
         ' data-allow=""' +
         ' data-exclude="' + self.esc(pending.exclude.join(',')) + '"' +
@@ -3423,7 +3811,8 @@ class Portal {
         '"' +
         ' data-mode="create"></div>' +
         '<button id="wa-go" type="button">' + (securityKey
-          ? 'Register security key' : 'Create passkey') + '</button>' +
+          ? t.html('portal.key.register') : t.html('portal.key.create')) +
+        '</button>' +
         '<form method="post" action="' + BASE + '/keys" id="wa-form">' + csrf +
         '<input type="hidden" name="action" value="finish">' +
         '<input type="hidden" name="enrolment_id" value="' +
@@ -3433,17 +3822,20 @@ class Portal {
         // and what it posts is a `finish` with no credential — which the
         // handler answers by saying the browser ran no ceremony, rather than by
         // appearing to do nothing.
-        '<button class="secondary">My browser did not ask &mdash; tell me ' +
-        'why</button></form><form method="post" ' +
+        '<button class="secondary">' + t.html('portal.key.didNotAsk') +
+        '</button></form><form method="post" ' +
         'action="' + BASE + '/keys">' + csrf +
         '<input type="hidden" name="action" value="cancel">' +
-        '<button class="secondary">Cancel</button></form>' +
-        '<p class="sub">Creating: <strong>' +
-        self.esc(securityKey ? 'a passkey on a security key'
-                             : 'a passkey on your device') +
-        '</strong>, ' + self.esc(pending.role === 'primary'
-          ? 'used instead of your password'
-          : 'used as a second step after your password') + '.</p>' +
+        '<button class="secondary">' + t.html('portal.enrol.cancel') +
+        '</button></form>' +
+        '<p class="sub">' +
+        (securityKey
+          ? (pending.role === 'primary'
+              ? t.html('portal.enrol.creatingKeyPrimary')
+              : t.html('portal.enrol.creatingKeyMfa'))
+          : (pending.role === 'primary'
+              ? t.html('portal.enrol.creatingDevicePrimary')
+              : t.html('portal.enrol.creatingDeviceMfa'))) + '</p>' +
         '<script src="' + authn.WEBAUTHN_SCRIPT_PATH + '"></script>';
     }
 
@@ -3454,47 +3846,44 @@ class Portal {
     // ---------------------------------------------------------------------
     const roles = [];
     if (policy.mfaAllowed) {
-      roles.push(['mfa', 'As a second step after my password',
+      roles.push(['mfa', t.html('portal.enrol.asSecond'),
                   mechanisms.password
-                    ? 'You will be asked for it every time you sign in.'
-                    : 'You have no password, so this passkey alone will not ' +
-                      'sign you in — set a password as well.']);
+                    ? t.html('portal.enrol.asSecondWhat')
+                    : t.html('portal.enrol.asSecondNoPassword')]);
     }
     if (policy.primaryAllowed) {
-      roles.push(['primary', 'Instead of my password',
-                  'You sign in with the passkey and nothing else.']);
+      roles.push(['primary', t.html('portal.enrol.instead'),
+                  t.html('portal.enrol.insteadWhat')]);
     }
     if (!roles.length) {
       log.debug('Leaving Portal.enrolBlock(). No role is allowed.');
-      return '<h2>Add a passkey</h2>' +
-        '<p class="note">This service allows a passkey in neither role at ' +
-        'the moment, so none can be created.</p>';
+      return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
+        '<p class="note">' + t.html('portal.enrol.noRole') + '</p>';
     }
     const kinds = webauthnPolicy.authenticatorKinds();
-    const labels = { 'passkey': 'Create a passkey',
-                     'security-key': 'Use a security key' };
+    const labels = { 'passkey': t.html('portal.enrol.createPasskey'),
+                     'security-key': t.html('portal.enrol.useSecurityKey') };
 
     log.debug('Leaving Portal.enrolBlock(). The form is drawn.');
-    return '<h2>Add a passkey</h2>' +
+    return '<h2>' + t.html('portal.enrol.heading') + '</h2>' +
       (mechanisms.keys.length
-        ? '<p class="note">This adds a NEW passkey. The ones you already ' +
-          'hold are excluded, so choosing one that is already registered ' +
-          'will refuse rather than adding it twice.</p>'
+        ? '<p class="note">' + t.html('portal.enrol.addsNew') + '</p>'
         : '') +
       '<form method="post" action="' + BASE + '/keys">' + csrf +
       '<input type="hidden" name="action" value="begin">' +
       (roles.length > 1
-        ? '<p class="sub"><strong>How will you use it?</strong></p>' +
+        ? '<p class="sub"><strong>' + t.html('portal.enrol.howUse') +
+          '</strong></p>' +
           roles.map(function (row) {
             return '<label class="chk"><input type="radio" name="role" ' +
               'value="' + self.esc(row[0]) + '"' +
               (row[0] === roles[0][0] ? ' checked' : '') + '> ' +
-              self.esc(row[1]) + ' <span class="sub">' + self.esc(row[2]) +
+              row[1] + ' <span class="sub">' + row[2] +
               '</span></label>';
           }).join('')
         : '<input type="hidden" name="role" value="' +
           self.esc(roles[0][0]) + '"><p class="note">' +
-          self.esc(roles[0][1]) + '. ' + self.esc(roles[0][2]) + '</p>') +
+          roles[0][1] + '. ' + roles[0][2] + '</p>') +
       // THE TWO CALLS TO ACTION, primary then secondary: two submit buttons
       // of one form, so the button pressed is the kind — no script.
       '<div class="ctas">' + kinds.map(function (kind, i) {
@@ -3502,7 +3891,7 @@ class Portal {
           (i > 0 ? ' class="secondary"' : '') + '>' +
           (kind === 'passkey' ? PORTAL_ICONS.passkey
                               : PORTAL_ICONS.securityKey) +
-          self.esc(labels[kind]) + '</button>';
+          labels[kind] + '</button>';
       }).join('') + '</div></form>';
   }
 
@@ -3577,7 +3966,7 @@ class Portal {
   // unverified address — DISABLED rather than left out, so a person reading
   // it learns what is missing.
   // ---------------------------------------------------------------------------
-  private emailFactorCard(session) {
+  private emailFactorCard(session, t: Translator) {
     const self = this;
     const { log, websecurity } = this.deps;
     log.debug('Entering Portal.emailFactorCard().');
@@ -3595,9 +3984,9 @@ class Portal {
       return '';
     }
     const blocked = !status.offered.code && !status.offered.link
-      ? 'This service cannot send mail just now.'
+      ? t.html('portal.emailFactor.noMail')
       : (!status.verified
-        ? 'Your address is not verified. Verify it on the Email page first.'
+        ? t.html('portal.emailFactor.unverified')
         : '');
     const option = function (kind, label) {
       log.debug('Entering option().');
@@ -3609,33 +3998,37 @@ class Portal {
         '<button id="email-factor-' + kind + '"' +
         (status.optedIn === kind ? ' class="secondary"' : '') +
         (off || status.optedIn === kind ? ' disabled' : '') + '>' +
-        self.esc(label) + '</button></form> ';
+        label + '</button></form> ';
     };
+    // WHAT IS ON: the masked address and the reason it is not used are
+    // `mail_factor`'s own and go in as parameters (#539).
+    let said = t.html('portal.emailFactor.off');
+    if (status.optedIn && status.usable) {
+      said = status.kind === 'code'
+        ? t.html('portal.emailFactor.onCode',
+                 { address: mailFactor.masked(status.address) })
+        : t.html('portal.emailFactor.onLink',
+                 { address: mailFactor.masked(status.address) });
+    } else if (status.optedIn) {
+      said = status.optedIn === 'code'
+        ? t.html('portal.emailFactor.unusedCode', { why: status.why })
+        : t.html('portal.emailFactor.unusedLink', { why: status.why });
+    }
     const out = '<div class="card" id="email-factor">' +
-      '<h2>Email as a second factor</h2>' +
-      '<p class="sub">' + self.esc(status.optedIn
-        ? (status.usable
-            ? 'On: after your password, a ' + (status.kind === 'code'
-                ? 'six-digit code' : 'sign-in link') + ' is sent to ' +
-              mailFactor.masked(status.address) + '.'
-            : 'You chose an emailed ' + status.optedIn + ', but it is not ' +
-              'being used: ' + status.why + '.')
-        : 'Off.') + '</p>' +
-      (blocked ? '<p class="note">' + self.esc(blocked) + '</p>' : '') +
-      (allowed.code ? option('code', 'Email me a code') : '') +
-      (allowed.link ? option('link', 'Email me a sign-in link') : '') +
+      '<h2>' + t.html('portal.emailFactor.heading') + '</h2>' +
+      '<p class="sub">' + said + '</p>' +
+      (blocked ? '<p class="note">' + blocked + '</p>' : '') +
+      (allowed.code ? option('code', t.html('portal.emailFactor.code')) : '') +
+      (allowed.link ? option('link', t.html('portal.emailFactor.link')) : '') +
       (status.optedIn
         ? '<form method="post" action="' + BASE + '/mfa" class="inline">' +
           csrf + '<input type="hidden" name="action" ' +
           'value="email-factor-off"><button class="danger" ' +
-          'id="email-factor-off">Turn it off</button></form>'
+          'id="email-factor-off">' + t.html('portal.emailFactor.turnOff') +
+          '</button></form>'
         : '') +
-      '<p class="note"><strong>Email is the weakest second factor this ' +
-      'service offers.</strong> Anybody who can read your mailbox — with ' +
-      'your email password alone, often — can finish signing in as you, ' +
-      'which is why NIST SP 800-63B-4 does not count email as an ' +
-      'authenticator. An authenticator app or a passkey is better where ' +
-      'you have one; you are asked for those first.</p></div>';
+      '<p class="note">' + t.html('portal.emailFactor.weakest') +
+      '</p></div>';
     log.debug('Leaving Portal.emailFactorCard().');
     return out;
   }
@@ -3649,6 +4042,7 @@ class Portal {
     const csrf = websecurity.field(session.id);
     const live = totp.settings();
     const offered = totp.offered();
+    const t = self.translatorFor(session);
 
     // THE ENROLMENT IN PROGRESS, passed in rather than read here: the caller
     // has already awaited the QR code, and a page builder that returned a
@@ -3657,156 +4051,133 @@ class Portal {
 
     const enrolledCard =
       '<div class="card">' +
-      '<h2>Status</h2>' +
+      '<h2>' + t.html('portal.mfa.status') + '</h2>' +
       '<p class="sub">' +
       (mechanisms.totp
         ? (mechanisms.totpUsable
-            ? self.esc('An authenticator app is set up. A password alone ' +
-                  'will not sign you in — you will be asked for a code.')
-            : self.esc('An authenticator app is enrolled, but this service ' +
-                  'cannot read the enrolment, so it cannot check your codes. ' +
-                  'An administrator has to clear it before you can set one ' +
-                  'up again.'))
-        : self.esc('No authenticator app is set up.')) + '</p>' +
+            ? t.html('portal.mfa.setUp')
+            : t.html('portal.mfa.unreadable'))
+        : t.html('portal.mfa.none')) + '</p>' +
       // THE PASSWORD-ONLY DOORS (#101): where a second factor cannot be
       // asked for, their own password is refused, and this says where to get
-      // what those clients take instead.
+      // what those clients take instead. The doors' names are data; the link
+      // is markup, so the sentence is two messages around it (#539).
       (function () {
         const doors = credentials.passwordOnlyDoors(username);
         return doors.applies && doors.refused.length
-          ? '<p class="note">' + self.esc('While you use a second factor, ' +
-              'your password alone is refused at the doors that cannot ask ' +
-              'for one (' + doors.refused.join(', ') + '). ') +
-            '<a href="' + BASE + '/app-passwords">Make an app password</a>' +
-            self.esc(' for a client that uses one of them.') + '</p>'
+          ? '<p class="note">' + t.html('portal.mfa.doors',
+              { doors: doors.refused.join(', ') }) + ' ' +
+            '<a href="' + BASE + '/app-passwords">' +
+            t.html('portal.mfa.makeAppPassword') + '</a>' +
+            t.html('portal.mfa.makeAppPasswordAfter') + '</p>'
           : '';
       })() +
       (mechanisms.totp && mechanisms.totpDetail
         ? '<table class="grid">' +
-          '<tr><th>Set up</th><td>' +
+          '<tr><th>' + t.html('portal.mfa.setUpOn') + '</th><td>' +
           self.esc(new Date(mechanisms.totpDetail.enrolledAt || 0).toISOString()
             .slice(0, 10)) +
           '</td></tr>' +
-          '<tr><th>Last used</th><td>' +
-          self.esc(mechanisms.totpDetail.lastUsedAt
-            ? new Date(mechanisms.totpDetail.lastUsedAt).toISOString()
-              .slice(0, 19) + 'Z'
-            : 'never') + '</td></tr>' +
-          '<tr><th>Algorithm</th><td>' +
-          self.esc('HMAC-' + String(mechanisms.totpDetail.algorithm || 'SHA1')
-                .replace(/^SHA/, 'SHA-') + ', ' +
-              String(mechanisms.totpDetail.digits || 6) + ' digits, every ' +
-              String(mechanisms.totpDetail.period || 30) + ' seconds') +
+          '<tr><th>' + t.html('portal.mfa.lastUsed') + '</th><td>' +
+          (mechanisms.totpDetail.lastUsedAt
+            ? self.esc(new Date(mechanisms.totpDetail.lastUsedAt)
+                .toISOString().slice(0, 19) + 'Z')
+            : t.html('portal.mfa.never')) + '</td></tr>' +
+          '<tr><th>' + t.html('portal.totp.algorithm') + '</th><td>' +
+          t.html('portal.totp.algorithmValue', {
+            alg: 'HMAC-' + String(mechanisms.totpDetail.algorithm || 'SHA1')
+                .replace(/^SHA/, 'SHA-'),
+            digits: String(mechanisms.totpDetail.digits || 6),
+            period: String(mechanisms.totpDetail.period || 30) }) +
           '</td></tr></table>' +
           '<form method="post" action="' + BASE + '/mfa">' + csrf +
           '<input type="hidden" name="action" value="remove">' +
-          '<button class="danger">Remove it</button></form>' +
-          '<p class="note">Removing it drops your account to one factor. It ' +
-          'cannot lock you out — an authenticator app is never a way in by ' +
-          'itself — but your password alone will sign you in again ' +
-          'afterwards.</p>'
+          '<button class="danger">' + t.html('portal.mfa.remove') +
+          '</button></form>' +
+          '<p class="note">' + t.html('portal.mfa.removeNote') + '</p>'
         : '') +
       '</div>';
 
     const setupCard = setup
       ? '<div class="card">' +
-        '<h2>Scan this with your authenticator app</h2>' +
-        '<p class="sub">Nothing is saved until you type a code back, so this ' +
-        'is not set up yet.</p>' +
+        '<h2>' + t.html('portal.totp.scanHeading') + '</h2>' +
+        '<p class="sub">' + t.html('portal.mfa.notSavedYet') + '</p>' +
         // THE IMAGE, drawn on the server. `alt` says what it is rather than
         // repeating the secret: a screen reader announcing a shared secret
         // character by character in an open-plan office is not an improvement.
         '<p><img src="' + self.esc(setup.qr) + '" width="240" height="240" ' +
-        'alt="QR code carrying this account\'s otpauth setup URI"></p><h3>Or ' +
-        'type it in</h3><p class="note">If you cannot scan — the phone is ' +
-        'showing this page, the app has no camera, or this service is on ' +
-        '<code>localhost</code> and your phone cannot reach it — add the ' +
-        'account by hand with these:</p><table ' +
-        'class="grid"><tr><th>Secret</th><td><code>' + self.esc(setup.grouped) +
-        '</code></td></tr><tr><th>Account</th><td><code>' + self.esc(username) +
-        '</code></td></tr><tr><th>Issuer</th><td>' + self.esc(setup.issuer) +
-        '</td></tr><tr><th>Type</th><td>Time ' +
-        'based</td></tr><tr><th>Algorithm</th><td>' +
+        'alt="' + self.esc(t.text('portal.totp.qrAlt')) + '"></p><h3>' +
+        t.html('portal.totp.typeIt') + '</h3><p class="note">' +
+        t.html('portal.mfa.byHand') + '</p><table ' +
+        'class="grid"><tr><th>' + t.html('portal.totp.secret') +
+        '</th><td><code>' + self.esc(setup.grouped) +
+        '</code></td></tr><tr><th>' + t.html('portal.totp.account') +
+        '</th><td><code>' + self.esc(username) +
+        '</code></td></tr><tr><th>' + t.html('portal.totp.issuer') +
+        '</th><td>' + self.esc(setup.issuer) +
+        '</td></tr><tr><th>' + t.html('portal.mfa.type') + '</th><td>' +
+        t.html('portal.mfa.timeBased') + '</td></tr><tr><th>' +
+        t.html('portal.totp.algorithm') + '</th><td>' +
         self.esc('HMAC-' + String(setup.algorithm).replace(/^SHA/, 'SHA-')) +
         '</td></tr>' +
-        '<tr><th>Digits</th><td>' + self.esc(String(setup.digits)) +
+        '<tr><th>' + t.html('portal.mfa.digits') + '</th><td>' +
+        self.esc(String(setup.digits)) +
         '</td></tr>' +
-        '<tr><th>Period</th><td>' + self.esc(String(setup.period)) + ' ' +
-        'seconds</td></tr></table><h3>Then prove it works</h3><form ' +
+        '<tr><th>' + t.html('portal.mfa.period') + '</th><td>' +
+        t.html('portal.mfa.seconds', { n: setup.period }) +
+        '</td></tr></table><h3>' + t.html('portal.mfa.prove') +
+        '</h3><form ' +
         'method="post" action="' + BASE + '/mfa">' + csrf +
         '<input type="hidden" name="action" value="confirm">' +
-        '<label for="code">The ' + self.esc(String(setup.digits)) +
-        '-digit code your app is showing now</label>' +
+        '<label for="code">' + t.html('portal.totp.codeLabel',
+          { digits: String(setup.digits) }) + '</label>' +
         '<input type="text" id="code" name="code" ' +
         'autocomplete="one-time-code" ' +
         'inputmode="numeric" ' +
         'maxlength="' + self.esc(String(setup.digits)) + '" ' +
         'placeholder="' + '0'.repeat(setup.digits) + '"><button ' +
-        'type="submit">Finish setting it up</button></form><p ' +
-        'class="note">The code this service accepts here is SPENT — you will ' +
-        'need the next one to sign in, which is RFC 6238 section 5.2 and is ' +
-        'why a code never works twice.</p></div>'
+        'type="submit">' + t.html('portal.mfa.finish') + '</button></form><p ' +
+        'class="note">' + t.html('portal.mfa.spent') + '</p></div>'
       : '';
 
     const startCard = offered
       ? '<div class="card">' +
-        '<h2>' + (mechanisms.totp ? 'Replace it' : 'Set one up') + '</h2>' +
-        '<p class="sub">Use your favourite authenticator app — ' +
-        '<strong>Google Authenticator, Microsoft Authenticator, Authy, ' +
-        '1Password, Bitwarden, Aegis, FreeOTP, KeePassXC</strong> or any ' +
-        'other. They all implement the same specification (RFC 6238), so any ' +
-        'of them works and nothing here is tied to one.</p>' +
+        '<h2>' + (mechanisms.totp ? t.html('portal.mfa.replaceHeading')
+                                  : t.html('portal.mfa.setOneUp')) + '</h2>' +
+        '<p class="sub">' + t.html('portal.mfa.anyApp') + '</p>' +
         (mechanisms.totp
-          ? '<p class="note"><strong>Setting up a new one replaces the one ' +
-            'you have.</strong> You hold one authenticator here and not a ' +
-            'list, because a six-digit code says nothing about which app ' +
-            'produced it. Delete the old account from your app afterwards — ' +
-            'it will keep showing codes that no longer work.</p>'
+          ? '<p class="note">' + t.html('portal.mfa.replaces') + '</p>'
           : '') +
         '<form method="post" action="' + BASE + '/mfa">' + csrf +
         '<input type="hidden" name="action" value="start">' +
         '<button' + (mechanisms.totp ? ' class="secondary"' : '') + '>' +
-        (setup ? 'Start again with a new secret'
-               : (mechanisms.totp ? 'Replace my authenticator app'
-                                  : 'Set up an authenticator app')) +
+        (setup ? t.html('portal.mfa.startAgain')
+               : (mechanisms.totp ? t.html('portal.mfa.replaceMine')
+                                  : t.html('portal.mfa.setUpApp'))) +
         '</button></form>' +
         '</div>'
-      : '<div class="card"><h2>Not available</h2>' +
-        '<p class="sub">' +
-        self.esc('Authenticator apps are turned off on this service. An ' +
-            'operator turns them on in the authentication policy.') +
-        '</p></div>';
+      : '<div class="card"><h2>' + t.html('portal.mfa.notAvailable') +
+        '</h2>' +
+        '<p class="sub">' + t.html('portal.mfa.turnedOff') + '</p></div>';
 
     const aboutCard =
       '<div class="card">' +
-      '<h2>What this is</h2>' +
-      '<p class="note">A <strong>time-based one-time password</strong> — RFC ' +
-      '6238. Your app and this service hold the same secret and both compute ' +
-      'the same ' + self.esc(String(live.digits)) + '-digit number from it ' +
-      'and the clock, so the code proves you have the app without either of ' +
-      'you sending the secret anywhere. It changes every ' +
-      self.esc(String(live.period)) + ' seconds.</p><p ' +
-      'class="note"><strong>It is a SECOND factor and never a first ' +
-      'one.</strong> It cannot replace your password here, because this ' +
-      'service holds the same secret your app does — which is fine for ' +
-      'proving you still have the app, and is not something to hang a whole ' +
-      'account on. That is the difference between this and a security key, ' +
-      'which keeps a private key this service never sees.</p><p ' +
-      'class="note">Codes are checked <strong>properly, in every ' +
-      'mode</strong>. Most credentials on this mock are not — any password ' +
-      'is accepted — but a one-time password verifier that accepted any six ' +
-      'digits would not be a permissive one, it would be a broken one, and ' +
-      'there would be nothing left to test a client against.</p></div>';
+      '<h2>' + t.html('portal.mfa.whatThisIs') + '</h2>' +
+      '<p class="note">' + t.html('portal.mfa.about',
+        { digits: String(live.digits), period: String(live.period) }) +
+      '</p><p ' +
+      'class="note">' + t.html('portal.mfa.aboutSecond') + '</p><p ' +
+      'class="note">' + t.html('portal.mfa.aboutChecked') + '</p></div>';
 
     // THE RECOVERY CODES (2026-09-10), between the authenticator's own cards
     // and the explanation. It is on THIS page rather than a page of its own
     // because it answers a question about the second factor — see
     // `backupCodesCard()`.
     const recoveryCard = self.backupCodesCard(session, fresh, revealed,
-                                              mechanisms);
+                                              mechanisms, t);
 
     const html = self.shell(BASE + '/mfa', session, message, error,
-      enrolledCard + setupCard + startCard + self.emailFactorCard(session) +
+      enrolledCard + setupCard + startCard + self.emailFactorCard(session, t) +
       recoveryCard + aboutCard);
     log.debug('Leaving Portal.mfaPage().');
     return html;
@@ -3838,12 +4209,14 @@ class Portal {
   // labelled as not-yet-active, and the Cancel beside it says what it throws
   // away.
   // ===========================================================================
-  private backupCodesCard(session, fresh, revealed, mechanisms) {
+  private backupCodesCard(session, fresh, revealed, mechanisms,
+                          translator?: Translator) {
     const self = this;
     const { backupCodes, credentials, log, websecurity } = this.deps;
     log.debug("Entering Portal.backupCodesCard().");
     const username = session.user.username;
     log.debug('Entering Portal.backupCodesCard(). username=' + username);
+    const t = translator || self.translatorFor(session);
     const live = backupCodes.settings();
     // THE CALLER'S ANSWER, PASSED IN — `mechanismsFor()` walks the directory
     // and asking twice on one render is a second walk for a number the caller
@@ -3868,53 +4241,44 @@ class Portal {
       }).join('');
       log.debug('Leaving Portal.backupCodesCard(). Showing a pending set.');
       return '<div class="card">' +
-        '<h2>Save these recovery codes</h2>' +
-        '<p class="sub"><strong>' +
-        self.esc('They are not saved yet. Nothing has been stored, and none ' +
-            'of these codes will work until you press the button below.') +
+        '<h2>' + t.html('portal.codes.saveHeading') + '</h2>' +
+        '<p class="sub"><strong>' + t.html('portal.codes.notSavedYet') +
         '</strong></p>' +
         '<ul class="codes">' + list + '</ul>' +
         // #224: the same codes ONE PER LINE, which a selection copies as
         // drawn, and the Copy button the script reveals (see COPY_SCRIPT).
-        '<p><label for="recovery-codes-text">The same codes as plain ' +
-        'text, one per line</label><br><textarea id="recovery-codes-text" ' +
+        '<p><label for="recovery-codes-text">' +
+        t.html('portal.codes.plainText') +
+        '</label><br><textarea id="recovery-codes-text" ' +
         'readonly rows="' + fresh.codes.length + '" cols="28">' +
         fresh.codes.map(function (code) {
           return self.esc(backupCodes.formatted(code));
         }).join('\n') + '</textarea><br><button type="button" ' +
         'class="copybtn secondary" hidden ' +
-        'data-copy-target="recovery-codes-text">Copy all codes</button></p>' +
+        'data-copy-target="recovery-codes-text">' +
+        t.html('portal.codes.copyAll') + '</button></p>' +
         '<script src="' + COPY_SCRIPT_PATH + '"></script>' +
-        '<p class="note"><strong>This is ' +
-        'the only time they will ever be shown.</strong> When you confirm, ' +
-        'this service stores a <em>hash</em> of each one &mdash; the same ' +
-        'kind of scrypt hash it stores for your password &mdash; so it can ' +
-        'check a code you type and can never print one back. Write them ' +
-        'down, print them, or put them in a password manager first.</p><p ' +
-        'class="note"><strong>Each code works once.</strong> Type one at the ' +
-        'sign-in screen instead of your second factor when you cannot ' +
-        'produce it. The dashes and the case do not matter; they are there ' +
-        'so you can transcribe it.</p>' +
+        '<p class="note">' + t.html('portal.codes.onlyTime') + '</p><p ' +
+        'class="note">' + t.html('portal.codes.eachOnce') + '</p>' +
         (fresh.replacing
-          ? '<p class="note"><strong>Confirming replaces the set you already ' +
-            'have.</strong> Every code on your old list stops working the ' +
-            'moment you press the button.</p>'
+          ? '<p class="note">' + t.html('portal.codes.confirmReplaces') +
+            '</p>'
           : '') +
         '<form method="post" action="' + BASE + '/mfa">' + csrf +
         '<input type="hidden" name="action" value="confirm-codes">' +
         '<input type="hidden" name="handle" value="' +
           self.esc(String(fresh.handle || '')) + '">' +
-        '<button>I have saved these codes</button>' +
+        '<button>' + t.html('portal.codes.saved') + '</button>' +
         '</form>' +
         '<form method="post" action="' + BASE + '/mfa">' + csrf +
         '<input type="hidden" name="action" value="discard-codes">' +
         '<input type="hidden" name="handle" value="' +
           self.esc(String(fresh.handle || '')) + '">' +
-        '<button class="secondary">Throw these away without saving</button>' +
+        '<button class="secondary">' + t.html('portal.codes.throwAway') +
+        '</button>' +
         '</form>' +
-        '<p class="note">If you close this page without confirming, nothing ' +
-        'is stored and nothing changes &mdash; these codes simply never ' +
-        'existed. Whatever set you had before is untouched.</p></div>';
+        '<p class="note">' + t.html('portal.codes.closeWithout') +
+        '</p></div>';
     }
 
     // ---------------------------------------------------------------------
@@ -3924,93 +4288,72 @@ class Portal {
       '<form method="post" action="' + BASE + '/mfa">' + csrf +
       '<input type="hidden" name="action" value="generate-codes">' +
       '<button' + (status.present ? ' class="secondary"' : '') + '>' +
-      (status.present ? 'Generate a new set' : 'Generate my recovery codes') +
+      (status.present ? t.html('portal.codes.generateNew')
+                      : t.html('portal.codes.generateMine')) +
       '</button></form>';
 
     let body;
     if (!status.present) {
       body =
         '<p class="sub">' +
-        self.esc(advised
-          ? 'You have a second factor and no recovery codes. If you cannot ' +
-            'reach it — a flat phone, a security key in a drawer at home — ' +
-            'there is currently no way back into this account except an ' +
-            'administrator.'
-          : 'None have been generated. Recovery codes stand in for a second ' +
-            'factor when you cannot produce it, so they are worth generating ' +
-            'once you have one.') + '</p>' +
         (advised
-          ? '<p class="note"><strong>This service will not create a set for ' +
-            'you.</strong> It used to, as a side effect of enrolling a ' +
-            'second factor &mdash; it cannot any more, because it now stores ' +
-            'only a hash of each code and a hash can only be made while the ' +
-            'code is on the screen in front of you.</p>'
+          ? t.html('portal.codes.advised')
+          : t.html('portal.codes.noneGenerated')) + '</p>' +
+        (advised
+          ? '<p class="note">' + t.html('portal.codes.willNotCreate') + '</p>'
           : '') +
         (live.enabled ? generateForm : '') +
-        '<p class="note">' + self.esc(live.count + ' codes of ' + live.length +
-          ' characters are generated. They are shown once, and stored only ' +
-          'after you confirm you have saved them.') + '</p>';
+        '<p class="note">' + t.html('portal.codes.howMany',
+          { count: live.count, length: live.length }) + '</p>';
     } else if (!status.usable) {
+      // The reason is the store's own and stays English (#539).
       body =
-        '<p class="sub">' +
-        self.esc('A set exists and this service cannot read it (' +
-            (status.why || 'the stored set is unusable') + '), so a code you ' +
-            'type cannot be checked against it.') + '</p>' +
-        '<p class="note">Generating a new set replaces it and fixes this. An ' +
-        'administrator can also clear it from your row under ' +
-        '<code>/admin/users</code>.</p>' +
+        '<p class="sub">' + t.html('portal.codes.unreadable',
+          { why: status.why || 'the stored set is unusable' }) + '</p>' +
+        '<p class="note">' + t.html('portal.codes.unreadableFix') + '</p>' +
         (live.enabled ? generateForm : '');
     } else {
       body =
-        '<p class="sub">' +
-        self.esc(status.remaining + ' of your ' + status.total +
-          ' recovery codes are unused.') + '</p>' +
+        '<p class="sub">' + t.html('portal.codes.unusedOf',
+          { remaining: status.remaining, total: status.total }) + '</p>' +
         '<table class="grid">' +
-        '<tr><th>Saved</th><td>' +
-        self.esc(status.generatedAt
-          ? new Date(status.generatedAt).toISOString().slice(0, 10)
-          : 'not recorded') + '</td></tr>' +
-        '<tr><th>Unused</th><td>' + self.esc(String(status.remaining) + ' of ' +
-          String(status.total)) + '</td></tr>' +
-        '<tr><th>Last used</th><td>' +
-        self.esc(status.lastUsedAt
-          ? new Date(status.lastUsedAt).toISOString().slice(0, 19) + 'Z'
-          : 'never') + '</td></tr>' +
-        '<tr><th>Stored</th><td>' + self.esc('as a scrypt hash of each code ' +
-          '— the same way your password is stored, which is why they cannot ' +
-          'be shown to you again') + '</td></tr>' +
+        '<tr><th>' + t.html('portal.codes.savedOn') + '</th><td>' +
+        (status.generatedAt
+          ? self.esc(new Date(status.generatedAt).toISOString().slice(0, 10))
+          : t.html('portal.codes.notRecorded')) + '</td></tr>' +
+        '<tr><th>' + t.html('portal.codes.unused') + '</th><td>' +
+        t.html('portal.codes.countOf',
+          { remaining: status.remaining, total: status.total }) +
+        '</td></tr>' +
+        '<tr><th>' + t.html('portal.mfa.lastUsed') + '</th><td>' +
+        (status.lastUsedAt
+          ? self.esc(new Date(status.lastUsedAt).toISOString().slice(0, 19) +
+                     'Z')
+          : t.html('portal.mfa.never')) + '</td></tr>' +
+        '<tr><th>' + t.html('portal.codes.stored') + '</th><td>' +
+        t.html('portal.codes.storedHow') + '</td></tr>' +
         '</table>' +
         // THE REPLACE CONTROL, WITH WHAT IT COSTS SAID BEFORE IT IS PRESSED.
         // This is the sharp edge of generating on request: there is no way to
         // see a set you already have, so the only reason to press this is that
         // you have lost it — and pressing it destroys the one you lost.
-        '<p class="note"><strong>There is no way to see these ' +
-        'again.</strong> Generating a new set shows you ten new codes and ' +
-        '<em>replaces</em> the ones you have &mdash; every code on your ' +
-        'current list stops working. Only do it if you have lost them or ' +
-        'have used most of them.</p>' +
+        '<p class="note">' + t.html('portal.codes.noWayToSee') + '</p>' +
         (live.enabled ? generateForm : '') +
         (status.remaining === 0
-          ? '<p class="note"><strong>Every code has been used.</strong> ' +
-            'There is nothing left to fall back on until you generate a new ' +
-            'set.</p>'
+          ? '<p class="note">' + t.html('portal.codes.allUsed') + '</p>'
           : (status.remaining <= 3
-              ? '<p class="note"><strong>You are nearly out.</strong> ' +
-                self.esc(String(status.remaining) + ' left of ' +
-                    String(status.total)) + '. They are not topped up.</p>'
+              ? '<p class="note">' + t.html('portal.codes.nearlyOut',
+                  { remaining: status.remaining, total: status.total }) +
+                '</p>'
               : ''));
     }
 
     log.debug('Leaving Portal.backupCodesCard(). present=' + status.present +
               ', advised=' + !!advised);
     return '<div class="card' + (advised && !status.present ? ' warn' : '') +
-           '"><h2>Recovery codes</h2>' + body +
+           '"><h2>' + t.html('portal.codes.heading') + '</h2>' + body +
       (!live.enabled
-        ? '<p class="note">' + self.esc('Recovery codes are turned off on ' +
-            'this realm\'s authentication policy, so no new set can be ' +
-            'generated. A set already saved goes on working — a setting that ' +
-            'took away the only way back into an account whose phone is lost ' +
-            'would be the worst switch here.') + '</p>'
+        ? '<p class="note">' + t.html('portal.codes.turnedOff') + '</p>'
         : '') +
       '</div>';
   }
@@ -4066,12 +4409,15 @@ class Portal {
   // with no separators in it is one they have to count digits in. An
   // unparseable value says so rather than printing eight characters of whatever
   // is there.
-  private readableDate(value) {
+  private readableDate(value, t?: Translator) {
     const { log } = this.deps;
     log.debug("Entering Portal.readableDate().");
     const found = /^(\d{4})(\d{2})(\d{2})/.exec(String(value || ''));
     log.debug("Leaving Portal.readableDate().");
-    return found ? found[1] + '-' + found[2] + '-' + found[3] : 'unknown';
+    if (found) {
+      return found[1] + '-' + found[2] + '-' + found[3];
+    }
+    return t ? t.text('portal.signingKey.unknownDate') : 'unknown';
   }
 
   private signingKeyProfile(id) {
@@ -4107,84 +4453,72 @@ class Portal {
 
   // The one-time card's instructions, per profile. The JWT half is what this
   // page said before RFC 7522 joined it, word for word.
-  private freshInstructions(profile, fresh, username, tokenEndpoint) {
+  private freshInstructions(profile, fresh, username, tokenEndpoint,
+                            t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.freshInstructions().");
-    const who = self.esc(String(fresh.issuer || username));
+    const who = String(fresh.issuer || username);
+    // The prose is translated (#539); the commands and the claim names are
+    // protocol and stay as they are.
     let how;
     if (profile.id === 'saml') {
-      how = '<p class="note"><strong>What to do with it.</strong> Build a ' +
-        'SAML 2.0 <code>&lt;Assertion&gt;</code> whose <code>&lt;Issuer&gt;' +
-        '</code> and <code>&lt;Subject&gt;&lt;NameID&gt;</code> are both ' +
-        '<code>' + who + '</code>, with an <code>&lt;Audience&gt;</code> and ' +
-        'a bearer <code>&lt;SubjectConfirmationData Recipient&gt;</code> of ' +
-        '<code>' + self.esc(tokenEndpoint) + '</code> and a ' +
-        '<code>NotOnOrAfter</code> a minute or two ahead. Sign it with an ' +
-        'enveloped XML Signature using this key, base64url-encode the ' +
-        'document, and present it to the token endpoint as an RFC 7522 ' +
-        'section 2.1 authorization grant. This service matches the signature ' +
-        'to the certificate it holds for you, thumbprint <code>' +
-        self.esc(String(fresh.thumbprint || '')) + '</code>.</p>' +
+      how = '<p class="note">' + t.html('portal.signingKey.samlHow',
+        { who: who, endpoint: tokenEndpoint,
+          thumbprint: String(fresh.thumbprint || '') }) + '</p>' +
         '<pre class="pem">' +
         self.esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
         '  -d grant_type=' + profile.grantType + ' \\\n' +
         '  -d assertion=<the signed assertion, base64url>') + '</pre>' +
-        '<p class="note"><strong>The <code>&lt;Subject&gt;</code> can only ' +
-        'ever be you.</strong> An assertion signed with this key that names ' +
-        'somebody else is refused — the key says who you are, and it is not ' +
-        'permission to speak for anybody.</p>';
+        '<p class="note">' + t.html('portal.signingKey.samlOnlyYou') + '</p>';
     } else {
-      how = '<p class="note"><strong>What to do with it.</strong> Sign a ' +
-        'JSON Web Token with it and present that to the token endpoint as an ' +
-        'RFC 7523 section 2.1 authorization grant. The claims are ' +
-        '<code>iss</code> and <code>sub</code> both <code>' + who +
-        '</code>, an ' +
-        '<code>aud</code> of <code>' + self.esc(tokenEndpoint) + '</code>, ' +
-        'an <code>exp</code> a minute or two ahead, and a <code>jti</code> ' +
-        'you do not reuse. The header carries <code>alg</code> <code>' +
-        self.esc(String(fresh.jwsAlg || '')) +
-        '</code> and <code>kid</code> <code>' +
-        self.esc(String(fresh.kid || '')) + '</code>.</p>' +
+      how = '<p class="note">' + t.html('portal.signingKey.jwtHow',
+        { who: who, endpoint: tokenEndpoint,
+          alg: String(fresh.jwsAlg || ''), kid: String(fresh.kid || '') }) +
+        '</p>' +
         '<pre class="pem">' +
         self.esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
         '  -d grant_type=' + profile.grantType + ' \\\n' +
         '  -d assertion=<the signed JWT>') + '</pre>' +
-        '<p class="note"><strong>`sub` can only ever be you.</strong> An ' +
-        'assertion signed with this key that names somebody else is refused ' +
-        '— the key says who you are, and it is not permission to speak for ' +
-        'anybody.</p>';
+        '<p class="note">' + t.html('portal.signingKey.jwtOnlyYou') + '</p>';
     }
     log.debug("Leaving Portal.freshInstructions().");
     return how;
   }
 
   // One profile's card: what is held, and its two controls.
-  private profileCard(profile, held, csrf, issuable, offered) {
+  private profileCard(profile, held, csrf, issuable, offered, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.profileCard(). profile=" + profile.id);
     const mine = self.heldProfile(held, profile);
+    const saml = profile.id === 'saml';
+    const rfc = profile.rfc;
     const heading = '<h2 id="' + profile.id + '">' +
-      self.esc(profile.rfc) + ': ' + self.esc(profile.title) + '</h2>';
+      self.esc(rfc) + ': ' + (saml ? t.html('portal.signingKey.samlTitle')
+                                   : t.html('portal.signingKey.jwtTitle')) +
+      '</h2>';
     const status = !held
       ? ''
       : (mine
-        ? '<table><tr><th>' + mine.handleLabel + '</th><td><code>' +
+        ? '<table><tr><th>' + (saml ? t.html('portal.signingKey.thumbprint')
+                                    : t.html('portal.signingKey.key')) +
+          '</th><td><code>' +
           self.esc(mine.handle) + '</code></td></tr>' +
-          '<tr><th>You assert as</th><td>' +
+          '<tr><th>' + t.html('portal.signingKey.assertAs') + '</th><td>' +
           (mine.issuers || []).map(function (one) {
             return '<code>' + self.esc(one) + '</code>';
           }).join(' ') + '</td></tr>' +
-          '<tr><th>Good until</th><td>' +
-          self.esc(self.readableDate(mine.expiresAt)) + '</td></tr></table>' +
+          '<tr><th>' + t.html('portal.signingKey.goodUntil') + '</th><td>' +
+          self.esc(self.readableDate(mine.expiresAt, t)) +
+          '</td></tr></table>' +
           (mine.certificate
-            ? '<details><summary>Your certificate (public — this is the half ' +
-              'anybody may hold)</summary><pre class="pem">' +
+            ? '<details><summary>' + t.html('portal.signingKey.certificate') +
+              '</summary><pre class="pem">' +
               self.esc(mine.certificate) + '</pre></details>'
             : '')
-        : '<p class="sub">You have no ' + self.esc(profile.rfc) +
-          ' signing key.</p>');
+        : '<p class="sub">' + t.html('portal.signingKey.noneHeld',
+            { rfc: rfc }) + '</p>');
 
     const hidden = csrf + '<input type="hidden" name="purpose" value="' +
       profile.id + '">';
@@ -4194,29 +4528,21 @@ class Portal {
         '<form method="post" action="' + BASE + '/signing-key">' + hidden +
         '<input type="hidden" name="action" value="generate">' +
         '<button' + (mine ? ' class="secondary"' : '') + '>' +
-        (mine ? 'Generate a new ' + self.esc(profile.rfc) + ' key pair'
-              : 'Generate my ' + self.esc(profile.rfc) + ' signing key') +
+        (mine ? t.html('portal.signingKey.generateNew', { rfc: rfc })
+              : t.html('portal.signingKey.generateMine', { rfc: rfc })) +
         '</button></form>' +
         (mine
-          ? '<p class="note"><strong>Generating replaces what you ' +
-            'have.</strong> The ' + self.esc(profile.rfc) + ' key you hold ' +
-            'now stops being accepted the moment the new one is written, and ' +
-            'anything signing with it starts being refused. Your other ' +
-            'signing key, if you hold one, is untouched.</p>'
-          : '<p class="note">The private half is shown once, on the page ' +
-            'that comes back. Nothing here can show it to you again.</p>');
+          ? '<p class="note">' + t.html('portal.signingKey.replaces',
+              { rfc: rfc }) + '</p>'
+          : '<p class="note">' + t.html('portal.signingKey.shownOnce') +
+            '</p>');
     }
     const removeForm = mine
       ? '<form method="post" action="' + BASE + '/signing-key">' + hidden +
         '<input type="hidden" name="action" value="remove"><button ' +
-        'class="danger">Take my ' + self.esc(profile.rfc) + ' signing key off' +
+        'class="danger">' + t.html('portal.signingKey.takeOff', { rfc: rfc }) +
         '</button></form><p ' +
-        'class="note"><strong>This is not revocation.</strong> The ' +
-        'certificate stays valid and still chains to this service&rsquo;s ' +
-        'root; what changes is that this service stops accepting what the ' +
-        'key signs, because the key is no longer registered against you. ' +
-        'Your other signing key, your password, your passkeys and your ' +
-        'authenticator app are untouched — this is not a way you sign in.</p>'
+        'class="note">' + t.html('portal.signingKey.notRevocation') + '</p>'
       : '';
     log.debug("Leaving Portal.profileCard().");
     return '<div class="card">' + heading + status + controls + removeForm +
@@ -4291,7 +4617,8 @@ class Portal {
     return values.length ? String(values[0]) : '';
   }
 
-  private tlsClientCard(session, csrf, issuable, offered, base) {
+  private tlsClientCard(session, csrf, issuable, offered, base,
+                        t: Translator) {
     const self = this;
     const { log, tlsClient } = this.deps;
     log.debug("Entering Portal.tlsClientCard().");
@@ -4312,32 +4639,27 @@ class Portal {
     const urls = self.tlsListenerUrls(base);
     const hidden = csrf;
 
+    // The sign-in address is a link, so its sentence is two messages around
+    // it (#539); the report's note is the register's own words.
     const what =
-      '<p class="sub">A TLS client certificate signs you in <strong>with no ' +
-      'password typed</strong>: your browser presents it when a server asks, ' +
-      'and this identity provider recognises it as you. It is issued from ' +
-      'this realm&rsquo;s TLS client certificate authority, names you ' +
-      '(<code>CN=' + self.esc(username) + '</code> and <code>urn:sts:person:' +
-      self.esc(username) + '</code>), and carries <code>clientAuth</code>. ' +
-      'You download it once, as a password-protected <code>.p12</code>, and ' +
-      'install it in each browser or device you want to sign in from.</p>' +
-      '<p class="note">Where it works: <a ' +
+      '<p class="sub">' + t.html('portal.tls.what', { name: username }) +
+      '</p>' +
+      '<p class="note">' + t.html('portal.tls.whereWorks') + ' <a ' +
       'href="' + self.esc(urls.signIn) + '">' +
-      self.esc(urls.signIn) + '</a>. This service asks every connection for ' +
-      'a client certificate and requires none, so your browser sends this ' +
-      'one when you choose it; that page starts a sign-on session for you in ' +
-      'this realm, and your other applications here then sign you in without ' +
-      'asking. Your browser will first ask you to trust this service&rsquo;s ' +
-      'server certificate if it does not already.</p>' +
+      self.esc(urls.signIn) + '</a>' + t.html('portal.tls.whereWorksAfter') +
+      '</p>' +
       (report.trusted
         ? ''
-        : '<p class="note"><strong>This service will not accept it at the ' +
-          'moment.</strong> ' + self.esc(report.note) + ' An administrator ' +
-          'can change that.</p>');
+        : '<p class="note">' + t.html('portal.tls.notAccepted') + ' ' +
+          self.esc(report.note) + ' ' + t.html('portal.tls.adminCanChange') +
+          '</p>');
 
     const rows = held.length
-      ? '<table class="grid"><tr><th>Name</th><th>Serial</th><th>Key</th>' +
-        '<th>Good until</th><th>State</th><th></th></tr>' +
+      ? '<table class="grid"><tr><th>' + t.html('portal.tls.name') +
+        '</th><th>' + t.html('portal.tls.serial') + '</th><th>' +
+        t.html('portal.tls.key') + '</th>' +
+        '<th>' + t.html('portal.signingKey.goodUntil') + '</th><th>' +
+        t.html('portal.tls.state') + '</th><th></th></tr>' +
         held.map(function (one) {
           const revokeForm = one.state === 'valid'
             ? '<form method="post" action="' + BASE + '/signing-key">' +
@@ -4345,12 +4667,20 @@ class Portal {
               '<input type="hidden" name="action" value="revoke-tls-client">' +
               '<input type="hidden" name="serial" value="' +
               self.esc(one.serialHex) + '">' +
-              '<select name="reason" aria-label="Why"><option ' +
-              'value="cessationOfOperation">I no longer use it</option>' +
-              '<option value="keyCompromise">Somebody else may have the key' +
-              '</option></select> <button class="danger">Revoke</button></form>'
-            : (one.revokedAt ? '<span class="note">revoked ' +
-              self.esc(String(one.revokedAt).slice(0, 10)) + '</span>' : '');
+              '<select name="reason" aria-label="' +
+              self.esc(t.text('portal.tls.why')) + '"><option ' +
+              'value="cessationOfOperation">' +
+              t.html('portal.tls.noLongerUse') + '</option>' +
+              '<option value="keyCompromise">' +
+              t.html('portal.tls.compromised') +
+              '</option></select> <button class="danger">' +
+              t.html('portal.tls.revoke') + '</button></form>'
+            : (one.revokedAt ? '<span class="note">' +
+              t.html('portal.tls.revokedOn',
+                     { day: String(one.revokedAt).slice(0, 10) }) +
+              '</span>' : '');
+          // The state is the register's own word (`valid`, `revoked`), and
+          // the class is built from it: drawn as data.
           return '<tr><td>' + self.esc(one.label) + '</td><td><code>' +
             self.esc(String(one.serialHex).slice(-16)) + '</code></td><td>' +
             self.esc(one.keyAlg) + '</td><td>' +
@@ -4360,7 +4690,7 @@ class Portal {
               ? ' (' + self.esc(one.reason) + ')' : '') +
             '</span></td><td>' + revokeForm + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="sub">You have no TLS client certificate.</p>';
+      : '<p class="sub">' + t.html('portal.tls.noneHeld') + '</p>';
 
     let controls = '';
     if (!issuable) {
@@ -4368,54 +4698,49 @@ class Portal {
     } else if (!offered) {
       controls = '';
     } else if (active.length >= report.maxPerPerson) {
-      controls = '<p class="note"><strong>You hold ' + active.length + ' ' +
-        'valid TLS client certificates, which is the most this service ' +
-        'issues to one person.</strong> Revoke one you no longer use to make ' +
-        'room.</p>';
+      controls = '<p class="note">' + t.html('portal.tls.atCap',
+        { n: active.length }) + '</p>';
     } else {
       controls =
         '<form method="post" action="' + BASE + '/signing-key">' + hidden +
         '<input type="hidden" name="action" value="generate-tls-client">' +
-        '<label for="tls-label">Name it after the browser or device ' +
-        '(optional)</label><input type="text" id="tls-label" name="label" ' +
-        'maxlength="40" placeholder="work laptop">' +
-        '<label for="tls-key-alg">Key</label><select id="tls-key-alg" ' +
+        '<label for="tls-label">' + t.html('portal.tls.labelName') +
+        '</label><input type="text" id="tls-label" name="label" ' +
+        'maxlength="40" placeholder="' +
+        self.esc(t.text('portal.tls.labelPlaceholder')) + '">' +
+        '<label for="tls-key-alg">' + t.html('portal.tls.key') +
+        '</label><select id="tls-key-alg" ' +
         'name="key_alg">' + tlsClient.KEY_ALGS.map(function (one) {
           return '<option value="' + self.esc(one) + '"' +
             (one === tlsClient.DEFAULT_KEY_ALG ? ' selected' : '') + '>' +
-            self.esc(one === 'rsa-2048' ? 'RSA 2048 (works everywhere)'
-              : one === 'rsa-3072' ? 'RSA 3072'
-              : one === 'ec-p256' ? 'ECDSA P-256' : 'ECDSA P-384') +
+            (one === 'rsa-2048' ? t.html('portal.tls.rsa2048')
+              : self.esc(one === 'rsa-3072' ? 'RSA 3072'
+                : one === 'ec-p256' ? 'ECDSA P-256' : 'ECDSA P-384')) +
             '</option>';
         }).join('') + '</select>' +
-        '<label for="tls-p12-password">A password for the downloaded file' +
+        '<label for="tls-p12-password">' + t.html('portal.tls.p12Password') +
         '</label><input type="password" id="tls-p12-password" ' +
         'name="p12_password" minlength="' + tlsClient.PKCS12_PASSWORD_MIN +
         '" autocomplete="new-password" required>' +
-        '<label for="tls-p12-confirm">The same password again</label>' +
+        '<label for="tls-p12-confirm">' + t.html('portal.tls.p12Again') +
+        '</label>' +
         '<input type="password" id="tls-p12-confirm" name="p12_confirm" ' +
         'minlength="' + tlsClient.PKCS12_PASSWORD_MIN + '" ' +
         'autocomplete="new-password" required>' +
-        '<p class="note">This password protects the private key inside the ' +
-        'file while it sits on your disk; your browser asks for it once, ' +
-        'when you import the file. It is not your account password, and this ' +
-        'service does not keep it.</p><button>Generate and download my TLS ' +
-        'client certificate</button></form>';
+        '<p class="note">' + t.html('portal.tls.p12Note') + '</p><button>' +
+        t.html('portal.tls.generate') + '</button></form>';
     }
     log.debug("Leaving Portal.tlsClientCard(). " + held.length + " held.");
-    return '<div class="card"><h2 id="tls-client">TLS client certificate</h2>' +
+    return '<div class="card"><h2 id="tls-client">' +
+      t.html('portal.tls.heading') + '</h2>' +
       what + rows + controls +
       (active.length
-        ? '<p class="note"><strong>Revoking is revocation.</strong> The ' +
-          'certificate goes on this realm&rsquo;s certificate revocation ' +
-          'list, its OCSP responder answers <code>revoked</code>, and the ' +
-          'TLS listeners refuse it from then on. It cannot be undone; ' +
-          'generate a new one instead.</p>'
+        ? '<p class="note">' + t.html('portal.tls.revokingIs') + '</p>'
         : '') + '</div>';
   }
 
   // The one-time card: the three files, and what to do with them.
-  private tlsClientFreshCard(fresh, base) {
+  private tlsClientFreshCard(fresh, base, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.tlsClientFreshCard().");
@@ -4442,74 +4767,62 @@ class Portal {
         items.map(function (one) { return '<li>' + one + '</li>'; }).join('') +
         '</ol></details>';
     };
-    const html = '<div class="card"><h2>Save your TLS client certificate</h2>' +
-      '<p class="sub"><strong>This is the only time these files can be ' +
-      'downloaded.</strong> The private key is not kept by this service — ' +
-      'not on this page, not by an administrator. If you lose the files, ' +
-      'revoke this certificate below and generate a new one.</p>' +
+    const html = '<div class="card"><h2>' + t.html('portal.tlsFresh.heading') +
+      '</h2>' +
+      '<p class="sub">' + t.html('portal.tlsFresh.onlyTime') + '</p>' +
       '<p><a class="dl" download="' + self.esc(p12) + '" href="' +
       self.esc(dataUri(files.pkcs12.mime, files.pkcs12.base64)) +
-      '">Download ' + self.esc(p12) +
+      '">' + t.html('portal.tlsFresh.download', { file: p12 }) +
       '</a><a class="dl secondary" download="' + self.esc(key) +
       '" href="' + self.esc(dataUri(files.key.mime, b64(files.key.text))) +
-      '">Download ' + self.esc(key) + '</a><a class="dl secondary" download="' +
+      '">' + t.html('portal.tlsFresh.download', { file: key }) +
+      '</a><a class="dl secondary" download="' +
       self.esc(chain) + '" href="' +
       self.esc(dataUri(files.chain.mime, b64(files.chain.text))) +
-      '">Download ' + self.esc(chain) + '</a></p>' +
-      '<table><tr><th>Issued to</th><td><code>' + self.esc(issued.subject) +
-      '</code></td></tr><tr><th>Serial</th><td><code>' +
-      self.esc(issued.serialHex) + '</code></td></tr><tr><th>Key</th><td>' +
-      self.esc(issued.keyAlg) + '</td></tr><tr><th>Good until</th><td>' +
+      '">' + t.html('portal.tlsFresh.download', { file: chain }) +
+      '</a></p>' +
+      '<table><tr><th>' + t.html('portal.tlsFresh.issuedTo') +
+      '</th><td><code>' + self.esc(issued.subject) +
+      '</code></td></tr><tr><th>' + t.html('portal.tls.serial') +
+      '</th><td><code>' +
+      self.esc(issued.serialHex) + '</code></td></tr><tr><th>' +
+      t.html('portal.tls.key') + '</th><td>' +
+      self.esc(issued.keyAlg) + '</td></tr><tr><th>' +
+      t.html('portal.signingKey.goodUntil') + '</th><td>' +
       self.esc(String(issued.notAfter).slice(0, 10)) + '</td></tr></table>' +
-      '<p class="note">The <code>.p12</code> holds the private key, your ' +
-      'certificate and the two certificate authorities above it, protected ' +
-      'by the password you just chose. The <code>-key.pem</code> is the same ' +
-      'key encrypted under the same password, and <code>-chain.pem</code> is ' +
-      'the certificates alone — both for command-line tools.</p>' +
-      '<h3>Install it</h3>' +
+      '<p class="note">' + t.html('portal.tlsFresh.files') + '</p>' +
+      '<h3>' + t.html('portal.tlsFresh.install') + '</h3>' +
 
-      step('Chrome or Edge on Windows', [
-        'Open the downloaded <code>' + self.esc(p12) + '</code>. The ' +
-        'Certificate Import Wizard starts.',
-        'Choose <em>Current User</em>, keep the file, and type the file ' +
-        'password.',
-        'Let Windows choose the store automatically, and finish.',
-        'Restart the browser.']) +
-      step('Chrome, Edge or Safari on macOS', [
-        'Open the downloaded <code>' + self.esc(p12) + '</code>. Keychain ' +
-        'Access offers to add it to the <em>login</em> keychain.',
-        'Type the file password.',
-        'Chrome, Edge and Safari all use that keychain.']) +
-      step('Firefox (any operating system)', [
-        'Open <em>Settings → Privacy &amp; Security</em> and scroll to ' +
-        '<em>Certificates</em>.',
-        'Press <em>View Certificates…</em>, open the <em>Your ' +
-        'Certificates</em> tab and press <em>Import…</em>.',
-        'Choose <code>' + self.esc(p12) + '</code> and type the file ' +
-                                          'password.']) +
-      step('Chrome or Edge on Linux', [
-        'Open <code>chrome://certificate-manager</code> (or ' +
-        '<code>edge://certificate-manager</code>) and choose <em>Your ' +
-        'certificates</em>.',
-        'Press <em>Import</em>, choose <code>' + self.esc(p12) + '</code> ' +
-        'and type the file password.',
-        'On an older browser: <code>pk12util -d sql:$HOME/.pki/nssdb -i ' +
-        self.esc(p12) + '</code>.']) +
-      step('curl or openssl', [
+      step(t.html('portal.tlsFresh.winTitle'), [
+        t.html('portal.tlsFresh.win1', { file: p12 }),
+        t.html('portal.tlsFresh.win2'),
+        t.html('portal.tlsFresh.win3'),
+        t.html('portal.tlsFresh.win4')]) +
+      step(t.html('portal.tlsFresh.macTitle'), [
+        t.html('portal.tlsFresh.mac1', { file: p12 }),
+        t.html('portal.tlsFresh.mac2'),
+        t.html('portal.tlsFresh.mac3')]) +
+      step(t.html('portal.tlsFresh.firefoxTitle'), [
+        t.html('portal.tlsFresh.firefox1'),
+        t.html('portal.tlsFresh.firefox2'),
+        t.html('portal.tlsFresh.firefox3', { file: p12 })]) +
+      step(t.html('portal.tlsFresh.linuxTitle'), [
+        t.html('portal.tlsFresh.linux1'),
+        t.html('portal.tlsFresh.linux2', { file: p12 }),
+        t.html('portal.tlsFresh.linux3', { file: p12 })]) +
+      step(t.html('portal.tlsFresh.curlTitle'), [
         '<code>curl --cert ' + self.esc(chain) + ' --key ' + self.esc(key) +
-        ' --pass &lt;file password&gt; ' + self.esc(urls.signIn) + '</code>',
-        'If a macOS release older than your browser refuses the ' +
-        '<code>.p12</code> with a message about the password, rebuild it ' +
-        'with the older algorithms it expects: <code>openssl pkcs12 -export ' +
-        '-legacy -inkey ' + self.esc(key) + ' ' +
-                                            '-in ' + self.esc(chain) + ' ' +
-        '-out legacy.p12</code>.']) +
-      '<h3>Use it</h3><p>Open <a href="' + self.esc(urls.signIn) + '">' +
-      self.esc(urls.signIn) + '</a> in the browser you installed it in and ' +
-      'choose this certificate when asked. What comes back says whether it ' +
-      'signed you in and who as; then come back to <a href="' + BASE +
-      '">your ' +
-      'account</a>, which will not ask you to sign in again.</p></div>';
+        ' --pass &lt;' + t.html('portal.tlsFresh.filePassword') + '&gt; ' +
+        self.esc(urls.signIn) + '</code>',
+        t.html('portal.tlsFresh.legacy', { key: key, chain: chain })]) +
+      // The two links are markup, so the sentence is three messages around
+      // them (#539).
+      '<h3>' + t.html('portal.tlsFresh.use') + '</h3><p>' +
+      t.html('portal.tlsFresh.useOpen') + ' <a href="' +
+      self.esc(urls.signIn) + '">' +
+      self.esc(urls.signIn) + '</a> ' + t.html('portal.tlsFresh.useChoose') +
+      ' <a href="' + BASE + '">' + t.html('portal.tlsFresh.yourAccount') +
+      '</a>' + t.html('portal.tlsFresh.useAfter') + '</p></div>';
     log.debug("Leaving Portal.tlsClientFreshCard().");
     return html;
   }
@@ -4525,6 +4838,7 @@ class Portal {
     const username = session.user.username;
     log.debug('Entering Portal.signingKeyPage(). username=' + username);
     const csrf = websecurity.field(session.id);
+    const t = self.translatorFor(session);
     const held = personAssertions.recordFor(username);
     const offered = config.value('pki.personSelfService') !== false;
     const issuable = pki.hasChain();
@@ -4537,40 +4851,29 @@ class Portal {
     const freshProfile = fresh && !tlsFresh
       ? (self.signingKeyProfile(fresh.purpose) || SIGNING_KEY_PROFILES[0])
       : null;
-    const freshCard = tlsFresh ? self.tlsClientFreshCard(fresh, base)
+    const freshCard = tlsFresh ? self.tlsClientFreshCard(fresh, base, t)
       : (fresh && fresh.privateKeyPem)
-      ? '<div class="card"><h2>Save this ' + self.esc(freshProfile.rfc) +
-        ' private key</h2><p ' +
-        'class="sub"><strong>This is the only time it will be ' +
-        'shown.</strong> It is stored on your entry encrypted, and nothing ' +
-        'in this service — not this page, not an administrator — can print ' +
-        'it again. Copy it now; if you lose it, generate a new key pair, ' +
-        'which replaces this one.</p><pre ' +
+      ? '<div class="card"><h2>' + t.html('portal.signingKey.saveHeading',
+          { rfc: freshProfile.rfc }) + '</h2><p ' +
+        'class="sub">' + t.html('portal.signingKey.onlyTime') + '</p><pre ' +
         'class="pem">' + self.esc(String(fresh.privateKeyPem)) + '</pre>' +
-        self.freshInstructions(freshProfile, fresh, username, tokenEndpoint) +
+        self.freshInstructions(freshProfile, fresh, username, tokenEndpoint,
+                               t) +
         '</div>'
       : '';
 
     // -----------------------------------------------------------------------
     // WHAT IT IS FOR. Drawn whether or not one is held, because this is the
     // page somebody arrives at not knowing what a signing key would be for.
+    // The link to the third card is markup, so its sentence is two messages
+    // around it (#539).
     // -----------------------------------------------------------------------
     const what =
-      '<p class="sub">A signing key lets something act as you ' +
-      '<strong>without a browser</strong>: a script or a service signs a ' +
-      'short-lived document with it and this identity provider hands back an ' +
-      'access token for you. No password is typed and no sign-in screen is ' +
-      'drawn — the signature is the whole of it.</p><p class="note">There ' +
-      'are two kinds, one per document format, and they are <strong>separate ' +
-      'key pairs</strong>: RFC 7523&rsquo;s <em>JWT bearer authorization ' +
-      'grant</em> signs a JSON Web Token, and RFC 7522&rsquo;s <em>SAML 2.0 ' +
-      'bearer authorization grant</em> signs a SAML assertion. A key issued ' +
-      'for one is refused by the other. This service issues each key pair ' +
-      'from its own certificate authority, keeps the public half on your ' +
-      'entry to check signatures with, and gives you the private half ' +
-      'once.</p><p class="note">The third card is a different kind of key: a ' +
-      '<a href="#tls-client">TLS client certificate</a>, which signs you in ' +
-      'from a browser rather than letting a script act as you.</p>';
+      '<p class="sub">' + t.html('portal.signingKey.what') + '</p>' +
+      '<p class="note">' + t.html('portal.signingKey.twoKinds') + '</p>' +
+      '<p class="note">' + t.html('portal.signingKey.thirdCard') +
+      ' <a href="#tls-client">' + t.html('portal.tls.heading') + '</a>' +
+      t.html('portal.signingKey.thirdCardAfter') + '</p>';
 
     // -----------------------------------------------------------------------
     // WHAT APPLIES TO BOTH: no entry, no certificate authority, or the feature
@@ -4578,20 +4881,15 @@ class Portal {
     // -----------------------------------------------------------------------
     let shared = '';
     if (!held) {
-      shared = '<p class="sub">This service holds no entry for you, so there ' +
-        'is nowhere to put a key pair.</p>';
+      shared = '<p class="sub">' + t.html('portal.signingKey.noEntry') +
+        '</p>';
     } else if (!issuable) {
-      shared = '<p class="note"><strong>Nothing can be issued here at the ' +
-        'moment.</strong> This service has no certificate authority in this ' +
-        'realm, and building one is an administrator&rsquo;s job rather than ' +
-        'something this page can do.</p>';
+      shared = '<p class="note">' + t.html('portal.signingKey.noAuthority') +
+        '</p>';
     } else if (!offered) {
-      shared = '<p class="note"><strong>This service does not let people ' +
-        'issue their own signing keys</strong> ' +
-        '(<code>pki.personSelfService</code> is off). An administrator can ' +
-        'still issue one to you.' +
+      shared = '<p class="note">' + t.html('portal.signingKey.notOffered') +
         ((held.hasKeyPair || held.hasSamlKeyPair)
-          ? ' The keys you already hold are unaffected and go on working.'
+          ? ' ' + t.html('portal.signingKey.unaffected')
           : '') + '</p>';
     }
 
@@ -4599,9 +4897,9 @@ class Portal {
       freshCard +
       '<div class="card">' + what + shared + '</div>' +
       SIGNING_KEY_PROFILES.map(function (profile) {
-        return self.profileCard(profile, held, csrf, issuable, offered);
+        return self.profileCard(profile, held, csrf, issuable, offered, t);
       }).join('') +
-      self.tlsClientCard(session, csrf, issuable, offered, base));
+      self.tlsClientCard(session, csrf, issuable, offered, base, t));
     log.debug('Leaving Portal.signingKeyPage(). ' +
               (held && held.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key ' +
                'pair. ') +
@@ -4816,16 +5114,15 @@ class Portal {
   // goes to the application's own front door and hands it nothing — which is
   // where a sign-in starts, and is exactly what a person would type themselves.
   // ---------------------------------------------------------------------------
-  private linkedName(row) {
+  private linkedName(row, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.linkedName().");
     if (!row.homePage) {
       log.debug("Leaving Portal.linkedName().");
-      return '<span class="unlinked" title="This application has not told ' +
-        'this identity provider where it lives, so there is nothing to link ' +
-        'to. Whoever administers this service can set its home page on the ' +
-        'application\'s entry.">' + self.esc(row.name) + '</span>';
+      return '<span class="unlinked" title="' +
+        self.esc(t.text('portal.apps.unlinkedTitle')) + '">' +
+        self.esc(row.name) + '</span>';
     }
     log.debug("Leaving Portal.linkedName().");
     // `rel="noopener"` on a link out of a page somebody is signed in to. There
@@ -4854,7 +5151,7 @@ class Portal {
   // page, where it registered an https one, since this page has no deeper
   // link to name.
   // ---------------------------------------------------------------------------
-  private initiateLoginLink(row, issuer, username) {
+  private initiateLoginLink(row, issuer, username, t: Translator) {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering Portal.initiateLoginLink().");
@@ -4875,13 +5172,14 @@ class Portal {
     }
     log.debug("Leaving Portal.initiateLoginLink().");
     return '<a class="launch" rel="noopener" href="' +
-      self.esc(url.toString()) + '">Sign in</a>';
+      self.esc(url.toString()) + '">' + t.html('portal.signIn') + '</a>';
   }
 
   private applicationsPage(session, message, error, wanted, base) {
     const self = this;
     const { log } = this.deps;
     log.debug('Entering Portal.applicationsPage().');
+    const t = self.translatorFor(session);
     let issuer = '';
     try {
       // Lazily, `common/oidc_rp.ts`'s arrangement: this module is required
@@ -4898,14 +5196,25 @@ class Portal {
     const pages = Math.max(1, Math.ceil(found.rows.length / PER_PAGE));
     const at = Math.min(Math.max(1, wanted || 1), pages);
     const shown = found.rows.slice((at - 1) * PER_PAGE, at * PER_PAGE);
+    // WHAT A ROW WOULD BE ISSUED, in the reader's language (#539): the
+    // table's `how` phrases, each a literal key; one the table gains and this
+    // does not name is drawn as written.
+    const ways = {
+      'an ID Token': t.text('portal.apps.wayIdToken'),
+      'an access token': t.text('portal.apps.wayAccessToken'),
+      'a SAML 2.0 assertion': t.text('portal.apps.waySaml2'),
+      'a SAML 1.1 assertion': t.text('portal.apps.waySaml11'),
+      'a WS-Federation token': t.text('portal.apps.wayWsfed')
+    };
 
     const table = shown.length
-      ? '<table class="grid"><tr><th>Application</th><th>Sign-in</th>' +
-        '<th>You would be issued</th></tr>' +
+      ? '<table class="grid"><tr><th>' + t.html('portal.apps.application') +
+        '</th><th>' + t.html('portal.apps.signIn') + '</th>' +
+        '<th>' + t.html('portal.apps.issued') + '</th></tr>' +
         shown.map(function (row) {
           const launch = self.initiateLoginLink(row, issuer,
-                                                session.user.username);
-          return '<tr><td><strong>' + self.linkedName(row) + '</strong>' +
+                                                session.user.username, t);
+          return '<tr><td><strong>' + self.linkedName(row, t) + '</strong>' +
             (launch ? ' ' + launch : '') +
             '<span class="ident"><code>' + self.esc(row.identifier) +
             '</code></span>' +
@@ -4917,79 +5226,55 @@ class Portal {
               return '<span class="tag">' + self.esc(label) + '</span>';
             }).join('') +
             (row.withheld.length
-              ? '<span class="ident">not ' + self.esc(row.withheld.join(', ')) +
-                ' — the policy permits the other' +
-                (row.families.length === 1 ? '' : 's') + '</span>'
+              ? '<span class="ident">' + t.html('portal.apps.withheld',
+                  { families: row.withheld.join(', '),
+                    n: row.families.length }) + '</span>'
               : '') +
-            '</td><td>' + self.esc(row.ways.join(', ')) + '</td></tr>';
+            '</td><td>' + self.esc(row.ways.map(function (how) {
+              return ways[how] || how;
+            }).join(', ')) + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="note">There is nothing here yet. Either this service has ' +
-        'no applications registered that sign people in, or the issuance ' +
-        'policy does not permit you any of them.</p>';
+      : '<p class="note">' + t.html('portal.apps.nothing') + '</p>';
 
     const paging = pages > 1
       ? '<p class="pagenav">' +
         (at > 1
           ? '<a href="' + self.esc(BASE + '/applications?page=' + (at - 1)) +
-            '">Previous</a>'
-          : '<span class="off">Previous</span>') +
-        '<span class="here">Page ' + self.esc(String(at)) + ' of ' +
-        self.esc(String(pages)) + '</span>' +
+            '">' + t.html('portal.paging.previous') + '</a>'
+          : '<span class="off">' + t.html('portal.paging.previous') +
+            '</span>') +
+        '<span class="here">' + t.html('portal.paging.page',
+          { at: at, pages: pages }) + '</span>' +
         (at < pages
           ? '<a href="' + self.esc(BASE + '/applications?page=' + (at + 1)) +
-            '">Next</a>'
-          : '<span class="off">Next</span>') +
+            '">' + t.html('portal.paging.next') + '</a>'
+          : '<span class="off">' + t.html('portal.paging.next') + '</span>') +
         '</p>'
       : '';
 
     const html = self.shell(BASE + '/applications', session, message, error,
-      '<div class="card"><p class="sub">Where this identity provider will ' +
-      'sign you in. Each row was decided by the SAME policy the token ' +
-      'endpoint, both SAML profiles and WS-Federation ask before they issue ' +
-      'anything — so this page and those endpoints cannot disagree.</p>' +
+      '<div class="card"><p class="sub">' + t.html('portal.apps.sub') +
+      '</p>' +
       table + paging +
       '</div>' +
 
       '<div class="card">' +
-      '<h2>What is not on this list</h2>' +
+      '<h2>' + t.html('portal.apps.notListed') + '</h2>' +
       '<table>' +
-      '<tr><th>Not permitted to you</th><td>' +
-        self.esc(String(found.refused)) +
-        (found.refused === 1 ? ' application' : ' applications') +
-        '. They are counted rather than named: which applications exist here ' +
-        'is not a question this page answers. Whoever administers this ' +
-        'service decides, by giving your account a role the application ' +
-        'requires.</td></tr><tr><th>Not sign-in destinations</th><td>' +
-        self.esc(String(found.notSignIn)) +
-        (found.notSignIn === 1 ? ' entry' : ' entries') +
-        '. A registered application is not necessarily somewhere a person ' +
-        'signs in — a Shared Signals receiver, a SCIM provisioning client, ' +
-        'an LDAP binder, a SPIFFE workload or a WS-Trust relying party is an ' +
-        'application this service knows and not a door you walk ' +
-        'through.</td></tr>' +
+      '<tr><th>' + t.html('portal.apps.notPermitted') + '</th><td>' +
+        t.html('portal.apps.notPermittedWhat', { n: found.refused }) +
+        '</td></tr><tr><th>' + t.html('portal.apps.notDestinations') +
+        '</th><td>' +
+        t.html('portal.apps.notDestinationsWhat', { n: found.notSignIn }) +
+        '</td></tr>' +
       (found.truncated
-        ? '<tr><th>Not looked at</th><td>' +
-          self.esc(String(found.total - found.scanned)) + ' of ' +
-          self.esc(String(found.total)) + ' entries. This page evaluates the ' +
-          'issuance policy for each application it lists and stops at ' +
-          self.esc(String(found.limit)) + ' (portal.applicationScanLimit), ' +
-          'because that work happens on the one ' +
-          'thread answering every socket this service holds.</td></tr>'
+        ? '<tr><th>' + t.html('portal.apps.notLooked') + '</th><td>' +
+          t.html('portal.apps.notLookedWhat',
+            { skipped: found.total - found.scanned, total: found.total,
+              limit: found.limit }) + '</td></tr>'
         : '') +
-      '</table><p class="note">A name in blue links to the application\'s ' +
-      'own home page and hands it nothing — it is where you would go ' +
-      'yourself, and a sign-in starts there. A name in grey means this ' +
-      'identity provider has not been told where that application lives; ' +
-      'whoever administers this service can set a home page on its entry, ' +
-      'and until then there is nothing to link to. <strong>Sign in</strong> ' +
-      'appears only beside an OpenID Connect application that registered ' +
-      'an <code>initiate_login_uri</code>: it asks that application to start ' +
-      'a sign-in here, naming this identity provider and you (OpenID ' +
-      'Connect Core section 4). Nothing else starts a sign-in for you: this ' +
-      'service implements no identity-provider-initiated sign-on in the ' +
-      'browser profiles — <code>/saml2</code> says so on its own page — so ' +
-      'such a link would have to invent a request the application never ' +
-      'asked for.</p></div>');
+      '</table><p class="note">' + t.html('portal.apps.note') +
+      '</p></div>');
     log.debug('Leaving Portal.applicationsPage(). Page ' + at + ' ' +
       'of ' + pages + '.');
     return html;
@@ -5022,7 +5307,7 @@ class Portal {
   // account over cannot silence the events that would report them. Only the
   // move the state diagram allows from where the account is gets a button.
   // ---------------------------------------------------------------------------
-  private participationCard(session): string {
+  private participationCard(session, t: Translator): string {
     const self = this;
     const { log, risc, config, websecurity } = this.deps;
     log.debug('Entering Portal.participationCard().');
@@ -5034,51 +5319,45 @@ class Portal {
     const now = risc.optOutOf(username);
     // A SERVICE ACCOUNT (#221) has no holder to make section 2.8's choice,
     // and the page SAYS so rather than offering a button that does nothing.
+    // The reason is RISC's own and is drawn as data (#539).
     if (now.applies === false) {
       log.debug('Leaving Portal.participationCard(). The opt-out does not ' +
                 'apply.');
-      return '<div class="card"><h2>Sharing security events about your ' +
-        'account</h2><p>Security events about this account <strong>are ' +
-        'shared</strong>, and cannot be stopped from here.</p><p ' +
+      return '<div class="card"><h2>' + t.html('portal.risc.heading') +
+        '</h2><p>' + t.html('portal.risc.alwaysShared') + '</p><p ' +
         'class="note">' + self.esc(String(now.why || '')) + '</p></div>';
     }
     const hours = Number(config.value('risc.optOutDelayHours'));
     const said = now.state === 'opt-in'
-      ? 'Security events about your account <strong>are shared</strong> ' +
-        'with the applications that receive them.'
+      ? t.html('portal.risc.shared')
       : now.state === 'opt-out-initiated'
-        ? 'You asked to <strong>stop sharing</strong> security events ' +
-          (now.since ? 'on ' + self.esc(now.since) + ' ' : '') +
-          'and it takes effect ' + self.esc(String(hours)) + ' hour(s) ' +
-          'after you asked. Until then they are still shared, and you can ' +
-          'cancel.'
-        : 'Security events about your account are <strong>not ' +
-          'shared</strong>, apart from the notice that you opted out.';
-    const labels = { optOutInitiated: 'Stop sharing security events',
-                     optOutCancelled: 'Cancel: keep sharing them',
-                     optIn: 'Share security events again' };
+        ? (now.since
+            ? t.html('portal.risc.stoppingSince',
+                     { since: now.since, hours: hours })
+            : t.html('portal.risc.stopping', { hours: hours }))
+        : t.html('portal.risc.notShared');
+    const labels = { optOutInitiated: t.html('portal.risc.stop'),
+                     optOutCancelled: t.html('portal.risc.cancel'),
+                     optIn: t.html('portal.risc.again') };
     const buttons = now.moves.map(function (move) {
       return '<form method="post" action="' + self.esc(BASE + '/signals') +
         '">' + websecurity.field(session.id) +
         '<input type="hidden" name="move" value="' + self.esc(move) + '">' +
         '<button' + (move === 'optOutInitiated' ? ' class="danger"' : '') +
-        '>' + self.esc(labels[move]) + '</button></form>';
+        '>' + (labels[move] || self.esc(move)) + '</button></form>';
     }).join('');
     log.debug('Leaving Portal.participationCard(). ' + now.state);
-    return '<div class="card"><h2>Sharing security events about your ' +
-      'account</h2><p>' + said + '</p>' + buttons +
-      '<p class="note">These are OpenID RISC events: an account disabled, a ' +
-      'password that must be changed, a contact detail changed. Applications ' +
-      'you use receive them to protect your account there. Stopping them is ' +
-      'your choice (RISC section 2.8), and it waits ' +
-      self.esc(String(hours)) + ' hour(s) so that somebody who has taken ' +
-      'your account over cannot silence them at once.</p></div>';
+    return '<div class="card"><h2>' + t.html('portal.risc.heading') +
+      '</h2><p>' + said + '</p>' + buttons +
+      '<p class="note">' + t.html('portal.risc.note', { hours: hours }) +
+      '</p></div>';
   }
 
   private signalsPage(session, message, error, wanted) {
     const self = this;
     const { log, signals } = this.deps;
     log.debug('Entering Portal.signalsPage().');
+    const t = self.translatorFor(session);
     const view = signals.view(signals.PORTAL,
                               { person: self.personOf(session) });
     /** @type {any} */
@@ -5092,18 +5371,19 @@ class Portal {
     // the five causes apply. The wording here is a PERSON's rather than an
     // operator's — the console's copy of this names the settings, and somebody
     // reading their own account page cannot change any of them — so this says
-    // what it means for them and points at who can.
+    // what it means for them and points at who can. A warning rather than a
+    // refusal, so it is translated (#539); the link is markup between two
+    // messages.
     const why = st.why && st.why.length
-      ? '<div class="err"><p>This portal is not currently being told about ' +
-        'everything that happens to your account, so this list may be ' +
-        'incomplete. An administrator can see why on ' +
-        '<a href="/admin/signals">the console\'s copy of this ' +
-        'page</a>.</p></div>'
+      ? '<div class="err"><p>' + t.html('portal.signals.incomplete') +
+        ' <a href="/admin/signals">' + t.html('portal.signals.consoleCopy') +
+        '</a>' + t.html('portal.signals.incompleteAfter') + '</p></div>'
       : '';
 
     const list = shown.length
-      ? '<table class="grid"><tr><th>When</th><th>What happened</th>' +
-        '<th>Detail</th></tr>' +
+      ? '<table class="grid"><tr><th>' + t.html('portal.signals.when') +
+        '</th><th>' + t.html('portal.signals.what') + '</th>' +
+        '<th>' + t.html('portal.signals.detail') + '</th></tr>' +
         shown.map(function (row) {
           return '<tr><td>' + self.esc(row.at) + '</td>' +
             '<td><strong>' + self.esc(row.name) + '</strong>' +
@@ -5113,88 +5393,68 @@ class Portal {
             '<td>' +
             (Object.keys(row.payload).length
               ? '<details><summary>' +
-                self.esc(String(Object.keys(row.payload).length) + ' ' +
-                  'detail(s)') +
+                t.html('portal.signals.details',
+                       { n: Object.keys(row.payload).length }) +
                 '</summary><pre>' +
                 self.esc(JSON.stringify(row.payload, null, 2)) +
                 '</pre></details>'
-              : '<span class="ident">nothing beyond the event itself</span>') +
+              : '<span class="ident">' + t.html('portal.signals.nothingMore') +
+                '</span>') +
             '<span class="ident">' +
             (row.verified
-              ? 'signed by this identity provider and verified'
-              : 'NOT VERIFIED — ' + self.esc(row.verificationNote)) +
+              ? t.html('portal.signals.verified')
+              : t.html('portal.signals.notVerified',
+                       { note: row.verificationNote })) +
             '</span>' +
             // WHAT THIS PORTAL DID WITH IT (#62): signed you out here, if
             // the signal-response policy said to.
             (row.reactions || []).map(function (r) {
               return '<span class="ident signal-reaction">' +
-                (r.failed ? 'this portal could not sign you out here'
-                  : r.skipped ? 'this portal left you signed in here (' +
-                                self.esc(r.skipped) + ')'
-                  : (r.observed ? 'this portal would sign you out here ' +
-                                  '(development mode records it only)'
+                (r.failed ? t.html('portal.signals.couldNot')
+                  : r.skipped ? t.html('portal.signals.left',
+                                       { why: r.skipped })
+                  : (r.observed ? t.html('portal.signals.would')
                     : (Number(r.ended) > 0
-                        ? 'this portal signed you out here'
-                        : 'this portal had no session of yours to end'))) +
+                        ? t.html('portal.signals.signedOut')
+                        : t.html('portal.signals.noSession')))) +
                 '</span>';
             }).join('') + '</td></tr>';
         }).join('') + '</table>'
-      : '<p class="note">Nothing has been reported about your account' +
-        (st.held ? ' yet' : ' yet') + '. This list fills when this identity ' +
-        'provider tells this portal that something happened to one of your ' +
-        'sessions or to your account &mdash; a sign-in, a sign-out, a ' +
-        'session revoked, an account disabled or enabled, an identifier ' +
-        'changed.</p>';
+      : '<p class="note">' + t.html('portal.signals.empty') + '</p>';
 
     const paging = pages > 1
       ? '<p class="pagenav">' +
         (at > 1
           ? '<a href="' + self.esc(BASE + '/signals?page=' + (at - 1)) +
-            '">Previous</a>'
-          : '<span class="off">Previous</span>') +
-        '<span class="here">Page ' + self.esc(String(at)) + ' of ' +
-        self.esc(String(pages)) + '</span>' +
+            '">' + t.html('portal.paging.previous') + '</a>'
+          : '<span class="off">' + t.html('portal.paging.previous') +
+            '</span>') +
+        '<span class="here">' + t.html('portal.paging.page',
+          { at: at, pages: pages }) + '</span>' +
         (at < pages
           ? '<a ' +
             'href="' + self.esc(BASE + '/signals?page=' + (at + 1)) +
-            '">Next</a>'
-          : '<span class="off">Next</span>') +
+            '">' + t.html('portal.paging.next') + '</a>'
+          : '<span class="off">' + t.html('portal.paging.next') + '</span>') +
         '</p>'
       : '';
 
+    // The sentence with two links in it is four messages around them.
     const html = self.shell(BASE + '/signals', session, message, error,
-      self.participationCard(session) +
+      self.participationCard(session, t) +
       '<div class="card">' +
-      '<h2>What has been reported about your account</h2>' +
-      '<p class="sub">This portal is a registered receiver of this identity ' +
-      'provider\'s security event feed. When something happens to one of ' +
-      'your sessions or to your account, a signed notice is delivered here ' +
-      '&mdash; and this is every one of them that was about you.</p>' +
+      '<h2>' + t.html('portal.signals.heading') + '</h2>' +
+      '<p class="sub">' + t.html('portal.signals.sub') + '</p>' +
       why +
       list +
       paging +
-      '</div><div class="card"><h2>What this list is, and what it is ' +
-      'not</h2><p class="note"><strong>Only the notices about you are ' +
-      'here.</strong> This portal is told about everybody it serves, and ' +
-      'what you are shown is narrowed to the notices whose subject is you. ' +
-      'Where a notice names somebody in a way this service cannot match to ' +
-      'an account &mdash; a phone number, for instance &mdash; it is left ' +
-      'out rather than guessed at, so it is possible for something about you ' +
-      'to be missing from this list. It is never possible for something ' +
-      'about somebody else to be on it.</p><p class="note"><strong>This list ' +
-      'is a record and not a control</strong> (the one control on this page ' +
-      'is whether events are shared at all, above). Nothing in it can be ' +
-      'edited or removed, including by you: a list of what was said about ' +
-      'your account would be worth nothing if the account\'s owner could ' +
-      'empty it. To end ' +
-      'a session, use <a href="/logout">sign out of everything</a>; to ' +
-      'change a credential, use the pages in <em>How you sign in</em>.</p><p ' +
-      'class="note">The notices are OpenID CAEP (what happened to a ' +
-      '<em>session</em>) and OpenID RISC (what happened to an ' +
-      '<em>account</em>) events, carried over the Shared Signals Framework ' +
-      'and signed by this identity provider. Each one was verified against ' +
-      'its signature before it was recorded here; a notice that did not ' +
-      'verify is shown saying so rather than hidden.</p></div>');
+      '</div><div class="card"><h2>' + t.html('portal.signals.isNot') +
+      '</h2><p class="note">' + t.html('portal.signals.onlyYou') +
+      '</p><p class="note">' + t.html('portal.signals.record') + ' ' +
+      t.html('portal.signals.toEnd') + ' <a href="/logout">' +
+      t.html('portal.signals.signOutAll') + '</a>' +
+      t.html('portal.signals.toChange') + '</p><p ' +
+      'class="note">' + t.html('portal.signals.caepRisc') + '</p></div>');
     log.debug('Leaving Portal.signalsPage(). ' + shown.length + ' ' +
       'of ' + rows.length +
               ' shown.');
@@ -5266,6 +5526,8 @@ class Portal {
       .concat([ACTIVATE, BASE + '/callback', BASE + '/remove-key',
                // Renaming a passkey (#470).
                BASE + '/rename-key',
+               // The language on the person's own entry (#539).
+               BASE + '/language',
                // The recovery codes' Copy script (#224).
                COPY_SCRIPT_PATH,
                BASE + '/signout', BASE + '/signals/receive',
@@ -5384,6 +5646,8 @@ class Portal {
       }
       const username = String(asked.value.user || '').trim();
       const token = String(asked.value.token || '');
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
       // RATE LIMITED even on the GET: this endpoint takes a credential, and an
       // endpoint that takes a credential must not be the one place in this
       // service that answers guesses at network speed.
@@ -5434,6 +5698,8 @@ class Portal {
       const username = String(body.user || '').trim();
       const token = String(body.token || '');
       const base = baseUrlOf(req);
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
 
       const allowed = await websecurity.attemptShared('activation', req,
                                                       username);
@@ -5911,17 +6177,19 @@ class Portal {
       log.info('portal: ' + username + ' set a new password from a reset ' +
                'link; the link is spent.');
       log.debug('Leaving POST ' + RESET_PASSWORD + '. Set.');
-      return self.send(res, 200, self.page('Password set',
-        '<div class="card"><h1>Your password is set</h1>' +
-        '<div class="ok">This reset link has now been used and will not work ' +
-        'again.</div>' +
-        '<p>Sign in with your new password. If your account has a second ' +
-        'factor, you will be asked for it as usual.</p>' +
+      // THE LANGUAGE (#539): nobody is signed in; the link is spent, so the
+      // chooser returns to the portal, where the Sign in link goes too.
+      const t = self.translatorFor(null);
+      return self.send(res, 200, self.page(t.text('portal.resetDone.title'),
+        '<div class="card">' + self.nobodyChooser(t, BASE) +
+        '<h1>' + t.html('portal.resetDone.heading') + '</h1>' +
+        '<div class="ok">' + t.html('portal.resetDone.ok') + '</div>' +
+        '<p>' + t.html('portal.resetDone.next') + '</p>' +
         // `/portal` and not the sign-in screen, for `finishActivation()`'s
         // reason: `/authn/login` draws a form for a pending record, and
         // `/portal` is what mints one when the link is pressed.
-        '<p><a href="' + self.esc(self.signInHref()) + '">Sign ' +
-          'in</a></p></div>'));
+        '<p><a href="' + self.esc(self.signInHref()) + '">' +
+          t.html('portal.signIn') + '</a></p></div>', false, t));
     });
 
     // =========================================================================
@@ -6201,6 +6469,8 @@ class Portal {
         errorCodes.mark(res, self.innerCode(asked) || 'STS-PORTAL-0001');
         return self.refuseShape(res, asked);
       }
+      // The person's passkey policy (#535); no application is in hand here.
+      passkeyPolicy.select(session.user.username, '');
       log.debug('Leaving GET ' + BASE + '/keys. Drawn for ' +
                 session.user.username + '.');
       // THROUGH `sendKeysPage()`, which relaxes `script-src` to `'self'` — this
@@ -7102,6 +7372,8 @@ class Portal {
       }
       const username = session.user.username;
       const base = baseUrlOf(req);
+      // The person's passkey policy (#535).
+      passkeyPolicy.select(username, '');
       const posted = validation.checkParsed(parseBody(req), 'body',
                                             ENROL_KEY_FORM);
       if (!posted.ok) {
@@ -7412,6 +7684,97 @@ class Portal {
     });
 
     // =========================================================================
+    // THE LANGUAGE ON THE PERSON'S OWN ENTRY (#539, rcbj: "a language field on
+    // the person's own profile"). The Overview's *Language and region* card
+    // posts here: `remove-key`'s door — signed in with MANAGE_OWN, CSRF, the
+    // username from the SESSION — writing `preferredLanguage` through the
+    // person editor, the one writer of a person's attributes, as the person
+    // themselves.
+    //
+    // A TAG is canonicalised and must be one a catalog answers (`i18n`'s
+    // `answers()`), the language chooser's own rule; it is written, and the
+    // chooser's cookie is set to it as well, so this browser agrees at once.
+    // EMPTY means "use my browser's language": the attribute is REMOVED, which
+    // is what lets the browser's `Accept-Language` decide again — the cookie
+    // is left as it is, because it is this browser's choice and not the
+    // account's. A refused tag is answered with the page and an English
+    // reason (errors stay English, rcbj's decision on #539).
+    // =========================================================================
+    app.post(BASE + '/language', function (req, res) {
+      log.debug('Entering POST ' + BASE + '/language.');
+      const session = self.requireSignIn(req, res, BASE,
+                                         accessGate.ACTION.MANAGE_OWN);
+      if (!session) {
+        log.debug('Leaving POST ' + BASE + '/language. Not signed in.');
+        return undefined;
+      }
+      const username = String(session.user.username);
+      const posted = validation.checkParsed(parseBody(req), 'body',
+                                            LANGUAGE_FORM);
+      if (!posted.ok) {
+        errorCodes.mark(res, self.innerCode(posted) || 'STS-PORTAL-0001');
+        log.debug('Leaving POST ' + BASE + '/language. Shape.');
+        return self.refuseShape(res, posted);
+      }
+      const body = posted.value;
+      const csrf = websecurity.checkCsrf(session.id, body);
+      if (!csrf.ok) {
+        log.debug('Leaving POST ' + BASE + '/language. CSRF.');
+        errorCodes.mark(res, self.innerCode(csrf) || 'STS-PORTAL-0017');
+        return self.send(res, 403, self.overviewPage(session, null,
+                                                     csrf.detail));
+      }
+      const asked = String(body.lang || '').trim();
+      const tag = asked ? i18n.canonical(asked) : '';
+      if (asked && (!tag || !i18n.answers(tag))) {
+        errorCodes.mark(res, 'STS-I18N-0008');
+        log.debug('Leaving POST ' + BASE + '/language. Not offered.');
+        return self.send(res, 400, self.overviewPage(session, null,
+          '"' + asked.slice(0, 64) + '" is not a language this service has ' +
+          'a catalog for, so your language was not changed.'));
+      }
+      // What the entry holds now: a removal names the value it removes.
+      const entry = self.entryFor(session);
+      const attributes = (entry && entry.attributes) || {};
+      const key = Object.keys(attributes).filter(function (one) {
+        return one.toLowerCase() === 'preferredlanguage';
+      })[0];
+      const held = key ? String([].concat(attributes[key])[0] || '') : '';
+      if (!tag && !held) {
+        log.debug('Leaving POST ' + BASE + '/language. Nothing to remove.');
+        res.status(303).set('Location', BASE + '?done=language').end();
+        return undefined;
+      }
+      let written: any = null;
+      try {
+        written = require('../ldap/person_editor').update(username,
+          tag ? { attribute: 'preferredLanguage', mode: 'set', value: tag }
+              : { attribute: 'preferredLanguage', mode: 'remove',
+                  value: held },
+          { actor: username, via: 'the user portal' });
+      } catch (e) {
+        log.debug('Caught in POST ' + BASE + '/language: ' +
+                  ((e && e.message) || e));
+        written = null;
+      }
+      if (!written || !written.ok) {
+        const why = (written && (written.errors || []).join(' ')) ||
+          'The directory could not be asked.';
+        errorCodes.mark(res, self.innerCode(written) || 'STS-I18N-0009');
+        log.debug('Leaving POST ' + BASE + '/language. Not written: ' + why);
+        return self.send(res, 400, self.overviewPage(session, null,
+          'Your language was not changed: ' + why));
+      }
+      if (tag) {
+        res.append('Set-Cookie', PageLocale.cookieLine(tag));
+      }
+      log.debug('Leaving POST ' + BASE + '/language. ' +
+                (tag || 'removed') + '.');
+      res.status(303).set('Location', BASE + '?done=language').end();
+      return undefined;
+    });
+
+    // =========================================================================
     // SIGNING OUT (2026-09-06). The other end of the callback above.
     //
     // **IT ENDS TWO SESSIONS**, for the reason the admin console's own sign-out
@@ -7444,11 +7807,15 @@ class Portal {
         // CSRF token to, and refusing here would only ever refuse somebody who
         // is already in the state they were asking for.
         log.debug('Leaving POST ' + BASE + '/signout. There was no session.');
-        return self.send(res, 200, self.page('Signed out',
-          '<div class="card"><h1>You are signed out</h1><p ' +
-          'class="note">There was no portal session on this browser to ' +
-          'end.</p><p><a href="' + self.esc(self.signInHref()) +
-          '">Sign in</a></p></div>'));
+        // THE LANGUAGE (#539): nobody's, and the chooser returns to the
+        // portal — there is no GET of a signed-out page to draw again.
+        const t = self.translatorFor(null);
+        return self.send(res, 200, self.page(t.text('portal.signedOut.title'),
+          '<div class="card">' + self.nobodyChooser(t, BASE) +
+          '<h1>' + t.html('portal.signedOut.heading') + '</h1><p ' +
+          'class="note">' + t.html('portal.signedOut.noSession') +
+          '</p><p><a href="' + self.esc(self.signInHref()) +
+          '">' + t.html('portal.signIn') + '</a></p></div>', false, t));
       }
       const username = session.user.username;
       const body = parseBody(req);
@@ -7550,25 +7917,24 @@ class Portal {
                 'session derived from it.'
                 : '; there was no sign-on session left to end.'));
       log.debug('Leaving POST ' + BASE + '/signout. Signed out.');
-      return self.send(res, 200, self.page('Signed out',
-        '<div class="card"><h1>You are signed out</h1>' +
-        '<div class="ok">Your portal session has ended' +
-        (consoleEnded
-          ? ', and so has the admin console session it was made from' : '') +
-        (signOnEnded
-          ? ', and so has the sign-on session it was built on — so anything ' +
-            'else you were signed in to through it is signed out too.'
-          : '. There was no sign-on session left behind it to ' +
-            'end.') + '</div><p ' +
-        'class="note">Signing out of the portal alone would not have signed ' +
-        'you out: this portal is an ordinary OpenID Connect client of this ' +
-        'service (<code>sts-user-portal</code>), so the next page would have ' +
-        'run the sign-in flow again, met the sign-on session and let you ' +
-        'back in with nothing to type.</p><p class="note">Tokens, tickets ' +
-        'and other credentials already issued to applications are untouched. ' +
-        '<a href="/logout">/logout</a> lists all of them and ends what you ' +
-        'choose.</p><p><a href="' + self.esc(self.signInHref()) + '">Sign in ' +
-        'again</a></p></div>'));
+      // THE LANGUAGE (#539): the person who has just signed out, whose own
+      // language their entry still names; the chooser returns to the portal.
+      const t = self.translatorFor(session);
+      const ended = consoleEnded
+        ? (signOnEnded ? t.html('portal.signedOut.endedAll')
+                       : t.html('portal.signedOut.endedConsole'))
+        : (signOnEnded ? t.html('portal.signedOut.endedSignOn')
+                       : t.html('portal.signedOut.endedPortal'));
+      return self.send(res, 200, self.page(t.text('portal.signedOut.title'),
+        '<div class="card">' + self.nobodyChooser(t, BASE) +
+        '<h1>' + t.html('portal.signedOut.heading') + '</h1>' +
+        '<div class="ok">' + ended + '</div><p ' +
+        'class="note">' + t.html('portal.signedOut.why') +
+        '</p><p class="note">' + t.html('portal.signedOut.tokens') +
+        ' <a href="/logout">/logout</a> ' +
+        t.html('portal.signedOut.logoutLists') + '</p><p><a href="' +
+        self.esc(self.signInHref()) + '">' + t.html('portal.signedOut.again') +
+        '</a></p></div>', false, t));
     });
     log.debug("Leaving Portal.registerRoutes().");
   }
@@ -7657,6 +8023,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7670,6 +8039,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7683,6 +8055,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7696,6 +8071,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7709,6 +8087,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7722,6 +8103,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7735,6 +8119,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7748,6 +8135,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       bare: slot.forward('bare'),
       requireSignIn: slot.forward('requireSignIn'),
@@ -7762,6 +8152,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7775,6 +8168,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7788,6 +8184,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7801,6 +8200,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),
@@ -7814,6 +8216,9 @@ export = {
       app: target, BASE: BASE, log: helpers.log,
       esc: slot.forward('esc'),
       shell: slot.forward('shell'),
+      // The portal's translator (#539 phase 3): the sub-module's pages are
+      // drawn with it, so the portal's application id is spelled once.
+      translatorFor: slot.forward('translatorFor'),
       send: slot.forward('send'),
       requireSignIn: slot.forward('requireSignIn'),
       refuseShape: slot.forward('refuseShape'),

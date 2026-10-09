@@ -26,6 +26,9 @@
 //   E. `shapeFields()` keeps the field grid's `field.<attribute>.<n>` boxes
 //      a schema names by pattern, and carries a column of checkboxes named
 //      `attribute` into the `attributes` list an operation takes.
+//   F. `revealActiveNav()` scrolls the sidebar's own nav so the active tab
+//      is in its middle after a page is drawn in place, and leaves a page
+//      with no nav or no active tab alone (2026-10-08).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -213,12 +216,74 @@ function checkShaping(t) {
   log.debug("Leaving checkShaping().");
 }
 
+// A nav 400px tall holding 2000px of tabs, scrolled to the top as a page
+// drawn by `innerHTML` leaves it, with the active tab 1500px down.
+function checkNavReveal(t) {
+  log.debug("Entering checkNavReveal().");
+  const box = function (top, height) {
+    return function () {
+      return { top: top, height: height };
+    };
+  };
+  const nav = { scrollTop: 0, clientHeight: 400 };
+  const here = { getBoundingClientRect: box(100 + 1500, 20) };
+  nav.getBoundingClientRect = box(100, 400);
+  nav.querySelector = function (selector) {
+    return selector === '.here' ? here : null;
+  };
+  const doc = {
+    querySelector: function (selector) {
+      return selector === 'aside.side nav' ? nav : null;
+    }
+  };
+  new ConsoleRuntime({ location: { pathname: '/admin' }, document: doc })
+    .revealActiveNav();
+  t.check(nav.scrollTop === 1500 - (400 - 20) / 2,
+          'F1. the active tab is scrolled to the middle of the nav',
+          'scrollTop ' + nav.scrollTop);
+  const top = { scrollTop: 0, clientHeight: 400,
+                getBoundingClientRect: box(100, 400) };
+  top.querySelector = function () {
+    return { getBoundingClientRect: box(110, 20) };
+  };
+  new ConsoleRuntime({ location: { pathname: '/admin' },
+                       document: { querySelector: function () {
+                         return top;
+                       } } }).revealActiveNav();
+  t.check(top.scrollTop === 0,
+          'F2. a tab near the top never scrolls the nav past its start',
+          'scrollTop ' + top.scrollTop);
+  let threw = '';
+  try {
+    new ConsoleRuntime({ location: { pathname: '/admin' },
+                         document: { querySelector: function () {
+                           return null;
+                         } } }).revealActiveNav();
+    new ConsoleRuntime({ location: { pathname: '/admin' } }).revealActiveNav();
+  } catch (e) {
+    threw = String((e && e.message) || e);
+  }
+  t.check(threw === '', 'F3. no nav, or no document, is left alone', threw);
+  // F4 is the source: every page the runtime draws (`draw()`) asks it, or a
+  // method held correct above is one nothing calls.
+  const source = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'admin-ui', 'web_runtime.ts'),
+    'utf8');
+  const drawBody = source.slice(source.indexOf('this.loadPageScripts();'),
+                                source.indexOf('revealActiveNav(): void'));
+  t.check(/this\.revealActiveNav\(\);/.test(drawBody),
+          'F4. draw() reveals the active tab after the page is in place',
+          'not called from draw()');
+  log.debug("Leaving checkNavReveal().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkRoundTrips(t);
   checkOnce(t);
   checkRedraws(t);
   checkShaping(t);
+  checkNavReveal(t);
   log.debug("Leaving run().");
 }
 

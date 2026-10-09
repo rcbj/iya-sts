@@ -28,7 +28,10 @@
 //      revives nothing, and a new sign-in works without being asked.
 //   f. THE PERSON THEMSELVES, on `/portal/consents`: the page lists what they
 //      agreed, the Withdraw form revokes the grant, and the page refuses a
-//      post without its CSRF token and one naming nothing of theirs.
+//      post without its CSRF token and one naming nothing of theirs. And
+//      (#537) the global consents that answered for them at sign-in are
+//      listed under Administrative consents, with no Withdraw form, and one
+//      the administrator takes away is no longer listed.
 //   g. `oauth2.refreshRequiresConsent`: a grant made while consent was off is
 //      refused once consent is on, and renewed with the setting off.
 //
@@ -422,6 +425,25 @@ async function portal() {
               "no Withdraw form");
     assert.ok(!/<script/i.test(page.text), "a script on the page");
   });
+  // ADMINISTRATIVE CONSENTS (#537): section e signed alice in to B, whose
+  // openid and profile are consented for everybody.
+  const administrative = page.text.split('id="administrative-consents"')[1] ||
+    "";
+  check("the global consents B's sign-in applied are listed under " +
+        "Administrative consents, with no Withdraw form", function () {
+    assert.ok(administrative, "no Administrative consents section");
+    assert.ok(administrative.indexOf(B.client_id) >= 0,
+              "B is not listed: " + administrative.slice(0, 600));
+    assert.ok(/<code>profile<\/code>/.test(administrative) &&
+              /<code>openid<\/code>/.test(administrative),
+              "B's scopes are not listed: " + administrative.slice(0, 600));
+    assert.ok(!/name="action"/.test(administrative),
+              "a Withdraw form in the administrative section");
+  });
+  check("and B is not among the person's own consents", function () {
+    const own = page.text.split('id="administrative-consents"')[0];
+    assert.ok(own.indexOf(B.client_id) < 0, "B listed as the person's own");
+  });
   const csrf = (page.text.match(/name="csrf_token" value="([^"]+)"/) ||
                 [])[1] || "";
   let r = await browse(jar, "POST", realmBase + "/portal/consents",
@@ -454,8 +476,26 @@ async function portal() {
   });
   page = await portalPage(jar, "/portal/consents");
   check("and profile is no longer listed for A", function () {
-    assert.ok(!/<code>profile<\/code>/.test(page.text),
-              "profile still listed");
+    const own = page.text.split('id="administrative-consents"')[0];
+    assert.ok(!/<code>profile<\/code>/.test(own), "profile still listed");
+  });
+  await ok(realmApi + "/consent/revoke-global-consent",
+    { client: B.client_id, scope: "profile" }, "withdrew B's profile");
+  page = await portalPage(jar, "/portal/consents");
+  // B's CARD, not the whole section: the person signed in to the portal
+  // through its own seeded client, whose global consent covers profile too,
+  // so the section rightly lists a profile row for that application.
+  const after = ((page.text.split('id="administrative-consents"')[1] || "")
+    .split('<div class="card">').filter(function (card) {
+      return card.indexOf(B.client_id) >= 0;
+    })[0]) || "";
+  check("an administrative consent the administrator takes away is no " +
+        "longer listed, and the rest still is", function () {
+    assert.ok(after, "B has no card under Administrative consents");
+    assert.ok(!/<code>profile<\/code>/.test(after),
+              "B's profile still listed: " + after.slice(0, 600));
+    assert.ok(/<code>openid<\/code>/.test(after),
+              "B's openid is gone too: " + after.slice(0, 600));
   });
   log.debug("Leaving portal().");
 }
@@ -526,7 +566,7 @@ async function test() {
   await globalConsent();
   await portal();
   await refreshRequiresConsent();
-  assert.ok(checks >= 23, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 26, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

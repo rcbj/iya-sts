@@ -29,6 +29,14 @@ type Json = any;
 // module may not require it.
 const MIB = 1024 * 1024;
 
+// A VALUE THE VIEW CARRIES, INSIDE A TRANSLATED SENTENCE (#539 phase 6). A
+// message's parameters are escaped by the translator, which writes an
+// apostrophe as `&#39;` where `kit.esc()` writes `&apos;`; so a sentence
+// that carries the view's own words is formatted with this mark in the
+// value's place and the value, escaped by `kit.esc()` as before, put in
+// after. English stays the bytes it was.
+const MARK = '\u0001';
+
 /**
  * Draws Monitoring → Node Health from the answer of `GET
  * /admin-api/node-health`: the cluster's totals and, for each node, its
@@ -42,10 +50,17 @@ class NodeHealthPage {
    * Draws the page's body from its view.
    *
    * @param view - the answer of the page's management API operation
+   * @param ctx - the render context (`WebKit.context()`); the server's
+   *   own drawing passes none, and gets English
    * @returns the body as HTML
    */
-  static render(view: Json): string {
-    return NodeHealthPage.clusterHtml(view);
+  static render(view: Json, ctx?: Json): string {
+    return NodeHealthPage.clusterHtml(view, ctx || kit.context());
+  }
+
+  // A formatted message with `MARK` replaced by markup already escaped.
+  static put(message: string, html: string): string {
+    return message.split(MARK).join(html);
   }
 
   // One decimal place, as a number. `NodeHealthAdmin.round1()`, which the
@@ -74,108 +89,150 @@ class NodeHealthPage {
       }).join('') + '</tbody></table>';
   }
 
-  static cpuHtml(cpu: Json): string {
-    const head = '<h2 id="cpu">Container CPU</h2>';
+  // "Not available:" and the view's reason, under a section's heading.
+  static notAvailableHtml(t: Json, why: unknown): string {
+    return '<p><strong>' + t.html('consoleNodeHealth.notAvailable') +
+      '</strong> ' + kit.esc(why) + '</p>';
+  }
+
+  // Each section below is handed the page's translator `t` by its caller
+  // (#539); a local that was called `t` before — the throttling figures,
+  // the totals — has a longer name now.
+  static cpuHtml(cpu: Json, t: Json): string {
+    const head = '<h2 id="cpu">' + t.html('consoleNodeHealth.headCpu') +
+      '</h2>';
     if (!cpu.available) {
-      return head + '<p><strong>Not available:</strong> ' +
-        kit.esc(cpu.unavailableText) + '</p>';
+      return head + this.notAvailableHtml(t, cpu.unavailableText);
     }
-    const t = cpu.throttling;
+    const thr = cpu.throttling;
     if (cpu.fromEcs) {
       const ecsHtml = head + '<p>' + kit.esc(cpu.limitText) + '</p>' +
         this.rows([
-          ['Utilisation', kit.esc(this.pct(cpu.utilisationPercent)),
-           kit.esc(cpu.coresUsed) + ' CPU(s)' + (cpu.percentOfVcpus
-             ? ' of ' + kit.esc(cpu.percentOfVcpus) : '') +
-           ', as the ECS agent measured it']
-        ]) + '<p><small>The cgroup: ' +
+          [t.text('consoleNodeHealth.utilisation'),
+           kit.esc(this.pct(cpu.utilisationPercent)),
+           cpu.percentOfVcpus
+             ? t.html('consoleNodeHealth.ecsCoresOf',
+                      { cores: String(cpu.coresUsed),
+                        of: String(cpu.percentOfVcpus) })
+             : t.html('consoleNodeHealth.ecsCores',
+                      { cores: String(cpu.coresUsed) })]
+        ]) + '<p><small>' + t.html('consoleNodeHealth.theCgroup') + ' ' +
         kit.esc(cpu.cgroupUnavailableText || '') + '</small></p>';
       return ecsHtml;
     }
     const html = head + '<p>' + kit.esc(cpu.limitText) + '</p>' +
       this.rows([
-        ['Utilisation', kit.esc(this.pct(cpu.utilisationPercent)),
-         kit.esc(cpu.coresUsed) + ' of ' + kit.esc(cpu.percentOfVcpus) +
-         ' CPU(s) over ' + kit.esc(cpu.windowSeconds) + ' s, ' +
-         (cpu.sampled === 'fresh-sample' ? 'two samples taken for this page'
-                                         : 'since the previous page')],
-        ['CPU time used', kit.esc(cpu.usageSeconds) + ' s',
-         'every process of the container since it started (user ' +
-         kit.esc(cpu.userSeconds === null ? '—' : cpu.userSeconds) +
-         ' s, system ' +
-         kit.esc(cpu.systemSeconds === null ? '—' : cpu.systemSeconds) +
-         ' s)'],
-        ['Throttled', t ? kit.esc(t.throttledPeriods) + ' of ' +
-           kit.esc(t.periods) + ' periods' : '—',
-         t ? kit.esc(this.pct(t.throttledPercentOfPeriods)) + ' of ' +
-             'periods, ' + kit.esc(t.throttledSeconds) + ' s held back ' +
-             'by the quota'
+        [t.text('consoleNodeHealth.utilisation'),
+         kit.esc(this.pct(cpu.utilisationPercent)),
+         t.html('consoleNodeHealth.utilisationWhy',
+                { cores: String(cpu.coresUsed),
+                  of: String(cpu.percentOfVcpus),
+                  seconds: String(cpu.windowSeconds),
+                  sampled: cpu.sampled === 'fresh-sample' ? 'fresh'
+                                                          : 'previous' })],
+        [t.text('consoleNodeHealth.cpuTimeUsed'),
+         kit.esc(cpu.usageSeconds) + ' s',
+         t.html('consoleNodeHealth.cpuTimeWhy',
+                { user: String(cpu.userSeconds === null ? '—'
+                                                        : cpu.userSeconds),
+                  system: String(cpu.systemSeconds === null
+                                   ? '—' : cpu.systemSeconds) })],
+        [t.text('consoleNodeHealth.throttled'), thr
+           ? t.html('consoleNodeHealth.throttledPeriods',
+                    { n: String(thr.throttledPeriods),
+                      periods: String(thr.periods) })
+           : '—',
+         thr ? t.html('consoleNodeHealth.throttledWhy',
+                      { pct: this.pct(thr.throttledPercentOfPeriods),
+                        seconds: String(thr.throttledSeconds) })
            : kit.esc(cpu.throttlingText)]
-      ]) + '<p><small>From cgroup v' + kit.esc(cpu.cgroupVersion) +
-      ', <code>' + kit.esc(cpu.source) + '</code>.</small></p>';
+      ]) + '<p><small>' +
+      t.html('consoleNodeHealth.fromCgroup',
+             { version: String(cpu.cgroupVersion),
+               source: String(cpu.source) }) + '</small></p>';
     return html;
   }
 
-  static memoryHtml(m: Json): string {
-    const head = '<h2 id="memory">Container memory</h2>';
+  static memoryHtml(m: Json, t: Json): string {
+    const head = '<h2 id="memory">' +
+      t.html('consoleNodeHealth.headMemory') + '</h2>';
     if (!m.available) {
-      return head + '<p><strong>Not available:</strong> ' +
-        kit.esc(m.unavailableText) + '</p>';
+      return head + this.notAvailableHtml(t, m.unavailableText);
     }
     const html = head + '<p>' + kit.esc(m.limitText) + '</p>' +
       this.rows([
-        ['In use', kit.esc(this.mib(m.currentBytes)),
-         (m.utilisationPercent === null ? 'no limit to measure against'
-            : kit.esc(this.pct(m.utilisationPercent)) + ' of ' +
-              kit.esc(this.mib(m.limitBytes))) +
+        [t.text('consoleNodeHealth.inUse'),
+         kit.esc(this.mib(m.currentBytes)),
+         (m.utilisationPercent === null
+            ? t.html('consoleNodeHealth.noLimit')
+            : t.html('consoleNodeHealth.pctOf',
+                     { pct: this.pct(m.utilisationPercent),
+                       of: this.mib(m.limitBytes) })) +
          (m.peakBytes === null ? ''
-            : '; the most it has used is ' +
-              kit.esc(this.mib(m.peakBytes)))],
-        ['Anonymous', kit.esc(this.mib(m.anonBytes)),
-         'the processes\' own memory: heaps, stacks, buffers'],
-        ['Page cache', kit.esc(this.mib(m.fileBytes)),
-         'files the kernel caches, and gives back under pressure'],
-        ['Kernel', kit.esc(this.mib(m.kernelBytes)),
-         'the kernel\'s own structures on the container\'s behalf'],
-        ['Killed for memory', m.oomKills === null ? '—'
+            : t.html('consoleNodeHealth.peak',
+                     { peak: this.mib(m.peakBytes) }))],
+        [t.text('consoleNodeHealth.anonymous'),
+         kit.esc(this.mib(m.anonBytes)),
+         t.html('consoleNodeHealth.anonymousWhy')],
+        [t.text('consoleNodeHealth.pageCache'),
+         kit.esc(this.mib(m.fileBytes)),
+         t.html('consoleNodeHealth.pageCacheWhy')],
+        [t.text('consoleNodeHealth.kernel'),
+         kit.esc(this.mib(m.kernelBytes)),
+         t.html('consoleNodeHealth.kernelWhy')],
+        [t.text('consoleNodeHealth.oomKills'), m.oomKills === null ? '—'
                                                   : kit.esc(m.oomKills),
-         'processes the kernel killed at the limit (oom_kill, in ' +
-         'memory.events or v1\'s memory.oom_control)']
-      ]) + '<p><small>' + kit.esc(m.statText) + ' From ' +
-      (m.fromEcs ? 'the ECS agent, because the cgroup cannot be read: ' +
-                   kit.esc(m.cgroupUnavailableText || '')
-                 : 'cgroup v' + kit.esc(m.cgroupVersion) + ', <code>' +
-                   kit.esc(m.source) + '</code>') + '.</small></p>';
+         t.html('consoleNodeHealth.oomKillsWhy')]
+      ]) + '<p><small>' + kit.esc(m.statText) + ' ' +
+      (m.fromEcs
+        ? this.put(t.html('consoleNodeHealth.fromEcsAgent', { why: MARK }),
+                   kit.esc(m.cgroupUnavailableText || ''))
+        : t.html('consoleNodeHealth.fromCgroup',
+                 { version: String(m.cgroupVersion),
+                   source: String(m.source) })) + '</small></p>';
     return html;
   }
 
-  static processesHtml(p: Json): string {
+  static processesHtml(p: Json, t: Json): string {
     const self = this;
-    const t = p.totals;
-    const html = '<h2 id="processes">Node.js processes and worker threads' +
-      '</h2>' +
+    const totals = p.totals;
+    const html = '<h2 id="processes">' +
+      t.html('consoleNodeHealth.headProcesses') + '</h2>' +
       this.rows([
-        ['Processes', kit.esc(t.processes), 'listed below'],
-        ['Worker threads', kit.esc(t.workerThreads || 0),
-         'request and hosted-surface workers, threads of the front process'],
-        ['Resident, in all', kit.esc(this.mib(t.rssBytes)),
-         'across ' + kit.esc(t.processesWithRss) + ' process(es); a ' +
-         'thread\'s is its process\'s'],
-        ['Heap used, in all', kit.esc(this.mib(t.heapUsedBytes)),
-         'of ' + kit.esc(this.mib(t.heapTotalBytes)) + ' allocated, ' +
-         'across ' + kit.esc(t.isolatesWithHeap) + ' V8 isolate(s)']
-      ]) + kit.note(kit.esc(p.totalsText), 'How the totals add up') +
-      '<table class="grid"><thead><tr><th>Process or thread</th>' +
-      '<th>Resident</th><th>Heap used</th><th>Heap total</th>' +
-      '<th>External</th><th>Array buffers</th><th>CPU time</th></tr>' +
+        [t.text('consoleNodeHealth.processes'), kit.esc(totals.processes),
+         t.html('consoleNodeHealth.listedBelow')],
+        [t.text('consoleNodeHealth.workerThreads'),
+         kit.esc(totals.workerThreads || 0),
+         t.html('consoleNodeHealth.workerThreadsWhy')],
+        [t.text('consoleNodeHealth.residentAll'),
+         kit.esc(this.mib(totals.rssBytes)),
+         t.html('consoleNodeHealth.residentWhy',
+                { n: String(totals.processesWithRss) })],
+        [t.text('consoleNodeHealth.heapAll'),
+         kit.esc(this.mib(totals.heapUsedBytes)),
+         t.html('consoleNodeHealth.heapWhy',
+                { total: this.mib(totals.heapTotalBytes),
+                  n: String(totals.isolatesWithHeap) })]
+      ]) + kit.note(kit.esc(p.totalsText),
+                    t.text('consoleNodeHealth.totalsLabel')) +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleNodeHealth.thProcess') + '</th>' +
+      '<th>' + t.html('consoleNodeHealth.thResident') + '</th><th>' +
+      t.html('consoleNodeHealth.thHeapUsed') + '</th><th>' +
+      t.html('consoleNodeHealth.thHeapTotal') + '</th>' +
+      '<th>' + t.html('consoleNodeHealth.thExternal') + '</th><th>' +
+      t.html('consoleNodeHealth.thArrayBuffers') + '</th><th>' +
+      t.html('consoleNodeHealth.thCpuTime') + '</th></tr>' +
       '</thead><tbody>' +
       p.rows.map(function (r: Json): string {
         const thread = r.kind === 'thread';
-        return '<tr><td>' + (thread ? 'thread ' + kit.esc(r.threadId) +
-                             ' of pid ' + kit.esc(r.pid)
-                           : 'pid ' + kit.esc(r.pid)) + '<br><small>' +
+        return '<tr><td>' + (thread
+          ? t.html('consoleNodeHealth.threadOfPid',
+                   { thread: String(r.threadId), pid: String(r.pid) })
+          : 'pid ' + kit.esc(r.pid)) + '<br><small>' +
           kit.esc(r.role) + '</small></td><td>' +
-          (thread ? '<small>the process\'s</small>'
+          (thread ? '<small>' + t.html('consoleNodeHealth.theProcesss') +
+                    '</small>'
            : r.unreadable ? '<small>' + kit.esc(r.unreadable) + '</small>'
              : kit.esc(self.mib(r.rssBytes))) +
           (r.notReported ? '<br><small>' + kit.esc(r.notReported) +
@@ -184,13 +241,17 @@ class NodeHealthPage {
           kit.esc(self.mib(r.heapTotalBytes)) + '</td><td>' +
           kit.esc(self.mib(r.externalBytes)) + '</td><td>' +
           kit.esc(self.mib(r.arrayBuffersBytes)) + '</td><td>' +
-          (thread ? '<small>the process\'s</small>'
+          (thread ? '<small>' + t.html('consoleNodeHealth.theProcesss') +
+                    '</small>'
            : r.cpuUserSeconds === null ? '—'
              : kit.esc(self.round1(r.cpuUserSeconds +
                                    r.cpuSystemSeconds)) +
-               ' s' + (r.processWide ? '<br><small>every thread\'s' +
-                                       '</small>' : '')) + '</td></tr>';
+               ' s' + (r.processWide
+                 ? '<br><small>' + t.html('consoleNodeHealth.everyThreads') +
+                   '</small>' : '')) + '</td></tr>';
       }).join('') + '</tbody></table>' +
+      // A worker that did not answer is a problem the page reports, and a
+      // problem's text stays English (#539).
       (p.unanswered.length ? kit.warn(
         p.unanswered.length + ' worker thread(s) did not report: ' +
         p.unanswered.map(function (u: Json): string {
@@ -202,79 +263,95 @@ class NodeHealthPage {
     return html;
   }
 
-  static ecsHtml(e: Json): string {
-    const head = '<h2 id="ecs">ECS task metadata</h2>';
+  static ecsHtml(e: Json, t: Json): string {
+    const head = '<h2 id="ecs">' + t.html('consoleNodeHealth.headEcs') +
+      '</h2>';
     if (!e.available) {
-      return head + '<p><strong>Not available:</strong> ' +
-        kit.esc(e.unavailableText) + '</p>';
+      return head + this.notAvailableHtml(t, e.unavailableText);
     }
     const s = e.stats || {};
     const limits = e.taskLimits || {};
     const html = head + '<p>' + kit.esc(e.text) + '</p>' +
       this.rows([
-        ['Task limits', kit.esc(limits.cpuVcpus === undefined ||
-                                  limits.cpuVcpus === null
-                                    ? '—' : limits.cpuVcpus) + ' vCPU, ' +
+        [t.text('consoleNodeHealth.taskLimits'),
+         kit.esc(limits.cpuVcpus === undefined ||
+                   limits.cpuVcpus === null
+                     ? '—' : limits.cpuVcpus) + ' vCPU, ' +
            kit.esc(limits.memoryMiB === undefined ||
                      limits.memoryMiB === null
                        ? '—' : limits.memoryMiB) + ' MiB', '/task'],
-        ['Memory', kit.esc(this.mib(s.memoryUsageBytes)),
-         (s.memoryLimitUnlimited ? 'no container limit (the agent\'s "none")'
-            : 'of ' + kit.esc(this.mib(s.memoryLimitBytes))) +
+        [t.text('consoleNodeHealth.memory'),
+         kit.esc(this.mib(s.memoryUsageBytes)),
+         (s.memoryLimitUnlimited
+            ? t.html('consoleNodeHealth.noContainerLimit')
+            : t.html('consoleNodeHealth.ofSize',
+                     { size: this.mib(s.memoryLimitBytes) })) +
          ', /task/stats'],
-        ['CPU', s.cpuCoresUsed === null || s.cpuCoresUsed === undefined
-           ? '—' : kit.esc(s.cpuCoresUsed) + ' CPU(s)',
-         kit.esc(this.pct(s.cpuPercentOfTaskLimit)) + ' of the task\'s ' +
-         'vCPUs, between the agent\'s last two samples']
+        [t.text('consoleNodeHealth.cpu'),
+         s.cpuCoresUsed === null || s.cpuCoresUsed === undefined
+           ? '—' : t.html('consoleNodeHealth.cores',
+                          { n: String(s.cpuCoresUsed) }),
+         t.html('consoleNodeHealth.ecsCpuWhy',
+                { pct: this.pct(s.cpuPercentOfTaskLimit) })]
       ]) + (e.unavailableText ? '<p><small>' + kit.esc(e.unavailableText) +
                                 '</small></p>' : '');
     return html;
   }
 
-  static html(json: Json): string {
+  // `t` is optional because `node_health_admin.ts` draws one node's
+  // sections with this alone, in English (`tests/node_health_page.js`).
+  static html(json: Json, t?: Json): string {
+    t = t || kit.context().t;
     const cpu = json.cpu;
     const mem = json.memory;
+    const na = t.text('consoleNodeHealth.na');
     const tiles = '<div class="tiles">' +
-      kit.tile(cpu.available ? this.pct(cpu.utilisationPercent) : 'n/a',
-                 'CPU') +
-      kit.tile(!mem.available ? 'n/a'
+      kit.tile(cpu.available ? this.pct(cpu.utilisationPercent) : na,
+                 t.text('consoleNodeHealth.cpu')) +
+      kit.tile(!mem.available ? na
                    : mem.utilisationPercent === null
                      ? this.mib(mem.currentBytes)
-                     : this.pct(mem.utilisationPercent), 'Memory') +
+                     : this.pct(mem.utilisationPercent),
+               t.text('consoleNodeHealth.memory')) +
       kit.tile(this.mib(json.processes.totals.rssBytes),
-                 'Resident, all processes') +
-      kit.tile(String(json.processes.totals.processes), 'Processes') +
+                 t.text('consoleNodeHealth.tileResident')) +
+      kit.tile(String(json.processes.totals.processes),
+               t.text('consoleNodeHealth.processes')) +
       kit.tile(String(json.processes.totals.workerThreads || 0),
-                 'Worker threads') +
+                 t.text('consoleNodeHealth.workerThreads')) +
       '</div>';
     const about = kit.note(
-      '<p>' + kit.esc(json.scopeText) + '</p><p>The container\'s CPU and ' +
-      'memory are read from its cgroup (v2), each process\'s and worker ' +
-      'thread\'s from the process or thread itself, when the page is ' +
-      'drawn; nothing is kept but the ' +
-      'previous CPU sample. This page changes nothing.</p>',
-      'What this page is');
+      '<p>' + kit.esc(json.scopeText) + '</p><p>' +
+      t.html('consoleNodeHealth.about') + '</p>',
+      t.text('consoleNodeHealth.whatThisPageIs'));
     const m = json.machine;
-    const machine = '<h2 id="machine">The machine, not the container</h2>' +
+    const machine = '<h2 id="machine">' +
+      t.html('consoleNodeHealth.headMachine') + '</h2>' +
       '<p>' + kit.esc(m.text) + '</p>' +
       this.rows([
-        ['Load average', kit.esc((m.loadavg || []).map(
-          function (n: number): string {
-            return n.toFixed(2);
-          }).join(' / ')), '1, 5 and 15 minutes (os.loadavg())'],
-        ['Memory', kit.esc(this.mib(m.freememBytes)) + ' free of ' +
-           kit.esc(this.mib(m.totalmemBytes)),
+        [t.text('consoleNodeHealth.loadAverage'),
+         kit.esc((m.loadavg || []).map(function (n: number): string {
+           return n.toFixed(2);
+         }).join(' / ')), t.html('consoleNodeHealth.loadAverageWhy')],
+        [t.text('consoleNodeHealth.memory'),
+         t.html('consoleNodeHealth.freeOf',
+                { free: this.mib(m.freememBytes),
+                  total: this.mib(m.totalmemBytes) }),
          'os.freemem() and os.totalmem()'],
-        ['CPUs', kit.esc(m.cpus), 'os.cpus()']
+        [t.text('consoleNodeHealth.cpus'), kit.esc(m.cpus), 'os.cpus()']
       ]);
-    const html = tiles + about + this.cpuHtml(cpu) + this.memoryHtml(mem) +
-      this.processesHtml(json.processes) + this.ecsHtml(json.ecs) + machine;
+    const html = tiles + about + this.cpuHtml(cpu, t) +
+      this.memoryHtml(mem, t) + this.processesHtml(json.processes, t) +
+      this.ecsHtml(json.ecs, t) + machine;
     return html;
   }
 
   // The page for every node: the cluster's totals and a section per node,
   // this node's from its live view and every other's from its snapshot.
-  static clusterHtml(json: Json): string {
+  // The page's words are its translator's (#539 phase 6); what the view
+  // carries — a state's sentence, a limit's text — is drawn as it comes.
+  static clusterHtml(json: Json, ctx: Json): string {
+    const t = ctx.t;
     const self = this;
     const c = json.cluster || {};
     const nodes: Json[] = json.nodes || [];
@@ -282,43 +359,61 @@ class NodeHealthPage {
       return n.self;
     })[0];
     if (!c.clustered || nodes.length < 2) {
-      const html = kit.note(kit.esc(c.text || ''), 'Cluster') +
+      const html = kit.note(kit.esc(c.text || ''),
+                            t.text('consoleNodeHealth.cluster')) +
         (c.readError ? kit.warn(kit.esc(c.readError)) : '') +
-        (own && own.view ? this.html(own.view)
+        (own && own.view ? this.html(own.view, t)
                          : nodes[0] && nodes[0].view
-                           ? this.html(nodes[0].view) : '');
+                           ? this.html(nodes[0].view, t) : '');
       return html;
     }
-    const t = json.totals;
-    const html = '<h2 id="cluster">Cluster</h2><p>' + kit.esc(c.text) +
+    const totals = json.totals;
+    const html = '<h2 id="cluster">' + t.html('consoleNodeHealth.cluster') +
+      '</h2><p>' + kit.esc(c.text) +
       '</p>' + (c.readError ? kit.warn(kit.esc(c.readError)) : '') +
       this.rows([
-        ['Container memory', kit.esc(this.mib(t.memoryUsedBytes)),
-         t.memoryLimitBytes === null ? 'no total limit to measure against'
-           : kit.esc(this.pct(t.memoryPercent)) + ' of ' +
-             kit.esc(this.mib(t.memoryLimitBytes))],
-        ['CPU', t.cpuCoresUsed === null ? '—'
-           : kit.esc(t.cpuCoresUsed) + ' CPU(s)',
-         t.cpuPercent === null ? 'not measured'
-           : kit.esc(this.pct(t.cpuPercent)) + ' of ' +
-             kit.esc(t.cpuOf) + ' CPU(s)'],
-        ['Processes', kit.esc(t.processes) + ' and ' +
-           kit.esc(t.workerThreads || 0) + ' worker thread(s)',
-         kit.esc(this.mib(t.rssBytes)) + ' resident (processes only), ' +
-         kit.esc(this.mib(t.heapUsedBytes)) + ' of heap used']
-      ]) + '<p><small>' + kit.esc(t.text) + '</small></p>' +
-      '<table class="grid"><thead><tr><th>Node</th><th>State</th>' +
-      '<th>Age</th></tr></thead><tbody>' +
+        [t.text('consoleNodeHealth.containerMemory'),
+         kit.esc(this.mib(totals.memoryUsedBytes)),
+         totals.memoryLimitBytes === null
+           ? t.html('consoleNodeHealth.noTotalLimit')
+           : t.html('consoleNodeHealth.pctOf',
+                    { pct: this.pct(totals.memoryPercent),
+                      of: this.mib(totals.memoryLimitBytes) })],
+        [t.text('consoleNodeHealth.cpu'), totals.cpuCoresUsed === null
+           ? '—'
+           : t.html('consoleNodeHealth.cores',
+                    { n: String(totals.cpuCoresUsed) }),
+         totals.cpuPercent === null
+           ? t.html('consoleNodeHealth.notMeasured')
+           : t.html('consoleNodeHealth.pctOfCores',
+                    { pct: this.pct(totals.cpuPercent),
+                      of: String(totals.cpuOf) })],
+        [t.text('consoleNodeHealth.processes'),
+         t.html('consoleNodeHealth.processesAndThreads',
+                { processes: String(totals.processes),
+                  threads: String(totals.workerThreads || 0) }),
+         t.html('consoleNodeHealth.residentHeap',
+                { resident: this.mib(totals.rssBytes),
+                  heap: this.mib(totals.heapUsedBytes) })]
+      ]) + '<p><small>' + kit.esc(totals.text) + '</small></p>' +
+      '<table class="grid"><thead><tr><th>' +
+      t.html('consoleNodeHealth.thNode') + '</th><th>' +
+      t.html('consoleNodeHealth.thState') + '</th>' +
+      '<th>' + t.html('consoleNodeHealth.thAge') +
+      '</th></tr></thead><tbody>' +
       nodes.map(function (n: Json): string {
         return '<tr><td><a href="#node-' + kit.esc(n.name) + '">' +
-          kit.esc(n.name) + '</a>' + (n.self ? ' (this node)' : '') +
+          kit.esc(n.name) + '</a>' +
+          (n.self ? ' ' + t.html('consoleNodeHealth.thisNode') : '') +
           '</td><td>' + kit.esc(n.state) + '</td><td>' +
           (n.ageSeconds === null ? '—' : kit.esc(n.ageSeconds) + ' s') +
           '</td></tr>';
       }).join('') + '</tbody></table>' +
       nodes.map(function (n: Json): string {
-        const head = '<h2 id="node-' + kit.esc(n.name) + '">Node ' +
-          kit.esc(n.name) + (n.self ? ' (this node)' : '') + '</h2><p>' +
+        const head = '<h2 id="node-' + kit.esc(n.name) + '">' +
+          t.html('consoleNodeHealth.nodeNamed', { name: String(n.name) }) +
+          (n.self ? ' ' + t.html('consoleNodeHealth.thisNode') : '') +
+          '</h2><p>' +
           '<strong>' + kit.esc(n.state) + '</strong>: ' +
           kit.esc(n.stateText) + '</p>';
         if (!n.view) {
@@ -326,7 +421,7 @@ class NodeHealthPage {
         }
         let body = '';
         try {
-          body = self.html(n.view);
+          body = self.html(n.view, t);
         } catch (e) {
           // A snapshot from another version of this page may lack a figure
           // this one draws; the node is still listed, and says so.

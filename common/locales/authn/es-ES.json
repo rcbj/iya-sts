@@ -1,0 +1,17 @@
+{
+  "login.linkAccount": "<strong>Vincula tu cuenta.</strong> Un socio de federación ha iniciado tu sesión como <code>{name}</code>, y esa cuenta todavía no está vinculada a él. Inicia sesión aquí como {name} para vincularlas; Cancelar no vincula nada.",
+  "login.rememberNote": "— lo reconocerá la próxima vez mediante una cookie. No lo marques en un ordenador compartido.",
+  "login.forgot": "¿Has olvidado tu contraseña?",
+  "login.metaPasswordlessChecked": "Sin contraseña: el campo de contraseña no se lee, y una llave de acceso que hayas registrado para iniciar sesión es el único factor. Una llave de acceso se añade en /portal/keys después de iniciar sesión, nunca aquí.",
+  "options.siopNote": "una clave de cartera que has registrado",
+  "passwordChange.meta": "Todavía no se ha iniciado ninguna sesión. El inicio de sesión que has empezado continúa en cuanto se guarde la contraseña nueva.",
+  "webauthn.noPrompt": "Mi navegador no me ha preguntado nada: dime por qué",
+  "backupCode.label": "Uno de los códigos de recuperación que has recibido",
+  "options.walletWithheld": "El inicio de sesión con una cartera no se ofrece para esta solicitud: exige una llave de seguridad.",
+  "options.wallet": "O inicia sesión con una cartera que contenga una credencial que este servicio te emitió. No se escribe nada: tu cartera demuestra que posee la clave a la que está vinculada la credencial.",
+  "options.walletMfaNote": "Esta solicitud necesita dos factores, así que después se te pedirá un segundo, salvo que la clave de tu cartera esté certificada como protegida por tu PIN o tu biometría.",
+  "options.walletButton": "Iniciar sesión con una cartera",
+  "passwordFactor.sub": "Segundo factor para <code>{name}</code>, después de tu cartera.",
+  "passwordFactor.meta": "Tu cartera ya presentó una credencial que este servicio te emitió. Si todo va bien, la sesión registra amr {amr} y acr \"mfa\".",
+  "secondFactor.walletInstead": "Usar en su lugar tu cartera"
+}

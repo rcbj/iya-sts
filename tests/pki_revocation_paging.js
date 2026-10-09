@@ -38,6 +38,10 @@ delete process.env.CONFIG_FILE;
 const realRevocation = require('../common/pki_revocation');
 const pkiAdminModule = require('../admin-ui/pki_admin');
 
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
+
 const log = require('bunyan').createLogger({
   name: 'pki_revocation_paging',
   level: process.env.LOG_LEVEL || 'info' });
@@ -241,7 +245,8 @@ async function run(t) {
           'name this file does not write', JSON.stringify(view));
   const json = { revocation: admin['revocationModel'](query) };
   // Drawn by the renderer from the model passed through JSON (#446).
-  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view);
+  const html = PkiPage.revocationPane(JSON.parse(JSON.stringify(json)), view,
+    require('../admin-ui/web_kit').context({}, true).t);
   const revokeForms =
     (html.match(/name="action" value="revoke-certificate"/g) || []).length;
   const releaseForms = (html.match(/name="action" value="release-hold"/g) ||
@@ -308,7 +313,8 @@ async function run(t) {
     { 'ca-default-jose-issuedq': 'no such thing',
       'ca-default-jose-issuedPage': '4', personsPage: '2' });
   const nothingHtml = PkiPage.revocationPane(
-    JSON.parse(JSON.stringify(nothing)), nothingView);
+    JSON.parse(JSON.stringify(nothing)), nothingView,
+    require('../admin-ui/web_kit').context({}, true).t);
   t.check(nothingHtml.indexOf('matches the search above') >= 0,
           'a search that matches nothing says so');
   const form = (nothingHtml.match(

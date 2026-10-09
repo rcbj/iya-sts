@@ -342,7 +342,28 @@ async function test() {
     const claims = claimsOf(r.json.access_token.value);
     assert.deepStrictEqual([].concat(claims.aud), [RS2],
                            JSON.stringify(claims));
-    assert.deepStrictEqual(claims.act, { sub: RS });
+    // #526: the act chain follows RFC 8693's rules — the deriving resource
+    // server as a client of the grant endpoint, the original client at the
+    // foot, each entry naming its issuer.
+    assert.ok(claims.act && typeof claims.act === "object",
+              JSON.stringify(claims));
+    assert.strictEqual(claims.act.sub, "urn:sts:client:" + RS,
+                       JSON.stringify(claims.act));
+    assert.ok(/\/gnap$/.test(String(claims.act.iss)),
+              JSON.stringify(claims.act));
+    // Every entry carries the GNAP authorization server's issuer, the
+    // token's own `iss`, and the foot names the client the original token
+    // was issued to — exactly, read off that token's own `client_id`.
+    assert.strictEqual(claims.act.iss, claims.iss,
+                       "each entry's iss is the token's own: " +
+                       JSON.stringify(claims));
+    assert.ok(claims.act.act &&
+              claims.act.act.sub === "urn:sts:client:" +
+                claimsOf(original).client_id &&
+              claims.act.act.iss === claims.iss &&
+              claims.act.act.act === undefined,
+              "the original client at the foot: " +
+              JSON.stringify(claims.act));
     assert.strictEqual(claims.access[0].type, REFUND);
   });
   r = await derive([{ type: OTHER }]);

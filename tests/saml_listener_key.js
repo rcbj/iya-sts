@@ -303,11 +303,20 @@ async function run(t) {
     return stsCrypto.stripPem(one.certPem);
   });
   const sp = 'https://listener-key-' + Date.now() + '.test/sp';
+  // ONE DOCUMENT FOR BOTH VERSIONS (#523): SAML 1.1's roles are in the
+  // SAML 2.0 document, and `/saml11/metadata` serves that same document (its
+  // `metadataFor()` asks the SAML 2.0 module's installed instance, which is
+  // not `idp2` and so carries the real listener keys, not `keys`). So the
+  // descriptors checked here hold both versions' endpoints.
   const documents = [
-    ['SAML 2.0', idp2.metadataFor('https://idp.test', sp)],
-    ['SAML 2.0 (unscoped)', idp2.metadataFor('https://idp.test', '')],
-    ['SAML 1.1', idp11.metadataFor('https://idp.test', sp)]
+    ['SAML (scoped)', idp2.metadataFor('https://idp.test', sp)],
+    ['SAML (unscoped)', idp2.metadataFor('https://idp.test', '')]
   ];
+  t.check(documents.every(function (row) {
+    return /\/saml11\/responder/.test(row[1]) &&
+           /urn:oasis:names:tc:SAML:1\.1:protocol/.test(row[1]);
+  }) && idp11.metadataParts('https://idp.test', sp).ssoProtocols.length === 2,
+          'the documents carry SAML 1.1\'s roles too (#523)');
   documents.forEach(function (row) {
     ['IDPSSODescriptor', 'AttributeAuthorityDescriptor'].forEach(
       function (role) {
@@ -327,7 +336,7 @@ async function run(t) {
   });
   https = false;
   const plain = [idp2.metadataFor('https://idp.test', sp),
-                 idp11.metadataFor('https://idp.test', sp)];
+                 idp2.metadataFor('https://idp.test', '')];
   t.check(plain.every(function (xml) {
     return xml.indexOf(a.b64) < 0;
   }), 'global.https OFF: neither document names a listener certificate');

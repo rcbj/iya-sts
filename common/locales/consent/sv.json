@@ -1,0 +1,21 @@
+{
+  "title": "Tillåta åtkomst? — simulerad auktoriseringsserver",
+  "heading": "Tillåta åtkomst?",
+  "signedInAs": "Inloggad som <code>{username}</code> på <code>{base}</code>",
+  "asking": "<strong>{client}</strong> ber om åtkomst för din räkning.",
+  "scope.permission": "{description} — exponeras av <code>{identifier}</code>, och åtkomsttoken kommer att adresseras till <code>{baseUri}</code>",
+  "scope.permissionNamed": "behörigheten ”{name}”",
+  "scope.ordinary": "ett vanligt scope: den här tjänsten lägger ingen betydelse i det och lägger det oförändrat i tokens scope-anspråk",
+  "detail.understood": "förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
+  "detail.described": "{description} — förstås av <code>{resource}</code>, och åtkomsttoken kommer att adresseras till <code>{audience}</code>",
+  "detailsNote": "Den här begäran innehåller <strong>{count, plural, one {# auktoriseringsdetalj} other {# auktoriseringsdetaljer}}</strong> (RFC 9396). Du tillfrågas om dem varje gång: Tillåt godkänner exakt det som listas, för just den här begäran.",
+  "already.summary": "{count} scope som du redan har godkänt för det här programmet",
+  "already.global": "godkänt för alla på programmets post (<code>oauthGlobalConsent</code>) — du tillfrågades aldrig",
+  "already.byYou": "godkänt av dig",
+  "already.byYouAt": "godkänt av dig {at}",
+  "allow": "Tillåt",
+  "deny": "Neka",
+  "meta.allow": "Tillåt skriver ett <code>{attribute}</code>-värde per scope på din post under <code>ou=users</code>, så att du inte tillfrågas om dem igen. Neka returnerar <code>access_denied</code> till programmet och registrerar ingenting.",
+  "meta.nothingIssued": "Ingenting har utfärdats än. Den här skärmen är <code>oauth2.consentRequired</code>, som är på som standard; på /admin/consent kan varje svar som ges här läsas och dras tillbaka.",
+  "meta.consentingFor": "Godkänner för: <code>{protocol}</code>"
+}

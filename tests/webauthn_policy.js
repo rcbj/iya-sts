@@ -61,6 +61,8 @@ const config = require('../common/config');
 const credentials = require('../common/credentials');
 const webauthn = require('../authn/webauthn');
 const policy = require('../authn/webauthn_policy');
+// #527: the passkey policy decides a security key's resident key now.
+const passkeyPolicy = require('../common/passkey_policy');
 const ldap = require('../ldap/ldap_server');
 const authn = require('../authn/authn');
 
@@ -83,6 +85,24 @@ function withSetting(key, value, fn) {
     return fn();
   } finally {
     config.clearOverride(key);
+  }
+}
+
+// THE PASSKEY POLICY FOR THE LENGTH OF ONE CHECK (#527): saved in this
+// realm, then reset so the next check sees the built-in defaults again.
+function withPasskeyPolicy(fields, fn) {
+  log.debug("Entering withPasskeyPolicy().");
+  const saved = passkeyPolicy.save('default',
+    Object.assign({}, passkeyPolicy.DEFAULTS, fields));
+  if (!saved.ok) {
+    throw new Error('the passkey policy was not saved: ' +
+                    (saved.errors || []).join(' '));
+  }
+  try {
+    log.debug("Leaving withPasskeyPolicy().");
+    return fn();
+  } finally {
+    passkeyPolicy.reset('default');
   }
 }
 
@@ -289,7 +309,8 @@ function run(t) {
   // browser with nothing built in — and hints the device then hybrid; *Use a
   // security key* asks for cross-platform and hints a security key.
   withSetting('webauthn.authenticatorAttachment', 'any', function () {
-    withSetting('webauthn.residentKey', 'discouraged', function () {
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'discouraged' }, function () {
       const passkey = policy.creationOptions('localhost', 'passkey');
       const key = policy.creationOptions('localhost', 'security-key');
       const neither = policy.creationOptions('localhost', 'bogus');
@@ -300,7 +321,7 @@ function run(t) {
               passkey.authenticatorSelection.requireResidentKey === true &&
               JSON.stringify(passkey.hints) === '["client-device","hybrid"]',
         'CREATE A PASSKEY asks for no attachment, REQUIRES a discoverable ' +
-        'credential whatever webauthn.residentKey says (#474: a passkey is ' +
+        'credential whatever securityKeyResidentKey says (#474: a passkey is ' +
         'one the usernameless sign-in can find) and hints the device then ' +
         'hybrid',
         JSON.stringify(passkey));
@@ -309,8 +330,9 @@ function run(t) {
               key.authenticatorSelection.residentKey === 'discouraged' &&
               JSON.stringify(key.hints) === '["security-key"]',
         'USE A SECURITY KEY asks for a roaming authenticator, hints a ' +
-        'security key and keeps the setting\'s resident-key answer — its ' +
-        'slot argument is about them', JSON.stringify(key));
+        'security key and, with usernameless sign-in ON, keeps the passkey ' +
+        'policy\'s securityKeyResidentKey (#527) — its slot argument is ' +
+        'about them', JSON.stringify(key));
       t.check(!Object.prototype.hasOwnProperty
                 .call(neither.authenticatorSelection,
                       'authenticatorAttachment') &&
@@ -324,10 +346,38 @@ function run(t) {
         'both calls to action are offered while the setting is any',
         JSON.stringify(policy.authenticatorKinds()));
     });
-    withSetting('webauthn.residentKey', 'required', function () {
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'required' }, function () {
       t.check(policy.creationOptions('localhost', 'passkey')
                 .authenticatorSelection.residentKey === 'required',
-        'a setting of REQUIRED is never loosened to preferred');
+        'a policy of REQUIRED is never loosened to preferred');
+    });
+    // #527, rcbj's answers 1 and 2: with usernameless sign-in OFF (the
+    // default) the security-key button asks REQUIRED whatever the row says,
+    // and the row's own default is REQUIRED, so one key gives one result
+    // through either button.
+    const both = function () {
+      return [policy.creationOptions('localhost', 'passkey'),
+              policy.creationOptions('localhost', 'security-key'),
+              policy.creationOptions('localhost')].map(function (opts) {
+        return opts.authenticatorSelection.residentKey + '/' +
+               opts.authenticatorSelection.requireResidentKey;
+      }).join(',');
+    };
+    t.check(both() === 'required/true,required/true,required/true',
+      '#527 built-in defaults: both buttons, and an enrolment naming no ' +
+      'kind, ask for a discoverable credential', both());
+    withPasskeyPolicy({ allowUsernameless: false,
+                        securityKeyResidentKey: 'discouraged' }, function () {
+      t.check(both() === 'required/true,required/true,required/true',
+        '#527 answer 1: usernameless OFF, the security-key button asks ' +
+        'REQUIRED whatever securityKeyResidentKey says', both());
+    });
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'preferred' }, function () {
+      t.check(both() === 'required/true,preferred/false,preferred/false',
+        '#527: usernameless ON, the security-key button asks the policy\'s ' +
+        'row; Create a passkey stays REQUIRED', both());
     });
   });
   withSetting('webauthn.authenticatorAttachment', 'cross-platform',
@@ -348,7 +398,8 @@ function run(t) {
       'platform authenticator');
   });
 
-  withSetting('webauthn.residentKey', 'required', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'required' }, function () {
     const sel = policy.creationOptions('localhost').authenticatorSelection;
     t.check(sel.residentKey === 'required' && sel.requireResidentKey === true,
       'a REQUIRED resident key sets the Level 1 `requireResidentKey` too, ' +
@@ -356,7 +407,8 @@ function run(t) {
       'that still read it are the ones that would otherwise ignore the ' +
       'modern member entirely', JSON.stringify(sel));
   });
-  withSetting('webauthn.residentKey', 'preferred', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'preferred' }, function () {
     t.check(policy.creationOptions('localhost')
               .authenticatorSelection.requireResidentKey === false,
       'and PREFERRED does not, because the Level 1 member has no third state');

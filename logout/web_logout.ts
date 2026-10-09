@@ -40,34 +40,39 @@ class LogoutPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6); a family's label,
+    // prose and specification come from the view and are drawn as they
+    // come, and the no-reader box is an error and stays English.
+    const t = ctx.t;
     const wantedUser = json.user;
     const mayWrite = ctx.write;
     const params = kit.pageParamsOf(ctx.query);
     const back = kit.queryWith(params, {});
     const families = json.families || [];
+    const yesNo = function (yes) {
+      return yes ? t.html('consoleLogout.yes') : '<span ' +
+        'class="state-none">' + t.html('consoleLogout.no') + '</span>';
+    };
 
     let inner;
     if (!wantedUser) {
       // No name is not an error and not a 404: this page is a lookup, and the
       // list of everybody is /admin/users' job rather than a second copy here.
       inner = (json.hasReader ? '' : LogoutPage.logoutNoReaderNote()) +
-        kit.note('Name an identity to see everything this service is still ' +
-        'holding for them — every browser sign-on session, every token it ' +
-        'can still revoke, every outstanding code, every directory ' +
-        'connection bound as them, and the Kerberos sign-out instant — and ' +
-        'to end any of it.') +
-        '<form method="get" action="/admin/logout"><label>Identity <input ' +
+        kit.note(t.html('consoleLogout.lookupLead')) +
+        '<form method="get" action="/admin/logout"><label>' +
+        t.html('consoleLogout.identity') + ' <input ' +
         'name="user" value="" placeholder="alice"></label> <button ' +
-        'type="submit">Look</button></form><h2>What a logout ' +
-        'reaches</h2><table><thead><tr><th>Family</th><th>Protocol</th><th>' +
-        'Can ' +
-        'it be ended?</th><th>What it is</th></tr></thead><tbody>' +
+        'type="submit">' + t.html('consoleLogout.look') +
+        '</button></form><h2>' + t.html('consoleLogout.hReaches') +
+        '</h2><table><thead><tr><th>' + t.html('consoleLogout.thFamily') +
+        '</th><th>' + t.html('consoleLogout.thProtocol') + '</th><th>' +
+        t.html('consoleLogout.thCanEnd') + '</th><th>' +
+        t.html('consoleLogout.thWhat') + '</th></tr></thead><tbody>' +
         families.map(function (family) {
           return '<tr><td>' + kit.esc(family.label) + '</td><td>' +
             kit.esc(family.protocol) + '</td><td>' +
-            (family.terminable ? 'yes' : '<span ' +
-                                                  'class="state-none">no' +
-                                                  '</span>') + '</td>' +
+            yesNo(family.terminable) + '</td>' +
             // The family's prose is a paragraph on most rows and it is the same
             // prose logout.ts owns (see FAMILIES over there) — so it folds here
             // rather than being shortened, which would have made this file the
@@ -77,33 +82,26 @@ class LogoutPage {
                 family.spec) +
             '</em></td></tr>';
         }).join('') + '</tbody></table>' +
-        kit.note('The families that cannot be ended are listed on purpose. ' +
-        'Nothing consults this service when a SAML assertion, a Kerberos ' +
-        'service ticket or an X509-SVID is presented, so there is no ' +
-        'revocation any issuer could perform — and a page that hid them ' +
-        'would make a global logout look complete when it is not.') +
-        kit.note('A person signing THEMSELVES out uses ' +
-        '<code>/logout</code>, which needs no console role and is where the ' +
-        'front-channel notifications actually load: those are iframes in the ' +
-        'signed-out person\'s own browser, and this console is not that ' +
-        'browser. The back-channel Logout Tokens are different — this ' +
-        'service sends them, whichever door the sign-out came through — and ' +
-        'the list below is where each one ended up.') +
-        LogoutPage.backchannelDeliveriesSection(json, mayWrite, back, '') +
+        kit.note(t.html('consoleLogout.cannotBeEnded')) +
+        kit.note(t.html('consoleLogout.themselves')) +
+        LogoutPage.backchannelDeliveriesSection(t, json, mayWrite, back, '') +
         // ON THE LOOKUP PAGE AND NOT ON THE PER-PERSON ONE. These four decide
         // what a logout REACHES, which is a question about the feature; the
         // drill-down is about one person, and a form there would invite
         // somebody to change the rules for everybody while looking at one of
         // them.
-        SettingsForms.forms(json.settings, '/admin/logout');
+        SettingsForms.forms(json.settings, '/admin/logout', undefined, t);
     } else if (!json.known) {
       inner = LogoutPage.logoutNoReaderNote();
     } else {
       const inventory = json;
       const wantedFamily = json.family;
       const canWrite = json.canWrite;
-      const summary = '<table><thead><tr><th>Family</th><th>Live</th><th>' +
-                      'Endable</th><th>Protocol</th></tr></thead><tbody>' +
+      const summary = '<table><thead><tr><th>' +
+        t.html('consoleLogout.thFamily') + '</th><th>' +
+        t.html('consoleLogout.thLive') + '</th><th>' +
+        t.html('consoleLogout.thEndable') + '</th><th>' +
+        t.html('consoleLogout.thProtocol') + '</th></tr></thead><tbody>' +
         inventory.families.map(function (family) {
           return '<tr><td><a href="' +
             kit.esc('/admin/logout' +
@@ -112,28 +110,20 @@ class LogoutPage {
                                                            page: '' })) + '">' +
             kit.esc(family.label) + '</a></td>' +
             '<td>' + family.held +
-            (family.notListed ? ' (' + family.notListed + ' ' +
-                'not listed)' : '') +
+            (family.notListed ? t.html('consoleLogout.notListed',
+                                       { n: family.notListed }) : '') +
             '</td>' +
-            '<td>' + (family.terminable ? 'yes' : '<span ' +
-                                                  'class="state-none">no' +
-                                                  '</span>') +
+            '<td>' + yesNo(family.terminable) +
             '</td><td ' +
             'class="sub">' + kit.esc(family.protocol) + '</td></tr>';
         }).join('') + '</tbody></table>';
 
-      inner = kit.note('<strong>' + inventory.total +
-        '</strong> live item(s) for ' +
-          '<code>' +
-        kit.esc(wantedUser) + '</code>, in ' +
-        inventory.families.filter(function (f) { return f.held; }).length +
-          ' ' +
-        'family/families. Filed under the key ' +
-        '<code>' + kit.esc(json.key) + '</code>, which is what folds ' +
-                                                       '<code>' +
-        kit.esc(wantedUser) + '</code>, <code>' + kit.esc(wantedUser) + '@' +
-        kit.esc(json.kerberosRealm) + '</code> and a <code>urn:</code> ' +
-                                         'subject into one person.') +
+      inner = kit.note(t.html('consoleLogout.inventory', {
+          total: inventory.total, user: wantedUser,
+          families: inventory.families.filter(function (f) {
+            return f.held;
+          }).length,
+          key: json.key, realm: json.kerberosRealm })) +
         summary +
         (canWrite
           ? '<form method="post" action="/admin/logout">' +
@@ -141,38 +131,36 @@ class LogoutPage {
             '<input type="hidden" name="user" value="' + kit.esc(wantedUser) +
             '">' +
             LogoutPage.logoutBackField(back) +
-            '<p><button type="submit">Global logout — end everything ' +
-            'above</button> <span class="sub">Everything endable, in every ' +
-            'family, in one act. What cannot be ended is reported rather ' +
-              'than ' +
-            'skipped silently.</span></p></form>'
-          : kit.note('Ending anything needs the Admin Write role.')) +
-        '<h2>Live items' + (wantedFamily ? ' — ' + kit.esc(wantedFamily) : '') +
+            '<p><button type="submit">' +
+            t.html('consoleLogout.globalLogout') + '</button> <span ' +
+            'class="sub">' + t.html('consoleLogout.globalLogoutNote') +
+            '</span></p></form>'
+          : kit.note(t.html('consoleLogout.needsWrite'))) +
+        '<h2>' + t.html('consoleLogout.hLiveItems') +
+        (wantedFamily ? ' — ' + kit.esc(wantedFamily) : '') +
         '</h2>' +
         kit.perPageForm('/admin/logout', 'family', wantedFamily,
                          json.paging.perPage,
-                         'Filter by family, and choose how many rows a page ' +
-                         'holds.',
+                         t.html('consoleLogout.perPageNote'),
                          { user: wantedUser }) +
         (json.rows.length
-          ? '<table><thead><tr><th>Family</th><th>What</th><th>Kind</th><th>' +
-            'Since</th><th>Until</th><th>End</th></tr></thead><tbody>' +
-            json.rows.map(function (r) { return LogoutPage.logoutRowHtml(r,
-              canWrite,
+          ? '<table><thead><tr><th>' + t.html('consoleLogout.thFamily') +
+            '</th><th>' + t.html('consoleLogout.thWhatShort') + '</th><th>' +
+            t.html('consoleLogout.thKind') + '</th><th>' +
+            t.html('consoleLogout.thSince') + '</th><th>' +
+            t.html('consoleLogout.thUntil') + '</th><th>' +
+            t.html('consoleLogout.thEnd') + '</th></tr></thead><tbody>' +
+            json.rows.map(function (r) { return LogoutPage.logoutRowHtml(t,
+              r, canWrite,
                 back); })
                     .join('') +
             '</tbody></table>' +
             kit.pageNavPair('/admin/logout', params, json.paging).head
-          : kit.note('Nothing live' + (wantedFamily ? ' in that family' : '') +
-                      '.')) +
+          : kit.note(wantedFamily ? t.html('consoleLogout.nothingLiveFamily')
+                                  : t.html('consoleLogout.nothingLive'))) +
         (canWrite
-          ? '<h2>Undo — both NON-SPEC</h2>' +
-            kit.note('Neither of these is an operation any real deployment ' +
-            'could offer, and they are here for the reason /admin/tokens\' ' +
-            'restore button is: having to restart this service to get back ' +
-              'to ' +
-            'a working credential turns a two-second test into a two-minute ' +
-            'one.') +
+          ? '<h2>' + t.html('consoleLogout.hUndo') + '</h2>' +
+            kit.note(t.html('consoleLogout.undoLead')) +
             // DEVELOPMENT ONLY (#111): refused in product by the action, and
             // so not offered there — a note says why in its place.
             (json.opensTestControls
@@ -182,27 +170,25 @@ class LogoutPage {
                 '<input type="hidden" name="user" value="' +
                 kit.esc(wantedUser) + '">' +
                 LogoutPage.logoutBackField(back) +
-                '<p><button type="submit">Clear the Kerberos sign-out ' +
-                'instant</button> <span class="sub">Tickets issued before it ' +
-                'are accepted again. Development mode only. A fresh AS-REQ ' +
-                'does NOT do this: it gets a newer ticket and the older ones ' +
-                'stay refused.</span></p></form>'
-              : kit.note('Clearing a Kerberos sign-out instant is a ' +
-                'development-only test control and is not offered in product ' +
-                'mode: the instant stands until the latest a ticket from ' +
-                'before it could still be valid.')) +
+                '<p><button type="submit">' +
+                t.html('consoleLogout.clearKerberos') + '</button> <span ' +
+                'class="sub">' + t.html('consoleLogout.clearKerberosNote') +
+                '</span></p></form>'
+              : kit.note(t.html('consoleLogout.clearKerberosProduct'))) +
             '<form method="post" ' +
             'action="/admin/logout"><input type="hidden" name="action" ' +
             'value="restore-token"><input type="hidden" name="user" ' +
             'value="' + kit.esc(wantedUser) + '">' +
             LogoutPage.logoutBackField(back) +
-            '<p><label>Restore a token by jti <input name="jti" ' +
+            '<p><label>' + t.html('consoleLogout.restoreByJti') +
+            ' <input name="jti" ' +
             'placeholder="jti"></label> <button ' +
-              'type="submit">Restore</button> ' +
-            '<span class="sub">RFC 7009 has no such operation: a resource ' +
-            'server may already have cached the refusal.</span></p></form>'
+              'type="submit">' + t.html('consoleLogout.restore') +
+            '</button> ' +
+            '<span class="sub">' + t.html('consoleLogout.restoreNote') +
+            '</span></p></form>'
           : '') +
-        LogoutPage.backchannelDeliveriesSection(json, canWrite, back,
+        LogoutPage.backchannelDeliveriesSection(t, json, canWrite, back,
           wantedUser);
     }
 
@@ -230,51 +216,53 @@ class LogoutPage {
    * Counts, a state and search filter, and a paged table; a dead letter
    * gets a Retry form for a holder of Admin Write.
    *
+   * @param t - the page's translator (#539)
    * @param view - the view from adminViews.logoutJson()
    * @param canWrite - optional; whether the reader holds Admin Write
    * @param back - optional; the list state the Retry form posts as `back`
    * @param wantedUser - optional; the identity the page is about
    * @returns the section as HTML
    */
-  static backchannelDeliveriesSection(view, canWrite?, back?, wantedUser?) {
+  static backchannelDeliveriesSection(t, view, canWrite?, back?,
+                                      wantedUser?) {
     const v = view || {};
     const list = Array.isArray(v.backchannelDeliveries)
       ? v.backchannelDeliveries : [];
     const counts = v.backchannelCounts || { pending: 0, sent: 0, dead: 0 };
     const state = String(v.deliveryState || '');
-    const heading = '<h2 id="backchannel">Back-channel Logout Tokens</h2>' +
-      kit.note('<strong>' + counts.pending + '</strong> pending, <strong>' +
-        counts.sent + '</strong> sent, <strong>' + counts.dead + '</strong> ' +
-        'dead letter(s) in this realm, across every node. A relying party ' +
-        'that is down is retried with backoff by whichever node gets there ' +
-        'first, across restarts; one that never accepts — or answers 400, ' +
-        'or is refused by the outbound policy — is a DEAD LETTER, sent again ' +
-        'only when somebody presses Retry. Each final outcome is also a ' +
-        '<code>logout.backchannel</code> row on <a href="/admin/audit">the ' +
-        'audit log</a>.') +
+    // The audit link carries an href, which a message may not, so the
+    // paragraph around it is two messages with the anchor in the code.
+    const heading = '<h2 id="backchannel">' +
+      t.html('consoleLogout.hBackchannel') + '</h2>' +
+      kit.note(t.html('consoleLogout.backchannelLead', {
+        pending: counts.pending, sent: counts.sent, dead: counts.dead }) +
+        '<a href="/admin/audit">' + t.html('consoleLogout.auditLink') +
+        '</a>' + t.html('consoleLogout.backchannelLeadEnd')) +
       '<form method="get" action="/admin/logout#backchannel"><div ' +
       'class="formrow">' +
       (wantedUser ? '<input type="hidden" name="user" value="' +
                     kit.esc(wantedUser) + '">' : '') +
-      '<label for="deliveryState">State</label><select id="deliveryState" ' +
-      'name="deliveryState"><option value="">any</option>' +
+      '<label for="deliveryState">' + t.html('consoleLogout.state') +
+      '</label><select id="deliveryState" ' +
+      'name="deliveryState"><option value="">' +
+      t.html('consoleLogout.any') + '</option>' +
       ['pending', 'sent', 'dead'].map(function (one) {
         return '<option value="' + one + '"' +
                (one === state ? ' selected' : '') + '>' +
-               (one === 'dead' ? 'dead letters' : one) + '</option>';
-      }).join('') + '</select><label for="deliveryq">Search</label>' +
+               (one === 'dead' ? t.html('consoleLogout.optionDead')
+                 : one === 'sent' ? t.html('consoleLogout.optionSent')
+                   : t.html('consoleLogout.optionPending')) + '</option>';
+      }).join('') + '</select><label for="deliveryq">' +
+      t.html('consoleLogout.search') + '</label>' +
       '<input id="deliveryq" name="deliveryq" value="' +
-      kit.esc(v.deliveryq || '') + '" placeholder="client, session, code">' +
-      '<button class="secondary">Filter</button></div></form>';
+      kit.esc(v.deliveryq || '') + '" placeholder="' +
+      kit.esc(t.text('consoleLogout.searchPlaceholder')) + '">' +
+      '<button class="secondary">' + t.html('consoleLogout.filter') +
+      '</button></div></form>';
     if (!list.length) {
       return heading + kit.note(state || v.deliveryq
-        ? 'No delivery matches.'
-        : 'None yet. A sign-out — or an expiry, while ' +
-          '<code>oauth2.backchannelLogoutOnExpiry</code> is on — sends one ' +
-            'to ' +
-          'every relying party on the ending session that registered a ' +
-          '<code>backchannel_logout_uri</code>, while ' +
-          '<code>oauth2.backchannelLogout</code> is on.');
+        ? t.html('consoleLogout.noDeliveryMatches')
+        : t.html('consoleLogout.noneYet'));
     }
     const paging = (v.deliveriesPg && v.deliveriesPg.paging) || null;
     const params = Object.assign({}, kit.pageParamsOf({}), wantedUser
@@ -283,8 +271,11 @@ class LogoutPage {
     const nav = paging
       ? kit.pageNavPair('/admin/logout', params, paging) : { head: '' };
     return heading + nav.head +
-      '<table><thead><tr><th>Queued</th><th>Client</th><th>Session</th>' +
-      '<th>State</th><th>Why</th><th></th></tr></thead><tbody>' +
+      '<table><thead><tr><th>' + t.html('consoleLogout.thQueued') +
+      '</th><th>' + t.html('consoleLogout.thClient') + '</th><th>' +
+      t.html('consoleLogout.thSession') + '</th>' +
+      '<th>' + t.html('consoleLogout.thState') + '</th><th>' +
+      t.html('consoleLogout.thWhy') + '</th><th></th></tr></thead><tbody>' +
       list.map(function (row) {
         const retry = row.state === 'dead' && canWrite
           ? '<form method="post" action="/admin/logout" ' +
@@ -295,25 +286,32 @@ class LogoutPage {
             '<input type="hidden" name="user" value="' +
             kit.esc(wantedUser || '') + '">' +
             LogoutPage.logoutBackField(back || kit.queryWith(params, {})) +
-            '<button type="submit">Retry</button></form>'
+            '<button type="submit">' + t.html('consoleLogout.retry') +
+            '</button></form>'
           : '';
+        // The state is the store's word, drawn as it comes, except a dead
+        // letter, which the page has always named in words of its own.
         return '<tr><td class="sub">' + kit.esc(row.queuedAt) + '</td>' +
           '<td><code>' + kit.esc(row.clientId) + '</code><br><span ' +
           'class="sub">' + kit.esc(row.uri) + '</span></td>' +
           '<td class="sub">' + kit.esc(row.sessionId) +
           (row.trigger && row.trigger !== 'sign-out'
             ? '<br>' + kit.esc(row.trigger) : '') + '</td>' +
-          '<td>' + kit.esc(row.state === 'dead' ? 'dead letter' : row.state) +
-          (row.attempts ? '<br><span class="sub">' + row.attempts +
-                          ' attempt(s)' +
+          '<td>' + (row.state === 'dead'
+            ? t.html('consoleLogout.deadLetter') : kit.esc(row.state)) +
+          (row.attempts ? '<br><span class="sub">' +
+                          t.html('consoleLogout.attempts',
+                                 { n: row.attempts }) +
                           (row.status ? ', HTTP ' + row.status : '') +
                           (row.generation > 1
-                            ? ', retry ' + (row.generation - 1) : '') +
+                            ? t.html('consoleLogout.retryN',
+                                     { n: row.generation - 1 }) : '') +
                           '</span>' : '') +
-          (row.encrypted ? '<br><span class="sub">encrypted ' +
-                           kit.esc(row.encrypted) + '</span>' : '') +
+          (row.encrypted ? '<br><span class="sub">' +
+                           t.html('consoleLogout.encrypted',
+                                  { alg: row.encrypted }) + '</span>' : '') +
           '</td>' +
-          '<td class="sub">' + (row.errorCode
+      '<td class="sub">' + (row.errorCode
             ? '<code>' + kit.esc(row.errorCode) + '</code> ' : '') +
           kit.esc(row.why || row.via || '') + '</td><td>' + retry +
           '</td></tr>';
@@ -358,23 +356,25 @@ class LogoutPage {
   /**
    * Draws one row of the sign-out page's table, with its End form.
    *
+   * @param t - the page's translator (#539)
    * @param row - an inventory row from logout.ts
    * @param canWrite - whether the reader holds Admin Write
    * @param back - the list state the form posts as `back`
    * @returns a <tr> as HTML
    */
-  static logoutRowHtml(row, canWrite, back) {
+  static logoutRowHtml(t, row, canWrite, back) {
     const button = row.terminable && canWrite
       ? '<form method="post" action="/admin/logout" style="display:inline">' +
         '<input type="hidden" name="action" value="end">' +
         '<input type="hidden" name="user" value="' + kit.esc(row.user) + '">' +
         '<input type="hidden" name="select" value="' + kit.esc(row.id) + '">' +
         LogoutPage.logoutBackField(back) +
-        '<button type="submit">End</button></form>'
+        '<button type="submit">' + t.html('consoleLogout.end') +
+        '</button></form>'
       : (row.terminable ? '<span class="state-none">—</span>'
                         : '<span class="state-none" title="' +
                           kit.esc(row.why) +
-                          '">cannot</span>');
+                          '">' + t.html('consoleLogout.cannot') + '</span>');
     return '<tr><td>' + kit.esc(row.family) + '</td>' +
       // kit.shortened() emits its OWN <code title=…> wrapper — the title is how
       // the

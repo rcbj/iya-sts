@@ -1,0 +1,17 @@
+{
+  "reauth.title": "Natapos na ang iyong session.",
+  "reauth.text": "Mag-sign in ulit para makapagpatuloy. Mananatili ang pahinang ito at ang mga tina-type mo, at ipapadala ang pinindot mo kapag nakabalik ka na.",
+  "reauth.again": "Mag-sign in ulit",
+  "reauth.here": "Mag-sign in sa pahinang ito",
+  "reauth.hereInstead": "Sa pahinang ito na lang mag-sign in",
+  "reauth.noPopup": "Hindi kayang ibalik ng browser na ito ang sign-in mula sa ibang window, kaya mag-sign in sa pahinang ito.",
+  "reauth.finish": "Tapusin ang pag-sign in sa window na nagbukas.",
+  "otherPerson.waiting": "Ibang tao ang nag-sign in, kaya hindi ipinadala ang naghihintay sa pahinang ito.",
+  "otherPerson.typed": "Ibang tao ang nag-sign in, kaya hindi ibinalik ang na-type sa pahinang ito kanina.",
+  "restored": "Naka-sign in ka na ulit. Ibinalik ang mga na-type mo sa pahinang ito, at walang ipinadala: pindutin ulit ang button para ipadala ito.",
+  "restored.unplaced": " {n, plural, one {May {n} value na hindi maibalik, dahil wala nang lugar para dito sa pahina.} other {May {n} value na hindi maibalik, dahil wala nang lugar para sa mga ito sa pahina.}}",
+  "signedInAgain": "Naka-sign in ulit",
+  "signedInAgain.text": "Itutuloy ng console kung saan ka huminto. Puwede mo nang isara ang window na ito.",
+  "openConsole": "Buksan ang console",
+  "copied": "Nakopya na"
+}

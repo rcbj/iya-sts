@@ -248,10 +248,8 @@ var config = {
     attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
     timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
     authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
-    residentKey: "discouraged",                                                                                                                        // Discoverable credential (CTAP resident key)
     credProps: true,                                                                                                                                   // Ask for the credProps extension
     primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
-    usernameless: false,                                                                                                                               // Sign in with a passkey and no username
     mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
     maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
@@ -664,7 +662,6 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    issuer: "",                                             // Assertion issuer
     clockSkewS: 0,                                          // Assertion clock skew (s)
     signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
@@ -676,8 +673,6 @@ var config = {
 
   // --- SAML 2.0 --------------------------------------------------------
   saml2: {
-    entityId: "urn:sts:idp",                                               // Identity provider entityID
-    perApplicationEntityId: true,                                          // An entityID per service provider
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
     signResponse: true,                                                    // Sign the response
@@ -704,8 +699,6 @@ var config = {
 
   // --- SAML 1.1 --------------------------------------------------------
   saml11: {
-    providerId: "urn:sts:idp:saml11",                                      // Identity provider providerID
-    perApplicationProviderId: true,                                        // A providerID per relying party
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
     signResponse: true,                                                    // Sign the response
@@ -720,7 +713,6 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    issuer: "",                  // Token issuer
     tokenLifetimeMin: 60,        // Token lifetime (minutes)
     maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
     jwtAlgorithm: "RS256",       // JWT signature algorithm
@@ -730,7 +722,6 @@ var config = {
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
     assertionLifetimeMin: 60, // Assertion lifetime (minutes)
-    entityId: "",             // Entity ID
     mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
   },
 
@@ -1348,7 +1339,6 @@ var config = {
     transport: "default",                // Mail transport
     from: "",                            // From address
     fromName: "",                        // From display name
-    defaultLanguage: "en",               // Default message language
     smtpPreset: "custom",                // SMTP preset
     smtpHost: "",                        // SMTP host
     smtpPort: 587,                       // SMTP port
