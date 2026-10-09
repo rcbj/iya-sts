@@ -4188,7 +4188,10 @@ class OAuth2Server {
       ? scopeClaims.combineResource(clientClaims, resourceLayer.claims,
                                     resourceLayer.mode)
       : clientClaims;
-    scopeClaims.gate(combined, granted, 'access token');
+    // A claim a GRANTED permission of the resource server maps is granted by
+    // that permission, a standard one included (rcbj, 2026-10-09).
+    scopeClaims.gate(combined, granted, 'access token',
+                     resourceLayer ? resourceLayer.grantedByPermission : []);
     const payloadWithCustom = Object.assign(combined,
                                             opts.assertionClaims || {},
                                             payload);
@@ -4214,82 +4217,138 @@ class OAuth2Server {
   }
 
   // -------------------------------------------------------------------------
-  // WHAT THE RESOURCE SERVERS A TOKEN IS FOR WANT IN IT (#395).
+  // WHAT THE RESOURCE SERVERS A TOKEN IS FOR WANT IN IT (#395, and the
+  // claims mapped to their own scopes, 2026-10-09).
   //
   // Each audience the token names is looked up as an application — by
   // `oauthAudience`, then as a client_id or identifier, which is how a scope
-  // naming an API becomes its audience — and its `oauthAccessTokenClaim` read.
-  // NO AUDIENCE DECLARING ANYTHING IS NO LAYER: the answer is null, and the
-  // client's claims go out as they are. Otherwise:
+  // naming an API becomes its audience. It wants two kinds of claim:
   //
-  //   * only what EVERY audience declared (rcbj, 2026-10-09), so a token for
-  //     two APIs carries nothing one of them did not ask for — and an
-  //     audience that declared nothing, this service's own resource server
-  //     among them, therefore leaves nothing;
-  //   * only what the GRANT covers: `profile` for `name`, `email` for `email`
-  //     and the rest of section 5.4's table;
-  //   * resolved for the person as UserInfo resolves them (claimsNamed()).
+  //   * DECLARED (`oauthAccessTokenClaim`): OIDC Core 5.4 claims, each only
+  //     when the scope that covers it was granted;
+  //   * MAPPED TO ITS OWN SCOPES (`oauthPermissionClaims`): for each
+  //     permission it exposes that the grant includes — named by its whole
+  //     identifier, or by its bare name on a token for it alone — the
+  //     catalogue attributes mapped to it. GRANTING THE PERMISSION IS THE
+  //     GRANT of those claims (rcbj), so they are returned in
+  //     `grantedByPermission` for the gate to pass.
   //
-  // The mode is the declaring audiences' `oauthAccessTokenClaimsCombine`:
-  // theirs when they agree, `intersection` when they do not.
+  // NO AUDIENCE WANTING ANYTHING IS NO LAYER: the answer is null, and the
+  // client's claims go out as they are. Otherwise only what EVERY audience
+  // wants (rcbj, 2026-10-09) — an audience that wants nothing, this
+  // service's own resource server among them, leaves nothing — resolved for
+  // the person: the declared claims as UserInfo resolves them
+  // (claimsNamed()), the mapped ones from the directory through the
+  // catalogue. The mode is the wanting audiences'
+  // `oauthAccessTokenClaimsCombine`: theirs when they agree, `intersection`
+  // when they do not.
   // -------------------------------------------------------------------------
   /**
    * Returns the identity claims the resource servers an access token is
-   * addressed to declared, gated by the granted scope, and how they combine
-   * with the client's — or null when no audience declared any.
+   * addressed to want — declared standard claims gated by the granted scope,
+   * and the claims mapped to their granted permissions — and how they
+   * combine with the client's, or null when no audience wants any.
    *
    * @param aud - the token's `aud`
    * @param user - the person
    * @param granted - the scope granted
-   * @returns `{ claims, mode }`, or null
+   * @returns `{ claims, mode, grantedByPermission }`, or null
    */
   resourceServerClaims(aud: Json, user: Json, granted: Json): Json {
-    const { log, applications } = this.deps;
+    const { log, applications, claimAttributes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.resourceServerClaims().");
-    const declared: string[][] = [];
+    const audiences = self.audienceList(aud);
+    const grantedValues = String(granted || '').split(/\s+/).filter(Boolean);
+    const wantedPer: string[][] = [];
+    const mappedPer: Json[] = [];
     const modes: string[] = [];
-    let anyDeclared = false;
-    self.audienceList(aud).forEach(function (one: string) {
+    let anyWanted = false;
+    audiences.forEach(function (one: string) {
       let app: Json = null;
       try {
+        // The permission base too: a scope naming one of its permissions
+        // makes the base the token's `aud` (audienceScopes()).
         app = applications.forAudience(one) ||
+          applications.forPermissionBase(one) ||
           applications.forClientId(one) || applications.get(one);
       } catch (e) {
         log.debug("Caught in OAuth2Server.resourceServerClaims(): " +
                   ((e && e.message) || e));
-        // A registry that cannot answer is an audience that declared
-        // nothing: the intersection then releases nothing, which is the
-        // private answer.
+        // A registry that cannot answer is an audience that wants nothing:
+        // the intersection then releases nothing, which is the private
+        // answer.
         app = null;
       }
-      const names = app && app.fields
+      const declared = app && app.fields
         ? [].concat(app.fields.oauthAccessTokenClaim || []).map(String)
           .filter(function (name: string): boolean {
-            return scopeClaims.DECLARABLE_CLAIMS.indexOf(name) >= 0;
+            return scopeClaims.DECLARABLE_CLAIMS.indexOf(name) >= 0 &&
+              scopeClaims.grants(granted, scopeClaims.scopeOf(name));
           })
         : [];
-      declared.push(names);
-      if (names.length) {
-        anyDeclared = true;
+      // The catalogue attributes its GRANTED permissions map, by attribute.
+      const mapped: Json = {};
+      if (app) {
+        const permissions = applications.permissionsOf(app);
+        const byName = claimAttributes.permissionClaimsOf(app,
+          permissions.map(function (p: Json): string { return p.name; }));
+        permissions.forEach(function (p: Json) {
+          const asked = grantedValues.some(function (v: string): boolean {
+            return (p.id && v === p.id) ||
+              (audiences.length === 1 && v === p.name);
+          });
+          if (asked && byName[p.name]) {
+            byName[p.name].forEach(function (ldap: string) {
+              mapped[ldap.toLowerCase()] = ldap;
+            });
+          }
+        });
+      }
+      const mappedClaims = Object.keys(mapped).length && user &&
+        user.username
+        ? claimAttributes.claimsForAttributes(
+            Object.keys(mapped).map(function (k) { return mapped[k]; }),
+            user.username).claims
+        : {};
+      wantedPer.push(declared.concat(Object.keys(mappedClaims)));
+      mappedPer.push(mappedClaims);
+      if (declared.length || Object.keys(mapped).length) {
+        anyWanted = true;
         modes.push(scopeClaims.modeOf(app.fields.oauthAccessTokenClaimsCombine,
                                       scopeClaims.RESOURCE_MODES, 'union'));
       }
     });
-    if (!anyDeclared) {
+    if (!anyWanted) {
       log.debug("Leaving OAuth2Server.resourceServerClaims(). No audience " +
-                "declared any.");
+                "wants any.");
       return null;
     }
-    const wanted = scopeClaims.intersectDeclared(declared)
-      .filter(function (name: string): boolean {
-        return scopeClaims.grants(granted, scopeClaims.scopeOf(name));
-      });
-    const claims = wanted.length ? self.claimsNamed(user, wanted) : {};
+    const wanted = scopeClaims.intersectDeclared(wantedPer);
+    const claims: Json = {};
+    const grantedByPermission: string[] = [];
+    // The mapped value first, from the first audience that maps it, then
+    // the declared claims resolved for any name no mapping answered.
+    wanted.forEach(function (name: string) {
+      for (let i = 0; i < mappedPer.length; i++) {
+        if (mappedPer[i][name] !== undefined) {
+          claims[name] = mappedPer[i][name];
+          grantedByPermission.push(name);
+          return;
+        }
+      }
+    });
+    const rest = wanted.filter(function (name: string): boolean {
+      return claims[name] === undefined;
+    });
+    if (rest.length) {
+      Object.assign(claims, self.claimsNamed(user, rest));
+    }
     const mode = scopeClaims.agreedResourceMode(modes);
     log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
               Object.keys(claims).length + " claim(s), " + mode + ".");
-    return { claims: claims, mode: mode };
+    return { claims: claims, mode: mode,
+             grantedByPermission: grantedByPermission };
   }
 
   private refreshToken(base: Json, opts: Json): Json {

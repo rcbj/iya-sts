@@ -740,6 +740,43 @@ All seven fields are ordinary configuration fields: set them from the
 application's page, `POST /admin-api/applications/update-fields`, or `set` (or
 `add` / `remove` for `oauthAccessTokenClaim`) with `attribute:` the field.
 
+#### Claims mapped to a resource server's own scopes
+
+A resource server's **Scope claims** tab maps each permission it exposes —
+its own custom scopes, `oauthPermission` under `oauthPermissionBaseUri` (the
+Permissions tab) — to directory attributes from the realm's claim catalogue.
+An access token **addressed to it** on which a permission was **granted**
+carries the person's values of that permission's attributes, under the
+catalogue's claim names (`mail` is `email`, `givenName` is `given_name`). The
+token's audience decides which application's mappings apply: a scope naming
+one of its permissions addresses the token to its base URI, and a token sent
+there with `resource` or an `audience` is looked up the same way.
+
+* **Granting the permission is the grant of its claims**, a standard OpenID
+  Connect claim included: `hr.read` mapped to `mail` puts `email` on the
+  token without the `email` scope. A permission that was not granted carries
+  nothing.
+* The mapped claims join the claims the resource server declares
+  (`oauthAccessTokenClaim`) and combine with the client's as
+  `oauthAccessTokenClaimsCombine` says. On a token for several resource
+  servers only the claims every one of them wants go in.
+* A permission removed from the application keeps its mapping on the entry
+  but maps nothing; the tab lists it as stale and the next save drops it.
+
+Tick the attributes under a permission and press **Save the claims of …**;
+**Clear** takes the mapping off. The whole map is one JSON object on the entry,
+`oauthPermissionClaims` (`{"hr.read": ["mail", "departmentNumber"]}`). A
+permission the application does not expose, an attribute the catalogue does
+not hold, or an application not declared for OAuth 2.0 or OpenID Connect is
+refused (`STS-REG-0344`); a stored value that is not a JSON object is ignored
+at issuance (`STS-REG-0343`).
+
+The management API: `POST /admin-api/applications/set-permission-claims`
+(`application`, `permission`, `attributes`) and `POST
+/admin-api/applications/clear-permission-claims` (`application`,
+`permission`). `GET /admin-api/applications?application=<id>` returns the
+tab's data in `page.permissionClaims`.
+
 ### CORS: which pages may read an answer
 
 CORS is an **allowlist on every path**, in both modes. An application's

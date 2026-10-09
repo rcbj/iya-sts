@@ -1615,13 +1615,17 @@ class Portal {
   static readonly REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup',
                                   'enrolled', 'named'];
 
-  refreshForm(active, translator?: Translator) {
-    const self = this;
-    const t = translator || this.translatorFor(null);
+  // THE PARAMETERS A SIGNED-IN PAGE IS DRAWN AGAIN WITH, for both the
+  // Refresh button and the language chooser's return path (#539): the paging
+  // ones and the step markers of a GET of the page's own path, and nothing
+  // else. Any other parameter is one no page reads, and carrying it would
+  // draw a value a link put on the URL — `?user=somebody` — back into the
+  // page (`sts_portal_sessions` holds a signed-in page to never do that).
+  keptParams(active): string[][] {
     const { log, audit } = this.deps;
-    log.debug('Entering Portal.refreshForm().');
+    log.debug('Entering Portal.keptParams().');
     const req = audit.currentRequest();
-    let fields = [];
+    let fields: string[][] = [];
     if (req && String(req.method || '').toUpperCase() === 'GET') {
       const url = new URL(String(req.url || ''), 'http://portal.invalid');
       if (url.pathname === active) {
@@ -1632,6 +1636,17 @@ class Portal {
           });
       }
     }
+    log.debug('Leaving Portal.keptParams(). ' + fields.length +
+              ' parameter(s) kept.');
+    return fields;
+  }
+
+  refreshForm(active, translator?: Translator) {
+    const self = this;
+    const t = translator || this.translatorFor(null);
+    const { log } = this.deps;
+    log.debug('Entering Portal.refreshForm().');
+    const fields = self.keptParams(active);
     log.debug('Leaving Portal.refreshForm(). ' + fields.length +
               ' parameter(s) kept.');
     return '<form method="get" action="' + self.esc(active) + '">' +
@@ -1694,7 +1709,7 @@ class Portal {
       self.esc(t.text('portal.shell.signOutTitle')) +
       '">' + t.html('portal.shell.signOut') + '</button></form>' +
       PageLocale.chooser(t, realms.currentPrefix(),
-        PageLocale.herePath(realms.currentPrefix() + active)) + '</div>' +
+        self.chooserReturn(active)) + '</div>' +
       '</header>' +
       '<div class="shell">' +
       '<div class="side"><div class="card">' + self.navBar(active, t) +
@@ -1819,6 +1834,19 @@ class Portal {
     log.debug("Leaving Portal.passwordRulesNote().");
     return '<p class="note">' + t.html('portal.rules.enforced',
       { rules: said.rules.join(', ') }) + '</p>';
+  }
+
+  // WHERE A SIGNED-IN PAGE'S LANGUAGE CHOOSER RETURNS TO: the page under the
+  // realm's prefix with the parameters `keptParams()` keeps — not the
+  // request's whole URL, which `PageLocale.herePath()` would give.
+  private chooserReturn(active: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Portal.chooserReturn().");
+    const kept = this.keptParams(active);
+    const query = kept.length ? '?' + new URLSearchParams(kept).toString()
+                              : '';
+    log.debug("Leaving Portal.chooserReturn().");
+    return realms.currentPrefix() + active + query;
   }
 
   // THE LANGUAGE CHOOSER ON A PAGE DRAWN FOR NOBODY (#539 phase 3): the

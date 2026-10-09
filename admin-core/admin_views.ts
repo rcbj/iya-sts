@@ -9249,6 +9249,9 @@ class AdminViews {
           return Object.assign({ stored: stored },
                                applications.authorizationDetailsTypeOf(stored));
         }),
+      // THE SCOPE CLAIMS TAB (2026-10-09): each permission this resource
+      // server exposes and the catalogue attributes it maps.
+      permissionClaims: self.applicationPermissionClaimsState(row),
       grantsUncataloguedAccess: mode.grantsUncataloguedAccess(),
       acceptsUnregisteredAddresses: mode.acceptsUnregisteredAddresses(),
       protocolRows: applications.PROTOCOL_IDS.map(function (id) {
@@ -10052,6 +10055,54 @@ class AdminViews {
     log.debug("Leaving AdminViews.applicationClaimSelections(). " +
               sets.length + " set(s)" + (credential ? " and credentials."
                                                     : "."));
+    return out;
+  }
+
+  // THE CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09): its
+  // Scope claims tab, as data. Each permission it exposes with the
+  // catalogue attributes mapped to it (none is `[]`), the mappings held for
+  // permissions it no longer exposes (which map nothing), and the catalogue
+  // the boxes are drawn from.
+  /**
+   * Answers a resource server's permission-to-claims mappings.
+   *
+   * @param row - the application's view
+   * @returns `{ permissions, stale, catalogue }`
+   */
+  applicationPermissionClaimsState(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPermissionClaimsState().");
+    const permissions = applications.permissionsOf(row);
+    const exposed = permissions.map(function (one) { return one.name; });
+    const held = claimAttributes.permissionClaimsOf(row, exposed);
+    let stale = [];
+    try {
+      const raw = [].concat((row.fields || {})[
+        claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE] || [])[0];
+      const parsed = raw ? JSON.parse(String(raw)) : {};
+      stale = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Object.keys(parsed).filter(function (name) {
+          return exposed.indexOf(name) < 0;
+        }) : [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPermissionClaimsState(): " +
+                ((e && e.message) || e));
+      // Unreadable: permissionClaimsOf() has said so, and nothing is mapped.
+      stale = [];
+    }
+    const out = {
+      permissions: permissions.map(function (one) {
+        return { name: one.name, description: one.description, id: one.id,
+                 attributes: held[one.name] || [] };
+      }),
+      stale: stale,
+      catalogue: vcClaims.VC_ATTRIBUTES.map(function (one) {
+        return { ldap: one.ldap, claim: one.claim.join('.'),
+                 label: one.label };
+      })
+    };
+    log.debug("Leaving AdminViews.applicationPermissionClaimsState(). " +
+              out.permissions.length + " permission(s).");
     return out;
   }
 
@@ -12906,6 +12957,8 @@ export = {
   applicationRolesState: slot.forward('applicationRolesState'),
   applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
   applicationClaimsState: slot.forward('applicationClaimsState'),
+  applicationPermissionClaimsState:
+    slot.forward('applicationPermissionClaimsState'),
   applicationTokenLifetimesState: slot.forward('applicationTokenLifetimesState'),
   attributeClaimChoices: slot.forward('attributeClaimChoices'),
   attributeClaimPreview: slot.forward('attributeClaimPreview'),

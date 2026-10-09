@@ -171,9 +171,12 @@ class ScopeClaims {
    * @param grantedScope - the scope GRANTED (before RFC 9068's plan took the
    *   OpenID Connect scopes off an access token for an API)
    * @param where - what is being issued, for the log
+   * @param alsoGranted - claim names granted another way: by a resource
+   *   server's own permission that maps them, which is itself a grant
    * @returns the same object, without what was not granted
    */
-  static gate(claims: Json, grantedScope: unknown, where: string): Json {
+  static gate(claims: Json, grantedScope: unknown, where: string,
+              alsoGranted?: string[]): Json {
     log.debug("Entering ScopeClaims.gate(). " + where);
     if (!claims || typeof claims !== 'object') {
       log.debug("Leaving ScopeClaims.gate(). Nothing to gate.");
@@ -182,7 +185,8 @@ class ScopeClaims {
     const removed: string[] = [];
     Object.keys(claims).forEach(function (name) {
       const scope = ScopeClaims.scopeOf(name);
-      if (scope && !ScopeClaims.grants(grantedScope, scope)) {
+      if (scope && !ScopeClaims.grants(grantedScope, scope) &&
+          (alsoGranted || []).indexOf(name) < 0) {
         delete claims[name];
         removed.push(name);
       }

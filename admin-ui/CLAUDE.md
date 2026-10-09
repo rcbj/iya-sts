@@ -7209,8 +7209,11 @@ configuration grid split by protocol.
   `#signals`, `#cfg-<group>`). The panel holding that fragment is the one
   shown.
 * **The tabs are**: Overview, Configuration, Credentials, Browser origins,
-  Shared Signals, Software statements, Return addresses, Permissions, Roles,
-  SP metadata, Directory entry (with the one-attribute forms) and Remove.
+  Access types, **Scope claims** (2026-10-09: the catalogue attributes each of
+  its own permissions carries on the access tokens addressed to it, one form
+  per permission — `common/CLAUDE.md` 3cj), Shared Signals, Software
+  statements, Return addresses, Permissions, Roles, SP metadata, Directory
+  entry (with the one-attribute forms) and Remove.
   The identifier and the tiles stay above them.
 * **CONFIGURATION IS SUB-TABS, EACH ITS OWN FORM AND SAVE.** The first
   sub-tab, Protocol families, is the declared families. Its form carries

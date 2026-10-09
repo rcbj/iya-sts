@@ -1267,6 +1267,14 @@ class ApplicationsPage {
           html: forFamilies(OAUTH.concat(['gnap']),
             ApplicationsPage.applicationAccessTypesSection(row, carryBack,
               t)) },
+        // THE CLAIMS ITS OWN SCOPES CARRY (2026-10-09): per permission it
+        // exposes as a resource server, the catalogue attributes an access
+        // token addressed to it carries when that permission is granted.
+        { id: 'tab-scope-claims',
+          label: t.text('consoleApplications.sc.tab'),
+          html: forFamilies(OAUTH,
+            ApplicationsPage.applicationScopeClaimsSection(ctx, row,
+              carryBack)) },
         { id: 'tab-signals', label: 'Shared Signals',
           html: forFamilies(['ssf'],
             ApplicationsPage.applicationSignalsSection(json,
@@ -2822,6 +2830,104 @@ class ApplicationsPage {
    * @param t - the page's translator (#539)
    * @returns the tab's HTML
    */
+  // A RESOURCE SERVER'S SCOPE CLAIMS (2026-10-09): for each permission it
+  // exposes, the catalogue's attributes as boxes, the ones mapped ticked,
+  // with Save and Clear. One form per permission, so a save names the one
+  // it changes and the others stay as held.
+  /**
+   * Draws the Scope claims tab: the claims each of a resource server's
+   * permissions carries on the access tokens addressed to it.
+   *
+   * @param ctx - the console context (`write`)
+   * @param row - the application's view, with its `page`
+   * @param carryBack - the hidden fields that return to this page
+   * @returns the markup
+   */
+  static applicationScopeClaimsSection(ctx, row, carryBack) {
+    // The page's translator (#539); English is the catalog's English.
+    const t = ctx.t;
+    const state = row.page.permissionClaims;
+    if (!state) {
+      return '';
+    }
+    const id = String(row.identifier || '');
+    const anchor = 'scope-claims';
+    const intro = kit.note(t.html('consoleApplications.sc.intro'));
+    if (!state.permissions.length) {
+      return '<h3 id="' + anchor + '">' +
+        t.html('consoleApplications.sc.heading') + '</h3>' + intro +
+        kit.note('<span class="state-none">' +
+          t.html('consoleApplications.sc.noPermission') + '</span>' +
+          t.html('consoleApplications.sc.noPermissionRest'));
+    }
+    const formOpen = function (action, permission) {
+      return '<form method="post" action="/admin/applications#' + anchor +
+        '"' + (action === 'set-permission-claims' ? '' : ' class="inline"') +
+        '>' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + kit.esc(id) +
+        '"><input type="hidden" name="permission" value="' +
+        kit.esc(permission) + '">';
+    };
+    const html = state.permissions.map(function (p) {
+      const held = p.attributes.map(function (one) {
+        return one.toLowerCase();
+      });
+      const boxes = state.catalogue.map(function (one) {
+        const on = held.indexOf(one.ldap.toLowerCase()) >= 0;
+        return '<tr><td>' + (ctx.write
+          ? '<input type="checkbox" name="attributes" value="' +
+            kit.esc(one.ldap) + '"' + (on ? ' checked' : '') +
+            ' aria-label="' + kit.esc(one.ldap) + '">'
+          : (on ? t.html('consoleApplications.sc.yes') : '')) +
+          '</td><td><code>' + kit.esc(one.ldap) +
+          '</code></td><td><code>' + kit.esc(one.claim) + '</code></td><td>' +
+          kit.esc(one.label || '') + '</td></tr>';
+      }).join('');
+      return '<h4>' + '<code>' + kit.esc(p.name) + '</code>' +
+        (p.description ? ' &mdash; ' + kit.esc(p.description) : '') +
+        '</h4>' + kit.note((p.id ? t.html('consoleApplications.sc.askedFor') +
+          ' <code>' + kit.esc(p.id) + '</code>. '
+          : '<span class="state-none">' +
+            t.html('consoleApplications.sc.noBaseUri') + '</span> ') +
+          (p.attributes.length
+            ? t.html('consoleApplications.sc.carries') + ' ' +
+              kit.codeList(p.attributes) + '.'
+            : '<span class="state-none">' +
+              t.html('consoleApplications.sc.carriesNone') + '</span>')) +
+        (ctx.write ? formOpen('set-permission-claims', p.name) +
+          '<input type="hidden" name="attributes" value="">' : '') +
+        '<details class="fold"><summary>' +
+        t.html('consoleApplications.sc.attributes') + '</summary>' +
+        '<table><tr><th>' + t.html('consoleApplications.sc.thMapped') +
+        '</th><th>' + t.html('consoleApplications.sc.thLdap') + '</th><th>' +
+        t.html('consoleApplications.sc.thClaim') + '</th><th>' +
+        t.html('consoleApplications.sc.thWhat') + '</th></tr>' + boxes +
+        '</table></details>' +
+        (ctx.write
+          ? '<div class="formrow"><button type="submit"' +
+            kit.tip(t.text('consoleApplications.sc.saveTip')) + '>' +
+            t.html('consoleApplications.sc.save') + ' ' + kit.esc(p.name) +
+            '</button></div>' +
+            '</form>' + (p.attributes.length ? '<div class="formrow">' +
+              formOpen('clear-permission-claims', p.name) +
+              '<button type="submit" class="secondary"' +
+              kit.tip(t.text('consoleApplications.sc.clearTip')) + '>' +
+              t.html('consoleApplications.sc.clear') + '</button></form>' +
+              '</div>' : '')
+          : '');
+    }).join('');
+    const stale = state.stale.length
+      ? kit.note('<span class="state-revoked">' +
+          t.html('consoleApplications.sc.stale') + '</span> ' +
+          kit.codeList(state.stale) + '. ' +
+          t.html('consoleApplications.sc.staleRest'))
+      : '';
+    return '<h3 id="' + anchor + '">' +
+      t.html('consoleApplications.sc.heading') + '</h3>' + intro + stale +
+      html;
+  }
+
   static applicationAccessTypesSection(row, carryBack, t) {
     // Each declared type, read (`page.accessTypes`, #446).
     const held = row.page.accessTypes;

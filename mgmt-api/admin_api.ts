@@ -13396,6 +13396,63 @@ class AdminApi {
             },
             responseDescription: '`inherited: true`.' },
 
+          // THE SCOPE CLAIMS TAB (2026-10-09): the claims a resource
+          // server's own permissions carry on access tokens addressed to it.
+          { action: 'set-permission-claims',
+            operationId: 'setApplicationPermissionClaims',
+            summary: 'Map claims to one of a resource server\'s own scopes',
+            description: 'Writes the directory attributes, from the claim ' +
+                         'catalogue `GET /admin-api/claims` lists, that an ' +
+                         'access token addressed to this application ' +
+                         'carries when `permission` — one of the ' +
+                         'permissions it exposes (`oauthPermission`) — was ' +
+                         'GRANTED. Granting the permission is the grant of ' +
+                         'those claims, a standard OpenID Connect claim ' +
+                         'included. They join the resource server\'s ' +
+                         'declared claims and combine with the client\'s ' +
+                         'as `oauthAccessTokenClaimsCombine` says; on a ' +
+                         'token for several resource servers only what ' +
+                         'every one wants goes in. An empty `attributes` ' +
+                         'maps none. Refused (`STS-REG-0344`) for a ' +
+                         'permission it does not expose, an attribute the ' +
+                         'catalogue does not hold, or an application not ' +
+                         'declared for OAuth 2.0 or OpenID Connect.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                permission: { type: 'string' },
+                attributes: { type: 'array', items: { type: 'string' } }
+              },
+              required: ['application', 'permission', 'attributes'],
+              examples: [{ application: 'hr-api', permission: 'hr.read',
+                           attributes: ['departmentNumber', 'employeeNumber',
+                                        'mail'] }],
+              additionalProperties: false
+            },
+            responseDescription: 'The permission\'s attributes now held, ' +
+                                 'in `attributes`, and the whole map, in ' +
+                                 '`mappings`.' },
+          { action: 'clear-permission-claims',
+            operationId: 'clearApplicationPermissionClaims',
+            summary: 'Take the claims off one of a resource server\'s ' +
+                     'own scopes',
+            description: 'Removes the mapping of one permission, so ' +
+                         'granting it adds no claim to an access token.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                permission: { type: 'string' }
+              },
+              required: ['application', 'permission'],
+              examples: [{ application: 'hr-api', permission: 'hr.read' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The whole map left, in `mappings`.' },
+
           // THE ACCESS TYPES TAB (#432 phase 4): one entry of the access-type
           // catalogue RFC 9396 and GNAP share.
           { action: 'set-access-type',
