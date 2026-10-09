@@ -330,13 +330,14 @@ async function thePoliciesPage() {
   log.info("=== 0. the Policies page, in a realm that cannot send mail ===");
   let r = await call("GET", realmBase() + "/admin-api/policies");
   // Since #221 the service-account policy is a third kind on the same
-  // resource; what this job asserts is that the password and authentication
-  // policies are kinds there, first and in that order.
+  // resource, and since #527 the passkey policy a fourth; what this job
+  // asserts is that the password and authentication policies are kinds
+  // there, first and in that order — the kinds after them are other jobs'.
   check("0. the policies are on one resource, as kinds", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.deepStrictEqual(r.json.kinds.map(function (k) {
       return k.id;
-    }), ["password", "authn", "serviceAccount"]);
+    }).slice(0, 2), ["password", "authn"]);
     assert.ok(r.json.actions.indexOf("save-authn-policy") >= 0);
   });
   check("0. both email mechanisms are OFF by default", function () {
