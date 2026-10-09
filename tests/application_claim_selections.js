@@ -61,6 +61,9 @@ function childMain() {
     const actions = require(ROOT + '/admin-core/admin_actions');
     const views = require(ROOT + '/admin-core/admin_views');
     const page = require(ROOT + '/admin-ui/web_applications');
+    // A render context carries the translator since #539; WebKit.context()
+    // gives node's, English (common/i18n.ts installs it).
+    const WebKit = require(ROOT + '/admin-ui/web_kit');
     const errorCodes = require(ROOT + '/common/error_codes');
     const stamp = String(Date.now()).slice(-6);
     const realm = realms.create({ id: 'acs-' + stamp, name: 'acs' }).realm;
@@ -199,7 +202,7 @@ function childMain() {
              'givenName',
            'E2. an OpenID4VCI client\'s model carries its credential claims',
            JSON.stringify(walletView.credential));
-      const html = page.applicationClaimSelectionSection({ write: true },
+      const html = page.applicationClaimSelectionSection(WebKit.context({}, true),
         { identifier: 'acs-web', page: { claimSelections: view } },
         '', ['access_token', 'id_token'], 'cfg-oauth');
       note(/name="attributes" value="sn" checked/.test(html) &&
@@ -211,7 +214,7 @@ function childMain() {
            'E3. the markup: the boxes in force ticked, Save, Use the ' +
            'realm\'s, and the preview form', html.slice(0, 400));
       const readOnly = page.applicationClaimSelectionSection(
-        { write: false },
+        WebKit.context({}, false),
         { identifier: 'acs-web', page: { claimSelections: view } },
         '', ['access_token'], 'cfg-oauth');
       note(readOnly.indexOf('<input type="checkbox"') < 0 &&
