@@ -9347,6 +9347,14 @@ const CODES = [
       'nor the exchanging client (its client_id, identifier or ' +
       'oauthAudience). Refused in every mode (#550).',
     spec: 'invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0957',
+    summary: 'A client asked, on a token whose subject is an application ' +
+      '(client_credentials), for an application permission no role it ' +
+      'holds authorizes (rolePermission), and the issuance policy left it ' +
+      'off the tokens. A delegated permission (oauthDelegatedPermission) ' +
+      'needs a person and does not count here (#551).',
+    spec: 'none — issued without that scope (RFC 6749 section 3.3); ' +
+      'invalid_scope when nothing else was asked for' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

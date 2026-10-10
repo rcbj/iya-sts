@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4252** of them, in **44** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4253** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 284
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 711
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
@@ -2162,6 +2162,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0954` | A token exchange asked for a delegated permission (oauthPermissionBaseUri plus a name) that was not delegated to the calling client (oauthDelegatedPermission), and the issuance policy left it out of the issued token, in every mode (#549). | none: the token is issued with a narrower scope (RFC 6749 section 3.3, RFC 8693 section 2.2.1) |
 | `STS-OAUTH-0955` | A token exchange presented an actor_token that was not issued to the exchanging client: its client_id (or azp) names another client, a token carrying neither does not name the client in aud, or a client_credentials token is about another client. Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 
 ## STS-SAML
 

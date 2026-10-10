@@ -271,7 +271,16 @@ scopes, the SCIM, Shared Signals, management API and grant management scopes)
 gets the audience those name. A request that names none of these gets a token
 addressed to the client itself: its `oauthAudience` values, or its `client_id`
 when it declares none (#550). That is the token to send as an RFC 8693
-`actor_token`. The seeded `sts-management-api` client is a
+`actor_token`.
+
+**Permissions on another application come from a role** (#551). A delegated
+grant (`oauthDelegatedPermission`) authorizes a permission only on a person's
+behalf, so it does not count here. To let the client use a permission itself,
+make it a member of a role whose `rolePermission` names the permission — an
+app role of the resource (`<role>@<resource>`) or a realm role. Without one the
+permission is left off the token, and a request asking for nothing else is
+refused with `invalid_scope`. See
+[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded `sts-management-api` client is a
 working example of this grant.
 
 ## Refresh token

@@ -183,7 +183,7 @@ Every protocol here shares that one session.
 |---|---|
 | `authorization_code` | PKCE, DPoP and certificate binding are checked before the code is spent. In every mode the code is redeemed only by the client it was issued to, and `redirect_uri` must be sent and identical to the authorization request's |
 | `refresh_token` | carries the scope, resources and authorization details it was granted, and never widens them. Without `offline_access` it is an **online** refresh token and is refused once the sign-on session it came from has ended |
-| `client_credentials` | for a client acting in its own name |
+| `client_credentials` | for a client acting in its own name. With no `resource`, `authorization_details`, party-naming scope or scope of this service's own resource server, the token is addressed to the client itself — its `oauthAudience`, else its `client_id` (#550). Its permissions on another application come from roles, not from `oauthDelegatedPermission` (#551) |
 | `password` | development mode only (see below) |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523) section 2.1 — see [JWT assertions](jwt-assertions.md) |
@@ -198,6 +198,16 @@ name, such as `https://example.com/write`) addresses the token to that base URI
 and puts the bare permission name in `scope`. **A token for an API is for that
 API alone.** The OpenID Connect scopes are left off it, so a client that wants
 UserInfo asks for a separate token.
+
+**The default audience.** A token whose request named no audience is
+addressed to this service's default resource indicator, `<base>/resource` —
+**except a `client_credentials` token** (#550). One that asks for nothing
+else (no `resource`, no `authorization_details`, no scope naming an
+application or a permission, and no scope of this service's resource server:
+the OpenID Connect scopes, SCIM, Shared Signals, the management API and grant
+management) is addressed to **the client itself**: its `oauthAudience`
+values, or its `client_id` when it declares none. That is the token a client
+sends as an RFC 8693 `actor_token`.
 
 **In product mode a resource must name a registered target** (#505), at the
 authorization endpoint, at `POST /oauth2/par` and at the token endpoint for
@@ -559,8 +569,8 @@ records what the client has asked for.
   `address`, `phone`, `offline_access` and this realm's OpenID4VCI credential
   scopes. In development any scope is issued.
 * **A scope naming another application or a delegated permission** keeps its own
-  rules: the first becomes the access token's audience, the second needs a grant
-  (`oauthDelegatedPermission`), which product mode always requires.
+  rules: the first becomes the access token's audience, the second is
+  described in *Permissions on another application*, below.
 
 The authorization, pushed authorization and token endpoints refuse anything else
 with `invalid_scope` (RFC 6749 section 3.3). A grant that carries its scope from
@@ -583,8 +593,41 @@ it is the client itself. Two kinds of scope are gated:
   on `/admin/roles` or `POST /admin-api/roles/add-permission`.
 
 A gated scope the subject's roles do not authorize is left off the token. If
-nothing else was requested, the request is refused with `invalid_scope`. A
-permission nobody has gated is issued exactly as before.
+nothing else was requested, the request is refused with `invalid_scope`.
+
+#### Permissions on another application: delegated, or the application's own
+
+A resource application exposes **permissions**: `oauthPermissionBaseUri` plus
+`oauthPermission` names, asked for as the full identifier
+(`https://api.example/read`). The access token is addressed to the base URI
+and carries the bare name (`read`) in `scope`; a bare name in the request is
+not recognised as a permission. How a client is allowed one depends on whether
+a **person** is behind the token (#551):
+
+| The token's subject | Where the permission comes from | Without it |
+|---|---|---|
+| **A person** — authorization code, password, device, CIBA, a refresh of those, a token exchange about a person | a **delegated** grant on the client: `oauthDelegatedPermission` (`POST /admin-api/permissions/grant-permission`, `/admin/delegation`) | product refuses `invalid_scope`; development issues it and logs it ungranted, unless `oauth2.delegatedPermissionsEnforced` |
+| **The client itself** — `client_credentials` | a **role** the client holds whose `rolePermission` names the permission: a realm role, or an app role of the resource's (`<role>@<resource>`, #310) — `create-role`, `add-member` (`kind: application`), `add-permission` on `/admin/roles` or `POST /admin-api/roles/*` | left off the token, in **every mode** (STS-OAUTH-0957); `invalid_scope` when nothing else was asked for |
+
+So `oauthDelegatedPermission` authorizes a permission only on a person's
+behalf, and is not consulted on `client_credentials`; a role authorizes the
+client's own use. Where the resource also gates the permission by role
+(`oauthRoleGatedPermission`, above), a person needs the delegated grant **and**
+a role. In a token exchange the calling client must hold the delegated grant
+for a permission the subject token did not carry (#549); one it does not hold
+is left off.
+
+```
+# the client's own permission: an app role of the resource, held by the client
+POST /admin-api/roles/create-role     {"role":"reader","application":"api1"}
+POST /admin-api/roles/add-member      {"role":"reader@api1","kind":"application","member":"svc1"}
+POST /admin-api/roles/add-permission  {"role":"reader@api1","permission":"https://api1.example/read"}
+
+POST /oauth2/token
+  grant_type=client_credentials&client_id=svc1&client_secret=<secret>
+  &scope=https://api1.example/read
+→ aud "https://api1.example/", scope "read"
+```
 
 ### ID Tokens
 
@@ -1179,6 +1222,18 @@ together. A refresh token comes back when the client asks with
 `oauth2.tokenExchangeRefreshToken` says; `issued_token_type` is always
 `access_token`.
 
+**The actor_token is the client's own, in both modes** (#550). It must have
+been issued to the exchanging client — its `client_id` (or `azp`) is that
+client, a token with neither names the client in `aud`, and a client's token
+is about that client — and its `aud` must name this authorization server (its
+issuer or token endpoint) or the exchanging client (its `client_id`,
+identifier or `oauthAudience`). A `client_credentials` token that asked for
+nothing else meets both. Anything else is `invalid_request`
+(STS-OAUTH-0955, STS-OAUTH-0956): another client's token, which would make
+`act` name that client and be decided with its settings, or a token minted
+for some other resource, which that resource could replay as its actor.
+Assertions as actor tokens follow their own rules ([JWT assertions](jwt-assertions.md)).
+
 **Which tokens are verified.** In product mode the `subject_token` and
 `actor_token` must both verify against this realm's key. In development a
 token this server signed is verified, and one it did not is **read without
@@ -1587,7 +1642,9 @@ and it is not recorded in `/admin/tokens`: it is a response, not a credential.
   is active only if it is the caller's own (`client_id`), if its `aud` is this
   service's default resource indicator (`<base>/resource`, or a named
   authorization server's), or if its `aud` names the caller's application by
-  `oauthClientId`, `oauthAudience` or `oauthPermissionBaseUri`. A refresh token
+  `oauthClientId`, `oauthAudience` or `oauthPermissionBaseUri`. A client's
+  plain `client_credentials` token is addressed to that client (#550), so
+  another resource server is told it is inactive. A refresh token
   is reported only to its own client. An anonymous development JSON caller is
   not restricted.
 * **A named authorization server's profile can narrow it**:
@@ -1919,7 +1976,9 @@ on [What is not checked](what-is-not-checked.md).
 | Token exchange | an unverified `subject_token` or `actor_token` is exchanged | both must verify against this realm's key |
 | Expired client secret | accepted and logged | refused `invalid_client` |
 | Scopes | any; this service's protected scopes only to a client declaring them | only those the client declares, or the default set; `invalid_scope` otherwise |
-| Ungranted delegated permission | honoured unless `oauth2.delegatedPermissionsEnforced` | refused `invalid_scope` |
+| Ungranted delegated permission (a person's token) | honoured unless `oauth2.delegatedPermissionsEnforced` | refused `invalid_scope` |
+| Permission on `client_credentials` with no role authorizing it (#551) | left off | left off |
+| `actor_token` not the client's own, or addressed elsewhere (#550) | refused `invalid_request` | refused `invalid_request` |
 | Profile claims | an invented persona fills gaps | from the directory entry or omitted; `email_verified` is `true` only for an address the person verified ([mail](mail.md)), else `false` |
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
@@ -1985,7 +2044,7 @@ on [OAuth security](oauth-security.md#configuration).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | `true` | yes | Ask the person, on `/oauth2/consent`, before issuing for a scope they have not agreed to for that application. |
-| `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. |
+| `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request, on a person's behalf, for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. Not asked on `client_credentials`, where a role decides (#551). |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core 5.5 claims request may name. |
 
 ### Grants and assertions

@@ -331,9 +331,12 @@ async function exchangePermissions(t) {
               'urn:ietf:params:oauth:grant-type:token-exchange'), '',
             'G6. product, token exchange: the request stage leaves it to ' +
             'the exchange stage');
-    t.check(/has not been granted/.test(oauth2.permissionRefusal(asked,
-              CLIENT, 'client_credentials')),
-            'G7. product, client_credentials: still refused');
+    // #551: a delegated grant needs a person. On client_credentials the
+    // request stage refuses nothing for it; the role check at issuance
+    // decides (`application-permission-not-authorized`).
+    t.equal(oauth2.permissionRefusal(asked, CLIENT, 'client_credentials'),
+            '', 'G7. product, client_credentials: the delegated grant is ' +
+            'not asked for (#551)');
   });
   log.debug("Leaving exchangePermissions().");
 }

@@ -1573,6 +1573,17 @@ it. A question with no `scope-delegated` fact is judged as before.
 holds read and write on sp1 and sp2 and not admin, asks for all three, and
 admin must never be issued.
 
+**AN APPLICATION'S PERMISSION IS A ROLE'S (#551, 2026-10-10).** A delegated
+grant needs a person: `permission-not-granted` also skips `client_credentials`
+(the environment's grant type), and on that grant `role_permissions.ts` sends
+every application permission with `urn:sts:xacml:scope-application-permission`
+beside its `authorizing-role` values; **`application-permission-not-authorized`
+drops one no role the subject holds authorizes, in every mode**
+(`STS-OAUTH-0957`). It sits after `scope-not-authorized`, which still decides a
+permission its resource gates. `tests/role_permissions.js` section H and
+`tests/vendored/sts_delegated_permissions_example.js` (an app role over HTTP)
+hold it.
+
 **MUTATION-TESTED** (2026-10-03): each of the twenty exchange rules removed
 in turn is told apart by the matrix, except the two that answer other
 questions — `may-act-subject-choice` (held by `exchange_policy.js` section N)

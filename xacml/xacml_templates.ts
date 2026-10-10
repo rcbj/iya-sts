@@ -195,6 +195,13 @@ const ISSUANCE_ATTRIBUTE = {
   CLIENT_NATIVE_SSO: 'urn:sts:xacml:client-native-sso',
   SCOPE_DELEGATED: 'urn:sts:xacml:scope-delegated',
   SCOPE_GRANTED: 'urn:sts:xacml:scope-granted',
+  // #551: an application permission (a resource's base URI plus a name)
+  // asked for by an APPLICATION subject — client_credentials, or an
+  // exchange of a client's own token. Sent only by the role-permission
+  // narrowing, beside AUTHORIZING_ROLE: an application's permission comes
+  // from a role, never from `oauthDelegatedPermission`, which needs a person.
+  SCOPE_APPLICATION_PERMISSION:
+    'urn:sts:xacml:scope-application-permission',
   SCOPE_CONSENTED: 'urn:sts:xacml:scope-consented',
   CONSENT_REQUIRED: 'urn:sts:xacml:consent-required',
   // A TOKEN EXCHANGE (#108, in policy since #186), stage `exchange`: whether
@@ -1638,6 +1645,8 @@ const TEMPLATES: TemplateRow[] = [
       const isTokenExchange = stringIs(model.CATEGORY.ENVIRONMENT,
         xacmlRequest.VOCABULARY.GRANT_TYPE,
         'urn:ietf:params:oauth:grant-type:token-exchange');
+      const isClientCredentials = stringIs(model.CATEGORY.ENVIRONMENT,
+        xacmlRequest.VOCABULARY.GRANT_TYPE, 'client_credentials');
       const settingOn = function (key: string): any {
         log.debug("Entering settingOn().");
         log.debug("Leaving settingOn().");
@@ -1827,6 +1836,9 @@ const TEMPLATES: TemplateRow[] = [
              fact(R, IA.SCOPE_DELEGATED, true),
              fact(R, IA.SCOPE_GRANTED, false),
              B.apply(F1 + 'not', [isTokenExchange]),
+             // #551: a delegated grant needs a person; client_credentials
+             // has none, and its permissions are decided by role below.
+             B.apply(F1 + 'not', [isClientCredentials]),
              B.apply(F1 + 'or', [inProduct,
                settingOn('oauth2.delegatedPermissionsEnforced')])]),
            obligations: verdict(model.EFFECT.DENY, 'refuse',
@@ -1889,6 +1901,29 @@ const TEMPLATES: TemplateRow[] = [
                            TYPE.STRING),
               B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
           obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-ADMIN-0821'),
+          advice: []
+        }],
+        // #551: an APPLICATION's permission comes from a role. A permission
+        // asked for by an application subject is dropped unless a role it
+        // holds authorizes it (rolePermission), whether or not the resource
+        // gates it — `oauthDelegatedPermission` authorizes a permission only
+        // on a person's behalf. In every mode.
+        [{
+          id: options.idBase + ':rule:application-permission-not-authorized',
+          effect: model.EFFECT.DENY,
+          description: 'Drop an application permission asked for by an ' +
+                       'application subject (client_credentials) when no ' +
+                       'role it holds authorizes it — a delegated ' +
+                       'permission needs a person (#551).',
+          target: scopeTarget,
+          condition: and([
+            fact(R, IA.SCOPE_APPLICATION_PERMISSION, true),
+            B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+              { kind: 'function', functionId: F1 + 'string-equal' },
+              B.designator(model.CATEGORY.ACCESS_SUBJECT, IA.ROLE,
+                           TYPE.STRING),
+              B.designator(R, IA.AUTHORIZING_ROLE, TYPE.STRING)])])]),
+          obligations: verdict(model.EFFECT.DENY, 'drop', 'STS-OAUTH-0957'),
           advice: []
         }],
         // Consent (#305): a scope the person has not agreed to, where the

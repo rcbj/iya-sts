@@ -2452,7 +2452,12 @@ async function theDelegatedPermissionsRoundTrip() {
   await ok("/applications/create",
     { identifier: client, name: "Portal", protocols: ["oauth2", "oidc"],
       fields: { oauthClientId: client, oauthClientSecret: MINT_CLIENT_SECRET,
-                oauthTokenEndpointAuthMethod: "client_secret_post" } },
+                oauthTokenEndpointAuthMethod: "client_secret_post",
+                // #551: a delegated permission is asked for on a person's
+                // behalf, so the token comes from the code flow.
+                oauthGrantType: ["authorization_code"],
+                oauthRedirectUri: [MINT_REDIRECT_URI],
+                oauthResponseType: ["code"] } },
     "created the client application, with the secret its token request " +
     "presents");
 
@@ -2660,16 +2665,27 @@ async function permissionRegister() {
   return reply.body;
 }
 
-// A token asked for by PERMISSION rather than by scope name.
-// `client_credentials` rather than the password grant `mintTokens()` uses,
-// because what is being asserted is a property of the SCOPE LIST and there is
-// no reason to involve a person in it.
+// A token asked for by PERMISSION rather than by scope name, by the
+// authorization code flow: a DELEGATED permission is exercised on a person's
+// behalf (#551), and on `client_credentials` — no person — a delegated grant
+// does not count; an application's own permission comes from a role.
 async function mintPermissionToken(client, wanted) {
   log.debug("Entering mintPermissionToken(). client=" + client);
-  const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(client) +
-      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
-      "&scope=" + encodeURIComponent(wanted.join(" "));
+  const username = names.usernameFor("stsapi-permperson");
+  if (!mintedParties["realm:user:" + username]) {
+    await ok("/users/create", {
+      username: username, invent: false,
+      credential: "password", password: MINT_PASSWORD
+    }, "created " + username + " before a permission token is minted");
+    mintedParties["realm:user:" + username] = true;
+  }
+  const granted = await registry.authorizationCode(base + "/realm/" + REALM, {
+    clientId: client, redirectUri: MINT_REDIRECT_URI, username: username,
+    password: MINT_PASSWORD, scope: wanted.join(" ") });
+  const body = new URLSearchParams({ grant_type: "authorization_code",
+    code: granted.code, redirect_uri: MINT_REDIRECT_URI,
+    code_verifier: granted.verifier, client_id: client,
+    client_secret: MINT_CLIENT_SECRET }).toString();
   const reply = await common.httpJson(base + "/realm/" + REALM +
                                       "/oauth2/token", {
     method: "POST",
