@@ -424,7 +424,7 @@ async function theReportFollowsTheSettings() {
         "the report offers " + offered.join(", ") + " after being told EdDSA.");
     });
     check("and the resident-key row reports the passkey policy's answer " +
-          "(#527): REQUIRED, usernameless sign-in being off by default",
+          "(#527): REQUIRED, the passkey policy's default",
           function () {
       assert.strictEqual(after.body.status.residentKey, "required",
         "the report says " + after.body.status.residentKey + ".");
