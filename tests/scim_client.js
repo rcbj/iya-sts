@@ -385,11 +385,27 @@ async function act(body) {
   return answer;
 }
 
-// Sends what is due until nothing is, the pause aside.
+// One sweep, then a pause in which the event loop serves the fake service
+// provider: a sweep that resolves on promises alone never yields to I/O, so
+// the provider — in this process — would never get to answer. A sweep the
+// reconciliation started, and did not wait for, settles in the pause too.
+async function sweepOnce() {
+  log.debug('Entering sweepOnce().');
+  await scimClients.delivery().sweep();
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 150);
+  });
+  log.debug('Leaving sweepOnce().');
+}
+
+// Sends what is due until nothing more reaches the provider, the pause aside.
 async function drain(times) {
   log.debug('Entering drain().');
-  for (let i = 0; i < (times || 6); i++) {
-    await scimClients.delivery().sweep();
+  let quiet = 0;
+  for (let i = 0; i < (times || 40) && quiet < 3; i++) {
+    const before = sp.requests.length;
+    await sweepOnce();
+    quiet = sp.requests.length === before ? quiet + 1 : 0;
   }
   log.debug('Leaving drain().');
 }
@@ -608,7 +624,7 @@ async function backoff(t, base, ca) {
   const entry = ldap.readPerson(dn);
   ldap.writePerson(dn, Object.assign({}, entry.attributes,
                                       { title: 'Lead' }));
-  await scimClients.delivery().sweep();
+  await sweepOnce();
   const v = scimClients.view({ client: 'basic-' + RUN });
   t.check(!!v.client.pausedUntil && v.client.failures === 1 &&
           v.client.queues.counts.retrying >= 1,
@@ -625,7 +641,7 @@ async function backoff(t, base, ca) {
   ldap.writePerson(bobDn, Object.assign({}, bob.attributes,
                                         { title: 'Held' }));
   const before = sp.requests.length;
-  await scimClients.delivery().sweep();
+  await sweepOnce();
   t.check(sp.requests.length === before,
           'G3. a paused client\'s other deliveries are held');
   const lifted = await act({ action: 'deliver-now', id: 'basic-' + RUN });
