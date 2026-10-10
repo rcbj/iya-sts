@@ -270,6 +270,72 @@ class RolePermissions {
   }
 
   // ---------------------------------------------------------------------------
+  // AN APPLICATION'S PERMISSION COMES FROM A ROLE (#551, 2026-10-10).
+  //
+  // A permission a resource application exposes (`oauthPermissionBaseUri`
+  // plus a name) is DELEGATED to a client by `oauthDelegatedPermission`, and
+  // a delegated permission is exercised on a signed-in person's behalf. With
+  // no person — a client_credentials token, whose subject is the client —
+  // the client needs the permission for ITSELF, and that is a role it holds
+  // whose `rolePermission` authorizes it (#303, #310), whether or not the
+  // resource gates the permission with `oauthRoleGatedPermission`. So for an
+  // APPLICATION subject every application permission is asked about here,
+  // with the fact `scope-application-permission`, and the issuance policy's
+  // `application-permission-not-authorized` drops one no held role
+  // authorizes (STS-OAUTH-0957). A person's permissions are unchanged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether a scope value is an application permission (a resource's
+   * base URI plus a name) that the role check takes for an application
+   * subject (#551): defined by an application, and not already gated.
+   *
+   * @param value - one scope value
+   * @returns true for an ungated application permission
+   */
+  isApplicationPermission(value: string): boolean {
+    const { log, applications } = this.deps;
+    log.debug("Entering RolePermissions.isApplicationPermission().");
+    let found = null;
+    try {
+      found = applications.forPermission(value);
+    } catch (e) {
+      // A registry that cannot be read names no permission: the value is
+      // then an ordinary scope, decided by the rules every scope has.
+      log.debug("Caught in RolePermissions.isApplicationPermission(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const answer = !!found && !this.isGated(value);
+    log.debug("Leaving RolePermissions.isApplicationPermission(). " + answer);
+    return answer;
+  }
+
+  /**
+   * Tells whether a scope asks for anything the role check decides for this
+   * subject: a gated permission for anybody, and for an application subject
+   * any application permission as well (#551).
+   *
+   * @param scope - a space-delimited scope
+   * @param subject - `{ kind, name, authenticated }`
+   * @returns true when narrowScope() has something to decide
+   */
+  asksFor(scope: unknown, subject: Subject): boolean {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering RolePermissions.asksFor().");
+    if (self.asksForGated(scope)) {
+      log.debug("Leaving RolePermissions.asksFor(). A gated permission.");
+      return true;
+    }
+    const asked = !!subject && subject.kind === 'application' &&
+      RolePermissions.split(scope).some(function (one) {
+        return self.isApplicationPermission(one);
+      });
+    log.debug("Leaving RolePermissions.asksFor(). " + asked);
+    return asked;
+  }
+
+  // ---------------------------------------------------------------------------
   // heldRoles(subject, realmId) — the roles the subject holds NOW, in the
   // named realm (the ambient one by default). See the header for the console
   // roles and a person.
@@ -537,11 +603,18 @@ class RolePermissions {
     const gated = values.filter(function (one) {
       return self.isGated(one);
     });
-    if (!gated.length) {
+    const who = subject || {};
+    // #551: for an application subject, every application permission.
+    const applicationPermissions = who.kind === 'application'
+      ? values.filter(function (one) {
+        return gated.indexOf(one) < 0 && self.isApplicationPermission(one);
+      }) : [];
+    // What a missing verdict drops: checkScopes()'s fail-closed reading.
+    const decidedHere = gated.concat(applicationPermissions);
+    if (!decidedHere.length) {
       log.debug("Leaving RolePermissions.narrowScope(). Nothing gated.");
       return unchanged;
     }
-    const who = subject || {};
     const ctx = context || {};
     const held = this.heldRoles(who);
     // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
@@ -565,17 +638,22 @@ class RolePermissions {
     // back to the built-in policy where the configured one gives no verdict.
     const facts = values.map(function (value) {
       const isGated = gated.indexOf(value) >= 0;
+      const attributes = [
+        scopeVerdicts.resourceFact(scopeVerdicts.ATTRIBUTE.SCOPE_GATED,
+                                   isGated),
+        scopeVerdicts.resourceStrings(
+          scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
+          Object.keys(authorizes).filter(function (role) {
+            return authorizes[role].indexOf(value) >= 0;
+          }))];
+      if (applicationPermissions.indexOf(value) >= 0) {
+        attributes.push(scopeVerdicts.resourceFact(
+          scopeVerdicts.ATTRIBUTE.SCOPE_APPLICATION_PERMISSION, true));
+      }
       return {
         scope: value,
         gated: isGated,
-        attributes: [
-          scopeVerdicts.resourceFact(scopeVerdicts.ATTRIBUTE.SCOPE_GATED,
-                                     isGated),
-          scopeVerdicts.resourceStrings(
-            scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
-            Object.keys(authorizes).filter(function (role) {
-              return authorizes[role].indexOf(value) >= 0;
-            }))]
+        attributes: attributes
       };
     });
     const answer = gate.checkScopes({
@@ -598,9 +676,15 @@ class RolePermissions {
     // A value the answer did not mention is a gated one dropped and an
     // ungated one kept — checkScopes()'s own fail-closed reading.
     const decided = function (value: string): any {
-      return verdictOf[value] ||
-        { verdict: gated.indexOf(value) >= 0 ? 'drop' : 'keep',
-          code: gated.indexOf(value) >= 0 ? 'STS-ADMIN-0821' : '' };
+      if (verdictOf[value]) {
+        return verdictOf[value];
+      }
+      if (gated.indexOf(value) >= 0) {
+        return { verdict: 'drop', code: 'STS-ADMIN-0821' };
+      }
+      return applicationPermissions.indexOf(value) >= 0
+        ? { verdict: 'drop', code: 'STS-OAUTH-0957' }
+        : { verdict: 'keep', code: '' };
     };
     const refused = values.filter(function (one) {
       return decided(one).verdict === 'refuse';
@@ -788,6 +872,8 @@ export = {
   split: RolePermissions.split,
   isGated: slot.forward('isGated'),
   asksForGated: slot.forward('asksForGated'),
+  asksFor: slot.forward('asksFor'),
+  isApplicationPermission: slot.forward('isApplicationPermission'),
   heldRoles: slot.forward('heldRoles'),
   configuredRolesOf: slot.forward('configuredRolesOf'),
   narrowScope: slot.forward('narrowScope'),

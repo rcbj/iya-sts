@@ -202,6 +202,13 @@ mode — are listed in [XACML](xacml.html).
   `subject_token` and optionally an `actor_token`. In product mode each must
   be a token this realm signed and has not revoked, or an assertion from an
   issuer the realm declared ([below](#assertions-as-the-subject-or-the-actor)).
+* **An `actor_token` is the exchanging client's own, in every mode (#550).**
+  It must have been issued to that client, and be addressed to it or to this
+  authorization server. A client's own `client_credentials` token that asks
+  for nothing else is addressed to the client, so it is the token to send.
+  A client presenting another client's token is refused with
+  `invalid_request`. Otherwise the token's `act` would name the other client,
+  and the policy would decide with that client's settings.
 * `exchange_semantics=delegation|impersonation` is this service's extension
   for asking. Any other value, or the parameter sent twice, is
   `invalid_request` in every mode.
@@ -241,6 +248,14 @@ mode — are listed in [XACML](xacml.html).
   (`exchange-widens-scope`): in product, a scope outside the subject token's
   `scope` is `invalid_scope`. A subject token with no `scope` claim (an ID
   Token, a WS-Trust JWT) has nothing to compare against.
+* **A delegated permission follows the caller, not the subject token**
+  (#549). A scope naming a delegated permission (an application's
+  `oauthPermissionBaseUri` plus a name) is issued when the client making the
+  exchange holds it (`oauthDelegatedPermission`), whether or not the
+  subject token carried it, and is **left out** of the issued token when the
+  client does not hold it — in every mode, while the rest of the request is
+  issued. Both are rules of the issuance policy
+  (`exchange-permission-not-delegated`, `STS-OAUTH-0954`).
 * **No `scope` on the exchange carries the subject token's forward.** The
   issued token is asked for the `scope` sent, else the subject token's `scope`
   claim, else nothing — the same rule for every kind of subject token. Either

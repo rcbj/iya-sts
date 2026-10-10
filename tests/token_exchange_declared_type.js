@@ -148,10 +148,16 @@ function child() {
     await accepted('D7. dev: a token from anywhere is still exchanged ' +
       'unverified (mode.exchangesUnverifiedTokens())',
       function () { return exchange(unsigned, 'access_token'); });
+    // The client's own client_credentials token: since #550 an actor_token
+    // must be the exchanging client's own and addressed to it or to this
+    // server, which a password-grant token for the default resource is not.
+    const ownCc = await post(port, Object.assign(
+      { grant_type: 'client_credentials' }, auth));
+    const ownAccess = String(ownCc.json.access_token || '');
     await accepted('D8. dev: our access token as the actor_token declared ' +
       'access_token', function () {
       return exchange(access, 'access_token',
-        { actor_token: access, actor_token_type: T + 'access_token' });
+        { actor_token: ownAccess, actor_token_type: T + 'access_token' });
     });
     await refused('D9. dev (#116): our own ID Token as the actor_token ' +
       'declared access_token, which was read unverified and believed',
@@ -159,11 +165,25 @@ function child() {
         return exchange(access, 'access_token',
           { actor_token: idToken, actor_token_type: T + 'access_token' });
       }, 'actor_token was declared');
+    // Read unverified, and held to #550's two rules all the same: one
+    // naming this client is exchanged, one naming nobody is refused.
+    const unsignedOwn = b64u({ alg: 'none', typ: 'JWT' }) + '.' +
+      b64u({ sub: 'txt-somebody', client_id: auth.client_id,
+             aud: auth.client_id,
+             iat: Math.floor(Date.now() / 1000) }) + '.';
     await accepted('D10. dev: an actor_token from anywhere is still read ' +
       'unverified', function () {
       return exchange(access, 'access_token',
-        { actor_token: unsigned, actor_token_type: T + 'access_token' });
+        { actor_token: unsignedOwn, actor_token_type: T + 'access_token' });
     });
+    const unbound = await exchange(access, 'access_token',
+      { actor_token: unsigned, actor_token_type: T + 'access_token' });
+    note(unbound.status === 400 && unbound.json.error === 'invalid_request' &&
+         /not issued to this client/.test(
+           String(unbound.json.error_description || '')),
+         'D10b. dev (#550): an unverified actor_token naming no client is ' +
+         'refused all the same', unbound.status + ' ' +
+         unbound.text.slice(0, 300));
 
     // --- PRODUCT -----------------------------------------------------------
     config.setOverride('oauth2.consentRequired', false);

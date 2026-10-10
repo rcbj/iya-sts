@@ -4270,7 +4270,10 @@ const SETTINGS = [
                  'it is an ordinary scope, granted as everything else here ' +
                  'is. It does NOT re-judge a grant already issued, so a ' +
                  'refresh of a code obtained before the setting was turned ' +
-                 'on still works.' },
+                 'on still works. Not asked on client_credentials (#551): ' +
+                 'with no person behind the token a delegated grant does ' +
+                 'not count, and a role the client holds decides, in every ' +
+                 'mode.' },
 
   // ---------------------------------------------------------------------------
   // RFC 8693 SECTION 2.2.1'S OPTIONAL `refresh_token`, AS A POLICY RATHER THAN
