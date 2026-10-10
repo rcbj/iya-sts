@@ -660,7 +660,10 @@ function childMain() {
     note(r.status === 200 && !activeIn(r),
          '4h. and not for another resource server', r.status);
 
-    const permToken = (await tokenFor({ grant_type: 'client_credentials',
+    // A PERSON's token (#551): a delegated permission needs one, and is
+    // refused on client_credentials.
+    const permToken = (await tokenFor({ grant_type: 'password',
+      username: 'r97-alice', password: 'anything',
       scope: 'https://perm.r97.example/read' })).access_token;
     r = await asJwt(permToken, 'r97-perm', 'r97-perm-secret-0123456789abcdef');
     note(activeIn(r), '4i. a delegated permission\'s base URI names the ' +
