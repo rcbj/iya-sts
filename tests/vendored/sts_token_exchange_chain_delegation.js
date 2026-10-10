@@ -86,6 +86,26 @@
 //      from bob_end_user to each tier, and esb1-del ONE box — in product
 //      too, where its actor subject is `urn:sts:client:esb1-del` (#468).
 //
+// AND THE CHAIN FORKS AT THE BUS (#549). After esb1 there are TWO service
+// providers, sp1-del and sp2-del, each exposing three delegated permissions
+// — read, write and admin. read and write on both are delegated to esb1
+// (`oauthDelegatedPermission`); admin on neither. esb1 exchanges ONCE PER
+// PROVIDER, asking for app1-scope and all three permissions, none of which
+// the subject token carries. The issuance policy (XACML, stage `exchange`)
+// keeps a delegated permission the CALLER holds whether or not the
+// subject_token carried it, and DROPS one it does not hold
+// (STS-OAUTH-0954), in every mode — so each provider's token carries
+// `app1-scope read write`, addressed to that provider, and NEVER admin. An
+// admin in an issued scope is the bug this job exists to catch, and it is
+// asserted on the token, at introspection and in the response's `scope`.
+//
+// AND EVERY TOKEN ABOUT THE PERSON CARRIES ROLES, GROUPS AND A CUSTOM CLAIM
+// (#549): bob is in a group that holds a role, every tier names the groups
+// claim `teams` (by cn) and a custom claim `tier`, so the ID Token, the
+// sign-in's access token and every exchanged token carry `teams`, `roles`
+// and `tier`. The actor tokens are about the tiers, which are in no group
+// and hold no role, and are not held to them.
+//
 // In development and product mode alike; entries left behind and
 // reconciled on a rerun, as there.
 //
@@ -143,6 +163,11 @@ function assertActorToken(cast, tier, token) {
   assert.ok(claims.act === undefined, what + " carries act " +
             JSON.stringify(claims.act));
   kit.assertCommonScope(claims, what);
+  // #550: a client_credentials token that asked for nothing else is
+  // addressed to the client itself — its registered audience.
+  assert.deepStrictEqual(kit.audienceList(claims), [tier.audience],
+    what + " should be addressed to the tier itself (" + tier.audience +
+    ", #550) and its aud is " + JSON.stringify(claims.aud) + ".");
   log.info("[actor] " + what + ": sub=" + claims.sub + ", aud=" +
            JSON.stringify(claims.aud) + ", scope=\"" + claims.scope +
            "\", jti=" + claims.jti);
@@ -176,18 +201,23 @@ function assertActIs(claims, expected, what) {
 async function test() {
   log.debug("Entering test().");
   const base = kit.serviceBase();
-  const cast = kit.castFor(TAG);
+  const cast = kit.castFor(TAG, { permissions: true });
+  const providers = cast.providers;
   const product = await kit.isProduct(base);
   log.info("The delegation chain at " + base + ": " + cast.user + " -> " +
            cast.webapp.identifier + " -> " + cast.gateway.identifier +
            " -> " + cast.esb.identifier + " -> " +
-           cast.provider.identifier + " (" +
+           providers.map(function (one) {
+             return one.identifier;
+           }).join(" and ") + " (" +
            (product ? "product" : "development") + " mode).");
   const baselineAt = await kit.registerBaseline(base);
   await kit.provisionCast(base, cast, SEMANTICS);
-  check("1. the four entries hold their audiences (none on " +
-        cast.webapp.identifier + ") and declare " + kit.COMMON_SCOPE,
-        function () {});
+  check("1. the five entries hold their audiences (none on " +
+        cast.webapp.identifier + ") and declare " + kit.COMMON_SCOPE +
+        "; each provider exposes read, write and admin, and " +
+        cast.esb.identifier + " holds read and write on both and admin on " +
+        "neither", function () {});
 
   log.info("=== The sign-in ===");
   const signedIn = await kit.signIn(base, cast);
@@ -200,6 +230,15 @@ async function test() {
       audience: cast.gateway.audience, clientId: cast.webapp.identifier,
       notAudience: [cast.gateway.identifier] });
     assert.ok(first.act === undefined, JSON.stringify(first.act));
+  });
+  check("2a-ii. the sign-in's access token and ID Token carry teams, " +
+        "roles and tier (#549)", function () {
+    kit.assertChainClaims(cast, first, cast.webapp.identifier +
+                          "'s access token");
+    assert.ok(signedIn.id_token, "the sign-in returned no ID Token: " +
+              Object.keys(signedIn).join(", "));
+    kit.assertChainClaims(cast, kit.claimsOf(signedIn.id_token, "the ID " +
+                          "Token"), cast.webapp.identifier + "'s ID Token");
   });
 
   log.info("=== Hop 1: " + cast.gateway.identifier + " acts ===");
@@ -228,83 +267,166 @@ async function test() {
     assertActIs(second, { sub: actor1Claims.sub, iss: second.iss,
                           act: { sub: originalSub, iss: second.iss } },
                 cast.gateway.identifier + "'s exchanged token");
+    kit.assertChainClaims(cast, second, cast.gateway.identifier +
+                          "'s exchanged token");
   });
 
-  log.info("=== Hop 2: " + cast.esb.identifier + " acts ===");
+  log.info("=== Hop 2: " + cast.esb.identifier + " acts, once per " +
+           "service provider ===");
   const actor2 = await kit.clientCredentials(base, cast, cast.esb);
   let actor2Claims;
   check("2d. " + cast.esb.identifier + "'s actor token is about itself " +
         "and carries " + kit.COMMON_SCOPE, function () {
     actor2Claims = assertActorToken(cast, cast.esb, actor2.access_token);
   });
-  const hop2 = await kit.exchange(base, cast, cast.esb, hop1.access_token,
-                                  actor2.access_token);
-  let third;
-  const nested = { sub: "", iss: "",
-                  act: { sub: "", iss: "", act: { sub: "", iss: "" } } };
-  check("2e. " + cast.esb.identifier + "'s exchanged token: " + cast.user +
-        ", " + kit.COMMON_SCOPE + ", addressed to " + cast.provider.audience +
-        ", act naming " + cast.esb.identifier + " with " +
-        cast.gateway.identifier + " and then the original client " +
-        cast.webapp.identifier + " NESTED beneath it (#443), every entry " +
-        "with the token's iss (#471)", function () {
-    third = kit.assertChainToken(cast, hop2.access_token, {
-      what: cast.esb.identifier + "'s exchanged token",
-      audience: cast.provider.audience, clientId: cast.esb.identifier,
-      notAudience: [cast.gateway.identifier, cast.esb.audience,
-                    cast.webapp.identifier] });
-    nested.sub = actor2Claims.sub;
-    nested.act.sub = actor1Claims.sub;
-    nested.act.act.sub = originalSub;
-    // Every entry written by this realm: the token's own issuer at each
-    // level (#471) — and the same issuer that wrote the hop-1 token, whose
-    // two entries are copied beneath the new actor as they came.
-    assert.ok(third.iss, "the final token names its issuer");
-    assert.strictEqual(third.iss, second.iss, "both hops were issued by " +
-                       "the one authorization server");
-    nested.iss = third.iss;
-    nested.act.iss = third.iss;
-    nested.act.act.iss = third.iss;
-    assertActIs(third, nested, cast.esb.identifier + "'s exchanged token");
+  // #550: an actor_token is the exchanging client's own. esb1 presenting
+  // apigw1's token as its actor is refused, in every mode — without the
+  // rule the issued token's act would name apigw1, decided with apigw1's
+  // delegation settings.
+  const borrowed = await kit.tokenRequest(base, {
+    grant_type: kit.EXCHANGE_GRANT,
+    subject_token: hop1.access_token,
+    subject_token_type: kit.ACCESS_TOKEN_TYPE,
+    actor_token: actor1.access_token,
+    actor_token_type: kit.ACCESS_TOKEN_TYPE,
+    audience: providers[0].audience, scope: kit.COMMON_SCOPE },
+    kit.basicAuth(cast.esb.identifier,
+                  kit.secretOf(cast, cast.esb.identifier)));
+  check("2d-ii. " + cast.esb.identifier + " presenting " +
+        cast.gateway.identifier + "'s token as its actor_token is refused " +
+        "invalid_request (#550)", function () {
+    assert.strictEqual(borrowed.status, 400, borrowed.text.slice(0, 400));
+    assert.strictEqual(borrowed.json && borrowed.json.error,
+                       "invalid_request", borrowed.text.slice(0, 400));
+    assert.ok(!(borrowed.json && borrowed.json.access_token),
+              "no token was issued");
   });
-  log.info("=== The final access token's claims ===");
-  log.info(JSON.stringify(third, null, 2));
+  // The chain every provider's token carries: esb1, then apigw1, then the
+  // original client, every entry with the token's iss (#443, #471).
+  const nestedFor = function (iss) {
+    log.debug("Entering nestedFor().");
+    log.debug("Leaving nestedFor().");
+    return { sub: actor2Claims.sub, iss: iss,
+             act: { sub: actor1Claims.sub, iss: iss,
+                    act: { sub: originalSub, iss: iss } } };
+  };
+  const finals = [];
+  for (let i = 0; i < providers.length; i++) {
+    const provider = providers[i];
+    const letter = "efghij"[i];
+    // ALL THREE PERMISSIONS, none of which the subject token carries: read
+    // and write are delegated to esb1, admin is not (#549).
+    const asked = [kit.COMMON_SCOPE].concat(
+      cast.permissions.names.map(function (name) {
+        return kit.permissionId(provider, name);
+      }));
+    const hop = await kit.exchange(base, cast, cast.esb, hop1.access_token,
+                                   actor2.access_token,
+                                   { target: provider,
+                                     scope: asked.join(" ") });
+    let claims;
+    check("2" + letter + ". " + cast.esb.identifier + "'s exchanged token " +
+          "for " + provider.identifier + ": " + cast.user + ", addressed " +
+          "to " + provider.audience + ", act naming " + cast.esb.identifier +
+          " with " + cast.gateway.identifier + " and then " +
+          cast.webapp.identifier + " nested beneath it (#443, #471)",
+          function () {
+      claims = kit.assertChainToken(cast, hop.access_token, {
+        what: cast.esb.identifier + "'s exchanged token for " +
+              provider.identifier,
+        audience: provider.audience, clientId: cast.esb.identifier,
+        notAudience: [cast.gateway.identifier, cast.esb.audience,
+                      cast.webapp.identifier] });
+      assert.ok(claims.iss, "the token names its issuer");
+      assert.strictEqual(claims.iss, second.iss, "every hop was issued by " +
+                         "the one authorization server");
+      assertActIs(claims, nestedFor(claims.iss), cast.esb.identifier +
+                  "'s exchanged token for " + provider.identifier);
+    });
+    check("2" + letter + "-ii. " + provider.identifier + "'s token carries " +
+          "the delegated read and write the subject token did not, and " +
+          "NOT admin, which was not delegated (#549)", function () {
+      const scopes = kit.scopesOf(claims);
+      ["read", "write"].forEach(function (name) {
+        assert.ok(scopes.indexOf(name) >= 0, provider.identifier + "'s " +
+          "token should carry " + name + ", delegated to " +
+          cast.esb.identifier + ": scope=" + JSON.stringify(claims.scope));
+        assert.ok(kit.scopesOf(second).indexOf(name) < 0, "the subject " +
+          "token already carried " + name + "; the job no longer shows a " +
+          "delegated permission ADDED by the exchange: " +
+          JSON.stringify(second.scope));
+      });
+      assert.ok(scopes.indexOf("admin") < 0 &&
+                scopes.indexOf(kit.permissionId(provider, "admin")) < 0,
+        "A HUGE BUG: " + provider.identifier + "'s token carries admin, " +
+        "which was never delegated to " + cast.esb.identifier + ": scope=" +
+        JSON.stringify(claims.scope));
+      assert.ok(String(hop.scope || "").split(/\s+/).indexOf("admin") < 0,
+        "A HUGE BUG: the exchange response's scope names admin: " +
+        JSON.stringify(hop.scope));
+    });
+    check("2" + letter + "-iii. and teams, roles and tier (#549)",
+          function () {
+      kit.assertChainClaims(cast, claims, cast.esb.identifier +
+                            "'s exchanged token for " + provider.identifier);
+    });
+    finals.push({ provider: provider, hop: hop, claims: claims });
+  }
+  log.info("=== The final access tokens' claims ===");
+  finals.forEach(function (one) {
+    log.info(one.provider.identifier + ": " +
+             JSON.stringify(one.claims, null, 2));
+  });
 
-  const introspection = await kit.introspect(base, cast, hop2.access_token);
-  check("3. introspection at " + cast.provider.identifier + ": active, " +
-        cast.user + ", addressed to " + cast.provider.audience + ", " +
-        kit.COMMON_SCOPE + ", the same nested act back to " +
-        cast.webapp.identifier + " (#469)", function () {
-    assert.strictEqual(introspection.active, true,
-                       JSON.stringify(introspection));
-    assert.strictEqual(introspection.username, cast.user,
-                       JSON.stringify(introspection));
-    assert.ok(kit.audienceList(introspection)
-      .indexOf(cast.provider.audience) >= 0, JSON.stringify(introspection));
-    kit.assertCommonScope(introspection, "the introspection of the final " +
-                          "token");
-    // The chain as the token carries it, `iss` at every level (#471).
-    assertActIs(introspection, nested, "the introspection of the final " +
-                "token (RFC 8693 section 7.2, #469, #471)");
-  });
+  for (let i = 0; i < finals.length; i++) {
+    const one = finals[i];
+    const introspection = await kit.introspect(base, cast,
+                                               one.hop.access_token,
+                                               one.provider);
+    check("3" + "abcdef"[i] + ". introspection at " +
+          one.provider.identifier + ": active, " + cast.user + ", " +
+          "addressed to " + one.provider.audience + ", " + kit.COMMON_SCOPE +
+          " read write and no admin, the same nested act back to " +
+          cast.webapp.identifier + " (#469, #549)", function () {
+      assert.strictEqual(introspection.active, true,
+                         JSON.stringify(introspection));
+      assert.strictEqual(introspection.username, cast.user,
+                         JSON.stringify(introspection));
+      assert.ok(kit.audienceList(introspection)
+        .indexOf(one.provider.audience) >= 0, JSON.stringify(introspection));
+      kit.assertCommonScope(introspection, "the introspection of " +
+                            one.provider.identifier + "'s token");
+      const scopes = kit.scopesOf(introspection);
+      assert.ok(scopes.indexOf("read") >= 0 && scopes.indexOf("write") >= 0,
+                "introspection scope " + JSON.stringify(introspection.scope));
+      assert.ok(scopes.indexOf("admin") < 0, "A HUGE BUG: introspection of " +
+                one.provider.identifier + "'s token names admin: " +
+                JSON.stringify(introspection.scope));
+      assertActIs(introspection, nestedFor(one.claims.iss),
+                  "the introspection of " + one.provider.identifier +
+                  "'s token (RFC 8693 section 7.2, #469, #471)");
+    });
+  }
 
   log.info("=== The register and the picture ===");
   const since = await kit.registerSince(base, cast, baselineAt);
   const hops = [
     { clientId: cast.gateway.identifier, target: cast.esb.identifier,
       audience: cast.esb.audience, claims: second, subjectJti: first.jti,
-      actor: actor1Claims, actorSub: actor1Claims.sub },
-    { clientId: cast.esb.identifier, target: cast.provider.identifier,
-      audience: cast.provider.audience, claims: third,
-      subjectJti: second.jti, actor: actor2Claims,
-      actorSub: actor2Claims.sub }
-  ];
+      actor: actor1Claims, actorSub: actor1Claims.sub }
+  ].concat(finals.map(function (one) {
+    return { clientId: cast.esb.identifier,
+             target: one.provider.identifier,
+             audience: one.provider.audience, claims: one.claims,
+             subjectJti: second.jti, actor: actor2Claims,
+             actorSub: actor2Claims.sub };
+  }));
   const acts = hops.map(function (hop) {
     return kit.actProducing(since.acts, hop.claims.jti,
                             hop.clientId + "'s exchanged token");
   });
   hops.forEach(function (hop, i) {
-    check("4" + "ab"[i] + ". the register: one oauth-delegation act by " +
+    check("4" + "abcdef"[i] + ". the register: one oauth-delegation act by " +
           hop.actor.sub + " through " + hop.clientId + " for " + cast.user +
           " to " + hop.target + ", the actor token consumed, allowed by the " +
           "issuance policy" + (product ? ", policed, both tokens verified"
@@ -317,14 +439,15 @@ async function test() {
         product: product });
     });
   });
-  check("4c. the picture: a delegation line from " + cast.user + " to " +
-        "each actor, and " + cast.esb.identifier + " both reached and " +
-        "acting, ONE box in either mode (#468)",
+  check("4" + "abcdefg"[hops.length] + ". the picture: a delegation " +
+        "line from " + cast.user + " to each actor, and " +
+        cast.esb.identifier + " both reached and acting, ONE box in " +
+        "either mode (#468)",
         function () {
     kit.assertGraphIsAChain(cast, since.graph, hops, "delegation");
   });
 
-  assert.ok(checks >= 10, "only " + checks + " of 10 checks ran; a " +
+  assert.ok(checks >= 18, "only " + checks + " of 18 checks ran; a " +
             "section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -334,10 +457,12 @@ async function test() {
 const program = new Command();
 program
   .name("sts_token_exchange_chain_delegation")
-  .description("A web application, an API gateway, a service bus and a " +
-    "service provider: one sign-in and two RFC 8693 exchanges, each with " +
-    "the tier's own client_credentials token as actor_token (delegation), " +
-    "the nested act, app1-scope on every token, asserted on the wire, at " +
+  .description("A web application, an API gateway, a service bus and " +
+    "two service providers: one sign-in and RFC 8693 exchanges, each " +
+    "with the tier's own client_credentials token as actor_token " +
+    "(delegation), the nested act, app1-scope on every token, the " +
+    "delegated read and write kept and the undelegated admin dropped, " +
+    "roles, groups and a custom claim, asserted on the wire, at " +
     "introspection and in the delegation register.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))

@@ -373,9 +373,12 @@ function childMain() {
              .every(function (k) { return claims[k] !== undefined; }),
            '3b. section 2.2: iss, exp, aud, sub, client_id, iat and jti are ' +
            'all present', JSON.stringify(claims));
-      note(claims.iss === BASE && claims.aud === BASE + '/resource',
-           '3c. iss is this authorization server and aud its default ' +
-           'resource indicator', claims.iss + ' ' + claims.aud);
+      // #550: a client_credentials token asking for nothing is addressed to
+      // the client itself — its oauthAudience, or (none here) its client_id.
+      note(claims.iss === BASE && claims.aud === 'r9-client',
+           '3c. iss is this authorization server and aud, for a ' +
+           'client_credentials token that asked for nothing, the client ' +
+           'itself (#550)', claims.iss + ' ' + claims.aud);
       note(!('scope' in claims),
            '3d. section 2.2.3: a token granted no scope carries no scope ' +
            'claim', JSON.stringify(claims.scope));

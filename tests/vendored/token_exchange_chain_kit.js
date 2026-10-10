@@ -61,6 +61,21 @@
 // are `webapp1-<tag>`, `apigw1-<tag>`, `esb1-<tag>` and `sp1-<tag>`, with
 // audiences `https://<name>-<tag>.example.com`.
 //
+// AND, FOR THE DELEGATION JOB, TWO SERVICE PROVIDERS WITH PERMISSIONS
+// (#549). `castFor(tag, { permissions: true })` puts sp1 AND sp2 after
+// esb1, each exposing three delegated permissions — read, write and admin
+// (`oauthPermissionBaseUri` + `oauthPermission`) — of which read and write
+// are delegated to esb1 (`oauthDelegatedPermission`) and admin is not.
+// esb1 exchanges once per service provider, asking for all three, and the
+// issuance policy keeps the two it holds and DROPS admin. Each provider's
+// audience is its permission base, so a permission's audience and the
+// exchange's `audience` are one URI (RFC 9068 section 2.2.3). The same cast
+// carries ROLES, GROUPS AND A CUSTOM CLAIM: the person in a group that
+// holds a role, and every tier's groups claim (`teams`, by cn) and custom
+// access-token claim (`tier`), which every person-bearing token carries.
+// Without the option the cast is the four tiers it always was, which is
+// what the impersonation job and the other protocols' kits use.
+//
 // AND ITS OWN PERSON (#482). The scenario's person is `bob_end_user`, and
 // each job signs in as `bob_end_user-<tag>`. Every chain job sets a fresh
 // random password on its person before it signs in. While they shared one
@@ -97,6 +112,24 @@ const SECRET_METHODS = ["client_secret_basic", "client_secret_post"];
 // refresh token), and the one scope every access token must carry.
 const OIDC_SCOPE = "openid email profile offline_access";
 const COMMON_SCOPE = "app1-scope";
+// #549: the delegated permissions each service provider exposes, and the
+// ones delegated to esb1. ADMIN IS NEVER DELEGATED, and a token carrying it
+// is the bug the delegation job exists to catch.
+const PERMISSION_NAMES = ["read", "write", "admin"];
+const DELEGATED_PERMISSIONS = ["read", "write"];
+// #549: the claim settings every tier carries when the cast asks for them —
+// the groups claim under a name and in a form of its own (`teams`, the
+// group's cn) and one custom claim naming the person, on the access token
+// and, for the web application, the ID Token.
+const CLAIM_FIELDS = {
+  appGroupsClaim: "TRUE",
+  appGroupsClaimName: "teams",
+  appGroupsClaimValue: "cn",
+  oauthClaimsAccessToken: JSON.stringify(
+    [{ name: "tier", value: "gold-${username}" }])
+};
+const ID_TOKEN_CLAIMS = JSON.stringify(
+  [{ name: "tier", value: "gold-${username}" }]);
 // The scenario's person; each cast signs in as `<this>-<tag>` (#482).
 const USER = process.env.DELEGATION_USER || "bob_end_user";
 // Generated per process and never derivable: the entry outlives the run on a
@@ -122,8 +155,9 @@ function serviceBase() {
 // is the one table both the delegation policy and the hops are read from, so
 // the two cannot describe different chains.
 // ---------------------------------------------------------------------------
-function castFor(tag) {
+function castFor(tag, opts) {
   log.debug("Entering castFor(). tag=" + tag);
+  const withPermissions = !!(opts && opts.permissions);
   const named = function (stem, what, withAudience) {
     log.debug("Entering named(). " + stem);
     const identifier = stem + "-" + tag;
@@ -140,12 +174,38 @@ function castFor(tag) {
   gateway.next = esb.identifier;
   esb.next = provider.identifier;
   provider.next = "";
+  const providers = [provider];
+  if (withPermissions) {
+    // A permission's audience is its BASE with the separator the registry
+    // adds (`permissionBaseOf()`), so each provider registers that one URI
+    // as its audience and as its permission base.
+    const provider2 = named("sp2", "service provider", true);
+    provider2.next = "";
+    providers.push(provider2);
+    providers.forEach(function (one) {
+      one.audience = one.audience + "/";
+      one.permissionBase = one.audience;
+    });
+    esb.delegatesTo = providers.map(function (one) {
+      return one.identifier;
+    });
+  }
   const cast = {
     tag: tag, user: USER + "-" + tag, password: USER_PASSWORD,
     webapp: webapp, gateway: gateway, esb: esb, provider: provider,
-    tiers: [webapp, gateway, esb, provider],
+    providers: providers,
+    tiers: [webapp, gateway, esb].concat(providers),
     redirectUri: "https://" + webapp.identifier + ".example.com/callback",
-    secrets: {}
+    secrets: {},
+    // #549: the permissions each provider exposes, and the ones delegated
+    // to esb1 — admin never is.
+    permissions: withPermissions
+      ? { names: PERMISSION_NAMES, delegated: DELEGATED_PERMISSIONS }
+      : null,
+    // #549: roles, groups and a custom claim on every person's token.
+    claims: withPermissions,
+    team: "oauth-chain-" + tag + "-team",
+    role: "oauth-chain-" + tag + "-role"
   };
   capture.set({ protocol: "OAuth 2.0 token exchange (RFC 8693)" });
   log.debug("Leaving castFor().");
@@ -276,7 +336,7 @@ function policyFieldsFor(tier, semantics) {
   return {
     appDelegationSemantics: [semantics],
     appDefaultDelegationSemantics: semantics,
-    appAllowedToDelegateTo: [tier.next]
+    appAllowedToDelegateTo: tier.delegatesTo || [tier.next]
   };
 }
 
@@ -286,7 +346,20 @@ function fieldsFor(cast, tier, semantics) {
   if (tier.audience) {
     fields.oauthAudience = [tier.audience];
   }
+  if (cast.claims) {
+    Object.assign(fields, CLAIM_FIELDS);
+  }
+  if (cast.permissions && tier.permissionBase) {
+    // What this provider exposes (#549). The grants to esb1 are made after
+    // every entry exists: a permission must be defined before it can be
+    // granted, and esb1 is provisioned before the providers.
+    fields.oauthPermissionBaseUri = tier.permissionBase;
+    fields.oauthPermission = cast.permissions.names.slice();
+  }
   if (tier === cast.webapp) {
+    if (cast.claims) {
+      fields.oauthClaimsIdToken = ID_TOKEN_CLAIMS;
+    }
     fields.oauthAllowedScope = OIDC_SCOPE.split(" ").concat([COMMON_SCOPE]);
     fields.oauthTokenEndpointAuthMethod = ["none"];
     fields.oauthRedirectUri = [cast.redirectUri];
@@ -346,6 +419,9 @@ async function provisionCast(base, cast, semantics) {
   // mode. Cleared rather than assumed, because the entry is shared.
   await adminOk(base, "/users/set-may-act", { user: cast.user, delegate: "" },
                 "clearing " + cast.user + "'s stsMayAct");
+  if (cast.claims) {
+    await provisionGroupAndRole(base, cast);
+  }
   for (let i = 0; i < cast.tiers.length; i++) {
     const tier = cast.tiers[i];
     const fields = fieldsFor(cast, tier, semantics);
@@ -363,6 +439,9 @@ async function provisionCast(base, cast, semantics) {
                       value: secretOf(cast, tier.identifier) },
                     "setting " + tier.identifier + "'s client secret");
     }
+  }
+  if (cast.permissions) {
+    await delegatePermissions(base, cast);
   }
   for (let i = 0; i < cast.tiers.length; i++) {
     const tier = cast.tiers[i];
@@ -391,6 +470,88 @@ async function provisionCast(base, cast, semantics) {
   log.debug("Leaving provisionCast().");
 }
 
+// The person, in a group that holds a role (#549, `wstrust_chain_kit.js`'s
+// arrangement): created, or reconciled on a rerun. A create of something
+// already there, and a role given to a group that already holds it, are
+// answered "already" and moved past; a membership add is idempotent.
+async function provisionGroupAndRole(base, cast) {
+  log.debug("Entering provisionGroupAndRole().");
+  const tolerant = async function (path, body) {
+    log.debug("Entering tolerant(). " + path);
+    const r = await call("POST", base + "/admin-api" + path, body);
+    assert.ok(r.status === 200 || /already|exists/i.test(r.text),
+              path + ": " + r.status + " " + r.text.slice(0, 300));
+    log.debug("Leaving tolerant().");
+  };
+  await tolerant("/groups/create", { group: cast.team });
+  await adminOk(base, "/groups/add-member",
+                { group: cast.team, member: cast.user },
+                "putting " + cast.user + " in " + cast.team);
+  await tolerant("/roles/create-role", { role: cast.role });
+  await tolerant("/roles/add-member",
+                 { role: cast.role, kind: "group", member: cast.team });
+  log.info("[registry] " + cast.user + " is in " + cast.team + ", which " +
+           "holds " + cast.role + ".");
+  log.debug("Leaving provisionGroupAndRole().");
+}
+
+// A provider's permission identifier: its base and a name, as the registry
+// composes one (`permissionIdOf()`).
+function permissionId(provider, name) {
+  log.debug("Entering permissionId(). " + provider.identifier);
+  log.debug("Leaving permissionId().");
+  return provider.permissionBase + name;
+}
+
+// THE GRANTS (#549): read and write on every provider, delegated to esb1;
+// admin taken OFF esb1 where an earlier run, or anybody, left it — the
+// negative test means nothing if esb1 happens to hold it. Then read back.
+async function delegatePermissions(base, cast) {
+  log.debug("Entering delegatePermissions().");
+  const esb = cast.esb;
+  let entry = await registry.entryOf(base, esb.identifier);
+  let held = registry.valuesOf(entry && entry.fields &&
+                               entry.fields.oauthDelegatedPermission);
+  for (let p = 0; p < cast.providers.length; p++) {
+    const provider = cast.providers[p];
+    for (let n = 0; n < cast.permissions.names.length; n++) {
+      const name = cast.permissions.names[n];
+      const id = permissionId(provider, name);
+      const delegated = cast.permissions.delegated.indexOf(name) >= 0;
+      if (delegated && held.indexOf(id) < 0) {
+        await adminOk(base, "/applications/add",
+                      { application: esb.identifier,
+                        attribute: "oauthDelegatedPermission", value: id },
+                      "delegating " + id + " to " + esb.identifier);
+      } else if (!delegated && held.indexOf(id) >= 0) {
+        await adminOk(base, "/applications/remove",
+                      { application: esb.identifier,
+                        attribute: "oauthDelegatedPermission", value: id },
+                      "taking " + id + " off " + esb.identifier);
+      }
+    }
+  }
+  entry = await registry.entryOf(base, esb.identifier);
+  held = registry.valuesOf(entry && entry.fields &&
+                           entry.fields.oauthDelegatedPermission);
+  cast.providers.forEach(function (provider) {
+    cast.permissions.names.forEach(function (name) {
+      const id = permissionId(provider, name);
+      const delegated = cast.permissions.delegated.indexOf(name) >= 0;
+      assert.strictEqual(held.indexOf(id) >= 0, delegated, esb.identifier +
+        (delegated ? " should hold " : " must NOT hold ") + id +
+        " on oauthDelegatedPermission, and holds " + JSON.stringify(held));
+    });
+  });
+  log.info("[registry] " + esb.identifier + " holds " +
+           held.filter(function (one) {
+             return cast.providers.some(function (provider) {
+               return one.indexOf(provider.permissionBase) === 0;
+             });
+           }).join(", ") + "; admin on no provider.");
+  log.debug("Leaving delegatePermissions().");
+}
+
 // ---------------------------------------------------------------------------
 // TOKENS.
 // ---------------------------------------------------------------------------
@@ -415,8 +576,43 @@ async function tokenRequest(base, form, authorization) {
   }
   const r = await call("POST", base + "/oauth2/token", params.toString(),
                        headers);
+  logToken(form, r);
   log.debug("Leaving tokenRequest(). " + r.status);
   return r;
+}
+
+// TOKEN LOGGING, OFF UNLESS ASKED FOR: with STS_TOKEN_LOG set (any value),
+// every token request and its answer is one `[token-log] {...}` line in this
+// job's log, so a reviewer can read the chain hop by hop. The request's form
+// is logged without its credentials — the Authorization header (the client
+// secret) is never logged — and the answer whole, tokens included: these are
+// a throwaway realm's test tokens, and the switch is for a run made to read
+// them.
+function logToken(form, r) {
+  log.debug("Entering logToken().");
+  if (!process.env.STS_TOKEN_LOG) {
+    log.debug("Leaving logToken(). Off.");
+    return;
+  }
+  const request = {};
+  Object.keys(form || {}).forEach(function (k) {
+    if (k !== "client_secret" && k !== "client_assertion" &&
+        form[k] !== undefined && form[k] !== null && form[k] !== "") {
+      request[k] = form[k];
+    }
+  });
+  let answer = r && r.json;
+  if (!answer && r && r.text) {
+    try {
+      answer = JSON.parse(r.text);
+    } catch (e) {
+      log.debug("Caught in logToken(): " + ((e && e.message) || e));
+      answer = { raw: String(r.text).slice(0, 2000) };
+    }
+  }
+  log.info("[token-log] " + JSON.stringify({ at: new Date().toISOString(),
+    status: r && r.status, request: request, response: answer || null }));
+  log.debug("Leaving logToken().");
 }
 
 function claimsOf(token, what) {
@@ -663,17 +859,23 @@ async function clientCredentials(base, cast, tier) {
 // ONE HOP: `tier` exchanges `subjectToken` for a token addressed to the
 // tier after it — `audience` its REGISTERED URI — asking for app1-scope, and
 // with `actorToken` when the job sends one.
-async function exchange(base, cast, tier, subjectToken, actorToken) {
+// `options` (#549): `target`, the tier to address the token to where it
+// is not `tier.next`, and `scope`, the scope to ask for where it is not
+// app1-scope alone.
+async function exchange(base, cast, tier, subjectToken, actorToken,
+                        options) {
   log.debug("Entering exchange(). " + tier.identifier);
-  const next = cast.tiers.filter(function (one) {
-    return one.identifier === tier.next;
-  })[0];
+  const next = (options && options.target) ||
+    cast.tiers.filter(function (one) {
+      return one.identifier === tier.next;
+    })[0];
+  const scope = (options && options.scope) || COMMON_SCOPE;
   const r = await tokenRequest(base, {
     grant_type: EXCHANGE_GRANT,
     subject_token: subjectToken, subject_token_type: ACCESS_TOKEN_TYPE,
     actor_token: actorToken || "",
     actor_token_type: actorToken ? ACCESS_TOKEN_TYPE : "",
-    audience: next.audience, scope: COMMON_SCOPE },
+    audience: next.audience, scope: scope },
     basicAuth(tier.identifier, secretOf(cast, tier.identifier)));
   assert.strictEqual(r.status, 200, tier.identifier + "'s exchange for " +
                      next.audience + ": " + r.text.slice(0, 500));
@@ -694,13 +896,14 @@ async function exchange(base, cast, tier, subjectToken, actorToken) {
 
 // The issuer's own reading of a token, asked by the far end — sp1, which
 // authenticates (product introspection refuses an unauthenticated caller).
-async function introspect(base, cast, token) {
+async function introspect(base, cast, token, asTier) {
   log.debug("Entering introspect().");
+  const caller = asTier || cast.provider;
   const r = await call("POST", base + "/oauth2/introspect",
     "token=" + encodeURIComponent(token) + "&token_type_hint=access_token",
     { "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: basicAuth(cast.provider.identifier,
-                               secretOf(cast, cast.provider.identifier)) });
+      Authorization: basicAuth(caller.identifier,
+                               secretOf(cast, caller.identifier)) });
   assert.strictEqual(r.status, 200, "introspection: " + r.text.slice(0, 300));
   log.debug("Leaving introspect(). active=" + r.json.active);
   return r.json;
@@ -777,6 +980,29 @@ function assertChainToken(cast, token, expect) {
            "\", act=" + JSON.stringify(claims.act) + ", jti=" + claims.jti);
   log.debug("Leaving assertChainToken().");
   return claims;
+}
+
+// THE CLAIM SETTINGS (#549), on a token about the person: `teams` (the
+// groups claim by cn, the application's name for it, with no realm `groups`
+// beside it), `roles` with the cast's role, and the custom `tier`.
+function assertChainClaims(cast, claims, what) {
+  log.debug("Entering assertChainClaims(). " + what);
+  assert.deepStrictEqual(claims.teams, [cast.team], what + " should carry " +
+    "the groups claim as `teams` [" + cast.team + "] and carries " +
+    JSON.stringify(claims.teams));
+  assert.strictEqual(claims.groups, undefined, what + " carries the " +
+                     "realm's `groups` claim beside the application's: " +
+                     JSON.stringify(claims.groups));
+  assert.ok(Array.isArray(claims.roles) &&
+            claims.roles.indexOf(cast.role) >= 0,
+            what + " should carry " + cast.role + " in roles: " +
+            JSON.stringify(claims.roles));
+  assert.strictEqual(claims.tier, "gold-" + cast.user, what + "'s custom " +
+                     "claim tier is " + JSON.stringify(claims.tier));
+  log.info("[claims] " + what + ": teams=" + JSON.stringify(claims.teams) +
+           ", roles=" + JSON.stringify(claims.roles) + ", tier=" +
+           claims.tier);
+  log.debug("Leaving assertChainClaims().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1008,6 +1234,9 @@ module.exports = {
   // `gnap_chain_kit.js`'s webapp1 (#497).
   authorizationCode: authorizationCode,
   tokenRequest: tokenRequest,
+  // #550: a request made as one tier, for the job's own refusals.
+  basicAuth: basicAuth,
+  secretOf: secretOf,
   provisionCast: provisionCast,
   signIn: signIn,
   clientCredentials: clientCredentials,
@@ -1018,6 +1247,8 @@ module.exports = {
   scopesOf: scopesOf,
   assertCommonScope: assertCommonScope,
   assertChainToken: assertChainToken,
+  assertChainClaims: assertChainClaims,
+  permissionId: permissionId,
   registerBaseline: registerBaseline,
   registerSince: registerSince,
   actProducing: actProducing,

@@ -876,6 +876,8 @@ COMPOSE_ENV=(
   "SAML_KEYCLOAK_ADDRESS=${STS_NETWORK_PREFIX}.46"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
+  # The token-exchange chain job's token log, off unless the host sets it.
+  "STS_TOKEN_LOG=${STS_TOKEN_LOG:-}"
   # ---------------------------------------------------------------------
   # TLS ON THE MAIN PORT (2026-08-30), and the URL the runner dials with it.
   #

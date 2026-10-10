@@ -9327,6 +9327,34 @@ const CODES = [
       'whose second factor the client does not allow (appMfaMechanism, ' +
       '#475), and prompt=none forbids asking.',
     spec: 'login_required (OIDC Core 3.1.2.6)' },
+  { code: 'STS-OAUTH-0954',
+    summary: 'A token exchange asked for a delegated permission ' +
+      '(oauthPermissionBaseUri plus a name) that was not delegated to the ' +
+      'calling client (oauthDelegatedPermission), and the issuance ' +
+      'policy left it out of the issued token, in every mode (#549).',
+    spec: 'none: the token is issued with a narrower scope (RFC 6749 ' +
+      'section 3.3, RFC 8693 section 2.2.1)' },
+  { code: 'STS-OAUTH-0955',
+    summary: 'A token exchange presented an actor_token that was not ' +
+      'issued to the exchanging client: its client_id (or azp) names ' +
+      'another client, a token carrying neither does not name the ' +
+      'client in aud, or a client_credentials token is about another ' +
+      'client. Refused in every mode (#550).',
+    spec: 'invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0956',
+    summary: 'A token exchange presented an actor_token whose aud names ' +
+      'neither this authorization server (its issuer or token endpoint) ' +
+      'nor the exchanging client (its client_id, identifier or ' +
+      'oauthAudience). Refused in every mode (#550).',
+    spec: 'invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0957',
+    summary: 'A client asked, on a token whose subject is an application ' +
+      '(client_credentials), for an application permission no role it ' +
+      'holds authorizes (rolePermission), and the issuance policy left it ' +
+      'off the tokens. A delegated permission (oauthDelegatedPermission) ' +
+      'needs a person and does not count here (#551).',
+    spec: 'none — issued without that scope (RFC 6749 section 3.3); ' +
+      'invalid_scope when nothing else was asked for' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

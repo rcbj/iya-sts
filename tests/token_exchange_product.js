@@ -293,20 +293,28 @@ function childMain() {
                                             claims.aud,
                                             row && row.authorizedBy,
                                             row && row.intermediary]));
-      // a2. The actor named by a VERIFIED actor_token, not the client.
+      // a2. The actor named by a VERIFIED actor_token: the client's own
+      // client_credentials token, which since #550 is addressed to the
+      // client itself (it declares no oauthAudience, so its client_id).
       const frontCc = await post(port, Object.assign(
-        { grant_type: 'client_credentials' }, as('txp-front')));
-      const frontSub = frontCc.json.access_token
-        ? claimsOf(frontCc.json.access_token).sub : '';
-      r = await by('txp-imp', aliceToken(), { audience: BACK,
+        { grant_type: 'client_credentials', scope: 'api' },
+        as('txp-front')));
+      const frontClaims = frontCc.json.access_token
+        ? claimsOf(frontCc.json.access_token) : {};
+      const frontSub = frontClaims.sub || '';
+      note(frontCc.status === 200 && frontClaims.aud === 'txp-front',
+           P + 'a2-aud. a client_credentials token asking for nothing else ' +
+           'is addressed to the client itself (#550)',
+           frontCc.status + ' ' + JSON.stringify(frontClaims.aud));
+      r = await by('txp-front', aliceToken(), { audience: BACK,
         actor_token: String(frontCc.json.access_token || ''),
         actor_token_type: ACCESS });
       claims = r.json.access_token ? claimsOf(r.json.access_token) : {};
       note(r.status === 200 && claims.act && frontSub &&
            claims.act.sub === frontSub && frontSub ===
              clientSubIn(m, 'txp-front') && claims.act.iss === claims.iss,
-           P + 'a2. the actor_token\'s subject is the actor: S itself, ' +
-           'exchanging through another client — `act.sub` is its sub',
+           P + 'a2. the actor_token\'s subject is the actor: S presenting ' +
+           'its own token — `act.sub` is its sub',
            r.status + ' ' + JSON.stringify([claims.act, frontSub]));
       // a3. The original client is not nested beneath ITSELF (#443): S
       // exchanged the token it was issued, so the chain begins with S.
@@ -314,6 +322,39 @@ function childMain() {
            P + 'a3. the actor IS the client the subject token was issued ' +
            'to: nothing nested beneath it (#443)',
            r.status + ' ' + JSON.stringify(claims.act));
+      // a2-bound. #550, in every mode: ANOTHER client presenting S's token
+      // as its actor_token is refused — the actor is the caller's own.
+      r = await by('txp-imp', aliceToken(), { audience: BACK,
+        actor_token: String(frontCc.json.access_token || ''),
+        actor_token_type: ACCESS });
+      note(r.status === 400 && r.json.error === 'invalid_request' &&
+           !r.json.access_token && codeRecorded('STS-OAUTH-0955'),
+           P + 'a2-bound. another client presenting S\'s token as its ' +
+           'actor_token: refused (invalid_request, 0955) (#550)',
+           r.status + ' ' + JSON.stringify(r.json));
+      // a2-person. A person's token issued to another client is not this
+      // client's actor either.
+      r = await by('txp-imp', aliceToken(), { audience: BACK,
+        actor_token: aliceToken('txp-front'), actor_token_type: ACCESS });
+      note(r.status === 400 && r.json.error === 'invalid_request' &&
+           /issued to .txp-front./.test(String(r.json.error_description)),
+           P + 'a2-person. a token issued to another client, about a ' +
+           'person, as the actor_token: refused (0955) (#550)',
+           r.status + ' ' + JSON.stringify(r.json));
+      // a2-aud. S's own token, but addressed to another resource — the
+      // kind that resource holds and could replay: refused (0956).
+      const nowS = Math.floor(Date.now() / 1000);
+      const forBack = helpers.signJwt({ iss: 'https://127.0.0.1:' + port,
+        sub: frontSub, client_id: 'txp-front', typ: 'Bearer', aud: BACK,
+        scope: 'api', iat: nowS, nbf: nowS, exp: nowS + 600,
+        jti: 'txp-' + crypto.randomBytes(6).toString('hex') });
+      r = await by('txp-front', aliceToken(), { audience: BACK,
+        actor_token: forBack, actor_token_type: ACCESS });
+      note(r.status === 400 && r.json.error === 'invalid_request' &&
+           !r.json.access_token && codeRecorded('STS-OAUTH-0956'),
+           P + 'a2-aud. S\'s own token addressed to another resource as ' +
+           'its actor_token: refused (invalid_request, 0956) (#550)',
+           r.status + ' ' + JSON.stringify(r.json));
       // b. The same, actor = R holding the token S was handed — and the
       // chain BEGINS with S, the client that token was issued to (#443), in
       // the form a client's subject takes in the mode.

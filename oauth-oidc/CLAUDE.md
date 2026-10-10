@@ -3307,7 +3307,10 @@ scope is a key to this service's own API.
 functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,
 `permissionRefusal()` (a delegated permission not granted —
 `permission-not-granted`, product always, development with
-`oauth2.delegatedPermissionsEnforced`, both as request attributes), and the two
+`oauth2.delegatedPermissionsEnforced`, both as request attributes; NOT for an
+RFC 8693 exchange since #549, whose delegated permissions the exchange stage
+keeps when the caller holds them and drops when it does not, in every mode —
+`xacml/CLAUDE.md`), and the two
 RFC 9396 type questions in `authorization_details.ts` (`STS-OAUTH-0454` the
 client's registered types, `0455` the server's published ones). RFC 9396
 well-formedness stays in `parse()`. `xacml/CLAUDE.md` has the per-scope
@@ -5290,3 +5293,50 @@ Behind #496's `mode.issuesToUnregisteredApplications()` — the question is the
 same, whether a token is issued FOR something nobody registered — with a row
 of its own, `unregistered-resource-targets`, on `/admin/mode`. Development is
 unchanged. `tests/registered_targets.js` (T1–T4) holds it in both modes.
+
+## THE ACTOR IS THE CALLER'S OWN, AND A CLIENT'S OWN TOKEN IS ADDRESSED TO IT (#550, 2026-10-10)
+
+rcbj's two findings on the #549 chain, decided "both modes, one ticket":
+
+* **`actorTokenProblem()` (in `tokenGrant()`'s token-exchange branch)**,
+  asked after the actor_token's signature, type and revocation checks and
+  before the delegation policy, in EVERY mode (development applies it to
+  the claims it reads unverified). Rule 1, `STS-OAUTH-0955`: the token was
+  issued to the exchanging client (`client_id`, else `azp`; with neither,
+  `aud` names the client), and a `urn:sts:client:` subject names that
+  client. Rule 2, `STS-OAUTH-0956`: `aud` names this authorization server
+  (issuer, token endpoint) or the client (`clientAudienceNames()`: its
+  client_id, identifier, `oauthAudience`). Before #550 the actor was READ
+  from the token and never compared with the caller, so a resource server
+  sent another client's access token could act with that client's
+  delegation rights. Not asked of an assertion actor (#114) or a Native SSO
+  device secret (#130). These are validation of who the actor IS; what it
+  may do is still the issuance policy's.
+* **`clientCredentialsAudience()`**: a `client_credentials` request naming
+  no `resource`, no `authorization_details`, no scope that names an
+  application or permission, and no scope of this service's own resource
+  server (`protocolScopes()`, `scopePolicy.isProtected()`) gets `aud` = the
+  client's `oauthAudience` values, or its client_id — not RFC 9068's
+  `<issuer>/resource`. A request naming any of those keeps the old default,
+  so every resource server here accepts what it accepted. One consequence:
+  another resource server's introspection no longer reports such a token
+  active (`introspection_jwt.ts`'s `intendedFor()`), which is right — the
+  token is the client's.
+
+## A DELEGATED PERMISSION NEEDS A PERSON; AN APPLICATION'S COMES FROM A ROLE (#551, 2026-10-10)
+
+rcbj's decisions: every mode; role membership (#303/#310), no new attribute;
+no `roles` claim and no `.default`. `oauthDelegatedPermission` authorizes a
+permission only on a token whose subject is a person. On `client_credentials`
+(`issuanceSubjectOf()` answers `application`) every application permission
+— not only the ones a resource lists in `oauthRoleGatedPermission` — goes
+through `role_permissions.narrowScope()` with the fact
+`scope-application-permission`, and the issuance policy's
+`application-permission-not-authorized` drops one no held role authorizes
+(STS-OAUTH-0957; `invalid_scope` when nothing is left). `tokenSet()` asks
+`rolePermissions.asksFor(scope, subject)` rather than `asksForGated()`. The
+request-stage `permission-not-granted` no longer applies to
+`client_credentials`. An exchange of a client's own token is still judged
+as a person's at mint (the subject kind is read off the grant), and the
+#549 exchange rule still asks the caller's delegated grant.
+

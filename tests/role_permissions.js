@@ -47,6 +47,11 @@
 //      xacml.enabled off) the BUILT-IN policy decides, so gating never
 //      switches off — and with no decider at all the gate evaluates the
 //      built-in policy itself (#305).
+//   H. AN APPLICATION PERMISSION COMES FROM A ROLE (#551). On
+//      client_credentials an ungated permission the client holds only by
+//      delegation is left off (invalid_scope alone, STS-OAUTH-0957 either
+//      way) and issued once a role it holds authorizes it; a person's is
+//      unchanged.
 //
 // IN A THROWAWAY REALM, for the reason #302's test was: `run.js` runs every
 // file in one process, and a grant on the default realm's roster would
@@ -335,6 +340,59 @@ async function gatedPermission(t, names) {
   log.debug("Leaving gatedPermission().");
 }
 
+// #551: on client_credentials the client is the subject, and an
+// application permission comes from a ROLE it holds; a delegated grant
+// (oauthDelegatedPermission) needs a person and does not count.
+async function applicationPermission(t, names) {
+  log.debug("Entering applicationPermission().");
+  t.log.info('=== H. an application permission comes from a role (#551) ===');
+  const WRITE = RESOURCE_BASE + 'write';
+  t.check(!rolePermissions.isGated(WRITE) &&
+          rolePermissions.isApplicationPermission(WRITE),
+          'precondition: write is an ungated application permission');
+  t.check(applications.updateApplication(MACHINE, {
+    attribute: 'oauthDelegatedPermission', mode: 'add', value: WRITE }).ok,
+          'precondition: the client holds write by delegation');
+  t.check(rolePermissions.asksFor(WRITE, { kind: 'application',
+                                           name: MACHINE }) &&
+          !rolePermissions.asksFor(WRITE, { kind: 'user',
+                                            name: names.nobody }),
+          'H1. the role check takes an ungated permission for an ' +
+          'application subject and not for a person');
+  const before = audit.list().filter(function (row) {
+    return row.errorCode === 'STS-OAUTH-0957';
+  }).length;
+  const alone = await refusedWith(function () {
+    return machineToken(MACHINE, WRITE);
+  });
+  t.check(!!alone && alone.refusal.error === 'invalid_scope',
+          'H2. client_credentials asking only for a permission it holds by ' +
+          'delegation alone: invalid_scope',
+          alone ? JSON.stringify(alone.refusal) : 'issued');
+  const beside = await machineToken(MACHINE, 'api ' + WRITE);
+  t.check(String(beside.scope).split(' ').indexOf('write') < 0 &&
+          String(beside.scope).split(' ').indexOf('api') >= 0,
+          'H3. beside another scope, the permission is left off',
+          beside.scope);
+  t.check(audit.list().filter(function (row) {
+    return row.errorCode === 'STS-OAUTH-0957';
+  }).length > before, 'H4. and STS-OAUTH-0957 is recorded');
+  t.check(action({ action: 'create-role', role: 'rp-writers-' + RUN }).ok &&
+          action({ action: 'add-member', role: 'rp-writers-' + RUN,
+                   kind: 'application', member: MACHINE }).ok &&
+          action({ action: 'add-permission', role: 'rp-writers-' + RUN,
+                   permission: WRITE }).ok,
+          'precondition: a role authorizing write, held by the client');
+  const held = await machineToken(MACHINE, WRITE);
+  t.check(String(held.scope).split(' ').indexOf('write') >= 0,
+          'H5. holding the role, the client is issued it', held.scope);
+  const person = await refresh(names.nobody, 'openid ' + WRITE);
+  t.check(String(person.scope).split(' ').indexOf('write') >= 0,
+          'H6. a person\'s ungated permission is issued as before',
+          person.scope);
+  log.debug("Leaving applicationPermission().");
+}
+
 function heldAndCarried(t, realm, names) {
   log.debug("Entering heldAndCarried().");
   t.log.info('=== E. held ∩ carried ===');
@@ -564,6 +622,7 @@ async function run(t) {
     await gatedPermission(t, names);
     heldAndCarried(t, realm, names);
     pipRoles(t, names);
+    await applicationPermission(t, names);
     try {
       await thePolicyDecides(t, names);
     } finally {
