@@ -262,7 +262,16 @@ POST /oauth2/token
 
 In product mode, a scope not listed in `oauthAllowedScope` is refused with
 `invalid_scope`, and a public client (auth method `none`) is refused this
-grant with `unauthorized_client`. The seeded `sts-management-api` client is a
+grant with `unauthorized_client`.
+
+**The audience.** A request that names a `resource`, `authorization_details`,
+a scope naming another application or a delegated permission, or a scope of
+this service's own resource server (`openid` and the other OpenID Connect
+scopes, the SCIM, Shared Signals, management API and grant management scopes)
+gets the audience those name. A request that names none of these gets a token
+addressed to the client itself: its `oauthAudience` values, or its `client_id`
+when it declares none (#550). That is the token to send as an RFC 8693
+`actor_token`. The seeded `sts-management-api` client is a
 working example of this grant.
 
 ## Refresh token
@@ -542,6 +551,16 @@ POST /oauth2/token
   [&actor_token=<a token about the actor>
    &actor_token_type=urn:ietf:params:oauth:token-type:access_token]
 ```
+
+**The actor_token must be the client's own, in both modes (#550).** It must
+have been issued to the exchanging client: its `client_id` (or `azp`) is that
+client, and a token carrying neither names the client in `aud`. Its `aud` must
+also name this authorization server (its issuer or token endpoint) or the
+exchanging client (its `client_id`, identifier or `oauthAudience`). A client's
+own `client_credentials` token that asked for nothing else meets both. Anything
+else is refused with `invalid_request`: another client's token, or a token
+minted for some other resource, which that resource could replay as its own
+actor.
 
 **Modes.** Product mode enforces the policy, refusing with `invalid_request`
 or `invalid_target`. It also verifies both tokens and refuses a scope wider

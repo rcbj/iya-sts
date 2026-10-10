@@ -9334,6 +9334,19 @@ const CODES = [
       'policy left it out of the issued token, in every mode (#549).',
     spec: 'none: the token is issued with a narrower scope (RFC 6749 ' +
       'section 3.3, RFC 8693 section 2.2.1)' },
+  { code: 'STS-OAUTH-0955',
+    summary: 'A token exchange presented an actor_token that was not ' +
+      'issued to the exchanging client: its client_id (or azp) names ' +
+      'another client, a token carrying neither does not name the ' +
+      'client in aud, or a client_credentials token is about another ' +
+      'client. Refused in every mode (#550).',
+    spec: 'invalid_request (RFC 8693 section 2.2.2)' },
+  { code: 'STS-OAUTH-0956',
+    summary: 'A token exchange presented an actor_token whose aud names ' +
+      'neither this authorization server (its issuer or token endpoint) ' +
+      'nor the exchanging client (its client_id, identifier or ' +
+      'oauthAudience). Refused in every mode (#550).',
+    spec: 'invalid_request (RFC 8693 section 2.2.2)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

@@ -163,6 +163,11 @@ function assertActorToken(cast, tier, token) {
   assert.ok(claims.act === undefined, what + " carries act " +
             JSON.stringify(claims.act));
   kit.assertCommonScope(claims, what);
+  // #550: a client_credentials token that asked for nothing else is
+  // addressed to the client itself — its registered audience.
+  assert.deepStrictEqual(kit.audienceList(claims), [tier.audience],
+    what + " should be addressed to the tier itself (" + tier.audience +
+    ", #550) and its aud is " + JSON.stringify(claims.aud) + ".");
   log.info("[actor] " + what + ": sub=" + claims.sub + ", aud=" +
            JSON.stringify(claims.aud) + ", scope=\"" + claims.scope +
            "\", jti=" + claims.jti);
@@ -273,6 +278,28 @@ async function test() {
   check("2d. " + cast.esb.identifier + "'s actor token is about itself " +
         "and carries " + kit.COMMON_SCOPE, function () {
     actor2Claims = assertActorToken(cast, cast.esb, actor2.access_token);
+  });
+  // #550: an actor_token is the exchanging client's own. esb1 presenting
+  // apigw1's token as its actor is refused, in every mode — without the
+  // rule the issued token's act would name apigw1, decided with apigw1's
+  // delegation settings.
+  const borrowed = await kit.tokenRequest(base, {
+    grant_type: kit.EXCHANGE_GRANT,
+    subject_token: hop1.access_token,
+    subject_token_type: kit.ACCESS_TOKEN_TYPE,
+    actor_token: actor1.access_token,
+    actor_token_type: kit.ACCESS_TOKEN_TYPE,
+    audience: providers[0].audience, scope: kit.COMMON_SCOPE },
+    kit.basicAuth(cast.esb.identifier,
+                  kit.secretOf(cast, cast.esb.identifier)));
+  check("2d-ii. " + cast.esb.identifier + " presenting " +
+        cast.gateway.identifier + "'s token as its actor_token is refused " +
+        "invalid_request (#550)", function () {
+    assert.strictEqual(borrowed.status, 400, borrowed.text.slice(0, 400));
+    assert.strictEqual(borrowed.json && borrowed.json.error,
+                       "invalid_request", borrowed.text.slice(0, 400));
+    assert.ok(!(borrowed.json && borrowed.json.access_token),
+              "no token was issued");
   });
   // The chain every provider's token carries: esb1, then apigw1, then the
   // original client, every entry with the token's iss (#443, #471).
