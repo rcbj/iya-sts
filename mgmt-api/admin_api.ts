@@ -12132,7 +12132,7 @@ class AdminApi {
         },
         actions: [
           { action: 'register', operationId: 'registerSaml11RelyingParty',
-            summary: 'Register a relying party by identifier',
+            summary: 'Register a relying party and its assertion consumer',
             description: 'OPTIONAL, and it changes nothing about whether a ' +
                          'flow is accepted: this identity provider accepts ' +
                          'any identifier, and the first flow or metadata ' +
@@ -12150,16 +12150,24 @@ class AdminApi {
                          'identifier already in the registry — an identifier ' +
                          'names ONE application here whatever protocol ' +
                          'brought it, and a WS-Federation relying party ' +
-                         'taking 1.1 assertions is already one of these.',
+                         'taking 1.1 assertions is already one of these. ' +
+                         '`shire` is required and is recorded as the ' +
+                         'assertion consumer service. In product mode, the ' +
+                         'identity provider returns assertions only to an ' +
+                         'exactly registered address.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 rp: { type: 'string', description: 'The relying party\'s ' +
-                                                   'identifier.' }
+                                                   'identifier.' },
+                shire: { type: 'string', format: 'uri',
+                         description: 'The assertion consumer service URL ' +
+                           'registered on the relying party.' }
               },
-              required: ['rp'],
-              examples: [{ rp: 'urn:example:app' }],
+              required: ['rp', 'shire'],
+              examples: [{ rp: 'urn:example:app',
+                           shire: 'https://app.example.com/saml/acs' }],
               additionalProperties: false
             },
             responseDescription: 'The application entry, and where its ' +

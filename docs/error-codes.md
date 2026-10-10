@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4280** of them, in **45** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4281** of them, in **45** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 229
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 230
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 84
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
@@ -4490,6 +4490,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0848` *(retired)* | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which had no catalogue half (#493). Retired by #498: the set has a ticked catalogue like the other five, and the three actions act on it. | — |
 | `STS-ADMIN-0849` | An operator's rename of a person's passkey named nobody (#470). | HTTP 400 (API) |
 | `STS-ADMIN-0850` | An operator's rename of a person's passkey was refused: the name was not one, or no such key is registered for them (#470). | HTTP 400 (API) |
+| `STS-ADMIN-0851` | Registering a SAML 1.1 relying party was refused because no assertion consumer service URL was supplied. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

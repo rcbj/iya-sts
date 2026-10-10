@@ -7729,12 +7729,15 @@ function secretDestinationCredentialOf(identifier) {
 // wrong answer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// WHICH ADDRESSES AN OAUTH ENTRY MAY HOLD (2026-09-13).
+// WHICH DECLARED RETURN ADDRESSES MAY BE WRITTEN (2026-09-13).
 //
 // `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
 // is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
 // `oauthBackchannelLogoutUri` (2026-09-17, #36) is one this service POSTs a
 // Logout Token to, and takes the same http(s)-only rule.
+// `samlAssertionConsumerService` (2026-10-10, #291) is where a signed SAML
+// assertion is sent; the SAML 1.1 registration action now writes it with the
+// relying party and this same check applies to every other write.
 // Until this date none of the three was checked on the way in — at
 // registration, at a console `add` or at `/admin-api` — so `javascript:` could
 // be stored in all of them. The two redirect attributes were caught again at
@@ -7752,6 +7755,7 @@ function secretDestinationCredentialOf(identifier) {
 // own checks and `frontchannel_logout.js` checks again when it reads.
 // ---------------------------------------------------------------------------
 const ADDRESS_ATTRIBUTES = {
+  samlAssertionConsumerService: 'saml',
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
   oauthFrontchannelLogoutUri: 'frontchannel',
@@ -7774,7 +7778,9 @@ function addressProblem(attribute, value) {
     return commandProblem ? '"' + value + '" cannot be ' + attribute +
       ': it must be an https URL with no fragment.' : null;
   }
-  const problem = kind === 'frontchannel'
+  const problem = kind === 'saml'
+    ? validation.redirectUriProblem(String(value), { privateUse: false })
+    : kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
     : kind === 'backchannel'
       ? validation.backchannelUriProblem(String(value))
