@@ -419,6 +419,17 @@ function childMain() {
          /could not sign you in/.test(posted.text),
          '5. an assertion WITHOUT user verification is refused, whatever ' +
          'webauthn.userVerification says', posted.status);
+    // A REFUSED ATTEMPT DOES NOT ARM THE AUTOFILL AGAIN (2026-10-10): an
+    // authenticator that answers a conditional request unasked would loop.
+    note(dataAttribute(posted.text, 'autofill', 'wa-passkey') === '0' &&
+         !/autocomplete="username webauthn"/.test(posted.text) &&
+         /id="wa-passkey-go"/.test(posted.text),
+         '5b. and the screen it redraws keeps the passkey button but does ' +
+         'not start the autofill request again', posted.text.slice(0, 120));
+    s = await screenFor();
+    note(dataAttribute(s.screen.text, 'autofill', 'wa-passkey') !== '0' &&
+         /autocomplete="username webauthn"/.test(s.screen.text),
+         '5c. a fresh screen still offers the autofill');
 
     // 6. A handle nobody holds.
     s = await screenFor();
