@@ -5399,7 +5399,10 @@ class OAuth2Server {
     // refused `invalid_scope` only when nothing is left (#88 decision 2) —
     // carried out as RFC 9068's refusal is, so the token endpoint's one
     // wrapper answers it. See `common/role_permissions.ts`.
-    if (rolePermissions.asksForGated(opts.scope)) {
+    // #551: and for an APPLICATION subject (client_credentials), every
+    // application permission — it comes from a role, never from a
+    // delegated grant, which needs a person.
+    if (rolePermissions.asksFor(opts.scope, self.issuanceSubjectOf(opts))) {
       const narrowed = rolePermissions.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });

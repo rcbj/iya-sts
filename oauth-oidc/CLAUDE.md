@@ -5323,3 +5323,20 @@ rcbj's two findings on the #549 chain, decided "both modes, one ticket":
   active (`introspection_jwt.ts`'s `intendedFor()`), which is right — the
   token is the client's.
 
+## A DELEGATED PERMISSION NEEDS A PERSON; AN APPLICATION'S COMES FROM A ROLE (#551, 2026-10-10)
+
+rcbj's decisions: every mode; role membership (#303/#310), no new attribute;
+no `roles` claim and no `.default`. `oauthDelegatedPermission` authorizes a
+permission only on a token whose subject is a person. On `client_credentials`
+(`issuanceSubjectOf()` answers `application`) every application permission
+— not only the ones a resource lists in `oauthRoleGatedPermission` — goes
+through `role_permissions.narrowScope()` with the fact
+`scope-application-permission`, and the issuance policy's
+`application-permission-not-authorized` drops one no held role authorizes
+(STS-OAUTH-0957; `invalid_scope` when nothing is left). `tokenSet()` asks
+`rolePermissions.asksFor(scope, subject)` rather than `asksForGated()`. The
+request-stage `permission-not-granted` no longer applies to
+`client_credentials`. An exchange of a client's own token is still judged
+as a person's at mint (the subject kind is read off the grant), and the
+#549 exchange rule still asks the caller's delegated grant.
+

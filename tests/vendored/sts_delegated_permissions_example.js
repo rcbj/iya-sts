@@ -133,6 +133,8 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
+// The authorization code walk (#551: a delegated permission needs a person).
+const registry = require("./sts_applications.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -220,6 +222,10 @@ function successorOf(app) {
 // token and still pass the audience assertion while proving nothing.
 const SPENDER = APPS[0];
 const SPENT_ON = successorOf(SPENDER);
+// The redirect URI the spender's entry registers first (createTheFive
+// Applications() writes it), used by the code flow in theTokenSaysBothHalves.
+const SPENDER_REDIRECT_URI = "https://abcapp" + SPENDER.n +
+  ".example1.com/oauth2/callback";
 
 function permissionId(app, name) {
   log.debug("Entering permissionId().");
@@ -902,17 +908,26 @@ async function theTokenSaysBothHalves() {
   const wanted = PERMISSIONS.map(function (one) {
     return permissionId(SPENT_ON, one.name);
   });
-  // THE CLIENT AUTHENTICATES WITH THE SECRET ITS ENTRY HOLDS (2026-09-12),
-  // by the method the entry declares. Development checks it nowhere outside
-  // RFC 9700 mode; product mode refuses this request without it — the grant
-  // is client_credentials, which product mode refuses to a PUBLIC client
-  // outright (RFC 6749 section 4.4) and requires a CONFIDENTIAL one to
-  // authenticate for — and this example is meant to be copied.
-  const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(SPENDER.id) +
-      "&client_secret=" +
-      encodeURIComponent(SPENDER.id + "-not-a-real-secret") +
-      "&scope=" + encodeURIComponent(wanted.join(" "));
+  // A DELEGATED PERMISSION IS EXERCISED ON A PERSON'S BEHALF (#551), so the
+  // token is asked for by the authorization code flow: a person signs in to
+  // the client, which then redeems the code with the secret its entry holds.
+  // `client_credentials` has no person, and a delegated grant does not count
+  // there — an application's own permission comes from a role. The person is
+  // made for this run, with a password the product password policy accepts.
+  const person = "dpx-person-" + Date.now().toString(36);
+  const password = "Dpx-" + require("crypto").randomBytes(12)
+    .toString("base64url") + "-9a!";
+  await ok("/users/create", { username: person, invent: false,
+    credential: "password", password: password,
+    passwordConfirm: password }, "created the person the token is for");
+  const redirectUri = SPENDER_REDIRECT_URI;
+  const granted = await registry.authorizationCode(base, {
+    clientId: SPENDER.id, redirectUri: redirectUri, username: person,
+    password: password, scope: wanted.join(" ") });
+  const body = new URLSearchParams({ grant_type: "authorization_code",
+    code: granted.code, redirect_uri: redirectUri,
+    code_verifier: granted.verifier, client_id: SPENDER.id,
+    client_secret: SPENDER.id + "-not-a-real-secret" }).toString();
   const reply = await common.httpJson(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -963,6 +978,77 @@ async function theTokenSaysBothHalves() {
            claimOf(token, "scope") + "`, and two of " +
            intendedGrants().length + " grants now read as used.");
   log.debug("Leaving theTokenSaysBothHalves().");
+}
+
+// ---------------------------------------------------------------------------
+// AND WITH NO PERSON, THE PERMISSION COMES FROM A ROLE (#551).
+//
+// `client_credentials` has no person behind it, so the delegated grant the
+// spender holds does not count there: asked for by itself the permission is
+// not issued. An APPLICATION's own permission comes from a role it holds —
+// here an app role of the resource's (`<role>@<application>`, #310) whose
+// `rolePermission` names both permissions, with the spender as a member.
+// ---------------------------------------------------------------------------
+async function theClientCredentialsGrantNeedsARole() {
+  log.debug("Entering theClientCredentialsGrantNeedsARole().");
+  log.info("=== client_credentials: a delegated grant is not enough, an app " +
+           "role is ===");
+  const wanted = PERMISSIONS.map(function (one) {
+    return permissionId(SPENT_ON, one.name);
+  });
+  const ask = function () {
+    log.debug("Entering ask().");
+    log.debug("Leaving ask().");
+    return common.httpJson(tokenEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "grant_type=client_credentials&client_id=" +
+        encodeURIComponent(SPENDER.id) + "&client_secret=" +
+        encodeURIComponent(SPENDER.id + "-not-a-real-secret") +
+        "&scope=" + encodeURIComponent(wanted.join(" "))
+    });
+  };
+  const ROLE = "example-cc-access";
+  const ROLE_ID = ROLE + "@" + SPENT_ON.id;
+  // A run before this one may have left it; a role that is not there is
+  // refused, which is fine.
+  await post("/roles/delete-role", { role: ROLE_ID });
+  const without = await ask();
+  assert.ok(without.status === 400 && without.body &&
+            without.body.error === "invalid_scope",
+    "WITHOUT A ROLE, client_credentials asking only for permissions the " +
+    "client holds by DELEGATION is refused invalid_scope: a delegated " +
+    "permission is exercised on a person's behalf, and there is none here " +
+    "(#551). It answered " + without.status + " " +
+    String(without.raw).slice(0, 300));
+  await ok("/roles/create-role", { role: ROLE, application: SPENT_ON.id },
+           "created an app role of " + SPENT_ON.id);
+  await ok("/roles/add-member", { role: ROLE_ID, kind: "application",
+                                  member: SPENDER.id },
+           "made " + SPENDER.id + " a member of " + ROLE_ID);
+  for (let i = 0; i < wanted.length; i++) {
+    await ok("/roles/add-permission", { role: ROLE_ID,
+                                        permission: wanted[i] },
+             "authorized " + wanted[i] + " by " + ROLE_ID);
+  }
+  const withRole = await ask();
+  assert.strictEqual(withRole.status, 200,
+    "WITH THE APP ROLE, client_credentials is issued the permissions; it " +
+    "answered " + withRole.status + " " + String(withRole.raw).slice(0, 300));
+  const token = withRole.body.access_token;
+  const audience = claimOf(token, "aud");
+  assert.ok([].concat(audience).indexOf(SPENT_ON.baseUri) >= 0,
+    "the token is addressed to " + SPENT_ON.baseUri + "; it carried " +
+    JSON.stringify(audience));
+  const scopes = String(claimOf(token, "scope")).split(/\s+/);
+  assert.ok(scopes.indexOf("read") >= 0 && scopes.indexOf("write") >= 0,
+    "and carries read and write; it carried " + claimOf(token, "scope"));
+  assert.strictEqual(claimOf(token, "client_id"), SPENDER.id,
+    "and it is the client's own token");
+  await ok("/roles/delete-role", { role: ROLE_ID }, "removed " + ROLE_ID);
+  log.info("[client_credentials] OK — refused without a role, issued " +
+           "read and write through " + ROLE_ID + ".");
+  log.debug("Leaving theClientCredentialsGrantNeedsARole().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1155,7 @@ async function test() {
   await thePictureIsARingAndNotAnActsDiagram();
   await theRingIsOneGroup();
   await theTokenSaysBothHalves();
+  await theClientCredentialsGrantNeedsARole();
 
   // NO TEARDOWN, and this line is where a reader is told so rather than
   // discovering it. See this file's header for the argument.
