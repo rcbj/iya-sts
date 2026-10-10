@@ -1366,16 +1366,18 @@ class ApplicationsPage {
         // sp_metadata.ts.
         { id: 'tab-metadata',
           label: t.text('consoleApplications.a2.tabMetadata'),
-          html: !forFamilies(['saml2'],
-            'x') ? '' : (metadataUrl
+          html: forFamilies(['saml2', 'saml11'], metadataUrl
           ? '<h2>' + t.html('consoleApplications.a2.spMetadataHeading') +
             '</h2>' +
             kit.note(t.html('consoleApplications.a2.spMetadataA') + '<code>' +
                       kit.esc(metadataUrl) +
-            '</code>' + t.html('consoleApplications.a2.spMetadataB') + '<a ' +
-            'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
-            '">' + t.html('consoleApplications.a2.saml2Page') + '</a>' +
-            t.html('consoleApplications.a2.spMetadataC')) +
+            '</code>' + t.html('consoleApplications.a2.spMetadataB') +
+            (declaredHere.indexOf('saml2') >= 0
+              ? '<a href="/admin/saml2?sp=' +
+                encodeURIComponent(row.identifier) + '">' +
+                t.html('consoleApplications.a2.saml2Page') +
+                '</a>' + t.html('consoleApplications.a2.spMetadataC')
+              : '')) +
             '<form method="post" action="/admin/applications">' + carryBack +
             '<div class="formrow">' +
             '<input type="hidden" name="action" value="refresh-metadata">' +

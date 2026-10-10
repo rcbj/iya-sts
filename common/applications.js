@@ -2556,12 +2556,15 @@ const SCHEMA = {
     { name: 'samlAcsEndpoint', kind: 'multi', from: 'consumed metadata',
       what: 'An <md:AssertionConsumerService> from the consumed metadata, as ' +
             '`<index> <isDefault> <binding> <location>` — isDefault is ' +
-            '`true`, `false` or `-` for unstated. An AuthnRequest naming an ' +
-            'AssertionConsumerServiceIndex is answered at that endpoint and ' +
-            'on its binding; one naming an AssertionConsumerServiceURL must ' +
-            'name one of these (in EVERY mode, once metadata has been ' +
-            'consumed); one naming neither goes to the default endpoint ' +
-            '(saml-metadata-2.0-os section 2.2.3).' },
+            '`true`, `false` or `-` for unstated. A SAML 2.0 AuthnRequest ' +
+            'naming an AssertionConsumerServiceIndex is answered at that ' +
+            'endpoint and on its binding; one naming an ' +
+            'AssertionConsumerServiceURL must name one of these (in EVERY ' +
+            'mode, once metadata has been consumed); one naming neither ' +
+            'goes to the default endpoint (saml-metadata-2.0-os section ' +
+            '2.2.3). SAML 1.1 uses the registered binding and location to ' +
+            'select Browser/POST or Browser/Artifact when no profile is ' +
+            'explicitly requested.' },
     { name: 'samlSloEndpoint', kind: 'multi', from: 'consumed metadata',
       what: 'An <md:SingleLogoutService> from the consumed metadata, as ' +
             '`<binding> <location>` or `<binding> <location> ' +
@@ -16090,7 +16093,8 @@ function replaceSamlMetadataFields(identifier, replacements, options) {
   }
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
-    protocol: 'SAML 2.0', channel: 'internal', target: String(identifier),
+    protocol: opts.protocol || 'SAML 2.0', channel: 'internal',
+    target: String(identifier),
     summary: 'Application "' + identifier + '": its service provider ' +
              'metadata was consumed (' + (opts.how || 'unstated') + ')',
     detail: { identifier: String(identifier),

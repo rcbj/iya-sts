@@ -1060,7 +1060,10 @@ general, because every other action on the page is synchronous and a
 2.0 page also draws the consumed document's STATE (fresh, stale, expired), what
 the background refresher last found, and the realm's metadata trust anchors,
 all out of `admin-core/admin_views.ts`'s view model, so `/admin-api/saml2?sp=`
-shows the same.
+shows the same. The application detail page's explicit refresh is available for
+both `saml2` and `saml11` entries; the new-application form offers
+`samlSpMetadata` for both, and consuming it configures the shared ACS and
+certificate fields.
 
 **THE FIELD NAMES ARE THE SCHEMA'S OWN, PREFIXED `field.`**, and both halves of
 that are deliberate. The prefix is what lets `applicationFieldsFrom()` tell an
@@ -1097,8 +1100,8 @@ page shows only what its declaration covers**: the field grid draws a field
 only for a declared family (or one every family shares), a family's
 configuration tab goes when it is unticked, and the Credentials, Software
 statements and Permissions tabs need an OAuth family, Shared Signals `ssf`, and
-SP metadata `saml2`. Values already stored on an undeclared family's attributes
-stay on the entry and in the Directory entry tab.
+SP metadata `saml2` or `saml11`. Values already stored on an undeclared
+family's attributes stay on the entry and in the Directory entry tab.
 
 Three things about it are decisions rather than mechanics:
 
@@ -7561,4 +7564,3 @@ furniture (`perPageForm`, `perPageOptions`, `sectionSearchForm`), `upTo`
 and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
 the settings block are done. **A page that draws a settings block has it as
 `view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
-

@@ -391,8 +391,8 @@ const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
 // answer began saying which fields its simplified view offers. They are not
 // setting overrides — nothing in config.js corresponds to them —
 // so they are not in `overridableSettings()` and would otherwise appear on no
-// form at all. They are conditional on SAML 2.0 like everything else in that
-// family.
+// form at all. The metadata fields are shared by the SAML 2.0 and SAML 1.1
+// families.
 //
 // `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
 // same shape rule the field grid follows: a document is not something

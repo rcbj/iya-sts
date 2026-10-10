@@ -161,6 +161,7 @@ const CLAIM_NS = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims';
 const NS_SAML = 'urn:oasis:names:tc:SAML:1.0:assertion';
 
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:1.0:protocol';
+const NS_SAMLP11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
 
 const CM_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 
@@ -693,6 +694,103 @@ async function main() {
     },
     why: 'the relying party providerId names in every flow below'
   });
+
+  heading('SAML 1.1-only service-provider metadata');
+  const metadataRp = RP + ':metadata';
+  const metadataAcs = BASE + '/saml11/rp/artifact-' + runStamp();
+  const newApplication = await request('GET',
+    '/admin-api/applications/new');
+  const newApplicationFields = JSON.parse(newApplication.body).fields || [];
+  const metadataField = newApplicationFields.filter(function (one) {
+    return one.attribute === 'samlSpMetadata';
+  })[0];
+  check('the new-application form offers metadata for SAML 1.1',
+        metadataField &&
+        Array.isArray(metadataField.families) &&
+        metadataField.families.indexOf('saml11') >= 0,
+        JSON.stringify(metadataField || null));
+  await registry.provision(registry.baseOf(BASE), {
+    identifier: metadataRp,
+    name: 'SAML 1.1 metadata-only relying party',
+    protocols: ['saml11'],
+    fields: { samlEntityId: [metadataRp] },
+    why: 'the metadata-only relying party used to test SAML 1.1 descriptor ' +
+         'consumption'
+  });
+  const metadataDocument =
+    '<md:EntityDescriptor xmlns:md="' +
+    'urn:oasis:names:tc:SAML:2.0:metadata" entityID="' + metadataRp + '">' +
+    '<md:SPSSODescriptor protocolSupportEnumeration="' + NS_SAMLP11 + '">' +
+    '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
+    'http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>' +
+    rpSigning.certB64 + '</ds:X509Certificate></ds:X509Data></ds:KeyInfo>' +
+    '</md:KeyDescriptor><md:AssertionConsumerService index="0" ' +
+    'isDefault="true" Binding="urn:oasis:names:tc:SAML:1.0:profiles:' +
+    'artifact-01" Location="' + metadataAcs + '"/>' +
+    '</md:SPSSODescriptor></md:EntityDescriptor>';
+  const createdMetadataRp = metadataRp + ':create';
+  const createdMetadataAcs = metadataAcs + '-create';
+  const createdMetadataDocument = metadataDocument
+    .replace(metadataRp, createdMetadataRp)
+    .replace(metadataAcs, createdMetadataAcs);
+  const createdMetadata = await registry.provision(
+    registry.baseOf(BASE), {
+      identifier: createdMetadataRp,
+      name: 'SAML 1.1 metadata configured at creation',
+      protocols: ['saml11'],
+      fields: { samlEntityId: [createdMetadataRp],
+                samlSpMetadata: createdMetadataDocument },
+      why: 'the new-application form consumes supplied SAML 1.1 metadata'
+    });
+  const createdMetadataAcsValue = registry.valuesOf(
+    createdMetadata.attributes.samlAcsEndpoint).join(' ');
+  check('creating a SAML 1.1 application consumes its metadata field',
+        createdMetadataAcsValue.indexOf(createdMetadataAcs) >= 0 &&
+        registry.valuesOf(createdMetadata.attributes.samlSigningCertificate)
+          .indexOf(rpSigning.certB64) >= 0,
+        createdMetadataAcsValue);
+  res = await api('/admin-api/saml2/upload-metadata',
+                  { sp: metadataRp, document: metadataDocument });
+  const metadataUpload = JSON.parse(res.body);
+  check('SAML 1.1-only metadata upload is consumed',
+        res.status === 200 && metadataUpload.ok,
+        'status ' + res.status + ' ' +
+        JSON.stringify(metadataUpload.errors || metadataUpload.message));
+  check('its ACS and signing certificate are registered',
+        metadataUpload.assertionConsumerServices &&
+        metadataUpload.assertionConsumerServices.indexOf(metadataAcs) >= 0 &&
+        metadataUpload.signingCertificates === 1,
+        JSON.stringify(metadataUpload));
+
+  const metadataFlow = await signIn({
+    providerId: metadataRp, shire: metadataAcs, TARGET: target
+  }, USER_ARTIFACT);
+  const metadataLocation = metadataFlow.headers.location || '';
+  const metadataArtifact = decodeURIComponent(
+    (/[?&]SAMLart=([^&]+)/.exec(metadataLocation) || [])[1] || '');
+  check('the registered artifact binding selects Browser/Artifact without ' +
+        'profile',
+        metadataFlow.status === 303 && !!metadataArtifact,
+        'status ' + metadataFlow.status + ' ' + metadataLocation);
+  if (metadataArtifact) {
+    const metadataRequestId = '_metadata' + Date.now();
+    const metadataResolve = await request('POST', '/saml11/responder',
+      samlRequest('<samlp:AssertionArtifact>' + metadataArtifact +
+                  '</samlp:AssertionArtifact>', metadataRequestId), XML);
+    const metadataAssertion = byLocal(parse(metadataResolve.body), 'Assertion');
+    check('the metadata-registered signing key resolves the artifact',
+          metadataResolve.status === 200 &&
+          statusOf(parse(metadataResolve.body)) === 'samlp:Success' &&
+          !!metadataAssertion,
+          'status ' + metadataResolve.status + ' ' +
+          statusOf(parse(metadataResolve.body)));
+    check('the resolved assertion is bound to the artifact',
+          !!metadataAssertion &&
+          textOf(metadataAssertion, 'ConfirmationMethod') === CM_ARTIFACT,
+          metadataAssertion ? textOf(metadataAssertion, 'ConfirmationMethod')
+                            : 'no assertion');
+  }
+
   if (!scopedEntityId) {
     // Product (#112): the scoped document exists now that `RP` is registered.
     res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));

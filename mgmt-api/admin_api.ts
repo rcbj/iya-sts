@@ -12016,10 +12016,17 @@ class AdminApi {
                          'service provider is refused — and past the ' +
                          'cacheDuration a document with a URL is fetched ' +
                          'again in the background. An EntitiesDescriptor ' +
-                         'is read for this entity.\n\nREFUSED, changing ' +
+                         'is read for this entity. The protocol URI is ' +
+                         'selected from the application declaration: ' +
+                         'SAML 1.1 is selected only for an entry declared ' +
+                         'for `saml11` and not `saml2`; SAML 2.0 remains ' +
+                         'the choice for SAML 2.0, dual-protocol and ' +
+                         'undeclared entries. This operation can therefore ' +
+                         'consume SAML 1.1-only metadata as well.\n\n' +
+                         'REFUSED, changing ' +
                          'nothing, for: a document that is not an ' +
                          'EntityDescriptor (or an aggregate holding exactly ' +
-                         'one for this entity) with a SAML 2.0 ' +
+                         'one for this entity) with the selected ' +
                          'SPSSODescriptor; an entityID that ' +
                          'is not this service provider\'s; a validUntil ' +
                          'already passed; an encryption certificate this ' +

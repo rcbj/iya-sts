@@ -732,7 +732,9 @@ derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
 of every add or set of `samlSigningCertificate` and
 `samlSpMetadataSigningCertificate` (an X.509 certificate whose key makes an XML
 signature this service verifies — RSA, EC, EdDSA, DSA, ML-DSA or SLH-DSA —
-`STS-REG-0160`). An explicit
+`STS-REG-0160`). The metadata writer takes the selected protocol label for its
+audit row; SAML 1.1-only applications are recorded as SAML 1.1, while the
+legacy and SAML 2.0 paths retain SAML 2.0. An explicit
 `add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
 certificate is a separate attribute where a return address is a mark, and the
 two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and

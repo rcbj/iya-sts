@@ -1018,7 +1018,11 @@ certificate, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`,
 `samlSpWantAssertionsSigned`, `samlSpMetadataValidUntil`,
 `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt` and
 `samlSpMetadataSignature`. A later consumption retires the endpoint locations
-the previous one wrote and leaves the ones an operator added by hand.
+the previous one wrote and leaves the ones an operator added by hand. It reads
+the SAML 1.1 SPSSODescriptor only for an application declared for `saml11` and
+not `saml2`; all other entries keep the SAML 2.0 selection. The shared ACS
+representation is what lets `saml11_sso.ts` infer Browser/POST versus
+Browser/Artifact from the registered `shire`, without a `profile` parameter.
 
 **It is a trust act because only an operator can cause it**: a refresh dials the
 URL an administrator put on the entry (never one from a request), when an
@@ -1035,9 +1039,10 @@ recorded `signed-not-verified`: verifying it against a key inside the same
 document would be the decoration the request check refuses.
 
 **Refused, writing nothing**: not an EntityDescriptor (or an
-EntitiesDescriptor holding exactly one for this entity) with a SAML 2.0
-SPSSODescriptor; an entityID that is not this application's (`STS-SAML-0066`); a
-passed validUntil (`0068`); an unusable encryption certificate (`0053`, as
+EntitiesDescriptor holding exactly one for this entity) with the SPSSODescriptor
+for the application's declared profile; an entityID that is not this
+application's (`STS-SAML-0066`); a passed validUntil (`0068`); an unusable
+encryption certificate (`0053`, as
 before); a metadata signature that does not verify (`0065`); an upload over
 `saml2.spMetadataMaxBytes` (`0067`). **A document with no encryption certificate
 is no longer refused** — it was, while the encryption certificate was the only
