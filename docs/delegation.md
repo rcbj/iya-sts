@@ -202,6 +202,13 @@ mode — are listed in [XACML](xacml.html).
   `subject_token` and optionally an `actor_token`. In product mode each must
   be a token this realm signed and has not revoked, or an assertion from an
   issuer the realm declared ([below](#assertions-as-the-subject-or-the-actor)).
+* **An `actor_token` is the exchanging client's own, in every mode (#550).**
+  It must have been issued to that client, and be addressed to it or to this
+  authorization server. A client's own `client_credentials` token that asks
+  for nothing else is addressed to the client, so it is the token to send.
+  A client presenting another client's token is refused with
+  `invalid_request`. Otherwise the token's `act` would name the other client,
+  and the policy would decide with that client's settings.
 * `exchange_semantics=delegation|impersonation` is this service's extension
   for asking. Any other value, or the parameter sent twice, is
   `invalid_request` in every mode.

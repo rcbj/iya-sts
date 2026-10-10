@@ -7994,6 +7994,214 @@ class OAuth2Server {
   // a code is minted and the token endpoint above the grant switch.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // THE NAMES A CLIENT ANSWERS TO AS AN AUDIENCE (#550): its client_id, the
+  // registry identifier of its entry, and every `oauthAudience` it declares.
+  // Two readers: a `client_credentials` token's default audience, and the
+  // actor_token rule that a token presented as the actor is addressed to
+  // the exchanging client (or to this authorization server).
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the names a client answers to as an audience: the declared
+   * `oauthAudience` values first, then its client_id and registry identifier.
+   *
+   * @param clientId - the client_id
+   * @returns `{ declared, all }`: the declared audiences, and every name
+   */
+  clientAudienceNames(clientId: Json): Json {
+    const { log, applications } = this.deps;
+    log.debug("Entering OAuth2Server.clientAudienceNames().");
+    const id = String(clientId == null ? '' : clientId).trim();
+    const declared: string[] = [];
+    const all: string[] = [];
+    const add = function (list: string[], one: Json) {
+      const text = String(one == null ? '' : one).trim();
+      if (text && list.indexOf(text) < 0) {
+        list.push(text);
+      }
+    };
+    let entry: Json = null;
+    try {
+      entry = id ? (applications.forClientId(id) || applications.get(id))
+        : null;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.clientAudienceNames(): " +
+                ((e && e.message) || e));
+      entry = null;
+    }
+    const fields = (entry && entry.fields) || {};
+    const audiences = fields.oauthAudience;
+    (Array.isArray(audiences) ? audiences
+      : (audiences ? [audiences] : [])).forEach(function (one: Json) {
+      add(declared, one);
+      add(all, one);
+    });
+    add(all, id);
+    if (entry) {
+      add(all, entry.identifier);
+    }
+    log.debug("Leaving OAuth2Server.clientAudienceNames(). " +
+              declared.length + " declared, " + all.length + " in all.");
+    return { declared: declared, all: all };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A client_credentials TOKEN IS ADDRESSED TO THE CLIENT ITSELF BY DEFAULT
+  // (#550, 2026-10-10).
+  //
+  // RFC 9068 section 3 requires a default resource indicator when a request
+  // names none, and every grant here used `<issuer>/resource`, this service's
+  // demonstration resource. For a client's own token — no person, nothing
+  // asked for — that names nothing the token is for; the token most often
+  // goes back to this server as an RFC 8693 actor_token, which section 2.1
+  // defines as representing the acting party. So the default for this grant
+  // alone is the CLIENT: its declared `oauthAudience`, or its client_id.
+  //
+  // ONLY WHEN THE REQUEST ASKED FOR NOTHING ELSE. A `resource`, an
+  // `authorization_details`, a scope naming an application or a delegated
+  // permission (each derives its own audience in `accessTokenPlan()`), or a
+  // scope of THIS service's resource server (OpenID Connect's, SCIM's,
+  // OpenID4VCI's, the protected scopes) keeps today's default, so every
+  // resource server here still accepts what it accepted.
+  // ---------------------------------------------------------------------------
+  /**
+   * The audience a `client_credentials` token takes when the request named
+   * nothing: the client's own, or an empty list to keep the default.
+   *
+   * @param clientId - the client
+   * @param scope - the requested scope
+   * @param details - the requested authorization details
+   * @returns the audiences, or an empty list
+   */
+  clientCredentialsAudience(clientId: Json, scope: Json,
+                            details: Json): Json {
+    const { log, scopePolicy } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.clientCredentialsAudience().");
+    if (Array.isArray(details) ? details.length : !!details) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+                "authorization_details name their own resource.");
+      return [];
+    }
+    const asked = String(scope || '').split(/\s+/).filter(Boolean);
+    const reserved = self.protocolScopes();
+    const ownServer = asked.filter(function (one) {
+      return reserved.indexOf(one) >= 0 || scopePolicy.isProtected(one);
+    });
+    if (ownServer.length) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+                "A scope of this service's resource server: " +
+                ownServer.join(', ') + ".");
+      return [];
+    }
+    if (self.audienceScopes(scope, clientId).audiences.length) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). The " +
+                "scope names an audience.");
+      return [];
+    }
+    const names = self.clientAudienceNames(clientId);
+    const id = String(clientId == null ? '' : clientId).trim();
+    const audience = names.declared.length ? names.declared
+      : (id ? [id] : []);
+    log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+              (audience.join(', ') || '(none)') + ".");
+    return audience;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN actor_token IS THE EXCHANGING CLIENT'S OWN, AND ADDRESSED TO IT OR TO
+  // THIS SERVER (#550, 2026-10-10), IN EVERY MODE.
+  //
+  // RFC 8693 section 2.1: the actor_token is "a security token that
+  // represents the identity of the acting party", and its validation is the
+  // authorization server's. Until #550 it was checked for its signature, its
+  // declared type and its revocation, and the actor was then READ from it
+  // (`sub`, `client_id`) and never compared with the client that
+  // authenticated. So a resource server sent another client's access token
+  // could authenticate as itself, present that token as its actor_token, and
+  // be issued a token whose `act` named the other client — decided by the
+  // delegation policy with the OTHER client's settings. Any bearer token
+  // about a client was a key to its delegation rights.
+  //
+  // Two rules, both about who the actor IS rather than what it may do (the
+  // issuance policy decides the latter, after this):
+  //
+  //   1. BOUND TO THE CALLER (STS-OAUTH-0955). Issued to the exchanging
+  //      client: its `client_id`, else `azp`, is that client; a token with
+  //      neither (a WS-Trust JWT) must name the client in `aud`. A
+  //      client_credentials token's `sub` is that client, in either subject
+  //      form.
+  //   2. AUDIENCE-RESTRICTED (STS-OAUTH-0956). `aud` names this
+  //      authorization server (its issuer, its token endpoint) or the
+  //      exchanging client (`clientAudienceNames()`). A token minted for
+  //      another resource is one that resource holds and could replay.
+  //
+  // Not asked of an RFC 7523/7522 assertion (its own audience rule, #114) or
+  // a Native SSO device secret (#130), which take other paths.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks that an actor_token belongs to the exchanging client and is
+   * addressed to it or to this authorization server.
+   *
+   * @param claims - the actor_token's claims
+   * @param client - the authenticated client
+   * @param base - the authorization server's base URL
+   * @returns `{ code, description }` to refuse, or null
+   */
+  actorTokenProblem(claims: Json, client: Json, base: Json): Json {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.actorTokenProblem().");
+    const clientId = String((client && client.client_id) || '').trim();
+    const names = self.clientAudienceNames(clientId);
+    const aud = (Array.isArray(claims.aud) ? claims.aud
+      : (claims.aud ? [claims.aud] : [])).map(function (one: Json) {
+        return String(one);
+      });
+    const issuedTo = String(claims.client_id || claims.azp || '').trim();
+    const namesClient = aud.some(function (one: string) {
+      return names.all.indexOf(one) >= 0;
+    });
+    if (issuedTo ? issuedTo !== clientId : !namesClient) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). Not the " +
+                "client's own.");
+      return { code: 'STS-OAUTH-0955', description: 'The actor_token was ' +
+        'not issued to this client: ' + (issuedTo
+          ? 'it was issued to "' + issuedTo + '"'
+          : 'it names no client, and its aud does not name this one') +
+        '. An actor_token must be the exchanging client\'s own (RFC 8693 ' +
+        'section 2.1: it represents the acting party).' };
+    }
+    const sub = String(claims.sub || '');
+    const subClient = /^urn:sts:client:/.test(sub)
+      ? sub.slice('urn:sts:client:'.length) : '';
+    if (subClient && subClient !== clientId) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). About another " +
+                "client.");
+      return { code: 'STS-OAUTH-0955', description: 'The actor_token is a ' +
+        'client\'s token about "' + subClient + '", and the exchanging ' +
+        'client is "' + clientId + '".' };
+    }
+    const issuer = self.issuerOf(base);
+    const server = [issuer, issuer + '/oauth2/token',
+                    String(base || '') + '/oauth2/token'];
+    const addressed = aud.some(function (one: string) {
+      return server.indexOf(one) >= 0;
+    }) || namesClient;
+    if (!addressed) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). Audience.");
+      return { code: 'STS-OAUTH-0956', description: 'The actor_token is ' +
+        'addressed to ' + (aud.length ? aud.map(function (one: string) {
+          return '"' + one + '"';
+        }).join(', ') : 'nobody') + ', which is neither this authorization ' +
+        'server nor the client "' + clientId + '". Use a token addressed to ' +
+        'the client itself (a client_credentials token asking for nothing ' +
+        'else is) or to this server.' };
+    }
+    log.debug("Leaving OAuth2Server.actorTokenProblem(). Accepted.");
+    return null;
+  }
+
   // An `aud`-shaped value — undefined, one string, or a list — as a list.
   /**
    * Reads an `aud`-shaped value as a list.
@@ -15356,7 +15564,12 @@ class OAuth2Server {
         // decision for a narrowing rule to be about. No `resources` beside it
         // because this grant issues no refresh token: that field exists so a
         // renewal cannot widen, and nothing here can be renewed.
-        audience: self.audienceClaim(requestedResources),
+        // #550: with nothing asked for, the client's own audience.
+        audience: self.audienceClaim(requestedResources.length
+          ? requestedResources
+          : self.clientCredentialsAudience(client.client_id,
+                                           String(body.scope || ''),
+                                           requestedDetails)),
         // RFC 9396: nothing preceded this request either, so the details asked
         // for are the details granted.
         authorization_details: grantIdentifiers(requestedDetails,
@@ -16396,6 +16609,20 @@ class OAuth2Server {
         }
         if (actorClaims) {
           act = { sub: actorClaims.sub };
+        }
+        // #550: who the actor IS, in every mode — the token must be the
+        // exchanging client's own and addressed to it or to this server.
+        const actorProblem = actorClaims
+          ? self.actorTokenProblem(actorClaims, client, base) : null;
+        if (actorProblem) {
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" was refused: ' + actorProblem.description);
+          errorCodes.mark(res, actorProblem.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " +
+                    actorProblem.code);
+          // error-code: none — marked above: 0955 or 0956, by the problem.
+          return self.oauthError(res, 400, 'invalid_request',
+                                 actorProblem.description);
         }
       }
       // -----------------------------------------------------------------------

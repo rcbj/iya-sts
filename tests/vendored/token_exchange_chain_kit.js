@@ -1234,6 +1234,9 @@ module.exports = {
   // `gnap_chain_kit.js`'s webapp1 (#497).
   authorizationCode: authorizationCode,
   tokenRequest: tokenRequest,
+  // #550: a request made as one tier, for the job's own refusals.
+  basicAuth: basicAuth,
+  secretOf: secretOf,
   provisionCast: provisionCast,
   signIn: signIn,
   clientCredentials: clientCredentials,

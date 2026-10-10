@@ -372,9 +372,12 @@ function childMain() {
     const basic = 'Basic ' + Buffer.from('r97-rs:' + RS_SECRET)
       .toString('base64');
 
+    // Addressed to r97-rs by a scope naming it: a client_credentials token
+    // asking for nothing else is the client's own since #550, and r97-rs
+    // may introspect only a token intended for it.
     let r = await request(port, 'POST', '/oauth2/token', { form: {
       grant_type: 'client_credentials', client_id: 'r97-client',
-      client_secret: CLIENT_SECRET } });
+      client_secret: CLIENT_SECRET, scope: 'r97-rs' } });
     const token = r.json && r.json.access_token;
     note(r.status === 200 && token, '3a. a token to introspect was issued',
          r.status + ' ' + r.text.slice(0, 160));
