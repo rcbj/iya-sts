@@ -191,6 +191,17 @@ function childMain() {
     const vcConfigs = require(ROOT + '/oid4vc/vc_configs');
     const authn = require(ROOT + '/authn/authn');
     const logout = require(ROOT + '/logout/logout');
+    // USERNAMELESS SIGN-IN OFF (it is on by default since 2026-10-10): with it
+    // on, the sign-in screen carries /authn/webauthn.js and relaxes
+    // script-src for its own passkey button, and this test reads that
+    // screen's policy as the base one.
+    {
+      const passkeyPolicy = require(ROOT + '/common/passkey_policy');
+      realms.run(realms.get(realms.DEFAULT_ID), function () {
+        passkeyPolicy.save('default', Object.assign({},
+          passkeyPolicy.DEFAULTS, { allowUsernameless: false }));
+      });
+    }
     const DEFAULT = realms.DEFAULT_REALM;
     const DCQL_ID = 'identity_credential';
     const PRE_AUTH = 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
