@@ -19266,6 +19266,10 @@ const CODES = [
     summary: 'An operator\'s rename of a person\'s passkey was refused: the ' +
       'name was not one, or no such key is registered for them (#470).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0851',
+    summary: 'Registering a SAML 1.1 relying party was refused because no ' +
+      'assertion consumer service URL was supplied.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

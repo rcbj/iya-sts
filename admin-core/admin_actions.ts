@@ -6003,10 +6003,19 @@ class AdminActions {
     }
 
     if (action === 'register') {
+      const shire = String(body.shire || '').trim();
+      if (!shire) {
+        log.debug("Leaving AdminActions.saml11Action(). No shire named.");
+        return this.refused('STS-ADMIN-0851', { ok: false, errors: [
+          'Name the relying party\'s assertion consumer service URL in ' +
+          '`shire`.'
+        ] });
+      }
       const result = applications.createApplication({
         identifier: identifier, kind: SAML11_RP_KIND, protocol: 'SAML 1.1',
         note: 'registered as a SAML 1.1 relying party from the admin console',
-        fields: { samlEntityId: identifier }
+        fields: { samlEntityId: identifier,
+                  samlAssertionConsumerService: shire }
       });
       log.debug("Leaving AdminActions.saml11Action(). register " +
                 (result.ok ? 'ok' : 'refused') + ".");

@@ -869,6 +869,14 @@ record of the decisions.
 **A refusal for an unregistered address is a PAGE and not a SAML Response**: the
 address a Response would go to is the address in question.
 
+**The console's SAML 1.1 registration takes the ACS at the same time as the
+relying-party identifier** (`/admin/saml11`, #291): `shire` is required and is
+stored as `samlAssertionConsumerService` on that entry. The application
+registry validates it as an absolute HTTP(S) URL at every write door; an OAuth
+native-app callback scheme is not a SAML endpoint. This makes a newly
+registered relying party immediately usable in product mode, where an
+unregistered `shire` has no mock fallback.
+
 ### The literals that became settings (default = the old literal)
 
 `saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30),
