@@ -576,8 +576,43 @@ async function tokenRequest(base, form, authorization) {
   }
   const r = await call("POST", base + "/oauth2/token", params.toString(),
                        headers);
+  logToken(form, r);
   log.debug("Leaving tokenRequest(). " + r.status);
   return r;
+}
+
+// TOKEN LOGGING, OFF UNLESS ASKED FOR: with STS_TOKEN_LOG set (any value),
+// every token request and its answer is one `[token-log] {...}` line in this
+// job's log, so a reviewer can read the chain hop by hop. The request's form
+// is logged without its credentials — the Authorization header (the client
+// secret) is never logged — and the answer whole, tokens included: these are
+// a throwaway realm's test tokens, and the switch is for a run made to read
+// them.
+function logToken(form, r) {
+  log.debug("Entering logToken().");
+  if (!process.env.STS_TOKEN_LOG) {
+    log.debug("Leaving logToken(). Off.");
+    return;
+  }
+  const request = {};
+  Object.keys(form || {}).forEach(function (k) {
+    if (k !== "client_secret" && k !== "client_assertion" &&
+        form[k] !== undefined && form[k] !== null && form[k] !== "") {
+      request[k] = form[k];
+    }
+  });
+  let answer = r && r.json;
+  if (!answer && r && r.text) {
+    try {
+      answer = JSON.parse(r.text);
+    } catch (e) {
+      log.debug("Caught in logToken(): " + ((e && e.message) || e));
+      answer = { raw: String(r.text).slice(0, 2000) };
+    }
+  }
+  log.info("[token-log] " + JSON.stringify({ at: new Date().toISOString(),
+    status: r && r.status, request: request, response: answer || null }));
+  log.debug("Leaving logToken().");
 }
 
 function claimsOf(token, what) {

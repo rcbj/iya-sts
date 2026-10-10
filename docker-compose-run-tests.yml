@@ -1127,6 +1127,10 @@ services:
       # "--only=crypto --no-browser" ./run-tests.sh` is the way to
       # narrow a containerized run; unset, the whole suite runs.
       - STS_TEST_ARGS=${STS_TEST_ARGS:-}
+      # TOKEN LOGGING for the token-exchange chain job: set, every token
+      # request and its answer is logged in that job's log (`[token-log]`).
+      # Off unless the host sets it.
+      - STS_TOKEN_LOG=${STS_TOKEN_LOG:-}
       # ONE REPORT TREE PER MODE, so three runs do not overwrite each other. The
       # mode matrix sets it; unset, run-report.js's own default applies.
       - STS_TEST_REPORT_DIR=${STS_TEST_REPORT_DIR:-}
