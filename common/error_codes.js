@@ -9327,6 +9327,13 @@ const CODES = [
       'whose second factor the client does not allow (appMfaMechanism, ' +
       '#475), and prompt=none forbids asking.',
     spec: 'login_required (OIDC Core 3.1.2.6)' },
+  { code: 'STS-OAUTH-0954',
+    summary: 'A token exchange asked for a delegated permission ' +
+      '(oauthPermissionBaseUri plus a name) that was not delegated to the ' +
+      'calling client (oauthDelegatedPermission), and the issuance ' +
+      'policy left it out of the issued token, in every mode (#549).',
+    spec: 'none: the token is issued with a narrower scope (RFC 6749 ' +
+      'section 3.3, RFC 8693 section 2.2.1)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

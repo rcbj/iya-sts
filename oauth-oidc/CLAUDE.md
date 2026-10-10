@@ -3307,7 +3307,10 @@ scope is a key to this service's own API.
 functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,
 `permissionRefusal()` (a delegated permission not granted —
 `permission-not-granted`, product always, development with
-`oauth2.delegatedPermissionsEnforced`, both as request attributes), and the two
+`oauth2.delegatedPermissionsEnforced`, both as request attributes; NOT for an
+RFC 8693 exchange since #549, whose delegated permissions the exchange stage
+keeps when the caller holds them and drops when it does not, in every mode —
+`xacml/CLAUDE.md`), and the two
 RFC 9396 type questions in `authorization_details.ts` (`STS-OAUTH-0454` the
 client's registered types, `0455` the server's published ones). RFC 9396
 well-formedness stays in `parse()`. `xacml/CLAUDE.md` has the per-scope

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4249** of them, in **44** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4250** of them, in **44** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 284
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 708
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 709
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
@@ -2159,6 +2159,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0951` | Product mode: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
 | `STS-OAUTH-0952` | An authorization request reached a session whose second factor the client does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
 | `STS-OAUTH-0953` | An authorization request with prompt=none reached a session whose second factor the client does not allow (appMfaMechanism, #475), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
+| `STS-OAUTH-0954` | A token exchange asked for a delegated permission (oauthPermissionBaseUri plus a name) that was not delegated to the calling client (oauthDelegatedPermission), and the issuance policy left it out of the issued token, in every mode (#549). | none: the token is issued with a narrower scope (RFC 6749 section 3.3, RFC 8693 section 2.2.1) |
 
 ## STS-SAML
 

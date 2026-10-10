@@ -189,7 +189,7 @@ function childMain() {
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
          'protected-undeclared-refused,protected-undeclared-dropped,' +
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
-         'exchange-widens-scope,' +
+         'exchange-widens-scope,exchange-permission-not-delegated,' +
          'scope-not-authorized,consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
          // The per-right GNAP rules (#432 phases 3, 5 and 6): today's
@@ -679,13 +679,14 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // the fourteen scope and detail rules of #304, #305 and #186, the
+         // the fifteen scope and detail rules of #304, #305, #186 and
+         // #549, the
          // six transfer rules of #98, the protocol-declaration rule, the
          // twenty exchange rules of #186, the fourteen per-right GNAP
          // rules of #432, the sign-in mechanism rule of #457, the
          // second-factor rule of #475, and the fifteen passkey rules of
          // #536.
-         unprotectedPolicy.policy.rules.length === 78,
+         unprotectedPolicy.policy.rules.length === 79,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

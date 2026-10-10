@@ -337,6 +337,11 @@ const JOBS = [
   // impersonation (no actor_token) and once as a delegation (each tier's
   // client_credentials token as actor_token, `act` nested). app1-scope on
   // every token, every hop naming its target by a registered audience.
+  // The delegation job forks at the bus (#549): esb1 exchanges once for
+  // sp1 and once for sp2, asking for read, write and admin on each — read
+  // and write delegated to it, admin not — and admin must never be issued;
+  // and every token about the person carries roles, groups and a custom
+  // claim.
   // `local: true`: the scenario is ours. Their entries are left standing.
   { file: 'sts_token_exchange_chain_impersonation.js', browser: false,
     local: true },
