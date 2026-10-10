@@ -328,11 +328,13 @@ function childMain() {
                      : null;
     };
 
-    // 1. Off by default.
+    // 1. Off — turned off here, since it is ON by default (2026-10-10).
+    passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
+                                                { allowUsernameless: false }));
     let s = await screenFor();
     note(s.screen.status === 200 && !/id="wa-passkey"/.test(s.screen.text) &&
          !/autocomplete="username webauthn"/.test(s.screen.text),
-         '1a. OFF BY DEFAULT: the screen draws no passkey button and no ' +
+         '1a. OFF: the screen draws no passkey button and no ' +
          'autofill token', s.screen.status + ' ' + s.screen.text.slice(0, 160));
     let posted = await usernameless(s, null);
     note(posted.status === 200 && !(posted.status === 302 ||

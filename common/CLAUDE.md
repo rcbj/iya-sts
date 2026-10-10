@@ -11358,7 +11358,7 @@ second followed `webauthn.residentKey`, which defaulted to `discouraged`.
   - The directory's three store functions are `ldap_server.js`'s, filled
     through `setDirectory()`.
 * **Two rows, and rcbj's three answers on the issue:**
-  - `allowUsernameless` is off by default.
+  - `allowUsernameless` is ON by default since 2026-10-10 (rcbj: "Enable webauthn usernameless logins by default"); it was off on #527's answer.
   - `securityKeyResidentKey` defaults to `required`.
   - `securityKeyResidentKey()` answers `required` while `allowUsernameless`
     is off, whatever the row says (answer 1), and the row while it is on.

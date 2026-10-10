@@ -8,7 +8,7 @@
 // ===========================================================================
 // THE PASSKEY POLICY (#527), in process:
 //
-//   P1. the built-in profile: usernameless sign-in OFF, a security key asked
+//   P1. the built-in profile: usernameless sign-in ON (since 2026-10-10), a security key asked
 //       for `required`, from the built-in defaults;
 //   P2. a save replaces the whole profile and is refused for a missing
 //       field, a value that is not one of the enum's (STS-AUTHN-0309) and a
@@ -101,9 +101,9 @@ function asked() {
 function builtIn(t) {
   log.debug('Entering builtIn().');
   const p = passkeyPolicy.read();
-  t.check(p.from === 'built-in' && p.allowUsernameless === false &&
+  t.check(p.from === 'built-in' && p.allowUsernameless === true &&
           p.securityKeyResidentKey === 'required' && p.enforced === true,
-          'P1. built in: usernameless sign-in OFF, a security key asked ' +
+          'P1. built in: usernameless sign-in ON, a security key asked ' +
           'for required, in force in both modes', JSON.stringify(p));
   t.check(asked() === 'required,required,required',
           'P1b. so both buttons, and an enrolment naming no kind, ask for a ' +
@@ -154,7 +154,7 @@ function inheritance(t) {
   log.debug('Entering inheritance().');
   const saved = realms.run(realms.DEFAULT_REALM, function () {
     return passkeyPolicy.save('default', withDefaults({
-      allowUsernameless: true, securityKeyResidentKey: 'preferred' }));
+      allowUsernameless: false, securityKeyResidentKey: 'preferred' }));
   });
   t.check(saved.ok && saved.profile.from === 'realm',
           'P3. the default realm saves its own profile',
@@ -163,14 +163,14 @@ function inheritance(t) {
     withRealm(t, function () {
       const inherited = passkeyPolicy.read();
       t.check(inherited.from === 'default-realm' &&
-              inherited.allowUsernameless === true &&
+              inherited.allowUsernameless === false &&
               inherited.securityKeyResidentKey === 'preferred',
               'P3b. a realm with no entry of its own follows the default ' +
               'realm\'s', JSON.stringify(inherited));
       const own = passkeyPolicy.save('default', withDefaults());
       const mine = passkeyPolicy.read();
       t.check(own.ok && mine.from === 'realm' &&
-              mine.allowUsernameless === false,
+              mine.allowUsernameless === true,
               'P3c. its own entry wins', JSON.stringify(mine));
       const reset = passkeyPolicy.reset('default');
       t.check(reset.ok && reset.removed &&
@@ -219,7 +219,7 @@ function answers(t) {
     });
   });
   const said = passkeyPolicy.describe(passkeyPolicy.read());
-  t.check(said.length === 10 && /names the person first/.test(said[0]) &&
+  t.check(said.length === 10 && /with no username/.test(said[0]) &&
           /synced \(backup-eligible\) passkeys are accepted/.test(said[3]),
           'P4c. the rules in sentences', JSON.stringify(said));
   log.debug('Leaving answers().');
@@ -227,7 +227,9 @@ function answers(t) {
 
 function door(t) {
   log.debug('Entering door().');
+  passkeyPolicy.save('default', withDefaults({ allowUsernameless: false }));
   const off = webauthnPolicy.usernamelessOffered();
+  passkeyPolicy.reset('default');
   t.check(!off.ok && errorCodes.codeOf(off) === 'STS-AUTHN-0301' &&
           /allowUsernameless/.test(off.why),
           'P5. usernameless OFF: the door refuses, naming the passkey ' +
