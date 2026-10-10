@@ -1633,6 +1633,11 @@ const TEMPLATES: TemplateRow[] = [
         return stringIs(model.CATEGORY.ENVIRONMENT,
                         xacmlRequest.VOCABULARY.SCOPE_STAGE, stage);
       };
+      // The grant the question is for (#549), told apart where a rule
+      // differs for an RFC 8693 token exchange.
+      const isTokenExchange = stringIs(model.CATEGORY.ENVIRONMENT,
+        xacmlRequest.VOCABULARY.GRANT_TYPE,
+        'urn:ietf:params:oauth:grant-type:token-exchange');
       const settingOn = function (key: string): any {
         log.debug("Entering settingOn().");
         log.debug("Leaving settingOn().");
@@ -1809,15 +1814,19 @@ const TEMPLATES: TemplateRow[] = [
                'STS-OAUTH-0578'),
         // A delegated permission the client was not granted: refused where
         // enforced — product always, development with the setting (#110).
+        // NOT for a token exchange (#549): there the exchange stage decides
+        // a delegated permission, and drops rather than refuses (below).
         [{ id: options.idBase + ':rule:permission-not-granted',
            effect: model.EFFECT.DENY,
            description: 'A delegated permission the client has not been ' +
                         'granted (oauthDelegatedPermission), in product ' +
-                        'mode or with oauth2.delegatedPermissionsEnforced.',
+                        'mode or with oauth2.delegatedPermissionsEnforced. ' +
+                        'A token exchange is decided at its own stage.',
            target: scopeTarget,
            condition: and([atStage('request'),
              fact(R, IA.SCOPE_DELEGATED, true),
              fact(R, IA.SCOPE_GRANTED, false),
+             B.apply(F1 + 'not', [isTokenExchange]),
              B.apply(F1 + 'or', [inProduct,
                settingOn('oauth2.delegatedPermissionsEnforced')])]),
            obligations: verdict(model.EFFECT.DENY, 'refuse',
@@ -1825,19 +1834,44 @@ const TEMPLATES: TemplateRow[] = [
            advice: [] }],
         // #108, in policy since #186: an exchange may narrow what the
         // subject token granted, never widen it — in product; development
-        // issues and the endpoint logs it.
+        // issues and the endpoint logs it. A DELEGATED PERMISSION IS NOT
+        // JUDGED HERE (#549): its one test is whether the caller holds it
+        // (the next rule), so a permission the subject token did not carry
+        // may be added by a caller it was delegated to. A question that
+        // does not say whether a scope is a permission is judged here as
+        // before.
         [{ id: options.idBase + ':rule:exchange-widens-scope',
            effect: model.EFFECT.DENY,
            description: 'A token exchange asking for a scope the verified ' +
                         'subject token does not carry, in product mode ' +
                         '(RFC 8693 leaves the scope to the server; this ' +
-                        'one narrows and never widens).',
+                        'one narrows and never widens). A delegated ' +
+                        'permission is judged by the next rule instead.',
            target: scopeTarget,
            condition: and([atStage('exchange'), inProduct,
              fact(R, IA.SUBJECT_TOKEN_HAS_SCOPE, true),
-             fact(R, IA.SCOPE_IN_SUBJECT_TOKEN, false)]),
+             fact(R, IA.SCOPE_IN_SUBJECT_TOKEN, false),
+             B.apply(F1 + 'not', [fact(R, IA.SCOPE_DELEGATED, true)])]),
            obligations: verdict(model.EFFECT.DENY, 'refuse',
                                 'STS-OAUTH-0621'),
+           advice: [] }],
+        // #549: a delegated permission asked for in a token exchange is
+        // issued only to a caller that holds it (oauthDelegatedPermission),
+        // whether or not the subject token carried it — and one the caller
+        // does not hold is DROPPED, in EVERY mode (rcbj, 2026-10-10). The
+        // rest of the request is honoured: RFC 6749 section 3.3 lets the
+        // server issue a narrower scope than was asked.
+        [{ id: options.idBase + ':rule:exchange-permission-not-delegated',
+           effect: model.EFFECT.DENY,
+           description: 'Drop, in a token exchange, a delegated permission ' +
+                        'the calling client has not been granted ' +
+                        '(oauthDelegatedPermission), in every mode (#549).',
+           target: scopeTarget,
+           condition: and([atStage('exchange'),
+             fact(R, IA.SCOPE_DELEGATED, true),
+             fact(R, IA.SCOPE_GRANTED, false)]),
+           obligations: verdict(model.EFFECT.DENY, 'drop',
+                                'STS-OAUTH-0954'),
            advice: [] }],
         // #303/#304: a scope its resource gates by role.
         [{

@@ -7421,9 +7421,12 @@ class OAuth2Server {
    *
    * @param scope - the requested scope
    * @param clientId - the client
+   * @param grantType - the token request's grant_type, where there is one;
+   *   an RFC 8693 exchange's delegated permissions are decided at the
+   *   exchange stage, which drops rather than refuses (#549)
    * @returns '' to allow, or the refusal's description
    */
-  permissionRefusal(scope: Json, clientId: Json): Json {
+  permissionRefusal(scope: Json, clientId: Json, grantType?: Json): Json {
     const { log, config, gate, mode, scopeVerdicts } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.permissionRefusal().");
@@ -7449,6 +7452,7 @@ class OAuth2Server {
       settings: { 'oauth2.delegatedPermissionsEnforced':
                     !!config.value('oauth2.delegatedPermissionsEnforced') },
       stage: 'request',
+      grantType: grantType ? String(grantType) : undefined,
       requested: String(scope || '').split(/\s+/).filter(Boolean),
       facts: found.permissions.map(function (one: Json): Json {
         return { scope: one.scope, attributes: [
@@ -13708,7 +13712,7 @@ class OAuth2Server {
     if (body.scope !== undefined && body.scope !== null &&
         String(body.scope) !== '') {
       const permissionProblem = self.permissionRefusal(String(body.scope),
-        (client && client.client_id) || body.client_id);
+        (client && client.client_id) || body.client_id, body.grant_type);
       if (permissionProblem) {
         log.debug("Leaving the token endpoint. An ungranted permission was " +
                   "asked for.");
@@ -16775,12 +16779,35 @@ class OAuth2Server {
       // scope`, stage `exchange`): this side sends each requested scope with
       // two facts — whether the subject_token has a `scope` claim at all,
       // and whether it carries this one — and the policy refuses in product.
-      if (subjectVerified && body.scope) {
-        const hasScope = subject.scope !== undefined && subject.scope !== null;
+      //
+      // A DELEGATED PERMISSION IS DECIDED BY DELEGATION, NOT BY THE SUBJECT
+      // TOKEN (#549). A permission identifier (an `oauthPermissionBaseUri`
+      // plus a name) asked for here is sent with two more facts — that it is
+      // a delegated permission, and whether the CALLING client holds it
+      // (`oauthDelegatedPermission`) — and the policy's `exchange-permission-
+      // not-delegated` rule DROPS one the caller does not hold, in every
+      // mode, while `exchange-widens-scope` leaves permissions alone. So a
+      // caller may add to the exchanged token a permission the subject_token
+      // did not carry, when that permission was delegated to it, and never
+      // one that was not. The request-stage refusal (`permission-not-
+      // granted`) does not apply to an exchange for the same reason.
+      let exchangeScope: string | null = null;
+      if (body.scope) {
+        const hasScope = subjectVerified &&
+          subject.scope !== undefined && subject.scope !== null;
         const granted = String(subject.scope || '').split(/\s+/)
           .filter(function (one) { return !!one; });
         const askedScopes = String(body.scope).split(/\s+/)
           .filter(function (one) { return !!one; });
+        // The permissions among them, by the one translation every grant
+        // uses, so "is this a permission" and "does this client hold it"
+        // cannot be answered two ways.
+        const found = self.audienceScopes(String(body.scope),
+                                          client.client_id);
+        const permissionOf: Json = {};
+        (found.permissions || []).forEach(function (one: Json) {
+          permissionOf[one.scope] = one;
+        });
         const SA = scopeVerdicts.ATTRIBUTE;
         const scopeAnswer = gate.checkScopes({
           subject: { kind: 'application', name: client.client_id,
@@ -16789,12 +16816,26 @@ class OAuth2Server {
           protocol: 'OAuth 2.0',
           mode: mode.current(),
           stage: 'exchange',
+          grantType: String(body.grant_type || ''),
           requested: askedScopes,
           facts: askedScopes.map(function (one: string): Json {
-            return { scope: one, attributes: [
+            const permission = permissionOf[one];
+            // A subject_token's scope claim carries a permission by its
+            // BARE NAME (audienceScopes() wrote it that way), so a
+            // permission is in the subject_token when either spelling is.
+            const inSubject = granted.indexOf(one) >= 0 ||
+              (!!permission && granted.indexOf(permission.permission) >= 0);
+            const attributes = [
               scopeVerdicts.resourceFact(SA.SUBJECT_TOKEN_HAS_SCOPE, hasScope),
               scopeVerdicts.resourceFact(SA.SCOPE_IN_SUBJECT_TOKEN,
-                                         granted.indexOf(one) >= 0)] };
+                                         inSubject)];
+            if (permission) {
+              attributes.push(
+                scopeVerdicts.resourceFact(SA.SCOPE_DELEGATED, true),
+                scopeVerdicts.resourceFact(SA.SCOPE_GRANTED,
+                                           !!permission.granted));
+            }
+            return { scope: one, attributes: attributes };
           })
         });
         const refusedScopes = (scopeAnswer.verdicts || [])
@@ -16815,8 +16856,22 @@ class OAuth2Server {
                                  ' is not in it). An exchange may narrow ' +
                                  'a scope, never widen it.');
         }
+        const dropped = (scopeAnswer.verdicts || [])
+          .filter(function (one: Json) { return one.verdict === 'drop'; })
+          .map(function (one: Json): string { return String(one.scope); });
+        if (dropped.length) {
+          log.info(errorCodes.tag('STS-OAUTH-0954') + 'oauth2: a token ' +
+                   'exchange by "' + client.client_id + '" asked for ' +
+                   dropped.join(' ') + ', which ' +
+                   (dropped.length === 1 ? 'is a delegated permission'
+                     : 'are delegated permissions') + ' not delegated ' +
+                   'to it; left out of the issued token.');
+        }
+        exchangeScope = askedScopes.filter(function (one) {
+          return dropped.indexOf(one) < 0;
+        }).join(' ');
         const widened = hasScope ? askedScopes.filter(function (one) {
-          return granted.indexOf(one) < 0;
+          return granted.indexOf(one) < 0 && !permissionOf[one];
         }) : [];
         if (widened.length) {
           log.info('oauth2: a token exchange by "' + client.client_id +
@@ -16843,7 +16898,11 @@ class OAuth2Server {
         // a token for another resource server. What survives is the response's
         // `scope` member, left out when nothing did, and an ID Token comes
         // back only when `openid` survived (idTokenFollowsIssuedScope).
-        scope: String(body.scope || subject.scope || ''),
+        // A requested scope the policy narrowed (#549) is the list that
+        // survived — empty included, so a dropped permission never brings
+        // the subject's own scope back in its place.
+        scope: exchangeScope !== null ? exchangeScope
+          : String(subject.scope || ''),
         idTokenFollowsIssuedScope: true,
         audience: self.audienceClaim(issuedAudiences), act: act,
         // RFC 9396 on an exchange: the details asked for, as for a direct

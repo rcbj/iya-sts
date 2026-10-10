@@ -1554,6 +1554,25 @@ whether the subject token has a `scope` claim, and whether it carries this
 one. An ID Token or a WS-Trust JWT has no grant to compare, and is not
 refused.
 
+**AND A DELEGATED PERMISSION IS DECIDED BY DELEGATION, NOT BY THE SUBJECT
+TOKEN (#549, 2026-10-10).** rcbj: a token exchange may put a delegated
+permission in the issued token that the subject_token did not carry, when
+the CALLER holds it, and the decision is policy. So the token endpoint adds
+two facts for a scope that names a delegated permission —
+`urn:sts:xacml:scope-delegated` and `urn:sts:xacml:scope-granted` (does the
+calling client hold it, `oauthDelegatedPermission`) — and the policy has
+three rules about it: `exchange-widens-scope` leaves a delegated permission
+alone; **`exchange-permission-not-delegated` DROPS one the caller does not
+hold, in every mode** (`STS-OAUTH-0954`, logged; the rest of the request is
+issued, RFC 6749 section 3.3); and the request-stage
+`permission-not-granted` no longer refuses a TOKEN EXCHANGE's permission
+(it tests the environment's grant type), because the exchange stage decides
+it. A question with no `scope-delegated` fact is judged as before.
+`tests/scope_rules_policy.js` section G holds the truth table, and
+`tests/vendored/sts_token_exchange_chain_delegation.js` the chain: esb1
+holds read and write on sp1 and sp2 and not admin, asks for all three, and
+admin must never be issued.
+
 **MUTATION-TESTED** (2026-10-03): each of the twenty exchange rules removed
 in turn is told apart by the matrix, except the two that answer other
 questions — `may-act-subject-choice` (held by `exchange_policy.js` section N)
