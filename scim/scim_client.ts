@@ -955,7 +955,12 @@ class ScimClients {
     log.debug("Entering ScimClients.notePause(). " + row.clientId);
     const state = this.stateOf(row.realm, row.clientId);
     if (ok) {
-      if (state.failures || state.pausedUntil) {
+      // A SUCCESS ENDS THE PAUSE ONLY WHEN IT IS THE PROBE'S, or the pause has
+      // run out: a request that was already in flight when another failed
+      // says nothing about whether the service provider has recovered.
+      const ends = !Number(state.failures) || state.probe === row.id ||
+                   Number(state.pausedUntil) <= now();
+      if (ends && (state.failures || state.pausedUntil)) {
         this.writeState(row.realm, row.clientId,
                         { failures: 0, pausedUntil: 0, probe: '' });
       }
@@ -2183,7 +2188,9 @@ class ScimClients {
           if (!link && !dir.entryByUuid(uuid)) {
             return;
           }
-          if (link && link.inactive) {
+          // Already deactivated there is done — unless deprovisioning now
+          // means delete, when it is queued and deleted.
+          if (link && link.inactive && c.deprovision !== 'delete') {
             return;
           }
           this.enqueue(c, type, uuid, link ? link.name : '');
