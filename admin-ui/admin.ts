@@ -9100,6 +9100,9 @@ const SETTING_HOMES = [
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
+  // THE OUTBOUND SCIM CLIENT (#552): on the same page, whose Clients tab is
+  // where each client is configured.
+  { group: 'SCIM client', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
   // family here, it is the one that runs the other way round — this service

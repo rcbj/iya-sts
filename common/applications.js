@@ -604,7 +604,23 @@ const PROTOCOLS = [
           'The secret must already exist there: a push writes a new version ' +
           'and never creates one. The write credential ' +
           '(secretDestCredential) is sealed on this entry and never shown. ' +
-          'Nothing is issued through this family.' }
+          'Nothing is issued through this family.' },
+  // #552: an OUTBOUND SCIM CLIENT. Like a secret destination this is an
+  // application this service CALLS — a remote SCIM 2.0 service provider it
+  // pushes this realm's people and groups to (`scim/scim_client.ts`) — and
+  // its credentials are sealed and withheld on the entry. Nothing is issued
+  // through it.
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    kind: '', kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A remote SCIM 2.0 service provider this service PUSHES users and ' +
+          'groups to (#552): RFC 7643 resources over RFC 7644, created, ' +
+          'replaced or patched, deactivated or deleted as the directory ' +
+          'changes, and reconciled on demand or on a schedule. It ' +
+          'authenticates with HTTP Basic, an OAuth 2.0 client_credentials ' +
+          'token, or a TLS client certificate; every credential is sealed ' +
+          'on this entry and never shown. Configured on Protocols → SCIM → ' +
+          'Clients. Nothing is issued through this family.' }
 ];
 
 /**
@@ -3650,6 +3666,136 @@ const SCHEMA = {
             'own key-encryption key and database password with. Sealed with ' +
             'the key-encryption key when keys persist, WITHHELD from every ' +
             'page, /admin-api reply and directory read, and never logged.' },
+    // AN OUTBOUND SCIM CLIENT (#552): the remote service provider this
+    // entry pushes to, how it authenticates there, and what it pushes. See
+    // the `scim-client` row of PROTOCOLS and `scim/scim_client.ts`, which
+    // reads these; every address here is the operator's.
+    { name: 'scimClientBaseUrl', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'THE REMOTE SCIM BASE URI (RFC 7644 section 1.3), the /v2 ' +
+            'segment included where the service provider uses one: ' +
+            'https://idp.example.com/scim/v2. https only (section 7.2); no ' +
+            'query, fragment or user information (section 7.1).' },
+    { name: 'scimClientEnabled', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'TRUE to push changes and reconcile; FALSE (the default) keeps ' +
+            'the configuration and sends nothing.' },
+    { name: 'scimClientAuthMethod', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW A REQUEST IS AUTHENTICATED (RFC 7644 section 2): basic ' +
+            '(HTTP Basic with scimClientUsername and scimClientPassword), ' +
+            'oauth2 (a client_credentials token from scimClientTokenEndpoint, ' +
+            'sent as a Bearer token), or none (only the TLS client ' +
+            'certificate, when one is configured).' },
+    { name: 'scimClientUsername', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'basic: the user name the service provider knows this client by.' },
+    { name: 'scimClientPassword', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'basic: the password. Sealed with the key-encryption key when ' +
+            'keys persist, WITHHELD from every page, /admin-api reply and ' +
+            'directory read, and never logged.' },
+    { name: 'scimClientTokenEndpoint', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the token endpoint of the authorization server the ' +
+            'service provider trusts. https only.' },
+    { name: 'scimClientOAuthClientId', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the client_id this client is registered under there.' },
+    { name: 'scimClientOAuthClientSecret', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'oauth2: the client secret. Sealed, withheld and never logged.' },
+    { name: 'scimClientOAuthClientAuth', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: how the client authenticates at the token endpoint — ' +
+            'client_secret_basic (the default) or client_secret_post ' +
+            '(RFC 6749 section 2.3.1).' },
+    { name: 'scimClientOAuthScope', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the scope asked for, space-separated (scim:write, for ' +
+            'this service\'s own /scim/v2). Empty asks for none.' },
+    { name: 'scimClientOAuthResource', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: an RFC 8707 resource indicator sent with the token ' +
+            'request, where the authorization server wants one.' },
+    { name: 'scimClientTlsSource', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'THE TLS CLIENT CERTIFICATE presented to the service provider: ' +
+            'none (the default), issued (by this realm\'s CA, from its ' +
+            'tls-client Issuing CA, revocable on /admin/pki) or uploaded ' +
+            '(scimClientTlsCertificate and scimClientTlsPrivateKey). It is ' +
+            'presented whatever scimClientAuthMethod says.' },
+    { name: 'scimClientTlsCertificate', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'The client certificate, PEM, its chain after it. Public.' },
+    { name: 'scimClientTlsPrivateKey', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'The client certificate\'s private key, PEM. Sealed, withheld ' +
+            'and never logged.' },
+    { name: 'scimClientCaCertificates', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'PEM certificates of a CA the service provider\'s TLS ' +
+            'certificate chains to, trusted beside the public roots. The ' +
+            'certificate and its host name are always verified.' },
+    { name: 'scimClientScopeMode', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHO IS PUSHED: all (every person in the realm), groups (the ' +
+            'members of scimClientScopeGroups) or filter (the people ' +
+            'scimClientScopeFilter matches). Somebody who leaves the scope ' +
+            'is deprovisioned there.' },
+    { name: 'scimClientScopeGroups', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'groups scope: the groups whose members are pushed, each a ' +
+            'group\'s cn or DN.' },
+    { name: 'scimClientScopeFilter', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'filter scope: an RFC 4515 LDAP filter a person\'s entry must ' +
+            'match, such as (department=Sales).' },
+    { name: 'scimClientGroupMode', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHICH GROUPS ARE PUSHED, each with its in-scope members only: ' +
+            'none, selected (scimClientGroups), member-groups (every group ' +
+            'an in-scope person is in) or all.' },
+    { name: 'scimClientGroups', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'selected groups: each a group\'s cn or DN.' },
+    { name: 'scimClientDeprovision', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHAT HAPPENS THERE when a person is deleted here or leaves the ' +
+            'scope: deactivate (active false, the default) or delete. A ' +
+            'disabled account here is always active false there.' },
+    { name: 'scimClientReconcileMinutes', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW OFTEN THE WHOLE SCOPE IS RECONCILED, in minutes, by the ' +
+            'cluster scheduler: every person and group in scope is pushed, ' +
+            'and what the service provider holds under an externalId of ' +
+            'this realm\'s and no longer in scope is deprovisioned. 0 (the ' +
+            'default) reconciles only when an administrator asks.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -4519,6 +4665,31 @@ const EDITABLE = {
   secretDestDirectory: 'set',
   secretDestCaCertificates: 'set',
   secretDestCredential: 'set',
+  // An outbound SCIM client (#552): one value each, the two lists multi;
+  // the three credentials sealed and withheld (SEALED_FIELDS,
+  // WITHHELD_FIELDS).
+  scimClientBaseUrl: 'set',
+  scimClientEnabled: 'set',
+  scimClientAuthMethod: 'set',
+  scimClientUsername: 'set',
+  scimClientPassword: 'set',
+  scimClientTokenEndpoint: 'set',
+  scimClientOAuthClientId: 'set',
+  scimClientOAuthClientSecret: 'set',
+  scimClientOAuthClientAuth: 'set',
+  scimClientOAuthScope: 'set',
+  scimClientOAuthResource: 'set',
+  scimClientTlsSource: 'set',
+  scimClientTlsCertificate: 'set',
+  scimClientTlsPrivateKey: 'set',
+  scimClientCaCertificates: 'set',
+  scimClientScopeMode: 'set',
+  scimClientScopeGroups: 'multi',
+  scimClientScopeFilter: 'set',
+  scimClientGroupMode: 'set',
+  scimClientGroups: 'multi',
+  scimClientDeprovision: 'set',
+  scimClientReconcileMinutes: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -5340,6 +5511,8 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
  * The single-valued attributes that take TRUE or FALSE.
  */
 const BOOLEAN_ATTRIBUTES = [
+  // #552: whether an outbound SCIM client pushes.
+  'scimClientEnabled',
   'oauthFrontchannelLogoutSessionRequired',
   'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
   'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
@@ -5502,6 +5675,25 @@ const ATTRIBUTE_CHOICES = {
   secretDestPayload: function () {
     return require('./secrets').DESTINATION_PAYLOADS.slice(0);
   },
+  // An outbound SCIM client (#552), from the module that pushes.
+  scimClientAuthMethod: function () {
+    return require('../scim/scim_client_rules').AUTH_METHODS.slice(0);
+  },
+  scimClientOAuthClientAuth: function () {
+    return require('../scim/scim_client_rules').OAUTH_CLIENT_AUTH.slice(0);
+  },
+  scimClientTlsSource: function () {
+    return require('../scim/scim_client_rules').TLS_SOURCES.slice(0);
+  },
+  scimClientScopeMode: function () {
+    return require('../scim/scim_client_rules').SCOPE_MODES.slice(0);
+  },
+  scimClientGroupMode: function () {
+    return require('../scim/scim_client_rules').GROUP_MODES.slice(0);
+  },
+  scimClientDeprovision: function () {
+    return require('../scim/scim_client_rules').DEPROVISION.slice(0);
+  },
   // #395, from `scope_claims.ts`: how two sets of claims are combined, and
   // the OpenID Connect section 5.4 claims a resource server may declare.
   oauthClaimsCombineAccessToken: realmCombineModes,
@@ -5547,6 +5739,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
+  'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
+  'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   'appMfaMechanism',
   // #395: a misspelt mode would silently be the default, and a misspelt
   // claim would be one no token ever carries.
@@ -5686,7 +5880,8 @@ const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
   'gnapKey', 'gnapJweKey', 'oauthResourceMetadata',
-  'secretDestCaCertificates'
+  'secretDestCaCertificates',
+  'scimClientTlsCertificate', 'scimClientCaCertificates'
 ];
 
 // THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
@@ -5714,6 +5909,10 @@ function gridExcludedAttributes() {
                // write-only; a grid cell would draw the withheld sentence
                // as its value and save it back.
                'secretDestCredential',
+               // An outbound SCIM client's three credentials (#552): set on
+               // its own page under Protocols → SCIM → Clients, write-only.
+               'scimClientPassword', 'scimClientOAuthClientSecret',
+               'scimClientTlsPrivateKey',
                // Drawn by their own Custom claims and Custom SAML
                // attributes sections (2026-10-01): a JSON array is not a
                // text box.
@@ -5923,6 +6122,19 @@ const FIELD_EXAMPLES = {
   secretDestField: 'value',
   secretDestDirectory: '/run/sts-test-secrets',
   secretDestCaCertificates: '-----BEGIN CERTIFICATE-----',
+  // An outbound SCIM client (#552).
+  scimClientBaseUrl: 'https://idp.example.com/scim/v2',
+  scimClientUsername: 'iya-sts-provisioner',
+  scimClientTokenEndpoint: 'https://idp.example.com/oauth2/token',
+  scimClientOAuthClientId: 'iya-sts-provisioner',
+  scimClientOAuthScope: 'scim:write',
+  scimClientOAuthResource: 'https://idp.example.com/scim/v2',
+  scimClientTlsCertificate: '-----BEGIN CERTIFICATE-----',
+  scimClientCaCertificates: '-----BEGIN CERTIFICATE-----',
+  scimClientScopeGroups: 'staff',
+  scimClientScopeFilter: '(department=Sales)',
+  scimClientGroups: 'staff',
+  scimClientReconcileMinutes: '0',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -6007,6 +6219,7 @@ const FIELD_FAMILY_PREFIXES = [
   ['oid4vp', ['oid4vp']],
   ['federation', ['federation']],
   ['ldap', ['ldap']],
+  ['scimClient', ['scim-client']],
   ['scim', ['scim']],
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
@@ -6045,7 +6258,9 @@ const FIELD_GROUPS = [
   { id: 'enroll', label: 'Certificate enrollment',
     families: ['acme', 'est', 'scep'] },
   { id: 'secret-destination', label: 'Secret push destination',
-    families: ['secret-destination'] }
+    families: ['secret-destination'] },
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    families: ['scim-client'] }
 ];
 
 // ---------------------------------------------------------------------------
@@ -7121,7 +7336,12 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        // WITHHELD as well (below): sealed so no dump holds
                        // it, and withheld so no reader opens it — the only
                        // reader is `secretDestinationCredentialOf()`.
-                       'secretDestCredential'];
+                       'secretDestCredential',
+                       // An outbound SCIM client's credentials (#552),
+                       // sealed and withheld the same way; the reader is
+                       // `scimClientCredentialOf()`.
+                       'scimClientPassword', 'scimClientOAuthClientSecret',
+                       'scimClientTlsPrivateKey'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -7132,6 +7352,9 @@ const SEAL_LABELS = {
   gnapSymmetricKey: 'gnap-shared-key',
   gnapMacaroonKey: 'gnap-macaroon-key',
   secretDestCredential: 'secret-destination-credential',
+  scimClientPassword: 'scim-client-credential',
+  scimClientOAuthClientSecret: 'scim-client-credential',
+  scimClientTlsPrivateKey: 'scim-client-credential',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -7172,7 +7395,12 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // A secret destination's write credential (#221
                          // P3): it leaves this service only on the wire to
                          // its own secrets manager.
-                         'secretDestCredential'];
+                         'secretDestCredential',
+                         // An outbound SCIM client's credentials (#552):
+                         // they leave only on the wire to its service
+                         // provider and its token endpoint.
+                         'scimClientPassword', 'scimClientOAuthClientSecret',
+                         'scimClientTlsPrivateKey'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -7241,6 +7469,12 @@ function withheldSentence(value, name) {
     log.debug("Leaving withheldSentence(). A destination credential.");
     return '(withheld: a secret destination\'s write credential, set, ' +
            'never shown)';
+  }
+  if (name === 'scimClientPassword' || name === 'scimClientOAuthClientSecret' ||
+      name === 'scimClientTlsPrivateKey') {
+    // Nor its length, for the reason above (#552).
+    log.debug("Leaving withheldSentence(). A SCIM client credential.");
+    return '(withheld: a SCIM client credential, set, never shown)';
   }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
@@ -16077,6 +16311,54 @@ function deleteApplication(identifier, options) {
 // imported INTO, under that realm's base. So a file moves an application from
 // one realm to another as it stands.
 // ---------------------------------------------------------------------------
+// AN OUTBOUND SCIM CLIENT'S CREDENTIAL, OPENED FOR THE ONE REQUEST THAT USES
+// IT (#552) — `secretDestinationCredentialOf()`'s reason, for the client's
+// password, OAuth client secret and TLS private key. `scim/scim_client.ts`
+// asks at the moment it sends and keeps nothing (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns one of an outbound SCIM client's credentials, opened, for the
+ * request that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the client application's identifier
+ * @param attribute - scimClientPassword, scimClientOAuthClientSecret or
+ *   scimClientTlsPrivateKey
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function scimClientCredentialOf(identifier, attribute) {
+  log.debug("Entering scimClientCredentialOf(). " + attribute);
+  if (['scimClientPassword', 'scimClientOAuthClientSecret',
+       'scimClientTlsPrivateKey'].indexOf(attribute) < 0) {
+    log.debug("Leaving scimClientCredentialOf(). Not a credential.");
+    return '';
+  }
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields[attribute] || [])[0] || '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving scimClientCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving scimClientCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf(attribute));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the ' + attribute + ' on SCIM client "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Protocols → ' +
+             'SCIM → Clients.');
+    log.debug("Leaving scimClientCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving scimClientCredentialOf(). Opened.");
+  return opened;
+}
+
+// ---------------------------------------------------------------------------
 /**
  * The credential attributes an export may carry and an import may write:
  * the editable ones that hold a secret or a private key.
@@ -16086,7 +16368,9 @@ const PORTABLE_CREDENTIALS = ['oauthClientSecret',
                               'oauthAssertionPrivateKey',
                               'oauthSamlAssertionPrivateKey',
                               'didPrivateKeys', 'secretDestCredential',
-                              'gnapSymmetricKey'];
+                              'gnapSymmetricKey', 'scimClientPassword',
+                              'scimClientOAuthClientSecret',
+                              'scimClientTlsPrivateKey'];
 
 // The attributes that name the entry, written by the create itself rather than
 // through `fields`.
@@ -18808,6 +19092,7 @@ module.exports = {
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
   secretDestinationCredentialOf: secretDestinationCredentialOf,
+  scimClientCredentialOf: scimClientCredentialOf,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,
