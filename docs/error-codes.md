@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4253** of them, in **44** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4280** of them, in **45** subsystems.
 
 ## Where a code appears
 
@@ -74,6 +74,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 27
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 48
@@ -2943,6 +2944,42 @@ Raised from: common/secret_destinations.ts, common/secrets.js (pushSecret), mgmt
 | `STS-SECDEST-0014` | A push named no usable secret: the name is empty, longer than 512 characters, holds a line break, or is not a path the store's request line takes; or there was no password to push (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
 | `STS-SECDEST-0015` | A push failed in a way its provider's code did not name (#221). | none (a push answers ok: false; logged) |
 | `STS-SECDEST-0016` | A secret destination's write credential is not the shape its provider takes (a JSON object with the members it needs) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+
+## STS-SCIMC
+
+**Outbound SCIM client.** The outbound SCIM 2.0 client (#552): pushing this realm's people and groups to a remote service provider, its authentication (Basic, an OAuth 2.0 token, a TLS client certificate), each client's retry queue and dead letters, and reconciliation. No code here is a credential.
+
+Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clients_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SCIMC-0001` | A queued change for an outbound SCIM client whose application entry is gone, is no longer declared for scim-client, or is disabled was dead-lettered (#552). | none — nothing is sent |
+| `STS-SCIMC-0002` | An outbound SCIM client's base URI or token endpoint is not usable: not an absolute URL, carries a user name, password, query or fragment (RFC 7644 sections 1.3, 7.1). | none — nothing is sent |
+| `STS-SCIMC-0003` | An outbound SCIM client's base URI or token endpoint is plain http, refused: product mode always, development with scimClient.allowHttp off (RFC 7644 section 7.2). | none — nothing is sent |
+| `STS-SCIMC-0004` | An outbound SCIM client's TLS material is unusable: its CA certificates, scimClient.caFile, or its client certificate and private key would not load. | none — nothing is sent |
+| `STS-SCIMC-0005` | A request to a SCIM service provider or its token endpoint timed out (scimClient.timeoutMs); retried. | none |
+| `STS-SCIMC-0006` | A request to a SCIM service provider or its token endpoint failed at the network: refused, reset, unresolved, or the TLS handshake or certificate check failed; retried. | none |
+| `STS-SCIMC-0007` | A SCIM service provider answered 400 or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidVers, invalidFilter, tooMany); dead-lettered with its scimType. | none |
+| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 408, 429, 500, 502, 503 or 504 are retried, anything else is dead-lettered. | none |
+| `STS-SCIMC-0009` | A SCIM service provider answered 401 or 403 to an authenticated request: its credential, token or certificate is not accepted, or it is not authorized for the operation (RFC 7644 section 2). A 401 with an OAuth token is retried once with a fresh token first. | none |
+| `STS-SCIMC-0010` | An outbound SCIM client's OAuth 2.0 token request failed: the token endpoint refused the client_credentials grant, answered no access_token, or could not be reached. | none |
+| `STS-SCIMC-0011` | A SCIM delivery was not attempted because the claim store could not be asked; the next sweep tries again. | none |
+| `STS-SCIMC-0012` | A SCIM delivery still unsent scimClient.retentionS after it was queued was dead-lettered. | none |
+| `STS-SCIMC-0013` | The outbound SCIM client's periodic summary: deliveries were dead-lettered or deferred in a realm since the last summary. | none (a log line) |
+| `STS-SCIMC-0014` | The scim-client.deliver sweep failed in a realm. | none (a log line) |
+| `STS-SCIMC-0015` | An operator's retry or purge was refused: the delivery is not a dead letter, or it is unknown in this realm. | HTTP 400 (console and API) |
+| `STS-SCIMC-0016` | A SCIM client action named an unknown action, or a client this realm does not have. | HTTP 400 (console and API) |
+| `STS-SCIMC-0017` | A SCIM client definition was refused: an unknown choice, an unusable URL, a missing credential its method needs, an unreadable LDAP filter or certificate, or a write the application registry refused. | HTTP 400 (console and API) |
+| `STS-SCIMC-0018` | A SCIM client action failed unexpectedly. | HTTP 500 (console and API) |
+| `STS-SCIMC-0019` | A SCIM service provider's /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support. | none |
+| `STS-SCIMC-0020` | A create answered 409 uniqueness (RFC 7644 section 3.3) and no resource could be found by externalId, userName or displayName to adopt; dead-lettered for an operator. | none |
+| `STS-SCIMC-0021` | A write answered 412 Precondition Failed (RFC 7644 section 3.14) more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
+| `STS-SCIMC-0022` | An outbound SCIM client's scope filter is not an LDAP filter this service can evaluate (RFC 4515); nobody is in its scope until it is fixed. | HTTP 400 (console and API) at the write |
+| `STS-SCIMC-0023` | An outbound SCIM client's reconciliation failed part way: listing the service provider's resources, or reading the realm. | none (a log line and the action's answer) |
+| `STS-SCIMC-0024` | An outbound SCIM client's TLS client certificate could not be issued from the realm's tls-client Issuing CA. | HTTP 400 (console and API) |
+| `STS-SCIMC-0025` | A SCIM service provider answered a create or a read with a body that is not a SCIM resource carrying an id (RFC 7643 section 3.1). | none |
+| `STS-SCIMC-0026` | A SCIM service provider holds more than one resource with this realm's externalId for one entry (RFC 7643 section 3.1: the client owns externalId); dead-lettered for an operator to resolve. | none |
+| `STS-SCIMC-0027` | scimClient.skipTlsVerification is on in a product-mode realm and is ignored: the service provider's certificate is verified (logged once per process). | none (a log line) |
 
 ## STS-SCIM
 

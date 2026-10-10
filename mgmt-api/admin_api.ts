@@ -528,6 +528,8 @@ interface AdminApiDeps {
     typeof import('../attribute-sources/attribute_sources_api');
   // The secret push destinations' operations (#221 P3).
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
+  // The outbound SCIM clients' operations (#552).
+  loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -640,6 +642,9 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadScimClientsApi: function () {
+        return require('./scim_clients_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -2469,6 +2474,7 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi,
+            loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -17068,6 +17074,13 @@ class AdminApi {
                      'SCIM is on /admin-api/users and their groups are on ' +
                      '/admin-api/groups. There is no second store to report.',
         mirrors: 'GET /admin/scim',
+        parameters: [
+          { name: 'client', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 512 },
+            description: 'One outbound SCIM client\'s identifier (#552): ' +
+                         '`scimClients.client` is then that client\'s ' +
+                         'page — its queues, dead letters and discovery.' }
+        ],
         responseDescription: 'The counters and the capabilities.',
         responseSchema: { $ref: '#/components/schemas/Scim' },
         handler: function (req, res) {
@@ -22073,6 +22086,9 @@ class AdminApi {
       // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
       // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
       ...loadSecretDestinationsApi().ROUTES,
+      // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
+      // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
+      ...loadScimClientsApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,

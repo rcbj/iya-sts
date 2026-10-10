@@ -610,6 +610,18 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/scim', title: 'SCIM',
     operation: '/admin-api/scim',
+    // ONE OUTBOUND SCIM CLIENT'S PAGE (#552): `?client=` on the same
+    // operation, which answers `scimClients.client`.
+    drill: {
+      param: 'client',
+      sample: function (list: Json): string | null {
+        const rows = (list.scimClients && list.scimClients.clients) || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return ScimPage.clientDetail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return ScimPage.body(ctx || WebKit.context(), view);
     } },

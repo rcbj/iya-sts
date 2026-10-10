@@ -1274,6 +1274,18 @@ const ACTIONS = [
     label: 'An attribute source was removed' },
   { action: 'attribute-sources.refresh', category: 'admin',
     label: 'People were read from an attribute source by hand' },
+  // THE OUTBOUND SCIM CLIENT (#552): its configuration, an operator's acts on
+  // its queues and a reconciliation, and each delivery that finished (one row
+  // per finished delivery, never per attempt).
+  { action: 'scim-client.change', category: 'admin',
+    label: 'An outbound SCIM client was added, changed or removed' },
+  { action: 'scim-client.delivery', category: 'admin',
+    label: 'A change was delivered to a SCIM service provider, or ' +
+           'dead-lettered' },
+  { action: 'scim-client.reconcile', category: 'admin',
+    label: 'An outbound SCIM client reconciled its service provider' },
+  { action: 'scim-client.queue', category: 'admin',
+    label: 'A dead letter of an outbound SCIM client was retried or purged' },
   { action: 'secret-destination.push', category: 'admin',
     label: 'A service account\'s password was pushed to a secret ' +
            'destination' },

@@ -943,6 +943,26 @@ var config = {
     authClientCert: true         // Offer TLS client certificates
   },
 
+  // --- SCIM client -----------------------------------------------------
+  scimClient: {
+    attempts: 8,                // Delivery attempts
+    timeoutMs: 15000,           // Request timeout (ms)
+    backoffMs: 10000,           // Retry backoff (ms)
+    maxBackoffMs: 3600000,      // Longest backoff (ms)
+    leaseMs: 300000,            // Delivery lease (ms)
+    sweepS: 15,                 // Delivery sweep (seconds)
+    retentionS: 604800,         // Retention (seconds)
+    maxRows: 200000,            // Deliveries kept per realm
+    concurrency: 4,             // Concurrent deliveries
+    summaryS: 300,              // Summary interval (seconds)
+    reconcileCheckS: 60,        // Reconciliation check (seconds)
+    pageSize: 100,              // Reconciliation page size
+    etagRetries: 3,             // ETag re-reads
+    allowHttp: false,           // Allow http:// to a service provider (development only)
+    skipTlsVerification: false, // Skip TLS verification to a service provider (development only)
+    caFile: ""                  // CA certificates file
+  },
+
   // --- SSF -------------------------------------------------------------
   ssf: {
     enabled: true,                                                                                                                                        // SSF enabled
