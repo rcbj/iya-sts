@@ -14816,7 +14816,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
 function clientSecretBytes() {
   log.debug("Entering clientSecretBytes().");
   log.debug("Leaving clientSecretBytes().");
-  return Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  return Number(config.value('oauth2.registeredSecretBytes'));
 }
 
 /**
