@@ -78,11 +78,7 @@ const LEFT_TO_THEIR_OWN_CONTROL = [
   'krb5ClaimsPac',
   // A secret destination's write credential (#221 P3): write-only, set on
   // Directory → Secret destinations.
-  'secretDestCredential',
-  // An outbound SCIM client's three credentials (#552): write-only, set on
-  // Protocols → SCIM → Clients.
-  'scimClientPassword', 'scimClientOAuthClientSecret',
-  'scimClientTlsPrivateKey'
+  'secretDestCredential'
 ];
 
 function run(t) {

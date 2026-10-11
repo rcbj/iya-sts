@@ -1504,49 +1504,7 @@ class ConsoleRuntime {
         null);
       return;
     }
-    let json = answer.json;
-    if (page.compose) {
-      const self = this;
-      const members = Object.keys(page.compose).filter(function (member) {
-        const when = (page.composeWhen || {})[member];
-        return !when || when.some(function (name) {
-          return Object.prototype.hasOwnProperty.call(query, name);
-        });
-      });
-      const answers = await Promise.all(members.map(async function (member) {
-        const operation = page.compose[member];
-        const params = {};
-        ((page.composeWhen || {})[member] || []).forEach(function (name) {
-          if (Object.prototype.hasOwnProperty.call(query, name)) {
-            params[name] = query[name];
-          }
-        });
-        const search = new URLSearchParams(params).toString();
-        return { member: member, operation: operation,
-          answer: await self.apiJson('GET', operation +
-            (search ? '?' + search : '')) };
-      }));
-      const failed = answers.filter(function (one) {
-        return !one.answer || one.answer.status !== 200 || !one.answer.json;
-      })[0];
-      if (failed) {
-        const status = failed.answer ? failed.answer.status : 'unavailable';
-        const detail = failed.answer && failed.answer.json &&
-          failed.answer.json.error
-          ? ' ' + kit.esc(failed.answer.json.error_description ||
-                          failed.answer.json.error) : '';
-        this.draw(WebPages.titleOf(page, this.t), page.path,
-          kit.warn('The management API answered ' + status + ' for <code>' +
-          kit.esc(failed.operation) + '</code>.' + detail,
-          'It could not be drawn'), null);
-        return;
-      }
-      json = Object.assign({}, json);
-      answers.forEach(function (one) {
-        json[one.member] = one.answer.json;
-      });
-    }
-    this.view = { page: page, json: json, query: query };
+    this.view = { page: page, json: answer.json, query: query };
     this.drawView(null);
   }
 
@@ -1859,11 +1817,11 @@ class ConsoleRuntime {
       const types = [].concat(prop.type || []);
       let value = fieldsIn[name];
       // AN EMPTY BOX IS AN ABSENT VALUE where the schema could not take an
-      // empty string — a pattern, a format, a minimum length, a type that is
-      // not a string — as the server-rendered console's form parser read it.
-      // It is kept where a string is all the schema asks, so a field can
-      // still be cleared.
-      if (value === '' && (prop.pattern || prop.format || prop.minLength > 0 ||
+      // empty string — a pattern, a minimum length, a type that is not a
+      // string — as the server-rendered console's form parser read it. It
+      // is kept where a string is all the schema asks, so a field can still
+      // be cleared.
+      if (value === '' && (prop.pattern || prop.minLength > 0 ||
                            (types.length && types.indexOf('string') < 0))) {
         return;
       }

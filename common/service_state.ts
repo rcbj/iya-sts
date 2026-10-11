@@ -177,45 +177,6 @@ class ServiceState {
    * coordination and the certificate authority report and carry on.
    * @returns a promise of `{ started, keys, minted, coordinating, pki }`
    */
-  // THE BUILT-IN APPLICATIONS AND NATIVE ROLES, SEEDED AGAIN ONCE THE STORE
-  // HAS RESTORED THE DIRECTORY (2026-10-10). `ldap_server.js` seeds them when
-  // it is required, which is before `persistence.start()`; the restore then
-  // REPLACES each realm's directory with what the store holds, so an entry
-  // the store never held — the embedded debugger's two applications, on a
-  // deployment whose store predates them — was seeded, thrown away and never
-  // written down, on every start. Both seeds create only what is missing, so
-  // running them again here changes nothing that exists; it comes after the
-  // keystore because a seeded registration's access token is sealed, and
-  // after coordination so the writes go through the change log like any
-  // other. Never fatal: a seed that fails says so and the service starts.
-  /**
-   * Seeds the built-in applications and native roles again in every realm,
-   * after the store has restored the directory.
-   */
-  reseedAfterRestore(): void {
-    const { log, realms } = this.deps;
-    log.debug("Entering ServiceState.reseedAfterRestore().");
-    try {
-      const applications = require('./applications');
-      const roles = require('./roles');
-      realms.list().forEach(function (realm: any) {
-        realms.run(realm, function () {
-          applications.seedInternalApplications({
-            scope: realm.id === realms.DEFAULT_ID ? 'default' : 'every' });
-          roles.seedNativeRoles();
-        });
-      });
-    } catch (e) {
-      log.debug("Caught in ServiceState.reseedAfterRestore(): " +
-                ((e && e.message) || e));
-      helpers.log.warn(require('./error_codes').tag('STS-REG-0002') +
-               'applications: the built-in ' +
-               'applications could not be seeded again after the store was ' +
-               'restored: ' + ((e && e.message) || e));
-    }
-    log.debug("Leaving ServiceState.reseedAfterRestore().");
-  }
-
   start(): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
@@ -309,7 +270,6 @@ class ServiceState {
         // with it. It starts, says so loudly, and keeps trying on its timer.
         // ---------------------------------------------------------------------
         return persistence.coordinate().then(function (coordinating) {
-          self.reseedAfterRestore();
           return self.settleSigningKeys().then(function () {
             return coordinating;
           });
@@ -423,7 +383,5 @@ const serviceState = new ServiceState({
  */
 export = {
   ServiceState: ServiceState,
-  start: serviceState.start.bind(serviceState) as ServiceState['start'],
-  reseedAfterRestore: serviceState.reseedAfterRestore.bind(serviceState) as
-    ServiceState['reseedAfterRestore']
+  start: serviceState.start.bind(serviceState) as ServiceState['start']
 };

@@ -1372,10 +1372,6 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
-    // #552: the outbound SCIM clients' operations; the client itself is built
-    // at 22, beside the SCIM server, and reached from here lazily.
-    this.build('mgmt-api/scim_clients_api',
-               require('../mgmt-api/scim_clients_api'), 'ScimClientsApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
@@ -1536,13 +1532,6 @@ class ProtocolStack {
     require('../scim/scim');
     this.build('scim/scim', require('../scim/scim'), 'Scim');
     this.register(app, require('../scim/scim'), 'scim/scim');
-    // #552: the outbound SCIM client, a library and no route — its clients are
-    // application entries, its wire step listens to the directory (filled at
-    // 21, above) and registers the `scim-client.deliver` and
-    // `scim-client.reconcile` scheduler jobs. Beside the server for a reader;
-    // `mgmt-api/admin_api` reaches it through `scim_clients_api` lazily.
-    this.build('scim/scim_client', require('../scim/scim_client'),
-               'ScimClients');
     // SPIFFE — the sixteenth family, and the third family here (after Kerberos
     // and the directory) whose own listeners are started from `server.js`'s
     // listen() rather than at require time.

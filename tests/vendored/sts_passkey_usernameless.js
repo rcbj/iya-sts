@@ -23,8 +23,7 @@
 // would be on for every job loading that screen meanwhile. A realm's own
 // policy is its own. The realm is left behind afterwards, as every job's is.
 //
-// It is on by default (G), turned off in its realm to check the refusal,
-// then on again for the rest:
+// It is off at first (G), then on for the rest:
 //
 //   A. the page created the credential under a minted 64-byte handle, never
 //      the username's bytes, and the person's key list says it signs in with
@@ -36,8 +35,8 @@
 //   D. one without user verification is refused;
 //   E. one under a handle nobody holds is refused;
 //   F. the real button with the script blocked is told it needs JavaScript;
-//   G. at its default (on since 2026-10-10) the button is drawn; turned off
-//      in the realm, nothing is drawn and the door refuses — asserted first;
+//   G. with the setting at its default, off, nothing is drawn and the door
+//      refuses — asserted first;
 //   H. SYNCED PASSKEYS (#528): a key whose authenticator data sets BE
 //      registers while the passkey policy's `backupEligibility` is `allow`;
 //      under `disallow` it signs nobody in (STS-AUTHN-0313, on an audit row)
@@ -509,18 +508,12 @@ async function signingInWithNoUsername(authenticator) {
 }
 
 // ---------------------------------------------------------------------------
-// G. ON BY DEFAULT (since 2026-10-10), then OFF in this realm.
+// G. OFF, which is the default.
 // ---------------------------------------------------------------------------
-async function offByDefault(authenticator, savePolicy) {
+async function offByDefault(authenticator) {
   log.debug("Entering offByDefault().");
-  log.info("=== the passkey policy's allowUsernameless: on by default, " +
-           "then off ===");
-  const first = await theSignInScreen();
-  check("AT ITS DEFAULT THE SCREEN DRAWS THE PASSKEY BUTTON", function () {
-    assert.ok(/id="wa-passkey"/.test(first.screen.text),
-      "the passkey button is not drawn at the default.");
-  });
-  await savePolicy(false);
+  log.info("=== the passkey policy's allowUsernameless off, its default " +
+           "===");
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
     attr(s.screen.text, "challenge") || "none"));
@@ -651,10 +644,11 @@ async function test() {
   await fixtures.publicClient(api, CLIENT, [REDIRECT]);
   const authenticator = makeAuthenticator();
   await registerThePasskey(authenticator);
+  // OFF FIRST, which is the default; then on, in this realm alone.
+  await offByDefault(authenticator);
   // #527: the realm's own passkey policy, saved whole.
-  const savePolicy = async function (allow) {
   const set = await call("POST", "/policies/save-passkey-policy",
-                         { allowUsernameless: allow,
+                         { allowUsernameless: true,
                            securityKeyResidentKey: "required",
                            backupEligibility: "allow",
                            enforcePinLength: false, minPinLength: 4,
@@ -667,13 +661,8 @@ async function test() {
                            userDisplayName: "", rpNameExtras: "none",
                            credentialLabel: "", aggregateDevices: true });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
-    "setting usernameless sign-in to " + allow + " in " + REALM + "'s " +
-    "passkey policy answered " + set.status + " " +
-    String(set.raw).slice(0, 300));
-  };
-  // ON BY DEFAULT, then OFF in this realm alone, then on again.
-  await offByDefault(authenticator, savePolicy);
-  await savePolicy(true);
+    "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
+    "answered " + set.status + " " + String(set.raw).slice(0, 300));
   await signingInWithNoUsername(authenticator);
   await syncedPasskeys(authenticator);
   assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
