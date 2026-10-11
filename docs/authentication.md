@@ -300,7 +300,7 @@ row says `disallow`. See [XACML](xacml.md).
 
 | Field | Default | What it does |
 |---|---|---|
-| `allowUsernameless` | on | Offers a passkey sign-in with **no username**, described below. |
+| `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
 | `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
 | `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
 | `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
@@ -515,7 +515,7 @@ The policy replaced the settings `webauthn.usernameless` and
 refused at start.
 
 **Signing in with a passkey and no username** (the passkey policy's
-`allowUsernameless`, on by default). Where it is on, the sign-in screen draws
+`allowUsernameless`, off by default). Where it is on, the sign-in screen draws
 *Sign in with a passkey*, and the username field offers passkeys as autofill in browsers that
 support conditional mediation. The browser is asked for any passkey of this
 service, the user handle it returns names the account, and:

@@ -28,11 +28,6 @@
 
 import kit = require('../admin-ui/web_kit');
 import SettingsForms = require('../admin-ui/web_settings');
-import ScimClientsPage = require('./web_scim_clients');
-
-// THE SETTINGS GROUP THE CLIENTS TAB DRAWS (#552); every other group on this
-// page is the server's.
-const CLIENT_GROUP = 'SCIM client';
 
 type Json = any;
 
@@ -264,8 +259,7 @@ class ScimPage {
       // same override map as /admin/config, which is the arrangement
       // /admin/token-lifetimes established. What has changed is only which
       // page draws the door.
-      SettingsForms.forms(json.settings, '/admin/scim',
-                          ScimPage.groupsOf(json.settings, false), t) +
+      SettingsForms.forms(json.settings, '/admin/scim', undefined, t) +
       kit.note(t.html('consoleScim.settingsNote') + ' <a ' +
       'href="/admin/users">' + t.html('consoleScim.linkUsers') + '</a> ' +
       t.html('consoleScim.and') + ' <a ' +
@@ -282,36 +276,7 @@ class ScimPage {
       '</a> &middot; <a href="/admin/ldap/service">' +
       t.html('consoleScim.footerDirectory') + '</a>');
 
-    // TWO TABS (#552, rcbj): Server is everything this page drew before;
-    // Clients is the outbound SCIM clients and their shared settings.
-    return kit.tabbedPanels('scim', [
-      { id: 'server', label: t.text('consoleScimClients.tabServer'),
-        html: inner },
-      { id: 'clients', label: t.text('consoleScimClients.tabClients'),
-        html: ScimClientsPage.tab(ctx, json.scimClients) +
-              SettingsForms.forms(json.settings, '/admin/scim',
-                                  ScimPage.groupsOf(json.settings, true), t) }
-    ]);
-  }
-
-  /**
-   * Draws one outbound SCIM client's page, `/admin/scim?client=<id>`.
-   *
-   * @param ctx - the render context
-   * @param json - the answer of the page's operation with `client`
-   * @returns the page's HTML
-   */
-  static clientDetail(ctx, json) {
-    return ScimClientsPage.detail(ctx, json);
-  }
-
-  // The settings groups of one tab: the clients' group, or every other.
-  static groupsOf(settings, clients) {
-    return ((settings && settings.groups) || []).map(function (group) {
-      return group.group;
-    }).filter(function (name) {
-      return (name === CLIENT_GROUP) === clients;
-    });
+    return inner;
   }
 
   // ---------------------------------------------------------------------------

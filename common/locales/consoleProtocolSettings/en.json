@@ -1,9 +1,6 @@
 {
   "asJson": "this page as JSON",
   "everyEndpoint": "every endpoint this service registers",
-  "globalSettings": "Global settings",
-  "metadataHeading": "Metadata",
-  "metadataDescription": "The OpenID Connect discovery document publishes this authorization server's endpoints and capabilities.",
   "thWhat": "What",
   "thAnswer": "Answer",
   "period": ".",

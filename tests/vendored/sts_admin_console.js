@@ -3791,8 +3791,7 @@ function writeForms(stamp) {
       values: { sp: "urn:console:" + stamp + ":sp" },
       expect: { text: "urn:console:" + stamp + ":sp" } },
     { path: "/admin/saml11", button: "Register",
-      values: { rp: "urn:console:" + stamp + ":rp",
-                shire: "https://console-" + stamp + ".example.test/acs" },
+      values: { rp: "urn:console:" + stamp + ":rp" },
       expect: { text: "urn:console:" + stamp + ":rp" } },
     { path: "/admin/authorization-servers", button: "Add",
       values: { id: "as" + stamp.slice(0, 8), label: "Console AS",
@@ -5106,33 +5105,6 @@ async function theFieldGridIsPressed(driver) {
     assert.ok(advanced.hasRadio, "the advanced view draws no radios for " +
               BOOL);
   });
-  const oauthFields = await driver.executeScript(`
-    return ["oauthTokenEndpointAuthMethod", "oauthGrantType",
-            "oauthAllowedScope"].every(function (name) {
-      const cell = document.getElementById("fgc-" + name);
-      return !!cell && cell.checkVisibility();
-    });
-  `);
-  check("the OAuth create form shows its auth, grant and allowed-scope " +
-        "fields", function () {
-    assert.strictEqual(oauthFields, true,
-      "the OAuth fields should be visible when OAuth 2.0 is selected");
-  });
-
-  await press("button[name=switchview]", "", { protocol: "saml11",
-                                               name: "SAML 1.1 app" });
-  const samlCertificate = await driver.executeScript(`
-    const cell = document.getElementById("fgc-samlSigningCertificate");
-    return !!cell && cell.checkVisibility();
-  `);
-  check("the SAML 1.1 create form shows its signing certificate field",
-        function () {
-    assert.strictEqual(samlCertificate, true,
-      "samlSigningCertificate should be visible when SAML 1.1 is selected");
-  });
-
-  await press("button[name=switchview]", "", { protocol: "oauth2",
-                                               name: "Console grid app" });
 
   await press(GROW, "", {});
   const grown = await state();

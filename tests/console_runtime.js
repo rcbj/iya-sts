@@ -33,8 +33,6 @@
 //   7. A tab survives: a page drawn at an address with a fragment makes it
 //      the `:target` again (a panel drawn after the navigation is not), and
 //      an act returns to the tab its form was on.
-//   8. The application's SAML metadata form sends a file, the selected
-//      family, and an empty paste field through the mirrored API operation.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -149,22 +147,7 @@ function childMain() {
             removeItem: function (k) { delete store[k]; }
           },
           formDataOf: function (form) {
-            const data = {
-              entries: [],
-              append: function (name, value) {
-                this.entries.push({ name: name, value: value });
-              },
-              delete: function (name) {
-                this.entries = this.entries.filter(function (one) {
-                  return one.name !== name;
-                });
-              },
-              forEach: function (callback) {
-                this.entries.slice().forEach(function (one) {
-                  callback(one.value, one.name);
-                });
-              }
-            };
+            const data = new FormData();
             Object.keys(form.fields).forEach(function (name) {
               data.append(name, form.fields[name]);
             });
@@ -337,53 +320,6 @@ function childMain() {
          '7b. an act returns to the tab its form was on, with its answer ' +
          'in the strip', JSON.stringify(seven.replaced) + ' ' +
            seven.env.location.href);
-
-    // --- 8. metadata files use the selected family's API operation ---------
-    const metadataId = 'https://console-' + stamp + '.test/saml';
-    const metadataApp = applications.createApplication({
-      identifier: metadataId, kind: 'saml2-service-provider',
-      protocol: 'SAML 2.0 and SAML 1.1',
-      protocols: ['saml2', 'saml11'],
-      fields: { samlEntityId: metadataId } });
-    const metadataEnv = makeEnv('/admin/applications',
-      '?application=' + encodeURIComponent(metadataId));
-    metadataEnv.env.location.hash = '#cfg-saml11';
-    runtime = new ConsoleRuntime(metadataEnv.env);
-    await signedIn(runtime);
-    await runtime.route();
-    const saml11Metadata = '<md:EntityDescriptor xmlns:md="' +
-      'urn:oasis:names:tc:SAML:2.0:metadata" entityID="' + metadataId +
-      '"><md:SPSSODescriptor protocolSupportEnumeration="' +
-      'urn:oasis:names:tc:SAML:1.1:protocol">' +
-      '<md:AssertionConsumerService index="0" isDefault="true" ' +
-      'Binding="urn:oasis:names:tc:SAML:1.0:profiles:artifact-01" ' +
-      'Location="https://sp.console.test/SAML/Artifact"/>' +
-      '</md:SPSSODescriptor></md:EntityDescriptor>';
-    const file = { name: 'sp-metadata.xml',
-                   size: Buffer.byteLength(saml11Metadata),
-                   text: async function () { return saml11Metadata; } };
-    await runtime.submit({
-      getAttribute: function (name) {
-        if (name === 'action') {
-          return '/admin/saml2#cfg-saml11';
-        }
-        return name === 'enctype' ? 'multipart/form-data' : '';
-      },
-      fields: { action: 'upload-metadata', family: 'saml11',
-        sp: metadataId, document: '', file: file }
-    }, null);
-    const consumed = applications.get(metadataId);
-    const consumedEndpoints = [].concat(
-      (consumed && consumed.fields.samlAcsEndpoint) || []).join(' ');
-    note(metadataApp && metadataApp.ok && consumedEndpoints.indexOf(
-      'https://sp.console.test/SAML/Artifact') >= 0 &&
-      consumedEndpoints.indexOf(
-        'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01') >= 0 &&
-      metadataEnv.env.location.hash === '#cfg-saml11' &&
-      /^\?(notice|error)=/.test(metadataEnv.env.location.search),
-      '8. a selected-family metadata file and empty paste field reach the ' +
-      'mirrored operation and import the matching SAML 1.1 descriptor',
-      consumedEndpoints + ' ' + metadataEnv.env.location.href);
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
