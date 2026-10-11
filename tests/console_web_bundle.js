@@ -149,7 +149,33 @@ function childMain() {
           typeof answer.body !== 'object') {
         throw new Error(page.operation + ' answered ' + answer.status);
       }
-      return JSON.parse(JSON.stringify(answer.body));
+      const view = JSON.parse(JSON.stringify(answer.body));
+      if (page.compose) {
+        const members = Object.keys(page.compose).filter(function (member) {
+          const when = (page.composeWhen || {})[member];
+          return !when || when.some(function (name) {
+            return Object.prototype.hasOwnProperty.call(query || {}, name);
+          });
+        });
+        const answers = await Promise.all(members.map(function (member) {
+          const params = {};
+          ((page.composeWhen || {})[member] || []).forEach(function (name) {
+            if (Object.prototype.hasOwnProperty.call(query || {}, name)) {
+              params[name] = query[name];
+            }
+          });
+          return apiAnswer(page.compose[member], params);
+        }));
+        answers.forEach(function (one, index) {
+          if (one.status !== 200 || !one.body ||
+              typeof one.body !== 'object') {
+            throw new Error(page.compose[members[index]] + ' answered ' +
+                            one.status);
+          }
+          view[members[index]] = JSON.parse(JSON.stringify(one.body));
+        });
+      }
+      return view;
     }
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
@@ -986,7 +1012,7 @@ function childMain() {
         application: one.query, per: '10'
       });
       const html = WebPages.render(applicationPage.path, detail,
-                                  WebKit.context({}, true));
+        WebKit.context({ application: one.query }, true));
       const present = one.want.every(function (id) {
         return html.indexOf('id="' + id + '"') >= 0;
       });
@@ -1034,6 +1060,28 @@ function childMain() {
          differing.join(', ') ||
          'drill-downs: ' + drilled.join(', ') + '; examples: ' +
          exampled.join(', '));
+    const oauthPage = WebPages.pageFor('/admin/oauth2');
+    const oauthView = oauthPage ? await viewOf(oauthPage, {}) : null;
+    const oauthHtml = oauthView
+      ? WebPages.render('/admin/oauth2', oauthView, WebKit.context({}, true))
+      : '';
+    const oauthTabIds = [
+      'oauth-tab-settings', 'oauth-tab-authorization-servers',
+      'oauth-tab-token-lifetimes', 'oauth-tab-claims',
+      'oauth-tab-userinfo-claims', 'oauth-settings-global',
+      'oauth-settings-metadata'
+    ];
+    note(oauthTabIds.every(function (id) {
+      return oauthHtml.indexOf('id="' + id + '"') >= 0;
+    }) && oauthHtml.indexOf('consoleAuthorizationServers') < 0 &&
+         oauthHtml.indexOf('openid-configuration') >= 0 &&
+         oauthHtml.indexOf('Global settings') >= 0 &&
+         oauthHtml.indexOf('Metadata') >= 0,
+         'D-OAuth. one OAuth2 / OIDC page draws five subpage tabs and ' +
+         'separates global settings from metadata',
+         oauthTabIds.filter(function (id) {
+           return oauthHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', ') || 'metadata/settings tab content missing');
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -1097,7 +1145,13 @@ function childMain() {
     // A page of the console, or a page drawn under one of its tabs
     // (`/admin/keys/history` under Key pairs).
     const consolePage = function (path) {
+      const oauthChildren = [
+        '/admin/authorization-servers', '/admin/token-lifetimes',
+        '/admin/claims', '/admin/userinfo-claims'
+      ];
       return consolePages.indexOf(path) >= 0 ||
+        (consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.indexOf(path) >= 0) ||
         consolePages.some(function (one) {
           return path.indexOf(one + '/') === 0;
         });
@@ -1105,12 +1159,29 @@ function childMain() {
     const untrue = WebPages.PAGES.filter(function (page) {
       return !consolePage(page.path) ||
              operations.indexOf('GET ' + page.operation) < 0 ||
+             Object.keys(page.compose || {}).some(function (member) {
+               return operations.indexOf(
+                 'GET ' + page.compose[member]) < 0;
+             }) ||
              typeof page.render !== 'function' || !page.title;
     }).map(function (page) { return page.path; });
     note(WebPages.PAGES.length >= 1 && untrue.length === 0,
          'E. every converted page is a page of the console and names an ' +
          '/admin-api operation that exists', untrue.join(', ') + ' ' +
          operations.length + ' operation(s)');
+    const oauthChildren = [
+      '/admin/authorization-servers', '/admin/token-lifetimes',
+      '/admin/claims', '/admin/userinfo-claims'
+    ];
+    note(consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0;
+         }),
+         'E-OAuth. the sidebar has one OAuth 2.0 / OIDC entry, not its ' +
+         'four former leaves', consolePages.filter(function (page) {
+           return page === '/admin/oauth2' ||
+             oauthChildren.indexOf(page) >= 0;
+         }).join(', '));
 
     // --- F. the settings block is one block ----------------------------------
     const config = require(ROOT_DIR + '/common/config');

@@ -151,8 +151,10 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +
    `items`), and `isNavGroup()` is the single predicate that decides which.
-   Under Protocols the groups are **OAuth2 / OIDC** (authorization
-   servers, token lifetimes, custom claims), **SAML** (SAML 2.0 identity
+   Under Protocols **OAuth 2.0 / OIDC is one page** with tabs for its
+   settings, authorization servers, token lifetimes, custom claims and
+   UserInfo claims; the settings tab has sub-tabs for global settings and
+   metadata. The other groups are **SAML** (SAML 2.0 identity
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
    claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
