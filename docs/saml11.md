@@ -304,7 +304,7 @@ changed on `/admin/saml11` or `/admin/saml-assertions`, or with
 
 ## In the running service
 
-* **Protocols → SAML → SAML 1.1 identity provider** (`/admin/saml11`): every
+* **Protocols → SAML** (`/admin/saml2`, SAML 1.1 tab): every
   relying party, its metadata URL, which profile it used and where the
   assertion went, and which identifiers look guessed.
 * **SAML assertions** (`/admin/saml-assertions`) and **Custom SAML attributes**

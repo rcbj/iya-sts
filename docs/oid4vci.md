@@ -77,7 +77,8 @@ header to `x5c`, because HAIP's verifier holds only the anchor.
 
 A credential carries claims chosen from a catalogue of **LDAP attribute
 types**, and each value is read from the person's own directory entry. What
-`/admin/vc` selects applies to all five configurations. An `ldp_vc` credential
+the Credential claims tab at `/admin/vc#vc-tab-claims` selects applies to all
+five configurations. An `ldp_vc` credential
 can carry only the terms its JSON-LD context defines, and the page names the
 claims it cannot express.
 
@@ -175,7 +176,8 @@ random and freed when the credential expires.
 A credential's status is VALID, INVALID or SUSPENDED. It is **computed** from
 the credential's own status and from whether an administrator revoked it, so
 every page that shows it agrees. Four things change it: a suspension,
-reinstatement or revocation on `/admin/vc-status`, a revocation or restore on
+reinstatement or revocation on the Credential status tab at
+`/admin/vc#vc-tab-status`, a revocation or restore on
 `/admin/tokens`, a global sign-out, and a disabled account.
 
 `oid4vci.statusListTtlS` is how long a verifier may keep a list (it is also the
@@ -319,8 +321,9 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `signing.credentialRotationIntervalDays` | `STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS` | `365` | yes | In product mode, how long the credential signing key works before its successor is promoted, when that key signs no tokens; `0` turns rotation off. |
 
 See [Configuration](configuration.md) for how a value is resolved. Every
-`oid4vci.*` setting is on `/admin/oid4vci` in the realm it applies to, and can
-be changed with `POST /admin-api/config/set`.
+`oid4vci.*` setting is on the OpenID4VCI settings tab at
+`/admin/vc#vc-tab-oid4vci` in the realm it applies to, and can be changed with
+`POST /admin-api/config/set`.
 
 ## Design decisions
 
@@ -352,7 +355,8 @@ be changed with `POST /admin-api/config/set`.
   control.
 * **One status index per credential, and the bit is computed.** The same index
   in every list, and a status derived from the credential's own entry and its
-  revocation mark, means `/admin/tokens`, `/admin/vc-status`, a global sign-out
+  revocation mark, means `/admin/tokens`, the Credential status tab at
+  `/admin/vc#vc-tab-status`, a global sign-out
   and the sign-in door cannot disagree.
 * **The sign-in register is written at issuance, where the facts are known.**
   In development the credential endpoint accepts tokens it did not issue, so a
@@ -372,20 +376,20 @@ be changed with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → Verifiable Credentials → OpenID4VCI** (`/admin/oid4vci`): the
-  issuer's settings, including which wallet the offer pages use, which
-  authorization server is advertised, the batch size, deferred timings,
+* **Protocols → Verifiable Credentials** (`/admin/vc`) is one tabbed page.
+  The **Metadata** tab lists the issuer and verifier endpoints. The
+  **OpenID4VCI** tab holds the issuer's settings, including which wallet the offer pages use,
+  which authorization server is advertised, the batch size, deferred timings,
   encryption, and the DID choices. API: `GET /admin-api/oid4vci-settings`.
-* **Protocols → Verifiable Credentials → Credential claims** (`/admin/vc`):
-  which claims a credential issued from now on carries, chosen from the LDAP
-  attribute catalogue, for all five configurations at once. Saving also
-  populates the directory. API: `GET /admin-api/credential-claims` and
+* Its **Credential claims** tab selects which claims an issued credential
+  carries, from the LDAP attribute catalogue, for all five configurations at
+  once. Saving also populates the directory. API:
+  `GET /admin-api/credential-claims` and
   `POST /admin-api/credential-claims/select`.
-* **Protocols → Verifiable Credentials → Credential status**
-  (`/admin/vc-status`): this realm's status lists, where they are served, and
-  every issued credential's index and status, with **Suspend**, **Reinstate**
-  and **Revoke**. API: `GET /admin-api/vc-status` and
-  `POST /admin-api/vc-status/{suspend,reinstate,revoke}`.
+* Its **Credential status** tab shows this realm's status lists, where they
+  are served, and every issued credential's index and status, with
+  **Suspend**, **Reinstate** and **Revoke**. API: `GET /admin-api/vc-status`
+  and `POST /admin-api/vc-status/{suspend,reinstate,revoke}`.
 * **Tokens** (`/admin/tokens`): issued credentials among everything else this
   realm issued, with the revocation that disowns one.
 * **The live metadata** at `/.well-known/openid-credential-issuer` is the

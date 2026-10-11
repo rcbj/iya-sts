@@ -63,12 +63,16 @@ about that line had to change.
      case.** `/admin-api/claims/:action` and `/admin-api/saml-attributes/:action`
      both call `claimsAction`, differing only in the third argument — the set ids
      that door carries, `stats.JWT_CLAIM_SET_IDS` or `stats.SAML_CLAIM_SET_IDS`,
-     which is exactly what the two console pages pass. That is what makes the two
-     resources a mirror of the two PAGES rather than two models of one store. It
-     costs fourteen operations for seven behaviours, so the seven are built once
-     by `claimSetActions(family)` and the family varies the set enum, the noun and
+     which is exactly what the console controls pass.
+     The SAML resource feeds the Custom SAML attributes tab on `/admin/saml2`;
+     the resource paths stay distinct so each control's operations remain clear.
+     It costs fourteen operations for seven behaviours, so the seven are built
+     once by `claimSetActions(family)` and the family varies the set enum, the noun and
      the reserved-names rule: fourteen hand-written descriptions would be seven
-     pairs, and the half of each pair nobody edited is the half a caller believes.
+     pairs, and the half of each pair nobody edited is the half a caller
+     believes. The parity check sees the same seven action names from both
+     resources, which is the property that makes them one behaviour rather than
+     two.
      The parity check that reads the refusal sentence off each resource sees the
      same seven action names from both, which is the property that makes them
      one behaviour rather than two.
@@ -148,10 +152,11 @@ one operation, and nothing whatsoever would fail.
 
 On 2026-08-27 every one of `config.js`'s setting groups moved onto the console
 page for the protocol it configures, and eight pages were created for the
-families that had settings and no page: `/admin/oauth2`, `/admin/oid4vci`,
-`/admin/oid4vp`, `/admin/kerberos`, `/admin/ldap`, `/admin/wstrust`,
-`/admin/wsfed` and `/admin/tls`. Rule 7 asks for an operation per page, so each
-gained a GET here — and **no POST**, for exactly the reason the row below gives.
+families that had settings and no page: `/admin/oauth2`, `/admin/vc`
+(OpenID4VCI and OpenID4VP settings), `/admin/kerberos`, `/admin/ldap`,
+`/admin/wstrust`, `/admin/wsfed` and `/admin/tls`. Rule 7 asks for an
+operation per page, so each gained a GET here — and **no POST**, for exactly
+the reason the row below gives.
 
 **Every form on those pages posts `set-many` to `/admin/config`**, which `POST
 /admin-api/config/set-many` already mirrors. A POST per page would be eight more
@@ -186,11 +191,11 @@ group, the other console pages that draw the same group. The block is drawn
 from this member alone now
 (`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
 
-**Two of the paths are not the obvious ones**, and the collision is worth
-knowing before somebody "fixes" them: `/admin-api/oid4vci-settings` and
-`/admin-api/oid4vp-settings`, because `/admin-api/credential-claims` and
-`/admin-api/verifier-request` already mirror the other two pages of those
-families and the bare names would have read as theirs.
+**Two operation names preserve distinct settings APIs**:
+`/admin-api/oid4vci-settings` and `/admin-api/oid4vp-settings`, while
+`/admin-api/credential-claims` and `/admin-api/verifier-request` retain the
+content operations' separate meanings. All four now feed tabs of the single
+`/admin/vc` destination.
 
 **`GET /admin-api/config` did not narrow when the page did.** It still answers
 the whole table — a caller asking this API for the configuration should not have
@@ -227,7 +232,8 @@ generated password and an activation link can be answered in a page body
 instead of a 303's query string. `tests/vendored/sts_admin_console.js` builds
 its list of "console paths that take a POST" by parsing this field, so a page
 left out of it reads as a control that reaches nothing. `/admin-api/xacml/{action}`
-has named three since it was written; this is the second resource to need it.
+names its former page paths and its three tab-specific controls; this is the
+second resource to need more than one console path.
 
 **IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
 SERVING.** `common/credentials.ts` names `POST /admin-api/users/set-password`
@@ -1779,8 +1785,9 @@ the roster. Now:
 
 `POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the
 key pair for its HTTPS listener, from the realm's `pep-tls` Issuing CA, and
-mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
-same `pepAction()` — rule 7 in the ordinary way. Three things about it:
+mirrors the **Issue certificate** control on the Remote PEPs tab of
+`/admin/xacml` through the same `pepAction()` — rule 7 in the ordinary way.
+Three things about it:
 
 * **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
   other XACML actions answer a result, so `admin-core/admin_actions.ts`'s
@@ -1953,8 +1960,8 @@ it under `/realm/{id}/admin-api/mode` for a realm's answer.
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
-(rule 7): `GET /admin-api/vc-status` is what `/admin/vc-status?format=json`
-answers — where this realm's status lists are served, their size and
+(rule 7): `GET /admin-api/vc-status` feeds the Credential status tab on
+`/admin/vc` — where this realm's status lists are served, their size and
 lifetimes, the counts, and a page of every issued credential's index and
 status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 `{ idx }` is the page's three buttons, through `statusAction()`. The action is

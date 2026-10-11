@@ -92,7 +92,7 @@ documents it.
 |---|---|---|
 | OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) |
 | SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) |
-| Verifiable Credentials | `/admin/oid4vci`, `/admin/vc`, `/admin/vc-status`, `/admin/oid4vp`, `/admin/vc-verifier-config` | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) |
+| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, Credential status, OpenID4VP settings and Verifier request tabs | [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) |
 | XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) |
 | SCIM | `/admin/scim` | [SCIM 2.0](scim.md) |
 | Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) |
@@ -191,7 +191,7 @@ the diagram and a walk through each layer.
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
 | OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |
-| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc-status` | [oid4vci](oid4vci.md) |
+| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc#vc-tab-status` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
 | The W3C VC-API test endpoints — Data Integrity (RDFC, JCS, ecdsa-sd-2023), VC-JOSE-COSE and DID resolution for the W3C test suites; a development test control | `/vc-api/*` | [vc-api](vc-api.md) |
 | Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |

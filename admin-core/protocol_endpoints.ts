@@ -88,10 +88,6 @@ import realms = require('../common/realms');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import InstanceSlot = require('../common/instance_slot');
 
-const OAUTH_ISSUING = ['/oauth2/authorize', '/oauth2/token',
-                       '/oauth2/introspect', '/oauth2/revoke'];
-const SAML_ISSUING = ['/saml2/sso', '/saml2/ars', '/saml11/sso',
-                      '/saml11/responder', '/sts', '/wsfed'];
 const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
                       '/ssf/status', '/ssf/subjects/add',
                       '/ssf/subjects/remove', '/ssf/verify', '/ssf/poll',
@@ -236,36 +232,23 @@ class ProtocolEndpoints {
         // The access-token status list (#432), shared with GNAP's JWTs; its
         // two settings are on this page.
         '/status-lists/access-tokens', '/status-lists'
-      ].map(route),
-      '/admin/authorization-servers': namedServerRoutes,
-      '/admin/token-lifetimes': OAUTH_ISSUING.map(route),
-      '/admin/claims': ['/oauth2/token', '/oauth2/userinfo',
-                        '/oauth2/introspect'].map(route),
-      '/admin/userinfo-claims': [this.route('/oauth2/userinfo'),
-                                 this.perServer('/:as/oauth2/userinfo')],
+      ].map(route).concat(namedServerRoutes),
       '/admin/saml2': [
         '/saml2', '/saml2/metadata', '/saml2/metadata/:sp', '/saml2/sso',
         '/saml2/sso/:sp', '/saml2/ars', '/saml2/ars/:sp', '/saml2/slo',
-        '/saml2/slo/:sp', '/saml2/sp'
+        '/saml2/slo/:sp', '/saml2/sp', '/saml11', '/saml11/metadata',
+        '/saml11/metadata/:rp', '/saml11/sso', '/saml11/sso/:rp',
+        '/saml11/responder', '/saml11/responder/:rp', '/saml11/rp', '/sts',
+        '/wsfed'
       ].map(route),
-      '/admin/saml11': [
-        '/saml11', '/saml11/metadata', '/saml11/metadata/:rp', '/saml11/sso',
-        '/saml11/sso/:rp', '/saml11/responder', '/saml11/responder/:rp',
-        '/saml11/rp'
-      ].map(route),
-      '/admin/saml-assertions': SAML_ISSUING.map(route),
-      '/admin/saml-attributes': SAML_ISSUING.map(route),
-      '/admin/oid4vci': [
+      '/admin/vc': [
         '/.well-known/openid-credential-issuer', '/.well-known/jwt-vc-issuer',
-        '/oid4vci/nonce', '/oid4vci/credential', '/oid4vci/deferred_credential',
-        '/oid4vci/notification', '/oid4vci/credential-offer/:id', '/issuer',
-        '/issuer/offer', '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
-        '/.well-known/did-configuration.json'
-      ].map(route),
-      '/admin/vc': ['/.well-known/openid-credential-issuer',
-                    '/oid4vci/credential',
-                    '/oid4vci/deferred_credential', '/issuer/offer'].map(route),
-      '/admin/oid4vp': [
+        '/oid4vci/nonce', '/oid4vci/credential',
+        '/oid4vci/deferred_credential', '/oid4vci/notification',
+        '/oid4vci/credential-offer/:id', '/issuer', '/issuer/offer',
+        '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
+        '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
+        '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',
         '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
         '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
         // The x509 Client Identifiers (#230), whose settings are here.
@@ -273,17 +256,6 @@ class ProtocolEndpoints {
         // The wallet sign-in (#38), whose four settings are on this page.
         '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
-      // THE STATUS LISTS (#38's follow-ups): what a verifier fetches to ask
-      // whether a credential this realm issued is still good, and the
-      // credential endpoints that put the reference in it.
-      '/admin/vc-status': [
-        '/oid4vci/status-lists/1', '/oid4vci/status-lists',
-        '/oid4vci/status-lists/bitstring/:purpose', '/oid4vci/credential',
-        '/oid4vci/deferred_credential'
-      ].map(route),
-      '/admin/vc-verifier-config': ['/oid4vp/verifier', '/oid4vp/start',
-                                    '/oid4vp/request/:id',
-                                    '/oid4vp/response'].map(route),
       '/admin/spiffe': [this.route('/spiffe'), this.route('/spiffe/bundle'),
                         this.route('/spiffe/federated/:trustDomain'),
                         this.socket('spiffe-workload'),
@@ -300,13 +272,6 @@ class ProtocolEndpoints {
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
         '/xacml/pip'
       ].map(route),
-      '/admin/xacml/policies': ['/xacml/policies',
-                                '/xacml/pep/policies'].map(route),
-      '/admin/xacml/editor': ['/xacml/policies', '/xacml/pdp'].map(route),
-      '/admin/xacml/peps': ['/xacml/pep/register', '/xacml/pep/policies',
-                            '/xacml/pep/heartbeat', '/xacml/pip'].map(route),
-      '/admin/xacml/decide': ['/xacml/pdp', '/xacml/protected',
-                              '/xacml/pip'].map(route),
       '/admin/scim': [
         '/scim', '/scim/v2/ServiceProviderConfig', '/scim/v2/ResourceTypes',
         '/scim/v2/ResourceTypes/:id', '/scim/v2/Schemas',
@@ -317,8 +282,6 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
-      '/admin/caep': SSF_DELIVERY.map(route),
-      '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
                             '/federation/acs/:id', '/federation/link/:handle',
                             '/federation/metadata/:id',
@@ -348,12 +311,6 @@ class ProtocolEndpoints {
                           this.route('/krb5/service'), this.route('/spnego'),
                           this.route('/spnego/protected'),
                           this.route('/authn/spnego')],
-      // #493: the claims every ticket from these doors carries.
-      '/admin/kerberos/claims': [this.socket('kdc'),
-                                 this.route('/KdcProxy')],
-      '/admin/kerberos/principals': [this.socket('kdc'),
-                                     this.route('/KdcProxy'),
-                                     this.route('/krb5/principals')],
       '/admin/ldap': [this.socket('ldap')],
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',

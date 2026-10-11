@@ -131,10 +131,12 @@ sign-in register whether or not it was disclosed.
 
 ### What the bar door asks for
 
-What the bar door asks for, and in which format, is configuration, set on
-`/admin/vc-verifier-config`. Two properties of it matter:
+What the bar door asks for, and in which format, is configuration, set on the
+Verifier request tab at `/admin/vc#vc-tab-verifier-request`. Two properties of
+it matter:
 
-* It is **separate** from what the issuer mints (`/admin/vc`). Asking for a
+* It is **separate** from what the issuer mints (the Credential claims tab at
+  `/admin/vc#vc-tab-claims`). Asking for a
   claim no credential here carries is how a wallet's *I cannot satisfy this
   request* path is reached. Asking for no claim at all is also a valid choice,
   and DCQL reads it as the whole credential.
@@ -265,7 +267,8 @@ A credential stops signing anybody in after any of these:
 * a **global** sign-out (`/logout`, `/admin/logout`, `/admin-api/logout`),
   which disowns every credential issued up to that moment;
 * an administrator's revocation on `/admin/tokens`;
-* a status that is not VALID, set on `/admin/vc-status` or by either of the
+* a status that is not VALID, set on the Credential status tab at
+  `/admin/vc#vc-tab-status` or by either of the
   above.
 
 An ordinary sign-out of one application disowns nothing, and the person signs
@@ -428,9 +431,9 @@ check are the same in both modes. See
 
 The DID documents' lifetimes and signing algorithm are `oid4vci.*` settings;
 see [OpenID4VCI](oid4vci.md#configuration). See
-[Configuration](configuration.md) for how a value is resolved. Every `oid4vp.*`
-setting is on `/admin/oid4vp` in the realm it applies to, and can be changed
-with `POST /admin-api/config/set`.
+[Configuration](configuration.md) for how a value is resolved. Every `oid4vp.*` setting is on the OpenID4VP settings tab at
+`/admin/vc#vc-tab-oid4vp` in the realm it applies to, and can be changed with
+`POST /admin-api/config/set`.
 
 ## Design decisions
 
@@ -484,19 +487,19 @@ with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → Verifiable Credentials → OpenID4VP** (`/admin/oid4vp`): the
-  Verifier's settings — client identifier, wallet address, Key Binding age,
-  default claims — and the wallet sign-in settings. API:
+* **Protocols → Verifiable Credentials** (`/admin/vc`) is one tabbed page.
+  The **Metadata** tab lists the issuer and verifier endpoints. The
+  **OpenID4VP** tab
+  holds the Verifier's settings — client identifier, wallet address, Key
+  Binding age, default claims — and the wallet sign-in settings. API:
   `GET /admin-api/oid4vp-settings`.
-* **Protocols → Verifiable Credentials → Verifier request**
-  (`/admin/vc-verifier-config`): what the bar door asks for and in which format,
-  as the `dcql_query` of the next Authorization Request, with each catalogue row
-  showing whether the issuer mints that claim. API:
+* Its **Verifier request** tab holds what the bar door asks for and in which
+  format, as the `dcql_query` of the next Authorization Request, with each
+  catalogue row showing whether the issuer mints that claim. API:
   `GET /admin-api/verifier-request` and
   `POST /admin-api/verifier-request/{select,add,remove,defaults,format}`.
-* **Protocols → Verifiable Credentials → Credential status**
-  (`/admin/vc-status`): suspend, reinstate or revoke a credential, which stops
-  it signing in.
+* Its **Credential status** tab lets an operator suspend, reinstate or revoke
+  a credential, which stops it signing in.
 * **Sessions** (`/admin/sessions`): wallet sign-ins appear as any other
   session, and end through the same sign-out doors.
 * **Users** (`/admin/users`): every holder whose presentation verified.

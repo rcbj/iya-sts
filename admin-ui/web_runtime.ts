@@ -1509,9 +1509,11 @@ class ConsoleRuntime {
       const self = this;
       const members = Object.keys(page.compose).filter(function (member) {
         const when = (page.composeWhen || {})[member];
-        return !when || when.some(function (name) {
-          return Object.prototype.hasOwnProperty.call(query, name);
-        });
+        return !when ||
+          (page.composeAlways || []).indexOf(member) >= 0 ||
+          when.some(function (name) {
+            return Object.prototype.hasOwnProperty.call(query, name);
+          });
       });
       const answers = await Promise.all(members.map(async function (member) {
         const operation = page.compose[member];
@@ -2001,7 +2003,8 @@ class ConsoleRuntime {
       this.drawView(null, drawn.banner);
       return;
     }
-    const operation = page ? WebForms.resolve(this.formTable, page, action)
+    const operation = page ? WebForms.resolve(
+      this.formTable, page + target.hash, action)
                            : null;
     const back = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
                             .replace(/[?&]+$/, '');

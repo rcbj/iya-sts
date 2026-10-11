@@ -50,7 +50,7 @@ class ScimPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static body(ctx, json) {
+  static body(ctx, json, endpoints) {
     const t = ctx.t;
     const counters = json.counters;
 
@@ -287,6 +287,8 @@ class ScimPage {
     return kit.tabbedPanels('scim', [
       { id: 'server', label: t.text('consoleScimClients.tabServer'),
         html: inner },
+      { id: 'endpoints', label: t.text('consolePages.endpoints'),
+        html: endpoints || '' },
       { id: 'clients', label: t.text('consoleScimClients.tabClients'),
         html: ScimClientsPage.tab(ctx, json.scimClients) +
               SettingsForms.forms(json.settings, '/admin/scim',

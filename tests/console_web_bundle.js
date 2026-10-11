@@ -76,6 +76,7 @@ function childMain() {
       require(ROOT_DIR + '/admin-core/protocol_endpoints');
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
+    const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
     // THE VIEW OF EVERY CONVERTED PAGE IS WHAT ITS OPERATION'S HANDLER
     // ANSWERS — the handler itself, called with a request that carries
     // nothing but a query, and not the function this test supposes the
@@ -175,9 +176,11 @@ function childMain() {
       if (page.compose) {
         const members = Object.keys(page.compose).filter(function (member) {
           const when = (page.composeWhen || {})[member];
-          return !when || when.some(function (name) {
-            return Object.prototype.hasOwnProperty.call(query || {}, name);
-          });
+          return !when ||
+            (page.composeAlways || []).indexOf(member) >= 0 ||
+            when.some(function (name) {
+              return Object.prototype.hasOwnProperty.call(query || {}, name);
+            });
         });
         const answers = await Promise.all(members.map(function (member) {
           const params = {};
@@ -552,7 +555,6 @@ function childMain() {
     // /admin-api/console/operations` — both kinds since #454, because a
     // form helper is the console's own operation; a form that resolves to
     // none, or to two, is a control the static console could not work.
-    const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
     const formTable = WebForms.table(adminApi.operationSummaries('all'));
     const unresolved = {};
     let forms = 0;
@@ -564,7 +566,8 @@ function childMain() {
         const head = /^<form\b[^>]*>/i.exec(form)[0];
         if (/method="post"/i.test(head)) {
           const target = (/action="([^"]*)"/i.exec(head) || [])[1] || '';
-          const path = target.replace(/[?#].*$/, '');
+          const targetUrl = new URL(target, 'https://sts.example');
+          const path = targetUrl.pathname + targetUrl.hash;
           const actions = [];
           const fields = /<(?:input|button)\b[^>]*\bname="action"[^>]*>/gi;
           let f = fields.exec(form);
@@ -620,7 +623,7 @@ function childMain() {
         const form = m[0];
         const head = /^<form\b[^>]*>/i.exec(form)[0];
         const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
-          .replace(/[?#].*$/, '');
+          .replace(/\?.*$/, '');
         const hiddenAction = (/<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
           .exec(form) || [])[1] || '';
         const buttons = /<button\b[^>]*>/gi;
@@ -804,7 +807,7 @@ function childMain() {
         if (/method="post"/i.test(head) &&
             !/multipart\/form-data/i.test(head)) {
           const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
-            .replace(/[?#].*$/, '');
+            .replace(/\?.*$/, '');
           const hidden = /<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
             .exec(form);
           const action = hidden ? hidden[1] : '';
@@ -1151,6 +1154,8 @@ function childMain() {
     const saml11Tab =
       /<section class="tabpanel" id="saml-tab-saml11">([\s\S]*?)<\/section>/
         .exec(samlHtml);
+    const samlTabLabels = samlHtml.match(
+      /<a[^>]+href="#saml-tab-saml(?:2|11)"[^>]*>[^<]*<\/a>/g) || [];
     const samlAssertionTab =
       /<section class="tabpanel" id="saml-tab-assertions">([\s\S]*?)<\/section>/
         .exec(samlHtml);
@@ -1213,6 +1218,12 @@ function childMain() {
          samlTabIds.filter(function (id) {
            return samlHtml.indexOf('id="' + id + '"') < 0;
          }).join(', '));
+    note(samlTabLabels.some(function (label) {
+      return label === '<a href="#saml-tab-saml2">SAML 2.0 IdP</a>';
+    }) && samlTabLabels.some(function (label) {
+      return label === '<a href="#saml-tab-saml11">SAML 1.1 IdP</a>';
+    }), 'D-SAML-tab-labels. profile tabs identify their identity providers',
+    samlTabLabels.join(' '));
     note(!!samlMetadataTab &&
          samlMetadataTab[1].indexOf(saml2Intro) >= 0 &&
          samlMetadataTab[1].indexOf(saml11Intro) >= 0 &&
@@ -1277,6 +1288,360 @@ function childMain() {
          '; SAML 1.1=' + (!!saml11Tab &&
            saml11Tab[1].indexOf(
              'action="/admin/saml2#saml-tab-saml11"') >= 0));
+
+    const vcPage = WebPages.pageFor('/admin/vc');
+    const vcView = vcPage ? await viewOf(vcPage, {}) : null;
+    if (vcView && vcView.vcStatus) {
+      vcView.vcStatus.rows = [{
+        idx: 1,
+        format: 'dc+sd-jwt',
+        configId: 'IdentityCredential',
+        status: 'VALID',
+        explicit: 'VALID',
+        via: 'fixture',
+        changedAt: 0,
+        expiresAt: 1
+      }];
+    }
+    const vcHtml = vcView
+      ? WebPages.render('/admin/vc', vcView, WebKit.context({}, true))
+      : '';
+    const vcTabIds = [
+      'vc-tab-metadata', 'vc-tab-oid4vci', 'vc-tab-claims',
+      'vc-tab-status', 'vc-tab-oid4vp', 'vc-tab-verifier-request'
+    ];
+    const vcTabs = {};
+    vcTabIds.forEach(function (id) {
+      vcTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(vcHtml);
+    });
+    const vcExpectedEndpoints = vcView
+      ? vcView.protocolEndpoints || [] : [];
+    note(vcTabIds.every(function (id) {
+      return !!vcTabs[id];
+    }) && /<section class="tabpanel first" id="vc-tab-metadata">/.test(
+      vcHtml),
+      'D-VC-tabs. the combined Verifiable Credentials page has six peer tabs ' +
+      'with Metadata first',
+      vcTabIds.filter(function (id) { return !vcTabs[id]; }).join(', '));
+    note(vcExpectedEndpoints.length > 0 &&
+         vcExpectedEndpoints.every(function (row) {
+           return vcTabs['vc-tab-metadata'] &&
+             vcTabs['vc-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         vcTabIds.slice(1).every(function (id) {
+           return vcExpectedEndpoints.every(function (row) {
+             return !vcTabs[id] || vcTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-VC-metadata. the combined issuer and verifier endpoints appear ' +
+         'on Metadata only',
+         'endpoints=' + vcExpectedEndpoints.length);
+    note(vcTabs['vc-tab-metadata'][1].indexOf(
+           'The credential issuer at') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'The mock Verifier at') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'href="/issuer/offer"') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'href="/oid4vp/verifier"') >= 0 &&
+         vcTabs['vc-tab-oid4vci'][1].indexOf(
+           'The credential issuer at') < 0 &&
+         vcTabs['vc-tab-oid4vp'][1].indexOf(
+           'The mock Verifier at') < 0,
+         'D-VC-metadata. issuer and verifier guidance and endpoint links are ' +
+         'preserved on Metadata, not repeated in settings tabs');
+    const issuerFold = vcTabs['vc-tab-metadata'][1].match(
+      /<details class="fold vc-metadata"><summary>OpenID4VCI<\/summary>[\s\S]*?<\/details>/);
+    const verifierFold = vcTabs['vc-tab-metadata'][1].match(
+      /<details class="fold vc-metadata"><summary>OpenID4VP<\/summary>[\s\S]*?<\/details>/);
+    note(!!issuerFold && !!verifierFold &&
+         !/<details[^>]*\bopen\b/.test(issuerFold[0]) &&
+         !/<details[^>]*\bopen\b/.test(verifierFold[0]) &&
+         issuerFold[0].indexOf('The credential issuer at') >= 0 &&
+         verifierFold[0].indexOf('The mock Verifier at') >= 0,
+         'D-VC-metadata-folds. issuer and verifier guidance is collapsed by ' +
+         'default in native disclosure sections',
+         'issuer=' + !!issuerFold + '; verifier=' + !!verifierFold);
+    const vciKeys = vcView
+      ? settingKeys(vcView.oid4vciSettings.settings, ['OID4VCI']) : [];
+    const vpKeys = vcView
+      ? settingKeys(vcView.oid4vpSettings.settings, ['OID4VP']) : [];
+    note(hasSettings(vcTabs['vc-tab-oid4vci'], vciKeys) &&
+         hasSettings(vcTabs['vc-tab-oid4vp'], vpKeys) &&
+         lacksSettings(vcTabs['vc-tab-oid4vci'], vpKeys) &&
+         lacksSettings(vcTabs['vc-tab-oid4vp'], vciKeys),
+         'D-VC-settings. OpenID4VCI and OpenID4VP configuration stays in ' +
+         'separate tabs',
+         'settings=' + vciKeys.length + '/' + vpKeys.length);
+    note(!!vcTabs['vc-tab-claims'] &&
+         vcTabs['vc-tab-claims'][1].indexOf(
+           'action="/admin/vc#vc-tab-claims"') >= 0 &&
+         !!vcTabs['vc-tab-status'] &&
+         vcTabs['vc-tab-status'][1].indexOf(
+           'action="/admin/vc#vc-tab-status"') >= 0 &&
+         !!vcTabs['vc-tab-verifier-request'] &&
+         vcTabs['vc-tab-verifier-request'][1].indexOf(
+           'action="/admin/vc#vc-tab-verifier-request"') >= 0,
+         'D-VC-forms. claim, status and verifier-request actions return to ' +
+         'their own tabs',
+         'claims=' + (vcTabs['vc-tab-claims']
+           ? vcTabs['vc-tab-claims'][1].indexOf(
+             'action="/admin/vc#vc-tab-claims"') : -1) +
+         '; status=' + (vcTabs['vc-tab-status']
+           ? vcTabs['vc-tab-status'][1].indexOf(
+             'action="/admin/vc#vc-tab-status"') : -1) +
+         '; verifier=' + (vcTabs['vc-tab-verifier-request']
+           ? vcTabs['vc-tab-verifier-request'][1].indexOf(
+             'action="/admin/vc#vc-tab-verifier-request"') : -1));
+
+    const xacmlPage = WebPages.pageFor('/admin/xacml');
+    const xacmlView = xacmlPage ? await viewOf(xacmlPage, {}) : null;
+    const xacmlHtml = xacmlView
+      ? WebPages.render('/admin/xacml', xacmlView,
+                        WebKit.context({}, true))
+      : '';
+    const xacmlTabIds = [
+      'xacml-tab-metadata', 'xacml-tab-settings', 'xacml-tab-policies',
+      'xacml-tab-editor', 'xacml-tab-peps', 'xacml-tab-decide'
+    ];
+    const xacmlTabs = {};
+    xacmlTabIds.forEach(function (id) {
+      xacmlTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(xacmlHtml);
+    });
+    const xacmlEndpoints = xacmlView
+      ? xacmlView.protocolEndpoints || [] : [];
+    note(xacmlTabIds.every(function (id) {
+      return !!xacmlTabs[id];
+    }) && /<section class="tabpanel first" id="xacml-tab-metadata">/.test(
+      xacmlHtml),
+      'D-XACML-tabs. the combined XACML page has six peer tabs with ' +
+      'Metadata first',
+      xacmlTabIds.filter(function (id) {
+        return !xacmlTabs[id];
+      }).join(', '));
+    note(xacmlEndpoints.length > 0 &&
+         xacmlEndpoints.every(function (row) {
+           return xacmlTabs['xacml-tab-metadata'] &&
+             xacmlTabs['xacml-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         xacmlTabIds.slice(1).every(function (id) {
+           return xacmlEndpoints.every(function (row) {
+             return !xacmlTabs[id] || xacmlTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-XACML-metadata. the XACML endpoint inventory appears on ' +
+         'Metadata only',
+         'endpoints=' + xacmlEndpoints.length);
+    const xacmlLinks = WebPages.xacmlTabLinks(
+      '<a href="/admin/xacml/policies#service-own">Policies</a>' +
+      '<a href="/admin/xacml/editor?policy=sample">Editor</a>' +
+      '<form action="/admin/xacml/peps"></form>');
+    note(xacmlLinks.indexOf(
+           'href="/admin/xacml#service-own"') >= 0 &&
+         xacmlLinks.indexOf(
+           'href="/admin/xacml?policy=sample#xacml-tab-editor"') >= 0 &&
+         xacmlLinks.indexOf(
+           'action="/admin/xacml#xacml-tab-peps"') >= 0,
+         'D-XACML-links. links and forms target their combined-page tabs',
+         xacmlLinks);
+    const xacmlFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-settings', 'set-many') ===
+             '/admin-api/config/set-many' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-policies',
+             'create-from-template') ===
+             '/admin-api/xacml/create-from-template' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-editor', 'edit-policy') ===
+             '/admin-api/xacml/edit-policy' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-peps', 'issue-pep-certificate') ===
+             '/admin-api/xacml/issue-pep-certificate',
+         'D-XACML-actions. each tab resolves forms through its mirrored API ' +
+         'operation');
+
+    const scimPage = WebPages.pageFor('/admin/scim');
+    const scimView = scimPage ? await viewOf(scimPage, {}) : null;
+    const scimHtml = scimView
+      ? WebPages.render('/admin/scim', scimView,
+                        WebKit.context({}, true))
+      : '';
+    const scimServerTab =
+      /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
+        .exec(scimHtml);
+    const scimEndpointsTab =
+      /<section class="tabpanel(?: first)?" id="endpoints">([\s\S]*?)<\/section>/
+        .exec(scimHtml);
+    const scimEndpoints = scimView
+      ? scimView.protocolEndpoints || [] : [];
+    note(!!scimServerTab && !!scimEndpointsTab &&
+         scimEndpointsTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
+         scimEndpoints.length > 0 &&
+         scimEndpoints.every(function (row) {
+           return scimEndpointsTab[1].indexOf(
+             'data-copy="' + WebKit.esc(row.url) + '"') >= 0 &&
+             scimServerTab[1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+         }),
+         'D-SCIM-endpoints. the SCIM endpoint inventory has its own tab',
+         'endpoints=' + scimEndpoints.length);
+    note(!!scimServerTab &&
+         scimServerTab[1].indexOf('What each operation does') >= 0 &&
+         scimServerTab[1].indexOf('/scim/v2/Users') >= 0,
+         'D-SCIM-server. operation descriptions stay on the Server tab');
+
+    const ssfPage = WebPages.pageFor('/admin/ssf');
+    const ssfView = ssfPage ? await viewOf(ssfPage, {}) : null;
+    const ssfHtml = ssfView
+      ? WebPages.render('/admin/ssf', ssfView,
+                        WebKit.context({}, true))
+      : '';
+    const ssfTabIds = [
+      'ssf-tab-metadata', 'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc'
+    ];
+    const ssfTabs = {};
+    ssfTabIds.forEach(function (id) {
+      ssfTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(ssfHtml);
+    });
+    const ssfEndpoints = ssfView
+      ? ssfView.protocolEndpoints || [] : [];
+    note(ssfTabIds.every(function (id) {
+      return !!ssfTabs[id];
+    }) && /<section class="tabpanel first" id="ssf-tab-metadata">/.test(
+      ssfHtml) &&
+      !WebPages.pageFor('/admin/caep') &&
+      !WebPages.pageFor('/admin/risc'),
+      'D-SSF-tabs. Shared Signals, CAEP and RISC are tabs on one page, ' +
+      'with Metadata first',
+      ssfTabIds.filter(function (id) {
+        return !ssfTabs[id];
+      }).join(', '));
+    note(ssfEndpoints.length > 0 &&
+         ssfEndpoints.every(function (row) {
+           return ssfTabs['ssf-tab-metadata'][1].indexOf(
+             'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         ssfTabIds.slice(1).every(function (id) {
+           return ssfEndpoints.every(function (row) {
+             return ssfTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-SSF-metadata. the protocol endpoint inventory appears on ' +
+         'Metadata only',
+         'endpoints=' + ssfEndpoints.length);
+    const ssfSettings = {
+      ssf: settingKeys(ssfView.settings, ['SSF']),
+      caep: settingKeys(ssfView.caep.settings, ['CAEP']),
+      risc: settingKeys(ssfView.risc.settings, ['RISC'])
+    };
+    note(hasSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.ssf) &&
+         hasSettings(ssfTabs['ssf-tab-caep'], ssfSettings.caep) &&
+         hasSettings(ssfTabs['ssf-tab-risc'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.caep) &&
+         lacksSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-caep'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-risc'], ssfSettings.caep),
+         'D-SSF-settings. SSF, CAEP and RISC settings stay on their own tabs',
+         Object.keys(ssfSettings).map(function (name) {
+           return name + '=' + ssfSettings[name].length;
+         }).join(', ') + '; ssf=' +
+         hasSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.ssf) +
+         ', caep=' +
+         hasSettings(ssfTabs['ssf-tab-caep'], ssfSettings.caep) +
+         ', risc=' +
+         hasSettings(ssfTabs['ssf-tab-risc'], ssfSettings.risc));
+    const ssfFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(ssfFormTable, '/admin/ssf', 'status') ===
+           '/admin-api/ssf/status' &&
+         WebForms.resolve(ssfFormTable, '/admin/caep', 'emit') ===
+           '/admin-api/caep/emit' &&
+         WebForms.resolve(ssfFormTable, '/admin/risc', 'emit') ===
+           '/admin-api/risc/emit',
+         'D-SSF-actions. forms retain each vocabulary API operation');
+
+    const kerberosPage = WebPages.pageFor('/admin/kerberos');
+    const kerberosView = kerberosPage
+      ? await viewOf(kerberosPage, {}) : null;
+    const kerberosHtml = kerberosView
+      ? WebPages.render('/admin/kerberos', kerberosView,
+                        WebKit.context({}, true))
+      : '';
+    const kerberosTabIds = [
+      'kerberos-tab-metadata', 'kerberos-tab-settings',
+      'kerberos-tab-claims', 'kerberos-tab-principals'
+    ];
+    const kerberosTabs = {};
+    kerberosTabIds.forEach(function (id) {
+      kerberosTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(kerberosHtml);
+    });
+    note(kerberosTabIds.every(function (id) {
+      return !!kerberosTabs[id];
+    }) &&
+         /<section class="tabpanel first" id="kerberos-tab-metadata">/.test(
+           kerberosHtml),
+         'D-Kerberos-tabs. Metadata, Settings, PAC claims and Principals ' +
+         'are tabs on one page, Metadata first',
+         kerberosTabIds.filter(function (id) {
+           return !kerberosTabs[id];
+         }).join(', '));
+    const kerberosEndpoints = kerberosView
+      ? kerberosView.protocolEndpoints || [] : [];
+    note(kerberosEndpoints.length > 0 &&
+         kerberosEndpoints.every(function (row) {
+           return kerberosTabs['kerberos-tab-metadata'] &&
+             kerberosTabs['kerberos-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         kerberosTabIds.slice(1).every(function (id) {
+           return kerberosEndpoints.every(function (row) {
+             return !kerberosTabs[id] || kerberosTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-Kerberos-metadata. endpoint inventory appears on Metadata only',
+         'endpoints=' + kerberosEndpoints.length);
+    const kerberosLinks = WebPages.kerberosTabLinks(
+      '<a href="/admin/kerberos/principals?peoplePage=2">Next</a>' +
+      '<form action="/admin/kerberos/claims">' +
+      '<input type="hidden" name="back" ' +
+      'value="/admin/kerberos/principals?servicesPage=2"></form>');
+    note(kerberosLinks.indexOf(
+           'href="/admin/kerberos?peoplePage=2#kerberos-tab-principals"') >=
+             0 &&
+         kerberosLinks.indexOf(
+           'action="/admin/kerberos#kerberos-tab-claims"') >= 0 &&
+         kerberosLinks.indexOf(
+           'value="/admin/kerberos?servicesPage=2#' +
+           'kerberos-tab-principals"') >= 0,
+         'D-Kerberos-links. links and forms stay on the selected tab',
+         kerberosLinks);
+    const kerberosFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(kerberosFormTable,
+             '/admin/kerberos#kerberos-tab-claims', 'add') ===
+             '/admin-api/kerberos/claims/add' &&
+         WebForms.resolve(kerberosFormTable,
+             '/admin/kerberos#kerberos-tab-principals',
+             'rotate-krbtgt') ===
+             '/admin-api/kerberos/principals/rotate-krbtgt',
+         'D-Kerberos-actions. each data tab resolves through its API operation');
+
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -1383,14 +1748,59 @@ function childMain() {
            return page === '/admin/oauth2' ||
              oauthChildren.indexOf(page) >= 0;
          }).join(', '));
+    const vcChildren = [
+      '/admin/oid4vci', '/admin/vc-status', '/admin/oid4vp',
+      '/admin/vc-verifier-config'
+    ];
+    note(consolePages.indexOf('/admin/vc') >= 0 &&
+         vcChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }),
+         'E-VC. the sidebar has one Verifiable Credentials destination, not ' +
+         'its former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/vc' || vcChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const xacmlChildren = [
+      '/admin/xacml/policies', '/admin/xacml/editor',
+      '/admin/xacml/peps', '/admin/xacml/decide'
+    ];
+    note(consolePages.indexOf('/admin/xacml') >= 0 &&
+         xacmlChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }) &&
+         consolePages.indexOf('/admin/xacml/monitor') >= 0,
+         'E-XACML. the sidebar has one XACML destination and keeps its ' +
+         'monitor separate',
+         consolePages.filter(function (page) {
+           return page === '/admin/xacml' ||
+             page.indexOf('/admin/xacml/') === 0;
+         }).join(', '));
+    const kerberosChildren = [
+      '/admin/kerberos/claims', '/admin/kerberos/principals'
+    ];
+    note(consolePages.indexOf('/admin/kerberos') >= 0 &&
+         kerberosChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }),
+         'E-Kerberos. the sidebar has one Kerberos destination, not its ' +
+         'former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/kerberos' ||
+             kerberosChildren.indexOf(page) >= 0;
+         }).join(', '));
     const samlChildren = [
       '/admin/saml11', '/admin/saml-assertions', '/admin/saml-attributes'
     ];
     note(consolePages.indexOf('/admin/saml2') >= 0 &&
          samlChildren.every(function (page) {
-           return consolePages.indexOf(page) < 0;
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
          }),
-         'E-SAML. the sidebar has one SAML entry, not its former leaves',
+         'E-SAML. the console has one SAML destination, not its former leaves',
          consolePages.filter(function (page) {
            return page === '/admin/saml2' ||
              samlChildren.indexOf(page) >= 0;

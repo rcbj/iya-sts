@@ -35,6 +35,8 @@
 //      an act returns to the tab its form was on.
 //   8. The application's SAML metadata form sends a file, the selected
 //      family, and an empty paste field through the mirrored API operation.
+//   9. The Verifiable Credentials page composes all six tabs, and forwards
+//      status paging to its operation.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -375,15 +377,57 @@ function childMain() {
     const consumed = applications.get(metadataId);
     const consumedEndpoints = [].concat(
       (consumed && consumed.fields.samlAcsEndpoint) || []).join(' ');
+    const returnedQuery = new URLSearchParams(
+      metadataEnv.env.location.search);
     note(metadataApp && metadataApp.ok && consumedEndpoints.indexOf(
       'https://sp.console.test/SAML/Artifact') >= 0 &&
       consumedEndpoints.indexOf(
         'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01') >= 0 &&
       metadataEnv.env.location.hash === '#cfg-saml11' &&
-      /^\?(notice|error)=/.test(metadataEnv.env.location.search),
+      returnedQuery.get('application') === metadataId &&
+      returnedQuery.has('notice') && !returnedQuery.has('error'),
       '8. a selected-family metadata file and empty paste field reach the ' +
       'mirrored operation and import the matching SAML 1.1 descriptor',
       consumedEndpoints + ' ' + metadataEnv.env.location.href);
+
+    // --- 9. all VC tabs are present on the first draw; paging is forwarded --
+    const vcCalls = [];
+    const vcEnv = makeEnv('/admin/vc', '', async function (url, init) {
+      vcCalls.push(String(url));
+      return fetch(url, init);
+    });
+    runtime = new ConsoleRuntime(vcEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const vcHtml = vcEnv.env.document.body.innerHTML;
+    const statusUrl = vcCalls.filter(function (url) {
+      return url.indexOf('/admin-api/vc-status') >= 0;
+    })[0] || '';
+    note(statusUrl.indexOf('/admin-api/vc-status') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-metadata"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-oid4vci"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-claims"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-status"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-oid4vp"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-verifier-request"') >= 0,
+         '9a. the initial VC page draws all six tabs and its status view',
+         statusUrl + ' ' + vcHtml.slice(0, 200));
+
+    const pagedVcCalls = [];
+    const pagedVcEnv = makeEnv('/admin/vc', '?page=2&per=5',
+      async function (url, init) {
+        pagedVcCalls.push(String(url));
+        return fetch(url, init);
+      });
+    runtime = new ConsoleRuntime(pagedVcEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const pagedStatus = pagedVcCalls.filter(function (url) {
+      return url.indexOf('/admin-api/vc-status') >= 0;
+    })[0] || '';
+    note(pagedStatus.indexOf('/admin-api/vc-status?page=2&per=5') >= 0,
+         '9b. VC status paging parameters reach the composed status operation',
+         pagedStatus);
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

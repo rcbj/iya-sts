@@ -156,23 +156,33 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    claims and UserInfo claims; Metadata is first and opens by default, with
    the explanatory notes and endpoint list, and Global settings holds the
    authorization server's forms. **SAML is one page** with Metadata first,
-   then Global settings, shared-profile settings, SAML 2.0, SAML 1.1, assertion
+   then Global settings, shared-profile    settings, **SAML 2.0 IdP**, **SAML 1.1 IdP**, assertion
    settings and Custom SAML attributes. The profile notes and combined
    endpoint list are on Metadata; Global settings holds each profile's own
-   defaults, while the shared `SAML` group and assertion defaults have tabs of
-   their own. The old SAML routes remain direct destinations for bookmarks,
-   forms and breadcrumbs, but their hidden rows are not sidebar links or
-   entries in `consoleJson().pages`. The other groups are
-   **Verifiable Credentials** (credential
-   claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
-   agents), **XACML**, — since 2026-09-13 — **Kerberos** (Kerberos
-   settings, principals; the settings page was renamed from `Kerberos` so the
-   heading does not say its label twice), and — since 2026-10-01, rcbj's ask
-   — **SSF** (Shared Signals, CAEP, RISC: the pipe and the two vocabularies
-   spoken over it, which were three ungrouped rows) — with SCIM left
-   ungrouped beside them. **SAML has one visible page for a family wider than
-   that page.** The group names both protocol versions and profiles, their
-   assertion settings and custom attributes; those are peer tabs rather than
+   defaults, while the shared `SAML` configuration group and assertion
+   defaults have tabs of their own. The page is a direct Protocols item
+   labelled `SAML`, not a nested leaf. The former SAML list leaves are no
+   longer console destinations; their API operations feed the combined page,
+   and forms return to the selected tab. **Verifiable Credentials is also one
+   direct Protocols page**: Metadata holds the endpoint list formerly shown on
+   the OpenID4VCI and OpenID4VP settings pages; OpenID4VCI settings, Credential
+   claims, Credential status, OpenID4VP settings and Verifier request each have
+   their own tab. Its issuer and verifier guidance on Metadata is in native
+   disclosures, collapsed by default, while the endpoint list stays visible.
+   The former leaves are not console destinations, while their distinct
+   management API operations continue to feed those tabs. **XACML is one
+   direct Protocols page** with Metadata first, then Settings, Policies, Policy
+   editor, Remote PEPs and Try a decision. The former policy, editor, PEP and
+   decision pages feed those tabs; XACML decisions remain a separate Monitoring
+   page.    the other pages are **SPIFFE** (SPIFFE, registration entries, agents) and
+   **Kerberos** (since 2026-09-13, now one direct Protocols page with Metadata,
+   Settings, PAC claims and Principals tabs; the former leaf pages feed those
+   tabs and keep their own API operations). **SSF** is also one direct
+   Protocols page with Metadata, Shared Signals, CAEP and RISC tabs; each
+   vocabulary keeps its own settings tab and API operation. **SAML has one
+   visible page for a family wider than that page.** Its tabs cover both
+   protocol versions and profiles, their
+   assertion settings and custom attributes; those are page tabs rather than
    separate sidebar leaves. A page row marked `hidden` stays in `NAV` so
    `upTo()`, breadcrumbs and `SETTING_HOMES` still recognize its direct route,
    but `navItem()` and the dashboard guide omit it, and `consoleJson().pages`
@@ -478,14 +488,13 @@ placement made in twenty-one route handlers:
   somebody means by "the Kerberos settings". A page that wanted half a group
   would be asking for the group to be SPLIT in `config.js`, where the reasoning
   for what belongs with what lives.
-* **A row may name two pages, and exactly one does.** The `SAML` group governs
-  every assertion this service builds — SAML 2.0's, SAML 1.1's and
-  WS-Federation's, out of the same two builders — so there is no one page it
-  belongs to (`saml.issuer`, the row that argued it, was retired by #523). It is drawn on both SAML pages and `configFormsFor()` says so on
-  each, because a value that silently appeared somewhere else would be the
-  worst version of this. The WS-Federation page LINKS to it instead: three
-  forms onto one setting is where "shown where it is relevant" stops being
-  useful.
+* **A row may name two pages, and exactly one does.** The `Second-factor
+  requirement` group governs both TOTP and WebAuthn and is drawn on both pages,
+  because either mechanism satisfies it and a reader of either page must see
+  that it is in force. `configFormsFor()` says so on each. The `SAML`
+  configuration group, by contrast, is drawn on the single combined SAML page;
+  the WS-Federation page LINKS to it instead, because three forms onto one
+  setting is where "shown where it is relevant" stops being useful.
 * **`/admin/config` is not special in the code.** It is a row in that table
   like the other twenty-one, so moving `Global` somewhere else one day is an
   edit to the table and to nothing else.
@@ -602,14 +611,13 @@ Three things about them:
   at the foot, where the table names ROUTES, the names and methods come from
   `sts_metadata.ts` and the router, and a test fails on both drifts.
 
-**Where the two grouped families' pages went in the sidebar** is argued in
+**Where the grouped families' pages went in the sidebar** is argued in
 `SECTIONS` beside the rows: the OAuth 2.0 / OIDC settings page is FIRST in its
 group, because the other four are about one aspect each and this one is the
-family's own configuration; the two Verifiable Credentials pages are
-interleaved — OpenID4VCI, Credential claims, OpenID4VP, Verifier request — so
-each protocol sits beside the page saying what goes through it. The five
-ungrouped ones sit beside SCIM and Federation, because a group of one is a
-heading that says the label twice.
+family's own configuration; Verifiable Credentials is one direct page with
+Metadata, separate OpenID4VCI and OpenID4VP settings, Credential claims,
+Credential status and Verifier request tabs. SAML and the other ungrouped
+pages appear directly under their protocol section.
 
 ### Rule 7 costs eight GETs and no POST
 
@@ -637,7 +645,7 @@ list comes back in `GET /admin-api/status`, which now names eight more.
 Twelve pages gained a settings block and three lost prose that had been
 explaining where their settings were instead:
 
-* `/admin/saml2` and `/admin/saml11` lost their *What every assertion this
+* The SAML 2.0 and 1.1 tabs lost their *What every assertion this
   profile issues is governed by* readings tables, and with them
   `SAML2_SETTINGS`, `SAML11_SETTINGS` and the two row builders — two
   hand-maintained lists of keys that `SETTING_HOMES` makes redundant. Their
@@ -773,11 +781,12 @@ keeping apart:
 
 ---
 
-## SAML ASSERTION DEFAULTS HAVE THEIR OWN TAB, AND THE LEGACY ROUTE REMAINS
+## SAML ASSERTION DEFAULTS HAVE THEIR OWN TAB
 
 Added 2026-08-27 under Protocols > SAML, and consolidated into the Assertions
-tab on `/admin/saml2` by #558. The old `/admin/saml-assertions` route remains a
-direct destination. Three `config.js` rows: the two assertion lifetimes —
+tab on `/admin/saml2` by #558. Its former standalone console destination was
+removed; the `/admin-api/saml-assertions` resource remains. Three `config.js`
+rows: the two assertion lifetimes —
 `saml2.assertionLifetimeMin` and `saml11.assertionLifetimeMin` — and
 `saml.clockSkewS`, which is new.
 
@@ -802,10 +811,10 @@ not one:
   visible at once, which is what makes "are these two the same?" a question a
   reader can answer by looking.
 
-**There is no store**, and the three doors onto these values are the combined
-SAML page, its `/admin/saml-assertions` compatibility route and
-`/admin/config` — all of them calling `config.setOverride()` against one
-override map.
+**There is no store**, and the two console doors onto these values are the
+combined SAML page and `/admin/config` — both call `config.setOverride()`
+against one override map. The API resource remains a separate machine-facing
+operation.
 
 **WHY THE SKEW IS ONE SETTING WHERE THE LIFETIMES ARE TWO.** A lifetime is a
 property of how a profile is consumed, and this repository argues in
@@ -827,10 +836,10 @@ what this service does for an application nobody has configured.
 
 **THE MOVE WAS A GROUP MOVE, WHICH IS THE WHOLE OF WHY IT WAS CHEAP.** The ten
 rows changed `group` in `config.js` — to `SAML 2.0 assertions` and `SAML 1.1
-assertions` — and `SETTING_HOMES` now places both groups on the combined page
-and its compatibility route. Nothing else was needed to keep them off the two
-identity provider settings groups, because a group is drawn where its row says
-and nowhere else. **No KEY and no environment variable changed**, so every
+assertions` — and `SETTING_HOMES` now places both groups on the combined page.
+Nothing else was needed to keep them off the two identity provider settings
+groups, because a group is drawn where its row says and nowhere else. **No KEY
+and no environment variable changed**, so every
 appconfig file and every `STS_SAML*` variable works exactly as it did. That
 property is what makes a settings move safe here, and it is the first thing to
 check for the next one.
@@ -2400,8 +2409,9 @@ owns the store, and reimplementing any of it here is how the console and an
   through the same set `/oauth2/revoke` writes to, and it adds custom claims to every
   future access token, ID Token, UserInfo response and SAML assertion — the tokens on
   `/admin/claims`, the UserInfo response on `/admin/userinfo-claims` since 2026-08-26
-  and the assertions on `/admin/saml-attributes` since 2026-08-24, **three pages onto
-  one store**: one `CLAIM_SETS`, one `setClaimSet()`, one `claimsAction()` taking the
+  and the assertions on the Custom SAML attributes tab since 2026-08-24,
+  **three console areas onto one store**: one `CLAIM_SETS`, one
+  `setClaimSet()`, one `claimsAction()` taking the
   set ids the door carries, and one audit row per change whichever door made it.
   **`/admin/userinfo-claims` is the one of the three with no "nothing already issued
   changes" warning on it, and that is the whole argument for it being a page.** A
@@ -4849,12 +4859,11 @@ five that moved in on 2026-09-01. They are `SECTIONS` rows with a `path`, a
 2026-08-24, and the reason `DIRECTORY_PAGE_NAMES` is checked WHOLE when
 `setDirectoryPages()` is filled.
 
-They are the layer beneath three pages that already exist — `/admin/roles`,
-`/admin/xacml` and `/admin/xacml/peps` — which is exactly the test the group
-heading was written for: *does the heading name more than the page under it
-does?* Each of the three publishes the container's SCHEMA, which is the thing
-its console twin has no room for and which this schemaless directory has nowhere
-else to say.
+They are the layer beneath `/admin/roles` and the Policies and Remote PEPs tabs
+on `/admin/xacml` — which is exactly the test the group heading was written
+for: *does the heading name more than the page under it does?* Each publishes
+the container's SCHEMA, which is the thing its console twin has no room for and
+which this schemaless directory has nowhere else to say.
 
 `ldap/CLAUDE.md` carries what writing them exposed, and it is worth knowing here
 too because it is a hazard for the ninth: the store lower-cases attribute names,
@@ -5345,7 +5354,7 @@ itself.
 **THE SECTION IS DECIDED BY THE QUESTION A PAGE ANSWERS.** *Monitoring* says
 "what this service has done: how much of it, what came out, and what happened in
 order", and that is exactly what a page counting decisions, allows and refusals
-per enforcement point reports. Everything else in the XACML group is what
+per enforcement point reports. The tabs on the XACML Protocols page are what
 authorization is CONFIGURED to do. Two pages in this section already made the
 same argument against the same pull — `/admin/delegation` is beside the tokens
 it points at rather than under one of the three protocol families it spans, and
@@ -5353,7 +5362,7 @@ it points at rather than under one of the three protocol families it spans, and
 the third instance of one rule rather than a new judgement.
 
 **WHAT DECIDED IT WRONG THE FIRST TIME WAS THE PATH AND THE MODULE**, and
-neither is evidence. The page lives under `/admin/xacml/` and is drawn by
+neither is evidence. The page lived under `/admin/xacml/` and was drawn by
 `xacml/xacml_admin.ts`, so filing it with the other five looked like tidiness.
 But a console page is a `path` and a `label` in `SECTIONS` **whoever builds the
 body** — that is the arrangement `/admin/sts-metadata` has had since 2026-08-24
@@ -5378,13 +5387,12 @@ Three smaller consequences of the move:
 * **It passes no `up` any more.** It is a page of a section now, not a
   drill-down of `/admin/xacml`, and rule 7a's `up` is for the second kind only.
 
-**AND IT EXPOSED A LATENT DEFECT IN THE FIVE PAGES LEFT BEHIND, WHICH IS NOT
-FIXED HERE.** All five pass the STRING `'/admin/xacml'` as `respond()`'s `up`,
-where that parameter is `upTo()`'s OBJECT — so `up.href` is `undefined`, the
-crumb is drawn as dead text, and the trail reads `Admin console › Policies ›
-Policies` with the middle crumb unclickable. They are pages of a group, so the
-right value is no `up` at all. Recorded rather than swept in with a placement
-change.
+**THE FIVE FORMER PROTOCOLS VIEWS NOW SHARE ONE DESTINATION.** Metadata,
+settings, policies, the editor, remote PEPs and the decision what-if are tabs
+on `/admin/xacml`; their distinct management API reads and actions still feed
+them. That removed the old drill-down crumbs rather than giving each tab a
+second sidebar destination. The XACML monitor remains the separate Monitoring
+page described above.
 
 ## `SCIM metrics` IS THE FOURTH INSTANCE OF THAT RULE, AND THE FIRST APPLIED IN ADVANCE (2026-09-06)
 
@@ -5950,10 +5958,11 @@ the store; three things are this console's.
 in that section draws something the directory holds, and this draws
 `ou=passwordPolicies`. It is not a drill-down — nothing else here leads to it as
 a next step — which is the test the two `/new` pages failed and this one passes.
-**The label is shared with `/admin/xacml/policies` and the `/admin/ldap/policies`
-group row**, and the blurb says the difference on the Overview rather than
-renaming what rcbj asked for: those draw `ou=policies`, documents a PDP
-evaluates; this draws profiles `credentials.setPassword()` checks.
+**The label is shared with the Policies tab on `/admin/xacml` and the
+`/admin/ldap/policies` group row**, and the blurb says the difference on the
+Overview rather than renaming what rcbj asked for: those draw `ou=policies`,
+documents a PDP evaluates; this draws profiles
+`credentials.setPassword()` checks.
 
 **THE FORM IS THE FIELD TABLE, AND THE RESET IS A SECOND FORM.** Every row of
 `password_policy.FIELDS` is one input — a `number` carrying the field's `min` and
@@ -6007,9 +6016,10 @@ Three things about it are decisions:
 `GET /admin-api/error-codes` answers from the same function — rule 7 with no
 POST beside the GET, because the page has nothing to change.
 
-## `/admin/kerberos/principals`: WHO THE KDC HOLDS A STORED KEY FOR (2026-09-12)
+## The Kerberos Principals tab: WHO THE KDC HOLDS A STORED KEY FOR (2026-09-12)
 
-Under Protocols, directly beside `/admin/kerberos`, and **Admin Write** for its
+This was formerly a separate Protocols page at `/admin/kerberos/principals`;
+it is now the Principals tab on `/admin/kerberos`, with **Admin Write** for its
 controls. Two tables — directory people whose keys were derived from their own
 password, and service principals created here with a random key — each paged on
 a parameter of its own (`peoplePage`, `servicesPage`) because one `page` cannot
@@ -6516,14 +6526,15 @@ Three decisions:
   second copy `mode.js`'s header refuses; the page's `?format=json` is
   `report()` itself, which is what `GET /admin-api/mode` answers (rule 7).
 
-## `/admin/vc-status`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
+## Credential status tab on `/admin/vc`: THIS REALM'S STATUS LISTS, AND THE ONE CONTROL THEY HAVE (#38's follow-ups, 2026-09-17)
 
-Verifiable Credentials → Credential status, drawn by `vc_status_admin.ts` from
-`oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule 3as). It shows where the Token
-Status List, its aggregation and the two Bitstring Status List credentials are
-served, the list size, `bits` and lifetimes, the counts, and — paged, newest
-first — every live credential's index, format, configuration, effective status,
-the explicit status beside it, and who set it.
+The Credential status tab on the combined Verifiable Credentials page, drawn
+by `vc_status_admin.ts` from `oid4vc/vc_status.ts` (`oid4vc/CLAUDE.md`, rule
+3as). It shows where the Token Status List, its aggregation and the two
+Bitstring Status List credentials are served, the list size, `bits` and
+lifetimes, the counts, and — paged, newest first — every live credential's
+index, format, configuration, effective status, the explicit status beside it,
+and who set it.
 
 Four decisions:
 
@@ -6540,7 +6551,7 @@ Four decisions:
   a page rather than to a family.
 * **RULE 7**: `GET /admin-api/vc-status` answers `statusView()` and
   `POST /admin-api/vc-status/{suspend|reinstate|revoke}` answers
-  `statusAction()`, the two functions the page itself calls.
+  `statusAction()`, the two functions the tab calls.
 **AND THE ACCOUNT ITSELF, SINCE 2026-09-17 (#36 follow-up).** The state table's
 first row is *Account: enabled / DISABLED*, and the controls above the reset are
 **Disable the account** and **Enable the account** — `usersAction()`'s
@@ -7380,20 +7391,20 @@ module always was, and imports the kit by its relative path.
 | `web_devices.ts` | The device register's three pages: `/admin/devices` (`render()`: the list or one device), `/admin/device-registration` (`registrationHtml()`) and `/admin/devices/monitor` (`monitorHtml()`). The drill-down draws its selects from the view's `vocabulary` and the monitor its legend from `complianceSources` (added in #446), where they read the register's constants; the list's paging is `devicesPaging`. |
 | `../acme/web_acme.ts`, `../est/web_est.ts`, `../scep/web_scep.ts` | Certificate enrollment's six pages: each family's Protocols page (`render()`) and its Monitoring page (`monitorBody()`). Their views' `settings` is the page's settings block since #446 — `admin_views.settingsBlockOf()`, a new public reader of the console's slot — where it was the group's bare rows; GNAP's view answers the block too. The server-only pages that show a secret once (a new EAB key, a server-generated private key) stay in the page modules: they answer an act, not a view. |
 | `../gnap/web_gnap.ts` | `/admin/gnap` (`render()`) and `/admin/gnap/monitor` (`monitorBody()`), which were drawn inside their routes. Its Copy buttons need `/admin/copy.js`, which `respond()` adds on this side and the static console's shell must load. |
-| `../xacml/web_xacml.ts` | Five of XACML's six pages — the overview (`render()`), policies, remote PEPs, decisions and the decision form — each drawn inside its route until #446. The overview reads the root policy's name from its view (`root`) where it asked the store. **The policy editor is not converted**: its forms are built from the policy parsed on the server (`editFormFor()`, `expressionForm()`), and moving it is a change to its view. The editor's server code calls this module's form helpers. |
+| `../xacml/web_xacml.ts` | The Settings, Policies, Policy editor, Remote PEPs and Try a decision tabs on `/admin/xacml`. The Metadata tab and its endpoint inventory are assembled by `web_pages.ts`; the five distinct API reads feed the tabs, and intra-page links and forms return to their tab. The overview reads the root policy's name from its view (`root`) where it asked the store. The server-side editor still calls this module's form helpers. |
 | `web_pki.ts` | The body of `/admin/pki`. Its view (`pkiJson()`, which `GET /admin-api/pki` answers) gained what the page read while drawing: `pageDefaults` (the key algorithm, organisation, leaf lifetime and alternative key algorithm the forms offer), `tierLabels`, `serviceScope`, `issuedShown` and `personsShown` (the rows each table shows, as indices into the whole lists), and `pqc` on every hierarchy, tree and object-store row naming a certificate. The revocation reasons are threaded from `revocation.reasons`. What a POST answers above the page — a banner, a private key handed over once — stays in the route. `keyPairListView()` is the renderer's, called back by the server. |
 | `web_crypto_metadata.ts` | `/admin/crypto-metadata` (`render()`, with a certificate's details over it from the view's `certificateDetails`), `/admin/keys` (`keysBody()`, whose view carries `settings` since #446) and `/admin/keys/history` (`renderHistory()`, which draws its pager from `paging`, the history's hidden `pagingRaw` removed). The envelopes link to the view's `standards`. |
 | `web_metrics.ts` | The body of `/admin/metrics`, drawn inside its route until #446, with `durationText()` and the three tables, whose `AdminConsole` methods delegate here. The first page moved by `tests/tools/convert-console-route.py`, the tool for pages drawn inside an `admin.ts` route. |
 | `web_token_lifetimes.ts` | The body of `/admin/token-lifetimes`. Its view carries the settings `context` (the files the Source column names) and `overridable` (which settings an application may override) since #446; the warnings are `tokenLifetimeWarningsFor()`, the three numbers handed in — `AdminConsole.tokenLifetimeWarnings()` still reads the settings for an application's page and calls it. |
-| `web_saml_assertions.ts` | The body of `/admin/saml-assertions`. Its view carries `rows` (the assertion settings table: key, unit, kind, profile, field), `seconds` (each lifetime in seconds) and the settings `context` since #446, which the page read from `admin_actions`, the settings and the process while it drew. |
-| `../scim/web_scim.ts`, `../ssf/web_ssf.ts` | `/admin/scim` (`body()`), `/admin/scim/monitor` (`monitorBody()`) and `/admin/ssf`, each drawn inside its route until #446. The SSF view carries the two menus each stream's forms offer, `statuses` and `eventTypes`, which the page asked the reporter for while it drew. |
-| `../ssf/web_caep_risc.ts` | `/admin/caep` (`caepBody()`), `/admin/risc` (`riscBody()`), `/admin/caep-sessions` (`caepSessionsBody()`) and `/admin/risc-accounts` (`riscAccountsBody()`) — the two list pages drawn from what `GET /admin-api/caep/sessions` and `/risc/accounts` answer, which gained each table's `shown` rows (and CAEP's `matched` counts) in #446, where the page filtered and paged the lists again — each with its chooser (`caepSessionChooser()`, `riscAccountChooser()`), drawn inside their routes until #446. The chooser itself is the kit's `chooserPane()` since then, with `chooserMatches()`. **And the two one-row pages** (`/admin/caep-sessions/session?id=`, `/admin/risc-accounts/account?id=`, `caepSessionBody()`, `riscAccountBody()`), drawn from the one-session and one-account answers `GET /admin-api/caep/sessions?session=` and `/risc/accounts?account=` already gave. **They introduced a row's `params`**: the page's `id` is the operation's `session` or `account`, and `WebPages.operationQuery()` translates; the console asks the same views through `withQuery()`. |
+| `web_saml_assertions.ts` | The Assertions tab on `/admin/saml2`, drawn from `GET /admin-api/saml-assertions`. Its view carries `rows` (the assertion settings table: key, unit, kind, profile, field), `seconds` (each lifetime in seconds) and the settings `context` since #446. |
+| `../scim/web_scim.ts`, `../ssf/web_ssf.ts` | `/admin/scim` (`body()`), `/admin/scim/monitor` (`monitorBody()`) and `/admin/ssf`, each drawn inside its route until #446. SCIM's Endpoints tab holds the realm's address inventory apart from the Server tab's per-operation description table. The SSF page composes Shared Signals, CAEP and RISC into tabs, with the endpoint inventory on Metadata and each settings group on its own tab. The SSF view carries the two menus each stream's forms offer, `statuses` and `eventTypes`, which the page asked the reporter for while it drew. |
+| `../ssf/web_caep_risc.ts` | The CAEP and RISC tabs on `/admin/ssf` (`caepBody()`, `riscBody()`), and the separate `/admin/caep-sessions` (`caepSessionsBody()`) and `/admin/risc-accounts` (`riscAccountsBody()`) pages — the two list pages drawn from what `GET /admin-api/caep/sessions` and `/risc/accounts` answer, which gained each table's `shown` rows (and CAEP's `matched` counts) in #446, where the page filtered and paged the lists again — each with its chooser (`caepSessionChooser()`, `riscAccountChooser()`). **And the two one-row pages** (`/admin/caep-sessions/session?id=`, `/admin/risc-accounts/account?id=`, `caepSessionBody()`, `riscAccountBody()`), drawn from the one-session and one-account answers `GET /admin-api/caep/sessions?session=` and `/risc/accounts?account=` already gave. **They introduced a row's `params`**: the page's `id` is the operation's `session` or `account`, and `WebPages.operationQuery()` translates; the console asks the same views through `withQuery()`. |
 | `web_policies.ts` | The body of `/admin/policies` with its seven section and form helpers, drawn inside its route until #446; its pager is the view's own `paging`, which is what the route recomputed. |
 | `../ssf/web_signals.ts` | The body of `/admin/signals`, drawn inside its route until #446. Its way back to the list is built by the kit's `listViewFromBack()`, which with `listViewOf()` and the `LIST_PARAMS` table is the kit's since then. |
 | `web_error_codes.ts` | The body of `/admin/error-codes`, which drew from the view's server-side half (`wantedSubsystem`, `shown`, a paging object) until #446 and now from the JSON the API answers: `filter`, `codes`, `subsystems`, `unregisteredSeen`, and `paging`, added. |
 | `web_applications.ts` | The application drill-down (`?application=`, `detail()`) and its tabs' sections. **Its answer carries `page`** (`admin_views.applicationPageData()`): the attribute notes, the configuration fields typed with the entry's values, CORS origins as matched, access types as read, the protocol rows, the editable-attribute menus, the DID document's facts, the mode flags and every section's state — with no credential: the credentials state loses its values and token, and the Credentials tab draws `revealControl()` buttons that post `reveal-secret`, whose console answer is the page with the value in its flash, once. A refused save's families are read off its body by the console (`state.declared`). And `/admin/applications/new` (`newApplicationBody()`, with the RFC 9728 import section and pane; its answer gained every field `fields`, typed by `admin_views.typedField()` — the console's `gridFieldTyped()` delegates there — and each saying whether the simplified view offers it, the field groups and family choices, the long-text attributes, the persistence facts and `resourceMetadataImport`; a posted form, a refused create and a loaded document ride on the page's view as `state`; the grid is the kit's `fieldGridOf()`, which `fieldGrid()` calls too), and `/admin/applications`, and the cells its drill-down shares with it (kind, protocols — given the register's `PROTOCOLS` from the answer — registered, and the client-secret mark) and `applicationsCaveat()`, a wire-time constant until #446. **The secret mark is judged in the view** (`admin_views.secretExpiryOf()`, a row's `secretExpiry`: `expired`, `soon` or nothing, and the instant), because it compares against the clock and a setting the page has neither of. The answer also carries `paging`, `kindCounts` for the kind menu, the authentication total and `protocols`. |
 | `web_authorization_servers.ts` | The body of `/admin/authorization-servers` and of its drill-down (`?profile=<id>`, `detail()`, whose answer now carries the effective `capabilities` and the member catalogue — `members`, `memberGroups` — its two menus are built from; `asMemberOptions()` moved with it), and the caveat both of its pages carry (`asCaveat()`, a wire-time constant until #446). The answer of `GET /admin-api/authorization-servers` carries `paging` and the two totals the tiles count across every profile, `overrideTotal` and `driftTotal`, where the page summed them over the register itself. |
-| `saml/web_saml.ts` | `/admin/saml2` and `/admin/saml11`, each with its drill-down (`?sp=<entityID>`, `?rp=<identifier>`), and the two sections the drill-downs share (signing certificates, consumed metadata). The 1.1 profile labels compare against the two browser-profile URIs written out here, since the module may not require `saml11_sso.ts`. The list's answer names the applications page's `kind` for these entries; the drill-downs carry `perApplicationEntityId` and `perApplicationProviderId`, so their first rows say whether the identity provider names itself per partner. |
+| `saml/web_saml.ts` | The SAML 2.0 and SAML 1.1 tabs on `/admin/saml2`, with drill-downs (`?sp=<entityID>`, `?rp=<identifier>`) and the two sections they share (signing certificates, consumed metadata). The 1.1 profile labels compare against the two browser-profile URIs written out here, since the module may not require `saml11_sso.ts`. The list's answer names the applications page's `kind` for these entries; the drill-downs carry `perApplicationEntityId` and `perApplicationProviderId`, so their first rows say whether the identity provider names itself per partner. |
 | `federation/web_federation.ts` | `/admin/federation` and its drill-down (`?relationship=<id>`, `detail()`), with the drill-down's four sections and `boolOf()` — the register's own reading of a stored boolean, copied so a switch is drawn as the register would act on it. **The drill-down's answer carries what the page drew from the register**: the field rows its lists and forms are built from, the schema, the labels of the values a select offers, the subject policy, whether it encrypts, the paths and the root-relative sign-in link (`loginHref`, kept root-relative for the reason the view's comment gives); the page reads `fields`, where the client secret is masked, as its record. And what both pages share: the state cell, the create form (given the roles and protocols from the answer), and the caveat and the links, wire-time constants until #446 (`federationCaveat()`, `federationLinks(base)`). The answer of `GET /admin-api/federation` carries `paging`, `roleCounts` for the role menu and the two totals the tiles count across every relationship. **And `/admin/federation/map`** (`map()`, `mapDrawing()`, `federationMapRow()`), from `GET /admin-api/federation/map` (`AdminViews.federationMapModel()`): the realm's relationships, the graph, the drawing laid out on the server, the filter's vocabulary, and the key as markup (`AdminViews.federationMapKey()`, moved from the console with `federationMapLooks()`). |
 | `spiffe/web_spiffe.ts` | `/admin/spiffe` — whose answer now carries the CA's authorities and federated bundles (`authorityState`), `serverApiAuthenticated` and the page's settings block as `settingsForms`, because its `settings` member is a list of readings an API caller already reads — and SPIFFE's registration entries, attested agents and brokers (`/admin/spiffe/entries`, `/agents`, `/brokers`), and the entry and agent drill-downs (`?entry=`, `?agent=`; `admin_views.spiffeEntryJson()`, `spiffeAgentJson()`). **`GET /admin-api/spiffe/entries` and `/agents` documented those two parameters and ignored them**, answering the list; they answer the one item now, `found: false` when it is not there, with the posture note — given whether the SPIRE Server API authenticates (`serverApiAuthenticated`) rather than asking `spiffeAuth` — and the create-entry form, given the `trustDomain`. Each answer's `paging` became the full paging object (it lacked the rows and the parameter the control is drawn from), and each entry carries its `selectorTexts`. |
 | `ldap/web_ldap.ts` | The nine `/admin/ldap/*` pages — applications, federations, SPIFFE, devices, roles, policies, PEPs, the directory and the service — as `LdapPage`, each drawn from its `GET /admin-api/ldap/*` answer. **Those answers carried credentials until #446** (client secrets, registration access tokens, a federation's client secret, assertion and DID private keys, TOTP seeds, recovery codes, `userPassword` hashes, as the entry held them): `ldap_server.js`'s `withoutSecrets()` now masks every attribute in its `SECRET_ATTRIBUTES` as `(set — not returned)` in `attributes`, `fields` and `entry.attributes`, rcbj's reveal-on-demand decision of 2026-10-05. An application row with a masked value links to its application page's credentials, where `reveal-secret` hands one back; **a federation's client secret has no reveal operation** and stays masked. Each answer gained `paging` and what its page reads (federations: `entryAttributes`, `roleShort`, `protocolLabel`, `enabled`, `enabledCount`; the directory: `originCounts`; the service: the two ports and `certificateProvenance`; roles: `builtInCatalogue`; policies and PEPs: `enabledCount`; SPIFFE: `selectorTexts`). `tests/application_reveal_secret.js` 4c holds that the applications and directory answers carry no secret. `WebKit.bullet()` is the SCIM pages' bullet, moved to the kit for both. |
@@ -7402,7 +7413,7 @@ module always was, and imports the kit by its relative path.
 | `web_rbac.ts` | `/admin/rbac`: who may use this console, its grants, the person chooser and the grant and revoke forms, and `rbacCaveat()` (a wire-time constant until #446). **The chooser is drawn from a slice**: the answer carries `candidatePane` — the matches for `personq`, `CHOOSER_HITS` from the clamped `personfrom`, by `kit.chooserPane()`'s own rule — because the candidates are every person in the realm, and `chooserPane()` takes a `slice` in place of the whole catalogue. Also `paging`, `known` (the page's people who have signed in here) and `roleChoices`. |
 | `web_realms.ts` | `/admin/realms` and its drill-down (`?realm=<id>`), with the retiring notice, the support table and `realmsCaveat()`. **The caveat was wire-time and read `persistence.status()`** once; the answer of `GET /admin-api/realms` carries `persistence` (`persistsRealms`, `mode`) and the caveat is drawn from it — as it carries `settings` (the console used to add them after the view), `defaultDomain`, `count` and the list's `paging`. **The drill-down has no GET operation of its own**: every row of the list's answer is that realm's `realmJson()`, so `detail()` picks its row by `?realm=` out of a list — the API's whole one in the browser, a list of the one realm in this process, which does not build every row because reading one mints that realm's key (the API makes them off the event loop first). The list carries `current` and `currentName` for it. |
 | `web_roles.ts` | The body of `/admin/roles`. The page and `GET /admin-api/roles` answer one view since #446 (`admin_views.rolesView(query)`: the register first, then `paging`, `shownRoles`, `applicationChoices`, the two menus and the settings), where the API answered the register alone. **The preview is composed in**: it is `GET /admin-api/roles/preview`, an operation of its own by design, and the page table's `compose` names it — the first page whose view is two answers. |
-| `../kerberos/web_kerberos_principals.ts` | The body of `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's locked Kerberos files. |
+| `../kerberos/web_kerberos_principals.ts` | The Principals-tab body on `/admin/kerberos`, formerly `/admin/kerberos/principals`, drawn inside its route until #446; its write controls follow the render context's `write`, where it read the gate's state. It is outside the parent project's locked Kerberos files. |
 | `../tls/web_tls_trust.ts` | The body of `/admin/tls/trust`, its "not installed" answer included — the first route with an early `respond()`, which the route tool turns into an early return. |
 | `../ssf/web_ssf_dead_letters.ts` | The body of `/admin/ssf/dead-letters` and its chart, with the colours and the section's reasoning, drawn inside its route until #446. `durationText()`, which it and Metrics share, is the kit's. |
 | `web_audit.ts` | The body of `/admin/audit` and its five cell helpers. It drew from the view's server-side half (the wanted filters, the rows, a paging object, the whole known-user set) until #446, and draws from the JSON the API answers now, which gained `paging`, `knownActors` (which actors on the page have a user page) and `settings`. |
@@ -7411,9 +7422,9 @@ module always was, and imports the kit by its relative path.
 | `../logout/web_sessions.ts` | The body of `/admin/sessions` and its row and cell helpers, drawn from the JSON `GET /admin-api/sessions` answers since #446. That JSON gained the protocol filter's `protocols`, `paging`, `unauthenticatedKept` (the setting the page states), and the fields each unauthenticated row is drawn with; its relative times are measured from the view's own `at`. |
 | `web_protocol_settings.ts` | The thirteen pages `PROTOCOL_SETTINGS_PAGES` generates, drawn from the JSON their operations answer, which carries the lead and warnings as markup (`leadHtml`, `alsoHtml`) beside their plain text since #446. **Six have a status block**: TOTP's, recovery codes', WebAuthn's and Kerberos pre-authentication's are drawn here from the view's `status` (`STATUS`, by page; WebAuthn's JSON gained the FIDO metadata snapshot its attestation rows read, and Kerberos' block builds its JSON — the krbtgt key's state included — before drawing from it); Persistence's is drawn here too. **The cluster's is still drawn by the console** and handed in as `statusHtml`, and that page stays out of the page table. |
 | `oid4vc/web_vc_claims.ts` | `/admin/vc`, drawn from `GET /admin-api/credential-claims`: its attribute table and preview. **Each attribute's example is judged in the view** (`admin_views.vcExampleOf()`, a row's `example`: the value and where it comes from), which the console's `vcExampleCell()` used to work out from the persona while drawing. |
-| `web_claims.ts` | The three claim-set pages, `/admin/claims`, `/admin/saml-attributes` and `/admin/userinfo-claims`, and the sections they share. **The sections read the registers themselves** — `stats.claimSet()`, the attribute catalogue's selections, `groupClaims`, the release withholding — and take the page's answer now, which `claimSetsJson()` had nearly all of: it gained `withholding`, and each catalogue row `generated`. The UserInfo answer gained the typed `request` and the `inventedEmail` a note contrasts with the directory's. |
+| `web_claims.ts` | The claim-set pages `/admin/claims` and `/admin/userinfo-claims`, the Custom SAML attributes tab on `/admin/saml2`, and the sections they share. **The sections read the registers themselves** — `stats.claimSet()`, the attribute catalogue's selections, `groupClaims`, the release withholding — and take the page's answer now, which `claimSetsJson()` had nearly all of: it gained `withholding`, and each catalogue row `generated`. The UserInfo answer gained the typed `request` and the `inventedEmail` a note contrasts with the directory's. |
 | `web_config.ts` | The body of `/admin/config`, drawn from `configJson()` (which `GET /admin-api/config` answers) since #446: where each group is drawn comes from its `homes`, the warning from `homeProblems`, and its form from `settings`, added. |
-| `../oid4vc/web_vc_verifier_config.ts` | The body of `/admin/vc-verifier-config` and its five helpers, which read the verifier's configuration module while drawing until #446; they read the view now, which gained each format's wording and the requested claims outside the catalogue (`extras`, with their DCQL paths). |
+| `../oid4vc/web_vc_verifier_config.ts` | The Verifier request tab on `/admin/vc` and its five helpers, which read the verifier's configuration module while drawing until #446; they read the view now, which gained each format's wording and the requested claims outside the catalogue (`extras`, with their DCQL paths). |
 | `web_used_assertions.ts` | `/admin/used-assertions`, drawn from `GET /admin-api/used-assertions`, whose answer gained `paging` as an object beside the members it already spread. The route reads the view, which is asynchronous, and hands it to `usedAssertionsPage()`. |
 | `web_users.ts` | `/admin/users/new` (`newUserBody()`, from `GET /admin-api/users/new`, whose answer gained the `username`, each credential's `what`, every field the grid can draw — `fieldRows`, built by `admin_views.newUserFieldRows()`, each saying whether the simplified view offers it — the long-text attributes, `mailAvailable` and the persistence facts; a refused create's values ride on the page's view as `prefill`, never on the answer), and `/admin/users`, and its three cells (credential, second factor, source; `sourceCell()` given the registry's size rather than reading `stats`). The answer of `GET /admin-api/users` carries `paging`, `withActiveSession` and each row's `liveSessions` — counted in the view from the sign-on sessions by the rows' own identity key — and three facts the notes state: `personFieldCount`, `newUserContainer`, `registryKeeps`. |
 | `web_users.ts` (the person) | `/admin/users?user=` (`detail()`, the drill-down) and a name nothing knows (`unknown()`), with the page's thirteen sections moved beside it — the sessions and their tokens, the artifacts, how they authenticated, the directory entry, the second factors (`mfaSection()` with the e-mail factor, app passwords, verifications, devices and self-issued subjects), the key pairs, Kerberos, federation links, GNAP grants, the attribute grid and the controls. **The answer of `GET /admin-api/users?user=` gained `page`** (`admin_views.userPageData()`): the counts the tiles show, `back` and `params`, the credential store's report and three mechanisms' settings (`mfa`), the key-pair state without the private keys (`keyPairs`), the service-provider relationships a link may name, `person_editor.ts`'s field groups, who may act for them, and whether the risk standing was read (`riskAsked`). The unknown answer gained `registryKeeps`. **A credential leak closed with it**: the answer's `ldap` was the entry as stored — password hash, TOTP seed, recovery codes, private keys — and the directory reader slot now hands over `withoutSecrets()`'s copy (`tests/application_reveal_secret.js` 5). A refused form's values ride beside the answer as `state`, never in it. `WebKit.subTabbedPanels()` moved to the kit. |
@@ -7425,7 +7436,7 @@ module always was, and imports the kit by its relative path.
 | `web_runtime.ts`, `web_console.ts` | **The static console's runtime** (#446 step 5), bundled by `build-typescript.sh` as `admin-ui/console.js` from `web_console.ts`, which only hands `ConsoleRuntime` the browser's objects and starts it. Sign-in is the code flow with PKCE S256 at the authorization server of the realm the console was opened in, `resource` that realm's `/admin-api`; the verifier, state and return path cross the redirect in sessionStorage, the tokens are held in memory only (a reload signs in again, silently while the sign-on session lasts). DPoP on every request with a non-extractable P-256 key made per page load, `ath` on API proofs, a server's nonce kept and a `use_dpop_nonce` refusal retried once, the refresh token rotated with the same key. Pages are routed on the console's own paths and drawn by `WebPages.render()` in `WebShell.frame()` (the shell is `GET /admin-api/console`, whose gate is the TOKEN's — `AdminApi.consoleGateOf()` over `meJson()`); a POST form goes to `WebForms.resolve()`'s operation or is refused; an act's answer is drawn as `respondToAction()` drew it, a reveal on the page that asked, a file saved; the realm switcher moves in place. Every browser object arrives through the constructor, which is what `tests/console_runtime.js` drives. **Served since the cutover (step 6)**: `/admin` and `/admin/*` answer the shell document with this script (`AdminConsole.shellDocument()`), any other method 404. Two rules it keeps from the server's form parser: a `formaction`'s query and the pressed button's value each TAKE THE PLACE of a field of the same name (Generate secret is `action=generate-secret` beside a create form's hidden `action=create`; since #454 that helper is the console's own operation, `/admin-api/console/applications/generate-secret`, and the runtime's form table is `GET /admin-api/console/operations`, both kinds, where it was the management index, and its request schemas come from both documents), and `shapeFields()` sends a form as its operation's schema takes it — a `patternProperties` member (the field grid's boxes) kept, a column of `attribute` boxes carried into `attributes`; `tests/console_web_bundle.js` F1b fails on a value dropped on the way and F0b on a named button that would be sent as its form's action. **A JOINED FIELD (#219)**: a control named `a|b` whose values are `x|y` is sent as the two fields `a=x` and `b=y` (`splitJoinedFields()`), which is how a form offers only the pairs that go together — Monitoring → Risk's *Dataset and its format* — without the API taking a combined member; F1b sends forms through the same split. **A SESSION THAT ENDS DOES NOT TAKE THE PAGE WITH IT (#508, rcbj 2026-10-07)**: a request that needs a sign-in WAITS (`send()` over `sendOnce()`), under a bar whose *Sign in again* opens the realm's own `/oauth2/authorize` in a popup (state prefixed `popup.`); that window's callback hands the code back over the `sts-console-signin` BroadcastChannel and closes, and this page redeems it with its own verifier and DPoP key and sends what was waiting, once — nothing for a different `sub`. *Sign in on this page* (and every case the popup cannot serve) keeps the forms' values in sessionStorage (`sts-console-restore`; never a password, file, hidden field or anything named for a secret, `keepsField()`) and the address with its fragment, and puts them back after for the same realm, page and person, saying nothing was sent. **Re-authentication is always the central sign-in** (rcbj): nothing here authenticates, extends a session or keeps one alive — a session is absolute, and a fresh sign-in by the same person adds an event to it without moving its end, which is why there is no 'stay signed in' warning. `tests/console_reauth.js` holds it with stand-ins. |
 | `web_answers.ts` | **What a form's answer draws where a notice is not enough** (#446, the cutover): the three kinds of answer the deleted console handlers answered with a page. A secret shown once — a generated or reset password, an activation or reset link, an app password, a realm's bootstrap password, a keytab, an EAB key, a SCEP challenge, a private key (DID, RFC 8705 client certificate, a person's assertion key, a remote PEP's listener) — drawn in place, never on a URL or in the history (`once()`). A round trip that writes nothing — the grids' "+" and bin, the view switch — drawn again from what the form holds and never sent, because those forms' hidden `action` is the write (`roundTrip()`). A redraw from an answer — a refused create or edit with its boxes, Fill (`GET /admin-api/users/new?invent=`), Generate secret and a loaded RFC 9728 document in the new-application form, the PKI workbench's next draft (`workbench` on a pane action's answer), an OpenID Federation resolution (`redraw()`). `tests/console_answers.js` holds it. |
 | `web_explorer.ts` | `/admin/api-explorer` for the static console (#446), from `GET /admin-api/console/api-explorer` (#454: the console's own operation; the page documents and calls the MANAGEMENT operations alone, `/admin-api/openapi.json`), whose answer gained `who` and `scope` (the token's subject and scopes, filled by the API's handler), `realmPrefix` and `script`. **No token is embedded**: the page carries `data-console-fetch` and `mgmt-api/admin_api_explorer.js` sends every call, the document included, through `window.stsConsoleFetch`, which the runtime answers with its DPoP-bound token and a proof by its key. The page names its script in `data-script` and the runtime loads it after drawing, since `innerHTML` runs none. The explorer's stylesheet lives here and `admin_api_docs.ts` reads it. |
-| `web_vc_status.ts` | The body of `/admin/vc-status`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
+| `web_vc_status.ts` | The Credential status tab on `/admin/vc`; its Suspend, Reinstate and Revoke buttons are drawn only when `ctx.write` says so, and its paging is drawn from the view's `rowsPaging`. |
 | `../attribute-sources/web_attribute_sources.ts` | The body of `/admin/attribute-sources`. Its operation answered the register WITHOUT the page's `settings` until #446; both now answer `attributeSourcesView()`. |
 | `web_secret_destinations.ts` | **Directory → Secret destinations** (#221 P3, 2026-10-06), from `GET /admin-api/secret-destinations` (`common/secret_destinations.ts`'s `view()`): where a service account's rotated password is pushed, each destination with its location, `credentialSet`, whether it is usable and why not, and — when `ctx.write` says so — Test push, an Edit fold and Remove, and the add form. **Born static**: no page module draws it, and its forms resolve through the operation's `mirrors`. In DIRECTORY, beside Attribute sources, because a destination IS a directory entry (an application entry declared for `secret-destination`); rotation's status is Monitoring's (#221 P4). **The write-credential box is a password input that is never filled**, because the view never carries the credential (`common/CLAUDE.md` 3ce). |
 | `../debugger/web_debugger.ts` | The body of `/admin/debugger` — **the first page whose Settings block comes out of its own view** (`SettingsForms.forms(json.settings, PAGE_PATH)`). |

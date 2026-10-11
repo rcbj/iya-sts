@@ -212,7 +212,8 @@ class XacmlPage {
         shared;
     }
     const list = where.map(function (one) {
-      return '<a href="/realm/' + esc(one.id) + '/admin/xacml/peps"><code>' +
+      return '<a href="/realm/' + esc(one.id) +
+        '/admin/xacml#xacml-tab-peps"><code>' +
         esc(one.id) + '</code></a> (' + one.count + ')';
     }).join(', ');
     return t.html('consoleXacml.noPeps.elsewhere', { n: where.length }) +

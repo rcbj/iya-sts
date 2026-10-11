@@ -40,7 +40,7 @@ class CaepRiscPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static caepBody(ctx, json) {
+  static caepBody(ctx, json, settingsGroups) {
     // THE LANGUAGE (#539): the reader's translator. Every word this page
     // writes is a message of `consoleCaepRisc`; what the view says (a
     // type's name and description, the settings) is drawn as it comes.
@@ -201,7 +201,7 @@ class CaepRiscPage {
           '</div></details>'
         : '') +
 
-      SettingsForms.forms(json.settings, '/admin/caep', undefined, t) +
+      SettingsForms.forms(json.settings, '/admin/caep', settingsGroups, t) +
 
       kit.note('<a href="/admin/caep-sessions">' +
       t.html('consoleCaepRisc.links.caepSessions') + '</a> &middot; ' +
@@ -308,7 +308,7 @@ class CaepRiscPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static riscBody(ctx, json) {
+  static riscBody(ctx, json, settingsGroups) {
     // THE LANGUAGE (#539), as on the CAEP page.
     const t = ctx.t;
 
@@ -467,7 +467,7 @@ class CaepRiscPage {
           '</div></details>'
         : '') +
 
-      SettingsForms.forms(json.settings, '/admin/risc', undefined, t) +
+      SettingsForms.forms(json.settings, '/admin/risc', settingsGroups, t) +
 
       kit.note('<a href="/admin/risc-accounts">' +
       t.html('consoleCaepRisc.links.riscAccounts') + '</a> &middot; ' +

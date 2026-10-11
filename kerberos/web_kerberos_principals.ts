@@ -6,18 +6,18 @@
 // File: web_kerberos_principals.ts
 //
 // ---------------------------------------------------------------------------
-// PROTOCOLS → KERBEROS PRINCIPALS, DRAWN FROM ITS VIEW ALONE (#446,
+// PROTOCOLS → KERBEROS PRINCIPALS TAB, DRAWN FROM ITS VIEW ALONE (#446,
 // 2026-10-05).
 //
-// Draws Kerberos principals from the answer of `GET
+// Draws the Principals tab on `/admin/kerberos` from the answer of `GET
 // /admin-api/kerberos/principals`: this realm's KDC principals, people and
 // services, with their keys and the forms that change them.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
-// It was drawn inside the route of `/admin/kerberos/principals` in
-// `admin-ui/admin.ts`, which still draws the page until the console's cutover
-// by calling this with its view passed through JSON.
+// It was the body of the `/admin/kerberos/principals` route in
+// `admin-ui/admin.ts` until the console's cutover; `admin-ui/web_pages.ts`
+// composes it into the Principals tab.
 // ---------------------------------------------------------------------------
 
 import kit = require('../admin-ui/web_kit');
@@ -33,7 +33,7 @@ type Json = any;
  */
 class KerberosPrincipalsPage {
   /**
-   * Draws the page's body from its view.
+   * Draws the tab's body from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)
    * @param json - the answer of the page's management API operation

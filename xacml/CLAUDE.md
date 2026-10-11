@@ -235,16 +235,22 @@ working and denying you.
 ## The console
 
 ```
-/admin/xacml            settings, and what the PDP decides with
-/admin/xacml/policies   the repository; enable, disable, root, delete,
+/admin/xacml            one Protocols destination, with six tabs:
+  Metadata              this realm's XACML endpoints
+  Settings              whether the PDP is on, its PEP bias and settings
+  Policies              the repository; enable, disable, root, delete,
                         import ALFA, create from a template — and this is the
-                        ONLY page that creates a policy: the editor edits one
-                        that exists, and says so on itself
-/admin/xacml/editor     the guided editor
-/admin/xacml/peps       the REMOTE enforcement points, and whether they are
+                        ONLY tab that creates a policy: the editor edits one
+                        that exists
+  Policy editor         the guided editor
+  Remote PEPs           the remote enforcement points, and whether they are
                         deciding with the same policy this service holds
-/admin/xacml/decide     ask the PDP and see what the PEP would do
+  Try a decision        ask the PDP and see what the PEP would do
 ```
+
+The former policies, editor, PEPs and decision destinations are tabs, not
+sidebar leaves; their distinct management API operations still supply them.
+The decision counters remain `/admin/xacml/monitor` under Monitoring.
 
 **The editor has no JavaScript, and that is argued rather than assumed.** This
 console is `script-src 'none'` and `admin-ui/CLAUDE.md` refuses a script nine
@@ -1890,13 +1896,13 @@ declines. **Per enforcement point** — every PEP, embedded and remote, in one
 table.
 
 **IT IS FILED UNDER `Monitoring` IN THE CONSOLE AND NOT UNDER Protocols >
-XACML, and that is the paragraph above read as a placement.** The five pages
-this directory registers under `/admin/xacml` are configuration and sit in the
-XACML group; this one answers *what has this service done*, which is the
-Monitoring section's own heading, and it is labelled `XACML decisions` there
-because `Monitor` alone would name the section rather than the subject. **The
-PATH did not move**: it is `/admin/xacml/monitor` still, drawn by
-`xacml_admin.ts` still, because a console page is a `path` and a `label` in
+XACML, and that is the paragraph above read as a placement.** The five
+configuration views this directory registers are tabs on the single
+`/admin/xacml` Protocols page; this one answers *what has this service done*,
+which is the Monitoring section's own heading, and it is labelled `XACML
+decisions` there because `Monitor` alone would name the section rather than
+the subject. **The PATH did not move**: it is `/admin/xacml/monitor` still,
+drawn by `xacml_admin.ts` still, because a console page is a `path` and a `label` in
 `admin-ui/admin.ts`'s `SECTIONS` whoever builds the body — the arrangement the
 eight `/admin/ldap/*` pages have with the Directory section and
 `/admin/sts-metadata` has had since 2026-08-24. Two consequences for this

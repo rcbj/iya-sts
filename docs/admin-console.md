@@ -161,11 +161,17 @@ The navigation is a grouped list down the left. Its five sections:
   kind of content.
 * **Protocols** — a page, or a group of pages, per protocol family: OAuth2 /
   OIDC (settings, authorization servers, token lifetimes, custom claims,
-  UserInfo claims), SAML, Verifiable Credentials, XACML, SCIM, Shared Signals,
-  CAEP and RISC, Federation, OpenID Federation, GNAP, the second factors,
-  Kerberos, LDAP, WS-Trust, WS-Federation, PKI, certificate issuance (ACME,
-  EST, SCEP and SPIFFE) and TLS. [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
+  UserInfo claims), SAML, Verifiable Credentials, XACML (Metadata, Settings,
+  Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
+  (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
+  PAC claims and Principals tabs), Federation, OpenID
+  Federation, GNAP, the second factors, Kerberos, LDAP, WS-Trust,
+  WS-Federation, PKI, certificate
+  issuance (ACME, EST, SCEP and SPIFFE) and TLS.
+  [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
+  SCIM's realm endpoint inventory is on its own Endpoints tab, separate from
+  the Server tab's descriptions of each SCIM operation.
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
@@ -1321,8 +1327,8 @@ relying party see the same person. **Update** installs exactly the ticked
 boxes, and **Select all** and **Delete all** are the extremes — all form posts,
 with no script.
 
-The catalogue is the same list of attribute types `/admin/vc` and
-`/admin/vc-verifier-config` choose from, so there is one spelling of each. The
+The catalogue is the same list of attribute types the Credential claims and
+Verifier request tabs at `/admin/vc` choose from, so there is one spelling of each. The
 *selections* are independent: an access token carrying `employee_number` while
 the ID Token carries only `email` is a normal arrangement. **Nothing is
 selected on a fresh start**, so upgrading never adds a claim to every token.
@@ -1345,7 +1351,22 @@ Every change to a claim set writes an audit row naming the set and what was
 added and removed — never a value — in addition to the row the call log writes
 for the same POST.
 
-### Credential claims — `/admin/vc`
+### Verifiable Credentials — `/admin/vc`
+
+The former separate OpenID4VCI, Credential status, OpenID4VP and Verifier
+request leaves are tabs on this one Protocols page:
+
+* **Metadata** lists the issuer and verifier endpoints. The explanatory
+  OpenID4VCI and OpenID4VP guidance is in disclosures that are collapsed by
+  default.
+* **OpenID4VCI** holds issuance settings.
+* **Credential claims** selects claims on issued credentials.
+* **Credential status** manages this realm's issued credential statuses.
+* **OpenID4VP** holds verifier and wallet sign-in settings.
+* **Verifier request** configures what the mock verifier asks wallets to
+  present.
+
+### Credential claims tab — `/admin/vc#vc-tab-claims`
 
 `/admin/vc` decides what every *future* verifiable credential carries, and its
 list is of **LDAP attribute types rather than claim names**, because this
@@ -1401,9 +1422,10 @@ authenticates, and once at startup.
 **A credential claim grants nothing and nothing reads one back.** It reaches a
 credential and stops there.
 
-### Verifier request — `/admin/vc-verifier-config`
+### Verifier request tab — `/admin/vc#vc-tab-verifier-request`
 
-The other end of `/admin/vc`, and deliberately a separate setting. `/admin/vc`
+The other end of the Credential claims tab, and deliberately a separate
+setting. `/admin/vc`
 decides what an issued credential *carries*; this decides what the Verifier at
 `/oid4vp/verifier` — *The Bar Door* — **asks for**, as the `dcql_query` of the
 next OID4VP request, and what the presentation is checked against. Keeping them
@@ -1436,6 +1458,14 @@ is configured to mint.
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
 a credential this realm issued with a request of its own and is not configured
 here ([OpenID4VP](oid4vp.md#signing-in-with-a-wallet)).
+
+### XACML — `/admin/xacml`
+
+Protocols → XACML is one destination with tabs for Metadata (the realm's
+XACML endpoints), Settings, Policies, Policy editor, Remote PEPs and Try a
+decision. The policies, editor, PEP and decision views remain distinct tabs;
+their controls return to the tab they came from. **XACML decisions** remains a
+separate Monitoring page at `/admin/xacml/monitor`.
 
 ### Authorization servers — `/admin/authorization-servers`
 

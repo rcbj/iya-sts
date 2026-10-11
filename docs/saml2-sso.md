@@ -479,10 +479,9 @@ specification.
 
 ### The assertion settings every application inherits
 
-**Protocols → SAML → SAML assertions** (`/admin/saml-assertions`) holds the
-defaults for what goes into an assertion — for this profile, SAML 1.1, WS-Trust
-and WS-Federation alike, because all four are built by the same two assertion
-builders:
+The **Assertions** tab under **Protocols → SAML** holds the defaults for what
+goes into an assertion — for this profile, SAML 1.1, WS-Trust and WS-Federation
+alike, because all four are built by the same two assertion builders:
 
 | For each of SAML 2.0 and SAML 1.1 | Overridden on an application by |
 |---|---|
@@ -516,10 +515,9 @@ A change reaches the next assertion; nothing already issued changes.
 
 ### Custom SAML attributes
 
-**Protocols → SAML → Custom SAML attributes** (`/admin/saml-attributes`) adds
-attributes to every assertion issued from now on by this profile, SAML 1.1,
-WS-Trust and WS-Federation. There are two sets, because the two vocabularies
-differ:
+The **Custom SAML attributes** tab under **Protocols → SAML** adds attributes
+to every assertion issued from now on by this profile, SAML 1.1, WS-Trust and
+WS-Federation. There are two sets, because the two vocabularies differ:
 
 | Set | Element | Reaches |
 |---|---|---|
@@ -669,7 +667,7 @@ changed on those pages or with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → SAML → SAML 2.0 identity provider** (`/admin/saml2`): every
+* **Protocols → SAML** (`/admin/saml2`): every
   service provider, its metadata URL, what it was sent and over which binding,
   its signature verification outcome, its registered and observed certificates
   with **Confirm** and **Discard**, its metadata state (fresh, stale, expired)
@@ -678,8 +676,8 @@ changed on those pages or with `POST /admin-api/config/set`.
   do I configure this service provider from**, which is not one URL and whose
   slug nobody derives by hand. It holds nothing of its own: every row is an
   entry in `ou=applications`.
-* **Protocols → SAML → SAML assertions** (`/admin/saml-assertions`) and
-  **Custom SAML attributes** (`/admin/saml-attributes`), described above.
+* The **Assertions** and **Custom SAML attributes** tabs under
+  **Protocols → SAML**, described above.
 * `POST /admin-api/applications/refresh-metadata` fetches a service
   provider's metadata from its `samlSpMetadataUrl`.
 * `GET /admin-api/saml2` and `POST /admin-api/saml2/{action}` — `register`,

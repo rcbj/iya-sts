@@ -27,11 +27,8 @@ below, and the application attribute editor.
 
 | Page | Console menu | What you do there |
 |---|---|---|
-| `/admin/saml2` | **Protocols → SAML → SAML 2.0 identity provider** | Register an SP, import one from MDQ, and change the `SAML` and `SAML 2.0` settings groups. |
-| `/admin/saml2?sp=<entityID>` | click an SP's row | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
-| `/admin/saml11` | **Protocols → SAML → SAML 1.1 identity provider** | Register a relying party, and change the `SAML` and `SAML 1.1` settings groups. |
-| `/admin/saml-assertions` | **Protocols → SAML → SAML assertions** | Change the signing, encryption, lifetime and NameID settings (the `SAML 2.0 assertions` and `SAML 1.1 assertions` groups). |
-| `/admin/saml-attributes` | **Protocols → SAML → Custom SAML attributes** | Add attributes to every assertion. |
+| `/admin/saml2` | **Protocols → SAML** | Register SAML 2.0 service providers and configure both profiles, assertion settings and custom attributes in the page's tabs. |
+| `/admin/saml2?sp=<entityID>` | click a service provider's row | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | Set per-SP overrides with **Set** / **Add to** / **Remove from**. |
 
 Each settings group is saved with its own **Save <group>** button, for example
@@ -62,7 +59,7 @@ encryption certificates, its NameID formats, and its `AuthnRequestsSigned` /
 `saml_peer_kit.js`.
 
 **Console:**
-1. On **SAML 2.0 identity provider**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
+1. On **Protocols → SAML**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
 2. Click the new row. Under **Its metadata**, paste the SP's metadata into **Upload a document** (or pick it under **or a file**), and click **Consume it**.
 3. In **The endpoints it is configured from**, copy the **Metadata** URL. That is the IdP metadata to load into the SP.
 

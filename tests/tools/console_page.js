@@ -155,11 +155,38 @@ function consolePage(root) {
       delete q.format;
       const answer = await call('GET', page.operation,
                                 WebPages.operationQuery(page.path, q));
-      const html = answer.status === 200 && answer.json
-        ? WebPages.render(page.path, JSON.parse(JSON.stringify(answer.json)),
-                          WebKit.context(q, true))
-        : '';
-      return { status: answer.status, json: answer.json, html: html };
+      let json = answer.status === 200 && answer.json
+        ? JSON.parse(JSON.stringify(answer.json)) : null;
+      if (json && page.compose) {
+        const members = Object.keys(page.compose).filter(function (member) {
+          const when = (page.composeWhen || {})[member];
+          return !when ||
+            (page.composeAlways || []).indexOf(member) >= 0 ||
+            when.some(function (name) {
+              return Object.prototype.hasOwnProperty.call(q, name);
+            });
+        });
+        const answers = await Promise.all(members.map(function (member) {
+          const params = {};
+          ((page.composeWhen || {})[member] || []).forEach(function (name) {
+            if (Object.prototype.hasOwnProperty.call(q, name)) {
+              params[name] = q[name];
+            }
+          });
+          return call('GET', page.compose[member], params);
+        }));
+        answers.forEach(function (one, index) {
+          if (one.status !== 200 || !one.json ||
+              typeof one.json !== 'object') {
+            throw new Error(page.compose[members[index]] + ' answered ' +
+                            one.status);
+          }
+          json[members[index]] = JSON.parse(JSON.stringify(one.json));
+        });
+      }
+      const html = json
+        ? WebPages.render(page.path, json, WebKit.context(q, true)) : '';
+      return { status: answer.status, json: json, html: html };
     },
     /**
      * Calls a POST operation, as a form of the console is sent.

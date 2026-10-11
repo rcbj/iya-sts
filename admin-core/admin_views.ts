@@ -6721,7 +6721,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.caepJson(). Not installed.");
       return { installed: false, enabled: false, sessions: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/caep'),
+               settings: configSettingsJson('/admin/ssf', ['CAEP']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Continuous Access Evaluation ' +
                      'Profile.' };
@@ -6729,7 +6729,7 @@ class AdminViews {
     const report = caepReporter.report(req);
     report.installed = true;
     report.catalogue = caepReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/caep');
+    report.settings = configSettingsJson('/admin/ssf', ['CAEP']);
     log.debug("Leaving AdminViews.caepJson(). " + report.tracked +
               " session(s).");
     return report;
@@ -6876,7 +6876,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.riscJson(). Not installed.");
       return { installed: false, enabled: false, accounts: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/risc'),
+               settings: configSettingsJson('/admin/ssf', ['RISC']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Risk Incident Sharing and ' +
                      'Coordination profile.' };
@@ -6884,7 +6884,7 @@ class AdminViews {
     const report = riscReporter.report(req);
     report.installed = true;
     report.catalogue = riscReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/risc');
+    report.settings = configSettingsJson('/admin/ssf', ['RISC']);
     log.debug("Leaving AdminViews.riscJson(). " + report.tracked +
               " account(s).");
     return report;

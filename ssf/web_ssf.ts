@@ -39,7 +39,7 @@ class SsfPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static body(ctx, json) {
+  static body(ctx, json, settingsGroups) {
     const t = ctx.t;
 
     const tiles = '<div class="tiles">' +
@@ -148,7 +148,7 @@ class SsfPage {
           '</div></form>'
         : '') +
 
-      SettingsForms.forms(json.settings, '/admin/ssf', undefined, t) +
+      SettingsForms.forms(json.settings, '/admin/ssf', settingsGroups, t) +
 
       kit.note('<a href="/ssf">' + t.html('consoleSsf.foot.person') +
       '</a> &middot; ' +

@@ -67,7 +67,8 @@ presentation, and — when asked or named — the credential's status.
   from a base proof, revealing `options.selectivePointers`.
 * `POST /vc-api/credentials/status` revokes, suspends or lifts the suspension
   of a credential this adapter issued with a status. It is the act
-  [`/admin/vc-status`](oid4vci.md#status-lists) performs; a revocation is
+  [`Credential status`](oid4vci.md#status-lists) performs on
+  [`/admin/vc#vc-tab-status`](oid4vci.md#status-lists); a revocation is
   final.
 * The Bitstring Status List credentials answer as JSON-LD with an
   `eddsa-rdfc-2022` proof when `Accept` asks for JSON-LD or JSON, and as a

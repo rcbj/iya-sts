@@ -1870,7 +1870,8 @@ class AdminApi {
                      'does not, which is how one process answers ' +
                      'permissively at /oauth2/authorize and enforces the ' +
                      'BCP under a realm prefix.' },
-      { path: '/oid4vci-settings', console: '/admin/oid4vci', tag: 'OpenID4VCI',
+      { path: '/oid4vci-settings', console: '/admin/vc',
+        settingsPage: '/admin/oid4vci', tag: 'OpenID4VCI',
         operationId: 'getOid4vciSettings',
         summary: 'The credential issuer\'s own settings',
         description: 'The `oid4vci.*` settings, among them the wallet an ' +
@@ -1884,7 +1885,8 @@ class AdminApi {
                      'change what a VERIFIER has to resolve — a key fetched ' +
                      'from a DID document rather than from JWKS. What a ' +
                      'credential CONTAINS is `GET /credential-claims`.' },
-      { path: '/oid4vp-settings', console: '/admin/oid4vp', tag: 'OpenID4VP',
+      { path: '/oid4vp-settings', console: '/admin/vc',
+        settingsPage: '/admin/oid4vp', tag: 'OpenID4VP',
         operationId: 'getOid4vpSettings',
         summary: 'The mock Verifier\'s own settings',
         description: 'The `oid4vp.*` settings: the client identifier ' +
@@ -2212,7 +2214,15 @@ class AdminApi {
                      'rest of the process\'s own settings: it is a fact ' +
                      'about the process rather than about this certificate, ' +
                      'and it defaults to whatever `oauth2.rfc9700` is.' }
-    ].map(function (row) {
+    ].map(function (row: {
+      path: string;
+      console: string;
+      tag: string;
+      operationId: string;
+      summary: string;
+      description: string;
+      settingsPage?: string;
+    }) {
       return { method: 'GET', path: BASE + row.path, tag: row.tag,
                operationId: row.operationId,
                summary: row.summary,
@@ -2234,7 +2244,8 @@ class AdminApi {
                      "endpoint.");
                  // Through the row's `prepare` step, which the Cluster page
                  // has (#361): the same answer the console draws.
-                 admin.preparedSettingsJsonFor(row.console).then(
+                 admin.preparedSettingsJsonFor(
+                   row.settingsPage || row.console).then(
                    function (json) {
                      self.sendJson(res, 200, json);
                      log.debug("Leaving the management API " + row.console +
@@ -3241,7 +3252,8 @@ class AdminApi {
       // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
       // ---------------------------------------------------------------------
       // THE STATUS LISTS (#38's follow-ups): `vcStatusAdmin.statusView()`
-      // and `statusAction()`, the two functions `/admin/vc-status` answers.
+      // and `statusAction()`, the two functions the Credential status tab
+      // on `/admin/vc` draws.
       { method: 'GET', path: BASE + '/vc-status', tag: 'Credential status',
         operationId: 'getCredentialStatus',
         summary: 'This realm\'s credential status lists',
@@ -3256,7 +3268,7 @@ class AdminApi {
                      'INVALID or SUSPENDED), the `explicit` status set here, ' +
                      '`via`, `changedAt`, `allocatedAt` and `expiresAt` — ' +
                      'answered in `rowsPaging`.',
-        mirrors: 'GET /admin/vc-status',
+        mirrors: 'GET /admin/vc',
         parameters: [].concat(self.pagingParameters()),
         responseDescription: 'The lists and their credentials.',
         responseSchema: { type: 'object',
@@ -3272,7 +3284,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/vc-status/:action',
         tag: 'Credential status',
-        mirrors: 'POST /admin/vc-status',
+        mirrors: 'POST /admin/vc',
         handler: function (req, res) {
           log.debug("Entering the management API credential status action.");
           const result = vcStatusAdmin.statusAction(
@@ -10015,7 +10027,8 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/config/:action', tag: 'Configuration',
-        mirrors: 'POST /admin/config',
+        mirrors: 'POST /admin/config and POST ' +
+                 '/admin/xacml#xacml-tab-settings',
         handler: function (req, res) {
           log.debug("Entering the management API configuration action " +
                     "endpoint.");
@@ -10316,9 +10329,9 @@ class AdminApi {
       // encryption choices (`SAML_ASSERTION_SETTINGS` in admin-core) — under a
       // name that promises those and nothing else.
       //
-      // Rule 7 is satisfied the same way /token-lifetimes satisfies it, and the
-      // parallel is exact: /admin/saml-assertions grew a form, so it gets its
-      // operations. It gets no second store either — the handler calls
+      // Rule 7 is satisfied the same way /token-lifetimes satisfies it: the
+      // Assertions tab on /admin/saml2 uses this resource's operations. It
+      // gets no second store either — the handler calls
       // adminActions.samlAssertionsAction, which writes through
       // config.setOverride() against the same override map POST /config/set
       // writes to, and the same map the two identity provider pages' own forms
@@ -10367,7 +10380,7 @@ class AdminApi {
                      'with no allowance applied.\n\nA WINDOW IS STAMPED INTO ' +
                      'AN ASSERTION WHEN IT IS SIGNED, so changing one ' +
                      'reaches the next assertion and nothing already issued.',
-        mirrors: 'GET /admin/saml-assertions',
+        mirrors: 'GET /admin/saml2',
         responseDescription: 'The settings, and what has been issued ' +
                              'under them.',
         responseSchema: { $ref: '#/components/schemas/SamlAssertions' },
@@ -10398,7 +10411,7 @@ class AdminApi {
         // ---------------------------------------------------------------------
         handlerOwnsBody: true,
         tag: 'SAML assertions',
-        mirrors: 'POST /admin/saml-assertions',
+        mirrors: 'POST /admin/saml2',
         handler: function (req, res) {
           log.debug("Entering the management API SAML assertions action.");
           const body = parseBody(req);
@@ -10669,12 +10682,11 @@ class AdminApi {
         actions: this.claimSetActions(USERINFO_CLAIM_FAMILY) },
 
       // -----------------------------------------------------------------------
-      // THE SAML HALF OF THE SAME STORE, mirroring the console page that
-      // carries it. Two resources rather than one taking four sets, because
-      // rule 7 is about the CONTROL: /admin/saml-attributes is its own page
-      // with its own forms, and an API that answered for it under a name
-      // promising tokens would leave a caller reading `getClaims` to find out
-      // what an assertion will carry.
+      // THE SAML HALF OF THE SAME STORE, mirrored by the Custom SAML
+      // attributes tab on /admin/saml2. Two resources rather than one taking
+      // four sets, because rule 7 is about the CONTROL: a resource named
+      // /saml-attributes is clearer than one promising tokens and leaving a
+      // caller to read `getClaims` to find out what an assertion will carry.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/saml-attributes', tag: 'Custom SAML ' +
           'attributes',
@@ -10705,7 +10717,7 @@ class AdminApi {
                      'when the call does not name one.\n\nThe two JWT sets ' +
                      'are at GET /admin-api/claims. One store behind both, ' +
                      'and one audit row per change whichever door made it.',
-        mirrors: 'GET /admin/saml-attributes',
+        mirrors: 'GET /admin/saml2',
         parameters: [
           { name: 'user', in: 'query', required: false,
             schema: { type: 'string', default: 'alice' },
@@ -10734,7 +10746,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/saml-attributes/:action',
         tag: 'Custom SAML attributes',
-        mirrors: 'POST /admin/saml-attributes',
+        mirrors: 'POST /admin/saml2',
         handler: function (req, res) {
           log.debug("Entering the management API SAML attributes action " +
                     "endpoint.");
@@ -10754,8 +10766,8 @@ class AdminApi {
 
       // -----------------------------------------------------------------------
       // THE KERBEROS PAC HALF OF THE SAME STORE (#493): the sixth set, the
-      // claims a ticket's PAC_CLIENT_CLAIMS_INFO carries, on its own page
-      // under Protocols → Kerberos. Same action function, same audit row,
+      // claims a ticket's PAC_CLIENT_CLAIMS_INFO carries, on the PAC claims
+      // tab under Protocols → Kerberos. Same action function, same audit row,
       // same CAEP announcement, and since #498 the same ticked catalogue.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/kerberos/claims', tag: 'Kerberos',
@@ -10782,7 +10794,7 @@ class AdminApi {
                      'the person\'s entry, under the rows and the roles ' +
                      'claim, which win by claim id. `preview.byLdap` is ' +
                      'what each attribute would carry for the person.',
-        mirrors: 'GET /admin/kerberos/claims',
+        mirrors: 'GET /admin/kerberos',
         parameters: [
           { name: 'user', in: 'query', required: false,
             schema: { type: 'string', default: 'alice' },
@@ -10804,7 +10816,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/kerberos/claims/:action',
         tag: 'Kerberos',
-        mirrors: 'POST /admin/kerberos/claims',
+        mirrors: 'POST /admin/kerberos#kerberos-tab-claims',
         handler: function (req, res) {
           log.debug("Entering the management API Kerberos PAC claims action " +
                     "endpoint.");
@@ -10854,7 +10866,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/credential-claims/:action',
         tag: 'Credential claims',
-        mirrors: 'POST /admin/vc',
+        mirrors: 'POST /admin/vc#vc-tab-claims',
         handler: function (req, res) {
           log.debug("Entering the management API credential-claims action.");
           const body = parseBody(req);
@@ -10984,7 +10996,7 @@ class AdminApi {
                      'rather than one to prevent: a Verifier asking for a ' +
                      'claim nothing here issues is the only way to exercise ' +
                      'what a wallet does with a request it cannot satisfy.',
-        mirrors: 'GET /admin/vc-verifier-config',
+        mirrors: 'GET /admin/vc',
         responseDescription: 'The request as it now stands.',
         responseSchema: { $ref: '#/components/schemas/VerifierRequest' },
         handler: function (req, res) {
@@ -10995,7 +11007,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/verifier-request/:action',
         tag: 'Verifier request',
-        mirrors: 'POST /admin/vc-verifier-config',
+        mirrors: 'POST /admin/vc#vc-tab-verifier-request',
         handler: function (req, res) {
           log.debug("Entering the management API verifier-request action.");
           const body = parseBody(req);
@@ -12130,7 +12142,7 @@ class AdminApi {
                      '`found: false` for an identifier that is not ' +
                      'registered, whose metadata is still served and whose ' +
                      'flow would still be answered.',
-        mirrors: 'GET /admin/saml11',
+        mirrors: 'GET /admin/saml2',
         parameters: [
           { name: 'rp', in: 'query', required: false,
             schema: { type: 'string' },
@@ -12148,7 +12160,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/saml11/:action',
         tag: 'SAML 1.1',
-        mirrors: 'POST /admin/saml11',
+        mirrors: 'POST /admin/saml2#saml-tab-saml11',
         handler: function (req, res) {
           log.debug("Entering the management API SAML 1.1 action endpoint.");
           const body = parseBody(req);
@@ -14049,20 +14061,18 @@ class AdminApi {
       // 2026-09-09) — so the console has no create form either, and the parity
       // holds because there is no control to mirror.
       // ---------------------------------------------------------------------
-      // XACML. THREE READS AND ONE WRITE, and the write is the whole PAP: the
-      // console's two POST endpoints (`/admin/xacml/policies` and
-      // `/admin/xacml/editor`) are ONE action function here, because a caller
-      // should not have to work out which page owns "enable". The console keeps
-      // two because a form posts back to the page it came from.
+      // XACML. FIVE READS AND ONE WRITE: four read views are composed into
+      // tabs on `/admin/xacml`, and the one action function serves its policy,
+      // editor and remote-PEP tabs. The settings tab's forms use the shared
+      // configuration action below.
       //
       // RULE 7 IS WHY THIS IS IN THE SAME COMMIT AS THE PAGES. Every control
       // the console grows owes an operation here, and the one that is easiest
       // to forget is not the protocol's own endpoint — it is exactly this.
       { method: 'GET', path: BASE + '/xacml', tag: 'XACML',
         operationId: 'getXacml',
-        summary: 'The Policy Decision Point: whether it is on, what it ' +
-                 'decides with, and where the attributes come from',
-        description: 'Everything /admin/xacml draws, as JSON.\n\nTHIS IS THE ' +
+        summary: 'The Policy Decision Point settings and current status',
+        description: 'The Settings tab on /admin/xacml, as JSON.\n\nTHIS IS THE ' +
                      'ONLY FAMILY ON THIS SERVICE THAT ANSWERS A QUESTION ' +
                      'ABOUT SOMEBODY ELSE\'S BOUNDARY. Every other protocol ' +
                      'here authenticates or provisions a person; this one is ' +
@@ -14085,7 +14095,7 @@ class AdminApi {
       { method: 'GET', path: BASE + '/xacml/policies', tag: 'XACML',
         operationId: 'getXacmlPolicies',
         summary: 'The policy repository, with the type-check problems of each',
-        description: 'Everything /admin/xacml/policies draws.\n\nTHE STORE ' +
+        description: 'Everything the Policies tab on /admin/xacml draws.\n\nTHE STORE ' +
                      'IS `ou=policies` IN THE EMBEDDED DIRECTORY — that ' +
                      'container IS the repository rather than a copy of one, ' +
                      'so an `ldapmodify` of `xacmlPolicyDocument` changes ' +
@@ -14097,7 +14107,7 @@ class AdminApi {
                      'null`.\n\n`templates` is what POST ' +
                      '/admin-api/xacml/create-from-template will build, with ' +
                      'the parameters each takes.',
-        mirrors: 'GET /admin/xacml/policies',
+        mirrors: 'GET /admin/xacml',
         responseDescription: 'The policies, the root, and the templates.',
         responseSchema: { $ref: '#/components/schemas/XacmlPolicies' },
         handler: function (req, res) {
@@ -14110,7 +14120,8 @@ class AdminApi {
         operationId: 'getXacmlEditor',
         summary: 'One policy as an editable tree, with what may legally be ' +
                  'added at each node',
-        description: 'Everything /admin/xacml/editor draws. `?policy=<name>` ' +
+        description: 'Everything the Policy editor tab on /admin/xacml ' +
+                     'draws. `?policy=<name>` ' +
                      'chooses one; without it, the root.\n\nEach node in ' +
                      '`tree` carries `options.additions` — the elements ' +
                      'XACML allows AT THAT POINT, computed against the real ' +
@@ -14119,7 +14130,7 @@ class AdminApi {
                      'not only as a page: a caller can walk ' +
                      'the tree, read the legal moves, and POST ' +
                      'one, without a second copy of the grammar.',
-        mirrors: 'GET /admin/xacml/editor',
+        mirrors: 'GET /admin/xacml',
         responseDescription:
           'The policy as a tree of editable nodes, with the ' +
                              'stored XML and the same policy rendered as ALFA.',
@@ -14134,7 +14145,8 @@ class AdminApi {
         operationId: 'getXacmlDecision',
         summary: 'Ask the PDP about somebody and see the decision, which ' +
                  'policies applied, and what the embedded PEP would do with it',
-        description: 'Everything /admin/xacml/decide draws. `subject`, ' +
+        description: 'Everything the Try a decision tab on /admin/xacml ' +
+                     'draws. `subject`, ' +
                      '`action` and `resource` are query parameters; with ' +
                      'none of them it answers `asked: false` rather than ' +
                      'deciding about nobody.\n\nTHE DECISION AND THE ' +
@@ -14149,7 +14161,7 @@ class AdminApi {
                      'takes a JSON Profile request and is what a PEP calls; ' +
                      'this builds a three-category request out of three ' +
                      'parameters and is what a person asks.',
-        mirrors: 'GET /admin/xacml/decide',
+        mirrors: 'GET /admin/xacml',
         responseDescription: 'The decision, what applied, and what the ' +
                              'embedded PEP would do.',
         responseSchema: { $ref: '#/components/schemas/XacmlDecision' },
@@ -14348,7 +14360,8 @@ class AdminApi {
         summary: 'The REMOTE Policy Enforcement Points that pull this ' +
                  'repository, and whether they are deciding with the same ' +
                  'policy this service holds',
-        description: 'Everything /admin/xacml/peps draws.\n\nA REMOTE PEP ' +
+        description: 'Everything the Remote PEPs tab on /admin/xacml ' +
+                     'draws.\n\nA REMOTE PEP ' +
                      'runs in another process, holds its own copy of the ' +
                      'engine and PULLS the enabled policies from GET ' +
                      '/xacml/pep/policies. The pull is the contract; the ' +
@@ -14370,7 +14383,7 @@ class AdminApi {
                      'cumulative in its process — this service saw none of ' +
                      'those decisions, which is what a remote PEP is — so a ' +
                      'PEP that restarts makes them go down.',
-        mirrors: 'GET /admin/xacml/peps',
+        mirrors: 'GET /admin/xacml',
         responseDescription: 'The register, and what each PEP last reported.',
         responseSchema: { $ref: '#/components/schemas/XacmlPeps' },
         handler: function (req, res) {
@@ -14380,8 +14393,10 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/xacml/:action', tag: 'XACML',
-        mirrors: 'POST /admin/xacml/policies, POST /admin/xacml/editor and ' +
-                 'POST /admin/xacml/peps',
+        mirrors: 'POST /admin/xacml#xacml-tab-policies, POST ' +
+                 '/admin/xacml#xacml-tab-editor, POST ' +
+                 '/admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, ' +
+                 'POST /admin/xacml/editor and POST /admin/xacml/peps',
         handler: function (req, res) {
           log.debug("Entering the management API XACML action endpoint.");
           const body = parseBody(req);
@@ -18956,7 +18971,7 @@ class AdminApi {
                      'KDC and a principal database of its own since ' +
                      '2026-09-15, so a realm prefix answers that ' +
                      'realm\'s principals.',
-        mirrors: 'GET /admin/kerberos/principals',
+        mirrors: 'GET /admin/kerberos',
         // `per` and the two lists' own page parameters — NOT
         // pagingParameters(), whose `page` this resource never reads.
         parameters: this.pagingParameters().filter(function (one) {
@@ -18985,7 +19000,8 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/kerberos/principals/:action',
         tag: 'Kerberos',
-        mirrors: 'POST /admin/kerberos/principals',
+        mirrors: 'POST /admin/kerberos#kerberos-tab-principals, POST ' +
+                 '/admin/kerberos/principals',
         handler: function (req, res) {
           log.debug("Entering the management API Kerberos principals action " +
                     "endpoint.");
@@ -24009,9 +24025,9 @@ import InstanceSlot = require('../common/instance_slot');
 // ---------------------------------------------------------------------------
 // THE SEVEN ACTIONS OF A CLAIM SET, FOR WHICHEVER FAMILY OF SETS ASKED.
 //
-// The console has THREE pages onto one store since 2026-08-26 — /admin/claims
-// for the two JWT sets, /admin/userinfo-claims for the UserInfo one and
-// /admin/saml-attributes for the two SAML ones — so this API has three action
+// The console has THREE areas onto one store since 2026-08-26 — /admin/claims
+// for the two JWT sets, /admin/userinfo-claims for the UserInfo one and the
+// Custom SAML attributes tab on /admin/saml2 — so this API has three action
 // resources, and rule 7 means each needs an operation per action. That is
 // twenty-one operations describing seven behaviours, and the one thing that
 // must not happen is twenty-one DESCRIPTIONS: the copy that is not edited

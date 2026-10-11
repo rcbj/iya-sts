@@ -184,13 +184,16 @@ function childMain() {
            'under a realm every HTTP row carries that realm\'s prefix',
            outside.slice(0, 5).join(', ') || 'all prefixed');
 
-      const named = table.forPage(fakeReq('/admin/authorization-servers'),
-                                  '/admin/authorization-servers');
+      const named = table.forPage(fakeReq('/admin/oauth2'), '/admin/oauth2')
+        .filter(function (row) {
+          return /tenantpe/.test(row.url) && /tenantpe$/.test(row.name);
+        });
       // Eleven since 2026-09-13: RFC 9126's /:as/oauth2/par joined the ten;
       // twelve since #138, with /:as/oauth2/fapi.
       note(named.length === 12 && named.every(function (row) {
         return /tenantpe/.test(row.url) && /tenantpe$/.test(row.name);
-      }), 'a named authorization server is listed by its id, once per route',
+      }), 'the combined OAuth page lists each named authorization server ' +
+           'route once by its id',
            named.map(function (row) { return row.url; }).join(', '));
       note(named.some(function (row) {
         return row.url === prefix +
@@ -198,6 +201,59 @@ function childMain() {
       }) && named.some(function (row) {
         return row.url === prefix + 'tenantpe/.well-known/openid-configuration';
       }), 'and both of its discovery documents are at their own addresses');
+
+    const vc = table.forPage(fakeReq('/admin/vc'), '/admin/vc');
+    const vcRoutes = vc.filter(function (row) { return row.route; })
+      .map(function (row) { return row.route; });
+    note(table.pages().indexOf('/admin/vc') >= 0 &&
+         ['/admin/oid4vci', '/admin/vc-status', '/admin/oid4vp',
+          '/admin/vc-verifier-config'].every(function (page) {
+           return table.pages().indexOf(page) < 0;
+         }) &&
+         vcRoutes.indexOf('/issuer') >= 0 &&
+         vcRoutes.indexOf('/oid4vp/verifier') >= 0 &&
+         vcRoutes.indexOf('/oid4vci/status-lists') >= 0,
+         'the single Verifiable Credentials page lists issuer, verifier and ' +
+         'status endpoints',
+         vcRoutes.join(', '));
+    const xacmlPages = table.pages().filter(function (page) {
+      return page === '/admin/xacml' ||
+        page.indexOf('/admin/xacml/') === 0;
+    });
+    const xacml = table.forPage(fakeReq('/admin/xacml'), '/admin/xacml')
+      .filter(function (row) { return row.route; })
+      .map(function (row) { return row.route; });
+    note(xacmlPages.indexOf('/admin/xacml') >= 0 &&
+         xacmlPages.indexOf('/admin/xacml/policies') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/editor') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/peps') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/decide') < 0 &&
+         ['/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
+          '/xacml/pep/register', '/xacml/pep/policies',
+          '/xacml/pep/heartbeat', '/xacml/pip']
+           .every(function (route) { return xacml.indexOf(route) >= 0; }),
+         'the combined XACML page owns its protocol endpoints',
+         'pages=' + xacmlPages.join(', ') + '; routes=' + xacml.join(', '));
+
+      const kerberosPages = table.pages().filter(function (page) {
+        return page === '/admin/kerberos' ||
+          page.indexOf('/admin/kerberos/') === 0;
+      });
+      const kerberos = table.forPage(
+        fakeReq('/admin/kerberos'), '/admin/kerberos')
+        .filter(function (row) { return row.route; })
+        .map(function (row) { return row.route; });
+      note(kerberosPages.indexOf('/admin/kerberos') >= 0 &&
+           kerberosPages.indexOf('/admin/kerberos/claims') < 0 &&
+           kerberosPages.indexOf('/admin/kerberos/principals') < 0 &&
+           ['/KdcProxy', '/krb5/principals', '/krb5/service', '/spnego',
+            '/spnego/protected', '/authn/spnego']
+             .every(function (route) {
+               return kerberos.indexOf(route) >= 0;
+             }),
+           'the combined Kerberos page owns its protocol endpoints',
+           'pages=' + kerberosPages.join(', ') + '; routes=' +
+           kerberos.join(', '));
 
       const ldap = table.forPage(fakeReq('/admin/ldap'), '/admin/ldap');
       note(ldap.length > 0 && ldap.every(function (row) {
@@ -245,6 +301,17 @@ function childMain() {
          'GET /admin-api/saml2, which mirrors the page, answers the same ' +
          'protocolEndpoints', 'status ' + mirrored.status + ' ' +
          (mirrored.parseError || ''));
+    const vcMirror = await fetchJson(port, '/admin-api/credential-claims');
+    const vcExpected = table.forPage({ path: '/admin/vc', query: {},
+      protocol: 'http', headers: {}, get: function () {
+        return '127.0.0.1:' + port;
+      } }, '/admin/vc');
+    note(vcMirror.status === 200 && vcMirror.json &&
+         JSON.stringify(vcMirror.json.protocolEndpoints) ===
+         JSON.stringify(vcExpected),
+         'GET /admin-api/credential-claims mirrors the combined VC page and ' +
+         'answers its endpoint list', 'status ' + vcMirror.status + ' ' +
+         (vcMirror.parseError || ''));
     const plain = await fetchJson(port, '/admin-api/users');
     note(plain.status === 200 && plain.json &&
          !('protocolEndpoints' in plain.json),
