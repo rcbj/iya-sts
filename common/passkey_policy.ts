@@ -20,9 +20,7 @@
 // ---------------------------------------------------------------------------
 // rcbj's ANSWERS ON #527 (2026-10-08), and so the defaults:
 //
-//   allowUsernameless        TRUE since 2026-10-10 (rcbj: "Enable webauthn
-//                            usernameless logins by default"; it was false
-//                            on #527's answer). Off, the sign-in screen offers no
+//   allowUsernameless        false. Off, the sign-in screen offers no
 //                            *Sign in with a passkey* button and no
 //                            conditional-mediation autofill, and asks for no
 //                            discoverable credential (`allowCredentials` is
@@ -379,9 +377,9 @@ const RP_NAME_EXTRAS = ['none', 'realm', 'organisation',
  */
 const FIELDS: PolicyField[] = [
   { key: 'allowUsernameless', attribute: 'stsPasskeyAllowUsernameless',
-    type: 'bool', dflt: true,
+    type: 'bool', dflt: false,
     label: 'Allow a passkey sign-in with no username',
-    what: 'ON BY DEFAULT. On, the sign-in screen offers *Sign in with a ' +
+    what: 'OFF BY DEFAULT. On, the sign-in screen offers *Sign in with a ' +
           'passkey* and the username field\'s autofill, which ask the ' +
           'browser for any discoverable credential of this realm (WebAuthn ' +
           'Level 3 section 5.4, `allowCredentials` empty) and sign in the ' +

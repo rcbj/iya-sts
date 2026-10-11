@@ -367,10 +367,6 @@ const CELL_MINTED = [
   'saml2_sso.artifacts', 'saml2_sso.pendingRequests', 'saml2_sso.spContexts',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',
   'scim.digestNonces', 'scim.hobaChallenges', 'scim.hobaSeen',
-  // The outbound SCIM client's (#552) deliveries, links and backoff state:
-  // a person is pushed from their home cell, so what was sent for them, and
-  // the service provider's id for them, stay in that cell (#553).
-  'scimClient.deliveries', 'scimClient.links', 'scimClient.state',
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',

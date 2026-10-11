@@ -430,17 +430,10 @@ function childMain() {
       credentials.addKey('ctl-carol', { credentialId: 'carol-primary',
         publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
         label: 'carol key' }, 'primary');
-      // Usernameless sign-in OFF for this one check: it is on by default
-      // since 2026-10-10, and then the screen carries /authn/webauthn.js for
-      // its own passkey button, which says nothing about this refusal.
-      const passkeyPolicy = require(ROOT + '/common/passkey_policy');
-      passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
-                                                  { allowUsernameless: false }));
       authnId = await startSignIn();
       r = await request(port, 'POST', '/authn/login',
         { authn_id: authnId, username: 'ctl-carol', webauthn_only: '1',
           action: 'login' });
-      passkeyPolicy.reset('default');
       note(r.status === 200 &&
            /security key on\s+its own is one factor/.test(r.text) &&
            !/\/authn\/webauthn\.js/.test(r.text) &&

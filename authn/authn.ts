@@ -1151,14 +1151,7 @@ const WEBAUTHN_SCRIPT = [
   'b64u(a.response.userHandle) : null } };',
   '    };',
   '    var pkAbort = null;',
-  // NOT ARMED AGAIN AFTER A REFUSAL (2026-10-10): a screen redrawn because a
-  // passkey answered the autofill and was refused says data-autofill="0".
-  // An authenticator that answers a conditional request with nobody choosing
-  // (a test's virtual one, an automatic password manager) would otherwise
-  // answer the redrawn page's request too, be refused again, and loop. The
-  // button still runs the ceremony.
-  '    if (pk.getAttribute("data-autofill") !== "0" &&',
-  '        PublicKeyCredential.isConditionalMediationAvailable &&',
+  '    if (PublicKeyCredential.isConditionalMediationAvailable &&',
   '        window.AbortController) {',
   '      PublicKeyCredential.isConditionalMediationAvailable()',
   '        .then(function (yes) {',
@@ -8649,8 +8642,7 @@ class Authn {
   }
 
   private loginPage(base, record, error, extra?: { unknownCredential?:
-                                                    string,
-                                                  noAutofill?: boolean }) {
+                                                    string }) {
     const { log, xmlEscape, config, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.loginPage(). protocol=" + record.protocol +
               (error ? ", showing an error" : ""));
@@ -8739,8 +8731,7 @@ class Authn {
       // `webauthn` LAST in the token list (HTML's autofill detail tokens):
       // the field offers this realm's passkeys where the browser supports
       // conditional mediation, and is an ordinary username field elsewhere.
-      'name="username" autocomplete="username' +
-      (passkey && !(extra && extra.noAutofill) ? ' webauthn' : '') +
+      'name="username" autocomplete="username' + (passkey ? ' webauthn' : '') +
       '" ' +
       (locked ? 'readonly ' : 'autofocus ') +
       'value="' + xmlEscape(record.hint) + '">' +
@@ -8888,8 +8879,7 @@ class Authn {
             webauthnPolicy.discoverableRequestOptions(passkeyRpId))) + '"' +
           ' data-unknown="' +
           xmlEscape(String((extra && extra.unknownCredential) || '')) +
-          '"' + (extra && extra.noAutofill ? ' data-autofill="0"' : '') +
-          '></div>'
+          '"></div>'
         : '') +
       // THE EMAILED FIRST FACTORS (#64): submit buttons of THIS form, so the
       // username above goes with them and no script is needed. The handler
@@ -11226,13 +11216,9 @@ class Authn {
       pending.set(record.id, record);
     }
     errorCodes.mark(res, code);
-    // The passkey button stays; the autofill is not armed again, or an
-    // authenticator that answers it unasked would loop (the script's
-    // data-autofill note).
     this.sendLoginPage(res, this.loginPage(base, record, shown,
                                            { unknownCredential:
-                                               unknownId || '',
-                                             noAutofill: true }));
+                                               unknownId || '' }));
     log.debug("Leaving Authn.passkeyRefused().");
   }
 

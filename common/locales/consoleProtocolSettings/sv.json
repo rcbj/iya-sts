@@ -1,9 +1,6 @@
 {
   "asJson": "den här sidan som JSON",
   "everyEndpoint": "alla slutpunkter som den här tjänsten registrerar",
-  "globalSettings": "Globala inställningar",
-  "metadataHeading": "Metadata",
-  "metadataDescription": "OpenID Connect-upptäcktsdokumentet publicerar auktoriseringsserverns slutpunkter och funktioner.",
   "thWhat": "Vad",
   "thAnswer": "Svar",
   "period": ".",

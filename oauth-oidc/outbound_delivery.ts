@@ -153,15 +153,6 @@ interface DeliveryKind {
   send?(row: Json, prepared: Prepared,
         options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
-  // THE WAIT BEFORE A RETRY, when the kind's is not the plain doubling of
-  // `backoffMs`: the outbound SCIM client's is jittered, capped and honours a
-  // Retry-After (#552). `n` is the attempt that failed; `row` carries the
-  // judgement's patch.
-  backoff?(n: number, row: Json): number;
-  // A PENDING ROW THE SWEEP MUST NOT ATTEMPT YET although it is due: a time
-  // after `at` holds it. The outbound SCIM client holds a paused client's
-  // rows (#552). An operator's retry is not held.
-  holdUntil?(row: Json, at: number): number;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -709,10 +700,8 @@ class OutboundDelivery {
       log.debug("Leaving OutboundDelivery.attempt(). Dead.");
       return 'dead';
     }
-    const backoff = kind.backoff
-      ? Math.max(0, Number(kind.backoff(n, current)) || 0)
-      : Math.max(0, this.setting(kind.settings.backoffMs)) *
-        Math.pow(2, n - 1);
+    const backoff = Math.max(0, this.setting(kind.settings.backoffMs)) *
+      Math.pow(2, n - 1);
     current.errorCode = judged.code || '';
     current.why = why + ' (attempt ' + n + '; trying again)';
     current.nextAttemptAt = now() + backoff;
@@ -874,8 +863,7 @@ class OutboundDelivery {
       if (row.state === 'pending') {
         if (at - Number(row.queuedAt) > keepMs) {
           stale.push(Object.assign({}, row));
-        } else if (!(Number(row.nextAttemptAt) > at) &&
-                   !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
+        } else if (!(Number(row.nextAttemptAt) > at)) {
           due.push(id);
         }
         return;

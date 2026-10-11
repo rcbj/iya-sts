@@ -5864,24 +5864,16 @@ class AdminActions {
     // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
     // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
     // document; `file` is what the console's file input carries, as text.
-    // `family` makes the SAML 1.1/SAML 2.0 sub-tab authoritative when one
-    // application is declared for both protocols.
     if (action === 'upload-metadata') {
-      const document = body.document;
-      const documentText = typeof document === 'string' ? document :
-        (document && typeof document.text === 'string'
-          ? document.text : '');
-      const fileText = typeof body.file === 'string' ? body.file :
-        (body.file && typeof body.file.text === 'string'
-          ? body.file.text : '');
-      const text = documentText || fileText;
+      const text = String(body.document || '') ||
+                   (typeof body.file === 'string' ? body.file :
+                     String((body.file && body.file.text) || ''));
       if (!text.trim()) {
         log.debug("Leaving AdminActions.saml2Action(). No document.");
         return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
                             'the metadata document in `document`.'] });
       }
-      const result = spMetadata.upload(identifier, text, body.actor || '',
-                                       body.family || '');
+      const result = spMetadata.upload(identifier, text, body.actor || '');
       log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0791', result);
@@ -6011,19 +6003,10 @@ class AdminActions {
     }
 
     if (action === 'register') {
-      const shire = String(body.shire || '').trim();
-      if (!shire) {
-        log.debug("Leaving AdminActions.saml11Action(). No shire named.");
-        return this.refused('STS-ADMIN-0851', { ok: false, errors: [
-          'Name the relying party\'s assertion consumer service URL in ' +
-          '`shire`.'
-        ] });
-      }
       const result = applications.createApplication({
         identifier: identifier, kind: SAML11_RP_KIND, protocol: 'SAML 1.1',
         note: 'registered as a SAML 1.1 relying party from the admin console',
-        fields: { samlEntityId: identifier,
-                  samlAssertionConsumerService: shire }
+        fields: { samlEntityId: identifier }
       });
       log.debug("Leaving AdminActions.saml11Action(). register " +
                 (result.ok ? 'ok' : 'refused') + ".");

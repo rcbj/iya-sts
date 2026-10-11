@@ -151,10 +151,8 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    **PROTOCOLS HAS A THIRD LEVEL AND NOTHING ELSE DOES.** An item in a section's
    `items` is either a page (`path` + `label`) or a GROUP (`title` + `what` +
    `items`), and `isNavGroup()` is the single predicate that decides which.
-   Under Protocols **OAuth 2.0 / OIDC is one page** with tabs for its
-   settings, authorization servers, token lifetimes, custom claims and
-   UserInfo claims; the settings tab has sub-tabs for global settings and
-   metadata. The other groups are **SAML** (SAML 2.0 identity
+   Under Protocols the groups are **OAuth2 / OIDC** (authorization
+   servers, token lifetimes, custom claims), **SAML** (SAML 2.0 identity
    provider, SAML 1.1 identity provider, custom SAML attributes),
    **Verifiable Credentials** (credential
    claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
@@ -1062,10 +1060,7 @@ general, because every other action on the page is synchronous and a
 2.0 page also draws the consumed document's STATE (fresh, stale, expired), what
 the background refresher last found, and the realm's metadata trust anchors,
 all out of `admin-core/admin_views.ts`'s view model, so `/admin-api/saml2?sp=`
-shows the same. The application detail page's explicit refresh is available for
-both `saml2` and `saml11` entries; the new-application form offers
-`samlSpMetadata` for both, and consuming it configures the shared ACS and
-certificate fields.
+shows the same.
 
 **THE FIELD NAMES ARE THE SCHEMA'S OWN, PREFIXED `field.`**, and both halves of
 that are deliberate. The prefix is what lets `applicationFieldsFrom()` tell an
@@ -1102,8 +1097,8 @@ page shows only what its declaration covers**: the field grid draws a field
 only for a declared family (or one every family shares), a family's
 configuration tab goes when it is unticked, and the Credentials, Software
 statements and Permissions tabs need an OAuth family, Shared Signals `ssf`, and
-SP metadata `saml2` or `saml11`. Values already stored on an undeclared
-family's attributes stay on the entry and in the Directory entry tab.
+SP metadata `saml2`. Values already stored on an undeclared family's attributes
+stay on the entry and in the Directory entry tab.
 
 Three things about it are decisions rather than mechanics:
 
@@ -7134,9 +7129,8 @@ sections on the application's configuration tabs:
   application's values. `tokenLifetimeWarnings()` takes values since this
   date; the realm page passes none. The four overrides were already
   fields on the tab, and clock skew stays realm-wide (rcbj's choice).
-* **Each SAML family sub-sub-tab** opens with its own
-  `applicationClaimsSection(..., [family])` and claim-selection section, so
-  SAML 1.1 and SAML 2.0 values stay with the protocol that consumes them.
+* **The SAML sub-tab** opens with `applicationClaimsSection(..., ['saml2',
+  'saml11'])`.
 
 Each section draws `adminViews.applicationClaimsState()`: the rows in force,
 marked `realm` or `application`, with a replaced realm row marked as such.
@@ -7147,16 +7141,6 @@ Its forms post `set-custom-claim` and `remove-custom-claim` to
 refusal is about one row and the reader is still on that application. The
 model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
 carries `customClaims` and `tokenLifetimes`.
-
-**The SAML configuration tab has one sub-sub-tab per declared family (#556)**:
-SAML 2.0 and SAML 1.1 are separate views of the shared application field
-catalogue, with family-specific fields and claims kept in their own view.
-Each also has a paste-or-file form for SP metadata. The form names its family
-explicitly, so importing metadata for one family on a dual-protocol
-application parses that family's descriptor rather than the automatic SAML 2.0
-default. The existing metadata consumer validates before writing; a refusal
-leaves the application's previous fields intact, and a successful import
-redraws the application's page from the updated entry.
 
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 
@@ -7577,3 +7561,4 @@ furniture (`perPageForm`, `perPageOptions`, `sectionSearchForm`), `upTo`
 and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
 the settings block are done. **A page that draws a settings block has it as
 `view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
+

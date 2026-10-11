@@ -6446,20 +6446,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
-  { path: '/admin-api/scim/clients', group: 'Management API',
-    name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
-    what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
-          'application entries declared for scim-client — the service ' +
-          'providers this realm pushes its people and groups to — each ' +
-          'with its queue counts and backoff pause, and with ?client= one ' +
-          'client\'s retry and dead-letter queues and discovery. Never a ' +
-          'credential.' },
-  { path: '/admin-api/scim/clients/:action', group: 'Management API',
-    name: 'Change the outbound SCIM clients', specs: ['openapi', 'rfc7644'],
-    what: 'NON-SPEC (#552). add-client, update-client, remove-client, ' +
-          'issue-certificate, test-connection, reconcile, deliver-now, ' +
-          'retry-delivery, retry-dead and purge-dead: the console\'s ten ' +
-          'acts, each audited. A credential is taken and never returned.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +

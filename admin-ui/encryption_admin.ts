@@ -348,20 +348,6 @@ const DATA_CLASSES = [
          'returned by `/admin-api`.'
   },
   {
-    label: 'scim-client-credential',
-    what: 'An outbound SCIM client’s credentials (#552) — ' +
-          '`scimClientPassword`, `scimClientOAuthClientSecret` and ' +
-          '`scimClientTlsPrivateKey`: what this service authenticates to a ' +
-          'remote SCIM service provider, or its token endpoint, with',
-    where: 'attributes on the client’s application entry under ' +
-           '`ou=applications`',
-    sealed: true,
-    why: 'Whoever holds them can create, change and delete accounts at the ' +
-         'remote identity provider. Sealed at rest when keys persist and ' +
-         'WITHHELD from every reader, as a secret destination’s credential ' +
-         'is: opened only for the request that uses it.'
-  },
-  {
     label: 'person-private-key',
     what: 'The assertion signing key pairs `/admin/pki` issues to a PERSON — ' +
           '`stsAssertionPrivateKey` (2026-09-11) and, for RFC 7522, ' +
