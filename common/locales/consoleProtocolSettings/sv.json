@@ -3,6 +3,7 @@
   "everyEndpoint": "alla slutpunkter som den här tjänsten registrerar",
   "globalSettings": "Globala inställningar",
   "metadataHeading": "Metadata",
+  "sharedProfileSettings": "Delade profilinställningar",
   "metadataDescription": "OpenID Connect-upptäcktsdokumentet publicerar auktoriseringsserverns slutpunkter och funktioner.",
   "thWhat": "Vad",
   "thAnswer": "Svar",

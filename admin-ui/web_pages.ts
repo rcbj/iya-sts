@@ -556,7 +556,14 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return RolesPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/saml2', title: 'SAML 2.0', operation: '/admin-api/saml2',
+  { path: '/admin/saml2', title: 'SAML', operation: '/admin-api/saml2',
+    // The sibling views draw tabs even when their old standalone routes are
+    // not active, so the combined page always needs each answer.
+    compose: {
+      saml11: '/admin-api/saml11',
+      assertions: '/admin-api/saml-assertions',
+      attributes: '/admin-api/saml-attributes'
+    },
     drill: {
       param: 'sp',
       sample: function (list: Json): string | null {
@@ -979,6 +986,84 @@ class WebPages {
       });
       return WebKit.tabbedPanels('oauth-pages', rendered);
     }
+    if (page.path === '/admin/saml2' &&
+        !(context.query && context.query.sp)) {
+      const saml11 = WebPages.pageFor('/admin/saml11');
+      const assertions = WebPages.pageFor('/admin/saml-assertions');
+      const attributes = WebPages.pageFor('/admin/saml-attributes');
+      if (!saml11 || !assertions || !attributes || !view.saml11 ||
+          !view.assertions || !view.attributes) {
+        throw new Error('The SAML page is missing a tab view.');
+      }
+      const endpoints: Json[] = [];
+      const endpointKeys: Json = {};
+      [view, view.saml11, view.assertions, view.attributes]
+        .forEach(function (answer) {
+          (Array.isArray(answer.protocolEndpoints)
+            ? answer.protocolEndpoints : []).forEach(function (row: Json) {
+            const key = String(row.name) + '\n' + String(row.url);
+            if (!endpointKeys[key]) {
+              endpointKeys[key] = true;
+              endpoints.push(row);
+            }
+          });
+        });
+      const metadata = WebPages.withEndpoints(
+        SamlPage.metadataBody(context), { protocolEndpoints: endpoints },
+        context.t);
+      const globalSettings =
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML 2.0'],
+                            context.t) +
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML 1.1'],
+                            context.t);
+      const sharedSettings =
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML'],
+                            context.t);
+      const saml2Body = SamlPage.saml2Body(context, view, {
+        includeMetadata: false, includeSettings: false
+      });
+      const saml11Body = SamlPage.saml11Body(context, view.saml11, {
+        includeMetadata: false, includeSettings: false
+      });
+      // The compatibility assertion page also edits the shared clock skew.
+      // In the combined page that control lives in the shared-settings tab;
+      // retain the timing data so the assertion warnings still use its value.
+      const assertionView = Object.assign({}, view.assertions, {
+        settings: view.assertions.settings.filter(function (setting: Json) {
+          return setting.key !== 'saml.clockSkewS';
+        })
+      });
+      const panels = [
+        { id: 'saml-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: metadata },
+        { id: 'saml-tab-global-settings',
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          html: globalSettings },
+        { id: 'saml-tab-shared-settings',
+          label: context.t.text(
+            'consoleProtocolSettings.sharedProfileSettings'),
+          html: sharedSettings },
+        { id: 'saml-tab-saml2',
+          label: WebPages.titleOf(WebPages.pageFor('/admin/saml2'),
+                                  context.t),
+          html: saml2Body },
+        { id: 'saml-tab-saml11',
+          label: WebPages.titleOf(saml11, context.t),
+          html: saml11Body },
+        { id: 'saml-tab-assertions',
+          label: WebPages.titleOf(assertions, context.t),
+          html: assertions.render(assertionView, context) },
+        { id: 'saml-tab-attributes',
+          label: WebPages.titleOf(attributes, context.t),
+          html: attributes.render(view.attributes, context) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.samlTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('saml-pages', rendered);
+    }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
     }
@@ -1005,6 +1090,57 @@ class WebPages {
       html = html.split('href="' + path + '"')
         .join('href="#' + paths[path] + '"');
     });
+    return html;
+  }
+
+  /**
+   * Keeps navigation between the SAML views inside their combined page.
+   *
+   * @param html - one SAML page's rendered HTML
+   * @returns the HTML with intra-page links
+   */
+  static samlTabLinks(html: string): string {
+    const paths = {
+      '/admin/saml2': 'saml-tab-saml2',
+      '/admin/saml11': 'saml-tab-saml11',
+      '/admin/saml-assertions': 'saml-tab-assertions',
+      '/admin/saml-attributes': 'saml-tab-attributes'
+    };
+    Object.keys(paths).forEach(function (path) {
+      html = html.split('href="' + path + '"')
+        .join('href="#' + paths[path] + '"');
+    });
+    html = html.replace(
+      /href="\/admin\/saml11(\?[^"#]*)?"/g,
+      function (match: string, query: string): string {
+        if (query && /(?:[?&])rp=/.test(query)) {
+          return match;
+        }
+        return 'href="/admin/saml2' + (query || '') +
+               '#saml-tab-saml11"';
+      });
+    html = html.replace(
+      /<form\b([^>]*\bmethod="get"[^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action || action[1] === '/admin/saml2' ||
+            action[1] === '/admin/saml11' ||
+            action[1] === '/admin/saml-assertions' ||
+            action[1] === '/admin/saml-attributes') {
+          const current = action ? action[1] : '';
+          const tabs = {
+            '/admin/saml2': 'saml-tab-saml2',
+            '/admin/saml11': 'saml-tab-saml11',
+            '/admin/saml-assertions': 'saml-tab-assertions',
+            '/admin/saml-attributes': 'saml-tab-attributes'
+          };
+          if (current && tabs[current]) {
+            return match.replace('action="' + current + '"',
+              'action="/admin/saml2#' + tabs[current] + '"');
+          }
+        }
+        return match;
+      });
     return html;
   }
 

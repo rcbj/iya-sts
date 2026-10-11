@@ -155,8 +155,14 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    Metadata, Global settings, authorization servers, token lifetimes, custom
    claims and UserInfo claims; Metadata is first and opens by default, with
    the explanatory notes and endpoint list, and Global settings holds the
-   authorization server's forms. The other groups are **SAML** (SAML 2.0 identity
-   provider, SAML 1.1 identity provider, custom SAML attributes),
+   authorization server's forms. **SAML is one page** with Metadata first,
+   then Global settings, shared-profile settings, SAML 2.0, SAML 1.1, assertion
+   settings and Custom SAML attributes. The profile notes and combined
+   endpoint list are on Metadata; Global settings holds each profile's own
+   defaults, while the shared `SAML` group and assertion defaults have tabs of
+   their own. The old SAML routes remain direct destinations for bookmarks,
+   forms and breadcrumbs, but their hidden rows are not sidebar links or
+   entries in `consoleJson().pages`. The other groups are
    **Verifiable Credentials** (credential
    claims, verifier request), **SPIFFE** (SPIFFE, registration entries,
    agents), **XACML**, — since 2026-09-13 — **Kerberos** (Kerberos
@@ -164,21 +170,19 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    heading does not say its label twice), and — since 2026-10-01, rcbj's ask
    — **SSF** (Shared Signals, CAEP, RISC: the pipe and the two vocabularies
    spoken over it, which were three ungrouped rows) — with SCIM left
-   ungrouped beside them. **SAML USED TO BE THE
-   EXCEPTION HERE and no longer is**: it held ONE page, and the argument for
-   keeping the heading anyway was that it names a protocol family this service
-   speaks in two versions and two profiles while the page under it configured
-   one aspect of that family — where SCIM's one page IS the whole of SCIM here.
-   The SAML 2.0 Web Browser SSO profile arrived on 2026-08-24 and put a second
-   page under it, so the group now earns its heading the ordinary way. **Keep
-   the argument rather than the precedent**: the test for the next group of one
-   is still "does the heading name more than the page under it does?", and this
-   group having outgrown the question is not an answer to it. Three rules, each the section rule one
+   ungrouped beside them. **SAML has one visible page for a family wider than
+   that page.** The group names both protocol versions and profiles, their
+   assertion settings and custom attributes; those are peer tabs rather than
+   separate sidebar leaves. A page row marked `hidden` stays in `NAV` so
+   `upTo()`, breadcrumbs and `SETTING_HOMES` still recognize its direct route,
+   but `navItem()` and the dashboard guide omit it, and `consoleJson().pages`
+   excludes it. This is the compatibility path for routes whose content moved
+   into a tab, not a second way to expose a sidebar page. Three rules, each the section rule one
    level down: a group **is not a crumb** and has no page, so `trailBar()` is
    untouched by grouping and must stay that way; `NAV` is still **derived**, now
    through `sectionPages()`, which flattens a group's pages into the section
-   holding it, so `upTo()`, the trail and `consoleJson().pages` cannot tell a
-   grouped page from an ungrouped one; and **a group may hold a group** since
+   holding it, so `upTo()` and the trail cannot tell a grouped page from an
+   ungrouped one; `consoleJson().pages` leaves out hidden aliases; and **a group may hold a group** since
    2026-10-01 (it read *nesting stops at one level* until then) — the one case
    is Cert issuance › SPIFFE, below, and `groupPages()` is the walk that
    flattens every depth. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
@@ -769,12 +773,13 @@ keeping apart:
 
 ---
 
-## `/admin/saml-assertions` IS THE THIRD PAGE OF THAT SHAPE, AND IT WAS CHECKED AGAINST THE TEST ABOVE RATHER THAN CITING IT
+## SAML ASSERTION DEFAULTS HAVE THEIR OWN TAB, AND THE LEGACY ROUTE REMAINS
 
-Added 2026-08-27, under Protocols > SAML. Three `config.js` rows: the two
-assertion lifetimes — `saml2.assertionLifetimeMin` and
-`saml11.assertionLifetimeMin`, which already existed and are still drawn on
-`/admin/saml2` and `/admin/saml11` — and `saml.clockSkewS`, which is new.
+Added 2026-08-27 under Protocols > SAML, and consolidated into the Assertions
+tab on `/admin/saml2` by #558. The old `/admin/saml-assertions` route remains a
+direct destination. Three `config.js` rows: the two assertion lifetimes —
+`saml2.assertionLifetimeMin` and `saml11.assertionLifetimeMin` — and
+`saml.clockSkewS`, which is new.
 
 **It passes the three-part test above**, and the specific answers matter because
 "it is like Token lifetimes" is exactly the argument the section above says is
@@ -797,9 +802,10 @@ not one:
   visible at once, which is what makes "are these two the same?" a question a
   reader can answer by looking.
 
-**There is no store**, and the four doors onto these three values are this page,
-`/admin/saml2`, `/admin/saml11` and `/admin/config` — all of them calling
-`config.setOverride()` against one override map.
+**There is no store**, and the three doors onto these values are the combined
+SAML page, its `/admin/saml-assertions` compatibility route and
+`/admin/config` — all of them calling `config.setOverride()` against one
+override map.
 
 **WHY THE SKEW IS ONE SETTING WHERE THE LIFETIMES ARE TWO.** A lifetime is a
 property of how a profile is consumed, and this repository argues in
@@ -821,12 +827,13 @@ what this service does for an application nobody has configured.
 
 **THE MOVE WAS A GROUP MOVE, WHICH IS THE WHOLE OF WHY IT WAS CHEAP.** The ten
 rows changed `group` in `config.js` — to `SAML 2.0 assertions` and `SAML 1.1
-assertions` — and gained two rows in `SETTING_HOMES` naming this page. Nothing
-else was needed to take them off the two identity provider pages, because a
-group is drawn where its row says and nowhere else. **No KEY and no environment
-variable changed**, so every appconfig file and every `STS_SAML*` variable
-works exactly as it did. That property is what makes a settings move safe here,
-and it is the first thing to check for the next one.
+assertions` — and `SETTING_HOMES` now places both groups on the combined page
+and its compatibility route. Nothing else was needed to keep them off the two
+identity provider settings groups, because a group is drawn where its row says
+and nowhere else. **No KEY and no environment variable changed**, so every
+appconfig file and every `STS_SAML*` variable works exactly as it did. That
+property is what makes a settings move safe here, and it is the first thing to
+check for the next one.
 
 **THE PAGE NAMES THE ATTRIBUTE THAT OVERRIDES EACH ROW**, in a column of its
 own, read from `applications.overridableSettings()`. That is the one thing a

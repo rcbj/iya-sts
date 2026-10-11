@@ -931,10 +931,9 @@ void roles;
 //     does not. `trailBar()` is therefore untouched by this and must stay that
 //     way — the trail is still `Admin console › Registration entries › <id>`.
 //   * `NAV` IS STILL DERIVED, now through `sectionPages()`, which flattens a
-//     group's pages into the section that holds it. Everything downstream —
-//     `upTo()`, the trail, `consoleJson().pages` — reads NAV and so cannot tell
-//     a grouped page from an ungrouped one, which is the point: grouping is a
-//     fact about the SIDEBAR, not about the pages.
+//     group's pages into the section that holds it. `hidden` keeps a direct
+//     destination in NAV for trails and settings ownership, but leaves it out
+//     of the sidebar and `consoleJson().pages`.
 //   * A GROUP MAY HOLD A GROUP, AND ONE DOES (2026-10-01, rcbj's ask):
 //     Cert issuance › SPIFFE, the four SPIFFE pages under a heading of their
 //     own inside the certificate group. It was "nesting stops here" until
@@ -955,20 +954,20 @@ void roles;
 // what the issuer puts in and what the verifier asks for — answer each other
 // and are worth reading together.
 //
-// `SAML` IS A GROUP WITH ONE PAGE IN IT AND THAT IS AN EXCEPTION WORTH
+// `SAML` IS A GROUP WITH ONE VISIBLE PAGE IN IT AND THAT IS AN EXCEPTION WORTH
 // ARGUING, because the rule right beside it says the opposite: `SCIM` is left
 // ungrouped for the smaller reason that a group of one is a heading buying
 // nothing, and it still is. What makes SAML different is that the heading names
-// a PROTOCOL FAMILY this service speaks in two versions and two profiles, and
-// the page under it — `Custom SAML attributes` (`/admin/saml-attributes`), the
-// two assertion claim sets, moved off `/admin/claims` on 2026-08-24 — is one
-// aspect of that family rather than the whole of it. A reader looking for what
-// a WS-Federation assertion will carry looks for the word SAML; ungrouped, that
-// page would sit among the protocol pages reading as something OAuth-adjacent,
-// which is exactly the confusion the grouping was introduced to end. SCIM's one
-// page IS the whole of SCIM here, so its heading would say the label twice.
-// The test for a second group of one is that question and not this precedent:
-// does the heading name more than the page under it does?
+// a PROTOCOL FAMILY this service speaks in two versions and two profiles; its
+// one page has tabs for both identity providers, their settings and notes,
+// assertion settings and the custom attribute sets moved off `/admin/claims`
+// on 2026-08-24. A reader looking for what a WS-Federation assertion will carry
+// looks for the word SAML; ungrouped, this page would sit among the protocol
+// pages reading as something OAuth-adjacent, which is exactly the confusion the
+// grouping was introduced to end. SCIM's one page IS the whole of SCIM here, so
+// its heading would say the label twice. The test for a second group of one is
+// that question and not this precedent: does the heading name more than the
+// page under it does?
 // ONE ROW BELOW IS A PAGE THIS FILE DOES NOT DRAW. `Service metadata`
 // (`/admin/sts-metadata`) is built by `../sts_metadata.js`, which derives its
 // whole content from the live express router and therefore has to be the LAST
@@ -1010,65 +1009,25 @@ const SECTIONS = [
                'authorization servers, token lifetimes, custom claims and ' +
                'UserInfo claims, each on its own tab.' },
       { title: 'SAML',
-        what: 'BOTH identity providers — SAML 2.0\'s Web Browser SSO profile ' +
-              'and SAML 1.1\'s two browser profiles, each with its relying ' +
-              'parties and the metadata each one is configured from — and ' +
-              'what this service puts into an assertion, 2.0 and 1.1 alike, ' +
-              'which is also what WS-Trust and WS-Federation carry. The two ' +
-              'profiles are separate pages because they are separate ' +
-              'implementations: SAML 1.1 has no request message and no ' +
-              'Single Logout, so half of what the 2.0 page reports has no ' +
-              'spelling over there.',
+        what: 'One tabbed page for metadata, profile and assertion settings, ' +
+              'both identity providers and custom attributes.',
         items: [
-          { path: '/admin/saml2', label: 'SAML 2.0 identity provider',
-            blurb: 'Every service provider this identity provider has been ' +
-                   'asked about, what each one was sent and over which ' +
-                   'binding, and what this service calls ITSELF to each of ' +
-                   'them. What goes INTO the next assertion moved to ' +
-                   '<a href="/admin/saml-assertions">SAML assertions</a> ' +
-                   'on 2026-08-27, because those five are per application ' +
-                   'now and this page configures the identity provider. ' +
-                   'Metadata is published PER service provider — the ' +
-                   'identity provider names itself differently to each one, ' +
-                   'the way Okta and Ping do — and it is minted for anything ' +
-                   'asked for, so nothing has to be registered here first: ' +
-                   'asking for a service provider\'s metadata is what ' +
-                   'creates it.' },
+          { path: '/admin/saml2', label: 'SAML settings',
+            blurb: 'Metadata, shared and profile settings, assertion ' +
+                   'settings, both identity providers and custom SAML ' +
+                   'attributes, each on its own tab.' },
           { path: '/admin/saml11', label: 'SAML 1.1 identity provider',
-            blurb: 'The same, for the older profiles, and it is a SEPARATE ' +
-                   'implementation rather than a version flag. SAML 1.1 has ' +
-                   'no request message, so a relying party cannot identify ' +
-                   'itself in the protocol at all — it is named by ' +
-                   'Shibboleth\'s <code>providerId</code>, by the path ' +
-                   'segment of a scoped endpoint, or GUESSED from the origin ' +
-                   'of the <code>TARGET</code> — and there is no Single ' +
-                   'Logout to configure and no request signature to record. ' +
-                   'What it has that 2.0 does not is a SOAP responder that ' +
-                   'is also an attribute authority.' },
+            hidden: true,
+            blurb: 'Legacy direct route; its view is also available as a tab ' +
+                   'on /admin/saml2.' },
           { path: '/admin/saml-assertions', label: 'SAML assertions',
-            blurb: 'THE DEFAULTS EVERY SAML APPLICATION INHERITS: how long ' +
-                   'an assertion is valid, whether it and its response are ' +
-                   'signed, the NameID format and the artifact lifetime — ' +
-                   'five per profile — plus the clock skew written into ' +
-                   'both ends of the validity window. Ten of the eleven can ' +
-                   'be overridden PER APPLICATION on ' +
-                   '<a href="/admin/applications">an application entry</a>, ' +
-                   'and this page names the attribute that does it beside ' +
-                   'each row; the skew cannot, because it is a fact about ' +
-                   'the clocks in this estate rather than about one relying ' +
-                   'party. All eleven reach WS-Trust and WS-Federation too — ' +
-                   'their assertions come out of the same two builders.' },
+            hidden: true,
+            blurb: 'Legacy direct route; its view is also available as a tab ' +
+                   'on /admin/saml2.' },
           { path: '/admin/saml-attributes', label: 'Custom SAML attributes',
-            blurb: 'The same two halves for the assertions: every SAML 2.0 ' +
-                   'and SAML 1.1 attribute added to what the two identity ' +
-                   'providers, WS-Trust and WS-Federation issue from now on. ' +
-                   'One store behind this page and ' +
-                   '<a href="/admin/claims">Custom claims</a>; two ' +
-                   'vocabularies, because 2.0 has <code>Name</code> and an ' +
-                   'optional <code>NameFormat</code> where 1.1 has ' +
-                   '<code>AttributeName</code> and a REQUIRED ' +
-                   '<code>AttributeNamespace</code>, and one list could not ' +
-                   'have served both.' }
+            hidden: true,
+            blurb: 'Legacy direct route; its view is also available as a tab ' +
+                   'on /admin/saml2.' },
         ] },
       { title: 'Verifiable Credentials',
         what: 'Both halves: what the OID4VCI issuer puts in a credential, ' +
@@ -3578,6 +3537,10 @@ class AdminConsole {
                                                          : 'page ' +
                                                              item.path));
     if (!this.isNavGroup(item)) {
+      if (item.hidden) {
+        log.debug("Leaving AdminConsole.navItem(). A hidden page.");
+        return '';
+      }
       log.debug("Leaving AdminConsole.navItem(). A page.");
       return this.navLink(item, active, up);
     }
@@ -4789,7 +4752,10 @@ class AdminConsole {
       ['oauth-tab-metadata', 'oauth-tab-global-settings',
        'oauth-tab-authorization-servers',
        'oauth-tab-token-lifetimes', 'oauth-tab-claims',
-       'oauth-tab-userinfo-claims']).map(function (id) {
+       'oauth-tab-userinfo-claims', 'saml-tab-metadata',
+       'saml-tab-global-settings', 'saml-tab-shared-settings',
+       'saml-tab-saml2', 'saml-tab-saml11', 'saml-tab-assertions',
+       'saml-tab-attributes']).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
           USER_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
@@ -5662,7 +5628,8 @@ class AdminConsole {
       artifactsHeld: snap.artifacts.held, signOnSessions: sessions.size,
       usersKnown: snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
-      pages: NAV.map(function (n) { return n.path; })
+      pages: NAV.filter(function (n) { return !n.hidden; })
+        .map(function (n) { return n.path; })
     };
     log.debug("Leaving AdminConsole.consoleJson().");
     return json;
@@ -8837,7 +8804,8 @@ const NAV = [];
 WIRE_STEPS.push(function (instance: AdminConsole): void {
   SECTIONS.forEach(function (section) {
     instance.sectionPages(section).forEach(function (item) {
-      NAV.push({ path: item.path, label: item.label, section: section.title });
+      NAV.push({ path: item.path, label: item.label, section: section.title,
+                 hidden: !!item.hidden });
     });
   });
 });
@@ -8943,10 +8911,12 @@ const SETTING_HOMES = [
   // built with is stored on the hierarchy — so the page that takes each of
   // them as a field is the only place they read as anything but trivia.
   { group: 'PKI', pages: ['/admin/pki'] },
-  // Two pages, deliberately. See the header above.
+  // The shared group appears on the combined SAML page and the legacy SAML
+  // 1.1 route. The latter stays a direct destination; only the combined page
+  // is in the sidebar.
   { group: 'SAML', pages: ['/admin/saml2', '/admin/saml11'] },
   { group: 'SAML 2.0', pages: ['/admin/saml2'] },
-  { group: 'SAML 1.1', pages: ['/admin/saml11'] },
+  { group: 'SAML 1.1', pages: ['/admin/saml2', '/admin/saml11'] },
   // THE TEN THAT BECAME PER-APPLICATION DEFAULTS ON 2026-08-27, and the two
   // groups exist to say exactly that. Every one of them was a `SAML 2.0` or
   // `SAML 1.1` row drawn on that profile's identity provider page, and every
@@ -8963,8 +8933,12 @@ const SETTING_HOMES = [
   // settings. Nothing about the KEYS or their environment variables changed,
   // which is what keeps every appconfig file and every `STS_SAML*` variable
   // working exactly as it did.
-  { group: 'SAML 2.0 assertions', pages: ['/admin/saml-assertions'] },
-  { group: 'SAML 1.1 assertions', pages: ['/admin/saml-assertions'] },
+  // These settings are now tabs on the combined SAML page; the old assertion
+  // route remains available as a direct destination.
+  { group: 'SAML 2.0 assertions',
+    pages: ['/admin/saml2', '/admin/saml-assertions'] },
+  { group: 'SAML 1.1 assertions',
+    pages: ['/admin/saml2', '/admin/saml-assertions'] },
   // WS-FEDERATION'S ONE ASSERTION SETTING IS DRAWN WITH THE SAML ONES, and
   // that is not a filing error. A WS-Federation sign-in response CARRIES a
   // SAML 1.1 assertion, built by the same function the SAML 1.1 profiles use,
@@ -8972,7 +8946,8 @@ const SETTING_HOMES = [
   // it on /admin/wsfed would have put the only setting that decides how long a
   // WS-Federation token lives on a different page from every other assertion
   // lifetime in this service.
-  { group: 'WS-Federation assertions', pages: ['/admin/saml-assertions'] },
+  { group: 'WS-Federation assertions',
+    pages: ['/admin/saml2', '/admin/saml-assertions'] },
   // THE FIVE OAUTH SETTINGS A CLIENT MAY ANSWER FOR ITSELF, on the page that
   // already drew three of them. /admin/token-lifetimes was a bespoke page
   // naming its four keys and had no row here at all; it has one now because

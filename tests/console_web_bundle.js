@@ -72,6 +72,8 @@ function childMain() {
     const mode = require(ROOT_DIR + '/common/mode');
     const admin = require(ROOT_DIR + '/admin-ui/admin');
     const adminApi = require(ROOT_DIR + '/mgmt-api/admin_api');
+    const protocolEndpoints =
+      require(ROOT_DIR + '/admin-core/protocol_endpoints');
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
     // THE VIEW OF EVERY CONVERTED PAGE IS WHAT ITS OPERATION'S HANDLER
@@ -87,6 +89,10 @@ function childMain() {
         const entry = adminApi.ROUTES.filter(function (one) {
           return one.method === 'GET' && one.path === operation &&
                  typeof one.handler === 'function';
+        })[0];
+        const page = WebPages.PAGES.filter(function (one) {
+          return one.operation === operation &&
+            protocolEndpoints.pages().indexOf(one.path) >= 0;
         })[0];
         if (!entry) {
           reject(new Error('no GET operation at ' + operation));
@@ -118,6 +124,14 @@ function childMain() {
             return this;
           },
           json: function (body) {
+            // The direct handler call skips admin-api's route wrapper, which
+            // adds protocol endpoints to mirrored Protocols page answers.
+            if (page && body && typeof body === 'object' &&
+                !Array.isArray(body)) {
+              body = Object.assign({}, body, {
+                protocolEndpoints: protocolEndpoints.forPage(req, page.path)
+              });
+            }
             resolve({ status: this.statusCode, body: body });
             return this;
           },
@@ -128,6 +142,14 @@ function childMain() {
             } catch (e) {
               // Not JSON: answered as the text it is, and D0 reports it.
               parsed = { notJson: String((e && e.message) || e) };
+            }
+            // The direct handler call skips admin-api's route wrapper, which
+            // adds protocol endpoints to mirrored Protocols page answers.
+            if (page && parsed && typeof parsed === 'object' &&
+                !Array.isArray(parsed)) {
+              parsed = Object.assign({}, parsed, {
+                protocolEndpoints: protocolEndpoints.forPage(req, page.path)
+              });
             }
             resolve({ status: this.statusCode, body: parsed });
             return this;
@@ -1103,6 +1125,158 @@ function childMain() {
            metadataTab[1].indexOf('/oauth2/authorize') >= 0) +
          '; Global: ' + (!!globalTab &&
            globalTab[1].indexOf('/oauth2/authorize') >= 0));
+    const samlPage = WebPages.pageFor('/admin/saml2');
+    const samlView = samlPage ? await viewOf(samlPage, {}) : null;
+    const samlHtml = samlView
+      ? WebPages.render('/admin/saml2', samlView,
+                        WebKit.context({}, true))
+      : '';
+    const samlTabIds = [
+      'saml-tab-metadata', 'saml-tab-global-settings',
+      'saml-tab-shared-settings', 'saml-tab-saml2', 'saml-tab-saml11',
+      'saml-tab-assertions', 'saml-tab-attributes'
+    ];
+    const samlMetadataTab =
+      /<section class="tabpanel first" id="saml-tab-metadata">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlGlobalTab =
+      /<section class="tabpanel" id="saml-tab-global-settings">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlSharedTab =
+      /<section class="tabpanel" id="saml-tab-shared-settings">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const saml2Tab =
+      /<section class="tabpanel" id="saml-tab-saml2">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const saml11Tab =
+      /<section class="tabpanel" id="saml-tab-saml11">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlAssertionTab =
+      /<section class="tabpanel" id="saml-tab-assertions">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlAttributeTab =
+      /<section class="tabpanel" id="saml-tab-attributes">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const settingKeys = function (settings, groups) {
+      return (settings.groups || []).filter(function (group) {
+        return groups.indexOf(group.group) >= 0;
+      }).reduce(function (keys, group) {
+        return keys.concat(group.settings.map(function (setting) {
+          return setting.key;
+        }));
+      }, []);
+    };
+    const hasSettings = function (tab, keys) {
+      return !!tab && keys.length > 0 && keys.every(function (key) {
+        return tab[1].indexOf('name="' + WebKit.esc(key) + '"') >= 0;
+      });
+    };
+    const lacksSettings = function (tab, keys) {
+      return !!tab && keys.every(function (key) {
+        return tab[1].indexOf('name="' + WebKit.esc(key) + '"') < 0;
+      });
+    };
+    const samlGlobalKeys = samlView
+      ? settingKeys(samlView.settings, ['SAML 2.0', 'SAML 1.1']) : [];
+    const samlSharedKeys = samlView
+      ? settingKeys(samlView.settings, ['SAML']) : [];
+    const samlAssertionKeys = samlView && samlView.assertions
+      ? samlView.assertions.settings.map(function (setting) {
+        return setting.key;
+      }).filter(function (key) {
+        return key !== 'saml.clockSkewS';
+      }) : [];
+    let samlExpectedEndpoints = samlView
+      ? [samlView, samlView.saml11, samlView.assertions, samlView.attributes]
+        .reduce(function (rows, answer) {
+          return rows.concat(answer.protocolEndpoints || []);
+        }, []) : [];
+    const samlEndpointKeys = {};
+    samlExpectedEndpoints = samlExpectedEndpoints.filter(function (row) {
+      const key = String(row.name) + '\n' + String(row.url);
+      if (samlEndpointKeys[key]) {
+        return false;
+      }
+      samlEndpointKeys[key] = true;
+      return true;
+    });
+    const saml2Intro = WebKit.context({}, true).t.html(
+      'consoleSaml.saml2.intro');
+    const saml11Intro = WebKit.context({}, true).t.html(
+      'consoleSaml.saml11.intro');
+    note(samlTabIds.every(function (id) {
+      return samlHtml.indexOf('id="' + id + '"') >= 0;
+    }) && !!samlMetadataTab && !!samlGlobalTab && !!samlSharedTab &&
+         !!saml2Tab && !!saml11Tab && !!samlAssertionTab &&
+         !!samlAttributeTab,
+         'D-SAML-tabs. the combined SAML page has all seven peer tabs',
+         samlTabIds.filter(function (id) {
+           return samlHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', '));
+    note(!!samlMetadataTab &&
+         samlMetadataTab[1].indexOf(saml2Intro) >= 0 &&
+         samlMetadataTab[1].indexOf(saml11Intro) >= 0 &&
+         samlMetadataTab[1].indexOf('saml-tab-saml2') >= 0 &&
+         samlExpectedEndpoints.length > 0 &&
+         samlExpectedEndpoints.every(function (row) {
+           return samlMetadataTab[1].indexOf(WebKit.esc(row.url)) >= 0;
+         }),
+         'D-SAML-metadata. Metadata is first/default and holds the profile ' +
+         'notes, SAML 2.0 link and all four endpoint lists',
+         'first=' + !!samlMetadataTab + '; notes=' +
+         (!!samlMetadataTab &&
+           samlMetadataTab[1].indexOf(saml2Intro) >= 0) + '/' +
+         (!!samlMetadataTab &&
+           samlMetadataTab[1].indexOf(saml11Intro) >= 0) +
+         '; endpoints=' + samlExpectedEndpoints.filter(function (row) {
+           return samlMetadataTab &&
+             samlMetadataTab[1].indexOf(WebKit.esc(row.url)) >= 0;
+         }).length + '/' + samlExpectedEndpoints.length);
+    note(hasSettings(samlGlobalTab, samlGlobalKeys) &&
+         hasSettings(samlSharedTab, samlSharedKeys) &&
+         hasSettings(samlAssertionTab, samlAssertionKeys),
+         'D-SAML-settings. global, shared, and assertion settings render in ' +
+         'their respective tabs',
+         'settings=' + samlGlobalKeys.length + '/' + samlSharedKeys.length +
+         '/' + samlAssertionKeys.length + '; present=' +
+         hasSettings(samlGlobalTab, samlGlobalKeys) + '/' +
+         hasSettings(samlSharedTab, samlSharedKeys) + '/' +
+         hasSettings(samlAssertionTab, samlAssertionKeys));
+    note(lacksSettings(samlSharedTab, samlGlobalKeys) &&
+         lacksSettings(samlAssertionTab,
+                       samlGlobalKeys.concat(samlSharedKeys)),
+         'D-SAML-separation. Global, shared and assertion settings do not ' +
+         'bleed into sibling tabs',
+         'shared omits global=' +
+         lacksSettings(samlSharedTab, samlGlobalKeys) +
+         '; assertions omit others=' +
+         lacksSettings(samlAssertionTab,
+                       samlGlobalKeys.concat(samlSharedKeys)) +
+         '; found=' +
+         samlGlobalKeys.concat(samlSharedKeys).filter(function (key) {
+           return samlAssertionTab &&
+             samlAssertionTab[1].indexOf('name="' + WebKit.esc(key) +
+                                          '"') >= 0;
+         }).join(', '));
+    note(!!samlAttributeTab &&
+         samlAttributeTab[1].indexOf(WebKit.context({}, true).t.html(
+           'consoleClaims.samlSetsHeading')) >= 0,
+         'D-SAML-attributes. Custom SAML attributes has its own content tab',
+         !!samlAttributeTab);
+    note(!!saml2Tab && !!saml11Tab &&
+         saml2Tab[1].indexOf(saml2Intro) < 0 &&
+         saml11Tab[1].indexOf(saml11Intro) < 0 &&
+         saml2Tab[1].indexOf('action="/admin/saml2#saml-tab-saml2"') >= 0 &&
+         saml11Tab[1].indexOf(
+           'action="/admin/saml2#saml-tab-saml11"') >= 0,
+         'D-SAML-links. profile notes stay on Metadata and list forms keep ' +
+         'submissions on their respective tabs',
+         'SAML 2.0=' + (!!saml2Tab &&
+           saml2Tab[1].indexOf(
+             'action="/admin/saml2#saml-tab-saml2"') >= 0) +
+         '; SAML 1.1=' + (!!saml11Tab &&
+           saml11Tab[1].indexOf(
+             'action="/admin/saml2#saml-tab-saml11"') >= 0));
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -1170,9 +1344,15 @@ function childMain() {
         '/admin/authorization-servers', '/admin/token-lifetimes',
         '/admin/claims', '/admin/userinfo-claims'
       ];
+      const samlChildren = [
+        '/admin/saml11', '/admin/saml-assertions',
+        '/admin/saml-attributes'
+      ];
       return consolePages.indexOf(path) >= 0 ||
         (consolePages.indexOf('/admin/oauth2') >= 0 &&
          oauthChildren.indexOf(path) >= 0) ||
+        (consolePages.indexOf('/admin/saml2') >= 0 &&
+         samlChildren.indexOf(path) >= 0) ||
         consolePages.some(function (one) {
           return path.indexOf(one + '/') === 0;
         });
@@ -1202,6 +1382,18 @@ function childMain() {
          'four former leaves', consolePages.filter(function (page) {
            return page === '/admin/oauth2' ||
              oauthChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const samlChildren = [
+      '/admin/saml11', '/admin/saml-assertions', '/admin/saml-attributes'
+    ];
+    note(consolePages.indexOf('/admin/saml2') >= 0 &&
+         samlChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0;
+         }),
+         'E-SAML. the sidebar has one SAML entry, not its former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/saml2' ||
+             samlChildren.indexOf(page) >= 0;
          }).join(', '));
 
     // --- F. the settings block is one block ----------------------------------

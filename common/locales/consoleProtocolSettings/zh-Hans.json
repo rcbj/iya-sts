@@ -3,6 +3,7 @@
   "everyEndpoint": "本服务注册的所有端点",
   "globalSettings": "全局设置",
   "metadataHeading": "元数据",
+  "sharedProfileSettings": "配置文件间共享设置",
   "metadataDescription": "OpenID Connect 发现文档会发布此授权服务器的端点和功能。",
   "thWhat": "项目",
   "thAnswer": "答案",

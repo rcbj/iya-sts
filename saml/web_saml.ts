@@ -58,8 +58,10 @@ class SamlPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static saml2Body(ctx, json) {
+  static saml2Body(ctx, json, options?) {
     const t = ctx.t;
+    const includeMetadata = !options || options.includeMetadata !== false;
+    const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
     const filterParams = { q: String(ctx.query.q || ''),
@@ -109,11 +111,13 @@ class SamlPage {
         '</td></tr>';
     }).join('');
 
-    const inner = '<h1>' + t.html('consoleSaml.saml2.title') +
-      '</h1><p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
-      kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
-      'href="/saml2/metadata">/saml2/metadata</a>' +
-      t.html('consoleSaml.common.unscopedAfter')) +
+    const inner = '<h1>' + t.html('consoleSaml.saml2.title') + '</h1>' +
+      (includeMetadata
+        ? '<p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
+          kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
+          'href="/saml2/metadata">/saml2/metadata</a>' +
+          t.html('consoleSaml.common.unscopedAfter'))
+        : '') +
       '<p class="sub"><a href="/saml2">' +
       t.html('consoleSaml.common.linkProfile') + '</a> &middot; <a ' +
       'href="/saml2/sp">' + t.html('consoleSaml.saml2.linkMockSp') +
@@ -183,7 +187,8 @@ class SamlPage {
           t.html('consoleSaml.saml2.thLast') + '</th></tr></thead>' +
           '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
         : '<p class="sub">' + t.html('consoleSaml.saml2.none') + '</p>') +
-      SettingsForms.forms(json.settings, '/admin/saml2') +
+      (includeSettings
+        ? SettingsForms.forms(json.settings, '/admin/saml2') : '') +
       kit.note(t.html('consoleSaml.saml2.shape') + '<a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkCustomAttributes') + '</a>' +
@@ -601,8 +606,10 @@ class SamlPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static saml11Body(ctx, json) {
+  static saml11Body(ctx, json, options?) {
     const t = ctx.t;
+    const includeMetadata = !options || options.includeMetadata !== false;
+    const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
     const filterParams = { q: String(ctx.query.q || ''),
@@ -639,14 +646,17 @@ class SamlPage {
         '</td></tr>';
     }).join('');
 
-    const inner = '<h1>' + t.html('consoleSaml.saml11.title') +
-      '</h1><p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
-      kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
-      'href="/admin/saml2">' + t.html('consoleSaml.saml11.linkSaml2Page') +
-      '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
-      kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
-      'href="/saml11/metadata">/saml11/metadata</a>' +
-      t.html('consoleSaml.common.unscopedAfter')) +
+    const inner = '<h1>' + t.html('consoleSaml.saml11.title') + '</h1>' +
+      (includeMetadata
+        ? '<p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
+          kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
+          'href="/admin/saml2">' +
+          t.html('consoleSaml.saml11.linkSaml2Page') +
+          '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
+          kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
+          'href="/saml11/metadata">/saml11/metadata</a>' +
+          t.html('consoleSaml.common.unscopedAfter'))
+        : '') +
       '<p class="sub"><a href="/saml11">' +
       t.html('consoleSaml.common.linkProfile') + '</a> &middot; <a ' +
       'href="/saml11/rp">' + t.html('consoleSaml.saml11.linkMockRp') +
@@ -701,7 +711,8 @@ class SamlPage {
       t.html('consoleSaml.common.register') + '</button><span ' +
       'class="note">' + t.html('consoleSaml.saml11.registerNote') +
       '</span></div></form>' +
-      SettingsForms.forms(json.settings, '/admin/saml11') +
+      (includeSettings
+        ? SettingsForms.forms(json.settings, '/admin/saml11') : '') +
       kit.note(t.html('consoleSaml.saml11.shape') + '<a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkCustomAttributes') + '</a>' +
@@ -711,6 +722,29 @@ class SamlPage {
                        '', {});
 
     return inner;
+  }
+
+  /**
+   * Draws the SAML profile notes collected on the Metadata tab.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @returns the explanatory notes as HTML
+   */
+  static metadataBody(ctx) {
+    const t = ctx.t;
+    return '<h1>SAML</h1>' +
+      '<p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
+      kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
+      'href="/saml2/metadata">/saml2/metadata</a>' +
+      t.html('consoleSaml.common.unscopedAfter')) +
+      '<p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
+      kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
+      'href="/admin/saml2">' +
+      t.html('consoleSaml.saml11.linkSaml2Page') +
+      '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
+      kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
+      'href="/saml11/metadata">/saml11/metadata</a>' +
+      t.html('consoleSaml.common.unscopedAfter'));
   }
 
   // Which of the two browser profiles a recorded binding value names, in words.

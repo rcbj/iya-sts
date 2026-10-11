@@ -3,6 +3,7 @@
   "everyEndpoint": "bawat endpoint na nirerehistro ng serbisyong ito",
   "globalSettings": "Mga pangkalahatang setting",
   "metadataHeading": "Metadata",
+  "sharedProfileSettings": "Mga setting na pinagsasaluhan ng mga profile",
   "metadataDescription": "Inilalathala ng dokumento ng pagtuklas ng OpenID Connect ang mga endpoint at kakayahan ng authorization server na ito.",
   "thWhat": "Ano",
   "thAnswer": "Sagot",

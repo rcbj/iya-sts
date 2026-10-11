@@ -187,13 +187,15 @@ class DashboardPage {
             if (!inner.length) {
               return;
             }
-            // The group's own description folds like a page's, for the same
-            // reason: SAML's runs to five lines and sat between the heading
-            // and the three pages under it.
+            // The group's own description stays with its heading, rather
+            // than being mistaken for the first page beneath it.
             out.push('<li><span class="grp">' + kit.esc(item.title) +
                      '</span>' +
                      kit.note(kit.esc(item.what)) +
                      '<ul>' + inner.join('') + '</ul></li>');
+            return;
+          }
+          if (item.hidden) {
             return;
           }
           if (item.path === activePath) {
