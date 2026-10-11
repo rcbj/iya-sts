@@ -19942,8 +19942,7 @@ class OAuth2Server {
                bcpCheck.description, code: bcpCheck.errorCode ||
                'STS-OAUTH-0158' };
     }
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const record = self.clientRecord(self.asBaseOf(req), metadata, clientId,
                                      o.secret ? randomId(secretBytes)
                                               : undefined, undefined);
@@ -20145,8 +20144,7 @@ class OAuth2Server {
     // the literals that were here. The secret and the registration access token
     // share a size because both ARE secrets and neither is weaker than the
     // other.
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const clientId = String(config.value('oauth2.registeredClientIdPrefix') ||
                             '') +
                      randomId(Number(

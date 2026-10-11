@@ -2831,10 +2831,22 @@ async function theSamlRegistriesRoundTrip() {
     "discarding when no request carried a certificate");
 
   const rp = "urn:test:" + REALM + ":rp";
-  // `target` was here and `saml11Action()` never read it — the third ignored
-  // member this file was sending, found the same way as `acs` and `binding`.
-  await ok("/saml11/register", { rp: rp },
-    "registered a SAML 1.1 relying party");
+  const shire = "https://saml11-" + REALM + ".example.test/acs";
+  await refused("/saml11/register", { rp: rp },
+    /shire|assertion consumer service/i,
+    "refused a SAML 1.1 relying party without an assertion consumer service");
+  await refused("/saml11/register", { rp: rp, shire: "javascript:alert(1)" },
+    /cannot be samlAssertionConsumerService/i,
+    "refused a non-HTTP assertion consumer service");
+  await refused("/saml11/register", { rp: rp, shire: "com.example.app:/acs" },
+    /must be an http or https URL/i,
+    "refused a private-use scheme as a SAML assertion consumer service");
+  await ok("/saml11/register", { rp: rp, shire: shire },
+    "registered a SAML 1.1 relying party and its assertion consumer service");
+  const detail = (await get("/saml11?rp=" + encodeURIComponent(rp))).body;
+  assert.deepStrictEqual(detail.assertionConsumerServices, [shire],
+    "the registered shire should be read back from the relying party entry; " +
+    "the API returned " + JSON.stringify(detail.assertionConsumerServices));
   const parties = (await get("/saml11")).body.relyingParties || [];
   assert.ok(parties.some(function (row) {
     return row.identifier === rp || row.rp === rp || row.entityId === rp;

@@ -149,7 +149,33 @@ function childMain() {
           typeof answer.body !== 'object') {
         throw new Error(page.operation + ' answered ' + answer.status);
       }
-      return JSON.parse(JSON.stringify(answer.body));
+      const view = JSON.parse(JSON.stringify(answer.body));
+      if (page.compose) {
+        const members = Object.keys(page.compose).filter(function (member) {
+          const when = (page.composeWhen || {})[member];
+          return !when || when.some(function (name) {
+            return Object.prototype.hasOwnProperty.call(query || {}, name);
+          });
+        });
+        const answers = await Promise.all(members.map(function (member) {
+          const params = {};
+          ((page.composeWhen || {})[member] || []).forEach(function (name) {
+            if (Object.prototype.hasOwnProperty.call(query || {}, name)) {
+              params[name] = query[name];
+            }
+          });
+          return apiAnswer(page.compose[member], params);
+        }));
+        answers.forEach(function (one, index) {
+          if (one.status !== 200 || !one.body ||
+              typeof one.body !== 'object') {
+            throw new Error(page.compose[members[index]] + ' answered ' +
+                            one.status);
+          }
+          view[members[index]] = JSON.parse(JSON.stringify(one.body));
+        });
+      }
+      return view;
     }
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
@@ -348,22 +374,7 @@ function childMain() {
     servers.setMember('webcheck', 'code_challenge_methods_supported',
                       '["S256"]');
     servers.removeMember('webcheck', 'request_uri_parameter_supported');
-    // And a SAML 2.0 service provider and a SAML 1.1 relying party, for
-    // the two identity providers' drill-downs.
     const applications = require(ROOT_DIR + '/common/applications');
-    const seeded = applications.createApplication({
-      identifier: 'https://sp.webcheck.example/saml2',
-      kind: 'saml2-service-provider', protocol: 'SAML 2.0',
-      note: 'drawn by the bundle check',
-      // What it may do and nothing it has done: an entry is refused one
-      // carrying a field the protocol endpoints accumulate.
-      fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
-    });
-    const seeded11 = applications.createApplication({
-      identifier: 'urn:webcheck:saml11',
-      kind: 'saml11-relying-party', protocol: 'SAML 1.1',
-      note: 'drawn by the bundle check'
-    });
     // And a federation relationship of each direction, for its drill-down.
     const federation = require(ROOT_DIR + '/federation/federation');
     const fedSp = federation.create({ id: 'webcheck-sp',
@@ -385,10 +396,6 @@ function childMain() {
       selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'api', td, 'test');
     note(seededEntry && seededEntry.ok, 'D-seed-spiffe. an entry is made',
          JSON.stringify((seededEntry && seededEntry.errors) || []));
-    note(seeded && seeded.ok && seeded11 && seeded11.ok,
-         'D-seed. the service provider and the relying party are made',
-         JSON.stringify([(seeded && seeded.errors) || [],
-                         (seeded11 && seeded11.errors) || []]));
     // A DELEGATION ACT, so the pictures are drawn with something in them —
     // a chain, an application in two roles, a person — and not only as the
     // page that says nothing has been delegated yet (#446).
@@ -860,7 +867,7 @@ function childMain() {
               body: JSON.stringify(shaped),
               headers: { 'content-type': 'application/json' } });
             const real = (checked.errors || []).filter(function (e) {
-              return !/is required\.$/.test(e);
+              return !/(?:is required\.|must have required property)/.test(e);
             });
             if (!checked.ok && real.length) {
               const key = operation + ': ' + real[0];
@@ -959,6 +966,70 @@ function childMain() {
            return k + ' (on ' + refusedBodies[k] + ')';
          }).join('; '));
 
+    // Seed the SAML applications after checking every form: a registered
+    // SAML 1.1 relying party changes the provider page's registration form.
+    // These entries exist only to verify the application's own nested tabs.
+    const seeded = applications.createApplication({
+      identifier: 'https://sp.webcheck.example/saml2',
+      kind: 'saml2-service-provider', protocol: 'SAML 2.0',
+      protocols: ['saml2'],
+      note: 'drawn by the bundle check',
+      fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
+    });
+    const seeded11 = applications.createApplication({
+      identifier: 'urn:webcheck:saml11',
+      kind: 'saml11-relying-party', protocol: 'SAML 1.1',
+      protocols: ['saml11'],
+      note: 'drawn by the bundle check'
+    });
+    const seededDual = applications.createApplication({
+      identifier: 'https://sp.webcheck.example/dual',
+      kind: 'saml2-service-provider', protocol: 'SAML 2.0 and SAML 1.1',
+      protocols: ['saml2', 'saml11'],
+      note: 'drawn by the bundle check',
+      fields: { samlEntityId: 'https://sp.webcheck.example/dual' }
+    });
+    note(seeded && seeded.ok && seeded11 && seeded11.ok &&
+         seededDual && seededDual.ok,
+         'D-seed. the SAML 2.0, SAML 1.1 and dual-family applications are made',
+         JSON.stringify([(seeded && seeded.errors) || [],
+                        (seeded11 && seeded11.errors) || [],
+                        (seededDual && seededDual.errors) || []]));
+    const applicationPage = WebPages.PAGES.filter(function (one) {
+      return one.path === '/admin/applications';
+    })[0];
+    const applicationTabs = [
+      { id: 'saml2', query: 'https://sp.webcheck.example/saml2',
+        want: ['cfg-saml2'], omit: ['cfg-saml11'] },
+      { id: 'saml11', query: 'urn:webcheck:saml11',
+        want: ['cfg-saml11'], omit: ['cfg-saml2'] },
+      { id: 'dual', query: 'https://sp.webcheck.example/dual',
+        want: ['cfg-saml2', 'cfg-saml11'], omit: [] }
+    ];
+    for (let i = 0; i < applicationTabs.length; i++) {
+      const one = applicationTabs[i];
+      const detail = await viewOf(applicationPage, {
+        application: one.query, per: '10'
+      });
+      const html = WebPages.render(applicationPage.path, detail,
+        WebKit.context({ application: one.query }, true));
+      const present = one.want.every(function (id) {
+        return html.indexOf('id="' + id + '"') >= 0;
+      });
+      const absent = one.omit.every(function (id) {
+        return html.indexOf('id="' + id + '"') < 0;
+      });
+      note(present && absent &&
+          (one.id !== 'dual' ||
+            (html.indexOf('name="family" value="saml2"') >= 0 &&
+             html.indexOf('name="family" value="saml11"') >= 0)) &&
+          html.indexOf('name="file"') >= 0 &&
+          html.indexOf('name="document"') >= 0,
+          'D-SAML-' + one.id + '. the matching metadata sub-tabs offer paste ' +
+          'and file import for their family',
+          'want=' + one.want.join(',') + '; omit=' + one.omit.join(','));
+    }
+
     // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
     // reports a route registered and undescribed, and a description of a
     // route that is not registered. Every page converted here owes its
@@ -989,6 +1060,28 @@ function childMain() {
          differing.join(', ') ||
          'drill-downs: ' + drilled.join(', ') + '; examples: ' +
          exampled.join(', '));
+    const oauthPage = WebPages.pageFor('/admin/oauth2');
+    const oauthView = oauthPage ? await viewOf(oauthPage, {}) : null;
+    const oauthHtml = oauthView
+      ? WebPages.render('/admin/oauth2', oauthView, WebKit.context({}, true))
+      : '';
+    const oauthTabIds = [
+      'oauth-tab-settings', 'oauth-tab-authorization-servers',
+      'oauth-tab-token-lifetimes', 'oauth-tab-claims',
+      'oauth-tab-userinfo-claims', 'oauth-settings-global',
+      'oauth-settings-metadata'
+    ];
+    note(oauthTabIds.every(function (id) {
+      return oauthHtml.indexOf('id="' + id + '"') >= 0;
+    }) && oauthHtml.indexOf('consoleAuthorizationServers') < 0 &&
+         oauthHtml.indexOf('openid-configuration') >= 0 &&
+         oauthHtml.indexOf('Global settings') >= 0 &&
+         oauthHtml.indexOf('Metadata') >= 0,
+         'D-OAuth. one OAuth2 / OIDC page draws five subpage tabs and ' +
+         'separates global settings from metadata',
+         oauthTabIds.filter(function (id) {
+           return oauthHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', ') || 'metadata/settings tab content missing');
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -1052,7 +1145,13 @@ function childMain() {
     // A page of the console, or a page drawn under one of its tabs
     // (`/admin/keys/history` under Key pairs).
     const consolePage = function (path) {
+      const oauthChildren = [
+        '/admin/authorization-servers', '/admin/token-lifetimes',
+        '/admin/claims', '/admin/userinfo-claims'
+      ];
       return consolePages.indexOf(path) >= 0 ||
+        (consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.indexOf(path) >= 0) ||
         consolePages.some(function (one) {
           return path.indexOf(one + '/') === 0;
         });
@@ -1060,12 +1159,29 @@ function childMain() {
     const untrue = WebPages.PAGES.filter(function (page) {
       return !consolePage(page.path) ||
              operations.indexOf('GET ' + page.operation) < 0 ||
+             Object.keys(page.compose || {}).some(function (member) {
+               return operations.indexOf(
+                 'GET ' + page.compose[member]) < 0;
+             }) ||
              typeof page.render !== 'function' || !page.title;
     }).map(function (page) { return page.path; });
     note(WebPages.PAGES.length >= 1 && untrue.length === 0,
          'E. every converted page is a page of the console and names an ' +
          '/admin-api operation that exists', untrue.join(', ') + ' ' +
          operations.length + ' operation(s)');
+    const oauthChildren = [
+      '/admin/authorization-servers', '/admin/token-lifetimes',
+      '/admin/claims', '/admin/userinfo-claims'
+    ];
+    note(consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0;
+         }),
+         'E-OAuth. the sidebar has one OAuth 2.0 / OIDC entry, not its ' +
+         'four former leaves', consolePages.filter(function (page) {
+           return page === '/admin/oauth2' ||
+             oauthChildren.indexOf(page) >= 0;
+         }).join(', '));
 
     // --- F. the settings block is one block ----------------------------------
     const config = require(ROOT_DIR + '/common/config');

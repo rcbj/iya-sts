@@ -1005,77 +1005,10 @@ const SECTIONS = [
     what: 'One page per family, each configuring or reporting what that ' +
           'protocol does here.',
     items: [
-      { title: 'OAuth2 / OIDC',
-        what: 'Which authorization server a flow runs against, how long what ' +
-              'it issues lasts, and what this service puts into it.',
-        items: [
-          // FIRST IN ITS GROUP, and the position is the argument for the page
-          // existing: the other four are about one aspect each — which server,
-          // how long, which claims — and this one is the family's own
-          // configuration, which is what a reader who has not decided what
-          // they are looking at yet wants first.
-          { path: '/admin/oauth2', label: 'OAuth 2.0 / OIDC settings',
-            blurb: 'The appconfig rows behind the authorization ' +
-                   'server: the issuer identifier, RFC 9700 mode and OAuth ' +
-                   '2.1 mode, the ' +
-                   'registered redirect URIs and how a loopback one is ' +
-                   'matched, Front-Channel Logout, the refresh token\'s idle ' +
-                   'timeout and whether a sign-out revokes it, the client ' +
-                   'assertion\'s clock skew — and the deliberate defect ' +
-                   '<code>oauth2.breakIdTokenNonce</code>, which makes this ' +
-                   'service return an ID Token whose <code>nonce</code> is ' +
-                   'wrong so that a client can find out whether it checks ' +
-                   '(development mode only). ' +
-                   'The five a CLIENT may answer for itself — the three ' +
-                   'lifetimes, the refresh idle timeout and whether a ' +
-                   'sign-out revokes refresh tokens — moved to ' +
-                   '<a href="/admin/token-lifetimes">Token lifetimes</a> ' +
-                   'on 2026-08-27, which is where their defaults live now.' },
-          { path: '/admin/authorization-servers',
-            label: 'Authorization servers',
-            blurb: 'Several authorization servers in ONE process, told apart ' +
-                   'by the path component the two discovery shapes already ' +
-                   'carry — RFC 8414 inserts it after the well-known segment ' +
-                   'and OpenID Connect Discovery appends the segment to it. ' +
-                   'Each has its own issuer, its own keys and its own idea ' +
-                   'of what it will accept, so a client can be pointed at a ' +
-                   'second one without a second process. A path nobody has ' +
-                   'configured publishes the document this service always ' +
-                   'published, which is what keeps a client that has never ' +
-                   'heard of this page unaffected by it.' },
-          { path: '/admin/token-lifetimes', label: 'Token lifetimes',
-            blurb: 'How long an access token, an ID Token and a refresh ' +
-                   'token issued here are good for, and how far out a clock ' +
-                   'may be before this service stops believing one of its ' +
-                   'own. Four configuration settings with a page of their ' +
-                   'own, written through the same function <a ' +
-                   'href="/admin/oauth2">the OAuth 2.0 / OIDC settings</a> ' +
-                   'write through — a change made on either page is one ' +
-                   'change.' },
-          { path: '/admin/claims', label: 'Custom claims',
-            blurb: 'What to add to every OAuth 2.0 access token and every ' +
-                   'OIDC ID Token this service issues FROM NOW ON. Two sets, ' +
-                   'because those two go to different readers and the ' +
-                   'interesting configuration is usually the one where they ' +
-                   'DIFFER. Additive only: a custom claim is never allowed ' +
-                   'to displace one the protocol defines, because an ' +
-                   '<code>exp</code> settable from a web form would produce ' +
-                   'tokens that fail to verify with nothing pointing back at ' +
-                   'the page. Nothing already issued changes — a token is a ' +
-                   'signed document and this page cannot reach inside one.' },
-          { path: '/admin/userinfo-claims', label: 'UserInfo claims',
-            blurb: 'The same two halves for the <strong>UserInfo ' +
-                   'response</strong>, and the one claims page here with no ' +
-                   '"nothing already issued changes" warning on it — which ' +
-                   'is the point of it being a page of its own. That ' +
-                   'response is built on EVERY call, so a claim added here ' +
-                   'reaches a client that signed in an hour ago and has done ' +
-                   'nothing since. It is also the one claim set a CLIENT can ' +
-                   'add to: OpenID Connect Core section 5.5\'s ' +
-                   '<code>claims</code> request parameter names individual ' +
-                   'claims, and they are answered off that person\'s entry ' +
-                   'under <code>ou=users</code>.' }
-        ] },
+      { path: '/admin/oauth2', label: 'OAuth 2.0 / OIDC',
+        blurb: 'One page for the authorization server settings, named ' +
+               'authorization servers, token lifetimes, custom claims and ' +
+               'UserInfo claims, each on its own tab.' },
       { title: 'SAML',
         what: 'BOTH identity providers — SAML 2.0\'s Web Browser SSO profile ' +
               'and SAML 1.1\'s two browser profiles, each with its relying ' +
@@ -3113,6 +3046,7 @@ type RouteApp = typeof app;
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
   'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry',
+  'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
@@ -4851,9 +4785,15 @@ class AdminConsole {
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
-      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS).map(function (id) {
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS,
+      ['oauth-tab-settings', 'oauth-tab-authorization-servers',
+       'oauth-tab-token-lifetimes', 'oauth-tab-claims',
+       'oauth-tab-userinfo-claims', 'oauth-settings-global',
+       'oauth-settings-metadata']).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
-          USER_SUB_TAB_IDS.indexOf(id) >= 0;
+          USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
+          id === 'oauth-settings-global' ||
+          id === 'oauth-settings-metadata';
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
@@ -9100,6 +9040,9 @@ const SETTING_HOMES = [
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
+  // THE OUTBOUND SCIM CLIENT (#552): on the same page, whose Clients tab is
+  // where each client is configured.
+  { group: 'SCIM client', pages: ['/admin/scim'] },
   // Shared Signals. A page of its own rather than a section of anything, for
   // the reason /admin/federation is ungrouped: SSF is not a variant of another
   // family here, it is the one that runs the other way round — this service

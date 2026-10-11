@@ -528,6 +528,8 @@ interface AdminApiDeps {
     typeof import('../attribute-sources/attribute_sources_api');
   // The secret push destinations' operations (#221 P3).
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
+  // The outbound SCIM clients' operations (#552).
+  loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
   loadSsfTransmittersApi(): typeof import('../ssf/ssf_transmitters_api');
 }
@@ -640,6 +642,9 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadScimClientsApi: function () {
+        return require('./scim_clients_api');
       },
       loadClaimsProvidersApi: function () {
         return require('../oauth-oidc/claims_providers_api');
@@ -2469,6 +2474,7 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi,
+            loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -12010,10 +12016,19 @@ class AdminApi {
                          'service provider is refused — and past the ' +
                          'cacheDuration a document with a URL is fetched ' +
                          'again in the background. An EntitiesDescriptor ' +
-                         'is read for this entity.\n\nREFUSED, changing ' +
+                         'is read for this entity. The protocol URI is ' +
+                         'selected from the application declaration: ' +
+                         'SAML 1.1 is selected only for an entry declared ' +
+                         'for `saml11` and not `saml2`; SAML 2.0 remains ' +
+                         'the choice for SAML 2.0, dual-protocol and ' +
+                         'undeclared entries unless `family` explicitly ' +
+                         'selects one declared SAML family. This operation ' +
+                         'can therefore ' +
+                         'consume SAML 1.1-only metadata as well.\n\n' +
+                         'REFUSED, changing ' +
                          'nothing, for: a document that is not an ' +
                          'EntityDescriptor (or an aggregate holding exactly ' +
-                         'one for this entity) with a SAML 2.0 ' +
+                         'one for this entity) with the selected ' +
                          'SPSSODescriptor; an entityID that ' +
                          'is not this service provider\'s; a validUntil ' +
                          'already passed; an encryption certificate this ' +
@@ -12032,10 +12047,30 @@ class AdminApi {
                 sp: { type: 'string',
                       description: 'The service provider\'s entityID — ' +
                                    'which the document must name.' },
+                family: { type: 'string', enum: ['saml2', 'saml11'],
+                          description: 'The declared SAML family selected ' +
+                                       'in the application configuration. ' +
+                                       'When omitted, SAML 1.1 is selected ' +
+                                       'only for an application declared ' +
+                                       'for SAML 1.1 alone.' },
                 document: { type: 'string',
-                            description: 'The metadata document, as XML.' }
+                            description: 'The metadata document, as XML.' },
+                file: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string',
+                            description: 'The uploaded file name.' },
+                    text: { type: 'string',
+                            description: 'The uploaded metadata document.' }
+                  },
+                  required: ['text'],
+                  additionalProperties: false,
+                  description: 'An uploaded metadata file, decoded as text ' +
+                               'by the static console.'
+                }
               },
-              required: ['sp', 'document'],
+              required: ['sp'],
+              anyOf: [{ required: ['document'] }, { required: ['file'] }],
               examples: [{
                 sp: 'https://sp.example.com/saml',
                 document: '<md:EntityDescriptor ' +
@@ -12126,7 +12161,7 @@ class AdminApi {
         },
         actions: [
           { action: 'register', operationId: 'registerSaml11RelyingParty',
-            summary: 'Register a relying party by identifier',
+            summary: 'Register a relying party and its assertion consumer',
             description: 'OPTIONAL, and it changes nothing about whether a ' +
                          'flow is accepted: this identity provider accepts ' +
                          'any identifier, and the first flow or metadata ' +
@@ -12144,16 +12179,24 @@ class AdminApi {
                          'identifier already in the registry — an identifier ' +
                          'names ONE application here whatever protocol ' +
                          'brought it, and a WS-Federation relying party ' +
-                         'taking 1.1 assertions is already one of these.',
+                         'taking 1.1 assertions is already one of these. ' +
+                         '`shire` is required and is recorded as the ' +
+                         'assertion consumer service. In product mode, the ' +
+                         'identity provider returns assertions only to an ' +
+                         'exactly registered address.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
                 rp: { type: 'string', description: 'The relying party\'s ' +
-                                                   'identifier.' }
+                                                   'identifier.' },
+                shire: { type: 'string', format: 'uri',
+                         description: 'The assertion consumer service URL ' +
+                           'registered on the relying party.' }
               },
-              required: ['rp'],
-              examples: [{ rp: 'urn:example:app' }],
+              required: ['rp', 'shire'],
+              examples: [{ rp: 'urn:example:app',
+                           shire: 'https://app.example.com/saml/acs' }],
               additionalProperties: false
             },
             responseDescription: 'The application entry, and where its ' +
@@ -17068,6 +17111,13 @@ class AdminApi {
                      'SCIM is on /admin-api/users and their groups are on ' +
                      '/admin-api/groups. There is no second store to report.',
         mirrors: 'GET /admin/scim',
+        parameters: [
+          { name: 'client', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 512 },
+            description: 'One outbound SCIM client\'s identifier (#552): ' +
+                         '`scimClients.client` is then that client\'s ' +
+                         'page — its queues, dead letters and discovery.' }
+        ],
         responseDescription: 'The counters and the capabilities.',
         responseSchema: { $ref: '#/components/schemas/Scim' },
         handler: function (req, res) {
@@ -22073,6 +22123,9 @@ class AdminApi {
       // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
       // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
       ...loadSecretDestinationsApi().ROUTES,
+      // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
+      // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
+      ...loadScimClientsApi().ROUTES,
       // PROVIDER COMMANDS AND OUTBOUND DELIVERIES (#151): /admin/commands'
       // and /admin/deliveries' twins, in the same shape.
       ...loadProviderCommandsApi().ROUTES,

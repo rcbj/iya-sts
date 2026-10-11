@@ -312,6 +312,17 @@ off `body`. `helpers.parseBody()` cannot see a repeated field, so a form-encoded
 body copied from the console's checkbox column would otherwise create the
 application with one family out of five and answer 200.
 
+### SAML SP metadata upload names the family when the application has both
+
+`POST /admin-api/saml2/upload-metadata` accepts a pasted `document` or a
+console-shaped `file` object and an optional `family` (`saml2` or `saml11`).
+The application's SAML family sub-sub-tabs send that value explicitly: without
+it, the shared consumer keeps its legacy selection, which defaults a
+dual-protocol application to SAML 2.0. The consumer refuses a family the
+application did not declare and validates the document before its one save.
+The API and console therefore share the same family-specific import behavior
+without a second metadata parser.
+
 ### `/admin-api/ssf` IS THE FIRST OPERATION HERE WHOSE HANDLER AWAITS, AND THE FIRST WITH A CONTROL DELIBERATELY MISSING
 
 Added 2026-08-31. A GET and a POST with four actions — set a status, transmit an

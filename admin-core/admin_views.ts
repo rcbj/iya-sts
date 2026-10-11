@@ -391,8 +391,8 @@ const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
 // answer began saying which fields its simplified view offers. They are not
 // setting overrides — nothing in config.js corresponds to them —
 // so they are not in `overridableSettings()` and would otherwise appear on no
-// form at all. They are conditional on SAML 2.0 like everything else in that
-// family.
+// form at all. The metadata fields are shared by the SAML 2.0 and SAML 1.1
+// families.
 //
 // `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
 // same shape rule the field grid follows: a document is not something
@@ -2987,6 +2987,23 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
+  // The outbound SCIM clients' view (#552), or null where the module is not
+  // loaded.
+  scimClientsView(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.scimClientsView().");
+    let out = null;
+    try {
+      out = require('../scim/scim_client').view((req && req.query) || {});
+    } catch (e) {
+      log.debug("Caught in AdminViews.scimClientsView(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AdminViews.scimClientsView().");
+    return out;
+  }
+
   scimJson(req) {
     const { log, stats, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimJson().");
@@ -3021,7 +3038,11 @@ class AdminViews {
       // The twenty-one scim.* rows this page now edits, described. It answers
       // the question the rest of this reply cannot: not what the server does,
       // but where the value that decides it came from.
-      settings: configSettingsJson('/admin/scim')
+      settings: configSettingsJson('/admin/scim'),
+      // THE CLIENTS TAB (#552): the outbound SCIM clients, and with
+      // `?client=` one client's page. Read lazily — `scim/scim_client` is
+      // built at 22 — and null in a process that never loaded it.
+      scimClients: this.scimClientsView(req)
     };
     log.debug("Leaving AdminViews.scimJson(). " + counters.total +
               " request(s) counted.");
