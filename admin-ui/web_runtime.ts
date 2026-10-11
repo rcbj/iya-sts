@@ -1817,11 +1817,11 @@ class ConsoleRuntime {
       const types = [].concat(prop.type || []);
       let value = fieldsIn[name];
       // AN EMPTY BOX IS AN ABSENT VALUE where the schema could not take an
-      // empty string — a pattern, a minimum length, a type that is not a
-      // string — as the server-rendered console's form parser read it. It
-      // is kept where a string is all the schema asks, so a field can still
-      // be cleared.
-      if (value === '' && (prop.pattern || prop.minLength > 0 ||
+      // empty string — a pattern, a format, a minimum length, a type that is
+      // not a string — as the server-rendered console's form parser read it.
+      // It is kept where a string is all the schema asks, so a field can
+      // still be cleared.
+      if (value === '' && (prop.pattern || prop.format || prop.minLength > 0 ||
                            (types.length && types.indexOf('string') < 0))) {
         return;
       }

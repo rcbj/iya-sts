@@ -945,12 +945,16 @@ class SpMetadata {
   // a URL, a status or a parser's message — never a certificate or a document
   // body.
   // error-code: none — the helper's definition, not a call to it
-  private refreshRefused(code, identifier, why) {
+  private refreshRefused(code, identifier, why, family?) {
     const { applications, audit } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.refreshRefused().");
     const record = applications.get(identifier);
-    const protocol = this.protocolFor((record && record.fields) || {});
+    const protocol = family === 'saml11'
+      ? { id: 'saml11', label: 'SAML 1.1' }
+      : (family === 'saml2'
+        ? { id: 'saml2', label: 'SAML 2.0' }
+        : this.protocolFor((record && record.fields) || {}));
     // A BACKGROUND consumption writes no row per refusal: the refresher
     // records the state change instead (see `recordRefresh()`).
     if (this.quiet) {
@@ -1070,9 +1074,10 @@ class SpMetadata {
    * @param identifier - the application's identifier
    * @param xml - the document
    * @param actor - who uploaded it
+   * @param family - the SAML family selected in the console, when supplied
    * @returns the consumption's result, or a refusal
    */
-  upload(identifier, xml, actor?) {
+  upload(identifier, xml, actor?, family?) {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.upload(). identifier=" + identifier);
     const text = String(xml == null ? '' : xml);
@@ -1085,7 +1090,7 @@ class SpMetadata {
                ' bytes (saml2.spMetadataMaxBytes), which no service provider ' +
                'metadata is. Nothing on the entry was changed.'] };
     }
-    const answer = this.consume(identifier, text, 'upload', actor);
+    const answer = this.consume(identifier, text, 'upload', actor, family);
     log.debug("Leaving SpMetadata.upload(). ok=" + answer.ok);
     return answer;
   }
@@ -1147,9 +1152,10 @@ class SpMetadata {
    * @param xml - the document
    * @param how - how it arrived, for the record
    * @param actor - who asked
+   * @param family - the SAML family selected for this import, when supplied
    * @returns `ok` with what was written, or a refusal carrying its error code
    */
-  consume(identifier, xml, how, actor?): Record<string, any> {
+  consume(identifier, xml, how, actor?, family?): Record<string, any> {
     const { applications, stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.consume(). identifier=" + identifier +
@@ -1166,18 +1172,34 @@ class SpMetadata {
     const fields = record.fields || {};
     const names = [identifier].concat(
       this.valuesOf(fields.samlEntityId));
-    const protocol = this.protocolFor(fields);
+    const declared = this.valuesOf(fields.appAllowedProtocol);
+    const protocol = family
+      ? (family === 'saml11'
+        ? { id: 'saml11', label: 'SAML 1.1' }
+        : { id: 'saml2', label: 'SAML 2.0' })
+      : this.protocolFor(fields);
+    if (family && (!['saml2', 'saml11'].includes(String(family)) ||
+                   declared.indexOf(String(family)) < 0)) {
+      this.refreshRefused('STS-SAML-0052', identifier,
+        'the requested metadata family is not declared on this application',
+        family);
+      log.debug("Leaving SpMetadata.consume(). Family is not declared.");
+      return { ok: false, errors: ['This application is not declared for ' +
+        String(family) + ', so metadata cannot be imported for that family. ' +
+        'Nothing on the entry was changed.'] };
+    }
     const parsed = this.parse(xml, names, protocol.id);
     if (!parsed.ok) {
       this.refreshRefused('STS-SAML-0052', identifier,
-                          'the metadata document is unusable: ' + parsed.why);
+                          'the metadata document is unusable: ' + parsed.why,
+                          family);
       log.debug("Leaving SpMetadata.consume(). Unusable.");
       return { ok: false, errors: ['The metadata document is unusable: ' +
                parsed.why + '. Nothing on the entry was changed.'] };
     }
     if (names.indexOf(String(parsed.entityId)) < 0) {
       this.refreshRefused('STS-SAML-0066', identifier, 'the document ' +
-                          'describes "' + parsed.entityId + '"');
+                          'describes "' + parsed.entityId + '"', family);
       log.debug("Leaving SpMetadata.consume(). Somebody else's entityID.");
       return { ok: false, errors: ['The document describes the entityID "' +
                parsed.entityId + '", which is not this application ("' +
@@ -1187,7 +1209,7 @@ class SpMetadata {
     }
     if (parsed.validUntil && Date.parse(parsed.validUntil) <= Date.now()) {
       this.refreshRefused('STS-SAML-0068', identifier, 'the document ' +
-                          'expired at ' + parsed.validUntil);
+                          'expired at ' + parsed.validUntil, family);
       log.debug("Leaving SpMetadata.consume(). Expired.");
       return { ok: false, errors: ['The document\'s validUntil (' +
                parsed.validUntil + ') has passed, so it is expired ' +
@@ -1206,7 +1228,8 @@ class SpMetadata {
       const verdict = this.verifyAgainst(String(xml), parsed, anchors);
       if (!verdict.ok) {
         this.refreshRefused('STS-SAML-0065', identifier, 'the document\'s ' +
-                            'signature was not verified: ' + verdict.why);
+                            'signature was not verified: ' + verdict.why,
+                            family);
         log.debug("Leaving SpMetadata.consume(). Signature refused.");
         return { ok: false, errors: ['This service provider\'s metadata ' +
                  'must be signed by a trust anchor (' + anchors.length +
@@ -1230,7 +1253,7 @@ class SpMetadata {
       } else if (bad) {
         this.refreshRefused('STS-SAML-0053', identifier, 'the metadata ' +
                             'carries a certificate this service cannot use: ' +
-                            bad);
+                            bad, family);
         log.debug("Leaving SpMetadata.consume(). Unusable encryption key.");
         return { ok: false, errors: ['The metadata carries an encryption ' +
                  'certificate this service cannot use: ' + bad + '. Nothing ' +
@@ -1306,7 +1329,8 @@ class SpMetadata {
       });
     if (!written.ok) {
       this.refreshRefused('STS-SAML-0054', identifier, 'the application ' +
-                          'entry would not take the consumed metadata');
+                          'entry would not take the consumed metadata',
+                          family);
       log.debug("Leaving SpMetadata.consume(). The entry would not take it.");
       return { ok: false, errors: written.errors || [] };
     }
