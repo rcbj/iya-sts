@@ -12021,7 +12021,9 @@ class AdminApi {
                          'SAML 1.1 is selected only for an entry declared ' +
                          'for `saml11` and not `saml2`; SAML 2.0 remains ' +
                          'the choice for SAML 2.0, dual-protocol and ' +
-                         'undeclared entries. This operation can therefore ' +
+                         'undeclared entries unless `family` explicitly ' +
+                         'selects one declared SAML family. This operation ' +
+                         'can therefore ' +
                          'consume SAML 1.1-only metadata as well.\n\n' +
                          'REFUSED, changing ' +
                          'nothing, for: a document that is not an ' +
@@ -12045,10 +12047,30 @@ class AdminApi {
                 sp: { type: 'string',
                       description: 'The service provider\'s entityID — ' +
                                    'which the document must name.' },
+                family: { type: 'string', enum: ['saml2', 'saml11'],
+                          description: 'The declared SAML family selected ' +
+                                       'in the application configuration. ' +
+                                       'When omitted, SAML 1.1 is selected ' +
+                                       'only for an application declared ' +
+                                       'for SAML 1.1 alone.' },
                 document: { type: 'string',
-                            description: 'The metadata document, as XML.' }
+                            description: 'The metadata document, as XML.' },
+                file: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string',
+                            description: 'The uploaded file name.' },
+                    text: { type: 'string',
+                            description: 'The uploaded metadata document.' }
+                  },
+                  required: ['text'],
+                  additionalProperties: false,
+                  description: 'An uploaded metadata file, decoded as text ' +
+                               'by the static console.'
+                }
               },
-              required: ['sp', 'document'],
+              required: ['sp'],
+              anyOf: [{ required: ['document'] }, { required: ['file'] }],
               examples: [{
                 sp: 'https://sp.example.com/saml',
                 document: '<md:EntityDescriptor ' +

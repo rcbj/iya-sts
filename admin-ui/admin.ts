@@ -3113,6 +3113,7 @@ type RouteApp = typeof app;
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
   'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry',
+  'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:

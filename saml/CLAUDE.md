@@ -1018,9 +1018,12 @@ certificate, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`,
 `samlSpWantAssertionsSigned`, `samlSpMetadataValidUntil`,
 `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt` and
 `samlSpMetadataSignature`. A later consumption retires the endpoint locations
-the previous one wrote and leaves the ones an operator added by hand. It reads
-the SAML 1.1 SPSSODescriptor only for an application declared for `saml11` and
-not `saml2`; all other entries keep the SAML 2.0 selection. The shared ACS
+the previous one wrote and leaves the ones an operator added by hand. Without
+an explicit family, it reads the SAML 1.1 SPSSODescriptor only for an
+application declared for `saml11` and not `saml2`; all other entries keep the
+SAML 2.0 selection. An administrator's upload from the application's SAML 1.1
+or SAML 2.0 sub-sub-tab supplies that declared family explicitly, so a
+dual-protocol application consumes the matching descriptor. The shared ACS
 representation is what lets `saml11_sso.ts` infer Browser/POST versus
 Browser/Artifact from the registered `shire`, without a `profile` parameter.
 
