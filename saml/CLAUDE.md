@@ -869,6 +869,14 @@ record of the decisions.
 **A refusal for an unregistered address is a PAGE and not a SAML Response**: the
 address a Response would go to is the address in question.
 
+**The console's SAML 1.1 registration takes the ACS at the same time as the
+relying-party identifier** (`/admin/saml11`, #291): `shire` is required and is
+stored as `samlAssertionConsumerService` on that entry. The application
+registry validates it as an absolute HTTP(S) URL at every write door; an OAuth
+native-app callback scheme is not a SAML endpoint. This makes a newly
+registered relying party immediately usable in product mode, where an
+unregistered `shire` has no mock fallback.
+
 ### The literals that became settings (default = the old literal)
 
 `saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30),
@@ -1010,7 +1018,14 @@ certificate, `samlSpNameIdFormat`, `samlSpAuthnRequestsSigned`,
 `samlSpWantAssertionsSigned`, `samlSpMetadataValidUntil`,
 `samlSpMetadataCacheDuration`, `samlSpMetadataConsumedAt` and
 `samlSpMetadataSignature`. A later consumption retires the endpoint locations
-the previous one wrote and leaves the ones an operator added by hand.
+the previous one wrote and leaves the ones an operator added by hand. Without
+an explicit family, it reads the SAML 1.1 SPSSODescriptor only for an
+application declared for `saml11` and not `saml2`; all other entries keep the
+SAML 2.0 selection. An administrator's upload from the application's SAML 1.1
+or SAML 2.0 sub-sub-tab supplies that declared family explicitly, so a
+dual-protocol application consumes the matching descriptor. The shared ACS
+representation is what lets `saml11_sso.ts` infer Browser/POST versus
+Browser/Artifact from the registered `shire`, without a `profile` parameter.
 
 **It is a trust act because only an operator can cause it**: a refresh dials the
 URL an administrator put on the entry (never one from a request), when an
@@ -1027,9 +1042,10 @@ recorded `signed-not-verified`: verifying it against a key inside the same
 document would be the decoration the request check refuses.
 
 **Refused, writing nothing**: not an EntityDescriptor (or an
-EntitiesDescriptor holding exactly one for this entity) with a SAML 2.0
-SPSSODescriptor; an entityID that is not this application's (`STS-SAML-0066`); a
-passed validUntil (`0068`); an unusable encryption certificate (`0053`, as
+EntitiesDescriptor holding exactly one for this entity) with the SPSSODescriptor
+for the application's declared profile; an entityID that is not this
+application's (`STS-SAML-0066`); a passed validUntil (`0068`); an unusable
+encryption certificate (`0053`, as
 before); a metadata signature that does not verify (`0065`); an upload over
 `saml2.spMetadataMaxBytes` (`0067`). **A document with no encryption certificate
 is no longer refused** — it was, while the encryption certificate was the only

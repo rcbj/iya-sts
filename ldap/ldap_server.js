@@ -9264,6 +9264,10 @@ const SECRET_ATTRIBUTES = [
   // A secret destination's write credential (#221 P3), sealed like the
   // three above and withheld from every directory read.
   'secretdestcredential',
+  // An outbound SCIM client's three credentials (#552), sealed like the
+  // destination's and withheld from every directory read.
+  'scimclientpassword', 'scimclientoauthclientsecret',
+  'scimclienttlsprivatekey',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like

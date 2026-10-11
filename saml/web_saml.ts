@@ -694,7 +694,10 @@ class SamlPage {
       'value="register"><label for="new_rp">' +
       t.html('consoleSaml.saml11.identifier') + '</label><input ' +
       'type="text" id="new_rp" name="rp" ' +
-      'placeholder="urn:example:app"><button>' +
+      'placeholder="urn:example:app" required><label for="new_shire">' +
+      t.html('consoleSaml.saml11.thShire') + ' (<code>shire</code>)</label>' +
+      '<input type="url" id="new_shire" name="shire" required ' +
+      'placeholder="https://app.example.com/saml/acs"><button>' +
       t.html('consoleSaml.common.register') + '</button><span ' +
       'class="note">' + t.html('consoleSaml.saml11.registerNote') +
       '</span></div></form>' +

@@ -352,6 +352,29 @@ async function signIn(driver, withKey) {
     return (await path(driver)).indexOf("/authn/login") >= 0;
   }, "an unauthenticated browser at /portal was never shown the sign-in " +
      "screen.");
+  // THE SCREEN SETTLES FIRST (2026-10-10): with usernameless sign-in on, it
+  // starts a conditional passkey request as it loads, the virtual
+  // authenticator answers it with nobody choosing, and a key that is only a
+  // second factor is refused and the screen drawn again — without the
+  // autofill this time (data-autofill="0"). Typing into the first screen
+  // while that post is under way would type into a page being replaced.
+  const settleBy = Date.now() + 2000;
+  for (;;) {
+    const marker = await driver.executeScript(
+      "var p = document.getElementById('wa-passkey');" +
+      "return p ? (p.getAttribute('data-autofill') || 'armed') : 'none';")
+      .catch(function (e) {
+        // The page was being replaced as the script ran: not settled yet.
+        log.debug("Caught in signIn(): " + ((e && e.message) || e));
+        return 'navigating';
+      });
+    if (marker === 'none' || marker === '0' || Date.now() > settleBy) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 100);
+    });
+  }
   const name = await driver.findElement(By.css("input[name='username']"));
   await name.clear();
   await name.sendKeys(PERSON);

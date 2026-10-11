@@ -100,6 +100,18 @@ function childMain() {
     const ldap = require(ROOT + '/ldap/ldap_server');
     const helpers = require(ROOT + '/common/helpers');
     const riskEngine = require(ROOT + '/risk/risk_engine');
+    const realms = require(ROOT + '/common/realms');
+    // USERNAMELESS SIGN-IN OFF (it is on by default since 2026-10-10): with it
+    // on, the sign-in screen carries /authn/webauthn.js and relaxes
+    // script-src for its own passkey button, and this test reads that
+    // screen's policy as the base one.
+    {
+      const passkeyPolicy = require(ROOT + '/common/passkey_policy');
+      realms.run(realms.get(realms.DEFAULT_ID), function () {
+        passkeyPolicy.save('default', Object.assign({},
+          passkeyPolicy.DEFAULTS, { allowUsernameless: false }));
+      });
+    }
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });

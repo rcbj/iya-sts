@@ -53,7 +53,7 @@ function run(t) {
   log.debug("Entering run().");
 
   // --- 1. What a minted secret is ----------------------------------------
-  const bytes = Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  const bytes = Number(config.value('oauth2.registeredSecretBytes'));
   const one = applications.mintClientSecret();
   const two = applications.mintClientSecret();
   t.check(/^[A-Za-z0-9_-]+$/.test(one) &&
