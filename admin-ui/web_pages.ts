@@ -119,8 +119,10 @@ interface WebPage {
   title: string;
   operation: string;
   // Other operations whose answers the view is composed with, by the member
-  // each goes in: asked only when the page's query asks for it (#446).
+  // each goes in. `composeWhen` limits a member to a query that names one of
+  // its inputs; otherwise the operation is part of every view.
   compose?: Record<string, string>;
+  composeWhen?: Record<string, string[]>;
   // THE DRILL-DOWN AT THE SAME PATH (#446): `/admin/groups?group=<dn>` is
   // one group, answered by the same operation asked with the same query, so
   // a drill-down is not a page of its own but a second renderer chosen when
@@ -550,6 +552,7 @@ const PAGES: WebPage[] = [
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
     compose: { preview: '/admin-api/roles/preview' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
     render: function (view: Json, ctx?: Json): string {
       return RolesPage.body(ctx || WebKit.context(), view);
     } },
@@ -803,7 +806,14 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/kerberos',
     render: ProtocolSettingsPage.render },
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
-    operation: '/admin-api/oauth2', render: ProtocolSettingsPage.render },
+    operation: '/admin-api/oauth2',
+    compose: {
+      authorizationServers: '/admin-api/authorization-servers',
+      tokenLifetimes: '/admin-api/token-lifetimes',
+      claims: '/admin-api/claims',
+      userinfoClaims: '/admin-api/userinfo-claims'
+    },
+    render: ProtocolSettingsPage.render },
   { path: '/admin/oid4vci', title: 'OpenID4VCI',
     operation: '/admin-api/oid4vci-settings',
     render: ProtocolSettingsPage.render },
@@ -915,11 +925,74 @@ class WebPages {
     if (!page) {
       return null;
     }
+    if (page.path === '/admin/oauth2') {
+      const authorizationServers =
+        WebPages.pageFor('/admin/authorization-servers');
+      const tokenLifetimes = WebPages.pageFor('/admin/token-lifetimes');
+      const claims = WebPages.pageFor('/admin/claims');
+      const userinfoClaims = WebPages.pageFor('/admin/userinfo-claims');
+      if (!authorizationServers || !tokenLifetimes || !claims ||
+          !userinfoClaims) {
+        throw new Error('The OAuth 2.0 / OIDC page is missing a tab.');
+      }
+      const panels = [
+        { id: 'oauth-tab-settings',
+          page: page,
+          view: view,
+          label: WebPages.titleOf(page, context.t) },
+        { id: 'oauth-tab-authorization-servers',
+          page: authorizationServers,
+          view: view.authorizationServers,
+          label: WebPages.titleOf(authorizationServers, context.t) },
+        { id: 'oauth-tab-token-lifetimes',
+          page: tokenLifetimes,
+          view: view.tokenLifetimes,
+          label: WebPages.titleOf(tokenLifetimes, context.t) },
+        { id: 'oauth-tab-claims',
+          page: claims,
+          view: view.claims,
+          label: WebPages.titleOf(claims, context.t) },
+        { id: 'oauth-tab-userinfo-claims',
+          page: userinfoClaims,
+          view: view.userinfoClaims,
+          label: WebPages.titleOf(userinfoClaims, context.t) }
+      ].map(function (one) {
+        const html = one.page && one.view
+          ? one.page.render(one.view, context) : '';
+        return { id: one.id, label: one.label,
+          html: one.page && one.view
+            ? WebPages.withEndpoints(WebPages.oauthTabLinks(html),
+                                     one.view, context.t) : '' };
+      });
+      return WebKit.tabbedPanels('oauth-pages', panels);
+    }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
     }
     return WebPages.withEndpoints(page.render(view, context), view,
                                   context.t);
+  }
+
+  /**
+   * Keeps links between the five OAuth pages inside their combined tabbed
+   * page, without changing their direct routes.
+   *
+   * @param html - one OAuth page's rendered HTML
+   * @returns the HTML with intra-page links
+   */
+  static oauthTabLinks(html: string): string {
+    const paths = {
+      '/admin/oauth2': 'oauth-tab-settings',
+      '/admin/authorization-servers': 'oauth-tab-authorization-servers',
+      '/admin/token-lifetimes': 'oauth-tab-token-lifetimes',
+      '/admin/claims': 'oauth-tab-claims',
+      '/admin/userinfo-claims': 'oauth-tab-userinfo-claims'
+    };
+    Object.keys(paths).forEach(function (path) {
+      html = html.split('href="' + path + '"')
+        .join('href="#' + paths[path] + '"');
+    });
+    return html;
   }
 
   // A PAGE'S TITLE IN THE READER'S LANGUAGE (#539 phase 5), drawn in the

@@ -1504,7 +1504,49 @@ class ConsoleRuntime {
         null);
       return;
     }
-    this.view = { page: page, json: answer.json, query: query };
+    let json = answer.json;
+    if (page.compose) {
+      const self = this;
+      const members = Object.keys(page.compose).filter(function (member) {
+        const when = (page.composeWhen || {})[member];
+        return !when || when.some(function (name) {
+          return Object.prototype.hasOwnProperty.call(query, name);
+        });
+      });
+      const answers = await Promise.all(members.map(async function (member) {
+        const operation = page.compose[member];
+        const params = {};
+        ((page.composeWhen || {})[member] || []).forEach(function (name) {
+          if (Object.prototype.hasOwnProperty.call(query, name)) {
+            params[name] = query[name];
+          }
+        });
+        const search = new URLSearchParams(params).toString();
+        return { member: member, operation: operation,
+          answer: await self.apiJson('GET', operation +
+            (search ? '?' + search : '')) };
+      }));
+      const failed = answers.filter(function (one) {
+        return !one.answer || one.answer.status !== 200 || !one.answer.json;
+      })[0];
+      if (failed) {
+        const status = failed.answer ? failed.answer.status : 'unavailable';
+        const detail = failed.answer && failed.answer.json &&
+          failed.answer.json.error
+          ? ' ' + kit.esc(failed.answer.json.error_description ||
+                          failed.answer.json.error) : '';
+        this.draw(WebPages.titleOf(page, this.t), page.path,
+          kit.warn('The management API answered ' + status + ' for <code>' +
+          kit.esc(failed.operation) + '</code>.' + detail,
+          'It could not be drawn'), null);
+        return;
+      }
+      json = Object.assign({}, json);
+      answers.forEach(function (one) {
+        json[one.member] = one.answer.json;
+      });
+    }
+    this.view = { page: page, json: json, query: query };
     this.drawView(null);
   }
 
