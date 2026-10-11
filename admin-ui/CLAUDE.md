@@ -7132,8 +7132,9 @@ sections on the application's configuration tabs:
   application's values. `tokenLifetimeWarnings()` takes values since this
   date; the realm page passes none. The four overrides were already
   fields on the tab, and clock skew stays realm-wide (rcbj's choice).
-* **The SAML sub-tab** opens with `applicationClaimsSection(..., ['saml2',
-  'saml11'])`.
+* **Each SAML family sub-sub-tab** opens with its own
+  `applicationClaimsSection(..., [family])` and claim-selection section, so
+  SAML 1.1 and SAML 2.0 values stay with the protocol that consumes them.
 
 Each section draws `adminViews.applicationClaimsState()`: the rows in force,
 marked `realm` or `application`, with a replaced realm row marked as such.
@@ -7144,6 +7145,16 @@ Its forms post `set-custom-claim` and `remove-custom-claim` to
 refusal is about one row and the reader is still on that application. The
 model is `common/CLAUDE.md`'s *An application's own claim sets*. The GET
 carries `customClaims` and `tokenLifetimes`.
+
+**The SAML configuration tab has one sub-sub-tab per declared family (#556)**:
+SAML 2.0 and SAML 1.1 are separate views of the shared application field
+catalogue, with family-specific fields and claims kept in their own view.
+Each also has a paste-or-file form for SP metadata. The form names its family
+explicitly, so importing metadata for one family on a dual-protocol
+application parses that family's descriptor rather than the automatic SAML 2.0
+default. The existing metadata consumer validates before writing; a refusal
+leaves the application's previous fields intact, and a successful import
+redraws the application's page from the updated entry.
 
 ## AN APPLICATION'S PAGE HAS A SHARED SIGNALS SECTION (2026-10-01)
 

@@ -52,6 +52,8 @@
 //   #292. A SAML 1.1-only application refreshes its metadata and consumes the
 //      SAML 1.1 SPSSODescriptor, while a SAML 2.0-only application continues to
 //      refuse that descriptor.
+//   #556. A dual-family application's selected metadata family is authoritative;
+//      an undeclared family or unusable document writes nothing.
 //
 // WHY IN PROCESS: time, a local HTTP server, product mode mid-run and a
 // session are all things this file controls directly.
@@ -215,6 +217,19 @@ async function run(t) {
             JSON.stringify(made.errors || ''));
     created.push(id);
     log.debug("Leaving newSaml11Sp().");
+    return id;
+  };
+  const newDualSamlSp = function (name) {
+    log.debug("Entering newDualSamlSp().");
+    const id = 'https://' + name + '-' + stamp + '.md.test/saml';
+    const made = applications.createApplication({
+      identifier: id, kind: 'saml2-service-provider',
+      protocols: ['saml2', 'saml11'],
+      fields: { samlEntityId: id } });
+    t.check(made.ok, 'created dual-protocol ' + name,
+            JSON.stringify(made.errors || ''));
+    created.push(id);
+    log.debug("Leaving newDualSamlSp().");
     return id;
   };
   const redirect = function (handler, path, xml, field) {
@@ -418,6 +433,47 @@ async function run(t) {
             /SAML 2\.0/.test((refused11.errors || []).join(' ')),
             'a SAML 2.0-only application still refuses SAML 1.1 metadata',
             JSON.stringify(refused11.errors || ''));
+    const dual = newDualSamlSp('dual-metadata');
+    const dualAcs11 = 'https://dual-sp.test/SAML/Artifact';
+    const dual11 = adminActions.saml2Action({
+      action: 'upload-metadata', sp: dual, family: 'saml11',
+      document: saml11Entity(dual, dualAcs11) });
+    t.check(dual11.ok &&
+            [].concat(fieldsOf(dual).samlAcsEndpoint || []).join(' ')
+              .indexOf(dualAcs11) >= 0,
+            'the SAML 1.1 sub-tab imports SAML 1.1 metadata for a dual-family ' +
+            'application', JSON.stringify(dual11.errors || dual11));
+    const dualAcs2 = 'https://dual-sp.test/saml2/acs';
+    const dual2 = adminActions.saml2Action({
+      action: 'upload-metadata', sp: dual, family: 'saml2',
+      document: entity(dual, { acs: dualAcs2 }) });
+    t.check(dual2.ok &&
+            [].concat(fieldsOf(dual).samlAcsEndpoint || []).join(' ')
+              .indexOf(dualAcs2) >= 0,
+            'the SAML 2.0 sub-tab imports SAML 2.0 metadata for the same ' +
+            'dual-family application', JSON.stringify(dual2.errors || dual2));
+    const beforeInvalid = fieldsOf(dual);
+    const invalidMetadata = adminActions.saml2Action({
+      action: 'upload-metadata', sp: dual, family: 'saml2',
+      document: '<not-saml-metadata>' });
+    const afterInvalid = fieldsOf(dual);
+    t.check(!invalidMetadata.ok &&
+            afterInvalid.samlSpMetadata === beforeInvalid.samlSpMetadata &&
+            JSON.stringify(afterInvalid.samlAcsEndpoint) ===
+              JSON.stringify(beforeInvalid.samlAcsEndpoint) &&
+            JSON.stringify(afterInvalid.samlSigningCertificate) ===
+              JSON.stringify(beforeInvalid.samlSigningCertificate),
+            'an unusable upload refuses without replacing metadata-derived ' +
+            'fields already on the entry',
+            JSON.stringify(invalidMetadata.errors || invalidMetadata));
+    const wrongFamily = adminActions.saml2Action({
+      action: 'upload-metadata', sp: sp11, family: 'saml2',
+      document: entity(sp11, {}) });
+    t.check(!wrongFamily.ok &&
+            /not declared for saml2/.test(
+              (wrongFamily.errors || []).join(' ')),
+            'a family tab cannot import metadata for an undeclared protocol',
+            JSON.stringify(wrongFamily.errors || wrongFamily));
 
     // -----------------------------------------------------------------------
     t.log.info('3c. an uploaded stale document is shown stale and works');
