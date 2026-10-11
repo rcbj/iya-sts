@@ -1,6 +1,9 @@
 {
   "asJson": "以 JSON 檢視此頁面",
   "everyEndpoint": "本服務註冊的所有端點",
+  "globalSettings": "全域設定",
+  "metadataHeading": "中繼資料",
+  "metadataDescription": "OpenID Connect 探索文件會發布此授權伺服器的端點與功能。",
   "thWhat": "項目",
   "thAnswer": "答案",
   "period": "。",
