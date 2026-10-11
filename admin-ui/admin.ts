@@ -4786,14 +4786,12 @@ class AdminConsole {
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
       }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS,
-      ['oauth-tab-settings', 'oauth-tab-authorization-servers',
+      ['oauth-tab-metadata', 'oauth-tab-global-settings',
+       'oauth-tab-authorization-servers',
        'oauth-tab-token-lifetimes', 'oauth-tab-claims',
-       'oauth-tab-userinfo-claims', 'oauth-settings-global',
-       'oauth-settings-metadata']).map(function (id) {
+       'oauth-tab-userinfo-claims']).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
-          USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
-          id === 'oauth-settings-global' ||
-          id === 'oauth-settings-metadata';
+          USER_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +

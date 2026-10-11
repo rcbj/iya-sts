@@ -935,11 +935,22 @@ class WebPages {
           !userinfoClaims) {
         throw new Error('The OAuth 2.0 / OIDC page is missing a tab.');
       }
-      const panels = [
-        { id: 'oauth-tab-settings',
+      const panels: Array<{ id: string; page: WebPage; view: Json;
+                            label: string; render?: () => string;
+                            endpoints?: boolean }> = [
+        { id: 'oauth-tab-metadata',
           page: page,
           view: view,
-          label: WebPages.titleOf(page, context.t) },
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          endpoints: true,
+          render: function (): string {
+            return ProtocolSettingsPage.oauthMetadata(view, context.t);
+          } },
+        { id: 'oauth-tab-global-settings',
+          page: page,
+          view: view,
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          endpoints: false },
         { id: 'oauth-tab-authorization-servers',
           page: authorizationServers,
           view: view.authorizationServers,
@@ -956,15 +967,17 @@ class WebPages {
           page: userinfoClaims,
           view: view.userinfoClaims,
           label: WebPages.titleOf(userinfoClaims, context.t) }
-      ].map(function (one) {
-        const html = one.page && one.view
+      ];
+      const rendered = panels.map(function (one) {
+        const html = one.render ? one.render() : one.page && one.view
           ? one.page.render(one.view, context) : '';
         return { id: one.id, label: one.label,
           html: one.page && one.view
-            ? WebPages.withEndpoints(WebPages.oauthTabLinks(html),
-                                     one.view, context.t) : '' };
+            ? WebPages.oauthTabLinks(one.endpoints === false ? html
+              : WebPages.withEndpoints(html, one.view, context.t))
+            : '' };
       });
-      return WebKit.tabbedPanels('oauth-pages', panels);
+      return WebKit.tabbedPanels('oauth-pages', rendered);
     }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
@@ -982,7 +995,7 @@ class WebPages {
    */
   static oauthTabLinks(html: string): string {
     const paths = {
-      '/admin/oauth2': 'oauth-tab-settings',
+      '/admin/oauth2': 'oauth-tab-global-settings',
       '/admin/authorization-servers': 'oauth-tab-authorization-servers',
       '/admin/token-lifetimes': 'oauth-tab-token-lifetimes',
       '/admin/claims': 'oauth-tab-claims',

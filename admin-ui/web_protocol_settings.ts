@@ -137,54 +137,55 @@ class ProtocolSettingsPage {
   }
 
   /**
-   * Draws the authorization server settings and discovery metadata in
-   * separate no-script sub-tabs.
+   * Draws the OAuth authorization server's global settings.
    *
    * @param view - the OAuth settings page's JSON
    * @param t - the page's translator
    * @param statusHtml - optional; the page's status block
-   * @returns the page body as HTML
+   * @returns the global settings body as HTML
    */
   static oauthSettings(view: Json, t: Json,
                        statusHtml?: string): string {
     const links = view.links || [];
-    const metadata = links.filter(function (link) {
-      return link.href === '/.well-known/openid-configuration';
-    });
     const globalLinks = links.filter(function (link) {
       return link.href !== '/.well-known/openid-configuration';
     });
-    const global = kit.note(view.leadHtml) +
-      (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
-        .join('') +
-      (statusHtml || (view.status && ProtocolSettingsPage.STATUS[view.page]
-        ? ProtocolSettingsPage.STATUS[view.page](view.status, t) : '')) +
+    return (statusHtml || (view.status &&
+      ProtocolSettingsPage.STATUS[view.page]
+      ? ProtocolSettingsPage.STATUS[view.page](view.status, t) : '')) +
       SettingsForms.forms(view.settings, view.page, undefined, t) +
       '<p class="sub">' + globalLinks.map(function (link) {
         return '<a href="' + kit.esc(link.href) + '">' +
                kit.esc(link.what) + '</a>';
       }).concat(['<a href="' + kit.esc(view.page) +
                  '?format=json">' +
-                 t.html('consoleProtocolSettings.asJson') + '</a>',
-                 '<a href="/admin/sts-metadata">' +
-                 t.html('consoleProtocolSettings.everyEndpoint') +
-                 '</a>']).join(' &middot; ') + '</p>';
-    const metadataBody = '<h2>' +
+                 t.html('consoleProtocolSettings.asJson') + '</a>'])
+        .join(' &middot; ') + '</p>';
+  }
+
+  /**
+   * Draws the OAuth page's explanatory notes and metadata references.
+   *
+   * @param view - the OAuth settings page's JSON
+   * @param t - the page's translator
+   * @returns the metadata body as HTML
+   */
+  static oauthMetadata(view: Json, t: Json): string {
+    const discovery = (view.links || []).filter(function (link) {
+      return link.href === '/.well-known/openid-configuration';
+    });
+    return kit.note(view.leadHtml) +
+      (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
+        .join('') +
+      '<h2>' +
       t.html('consoleProtocolSettings.metadataHeading') + '</h2>' +
       kit.note(t.html('consoleProtocolSettings.metadataDescription')) +
-      '<p class="sub">' + metadata.map(function (link) {
+      '<p class="sub">' + discovery.map(function (link) {
         return '<a href="' + kit.esc(link.href) + '">' +
                kit.esc(link.what) + '</a>';
-      }).join(' &middot; ') + '</p>';
-    return kit.subTabbedPanels(
-      t.text('consoleProtocolSettings.globalSettings'), [
-        { id: 'oauth-settings-global',
-          label: t.text('consoleProtocolSettings.globalSettings'),
-          html: global },
-        { id: 'oauth-settings-metadata',
-          label: t.text('consoleProtocolSettings.metadataHeading'),
-          html: metadataBody }
-      ]);
+      }).concat(['<a href="/admin/sts-metadata">' +
+                 t.html('consoleProtocolSettings.everyEndpoint') +
+                 '</a>']).join(' &middot; ') + '</p>';
   }
 
   // The /admin/totp status block (#446): what the console drew from its JSON.

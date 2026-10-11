@@ -1066,22 +1066,43 @@ function childMain() {
       ? WebPages.render('/admin/oauth2', oauthView, WebKit.context({}, true))
       : '';
     const oauthTabIds = [
-      'oauth-tab-settings', 'oauth-tab-authorization-servers',
+      'oauth-tab-metadata', 'oauth-tab-global-settings',
+      'oauth-tab-authorization-servers',
       'oauth-tab-token-lifetimes', 'oauth-tab-claims',
-      'oauth-tab-userinfo-claims', 'oauth-settings-global',
-      'oauth-settings-metadata'
+      'oauth-tab-userinfo-claims'
     ];
+    const metadataTab =
+      /<section class="tabpanel first" id="oauth-tab-metadata">([\s\S]*?)<\/section>/
+        .exec(oauthHtml);
+    const globalTab =
+      /<section class="tabpanel" id="oauth-tab-global-settings">([\s\S]*?)<\/section>/
+        .exec(oauthHtml);
+    const metadataWarnings = metadataTab
+      ? (metadataTab[1].match(/<details class="warn fold">/g) || []).length
+      : 0;
     note(oauthTabIds.every(function (id) {
       return oauthHtml.indexOf('id="' + id + '"') >= 0;
     }) && oauthHtml.indexOf('consoleAuthorizationServers') < 0 &&
          oauthHtml.indexOf('openid-configuration') >= 0 &&
-         oauthHtml.indexOf('Global settings') >= 0 &&
-         oauthHtml.indexOf('Metadata') >= 0,
-         'D-OAuth. one OAuth2 / OIDC page draws five subpage tabs and ' +
-         'separates global settings from metadata',
-         oauthTabIds.filter(function (id) {
+         !!metadataTab && !!globalTab &&
+         metadataTab[1].indexOf('<details class="note fold">') >= 0 &&
+         metadataWarnings === oauthView.alsoHtml.length &&
+         metadataTab[1].indexOf('The authorization server') >= 0 &&
+         metadataTab[1].indexOf('is a MODE, and so is') >= 0 &&
+         metadataTab[1].indexOf('/oauth2/authorize') >= 0 &&
+         globalTab[1].indexOf('The authorization server') < 0 &&
+         globalTab[1].indexOf('is a MODE, and so is') < 0 &&
+         globalTab[1].indexOf('/oauth2/authorize') < 0,
+         'D-OAuth. Metadata is the first peer tab and contains the notes and ' +
+         'endpoints, separate from Global settings',
+         'tabs missing: ' + oauthTabIds.filter(function (id) {
            return oauthHtml.indexOf('id="' + id + '"') < 0;
-         }).join(', ') || 'metadata/settings tab content missing');
+         }).join(', ') + '; warning folds: ' + metadataWarnings + '/' +
+         (oauthView ? oauthView.alsoHtml.length : 0) +
+         '; Metadata: ' + (!!metadataTab &&
+           metadataTab[1].indexOf('/oauth2/authorize') >= 0) +
+         '; Global: ' + (!!globalTab &&
+           globalTab[1].indexOf('/oauth2/authorize') >= 0));
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
