@@ -3134,10 +3134,10 @@ const SPECS: Spec[] = [
               'statusSize 1 only; no statusMessage.' },
   { id: 'dc-api', name: 'W3C Digital Credentials API',
     where: 'W3C', url: 'https://www.w3.org/TR/digital-credentials/',
-    coverage: 'partial: the wallet sign-in page calls ' +
+    coverage: 'partial: the wallet sign-in\'s wait page calls ' +
               'navigator.credentials.get({ digital }) with one signed ' +
-              'OpenID4VP request and posts the answer; nothing else here ' +
-              'uses it.' },
+              'OpenID4VP request and sends the answer to ' +
+              '/authn-api/wallet/{state}/dc-api; nothing else here uses it.' },
   { id: 'di-bbs', name: 'W3C Data Integrity — bbs-2023 cryptosuite',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-bbs/',
     coverage: 'full for base proofs and derived proofs over BLS12-381, ' +
@@ -7615,13 +7615,16 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Sign in with a wallet',
     specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc',
             'siopv2'],
-    effect: 'builds an OpenID4VP request bound to the pending sign-in (or to ' +
-            'a second-factor step), sets the browser-binding cookie and ' +
-            'redirects to the wait page',
+    effect: 'answers the sign-in surface\'s shell; its script starts an ' +
+            'OpenID4VP request bound to the pending sign-in (or to a ' +
+            'second-factor step) at /authn-api/wallet and goes to the wait ' +
+            'page',
     what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
           '/authn/login to every flow in progress, like the Kerberos ' +
           'button: it takes ?authn= (or ?mfa=, a wallet as the second ' +
-          'factor after a password) and NEVER a returnTo. The request is ' +
+          'factor after a password) and NEVER a returnTo. A route of the ' +
+          'static sign-in surface since #574: the request is made by POST ' +
+          '/authn-api/wallet, never by this GET. The request is ' +
           'always signed, asks for this issuer\'s credential in every ' +
           'format oid4vp.signInFormats names (a credential query each and ' +
           'a credential set), and is offered through the Digital ' +
@@ -7638,42 +7641,25 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn/wallet/wait', group: 'Authentication',
     name: 'Wallet sign-in: wait, and finish',
     specs: ['oid4vp', 'dc-api', 'oidc'],
-    effect: 'once the wallet has answered, establishes the browser session ' +
-            '(or asks for a second factor) and returns to whatever was ' +
-            'interrupted',
-    what: 'The page the browser waits on: a Digital Credentials API button ' +
-          '— the one scripted exception on this path, /authn/wallet.js — ' +
-          'the same-device wallet link, and, only where ' +
-          'oid4vp.signInCrossDevice is on (off by default), a link to a ' +
-          'server-drawn QR code page (?qr=1) that polls with a <meta> ' +
-          'refresh. Once the wallet has answered it either signs the ' +
-          'browser in or says why nobody was: the presentation did not ' +
-          'verify, the credential was a trusted foreign issuer\'s, this ' +
-          'realm has no record of issuing it to a person on a token it ' +
-          'verified, it was disowned or its status is not VALID, or the ' +
-          'entry is gone. It finishes ONLY in the browser that started the ' +
-          'sign-in (a hashed binding cookie), ONLY with the right ' +
-          'response_code where one is carried (OpenID4VP section 8.2), and ' +
-          'ONCE — across a cluster too; the transaction lives ' +
+    effect: 'answers the sign-in surface\'s shell; its script finishes the ' +
+            'sign-in at /authn-api/wallet once the wallet has answered',
+    what: 'The page the browser waits on, drawn by the sign-in surface ' +
+          'since #574 from GET /authn-api/wallet/{state}: a Digital ' +
+          'Credentials API button, the same-device wallet link, and, only ' +
+          'where oid4vp.signInCrossDevice is on (off by default), a QR ' +
+          'code (?qr=1) drawn in the browser and polled every ' +
+          'oid4vp.signInPollS seconds. A wallet\'s same-device answer ' +
+          'sends the person back here with its response_code, and the ' +
+          'page collects the sign-in. Once the wallet has answered it ' +
+          'either signs the browser in or says why nobody was: the ' +
+          'presentation did not verify, the credential was a trusted ' +
+          'foreign issuer\'s, this realm has no record of issuing it to a ' +
+          'person on a token it verified, it was disowned or its status is ' +
+          'not VALID, or the entry is gone. It finishes ONLY in the browser ' +
+          'that started the sign-in (a hashed binding cookie), ONLY with ' +
+          'the right response_code where one is carried (OpenID4VP section ' +
+          '8.2), and ONCE — across a cluster too; the transaction lives ' +
           'oid4vp.signInTtlS.' },
-  { path: '/authn/wallet/dc-api', group: 'Authentication',
-    name: 'Wallet sign-in: the Digital Credentials API answer',
-    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
-    effect: 'verifies the wallet\'s answer and signs the posting browser in',
-    what: 'What the wait page\'s script posts: the DigitalCredential ' +
-          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
-          'decrypted where the request asked for dc_api.jwt, verified with ' +
-          'origin:<origin> as the audience, and answered once. Accepted only ' +
-          'from the browser that started the sign-in and from this ' +
-          'service\'s own origin (STS-VC-0074). An empty form — the ' +
-          'script did not run — is answered with the same-device link ' +
-          '(STS-VC-0081).' },
-  { path: '/authn/wallet.js', group: 'Authentication',
-    name: 'Wallet sign-in script',
-    specs: ['dc-api'],
-    what: 'NON-SPEC. The one static script the wait page loads under ' +
-          'script-src \'self\': it calls the Digital Credentials API with ' +
-          'the request on the page and submits the answer in a real form.' },
   { path: '/authn/password-factor', group: 'Authentication',
     name: 'Password as the second factor',
     specs: ['oidc', 'rfc8176'],
@@ -7924,6 +7910,39 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Sign in with a passkey and no username', specs: [],
     what: 'NON-SPEC (#571). The ceremony\'s result, verified with user ' +
           'verification required.' },
+  { path: '/authn-api/wallet', group: 'Authentication',
+    name: 'Start a wallet sign-in', specs: ['oid4vp', 'dc-api'],
+    what: 'NON-SPEC (#574). GET answers what the start page needs and the ' +
+          'CSRF token, and creates nothing; POST — JSON, an Origin of this ' +
+          'service and the X-CSRF-Token of the browser\'s session — makes ' +
+          'the signed OpenID4VP request, bound to the pending sign-in (or ' +
+          'step, or enrolment) and to this browser by the ' +
+          'sts_wallet_binding cookie it sets, and names the wait page.' },
+  { path: '/authn-api/wallet/:state', group: 'Authentication',
+    name: 'What the wallet sign-in\'s wait page draws', specs: [],
+    what: 'NON-SPEC (#574). For the browser that started the transaction ' +
+          'only: the Digital Credentials API request, the same-device ' +
+          'link, the QR code\'s text where it is offered, and the time ' +
+          'left. The state is a bearer capability and is never logged.' },
+  { path: '/authn-api/wallet/:state/status', group: 'Authentication',
+    name: 'Collect a wallet sign-in', specs: ['oid4vp'],
+    effect: 'once the wallet has answered, establishes the browser session ' +
+            '(or names a second factor) and names whatever was interrupted',
+    what: 'NON-SPEC (#574). The wait page\'s poll: wait until the wallet ' +
+          'has answered, then the sign-in finished in this request, once, ' +
+          'with the response_code a same-device wallet sent the person ' +
+          'back with where one is carried.' },
+  { path: '/authn-api/wallet/:state/dc-api', group: 'Authentication',
+    name: 'Wallet sign-in: the Digital Credentials API answer',
+    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
+    effect: 'verifies the wallet\'s answer and signs the posting browser in',
+    what: 'What the wait page\'s script sends: the DigitalCredential ' +
+          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
+          'decrypted where the request asked for dc_api.jwt, verified with ' +
+          'origin:<origin> as the audience, and answered once. Accepted only ' +
+          'from the browser that started the sign-in and from this ' +
+          'service\'s own origin (STS-VC-0074); since #574 also only as ' +
+          'JSON with the X-CSRF-Token of the browser\'s session.' },
   { path: '/authn-api/password-change/:id', group: 'Authentication',
     name: 'A forced password change', specs: [],
     what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +

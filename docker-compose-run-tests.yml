@@ -186,8 +186,16 @@ services:
       # tests/postgres_schema.js is what notices if only one of them moves.
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # WHERE generate-tls.sh SHARES ITS CERTIFICATE — the certificate and
+      # never the key — as `<CN>.crt` (2026-10-12): `sts` verifies the
+      # database by default and trusts this directory for it
+      # (STS_DATABASE_TLS_CA_FILE below). The cells layer's two databases
+      # `extends` this service and write their own file into the same one.
+      - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
-      # THE SCRIPTS ONLY. See the header: no data volume, deliberately.
+      # THE SCRIPTS, and the shared certificate directory. See the header: no
+      # data volume, deliberately.
+      - sts-db-ca:/run/sts-db-ca
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       # Turns every `host` rule in pg_hba.conf into `hostssl`, so a plaintext
       # dial is refused rather than merely discouraged.
@@ -598,17 +606,20 @@ services:
       # gives — a connection string is one string and compose cannot build it
       # from the parts.
       #
-      # `sslmode=require` IS NOT DECORATION. postgres/require-tls.sh rewrites
-      # every `host` rule in pg_hba.conf to `hostssl`, so a plaintext dial is
-      # REFUSED by that container — and the service says so at startup when the
-      # string does not ask for TLS, which is a warning printed just before a
-      # connection failure that reads as something else.
+      # `sslmode=verify-full` (2026-10-12; `require` until then): the
+      # connection is TLS — postgres/require-tls.sh rewrites every `host`
+      # rule in pg_hba.conf to `hostssl`, and this service never dials in the
+      # clear (#273) — and the server is AUTHENTICATED, chain and host name,
+      # against the certificate the `postgres` service shares in
+      # `sts-db-ca`, which STS_DATABASE_TLS_CA_FILE names. A directory, so
+      # the cells layer's cells trust their global tier from the same one.
       #
       # Ignored entirely in `memory` mode, where nothing opens a store.
       # NO PASSWORD IN THIS STRING (2026-09-12): it comes from the secret
       # store above, like docker-compose.yml's. The service dials the same
       # database as the same role either way.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=verify-full}
+      - STS_DATABASE_TLS_CA_FILE=${STS_DATABASE_TLS_CA_FILE:-/run/secrets/database-ca}
       - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
@@ -691,6 +702,9 @@ services:
       - sts-bao-client:/run/secrets/openbao:ro
       # THIS NODE'S START-UP TOKEN (#254), taken by the command above as root.
       - sts-bao-startup:/run/secrets/openbao-startup
+      # THE DATABASES' CERTIFICATES, read-only, without their keys
+      # (2026-10-12): what STS_DATABASE_TLS_CA_FILE names.
+      - sts-db-ca:/run/secrets/database-ca:ro
       # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
       # listener of its own makes a CA at run time and writes the CA's
       # CERTIFICATE here, then names it in a `…CaFile` setting so the service
@@ -1399,6 +1413,8 @@ volumes:
   sts-test-secret-push:
   # An uploaded risk dataset while it is imported (#215).
   sts-risk-uploads:
+  # The databases' certificates, shared with `sts` without their keys.
+  sts-db-ca:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

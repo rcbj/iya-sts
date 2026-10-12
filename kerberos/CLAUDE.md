@@ -180,7 +180,9 @@ mechanism under `forceMfa`. A ticket claims what its own flags claim, which is
 usually one factor, and by the time the flags are readable the ticket has been
 accepted — so the only honest place to refuse is before the offer.
 
-**Every refusal draws a page with the sign-in screen linked from it.** A bare
+**Every refusal draws a page with the sign-in screen linked from it** (since
+#575 the first 401's and the 403's are the sign-in surface's — see *The
+bodies a person reads are the sign-in surface's*, below). A bare
 `401 WWW-Authenticate: Negotiate` is a dead end in every browser not configured
 for this host (Chrome's `--auth-server-allowlist`, Firefox's
 `network.negotiate-auth.trusted-uris`, plus a credential cache in the realm), and
@@ -226,6 +228,57 @@ RFC 4178's NegTokenResp can carry a context handle, so:
 `tests/cluster_limits_challenges_retention.js` section D holds all four; the
 parent's `tests/krb5_spnego_http.js` passed against this tree
 (`MOCK_STS_DIR`), request-mic included.
+
+---
+
+## The bodies a person reads are the sign-in surface's (#575, 2026-10-12)
+
+**The RFC 4559 exchange is not converted** (#569's rule, rcbj 2026-10-12):
+the first 401 and its `WWW-Authenticate: Negotiate`, the `Authorization`
+round trips, the final mutual-authentication token, the 403 when the door is
+off and the 303 to `returnTo` keep their statuses, their headers and the
+top-level navigation that carries them. The sign-in runtime never drives
+Negotiate through `fetch()`: the browser's own Negotiate is the navigation.
+
+**Three BODIES changed**, each now the sign-in surface's shell
+(`SpnegoAuthn.sendShell()`: `ShellDocument.document()` with the sign-in
+bundle `/authn/signin.js`, `/web/card.css` and the wide card) carrying the
+page's state in `data-sts-state` on `<html>` — there is nothing to fetch it
+from, since the verdict and the session it drew exist only on that one
+response:
+
+| Response | `kind` | What the state carries |
+|---|---|---|
+| the first 401 (no `Authorization`) | `challenge` | the pending sign-in (`id`, `protocol`, `application`) or null, the SPN, the realm, the hosts |
+| the 403 when `krb5.spnegoAuthentication` is false | `off` | the setting, `/spnego/protected` only where the realm is served it (#585), the pending sign-in |
+| the 200 when nothing was interrupted | `signed-in` | who (the username and the principal), the session id and subject, the flags, the indicators, `amr`, `acr`, the mechanism, bare or not, the mechListMIC, the acceptor's checks |
+
+`kerberos/web_authn_spnego.ts` draws them, as the sign-in surface's
+`/authn/spnego` row (`authn/web_authn_pages.ts`, an EMBEDDED page:
+`authn/web_authn.ts` reads the view off the shell and asks `/authn-api` for
+nothing, follows none of its links in place — the password screen is a full
+navigation that mints its arrival cookie — and draws it again from the same
+state when a language is chosen). The browser translates, in #539's order
+with the pending sign-in's `ui_locales` and a signed-in person's own
+language; the `off` page's sentences and the checks table are English, as a
+refusal and a diagnostic are, and its link back to the password screen is
+translated, where the server drew it in English. **Script is required**
+(rcbj on #569): the `<noscript>` says so and draws nothing else.
+
+**The one header that changed is the Content-Security-Policy**, which a page
+that runs a script cannot keep: `script-src 'self'`, `connect-src 'self'`,
+`style-src 'self'`, set through `app.contentSecurityPolicy()` so
+`frame-ancestors` stays. Status, `WWW-Authenticate`, `Cache-Control:
+no-store`, `Content-Type`, the session cookie and `Location` are byte for
+byte what they were — `tests/spnego_shell.js` snapshots each response and the
+snapshot was compared against the tree before #575.
+
+**What stays server-drawn**: a continuation 401 and a terminal refusal of a
+token (the negotiation's own diagnostics, `spnego.js`'s `page()` and
+`checksTable()`), the issuance policy's 403 and the 500. A client that runs
+no script and wants what a body says reads `data-sts-state`: the protocol
+jobs (`sts_kerberos_spnego.js`, `sts_kerberos_heimdal.js`,
+`sts_kerberos_fast_otp.js`) do.
 
 ---
 
@@ -478,9 +531,9 @@ load with `Cannot find module` naming a file nobody edited. See
 ("go ahead and update the kerberos sign-in page. I'll deal with the drift from
 the parent project"). `page()` takes an optional third argument, `framing`,
 holding the `<html>` attributes, a block drawn first in the card, and extra
-CSS. With it, `spnego_authn.ts` draws `/authn/spnego`'s first 401, its
-continuation and its "Signed in" page in the reader's language with the
-language chooser. Without it, the output is byte-for-byte what it was, so the
+CSS. With it, `spnego_authn.ts` draws `/authn/spnego`'s continuation in the
+reader's language with the language chooser (its first 401 and "Signed in"
+page did too until #575 made them the sign-in surface's). Without it, the output is byte-for-byte what it was, so the
 parent's own `/spnego/protected` is unchanged. It added **no require**, so the
 COPY closure did not grow. rcbj reconciles the difference with the parent
 project; until then the next `--sync` of the parent's copy would undo it.
@@ -589,6 +642,11 @@ when a person's keys are first derived (create), derived from a new password
 LAZY `require()` inside a `try`, at the moment an event is due, so nothing is
 added to what those three modules load, and a copy without the file sends
 nothing and says so at debug.
+
+**#575 (2026-10-12) ADDED NO REQUIRE TO THE CLOSURE EITHER**: only
+`spnego_authn.ts`, which is outside it, changed, and `spnego.js` still draws
+the continuation and terminal-refusal 401s with `page()` and `checksTable()`
+as before.
 
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and

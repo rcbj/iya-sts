@@ -98,7 +98,13 @@ function childMain() {
       const presentation = w.presentSdJwt(credential, holder,
                                           one.requestObject.nonce, aud);
       await w.respond(one, presentation, { format: 'dc+sd-jwt' });
-      const page = await w.request('GET', one.waitPath, { browser: who });
+      // The poll's answer (#574); a second factor it names is that step's
+      // page, fetched as a browser follows the address it was given.
+      let page = await w.collect(who, one);
+      if (page.json && page.json.next === 'mfa' && page.json.location) {
+        page = await w.request('GET', w.pathOf(page.json.location),
+                               { browser: who });
+      }
       return { who: who, page: page, one: one,
                session: w.sessionOf(who) };
     }

@@ -18,13 +18,5 @@
   "endpoints.route./authn/wallet/wait.name": {
     "en": "b5fe1c58e2d72833",
     "text": "Inicio de sesión con cartera: esperar y finalizar"
-  },
-  "endpoints.route./authn/wallet/dc-api.name": {
-    "en": "6f6ac9c72bde33a8",
-    "text": "Inicio de sesión con cartera: la respuesta de la Digital Credentials API"
-  },
-  "endpoints.route./authn/wallet.js.name": {
-    "en": "61ec0700cb9645d2",
-    "text": "Script de inicio de sesión con cartera"
   }
 }

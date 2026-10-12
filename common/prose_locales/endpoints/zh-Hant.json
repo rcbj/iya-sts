@@ -1343,14 +1343,6 @@
     "en": "b5fe1c58e2d72833",
     "text": "錢包登入：等待並完成"
   },
-  "endpoints.route./authn/wallet/dc-api.name": {
-    "en": "6f6ac9c72bde33a8",
-    "text": "錢包登入：Digital Credentials API 的回應"
-  },
-  "endpoints.route./authn/wallet.js.name": {
-    "en": "61ec0700cb9645d2",
-    "text": "錢包登入指令碼"
-  },
   "endpoints.route./authn/password-factor.name": {
     "en": "153eb47c253809aa",
     "text": "密碼作為第二因素"
@@ -1434,6 +1426,22 @@
   "endpoints.route./authn-api/pending/:id/passkey.name": {
     "en": "d358470d455e8a4f",
     "text": "使用密碼金鑰登入，無需使用者名稱"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "開始錢包登入"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "錢包登入的等待頁面所繪製的內容"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "收取錢包登入結果"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "錢包登入：Digital Credentials API 的回應"
   },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",

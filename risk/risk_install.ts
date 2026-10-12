@@ -84,7 +84,9 @@
 // `persistence.databasePasswordProvider`, and `verifyTls`, which
 // `persistence_postgres.create()` reads beside the URL's own `sslmode` — so
 // a `verify-ca` or `verify-full` string verifies here exactly as it does in
-// the service, whatever the setting says (#543 round 2). A password
+// the service, whatever the setting says (#543 round 2) — and `tlsCa`,
+// `persistence.databaseTlsCaFile`'s certificates, so the loader trusts the
+// database's own anchor where the service does (2026-10-12). A password
 // written into `STS_DATABASE_URL` still works where no provider is
 // configured, for a throwaway database. A provider that is configured and
 // cannot be read is STS-RISK-0040, with the provider's own reason.
@@ -460,7 +462,8 @@ class RiskInstall {
         (label || 'a secret store') + '): ' + ((e && e.message) || e));
     }
     log.debug("Leaving RiskInstall.driverOptions().");
-    return { url: connection.url, verifyTls: connection.verifyTls, log: log };
+    return { url: connection.url, verifyTls: connection.verifyTls,
+             tlsCa: connection.tlsCa, log: log };
   }
 
   // -------------------------------------------------------------------------

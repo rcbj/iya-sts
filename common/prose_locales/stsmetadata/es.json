@@ -612,8 +612,8 @@
     "text": "partial: listas de revocación y suspensión por dominio, servidas como BitstringStatusListCredential protegida como JWT o, según Accept, como JSON-LD con una prueba eddsa-rdfc-2022 (#197), y una BitstringStatusListEntry por propósito en cada credencial jwt_vc_json y ldp_vc; el verificador las lee. Solo statusSize 1; sin statusMessage."
   },
   "stsmetadata.specs.dc-api.coverage": {
-    "en": "2fc60ff95cc7a863",
-    "text": "partial: la página de inicio de sesión con billetera llama a navigator.credentials.get({ digital }) con una solicitud OpenID4VP firmada y envía la respuesta; nada más aquí lo usa."
+    "en": "8baebcd0c7dfde66",
+    "text": "partial: la página de espera del inicio de sesión con billetera llama a navigator.credentials.get({ digital }) con una solicitud OpenID4VP firmada y envía la respuesta a /authn-api/wallet/{state}/dc-api; nada más aquí la usa."
   },
   "stsmetadata.specs.di-bbs.coverage": {
     "en": "5532c9619b858aae",
@@ -2368,32 +2368,20 @@
     "text": "responde 401 con \"WWW-Authenticate: Negotiate\" y, a una solicitud que lleva un ticket de servicio válido, establece la sesión del navegador y vuelve a lo que se interrumpió"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "UNA PRESENTACIÓN VERIFICADA COMO INICIO DE SESIÓN (2026-09-17). Se ofrece en /authn/login a todo flujo en curso, como el botón de Kerberos: recibe ?authn= (o ?mfa=, una billetera como segundo factor tras una contraseña) y NUNCA un returnTo. La solicitud siempre va firmada, pide la credencial de este emisor en cada formato que nombra oid4vp.signInFormats (una consulta de credencial por cada uno y un conjunto de credenciales), y también se ofrece mediante la Digital Credentials API (openid4vp-v1-signed, expected_origins). Solo una credencial que emitió ESTE DOMINIO, sobre un token de acceso que verificó y que nadie desautorizó, para una persona, no desautorizada desde entonces, con estado VALID y presentada con una prueba de titular reciente inicia la sesión de alguien, como la entrada de directorio para la que se emitió. amr [\"pop\"] y acr \"1\", o hwk y acr \"mfa\" cuando una atestación de clave verificada lo indica; a una solicitud que exige dos factores se le pide un segundo después de la billetera. appAuthnMechanism: wallet envía a las personas de una aplicación directamente aquí. oid4vp.signIn lo desactiva, y entonces responde 403 indicándolo."
+    "en": "595ee670036d604e",
+    "text": "UNA PRESENTACIÓN VERIFICADA COMO INICIO DE SESIÓN (2026-09-17). Se ofrece en /authn/login a todo flujo en curso, como el botón de Kerberos: recibe ?authn= (o ?mfa=, una billetera como segundo factor tras una contraseña) y NUNCA un returnTo. Es una ruta de la superficie estática de inicio de sesión desde #574: la solicitud se hace con POST /authn-api/wallet, nunca con este GET. La solicitud siempre va firmada, pide la credencial de este emisor en cada formato que nombra oid4vp.signInFormats (una consulta de credencial por cada uno y un conjunto de credenciales), y también se ofrece mediante la Digital Credentials API (openid4vp-v1-signed, expected_origins). Solo una credencial que emitió ESTE DOMINIO, sobre un token de acceso que verificó y que nadie desautorizó, para una persona, no desautorizada desde entonces, con estado VALID y presentada con una prueba de titular reciente inicia la sesión de alguien, como la entrada de directorio para la que se emitió. amr [\"pop\"] y acr \"1\", o hwk y acr \"mfa\" cuando una atestación de clave verificada lo indica; una solicitud que exige dos factores pide un segundo tras la billetera. appAuthnMechanism: wallet envía directamente aquí a las personas de una aplicación. oid4vp.signIn lo desactiva, y entonces responde 403 indicándolo."
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
-    "en": "10896d747624c10a",
-    "text": "construye una solicitud OpenID4VP ligada al inicio de sesión pendiente (o a un paso de segundo factor), establece la cookie de vinculación al navegador y redirige a la página de espera"
+    "en": "79a0035468001881",
+    "text": "responde con la envoltura de la superficie de inicio de sesión; su script inicia una solicitud OpenID4VP ligada al inicio de sesión pendiente (o a un paso de segundo factor) en /authn-api/wallet y pasa a la página de espera"
   },
   "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "La página en la que espera el navegador: un botón de la Digital Credentials API (la única excepción con script en esta ruta, /authn/wallet.js), el enlace a la billetera en el mismo dispositivo y, solo donde oid4vp.signInCrossDevice está activo (desactivado por defecto), un enlace a una página con un código QR dibujado por el servidor (?qr=1) que sondea con un refresco <meta>. Una vez que la billetera ha respondido, inicia la sesión del navegador o explica por qué no se inició la de nadie: la presentación no verificó, la credencial era de un emisor externo de confianza, este dominio no tiene registro de habérsela emitido a una persona sobre un token que verificó, fue desautorizada o su estado no es VALID, o la entrada ya no existe. Solo termina en el navegador que inició el inicio de sesión (una cookie de vinculación con hash), SOLO con el response_code correcto cuando se transporta uno (OpenID4VP sección 8.2), y UNA SOLA VEZ, también en un clúster; la transacción dura oid4vp.signInTtlS."
+    "en": "202ad1e33a120a27",
+    "text": "La página en la que espera el navegador, dibujada por la superficie de inicio de sesión desde #574 a partir de GET /authn-api/wallet/{state}: un botón de la Digital Credentials API, el enlace de billetera del mismo dispositivo y, solo donde oid4vp.signInCrossDevice está activado (desactivado por defecto), un código QR (?qr=1) dibujado en el navegador y sondeado cada oid4vp.signInPollS segundos. La respuesta de una billetera del mismo dispositivo devuelve a la persona aquí con su response_code, y la página recoge el inicio de sesión. Una vez que la billetera ha respondido, inicia la sesión del navegador o dice por qué no se inició: la presentación no se verificó, la credencial era de un emisor extranjero de confianza, este dominio no tiene registro de haberla emitido a una persona sobre un token que verificó, fue desautorizada o su estado no es VALID, o la entrada ya no existe. Termina SOLO en el navegador que inició el inicio de sesión (una cookie de vinculación con hash), SOLO con el response_code correcto donde se transporta (OpenID4VP sección 8.2) y UNA SOLA VEZ — también en un clúster; la transacción vive oid4vp.signInTtlS."
   },
   "stsmetadata.endpoints./authn/wallet/wait.effect": {
-    "en": "bd1af71e0b16fffe",
-    "text": "una vez que la billetera ha respondido, establece la sesión del navegador (o pide un segundo factor) y vuelve a lo que se interrumpió"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "Lo que envía el script de la página de espera: la DigitalCredential que devolvió navigator.credentials.get() (OpenID4VP Apéndice A.4), descifrada cuando la solicitud pidió dc_api.jwt, verificada con origin:<origin> como audiencia y respondida una sola vez. Solo se acepta desde el navegador que inició el inicio de sesión y desde el origen propio de este servicio (STS-VC-0074). Un formulario vacío (el script no se ejecutó) se responde con el enlace del mismo dispositivo (STS-VC-0081)."
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.effect": {
-    "en": "f04802283b57225d",
-    "text": "verifica la respuesta de la billetera e inicia la sesión del navegador que la envía"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "NON-SPEC. El único script estático que carga la página de espera bajo script-src 'self': llama a la Digital Credentials API con la solicitud de la página y envía la respuesta en un formulario real."
+    "en": "c86e75db89e317a1",
+    "text": "responde con la envoltura de la superficie de inicio de sesión; su script termina el inicio de sesión en /authn-api/wallet una vez que la billetera ha respondido"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "9dc6755b8f15d19f",
@@ -2514,6 +2502,30 @@
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
     "en": "e992662e8638f8c3",
     "text": "NON-SPEC (#571). El resultado de la ceremonia, verificado con la verificación de usuario requerida."
+  },
+  "stsmetadata.endpoints./authn-api/wallet.what": {
+    "en": "99c4ba1db29bff8e",
+    "text": "NON-SPEC (#574). GET responde lo que necesita la página de inicio y el token CSRF, y no crea nada; POST — JSON, un Origin de este servicio y el X-CSRF-Token de la sesión del navegador — genera la solicitud OpenID4VP firmada, ligada al inicio de sesión pendiente (o al paso, o a la inscripción) y a este navegador mediante la cookie sts_wallet_binding que establece, y nombra la página de espera."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state.what": {
+    "en": "2bb53bccad452c02",
+    "text": "NON-SPEC (#574). Solo para el navegador que inició la transacción: la solicitud de la Digital Credentials API, el enlace para el mismo dispositivo, el texto del código QR donde se ofrece, y el tiempo restante. El estado es una capacidad al portador y nunca se registra en el log."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.what": {
+    "en": "35446f54582a609d",
+    "text": "NON-SPEC (#574). El sondeo de la página de espera: esperar hasta que la billetera haya respondido y luego el inicio de sesión terminado en esta solicitud, una sola vez, con el response_code con el que una billetera del mismo dispositivo devolvió a la persona donde se transporta."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.effect": {
+    "en": "9264793fca0d1248",
+    "text": "una vez que la billetera ha respondido, establece la sesión del navegador (o nombra un segundo factor) y nombra lo que se había interrumpido"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.what": {
+    "en": "9f4b6afb2e1fecdc",
+    "text": "Lo que envía el script de la página de espera: el DigitalCredential que devolvió navigator.credentials.get() (OpenID4VP apéndice A.4), descifrado donde la solicitud pidió dc_api.jwt, verificado con origin:<origin> como audiencia y respondido una sola vez. Se acepta solo del navegador que inició el inicio de sesión y del origen propio de este servicio (STS-VC-0074); desde #574 también solo como JSON con el X-CSRF-Token de la sesión del navegador."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
+    "en": "f04802283b57225d",
+    "text": "verifica la respuesta de la billetera e inicia la sesión del navegador que la envía"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

@@ -1591,6 +1591,11 @@ const LOCAL_HELPERS = [
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.
   'authn_signin.js',
+  // The wallet's pages over `/authn-api/wallet` (#574): the start, the wait
+  // page's view, the collection and the Digital Credentials API's answer,
+  // with the same binding — what `sts_oid4vp_wallet.js` and `sts_siop.js`
+  // drive since the wallet's pages became routes of the sign-in surface.
+  'wallet_signin.js',
   // The console's sign-in and a client of the operations its pages are
   // drawn from (#446). Copied from the parent on 2026-09-06 and written here
   // since; the static console (#446) made it a different helper from the

@@ -612,8 +612,8 @@
     "text": "partial : des listes de révocation et de suspension par domaine, servies comme BitstringStatusListCredential sécurisé en JWT ou, selon Accept, en JSON-LD avec une preuve eddsa-rdfc-2022 (#197), et un BitstringStatusListEntry pour chaque finalité dans chaque justificatif jwt_vc_json et ldp_vc ; le Verifier les lit. statusSize 1 uniquement ; pas de statusMessage."
   },
   "stsmetadata.specs.dc-api.coverage": {
-    "en": "2fc60ff95cc7a863",
-    "text": "partial : la page de connexion par portefeuille appelle navigator.credentials.get({ digital }) avec une requête OpenID4VP signée et publie la réponse ; rien d’autre ici ne l’utilise."
+    "en": "8baebcd0c7dfde66",
+    "text": "partial : la page d’attente de la connexion par portefeuille appelle navigator.credentials.get({ digital }) avec une requête OpenID4VP signée et envoie la réponse à /authn-api/wallet/{state}/dc-api ; rien d’autre ici ne l’utilise."
   },
   "stsmetadata.specs.di-bbs.coverage": {
     "en": "5532c9619b858aae",
@@ -2368,32 +2368,20 @@
     "text": "répond 401 avec « WWW-Authenticate: Negotiate » et, pour une requête portant un ticket de service valide, établit la session du navigateur et revient à ce qui a été interrompu"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "UNE PRÉSENTATION VÉRIFIÉE COMME CONNEXION (2026-09-17). Proposée sur /authn/login à chaque flux en cours, comme le bouton Kerberos : elle prend ?authn= (ou ?mfa=, un portefeuille comme second facteur après un mot de passe) et JAMAIS un returnTo. La requête est toujours signée, demande l’attestation de cet émetteur dans chaque format que nomme oid4vp.signInFormats (une requête d’attestation pour chacun et un ensemble d’attestations), et est également proposée via la Digital Credentials API (openid4vp-v1-signed, expected_origins). Seule une attestation émise par CE DOMAINE, sur un jeton d’accès qu’il a vérifié et que personne n’a désavoué, pour une personne, non désavouée depuis, au statut VALID, et présentée avec une preuve de détention récente connecte quelqu’un — en tant que l’entrée d’annuaire pour laquelle elle a été émise. amr [\"pop\"] et acr \"1\", ou hwk et acr \"mfa\" lorsqu’une attestation de clé vérifiée l’indique ; à une requête exigeant deux facteurs, un second est demandé après le portefeuille. appAuthnMechanism: wallet y envoie directement les personnes d’une application. oid4vp.signIn la désactive, et elle répond alors 403 en le disant."
+    "en": "595ee670036d604e",
+    "text": "UNE PRÉSENTATION VÉRIFIÉE COMME CONNEXION (2026-09-17). Proposée sur /authn/login à chaque flux en cours, comme le bouton Kerberos : elle prend ?authn= (ou ?mfa=, un portefeuille comme second facteur après un mot de passe) et JAMAIS un returnTo. Une route de la surface de connexion statique depuis #574 : la requête est faite par POST /authn-api/wallet, jamais par ce GET. La requête est toujours signée, demande l’attestation de cet émetteur dans chaque format que nomme oid4vp.signInFormats (une requête d’attestation pour chacun et un ensemble d’attestations), et est également proposée via la Digital Credentials API (openid4vp-v1-signed, expected_origins). Seule une attestation émise par CE DOMAINE, sur un jeton d’accès qu’il a vérifié et que personne n’a désavoué, pour une personne, non désavouée depuis, au statut VALID, et présentée avec une preuve de détention récente connecte quelqu’un — en tant que l’entrée d’annuaire pour laquelle elle a été émise. amr [\"pop\"] et acr \"1\", ou hwk et acr \"mfa\" lorsqu’une attestation de clé vérifiée l’indique ; à une requête exigeant deux facteurs, un second est demandé après le portefeuille. appAuthnMechanism: wallet y envoie directement les personnes d’une application. oid4vp.signIn la désactive, et elle répond alors 403 en le disant."
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
-    "en": "10896d747624c10a",
-    "text": "construit une requête OpenID4VP liée à la connexion en attente (ou à une étape de second facteur), définit le cookie de liaison au navigateur et redirige vers la page d’attente"
+    "en": "79a0035468001881",
+    "text": "répond par la coquille de la surface de connexion ; son script lance une requête OpenID4VP liée à la connexion en attente (ou à une étape de second facteur) sur /authn-api/wallet et passe à la page d’attente"
   },
   "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "La page sur laquelle attend le navigateur : un bouton Digital Credentials API — la seule exception à script sur ce chemin, /authn/wallet.js —, le lien vers le portefeuille sur le même appareil et, uniquement lorsque oid4vp.signInCrossDevice est activé (désactivé par défaut), un lien vers une page de code QR dessinée par le serveur (?qr=1) qui interroge par un rafraîchissement <meta>. Une fois que le portefeuille a répondu, elle connecte le navigateur ou explique pourquoi personne ne l’a été : la présentation ne s’est pas vérifiée, l’attestation provenait d’un émetteur étranger de confiance, ce domaine n’a aucune trace de l’avoir émise à une personne sur un jeton qu’il a vérifié, elle a été désavouée ou son statut n’est pas VALID, ou l’entrée n’existe plus. Elle n’aboutit QUE dans le navigateur qui a démarré la connexion (un cookie de liaison haché), QUE avec le bon response_code lorsqu’il y en a un (OpenID4VP section 8.2), et UNE SEULE FOIS — y compris au sein d’un cluster ; la transaction vit oid4vp.signInTtlS."
+    "en": "202ad1e33a120a27",
+    "text": "La page sur laquelle le navigateur attend, affichée par la surface de connexion depuis #574 à partir de GET /authn-api/wallet/{state} : un bouton de la Digital Credentials API, le lien du portefeuille sur le même appareil et, uniquement lorsque oid4vp.signInCrossDevice est activé (désactivé par défaut), un code QR (?qr=1) dessiné dans le navigateur et sondé toutes les oid4vp.signInPollS secondes. La réponse d’un portefeuille sur le même appareil renvoie la personne ici avec son response_code, et la page recueille la connexion. Une fois que le portefeuille a répondu, elle connecte le navigateur ou dit pourquoi personne ne l’a été : la présentation ne s’est pas vérifiée, l’attestation venait d’un émetteur étranger de confiance, ce domaine n’a aucune trace de l’avoir émise pour une personne sur un jeton qu’il a vérifié, elle a été désavouée ou son statut n’est pas VALID, ou l’entrée n’existe plus. Elle ne se termine QUE dans le navigateur qui a lancé la connexion (un cookie de liaison haché), QUE avec le bon response_code là où il est transporté (OpenID4VP section 8.2), et UNE SEULE FOIS — y compris dans une grappe ; la transaction vit oid4vp.signInTtlS."
   },
   "stsmetadata.endpoints./authn/wallet/wait.effect": {
-    "en": "bd1af71e0b16fffe",
-    "text": "une fois que le portefeuille a répondu, établit la session du navigateur (ou demande un second facteur) et revient à ce qui a été interrompu"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "Ce qu’envoie le script de la page d’attente : la DigitalCredential renvoyée par navigator.credentials.get() (OpenID4VP Appendix A.4), déchiffrée lorsque la requête demandait dc_api.jwt, vérifiée avec origin:<origin> comme audience, et traitée une seule fois. Acceptée uniquement depuis le navigateur qui a démarré la connexion et depuis l’origine propre de ce service (STS-VC-0074). Un formulaire vide — le script ne s’est pas exécuté — reçoit en réponse le lien pour le même appareil (STS-VC-0081)."
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.effect": {
-    "en": "f04802283b57225d",
-    "text": "vérifie la réponse du portefeuille et connecte le navigateur émetteur"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "NON-SPEC. L’unique script statique que charge la page d’attente sous script-src 'self' : il appelle la Digital Credentials API avec la requête de la page et soumet la réponse dans un vrai formulaire."
+    "en": "c86e75db89e317a1",
+    "text": "répond par la coquille de la surface de connexion ; son script termine la connexion sur /authn-api/wallet une fois que le portefeuille a répondu"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "9dc6755b8f15d19f",
@@ -2514,6 +2502,30 @@
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
     "en": "e992662e8638f8c3",
     "text": "NON-SPEC (#571). Le résultat de la cérémonie, vérifié avec la vérification de l’utilisateur exigée."
+  },
+  "stsmetadata.endpoints./authn-api/wallet.what": {
+    "en": "99c4ba1db29bff8e",
+    "text": "NON-SPEC (#574). GET répond ce dont la page de départ a besoin ainsi que le jeton CSRF, et ne crée rien ; POST — en JSON, avec un Origin de ce service et le X-CSRF-Token de la session du navigateur — établit la requête OpenID4VP signée, liée à la connexion en attente (ou à l’étape, ou à l’enrôlement) et à ce navigateur par le cookie sts_wallet_binding qu’il définit, et nomme la page d’attente."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state.what": {
+    "en": "2bb53bccad452c02",
+    "text": "NON-SPEC (#574). Pour le seul navigateur qui a lancé la transaction : la requête de la Digital Credentials API, le lien pour le même appareil, le texte du code QR là où il est proposé, et le temps restant. L’état est une capacité porteuse et n’est jamais journalisé."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.what": {
+    "en": "35446f54582a609d",
+    "text": "NON-SPEC (#574). Le sondage de la page d’attente : attendre que le portefeuille ait répondu, puis la connexion terminée dans cette requête, une seule fois, avec le response_code avec lequel un portefeuille sur le même appareil a renvoyé la personne, là où il est transporté."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.effect": {
+    "en": "9264793fca0d1248",
+    "text": "une fois que le portefeuille a répondu, établit la session du navigateur (ou nomme un second facteur) et nomme ce qui avait été interrompu"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.what": {
+    "en": "9f4b6afb2e1fecdc",
+    "text": "Ce qu’envoie le script de la page d’attente : le DigitalCredential renvoyé par navigator.credentials.get() (OpenID4VP annexe A.4), déchiffré là où la requête demandait dc_api.jwt, vérifié avec origin:<origin> comme audience, et traité une seule fois. Accepté uniquement du navigateur qui a lancé la connexion et de l’origine propre de ce service (STS-VC-0074) ; depuis #574 aussi uniquement en JSON avec le X-CSRF-Token de la session du navigateur."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
+    "en": "f04802283b57225d",
+    "text": "vérifie la réponse du portefeuille et connecte le navigateur qui l’a envoyée"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

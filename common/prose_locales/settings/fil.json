@@ -8800,10 +8800,22 @@
     "text": "I-verify ang certificate ng database"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "f43d1062e91c3dbe",
-    "text": "Kung dapat mag-verify ang certificate ng PostgreSQL server laban sa isang trust anchor na hawak ng process na ito. NAKA-OFF bilang default, at pahayag iyon tungkol sa STACK sa halip na pinahinang default: ginagawa ang certificate sa loob ng postgres container sa unang start nito at walang pumirma rito, kaya walang mapagve-verify-an ang client at ang pag-on dito ay tatanggi sa bawat connection na may mensahe tungkol sa self-signed certificate. NAKA-ENCRYPT PA RIN ANG CONNECTION alinman ang piliin — hindi kailanman dina-dial ng serbisyong ito ang database nito nang hindi naka-encrypt (#273), hinihingi rin ng sariling pg_hba.conf ng database ang TLS, at ito ay nagpapasya lang kung AUTHENTICATED ang server. I-on ito kapag itinuro mo ito sa isang tunay na database na ang certificate ay nagcha-chain sa isang bagay na pinapangalanan ng NODE_EXTRA_CA_CERTS; chine-check nito noon ang chain at ang host name. Nagpapasya lang ito para sa connection string na ang sslmode ay hindi nakatakda, require o prefer: vine-verify ng sslmode=verify-full ang chain at ang host name, at ng sslmode=verify-ca ang chain lang (ayon sa pagbasa ng libpq), anuman ang sabihin nito."
+    "en": "349255b3b313fd58",
+    "text": "Kung dapat mag-verify ang certificate ng PostgreSQL server laban sa isang trust anchor na hawak ng process na ito, ang chain at ang host name. NAKA-ON bilang default, sa bawat mode. Ang mga trust anchor ay ang persistence.databaseTlsCaFile kapag nakatakda iyon, at ang default na trust store ng process na ito (kasama ang NODE_EXTRA_CA_CERTS) kung hindi. BABALA: ang pag-off nito ay nag-iiwan sa database server na HINDI AUTHENTICATED — naka-encrypt pa rin ang connection (hindi kailanman dina-dial ng serbisyong ito ang database nito nang plaintext, #273), pero anumang makakasagot sa address ng database ay maaaring magpanggap bilang ito at magbasa at magsulat ng bawat row na iniingatan ng serbisyong ito, kasama ang mga naka-seal na key at ang directory. I-off lang ito para sa isang pansamantalang database na ibibigay mo kahit kanino. Nagpapasya lang ito para sa connection string na ang sslmode ay hindi nakatakda, require o prefer: vine-verify ng sslmode=verify-full ang chain at ang host name, at ng sslmode=verify-ca ang chain lamang (ayon sa pagbasa ng libpq), anuman ang sabihin nito."
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "binubuksan ang connection pool bago mag-bind ang listener"
+  },
+  "persistence.databaseTlsCaFile|label": {
+    "en": "cecd97b1da67d416",
+    "text": "File ng CA certificate ng database"
+  },
+  "persistence.databaseTlsCaFile|description": {
+    "en": "a1782a05a9d84547",
+    "text": "Isang PEM file ng mga CA certificate na pinagkakatiwalaan para sa mga connection sa database LAMANG, kapalit ng default na trust store ng process na ito para sa mga iyon; walang ibang dina-dial ng serbisyong ito ang nagtitiwala sa mga ito. Maaari itong magpangalan ng directory sa halip, at babasahin ang bawat .crt at .pem file sa loob nito. Kapag walang laman, ginagamit ang default na trust store (kasama ang NODE_EXTRA_CA_CERTS). Ang file na pinangalanan pero hindi mabasa, o walang lamang certificate, ay pumipigil sa serbisyo sa pagsisimula. Itinatakda ito ng compose stack sa certificate na ginagawa ng postgres container nito, ibinabahagi nang read-only nang walang key."
+  },
+  "persistence.databaseTlsCaFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "binubuksan ang connection pool bago mag-bind ang listener"
   },

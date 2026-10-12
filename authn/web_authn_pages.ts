@@ -9,12 +9,13 @@
 // THE SIGN-IN SURFACE'S PAGE TABLE (#571, 2026-10-12).
 //
 // Rows in `common/web_surface.ts`'s shape — the screen, the federation
-// chooser and the forced password change (#571), and since #572 and #573
-// the second-factor and emailed-factor steps — each with the `/authn-api`
-// operation its view is the answer of. Each operation names its resource in
-// the PATH (the pending sign-in's id, the step's id), which the browser
-// reads off the location's query (`?authn=`, `?change=`, `?mfa=`) — the
-// addresses
+// chooser and the forced password change (#571), each with the `/authn-api`
+// operation its view is the answer of; the wallet's start and wait pages
+// (#574), likewise; the SPNEGO sign-in's bodies (#575), whose view the
+// shell carries instead; and the second-factor and emailed-factor steps
+// (#572, #573). Each operation names its resource in the PATH (the pending
+// sign-in's id, the step's id), which the browser reads off the location's
+// query (`?authn=`, `?change=`, `?mfa=`) — the addresses
 // `beginAuthentication()` and the screen's acts have always sent a browser
 // to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
 // global `StsAuthn`, which `tests/web_surfaces.js` loads to draw a page from
@@ -29,6 +30,10 @@ import WebAuthnSelect = require('./web_authn_select');
 import WebAuthnPassword = require('./web_authn_password');
 import WebAuthnMfa = require('./web_authn_mfa');
 import WebAuthnEmail = require('./web_authn_email');
+// THE WALLET'S TWO PAGES (#574), whose renderers are beside their server
+// module in `oid4vc/`.
+import WebVcSignin = require('../oid4vc/web_vc_signin');
+import WebAuthnSpnego = require('../kerberos/web_authn_spnego');
 
 type Json = any;
 
@@ -119,6 +124,52 @@ const PAGES = [
     title: function (view: Json, ctx: Json): string {
       return WebAuthnPassword.title(view, ctx);
     } },
+  // THE WALLET SIGN-IN (#574): the start, asked with the location's
+  // `authn`/`mfa`, `siop` and `enrol`; and the wait page, whose view is the
+  // transaction's (its `state`) for the browser that started it.
+  { path: '/authn/wallet',
+    operation: function (query: Json): string {
+      const asked = ['authn', 'mfa', 'siop', 'enrol'].filter(function (name) {
+        return query[name] !== undefined && query[name] !== '';
+      }).map(function (name) {
+        return name + '=' + encodeURIComponent(String(query[name]));
+      });
+      return '/authn-api/wallet' + (asked.length ? '?' + asked.join('&')
+                                                 : '');
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.title(view, ctx);
+    } },
+  { path: '/authn/wallet/wait',
+    operation: function (query: Json): string {
+      return '/authn-api/wallet/' + encodeURIComponent(String(query.state ||
+                                                              ''));
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.title(view, ctx);
+    } },
+  // THE SPNEGO SIGN-IN'S BODIES (#575). `/authn/spnego` is an RFC 4559
+  // exchange the runtime never drives: the page is EMBEDDED — its view is
+  // the state the shell carried on the response the exchange answered
+  // (`data-sts-state`), not an operation's answer, so it has no operation
+  // and `authn/web_authn.ts` never fetches one for it.
+  { path: '/authn/spnego',
+    embedded: true,
+    operation: function (): string {
+      return '';
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebAuthnSpnego.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebAuthnSpnego.title(view, ctx);
+    } },
   // THE STEPS AFTER THE SCREEN (#572, #573).
   stepRow('/authn/totp', 'totp', WebAuthnMfa.totp),
   stepRow('/authn/webauthn', 'webauthn', WebAuthnMfa.webauthn),
@@ -152,7 +203,9 @@ class AuthnPages {
     if (!ctx || !ctx.view) {
       return body;
     }
-    return '<div class="card">' + body + '</div>';
+    // The SPNEGO sign-in's tables need the wide card (#575).
+    return '<div class="card' + (ctx.view.door === 'spnego' ? ' wide' : '') +
+      '">' + body + '</div>';
   }
 
   /**

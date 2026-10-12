@@ -2039,11 +2039,22 @@ function recordHttp(req, res, detail) {
 // AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
 // sign-in's id and a forced password change's step id, each a bearer
 // capability over that sign-in, and the operation's path carries it. The row
-// keeps the operation and drops the id. And a second-factor or emailed-factor
-// step's id since #572 and #573 (`/authn-api/mfa/{id}`), the same capability
-// `?mfa=` always was.
+// keeps the operation and drops the id. A second-factor or emailed-factor
+// step's id since #572 and #573 (`/authn-api/mfa/{id}`) is another, the same
+// capability `?mfa=` always was.
+// THE WALLET SIGN-IN'S TRANSACTION (#574) is another: `/authn-api/wallet/
+// {state}`. And the same capabilities travel in the QUERY of the pages they
+// open — `/authn/login?authn=`, `/authn/wallet/wait?authn=&state=&mfa=`, a
+// wallet's same-device return with its `response_code` — so a full URL a
+// line records has those values replaced too (`REDACTED_CAPABILITIES`).
 const REDACTED_PATHS =
-  /(\/authn-api\/(?:pending|password-change|mfa)\/)[^/?#]+/g;
+  /(\/authn-api\/(?:pending|password-change|wallet|mfa)\/)[^/?#]+/g;
+// And a mailed sign-in link's token (#573, `/authn/email-link/open?t=`),
+// which is a credential rather than a capability over a step.
+const REDACTED_CAPABILITIES = ['authn', 'mfa', 'state', 'response_code',
+                               'change', 't'];
+const REDACTED_QUERY_VALUES = new RegExp('([?&](?:' +
+  REDACTED_CAPABILITIES.join('|') + ')=)[^&#]*', 'g');
 
 /**
  * A request path with any capability it carries replaced by `(redacted)`.
@@ -2054,12 +2065,32 @@ const REDACTED_PATHS =
 function redactedPath(path) {
   log.debug("Entering redactedPath().");
   log.debug("Leaving redactedPath().");
-  return String(path || '').replace(REDACTED_PATHS, '$1(redacted)');
+  return String(path || '').replace(REDACTED_PATHS, '$1(redacted)')
+    .replace(REDACTED_QUERY_VALUES, '$1(redacted)');
+}
+
+/**
+ * A parsed query with every capability's value replaced by `(redacted)`, for
+ * the call log (#574).
+ *
+ * @param query - the query, name → value
+ * @returns a copy a log line may carry
+ */
+function redactedQuery(query) {
+  log.debug("Entering redactedQuery().");
+  const out = {};
+  Object.keys(query || {}).forEach(function (key) {
+    out[key] = REDACTED_CAPABILITIES.indexOf(String(key).toLowerCase()) >= 0
+      ? '(redacted)' : query[key];
+  });
+  log.debug("Leaving redactedQuery().");
+  return out;
 }
 
 const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'assertion', 'client_secret', 'password',
-                             'credential', 'vp_token', 'response'];
+                             'credential', 'vp_token', 'response']
+  .concat(REDACTED_CAPABILITIES);
 
 function queryText(query) {
   log.debug("Entering queryText().");
@@ -2372,6 +2403,7 @@ function prose() {
 module.exports = {
   CATEGORIES: CATEGORIES,
   redactedPath: redactedPath,
+  redactedQuery: redactedQuery,
   ACTIONS: ACTIONS,
   OUTCOMES: OUTCOMES,
   audit: audit,

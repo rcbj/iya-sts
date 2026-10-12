@@ -1666,6 +1666,12 @@ const CODES = [
       'would or might connect in the clear. Every connection is TLS (#273). ' +
       'Fatal at persistence.start().',
     spec: '' },
+  { code: 'STS-STORE-0079',
+    summary: 'persistence.databaseTlsCaFile names a file that could not be ' +
+      'read, or that holds no PEM certificate, so the database connection ' +
+      'has no trust anchor anybody chose. Fatal at persistence.start(); ' +
+      'the out-of-process tools that dial the database refuse the same way.',
+    spec: 'none — fatal at start' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -14288,28 +14294,28 @@ const CODES = [
   // --- signing in with a wallet, /authn/wallet (2026-09-17, #38) -----------
   { code: 'STS-VC-0052',
     summary: 'A wallet sign-in was refused because oid4vp.signIn is off.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0053',
     summary: 'A wallet sign-in named no pending authentication — never ' +
       'started, expired, or already used — so there was nothing to sign in ' +
       'to.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   // Retired 2026-09-17 (#38's follow-ups): a wallet sign-in under a demand
   // for two factors is now followed by a second factor rather than refused.
   // Kept, because a code is never reused.
   { code: 'STS-VC-0054',
     summary: 'A wallet sign-in was refused for a request that demanded two ' +
       'factors (retired: it is now followed by a second factor).',
-    spec: 'HTTP 403 page', retired: true },
+    spec: 'HTTP 403 refusal at /authn-api/wallet', retired: true },
   { code: 'STS-VC-0055',
     summary: 'A wallet sign-in was asked about by a browser that did not ' +
       'start it (no binding cookie, or the wrong one), so it was not ' +
       'finished there.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0056',
     summary: 'A wallet sign-in\'s transaction is unknown, has expired, or ' +
       'belongs to a different pending authentication.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0057',
     summary: 'A second OpenID4VP response arrived for a sign-in\'s ' +
       'transaction, which is answered once.',
@@ -14318,63 +14324,63 @@ const CODES = [
     summary: 'A presentation verified and signed nobody in: the credential ' +
       'was signed by a certificate in oid4vp.trustedIssuerCertificates, not ' +
       'by this realm\'s issuer.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0059',
     summary: 'A presentation verified and signed nobody in: this realm has ' +
       'no record of issuing the credential for a person on an access token ' +
       'it verified (another realm\'s, a foreign token\'s, or unknown).',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0060',
     summary: 'A presentation verified and signed nobody in: the directory ' +
       'entry the credential was issued for no longer exists.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0061',
     summary: 'A presentation made to sign in did not verify (or was not a ' +
       'presentation at all), so nobody was signed in.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0062',
     summary: 'A wallet sign-in was already finished — here or on another ' +
       'node — and was not finished again.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0063',
     summary: 'The cluster claim store could not be asked whether a wallet ' +
       'sign-in was already finished, so it was refused rather than finished ' +
       'unproven.',
-    spec: 'HTTP 503 page' },
+    spec: 'HTTP 503 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0064',
     summary: 'A presentation verified and mapped to a person, and the ' +
       'issuance policy refused them a session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0065',
     summary: 'A wallet sign-in was returned to with a response_code that is ' +
       'not the one given to the wallet.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0066',
     summary: 'A presentation verified and signed nobody in: its subject or ' +
       'holder key disagrees with what this realm recorded when it issued ' +
       'the credential.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0067',
     summary: 'An unexpected failure inside the wallet sign-in door.',
-    spec: 'HTTP 500 page' },
+    spec: 'HTTP 500 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0068',
     summary: 'An issued credential could not be recorded as one that may ' +
       'sign its subject in; the credential was issued anyway.',
     spec: '' },
   { code: 'STS-VC-0069',
     summary: 'A wallet sign-in request carried a malformed query parameter.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0070',
     summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
       'had presented and before the browser collected the session.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   // --- #38's follow-ups: disowning, status lists, the Digital Credentials
   // API, every format, key attestations -------------------------------------
   { code: 'STS-VC-0071',
     summary: 'A presentation verified and signed nobody in: the credential ' +
       'was disowned — by a global sign-out, an administrator\'s revocation, ' +
       'or its status-list entry.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0072',
     summary: 'A presented credential\'s status list says it is revoked or ' +
       'suspended, or no statement about its status could be made (the list ' +
@@ -14385,11 +14391,11 @@ const CODES = [
       'openid4vp-v1-signed DigitalCredential, was not in the response mode ' +
       'the request asked for, or its encrypted response could not be ' +
       'opened.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0074',
     summary: 'A Digital Credentials API answer was posted from a page on an ' +
       'origin other than the one the request named in expected_origins.',
-    spec: 'HTTP 403 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0075',
     summary: 'No status-list index could be allocated for a credential: the ' +
       'claim store could not be asked, or the list is full.',
@@ -14416,10 +14422,10 @@ const CODES = [
       'composite).',
     spec: 'invalid_proof (HTTP 400)' },
   { code: 'STS-VC-0081',
-    summary: 'The Digital Credentials API form was submitted with no answer ' +
-      '— the page\'s script did not run — and the same-device link was ' +
-      'offered instead.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    summary: 'A Digital Credentials API answer was sent with nothing in it — ' +
+      'nothing came back from the browser\'s API — and the same-device ' +
+      'link was offered instead.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0082',
     summary: 'A status-list entry could not be changed from the console or ' +
       'the management API: no such index, an unknown status, or an ' +
@@ -14428,13 +14434,13 @@ const CODES = [
   { code: 'STS-VC-0083',
     summary: 'A Digital Credentials API answer arrived for a sign-in that ' +
       'was not offered through the Digital Credentials API.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0084',
     summary: 'A wallet could not be the second factor: the step had ' +
       'expired, its first factor was already a wallet, or the credential ' +
       'was issued to somebody other than the person whose password was ' +
       'entered.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0085',
     summary: 'A certificate in oid4vci.keyAttestationTrustedCertificates ' +
       'could not be read and was ignored.',
@@ -14474,7 +14480,7 @@ const CODES = [
     summary: 'A self-issued ID Token verified and its subject is enrolled ' +
       'for nobody in the realm, so it signed nobody in — in both modes ' +
       '(#129).',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0092',
     summary: 'oid4vp.verifierAttestation cannot be used — unreadable, not ' +
       'typ verifier-attestation+jwt, no sub, expired, or its cnf is not ' +
@@ -14486,12 +14492,12 @@ const CODES = [
       'holding no sign-on session, or for a person other than the one now ' +
       'signed in; or a self-issued ID was asked for as a second factor, ' +
       'which it is not offered as (#129).',
-    spec: 'HTTP 403 / 400 page' },
+    spec: 'HTTP 403 / 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0094',
     summary: 'A key proved by a SIOPv2 enrolment was not enrolled: it is ' +
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0095',
     summary: 'A credential issuer\'s well-known document was asked for at ' +
       'an inserted path no issuer here has (OpenID4VCI 1.0 section ' +

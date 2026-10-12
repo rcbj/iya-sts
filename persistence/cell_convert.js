@@ -220,13 +220,14 @@ function contentOf(table, row) {
  * Builds the store of one database over `pg`.
  *
  * @param options - `url` (the connection string, password included),
- *   `verifyTls`, and `name` ('cell' or 'global', for the log)
+ *   `verifyTls`, `tlsCa` (the database's PEM trust anchors, or ''), and
+ *   `name` ('cell' or 'global', for the log)
  * @returns the store
  */
 function sqlStore(options) {
   log.debug("Entering sqlStore().");
   const dial = require('./persistence_postgres')
-    .dialOptions(options.url, options.verifyTls);
+    .dialOptions(options.url, options.verifyTls, options.tlsCa);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') + 'cell_convert: the ' +
                     options.name + ' connection string is not dialled: ' +
@@ -1126,9 +1127,11 @@ async function main(argv) {
                     ((e && e.message) || e));
     }
     cellStore = sqlStore({ url: cellConnection.url, name: 'cell',
-                           verifyTls: cellConnection.verifyTls });
+                           verifyTls: cellConnection.verifyTls,
+                           tlsCa: cellConnection.tlsCa });
     globalStore = sqlStore({ url: globalConnection.url, name: 'global',
-                             verifyTls: globalConnection.verifyTls });
+                             verifyTls: globalConnection.verifyTls,
+                             tlsCa: globalConnection.tlsCa });
     try {
       await holdKek(cellStore, globalStore);
     } catch (e) {

@@ -1343,14 +1343,6 @@
     "en": "b5fe1c58e2d72833",
     "text": "Plånboksinloggning: vänta och slutför"
   },
-  "endpoints.route./authn/wallet/dc-api.name": {
-    "en": "6f6ac9c72bde33a8",
-    "text": "Plånboksinloggning: svaret från Digital Credentials API"
-  },
-  "endpoints.route./authn/wallet.js.name": {
-    "en": "61ec0700cb9645d2",
-    "text": "Skript för plånboksinloggning"
-  },
   "endpoints.route./authn/password-factor.name": {
     "en": "153eb47c253809aa",
     "text": "Lösenord som andra faktor"
@@ -1434,6 +1426,22 @@
   "endpoints.route./authn-api/pending/:id/passkey.name": {
     "en": "d358470d455e8a4f",
     "text": "Logga in med en inloggningsnyckel utan användarnamn"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "Starta en inloggning med plånbok"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "Vad väntesidan för plånboksinloggningen ritar"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "Hämta en plånboksinloggning"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "Plånboksinloggning: svaret från Digital Credentials API"
   },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",

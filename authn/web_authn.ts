@@ -47,6 +47,11 @@
 //     library is not a `web_` module and cannot be bundled into one — and
 //     its visitorId sent with the act.
 //
+//   * THE SPNEGO SIGN-IN'S BODIES (#575): `/authn/spnego`'s first 401, its
+//     403 when off and its signed-in 200 are the shell with the page's
+//     state in `data-sts-state`, drawn from it and never fetched — the
+//     RFC 4559 exchange is the browser's navigation, untouched.
+//
 // `authn-spa.js` and never `authn.js` on disk: `authn/authn.js` is the server
 // module `authn.ts` compiles to, and the bundle would overwrite it.
 //
@@ -58,6 +63,9 @@ import WebSurface = require('../common/web_surface');
 import WebPage = require('../common/web_page');
 import WebWebAuthn = require('../common/web_webauthn');
 import AuthnPages = require('./web_authn_pages');
+// THE WALLET'S PAGES RUN (#574): the start, the poll, the Digital
+// Credentials API call — `/authn/wallet.js` until then.
+import WebVcSignin = require('../oid4vc/web_vc_signin');
 
 type Json = any;
 
@@ -133,6 +141,8 @@ class AuthnSurface extends WebSurface {
   private notice: string;
   // The waiting page's next poll (#573), cleared whenever a page is drawn.
   private pollTimer: Json;
+  // The wallet sign-in's pages' runtime (#574).
+  private walletFlow: Json;
 
   /**
    * Makes the runtime.
@@ -142,7 +152,7 @@ class AuthnSurface extends WebSurface {
   constructor(env: Json) {
     super(env, { base: '/authn', api: '/authn-api',
                  pages: AuthnPages.PAGES,
-                 namespaces: ['authn', 'emailFactor'],
+                 namespaces: AuthnSurface.namespacesAt(env),
                  frame: AuthnPages.frame, brand: '' });
     this.actError = '';
     this.autofill = true;
@@ -151,6 +161,7 @@ class AuthnSurface extends WebSurface {
     this.fingerprintLoaded = false;
     this.notice = '';
     this.pollTimer = null;
+    this.walletFlow = new WebVcSignin.Flow(this);
   }
 
   /**
@@ -186,11 +197,15 @@ class AuthnSurface extends WebSurface {
     }
     this.pollTimer = null;
     const view = ctx && ctx.view;
+    // A wallet page's start, poll and button (#574); any other page stops
+    // a poll the last one armed.
+    this.walletFlow.onPut(view, ctx);
     if (!view) {
       return;
     }
     // THE WAITING PAGE ASKS AGAIN (#573), as its `<meta>` refresh did.
-    if (view.state === 'wait' && this.env.window) {
+    // (`kind` too: a wallet's view carries a `state` of its own, #574.)
+    if (view.state === 'wait' && view.kind === 'link' && this.env.window) {
       const self = this;
       this.pollTimer = this.env.window.setTimeout(function () {
         self.poll();
@@ -202,6 +217,126 @@ class AuthnSurface extends WebSurface {
     if (view.passkey && this.autofill) {
       this.armAutofill();
     }
+  }
+
+  // --- the SPNEGO sign-in's bodies (#575) -----------------------------------
+  //
+  // `/authn/spnego` is an RFC 4559 exchange this runtime never drives: the
+  // browser's own Negotiate (or a person reading a 401) is the navigation,
+  // and the response it got is the shell, carrying the state its page is
+  // drawn from in `data-sts-state` — there is nothing to fetch and no
+  // operation to fetch it from, since the verdict and the session it drew
+  // exist only on that one response. So an EMBEDDED page is drawn from the
+  // shell, a link on it is the browser's (to the password screen, a full
+  // navigation that mints its arrival cookie as `/authn/login` always does),
+  // and a chosen language draws it again from the same state.
+
+  /**
+   * The catalog namespaces the page at the location draws: the SPNEGO
+   * sign-in's `spnego` beside `authn` there, `authn` and `wallet` (#574)
+   * everywhere else.
+   *
+   * @param env - the browser's objects
+   * @returns the namespaces
+   */
+  static namespacesAt(env: Json): string[] {
+    const path = String((env && env.location && env.location.pathname) || '');
+    // THE WALLET'S CATALOG (#574) on every other page: the screen's wallet
+    // button is followed IN PLACE, to a page drawn from it.
+    // THE EMAILED FACTOR'S (#573) on every page but SPNEGO's, for the same
+    // reason: the screen's email buttons are followed in place.
+    return /\/authn\/spnego$/.test(path) ? ['authn', 'spnego']
+                                          : ['authn', 'wallet', 'emailFactor'];
+  }
+
+  /**
+   * The state the shell carried, or null where it carried none or it does
+   * not read.
+   *
+   * @param env - the browser's objects
+   * @returns `{ view, uiLocales?, preferredLanguage? }`, or null
+   */
+  static embeddedState(env: Json): Json {
+    const text = WebPage.attribute(env, 'data-sts-state');
+    if (!text) {
+      return null;
+    }
+    try {
+      const state = JSON.parse(text);
+      return state && typeof state === 'object' && state.view ? state : null;
+    } catch (e) {
+      // Not JSON: the page says it could not be drawn.
+      return null;
+    }
+  }
+
+  /**
+   * Whether the page in hand is an embedded one.
+   *
+   * @returns true on the SPNEGO sign-in's bodies
+   */
+  embeddedHere(): boolean {
+    const path = this.surfacePath(this.env.location.pathname) || '';
+    const page: Json = this.find(path);
+    return !!(page && page.embedded);
+  }
+
+  /**
+   * Draws the page the location names; an embedded page from the shell's
+   * state, any other from its operation.
+   *
+   * @returns nothing
+   */
+  async route(): Promise<void> {
+    if (!this.embeddedHere()) {
+      await super.route();
+      return;
+    }
+    const path = this.surfacePath(this.env.location.pathname) || '';
+    const page: Json = this.find(path);
+    const query = WebPage.queryOf(this.env.location.search);
+    const state = AuthnSurface.embeddedState(this.env);
+    const ui = query.ui_locales ||
+      String((state && state.uiLocales) || '');
+    this.t = await this.i18n.load({
+      uiLocales: ui, own: state ? state.preferredLanguage : undefined });
+    if (!state) {
+      this.view = null;
+      this.drawProblem('This page could not be drawn',
+        'The service sent no state for it.');
+      return;
+    }
+    this.lastAnswer = state;
+    this.view = { page: page, query: query, json: state.view };
+    this.drawView();
+  }
+
+  /**
+   * Draws the page in hand again — an embedded page from its state, in the
+   * language just chosen.
+   *
+   * @returns nothing
+   */
+  redraw(): void {
+    if (this.embeddedHere()) {
+      this.route();
+      return;
+    }
+    super.redraw();
+  }
+
+  /**
+   * Follows a link in place, except on an embedded page, whose links are
+   * the browser's.
+   *
+   * @param event - the click
+   * @returns nothing
+   */
+  onClick(event: Json): void {
+    if (this.embeddedHere()) {
+      return;
+    }
+    super.onClick(event);
   }
 
   // --- the act ---------------------------------------------------------------
@@ -252,8 +387,8 @@ class AuthnSurface extends WebSurface {
     return rows.length ? rows[0] : null;
   }
 
-  // The index's operations, once.
-  private indexRows: Json[] | null = null;
+  // The index's operations, once; the wallet's runtime reads them too.
+  indexRows: Json[] | null = null;
 
   /**
    * Reads the API's index, once.
@@ -344,6 +479,29 @@ class AuthnSurface extends WebSurface {
     const answer = await this.send(String(op.path)
       .replace('{id}', encodeURIComponent(this.idHere())), body);
     await this.next(answer);
+  }
+
+  /**
+   * Draws a view an act answered in place of the page in hand, under the
+   * act's sentence (#574: a wallet sign-in's refusal), or a problem page
+   * where the answer carried none.
+   *
+   * @param json - the view, or null
+   * @param error - the sentence, English
+   * @returns nothing
+   */
+  showView(json: Json, error: string): void {
+    const page = this.find(this.surfacePath(this.env.location.pathname) ||
+                           '');
+    if (!page || !json) {
+      this.view = null;
+      this.drawProblem('Nobody was signed in', error);
+      return;
+    }
+    this.view = { page: page, query: WebPage.queryOf(this.env.location.search),
+                  json: json };
+    this.flash = error ? { error: error } : null;
+    this.drawView();
   }
 
   /**

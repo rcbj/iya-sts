@@ -15655,32 +15655,67 @@ const SETTINGS = [
   // and authentication are two decisions, a self-signed pair gives the first
   // and not the second, and a service that conflated them would be one where
   // turning verification off looked like turning TLS off.
+  //
+  // **ON BY DEFAULT, IN EVERY MODE (rcbj, 2026-10-12).** It was off, on the
+  // argument that the compose stack's certificate is self-signed and there
+  // was nothing to verify it against. That argued from the stack to the
+  // default, and the default is what every deployment gets: an
+  // unauthenticated database is one anything at its address can impersonate,
+  // reading and writing every row. The stack now hands its certificate to
+  // the service read-only (`persistence.databaseTlsCaFile`, below) and dials
+  // `sslmode=verify-full`, so nothing it runs needs this off.
   // ---------------------------------------------------------------------
   { key: 'persistence.databaseTlsRejectUnauthorized', group: 'Persistence',
     label: 'Verify the database certificate',
-    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: false,
+    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: true,
     runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'Whether the PostgreSQL server\'s certificate must verify ' +
-                 'against a trust anchor this process holds. OFF by default, ' +
-                 'and that is a statement about the STACK rather than a ' +
-                 'weakened default: the certificate is generated inside the ' +
-                 'postgres container on its first start and is signed by ' +
-                 'nobody, so there is nothing for a client to verify it ' +
-                 'against and turning this on would refuse every connection ' +
-                 'with a message about a self-signed certificate. THE ' +
-                 'CONNECTION IS STILL ENCRYPTED either way — this service ' +
-                 'never dials its database in the clear (#273), the ' +
-                 'database\'s own pg_hba.conf requires TLS too, and this ' +
-                 'decides only whether the ' +
-                 'server is AUTHENTICATED. Turn it on when you point this at ' +
-                 'a real database whose certificate chains to something ' +
-                 'NODE_EXTRA_CA_CERTS names; it then checks the chain and ' +
-                 'the host name. It decides only for a connection string ' +
-                 'whose sslmode is unset, require or prefer: ' +
-                 'sslmode=verify-full verifies the chain and the host name, ' +
-                 'and sslmode=verify-ca the chain alone (as libpq reads ' +
-                 'them), whatever this says.' },
+                 'against a trust anchor this process holds, chain and host ' +
+                 'name. ON by default, in every mode. The trust anchors are ' +
+                 'persistence.databaseTlsCaFile when that is set, and this ' +
+                 'process\'s default trust store (with NODE_EXTRA_CA_CERTS) ' +
+                 'otherwise. WARNING: turning this off leaves the database ' +
+                 'server UNAUTHENTICATED — the connection is still ' +
+                 'encrypted (this service never dials its database in the ' +
+                 'clear, #273), but anything that can answer at the ' +
+                 'database\'s address can impersonate it and read and write ' +
+                 'every row this service keeps, the sealed keys and the ' +
+                 'directory included. Turn it off only for a throwaway ' +
+                 'database you would hand to anyone. ' +
+                 'It decides only for a connection string whose sslmode is ' +
+                 'unset, require or prefer: sslmode=verify-full verifies the ' +
+                 'chain and the host name, and sslmode=verify-ca the chain ' +
+                 'alone (as libpq reads them), whatever this says.' },
+
+  // ---------------------------------------------------------------------
+  // THE DATABASE'S OWN TRUST ANCHOR (2026-10-12). A certificate that chains
+  // to nothing node already trusts — the compose stack's, made self-signed
+  // inside the postgres container — could be verified only by adding it to
+  // NODE_EXTRA_CA_CERTS, which trusts it for EVERY outbound connection this
+  // process makes: a federation partner, a JWKS, a mail relay. This names a
+  // PEM file (or a directory of them, for the cells stack's two databases)
+  // trusted for the database connections ONLY, in place of the default
+  // trust store for them; `persistence.databaseTlsCa()` reads it,
+  // and a file named and unreadable, or holding no certificate, stops the
+  // service at start (STS-STORE-0079) rather than dialling with a trust
+  // anchor nobody chose.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.databaseTlsCaFile', group: 'Persistence',
+    label: 'Database CA certificate file',
+    env: 'STS_DATABASE_TLS_CA_FILE', type: 'string', dflt: '',
+    runtime: false,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: 'A PEM file of CA certificates trusted for the connections ' +
+                 'to the database ONLY, in place of this process\'s default ' +
+                 'trust store for them; nothing else this service dials ' +
+                 'trusts them. It may name a directory instead, and then ' +
+                 'every .crt and .pem file in it is read. Empty uses the ' +
+                 'default trust store (with NODE_EXTRA_CA_CERTS). A file ' +
+                 'that is named and cannot be read, or holds no certificate, ' +
+                 'stops the service at start. The compose stack sets it to ' +
+                 'the certificate its postgres container generates, shared ' +
+                 'read-only without the key.' },
 
   // -------------------------------------------------------------------------
   // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the

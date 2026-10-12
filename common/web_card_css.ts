@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The card's two stylesheets. A static utility class of constants.
+ * The card's stylesheets. A static utility class of constants.
  */
 class WebCardCss {
   /**
@@ -46,8 +46,9 @@ class WebCardCss {
    * What the sign-in surface's steps draw beyond the screen (#572, #573):
    * the notice a resend leaves, the warning of a set of recovery codes
    * running low, the set-up step's headings, a code's wide field, the ways
-   * round a factor, the technical fold and the QR code. They were in each
-   * step page's own stylesheet while the server drew the steps.
+   * round a factor, the technical fold (the QR code's rule is the
+   * wallet's, #574). They were in each step page's own stylesheet while the
+   * server drew the steps.
    */
   static readonly STEP_CSS =
     '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:' +
@@ -57,11 +58,31 @@ class WebCardCss {
     'e:1em;margin:18px 0 6px}input.code{font-size:1.4em;letter-spacing:.35em' +
     ';text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monosp' +
     'ace}.links div{margin:6px 0;font-size:.85em}details summary{cursor:poin' +
-    'ter;color:#12107c}.qr{text-align:center;margin:12px 0}';
+    'ter;color:#12107c}';
+
+  /**
+   * The WIDE card (#575): the SPNEGO sign-in's pages carry tables — the
+   * service principal, the ticket's flags, the acceptor's checks — that do
+   * not fit the 380-pixel card, so `.card.wide` lifts the width and every
+   * rule below is scoped to it, leaving every other page of the card as it
+   * was. The values are `kerberos/spnego.js`'s page shell's, where these
+   * pages were drawn until #575.
+   */
+  static readonly WIDE_CSS =
+    '.card.wide{width:auto;max-width:52rem;margin:2rem;line-height:1.45}.wid' +
+    'e h2{font-size:1em;margin:1.4em 0 .4em}.wide table{border-collapse:coll' +
+    'apse;width:100%;margin:.5rem 0 1rem;font-size:.85em}.wide th,.wide td{b' +
+    'order:1px solid #ddd;padding:.35rem .55rem;text-align:left;vertical-ali' +
+    'gn:top}.wide th{background:#f0f0f5}.wide .pass{color:#0b6b4f;font-weigh' +
+    't:600;white-space:nowrap}.wide .fail{color:#b00020;font-weight:600;whit' +
+    'e-space:nowrap}.wide .ok{background:#e8f5e9;border:1px solid #a5d6a7;pa' +
+    'dding:8px 10px;border-radius:5px;font-size:.9em;margin-bottom:12px}.wid' +
+    'e code{font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;border-r' +
+    'adius:3px;word-break:break-all}.wide a{color:#12107c}';
 
   /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
-   * with the consent screen.
+   * with the consent screen; the wide card's rules after the chooser's.
    */
   static readonly CARD_CSS =
     'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;bac' +
@@ -86,7 +107,17 @@ class WebCardCss {
     'order:1px solid #12107c;color:#12107c;background:#fff;text-decoration:no' +
     'ne;font-size:.9em}a.fedbtn span{display:block;font-size:.75em;color:#777' +
     '}' +
-    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS;
+    // THE WALLET SIGN-IN'S PAGES (#574), which carried these in a `<style>`
+    // of their own until they became routes of the sign-in surface: the QR
+    // code, the presentation's checks, and the Digital Credentials API
+    // button, which is a button and looks like the link beside it.
+    '.qr{display:block;margin:12px auto;text-align:center}.checks{font-size:' +
+    '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
+    'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
+    'block;font-size:.75em}' +
+    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
+    // The steps' rules BEFORE the wide card's, which win where both speak.
+    WebCardCss.WIDE_CSS;
 }
 
 export = WebCardCss;

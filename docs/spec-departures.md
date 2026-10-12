@@ -319,11 +319,7 @@ to make the choice — and the register and the portal say so.
 
 ## The persistence store and the cluster
 
-| What iya-sts does by default | What the specification says | Product mode | Changing it |
-|---|---|---|---|
-| **Weaker.** With `persistence.mode` = `postgres` and a URL whose `sslmode` is unset, `require` or `prefer`, TLS to the database encrypts but does not verify the server's certificate. `sslmode=verify-full` verifies the certificate and the host name, and `sslmode=verify-ca` the certificate only, as libpq does, whatever the setting says. (The connection itself is always TLS: a URL with no `sslmode` is `require`, and `disable` or `allow` is refused at start — #273.) | [RFC 9525 section 6](https://www.rfc-editor.org/rfc/rfc9525#section-6): a TLS client verifies the server's identity. libpq's `verify-ca` and `verify-full` mean the certificate (and, for `verify-full`, the host name) is checked. | Same. | `sslmode=verify-full` in the URL, or `persistence.databaseTlsRejectUnauthorized` (default `false`), which checks the certificate and the host name. The default store is `memory`, which has no connection. See [Encryption at rest](encryption-at-rest.md). |
-
-No departures were found in the cluster. It is off unless product mode runs on postgres.
+No departures were found in the persistence store: since 2026-10-12 the database server's certificate and host name are verified by default in every mode ([RFC 9525 section 6](https://www.rfc-editor.org/rfc/rfc9525#section-6)), `persistence.databaseTlsRejectUnauthorized` defaulting to `true` and `persistence.databaseTlsCaFile` naming a database's own CA. Turning the setting off is an operator's choice the service warns about ([Persistence](persistence.md#the-compose-database-is-tls-and-the-service-verifies-it)). No departures were found in the cluster. It is off unless product mode runs on postgres.
 
 ## Risk scoring and device registration
 

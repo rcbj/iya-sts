@@ -40,12 +40,12 @@
     "text": "簽章無法驗證的已接收 Security Event Token 會被拒絕"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "POST /ssf/receive 以及主控台與入口網站自己的接收者會接受它、記錄它並說明它為何未通過驗證——即偵錯工具的立場——除非 ssf.receiveRequireSignature 開啟。不會據此採取任何行動。"
+    "en": "298534c9f2c4f318",
+    "text": "POST /ssf/receive 以及主控台與入口網站自己的接收者會接受它、記錄它並說明它為何未通過驗證——即偵錯工具的立場——除非 ssf.receiveRequireSignature 開啟。不會據此採取任何行動。聯盟夥伴的 Shared Signals——無論是推送至 /federation/signals/{id} 或以輪詢取得——也比照辦理：未經驗證的 SET 會以「未經驗證」記錄在該關係的收件匣中，不會據此採取任何行動，除非 ssf.receiveRequireSignature 開啟。"
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "無論 ssf.receiveRequireSignature 如何設定，主控台與入口網站的接收者都回應 400 invalid_key（#117），並將它保留在收件匣中、標記為已拒絕。/ssf/receive 是開發端點，在此不存在（#585）。"
+    "en": "7823c19f4b2f69fb",
+    "text": "無論 ssf.receiveRequireSignature 如何設定，主控台與入口網站的接收者都回應 400 invalid_key（#117），並將它保留在收件匣中、標記為已拒絕。/ssf/receive 是開發端點，在此不存在（#585）。聯盟夥伴未經驗證的 SET 同樣以 invalid_key 拒絕——推送至 /federation/signals/{id} 時回應 HTTP 400；以輪詢取得者，則在下一次輪詢請求的 setErrs 中回報——並保留在該關係的收件匣中、標記為已拒絕，且絕不據此採取任何行動。"
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",

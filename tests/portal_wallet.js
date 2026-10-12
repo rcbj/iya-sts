@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (#589).
 //
-//   A. THE QR CODE THE BROWSER DRAWS (`portal/web_qr.ts`) is the `qrcode`
+//   A. THE QR CODE THE BROWSER DRAWS (`common/web_qr.ts`) is the `qrcode`
 //      package's, module for module: every error correction level, every
 //      mask, lengths from one byte to the versions an offer reaches. An
 //      encoder that is wrong draws a picture that scans as nothing.

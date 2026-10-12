@@ -34,7 +34,9 @@
 //
 // The sign-in screen (#571) draws three pages from views alone: the screen
 // in the states its view can name, the federation chooser and the forced
-// password change.
+// password change; the SPNEGO sign-in's three bodies (#575), from the
+// state their shell carries; and the wallet's start and wait pages (#574),
+// the QR code and a refusal.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -182,6 +184,11 @@ function authnCases(root) {
               siop: '' } });
   const nothing = Object.assign({}, everything, { screen: false,
     partners: null, kerberos: null, wallet: null });
+  const spnegoEn = { t: translatorFor(root, 'spnego', ['en']), query: {},
+                     prefix: '', origin: 'https://sts.example',
+                     here: '/authn/spnego' };
+  const spnegoFr = Object.assign({}, spnegoEn,
+    { t: translatorFor(root, 'spnego', ['fr', 'en']) });
   log.debug("Leaving authnCases().");
   return [
     { label: 'the sign-in screen, every door, in English',
@@ -208,7 +215,108 @@ function authnCases(root) {
               notice: 'The password you signed in with has appeared in a ' +
                       'data breach.' },
       ctx: Object.assign({}, en, { error: 'The two passwords are not the ' +
-                                          'same.' }) }
+                                          'same.' }) },
+    // THE SPNEGO SIGN-IN'S BODIES (#575), drawn from the state the shell
+    // carries: the first 401, the 403 when off, the signed-in page.
+    { label: 'the SPNEGO challenge, for a waiting request, in French',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'challenge',
+              pending: { id: 'abc', protocol: 'OIDC <code>',
+                         application: 'urn:app:<one>' },
+              spn: 'HTTP/sts.example', realm: 'EXAMPLE.COM',
+              hosts: ['sts.example', 'other.example'], checks: null },
+      ctx: Object.assign({}, spnegoFr, { here: '/authn/spnego?authn=abc' }) },
+    { label: 'the SPNEGO challenge, reached directly',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'challenge', pending: null,
+              spn: 'HTTP/sts.example', realm: 'EXAMPLE.COM', hosts: [],
+              checks: [{ name: 'a check', ok: false, detail: '<x>' }] },
+      ctx: spnegoEn },
+    { label: 'the SPNEGO door off, with the demonstration',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'off',
+              setting: 'krb5.spnegoAuthentication',
+              demoPath: '/spnego/protected',
+              pending: { id: 'abc', protocol: 'SAML 2.0', application: '' } },
+      ctx: spnegoEn },
+    { label: 'signed in with a Kerberos ticket, two factors',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'signed-in', username: 'alice & co',
+              principal: 'alice@EXAMPLE.COM', session: 's1',
+              subject: 'urn:uuid:1', flags: ['pre-authent'],
+              indicators: ['otp'], amr: ['pwd', 'otp'], acr: 'mfa',
+              mechanism: 'Kerberos 5', bare: false, mic: true,
+              checks: [{ name: 'the ticket decrypts', ok: true,
+                         detail: 'yes' }] },
+      ctx: spnegoEn },
+    { label: 'signed in with a bare ticket claiming nothing, in French',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'signed-in', username: 'bob',
+              principal: 'bob@PARTNER.COM', session: 's2',
+              subject: 'urn:uuid:2', flags: [], indicators: [], amr: [],
+              acr: '0', mechanism: 'Kerberos 5', bare: true, mic: false,
+              checks: null },
+      ctx: spnegoFr }
+  ];
+}
+
+/**
+ * The wallet sign-in's cases (#574): the start page; the wait page with the
+ * Digital Credentials API button and a QR code offered, in English and in
+ * French, as a second factor and as an enrolment; the QR page itself; and
+ * a refusal with the presentation's checks, and one back to the portal.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function walletCases(root) {
+  log.debug("Entering walletCases().");
+  const en = { t: translatorFor(root, 'wallet', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/authn/wallet/wait?authn=abc&state=s1' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'wallet', ['fr', 'en']) });
+  const wait = {
+    wallet: 'wait', state: 's1', kind: 'wallet', secondFactor: false,
+    authn: 'abc', mfa: '', enrol: false,
+    dcRequest: { protocol: 'openid4vp-v1-signed',
+                 data: { request: 'eyJ.<a&b>.sig' } },
+    sameDevice: 'https://wallet.example/present?client_id=x&request_uri=' +
+                'https%3A%2F%2Fsts.example%2Foid4vp%2Frequest%2Fs1',
+    qr: 'openid4vp://?client_id=x&request_uri=https%3A%2F%2Fsts.example' +
+        '%2Foid4vp%2Frequest%2Fs1',
+    expiresIn: 297, pollSeconds: 3, protocol: 'OAuth 2.0 <authorize>',
+    verifier: 'x509_san_dns:sts.example', back: '/authn/login?authn=abc',
+    backKind: 'screen' };
+  log.debug("Leaving walletCases().");
+  return [
+    { label: 'the wallet start page', path: '/authn/wallet',
+      view: { wallet: 'start', kind: 'wallet', secondFactor: true },
+      ctx: en },
+    { label: 'the wallet wait page, every door, in English',
+      path: '/authn/wallet/wait', view: wait, ctx: en },
+    { label: 'the wallet wait page, every door, in French',
+      path: '/authn/wallet/wait', view: wait, ctx: fr },
+    { label: 'the wallet wait page, an enrolment with no QR code',
+      path: '/authn/wallet/wait', ctx: en,
+      view: Object.assign({}, wait, { kind: 'enrol', enrol: true,
+        qr: '', dcRequest: null, back: '/portal/self-issued',
+        backKind: 'portal' }) },
+    { label: 'the wallet QR page', path: '/authn/wallet/wait', view: wait,
+      ctx: Object.assign({}, en, { query: { qr: '1' } }) },
+    { label: 'a wallet refusal with the presentation\'s checks',
+      path: '/authn/wallet/wait', ctx: en,
+      view: { wallet: 'refused', heading: 'Nobody was signed in',
+              retry: '/authn/wallet?authn=abc',
+              verdict: 'presentation.verified',
+              checks: [{ ok: true, name: 'Signature', detail: 'ES256 <ok>' },
+                       { ok: false, name: 'Register', detail: 'not issued' }],
+              back: '/authn/login?authn=abc', backKind: 'screen' } },
+    { label: 'a wallet refusal with nothing to go back to',
+      path: '/authn/wallet', ctx: fr,
+      view: { wallet: 'refused', heading: 'Nothing is waiting for this ' +
+              'sign-in', retry: '', verdict: '', checks: [], back: '',
+              backKind: 'none' } }
   ].concat(stepCases(en, fr));
 }
 
@@ -339,5 +447,9 @@ module.exports = [
   { name: 'the sign-in screen',
     pages: 'authn/web_authn_pages.ts', global: 'StsAuthn',
     bundle: 'authn/authn.bundle.js', runtime: 'authn/authn-spa.js',
-    cases: authnCases }
+    cases: function (root) {
+      log.debug("Entering the sign-in screen's cases.");
+      log.debug("Leaving the sign-in screen's cases.");
+      return authnCases(root).concat(walletCases(root));
+    } }
 ];

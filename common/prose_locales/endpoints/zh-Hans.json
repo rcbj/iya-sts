@@ -1343,14 +1343,6 @@
     "en": "b5fe1c58e2d72833",
     "text": "钱包登录：等待并完成"
   },
-  "endpoints.route./authn/wallet/dc-api.name": {
-    "en": "6f6ac9c72bde33a8",
-    "text": "钱包登录：Digital Credentials API 的应答"
-  },
-  "endpoints.route./authn/wallet.js.name": {
-    "en": "61ec0700cb9645d2",
-    "text": "钱包登录脚本"
-  },
   "endpoints.route./authn/password-factor.name": {
     "en": "153eb47c253809aa",
     "text": "密码作为第二因素"
@@ -1434,6 +1426,22 @@
   "endpoints.route./authn-api/pending/:id/passkey.name": {
     "en": "d358470d455e8a4f",
     "text": "使用通行密钥登录，无需用户名"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "开始钱包登录"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "钱包登录的等待页面所绘制的内容"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "收取钱包登录结果"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "钱包登录：Digital Credentials API 的应答"
   },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",

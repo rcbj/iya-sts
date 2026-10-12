@@ -343,16 +343,10 @@ const WALLET_PATH = '/authn/wallet';
  * The path of the wallet sign-in's waiting page.
  */
 const WALLET_WAIT_PATH = '/authn/wallet/wait';
-// And, since #38's follow-ups, the Digital Credentials API answer the wait
-// page's script posts, and that script. Declared here for the same reason.
-/**
- * The path the wait page's script posts a Digital Credentials API answer to.
- */
-const WALLET_DCAPI_PATH = '/authn/wallet/dc-api';
-/**
- * The path of the wallet sign-in's Digital Credentials API script.
- */
-const WALLET_SCRIPT_PATH = '/authn/wallet.js';
+// The Digital Credentials API answer the wait page's script posted to
+// (`/authn/wallet/dc-api`) and that script (`/authn/wallet.js`) were declared
+// here until #574: both are the sign-in surface's now — the answer an
+// `/authn-api/wallet` operation, the call the surface's runtime.
 
 // ---------------------------------------------------------------------------
 // A PASSWORD AS THE SECOND FACTOR (#38's follow-ups). A wallet presentation is
@@ -672,7 +666,12 @@ const ARRIVAL_PATHS = [
   '/authn/backup-code',
   '/authn/password-factor',
   '/authn/email-code',
-  '/authn/email-link'
+  '/authn/email-link',
+  // AND THE WALLET'S TWO (#574): `/authn/wallet` and `/authn/wallet/wait`,
+  // matched by prefix. A wallet's same-device redirect brings a browser
+  // back to the wait page, and the sign-in a person starts from a second
+  // factor's page or from the portal starts here.
+  '/authn/wallet'
 ];
 
 // ---------------------------------------------------------------------------
@@ -7898,6 +7897,13 @@ class Authn {
     } else if (factor === 'totp') {
       this.stepAnswer(res, 'mfa', 'totp', mfaId, TOTP_PATH, 'mfa');
     } else if (factor === 'webauthn') {
+      // THE CEREMONY THIS STEP WAS MINTED FOR (#574): drawn by the passkey
+      // page, as the sign-in screen's is (#571).
+      const minted = pendingMfa.get(mfaId);
+      if (minted) {
+        minted.atSignIn = true;
+        pendingMfa.set(mfaId, minted);
+      }
       this.stepAnswer(res, 'mfa', 'webauthn', mfaId, WEBAUTHN_PATH, 'mfa');
     } else {
       this.stepAnswer(res, 'mfa', 'password', mfaId, PASSWORD_FACTOR_PATH,
@@ -13664,12 +13670,18 @@ export = {
   //                          4.12's 303-not-307 to be got wrong.
   // ---------------------------------------------------------------------
   SPNEGO_PATH: SPNEGO_PATH,
+  // The sign-in surface's bundle (#571), which the SPNEGO door's shell loads
+  // too (#575).
+  SIGNIN_SCRIPT_PATH: SIGNIN_SCRIPT_PATH,
   // The wallet door's two paths (#38), for `oid4vc/vc_signin.ts`, which uses
   // `pendingFor` and `completeAuthentication` for the Kerberos door's reasons.
   WALLET_PATH: WALLET_PATH,
   WALLET_WAIT_PATH: WALLET_WAIT_PATH,
-  WALLET_DCAPI_PATH: WALLET_DCAPI_PATH,
-  WALLET_SCRIPT_PATH: WALLET_SCRIPT_PATH,
+  // The wallet's two pages are routes of the sign-in surface (#574): the
+  // shell they answer, and the address an answer names, as a redirect
+  // would have named it.
+  signInShell: slot.forward('signInShell'),
+  locationOf: slot.forward('locationOf'),
   PASSWORD_FACTOR_PATH: PASSWORD_FACTOR_PATH,
   // The wallet as a factor (#38's follow-ups): read a second-factor step,
   // finish one with a presentation, and ask for a second factor after one.
@@ -13713,7 +13725,6 @@ export = {
   stepAnswer: slot.forward('stepAnswer'),
   // The second-factor steps' pages and acts (#572), for `/authn-api` and
   // the emailed factor's shells.
-  signInShell: slot.forward('signInShell'),
   stepPagePath: slot.forward('stepPagePath'),
   mfaView: slot.forward('mfaView'),
   stepRefused: slot.forward('stepRefused'),

@@ -96,7 +96,19 @@ const ALLOWED = {
     'still waits (#573)' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
-    'retry with back-off within supervising one child' }
+    'retry with back-off within supervising one child' },
+  // THE WALLET'S QR PAGE POLLS IN THE BROWSER (#574): the `<meta>` refresh
+  // the server-drawn page polled with became one timer in the sign-in
+  // surface's runtime, re-armed by each answer and stopped when the page
+  // changes. It runs in a person's browser, not in this service, so there
+  // is no scheduler for it to be a job on. Its source, and the renderers'
+  // bundle the image build writes from it.
+  'oid4vc/web_vc_signin.ts|schedule|timeout': { permanent:
+    'not this service\'s work: the wallet QR page\'s poll, in the browser ' +
+    '(#574), where a <meta> refresh was' },
+  'authn/authn.bundle.js|schedule|timeout': { permanent:
+    'the same poll in the sign-in surface\'s bundle, which the image ' +
+    'build writes from oid4vc/web_vc_signin.ts' }
 };
 
 function walk(dir, out) {

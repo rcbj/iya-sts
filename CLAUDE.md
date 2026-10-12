@@ -819,6 +819,7 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 | `/` — **the front door, the first public surface, since #579 (2026-10-12)** | `/home.js` — drawn from `/home-api/front` in the browser's language, `/home.css` over `/web/card.css`; `style-src 'self'`, `connect-src 'self'` plus the sign-in service's origin where it is elsewhere | `home/CLAUDE.md` |
 | `/authn/login`, `/authn/select-idp`, `/authn/password-change` — **the sign-in screen, since #571 (2026-10-12)** | `/authn/signin.js` — drawn from `/authn-api`'s views in the browser's language, its acts sent there as JSON bound to the `sts_session` cookie (a CSRF token, an Origin of this service), the next step followed; it runs the usernameless passkey and its autofill and loads `/authn/fingerprint.js` where the realm asks. `style-src 'self'`, `connect-src 'self'` | `authn/CLAUDE.md` |
 | `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup` (#572) and `/authn/email-code`, `/authn/email-link`, `/authn/email-link/open` (#573) — **the steps after the screen, since 2026-10-12** | the same `/authn/signin.js`, over `/authn-api/mfa/{id}`: it runs the passkey step's ceremony (`/authn/webauthn.js` is gone), draws the set-up step's QR code from its `otpauth:` URI (`common/web_qr.ts`), and polls the mailed link's waiting page; the same policy | `authn/CLAUDE.md` |
+| `/authn/wallet` and `/authn/wallet/wait` — **the wallet sign-in, routes of the sign-in surface since #574 (2026-10-12)** | `/authn/signin.js`, the sign-in surface's runtime: the start, the poll (`?qr=1`'s QR code drawn in the browser), and the Digital Credentials API call `/authn/wallet.js` made, over `/authn-api/wallet` | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | each public surface #569 converts (the front door first, #579) | its own bundle over `common/web_surface.ts`, with `/web/card.css` and the catalogs under `/web/locales/`. **Not an OAuth client and holding no token**: the sign-on session is the `sts_session` cookie (#569's decision 3) | `common/CLAUDE.md` (3cl) |
 
 **A SERVER-DRAWN PAGE WITH ONE NAMED SCRIPT** is the older exception, and each
@@ -833,7 +834,6 @@ surface is converted; the protocol documents never do.
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
@@ -850,10 +850,8 @@ own file:
 | federation's outbound HTTP-POST binding | a person LEAVING this service gets a real form and a real button | `federation/CLAUDE.md` |
 | the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
-| the wallet sign-in's wait page `/authn/wallet/wait` | a `<meta>` refresh is the poll, and its QR code is a server-rendered SVG | `oid4vc/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
-| the wallet sign-in's QR page (`?qr=1`) | a `<meta>` refresh is the poll and the code is a server-drawn SVG — the page next to it argued its own script from scratch | `oid4vc/CLAUDE.md` |
 
 **A new scripted server-drawn page needs the argument made again from scratch,
 and "the same as the page next door" is not one** — while a new static surface
@@ -1207,7 +1205,7 @@ the file the row names.
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
 | Serve or list a demonstration, mock or test-control ENDPOINT, **in a product realm** (#585) — each carries `common/app.js`'s `demoOnly` mark and answers as an unrouted path (Express's own 404); the truststore door and the protected Kerberos service's socket are the process's | `common/CLAUDE.md` (`mode.js`, `app.js`), `tests/demo_endpoints.js` |
-| Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273; it does not authenticate that server by default either | `persistence/CLAUDE.md` |
+| Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273 — ~~or authenticate that server by default~~ **reversed 2026-10-12**: the server's certificate and host name are verified by default in every mode, against `persistence.databaseTlsCaFile` where set | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
 | Recall anything it has already ISSUED — it DISOWNS them, which is a different claim | `logout/CLAUDE.md`, `common/CLAUDE.md` |

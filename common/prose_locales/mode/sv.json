@@ -40,12 +40,12 @@
     "text": "En mottagen Security Event Token vars signatur inte verifieras avvisas"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "POST /ssf/receive och konsolens och portalens egna mottagare godtar den, registrerar den och säger varför den inte verifierades — debuggerns hållning — om inte ssf.receiveRequireSignature är påslaget. Ingenting agerar på den."
+    "en": "298534c9f2c4f318",
+    "text": "POST /ssf/receive och konsolens och portalens egna mottagare godtar den, registrerar den och säger varför den inte verifierades — debuggerns hållning — om inte ssf.receiveRequireSignature är påslaget. Ingenting agerar på den. En federationspartners Shared Signals, pushade till /federation/signals/{id} eller hämtade genom pollning, behandlas likadant: en overifierad SET registreras i relationens inkorg som overifierad och ageras inte på över huvud taget, om inte ssf.receiveRequireSignature är påslaget."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "Konsolens och portalens mottagare svarar 400 invalid_key, oavsett vad ssf.receiveRequireSignature säger (#117), och behåller den i sin inkorg markerad som avvisad. /ssf/receive är en utvecklingsslutpunkt och finns inte här (#585)."
+    "en": "7823c19f4b2f69fb",
+    "text": "Konsolens och portalens mottagare svarar 400 invalid_key, oavsett vad ssf.receiveRequireSignature säger (#117), och behåller den i sin inkorg markerad som avvisad. /ssf/receive är en utvecklingsslutpunkt och finns inte här (#585). En federationspartners overifierade SET avvisas också med invalid_key — HTTP 400 på en push till /federation/signals/{id}, och i setErrs i nästa pollningsbegäran för en som hämtas genom pollning — behålls i relationens inkorg markerad som avvisad, och ageras aldrig på."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",

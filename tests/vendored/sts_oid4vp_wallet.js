@@ -101,6 +101,9 @@ const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
+// THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
+// page's view, the collection — bound as the pages bind them.
+const walletSignin = require("./wallet_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -607,23 +610,28 @@ async function startSignIn(who) {
                                authorizeUrl("openid", pair, state));
   const authnId = new URL(authorized.location || base, base).searchParams
     .get("authn") || "";
+  // THE SCREEN IS A STATIC SURFACE (#571): its shell, then its view, whose
+  // `wallet` member is the button.
   const screen = await hop(who, "GET", authorized.location || base);
-  const link = /id="wallet-signin" href="([^"]+)"/.exec(screen.text);
+  const screenView = authnId ? await hop(who, "GET", base +
+    "/authn-api/pending/" + encodeURIComponent(authnId)) : null;
+  const wallet = screenView && screenView.json && screenView.json.view &&
+                 screenView.json.view.wallet;
   const out = { pair: pair, oauthState: state, authnId: authnId,
                 authorized: authorized, screen: screen,
-                walletLink: link ? unescapeHtml(link[1]) : "" };
-  out.door = await hop(who, "GET", base + "/authn/wallet?authn=" +
-                       encodeURIComponent(authnId));
+                walletLink: (wallet && wallet.href) || "" };
+  // THE WALLET'S PAGES ARE ROUTES OF THE SIGN-IN SURFACE (#574): the start
+  // page's view and its act, read as the 303 the door used to answer.
+  out.started = await walletSignin.start(base, who, { authn: authnId });
+  out.door = out.started.door;
   if (out.door.status !== 303) {
     log.debug("Leaving startSignIn(). The door did not open.");
     return out;
   }
-  out.waitUrl = out.door.location;
-  out.waiting = await hop(who, "GET", out.waitUrl);
-  const open = /id="wallet-open" href="([^"]+)"/.exec(out.waiting.text);
-  out.walletUrl = open ? new URL(unescapeHtml(open[1])) : null;
-  out.requestUri = out.walletUrl ?
-    out.walletUrl.searchParams.get("request_uri") : "";
+  out.waitUrl = out.started.waitUrl;
+  out.waiting = out.started.waiting;
+  out.walletUrl = out.started.walletUrl;
+  out.requestUri = out.started.requestUri;
   if (out.requestUri) {
     const ro = await hop(null, "GET", out.requestUri);
     out.requestObjectResponse = ro;
@@ -685,7 +693,7 @@ async function refused(label, format, build, expect) {
   const answered = await respond(s.requestObject, format,
                                  build(s.requestObject));
   const verdict = await verdictOf(s.requestObject.state);
-  const page = await hop(who, "GET", s.waitUrl);
+  const page = await walletSignin.collect(base, who, s.started);
   const landed = await sessionAnswer(who);
   check(label, function () {
     assert.strictEqual(answered.status, expect.response,
@@ -698,9 +706,11 @@ async function refused(label, format, build, expect) {
     }
     assert.strictEqual(!!(verdict && verdict.ok), expect.verified,
       "the verdict: " + JSON.stringify(verdict).slice(0, 600));
-    assert.strictEqual(page.status, 403, "the wait page answered " +
-      page.status + " " + page.text.replace(/\s+/g, " ").slice(0, 300));
-    assert.ok(/id="wallet-reason"/.test(page.text),
+    assert.strictEqual(page.status, 403, "the wait page's collection " +
+      "answered " + page.status + " " + page.text.slice(0, 300));
+    assert.ok(page.json && page.json.next === "refused" &&
+              (page.json.errors || []).length > 0 && page.json.view &&
+              page.json.view.wallet === "refused",
       "and says why nobody was signed in");
     assert.ok(!setsSession(page), "the wait page set a session cookie");
     assert.ok(nobodyIn(landed), "and nobody is signed in in that " +
@@ -979,7 +989,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
 
   // Another browser, before any answer, is not this sign-in's.
   const stranger = jar();
-  let r = await hop(stranger, "GET", s.waitUrl);
+  let r = await walletSignin.collect(base, stranger, s.started);
   check("another browser asking the wait page is refused, 403, and given " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
@@ -1012,20 +1022,20 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(r.json && r.json.error, "invalid_request");
         });
 
-  r = await hop(stranger, "GET", redirect);
+  r = await walletSignin.collect(base, stranger, redirect);
   check("the response_code does not let another browser collect it: 403, " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
           assert.ok(!setsSession(r) && !stranger.cookies.sts_session,
                     JSON.stringify(r.setCookie));
         });
-  r = await hop(null, "GET", redirect);
+  r = await walletSignin.collect(base, null, redirect);
   check("nor a request carrying no cookie at all", function () {
     assert.strictEqual(r.status, 403, r.text.slice(0, 200));
     assert.ok(!setsSession(r));
   });
-  r = await hop(browser, "GET", redirect.replace(/response_code=[^&]+/,
-                                                 "response_code=wrong"));
+  r = await walletSignin.collect(base, browser, redirect,
+                               { responseCode: "wrong" });
   const stillNobody = await sessionAnswer(browser);
   check("a wrong response_code is refused in the right browser too, 403, " +
         "and that browser is still signed in as nobody", function () {
@@ -1038,7 +1048,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   // The arrival cookie the authorization endpoint set, which a sign-in must
   // REPLACE rather than upgrade in place (session fixation, authn/CLAUDE.md).
   const arrival = browser.cookies.sts_session || "";
-  r = await hop(browser, "GET", redirect);
+  r = await walletSignin.collect(base, browser, redirect);
   check("the browser that started it collects: a NEW session cookie, and " +
         "back to the authorization request that was waiting", function () {
           assert.strictEqual(r.status, 303, r.text.slice(0, 300));
@@ -1059,7 +1069,14 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(finished.idToken.sub, holderSub);
           assert.deepStrictEqual(finished.idToken.amr, ["pop"]);
         });
-  r = await hop(browser, "GET", redirect);
+  // The sign-in replaced the browser's session, and the page's token is the
+  // session's: a fresh one, from a sign-in that is pending again.
+  const relogin = await hop(browser, "GET", authorizeUrl("openid", pkce(),
+                                                         "again") +
+                            "&prompt=login");
+  await walletSignin.refreshCsrf(base, browser, new URL(relogin.location ||
+    base, base).searchParams.get("authn") || "");
+  r = await walletSignin.collect(base, browser, redirect);
   check("the sign-in is collected once: asked again it is refused, 400, " +
         "and starts no second session", function () {
           assert.strictEqual(r.status, 400, r.text.slice(0, 200));
@@ -1151,7 +1168,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(r.status, 200, r.text.slice(0, 400));
           assert.ok(/[?&]response_code=/.test(redirect2), redirect2);
         });
-  r = await hop(second, "GET", redirect2);
+  r = await walletSignin.collect(base, second, redirect2);
   const finished2 = r.status === 303 ?
     await finishAuthorization(second, r.location, s2.pair) : null;
   check("and the browser that started it is signed in as the same person",

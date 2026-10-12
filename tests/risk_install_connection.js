@@ -22,8 +22,9 @@
 //      URL with the password in it — asserted through `pg`'s OWN parser, for
 //      a password made of the characters that break a naive injection
 //      (`%`, `&`, `+`, `@`, `:`, `/`, `#`), so the encoding round-trips.
-//   B. `verifyTls` FOLLOWS `persistence.databaseTlsRejectUnauthorized`, off
-//      and on — and `run()` really PASSES it (and the URL) to
+//   B. `verifyTls` FOLLOWS `persistence.databaseTlsRejectUnauthorized`, on
+//      (its default since 2026-10-12) and off — and `run()` really PASSES it
+//      (and the URL, and `tlsCa`, empty by default) to
 //      `persistence_postgres.create()`, caught at that call with a stand-in
 //      driver, so a loader that computed the options and then built its own
 //      would fail here.
@@ -195,30 +196,36 @@ async function run(t) {
               options.url.indexOf('sslmode=require') >= 0,
               'with the host, the database and sslmode untouched',
               options.url.replace(/:[^:@/]*@/, ':***@'));
-      t.equal(options.verifyTls, false,
+      t.equal(options.verifyTls, true,
               'B. and with persistence.databaseTlsRejectUnauthorized at its ' +
-              'default (off) verifyTls is false, as the service\'s is');
+              'default (on since 2026-10-12) verifyTls is true, as the ' +
+              'service\'s is');
+      t.equal(options.tlsCa, '',
+              'and with persistence.databaseTlsCaFile empty, tlsCa is empty ' +
+              '(the default trust store)');
       t.check(options.log && typeof options.log.debug === 'function',
               'and the driver is given a logger, as the service gives it');
     });
 
     // -------------------------------------------------------------------
-    // B. verifyTls ON, AND run() PASSES WHAT driverOptions() MADE.
+    // B. verifyTls OFF, AND run() PASSES WHAT driverOptions() MADE.
     // -------------------------------------------------------------------
     await withEnvironment(Object.assign({
-      STS_DATABASE_TLS_REJECT_UNAUTHORIZED: 'true' }, provider),
+      STS_DATABASE_TLS_REJECT_UNAUTHORIZED: 'false' }, provider),
     async function () {
-      t.equal((await RiskInstall.driverOptions()).verifyTls, true,
-              'B. with persistence.databaseTlsRejectUnauthorized on, ' +
-              'verifyTls is true — the loader verifies the database ' +
+      t.equal((await RiskInstall.driverOptions()).verifyTls, false,
+              'B. with persistence.databaseTlsRejectUnauthorized turned ' +
+              'off, verifyTls is false — the loader verifies the database ' +
               'server\'s certificate exactly when the service does, where it ' +
               'never ' +
               'did before #213');
       const r = await runCapturing(manifest);
       t.check(r.created, 'run() builds its driver through ' +
               'persistence_postgres.create()', r.error || r.stderr);
-      t.equal(r.created && r.created.verifyTls, true,
-              'and passes it verifyTls: true');
+      t.equal(r.created && r.created.verifyTls, false,
+              'and passes it verifyTls: false');
+      t.equal(r.created && r.created.tlsCa, '',
+              'and tlsCa: \'\' (the default trust store)');
       t.equal(r.created && passwordPgSees(r.created.url), HOSTILE_PASSWORD,
               'and the URL with the provider\'s password in it');
       t.check(/stand-in driver/.test(r.error),
