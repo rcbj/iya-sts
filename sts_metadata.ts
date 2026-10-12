@@ -3705,7 +3705,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc9767'],
     what: 'The same document for one authorization server profile.' },
   { path: '/gnap/introspect', group: 'GNAP', name: 'Token introspection',
-    specs: ['rfc9767'],
+    // `macaroons` (#593): introspection verifies a macaroon in its own
+    // format, and the demonstration resource server that also cited it is
+    // gone.
+    specs: ['rfc9767', 'macaroons'],
     what: 'RFC 9767 section 3.3: a resource server, proofed with its own ' +
           'key, asks whether a token is active and gets the section 2.1 ' +
           'token model back — in every format, including the three that are ' +
