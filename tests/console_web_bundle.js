@@ -59,7 +59,6 @@ function childMain() {
   const OUT = process.env.AG_OUT;
   const fsC = require('fs');
   const pathC = require('path');
-  const vm = require('vm');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
@@ -341,35 +340,26 @@ function childMain() {
          proseDiffers.join(', '));
 
     // --- C. the bundle -------------------------------------------------------
+    // Loaded by the round-trip harness every static surface shares (#570):
+    // no require, process, module or Buffer, which is what a browser has
+    // not.
+    const harness = require(ROOT_DIR + '/tests/tools/web_round_trip');
     const bundlePath = pathC.join(dir, 'console.bundle.js');
-    let code = '';
-    try {
-      code = fsC.readFileSync(bundlePath, 'utf8');
-    } catch (e) {
-      // No bundle: C1 reports it.
-      code = '';
-    }
+    const loaded = harness.loadBundle(bundlePath, 'StsConsole');
+    const code = loaded.code;
     note(code.length > 500,
          'C1. the image build wrote the browser bundle',
          bundlePath + ' ' + code.length + ' byte(s)');
-    let StsConsole = null;
-    let loadProblem = '';
-    try {
-      // No require, process, module or Buffer: what a browser has not.
-      const sandbox = vm.createContext({});
-      StsConsole = vm.runInContext(code + '\n;StsConsole;', sandbox,
-                                   { filename: 'console.bundle.js' });
-      // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
-      // the page's own (`applyLocale()`), so a helper handed no translator
-      // draws in the reader's language. Here there is no runtime, so the
-      // bundle is given node's — English — and the two draw the same words.
-      if (StsConsole && StsConsole.messages) {
-        StsConsole.messages.WebTranslator.setDefault(function () {
-          return WebKit.context().t;
-        });
-      }
-    } catch (e) {
-      loadProblem = String((e && e.message) || e);
+    const StsConsole = loaded.value;
+    const loadProblem = loaded.problem;
+    // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
+    // the page's own (`applyLocale()`), so a helper handed no translator
+    // draws in the reader's language. Here there is no runtime, so the
+    // bundle is given node's — English — and the two draw the same words.
+    if (StsConsole && StsConsole.messages) {
+      StsConsole.messages.WebTranslator.setDefault(function () {
+        return WebKit.context().t;
+      });
     }
     note(!!StsConsole && Array.isArray(StsConsole.PAGES) &&
          typeof StsConsole.render === 'function',
@@ -1465,29 +1455,34 @@ function childMain() {
       ? WebPages.render('/admin/scim', scimView,
                         WebKit.context({}, true))
       : '';
+    // METADATA FIRST (2026-10-12): the endpoints and everything the page
+    // explains or reports; Server is its settings.
     const scimServerTab =
       /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
         .exec(scimHtml);
-    const scimEndpointsTab =
-      /<section class="tabpanel(?: first)?" id="endpoints">([\s\S]*?)<\/section>/
+    const scimMetadataTab =
+      /<section class="tabpanel first" id="scim-tab-metadata">([\s\S]*?)<\/section>/
         .exec(scimHtml);
     const scimEndpoints = scimView
       ? scimView.protocolEndpoints || [] : [];
-    note(!!scimServerTab && !!scimEndpointsTab &&
-         scimEndpointsTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
+    note(!!scimServerTab && !!scimMetadataTab &&
+         scimMetadataTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
          scimEndpoints.length > 0 &&
          scimEndpoints.every(function (row) {
-           return scimEndpointsTab[1].indexOf(
+           return scimMetadataTab[1].indexOf(
              'data-copy="' + WebKit.esc(row.url) + '"') >= 0 &&
              scimServerTab[1].indexOf(
                'data-copy="' + WebKit.esc(row.url) + '"') < 0;
          }),
-         'D-SCIM-endpoints. the SCIM endpoint inventory has its own tab',
-         'endpoints=' + scimEndpoints.length);
-    note(!!scimServerTab &&
-         scimServerTab[1].indexOf('What each operation does') >= 0 &&
-         scimServerTab[1].indexOf('/scim/v2/Users') >= 0,
-         'D-SCIM-server. operation descriptions stay on the Server tab');
+         'D-SCIM-endpoints. the SCIM endpoint inventory is on Metadata, the ' +
+         'first tab', 'endpoints=' + scimEndpoints.length);
+    note(!!scimMetadataTab && !!scimServerTab &&
+         scimMetadataTab[1].indexOf('What each operation does') >= 0 &&
+         scimMetadataTab[1].indexOf('/scim/v2/Users') >= 0 &&
+         scimServerTab[1].indexOf('What each operation does') < 0 &&
+         scimServerTab[1].indexOf('action="/admin/config"') >= 0,
+         'D-SCIM-server. operation descriptions are on Metadata and the ' +
+         'Server tab is its settings');
 
     const ssfPage = WebPages.pageFor('/admin/ssf');
     const ssfView = ssfPage ? await viewOf(ssfPage, {}) : null;
@@ -1753,6 +1748,78 @@ function childMain() {
     note(missingSubTabs.length === 0,
          'D-Cert-subtabs. the ACME, EST and SCEP tabs draw each section as a ' +
          'sub-tab', missingSubTabs.join(', '));
+
+    // EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (2026-10-12): each page
+    // `WebPages.PROTOCOL_TABS` names is drawn as tabs whose first is
+    // Metadata, and every tab it draws is one the table lists (the
+    // stylesheet's ids come from that table). A page this process cannot
+    // answer here (the truststore, with no TLS module loaded) is skipped.
+    const protocolProblems = [];
+    const protocolDrawn = [];
+    const protocolPaths = Object.keys(WebPages.PROTOCOL_TABS);
+    for (let i = 0; i < protocolPaths.length; i++) {
+      const path = protocolPaths[i];
+      const row = WebPages.pageFor(path);
+      if (!row) {
+        protocolProblems.push(path + ' is no console page');
+        continue;
+      }
+      const pview = await viewOf(row, {}).catch(function () {
+        return null;
+      });
+      if (!pview) {
+        continue;
+      }
+      const html = WebPages.render(path, pview, WebKit.context({}, true));
+      const slug = path.replace(/^\/admin\//, '').replace(/[^a-z0-9]+/gi,
+                                                            '-');
+      const bar = /<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/.exec(html);
+      const ids = bar ? (bar[1].match(/href="#([^"]+)"/g) || [])
+        .map(function (h) { return h.slice(7, -1); }) : [];
+      // A page that drew no marked section this time is drawn as it was
+      // (`protocolTabs()`), with no tab bar to check.
+      if (ids.length && ids[0] !== slug + '-tab-metadata') {
+        protocolProblems.push(path + ' does not open on Metadata: ' +
+                              ids.join(' '));
+      }
+      ids.slice(1).forEach(function (id) {
+        const name = id.replace(slug + '-tab-', '');
+        if (WebPages.PROTOCOL_TABS[path].indexOf(name) < 0) {
+          protocolProblems.push(path + ' draws a tab its row does not ' +
+                                'list: ' + name);
+        }
+      });
+      if (ids.length && pview.protocolEndpoints &&
+          pview.protocolEndpoints.length) {
+        const meta = new RegExp('<section class="tabpanel first" id="' +
+          slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
+        if (!meta || meta[1].indexOf('data-copy="' +
+            WebKit.esc(pview.protocolEndpoints[0].url) + '"') < 0) {
+          protocolProblems.push(path + '\'s endpoints are not on Metadata');
+        }
+      }
+      protocolDrawn.push(path);
+    }
+    // Every page under Protocols is tabbed: by this table, or by a page of
+    // its own drawn as tabs before it.
+    const tabbedOtherwise = ['/admin/oauth2', '/admin/saml2', '/admin/vc',
+      '/admin/xacml', '/admin/scim', '/admin/ssf', '/admin/kerberos',
+      '/admin/cert-issuance'];
+    // The Protocols pages are the endpoint table's pages and its
+    // exemptions (`tests/protocol_endpoints.js` holds that they are).
+    protocolEndpoints.pages().concat(Object.keys(protocolEndpoints.exempt()))
+      .forEach(function (path) {
+        if (tabbedOtherwise.indexOf(path) < 0 &&
+            !WebPages.PROTOCOL_TABS[path]) {
+          protocolProblems.push(path + ' is under Protocols and not tabbed');
+        }
+      });
+    note(protocolProblems.length === 0 && protocolDrawn.length >= 14,
+         'D-Protocol-tabs. every Protocols and Directory page in the table is ' +
+         'drawn as ' +
+         'tabs, Metadata first, its endpoints there, and draws only tabs ' +
+         'the table lists', protocolProblems.join('; ') + ' (drew ' +
+         protocolDrawn.length + ')');
     // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
     // and the three SPIFFE lists search `q`, so on one page each carries
     // its prefix — in its links, its pager's anchor and its filter form.
@@ -1813,7 +1880,8 @@ function childMain() {
     }).concat(report.developmentOnlySettings.filter(function (row) {
       return here.indexOf('id="setting-' + WebKit.esc(row.key) + '"') < 0;
     }));
-    note(missing.length === 0 && here.indexOf('<div class="tiles">') === 0 &&
+    // The page is tabs since 2026-10-12, its tiles on Metadata.
+    note(missing.length === 0 && here.indexOf('<div class="tiles">') >= 0 &&
          report.requirements.length > 10,
          'D2. and it carries every requirement and every development-only ' +
          'setting of the report', missing.length + ' missing of ' +

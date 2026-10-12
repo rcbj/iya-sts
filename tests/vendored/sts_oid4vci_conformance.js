@@ -21,10 +21,13 @@
 //
 // An issuer-initiated module waits for the OFFER, and a pre-authorized one
 // then for the TRANSACTION CODE the person would type. This job is that
-// operator (`onWaiting`): it asks this realm's own offer page for an offer
-// — the realm's `oid4vci.walletUrl` is the suite's offer endpoint, so the
-// page's link IS the delivery — and reads the transaction code off the same
-// page, as the person would.
+// operator (`onWaiting`): it asks this realm for an offer — the realm's
+// `oid4vci.walletUrl` is the suite's offer endpoint, so the offer's wallet
+// link IS the delivery — and, for a pre-authorized one, reads the
+// transaction code the person would read. A same-device offer comes from
+// the issuer's own offer page; a pre-authorized one is the person's own,
+// made on the user portal (`POST /account-api/credentials/offers`, #589),
+// signed in as the static portal signs in.
 //
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
@@ -35,6 +38,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -338,11 +342,24 @@ function overridesFor(base, person) {
 
 // ---------------------------------------------------------------------------
 // THE ISSUER'S OPERATOR (see the header). The offer page answers a
-// same-device offer with a redirect to the wallet — the suite — and a
-// cross-device one with a page carrying the wallet link and the
-// transaction code; either way this job follows the link, and hands the
-// suite the code when it asks for one.
+// same-device offer with a redirect to the wallet — the suite; the portal
+// answers a pre-authorized one with the offer, its wallet link and the
+// transaction code (#589). Either way this job follows the link, and hands
+// the suite the code when it asks for one.
 // ---------------------------------------------------------------------------
+
+// The person signed in to the realm's user portal, once per plan: the
+// pre-authorized offer is theirs, made for their own wallet.
+async function portalFor(prepared) {
+  log.debug("Entering portalFor().");
+  if (!prepared.portal) {
+    prepared.portal = await portal.signInToThePortal(prepared.realm.base,
+      prepared.person, null, { password: PASSWORD });
+  }
+  log.debug("Leaving portalFor().");
+  return prepared.portal;
+}
+
 function operatorFor(plan, prepared) {
   log.debug("Entering operatorFor(). " + plan.key);
   // What has been served, per module: how many offers and codes. The suite
@@ -378,21 +395,28 @@ function operatorFor(plan, prepared) {
       return;
     }
     mine.offers += 1;
-    const page = await oidf.send(prepared.realm.base + "/issuer/offer?" +
-      new URLSearchParams({ mode: plan.offer, by: "reference",
-                            credential_configuration_ids:
-                              CONFIGURATION_ID }).toString());
-    let link = page.headers.get("location") || "";
-    if (!link) {
-      // The page's own two ids: the wallet link, and the code the person
-      // would read off it (`oid4vc/vc_offers.ts`, renderOfferQrPage()).
-      const decoded = page.raw.replace(/&amp;/g, "&");
-      link = (decoded.match(/id="open_in_wallet" href="([^"]+)"/) ||
-              [])[1] || "";
-      mine.txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
+    let link = "";
+    let said = "";
+    if (plan.offer === "same-device") {
+      const page = await oidf.send(prepared.realm.base + "/issuer/offer?" +
+        new URLSearchParams({ mode: plan.offer, by: "reference",
+                              credential_configuration_ids:
+                                CONFIGURATION_ID }).toString());
+      link = page.headers.get("location") || "";
+      said = page.status + " " + page.raw.slice(0, 300);
+    } else {
+      // The person's own offer (#589): by reference, as the page asked for
+      // it, and the transaction code they would read off the portal.
+      const client = await portalFor(prepared);
+      const made = await client.act("/portal/wallet",
+        { configuration: CONFIGURATION_ID, mode: plan.offer });
+      const offer = (made.json && made.json.offer) || {};
+      link = (offer.byReference && offer.byReference.walletUrl) || "";
+      mine.txCode = String(offer.txCode || "");
+      said = made.status + " " + made.text.slice(0, 300);
     }
-    assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer page named no link " +
-              "to the suite: " + page.status + " " + page.raw.slice(0, 300));
+    assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer named no link " +
+              "to the suite: " + said);
     const r = await oidf.suite("GET", link.slice(oidf.SUITE.length));
     log.info("  delivered a " + plan.offer + " credential offer: " + r.status +
              (mine.txCode ? " (a transaction code is held)" : ""));

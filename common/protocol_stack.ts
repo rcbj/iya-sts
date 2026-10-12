@@ -250,6 +250,16 @@ class ProtocolStack {
     this.build('home/home', require('../home/home'), 'Home');
     this.register(app, require('../home/home'), 'home/home');
 
+    // THE PUBLIC SURFACES' SHARED FILES (#570): the card and the locale
+    // catalogs under `/web`, answered on every listener. No constraint: it
+    // requires only libraries (`i18n`, `version`, `shell_document`) and its
+    // paths collide with nothing; beside the front door, the first surface
+    // that will draw with them (#579).
+    require('./public_assets');
+    this.build('common/public_assets', require('./public_assets'),
+               'PublicAssets');
+    this.register(app, require('./public_assets'), 'common/public_assets');
+
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
     // use it, because this order is the route order on the /admin/sts-metadata
@@ -437,6 +447,11 @@ class ProtocolStack {
     this.build('portal/portal_self_issued',
                require('../portal/portal_self_issued'),
                'PortalSelfIssued');
+    // #589: /portal/wallet, a pre-authorized Credential Offer for the
+    // person's own wallet. It reaches the OpenID4VCI family (11-14) only
+    // when asked, so building it here loads none of it.
+    this.build('portal/portal_wallet', require('../portal/portal_wallet'),
+               'PortalWallet');
     // #130: /portal/devices, the person's own ou=devices entries.
     this.build('portal/portal_devices', require('../portal/portal_devices'),
                'PortalDevices');
@@ -830,6 +845,15 @@ class ProtocolStack {
     // Binding a privileged port can fail, and a require that throws takes the
     // whole service down; a route cannot.
     const krb5 = require('../kerberos/krb5_kdc');
+    // 14c's second half (#588): the KDC handed to `krb5_home`, which
+    // registers the inter-cell `kdc-message` operation and — in a service
+    // deployed as cells only — sets the router TCP and UDP 88 ask before
+    // they answer, so a message whose client is homed in another cell is
+    // answered there. Handed in rather than required from `krb5_home`, whose
+    // require of the JavaScript KDC would register its routes ahead of
+    // 14c's; and the KDC requires nothing new, so the parent project's COPY
+    // closure does not move.
+    require('../kerberos/krb5_home').install(krb5);
     // The Kerberos-protected service. Like the KDC it registers its HTTP view
     // at require time and starts its socket from listen(), for the same reason.
     const krb5Service = require('../kerberos/krb5_service');

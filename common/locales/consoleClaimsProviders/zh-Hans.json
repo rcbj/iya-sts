@@ -44,5 +44,6 @@
   "colPerson": "用户",
   "colTheirSub": "其在那里的 sub",
   "colLinked": "关联时间",
-  "colToken": "令牌"
+  "colToken": "令牌",
+  "providersHeading": "声明提供方"
 }

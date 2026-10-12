@@ -44,5 +44,6 @@
   "colPerson": "Tao",
   "colTheirSub": "Ang sub nila roon",
   "colLinked": "Na-link",
-  "colToken": "Token"
+  "colToken": "Token",
+  "providersHeading": "Mga Claims Provider"
 }

@@ -336,6 +336,9 @@ class ProtocolEndpoints {
         '/oid4vci/nonce', '/oid4vci/credential',
         '/oid4vci/deferred_credential', '/oid4vci/notification',
         '/oid4vci/credential-offer/:id', '/issuer', '/issuer/offer',
+        // A person's own pre-authorized offer, on the portal (#589).
+        '/account-api/credentials/offerable',
+        '/account-api/credentials/offers',
         '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
         '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',

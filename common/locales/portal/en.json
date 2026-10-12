@@ -35,6 +35,8 @@
   "nav.delegate.heading": "Who may act for you",
   "nav.self-issued.label": "Self-issued IDs",
   "nav.self-issued.heading": "Your self-issued IDs",
+  "nav.wallet.label": "Add to your wallet",
+  "nav.wallet.heading": "Add a credential to your wallet",
   "nav.devices.label": "Devices",
   "nav.devices.heading": "Your devices",
   "nav.ciba.label": "Sign-in requests",

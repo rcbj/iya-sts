@@ -52,7 +52,8 @@
 //               LogoutResponse to a service provider's LogoutRequest and the
 //               LogoutRequests of identity-provider-initiated logout. The
 //               service providers are THIS FILE — requests signed with a key
-//               made for the run.
+//               made for the run — and, in the development realm only, the
+//               service's own mock service provider's AuthnRequests (#585).
 //   SAML 1.1    the metadata; the Browser/POST Response; the SOAP responder's
 //               answer to an artifact, an AssertionIDReference, an
 //               AttributeQuery and an AuthenticationQuery (the
@@ -1074,7 +1075,19 @@ async function saml2(w) {
   }
 
   // THE MOCK SERVICE PROVIDER's AuthnRequests (/saml2/sp, non-spec, but a
-  // document this service emits): one per response binding it offers.
+  // document this service emits): one per response binding it offers — in
+  // the DEVELOPMENT realm only, because the mock is development only since
+  // #585 and a product realm answers its path as an unrouted one. Product's
+  // AuthnRequests come from service providers that are not this service
+  // (the test peer, #586, and the SAML interoperability peers), whose
+  // documents are theirs to validate, not this service's.
+  if (w.mode !== "development") {
+    log.info(w.mode + ": the mock service provider is development only " +
+             "(#585); its AuthnRequests are validated in the development " +
+             "realm");
+    log.debug("Leaving saml2(). No mock in " + w.mode + ".");
+    return;
+  }
   const mock = await hop(null, w.rb + "/saml2/sp");
   const requests = [...mock.body.matchAll(/href="([^"]*SAMLRequest=[^"]*)"/g)]
     .map(function (x) {

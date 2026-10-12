@@ -166,7 +166,10 @@ class DebuggerPage {
         : t.html('consoleDebugger.api.anything')) +
       '</table>';
     return tiles + what + warning + listener + process +
-           '<h2>' + t.html('consoleDebugger.settings') + '</h2>' +
+           // The listener and the api process are status, so Metadata; the
+           // settings are a tab (2026-10-12).
+           '<h2 data-tab="settings">' + t.html('consoleDebugger.settings') +
+           '</h2>' +
            SettingsForms.forms(json.settings, PAGE_PATH, undefined, t);
   }
 }

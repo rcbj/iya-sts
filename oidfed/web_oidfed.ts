@@ -178,7 +178,8 @@ class OidfedPage {
         control + '</td></tr>';
     }).join('') : '<tr><td colspan="7" class="sub">' +
       t.html('consoleOidfed.noKey') + '</td></tr>';
-    return '<h2>' + t.html('consoleOidfed.keysHeading') + '</h2>' +
+    return '<h2 data-tab="keys">' +
+      t.html('consoleOidfed.keysHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.keysNote', { alg: json.signingAlg })) +
       '<table><thead><tr><th>kid</th><th>' +
       t.html('consoleOidfed.thAlgorithm') + '</th><th>' +
@@ -241,7 +242,8 @@ class OidfedPage {
       }).join('')
       : '<tr><td colspan="6" class="sub">' +
         t.html('consoleOidfed.noSubordinates') + '</td></tr>';
-    return '<h2>' + t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
+    return '<h2 data-tab="subordinates">' +
+      t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.subordinatesNote')) +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thEntity') +
       '</th><th>' + t.html('consoleOidfed.thKeys') + '</th><th>' +
@@ -361,7 +363,8 @@ class OidfedPage {
     // `jobOff` is the view's own sentence, drawn as it comes (#539), and
     // kept out of the message: a parameter's apostrophe is escaped as
     // `&#39;` where esc() writes `&apos;`, which would change the page.
-    return '<h2>' + t.html('consoleOidfed.collectionHeading') + '</h2>' +
+    return '<h2 data-tab="collection">' +
+      t.html('consoleOidfed.collectionHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.collectionNote') + ' ' +
         (c.jobOff ? t.html('consoleOidfed.crawlOff') + esc(c.jobOff) +
                     t.html('consoleOidfed.crawlOffEnd')
@@ -390,7 +393,8 @@ class OidfedPage {
           t.text('consoleOidfed.remove'), true)) +
         '</td></tr>';
     }).join('');
-    return '<h2>' + t.html('consoleOidfed.anchorsHeading') + '</h2>' +
+    return '<h2 data-tab="anchors">' +
+      t.html('consoleOidfed.anchorsHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.anchorsNote')) +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thAnchor') +
       '</th><th>' + t.html('consoleOidfed.thKeys') +
@@ -457,7 +461,8 @@ class OidfedPage {
       return '<tr><td colspan="' + n + '" class="sub">' +
              t.html('consoleOidfed.noneRow') + '</td></tr>';
     };
-    return '<h2>' + t.html('consoleOidfed.marksHeading') + '</h2>' +
+    return '<h2 data-tab="marks">' +
+      t.html('consoleOidfed.marksHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.marksNote')) +
       '<h3>' + t.html('consoleOidfed.typesIssued') +
       '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
@@ -527,7 +532,8 @@ class OidfedPage {
   static sectionResolve(json: Json, extra: Json, t: Json): string {
     const shown = extra ? '<pre>' + esc(JSON.stringify(extra, null, 2)) +
                           '</pre>' : '';
-    return '<h2>' + t.html('consoleOidfed.resolveHeading') + '</h2>' +
+    return '<h2 data-tab="resolve">' +
+      t.html('consoleOidfed.resolveHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.resolveNote',
                       { n: String(json.resolutions.length) })) +
       this.form('resolve', '<input name="sub" placeholder="https://entity.' +
@@ -555,7 +561,8 @@ class OidfedPage {
       this.sectionMarks(json, t) +
       this.sectionResolve(json, json.resolution, t) +
       SettingsForms.forms(json.settings, '/admin/oidfed') +
-      '<p class="links"><a href="/admin/oidfed?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="/admin/oidfed?format=json">' +
+      'JSON</a> · ' +
       '<code>GET /admin-api/oidfed</code> · <a href="' +
       esc(json.configurationUrl) + '">' +
       t.html('consoleOidfed.linkEntityConfiguration') + '</a> · ' +

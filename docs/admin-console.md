@@ -171,11 +171,16 @@ The navigation is a grouped list down the left. Its five sections:
   agents and brokers) and TLS.
   [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
-  SCIM's realm endpoint inventory is on its own Endpoints tab, separate from
-  the Server tab's descriptions of each SCIM operation.
+  Every page under Protocols is drawn as tabs, and the first tab is
+  **Metadata**: the realm's endpoints for that protocol and what explains it
+  or reports its state. The other tabs are the registers, forms and settings.
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
+  A page with more than one section is drawn as tabs, Metadata first (its
+  tiles, notes and the container's schema), then the list, its forms and its
+  settings. Monitoring and Server configuration follow the same rule: the
+  lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,

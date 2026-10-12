@@ -100,7 +100,7 @@ class CryptoMetadataPage {
   static renderFamilies(report, t) {
     const self = this;
     // The link is markup a message cannot carry, so the lead is cut at it.
-    let html = '<h2 id="families">' +
+    let html = '<h2 id="families" data-tab="families">' +
       t.html('consoleCryptoMetadata.familiesHeading') +
       '</h2><p class="lead">' + t.html('consoleCryptoMetadata.familiesLead') +
       ' <a href="/admin/sts-metadata">' +
@@ -189,7 +189,8 @@ class CryptoMetadataPage {
   static renderKeys(report, t) {
     const self = this;
     const keys = report.keys;
-    let html = '<h2 id="keys">' + t.html('consoleCryptoMetadata.keysHeading') +
+    let html = '<h2 id="keys" data-tab="material">' +
+      t.html('consoleCryptoMetadata.keysHeading') +
       '</h2><p ' +
       'class="lead">' + t.html('consoleCryptoMetadata.keysLead',
                                { realm: keys.realm }) + '</p>';
@@ -306,7 +307,8 @@ class CryptoMetadataPage {
     const self = this;
     const h = report.hashing;
     // Every row's where, what and why are the report's, drawn as they come.
-    let html = '<h2 id="hashing">' + t.html('consoleCryptoMetadata.hashing') +
+    let html = '<h2 id="hashing" data-tab="hashing">' +
+      t.html('consoleCryptoMetadata.hashing') +
       '</h2>' +
       '<p class="lead">' + t.html('consoleCryptoMetadata.hashingLead') +
       '</p>';
@@ -363,7 +365,7 @@ class CryptoMetadataPage {
     const s = report.signatures;
     const yes = t.html('consoleCryptoMetadata.yes');
     const no = t.html('consoleCryptoMetadata.no');
-    let html = '<h2 id="signatures">' +
+    let html = '<h2 id="signatures" data-tab="signatures">' +
       t.html('consoleCryptoMetadata.signaturesHeading') + '</h2>' +
       '<p class="lead">' + t.html('consoleCryptoMetadata.signaturesLead') +
       '</p>';
@@ -449,7 +451,7 @@ class CryptoMetadataPage {
     const self = this;
     const e = report.encryption;
     const yes = t.html('consoleCryptoMetadata.yes');
-    let html = '<h2 id="encryption">' +
+    let html = '<h2 id="encryption" data-tab="encryption">' +
       t.html('consoleCryptoMetadata.encryptionHeading') + '</h2><p ' +
       'class="lead">' + t.html('consoleCryptoMetadata.encryptionLead') +
       '</p>';
@@ -552,7 +554,7 @@ class CryptoMetadataPage {
     const pq = report.postQuantum;
     // The `what`, `strongest`, `independence`, `how` and drafts sentences
     // are the report's, drawn as they come.
-    let html = '<h2 id="post-quantum">' +
+    let html = '<h2 id="post-quantum" data-tab="post-quantum">' +
       t.html('consoleCryptoMetadata.pqHeading') + '</h2>' +
       '<p class="lead">' + t.html('consoleCryptoMetadata.pqLead') + '</p>' +
       kit.note(t.html('consoleCryptoMetadata.pqHalves')) +
@@ -653,7 +655,7 @@ class CryptoMetadataPage {
   static renderStandards(report, t) {
     const self = this;
     // The link is markup a message cannot carry, so the lead is cut at it.
-    let html = '<h2 id="standards">' +
+    let html = '<h2 id="standards" data-tab="standards">' +
       t.html('consoleCryptoMetadata.standardsHeading') + '</h2><p ' +
       'class="lead">' + t.html('consoleCryptoMetadata.standardsLead') +
       ' <a href="/admin/sts-metadata">' +
@@ -757,13 +759,14 @@ class CryptoMetadataPage {
     // cut at them.
     return this.renderRotation(json.rotation, ctx.write, t) +
       this.renderKeyPairs(json, t) +
-      '<p>' + t.html('consoleCryptoMetadata.publishedIn') + ' ' +
+      '<p data-metadata>' + t.html('consoleCryptoMetadata.publishedIn') + ' ' +
       '<a href="' + esc(json.issuer + '/crypto/metadata.json') +
       '">' + t.html('consoleCryptoMetadata.metadataDocument') + '</a> ' +
       t.html('consoleCryptoMetadata.alsoAs') + ' <a href="' +
       esc(json.issuer + '/crypto/metadata.xml') +
       '">XML</a>).</p>' +
-      '<h2>' + t.html('consoleCryptoMetadata.settings') + '</h2>' +
+      '<h2 data-tab="settings">' + t.html('consoleCryptoMetadata.settings') +
+      '</h2>' +
       SettingsForms.forms(json.settings, '/admin/keys', undefined, t);
   }
 
@@ -924,10 +927,14 @@ class CryptoMetadataPage {
                      days: String(view.refresh.graceDays) }) +
       '</p>';
     if (!canWrite) {
-      return '<h2>' + t.html('consoleCryptoMetadata.rotation') + '</h2>' +
-        status + table;
+      return '<h2 data-tab="rotation">' +
+        t.html('consoleCryptoMetadata.rotation') + '</h2>' + status + table;
     }
-    const out = '<h2>' + t.html('consoleCryptoMetadata.rotation') + '</h2>' +
+    // THE ROTATION, THE KEY PAIRS AND THE SETTINGS ARE TABS ON /admin/keys
+    // (2026-10-12); what is held decrypted, the exporter's note and the
+    // legend are Metadata.
+    const out = '<h2 data-tab="rotation">' +
+      t.html('consoleCryptoMetadata.rotation') + '</h2>' +
       status +
       '<form method="post" action="/admin/keys/rotate">' +
       '<input type="hidden" name="action" value="rotate">' + table +
@@ -1044,7 +1051,8 @@ class CryptoMetadataPage {
     html += PqcBadgeView.legend(t);
 
     // A key's label, its uses and its names are the view's.
-    html += '<h2 id="keys">' + t.html('consoleCryptoMetadata.theKeyPairs') +
+    html += '<h2 id="keys" data-tab="keys">' +
+      t.html('consoleCryptoMetadata.theKeyPairs') +
       '</h2>' +
       '<table><thead><tr><th class="n">' +
       t.html('consoleCryptoMetadata.thKey') + '</th><th>' +

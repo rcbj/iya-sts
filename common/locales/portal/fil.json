@@ -35,6 +35,8 @@
   "nav.delegate.heading": "Sino ang puwedeng kumilos para sa iyo",
   "nav.self-issued.label": "Mga self-issued ID",
   "nav.self-issued.heading": "Ang iyong mga self-issued ID",
+  "nav.wallet.label": "Idagdag sa iyong wallet",
+  "nav.wallet.heading": "Magdagdag ng credential sa iyong wallet",
   "nav.devices.label": "Mga device",
   "nav.devices.heading": "Ang iyong mga device",
   "nav.ciba.label": "Mga request sa pag-sign in",

@@ -1259,6 +1259,10 @@
     "en": "b6f77328c0b99b89",
     "text": "Une personne a retiré un sujet auto-émis"
   },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "Une personne a créé une offre d’attestation pour son propre portefeuille"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Un retour sur une évaluation du risque a été enregistré"

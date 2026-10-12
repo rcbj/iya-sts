@@ -137,7 +137,8 @@ class RolesPage {
       }).join('') +
       '</tbody></table>' +
 
-      '<h3 id="roles">' + t.html('consoleRoles.body.madeHeading') + '</h3>' +
+      '<h3 id="roles" data-tab="roles">' +
+      t.html('consoleRoles.body.madeHeading') + '</h3>' +
       kit.note(t.html('consoleRoles.body.madeNote',
                       { container: register.container || 'ou=roles' })) +
       '<form method="get" action="/admin/roles"><div class="formrow">' +
@@ -171,7 +172,8 @@ class RolesPage {
       // since before #539; the words are what changed here, not that.
       '</tbody></table>' + rolesNav +
 
-      '<h3 id="create">' + t.html('consoleRoles.body.makeHeading') + '</h3>' +
+      '<h3 id="create" data-tab="create">' +
+      t.html('consoleRoles.body.makeHeading') + '</h3>' +
       kit.note(t.html('consoleRoles.body.makeNote',
                       { container: register.container || 'ou=roles' })) +
       '<form method="post" action="/admin/roles">' +
@@ -222,7 +224,8 @@ class RolesPage {
       // naming all three so that the derived summary does too. The per-kind
       // detail is unchanged and still folded — the fix is which sentence is
       // visible with the fold shut, not how much prose there is.
-      '<h3 id="member">' + t.html('consoleRoles.body.memberHeading') +
+      '<h3 id="member" data-tab="member">' +
+      t.html('consoleRoles.body.memberHeading') +
       '</h3>' +
       kit.note(t.html('consoleRoles.body.memberLead') + '<br>' +
       json.memberKinds.map(function (one) {
@@ -271,7 +274,8 @@ class RolesPage {
       '</div></form>' +
 
       // WHAT A ROLE AUTHORIZES (#303, part B of #88).
-      '<h3 id="authorizes">' + t.html('consoleRoles.body.authorizeHeading') +
+      '<h3 id="authorizes" data-tab="authorizes">' +
+      t.html('consoleRoles.body.authorizeHeading') +
       '</h3>' +
       kit.note(t.html('consoleRoles.body.authorizeBefore') +
       '<a href="/admin/rbac">' + t.html('consoleRoles.body.adminRoles') +
@@ -302,7 +306,8 @@ class RolesPage {
       '</button>' +
       '</div></form>' +
 
-      '<h3 id="requiring">' + t.html('consoleRoles.body.requiringHeading') +
+      '<h3 id="requiring" data-tab="requiring">' +
+      t.html('consoleRoles.body.requiringHeading') +
       '</h3>' +
       kit.note(t.html('consoleRoles.body.requiringNote',
                       { defaultRequired: register.defaultRequired })) +
@@ -340,7 +345,8 @@ class RolesPage {
           '</span></td></tr>') +
       '</tbody></table>' +
 
-      '<h3 id="preview">' + t.html('consoleRoles.body.previewHeading') +
+      '<h3 id="preview" data-tab="preview">' +
+      t.html('consoleRoles.body.previewHeading') +
       '</h3>' +
       kit.note(t.html('consoleRoles.body.previewBefore') + '<a ' +
       'href="/admin/xacml/decide">' + t.html('consoleRoles.body.tryDecision') +

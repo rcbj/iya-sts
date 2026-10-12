@@ -331,7 +331,11 @@ class RiskPage {
         (p ? kit.tile(d.samples ? Math.round(d.p95) + ' ms' : '—',
                         t.text('consoleRisk.tile.p95')) : '') +
       '</div>' +
-      '<h3>' + t.html('consoleRisk.metrics.overTime') + '</h3>' +
+      // FOUR TABS (2026-10-12; `WebPages.protocolTabs()`), each opened by a
+      // marked `<h2>` named for its first chart, the charts after it `<h3>`s
+      // inside it; the note, the window and the tiles are Metadata.
+      '<h2 data-tab="assessments">' + t.html('consoleRisk.metrics.overTime') +
+      '</h2>' +
       this.timeline(m, t) +
       '<h3>' + t.html('consoleRisk.metrics.byLevel') + '</h3>' +
       this.bars(t, 'risk-by-level', t.text('consoleRisk.th.level'),
@@ -346,7 +350,8 @@ class RiskPage {
       '<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
       this.bars(t, 'risk-standings', t.text('consoleRisk.th.level'),
                 m.standings, people, level, undefined, LEVELS) +
-      '<h3>' + t.html('consoleRisk.metrics.signals') + '</h3><p>' +
+      '<h2 data-tab="signals">' + t.html('consoleRisk.metrics.signals') +
+      '</h2><p>' +
       t.html('consoleRisk.metrics.signalsNote') + '</p>' +
       '<table class="grid" id="risk-signals"><thead><tr><th>' +
       t.html('consoleRisk.th.signal') + '</th>' +
@@ -356,7 +361,8 @@ class RiskPage {
       t.html('consoleRisk.th.ofAssessments') + '</th>' +
       '</tr></thead><tbody>' + signals + '</tbody></table>' +
       this.calibrationHtml(m, t) +
-      '<h3>' + t.html('consoleRisk.metrics.decisions') + '</h3>' +
+      '<h2 data-tab="decisions">' + t.html('consoleRisk.metrics.decisions') +
+      '</h2>' +
       this.bars(t, 'risk-by-decision', t.text('consoleRisk.th.decision'),
                 a.byDecision, a.total) +
       '<h3>' + t.html('consoleRisk.metrics.doors') + '</h3>' +
@@ -372,7 +378,8 @@ class RiskPage {
       '<p id="risk-feedback">' + t.html('consoleRisk.metrics.saidText', {
         confirmed: a.feedback.confirmed, denied: a.feedback.denied }) +
       '</p>' +
-      (!p ? '' : '<h3>' + t.html('consoleRisk.process.heading') + '</h3>' +
+      (!p ? '' : '<h2 data-tab="process">' +
+      t.html('consoleRisk.process.heading') + '</h2>' +
       '<table class="grid" id="risk-process"><tbody>' +
       '<tr><th>' + t.html('consoleRisk.process.since') + '</th><td>' +
       esc(this.when(p.since)) + '</td></tr>' +
@@ -543,10 +550,12 @@ class RiskPage {
           '</small></td><td>' + controls +
           '</td></tr>';
       }).join('');
-      return '<h3>' + esc(d.title) + ' <small><code>' + esc(d.dataset) +
+      // An `<h4>` since 2026-10-12: the datasets are one tab, opened by
+      // `datasetsHeading` below, and the splitter never cuts at an `<h4>`.
+      return '<h4>' + esc(d.title) + ' <small><code>' + esc(d.dataset) +
         '</code>' + (d.perRealm
           ? t.html('consoleRisk.dataset.inRealm', { realm: d.realm }) : '') +
-        '</small></h3><p>' + esc(d.what) + '</p><p><strong>' +
+        '</small></h4><p>' + esc(d.what) + '</p><p><strong>' +
         esc(d.state) + '</strong>' +
         (d.activeVersion
           ? t.html('consoleRisk.dataset.activeVersion', {
@@ -590,10 +599,13 @@ class RiskPage {
     // a browser sends the parts in document order, the CSRF token this
     // shell adds is the first of them, and `risk_upload.ts` checks the token
     // and the fields before it writes a byte of the file.
+    // THE TWO DOORS ARE ONE TAB (2026-10-12), opened by `import.heading`;
+    // each door's own heading is an `<h4>` inside it.
     const uploadForm = !canWrite ? '' :
-      self.pairGuide(view, t) +
-      '<h3>' + t.html('consoleRisk.upload.heading') +
-      '</h3><form method="post" action="' + UPLOAD +
+      '<h3 data-tab="import">' + t.html('consoleRisk.import.heading') +
+      '</h3>' + self.pairGuide(view, t) +
+      '<h4>' + t.html('consoleRisk.upload.heading') +
+      '</h4><form method="post" action="' + UPLOAD +
       '" enctype="multipart/form-data" id="risk-upload-form">' +
       self.pairSelect(view, 'risk-upload-pair', t) + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
@@ -622,8 +634,8 @@ class RiskPage {
       'required></label><br><button type="submit" id="risk-upload">' +
       t.html('consoleRisk.upload.button') + '</button></form>';
     const importForm = !canWrite ? '' :
-      '<h3>' + t.html('consoleRisk.paste.heading') +
-      '</h3><form method="post" action="' + PAGE + '">' +
+      '<h4>' + t.html('consoleRisk.paste.heading') +
+      '</h4><form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="import">' +
       self.pairSelect(view, 'risk-import-pair', t) + ' ' + (view.realmOnly
         ? '<input type="hidden" name="realm" value="' + esc(view.realm) +
@@ -654,7 +666,8 @@ class RiskPage {
         (f.asn ? '<br><small>AS' + f.asn + '</small>' : '') + '</td><td>' +
         '<code>' + esc(f.errorCode) + '</code></td></tr>';
     }).join('');
-    const failures = '<h3>' + t.html('consoleRisk.failures.heading', {
+    const failures = '<h3 data-tab="failures">' +
+      t.html('consoleRisk.failures.heading', {
         realm: view.realm }) +
       ' <small>' + t.html('consoleRisk.failures.lastDays',
                           { days: view.failures.windowDays }) +
@@ -669,7 +682,8 @@ class RiskPage {
       (failureRows || '<tr><td colspan="5">' +
        t.html('consoleRisk.failures.none') + '</td></tr>') +
       '</tbody></table>';
-    const providers = '<h3>' + t.html('consoleRisk.providers.heading') +
+    const providers = '<h3 data-tab="providers">' +
+      t.html('consoleRisk.providers.heading') +
       '</h3><p><strong>' +
       esc(view.redistribution) + '</strong> ' +
       t.html('consoleRisk.providers.note') +
@@ -717,19 +731,23 @@ class RiskPage {
             '</small></p>';
         }).join('') : '';
     const assessments = this.assessmentsHtml(ctx, view);
+    // EACH SECTION A TAB (2026-10-12; `WebPages.protocolTabs()`): the tiles,
+    // the note and the data credits are Metadata.
+    const lookup = '<h3 data-tab="lookup">' +
+      t.html('consoleRisk.lookup.heading') + '</h3>' + lookupForm;
+    const datasets = '<h3 data-tab="datasets">' +
+      t.html('consoleRisk.datasets.heading') + '</h3>' + rows;
     if (view.realmOnly) {
       return tiles + kit.note(t.html('consoleRisk.about.realmOnly',
                                      { realm: view.realm }),
                               t.text('consoleRisk.about.label')) +
-        assessments + '<h3>' + t.html('consoleRisk.lookup.heading') +
-        '</h3>' + lookupForm + rows +
+        assessments + lookup + datasets +
         uploadForm + importForm + failures + credits;
     }
-    return tiles + about + assessments + '<h3>' +
-      t.html('consoleRisk.lookup.heading') + '</h3>' +
-      lookupForm + rows + uploadForm + importForm + providers + failures +
-      credits +
-      '<h2>' + t.html('consoleRisk.settings.heading') + '</h2>' +
+    return tiles + about + assessments + lookup + datasets + uploadForm +
+      importForm + providers + failures + credits +
+      '<h2 data-tab="settings">' + t.html('consoleRisk.settings.heading') +
+      '</h2>' +
       SettingsForms.forms(view.settings, PAGE, undefined, t);
   }
 
@@ -823,7 +841,8 @@ class RiskPage {
       credit += '<p class="attribution"><small>' + self.credit(c, t) +
         '</small></p>';
     });
-    return '<h3>' + t.html('consoleRisk.assessments.heading') + ' <small>' +
+    return '<h3 data-tab="assessments">' +
+      t.html('consoleRisk.assessments.heading') + ' <small>' +
       t.html('consoleRisk.assessments.sub') + '</small></h3><p>' +
       (view.assessmentsInDatabase
         ? t.html('consoleRisk.assessments.inDatabase')
@@ -843,7 +862,8 @@ class RiskPage {
       '</thead><tbody>' + (rows || '<tr><td colspan="8">' +
                            t.html('consoleRisk.noneYet') + '</td></tr>') +
       '</tbody></table>' + assessmentsNav.foot + credit +
-      '<h3>' + t.html('consoleRisk.standings.heading') + '</h3>' +
+      '<h3 data-tab="standings">' + t.html('consoleRisk.standings.heading') +
+      '</h3>' +
       subjectsNav.head +
       '<table class="grid" id="risk-subjects"><thead><tr><th>' +
       t.html('consoleRisk.th.who') + '</th>' +

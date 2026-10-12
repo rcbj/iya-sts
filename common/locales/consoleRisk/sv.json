@@ -117,6 +117,8 @@
   "dataset.activeVersion": ": version <code>{version}</code>, {rows} rader, publicerad {at}",
   "dataset.rollBack": "Återgå till {version}",
   "lookup.heading": "Slå upp en adress",
+  "datasets.heading": "Datamängder",
+  "import.heading": "Läs in en datamängd",
   "lookup.label": "Vad säger datamängderna om",
   "lookup.button": "Slå upp",
   "upload.heading": "Ladda upp en fil",

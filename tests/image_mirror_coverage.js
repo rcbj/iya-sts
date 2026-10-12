@@ -58,7 +58,8 @@ const REGISTRY = '${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/';
 const COMPOSE_DOCKERFILES = ['Dockerfile', 'tests/Dockerfile',
   'xacml-pep/Dockerfile', 'tests/saml-peers/shibboleth/Dockerfile',
   'tests/saml-peers/simplesamlphp/Dockerfile',
-  'tests/saml-peers/pysaml2/Dockerfile', 'tests/saml-peers/keycloak/Dockerfile'];
+  'tests/saml-peers/pysaml2/Dockerfile', 'tests/saml-peers/keycloak/Dockerfile',
+  'tests/peer/Dockerfile'];
 
 function read(rel) {
   log.debug("Entering read(). " + rel);

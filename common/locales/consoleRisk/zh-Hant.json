@@ -117,6 +117,8 @@
   "dataset.activeVersion": "：版本 <code>{version}</code>，{rows} 列，發布於 {at}",
   "dataset.rollBack": "復原到 {version}",
   "lookup.heading": "查詢位址",
+  "datasets.heading": "資料集",
+  "import.heading": "載入資料集",
   "lookup.label": "資料集對以下位址怎麼說：",
   "lookup.button": "查詢",
   "upload.heading": "上傳檔案",

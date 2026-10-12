@@ -16,9 +16,9 @@ way, and the console-session adoption dropped.
 
 | Files | What they are |
 |---|---|
-| `portal.ts` | The server half that is left: the shell, its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
-| `account_*.ts` (seven), `portal_*.ts` (thirteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
-| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
+| `portal.ts` | The server half that is left: the shell (drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
+| `account_*.ts` (seven), `portal_*.ts` (fourteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
+| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row), `web_qr.ts` (a QR code drawn from a string, #589) and one renderer module per family. |
 
 **WHAT THE SECTIONS BELOW SAY THAT IS NO LONGER SO**, read with this table
 rather than rewritten one by one, because most of each section is about what
@@ -1418,6 +1418,58 @@ never whose it is (`STS-PORTAL-0087` when it is not theirs).
 `portal_self_issued.ts` draws it the way `portal_delegate.ts` does. An
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
+
+## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
+
+The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
+credential leaves this service to be held somewhere else: a pre-authorized
+OpenID4VCI Credential Offer (Appendix H.2, or H.3 deferred) of one of the
+realm's credential configurations, for the person's OWN wallet. It was the
+product behaviour of the demo issuer's `/issuer/offer` until rcbj decided on
+2026-10-12 that it is a real self-service feature; `oid4vc/CLAUDE.md` has
+that history and the one `makeOffer()` both doors call.
+
+* **Two operations** (`portal_wallet.ts`): `GET
+  /account-api/credentials/offerable` (the page's view: the configurations,
+  named as the issuer's metadata names them, the two modes, the offer's
+  lifetime) and `POST /account-api/credentials/offers` (`configuration`,
+  `mode`). The paths are the API's names for the resource rather than the
+  page's, because a native application holding `account:manage` asks for an
+  offer with no page in sight; `mirrors` ties them to `GET` and `POST
+  /portal/wallet` as rule 7's twin asks.
+* **THE SUBJECT IS THE TOKEN'S**: the offer names `caller.username` and the
+  token's `sub`, and a body naming anybody is ignored — the A01 rule above.
+* **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
+  (`caller.signOn`), which CAEP reports as `session-presented` naming
+  OpenID4VCI, as `/issuer/offer` did. Where the token registry no longer says
+  which session that was — it is capped — or the session continued without
+  signing in, the offer is REFUSED (`STS-PORTAL-0590`) rather than made on
+  nothing; signing in again cures it. `STS-PORTAL-0310` is the same answer
+  for a device link, for the same reason.
+* **THE OFFER IS SHOWN ONCE, IN PLACE**: the POST answers the offer and the
+  page's `view` with it, and the runtime draws it without a URL — the
+  pre-authorized code and the Transaction Code beside it must not reach the
+  address bar or the history. A reload shows the form again, and a new offer
+  is a new code.
+* **THE QR CODE IS DRAWN IN THE BROWSER** (`web_qr.ts`), from the offer BY
+  REFERENCE, which is short enough to scan; the open-in-wallet link carries
+  the offer by value as the `openid-credential-offer://` URI a native wallet
+  registers for, and the configured web wallet (`oid4vci.walletUrl`) gets a
+  second link. `/portal/mfa`'s QR code is an image the server drew, because
+  its secret is the server's to show; here the answer is a URI and the
+  picture is only a way of showing it, so the renderer makes it. `web_qr.ts`
+  requires nothing, emits inline SVG (the portal's `img-src` admits no
+  `data:` image) and is held module for module to the `qrcode` package the
+  server uses, for every level and mask (`tests/portal_wallet.js`, A).
+* **THE ELEMENT IDS ARE THE DEMO ISSUER'S** — `offer_qr`, `tx_code`,
+  `offer_uri`, `open_in_wallet` — so a reader of either screen finds the
+  same things.
+* **Filed under the credentials section**, beside *Self-issued IDs*, for the
+  signing keys' reason: what it hands over is a credential about the person,
+  on their own sign-in.
+* `tests/portal_wallet.js` holds the operations, the refusals and the page's
+  round trip through the bundle; three protocol jobs make their offers here
+  (`oid4vc/CLAUDE.md`).
 
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 

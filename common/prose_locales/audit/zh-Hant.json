@@ -1259,6 +1259,10 @@
     "en": "b6f77328c0b99b89",
     "text": "某人移除了自行簽發主體"
   },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "某人為自己的錢包建立了憑證提供"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "記錄了對風險評估的回饋"

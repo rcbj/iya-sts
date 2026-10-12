@@ -35,6 +35,8 @@
   "nav.delegate.heading": "谁可以代表您",
   "nav.self-issued.label": "自签发 ID",
   "nav.self-issued.heading": "您的自签发 ID",
+  "nav.wallet.label": "添加到钱包",
+  "nav.wallet.heading": "将凭证添加到您的钱包",
   "nav.devices.label": "设备",
   "nav.devices.heading": "您的设备",
   "nav.ciba.label": "登录请求",

@@ -479,13 +479,21 @@ once in every cell. Those jobs claim their runs in the global tier instead:
 The list is `GLOBAL_JOBS` in `persistence/tiers.js`, and a new job that
 writes global state belongs on it.
 
-## 15. What is not placed yet
+## 15. Kerberos, on both of its doors
 
-A Kerberos request sent over raw TCP or UDP port 88 is answered by the cell
-that receives it. The KDC's socket code belongs to the parent project, which
-needs a hook for it (rcbj/id-proto-debugger#317). Over HTTPS, at
-`/KdcProxy`, a Kerberos request is placed at the client's home like any other
-request.
+A Kerberos request is answered in its client's home cell whichever door it
+arrives at: over HTTPS at `/KdcProxy` (MS-KKDCP), and since 2026-10-12 (#588)
+over raw TCP and UDP port 88 as well. The cell that receives it reads who the
+client is (the AS-REQ's name, or the client of the ticket a TGS-REQ presents),
+and sends a request for somebody homed elsewhere to that cell; the reply comes
+back and is written to the client as if the receiving cell had made it. Over
+UDP that includes the size limit: a reply too large for a datagram is
+`KRB_ERR_RESPONSE_TOO_BIG`, and the client retries over TCP, wherever its
+datagram landed. A home cell that cannot be reached answers
+`KDC_ERR_SVC_UNAVAILABLE`, so the client tries its next KDC.
+
+A cross-realm ticket, a service's own ticket and a name with more than one
+component are answered by the cell that receives them.
 
 ## 16. Trying it on one machine
 

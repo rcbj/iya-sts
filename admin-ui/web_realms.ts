@@ -107,7 +107,10 @@ class RealmsPage {
           ? kit.warn(t.html('consoleRealms.switchedOff'))
           : kit.note(t.html('consoleRealms.switchedOnNone'))) +
 
-      '<h2>' + t.html('consoleRealms.theRealms') + '</h2><table><tr><th>' +
+      // THE LIST, THE CREATE FORM AND THE SETTINGS ARE TABS (2026-10-12),
+      // after a Metadata tab holding the notes above and the support table.
+      '<h2 data-tab="realms">' + t.html('consoleRealms.theRealms') +
+      '</h2><table><tr><th>' +
       t.html('consoleRealms.id') + '</th><th>' +
       t.html('consoleRealms.name') + '</th>' +
       '<th>' + t.html('consoleRealms.domain') + '</th><th>' +
@@ -119,7 +122,8 @@ class RealmsPage {
       kit.perPageForm('/admin/realms', 'per', ctx.query.per, pg.perPage, '',
                        listView) +
 
-      '<h2>' + t.html('consoleRealms.defineHeading') + '</h2>' +
+      '<h2 data-tab="define">' + t.html('consoleRealms.defineHeading') +
+      '</h2>' +
       // The reserved segments are code, and sit between two messages: the
       // catalog carries no markup a list of <code> elements would need.
       kit.note(t.html('consoleRealms.idRuleHead') + ' ' +

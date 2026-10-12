@@ -44,5 +44,6 @@
   "colPerson": "Person",
   "colTheirSub": "Their sub there",
   "colLinked": "Linked",
-  "colToken": "Token"
+  "colToken": "Token",
+  "providersHeading": "Claims Providers"
 }

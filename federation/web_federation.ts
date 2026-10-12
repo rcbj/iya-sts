@@ -114,6 +114,10 @@ class FederationPage {
       kit.note('<a href="/admin/federation/map">' +
       t.html('consoleFederation.pictureLink') + '</a>' +
       t.html('consoleFederation.pictureNote')) +
+      // The list is the page's first tab (2026-10-12); the tiles, the caveat
+      // and the picture's link above it are Metadata.
+      '<h2 data-tab="relationships">' +
+      t.html('consoleFederation.headingRelationships') + '</h2>' +
       '<form method="get" action="/admin/federation"><div class="formrow">' +
       '<label for="q">' + t.html('consoleFederation.labelRelationship') +
       '</label>' +
@@ -220,7 +224,8 @@ class FederationPage {
    * @returns the form as HTML
    */
   static federationCreateForm(roles, protocols, t) {
-    return '<h2>' + t.html('consoleFederation.headingAdd') + '</h2>' +
+    return '<h2 data-tab="add">' + t.html('consoleFederation.headingAdd') +
+      '</h2>' +
       kit.note(t.html('consoleFederation.createdDisabled')) +
       '<form method="post" action="/admin/federation"><div ' +
       'class="formrow"><input type="hidden" name="action" ' +
@@ -278,7 +283,7 @@ class FederationPage {
   static federationLinks(base, t?) {
     t = t || kit.context().t;
     return (
-      '<p class="sub"><a href="/admin/federation/map">' +
+      '<p class="sub" data-metadata><a href="/admin/federation/map">' +
       t.html('consoleFederation.linkPicture') + '</a> ' +
         '&middot; ' +
       '<a href="' + base + '">' + t.html('consoleFederation.linkIndex') +

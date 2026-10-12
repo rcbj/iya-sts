@@ -12109,6 +12109,22 @@ const CODES = [
       '88 with no reply bytes; the client is told the KDC is unavailable ' +
       '(2026-10-07).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0206',
+    summary: 'The message router a service deployed as cells installs on ' +
+      'TCP and UDP 88 failed on a message; it is answered by this cell\'s ' +
+      'KDC as it was before the router (#588, 2026-10-12).',
+    spec: 'none — #98, RFC 4120 7.2' },
+  { code: 'STS-KRB-0207',
+    summary: 'A Kerberos message on TCP or UDP 88 whose client is homed in ' +
+      'another cell could not be answered there (the cell unreachable, or ' +
+      'no reply); the client is told the KDC is unavailable, fail-closed ' +
+      '(#588, 2026-10-12).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6' },
+  { code: 'STS-KRB-0208',
+    summary: 'Another cell relayed a Kerberos message here with no message ' +
+      'in it; the inter-cell operation kdc-message failed (#588, ' +
+      '2026-10-12).',
+    spec: 'none — #98' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -14095,8 +14111,10 @@ const CODES = [
   { code: 'STS-VC-0027',
     summary: 'A pre-authorized (cross-device or deferred) Credential Offer ' +
       'was requested from a session that continued without signing ' +
-      'in, where test controls are closed.',
-    spec: 'HTTP 403 plain text' },
+      'in, where test controls are closed. Retired by #589: where the ' +
+      'test controls are closed /issuer/offer makes no pre-authorized ' +
+      'offer and sends the browser to /portal/wallet.',
+    spec: '', retired: true },
   { code: 'STS-VC-0028',
     summary: 'The QR code for a cross-device Credential Offer could not be ' +
       'rendered.',
@@ -15571,6 +15589,12 @@ const CODES = [
       'setting\'s description — could not be read or parsed; that prose ' +
       'falls back along its chain to English (#543).',
     spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0012',
+    summary: 'GET /web/locales/<namespace>/<catalog>.json named a namespace ' +
+      'or a catalog this service does not have, or a file name that is not ' +
+      '<catalog>.json; nothing is read from disk by a requested name ' +
+      '(#570).',
+    spec: 'HTTP 404' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -20070,6 +20094,17 @@ const CODES = [
       'API token\'s sign-on session is not known (the token registry ' +
       'dropped it), so the person is asked to sign in again.',
     spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0589',
+    summary: 'A Credential Offer asked for on /portal/wallet (POST ' +
+      '/account-api/credentials/offers) named a credential configuration ' +
+      'this realm\'s OpenID4VCI issuer does not offer (#589).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0590',
+    summary: 'A Credential Offer asked for on /portal/wallet was refused ' +
+      'because the sign-on session the portal\'s token was issued on is ' +
+      'no longer known, or continued without signing in: a pre-authorized ' +
+      'offer is made on that session\'s authority (#589, #240).',
+    spec: 'HTTP 403 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

@@ -1259,6 +1259,10 @@
     "en": "b6f77328c0b99b89",
     "text": "Una persona quitó un sujeto autoemitido"
   },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "Una persona creó una oferta de credencial para su propia cartera"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Se registró una opinión sobre una evaluación de riesgo"

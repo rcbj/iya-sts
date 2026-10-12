@@ -36,6 +36,7 @@ import AppPasswordsPages = require('./web_app_passwords');
 import KerberosPages = require('./web_kerberos');
 import DelegatePages = require('./web_delegate');
 import SelfIssuedPages = require('./web_self_issued');
+import WalletPages = require('./web_wallet');
 import DevicesPages = require('./web_devices');
 import CibaPages = require('./web_ciba');
 import DevicePages = require('./web_device');
@@ -43,7 +44,7 @@ import ClaimSourcesPages = require('./web_claim_sources');
 import ActivationPages = require('./web_activation');
 import ResetPages = require('./web_reset');
 
-import WebMessages = require('../admin-ui/web_messages');
+import WebMessages = require('../common/web_messages');
 import PortalShell = require('./web_portal_shell');
 import PortalKit = require('./web_portal_kit');
 
@@ -65,6 +66,7 @@ const PAGES: PortalPage[] = [].concat(
   KerberosPages.PAGES,
   DelegatePages.PAGES,
   SelfIssuedPages.PAGES,
+  WalletPages.PAGES,
   DevicesPages.PAGES,
   CibaPages.PAGES,
   DevicePages.PAGES,

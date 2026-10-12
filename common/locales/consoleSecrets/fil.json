@@ -66,5 +66,8 @@
   "noStores": "Wala sa dalawang secret ang binabasa mula sa isang store, kaya walang maiuulat.",
   "perStore": "Isang block kada store at hindi kada secret: ang dalawang secret na nasa iisang lugar ay magkahati sa lahat ng nasa ibaba, at ang pagtatanong nang dalawang beses sa iisang store kung naka-seal ito ay pag-imbento ng pahinang ito ng isang hindi pagkakasundo na kailangan pa nitong ipakita.",
   "holds": "Hawak:",
-  "nothingPublished": "Walang inilalathala ang provider na ito tungkol sa mismong store bukod sa nasa secret na sa itaas &mdash; ang cloud secret manager ay isang endpoint at isang access policy, at lahat ng sasabihin nito ay tungkol sa secret."
+  "nothingPublished": "Walang inilalathala ang provider na ito tungkol sa mismong store bukod sa nasa secret na sa itaas &mdash; ang cloud secret manager ay isang endpoint at isang access policy, at lahat ng sasabihin nito ay tungkol sa secret.",
+  "tab.keys": "Mga encryption key",
+  "tab.database": "Mga password ng database",
+  "tab.mail": "Mga sikreto ng mail"
 }

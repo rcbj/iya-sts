@@ -4422,6 +4422,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
 
+  { path: '/web/card.css', group: 'Service',
+    name: 'The public surfaces\' card stylesheet', specs: [],
+    what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
+          'chooser\'s rules, as one stylesheet a static public surface\'s ' +
+          'shell links (common/web_card_css.ts). Answered on every ' +
+          'listener; an address carrying this build\'s ?v= is cached for ' +
+          'good.' },
+  { path: '/web/locales/catalogs.json', group: 'Service',
+    name: 'The locale catalog index', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
+          'base an overlay extends) and which locales the language chooser ' +
+          'offers — common/locales/catalogs.json, for a static surface\'s ' +
+          'runtime to negotiate the page\'s language in the browser in ' +
+          '#539\'s order. Public, on every listener, cached for good under ' +
+          'this build\'s ?v=.' },
+  { path: '/web/locales/:ns/:file', group: 'Service',
+    name: 'One namespace\'s messages in one catalog', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). The messages a static surface draws, as ' +
+          'common/i18n.ts loaded them: <namespace>/<catalog>.json, a flat ' +
+          'object key to ICU-subset message. An unknown namespace, catalog ' +
+          'or file name is a 404 (STS-I18N-0012) — nothing is read from ' +
+          'disk by a requested name; a known pair with no file is {}. ' +
+          'Errors are not in any catalog: they stay English (#539).' },
   { path: '/healthcheck', group: 'Service', name: 'Health check',
     specs: [], what: 'Liveness only. Answers 200 with a JSON message; used ' +
                      'by the compose healthcheck.' },

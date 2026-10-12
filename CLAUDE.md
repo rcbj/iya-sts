@@ -56,7 +56,7 @@ files did not change; the paths did.
 
 | Directory | What is in it |
 |---|---|
-| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, the request pool and the shared require order, **`pq_native.js` (ML-DSA, SLH-DSA and ML-KEM on node's OpenSSL, #363)**, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), **the mail channel** (`mail.ts` and its transports, templates and uses — #63), and **`mode.js`, the one place `development` and `product` are told apart**, and **the cells** (`cells.ts` and the five `cell_*.ts`, #98 — one service deployed across regions and jurisdictions), and **the hosted applications and the listeners each is on** (`hosted_applications.js`, `listener_map.js`, #472). `common/CLAUDE.md`. |
+| `common/` | Everything more than one family reads — settings, the express app, **`crypto.js` (the one place this service signs, verifies, encrypts and decrypts)**, trust realms, the request pool and the shared require order, **`pq_native.js` (ML-DSA, SLH-DSA and ML-KEM on node's OpenSSL, #363)**, the registers (applications, delegation, permissions, consent, roles, the issuance gate), the certificate authority (`pki.js`), the second factors, the password policy, the error-code table, `outbound_tls.ts` (whether an outbound request may be plain http, and whether the peer's certificate is verified — #171), **the mail channel** (`mail.ts` and its transports, templates and uses — #63), and **`mode.js`, the one place `development` and `product` are told apart**, and **the cells** (`cells.ts` and the five `cell_*.ts`, #98 — one service deployed across regions and jurisdictions), and **the hosted applications and the listeners each is on** (`hosted_applications.js`, `listener_map.js`, #472), and **what every static surface stands on** (#570: the `web_*.ts` runtime the console, the portal and #569's public surfaces share, `shell_document.ts`, and `public_assets.ts`'s `/web` files, answered on every listener). `common/CLAUDE.md`. |
 | `common/vendored/` | Byte-identical copies of the parent project's files — the PKI encoders and `bbs2023.js` — plus the JSON-LD `contexts/`. **Do not edit them here** — except `pqc.js`, `pqc_x509.js` and `xmldsig.js`, this service's own since #363 and never re-synced. `common/vendored/CLAUDE.md`. |
 | `home/` | The front door: `GET /` and the one image on it. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |
@@ -80,7 +80,7 @@ files did not change; the paths did.
 | `tls/` | The certificate three sockets share, the client truststore, the sighting on the main port, the client's JA4 TLS fingerprint (`client_hello.ts`, #62) and `GET /tls/sign-in`. **It owned the 8443 and 9443 listeners until 2026-09-16; since #472 (2026-10-07) it binds the custom listeners** (`listeners.js`, a realm's own among them). `tls/CLAUDE.md`. |
 | `oid4vc/` | OpenID4VCI, OpenID4VP and DID Core, the wallet sign-in at `/authn/wallet` (`vc_signin.ts`, the W3C Digital Credentials API included), and the status lists every credential names (`vc_status.ts`). `oid4vc/CLAUDE.md`. |
 | `admin-core/` | What both admin surfaces DO, in a directory neither owns: `admin_actions.js`, `admin_views.js`, `certificate_views.js`. It requires route-registering modules, so it may be required at 18 or later and is not in `common/`. `admin-core/CLAUDE.md`. |
-| `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. **Being converted into a static application over `/admin-api` (#446): the `web_*.ts` files are its renderers, loadable in a browser, and may require nothing but each other.** `admin-ui/CLAUDE.md`. |
+| `admin-ui/` | The console at `/admin`, its gate and two roles, every setting drawn on its protocol's page (`SETTING_HOMES`), the two server-laid-out drawings, and the pages that report on this service itself — `/admin/crypto-metadata`, `/admin/pki`, `/admin/secrets`, `/admin/api-explorer`. **Being converted into a static application over `/admin-api` (#446): the `web_*.ts` files are its renderers, loadable in a browser, and may require nothing but each other and `common/web_*.ts`.** `admin-ui/CLAUDE.md`. |
 | `mgmt-api/` | `/admin-api` — every console control, reachable by a machine (rule 7), gated by an OAuth 2.0 access token — its generated OpenAPI document, and the explorer's assets. `mgmt-api/CLAUDE.md`. |
 | `tests/` | **The only test directory**: `tests/*.js` is the in-process half (`npm test`), `tests/vendored/` the protocol half driven over HTTP against a container built from this tree, with `MANIFEST.js` the count and the record of which jobs are copies and which are `local: true`; `tools/`, `Dockerfile` and `run-tests-in-container.sh` are tooling, not tests. `tests/CLAUDE.md`. |
 | `xacml/` | XACML 3.0 and ALFA — the engine (held to the vendored OASIS suite, Apache-2.0), the `ou=policies` repository, the PIP, the embedded PEPs that decide this service's own issuance and access, the PAP console, and the PDP side of the remote PEP. `xacml/CLAUDE.md`. |
@@ -524,6 +524,7 @@ is and the named file says why.
 | 5 | `common/claim_attributes` | Ahead of everything that ISSUES: it fills `setAttributeResolver()`. | `common/CLAUDE.md` |
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
+| 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing; beside the front door, the first surface to draw with it. | `common/CLAUDE.md` (3cl) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8-email | `authn/email_factor` (and `common/mail_factor`, a library built with it) | Just after `authn`, whose pending steps it reads through that module's exports and whose three `/authn/email-*` paths it registers (#64) — `vc_signin`'s and `spnego_authn`'s arrangement. | `authn/CLAUDE.md` |
@@ -542,7 +543,7 @@ is and the named file says why.
 | 14-vcapi | `oid4vc/vc_api` (and its libraries `vc_jsonld`, `vc_data_model`, `vc_ecdsa_sd`, `vc_jose_cose` built before `vc_data_integrity`, `vc_did_resolver` just before it) | After `vc_verifier`, whose libraries it reads; a TEST CONTROL (`/vc-api/*`, #194-#199) that requires no route module. | `oid4vc/CLAUDE.md` |
 | 14a | `oid4vc/vc_signin` | After `vc_verifier`, whose transactions it reads, and after `authn` (8), whose session it starts; `authn` declares its two paths and requires nothing here — `spnego_authn`'s arrangement (#38). | `oid4vc/CLAUDE.md` |
 | 14b | `oidfed/federation_keys`, `oidfed/oidfed` | After `oauth2` and `vc_verifier`, whose metadata the Entity Configuration carries (read lazily). `federation_keys` is a library whose wire step registers its two scheduler jobs; `oidfed` registers `/.well-known/openid-federation` (the verifier's until #132) and `/oidfed/*`, the three extensions' routes among them — `extended_listing` and `entity_collection` (#135, #136) are built beside it, reached lazily, and register no route; the collection's wire step registers `oidfed.collection-crawl`. | `oidfed/CLAUDE.md` |
-| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first, relaying a request whose client is homed in another cell and calling `next()` otherwise, so the KDC's own handler and its require closure (the parent's COPY set) stay unchanged. Requires only the vendored codec at load and the principal database lazily; outside the parent project's COPY closure. | `kerberos/CLAUDE.md` |
+| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first, relaying a request whose client is homed in another cell and calling `next()` otherwise, so the KDC's own handler and its require closure (the parent's COPY set) stay unchanged. Requires only the vendored codec at load and the principal database lazily; outside the parent project's COPY closure. Just after `krb5_kdc` is required, `install(krb5)` hands it the KDC: the `kdc-message` operation, and in a service deployed as cells the router TCP and UDP 88 ask (#588). | `kerberos/CLAUDE.md` |
 | 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, in the parent's COPY closure (this repository's own and edited here; a new require owes the parent a COPY line): their routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
 | 17 | `kerberos/spnego` | JavaScript, in the parent's COPY closure (this repository's own and edited here; a new require owes the parent a COPY line): registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
@@ -698,6 +699,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ck | `server_prose.ts` (#543): the prose a console view carries (setting labels, descriptions, restart reasons first) translated by `/admin-api` only when the request names an `Accept-Language`, never in an OpenAPI document; English kept in the source with a generated `common/prose_locales/<ns>/en.json`, every translation carrying the hash of its English so a changed sentence is served in English | `common/CLAUDE.md` |
 | 3cg | `hosted_applications.js` and `listener_map.js` (#472): a closed catalogue of hosted applications held to the router, custom listeners (the service's and a realm's own), a per-realm mapping with an advertised listener per application, four rules judged over the whole state at every write, URLs built on the advertised base, and `listeners.adminOnMain` | `common/CLAUDE.md`, `tls/CLAUDE.md` |
 | 3ck | `account_api.ts` (#568): the user portal's only door — a person's DPoP-bound token from THIS realm carrying `account:manage`, the person always its subject, the access policy as the portal's pages asked it; an operation per portal page and form, contributed by the page's own module, `mirrors` naming it (rule 7's twin); the answer conventions the portal's runtime draws by | `account-api/CLAUDE.md`, `portal/CLAUDE.md` |
+| 3cl | The static surfaces' shared foundation (#570): `common/web_*.ts` (the page base, the OAuth client half, the formatter, the locale order and negotiation, the browser's translator, the public surface runtime, the card), `shell_document.ts`, `public_assets.ts`'s `/web` files, `bundle_surface`, the round trip — and the recipe a public surface follows | `common/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -740,7 +742,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the eleven kinds of scripted page below, and others
+growing number of routes relax it — the scripted pages below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -775,32 +777,59 @@ argues it.
 silently.
 
 
-## Eleven kinds of page here have a script on them, and each is the same exception
+## Pages with a script: the static surfaces, and one named script each
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Eleven kinds of page need a script and each takes the SAME shape of
-exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
-and **each but the OP iframe, the admin console and the user portal carries a
-REAL SUBMIT BUTTON as well**, because with the script blocked the button is
-the whole mechanism. The OP iframe has no person in front of it and nothing to
-submit, and the console and the portal ARE scripts — applications that reach
-this service only through `/admin-api` and `/account-api` — so with script
-blocked each says so and does nothing; their arguments are their rows. **The
-portal's four rows became one on #568** (`/portal/keys`, `/portal/activate`'s
-key step, `/portal/devices`' link ceremony and `/portal/mfa`'s Copy button):
-the ceremonies and the button are its runtime's now
-(`portal/web_portal_webauthn.ts`).
+than merely unlikely. Two kinds of page carry a script, and each takes the SAME
+shape of exception — `script-src 'self'` naming this service's own files, never
+`'unsafe-inline'`, the policy set ONLY through `app.contentSecurityPolicy()`.
+
+**A STATIC SURFACE** (#446, #568; the rule since #570) is an application drawn
+in the browser from its API: everything it shows comes from an API answer and
+everything it changes goes through an API call. **#569 converts every
+human-facing page outside `/admin` and `/portal` into one, surface by surface**
+(each switches when its own ticket merges), and every one keeps this rule:
+
+* **SCRIPT IS REQUIRED** (rcbj on #569). No server-drawn fallback and no submit
+  button stands in for the script; the shell's `<noscript>` says the page
+  needs its script and nothing else is drawn.
+* **ONE STATIC RUNTIME PER SURFACE**, built with the image by
+  `build-typescript.sh`'s `bundle_surface`, its `web_*.ts` modules requiring
+  nothing but other `web_*.ts` (a server module does not resolve, and the
+  image does not build). What the surfaces share is `common/web_*.ts`.
+* **ONE SHELL WRITER**: `common/shell_document.ts` draws the one document a
+  surface answers and sends it with `script-src 'self'` and `connect-src
+  'self'` plus the origins of the other listeners its runtime calls, through
+  `app.contentSecurityPolicy()` — so `frame-ancestors` and `base-uri` cannot
+  be dropped.
+* **THE BROWSER TRANSLATES** (rcbj's decision 3 on #570), in #539's order, from
+  the catalogs served as static JSON under `/web`; the APIs stay
+  language-free and errors stay English.
+* **A specification's endpoint is never converted** (#569's rule): its status,
+  headers, body and the documents it answers — the auto-POST forms, the OP
+  iframe, front-channel fan-out, the RFC 4559 exchange — stay as they are,
+  and so do their rows in the second table.
+
+| Surface | Script | Argued in |
+|---|---|---|
+| `/admin` and every `/admin/*` path — **the admin console, a static application since #446 (2026-10-05)** | `/admin/console.js` — the console's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/admin-api` operation, sends every form there, writes a Copy button's URL to the clipboard, and loads the API explorer's own script (`/admin/api-explorer/explorer.js`) when that page is drawn. **No submit button stands in for it**: a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn. `connect-src 'self'` beside `script-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
+| `/portal` and every `/portal/*` path — **the user portal, a static application since #568 (2026-10-12)** | `/portal/portal.js` — the portal's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/account-api` operation, sends every form there, runs the WebAuthn ceremonies of `/portal/keys`, `/portal/activate` and `/portal/devices` itself (the markup `/authn/webauthn.js` read, `web_portal_webauthn.ts`), and reveals the Copy buttons. **No submit button stands in for it**, for the console's reason; the shell's `<noscript>` says so. `connect-src 'self'` and `img-src 'self' data:` (a QR code) beside `script-src 'self'` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
+| each public surface #569 converts (the front door first, #579) | its own bundle over `common/web_surface.ts`, with `/web/card.css` and the catalogs under `/web/locales/`. **Not an OAuth client and holding no token**: the sign-on session is the `sts_session` cookie (#569's decision 3) | `common/CLAUDE.md` (3cl) |
+
+**A SERVER-DRAWN PAGE WITH ONE NAMED SCRIPT** is the older exception, and each
+but the OP iframe carries a REAL SUBMIT BUTTON as well, because with the
+script blocked the button is the whole mechanism; the OP iframe has no person
+in front of it and nothing to submit. A row leaves this table when its
+surface is converted; the protocol documents never do.
 
 | Page | Script | Argued in |
 |---|---|---|
 | `/authn/webauthn` | `/authn/webauthn.js` | `authn/CLAUDE.md` |
 | WS-Federation's sign-in response | `/wsfed/autopost.js` | `ws-federation/CLAUDE.md` |
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
-| `/admin` and every `/admin/*` path — **the admin console, a static application since #446 (2026-10-05)** | `/admin/console.js` — the console's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/admin-api` operation, sends every form there, writes a Copy button's URL to the clipboard, and loads the API explorer's own script (`/admin/api-explorer/explorer.js`) when that page is drawn. **No submit button stands in for it**: a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn. `connect-src 'self'` beside `script-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/portal` and every `/portal/*` path — **the user portal, a static application since #568 (2026-10-12)** | `/portal/portal.js` — the portal's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/account-api` operation, sends every form there, runs the WebAuthn ceremonies of `/portal/keys`, `/portal/activate` and `/portal/devices` itself (the markup `/authn/webauthn.js` read, `web_portal_webauthn.ts`), and reveals the Copy buttons. **No submit button stands in for it**, for the console's reason; the shell's `<noscript>` says so. `connect-src 'self'` and `img-src 'self' data:` (a QR code) beside `script-src 'self'` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while it offers a passkey with no username** (#474; the passkey policy's `allowUsernameless`, ON by default since 2026-10-10, #527) | `/authn/webauthn.js` — the SAME resource as `/authn/webauthn`'s, not a copy: a ceremony with no `allowCredentials`, and the username field's autofill (conditional mediation), neither of which markup can run. *Sign in with a passkey* is a REAL submit button: with script blocked it posts `action=passkey` and is told the ceremony needs JavaScript, and the password form beside it works as before. `sendLoginPage()` reads the policy off the markup, so the page and its CSP cannot disagree | `authn/CLAUDE.md` |
@@ -811,8 +840,9 @@ this origin** (2026-09-13): `debugger/debugger_server.ts` serves them on a
 listener of its own with a policy that allows their inline scripts THERE, which
 is the reason it is a separate origin — `debugger/CLAUDE.md` argues it.
 
-**The test for a script is that the page CANNOT work without one**, and the
-refusals are what establish it. Each is argued in its own file:
+**For a server-drawn page, the test for a script is that the page CANNOT work
+without one**, and the refusals are what establish it. Each is argued in its
+own file:
 
 | Refused | Because | Argued in |
 |---|---|---|
@@ -825,8 +855,10 @@ refusals are what establish it. Each is argued in its own file:
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
 | the wallet sign-in's QR page (`?qr=1`) | a `<meta>` refresh is the poll and the code is a server-drawn SVG — the page next to it argued its own script from scratch | `oid4vc/CLAUDE.md` |
 
-**A new scripted page needs the argument made again from scratch, and "the same
-as the page next door" is not one.** The federation picture is the delegation
+**A new scripted server-drawn page needs the argument made again from scratch,
+and "the same as the page next door" is not one** — while a new static surface
+needs none of it, because the rule above is the argument: it follows the
+recipe in `common/CLAUDE.md` (3cl). The federation picture is the delegation
 picture in every respect a reader would cite and got its own argument anyway;
 `/authn/totp` sits beside a page that DOES relax the policy and still had to
 argue its own case.

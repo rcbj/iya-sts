@@ -23,16 +23,29 @@
 //     `use_dpop_nonce`, and what it answered kept in memory only
 //     (`keepTokens()`) — a reload signs in again, silently while the sign-on
 //     session lasts;
-//   * this realm's address for a path (`url()`), the authorization server
-//     and the sign-out included where they are on another listener (#472).
+//   * the authorization request (`authorizationRequestUrl()`), pushed first
+//     where the realm requires it, and a JARM answer opened and checked
+//     (`openAuthorizationResponse()`).
 //
 // What each application does with a page — routing, drawing, its forms —
-// stays in its own runtime (`web_runtime.ts`, `portal/web_portal_runtime.ts`).
+// stays in its own runtime (`admin-ui/web_runtime.ts`,
+// `portal/web_portal_runtime.ts`).
 //
-// A `web_` MODULE, on `web_kit.ts`'s terms: it requires nothing, logs
-// nothing, and is bundled for a browser by `build-typescript.sh`. Everything
-// it touches in the browser arrives in `env`, so a test drives it in node.
+// IN `common/` SINCE #570 (it was `admin-ui/web_spa_client.ts`), with what a
+// runtime needs whether or not it is a client — the address of a path, the
+// query, fetch, forms, links — moved under it into `web_page.ts`, which the
+// public surfaces of #569 stand on directly: they hold no token. Nothing in
+// this class changed in the move; in particular the push still carries no
+// DPoP proof and a JARM answer is still opened before anything in it is
+// believed (both argued where they are below).
+//
+// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires `web_page.ts`
+// and nothing else, logs nothing, and is bundled for a browser by
+// `build-typescript.sh`. Everything it touches in the browser arrives in
+// `env`, so a test drives it in node.
 // ---------------------------------------------------------------------------
+
+import WebPage = require('./web_page');
 
 type Json = any;
 
@@ -53,9 +66,7 @@ interface SpaClientOptions {
 /**
  * A static application's OAuth 2.0 client: PKCE, DPoP and the tokens.
  */
-class SpaClient {
-  protected env: Json;
-  protected prefix: string;
+class SpaClient extends WebPage {
   protected clientId: string;
   protected scope: string;
   protected accessToken: string;
@@ -66,11 +77,9 @@ class SpaClient {
   protected nonce: string;
   // WHO SIGNED IN (#508): the ID Token's `sub`.
   protected subject: string;
-  // WHERE THE AUTHORIZATION SERVER, THE API AND THE SIGN-IN SERVICE ARE when
-  // they are not on this application's own listener (#472): their bases, the
-  // realm prefix included, from the shell's `data-sts-*` attributes; '' where
-  // they are here, which is every service without a custom listener.
-  protected elsewhere: Json;
+  // Where the authorization server, the API and the sign-in service are when
+  // they are not on this application's own listener (#472) is `WebPage`'s
+  // `elsewhere`, read from the shell's `data-sts-*` attributes.
   // The realm's authorization server metadata, read once (`asMetadata()`).
   protected metadata: Json;
 
@@ -85,8 +94,7 @@ class SpaClient {
    * @param options - the client's id, its scope and the shell's attributes
    */
   constructor(env: Json, prefix: string, options: SpaClientOptions) {
-    this.env = env;
-    this.prefix = prefix;
+    super(env, prefix, options.elsewhere);
     this.clientId = options.clientId;
     this.scope = options.scope;
     this.accessToken = '';
@@ -97,33 +105,9 @@ class SpaClient {
     this.nonce = '';
     this.subject = '';
     this.metadata = null;
-    const root = env.document && env.document.documentElement;
-    const read = function (name: string): string {
-      return root && typeof root.getAttribute === 'function'
-        ? String(root.getAttribute(name) || '').replace(/\/+$/, '') : '';
-    };
-    const elsewhere: Json = {};
-    Object.keys(options.elsewhere || {}).forEach(function (first) {
-      elsewhere[first] = read(options.elsewhere[first]);
-    });
-    this.elsewhere = elsewhere;
   }
 
-  /**
-   * Parses a query string into an object, the last value of a repeated
-   * name winning as express's own parser does for a single value.
-   *
-   * @param search - `?a=1&b=2` or ''
-   * @returns the query
-   */
-  static queryOf(search: string): Json {
-    const out = {};
-    new URLSearchParams(String(search || '').replace(/^\?/, ''))
-      .forEach(function (value, name) {
-        out[name] = value;
-      });
-    return out;
-  }
+  // `SpaClient.queryOf()` is `WebPage.queryOf()`, inherited.
 
   // --- encoding and crypto -------------------------------------------------
 
@@ -225,21 +209,7 @@ class SpaClient {
   }
 
   // --- the authorization server --------------------------------------------
-
-  /**
-   * This realm's address for one of its paths.
-   *
-   * @param path - `/oauth2/token`, `/admin-api/...`
-   * @returns the absolute URL
-   */
-  url(path: string): string {
-    const elsewhere = this.elsewhere || {};
-    const first = '/' + String(path || '').split(/[/?#]/)[1];
-    if (elsewhere[first]) {
-      return elsewhere[first] + path;
-    }
-    return this.env.location.origin + this.prefix + path;
-  }
+  // (This realm's address for a path, `url()`, is `WebPage`'s.)
 
   // A token endpoint answer with `error: use_dpop_nonce` is retried once
   // with the nonce it sent (RFC 9449 section 8).

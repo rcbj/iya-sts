@@ -287,11 +287,38 @@ class SecretsPage {
           t.html('consoleSecrets.unusedTitle'))
       : '';
 
+    // THREE TABS OF SECRETS AND ONE OF STORES (2026-10-12,
+    // `WebPages.protocolTabs()`): nine secrets would be nine tabs, so each
+    // is filed under its kind — the encryption keys, the database
+    // passwords, the mail secrets — by a heading that names the kind, and
+    // its own heading becomes a heading inside the tab. The tiles and the
+    // notes above are Metadata.
     return tiles + what + refusals + unused +
            json.secrets.map(function (row) {
-             return self.secretBlock(row, json, t);
+             const kind = SecretsPage.kindOf(row.secret);
+             // The key is built in a variable: a literal beside `t.html(` is
+             // what the catalog test reads as a key (`tab.keys`,
+             // `tab.database`, `tab.mail`).
+             const label = 'consoleSecrets.tab.' + kind;
+             return '<h3 data-tab="' + kind + '">' + t.html(label) + '</h3>' +
+               self.secretBlock(row, json, t)
+                 .replace(/^<h3>/, '<h4>').replace('</h3>', '</h4>');
            }).join('') +
            self.storesBlock(json, t);
+  }
+
+  /**
+   * The kind of secret a tab files a secret under.
+   *
+   * @param id - the secret's id, as `common/secrets.js` names it
+   * @returns `keys`, `database` or `mail`
+   */
+  static kindOf(id: string): string {
+    const name = String(id || '');
+    if (name.indexOf('mail-') === 0) {
+      return 'mail';
+    }
+    return name.indexOf('database') >= 0 ? 'database' : 'keys';
   }
 
   // ---------------------------------------------------------------------------
@@ -403,10 +430,12 @@ class SecretsPage {
   static storesBlock(json: Json, t: Json): string {
     const self = this;
     if (!json.stores.length) {
-      return '<h3>' + t.html('consoleSecrets.stores') + '</h3>' +
+      return '<h3 data-tab="stores">' + t.html('consoleSecrets.stores') +
+        '</h3>' +
         kit.note(t.html('consoleSecrets.noStores'));
     }
-    return '<h3>' + t.html('consoleSecrets.stores') + '</h3>' +
+    return '<h3 data-tab="stores">' + t.html('consoleSecrets.stores') +
+      '</h3>' +
       kit.note('<p>' + t.html('consoleSecrets.perStore') + '</p>') +
       json.stores.map(function (store) {
         return '<h4>' + kit.esc(store.label) + ' <span class="muted">' +

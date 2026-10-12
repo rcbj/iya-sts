@@ -176,7 +176,10 @@ class TokensPage {
       kit.note(t.html('consoleTokens.leadOnlyJwts')) +
       kit.note(t.html('consoleTokens.leadAssertionButton')) +
 
-      '<h2>' + t.html('consoleTokens.hInvalidate') + '</h2>' +
+      // A TAB PER SECTION (2026-10-12): the lead notes and the column
+      // legend are Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="invalidate">' + t.html('consoleTokens.hInvalidate') +
+      '</h2>' +
       '<form method="post" action="/admin/tokens">' +
         '<input type="hidden" name="action" value="revoke">' +
         '<input type="hidden" name="back" value="' + kit.esc(backFilter) +
@@ -215,8 +218,8 @@ class TokensPage {
         'name="subject" size="40" placeholder="' +
         kit.esc(t.text('consoleTokens.placeholderSubject')) + '"><button ' +
         'class="danger">' + t.html('consoleTokens.revoke') +
-        '</button></div></form><h2>' + t.html('consoleTokens.hIssued') +
-        '</h2>' +
+        '</button></div></form><h2 data-tab="issued">' +
+        t.html('consoleTokens.hIssued') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
@@ -305,14 +308,15 @@ class TokensPage {
       'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
       '</a>' + t.html('consoleTokens.perFamilyAfter')) +
 
-      '<h3>' + t.html('consoleTokens.hColumns') + '</h3>' +
+      '<div data-metadata><h3>' + t.html('consoleTokens.hColumns') + '</h3>' +
       kit.note(t.html('consoleTokens.columnsLead')) +
       columnLegend(t) +
       kit.note(t.html('consoleTokens.oid4vciBefore') + '<a ' +
       'href="/admin/metrics">' + t.html('consoleTokens.metricsLink') +
       '</a>' + t.html('consoleTokens.oid4vciAfter')) +
 
-      kit.note(t.html('consoleTokens.pagingJson', { max: kit.MAX_ROWS }));
+      kit.note(t.html('consoleTokens.pagingJson', { max: kit.MAX_ROWS })) +
+      '</div>';
 
     return inner;
   }
