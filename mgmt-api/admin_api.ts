@@ -18845,7 +18845,7 @@ class AdminApi {
                          'SERVICE DOES NOT CONSULT ITS OWN LISTS.** A client ' +
                          'certificate revoked here still authenticates on ' +
                          'the main port and LDAPS 636, because those check ' +
-                         'the anchors on `/tls/trust` and fetch nothing. ' +
+                         'the truststore\'s anchors and fetch nothing. ' +
                          'What this operation buys is that a relying party ' +
                          'which DOES check can now find out.',
             requestBodyRequired: true,
@@ -19125,11 +19125,12 @@ class AdminApi {
       // nowhere else, and carry no realm: the array is the process's, so every
       // realm prefix reads and writes the same one.
       //
-      // **THIS IS THE RUNTIME DOOR PRODUCT MODE HAD NONE OF.** `POST
-      // /tls/trust` needs no credential and product mode refuses it; this API's
-      // own access token is the credential here, `admin:read` to list and
-      // `admin:write` to change — the gate below every operation, by method, so
-      // nothing in these two rows re-checks it.
+      // **THIS IS THE RUNTIME DOOR, AND SINCE #597 THE ONLY ONE BESIDE THE
+      // CONSOLE'S.** The open `POST /tls/trust` needed no credential, and
+      // #597 deleted it; this API's own access token is the credential here,
+      // `admin:read` to list and `admin:write` to change — the gate below
+      // every operation, by method, so nothing in these two rows re-checks
+      // it.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/tls/trust', tag: 'TLS',
         operationId: 'getTruststore',
@@ -19213,9 +19214,9 @@ class AdminApi {
                          '`ou=trustAnchors` wherever the directory is; ' +
                          '`persisted` in the reply says whether every anchor ' +
                          'this call added was written down.\n\n**THIS IS THE ' +
-                         'GATED TWIN OF `POST /tls/trust`**, which needs no ' +
-                         'credential and is refused in product mode. This ' +
-                         'operation answers in both modes. The ' +
+                         'ONE WAY TO ADD AN ANCHOR AT RUNTIME**, beside the ' +
+                         'console page that mirrors it, in both modes: the ' +
+                         'open `POST /tls/trust` was deleted. The ' +
                          'reply names what was added and carries ' +
                          'no private key, because none is involved.',
             requestBodyRequired: true,
@@ -19246,10 +19247,9 @@ class AdminApi {
                          'to every listener.\n\n**THERE IS NO BULK CLEAR ON ' +
                          'THIS API, AND THAT IS DELIBERATE.** A clear is the ' +
                          'one change whose reach is every client certificate ' +
-                         'every other caller relies on; `POST ' +
-                         '/tls/trust/clear` exists as a development test ' +
-                         'control and is refused in product mode. Remove the ' +
-                         'rows you mean.\n\n**A `file` ANCHOR MAY BE REMOVED ' +
+                         'every other caller relies on, and the open `POST ' +
+                         '/tls/trust/clear` that did it was deleted. Remove ' +
+                         'the rows you mean.\n\n**A `file` ANCHOR MAY BE REMOVED ' +
                          'AND COMES BACK AT THE NEXT START**, when ' +
                          '`tls.trustAnchorsFile` is read again; the reply ' +
                          'says so. A fingerprint this truststore does not ' +

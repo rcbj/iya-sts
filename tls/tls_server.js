@@ -42,8 +42,8 @@
 // surface rather than a protocol, and it is being taken up in the project that
 // asks the question. What this file still answers is the part that is about
 // this service rather than about the connection — whose anchors verify a
-// client certificate (`/tls/trust`), what this service presents
-// (`/tls/server-certificate`), what a certificate that verified is worth
+// client certificate (the truststore, `/admin-api/tls/trust`), what this
+// service presents (`/tls/server-certificate`), what a certificate that verified is worth
 // (`/tls/sign-in`), and what arrived (the sighting, on /admin/tls).
 //
 // ---------------------------------------------------------------------------
@@ -82,7 +82,8 @@
 // It has to be. The certificate authority whose clients this is meant to verify
 // is generated in somebody's BROWSER, thirty seconds before the connection, and
 // exists nowhere else — so there is no configuration file that could hold it
-// and no image that could bake it in. `POST /tls/trust` takes the anchors and
+// and no image that could bake it in. `POST /admin-api/tls/trust/add` takes
+// the anchors (the open `POST /tls/trust` until #597) and
 // `tls.Server.setSecureContext()` applies them; existing connections are not
 // disturbed, and the next handshake is judged against the new list.
 //
@@ -106,7 +107,7 @@
 //     RFC 9700 and OAuth 2.1 mode turn on by default — takes that property
 //     away, and it is worth knowing rather than discovering: with it on there
 //     is no plain listener in this process at all, so the FIRST fetch of
-//     /tls/server-certificate and the first POST to /tls/trust have to be made
+//     /tls/server-certificate and the first call to /admin-api have to be made
 //     without verifying the certificate (`curl -k`). That is the ordinary
 //     bootstrap for a certificate regenerated on every start — it is the same
 //     act as trusting the PEM this endpoint hands back, done a step earlier —
@@ -1810,7 +1811,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // created with the secure context evaluated THERE, before `pki.start()`
   // had run, so mutating the record above is invisible to a socket that
   // already has a context. `applyAnchors()` is the rebuild
-  // path `POST /tls/trust` already uses, and it re-reads
+  // path every truststore change already uses, and it re-reads
   // `secureContextOptions()`, which is where the new certificate and its
   // chain are picked up. Without this line the certificate is issued,
   // recorded, reported on every page — and not served, which is the most
@@ -2298,8 +2299,8 @@ function describePem(pem) {
     };
   } catch (e) {
     // OpenSSL cannot read it, so it is not an anchor OpenSSL will use either.
-    // The row is still described — `/tls/trust` has always accepted what it
-    // was given, and that door's behaviour is not this function's to change —
+    // The row is still described — a non-strict add (the in-process tests')
+    // accepts what it was given, and that is not this function's to change —
     // and `readable: false` says why the rest is blank.
     log.debug('describePem(): OpenSSL could not read the certificate: ' +
               e.message);
@@ -3396,7 +3397,8 @@ function trustClientCertificatesOn(server, label, certificateOf, which) {
   log.info('tls: the client truststore now covers ' + label + '. A client ' +
            'certificate presented there is verified against ' +
            'the ' + anchors.length + ' anchor(s) ' +
-           'at /tls/trust; one that chains to none of them is still accepted ' +
+           'in the truststore; one that chains to none of them is still ' +
+           'accepted ' +
            'and still binds a token, which is what that port has always done.');
   log.debug('Leaving trustClientCertificatesOn(). Covered.');
   return true;
@@ -3930,7 +3932,7 @@ function listenerPolicies() {
 // `options.source` is `runtime` unless a caller says otherwise — the file
 // loader below pushes directly and marks its own rows `file` — and
 // `options.strict` is the management door's: see the block above `truststore`
-// at the foot of this section for why `/tls/trust` does not pass it.
+// at the foot of this section; the in-process tests' adds do not pass it.
 /**
  * Adds the certificates in a PEM bundle to the client truststore, storing
  * runtime anchors so they survive a restart, and applies it to every registered
@@ -4019,7 +4021,8 @@ function addAnchors(text, options) {
 // ONE ANCHOR TAKEN AWAY, BY ITS SHA-256 FINGERPRINT (2026-09-12).
 //
 // The management door's remove. There is deliberately no bulk counterpart on
-// that door: `clearAnchors()` is what `POST /tls/trust/clear` calls, and a
+// that door: `clearAnchors()` is what the in-process tests call (`POST
+// /tls/trust/clear` did until #597 deleted it), and a
 // bulk clear is exactly what `tests/CLAUDE.md` records costing a remote PEP its
 // identity for the rest of a run. A caller that means to empty the truststore
 // removes what it can see, one row at a time, and the rows it did not put
@@ -4900,8 +4903,8 @@ function recordCertificateAuthentication(subject, common, cert, mode,
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE FROM A FILE, READ BEFORE THE LISTENERS EXIST (2026-09-12).
 //
-// `tls.trustAnchorsFile`. Product mode refuses `POST /tls/trust` (see there),
-// and a deployment that verifies client certificates at all — a remote XACML
+// `tls.trustAnchorsFile`. There is no open door to the truststore (#597), and
+// a deployment that verifies client certificates at all — a remote XACML
 // PEP is the one this service ships — needs its anchors from somewhere an
 // operator controls rather than from whoever reaches the port. So they are
 // CONFIGURATION: a PEM file read once, here, before any listener is given a
@@ -5674,40 +5677,18 @@ app.get('/tls/server-certificate', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// A TEST CONTROL, AND PRODUCT MODE DOES NOT HAVE IT (2026-09-12; #585).
+// THE TRUSTSTORE HAS NO OPEN DOOR SINCE #597 (2026-10-12).
 //
-// Adding an anchor decides whose client certificates VERIFY on the main port
-// — and since 2026-09-06 a verified certificate is an identity:
-// it resolves to a directory entry, a group and a role, and it is what admits a
-// remote XACML PEP to the documents this service enforces its own access with.
-// Both routes answered anybody who could reach the port. In development that is
-// the point (a test drives the truststore, and the launchers post the PEP's
-// Root here). In product mode (`mode.opensTestControls()` false) an anchor
-// anybody can add is a certificate anybody can make verify.
-//
-// **REFUSED RATHER THAN GATED, AND THE REFUSAL SAYS WHERE TO GO.** The obvious
-// alternative was to require the credential `/admin-api` requires — an access
-// token with `admin:write` — and it was not taken for a structural reason:
-// that verification is middleware inside `mgmt-api/admin_api.ts`, exported as
-// nothing, and a second copy of it here would be a second answer to "who may
-// administer this service" (the mistake `logout.js` exists to prevent).
-//
-// **THE RUNTIME DOOR EXISTS SINCE 2026-09-12 AND IT IS NOT THIS ONE.** This
-// paragraph ended "a management-API operation that calls `addAnchors()` behind
-// that API's own gate is the runtime door still to be built". It is built:
-// `/admin/tls/trust` behind the console's session and roles, and
-// `POST /admin-api/tls/trust/{add,remove}` behind that API's access token —
-// both through `truststore` below, handed to the console through
-// `admin.setTruststore()`.
-//
-// **SINCE #585 (2026-10-12) THE TWO ROUTES ARE NOT THERE IN PRODUCT AT ALL.**
-// They answered 403 with a message naming those gated doors (`STS-TLS-0024`,
-// retired); now each carries `common/app.js`'s `processDemoOnly` mark and a
-// product process answers as for a path nothing is registered on. The mark is
-// the PROCESS's one — asked in the default realm as well as the ambient one —
-// because the anchors are one array for every listener in the process, so a
-// realm left in development inside a product process must not be a way to
-// add one.
+// `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could
+// reach the main port — test controls, development only since #585, the
+// PROCESS's mark (`app.processDemoOnly`) because the anchors are one array
+// for every listener. Adding an anchor decides whose client certificates
+// VERIFY, and a verified certificate is an identity here, so #597 deleted
+// both: the doors are `/admin/tls/trust` behind the console's roles and
+// `POST /admin-api/tls/trust/{add,remove}` behind the management API's
+// access token, both through `truststore` below, in either mode. There is
+// deliberately no bulk clear on them (`clearAnchors()` stays, for the
+// in-process tests).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -5723,12 +5704,10 @@ app.get('/tls/server-certificate', function (req, res) {
 // which `setTruststore` does not exist yet. `common/protocol_stack.ts` fills
 // the slot on the line after it requires this module, where both are whole.
 //
-// **`add` IS STRICT AND `/tls/trust` IS NOT.** A block OpenSSL cannot read is
-// refused whole here, because an anchor the listener cannot parse makes the
-// next `setSecureContext()` throw on every listener (logged, and the listeners
-// keep their old context while the page says otherwise). `/tls/trust` has
-// always accepted what it was given, and a development-mode test control is
-// left behaving as it did.
+// **`add` IS STRICT.** A block OpenSSL cannot read is refused whole here,
+// because an anchor the listener cannot parse makes the next
+// `setSecureContext()` throw on every listener (logged, and the listeners
+// keep their old context while the page says otherwise).
 //
 // **A RUNTIME ANCHOR IS PERSISTED SINCE LATER THE SAME DAY**, and this
 // paragraph said *nothing here is persisted* until then. It is written to
@@ -5751,61 +5730,6 @@ const truststore = {
   },
   remove: removeAnchor
 };
-
-// The body may be raw PEM (what a script sends), or the `certificates` member
-// of a form or JSON body (a script's, and since #583 the /tls page's, which
-// sends JSON). They are told apart by
-// looking for the PEM header rather than by the content type, because a raw PEM
-// posted as text/plain would otherwise be run through URLSearchParams and come
-// out as a set of nonsense keys — a silent mangling rather than a refusal.
-app.post('/tls/trust', app.processDemoOnly, function (req, res) {
-  log.debug('Entering POST /tls/trust.');
-  // A BROWSER'S ACT IS BOUND to the `/tls` page (#583): JSON, an origin of
-  // this service, and the page's token. A script's — no `Origin` — is not
-  // asked, and is answered as it always was.
-  if (!TlsPages.bound(req, res)) {
-    log.debug('Leaving POST /tls/trust. Not bound.');
-    return;
-  }
-  const raw = typeof req.body === 'string' ? req.body : '';
-  const looksLikePem = /-----BEGIN CERTIFICATE-----/.test(raw) &&
-      !/^certificates=/.test(raw.trim());
-  const text = looksLikePem ? raw
-    : String((parseBody(req) || {}).certificates || '');
-  const result = addAnchors(text);
-  // JSON ONLY SINCE #583. A browser's form was answered a page here until
-  // then; the `/tls` page now sends JSON and draws what this answers
-  // (`web_tls_views.ts`'s `trusted` and `notAdded`).
-  if (result.error && !result.added) {
-    log.debug('Leaving POST /tls/trust. Refused: ' + result.error);
-    errorCodes.mark(res, result.errorCode || 'STS-TLS-0012');
-    return res.status(400)
-              .json({ error: result.error, anchors: anchors.length });
-  }
-  res.status(200).json({
-    added: result.added,
-    duplicates: result.duplicates || 0,
-    anchors: anchors.length,
-    subjects: anchors.map(function (anchor) { return anchor.subject; }),
-    note: 'Applied with tls.Server.setSecureContext(). Existing connections ' +
-      'keep the truststore they were made under; the next handshake is ' +
-      'judged against this one.'
-  });
-  log.debug('Leaving POST /tls/trust. added=' + result.added);
-});
-
-app.post('/tls/trust/clear', app.processDemoOnly, function (req, res) {
-  log.debug('Entering POST /tls/trust/clear.');
-  // Bound as `POST /tls/trust` is (#583).
-  if (!TlsPages.bound(req, res)) {
-    log.debug('Leaving POST /tls/trust/clear. Not bound.');
-    return;
-  }
-  const result = clearAnchors();
-  // JSON only since #583, for `POST /tls/trust`'s reason.
-  res.status(200).json({ removed: result.removed, anchors: 0 });
-  log.debug('Leaving POST /tls/trust/clear.');
-});
 
 // ---------------------------------------------------------------------------
 // GET /tls/forwarded — what a reverse proxy told this service, and what was
@@ -6052,7 +5976,7 @@ module.exports = {
   setTrustAnchorStore: setTrustAnchorStore,
   reloadStoredAnchors: reloadStoredAnchors,
   // The main HTTPS listener is created in server.js and registers here so that
-  // /tls/trust reaches it too — see the block above
+  // a truststore change reaches it too — see the block above
   // trustClientCertificatesOn().
   trustClientCertificatesOn: trustClientCertificatesOn,
   forgetListener: forgetListener,

@@ -20,10 +20,6 @@
   "tileMaximum": "máximo",
   "fileSet": "<code>tls.trustAnchorsFile</code> es <code>{file}</code>, y se cargaron {n} ancla(s) de él al iniciar.",
   "fileUnset": "<code>tls.trustAnchorsFile</code> no está definido, así que cada ancla de aquí se agregó mientras este proceso se ejecutaba.",
-  "controlsBefore": " Los dos controles de prueba de ",
-  "controlsAfter": " — <code>POST /tls/trust</code> y <code>POST /tls/trust/clear</code> — ",
-  "controlsOpen": "responden a cualquiera en este proceso en modo de desarrollo.",
-  "controlsRefused": "se rechazan en modo producto; esta página y <code>/admin-api/tls/trust</code> son las vías en tiempo de ejecución.",
   "anchors": "Anclas",
   "thSubject": "Sujeto",
   "thIssuer": "Emisor",
@@ -40,6 +36,5 @@
   "linkJson": "esta página en JSON",
   "linkApi": "lo mismo por la API de administración",
   "linkSettings": "la configuración de los puertos de escucha TLS",
-  "linkEndpoint": "el punto de conexión TLS",
   "linkPki": "la autoridad de certificación propia de este servicio"
 }

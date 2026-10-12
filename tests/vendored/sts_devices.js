@@ -906,15 +906,15 @@ async function test() {
   const fed = await feed(feedGrant.json.access_token, {
     id: laptop.device.id, status: "not-compliant",
     reason: "sts_devices one door" });
-  const after = await read("/devices?device=" + laptop.device.id);
+  const fedShown = await read("/devices?device=" + laptop.device.id);
   check("there is no test control, even in development: the feed under " +
         "its scope sets compliance", function () {
     assert.strictEqual(control.status, 404, control.text.slice(0, 300));
     assert.ok(/Cannot POST /.test(control.text), control.text.slice(0, 300));
     assert.strictEqual(fed.status, 200, fed.text.slice(0, 300));
     assert.strictEqual(fed.json.applied, 1);
-    assert.strictEqual(after.device.compliance, "not-compliant");
-    assert.strictEqual(after.device.complianceChange.source, "mdm");
+    assert.strictEqual(fedShown.device.compliance, "not-compliant");
+    assert.strictEqual(fedShown.device.complianceChange.source, "mdm");
   });
 
   log.info("=== 13. a compromised device ===");
