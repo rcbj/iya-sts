@@ -218,10 +218,15 @@ touched** (#569's rule), and nothing they answer changed.
 * **THE INVENTORY IS TWO TABS (rcbj, 2026-10-12)**, through the console's
   `WebKit.tabbedPanels()` and tab rules in `LOGOUT_CSS`, with no script of
   their own. **Sign out** opens by default: the global sign-out, then every
-  live session in ONE list (`sessionList()`: a checkbox where it can be
+  live SESSION in ONE list — the families in `SESSION_FAMILIES`: sign-on,
+  relying-party and partner sessions, directory connections, Kerberos
+  tickets (`sessionList()`: a checkbox where it can be
   ended, a dash with the reason as its tooltip where it cannot, what it is,
   its protocol family, since and until) and the ticked-items button.
-  **Details** holds everything else: the live count, each family's label,
+  **Details** holds everything else: the TOKENS AND CREDENTIALS (tokens,
+  grants, codes, wallet items, GNAP grants, what was issued), each family
+  with its checkboxes and a ticked-items button of their own (rcbj, later
+  the same day: the first tab lists sessions only), then the live count, each family's label,
   protocol and specification, what a sign-out does to it, its rows' details
   and refusal reasons (`familyDetails()`, read-only), the rows not listed,
   and who may be named here. The JSON is unchanged; the browser jobs press

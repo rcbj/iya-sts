@@ -34,5 +34,6 @@
   "tab.signOut": "Cerrar sesión",
   "tab.details": "Detalles",
   "list.colProtocol": "Protocolo",
-  "inventory.listNote": "Márquelos en la lista de arriba. Si no marca nada, no se termina nada."
+  "inventory.listNote": "Márquelos en la lista de arriba. Si no marca nada, no se termina nada.",
+  "inventory.detailsNote": "Marque los tokens y las credenciales en las tablas de arriba. Si no marca nada, no se termina nada."
 }

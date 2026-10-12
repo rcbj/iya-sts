@@ -34,5 +34,6 @@
   "tab.signOut": "登出",
   "tab.details": "詳細資訊",
   "list.colProtocol": "協定",
-  "inventory.listNote": "請在上方清單中勾選。未勾選任何項目則不會結束任何內容。"
+  "inventory.listNote": "請在上方清單中勾選。未勾選任何項目則不會結束任何內容。",
+  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。"
 }

@@ -61,6 +61,25 @@ function whenText(ms: unknown): string {
   return ms ? new Date(Number(ms)).toISOString() : '—';
 }
 
+// THE FAMILIES THAT ARE SESSIONS (rcbj, 2026-10-12): what the Sign out
+// tab lists — a sign-on session, the relying-party sessions it carries, a
+// federation partner's, a held directory connection and a Kerberos ticket.
+// Every other family is a token or a credential (tokens, grants, codes,
+// wallet items, GNAP grants, what was issued) and is on the Details tab,
+// with checkboxes of its own. By the model's family ids (`logout.ts`).
+const SESSION_FAMILIES = ['session', 'oidc-rp', 'wsfed-rp', 'saml2-sp',
+                          'federation-partner', 'ldap', 'krb5'];
+
+/**
+ * Whether a family is one of the sessions the Sign out tab lists.
+ *
+ * @param family - the family, as the view lists it
+ * @returns true for a session family
+ */
+function isSessionFamily(family: Json): boolean {
+  return SESSION_FAMILIES.indexOf(String(family && family.id)) >= 0;
+}
+
 /**
  * The sign-out's pages. A static utility class.
  */
@@ -76,7 +95,7 @@ class SignoutPages {
    * @param t - the translator
    * @returns the HTML
    */
-  static familyDetails(family: Json, t: Json): string {
+  static familyDetails(family: Json, t: Json, selectable?: boolean): string {
     const head = '<h2>' + esc(family.label) + '</h2>' +
       '<div class="spec">' + esc(family.protocol) + ' — ' +
       esc(family.spec) + '</div>' + kit.note(esc(family.what));
@@ -92,14 +111,20 @@ class SignoutPages {
         '</p>';
     }
     const body = rows.map(function (r: Json) {
-      return '<tr><td><code>' + esc(r.label) + '</code><br><span ' +
+      const box = !selectable ? '' : '<td>' + (r.terminable
+        ? '<input type="checkbox" name="select" value="' + esc(r.id) + '">'
+        : '<span class="cannot" title="' + esc(r.why) + '">—</span>') +
+        '</td>';
+      return '<tr>' + box + '<td><code>' + esc(r.label) + '</code><br><span ' +
         'class="sub">' + esc(r.detail) + '</span>' +
         (r.terminable ? '' :
          '<br><span class="cannot">' + esc(r.why) + '</span>') +
         '</td><td>' + esc(r.kind) + '</td></tr>';
     }).join('');
     return head +
-      '<table><thead><tr><th>' + t.html('logout.family.colWhat') +
+      '<table><thead><tr>' + (selectable
+        ? '<th>' + t.html('logout.family.colEnd') + '</th>' : '') + '<th>' +
+      t.html('logout.family.colWhat') +
       '</th><th>' + t.html('logout.family.colKind') + '</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table>' +
       (family.notListed
@@ -178,14 +203,28 @@ class SignoutPages {
       'class="sub">' + t.html('logout.inventory.globalNote') +
       '</span></div></form>' +
       '<form method="post" action="/logout">' + who +
-      SignoutPages.sessionList(families, t) +
+      SignoutPages.sessionList(families.filter(isSessionFamily), t) +
       '<div class="actions"><button type="submit" name="scope" ' +
       'value="selected">' + t.html('logout.inventory.selectedButton') +
       '</button><span class="sub">' +
       t.html('logout.inventory.listNote') + '</span></div></form>';
     const details = kit.warn(t.html('logout.inventory.liveCount',
                                     { total: view.total, families: held })) +
-      families.map(function (family: Json) {
+      // The tokens and credentials, each family with its checkboxes and
+      // their own ticked-items button: they are ended here, not from the
+      // Sign out tab.
+      '<form method="post" action="/logout">' + who +
+      families.filter(function (family: Json) {
+        return !isSessionFamily(family);
+      }).map(function (family: Json) {
+        return SignoutPages.familyDetails(family, t, true);
+      }).join('') +
+      '<div class="actions"><button type="submit" name="scope" ' +
+      'value="selected">' + t.html('logout.inventory.selectedButton') +
+      '</button><span class="sub">' +
+      t.html('logout.inventory.detailsNote') + '</span></div></form>' +
+      // And the sessions' own explanations, read-only.
+      families.filter(isSessionFamily).map(function (family: Json) {
         return SignoutPages.familyDetails(family, t);
       }).join('') +
       kit.note(naming + ' ' + t.html('logout.inventory.operatorView'));

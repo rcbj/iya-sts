@@ -34,5 +34,6 @@
   "tab.signOut": "Mag-sign out",
   "tab.details": "Mga detalye",
   "list.colProtocol": "Protocol",
-  "inventory.listNote": "I-tsek ang mga ito sa listahan sa itaas. Walang matatapos kung walang naka-tsek."
+  "inventory.listNote": "I-tsek ang mga ito sa listahan sa itaas. Walang matatapos kung walang naka-tsek.",
+  "inventory.detailsNote": "I-tsek ang mga token at kredensyal sa mga talahanayan sa itaas. Walang matatapos kung walang naka-tsek."
 }
