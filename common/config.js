@@ -10540,6 +10540,51 @@ const SETTINGS = [
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
 
+  // --- The W3C VC API (#598) ------------------------------------------------
+  //
+  // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until
+  // then `/vc-api` was a development-only test control (#194-#199, #585). It
+  // is an issuer that signs a document ITS CALLER WROTE, a holder that
+  // presents one, and a verifier — so it is off by default for the reason any
+  // signing service is: nothing should be signing on a realm's behalf until
+  // that realm's administrator decided it should. `oid4vc/vc_api.ts` argues
+  // the surface; the setting decides only whether it exists.
+  { key: 'vcApi.enabled', group: 'W3C VC API',
+    label: 'Serve the W3C VC API',
+    env: 'STS_VC_API_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'Serve the W3C CCG Verifiable Credentials API (VCALM) at ' +
+                 '/vc-api: an issuer that secures a credential it is handed ' +
+                 '(Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ' +
+                 'ecdsa-rdfc-2019, ecdsa-jcs-2019 and ecdsa-sd-2023, or a ' +
+                 'VC-JOSE-COSE envelope), a holder that proves a ' +
+                 'presentation and derives a selective disclosure, a ' +
+                 'verifier of credentials and presentations, a status ' +
+                 'service over this realm\'s Bitstring Status Lists, and DID ' +
+                 'resolution of did:key, did:jwk and this realm\'s own ' +
+                 'did:web. Every call needs an access token this realm ' +
+                 'issued carrying vc-api:issue or vc-api:verify — protected ' +
+                 'scopes, issued only to a client an administrator declared ' +
+                 'them on — in every mode. It signs with keys of its own, ' +
+                 'each named by its did:key, never with the keys that sign ' +
+                 'this realm\'s tokens. OFF BY DEFAULT, because it signs ' +
+                 'documents its caller wrote: off, every /vc-api path ' +
+                 'answers as a path nothing is registered on.' },
+
+  { key: 'vcApi.maxPerWindow', group: 'W3C VC API',
+    label: 'VC API calls one client may make per rate-limit window',
+    env: 'STS_VC_API_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many /vc-api calls one client — and one address — may ' +
+                 'make in a security.rateLimitWindowS window, counted per ' +
+                 'realm; past it a call is refused 429 with Retry-After. ITS ' +
+                 'OWN NUMBER, for xacml.pipMaxPerWindow\'s reason: ' +
+                 'security.rateLimitPerIdentity is five, because it guards a ' +
+                 'sign-in, and an issuer or verifier a coordinator calls ' +
+                 'once per credential would be switched off by it. What it ' +
+                 'bounds is cost: a call canonicalizes JSON-LD and signs or ' +
+                 'verifies, and an admitted client could otherwise spend ' +
+                 'this service\'s CPU in a loop.' },
+
   // --- Kerberos ------------------------------------------------------------
   //
   // **A TRUST REALM HAS A KERBEROS OF ITS OWN SINCE 2026-09-15**, on the same

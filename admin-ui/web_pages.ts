@@ -1760,7 +1760,7 @@ class WebPages {
         view, context.t);
       const vciSettings = SettingsForms.forms(
         view.oid4vciSettings.settings,
-        '/admin/vc#vc-tab-oid4vci', ['OID4VCI'], context.t);
+        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API'], context.t);
       const vpSettings = SettingsForms.forms(
         view.oid4vpSettings.settings,
         '/admin/vc#vc-tab-oid4vp', ['OID4VP'], context.t);
