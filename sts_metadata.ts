@@ -2210,11 +2210,13 @@ const SPECS: Spec[] = [
               'client\'s to keep: reuse of a code_challenge or nonce across ' +
               'transactions (which a real server generally cannot see and a ' +
               'mock that remembers can), an unbound access token (section ' +
-              '2.2 is a SHOULD and there is deliberately no "DPoP required" ' +
-              'mode), and symmetric client authentication where 2.5 ' +
+              '2.2 is a SHOULD, so no mode requires a bound one; a realm ' +
+              'can, with oauth2.accessTokenRequireDpop or ' +
+              'oauth2.accessTokenRequireMtls), and symmetric client ' +
+              'authentication where 2.5 ' +
               'recommends asymmetric — the preference is detected, but all ' +
               'SIX methods are now genuinely verified, the three asymmetric ' +
-              'ones included. Section 4.5 Sections 2.2 and 2.3 are covered ' +
+              'ones included. Sections 2.2 and 2.3 are covered ' +
               'as far as an authorization server can cover them: BOTH ' +
               'sender-constraining mechanisms are implemented (DPoP, and RFC ' +
               '8705 certificate binding wherever the main port is TLS), the ' +
