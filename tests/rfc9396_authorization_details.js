@@ -392,6 +392,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const realms = require(ROOT + '/common/realms');
@@ -496,14 +497,11 @@ function childMain() {
           break;
         }
         if (/\/authn\/login/.test(where)) {
-          const page = await request(port, 'GET', local(where),
-                                     { cookies: true });
-          const form = hidden(page.text);
-          form.username = 'r96-alice';
-          form.password = 'anything';
-          form.action = 'login';
-          r = await request(port, 'POST', '/authn/login',
-                            { form: form, cookies: true });
+          // THE SCREEN OVER `/authn-api` (#571), this test's jar kept;
+          // the act's answer is read as the 303 the form was answered with.
+          r = await screen.submit({ port: port, jar: jar, at: local(where),
+            fields: { action: 'login', username: 'r96-alice',
+                      password: 'anything' } });
           continue;
         }
         if (/\/oauth2\/consent/.test(where)) {

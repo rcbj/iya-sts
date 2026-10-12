@@ -287,6 +287,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const stsCrypto = require(ROOT + '/common/crypto');
@@ -438,22 +439,14 @@ function childMain() {
       if (!toSignIn(first)) {
         return { final: first, page: null };
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username || 'r91-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form, cookies: true });
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, this test's jar kept. `page` is the view the screen is drawn
+      // from: what the old page said is a fact of it now.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: username || 'r91-alice',
+                  password: 'anything' } });
+      const page = { text: JSON.stringify(posted.view || {}) };
       const back = String(posted.headers.location || '');
       const final = back
         ? await request(port, 'GET', back.replace(/^https?:\/\/[^/]+/, ''),
@@ -488,7 +481,8 @@ function childMain() {
          flow.final.status + ' ' + flow.final.headers.location);
     note(flow.page && /signed request object \(ES256\)/.test(flow.page.text),
          '3d. section 11.1: the sign-in screen says the request was a ' +
-         'verified signed request object', flow.page &&
+         'verified signed request object (a detail of its view since #571)',
+         flow.page &&
          flow.page.text.slice(0, 80));
 
     r = await authorize({ client_id: 'r91', request: object,

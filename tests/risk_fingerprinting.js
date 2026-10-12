@@ -78,23 +78,12 @@ function childMain() {
         req.end(body);
       });
     };
-    return { go: go };
+    return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
-
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const ldap = require(ROOT + '/ldap/ldap_server');
@@ -135,18 +124,25 @@ function childMain() {
         new URLSearchParams({ client_id: CLIENT, response_type: 'code',
           redirect_uri: REDIRECT, scope: 'openid', state: 's',
           nonce: 'n-' + Date.now() }).toString());
-      return b.go('GET', String(start.headers.location || ''));
+      // THE SHELL (#571), and the view it is drawn from: whether the
+      // realm asks for a fingerprint is a fact of the view, and the
+      // browser loads the script for it.
+      const at = String(start.headers.location || '');
+      const shell = await b.go('GET', at);
+      const opened = await authnScreen.open({ port: port, jar: b.jar,
+                                              userAgent: CHROME, at: at });
+      return { status: shell.status, headers: shell.headers,
+               text: shell.text, at: at, opened: opened,
+               view: opened.view || {} };
     };
 
     // --- A. off ------------------------------------------------------------
     const off = await screen(browser(port));
     const offScript = await browser(port).go('GET', '/authn/fingerprint.js');
-    note(!/fingerprint\.js/.test(off.text) &&
-         !/name="device_fp"/.test(off.text) &&
-         /script-src 'none'/.test(String(off.headers[
-           'content-security-policy'] || '')) && offScript.status === 404,
-         'A1. off (the default): no script, no field, script-src stays ' +
-         '\'none\', and the script is not served',
+    note(!/fingerprint\.js/.test(off.text) && off.view.fingerprint === false &&
+         offScript.status === 404,
+         'A1. off (the default): the view asks for no fingerprint, the ' +
+         'shell names no fingerprint script, and the script is not served',
          offScript.status + ' ' + off.headers['content-security-policy']);
 
     // --- B. on -------------------------------------------------------------
@@ -155,11 +151,12 @@ function childMain() {
     const csp = String(on.headers['content-security-policy'] || '');
     const scripts = on.text.match(/<script [^>]*>/g) || [];
     note(scripts.length === 1 &&
-         /src="\/authn\/fingerprint\.js"/.test(scripts[0]) &&
-         /name="device_fp"/.test(on.text) &&
+         /src="\/authn\/signin\.js"/.test(scripts[0]) &&
+         on.view.fingerprint === true &&
          /script-src 'self'/.test(csp) && /frame-ancestors/.test(csp),
-         'B1. on: the screen carries the field and ONE script, and relaxes ' +
-         'script-src to \'self\' with frame-ancestors kept', csp);
+         'B1. on: the view asks for the fingerprint (the screen\'s script ' +
+         'loads /authn/fingerprint.js beside it, #571), under script-src ' +
+         '\'self\' with frame-ancestors kept', csp);
     const script = await browser(port).go('GET', '/authn/fingerprint.js');
     note(script.status === 200 &&
          /javascript/.test(String(script.headers['content-type'])) &&
@@ -173,9 +170,10 @@ function childMain() {
     const signInWith = async function (fp) {
       const b = browser(port);
       const page = await screen(b);
-      return b.go('POST', '/authn/login', { form: Object.assign(
-        hiddenFields(page.text), { username: 'rf-erin', password: 'x',
-                                   action: 'login', device_fp: fp }) });
+      return authnScreen.submit({ port: port, jar: b.jar, userAgent: CHROME,
+        at: page.at, opened: page.opened,
+        fields: { action: 'login', username: 'rf-erin', password: 'x',
+                  device_fp: fp } });
     };
     const FIRST = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
     const SECOND = 'ffeeddccbbaa99887766554433221100';

@@ -103,6 +103,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
 
@@ -132,21 +133,12 @@ function childMain() {
         new URLSearchParams({ client_id: 'rl-rp', response_type: 'code',
           redirect_uri: REDIRECT, scope: 'openid', state: 'st',
           nonce: 'n-' + crypto.randomBytes(4).toString('hex') }).toString());
-      const page = await request(port, 'GET', String(r.headers.location));
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username;
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form });
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, this test's jar kept; read as the 303 the form answered.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: String(r.headers.location),
+        fields: { action: 'login', username: username,
+                  password: 'anything' } });
       r = await request(port, 'GET', String(posted.headers.location));
       const loc = String(r.headers.location || '');
       const code = new URLSearchParams(loc.slice(loc.indexOf('?') + 1))

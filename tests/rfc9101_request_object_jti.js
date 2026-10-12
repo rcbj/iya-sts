@@ -247,6 +247,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const usedAssertions = require(ROOT + '/common/used_assertions');
@@ -327,14 +328,11 @@ function childMain() {
     // The sign-in screen, posted; answers the return URL and the response to
     // it WITHOUT following it, so a test can hold a flow half way.
     const signIn = async function (first, username) {
-      const page = await request(port, 'GET', local(first.headers.location),
-                                 { cookies: true });
-      const form = hiddenFields(page.text);
-      form.username = username || 'jti-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form, cookies: true });
+      // THE SCREEN OVER `/authn-api` (#571), this test's jar kept.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: local(first.headers.location),
+        fields: { action: 'login', username: username || 'jti-alice',
+                  password: 'anything' } });
       return String(posted.headers.location || '');
     };
     const complete = async function (first, username) {
