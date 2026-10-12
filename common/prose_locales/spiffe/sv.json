@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "Lokal"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "Anropet kom på Unix-domänsocketen. En riktig SPIRE-server litar helt på sin privata socket — det är så spire-server-CLI:t fungerar — och åtkomstkontrollen är socketens filsystemsbehörigheter. Utvecklingsläget antar den gränsen; PRODUKTLÄGET verifierar den per anslutning: socketen skapad med 0600 i en katalog som andra användare inte kan nå, och anroparens kärn-uid den här tjänstens egen. `spiffe.trustLocalSocket` stänger av det, vilket får socketen att kräva ett SVID som TCP-porten och är det enda sättet att pröva en klients väg \"jag vägrades på socketen\"."
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "Agent"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "Anroparen visade upp ett X509-SVID vars SPIFFE-ID är ett agent-id (/spire/agent/...) och som namnger en agent som den här servern har attesterat och inte bannlyst. En bannlyst agent vägras här och inte bara vid AttestAgent, vilket är det som ger bannlysningen på /admin/spiffe/agents betydelse för en anropare som redan har ett SVID."
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "Administratör"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "Anroparens SPIFFE-ID namnges i `spiffe.adminIds`, eller så är en registreringspost för den identiteten markerad `admin`. Båda, eftersom SPIRE har båda: admin_ids behöver ingen post, och flaggan på en post är det som en operatör sätter från konsolen. Det här är det som låter en fjärranropare hantera registreringsposter."
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "Nedströms"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "En registreringspost för anroparens identitet är markerad `downstream` — en nästlad SPIRE-server, som får begära en mellanliggande CA och publicera en utfärdare och inte får göra något annat."
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "Anonym"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "Ingen autentiseringsuppgift visades upp, eller så visades en och den verifierades inte. Två metoder är fortfarande öppna för den, och båda måste vara det: AttestAgent, eftersom en agent inte har något SVID förrän det anropet ger den ett, och GetBundle, eftersom förtroendepaketet är publikt från början."
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "Endast SPIRE Server API. Dess TCP-port är ömsesidig TLS: en anropare visar upp ett X509-SVID från den här förtroendedomänen, den här tjänsten verifierar det mot förtroendepaketet och mot certifikatets eget giltighetsfönster, tar SPIFFE-ID:t från URI-subjectAltName (aldrig från subjektet), klassificerar det som local, agent, admin eller downstream, och auktoriserar metoden mot SPIRE:s egen policy_data.json, rad för rad. Dess Unix-socket är entiteten `local` och behöver ingen autentiseringsuppgift, vilket är hur spire-server-CLI:t når en riktig server. Workload API lämnas avsiktligt orört av allt detta: dess specifikation säger att en klient MUST NOT krävas att autentisera sig."
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "TCP-porten ber om ett klientcertifikat och kräver INTE ett, eftersom AttestAgent är öppen för en anropare utan SVID — en agent har inget förrän det anropet ger den ett. Hämta paketet från paketslutpunkten, verifiera den här servern mot det, och attestera."
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "En accepterad autentiseringsuppgift är en IDENTITET här som vilken annan som helst: den når samma tratt som var och en av de sexton protokollfamiljerna använder, så dess innehavare syns på /admin/users och får en katalogpost under ou=users — namngiven av ett sammandrag, med identifieraren på den som `spiffeSubject`, och ÅTERANVÄND när samma identitet anländer igen via en annan väg. Tre accepteringar gör det: ett X509-SVID över ömsesidig TLS (en gång per anslutning), en agent som attesterar, och ett JWT-SVID som verifieras vid ValidateJWTSVID. ETT UTFÄRDANDE ÄR EN FJÄRDE VÄG IN och är inte en av de tre: varje identitet som den här förtroendedomänen präglar ett X509-SVID för får samma post, som bär certifikatet som samma sex `x509*`-attribut som ett verifierat TLS-klientcertifikat skriver — TILLDELADE snarare än tillagda, eftersom ett SVID präglas på nytt varje halva livslängd, med `x509svidsIssued` och två tidsstämplar bredvid. Det räknas inte som en autentisering, eftersom att bli utfärdad en autentiseringsuppgift inte är att visa upp en."
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "Posten registrerar också om identiteten fortfarande får utfärdas en autentiseringsuppgift HÄR — `spiffeCredentialStatus`, med ett skäl bredvid. DET ÄR INTE EN CERTIFIKATSTATUS OCH INGENTING LÄSER TILLBAKA DEN: SPIFFE har ingen återkallelse, och ett redan utfärdat SVID verifieras mot paketet tills det löper ut, vad katalogen än säger. Det som registreras är de tre saker som avslutar en identitets förmåga att få ett NYTT — dess sista registreringspost borttagen, dess agent bannlyst, dess agent borttagen — var och en av dem reversibel och registrerad på samma sätt när den återställs. Posten tas aldrig bort."
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "av (spiffe.workloadPort är 0)"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "betjänas (utvecklingsläge, inte attesterad)"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "betjänas inte (produktläge, källan inte deklarerad som autentiserad)"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "betjänas inte (produktläge, bindningsadress med jokertecken)"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "betjänas (produktläge, källan deklarerad som autentiserad)"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "Det som SPIRE utfärdar som standard och det som X509-SVID-specifikationen rekommenderar. Standard här av samma skäl."
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "En större kurva, för en klient som låser fast en."
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "Ännu större. Värt att veta att ungefär en P-521-signatur av 256 är en byte kortare än de andra 255, vilket är en verklig interoperabilitetskant och är skälet till att x509.js har en funktion för det."
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "Den nedre gräns som X509-SVID-specifikationen tillåter för RSA. Långsammare att generera — märkbart vid start — och ger mycket större SVID:er."
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "Flera sekunder att generera vid start, vilket är värt att veta innan man undrar varför paketslutpunkten inte svarar ännu."
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "Tillåten för X.509 enligt specifikationen. INTE tillgänglig för JWT-utfärdaren: jsonwebtoken, den här tjänstens JWS-implementation, signerar inte EdDSA."
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Den abstrakta klass som varje post bär."
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "Den enda REGISTRERADE klass som passar: den ger cn och description, så NAMNET på en registreringspost är ett standardattribut även om inget annat i den kan vara det. Samma klass som ou=applications använder, av samma skäl."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "PÅHITTAD. Inget registrerat LDAP-schema har ett SPIFFE-ID, ett förälder-ID eller en selektor — SPIRE håller sina poster i SQL och inget annat håller dem någonstans — så det fanns inget att låna."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "PÅHITTAD, av samma skäl, på posterna under ou=agents."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "NYCKELN: post-id:t, vilket är det som SPIRE Server API kallar `id` och det som BatchUpdateEntry och BatchDeleteEntry namnger. Genereras här som 32 hexadecimala tecken och återanvänds aldrig. Postens eget cn är en förkortad form av det, så det här är attributet att söka på — det arrangemang som appIdentifier redan har en behållare bort."
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "RDN-värdet: post-id:t."
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "IDENTITETEN SOM DEN HÄR POSTEN BEVILJAR — det SPIFFE-ID som en matchande arbetslast utfärdas. Vägras om det inte är ett giltigt SPIFFE-ID, om det tillhör en annan förtroendedomän eller om det ligger under den reserverade sökvägen /spire."
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "VEM SOM FÅR UTFÄRDA DET: SPIFFE-ID:t för den agent (eller den här servern) som den här posten hänger under. Det avgör vilka poster GetAuthorizedEntries och SyncAuthorizedEntries berättar om för en agent: de under dess eget SPIFFE-ID eller ett nodalias som dess selektorer matchar, och BatchNewX509SVID och NewJWTSVID vägrar en agent varje annan post."
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "Ett värde per selektor, skrivet `type:value` — `unix:uid:1000`, `k8s:ns:default`, `docker:label:app:web`. Typen är allt före det FÖRSTA kolonet och värdet är hela resten, kolon inräknade, vilket är skälet till att de lagras som en sträng snarare än som ett par: att dela vid varje kolon är hur `docker:label:app:web` blir en selektor som ingen skrev."
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "Livslängden i sekunder för de X509-SVID:er som den här posten ger. Saknas eller 0 betyder spiffe.svidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "Detsamma för JWT-SVID:er. Saknas eller 0 betyder spiffe.jwtSvidTtl."
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "DNS-subjectAltNames som läggs till i SVID:t bredvid SPIFFE-ID:t. Det som gör ett SVID användbart för TLS-programvara som kontrollerar ett värdnamn och inte kan läsa ett SPIFFE-ID."
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "Namn på förtroendedomäner vars paket lämnas till en arbetslast som har den här identiteten — X509SVIDResponse.federated_bundles. Ett namn utan paket här registreras och bidrar helt enkelt med ingenting, eftersom en federationsrelation som konfigureras innan paketet anländer är den vanliga ordningen."
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "Operatörens vägledning när en arbetslast får mer än ett SVID — `internal`, `external`. Skickas vidare till Workload API ordagrant; ingenting här läser det."
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "8a9a63bc0fea2453",
+    "text": "TRUE där innehavaren får anropa SPIRE Server API:s administrativa metoder. REGISTRERAT OCH INTE UPPRÄTTHÅLLET, som varje annat auktoriseringsfaktum i den här tjänsten: inget anrop här vägras för att det saknas."
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "093ab596c5763625",
+    "text": "TRUE där innehavaren är en nedströms SPIRE-server som får begära en mellanliggande CA (NewDownstreamX509CA). Registrerat, inte upprätthållet."
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "TRUE där SVID:t ska skrivas till ett plugin för SVID-lagring snarare än lämnas till arbetslasten. Registrerat och inte åtgärdat — den här tjänsten har inga lagringsplugin."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "När själva POSTEN slutar gälla, i sekunder sedan epoken. Skiljer sig från en SVID-livslängd: detta pensionerar registreringen. En utgången post behålls och rapporteras som utgången i stället för att tas bort, eftersom en post som försvunnit inte går att skilja från en som ingen skapat."
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "Räknas upp vid varje ändring. SPIRE Server API publicerar det och en agent använder det för att skilja \"posten jag har är aktuell\" från \"jag har en post\"."
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "Hur den här posten kom hit: `seed`, `console`, `api`, `grpc`, `auto` (påhittad för en arbetslast som inte matchade något) eller `ldap`. Det som skiljer en påhittad post från en som någon avsåg."
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "Hur många SVID:er som har utfärdats mot den här posten. TILLDELAS vid varje ändring — en räknare som ackumulerade värden vore nonsens — och ett levande tal i en katalogpost, vilket en riktig katalog inte skulle hålla."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime, det senaste utfärdandet mot den."
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime. Bredvid postens egen createTimestamp eftersom SPIRE Server API publicerar `created_at` som ett tal och en läsare ska kunna se att båda är samma ögonblick."
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "En rad som säger var den här posten kom ifrån."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "NYCKELN för en agentpost: agentens eget SPIFFE-ID, alltid under den reserverade sökvägen /spire/agent."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "Den nodattestor som verifierade agenten — `join_token`, och de andra typer som en sfär namnger i spiffe.nodeAttestors. En typ som ingen attestor här verifierar vägras vid AttestAgent och registreras aldrig."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "De selektorer som attesteringen gav. Påhittade utifrån det som agenten skickade, av samma skäl."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "TRUE där BanAgent anropades. En bannlyst agent VÄGRAS vid AttestAgent och RenewAgent — en av de få vägringarna i den här tjänsten — eftersom en agent som inte går att bannlysa gör bannlysningsknappen till en lögn."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "Om attestorn kan köras igen utan en operatör. Rapporteras till agenten, som avgör vad den ska göra åt det."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "SHA-256 över DER för agentens aktuella SVID, vilket är det som spire.api.types.Agent bär och hur en operatör skiljer två agenter med samma identitet åt."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "När det SVID:t löper ut, i sekunder sedan epoken."
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime, när den här agenten först attesterade."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, den senaste gången."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "Hur många gånger den har attesterat eller förnyat. TILLDELAS, ackumuleras inte."
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "den här tjänsten"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "det här registret"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "anroparen"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "agenten"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "Ingen autentiseringsuppgift. Den här socketen är entiteten `local` och är helt betrodd, vilket är hur spire-server-CLI:t fungerar."
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "Ingen autentiseringsuppgift, från en process som körs med den här tjänstens eget uid: produktläge verifierar per anslutning att socketen är privat och läser anroparens uid från kärnan innan den är entiteten `local`."
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "Ingen är entiteten `local` här: produktläge verifierar socketens gräns och kan inte ({{reason}}). Visa upp en administratörs X509-SVID på TCP-porten."
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "motpartens uid kan inte läsas — {{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "Ett X509-SVID krävs även här (spiffe.trustLocalSocket är av)."
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "Ingen, och det får inte finnas någon: specifikationen Workload Endpoint förbjuder att en krävs."
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "Ömsesidig TLS. Verifiera den här servern mot förtroendepaketet, visa upp ditt eget X509-SVID, och räkna med att auktoriseras per metod."
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "Ingen — autentisering är avstängd, så den här porten är vanlig gRPC och varje metod är öppen för alla."
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "Ingen, och det får inte finnas någon: specifikationen Workload Endpoint förbjuder att en krävs. Nätverket är DEKLARERAT att autentisera källadresser (spiffe.workloadTcpSourceAuthenticated), så en anropare besvaras med de poster som dess peer:-adress väljer."
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "Ingen, och det får inte finnas någon: specifikationen Workload Endpoint förbjuder att en krävs. Ingenting attesterar en anropare här (utvecklingsläge): driftsättningen skyddar den här porten på annat sätt eller exponerar den inte."
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "Ingenting lyssnar här."
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "Ömsesidig TLS. Verifiera den här servern som spiffe://<trust domain>/spire/server mot förtroendepaketet, visa upp X509-SVID:t för en mäklare som namnges i spiffe.brokers, och skicka broker.spiffe.io: true vid varje anrop."
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "arbetslastattestering är inte tillgänglig här: {{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "socketen är inte privat"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "Det uid, gid och de tilläggsgrupper som kärnan rapporterar för anroparens process, samt dess körbara fils sökväg och SHA-256."
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "Den Docker-container som anroparens process körs i, så som Docker Engine rapporterar dess etiketter, miljö och avbildning."
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "Den Kubernetes-podd och container som anroparens process körs i, så som nodens kubelet rapporterar dem."
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "Den systemd-enhet som håller anroparens process, så som systemd rapporterar den över D-Bus: dess id och dess enhetsfil."
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "motpartens process kunde inte läsas, så endast dess uid och gid attesteras"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "motparten finns i ett annat pid-namnutrymme (pid 0), så endast dess uid och gid attesteras — dela pid-namnutrymmet för resten"
+  }
+}

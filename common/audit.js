@@ -2291,6 +2291,49 @@ log.info('The audit log is running: every authentication, session, directory ' +
          'GET /admin-api/audit, holds at most ' + maxEvents() + ' events in ' +
          'memory, and carries no credential of any kind.');
 
+// ---------------------------------------------------------------------------
+// THE AUDIT NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): the vocabulary's
+// labels and sentences, which `GET /admin-api/audit` carries as `categories`
+// and `actions`. The EVENTS are not harvested: a row's summary and detail
+// are records, written when something happened, and an id (`category`,
+// `action`, `outcome`) is a value the filters send back. A row is keyed by
+// its own id here rather than by `harvest()`'s choice of one, because an
+// action carries a `category` too, and that is the id `harvest()` would
+// reach first.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/audit'];
+
+/**
+ * Extracts the audit namespace (#543 phase 2b): each category's label and
+ * sentence and each action's label.
+ *
+ * `server_prose` is required here, LAZILY, which is safe however early this
+ * file is loaded: `server_prose` requires `helpers.js`, which this file
+ * requires too, and only this function needs it.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const categories = {};
+  CATEGORIES.forEach(function (one) {
+    categories[one.category] = { label: one.label, what: one.what };
+  });
+  const actions = {};
+  ACTIONS.forEach(function (one) {
+    actions[one.action] = { label: one.label };
+  });
+  const out = Object.assign(
+    harvest('audit.categories', categories, ['label', 'what']),
+    harvest('audit.actions', actions, ['label']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The audit log: what happened here, in the order it happened, as discrete
  * events.
@@ -2316,5 +2359,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
-  summary: summary
+  summary: summary,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

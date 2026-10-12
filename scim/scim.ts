@@ -264,6 +264,11 @@ import errorCodes = require('../common/error_codes');
 import scimCells = require('./scim_cells');
 import realms = require('../common/realms');
 import cells = require('../common/cells');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `fill()` makes the
+// templated sentences of `description()`, and `harvest()` collects this
+// module's tables for the scim namespace. Safe at the top: it requires only
+// libraries that never require this module back.
+import serverProse = require('../common/server_prose');
 
 // A function the directory, `scim_auth`, `scim_map` and the others offer, as
 // this module calls it. Their own modules are the authority on the shapes.
@@ -401,6 +406,207 @@ const CANONICAL_TYPES: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 const HOBA_REGISTER_PATH = '/.well-known/hoba/register';
 
+// ---------------------------------------------------------------------------
+// WHAT `description()` SAYS, as tables and templates (#543 phase 2b). One
+// copy: `description()` reads and fills them, and `common/server_prose.ts`
+// matches an answer to `GET /admin-api/scim` and `/scim/monitor` against
+// them to refill it in a console reader's language. Each is the sentence
+// `description()` made inline until #543, byte for byte; a template's
+// parameters are data (a scope, a reserved value, a number) and are carried
+// over untranslated.
+// ---------------------------------------------------------------------------
+// The one part of the first "does not do" sentence that varies with whether a
+// credential is required at all. A template could not carry it: an EMPTY
+// parameter matches nothing, so each of the four is a sentence of its own.
+const NOT_REQUIRED = ' — except that it is currently turned off here, so it ' +
+  'is not';
+const PERMISSIVE_HEAD = 'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A ' +
+  'credential is required';
+const PERMISSIVE_TAIL = ', and every scheme behind that requirement is ' +
+  'permissive: any caller can get an access token with either scope from ' +
+  'this service\'s own token endpoint with any grant, any username with any ' +
+  'password but "invalid" passes Basic, any username passes Digest with the ' +
+  'one shared password, and anybody can register a HOBA key for any name. ' +
+  'It is a turnstile, not a lock. What it buys is that a client\'s 401, ' +
+  '403, challenge-response and scope handling can be exercised at all — ' +
+  'none of which an open endpoint can produce. Do not put this port on a ' +
+  'public address on the strength of it.';
+const PRODUCT_HEAD = 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A ' +
+  'credential is required';
+const PRODUCT_TAIL = ', and each scheme behind that requirement is ' +
+  'verified: an access token must come from this service\'s own token ' +
+  'endpoint with the scope, a Basic password is checked against the hashed ' +
+  'userPassword on the person\'s entry, a HOBA key must have been ' +
+  'registered by its signed-in owner, and Digest is not offered.';
+
+// The sentences that matter most, in the order somebody is likely to be
+// surprised by them. The first is one of four, by mode (#70) and by
+// `scim.authRequired`; `description()` picks it.
+const DOES_NOT_DO = Object.freeze({
+  permissive: PERMISSIVE_HEAD + PERMISSIVE_TAIL,
+  permissiveOff: PERMISSIVE_HEAD + NOT_REQUIRED + PERMISSIVE_TAIL,
+  product: PRODUCT_HEAD + PRODUCT_TAIL,
+  productOff: PRODUCT_HEAD + NOT_REQUIRED + PRODUCT_TAIL,
+  scope: 'A SCOPE GRANTS AND NOTHING ELSE READS ONE. scim:read and ' +
+    'scim:write are the first scope requirement anywhere in this service, ' +
+    'and they apply at these endpoints only — no other surface here reads a ' +
+    'scope, and holding one confers nothing beyond /scim/v2. Note also that ' +
+    'only the OAuth schemes carry scopes at all: Basic, Digest, HOBA, a ' +
+    'cookie and a client certificate authenticate a caller who may then do ' +
+    'both, so a caller who cannot get a scope can simply use another ' +
+    'scheme. Each scheme has a switch of its own for exactly that reason.',
+  active: 'active: false DISABLES THE ACCOUNT (since 2026-09-17). It is the ' +
+    'password-policy lock pwdAccountLockedTime on the entry, and every door ' +
+    'refuses the person while it is set — a password, a session, a token ' +
+    'grant, a Kerberos AS-REQ — and everything they held is ended when it ' +
+    'is written. active: true enables them again; a resource that leaves ' +
+    'active out leaves the account as it was.',
+  etag: 'NO ETag AND NO changePassword, both advertised as unsupported ' +
+    'rather than half-implemented. A version built over a timestamp with ' +
+    'one-second resolution would be a concurrency control a client trusts ' +
+    'and that is wrong; and no password in this service is checked, so ' +
+    'there is none to change.',
+  member: 'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
+    'referential integrity on purpose — deleting a user leaves their DN in ' +
+    'every group that listed them — so refusing a dangling member here ' +
+    'would make that state impossible to reproduce. /admin/groups reports ' +
+    'them.'
+});
+
+// What each endpoint is, keyed by a name of this table's own (the methods
+// repeat, so a method cannot key it). `bulk` is a template: its limit is
+// the setting's.
+const ENDPOINT_WHAT = Object.freeze({
+  serviceProviderConfig: 'What this server supports. Read it first.',
+  resourceTypes: 'User and Group.',
+  schemas: 'The core User and Group schemas, and the enterprise User ' +
+    'extension.',
+  usersList: 'The list, with ?filter, ?sortBy, ?startIndex, ?count, ' +
+    '?attributes.',
+  usersCreate: 'Create.',
+  usersSearch: 'The same query as a POST body, for a filter too long for a ' +
+    'URL.',
+  userRead: 'One user.',
+  userReplace: 'Replace.',
+  userModify: 'Modify (section 3.5.2), path grammar and all.',
+  userDelete: 'Delete.',
+  groups: 'Groups, whose members are resolved from member, uniqueMember and ' +
+    'memberUid alike.',
+  search: 'A query across BOTH resource types at once.',
+  bulk: 'Up to {{n}} operations in one request.',
+  me: 'The subject this request authenticated as (section 3.11), delegated ' +
+    'to the same User handlers. 501 when nothing authenticated, and on ' +
+    'POST; 404 when the credential names somebody with no entry here.',
+  hoba: 'Register a HOBA public key (RFC 7486 section 7). Unauthenticated ' +
+    'on purpose — it is how a caller gets a credential. GET describes it.'
+});
+
+// The refusals a client can provoke, each a `what` and an `answer`. `key`
+// names a row for the prose catalog and is not sent. The four templates'
+// parameters are the scopes (`read`, `write`) and the two reserved values
+// (`password`, `username`); `description()` fills every member, and a
+// member with no placeholder comes back as written.
+const REACHABLE_NEGATIVES = Object.freeze([
+  { key: 'noCredential',
+    what: 'A request with no credential',
+    answer: '401, with a WWW-Authenticate header per offered scheme — RFC ' +
+      '7644 section 2 makes that header a SHALL. The discovery endpoints are ' +
+      'exempt unless scim.authDiscovery is on.' },
+  { key: 'wrongScope',
+    what: 'An access token with the wrong scope for the operation',
+    answer: '403 with WWW-Authenticate: Bearer error="insufficient_scope", ' +
+      'scope="{{write}}". Reads need "{{read}}" and writes need ' +
+      '"{{write}}"; neither implies the other.' },
+  { key: 'foreignToken',
+    what: 'An access token this service did not issue, or one that was ' +
+      'revoked',
+    answer: '401. These endpoints verify the signature, unlike the OID4VCI ' +
+      'credential endpoints, which accept a foreign token: a scope on a ' +
+      'token nobody verified is a permission its holder wrote for ' +
+      'themselves.' },
+  { key: 'refusedPassword',
+    what: 'Basic with the password "{{password}}"',
+    answer: '401 — the same reserved value every other family here ' +
+      'refuses.' },
+  { key: 'digest',
+    what: 'Digest with a wrong password, a stale nonce, or a repeated nc',
+    answer: '401 three ways: the password really is checked here, a stale ' +
+      'nonce carries stale=true (which a conforming client retries ' +
+      'silently), and a replayed nonce count does NOT — it was a valid ' +
+      'credential and has been seen before, which is a different ' +
+      'sentence.' },
+  { key: 'hoba',
+    what: 'A HOBA signature that does not verify, or a reused (kid, ' +
+      'challenge, nonce)',
+    answer: '401. The signature is really verified — RSA-SHA256 over RFC ' +
+      '7486 section 5\'s length-prefixed blob — and the challenge may be ' +
+      'REUSED until its max-age, so what is refused as a replay is the ' +
+      'triple and not the challenge.' },
+  { key: 'otherScheme',
+    what: 'A credential in a scheme this service does not offer',
+    answer: '401 naming the ones it does. An access token in the query ' +
+      'string is refused separately, by the same check /oauth2/userinfo ' +
+      'uses.' },
+  { key: 'meAlias',
+    what: 'GET /Me with no credential, or POST /Me',
+    answer: '501 — the alias is unavailable rather than the resource ' +
+      'missing. A credential naming somebody with no entry gets 404.' },
+  { key: 'refusedUsername',
+    what: 'A userName of "{{username}}"',
+    answer: '400 invalidValue — the same reserved value the password grant, ' +
+      'WS-Trust, the WS-Federation sign-in screen and every LDAP bind here ' +
+      'refuse.' },
+  { key: 'duplicate',
+    what: 'A second user with a userName somebody already has',
+    answer: '409 uniqueness.' },
+  { key: 'specialCharacter',
+    what: 'A userName or displayName carrying an RFC 4514 special character ' +
+      '(a comma, a quote, a plus, a hash, a semicolon, an equals, an angle ' +
+      'bracket or a backslash)',
+    answer: '400 invalidValue — the entry\'s DN is built from the name, so ' +
+      'a name carrying one would produce an entry the other doors cannot ' +
+      'name. It is the SAME refusal the console and the management API ' +
+      'give, from the same rule; an ldapadd can still create such an entry ' +
+      'with the escaping written out.' },
+  { key: 'dnShaped',
+    what: 'A userName that is DN-shaped or DID-shaped',
+    answer: '400 invalidValue — an entry named by a distinguished name gets ' +
+      'here by presenting a client certificate and one named by a ' +
+      'decentralized identifier by presenting that, so there is nothing to ' +
+      'create one from by hand. Also the console\'s and the management ' +
+      'API\'s answer, from the same function.' },
+  { key: 'unknownId', what: 'An id that names nothing', answer: '404.' },
+  { key: 'badFilter',
+    what: 'A filter this server cannot evaluate',
+    answer: '400 invalidFilter — refused rather than answered with an empty ' +
+      'list, because "no results" and "I could not read your filter" are ' +
+      'different answers.' },
+  { key: 'meMethod', what: 'Any method on /Me', answer: '501.' }
+].map(function (row) {
+  return Object.freeze(row);
+}));
+
+// The three sentences besides: the store, the identifier, the mapping.
+const DESCRIPTION_PROSE = Object.freeze({
+  store: 'The embedded LDAP directory in this process. There is no second ' +
+    'store and no cache: a SCIM POST and an ldapadd write the same entry, ' +
+    'and a person provisioned here appears on /admin/users, in an ' +
+    'ldapsearch, and in the attributes their access token carries.',
+  identifiersWhy: 'RFC 7643 section 3.1 asks for an opaque, ' +
+    'server-assigned, unique identifier that is never reassigned. It was ' +
+    'the entry\'s DN until 2026-09-14, and a rename reassigned it. The ' +
+    'entryUUID is assigned when the entry is created, survives a rename, ' +
+    'and is the same value a person\'s token carries in `sub` as ' +
+    'urn:uuid:<value>. A DN presented as an id still resolves, for a client ' +
+    'that stored one before the change. Member and manager values are ids ' +
+    'too, and are stored as the DNs LDAP holds.',
+  mapping: 'Which LDAP attribute each SCIM member is. The whole table, with ' +
+    'the schema document that defines each attribute, is on /admin/scim.'
+});
+
+// The routes whose answers carry the scim namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
+
 /**
  * SCIM 2.0 (RFC 7642, 7643, 7644) at `/scim/v2`, on scimmy, provisioning into
  * the embedded LDAP directory with no store of its own.
@@ -415,6 +621,30 @@ class Scim {
    * The one user name SCIM refuses, `invalid`, beside the one refused password.
    */
   static readonly REFUSED_USERNAME = REFUSED_USERNAME;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's part of the scim namespace (#543 phase 2b): the
+   * sentences `description()` reads out of its tables, and its templates.
+   * Static, so that extracting the namespace builds no instance.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering Scim.prose().");
+    const harvest = serverProse.harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('scim.doesNotDo', DOES_NOT_DO, Object.keys(DOES_NOT_DO)),
+      harvest('scim.endpoints', ENDPOINT_WHAT, Object.keys(ENDPOINT_WHAT)),
+      harvest('scim.negatives', REACHABLE_NEGATIVES, ['what', 'answer']),
+      harvest('scim.description', DESCRIPTION_PROSE,
+              Object.keys(DESCRIPTION_PROSE)));
+    helpers.log.debug("Leaving Scim.prose(). " + Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds the SCIM surface from the modules it reads.
@@ -2663,6 +2893,11 @@ class Scim {
     const { log, baseUrlOf, stats, directory, scimAuth, scimMap } = this.deps;
     log.debug("Entering Scim.description().");
     const base = baseUrlOf(req);
+    const fill = serverProse.fill;
+    const negativeParams = { read: scimAuth.scopeRead(),
+                             write: scimAuth.scopeWrite(),
+                             password: scimAuth.REFUSED_PASSWORD,
+                             username: REFUSED_USERNAME };
     const out = {
       enabled: this.enabled(),
       baseUrl: base + BASE,
@@ -2675,11 +2910,7 @@ class Scim {
       // offered.
       authentication: scimAuth.describe(req),
       store: {
-        what: 'The embedded LDAP directory in this process. There is no ' +
-              'second store and no cache: a SCIM POST and an ldapadd write ' +
-              'the same entry, and a person provisioned here appears on ' +
-              '/admin/users, in an ldapsearch, and in the attributes their ' +
-              'access token carries.',
+        what: DESCRIPTION_PROSE.store,
         users: directory.usersDn(),
         groups: directory.groupsDn(),
         baseDn: directory.baseDn(),
@@ -2690,188 +2921,63 @@ class Scim {
       },
       identifiers: {
         id: "the entry's entryUUID (RFC 4530)",
-        why: 'RFC 7643 section 3.1 asks for an opaque, server-assigned, ' +
-             'unique identifier that is never reassigned. It was the ' +
-             'entry\'s DN until 2026-09-14, and a rename reassigned it. The ' +
-             'entryUUID is assigned when the entry is created, survives a ' +
-             'rename, and is the same value a person\'s token carries in ' +
-             '`sub` as urn:uuid:<value>. A DN presented as an id still ' +
-             'resolves, for a client that stored one before the change. ' +
-             'Member and manager values are ids too, and are stored as the ' +
-             'DNs LDAP holds.',
+        why: DESCRIPTION_PROSE.identifiersWhy,
         example: base + BASE + '/Users/' +
                  directory.resourceIdOfDn('uid=alice,' + directory.usersDn())
       },
       endpoints: [
         { method: 'GET', path: BASE + '/ServiceProviderConfig',
-          what: 'What this server supports. Read it first.' },
+          what: ENDPOINT_WHAT.serviceProviderConfig },
         { method: 'GET', path: BASE + '/ResourceTypes',
-          what: 'User and Group.' },
+          what: ENDPOINT_WHAT.resourceTypes },
         { method: 'GET', path: BASE + '/Schemas',
-          what: 'The core User and Group schemas, and the enterprise User ' +
-                'extension.' },
+          what: ENDPOINT_WHAT.schemas },
         { method: 'GET', path: BASE + '/Users',
-          what: 'The list, with ?filter, ?sortBy, ?startIndex, ?count, ' +
-                '?attributes.' },
-        { method: 'POST', path: BASE + '/Users', what: 'Create.' },
+          what: ENDPOINT_WHAT.usersList },
+        { method: 'POST', path: BASE + '/Users',
+          what: ENDPOINT_WHAT.usersCreate },
         { method: 'POST', path: BASE + '/Users/.search',
-          what:
-            'The same query as a POST body, for a filter too long for a URL.' },
-        { method: 'GET', path: BASE + '/Users/{id}', what: 'One user.' },
-        { method: 'PUT', path: BASE + '/Users/{id}', what: 'Replace.' },
+          what: ENDPOINT_WHAT.usersSearch },
+        { method: 'GET', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userRead },
+        { method: 'PUT', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userReplace },
         { method: 'PATCH', path: BASE + '/Users/{id}',
-          what: 'Modify (section 3.5.2), path grammar and all.' },
-        { method: 'DELETE', path: BASE + '/Users/{id}', what: 'Delete.' },
+          what: ENDPOINT_WHAT.userModify },
+        { method: 'DELETE', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userDelete },
         { method: '(the same seven)', path: BASE + '/Groups',
-          what: 'Groups, whose members are resolved from member, ' +
-                'uniqueMember and memberUid alike.' },
+          what: ENDPOINT_WHAT.groups },
         { method: 'POST', path: BASE + '/.search',
-          what: 'A query across BOTH resource types at once.' },
+          what: ENDPOINT_WHAT.search },
         { method: 'POST', path: BASE + '/Bulk',
-          what: 'Up to ' + this.bulkMaxOperations() +
-                ' operations in one request.' },
+          what: fill(ENDPOINT_WHAT.bulk, { n: this.bulkMaxOperations() }) },
         { method: 'GET / PUT / PATCH / DELETE', path: BASE + '/Me',
-          what: 'The subject this request authenticated as (section 3.11), ' +
-                'delegated to the same User handlers. 501 when nothing ' +
-                'authenticated, and on POST; 404 when the credential names ' +
-                'somebody with no entry here.' },
+          what: ENDPOINT_WHAT.me },
         { method: 'POST', path: '/.well-known/hoba/register',
-          what: 'Register a HOBA public key (RFC 7486 section 7). ' +
-                'Unauthenticated on purpose — it is how a caller gets a ' +
-                'credential. GET describes it.' }
+          what: ENDPOINT_WHAT.hoba }
       ],
-      // The four sentences that matter most, in the order somebody is likely to
-      // be surprised by them.
+      // The sentences that matter most, in the order somebody is likely to
+      // be surprised by them (`DOES_NOT_DO`).
       doesNotDo: [
         // Mode-dependent since #70: this said "checks almost nothing" in
         // product mode too, where every scheme is verified.
         scimAuth.permissive()
-          ? 'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A credential is ' +
-            'required' + (scimAuth.authRequired() ? '' : ' — except that it ' +
-            'is currently turned off here, so it is not') + ', and every ' +
-            'scheme behind that requirement is permissive: any caller can ' +
-            'get an access token with either scope from this service\'s own ' +
-            'token endpoint with any grant, any username with any password ' +
-            'but "invalid" passes Basic, any username passes Digest with the ' +
-            'one shared password, and anybody can register a HOBA key for ' +
-            'any name. It is a turnstile, not a lock. What it buys is that ' +
-            'a client\'s 401, 403, challenge-response and scope handling can ' +
-            'be exercised at all — none of which an open endpoint can ' +
-            'produce. ' +
-            'Do not put this port on a public address on the strength of it.'
-          : 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A credential ' +
-            'is required' +
-            (scimAuth.authRequired() ? '' : ' — except that it is ' +
-            'currently turned off here, so it is not') + ', and each ' +
-            'scheme behind that requirement is verified: an access token ' +
-            'must come from this service\'s own token endpoint with the ' +
-            'scope, a Basic password is checked against the hashed ' +
-            'userPassword on the person\'s entry, a HOBA key must have been ' +
-            'registered by its signed-in owner, and Digest is not offered.',
-
-        'A SCOPE GRANTS AND NOTHING ELSE READS ONE. scim:read and scim:write ' +
-        'are the first scope requirement anywhere in this service, and they ' +
-        'apply at these endpoints only — no other surface here reads a ' +
-        'scope, and holding one confers nothing beyond /scim/v2. Note also ' +
-        'that only the OAuth schemes carry scopes at all: Basic, Digest, ' +
-        'HOBA, a cookie and a client certificate authenticate a caller who ' +
-        'may then do both, so a caller who cannot get a scope can simply use ' +
-        'another scheme. Each scheme has a switch of its own for exactly ' +
-        'that reason.',
-
-        'active: false DISABLES THE ACCOUNT (since 2026-09-17). It is the ' +
-        'password-policy lock pwdAccountLockedTime on the entry, and every ' +
-        'door refuses the person while it is set — a password, a session, a ' +
-        'token grant, a Kerberos AS-REQ — and everything they held is ended ' +
-        'when it is written. active: true enables them again; a resource ' +
-        'that leaves active out leaves the account as it was.',
-
-        'NO ETag AND NO changePassword, both advertised as unsupported ' +
-        'rather than half-implemented. A version built over a timestamp with ' +
-        'one-second resolution would be a concurrency control a client ' +
-        'trusts and that is wrong; and no password in this service is ' +
-        'checked, so there is none to change.',
-
-        'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
-        'referential integrity on purpose — deleting a user leaves their DN ' +
-        'in every group that listed them — so refusing a dangling member ' +
-        'here would make that state impossible to reproduce. /admin/groups ' +
-        'reports them.'
+          ? (scimAuth.authRequired() ? DOES_NOT_DO.permissive
+                                     : DOES_NOT_DO.permissiveOff)
+          : (scimAuth.authRequired() ? DOES_NOT_DO.product
+                                     : DOES_NOT_DO.productOff),
+        DOES_NOT_DO.scope,
+        DOES_NOT_DO.active,
+        DOES_NOT_DO.etag,
+        DOES_NOT_DO.member
       ],
-      reachableNegatives: [
-        { what: 'A request with no credential',
-          answer: '401, with a WWW-Authenticate header per offered scheme — ' +
-                  'RFC 7644 section 2 makes that header a SHALL. The ' +
-                  'discovery endpoints are exempt unless scim.authDiscovery ' +
-                  'is on.' },
-        { what: 'An access token with the wrong scope for the operation',
-          answer: '403 with WWW-Authenticate: Bearer ' +
-                  'error="insufficient_scope", ' +
-                  'scope="' + scimAuth.scopeWrite() + '". Reads need "' +
-                  scimAuth.scopeRead() + '" and writes need "' +
-                  scimAuth.scopeWrite() + '"; neither implies the other.' },
-        { what: 'An access token this service did not issue, or one that was ' +
-                'revoked',
-          answer: '401. These endpoints verify the signature, unlike the ' +
-                  'OID4VCI credential endpoints, which accept a foreign ' +
-                  'token: a scope on a token nobody verified is a permission ' +
-                  'its holder wrote for themselves.' },
-        { what: 'Basic with the password "' + scimAuth.REFUSED_PASSWORD + '"',
-          answer:
-            '401 — the same reserved value every other family here refuses.' },
-        { what: 'Digest with a wrong password, a stale nonce, or a repeated nc',
-          answer: '401 three ways: the password really is checked here, a ' +
-                  'stale nonce carries stale=true (which a conforming client ' +
-                  'retries silently), and a replayed nonce count does NOT — ' +
-                  'it was a valid credential and has been seen before, which ' +
-                  'is a different sentence.' },
-        { what: 'A HOBA signature that does not verify, or a reused ' +
-                '(kid, challenge, nonce)',
-          answer: '401. The signature is really verified — RSA-SHA256 over ' +
-                  'RFC 7486 section 5\'s length-prefixed blob — and the ' +
-                  'challenge may be REUSED until its max-age, so what is ' +
-                  'refused as a replay is the triple and not the challenge.' },
-        { what: 'A credential in a scheme this service does not offer',
-          answer: '401 naming the ones it does. An access token in the query ' +
-                  'string is refused separately, by the same check ' +
-                  '/oauth2/userinfo uses.' },
-        { what: 'GET /Me with no credential, or POST /Me',
-          answer: '501 — the alias is unavailable rather than the resource ' +
-                  'missing. A credential naming somebody with no entry gets ' +
-                  '404.' },
-        { what: 'A userName of "' + REFUSED_USERNAME + '"',
-          answer: '400 invalidValue — the same reserved value the password ' +
-                  'grant, WS-Trust, the WS-Federation sign-in screen and ' +
-                  'every LDAP bind here refuse.' },
-        { what: 'A second user with a userName somebody already has',
-          answer: '409 uniqueness.' },
-        { what: 'A userName or displayName carrying an RFC 4514 special ' +
-                'character (a comma, a quote, a plus, a hash, a semicolon, ' +
-                'an equals, an angle bracket or a backslash)',
-          answer: '400 invalidValue — the entry\'s DN is built from the ' +
-                  'name, so a name carrying one would produce an entry the ' +
-                  'other doors cannot name. It is the SAME refusal the ' +
-                  'console and the management API give, from the same rule; ' +
-                  'an ldapadd can still create such an entry with the ' +
-                  'escaping written out.' },
-        { what: 'A userName that is DN-shaped or DID-shaped',
-          answer: '400 invalidValue — an entry named by a distinguished name ' +
-                  'gets here by presenting a client certificate and one ' +
-                  'named by a decentralized identifier by presenting that, ' +
-                  'so there is nothing to create one from by hand. Also the ' +
-                  'console\'s and the management API\'s answer, from the ' +
-                  'same function.' },
-        { what: 'An id that names nothing', answer: '404.' },
-        { what: 'A filter this server cannot evaluate',
-          answer: '400 invalidFilter — refused rather than answered with an ' +
-                  'empty list, because "no results" and "I could not read ' +
-                  'your filter" are different answers.' },
-        { what: 'Any method on /Me', answer: '501.' }
-      ],
+      reachableNegatives: REACHABLE_NEGATIVES.map((row) => {
+        return { what: fill(row.what, negativeParams),
+                 answer: fill(row.answer, negativeParams) };
+      }),
       mapping: Object.assign({
-        what: 'Which LDAP attribute each SCIM member is. The whole table, ' +
-              'with the schema document that defines each attribute, is on ' +
-              '/admin/scim.'
+        what: DESCRIPTION_PROSE.mapping
       // ONE PROJECTION, IN scim_map.ts, SINCE 2026-09-06. This endpoint and
       // /admin-api/scim each had one of their own and they had already drifted
       // — the same table, published by one service at two endpoints, describing
@@ -3637,6 +3743,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   BASE: Scim.BASE,
   REFUSED_USERNAME: Scim.REFUSED_USERNAME,
+  PROSE_ROUTES: Scim.PROSE_ROUTES,
+  prose: Scim.prose,
   enabled: slot.forward('enabled'),
   description: slot.forward('description')
 };

@@ -4212,6 +4212,43 @@ function realmSupport() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// THE REALMS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): each support
+// row's `family` and `note`, which `GET /admin-api/realms` carries as
+// `support`. `by` and `state` are codes, `cards` names `sts_metadata.ts`'s
+// cards, and a retiring realm's `why`, `refusing` and `finish` are the
+// refusal's own text, which stays English. A row is keyed by its family made
+// a slug rather than by its place, so a row added in the middle moves no
+// other row's key.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/realms'];
+
+/**
+ * Extracts the realms namespace (#543 phase 2b): every support row's family
+ * and note.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const rows = {};
+  realmSupport().forEach(function (row) {
+    const slug = String(row.family).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    rows[slug] = { family: row.family, note: row.note };
+  });
+  const out = harvest('realms.support', rows, ['family', 'note']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Trust realms: several logical copies of this service in one process,
  * told apart by a path prefix.
@@ -4272,5 +4309,7 @@ module.exports = {
   unknownRealmPath: unknownRealmPath,
   handles: handles,
   handleFor: handleFor,
-  realmSupport: realmSupport
+  realmSupport: realmSupport,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

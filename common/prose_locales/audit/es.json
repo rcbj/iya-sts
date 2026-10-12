@@ -1,0 +1,1382 @@
+{
+  "audit.categories.authentication.label": {
+    "en": "66880d2d8216260d",
+    "text": "Autenticación"
+  },
+  "audit.categories.authentication.what": {
+    "en": "a75d8d51a0eb704d",
+    "text": "Se ACEPTÓ una credencial, en cualquiera de las dieciséis familias de protocolos de este servicio. Se registra en el único embudo por el que ya pasan todas ellas, así que es un solo lugar y no dieciséis. SCIM se incorporó tarde y SPIFFE más tarde aún. SCIM: tres de los esquemas que aceptan sus endpoints — Basic, Digest y HOBA — presentan una credencial en cada solicitud, y aceptar una es una autenticación. Los otros tres no aparecen aquí, porque cada uno continúa una autenticación registrada en otro lugar: un token de acceso se aceptó cuando se emitió, una cookie de sesión cuando comenzó su sesión, y un certificado de cliente una vez por CONEXIÓN y no una vez por solicitud. SPIFFE es la decimosexta y llega aquí de tres formas: un X509-SVID presentado por TLS mutuo en la SPIRE Server API (una vez por conexión, por la misma razón que un certificado de cliente), un agente que se atesta y un JWT-SVID verificado en ValidateJWTSVID. Que se le EMITA un SVID no es una de ellas."
+  },
+  "audit.categories.session.label": {
+    "en": "6fa3cbf451b2a1d5",
+    "text": "Sesiones"
+  },
+  "audit.categories.session.what": {
+    "en": "da2cf9fdd76b22ff",
+    "text": "Se creó o se terminó una sesión de inicio de sesión del navegador. Es compartida entre OAuth 2.0 / OIDC y WS-Federation, de modo que un cierre de sesión de WS-Federation y un /oauth2/logout producen la misma fila."
+  },
+  "audit.categories.directory.label": {
+    "en": "c8f84c3c5378b920",
+    "text": "Directorio"
+  },
+  "audit.categories.directory.what": {
+    "en": "1783abc24177bf60",
+    "text": "El directorio LDAP integrado: entradas creadas, eliminadas, actualizadas, renombradas y consultadas, tanto por el 389 en claro como por LDAPS 636."
+  },
+  "audit.categories.admin.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Consola de administración"
+  },
+  "audit.categories.admin.what": {
+    "en": "84e06d85d9c8036d",
+    "text": "Cada página de /admin que se vio y cada formulario que se envió. Incluye la solicitud que dibujó la página que está leyendo."
+  },
+  "audit.categories.api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "API de administración"
+  },
+  "audit.categories.api.what": {
+    "en": "71c007163c40d555",
+    "text": "Cada llamada a /admin-api, tanto de lectura como de escritura."
+  },
+  "audit.categories.application.label": {
+    "en": "98e33b0f3104fcf1",
+    "text": "Aplicaciones"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "Una aplicación — un cliente OAuth, una parte que confía OIDC, un proveedor de servicios SAML, una aplicación WS-Federation, una parte que confía WS-Trust, un servicio Kerberos — se vio por primera vez o registró algo nuevo. Es la contraparte de la fila de autenticación anterior: aquella dice QUIÉN, esta dice EN QUÉ INICIABA SESIÓN. Un mismo acto suele escribir ambas."
+  },
+  "audit.categories.protocol.label": {
+    "en": "00052adcbc9e9b70",
+    "text": "Endpoints de protocolo"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "Todos los demás endpoints HTTP: el endpoint de token, el proxy del KDC, el endpoint de credenciales, los documentos de metadatos, todo."
+  },
+  "audit.categories.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "audit.categories.spiffe.what": {
+    "en": "a3485b52ee7b4222",
+    "text": "Las tres superficies SPIFFE del lado del servidor: un SVID acuñado, una entrada de registro creada, modificada o eliminada, un agente que se atesta, y el paquete de confianza obtenido o federado. Una fila de SVID NO es una fila de autenticación — que se le EMITA una credencial no es presentarla —, así que una emisión está aquí y nunca en `authentication`. Lo que SÍ está en ambas es una credencial PRESENTADA a una de estas superficies y aceptada: un X509-SVID por TLS mutuo, un agente que se atesta, un JWT-SVID validado. Esos escriben también una fila de autenticación, en el embudo, igual que en todo este servicio un mismo acto escribe filas en varias capas."
+  },
+  "audit.categories.signals.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "El Shared Signals Framework: un flujo acordado, modificado o eliminado, un sujeto agregado o quitado, un cambio de estado, y cada Security Event Token que este servicio TRANSMITIÓ o RECIBIÓ — incluidos los que un receptor rechazó, que es la fila que más importa, porque un envío rechazado es invisible desde el extremo receptor por definición."
+  },
+  "audit.categories.authorization.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "Decisiones de autorización: qué se le preguntó al PDP, qué respondió y — por separado — qué HIZO el PEP integrado con esa respuesta. Son filas separadas a propósito: un PDP que dice Indeterminate y un PEP sesgado a denegar que rechaza son un solo evento para un usuario y dos decisiones de dos componentes, y cuando no coinciden con lo que alguien esperaba es siempre porque solo se estaba mirando uno de ellos. Los cambios de política son filas LDAP sobre ou=policies, no filas aquí, porque el repositorio es el directorio."
+  },
+  "audit.categories.service.label": {
+    "en": "d677190e0a9990e7",
+    "text": "Servicio"
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "Fallos de algo que este servicio hace por sí mismo y no en respuesta a una solicitud: persistencia, coordinación entre procesos, los grupos de workers, el manejo de claves y secretos, las tareas en segundo plano y las solicitudes salientes. Cada fila lleva un código de error."
+  },
+  "audit.categories.mail.label": {
+    "en": "07ed6ccf6bf6393d",
+    "text": "Correo"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "Un mensaje se puso en cola, se envió, se capturó, pasó a mensajes no entregables o se rechazó (un límite de frecuencia, una baja voluntaria, sin dirección), y los actos propios del canal de correo: un reintento, un mensaje de prueba, una plantilla guardada. Una fila nombra al destinatario y la categoría, nunca el cuerpo."
+  },
+  "audit.actions.authentication.label": {
+    "en": "579808c825684965",
+    "text": "Se aceptó una credencial"
+  },
+  "audit.actions.portal.activate.label": {
+    "en": "979387f5c20ade32",
+    "text": "Alguien completó la configuración de su cuenta desde un enlace de activación"
+  },
+  "audit.actions.portal.activate.refused.label": {
+    "en": "b70b90f7c094681b",
+    "text": "Se rechazó un enlace de activación"
+  },
+  "audit.actions.portal.password.changed.label": {
+    "en": "f1da75066d25fade",
+    "text": "Alguien cambió su propia contraseña"
+  },
+  "audit.actions.authn.password.changed.label": {
+    "en": "d386485290b35131",
+    "text": "Alguien cambió una contraseña que se le exigió cambiar al iniciar sesión"
+  },
+  "audit.actions.portal.password.refused.label": {
+    "en": "47f69cc67c7ed68a",
+    "text": "Se rechazó un cambio de contraseña"
+  },
+  "audit.actions.portal.password.csrf.label": {
+    "en": "d0d17a1db73fc8e9",
+    "text": "Se rechazó un formulario del portal por un token CSRF incorrecto"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "Alguien cerró sesión en el portal de usuario"
+  },
+  "audit.actions.portal.signout.csrf.label": {
+    "en": "5c6a2c095c428958",
+    "text": "Se rechazó un cierre de sesión del portal por un token CSRF incorrecto"
+  },
+  "audit.actions.portal.key.enrolled.label": {
+    "en": "a3f3da7733b18c08",
+    "text": "Alguien registró una llave de seguridad en su propia cuenta"
+  },
+  "audit.actions.portal.key.removed.label": {
+    "en": "9df626538a846900",
+    "text": "Alguien quitó una llave de seguridad de su propia cuenta"
+  },
+  "audit.actions.portal.key.renamed.label": {
+    "en": "60304bcfd89153d4",
+    "text": "Alguien renombró una de sus propias llaves de acceso"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "Alguien se emitió a sí mismo un certificado de cliente TLS"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "Alguien revocó uno de sus propios certificados de cliente TLS"
+  },
+  "audit.actions.activation.issued.label": {
+    "en": "5889a60b1396424b",
+    "text": "Un administrador emitió un enlace de activación"
+  },
+  "audit.actions.portal.password-reset.label": {
+    "en": "92c286943e08eabe",
+    "text": "Alguien estableció una contraseña nueva desde un enlace de restablecimiento de contraseña"
+  },
+  "audit.actions.portal.password-reset.refused.label": {
+    "en": "23968f6638f00db4",
+    "text": "Se rechazó un enlace de restablecimiento de contraseña"
+  },
+  "audit.actions.authn.mfa.enrolment.required.label": {
+    "en": "7c0e0aaea8f8b2c4",
+    "text": "Se pidió en un inicio de sesión configurar un segundo factor obligatorio"
+  },
+  "audit.actions.authn.mfa.enrolment.started.label": {
+    "en": "209d46dc07311972",
+    "text": "Se mostró el secreto de una aplicación de autenticación al iniciar sesión"
+  },
+  "audit.actions.authn.mfa.enrolment.offered.label": {
+    "en": "1ed9cdf1827f2e5b",
+    "text": "Se ofreció un segundo factor a un administrador que no tenía ninguno"
+  },
+  "audit.actions.authn.mfa.enrolment.declined.label": {
+    "en": "ba0e0e725746bbf3",
+    "text": "Un administrador ignoró la oferta e inició sesión con una contraseña"
+  },
+  "audit.actions.authn.second-factor.skipped.label": {
+    "en": "8ea4bca1ff36014e",
+    "text": "Un navegador recordado sustituyó al segundo factor (#265)"
+  },
+  "audit.actions.authn.mfa.enrolment.at-risk.label": {
+    "en": "c9d54d1c53954c0d",
+    "text": "Se configuró un segundo factor en un inicio de sesión de riesgo elevado"
+  },
+  "audit.actions.authn.mfa.enrolled.label": {
+    "en": "9f66bf08890386c9",
+    "text": "Alguien configuró un segundo factor obligatorio al iniciar sesión"
+  },
+  "audit.actions.portal.mfa.started.label": {
+    "en": "d51f6daad15168fd",
+    "text": "A alguien se le mostró un secreto nuevo de aplicación de autenticación"
+  },
+  "audit.actions.portal.mfa.enrolled.label": {
+    "en": "06603e0b57ab3156",
+    "text": "Alguien configuró una aplicación de autenticación en su propia cuenta"
+  },
+  "audit.actions.portal.mfa.refused.label": {
+    "en": "2118006526a28182",
+    "text": "No se confirmó la configuración de una aplicación de autenticación"
+  },
+  "audit.actions.portal.mfa.removed.label": {
+    "en": "5bb7d0985ef3e565",
+    "text": "Alguien quitó la aplicación de autenticación de su propia cuenta"
+  },
+  "audit.actions.portal.mfa.csrf.label": {
+    "en": "228f7d738861aa3c",
+    "text": "Se rechazó un cambio de aplicación de autenticación por un token CSRF incorrecto"
+  },
+  "audit.actions.portal.activate.mfa.started.label": {
+    "en": "df561a24375c8165",
+    "text": "Se mostró el secreto de una aplicación de autenticación mientras se usaba un enlace de activación"
+  },
+  "audit.actions.portal.activate.mfa.refused.label": {
+    "en": "7a566c67501c3cbf",
+    "text": "No se confirmó una aplicación de autenticación durante la activación"
+  },
+  "audit.actions.portal.activate.key.started.label": {
+    "en": "df93eecfc112a97a",
+    "text": "Se inició una ceremonia de llave de seguridad mientras se usaba un enlace de activación"
+  },
+  "audit.actions.portal.activate.key.enrolled.label": {
+    "en": "6f06ac6bc8ba305b",
+    "text": "Se registró una llave de seguridad mientras se usaba un enlace de activación"
+  },
+  "audit.actions.portal.activate.key.refused.label": {
+    "en": "0a96c72ca7f0d27e",
+    "text": "No se registró una llave de seguridad durante la activación"
+  },
+  "audit.actions.session.start.label": {
+    "en": "e88b0f8f798c2f1f",
+    "text": "Se creó una sesión de inicio de sesión"
+  },
+  "audit.actions.session.end.label": {
+    "en": "4edfa53f58db7a9b",
+    "text": "Se terminó una sesión de inicio de sesión"
+  },
+  "audit.actions.session.renew.label": {
+    "en": "0bfd5e67a3f0fdc2",
+    "text": "Una superficie alojada renovó sus tokens dentro de la misma sesión"
+  },
+  "audit.actions.logout.global.label": {
+    "en": "db32c1466e054343",
+    "text": "Se terminó todo lo que se tenía para una identidad, en todos los protocolos"
+  },
+  "audit.actions.logout.selective.label": {
+    "en": "e291d5be7d6ee6b6",
+    "text": "Se terminaron sesiones o credenciales determinadas de una identidad"
+  },
+  "audit.actions.logout.backchannel.label": {
+    "en": "8814d3131ad9808b",
+    "text": "Un Logout Token de canal posterior llegó a una parte que confía, o definitivamente no llegó"
+  },
+  "audit.actions.mail.queued.label": {
+    "en": "b3de8ca7af29b8f6",
+    "text": "Se puso en cola un mensaje para un destinatario"
+  },
+  "audit.actions.mail.sent.label": {
+    "en": "fa6f816945723d59",
+    "text": "El transporte aceptó un mensaje, o este se capturó"
+  },
+  "audit.actions.mail.dead.label": {
+    "en": "9af6832caf6ce8ab",
+    "text": "Un mensaje no se entregó y es un mensaje no entregable"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "No se puso en cola un mensaje (límite de frecuencia, baja voluntaria, sin dirección, sin transporte)"
+  },
+  "audit.actions.mail.reset-requested.label": {
+    "en": "96d00a4e43d335ab",
+    "text": "Una persona pidió un enlace de autoservicio para restablecer la contraseña; la fila dice si se envió uno, y el formulario nunca lo dice"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "Un administrador volvió a poner en cola un mensaje no entregable"
+  },
+  "audit.actions.mail.template.label": {
+    "en": "e647419ca1d6ef3f",
+    "text": "Se guardó o restableció la plantilla de mensaje de un dominio"
+  },
+  "audit.actions.mail.verified.label": {
+    "en": "3b2f440c71a1db39",
+    "text": "Una persona verificó la dirección de su entrada"
+  },
+  "audit.actions.mail.preferences.label": {
+    "en": "3bcffd401e71abf8",
+    "text": "Una persona cambió qué mensajes opcionales recibe"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "Se ejecutó una tarea programada, se puso en cola a mano o fue asumida por otro nodo"
+  },
+  "audit.actions.scheduler.step-down.label": {
+    "en": "c632cf6ff6fe1c5f",
+    "text": "Se pidió al líder del planificador que se retirara"
+  },
+  "audit.actions.keys.rotate.label": {
+    "en": "d6193043627c50dd",
+    "text": "Se rotaron las claves de firma de un dominio"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "Se rotaron las claves de firma de un dominio en una EMERGENCIA: certificados revocados por keyCompromise, sesiones terminadas"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "El secreto de cliente de una aplicación vence pronto"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "El secreto de cliente de una aplicación ha vencido"
+  },
+  "audit.actions.keys.retire.label": {
+    "en": "04a39be278dba264",
+    "text": "Se descartaron claves de firma retiradas cuyo periodo de gracia había pasado"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "Se rotaron las claves de cifrado de datos"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "Se volvieron a sellar los valores protegidos con claves de cifrado de datos reemplazadas"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "Se destruyeron claves de cifrado de datos reemplazadas bajo las que ya no hay nada sellado"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "Se rotó la clave de cifrado de claves en su servicio de administración de claves y se volvieron a envolver las claves de datos"
+  },
+  "audit.actions.keys.pin.label": {
+    "en": "d76686444b21987a",
+    "text": "Se fijó un par de claves como clave de firma de un dominio para un algoritmo"
+  },
+  "audit.actions.keys.unpin.label": {
+    "en": "54192b081654a36e",
+    "text": "Se dejó de fijar una clave de firma fijada; la clave generada vuelve a firmar"
+  },
+  "audit.actions.oidfed.key-minted.label": {
+    "en": "757374057c690128",
+    "text": "Se creó la primera Federation Entity Key de un dominio"
+  },
+  "audit.actions.oidfed.key-rotated.label": {
+    "en": "421ae5fd8aeff013",
+    "text": "Se rotó la Federation Entity Key de un dominio"
+  },
+  "audit.actions.oidfed.key-revoked.label": {
+    "en": "d44e60f7c3b5dfd2",
+    "text": "Se revocó una Federation Entity Key"
+  },
+  "audit.actions.oidfed.subordinate-set.label": {
+    "en": "9bed214a635cd3f6",
+    "text": "Se registró una entidad como subordinada de la federación"
+  },
+  "audit.actions.oidfed.subordinate-removed.label": {
+    "en": "0c067c73e73448f8",
+    "text": "Se quitó una subordinada de la federación"
+  },
+  "audit.actions.oidfed.anchor-set.label": {
+    "en": "ead499e281c4e6de",
+    "text": "Se configuró un Trust Anchor de la federación"
+  },
+  "audit.actions.oidfed.anchor-removed.label": {
+    "en": "2b7251797963c5ef",
+    "text": "Se quitó un Trust Anchor de la federación"
+  },
+  "audit.actions.oidfed.mark-type-set.label": {
+    "en": "9e9372675eaa32ad",
+    "text": "Se registró un tipo de Trust Mark para emitirlo"
+  },
+  "audit.actions.oidfed.remove-mark-type.label": {
+    "en": "835f965dca447e5d",
+    "text": "Se dejó de emitir un tipo de Trust Mark"
+  },
+  "audit.actions.oidfed.mark-policy-set.label": {
+    "en": "d5ab1ca537a13651",
+    "text": "Se estableció la política de un Trust Anchor para un tipo de Trust Mark"
+  },
+  "audit.actions.oidfed.remove-mark-policy.label": {
+    "en": "9dccb0790296dce2",
+    "text": "Se quitó la política de un Trust Anchor para un tipo de Trust Mark"
+  },
+  "audit.actions.oidfed.mark-issued.label": {
+    "en": "e64f13f3406e1762",
+    "text": "Se emitió una Trust Mark"
+  },
+  "audit.actions.oidfed.mark-revoked.label": {
+    "en": "6f2328d050fa14d0",
+    "text": "Se revocó una Trust Mark"
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "Se agregó a la Entity Configuration del dominio una Trust Mark emitida para él"
+  },
+  "audit.actions.oidfed.held-mark-removed.label": {
+    "en": "95a2ca1dbc9523c2",
+    "text": "Se quitó una Trust Mark que se llevaba"
+  },
+  "audit.actions.oidfed.act-refused.label": {
+    "en": "401bfc3383109058",
+    "text": "Se rechazó un acto de OpenID Federation por sus datos de entrada"
+  },
+  "audit.actions.oidfed.resolved.label": {
+    "en": "f143a7ceda9e1a0a",
+    "text": "Un administrador resolvió la Trust Chain de una entidad"
+  },
+  "audit.actions.device.create.label": {
+    "en": "3db68946dc0a58b8",
+    "text": "Se registró un dispositivo"
+  },
+  "audit.actions.device.browser.remembered.label": {
+    "en": "49ff1994e426c867",
+    "text": "Una persona pidió que se recordara este navegador (#265)"
+  },
+  "audit.actions.device.update.label": {
+    "en": "3bc1ce21da5ded97",
+    "text": "Se modificó un dispositivo: su etiqueta, propietario, aplicaciones o estado"
+  },
+  "audit.actions.device.delete.label": {
+    "en": "65e418409a57cb08",
+    "text": "Se quitó un dispositivo"
+  },
+  "audit.actions.device.evict.label": {
+    "en": "b1cb118450f0fbef",
+    "text": "Se quitó un dispositivo para hacer lugar dentro del límite de su persona"
+  },
+  "audit.actions.device.attestation-revoked.label": {
+    "en": "3571d30810b2d9c7",
+    "text": "La clave de un dispositivo ya no está atestada: la lista de estado de atestación de Android de Google revoca su cadena"
+  },
+  "audit.actions.webauthn.attestation-revoked.label": {
+    "en": "0be46b8b29aaf446",
+    "text": "La atestación de una llave de seguridad ya no es de confianza: la lista de estado de atestación de Android de Google revoca su cadena"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "Se agregó una clave a un dispositivo"
+  },
+  "audit.actions.device.key-remove.label": {
+    "en": "edae701aed965cc2",
+    "text": "Se quitó una clave de un dispositivo"
+  },
+  "audit.actions.device.compliance.label": {
+    "en": "60bbcc3da44c2094",
+    "text": "Se estableció el cumplimiento de un dispositivo"
+  },
+  "audit.actions.device.enrol.refused.label": {
+    "en": "9dd9615a103316c6",
+    "text": "Se rechazó una clave de dispositivo sin atestación verificada"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "Se creó un usuario"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "Se eliminó un usuario"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "Se actualizó un usuario"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "Se renombró un usuario"
+  },
+  "audit.actions.cells.rehome.label": {
+    "en": "5d1b93eaa6c979c6",
+    "text": "Se trasladó a una persona a otra celda"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "Una búsqueda devolvió al menos un usuario"
+  },
+  "audit.actions.group.create.label": {
+    "en": "58d10c676bac86f0",
+    "text": "Se creó un grupo"
+  },
+  "audit.actions.group.delete.label": {
+    "en": "c09f3ad40bb637a6",
+    "text": "Se eliminó un grupo"
+  },
+  "audit.actions.group.update.label": {
+    "en": "7b8bdc21120a364b",
+    "text": "Se actualizó un grupo"
+  },
+  "audit.actions.group.rename.label": {
+    "en": "7249c5235cd5c992",
+    "text": "Se renombró un grupo"
+  },
+  "audit.actions.entry.create.label": {
+    "en": "d15a6deade1530ee",
+    "text": "Se creó una entrada en otra parte del árbol"
+  },
+  "audit.actions.entry.delete.label": {
+    "en": "7c1e5a26bd61edeb",
+    "text": "Se eliminó una entrada en otra parte del árbol"
+  },
+  "audit.actions.entry.update.label": {
+    "en": "a04e6a7c2bb7c122",
+    "text": "Se actualizó una entrada en otra parte del árbol"
+  },
+  "audit.actions.entry.rename.label": {
+    "en": "ca4b7726b4ea6fc4",
+    "text": "Se renombró una entrada en otra parte del árbol"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "Una búsqueda que no devolvió ningún usuario"
+  },
+  "audit.actions.directory.compare.label": {
+    "en": "3045c116ef8b9c13",
+    "text": "Se comparó el valor de un atributo"
+  },
+  "audit.actions.directory.bind.label": {
+    "en": "df3057c73cc1b56c",
+    "text": "Un bind"
+  },
+  "audit.actions.application.create.label": {
+    "en": "24f5ef2da42260cf",
+    "text": "Se vio una aplicación por primera vez"
+  },
+  "audit.actions.application.secret-revealed.label": {
+    "en": "8f3f50eb41e457f1",
+    "text": "Se reveló a un administrador una credencial de una aplicación"
+  },
+  "audit.actions.application.export.label": {
+    "en": "6cf3b675c20a94b9",
+    "text": "Se exportó una aplicación a un archivo LDIF"
+  },
+  "audit.actions.application.import.label": {
+    "en": "11baa5a45c403972",
+    "text": "Se importó una aplicación desde un archivo LDIF"
+  },
+  "audit.actions.application.update.label": {
+    "en": "fdd9e6c7aff9da36",
+    "text": "Una aplicación registró algo nuevo"
+  },
+  "audit.actions.consent.grant.label": {
+    "en": "b293aef893d9084c",
+    "text": "Una persona dio su consentimiento a los ámbitos de una aplicación"
+  },
+  "audit.actions.consent.deny.label": {
+    "en": "39e3064d53842768",
+    "text": "Una persona rechazó los ámbitos de una aplicación"
+  },
+  "audit.actions.consent.revoke.label": {
+    "en": "3f62e1d9194a46d3",
+    "text": "Se retiró un consentimiento registrado"
+  },
+  "audit.actions.application.delete.label": {
+    "en": "d0041a29161906a3",
+    "text": "Se eliminó una aplicación del registro"
+  },
+  "audit.actions.oidfed.registered.label": {
+    "en": "477befa37c2832e8",
+    "text": "Se registró una parte que confía a través de una OpenID Federation"
+  },
+  "audit.actions.oidfed.registration-refused.label": {
+    "en": "da4aeca7dea3666c",
+    "text": "Se rechazó un registro a través de una OpenID Federation"
+  },
+  "audit.actions.admin.view.label": {
+    "en": "0e19d702f1b129e8",
+    "text": "Se vio una página de la consola"
+  },
+  "audit.actions.admin.change.label": {
+    "en": "cfd6adfa05969133",
+    "text": "Se envió un formulario de la consola"
+  },
+  "audit.actions.claims.change.label": {
+    "en": "34e69552072a4ab5",
+    "text": "Se modificó un conjunto de claims de un token o una aserción"
+  },
+  "audit.actions.admin.role.change.label": {
+    "en": "01b01e9a91df66f7",
+    "text": "Se concedió o retiró un rol de la consola de administración"
+  },
+  "audit.actions.admin.console.bootstrap.label": {
+    "en": "fb5ea855b492ffb3",
+    "text": "Se sembró el administrador de arranque, o inició sesión en la consola por primera vez"
+  },
+  "audit.actions.admin.mail.set.label": {
+    "en": "00a6e30371abdc2d",
+    "text": "Un administrador estableció la dirección de una persona"
+  },
+  "audit.actions.admin.mfa.totp.cleared.label": {
+    "en": "478c7ee15248637f",
+    "text": "Un operador borró la aplicación de autenticación de alguien"
+  },
+  "audit.actions.admin.mfa.key.cleared.label": {
+    "en": "d62700d9f7751e8b",
+    "text": "Un operador quitó la llave de seguridad de alguien"
+  },
+  "audit.actions.admin.mfa.key.renamed.label": {
+    "en": "c179dbd3cb227763",
+    "text": "Un operador renombró la llave de acceso de alguien"
+  },
+  "audit.actions.admin.password.reset.label": {
+    "en": "079b0b2fbe1a3633",
+    "text": "Un operador restableció la contraseña de alguien"
+  },
+  "audit.actions.admin.password.reset-link.label": {
+    "en": "852a4863afb8c14c",
+    "text": "Un operador emitió a alguien un enlace de restablecimiento de contraseña"
+  },
+  "audit.actions.admin.mfa.primary-keys.removed.label": {
+    "en": "862aab6d15756275",
+    "text": "Un operador desactivó el inicio de sesión sin contraseña de alguien"
+  },
+  "audit.actions.admin.mfa.disabled.label": {
+    "en": "3173c5ea3812f14e",
+    "text": "Un operador quitó todos los segundos factores que tenía alguien"
+  },
+  "audit.actions.admin.mfa.required.label": {
+    "en": "26c5d8ef5b36a4ad",
+    "text": "Un operador exigió un segundo factor a alguien"
+  },
+  "audit.actions.admin.mfa.unrequired.label": {
+    "en": "e9ee0fbe15904e35",
+    "text": "Un operador dejó de exigir un segundo factor a alguien"
+  },
+  "audit.actions.admin.delegation.not-delegated.label": {
+    "en": "305dc1462bc75cc4",
+    "text": "Un operador marcó a alguien como no delegable, o quitó la marca"
+  },
+  "audit.actions.admin.delegation.may-act.label": {
+    "en": "2d5a617736d0c319",
+    "text": "Un operador nombró o borró la parte que puede actuar en nombre de alguien"
+  },
+  "audit.actions.admin.delegation.semantics.label": {
+    "en": "370cb73f7a19a60b",
+    "text": "Un operador estableció la semántica de delegación que permite una persona, o su valor predeterminado (#186)"
+  },
+  "audit.actions.portal.delegation.may-act.label": {
+    "en": "faa7f1245749fea5",
+    "text": "Una persona nombró o borró la parte que puede actuar en su nombre"
+  },
+  "audit.actions.admin.password-policy.change.label": {
+    "en": "3919c9c6efb6ee77",
+    "text": "Se modificó un perfil de política de contraseñas"
+  },
+  "audit.actions.admin.authn-policy.change.label": {
+    "en": "be6362a1a19bae26",
+    "text": "Se modificó un perfil de política de autenticación"
+  },
+  "audit.actions.admin.locale-policy.change.label": {
+    "en": "4dfe507526bb6dd5",
+    "text": "Se modificó un perfil de política de configuración regional"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "Se activó o desactivó un segundo factor por correo electrónico"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "Se envió un código o enlace de inicio de sesión por correo electrónico"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "Se aceptó un código o enlace de inicio de sesión enviado por correo electrónico"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "Se rechazó un código o enlace de inicio de sesión enviado por correo electrónico"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "Se agregó o quitó un ancla de confianza para certificados de cliente"
+  },
+  "audit.actions.krb5.keys.derived.label": {
+    "en": "048452fd758565c6",
+    "text": "Se derivaron las claves Kerberos de una persona a partir de su contraseña"
+  },
+  "audit.actions.admin.krb5.keys.cleared.label": {
+    "en": "a9405f7ee523fd30",
+    "text": "Un operador borró las claves Kerberos de alguien"
+  },
+  "audit.actions.admin.krb5.service.created.label": {
+    "en": "c81b1d8c217579ec",
+    "text": "Se creó un principal de servicio Kerberos con una clave aleatoria"
+  },
+  "audit.actions.admin.krb5.service.rotated.label": {
+    "en": "322d960ee729793c",
+    "text": "Se rotó la clave de un principal de servicio Kerberos"
+  },
+  "audit.actions.admin.krb5.service.deleted.label": {
+    "en": "e9d7662a459d7ad5",
+    "text": "Se eliminó la clave guardada de un principal de servicio Kerberos"
+  },
+  "audit.actions.admin.krb5.previous.dropped.label": {
+    "en": "1016d50b8a7601b9",
+    "text": "Un operador descartó las versiones anteriores de clave Kerberos que una persona o un principal de servicio todavía conservaba"
+  },
+  "audit.actions.api.read.label": {
+    "en": "5d856ba543153b94",
+    "text": "Una lectura de la API de administración"
+  },
+  "audit.actions.api.change.label": {
+    "en": "258c82b64e15408a",
+    "text": "Una escritura de la API de administración"
+  },
+  "audit.actions.protocol.call.label": {
+    "en": "9f6c67e10d66e597",
+    "text": "Se llamó a un endpoint de protocolo"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "Un cliente revocó un token OAuth 2.0 en /oauth2/revoke, o se le rechazó el de otro cliente"
+  },
+  "audit.actions.protocol.failure.label": {
+    "en": "7a4b45f0a9763acd",
+    "text": "Se rechazó o falló una operación de protocolo"
+  },
+  "audit.actions.service.failure.label": {
+    "en": "20f1fa365cfbca21",
+    "text": "Falló algo que este servicio hace por sí mismo"
+  },
+  "audit.actions.spiffe.svid.issue.label": {
+    "en": "f6a1c6d754b03f45",
+    "text": "Se emitió un SVID"
+  },
+  "audit.actions.spiffe.svid.validate.label": {
+    "en": "2985e02244f967c8",
+    "text": "Se validó un JWT-SVID"
+  },
+  "audit.actions.spiffe.entry.create.label": {
+    "en": "9949b94180356b54",
+    "text": "Se creó una entrada de registro"
+  },
+  "audit.actions.spiffe.entry.update.label": {
+    "en": "4d768a07aee4e2c9",
+    "text": "Se modificó una entrada de registro"
+  },
+  "audit.actions.spiffe.entry.delete.label": {
+    "en": "53297b800cad6afc",
+    "text": "Se eliminó una entrada de registro"
+  },
+  "audit.actions.spiffe.agent.create.label": {
+    "en": "3d5c2896da415cbe",
+    "text": "Un agente se atestó por primera vez"
+  },
+  "audit.actions.spiffe.agent.attest.label": {
+    "en": "2878b0a388b202ab",
+    "text": "Un agente volvió a atestarse"
+  },
+  "audit.actions.spiffe.agent.ban.label": {
+    "en": "da40021ba677279f",
+    "text": "Se vetó a un agente"
+  },
+  "audit.actions.spiffe.agent.unban.label": {
+    "en": "77326a7c253442bb",
+    "text": "Se levantó el veto a un agente"
+  },
+  "audit.actions.spiffe.agent.delete.label": {
+    "en": "d7b8483047ba641e",
+    "text": "Se eliminó un agente"
+  },
+  "audit.actions.spiffe.bundle.read.label": {
+    "en": "7f6e38b4ab094630",
+    "text": "Se obtuvo el paquete de confianza"
+  },
+  "audit.actions.spiffe.bundle.change.label": {
+    "en": "61fe1f3cbe80f39c",
+    "text": "Se rotó una autoridad, o se estableció o quitó un paquete federado"
+  },
+  "audit.actions.spiffe.call.refuse.label": {
+    "en": "40d52233dda92cda",
+    "text": "Se rechazó una llamada a la SPIRE Server API por quién la hacía"
+  },
+  "audit.actions.xacml.decision.label": {
+    "en": "8930a657b99988a7",
+    "text": "El PDP llegó a una decisión"
+  },
+  "audit.actions.xacml.enforcement.label": {
+    "en": "d9fe267d0aae76d6",
+    "text": "El PEP integrado aplicó una decisión"
+  },
+  "audit.actions.xacml.issuance.refused.label": {
+    "en": "f1b5bcbea74861a0",
+    "text": "El PEP de emisión no permitió que este servicio acuñara algo"
+  },
+  "audit.actions.xacml.access.refused.label": {
+    "en": "82838f9e909973d8",
+    "text": "El PEP de acceso rechazó una solicitud a una superficie protegida"
+  },
+  "audit.actions.xacml.issuance.alarm.label": {
+    "en": "38060f35597fa37d",
+    "text": "El PEP de emisión dejó pasar un riesgo elevado, sin factor al que escalar, para una aplicación a la que el riesgo nunca puede bloquear"
+  },
+  "audit.actions.xacml.pep.register.label": {
+    "en": "f6687cc2fa5b3bac",
+    "text": "Se registró un Policy Enforcement Point remoto"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "Se emitió a un PEP remoto un certificado de escucha HTTPS"
+  },
+  "audit.actions.xacml.pip.query.label": {
+    "en": "af3eace9dacb68c6",
+    "text": "Un PEP remoto pidió al PIP los atributos de un sujeto"
+  },
+  "audit.actions.saml2.request.signature.label": {
+    "en": "2c3788ba6491a142",
+    "text": "Se comprobó la firma de la solicitud de un proveedor de servicios SAML 2.0"
+  },
+  "audit.actions.gnap.grant.request.label": {
+    "en": "76968511df03acf3",
+    "text": "Se solicitó una concesión GNAP"
+  },
+  "audit.actions.gnap.grant.consent.label": {
+    "en": "c353731b459990c0",
+    "text": "Un propietario de recursos aprobó una concesión GNAP"
+  },
+  "audit.actions.gnap.grant.deny.label": {
+    "en": "55de39fc99dc456d",
+    "text": "Un propietario de recursos no aprobó una concesión GNAP"
+  },
+  "audit.actions.gnap.grant.approve.label": {
+    "en": "d2aa94094296bd99",
+    "text": "Se aprobó una concesión GNAP y se liberaron sus tokens"
+  },
+  "audit.actions.gnap.grant.revoke.label": {
+    "en": "5fb758cf8f654e10",
+    "text": "Se revocó una concesión GNAP"
+  },
+  "audit.actions.gnap.grant.owner-queued.label": {
+    "en": "27d7c634cbbfeeca",
+    "text": "Una concesión GNAP espera en el portal la aprobación de su propietario de recursos ausente (#432 fase 6)"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "La persona en una página de aprobación GNAP no era el usuario que nombraba la solicitud, y la concesión se envió al portal de ese usuario (#432 fase 6)"
+  },
+  "audit.actions.gnap.grant.finalize.label": {
+    "en": "fee9afbd448956f2",
+    "text": "Se finalizó una concesión GNAP, con el motivo: emitida, revocada, rechazada o vencida"
+  },
+  "audit.actions.gnap.token.issue.label": {
+    "en": "01a8a01e0a6de666",
+    "text": "Se emitió un token de acceso GNAP"
+  },
+  "audit.actions.gnap.token.rotate.label": {
+    "en": "2577dadbfe39e706",
+    "text": "Se rotó un token de acceso GNAP"
+  },
+  "audit.actions.gnap.token.revoke.label": {
+    "en": "400717d57ee49589",
+    "text": "Se revocó un token de acceso GNAP"
+  },
+  "audit.actions.gnap.rs.introspect.label": {
+    "en": "95163051792199f3",
+    "text": "Un servidor de recursos introspeccionó un token de acceso GNAP"
+  },
+  "audit.actions.gnap.rs.register.label": {
+    "en": "616528ec363696a9",
+    "text": "Un servidor de recursos registró un conjunto de recursos GNAP"
+  },
+  "audit.actions.ssf.stream.create.label": {
+    "en": "3d4873ca2f3e8a95",
+    "text": "Se creó un flujo de Shared Signals"
+  },
+  "audit.actions.ssf.stream.update.label": {
+    "en": "153bad40b9661b0f",
+    "text": "Se modificó un flujo de Shared Signals"
+  },
+  "audit.actions.ssf.stream.delete.label": {
+    "en": "ab202e818b58bb83",
+    "text": "Se eliminó un flujo de Shared Signals"
+  },
+  "audit.actions.ssf.stream.status.label": {
+    "en": "b7b5eb76ca067916",
+    "text": "Se habilitó, pausó o deshabilitó un flujo"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "Se agregó o quitó un sujeto de un flujo"
+  },
+  "audit.actions.ssf.event.transmit.label": {
+    "en": "3a3cd80f6d3a215a",
+    "text": "Se entregó un Security Event Token a un receptor"
+  },
+  "audit.actions.ssf.event.refused.label": {
+    "en": "29910e5a49b21a0c",
+    "text": "Un receptor rechazó un Security Event Token"
+  },
+  "audit.actions.ssf.stream.dead.label": {
+    "en": "06c053574e130b1a",
+    "text": "Se declaró muerto un flujo push tras solo envíos fallidos"
+  },
+  "audit.actions.ssf.stream.revived.label": {
+    "en": "bb572a202bd6c70a",
+    "text": "Se reactivó un flujo push muerto"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "Se vació a mano la cola de mensajes no entregables de un flujo"
+  },
+  "audit.actions.ssf.event.receive.label": {
+    "en": "12ab6669f5a136e8",
+    "text": "Se envió un Security Event Token A este servicio"
+  },
+  "audit.actions.caep.event.auto.label": {
+    "en": "b5f40accc5e9e150",
+    "text": "Un evento CAEP quedó pendiente porque cambió una sesión"
+  },
+  "audit.actions.caep.event.emit.label": {
+    "en": "b0c8137c489493d5",
+    "text": "Se emitió a mano un evento CAEP"
+  },
+  "audit.actions.caep.session.reset.label": {
+    "en": "dc5cd9a8d40da255",
+    "text": "Se restableció el estado CAEP de una sesión"
+  },
+  "audit.actions.caep.session.clear.label": {
+    "en": "5d7001f86cd8a1e9",
+    "text": "Se borró el registro de sesiones CAEP"
+  },
+  "audit.actions.risc.event.auto.label": {
+    "en": "1ce902ca9f8e640a",
+    "text": "Un evento RISC quedó pendiente porque cambió el directorio"
+  },
+  "audit.actions.risc.event.emit.label": {
+    "en": "b1167bf71ee133e2",
+    "text": "Se emitió a mano un evento RISC"
+  },
+  "audit.actions.risc.account.reset.label": {
+    "en": "94728541aaba5150",
+    "text": "Se restableció el estado RISC de una cuenta"
+  },
+  "audit.actions.risc.account.clear.label": {
+    "en": "38e9f05ac95fd655",
+    "text": "Se borró el registro de cuentas RISC"
+  },
+  "audit.actions.admin.aud-sub.set.label": {
+    "en": "67489d67e805ecfd",
+    "text": "Un administrador modificó la configuración aud_sub de una persona"
+  },
+  "audit.actions.admin.mfa.backup-codes.cleared.label": {
+    "en": "ea84314da98659bf",
+    "text": "Un administrador borró los códigos de recuperación de una persona"
+  },
+  "audit.actions.admin.password.reset-keytab.label": {
+    "en": "b038ba117b4de668",
+    "text": "Un administrador restableció una contraseña y entregó el keytab de la persona"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "Un administrador estableció, agregó o quitó un atributo de una persona"
+  },
+  "audit.actions.admin.service-account.set.label": {
+    "en": "5f269de6647c621b",
+    "text": "Un administrador convirtió a una persona en cuenta de servicio, o cambió su propietario o su destino"
+  },
+  "audit.actions.admin.service-account.cleared.label": {
+    "en": "b2581e6ddce1f837",
+    "text": "Un administrador volvió a convertir una cuenta de servicio en una persona común"
+  },
+  "audit.actions.admin.service-account.rotate.label": {
+    "en": "9eab836b051b0346",
+    "text": "Un administrador pidió que se rotara la contraseña de una cuenta de servicio"
+  },
+  "audit.actions.admin.app-password.created.label": {
+    "en": "39ab2dba96dcf58b",
+    "text": "Un administrador creó una contraseña de aplicación para una persona"
+  },
+  "audit.actions.admin.app-password.revoked.label": {
+    "en": "0509990ff43e2d9e",
+    "text": "Un administrador revocó una contraseña de aplicación de una persona"
+  },
+  "audit.actions.admin.ciba.answered.label": {
+    "en": "0f2e483fa60b8d8f",
+    "text": "Un administrador aprobó o denegó una solicitud CIBA (control de prueba)"
+  },
+  "audit.actions.admin.device.removed.label": {
+    "en": "893a2ce1d871ed95",
+    "text": "Un administrador quitó un dispositivo de una persona"
+  },
+  "audit.actions.admin.ida.recorded.label": {
+    "en": "b68f52de80751f43",
+    "text": "Un administrador registró una verificación de identidad para una persona"
+  },
+  "audit.actions.admin.ida.removed.label": {
+    "en": "071852997fcc15ca",
+    "text": "Un administrador quitó la verificación de identidad de una persona"
+  },
+  "audit.actions.admin.siop.enrolled.label": {
+    "en": "f6e33546d3d23472",
+    "text": "Un administrador registró un sujeto autoemitido (SIOPv2) para una persona"
+  },
+  "audit.actions.admin.siop.removed.label": {
+    "en": "f6af7681f3d25fd7",
+    "text": "Un administrador quitó el sujeto autoemitido (SIOPv2) de una persona"
+  },
+  "audit.actions.ssf.signals.discover.label": {
+    "en": "55d2d7d9682c339a",
+    "text": "Se descubrió la configuración de Shared Signals de un socio de federación"
+  },
+  "audit.actions.ssf.signals.stream.label": {
+    "en": "737beffd42f5852e",
+    "text": "Se creó un flujo en el transmisor de Shared Signals de un socio de federación"
+  },
+  "audit.actions.ssf.signals.unblock.label": {
+    "en": "5219dcbe14570844",
+    "text": "Se volvieron a permitir inicios de sesión que la señal de un socio de federación había bloqueado"
+  },
+  "audit.actions.ssf.signals.read-stream.label": {
+    "en": "ffea29094f8154a0",
+    "text": "Se leyó el flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.update-stream.label": {
+    "en": "9450fed407b4c350",
+    "text": "Se actualizó el flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.delete-stream.label": {
+    "en": "b15530168632eb08",
+    "text": "Se eliminó el flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.set-status.label": {
+    "en": "285b162026e85285",
+    "text": "Se estableció el estado del flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "Se agregó un sujeto al flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.remove-subject.label": {
+    "en": "c316b73a1a06cc62",
+    "text": "Se quitó un sujeto del flujo de un socio de federación"
+  },
+  "audit.actions.ssf.signals.verify.label": {
+    "en": "d9dca81bc6808ffa",
+    "text": "Se pidió un evento de verificación al flujo de un socio de federación"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "La CA emitió el par de claves de cliente de una superficie alojada"
+  },
+  "audit.actions.enrollment.acme.account.create.label": {
+    "en": "3e069a334b19666a",
+    "text": "Se creó una cuenta ACME"
+  },
+  "audit.actions.enrollment.acme.account.deactivate.label": {
+    "en": "72423ecca6d7a8d3",
+    "text": "Se desactivó una cuenta ACME"
+  },
+  "audit.actions.enrollment.acme.account.key-change.label": {
+    "en": "45caca51b10836c9",
+    "text": "Se cambió la clave de una cuenta ACME"
+  },
+  "audit.actions.enrollment.eab.create.label": {
+    "en": "02cae811cec833c3",
+    "text": "Se creó una clave External Account Binding de ACME"
+  },
+  "audit.actions.enrollment.eab.delete.label": {
+    "en": "c8aa53e6726431da",
+    "text": "Se quitó una clave External Account Binding de ACME"
+  },
+  "audit.actions.enrollment.challenge.create.label": {
+    "en": "28c2f31734c71daf",
+    "text": "Se creó una contraseña de desafío SCEP"
+  },
+  "audit.actions.enrollment.challenge.delete.label": {
+    "en": "f6ccc4485e9cef99",
+    "text": "Se quitó una contraseña de desafío SCEP"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "Se emitió un certificado mediante ACME, EST o SCEP"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "Se rechazó una inscripción de certificado"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "Se revocó un certificado inscrito"
+  },
+  "audit.actions.federation.signal-block.label": {
+    "en": "0f06883b0dbb2366",
+    "text": "Las Shared Signals de un socio de federación bloquearon sus inicios de sesión de una persona (#373)"
+  },
+  "audit.actions.federation.signal-unblock.label": {
+    "en": "f1b6331059f472d3",
+    "text": "Las Shared Signals de un socio de federación levantaron su bloqueo sobre una persona (#373)"
+  },
+  "audit.actions.federation.signout.label": {
+    "en": "2e6c01e23921383f",
+    "text": "El cierre de sesión de un socio de federación terminó una sesión"
+  },
+  "audit.actions.federation.signout-answered.label": {
+    "en": "156d4e2f462e9126",
+    "text": "Un socio de federación confirmó un cierre de sesión que envió este servicio"
+  },
+  "audit.actions.federation.unlink.label": {
+    "en": "a5c85407fff2c148",
+    "text": "Se quitó un vínculo de federación de una persona"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "Se agregó un miembro a un grupo"
+  },
+  "audit.actions.krb5.keytab.person.label": {
+    "en": "7f9ec638380e53d7",
+    "text": "Se generó el keytab de una persona a partir de una contraseña proporcionada"
+  },
+  "audit.actions.logout.backchannel.retry.label": {
+    "en": "48c1b798cbbd16cc",
+    "text": "Se reintentó una entrega muerta de un Logout Token de canal posterior"
+  },
+  "audit.actions.oauth.device-secret.revoke.label": {
+    "en": "f382e451311ceacd",
+    "text": "Se revocó un secreto de dispositivo de Native SSO"
+  },
+  "audit.actions.oauth2.ciba.notify.label": {
+    "en": "40247d2486a53b3f",
+    "text": "Se entregó o falló una notificación ping o push de CIBA"
+  },
+  "audit.actions.oauth2.claim-source-linked.label": {
+    "en": "378743408d814c69",
+    "text": "Una persona vinculó un Claims Provider"
+  },
+  "audit.actions.oauth2.claims-providers.add-provider.label": {
+    "en": "32689eddc489b284",
+    "text": "Se registró un Claims Provider"
+  },
+  "audit.actions.oauth2.claims-providers.update-provider.label": {
+    "en": "47c730b95278173b",
+    "text": "Se modificó un Claims Provider"
+  },
+  "audit.actions.oauth2.claims-providers.remove-provider.label": {
+    "en": "be1f28b2db7c1656",
+    "text": "Se quitó un Claims Provider"
+  },
+  "audit.actions.oauth2.claims-providers.revoke-link.label": {
+    "en": "a320d071faf639f1",
+    "text": "Se revocó el vínculo de una persona con un Claims Provider"
+  },
+  "audit.actions.oauth2.command.label": {
+    "en": "e00f7bb85d9450bc",
+    "text": "Se recibió un OpenID Provider Command"
+  },
+  "audit.actions.oauth2.command.tenant.label": {
+    "en": "9615a82791bf97fd",
+    "text": "Se ejecutó un comando de inquilino de OpenID Provider"
+  },
+  "audit.actions.oauth2.grant-revoked.label": {
+    "en": "822d13c8d94685a0",
+    "text": "Se revocó una concesión de Grant Management"
+  },
+  "audit.actions.oauth2.par.withdraw.label": {
+    "en": "f3413ee65719b6eb",
+    "text": "Se retiró una solicitud de autorización enviada (PAR)"
+  },
+  "audit.actions.password.set.label": {
+    "en": "2a1b07a8ecbc1d84",
+    "text": "Un administrador estableció la contraseña de una persona"
+  },
+  "audit.actions.service-account.rotated.label": {
+    "en": "260f3e0c6496aafe",
+    "text": "Se rotó la contraseña de una cuenta de servicio y se envió a su destino"
+  },
+  "audit.actions.service-account.rotation-failed.label": {
+    "en": "e37cc3c875768aba",
+    "text": "La contraseña de una cuenta de servicio no se rotó; no cambió nada"
+  },
+  "audit.actions.portal.app-password.created.label": {
+    "en": "1128ac83789c2235",
+    "text": "Una persona creó una contraseña de aplicación"
+  },
+  "audit.actions.portal.app-password.revoked.label": {
+    "en": "cc585fef9d245590",
+    "text": "Una persona revocó una contraseña de aplicación"
+  },
+  "audit.actions.portal.app-password.csrf.label": {
+    "en": "e77bbbd5f3d6480d",
+    "text": "Se rechazó un formulario de contraseña de aplicación por su token CSRF"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "Se rechazó un formulario de certificados por su token CSRF"
+  },
+  "audit.actions.portal.device.remove.label": {
+    "en": "a23e3b91423c45b6",
+    "text": "Una persona quitó un dispositivo de Native SSO"
+  },
+  "audit.actions.portal.device.remember-browser.label": {
+    "en": "3e6dd7c211c0de5a",
+    "text": "Una persona recordó el navegador que usaba en /portal/devices (#265)"
+  },
+  "audit.actions.portal.kerberos.keytab.label": {
+    "en": "d228ad6c8de67f3a",
+    "text": "Una persona descargó su propio keytab"
+  },
+  "audit.actions.portal.kerberos.refused.label": {
+    "en": "06c1bf49bafd77aa",
+    "text": "Se rechazó la solicitud de keytab de una persona"
+  },
+  "audit.actions.portal.kerberos.csrf.label": {
+    "en": "45607efabeb88b85",
+    "text": "Se rechazó un formulario de Kerberos por su token CSRF"
+  },
+  "audit.actions.portal.key.started.label": {
+    "en": "94d7c38c91fd3cbe",
+    "text": "Una persona comenzó a registrar una llave de seguridad"
+  },
+  "audit.actions.portal.key.refused.label": {
+    "en": "6679aa8b834badee",
+    "text": "Se rechazó el registro de la llave de seguridad de una persona"
+  },
+  "audit.actions.portal.mfa.backup-codes.generated.label": {
+    "en": "18ec89def789c4a2",
+    "text": "Una persona generó un conjunto de códigos de recuperación"
+  },
+  "audit.actions.portal.mfa.backup-codes.confirmed.label": {
+    "en": "d00909f08b87672d",
+    "text": "Una persona confirmó que guardó sus códigos de recuperación"
+  },
+  "audit.actions.portal.mfa.backup-codes.discarded.label": {
+    "en": "6dd158a3c30ffda1",
+    "text": "Una persona descartó un conjunto generado de códigos de recuperación"
+  },
+  "audit.actions.portal.risc.optOutInitiated.label": {
+    "en": "5ab0bc8a8b2b737e",
+    "text": "Una persona comenzó a darse de baja de RISC"
+  },
+  "audit.actions.portal.risc.optOutCancelled.label": {
+    "en": "b84e60c2060ee85e",
+    "text": "Una persona canceló una baja de RISC"
+  },
+  "audit.actions.portal.risc.optIn.label": {
+    "en": "fddad4840e8f7000",
+    "text": "Una persona volvió a darse de alta en RISC"
+  },
+  "audit.actions.portal.signing-key.issued.label": {
+    "en": "ef02d14e5ec6fe11",
+    "text": "Una persona emitió su propio par de claves de firma"
+  },
+  "audit.actions.portal.signing-key.removed.label": {
+    "en": "cc45482e315cf6a0",
+    "text": "Una persona quitó su par de claves de firma"
+  },
+  "audit.actions.portal.signing-key.csrf.label": {
+    "en": "51cd295b713684de",
+    "text": "Se rechazó un formulario de clave de firma por su token CSRF"
+  },
+  "audit.actions.portal.siop.remove.label": {
+    "en": "b6f77328c0b99b89",
+    "text": "Una persona quitó un sujeto autoemitido"
+  },
+  "audit.actions.risk.feedback.label": {
+    "en": "e244d70b4d5a8c39",
+    "text": "Se registró una opinión sobre una evaluación de riesgo"
+  },
+  "audit.actions.risk.response.label": {
+    "en": "36887af166b69ed0",
+    "text": "Se ejecutó una respuesta al riesgo"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "Se aceptaron los términos del proveedor de un conjunto de datos de riesgo"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "Se agregó una fuente de atributos"
+  },
+  "audit.actions.attribute-sources.update.label": {
+    "en": "3b252df30382723d",
+    "text": "Se modificó una fuente de atributos"
+  },
+  "audit.actions.attribute-sources.remove.label": {
+    "en": "ba337c73fb4dc623",
+    "text": "Se quitó una fuente de atributos"
+  },
+  "audit.actions.attribute-sources.refresh.label": {
+    "en": "9b6a000459343ab3",
+    "text": "Se leyeron personas a mano desde una fuente de atributos"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "Se agregó, modificó o quitó un cliente SCIM saliente"
+  },
+  "audit.actions.scim-client.delivery.label": {
+    "en": "daca3d57491288f9",
+    "text": "Se entregó un cambio a un proveedor de servicios SCIM, o pasó a mensajes no entregables"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "Un cliente SCIM saliente reconcilió su proveedor de servicios"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "Se reintentó o purgó un mensaje no entregable de un cliente SCIM saliente"
+  },
+  "audit.actions.secret-destination.push.label": {
+    "en": "184a296748506865",
+    "text": "Se envió la contraseña de una cuenta de servicio a un destino de secretos"
+  },
+  "audit.actions.secret-destination.test-push.label": {
+    "en": "38f7979ecec34d0a",
+    "text": "Se envió una versión canario al secreto de prueba de un destino de secretos"
+  },
+  "audit.actions.roles.create.label": {
+    "en": "a510e6ae7b1a9adb",
+    "text": "Se creó un rol"
+  },
+  "audit.actions.roles.delete.label": {
+    "en": "2426599aa1c52b19",
+    "text": "Se eliminó un rol"
+  },
+  "audit.actions.roles.describe.label": {
+    "en": "896007dff32a6824",
+    "text": "Se establecieron la descripción, el nombre para mostrar o los tipos de miembro de un rol"
+  },
+  "audit.actions.saml2.authnrequest.label": {
+    "en": "8d29d93421323443",
+    "text": "Se rechazó un AuthnRequest de SAML 2.0"
+  },
+  "audit.actions.saml2.artifact.resolve.label": {
+    "en": "0f9a2c3b3c7b36ea",
+    "text": "Se rechazó una resolución de artefacto de SAML 2.0"
+  },
+  "audit.actions.saml2.attribute-query.label": {
+    "en": "c93dbc04d8c0ead5",
+    "text": "Se respondió o rechazó una consulta de atributos de SAML 2.0"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "Se hizo o rechazó una búsqueda MDQ de metadatos SAML"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "Se actualizaron los metadatos SAML de un proveedor de servicios"
+  },
+  "audit.actions.session.reauthenticate.label": {
+    "en": "f6867c3c6a1d35bd",
+    "text": "La misma persona volvió a iniciar sesión en una sesión activa"
+  },
+  "audit.actions.session.refuse.label": {
+    "en": "c8703bfa89913b23",
+    "text": "Se rechazó una sesión por su mecanismo de inicio de sesión"
+  },
+  "audit.actions.session.refused.label": {
+    "en": "9422128afb69d8ad",
+    "text": "Una superficie alojada rechazó una sesión"
+  },
+  "audit.actions.ssf.event.act.label": {
+    "en": "bf25b2c0497d20f6",
+    "text": "Se actuó sobre un Security Event recibido"
+  },
+  "audit.actions.ssf.stream.swept.label": {
+    "en": "a5277d5fd80dfb8e",
+    "text": "Se barrió un flujo receptor obsoleto"
+  },
+  "audit.actions.xacml.pep.enable.label": {
+    "en": "4584cff2d4f455e6",
+    "text": "Se habilitó un PEP remoto"
+  },
+  "audit.actions.xacml.pep.disable.label": {
+    "en": "1ca5e416c1bfdf45",
+    "text": "Se deshabilitó un PEP remoto"
+  },
+  "audit.actions.xacml.pep.forget.label": {
+    "en": "82df232dbe72d709",
+    "text": "Se olvidó un PEP remoto"
+  },
+  "audit.actions.xacml.policy.write.label": {
+    "en": "29b7a729b51d40c7",
+    "text": "Se escribió una política XACML"
+  },
+  "audit.actions.xacml.policy.delete.label": {
+    "en": "90274c33f8a0cbe3",
+    "text": "Se eliminó una política XACML"
+  }
+}

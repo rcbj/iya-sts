@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "Local"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "Dumating ang tawag sa Unix domain socket. Lubos na pinagkakatiwalaan ng totoong SPIRE server ang private socket nito — ganoon gumagana ang spire-server CLI — at ang access control ay ang filesystem permission ng socket. Ipinapalagay ng development mode ang hangganang iyon; vine-verify ito ng PRODUCT mode bawat connection: ginawang 0600 ang socket sa directory na hindi maaabot ng ibang user, at ang kernel uid ng tumatawag ay ang sa serbisyong ito. Ino-off ito ng `spiffe.trustLocalSocket`, na nagpapahingi sa socket ng SVID gaya ng TCP port at siyang tanging paraan para masubok ang \"tinanggihan ako sa socket\" na path ng isang client."
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "Agent"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "Nagpakita ang tumatawag ng X509-SVID na ang SPIFFE ID ay isang agent id (/spire/agent/...) at nagpapangalan ng agent na na-attest na ng server na ito at hindi na-ban. Tinatanggihan dito ang na-ban na agent sa halip na sa AttestAgent lang, na siyang nagbibigay ng kahulugan sa ban sa /admin/spiffe/agents para sa tumatawag na may hawak nang SVID."
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "Admin"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "Pinangangalanan sa `spiffe.adminIds` ang SPIFFE ID ng tumatawag, o naka-marka bilang `admin` ang registration entry para sa identity na iyon. Pareho, dahil mayroon ng pareho ang SPIRE: walang kailangang entry ang admin_ids, at ang flag sa entry ang itinatakda ng operator mula sa console. Ito ang nagpapahintulot sa remote caller na mamahala ng mga registration entry."
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "Downstream"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "Naka-marka bilang `downstream` ang registration entry para sa identity ng tumatawag — isang nested SPIRE server, na puwedeng humingi ng intermediate CA at maglathala ng authority at wala nang ibang puwedeng gawin."
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "Anonymous"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "Walang ipinakitang credential, o mayroon pero hindi ito na-verify. Dalawang method pa rin ang bukas dito, at kailangang bukas ang pareho: ang AttestAgent, dahil walang SVID ang agent hanggang bigyan ito ng tawag na iyon, at ang GetBundle, dahil public ang trust bundle ayon sa disenyo."
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "Ang SPIRE Server API lang. Mutual TLS ang TCP port nito: nagpapakita ang tumatawag ng X509-SVID mula sa trust domain na ito, vine-verify ito ng serbisyong ito laban sa trust bundle at laban sa sariling validity window ng certificate, kinukuha ang SPIFFE ID mula sa URI subjectAltName (hindi kailanman mula sa subject), inuuri ito bilang local, agent, admin o downstream, at ina-authorize ang method laban sa sariling policy_data.json ng SPIRE, bawat row. Ang Unix socket nito ay ang `local` entity at walang kailangang credential, na siyang paraan ng spire-server CLI para maabot ang totoong server. Sinasadyang hindi ginagalaw ng alinman dito ang Workload API: sinasabi ng specification nito na HINDI DAPAT hingan ng authentication ang client."
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "Humihingi ang TCP port ng client certificate at HINDI ito kinakailangan, dahil bukas ang AttestAgent sa tumatawag na walang SVID — wala ang agent nito hanggang bigyan ito ng tawag na iyon. Kunin ang bundle mula sa bundle endpoint, i-verify ang server na ito laban dito, at mag-attest."
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "Ang tinanggap na credential ay isang IDENTITY dito gaya ng iba: umaabot ito sa parehong funnel na ginagamit ng bawat isa sa labing-anim na protocol family, kaya lumalabas ang may hawak nito sa /admin/users at nakakakuha ng directory entry sa ilalim ng ou=users — pinangalanan ayon sa digest, na may identifier dito bilang `spiffeSubject`, at GINAGAMIT ULIT kapag dumating ulit ang parehong identity sa ibang ruta. Tatlong pagtanggap ang gumagawa niyon: isang X509-SVID sa mutual TLS (isang beses bawat connection), isang agent na nag-a-attest, at isang JWT-SVID na na-verify sa ValidateJWTSVID. ANG ISSUANCE AY IKAAPAT NA DAAN PAPASOK at hindi isa sa tatlong iyon: bawat identity na pinag-mint-an ng trust domain na ito ng X509-SVID ay nakakakuha ng parehong entry, na may dalang certificate bilang parehong anim na `x509*` attribute na isinusulat ng na-verify na TLS client certificate — ITINATALAGA sa halip na idinudugtong, dahil mini-mint nang bago ang SVID bawat kalahati ng lifetime nito, na may `x509svidsIssued` at dalawang timestamp sa tabi. Hindi ito binibilang bilang authentication, dahil ang pagbibigay sa iyo ng credential ay hindi pagpapakita ng isa."
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "Itinatala rin ng entry kung puwede pang i-issue-han ng credential DITO ang identity — `spiffeCredentialStatus`, na may dahilan sa tabi. HINDI IYON CERTIFICATE STATUS AT WALANG BUMABASA NITO PABALIK: walang revocation ang SPIFFE, at ang SVID na in-issue na ay nave-verify laban sa bundle hanggang mag-expire ito anuman ang sabihin ng directory. Ang itinatala nito ay ang tatlong bagay na tumatapos sa kakayahan ng identity na makakuha ng BAGO — na-delete ang huling registration entry nito, na-ban ang agent nito, na-delete ang agent nito — bawat isa ay nababawi at itinatala sa parehong paraan kapag binawi. Hindi kailanman inaalis ang entry."
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "off (0 ang spiffe.workloadPort)"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "sine-serve (development, hindi na-attest)"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "hindi sine-serve (product, hindi idineklarang authenticated ang source)"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "hindi sine-serve (product, wildcard na bind address)"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "sine-serve (product, idineklarang authenticated ang source)"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "Ang in-iissue ng SPIRE bilang default at ang inirerekomenda ng X509-SVID specification. Ang default dito sa parehong dahilan."
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "Mas malaking curve, para sa client na nagpi-pin ng isa."
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "Mas malaki pa. Mabuting malaman na humigit-kumulang isa sa 256 na P-521 signature ay isang byte na mas maikli kaysa sa ibang 255, na totoong interoperability edge at siyang dahilan kung bakit may function ang x509.js para dito."
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "Ang pinakamababang pinapayagan ng X509-SVID specification para sa RSA. Mas mabagal gawin — kapansin-pansin sa startup — at gumagawa ng mas malalaking SVID."
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "Ilang segundo para gawin sa startup, na mabuting malaman bago magtaka kung bakit hindi pa sumasagot ang bundle endpoint."
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "Pinapayagan para sa X.509 ng specification. HINDI available para sa JWT authority: hindi pumipirma ng EdDSA ang jsonwebtoken, ang JWS implementation ng serbisyong ito."
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Ang abstract class na dala ng bawat entry."
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "Ang iisang NAKA-REGISTER na class na akma: nagdadala ito ng cn at description, kaya standard attribute ang PANGALAN ng registration entry kahit hindi puwede ang anumang iba pa tungkol dito. Ang parehong class na ginagamit ng ou=applications, sa parehong dahilan."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "INIMBENTO. Walang naka-register na LDAP schema na may SPIFFE ID, parent ID o selector — itinatago ng SPIRE ang mga entry nito sa SQL at walang ibang nagtatago ng mga ito kahit saan — kaya walang mahihiram."
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "INIMBENTO, sa parehong dahilan, sa mga entry sa ilalim ng ou=agents."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "ANG KEY: ang entry id, na tinatawag ng SPIRE Server API na `id` at pinangangalanan ng BatchUpdateEntry at BatchDeleteEntry. Ginagawa rito bilang 32 hex character at hindi kailanman ginagamit ulit. Pinaikling anyo nito ang sariling cn ng entry, kaya ito ang attribute na hahanapin — ang ayos na mayroon na ang appIdentifier sa isang container sa tabi."
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "Ang RDN value: ang entry id."
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "ANG IDENTITY NA IBINIBIGAY NG ENTRY NA ITO — ang SPIFFE ID na in-iissue sa tumutugmang workload. Tinatanggihan kung hindi ito valid na SPIFFE ID, kung pag-aari ito ng ibang trust domain, o kung nasa ilalim ito ng reserved na /spire path."
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "SINO ANG PUWEDENG MAG-ISSUE NITO: ang SPIFFE ID ng agent (o ng server na ito) na kinasasabitan ng entry na ito. Ito ang nagpapasya kung aling mga entry ang sinasabi ng GetAuthorizedEntries at SyncAuthorizedEntries sa agent: ang mga nasa ilalim ng sarili nitong SPIFFE ID o ng node alias na tugma sa mga selector nito, at tinatanggihan ng BatchNewX509SVID at NewJWTSVID ang agent sa anumang ibang entry."
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "Isang value bawat selector, isinusulat na `type:value` — `unix:uid:1000`, `k8s:ns:default`, `docker:label:app:web`. Ang type ay ang lahat bago ang UNANG colon at ang value ay ang buong natitira, kasama ang mga colon, kaya iniimbak sila bilang iisang string sa halip na pares: ang paghahati sa bawat colon ang paraan kung paano nagiging selector na walang sumulat ang `docker:label:app:web`."
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "Ang lifetime sa segundo ng mga X509-SVID na ginagawa ng entry na ito. Kapag wala o 0, spiffe.svidTtl ang ibig sabihin."
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "Pareho para sa mga JWT-SVID. Kapag wala o 0, spiffe.jwtSvidTtl ang ibig sabihin."
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "Mga DNS subjectAltName na idinadagdag sa SVID sa tabi ng SPIFFE ID. Ang nagpapagamit sa SVID sa TLS software na nagche-check ng hostname at hindi makabasa ng SPIFFE ID."
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "Mga trust domain name na ang mga bundle ay ibinibigay sa workload na may hawak ng identity na ito — X509SVIDResponse.federated_bundles. Ang pangalang walang bundle dito ay itinatala at walang naiaambag, dahil ang federation relationship na na-configure bago dumating ang bundle ang ordinaryong pagkakasunod ng mga pangyayari."
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "Ang gabay ng operator kapag nakakuha ang workload ng higit sa isang SVID — `internal`, `external`. Ipinapasa nang verbatim sa Workload API; walang bumabasa nito rito."
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "8a9a63bc0fea2453",
+    "text": "TRUE kung saan puwedeng tawagin ng may hawak ang mga administrative method ng SPIRE Server API. ITINATALA AT HINDI IPINAPATUPAD, gaya ng bawat ibang authorization fact sa serbisyong ito: walang tawag dito na tinatanggihan dahil sa kawalan nito."
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "093ab596c5763625",
+    "text": "TRUE kung saan downstream SPIRE server ang may hawak na puwedeng humingi ng intermediate CA (NewDownstreamX509CA). Itinatala, hindi ipinapatupad."
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "TRUE kung saan isusulat ang SVID sa isang SVID store plugin sa halip na ibigay sa workload. Itinatala at hindi kinikilusan — walang store plugin ang serbisyong ito."
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "Kung kailan humihinto sa pag-apply ang ENTRY mismo, bilang segundo mula sa epoch. Iba sa SVID lifetime: nire-retire nito ang registration. Itinatago ang expired na entry at iniuulat bilang expired sa halip na i-delete, dahil ang entry na naglaho ay hindi maihihiwalay sa entry na walang gumawa."
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "Dinaragdagan sa bawat pagbabago. Inilalathala ito ng SPIRE Server API at ginagamit ito ng agent para paghiwalayin ang \"kasalukuyan ang entry na hawak ko\" at \"may hawak akong entry\"."
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "Kung paano napunta rito ang entry na ito: `seed`, `console`, `api`, `grpc`, `auto` (inimbento para sa workload na walang tinugmaan) o `ldap`. Ang nagsasabi kung alin ang inimbentong entry at alin ang sinadya ng isang tao."
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "Ilang SVID na ang in-issue laban sa entry na ito. ITINATALAGA sa bawat pagbabago — walang saysay ang counter na nag-iipon ng mga value — at isang live na numero sa directory entry, na hindi hahawakan ng totoong directory."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime, ang pinakahuling issuance laban dito."
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime. Nasa tabi ng sariling createTimestamp ng entry dahil inilalathala ng SPIRE Server API ang `created_at` bilang numero at dapat makita ng nagbabasa na iisang sandali ang dalawa."
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "Isang linya na nagsasabi kung saan nanggaling ang entry na ito."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "ANG KEY ng agent entry: ang sariling SPIFFE ID ng agent, palaging nasa ilalim ng reserved na /spire/agent path."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "Ang node attestor na nag-verify sa agent — `join_token`, at ang ibang type na pinangangalanan ng realm sa spiffe.nodeAttestors. Tinatanggihan sa AttestAgent ang type na walang attestor dito na nagve-verify, hindi kailanman itinatala."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "Ang mga selector na ginawa ng attestation. Inimbento mula sa ipinadala ng agent, sa parehong dahilan."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "TRUE kung saan tinawag ang BanAgent. TINATANGGIHAN ang na-ban na agent sa AttestAgent at RenewAgent — isa sa iilang pagtanggi sa serbisyong ito — dahil ang agent na hindi maba-ban ay ginagawang kasinungalingan ang ban button."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "Kung mapapatakbo ulit ang attestor nang walang operator. Iniuulat sa agent, na siyang magpapasya kung ano ang gagawin tungkol dito."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "SHA-256 sa DER ng kasalukuyang SVID ng agent, na siyang dala ng spire.api.types.Agent at paraan ng operator para paghiwalayin ang dalawang agent na may iisang identity."
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "Kung kailan mag-e-expire ang SVID na iyon, bilang segundo mula sa epoch."
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime, kung kailan unang nag-attest ang agent na ito."
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, ang pinakahuling pagkakataon."
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "Ilang beses na itong nag-attest o nag-renew. ITINATALAGA, hindi iniipon."
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "ang serbisyong ito"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "ang registry na ito"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "ang tumatawag"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "ang agent"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "Walang credential. Ang socket na ito ay ang `local` entity at lubos na pinagkakatiwalaan, na siyang paraan ng paggana ng spire-server CLI."
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "Walang credential, mula sa process na tumatakbo bilang sariling uid ng serbisyong ito: vine-verify ng product mode bawat connection na private ang socket at binabasa ang uid ng tumatawag mula sa kernel bago ito maging `local` entity."
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "Walang `local` entity dito: vine-verify ng product mode ang hangganan ng socket at hindi nito magawa ({{reason}}). Magpakita ng X509-SVID ng administrator sa TCP port."
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "hindi mabasa ang uid ng peer — {{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "Kailangan ng X509-SVID kahit dito (naka-off ang spiffe.trustLocalSocket)."
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "Wala, at dapat walang anuman: ipinagbabawal ng Workload Endpoint specification ang paghingi ng isa."
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "Mutual TLS. I-verify ang server na ito laban sa trust bundle, ipakita ang sarili mong X509-SVID, at asahang ma-authorize bawat method."
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "Wala — naka-off ang authentication, kaya plain gRPC ang port na ito at bukas sa lahat ang bawat method."
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "Wala, at dapat walang anuman: ipinagbabawal ng Workload Endpoint specification ang paghingi ng isa. IDINEKLARA na ina-authenticate ng network ang mga source address (spiffe.workloadTcpSourceAuthenticated), kaya sinasagot ang tumatawag ng mga entry na pinipili ng peer: address nito."
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "Wala, at dapat walang anuman: ipinagbabawal ng Workload Endpoint specification ang paghingi ng isa. Walang nag-a-attest sa tumatawag dito (development): sine-secure ng deployment ang port na ito sa ibang paraan o hindi ito inilalantad."
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "Walang nakikinig dito."
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "Mutual TLS. I-verify ang server na ito bilang spiffe://<trust domain>/spire/server laban sa trust bundle, ipakita ang X509-SVID ng broker na pinangalanan sa spiffe.brokers, at ipadala ang broker.spiffe.io: true sa bawat tawag."
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "hindi available dito ang workload attestation: {{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "hindi private ang socket"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "Ang uid, gid at mga supplementary group na iniuulat ng kernel para sa process ng tumatawag, at ang path at SHA-256 ng executable nito."
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "Ang Docker container na pinapatakbuhan ng process ng tumatawag, ayon sa iniuulat ng Docker Engine na mga label, environment at image nito."
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "Ang Kubernetes pod at container na pinapatakbuhan ng process ng tumatawag, ayon sa iniuulat ng kubelet ng node."
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "Ang systemd unit na humahawak sa process ng tumatawag, ayon sa iniuulat ng systemd sa D-Bus: ang id nito at ang unit file nito."
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "hindi mabasa ang process ng peer, kaya ang uid at gid lang nito ang na-attest"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "nasa ibang pid namespace ang peer (pid 0), kaya ang uid at gid lang nito ang na-attest — ibahagi ang pid namespace para sa iba pa"
+  }
+}

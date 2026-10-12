@@ -321,6 +321,32 @@ class PepRegistry {
   static readonly SCHEMA = SCHEMA;
 
   /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/peps`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/peps']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): the object
+   * class's and each attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering PepRegistry.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('../common/server_prose') =
+      require('../common/server_prose');
+    const out = serverProse.harvest('xacmlPeps.schema', SCHEMA, ['what']);
+    helpers.log.debug("Leaving PepRegistry.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
+  /**
    * Builds the register over the given dependencies.
    * @param deps - the logger, settings, error codes, realms, the policy
    * repository and a SHA-256 function
@@ -1058,6 +1084,10 @@ export = {
   installInstance: (instance: PepRegistry): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: PepRegistry.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: PepRegistry.PROSE_ROUTES,
+  prose: PepRegistry.prose,
   setDirectory: PepRegistry.setDirectory,
   directoryInstalled: PepRegistry.directoryInstalled,
   certificateIdentity: slot.forward('certificateIdentity'),

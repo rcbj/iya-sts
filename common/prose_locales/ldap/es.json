@@ -1,0 +1,1838 @@
+{
+  "ldap.service.bindPolicy": {
+    "en": "ff24480e5b0e0e15",
+    "text": "todo bind tiene éxito — cualquier DN, cualquier contraseña, incluido uno anónimo — excepto la contraseña literal \"invalid\", que se responde con LDAP_INVALID_CREDENTIALS (49) para que una prueba negativa tenga algo con lo que fallar"
+  },
+  "ldap.service.schema": {
+    "en": "0aabcadd26b32a63",
+    "text": "ninguno. No se impone ningún objectClass y ningún atributo se comprueba contra una sintaxis, así que una entrada puede llevar los atributos que envíe un cliente. Un directorio real rechazaría la mayor parte de eso."
+  },
+  "ldap.service.authenticationFacts": {
+    "en": "50b11d2cbd23b36a",
+    "text": "cuando el protocolo que aceptó la credencial dice CÓMO se presentó — que hoy es la pantalla de inicio de sesión y nada más, ya que amr es un vocabulario de OIDC —, la entrada lleva también authnMethod (todos los métodos RFC 8176 que esta persona ha usado aquí, acumulados), mfaAuthenticated (TRUE o FALSE para la autenticación MÁS RECIENTE, sobrescrito cada vez) y mfaLastAuthTime (cuándo ocurrió la última autenticación multifactor, nunca se borra). Son nombres propios de este servicio y no de esquema. Una ceremonia WebAuthn tras una contraseña escribe TRUE; la misma ceremonia usada sin contraseña escribe authnMethod hwk sin pwd al lado y mfaAuthenticated FALSE, porque un factor es un factor por muy resistente al phishing que sea. Nada aquí los LEE: ningún token los lleva y ningún endpoint decide nada con ellos, igual que aquí un grupo no concede nada — salvo los dos grupos que deciden quién puede usar la consola de administración, que son la única excepción en todo este directorio y se limitan a esa consola."
+  },
+  "ldap.service.implementation": {
+    "en": "8097f8996f966e83",
+    "text": "ldapjs 3.0.7, fijado como el submódulo node-ldapjs y usado sin modificar"
+  },
+  "ldap.service.enforcedRules.0": {
+    "en": "f35b69973b84ae59",
+    "text": "un add cuyo padre no existe es LDAP_NO_SUCH_OBJECT (32)"
+  },
+  "ldap.service.enforcedRules.1": {
+    "en": "bfd20d58c8b5dd5b",
+    "text": "un delete de una entrada con hijos es LDAP_NOT_ALLOWED_ON_NONLEAF (66)"
+  },
+  "ldap.service.enforcedRules.2": {
+    "en": "c23d48836f81aaa4",
+    "text": "un modify delete de un atributo que no está presente es LDAP_NO_SUCH_ATTRIBUTE (16)"
+  },
+  "ldap.service.enforcedRules.3": {
+    "en": "84c96a7e373363b1",
+    "text": "eliminar el último valor de un atributo elimina el atributo"
+  },
+  "ldap.service.enforcedRules.4": {
+    "en": "a41fc8c3be6cf1bc",
+    "text": "un add bajo ou=users cuyo nombre de usuario ya existe aquí es LDAP_ENTRY_ALREADY_EXISTS (68), y nombra la entrada que lo tiene. UNA ENTRADA POR PERSONA: el nombre de usuario es el valor del RDN de nombre de la entrada y cualquier uid que lleve, así que uid=rcbj y cn=rcbj son la misma persona y solo una de ellas puede estar aquí. Es el mismo rechazo que dan la consola y POST /admin-api/users/create, y la misma regla a la que se reduce cada protocolo de aquí cuando autentica a alguien"
+  },
+  "ldap.service.specifications.0": {
+    "en": "152af942eb9a86bf",
+    "text": "RFC 4510 (hoja de ruta de la especificación técnica de LDAP)"
+  },
+  "ldap.service.specifications.1": {
+    "en": "ce36f6cc63efd01c",
+    "text": "RFC 4511 (el protocolo)"
+  },
+  "ldap.service.specifications.2": {
+    "en": "4ef14ce29aa9d0f4",
+    "text": "RFC 4512 (modelos de información de directorio)"
+  },
+  "ldap.service.specifications.3": {
+    "en": "cd7ef4b993066ad2",
+    "text": "RFC 4514 (representación de DN como cadena)"
+  },
+  "ldap.service.specifications.4": {
+    "en": "b65b5adecdeec710",
+    "text": "RFC 4515 (representación de filtros de búsqueda como cadena)"
+  },
+  "ldap.service.sentences.searchScopeRealms": {
+    "en": "a9a6103ce6cbf322",
+    "text": "una búsqueda de subárbol responde sobre el dominio de confianza desde cuyo DN base comenzó. {{contexts}} son los contextos; una entrada que pertenece a otro dominio se filtra de una búsqueda con base por encima de ella, y se alcanza buscando desde la base propia de ese dominio. Una operación que nombra UN DN — add, modify, delete, compare o una búsqueda con alcance base — se responde dondequiera que esté ese DN, porque escribir el DN completo nombra el dominio"
+  },
+  "ldap.service.sentences.searchScopeOne": {
+    "en": "55b2bbab540dbbb4",
+    "text": "no hay dominios de confianza definidos, así que hay un solo contexto ({{root}}) y una búsqueda de subárbol desde él responde sobre todo el almacén"
+  },
+  "ldap.service.sentences.clientCertificates": {
+    "en": "18c68f9d37420f1c",
+    "text": "nunca se solicitan. Esta escucha demuestra el SERVIDOR al cliente y nada más; un certificado de cliente que se le ofrezca no se pide y no sería un inicio de sesión si se pidiera. El puerto principal ({{port}}) es donde se piden y leen los certificados de cliente."
+  },
+  "ldap.service.sentences.certificateSource": {
+    "en": "a969a038097605ed",
+    "text": "el mismo certificado y la misma clave que sirve el puerto principal ({{port}}). Es {{provenance}}: GET /tls/server-certificate lo entrega en PEM. Un ancla para ambos sockets es la razón por la que lo comparten."
+  },
+  "ldap.service.sentences.autoCreateRule": {
+    "en": "23f1b072b3557932",
+    "text": "una entrada uid=<name>,{{usersDn}} aparece la primera vez que <name> se autentica en este servicio mediante CUALQUIER protocolo. Un bind LDAP no crea una (presenta un DN, no un nombre de usuario), ni tampoco un cliente OAuth. Un CERTIFICADO DE CLIENTE TLS verificado es la única identidad que ya es un DN: su entrada conserva el RDN hoja propio del sujeto — cn=alice,{{usersDn}} para CN=alice,O=Example — o el sujeto completo cuando ya está bajo {{baseDn}}, y el sujeto completo, el emisor, el número de serie y la validez están en la entrada como atributos x509*, que son nombres propios de este servicio y no de esquema. Un IDENTIFICADOR DESCENTRALIZADO es la tercera forma y no es ni un nombre ni un DN: el sujeto did:jwk de una credencial emitida, cualquier DID que se presente al Verifier OID4VP, el que acuña /did/generate. Su entrada va en uid=did-<12 hex del SHA-256 del DID>,{{usersDn}} — un did:jwk escrito completo es un DN de varios cientos de caracteres, en su mayoría material de clave — con el propio identificador guardado completo en la entrada como didSubject, y su método como didMethod. Busque a la persona por didSubject, no por uid: en esas entradas el uid es un resumen y el didSubject es la identidad."
+  },
+  "ldap.spiffe.sourceOfTruth": {
+    "en": "b1ca8ee3d774cf2d",
+    "text": "Estas entradas SON el registro SPIFFE. Un ldapmodify bajo ou=entries cambia cómo será el próximo SVID — spiffeX509SvidTtl cambia su vigencia, spiffeDnsName cambia su subjectAltName y spiffeId cambia de quién es la identidad — porque nada las almacena en caché. Los dos contenedores guardan TIPOS distintos de cosas: las entradas son CONFIGURACIÓN y los agentes son un REGISTRO, por eso nada de un agente se puede editar desde la consola."
+  },
+  "ldap.applications.sourceOfTruth": {
+    "en": "c927447175e35efb",
+    "text": "Estas entradas SON el registro. Un ldapmodify aquí cambia lo que hacen los endpoints de protocolo — agregar un valor a oauthRedirectUri agrega un URI de redirección que el modo RFC 9700 aceptará entonces por coincidencia exacta."
+  },
+  "ldap.federations.sourceOfTruth": {
+    "en": "435fdeccd74e04b0",
+    "text": "Estas entradas SON el registro. Un ldapmodify aquí es un cambio de SEGURIDAD: fedSigningCertificate decide de quién creerá las aserciones este servicio, y fedEnabled activa a un socio. Nada las almacena en caché."
+  },
+  "ldap.devices.sourceOfTruth": {
+    "en": "fbfeae54369b2897",
+    "text": "Estas entradas SON el registro de dispositivos: nada las almacena en caché, así que un ldapmodify de stsDeviceCompliance es el cumplimiento del dispositivo en la próxima lectura. stsDeviceSecretHash se oculta."
+  },
+  "ldap.roles.sourceOfTruth": {
+    "en": "88697020f123dac5",
+    "text": "Estas entradas SON la mitad de pertenencia del registro de roles. Un ldapmodify que agrega un valor a roleMemberUser concede ese rol, y la próxima decisión de emisión se toma con él. Lo que EXIGE un rol es appRequiredRole en una entrada de aplicación bajo ou=applications, que es otro contenedor."
+  },
+  "ldap.policies.sourceOfTruth": {
+    "en": "4f8877fec63c3904",
+    "text": "Estas entradas SON el repositorio de políticas. Un ldapmodify de xacmlPolicyDocument cambia lo que decide el PDP en la siguiente solicitud y NO se valida estáticamente al entrar, a diferencia de toda escritura a través de /admin/xacml — así que un documento que deja de pasar la comprobación de tipos responde Indeterminate en lugar de rechazarse."
+  },
+  "ldap.peps.sourceOfTruth": {
+    "en": "b8fc2f8f4bf8c58b",
+    "text": "Casi todos los atributos de aquí son un REGISTRO que este servicio escribió cuando un PEP se registró, obtuvo o informó. Los dos que no lo son son xacmlPepEnabled, que establece un administrador y que un PEP que se reconecta no borra, y xacmlPepNotifyUrl, que es una de las tres direcciones a las que llama este servicio."
+  },
+  "applications.kinds.oauth2-client.label": {
+    "en": "70d50cab8908ac09",
+    "text": "Cliente OAuth 2.0"
+  },
+  "applications.kinds.oauth2-client.what": {
+    "en": "348a7be2ebfe0753",
+    "text": "Un client_id presentado en el endpoint de autorización o de token."
+  },
+  "applications.kinds.oidc-relying-party.label": {
+    "en": "d1c72d0dc209cf8d",
+    "text": "Parte que confía OpenID Connect"
+  },
+  "applications.kinds.oidc-relying-party.what": {
+    "en": "af403fd2e4478e84",
+    "text": "El mismo client_id cuando la solicitud pidió el ámbito openid — una parte que confía es un cliente OAuth que además quiere un ID Token, así que un registro suele llevar ambos tipos."
+  },
+  "applications.kinds.saml2-service-provider.label": {
+    "en": "d9997212d7ad263b",
+    "text": "Proveedor de servicios SAML 2.0"
+  },
+  "applications.kinds.saml2-service-provider.what": {
+    "en": "f83fcd03aa0aca09",
+    "text": "La audiencia de una aserción SAML 2.0 que emitió este servicio."
+  },
+  "applications.kinds.saml11-relying-party.label": {
+    "en": "9abb39b3d0f1ed3c",
+    "text": "Parte que confía SAML 1.1"
+  },
+  "applications.kinds.saml11-relying-party.what": {
+    "en": "4d826e30dbea03d6",
+    "text": "La audiencia de una aserción SAML 1.1 — que es lo que se entrega de forma predeterminada a una parte que confía WS-Federation, así que estos dos suelen aparecer juntos."
+  },
+  "applications.kinds.wsfed-relying-party.label": {
+    "en": "357be565b6f394e2",
+    "text": "Aplicación WS-Federation"
+  },
+  "applications.kinds.wsfed-relying-party.what": {
+    "en": "8882d3936c581ca7",
+    "text": "Un wtrealm de una solicitud wsignin1.0 (sección 13.2.1)."
+  },
+  "applications.kinds.wstrust-relying-party.label": {
+    "en": "c7d4443f1d20d799",
+    "text": "Parte que confía WS-Trust"
+  },
+  "applications.kinds.wstrust-relying-party.what": {
+    "en": "27bcd37dd10ee019",
+    "text": "Un AppliesTo de un RequestSecurityToken — el servicio para el que es el token."
+  },
+  "applications.kinds.oid4vp-verifier.label": {
+    "en": "8f530299a9f890c0",
+    "text": "Verificador OpenID4VP"
+  },
+  "applications.kinds.oid4vp-verifier.what": {
+    "en": "d233da27ee32a17e",
+    "text": "El client_id que presenta el Verifier simulado en una Authorization Request."
+  },
+  "applications.kinds.federation-identity-provider.label": {
+    "en": "3f6b9e4e19beb32d",
+    "text": "Proveedor de identidad federado"
+  },
+  "applications.kinds.federation-identity-provider.what": {
+    "en": "0d2adcc59a7c1995",
+    "text": "Un servicio de identidad EXTERNO con el que esta instancia se federa como proveedor de servicios — autentica personas ANTE este servicio en lugar de pedirle nada, lo que lo convierte en el único tipo de aquí que no es un cliente. Está en este registro de todos modos, porque la pregunta que este contenedor existe para responder es \"¿con qué partes ha tratado este servicio?\" y un socio de federación es la de mayores consecuencias: es una parte cuya firma este servicio CREE. Vea federation/CLAUDE.md. La relación en sí — los endpoints, el certificado, la correspondencia de atributos — vive bajo ou=federations y no aquí; este registro es el socio como parte, y aquel es el acuerdo con él."
+  },
+  "applications.kinds.kerberos-service.label": {
+    "en": "c60a52be697d41a7",
+    "text": "Principal de servicio Kerberos"
+  },
+  "applications.kinds.kerberos-service.what": {
+    "en": "066a9468344f9c0d",
+    "text": "Un nombre de principal de servicio para el que se emitió un ticket, o que se pidió al aceptador que fuera."
+  },
+  "applications.kinds.gnap-client.label": {
+    "en": "ea237766411168ed",
+    "text": "Instancia de cliente GNAP"
+  },
+  "applications.kinds.gnap-client.what": {
+    "en": "42cf02b486bd48ab",
+    "text": "Una clave (o identificador de instancia) que hizo una solicitud de concesión GNAP."
+  },
+  "applications.kinds.gnap-resource-server.label": {
+    "en": "5a9da6b3e05542bf",
+    "text": "Servidor de recursos GNAP"
+  },
+  "applications.kinds.gnap-resource-server.what": {
+    "en": "dcbb24cab569794d",
+    "text": "Una clave que llamó a la API orientada a RS: introspección, registro de conjuntos de recursos o una derivación de token hacia un servidor posterior."
+  },
+  "applications.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "applications.protocols.oauth2.what": {
+    "en": "fe4f3acd275e39a1",
+    "text": "Un client_id en los endpoints de autorización y de token."
+  },
+  "applications.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "applications.protocols.oidc.what": {
+    "en": "1ce7cc23cb0f3a91",
+    "text": "El mismo client_id que pide el ámbito openid, y por tanto un ID Token. Una parte que confía ES un cliente OAuth, así que estos dos suelen marcarse juntos; marcar solo este es válido y dice que la entrada es para un flujo OIDC."
+  },
+  "applications.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "applications.protocols.saml2.what": {
+    "en": "cae55da402c3a60c",
+    "text": "Un entityID de proveedor de servicios en el perfil Web Browser SSO en /saml2, o la audiencia de una aserción SAML 2.0 emitida en cualquier otra parte de este servicio."
+  },
+  "applications.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "applications.protocols.saml11.what": {
+    "en": "0f0b81ee62d1009e",
+    "text": "Una parte que confía de los dos perfiles de navegador en /saml11 — y lo que se entrega de forma predeterminada a una aplicación WS-Federation, por eso estos dos suelen marcarse juntos."
+  },
+  "applications.protocols.wsfed.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "applications.protocols.wsfed.what": {
+    "en": "cd68aba0fbb971af",
+    "text": "Un wtrealm en una solicitud wsignin1.0 (sección 13.2.1)."
+  },
+  "applications.protocols.wstrust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "applications.protocols.wstrust.what": {
+    "en": "9cedca1464312341",
+    "text": "Un AppliesTo en un RequestSecurityToken — el servicio PARA el que se emite el token."
+  },
+  "applications.protocols.krb5.label": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "applications.protocols.krb5.what": {
+    "en": "e0907807887b2538",
+    "text": "Un nombre de principal de servicio para el que puede emitirse un ticket, o que puede pedirse al aceptador que sea. Esto abarca SPNEGO (HTTP Negotiate, RFC 4559) hacia un servicio protegido por Kerberos, que lleva el mismo ticket. Iniciar la sesión de personas en esta aplicación con SPNEGO no es una familia: incluya spnego en appAuthnMechanism, y declare el protocolo por el que la aplicación obtiene sus tokens o aserciones."
+  },
+  "applications.protocols.oid4vci.label": {
+    "en": "6a5c76ded81999e5",
+    "text": "OpenID4VCI"
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "Una billetera que recoge una credencial verificable del emisor. La billetera no presenta ningún identificador de aplicación propio en ese flujo — se autentica como un cliente OAuth y se registra como tal —, así que esta familia no tiene tipo y nada la marcará nunca como vista."
+  },
+  "applications.protocols.oid4vp.label": {
+    "en": "e2031ac8e75c04a0",
+    "text": "OpenID4VP"
+  },
+  "applications.protocols.oid4vp.what": {
+    "en": "23aae2a858af04d4",
+    "text": "Un client_id de verificador en una Authorization Request que pide una presentación."
+  },
+  "applications.protocols.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federación"
+  },
+  "applications.protocols.federation.what": {
+    "en": "51f9dc86ae390cb9",
+    "text": "Un servicio de identidad EXTERNO al otro lado de una relación de federación. Es lo único en este registro que no es un cliente de este servicio — autentica personas ANTE él. Su AVISTAMIENTO se registra bajo el protocolo que hable la relación, así que la etiqueta de protocolo en una entrada así es indistinguible de la de un cliente común y el TIPO es lo único que los diferencia — que es toda la razón por la que esta tabla compara por tipos. La relación en sí vive bajo ou=federations; vea federation/CLAUDE.md."
+  },
+  "applications.protocols.ldap.label": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "applications.protocols.ldap.what": {
+    "en": "9e2b2e44593ddedf",
+    "text": "Un cliente de directorio que hace bind en el 389 o en LDAPS 636. TODO BIND AQUÍ TIENE ÉXITO y ninguno nombra una aplicación, así que nada registrará nunca un avistamiento para esta familia — marcarla dice para qué es la entrada y nada más."
+  },
+  "applications.protocols.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "applications.protocols.scim.what": {
+    "en": "ce2bae136c7ecd7f",
+    "text": "Un cliente de aprovisionamiento en /scim/v2. Esa superficie autentica a su LLAMANTE — en cualquiera de los seis esquemas que nombra RFC 7644 sección 2 — y no un identificador de aplicación, así que, como con LDAP, nada escribe esta familia en appProtocol."
+  },
+  "applications.protocols.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "applications.protocols.spiffe.what": {
+    "en": "6d81b6713ac464a6",
+    "text": "Una carga de trabajo en la Workload API, o un agente o administrador en la SPIRE Server API. Una identidad SPIFFE obtiene una entrada propia bajo ou=spiffe y no una aquí (vea spiffe/CLAUDE.md), así que esto es una declaración y nunca un registro."
+  },
+  "applications.protocols.mtls.label": {
+    "en": "84f3396586f6fc6d",
+    "text": "TLS / TLS mutuo"
+  },
+  "applications.protocols.mtls.what": {
+    "en": "eb9407b59ae6b377",
+    "text": "Un cliente que se autentica en el endpoint de token según RFC 8705. Un certificado de cliente TLS emitido a la aplicación desde su sección Credenciales la autentica con tls_client_auth sin nada registrado; un certificado de otra autoridad necesita UNO de los cinco parámetros de sujeto (oauthTlsClientAuthSubjectDn y los cuatro atributos oauthTlsClientAuthSan*), y self_signed_tls_client_auth lee el x5c del jwks u oauthTlsClientCertificateThumbprint — así que marcar esta casilla es un recordatorio para uno mismo, y aquello es la configuración."
+  },
+  "applications.protocols.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "applications.protocols.ssf.what": {
+    "en": "4042b281e588be6c",
+    "text": "Un RECEPTOR de Shared Signals: algo que acuerda un flujo en /ssf/stream y al que luego se le entregan Security Event Tokens. Su identificador es aquello como lo que se autenticó al crear el flujo, que es el `aud` que llevan esos SET, y su endpoint de entrega es a donde va un envío push. Ninguno de los dos se lee como un permiso — un flujo lleva su propio endpoint de entrega y esta entrada es donde un operador anota lo que se ESPERA que sea un receptor, junto a todo lo demás que es esa aplicación."
+  },
+  "applications.protocols.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "applications.protocols.gnap.what": {
+    "en": "86edbf0cbc0fcbab",
+    "text": "Una instancia de cliente GNAP, o un servidor de recursos GNAP, o ambos: una parte que demuestra la posesión de una clave ante /gnap (RFC 9635) o ante la API orientada a RS (RFC 9767). Su clave es gnapKey (un objeto de clave pública) o gnapKeyReference con un gnapSymmetricKey sellado; sus URI de finalización son direcciones de retorno como cualquier otra; un servidor de recursos lleva las ubicaciones de las que responde y, una vez que ha registrado un conjunto de recursos, la clave raíz de macaroon con la que verifica."
+  },
+  "applications.protocols.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "applications.protocols.acme.what": {
+    "en": "a497ff001f194be7",
+    "text": "Inscripción de certificados mediante ACME (RFC 8555) en /enroll/acme: una cuenta ACME vinculada a esta aplicación por una clave External Account Binding. Sus certificados nombran urn:sts:application:<id> y se guardan en esta entrada."
+  },
+  "applications.protocols.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "applications.protocols.est.what": {
+    "en": "cc7e6d70b3c9a590",
+    "text": "Inscripción de certificados mediante EST (RFC 7030) en /.well-known/est: esta aplicación autenticándose con su id y secreto de cliente, o con un certificado que este dominio le emitió."
+  },
+  "applications.protocols.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "applications.protocols.scep.what": {
+    "en": "3aa1a8167ba7b6a1",
+    "text": "Inscripción de certificados mediante SCEP (RFC 8894) en /enroll/scep: una contraseña de desafío de un solo uso creada para esta aplicación."
+  },
+  "applications.protocols.did.label": {
+    "en": "be52dffd72816927",
+    "text": "Identificador descentralizado (DID)"
+  },
+  "applications.protocols.did.what": {
+    "en": "ccfbaceacd779cc0",
+    "text": "Un DID del W3C que describe esta aplicación: did:web:<host>[:realm:<id>]:applications:<identifier>, cuyo documento anuncia este servicio en <base>/applications/<identifier>/did.json. El documento publica las claves públicas de didPublicKeyJwk (genere un par de claves, o pegue la mitad pública de uno propio), los servicios de didService y los URI de didAlsoKnownAs. No se emite nada mediante esta familia: es cómo se identifica la aplicación y cómo se encuentran sus claves."
+  },
+  "applications.protocols.secret-destination.label": {
+    "en": "c9d21f45ee42c8f9",
+    "text": "Destino de envío de secretos"
+  },
+  "applications.protocols.secret-destination.what": {
+    "en": "c604726c3f603150",
+    "text": "Un gestor de secretos al que este servicio ENVÍA la contraseña rotada de una cuenta de servicio (#221): AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault, o un motor KV versión 2 de HashiCorp Vault / OpenBao — y, solo en modo de desarrollo, un archivo. El secreto ya debe existir allí: un envío escribe una versión nueva y nunca crea uno. La credencial de escritura (secretDestCredential) está sellada en esta entrada y nunca se muestra. No se emite nada mediante esta familia."
+  },
+  "applications.protocols.scim-client.label": {
+    "en": "9be47ed83dd2d7b2",
+    "text": "Cliente SCIM (aprovisionamiento saliente)"
+  },
+  "applications.protocols.scim-client.what": {
+    "en": "b4c33bcec8578230",
+    "text": "Un proveedor de servicios SCIM 2.0 remoto al que este servicio ENVÍA usuarios y grupos (#552): recursos RFC 7643 sobre RFC 7644, creados, reemplazados o modificados con patch, desactivados o eliminados a medida que cambia el directorio, y reconciliados a petición o según un calendario. Se autentica con HTTP Basic, un token OAuth 2.0 client_credentials o un certificado de cliente TLS; toda credencial está sellada en esta entrada y nunca se muestra. Se configura en Protocolos → SCIM → Clientes. No se emite nada mediante esta familia."
+  },
+  "applications.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "La clase abstracta que lleva toda entrada."
+  },
+  "applications.schema.objectClasses.applicationProcess.what": {
+    "en": "dd82f17846370ea7",
+    "text": "La única clase de objeto REGISTRADA que encaja con una aplicación. Trae cn, description, seeAlso, ou y l — así que el NOMBRE de una aplicación aquí es un atributo estándar aunque nada más de ella pueda serlo."
+  },
+  "applications.schema.objectClasses.stsApplication.what": {
+    "en": "1687dbb8042b2835",
+    "text": "INVENTADA, porque ningún esquema LDAP registrado tiene un client_id, un conjunto de URI de redirección, un entityID ni un nombre de principal de servicio. Todo producto que guarda clientes OAuth los guarda en su propia base de datos y no en un directorio, así que no había nada que tomar prestado. Son nombres propios de este servicio, como ya lo son x509subject y didSubject."
+  },
+  "applications.schema.attributes.appIdentifier.what": {
+    "en": "db19692c7629ad26",
+    "text": "LA CLAVE: el identificador exactamente como lo presentó el protocolo. El cn propio de la entrada puede ser un resumen de él cuando es demasiado largo para ser un RDN legible, así que este es el atributo por el que buscar — la misma disposición que tiene didSubject en una persona con nombre DID."
+  },
+  "applications.schema.attributes.cn.what": {
+    "en": "6fc8c608a7cfc89a",
+    "text": "El valor del RDN: el propio identificador, o app-<12 hex> cuando aquel tendría más de 64 caracteres."
+  },
+  "applications.schema.attributes.appName.what": {
+    "en": "9193fd826474105f",
+    "text": "Cómo llamarla en una página. Un registro proporciona uno; si no, el identificador es el nombre, porque inventar un nombre amigable para un id opaco sería inventar un hecho."
+  },
+  "applications.schema.attributes.appHomePageUrl.what": {
+    "en": "bb7f9df5947fbef1",
+    "text": "LA PÁGINA DE INICIO PROPIA DE LA APLICACIÓN: a donde va una persona para llegar a ella, y por tanto donde empieza un inicio de sesión en ella. Es a lo que /portal/applications enlaza cada fila, y una entrada sin ella se dibuja allí sin enlace en lugar de con una dirección adivinada. DECLARADA y nunca derivada — los URI de redirección que tiene al lado son callbacks y no puertas de entrada, así que nada la calcula a partir de ellos. Solo http o https, porque se convierte en un href."
+  },
+  "applications.schema.attributes.appCorsOrigin.what": {
+    "en": "03bcebb131e7b340",
+    "text": "LOS ORÍGENES DESDE LOS QUE UNA PÁGINA DE NAVEGADOR PUEDE LLAMAR A ESTE SERVICIO PARA ESTA APLICACIÓN — `https://app.example.com`, un origen exacto por valor, sin ruta y sin comodín. Una solicitud que nombra a esta aplicación como su cliente (un client_id, una credencial Basic, una aserción de cliente o un token de acceso emitido a ella) se responde con Access-Control-Allow-Origin solo cuando su Origin figura aquí; una solicitud que no nombra ningún cliente — descubrimiento, un JWKS, un documento DID, una solicitud previa CORS — se responde para un origen que figure en CUALQUIER aplicación del dominio. VACÍO NO PERMITE NINGÚN ORIGEN DE TERCEROS, en ambos modos. Los orígenes propios de este servicio (sus escuchas, global.publicBaseUrl, el depurador integrado y global.corsOrigins) nunca necesitan figurar. Se normaliza al escribirse: esquema y host en minúsculas, un puerto predeterminado se elimina."
+  },
+  "applications.schema.attributes.appKind.what": {
+    "en": "33629ff0f1ba7b81",
+    "text": "Lo que ES esta aplicación, un valor por cada rol en el que se la ha visto. Varios es el caso habitual y es la idea: un cliente OAuth que pide el ámbito openid es también una parte que confía."
+  },
+  "applications.schema.attributes.appProtocol.what": {
+    "en": "f52b7b33a4356dba",
+    "text": "Las familias de protocolos en las que ha aparecido, acumuladas."
+  },
+  "applications.schema.attributes.appAllowedProtocol.what": {
+    "en": "45439186294a129f",
+    "text": "LAS FAMILIAS DE PROTOCOLOS PARA LAS QUE ESTÁ DECLARADA ESTA APLICACIÓN, un valor por familia, de la tabla cerrada que publica PROTOCOLS. Es el gemelo DECLARADO de appProtocol, arriba, y no deben leerse como una sola cosa: aquel atributo es lo que ha ocurrido y no se puede editar, este es lo que alguien dijo que es el propósito de la aplicación y se marca en /admin/applications/new antes de que se haya conectado nunca. No concede nada. En modo PRODUCTO la política de emisión rechaza una emisión mediante una familia que no nombra — a una aplicación declarada solo para SAML 2.0 se le rechaza un token de acceso (STS-XACML-0084); en desarrollo no rechaza nada. Sin ninguna declaración, no se rechaza nada en ningún modo."
+  },
+  "applications.schema.attributes.appAuthorizationServer.what": {
+    "en": "c825e716fe988b04",
+    "text": "QUÉ SERVIDORES DE AUTORIZACIÓN ha usado este cliente, por el nombre en sus rutas — un valor por cada servidor en el que se le ha visto. Este proceso publica varios, cada uno con sus propias capacidades y sus propios endpoints bajo /{id}/oauth2/…, y TODO CLIENTE PUEDE USAR CADA UNO de ellos: nada aquí restringe un cliente a un servidor, así que esto registra dónde HA estado y no a dónde puede ir. Acumulado, porque un cliente que habla con dos de ellos es un cliente con dos valores y no dos clientes."
+  },
+  "applications.schema.attributes.description.what": {
+    "en": "81229d2596ad5f00",
+    "text": "Qué es esta aplicación, en una frase. Un valor: hasta que alguien escriba uno, dice cómo llegó la aplicación aquí por primera vez."
+  },
+  "applications.schema.attributes.appFirstSeen.what": {
+    "en": "035402abf1f3f295",
+    "text": "GeneralizedTime, cuándo se presentó este identificador por primera vez."
+  },
+  "applications.schema.attributes.appLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, la vez más reciente."
+  },
+  "applications.schema.attributes.appAuthentications.what": {
+    "en": "e453d78bb1daee11",
+    "text": "Cuántas credenciales ha aceptado este servicio PARA esta aplicación. Se ASIGNA en cada cambio — un contador que acumulara valores no tendría sentido — y es un número vivo en una entrada de directorio, lo cual es lo bastante inusual como para decirlo en voz alta: un directorio real no guardaría uno."
+  },
+  "applications.schema.attributes.appSessions.what": {
+    "en": "74c806c6cf9b69f8",
+    "text": "En cuántas sesiones DISTINTAS de inicio de sesión del navegador ha intervenido. Se cuenta a partir del id de sesión que viaja por el embudo de autenticación, así que una concesión directa sin sesión de navegador detrás no suma nada."
+  },
+  "applications.schema.attributes.appUsers.what": {
+    "en": "78bcd4b5578f86b8",
+    "text": "Cuántas identidades distintas se han autenticado para ella. Las identidades en sí NO se listan aquí: una aplicación usada por dos mil personas pondría de otro modo dos mil valores en una entrada."
+  },
+  "applications.schema.attributes.appLastSession.what": {
+    "en": "74b4f32d920e36d9",
+    "text": "El id de la sesión de inicio de sesión más reciente. Es contra lo que se cuenta appSessions — uno distinto incrementa el recuento — y está en la entrada y no en memoria porque la entrada es el almacén: sin él, un reinicio sin más volvería a contar la sesión ya contada."
+  },
+  "applications.schema.attributes.appLastUser.what": {
+    "en": "a33e3ab766bdbaf9",
+    "text": "La identidad más reciente, por la misma razón y con la misma limitación: cuenta un CAMBIO de usuario y no un conjunto distinto, lo que es correcto para el caso habitual y se queda corto con alguien que alterna entre dos aplicaciones. Se indica en seen(), donde se hace la concesión."
+  },
+  "applications.schema.attributes.appRegistered.what": {
+    "en": "1ee5893663bda0e9",
+    "text": "TRUE cuando esta aplicación pasó por el registro dinámico de clientes aquí, FALSE cuando es simplemente un client_id que apareció. Registra CÓMO llegó la aplicación aquí y no lo que cuenta: el modo RFC 9700 juzga a un cliente contra su propio oauthRedirectUri siempre que la entrada tenga uno, sin importar cómo llegó allí, y contra la configuración oauth2.redirectUris solo cuando no tiene ninguno — lo que el modo OAuth 2.1 rechaza en su lugar. Un token_endpoint_auth_method omitido significa client_secret_basic para un cliente registrado y nada para uno creado a mano."
+  },
+  "applications.schema.attributes.appRegisteredBy.what": {
+    "en": "7472cd23e6e908b3",
+    "text": "Cómo se registró esta aplicación, cuando se registró: \"administrator\" (creada en /admin/applications/new o mediante la API de administración), \"rfc7591\" (POST /oauth2/register), \"ldap:<bound DN>\" (un add LDAP bajo ou=applications, #504; \"ldap\" para uno sin bind) o \"startup\" (uno de los clientes sembrados propios de este servicio). Ausente en una aplicación que simplemente apareció. Lo escriben este registro y un add LDAP, que conserva el valor que le dio su autor; un modify LDAP nunca lo marca. EN PRODUCTO ES LO QUE HACE QUE UNA APLICACIÓN SE ATIENDA (#496): una entrada sin él — una que archivó un avistamiento de desarrollo — se responde como ninguna aplicación en cada puerta de protocolo."
+  },
+  "applications.schema.attributes.appFederationRegistration.what": {
+    "en": "f86a04098367f409",
+    "text": "\"automatic\" (su primera solicitud de autenticación firmada) o \"explicit\" (su Entity Configuration enviada con POST a /oidfed/register)."
+  },
+  "applications.schema.attributes.appFederationExpiresAt.what": {
+    "en": "0ff15cde7d7b84d0",
+    "text": "Cuándo termina el registro, en SEGUNDOS desde la época: el propio vencimiento de la Trust Chain, u oidfed.registrationLifetimeS si llega antes."
+  },
+  "applications.schema.attributes.appFederationTrustAnchor.what": {
+    "en": "ea39ae6600e267d6",
+    "text": "El Trust Anchor en el que terminó su cadena."
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "1e1a912a88773d34",
+    "text": "EL CLIENT_ID, y el atributo identificador de tres familias: una parte que confía OpenID Connect ES un cliente OAuth, y una billetera que recoge una credencial en el emisor OpenID4VCI se autentica como uno, así que las tres declaran su nombre aquí en lugar de en tres atributos que serían tres formas de escribir un mismo hecho. Normalmente igual a appIdentifier, que es lo que escribe un avistamiento de protocolo; un SEGUNDO valor es un client_id al que esta aplicación también responde — un id por entorno — y es la razón por la que esto se acumula en lugar de asignarse. Ausente en una entrada para la que no se ha declarado ninguna familia OAuth."
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "b498dbc0da8ba7a9",
+    "text": "LA AUDIENCIA A LA QUE RESPONDE ESTA APLICACIÓN — el `aud` que lleva un token de acceso dirigido a ella, y lo que un cliente pone en el `audience` (o `resource`) de RFC 8693 sección 2.1 cuando intercambia un token para llegar a esta aplicación. Es la forma OAuth de un hecho que otras tres familias de aquí ya registran con sus propios nombres: `wstrustAppliesTo` es lo mismo en un RequestSecurityToken y `samlEntityId` es lo mismo en la AudienceRestriction de una aserción, y un atributo que contuviera los tres sería una cadena que tendría que significar lo que pidiera el último protocolo.\n\nEs DECLARADO — nadie presenta una audiencia como su propio nombre, así que nada aquí lo escribe y no puede derivarse — y es un URI y no un client_id porque eso es una audiencia: el recurso, no el cliente que lo llama. Varios valores es el caso habitual (un nombre de host por entorno), por eso se acumula.\n\n**SE LEE, LO QUE LO CONVIERTE EN LA EXCEPCIÓN** entre los atributos de declaración que tiene al lado. El intercambio de tokens BUSCA aquí una `audience` — forAudience() — para que una delegación registrada para `https://esb1.example.com` nombre la aplicación `esb1` en /admin/delegation y en su dibujo, en lugar de dibujar un recuadro para una URL que nada más en el registro menciona. Es una BÚSQUEDA y no un permiso: una audiencia que nadie registró se intercambia exactamente como antes y se registra textualmente, porque un simulador que la rechazara eliminaría un caso de prueba en lugar de agregar uno."
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "LOS SECRETOS QUE ESTE SERVICIO ACUÑÓ O RECIBIÓ. Cada valor está SELLADO con la clave de cifrado de claves dondequiera que el proceso tenga una duradera (desde el 2026-10-01), así que una lectura del directorio, una fila de base de datos y una copia de seguridad contienen texto cifrado; sin una (desarrollo) está en claro. La consola y /admin-api, tras una credencial, lo muestran abierto. Nunca se escribe en el registro de auditoría.\n\nVARIOS DESDE EL 2026-10-01, CADA UNO UN REGISTRO: {\"id\",\"secret\",\"created\",\"expires\",\"description\"}, los dos tiempos en segundos desde la época y `expires` 0 para nunca. Todo secreto no vencido autentica; el no vencido MÁS RECIENTE es con el que este servicio firma y cifra y el client_secret que devuelven RFC 7591 y 7592. Un valor simple (un ldapmodify, un set) es un secreto sin vencimiento; un set REEMPLAZA todos los secretos, y la sección Credenciales los agrega, quita y rota de uno en uno, como máximo oauth2.clientSecretsMax."
+  },
+  "applications.schema.attributes.oauthRedirectUri.what": {
+    "en": "36056278a77af2f2",
+    "text": "URI de redirección registrados en un registro, y cualquier redirect_uri que este servicio haya ACEPTADO para la aplicación junto a ellos. Ambos no son la misma afirmación y el registro no los fusiona en silencio — vea appRedirectUriObserved."
+  },
+  "applications.schema.attributes.appRedirectUriObserved.what": {
+    "en": "8ef752a64a9931a4",
+    "text": "Un redirect_uri visto en una solicitud de autorización que este servicio respondió. Se mantiene aparte de oauthRedirectUri porque \"registrado\" y \"usado\" son hechos distintos, y RFC 9700 sección 2.1 trata enteramente de no confundirlos: una comprobación de coincidencia exacta lee la lista registrada, y esta es evidencia de lo que un cliente hace realmente."
+  },
+  "applications.schema.attributes.appReturnAddressObserved.what": {
+    "en": "c0072e90e57245a4",
+    "text": "QUÉ DIRECCIONES DE RETORNO DE ESTA ENTRADA NUNCA REGISTRÓ NADIE. Cada valor es `<attribute> <address>` — por ejemplo `samlAssertionConsumerService https://sp.example.com/acs` — y marca una dirección que nombró una solicitud en modo DESARROLLO, que el desarrollo escribe en la entrada porque cree en toda dirección. El modo PRODUCTO trata una dirección marcada como NO registrada y la rechaza exactamente como rechaza una que no está en la entrada, así que un dominio que pasa de desarrollo a producto no confía en silencio en lo que aprendió el desarrollo. Un operador CONFIRMA una (la marca desaparece, la dirección se queda), DESCARTA una (desaparecen ambas) o escribe la dirección explícitamente, lo que la confirma. Las direcciones registradas ANTES de que existiera este atributo no llevan marca y no pueden distinguirse de las registradas — revíselas a mano."
+  },
+  "applications.schema.attributes.oauthPostLogoutRedirectUri.what": {
+    "en": "2008a5c4fcddceb4",
+    "text": "post_logout_redirect_uris registrados, con los que RP-Initiated Logout compara de forma exacta, en todos los modos (#124)."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutUri.what": {
+    "en": "8c640a5c7d635f32",
+    "text": "DÓNDE SE AVISA A ESTE CLIENTE DE QUE EL USUARIO CERRÓ SESIÓN — el frontchannel_logout_uri de OpenID Connect Front-Channel Logout 1.0 sección 2. La página de cierre de sesión lo carga en un iframe oculto, con iss y sid en la cadena de consulta cuando el cliente los pidió. Es de VALOR ÚNICO porque la especificación define un URI por cliente, a diferencia de los URI de redirección que tiene al lado; a un cliente sin ninguno registrado no se le notifica nada y aparece así en /logout en lugar de omitirse en silencio."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutSessionRequired.what": {
+    "en": "501fcc040a4dd31f",
+    "text": "TRUE si este cliente exige `iss` y `sid` en la notificación anterior — el frontchannel_logout_session_required de Front-Channel Logout 1.0 sección 2. Importa porque una RP con varias sesiones en un navegador no puede saber cuál terminó sin el sid, y RFC 7591 sección 2 hace que un booleano omitido sea FALSE y no desconocido — así que un valor ausente aquí significa que el cliente no lo pidió, que es un hecho distinto de que el cliente no se haya registrado."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutUri.what": {
+    "en": "3b143ba0baa349f2",
+    "text": "DÓNDE ENVÍA ESTE SERVICIO CON POST UN LOGOUT TOKEN CUANDO EL USUARIO CIERRA SESIÓN — el backchannel_logout_uri de OpenID Connect Back-Channel Logout 1.0 sección 2.2. Cada cierre de una sesión en la que se emitió a este cliente una respuesta de autorización envía uno, de servidor a servidor, después de que el cierre de sesión haya respondido, bajo la política saliente (https con el certificado verificado; ninguna dirección interna en modo producto). De VALOR ÚNICO, como el URI de canal frontal: la especificación define uno por cliente. https sin fragmento; http solo para un cliente confidencial y solo donde la política saliente envía por http (federation.outboundAllowHttp, modo de desarrollo; sección 2.2, #123)."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutSessionRequired.what": {
+    "en": "ceb948059d9c1807",
+    "text": "TRUE si este cliente exige `sid` en el Logout Token — el backchannel_logout_session_required de Back-Channel Logout 1.0 sección 2.2. Este servicio pone `sid` Y `sub` en cada Logout Token que envía, así que el indicador siempre se respeta; se registra porque \"false\" y \"no indicado\" son hechos distintos sobre un cliente, como con el indicador de canal frontal."
+  },
+  "applications.schema.attributes.oauthGrantType.what": {
+    "en": "0b1c949fd4f2f952",
+    "text": "Los tipos de concesión que puede usar este cliente — el grant_types de RFC 7591 sección 2, de un registro o escrito por un administrador. El endpoint de token rechaza cualquier otra concesión (unauthorized_client), en todos los modos; una lista vacía no restringe nada. Lo que el cliente ha usado realmente es oauthGrantTypeObserved."
+  },
+  "applications.schema.attributes.oauthResponseType.what": {
+    "en": "6be9c178253c7d2c",
+    "text": "Los valores de response_type que puede pedir este cliente — el response_types de RFC 7591 sección 2, de un registro o escrito por un administrador, cada valor un tipo de respuesta (\"code\", \"code id_token\"). El endpoint de autorización rechaza cualquier otro (unauthorized_client), en todos los modos; una lista vacía no restringe nada. Lo que el cliente ha pedido realmente es oauthResponseTypeObserved."
+  },
+  "applications.schema.attributes.oauthGrantTypeObserved.what": {
+    "en": "377bd68db76fa783",
+    "text": "Un tipo de concesión que se vio usar a este cliente en el endpoint de token. Un registro, no un permiso: oauthGrantType es lo que puede usar."
+  },
+  "applications.schema.attributes.oauthResponseTypeObserved.what": {
+    "en": "4f06a60676c6cdb9",
+    "text": "Un response_type que se vio pedir a este cliente en el endpoint de autorización. Un registro, no un permiso: oauthResponseType es lo que puede pedir."
+  },
+  "applications.schema.attributes.oauthScope.what": {
+    "en": "04292dc39076baaf",
+    "text": "Ámbitos que esta aplicación ha PEDIDO, acumulados a medida que los pide. AVISTADOS, nunca declarados: nada se permite ni se rechaza por ellos. Lo que se le puede emitir a la aplicación es oauthAllowedScope."
+  },
+  "applications.schema.attributes.oauthAllowedScope.what": {
+    "en": "318365370d864543",
+    "text": "LOS ÁMBITOS QUE SE LE PUEDEN EMITIR A ESTE CLIENTE — el `scope` de RFC 7591 sección 2, \"la lista que el cliente puede usar al solicitar tokens de acceso\". Un token de ámbito por valor. Tres tipos de ámbito lo leen de forma distinta.\n\n**Los ámbitos protegidos propios de este servicio** — admin:read y admin:write (/admin-api), los ámbitos SCIM (scim.scopeRead, scim.scopeWrite), los ámbitos de Shared Signals (ssf.authScopeRead, ssf.authScopeWrite) y el permiso del depurador — se emiten SOLO a un cliente que los liste, EN AMBOS MODOS, y el servidor de recursos detrás de cada uno vuelve a preguntar en cada llamada, así que quitar un valor aquí deja sin efecto los tokens ya emitidos. Un registro RFC 7591 no puede declararlos; lo hace un administrador, aquí.\n\n**Cualquier otro ámbito**, en modo producto, se emite solo cuando figura aquí — o, cuando no figura nada, cuando está en el conjunto predeterminado: openid, profile, email, address, phone, offline_access y los ámbitos de credenciales OpenID4VCI de este dominio. En desarrollo se emite cualquier ámbito.\n\n**Un ámbito que nombra una aplicación o un permiso delegado** conserva sus propias reglas (la audiencia, y oauthDelegatedPermission) y no necesita figurar.\n\nUn ámbito fuera de la lista se rechaza con invalid_scope en los endpoints de autorización y de token (RFC 6749 sección 3.3), y se quita de una renovación o de un intercambio de tokens. Distinto de oauthScope, que es solo lo que el cliente ha pedido."
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "EL URI BASE DEL QUE CUELGA CADA PERMISO QUE DEFINE ESTA APLICACIÓN, y lo que hace que un nombre de permiso sea único globalmente aquí. Un permiso se identifica con este valor seguido de su nombre — la base `https://example.com/` y el nombre `write` son el permiso `https://example.com/write` —, que es lo que un cliente pone en un `scope` y a lo que luego se DIRIGE la audiencia del token de acceso. Entra ID lo llama Application ID URI y lo escribe `api://<guid>`; la forma es la misma y nada aquí exige ese esquema.\n\nSE NORMALIZA PARA QUE TERMINE EN UN SEPARADOR cuando se escribe mediante este módulo — se agrega una `/` final cuando no hay `/`, `#` ni `:` al final — porque base + nombre es una simple concatenación y `https://example.com` + `write` produciría de otro modo `https://example.comwrite`. Un `ldapmodify` llega a este atributo como a cualquier otro y no se normaliza, así que una base escrita a mano significa exactamente lo que dice.\n\nDE VALOR ÚNICO, y es el único atributo de este grupo que no podría ampliarse sin decidir algo: dos bases significarían que cada permiso de la entrada tendría dos identificadores, y la búsqueda que convierte un ámbito en una audiencia tendría que elegir uno para poner en `aud`."
+  },
+  "applications.schema.attributes.oauthPermission.what": {
+    "en": "0c47fe049bbc6c7b",
+    "text": "UN PERMISO QUE EXPONE ESTA APLICACIÓN, un valor cada uno. El valor es el NOMBRE del permiso — `read`, `write`, `Widgets.ReadWrite.All` — seguido opcionalmente de `|` y una descripción: `write|Change widgets on somebody's behalf`. El PRIMER `|` es el delimitador y cada uno posterior pertenece a la descripción, así que una descripción puede contener el carácter y un nombre no.\n\nEl nombre debe ser un token de ámbito OAuth válido (RFC 6749 sección 3.3 — sin espacios, sin comillas dobles, sin barras invertidas), porque eso es lo que un cliente pondrá en un parámetro `scope` y lo que vuelve en el claim `scope` del token. Nada lo impone cuando lo escribe un `ldapmodify`; este módulo y ambas consolas sí.\n\nUN PERMISO DEBE EXISTIR ANTES DE QUE PUEDA CONCEDERSE, que es la única regla de orden que tiene esta funcionalidad y se comprueba en updateApplication() para que el formulario de la consola y la API de administración no puedan discrepar al respecto. Se comprueba en la CONCESIÓN y no aquí: este atributo es la definición, y una definición que nadie ha usado todavía es el primer paso habitual y no un error."
+  },
+  "applications.schema.attributes.oauthRoleGatedPermission.what": {
+    "en": "fa1c86d8fb8ce2fb",
+    "text": "UN PERMISO QUE DEFINE ESTA APLICACIÓN Y QUE SOLO SE EMITE A UN SUJETO QUE TENGA UN ROL QUE LO AUTORICE. Un valor cada uno, el NOMBRE del permiso tal como lo da `oauthPermission` (`write`, no el identificador completo). A una persona o aplicación que pide un permiso restringido se le emite solo mientras tenga un rol cuyo `rolePermission` nombre el identificador completo (base + nombre); si no, se deja fuera del token (RFC 6749 sección 3.3), y una solicitud que no pide nada más se rechaza con `invalid_scope`. Un permiso que no figura aquí se emite como siempre, que es lo que mantiene funcionando a todos los clientes existentes hasta que alguien opte por esto.\n\nEl nombre debe ser uno de los propios permisos de esta entrada cuando se escribe mediante este módulo; un `ldapmodify` no se comprueba, y un valor que no nombra ningún permiso definido no restringe nada, porque ninguna solicitud puede nombrarlo."
+  },
+  "applications.schema.attributes.oauthResourceMetadata.what": {
+    "en": "46f443d9a9272cd3",
+    "text": "EL DOCUMENTO DE METADATOS DE RECURSO PROTEGIDO (RFC 9728) A PARTIR DEL CUAL SE CONFIGURÓ ESTA APLICACIÓN, como JSON compacto. Su `resource` es el nombre predeterminado, `oauthPermissionBaseUri` y `oauthAudience` de una entrada creada a partir de él, y su `scopes_supported` los permisos; cualquier otro miembro — `authorization_servers`, `jwks_uri`, `bearer_methods_supported`, los miembros de DPoP — se registra aquí y en ningún otro lugar.\n\nEs SOLO DECLARACIÓN: nada lo vuelve a leer, nada lo vuelve a obtener, y cambiarlo no cambia ninguno de los atributos que rellenó. Un valor escrito mediante este módulo debe ser un objeto JSON con un `resource`; un `ldapmodify` no se comprueba."
+  },
+  "applications.schema.attributes.oauthResourceMetadataUrl.what": {
+    "en": "0e8c5a19327706e7",
+    "text": "DE DÓNDE SE OBTUVO EL DOCUMENTO DE METADATOS DE RECURSO PROTEGIDO, cuando se obtuvo en lugar de pegarse o cargarse. Se registra y nunca se vuelve a llamar: la obtención es un acto de un administrador en /admin/applications/new o POST /admin-api/applications/load-resource-metadata, y nada la actualiza."
+  },
+  "applications.schema.attributes.oauthDelegatedPermission.what": {
+    "en": "78e514ee83d20e97",
+    "text": "UN PERMISO QUE SE HA CONCEDIDO A ESTA APLICACIÓN SOBRE OTRA — el identificador completo del permiso, URI base y nombre juntos: `https://example.com/write`. Es la RELACIÓN DE DELEGACIÓN, y se guarda en el CLIENTE y no en el recurso por la razón de Entra y una más: el cliente es la parte que lo nombrará en un `scope`, así que la entrada que responde \"¿puede atenderse esta solicitud?\" es la entrada que identifica la solicitud.\n\n**SE LEE, y se lee en el único lugar que decide lo que dice un token.** Un valor de `scope` que coincide con un permiso definido se convierte en el `aud` del token de acceso (el URI base) y en su `scope` (el nombre) — vea audienceScopes() de oauth2.js. En MODO PRODUCTO un permiso no concedido se rechaza con `invalid_scope` en los endpoints de autorización y de token, siempre. En desarrollo se informa y NO RECHAZA nada salvo que `oauth2.delegatedPermissionsEnforced` esté activado, y está desactivado de forma predeterminada: un cliente en pruebas se ejercita con ambas respuestas.\n\nUN VALOR QUE NO SE RESUELVE EN NINGÚN PERMISO DEFINIDO NO ES UN ERROR Y NO SE OCULTA. Puede que la entrada del recurso se haya eliminado, o que el permiso se haya quitado; `/admin/delegation` muestra una concesión así como HUÉRFANA, que es la misma honestidad de tres estados que el resto de esta consola aplica a un nombre que no puede resolver."
+  },
+  "applications.schema.attributes.oauthGlobalConsent.what": {
+    "en": "7e0e74028e48880c",
+    "text": "UN ÁMBITO SOBRE EL QUE NO SE PREGUNTA A NADIE CUANDO INICIA SESIÓN EN ESTA APLICACIÓN. Un valor por ámbito, escrito exactamente como un cliente lo pone en un parámetro `scope` — `openid`, `profile`, o un identificador completo de permiso delegado como `https://example.com/write`.\n\n**Es una ANULACIÓN y no un registro.** Con `oauth2.consentRequired` activado (que es el valor predeterminado), el endpoint de autorización dibuja /oauth2/consent para cualquier ámbito que esta persona no haya aceptado para esta aplicación; un ámbito nombrado aquí se omite para TODOS, y no se escribe nada en la entrada de nadie. Así que quitar un valor vuelve a preguntar a todos — incluidas las personas que habrían dicho que sí —, mientras que quitar el `oauthConsent` propio de una persona solo le pregunta a ella.\n\n**Se indexa por el par y no solo por el ámbito.** Dar consentimiento a `read` aquí lo da para ESTA aplicación; a una aplicación registrada cinco minutos después que escriba la misma palabra se le sigue preguntando.\n\nUn valor que no nombra ningún permiso que defina alguna aplicación no es un error y no se oculta — la mayoría de los ámbitos no son permisos. Debe ser un token de ámbito válido según RFC 6749 sección 3.3, porque un valor con un espacio nunca podría coincidir con un ámbito; un `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba, y /admin/consent muestra lo que puso allí."
+  },
+  "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
+    "en": "2d52b0e0fe8e25ca",
+    "text": "CUÁNDO SE RETIRÓ UN CONSENTIMIENTO GLOBAL, como `<when> <scope>` con el instante al milisegundo. La concesión de renovación rechaza un token de renovación concedido antes de ese momento que se apoyaba en esa anulación, incluso después de que la anulación se vuelva a agregar — una concesión retirada no revive con la siguiente. Un valor por ámbito; una retirada posterior reemplaza a la anterior. Lo escribe el registro de consentimiento y nunca un formulario."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthMethod.what": {
+    "en": "3e1fd60dfab74200",
+    "text": "Cómo se autentica — cada método que puede usar en el endpoint de token, cualquiera de los cuales puede presentar una solicitud. `none` (un cliente público) no puede tenerse junto con ningún otro. RFC 7591 sección 2 hace que client_secret_basic sea el predeterminado cuando un registro lo omite, por eso una omisión significa CONFIDENCIAL y no desconocido."
+  },
+  "applications.schema.attributes.oauthNativeSso.what": {
+    "en": "582a2cbef470da1a",
+    "text": "TRUE permite a este cliente pedir el ámbito device_sso — y así recibir un device_secret — y participar en un intercambio de tokens de Native SSO, como primera aplicación o como segunda. Cualquier otro valor, el predeterminado, rechaza ambas cosas. Las dos aplicaciones de un intercambio deben tenerlo Y compartir oauthNativeSsoGroup. Un registro solo puede establecerlo mediante una software statement de confianza, porque el grupo es el límite y un cliente no puede elegir el suyo."
+  },
+  "applications.schema.attributes.oauthNativeSsoGroup.what": {
+    "en": "78d42281463c5a94",
+    "text": "El grupo de Native SSO: las aplicaciones que pueden compartir una sesión de dispositivo — en la práctica, las de un mismo proveedor. Un intercambio de tokens se rechaza salvo que la aplicación que recibió el ID Token y la que lo pide lo compartan. De 1 a 64 letras, dígitos y . _ : -; un valor vacío o mal formado saca al cliente de Native SSO."
+  },
+  "applications.schema.attributes.oauthBackchannelTokenDeliveryMode.what": {
+    "en": "ebaef707274ab832",
+    "text": "`backchannel_token_delivery_mode` de CIBA: poll, ping o push. Un cliente sin ninguno no puede usar en absoluto el Backchannel Authentication Endpoint."
+  },
+  "applications.schema.attributes.oauthBackchannelClientNotificationEndpoint.what": {
+    "en": "f4bad1b37661210d",
+    "text": "`backchannel_client_notification_endpoint` de CIBA: la URL https a la que se envía con POST un ping o un push, bajo la política saliente. Obligatorio para ping y push."
+  },
+  "applications.schema.attributes.oauthCommandEndpoint.what": {
+    "en": "849117c9b5e7b475",
+    "text": "`command_endpoint` de OpenID Provider Commands (#151): la URL https a la que se envía con POST un Command Token, bajo la política saliente. A un cliente sin ninguno no se le envía ningún comando."
+  },
+  "applications.schema.attributes.oauthBackchannelAuthenticationRequestSigningAlg.what": {
+    "en": "cdfc398e17d181c0",
+    "text": "`backchannel_authentication_request_signing_alg` de CIBA: cuando se establece, toda solicitud de autenticación de este cliente debe ser un objeto de solicitud firmado con este algoritmo (sección 7.1.1)."
+  },
+  "applications.schema.attributes.oauthBackchannelUserCodeParameter.what": {
+    "en": "6c0f2095e873b568",
+    "text": "TRUE: toda solicitud de autenticación de este cliente lleva el `user_code` de la persona (CIBA sección 7.1), un secreto que la persona estableció en /portal/ciba, lo que impide que un cliente que solo conoce un nombre le envíe solicitudes."
+  },
+  "applications.schema.attributes.oauthSubjectType.what": {
+    "en": "cf054cc8fd5f57e3",
+    "text": "`subject_type` de OIDC Core sección 8: `public` (el predeterminado, y lo que significa un valor vacío) da a todos los clientes el mismo `sub`; `pairwise` da a este cliente uno propio, derivado de la persona, el sector y un secreto que comparten todos los nodos, así que dos clientes de sectores distintos no pueden correlacionar a una persona; `ephemeral` (#149) le da uno aleatorio en cada autenticación, el mismo para todo lo que emite esa autenticación y nunca más después."
+  },
+  "applications.schema.attributes.oauthSectorIdentifierUri.what": {
+    "en": "2b77aa6b404dbdc0",
+    "text": "`sector_identifier_uri` de OIDC Core sección 8.1: una URL https cuyo HOST es el sector para el que se deriva un `sub` pairwise, de modo que varios hosts de redirección de una organización vean un solo sujeto. Un REGISTRO que nombra una hace que se OBTENGA, y cada uno de sus URI de redirección debe figurar en el array JSON que sirve; una escrita aquí por un administrador es la declaración del administrador y no se obtiene. Vacío: el sector es el host de los URI de redirección, que entonces deben compartir todos uno solo."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
+    "en": "c3cee680e93f74e1",
+    "text": "`token_endpoint_auth_signing_alg` de OIDC Core sección 9 / RFC 7591: el ÚNICO algoritmo JWS con que debe firmarse la aserción de autenticación de este cliente. Una aserción firmada con cualquier otro se rechaza, en todos los modos. Vacío: cualquier algoritmo que permita el método."
+  },
+  "applications.schema.attributes.oauthJwks.what": {
+    "en": "ecb31a10d74a0998",
+    "text": "LAS CLAVES PÚBLICAS DEL CLIENTE, como documento JWKS — contra lo que se verifica private_key_jwt (`jwks` de RFC 7591). Es la credencial asimétrica que RFC 9700 sección 2.5 RECOMIENDA, y es el único atributo de credencial de aquí que NO es un secreto: es material de clave pública, sin valor para quien lo lea, que es justamente la razón de preferirlo a un secreto compartido."
+  },
+  "applications.schema.attributes.oauthJwksUri.what": {
+    "en": "99f551bf8039ea17",
+    "text": "`jwks_uri` de RFC 7591, https. SE OBTIENE desde #120, cuando se necesita una clave, bajo la política saliente de federation/federation_http.ts (https, sin redirección, un límite de tamaño, direcciones internas rechazadas en modo producto), se almacena en caché durante oauth2.clientJwksCacheS y se vuelve a obtener para un kid desconocido como máximo cada oauth2.clientJwksRefetchS. Nunca junto a `oauthJwks`: RFC 7591 sección 2 permite uno u otro."
+  },
+  "applications.schema.attributes.oauthIntrospectionSignedResponseAlg.what": {
+    "en": "d3d0457a7d5c2198",
+    "text": "`introspection_signed_response_alg` de RFC 9701 sección 6: el algoritmo JWS de la respuesta de introspección JWT que recibe esta aplicación cuando consulta /oauth2/introspect con `Accept: application/token-introspection+jwt`. VACÍO SIGNIFICA RS256, el predeterminado de la sección. Cualquier algoritmo de `introspection_signing_alg_values_supported` — todos los asimétricos para los que este servicio tiene una clave, y HS256/384/512 con el client_secret propio de esta aplicación como clave. `none` se rechaza: la sección 5 dice que la respuesta DEBE estar protegida criptográficamente."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseAlg.what": {
+    "en": "e7f4e5a5308b2858",
+    "text": "`introspection_encrypted_response_alg` de RFC 9701 sección 6: el algoritmo de administración de claves JWE con que la respuesta de introspección firmada se CIFRA para esta aplicación, convirtiéndola en un Nested JWT. VACÍO SIGNIFICA SIN CIFRAR. Uno de los algoritmos asimétricos (RSA-OAEP, RSA-OAEP-256, ECDH-ES y sus variantes de envoltura de claves), y la clave se toma del `oauthJwks` de esta entrada, o del conjunto que responde su `oauthJwksUri` (#120). Las familias simétricas se rechazan: son para un documento cifrado PARA este servicio."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseEnc.what": {
+    "en": "a5b33f9189532b52",
+    "text": "`introspection_encrypted_response_enc` de RFC 9701 sección 6: el algoritmo JWE de cifrado de contenido. VACÍO SIGNIFICA A128CBC-HS256 una vez que se establece `oauthIntrospectionEncryptedResponseAlg`. NO DEBE establecerse sin ese atributo, y una escritura que lo intente se rechaza; una entrada que quede con solo este (por `ldapmodify`, o al borrar el algoritmo) hace que la respuesta de introspección JWT falle con el motivo en lugar de salir sin cifrar."
+  },
+  "applications.schema.attributes.oauthRequestUri.what": {
+    "en": "5aed34e258774de3",
+    "text": "`request_uris` de OpenID Connect Registration: los valores de request_uri (RFC 9101 sección 5.2) que este cliente puede enviar, uno por línea. EL ENDPOINT DE AUTORIZACIÓN OBTIENE UN request_uri SOLO CUANDO ES UNO DE ESTOS, comparado de forma exacta una vez quitado cualquier #fragmento — un request_uri que nadie registró se rechaza con invalid_request_uri y nunca se llama, que es lo que evita que la obtención sea una falsificación de solicitudes del lado del servidor. https, o http solo en modo de desarrollo."
+  },
+  "applications.schema.attributes.oauthRequestObjectSigningAlg.what": {
+    "en": "0f2db9e8b6d6472a",
+    "text": "`request_object_signing_alg` de OpenID Connect Registration: el ÚNICO algoritmo JWS en que se acepta un objeto de solicitud de este cliente. VACÍO SIGNIFICA CUALQUIER algoritmo de request_object_signing_alg_values_supported. `none` solo puede registrarse donde se acepte algún objeto de solicitud sin firmar — modo de desarrollo, sin que se exija uno firmado."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionAlg.what": {
+    "en": "32ae3a1152bab999",
+    "text": "OpenID Connect Registration `request_object_encryption_alg`: cuando está definido, un objeto de solicitud de este cliente DEBE estar cifrado (RFC 9101 sección 6.1) con este algoritmo de gestión de claves JWE — para la clave de objeto de solicitud de este dominio publicada en /oauth2/jwks (use: enc) en el caso de RSA-OAEP y ECDH-ES, o para el propio client_secret de este cliente en el caso de las familias simétricas. VACÍO SIGNIFICA que el cifrado es opcional."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionEnc.what": {
+    "en": "fb477df5cfbc6756",
+    "text": "OpenID Connect Registration `request_object_encryption_enc`: el cifrado de contenido JWE que debe usar un objeto de solicitud de este cliente. VACÍO SIGNIFICA A128CBC-HS256 una vez que `oauthRequestObjectEncryptionAlg` está definido; no puede definirse sin ese atributo."
+  },
+  "applications.schema.attributes.oauthRequireSignedRequestObject.what": {
+    "en": "c9c63effbd13dd2a",
+    "text": "RFC 9101 sección 10.5 `require_signed_request_object`, solo para este cliente: TRUE rechaza con invalid_request una solicitud de autorización suya que no lleve `request` ni `request_uri`, y un objeto de solicitud firmado con `none`. FALSE o vacío remite a oauth2.requireSignedRequestObject."
+  },
+  "applications.schema.attributes.oauthRequirePushedAuthorizationRequests.what": {
+    "en": "09a53af1a788654f",
+    "text": "RFC 9126 sección 6 `require_pushed_authorization_requests`, solo para este cliente: TRUE rechaza con invalid_request una solicitud de autorización suya que no lleve un request_uri emitido en /oauth2/par. FALSE o vacío remite a oauth2.requirePushedAuthorizationRequests."
+  },
+  "applications.schema.attributes.oauthHttpSignedRequests.what": {
+    "en": "e5c1786e8608f23a",
+    "text": "FAPI 2.0 HTTP Signatures, solo para este cliente: TRUE rechaza, con 401, una solicitud a un servidor de recursos con el token de acceso de este cliente que no lleve una firma \"fapi-2-request\" válida (RFC 9421) hecha con una clave de su jwks o jwks_uri. FALSE o vacío remite a oauth2.httpSignatures."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsType.what": {
+    "en": "103312425b7a3ae9",
+    "text": "Un TIPO DE ACCESO del que es propietaria esta aplicación como servidor de recursos — uno por valor, leído por igual por authorization_details de RFC 9396 y por los derechos de acceso de GNAP. Un nombre de tipo sin más, o un objeto JSON {\"type\", \"description\", \"locations\", \"schema\", \"actions\", \"datatypes\", \"privileges\", \"required\", \"interaction\", \"consentActions\", \"bearer\", \"maxLifetimeS\", \"acr\", \"derivableFrom\", \"introspectionClaims\", \"limits\"}: `locations` son las direcciones que puede nombrar un derecho de este tipo (el URI base del permiso y oauthAudience siempre cuentan), `schema` un JSON Schema que debe cumplir todo derecho de este tipo, `actions`, `datatypes` y `privileges` los valores que puede nombrar, `required` los miembros que debe llevar, `bearer: false` que un token que lo lleve está restringido al remitente, `maxLifetimeS` lo máximo que vive un token así, `derivableFrom` los tipos de los que puede derivarse (RFC 9767 sección 4), `introspectionClaims` lo que se comunica a este servidor de recursos sobre la persona en la introspección, y `limits` el JSON Schema (un subconjunto) que deben cumplir los límites de un derecho. `interaction` (always, default, never), `consentActions` y `acr` deciden, para GNAP, si se pregunta al propietario del recurso y con qué solidez debe haber iniciado sesión (#432 fase 6). Un tipo no declarado se rechaza con invalid_authorization_details por RFC 9396 en todos los modos, y por GNAP en modo producto."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
+    "en": "5a0acf9625882942",
+    "text": "RFC 9396 sección 10 `authorization_details_types`: los ÚNICOS tipos de authorization_details que puede usar este cliente, uno por valor. VACÍO SIGNIFICA cualquier tipo que admita este servidor de autorización."
+  },
+  "applications.schema.attributes.oauthStepUpAcrValues.what": {
+    "en": "847d2fc846138cb9",
+    "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk, phr y phrh se cumplen con una contraseña más una llave de seguridad; cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."
+  },
+  "applications.schema.attributes.oauthStepUpMaxAge.what": {
+    "en": "fdd12480b52b8006",
+    "text": "El max_age de RFC 9470 sección 3: la autenticación más antigua, en segundos enteros, que esta aplicación acepta detrás de un token de acceso. Un token cuyo auth_time es más antiguo, o falta, recibe el desafío 401 insufficient_user_authentication con max_age. 0 significa una autenticación en este mismo segundo. VACÍO no exige nada."
+  },
+  "applications.schema.attributes.oauthIdTokenSignedResponseAlg.what": {
+    "en": "8a855d8855d28896",
+    "text": "OpenID Connect Registration `id_token_signed_response_alg`: el algoritmo JWS con el que se firman los ID Tokens de este cliente — y sus Logout Tokens del canal posterior y sus Command Tokens. VACÍO SIGNIFICA RS256 (PS256 bajo FAPI 1.0 Advanced). Cualquier algoritmo de id_token_signing_alg_values_supported; uno HMAC usa como clave el secreto del cliente. `none` se rechaza."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseAlg.what": {
+    "en": "183714d075e4bf22",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_alg`: el algoritmo de gestión de claves JWE con el que se cifran para él sus ID Tokens (y Logout Tokens), después de firmarlos. VACÍO SIGNIFICA SIN CIFRAR. Un algoritmo asimétrico, y la clave se toma de `oauthJwks` o `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseEnc.what": {
+    "en": "48ee797ab8e75fa2",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_enc`: el cifrado de contenido JWE. VACÍO SIGNIFICA A128CBC-HS256 una vez que `oauthIdTokenEncryptedResponseAlg` está definido; no puede definirse sin ese atributo."
+  },
+  "applications.schema.attributes.oauthUserinfoSignedResponseAlg.what": {
+    "en": "ef48efadfd32f3ee",
+    "text": "OpenID Connect Registration `userinfo_signed_response_alg`: el algoritmo JWS con el que se firma la respuesta de UserInfo a este cliente, lo que la convierte en `application/jwt` con `iss` y `aud`. VACÍO (o `none`) SIGNIFICA JSON simple, salvo que esté cifrada."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseAlg.what": {
+    "en": "76a0ae0574f3ef25",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_alg`: el algoritmo de gestión de claves JWE con el que se cifra la respuesta de UserInfo para este cliente (después de firmarla, cuando se firma). VACÍO SIGNIFICA SIN CIFRAR. Un algoritmo asimétrico, para `oauthJwks` o `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseEnc.what": {
+    "en": "6852fab2d2fc0d6a",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_enc`: el cifrado de contenido JWE. VACÍO SIGNIFICA A128CBC-HS256 una vez que `oauthUserinfoEncryptedResponseAlg` está definido; no puede definirse sin ese atributo."
+  },
+  "applications.schema.attributes.oauthAuthorizationSignedResponseAlg.what": {
+    "en": "1287c2f4ab72e7da",
+    "text": "JARM sección 3 `authorization_signed_response_alg`: el algoritmo JWS de las respuestas de autorización protegidas con JWT de este cliente (`response_mode` `jwt`, `query.jwt` y los demás). VACÍO SIGNIFICA RS256 (PS256 bajo FAPI 1.0 Advanced). `none` se rechaza (JARM sección 3)."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseAlg.what": {
+    "en": "9c508446b117e1da",
+    "text": "JARM sección 3 `authorization_encrypted_response_alg`: el algoritmo de gestión de claves JWE con el que se cifra para este cliente una respuesta de autorización protegida con JWT. VACÍO SIGNIFICA SIN CIFRAR. Un algoritmo asimétrico, para `oauthJwks` o `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseEnc.what": {
+    "en": "c06c3ef3bf155771",
+    "text": "JARM sección 3 `authorization_encrypted_response_enc`: el cifrado de contenido JWE. VACÍO SIGNIFICA A128CBC-HS256 una vez que `oauthAuthorizationEncryptedResponseAlg` está definido; no puede definirse sin ese atributo."
+  },
+  "applications.schema.attributes.oauthDefaultAcrValues.what": {
+    "en": "2420d2fb6289e439",
+    "text": "OpenID Connect Registration `default_acr_values`: los valores acr que se solicitan para este cliente cuando una solicitud no nombra ni `acr_values` ni un claim acr esencial — separados por espacios, el preferido primero. VACÍO no solicita nada."
+  },
+  "applications.schema.attributes.oauthDefaultMaxAge.what": {
+    "en": "4aab318613c37bad",
+    "text": "OpenID Connect Registration `default_max_age`: el inicio de sesión más antiguo, en segundos enteros, que este cliente acepta cuando una solicitud no nombra ningún `max_age` — uno más antiguo hace que la persona vuelva a iniciar sesión. 0 significa un inicio de sesión en este mismo segundo. VACÍO no exige nada."
+  },
+  "applications.schema.attributes.oauthAssertionIssuer.what": {
+    "en": "f927674d2d7a1f5f",
+    "text": "LOS VALORES `iss` QUE ESTA APLICACIÓN PUEDE PRESENTAR EN UNA CONCESIÓN DE AUTORIZACIÓN DE RFC 7523 SECCIÓN 2.1, y es uno de los pocos atributos DECLARADOS de aquí que SE LEEN. Una aserción portadora JWT ES toda la autorización — en esa concesión no hay navegador, ni contraseña, ni paso de consentimiento —, así que aceptar una de cualquiera significaría que cualquiera que pueda llegar a este puerto obtiene un token de acceso como cualquiera. Por eso es la segunda función de este servicio sin respuesta permisiva posible, junto a la federación, y `oauth2.jwtBearerRequireRegisteredIssuer` está activado de forma predeterminada.\n\nUna aserción que un cliente emite SOBRE SÍ MISMO nombra su propio client_id como `iss` y no necesita ningún valor aquí: esa búsqueda ya tiene éxito a través de oauthClientId, y pedir a un operador que escriba el client_id dos veces sería un paso de configuración sin ninguna decisión en él. Se acumula, porque una aplicación afirma legítimamente bajo un nombre de emisor por entorno."
+  },
+  "applications.schema.attributes.oauthAssertionJwks.what": {
+    "en": "3abc3d2dd9035aef",
+    "text": "LAS CLAVES PÚBLICAS QUE ESTE SERVICIO EMITIÓ A ESTA APLICACIÓN, como documento JWKS, cada clave con `x5c` (su cadena de certificados) y `x5t#S256`. Las escribe el control Emitir de /admin/pki y POST /admin-api/pki/issue.\n\nEs un SEGUNDO atributo junto a `oauthJwks` y nunca lo sobrescribe. Un cliente que registró sus propias claves y al que luego un operador emitió un par tiene dos formas de firmar, y ambas las dispuso alguien deliberadamente — sobrescribir la primera la anularía en silencio en el momento en que alguien pulsara un botón sobre la segunda. Ambas se leen, con un O lógico, en client_auth.js y en assertion_grant.js. Es material de clave pública, así que, como oauthJwks, no vale nada para quien lea este directorio."
+  },
+  "applications.schema.attributes.oauthAssertionCertificate.what": {
+    "en": "b4cbd65aec258415",
+    "text": "El certificado hoja, en PEM, cuyo sujeto es esta aplicación y cuyo emisor es la CA emisora del dominio. Los mismos bytes que el primer miembro de `x5c` de arriba, en la forma que una persona puede pegar en `openssl x509 -text`."
+  },
+  "applications.schema.attributes.oauthAssertionCertificateChain.what": {
+    "en": "b7a32cc9139e6bd2",
+    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a una hoja. La RAÍZ no está incluida deliberadamente: una raíz es un ancla de confianza, y una parte de confianza que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
+  },
+  "applications.schema.attributes.oauthAssertionPrivateKey.what": {
+    "en": "8b668a69fa54d2c9",
+    "text": "LA CLAVE PRIVADA, en PEM. **SELLADA EN REPOSO DONDEQUIERA QUE LA CLAVE DE CIFRADO DE CLAVES SOBREVIVA AL PROCESO** — AES-256-GCM mediante common/keystore.js, el mismo mecanismo y la misma clave que sellan las propias claves de firma de este servicio, los tres pares de claves de CA de common/pki.js y el secreto compartido de un autenticador. Así, un ldapsearch en TCP 389, donde todo bind tiene éxito, un archivo ldif, una fila de base de datos y una copia de seguridad de cualquiera de ellos contienen `$aesgcm$…` y no una clave utilizable. Las superficies que pasan por este módulo — /admin/applications y GET /admin-api/applications, ambas detrás de una credencial — reciben el PEM, porque el sello protege el ALMACÉN y no la consola de la que un operador recoge una credencial emitida; SEALED_FIELDS argumenta la división. En modo DESARROLLO se escribe en claro, que es la regla que sigue el secreto del autenticador de al lado y por la misma razón: allí la clave de cifrado de claves es efímera, así que sellar una entrada que sobrevive a un reinicio bajo una clave que no sobrevive convertiría la mitad privada en basura permanente mientras el certificado volvía. Nunca se escribe en el registro de auditoría, y este servicio NO GUARDA NINGUNA SEGUNDA COPIA — common/pki.js la entrega una vez, en la emisión, y la olvida."
+  },
+  "applications.schema.attributes.oauthAssertionKid.what": {
+    "en": "0bdfcb2fca7999a3",
+    "text": "El `kid` de la clave emitida, derivado del material de clave como todo kid de este servicio (RFC 7638). Una aserción que lo nombre en su encabezado JWS restringe la verificación a esa clave; una que no nombre ninguno se prueba contra todas las claves registradas para esta aplicación, lo cual es correcto y no laxo."
+  },
+  "applications.schema.attributes.oauthAssertionExpiresAt.what": {
+    "en": "bf8bf93da43a7bf7",
+    "text": "Cuándo caduca el certificado emitido, como GeneralizedTime. Es un hecho sobre el CERTIFICADO y no una política: aquí nada rechaza una aserción porque haya pasado esta fecha — lo que la rechaza es que el certificado no logre construir una ruta, lo cual se comprueba donde se comprueba la cadena. Se muestra en /admin/pki para que un operador pueda ver lo que está a punto de dejar de funcionar."
+  },
+  "applications.schema.attributes.oauthAssertionKeySource.what": {
+    "en": "9763e439aef61fa1",
+    "text": "DE DÓNDE PROCEDE EL PAR DE CLAVES DE RFC 7523 DE ARRIBA, y por tanto quién tiene su mitad privada. `issued` — generado aquí y firmado por la CA emisora de este dominio, con la clave privada en `oauthAssertionPrivateKey`. `uploaded-realm-ca` — un certificado que emitió la propia autoridad de certificación de este dominio, cargado en lugar de un par generado. `uploaded-external-ca` — un certificado de otra autoridad, cargado con toda su cadena hasta una raíz autofirmada, con cada eslabón verificado. En los dos valores de carga, la clave privada la tiene la APLICACIÓN y este servicio nunca la ha tenido.\n\nEs un hecho sobre lo que se hizo y no una política: ningún verificador lo lee, y una entrada escrita antes de que existiera no lleva ninguno — la consola interpreta allí una clave privada sellada como `issued`, que es lo único que pudo haber puesto una en la entrada."
+  },
+  "applications.schema.attributes.oauthSamlAssertionIssuer.what": {
+    "en": "fd1408bafa076faa",
+    "text": "LOS VALORES `<Issuer>` QUE ESTA APLICACIÓN PUEDE PRESENTAR EN UNA CONCESIÓN DE AUTORIZACIÓN DE RFC 7522 SECCIÓN 2.1. Es el hermano de `oauthAssertionIssuer` para el perfil SAML 2.0 y SE LEE por la misma razón: una aserción portadora ES toda la autorización — sin navegador, sin contraseña, sin paso de consentimiento —, así que aceptar una de cualquiera significaría que cualquiera que pueda llegar a este puerto obtiene un token de acceso como cualquiera. `oauth2.saml2BearerRequireRegisteredIssuer` está activado de forma predeterminada.\n\nEs un atributo SEPARADO del de JWT y no una lista compartida: una parte en la que se confía para afirmar en un formato no ha recibido por ello confianza para afirmar en el otro, y un operador que declaró un emisor para RFC 7523 no debe haberlo declarado en silencio para RFC 7522. Se compara mediante comparación simple de cadenas (RFC 3986 sección 6.2.1), que es lo que pide RFC 7522 sección 3 punto 1 — sin plegado de mayúsculas y sin tolerancia a la barra final. Se acumula, por la misma razón que el de JWT."
+  },
+  "applications.schema.attributes.oauthSamlAssertionSigningCertificate.what": {
+    "en": "2f3d2c8cf3ae0cc7",
+    "text": "EL CERTIFICADO CON EL QUE ESTA PARTE FIRMA SUS ASERCIONES DE RFC 7522, en PEM, registrado por valor. Es el análogo de `oauthJwks` para un perfil cuyas firmas son XML Signature y no JWS — en SAML no hay JWKS; lo que una parte registra ES un certificado.\n\nPuede haber varios bloques PEM en un valor, porque una parte que rota un certificado tiene dos mientras sigan en circulación aserciones firmadas con el antiguo. Es material de clave pública, así que, como `oauthJwks`, no vale nada para quien lea este directorio.\n\n**UN CERTIFICADO QUE LLEGA EN EL PROPIO `<ds:KeyInfo>` DE LA ASERCIÓN NO SUSTITUYE A ESTE.** Se usa para elegir entre lo registrado aquí y nunca como clave por derecho propio, y en eso este perfil es más estricto que RFC 7523: una cadena hasta la raíz de este dominio prueba que el DOMINIO emitió una clave y no dice nada sobre QUÉ aplicación la tiene, así que aceptarla permitiría que la hoja RFC 7523 de una aplicación firmara una aserción SAML."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificate.what": {
+    "en": "d1e47484136de9b4",
+    "text": "El certificado hoja que este servicio EMITIÓ a esta aplicación para RFC 7522, en PEM, cuyo sujeto es la aplicación y cuyo emisor es la CA emisora del dominio. Lo escribe el control Emitir de /admin/pki con el propósito SAML 2.0 elegido, y POST /admin-api/pki/issue con `purpose: \"saml\"`. Es un certificado DISTINTO sobre un par de claves DISTINTO del `oauthAssertionCertificate` de al lado, y su subjectAltName lleva el URI del perfil RFC 7522, de modo que un certificado leído fuera de contexto dice para qué perfil se emitió."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
+    "en": "49df2430d4c7cf4c",
+    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a la hoja de arriba. La RAÍZ no está incluida deliberadamente, por la razón que da la fila de la cadena JWT: una parte de confianza que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
+  },
+  "applications.schema.attributes.oauthSamlAssertionPrivateKey.what": {
+    "en": "63981c5c57f70802",
+    "text": "LA CLAVE PRIVADA del par RFC 7522, en PEM. **SELLADA EN REPOSO DONDEQUIERA QUE LA CLAVE DE CIFRADO DE CLAVES SOBREVIVA AL PROCESO**, con el mismo mecanismo y bajo la misma clave que el `oauthAssertionPrivateKey` de al lado — véase esa fila, que lo argumenta todo. Este servicio NO GUARDA NINGUNA SEGUNDA COPIA: common/pki.js la entrega una vez, en la emisión, y la olvida."
+  },
+  "applications.schema.attributes.oauthSamlAssertionThumbprint.what": {
+    "en": "7788d86bee182127",
+    "text": "La huella SHA-256 del certificado emitido, en base64url. Es lo que `oauthAssertionKid` es para el perfil JWT, y se escribe de otro modo porque los dos formatos llevan identificadores distintos: un encabezado JWS nombra un `kid` y una XML Signature lleva el propio certificado, así que lo que compara un <ds:KeyInfo> presentado con lo registrado es una huella."
+  },
+  "applications.schema.attributes.oauthSamlAssertionExpiresAt.what": {
+    "en": "21956043d5d0e1df",
+    "text": "Cuándo caduca el certificado RFC 7522 emitido, como GeneralizedTime. Un hecho sobre el CERTIFICADO y no una política, exactamente como `oauthAssertionExpiresAt`: aquí nada rechaza una aserción porque haya pasado esta fecha. Se muestra en /admin/pki para que un operador pueda ver lo que está a punto de dejar de funcionar."
+  },
+  "applications.schema.attributes.oauthSamlAssertionKeySource.what": {
+    "en": "885b1731802e4f71",
+    "text": "De dónde procede el par de claves RFC 7522 de arriba, en el vocabulario que usa `oauthAssertionKeySource` y por su misma razón: `issued`, `uploaded-realm-ca` o `uploaded-external-ca`. Es un atributo SEPARADO del de JWT porque los dos pares de claves son independientes — uno puede emitirse aquí mientras el otro es el certificado de otra persona."
+  },
+  "applications.schema.attributes.oauthSoftwareStatementIssuer.what": {
+    "en": "c6834fb57ae3ff4c",
+    "text": "LOS VALORES `iss` CUYAS DECLARACIONES DE SOFTWARE AVALA ESTA APLICACIÓN en POST /oauth2/register (RFC 7591 sección 2.3) — la aplicación es el EDITOR del software, y una declaración que nombre uno de estos emisores se verifica contra su `jwks` o su par de claves RFC 7523 de /admin/pki, o contra un x5c que este dominio le emitió. SE LEE: una declaración de un emisor que nadie declara se rechaza con unapproved_software_statement mientras `oauth2.softwareStatementRequireTrustedIssuer` esté activado, y una de confianza fija los metadatos registrados y puede abrir un endpoint de registro cerrado.\n\nEs un atributo SEPARADO de `oauthAssertionIssuer`: una parte en la que se confía para decir quién es una persona no ha recibido por ello confianza para decir como qué software puede registrarse. Una declaración que emitió este mismo dominio no necesita declaración. Se acumula, por la misma razón que los emisores de aserciones."
+  },
+  "applications.schema.attributes.oauthIssuedSoftwareStatement.what": {
+    "en": "6e1666963d910326",
+    "text": "LA DECLARACIÓN DE SOFTWARE QUE ESTE DOMINIO EMITIÓ POR ÚLTIMA VEZ PARA ESTA APLICACIÓN, como JWS compacto, de tipo `software-statement+jwt`, con `sub` nombrando esta aplicación. Un cliente que la presente en POST /oauth2/register queda registrado con los miembros que fija. NO ES UN SECRETO — RFC 7591 sección 2.3 espera que una declaración acompañe a cada copia del software — ni un registro de todas las declaraciones emitidas: volver a emitir sustituye este valor, y la declaración anterior sigue verificándose hasta que caduque o cambie la clave de firma del dominio."
+  },
+  "applications.schema.attributes.appSoftwareStatementIssuer.what": {
+    "en": "4bd7d529acd9f5fc",
+    "text": "El `iss` de la declaración de software con la que este cliente SE REGISTRÓ, o ausente cuando no presentó ninguna. Se borra con una actualización RFC 7592 que no lleve ninguna, y al eliminarse el registro."
+  },
+  "applications.schema.attributes.appSoftwareStatementTrusted.what": {
+    "en": "b995b37e9b9438b5",
+    "text": "TRUE cuando esa declaración se verificó contra un emisor en el que confía este dominio, FALSE cuando se aceptó sin verificar porque `oauth2.softwareStatementRequireTrustedIssuer` estaba desactivado. Un cliente registrado con una declaración TRUE en un endpoint que de otro modo está cerrado debe presentar en cada actualización una declaración de confianza del mismo emisor."
+  },
+  "applications.schema.attributes.appSoftwareStatementPublisher.what": {
+    "en": "5b7f331c8b1c940f",
+    "text": "La aplicación a través de la cual llegó la confianza: la que declara el emisor o — para una declaración que emitió este dominio — la aplicación para la que se emitió."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSubjectDn.what": {
+    "en": "5e4d2971c2881d13",
+    "text": "RFC 8705 sección 2.1.2 `tls_client_auth_subject_dn`: el DN de sujeto del certificado PKI con el que se autentica este cliente, en forma RFC 4514. Se compara como NOMBRE desde el 2026-09-13 (common/certificate_subject.js: tipos de atributo normalizados, valores con caseIgnoreMatch, los AVA de un RDN multivalor en cualquier orden) y solo contra un certificado cuya cadena se VERIFICÓ. Es uno de los CINCO parámetros de sujeto, y un cliente registra como máximo uno — un segundo se rechaza (STS-REG-0131, STS-REG-0135). Sin ninguno, tls_client_auth sigue autenticando un certificado que este dominio emitió a ESTA aplicación. TAMBIÉN ES EL ATRIBUTO IDENTIFICADOR DE LA FAMILIA `mtls`, y es MONOVALOR mientras que todos los demás identificadores de aquí se acumulan, porque RFC 8705 dice que el certificado coincide con \"the single expected subject\"."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanDns.what": {
+    "en": "112f46fd50b192e5",
+    "text": "RFC 8705 sección 2.1.2 `tls_client_auth_san_dns`: un dNSName que debe llevar el certificado con el que se autentica este cliente, comparado sin distinguir mayúsculas ni un punto final, nunca como comodín. Uno de los cinco parámetros de sujeto; véase oauthTlsClientAuthSubjectDn."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanUri.what": {
+    "en": "1d73c827b1f6f2f1",
+    "text": "RFC 8705 sección 2.1.2 `tls_client_auth_san_uri`: un uniformResourceIdentifier que debe llevar el certificado, comparado de forma exacta. Uno de los cinco parámetros de sujeto."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanIp.what": {
+    "en": "bdaffe89241efe64",
+    "text": "RFC 8705 sección 2.1.2 `tls_client_auth_san_ip`: un iPAddress que debe llevar el certificado, IPv4 o IPv6, comparado como dirección y no por su escritura. Uno de los cinco parámetros de sujeto."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanEmail.what": {
+    "en": "fde7039fac656aab",
+    "text": "RFC 8705 sección 2.1.2 `tls_client_auth_san_email`: un rfc822Name que debe llevar el certificado; el dominio se compara sin distinguir mayúsculas y la parte local de forma exacta (RFC 5280 sección 7.5). Uno de los cinco parámetros de sujeto."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateBoundAccessTokens.what": {
+    "en": "0f2ad8a5c3044e38",
+    "text": "RFC 8705 sección 3.4 `tls_client_certificate_bound_access_tokens`, TRUE o FALSE. TRUE es este cliente DECLARANDO que sus tokens están vinculados a un certificado, y se le exige en TODOS los modos: una solicitud de token suya por una conexión sin certificado de cliente se rechaza (STS-OAUTH-0487) en lugar de responderse con un token no vinculado, algo que la sección 3.4 deja en manos del servidor de autorización. FALSE o ausente no cambia nada — un cliente que presenta un certificado sigue obteniendo un token vinculado."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateThumbprint.what": {
+    "en": "1aad4795617491a1",
+    "text": "Para self_signed_tls_client_auth de RFC 8705 sección 2.2: el SHA-256 en base64url del DER del certificado con el que se autentica este cliente. ES EL NOMBRE PROPIO DE ESTE SERVICIO, mantenido junto a lo que nombra la RFC: desde el 2026-09-13 un certificado también autentica al cliente cuando es el x5c[0] de una clave del jwks que registró (sección 2.2.2). Obtenga la huella de un certificado con GET /tls/sign-in, o calcúlela: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
+  },
+  "applications.schema.attributes.oauthConfidential.what": {
+    "en": "ae52d212279d2378",
+    "text": "TRUE/FALSE, la determinación que hace sobre él el modo RFC 9700 — y por tanto si se le exige PKCE y si se comprueba su secreto. Se escribe aquí para que la respuesta pueda leerse en lugar de inferirse."
+  },
+  "applications.schema.attributes.samlEntityId.what": {
+    "en": "3987c430d22d9352",
+    "text": "EL ENTITYID DEL PROVEEDOR DE SERVICIOS — la audiencia de la aserción, y el atributo identificador de AMBAS familias SAML. SAML 1.1 no tiene entityID propio en el protocolo (no hay mensaje de solicitud en el que pueda viajar) y lo que lo sustituye — el providerId de Shibboleth, el segmento de ruta o el origen del TARGET — nombra a la misma parte, así que un solo atributo lo contiene en lugar de dos que discreparían la primera vez que una aplicación se declarara para ambas. Se acumula: una aplicación que responde a dos entityID es una sola aplicación.\n\nSE LEE, como la SEGUNDA mitad de forAppliesTo(): un AppliesTo de WS-Trust y el AudienceRestriction de la aserción emitida para él son una misma cadena, así que una aplicación que lo registró aquí y no en `wstrustAppliesTo` sigue teniendo su propio recuadro en el mapa de delegación. Es la misma búsqueda, y desde #496 el AppliesTo que resuelve se rechaza en modo producto cuando la aplicación que nombra no está registrada (appRegisteredBy)."
+  },
+  "applications.schema.attributes.samlAssertionConsumerService.what": {
+    "en": "fd890662f96f022c",
+    "text": "LA URL DEL ASSERTION CONSUMER SERVICE — adonde se envía de vuelta una respuesta SAML, y el URI de redirección de ambas familias SAML. Contenía también el `wreply` de WS-Federation hasta el 2026-08-25; ese pasó a wsfedReplyUrl, porque las páginas SAML leen este atributo para el respaldo de Single Logout y un wreply que llegara aquí hacía que una aplicación WS-Federation pareciera haber nombrado un ACS de SAML. SOLO SE COMPRUEBA EN MODO PRODUCTO: el modo desarrollo envía una respuesta adonde pidió la solicitud y registra la dirección aquí; el modo producto entrega solo a una dirección que ya está en esta lista, y un avistamiento allí nunca añade una. Lo que el modo desarrollo REGISTRA aquí se marca en appReturnAddressObserved, y el modo producto rechaza una dirección marcada hasta que un operador la confirma — así un dominio que pasa de desarrollo a producto no confía en lo que aprendió el modo desarrollo. Los valores registrados antes de que existiera esa marca no llevan ninguna y siguen necesitando revisión."
+  },
+  "applications.schema.attributes.samlSingleLogoutService.what": {
+    "en": "afe0a7928da789d7",
+    "text": "ADONDE SE ENVÍA UN <samlp:LogoutResponse> para este proveedor de servicios, y adonde va un LogoutRequest cuando este proveedor de identidad inicia el cierre de sesión. DECLARADO, no observado: un LogoutRequest no lleva dirección de retorno, así que solo los METADATOS DEL SP o un operador pueden indicarla. Consumir los metadatos escribe aquí sus ubicaciones SingleLogoutService (y el binding y el ResponseLocation de cada endpoint en samlSloEndpoint, que se lee primero). Sin ninguna registrada, el respaldo es saml2.defaultSingleLogoutService y después la URL del assertion consumer service de arriba, que es una suposición que este servicio hace en voz alta y no en silencio."
+  },
+  "applications.schema.attributes.samlNameIdFormat.what": {
+    "en": "7f5ead1978717201",
+    "text": "Todos los formatos de NameID que este proveedor de servicios ha pedido en un NameIDPolicy, acumulados. Es evidencia y no configuración: este proveedor de identidad responde con lo que se haya pedido, incluso un formato del que nadie ha oído hablar, así que un valor aquí no restringe la siguiente solicitud."
+  },
+  "applications.schema.attributes.samlResponseBinding.what": {
+    "en": "d9d4d1b00c05d3ef",
+    "text": "Los valores de ProtocolBinding en los que ha pedido recibir sus respuestas — HTTP-POST, HTTP-Redirect o HTTP-Artifact. Varios es el caso habitual para un proveedor de servicios que se está poniendo a prueba, y por eso esto es una lista."
+  },
+  "applications.schema.attributes.samlSigningCertificate.what": {
+    "en": "a2ead784b1dff911",
+    "text": "LOS CERTIFICADOS DE FIRMA REGISTRADOS DEL PROVEEDOR DE SERVICIOS, en DER base64, uno por valor. Un AuthnRequest, LogoutRequest o LogoutResponse firmado de este proveedor de servicios se VERIFICA contra ellos — en todos los modos — y se rechaza cuando no se verifica contra ninguno. Lo escriben el consumo de sus metadatos (todo KeyDescriptor use=\"signing\" o sin use), la página de consola de SAML 2.0, POST /admin-api/saml2/set-signing-certificate, la confirmación del certificado observado de abajo, o una edición manual. Su clave debe producir una firma XML que este servicio verifique — RSA, EC, EdDSA, DSA, ML-DSA o SLH-DSA (STS-REG-0160). NUNCA se escribe a partir de una solicitud: el certificado que una solicitud lleva en su ds:KeyInfo va a samlObservedSigningCertificate. Los valores escritos antes del 2026-09-17 se capturaron de solicitudes y no tienen procedencia — revíselos antes de confiar en ellos. Es material de clave pública, así que, a diferencia de oauthClientSecret, no vale nada para quien lea este directorio."
+  },
+  "applications.schema.attributes.samlObservedSigningCertificate.what": {
+    "en": "91dce6d63a1aaa80",
+    "text": "EL CERTIFICADO QUE LA ÚLTIMA SOLICITUD FIRMADA LLEVABA EN SU ds:KeyInfo, en DER base64, cuando no es uno de los valores registrados de samlSigningCertificate. OBSERVADO, NO DE CONFIANZA: una clave que trae consigo una solicitud no prueba nada sobre quién la envió, así que no verifica nada en ningún modo. El modo desarrollo sigue cifrando una aserción para ella cuando la entrada no tiene otro certificado; el modo producto no. Un operador lo CONFIRMA (pasa a samlSigningCertificate) o lo DESCARTA, en la página de SAML 2.0 o con POST /admin-api/saml2/confirm-signing-certificate y /discard-signing-certificate. UN solo valor — el último —, de modo que una serie de solicitudes con claves inventadas no puede hacer crecer la entrada."
+  },
+  "applications.schema.attributes.samlAuthnRequestVerification.what": {
+    "en": "6acc91b675eb6f89",
+    "text": "LO QUE ENCONTRÓ LA COMPROBACIÓN DE LA FIRMA DE LA ÚLTIMA SOLICITUD: `verified`, `failed`, `unsigned` o `no-certificate` (firmada, y sin nada registrado contra lo que comprobarla), seguido del binding y el algoritmo. Asignado, como el samlAuthnRequestSigned de al lado."
+  },
+  "applications.schema.attributes.samlSpMetadataUrl.what": {
+    "en": "4de7dca3c5546c56",
+    "text": "DÓNDE SE PUBLICAN LOS METADATOS DE ESTE PROVEEDOR DE SERVICIOS. Los obtiene la acción \"actualizar metadatos\" de la página de la aplicación y POST /admin-api/applications/refresh-metadata, y NUNCA mientras se ejecuta un flujo — una aserción que tuviera que esperar al servidor web de otro para emitirse haría que cada inicio de sesión fuera tan fiable como ese servidor. Lo que escribe la obtención es todo lo que escribe el consumo del documento — véase samlSpMetadata más abajo.\n\nEs la SEGUNDA superficie de solicitudes salientes de este servicio; la federación fue la primera y es la única otra. Sigue los mismos rechazos — la URL debe ser una que lleve esta entrada, el esquema debe ser http o https, y la solicitud tiene un tiempo de espera."
+  },
+  "applications.schema.attributes.samlSpMetadata.what": {
+    "en": "f94a9d0c56e1e3f0",
+    "text": "EL DOCUMENTO DE METADATOS DEL PROVEEDOR DE SERVICIOS, en caché literalmente. Es lo que guarda la acción de actualizar, y lo que guarda la carga de uno en la página de SAML 2.0 (o POST /admin-api/saml2/upload-metadata) para un proveedor de servicios cuyos metadatos este servicio no puede alcanzar. CONSUMIRLO (2026-09-17) escribe sus endpoints AssertionConsumerService y SingleLogoutService como direcciones de retorno REGISTRADAS (samlAssertionConsumerService, samlAcsEndpoint, samlSingleLogoutService, samlSloEndpoint), sus certificados de firma (samlSigningCertificate), su certificado de cifrado (samlEncryptionCertificate), sus NameIDFormats, AuthnRequestsSigned y WantAssertionsSigned, y su validUntil y cacheDuration. Definir este atributo a mano guarda el documento y no consume NADA — use la carga.\n\nSE CONSERVA ADEMÁS DEL EXTRACTO para que un lector pueda ver lo que realmente se consumió. Un certificado sin documento detrás es un valor que nadie puede comprobar."
+  },
+  "applications.schema.attributes.samlEncryptionCertificate.what": {
+    "en": "9105bb16521de17b",
+    "text": "EL CERTIFICADO PARA EL QUE SE CIFRA UNA ASERCIÓN, en DER base64 o PEM. Lo escribe la obtención de metadatos a partir del <md:KeyDescriptor use=\"encryption\"> — con respaldo en un KeyDescriptor sin calificar, que según la especificación sirve para ambos usos — y puede definirse a mano para un proveedor de servicios sin metadatos.\n\nDecide lo que sale. Sin ninguno aquí se usa un samlSigningCertificate registrado y luego — solo en desarrollo — el observado, y sin ninguno de ellos la aserción se envía en claro (desarrollo) o se rechaza (producto), y la página lo indica."
+  },
+  "applications.schema.attributes.samlAcsEndpoint.what": {
+    "en": "3bc462623206e5a8",
+    "text": "Un <md:AssertionConsumerService> de los metadatos consumidos, como `<index> <isDefault> <binding> <location>` — isDefault es `true`, `false` o `-` si no se indica. Un AuthnRequest de SAML 2.0 que nombra un AssertionConsumerServiceIndex se responde en ese endpoint y con su binding; uno que nombra un AssertionConsumerServiceURL debe nombrar uno de estos (en TODOS los modos, una vez consumidos los metadatos); uno que no nombra ninguno va al endpoint predeterminado (saml-metadata-2.0-os sección 2.2.3). SAML 1.1 usa el binding y la ubicación registrados para elegir Browser/POST o Browser/Artifact cuando no se solicita explícitamente ningún perfil."
+  },
+  "applications.schema.attributes.samlSloEndpoint.what": {
+    "en": "50fc4269807fa1f6",
+    "text": "Un <md:SingleLogoutService> de los metadatos consumidos, como `<binding> <location>` o `<binding> <location> <responseLocation>`. Un LogoutResponse va a la ResponseLocation cuando la hay, con el binding en el que llegó el LogoutRequest si el proveedor de servicios lo publica."
+  },
+  "applications.schema.attributes.samlSpNameIdFormat.what": {
+    "en": "5c24c66a2d887053",
+    "text": "Los valores <md:NameIDFormat> que declaran los metadatos del proveedor de servicios. A diferencia de samlNameIdFormat (lo que ha PEDIDO), estos RESTRINGEN: un NameIDPolicy que nombra otro formato se responde con InvalidNameIDPolicy (saml-core-2.0-os sección 3.4.1.1), y el formato predeterminado se elige entre ellos."
+  },
+  "applications.schema.attributes.samlSpAuthnRequestsSigned.what": {
+    "en": "9859c664a8b4172e",
+    "text": "TRUE cuando los metadatos dicen AuthnRequestsSigned=\"true\": una solicitud sin firmar de este proveedor de servicios se rechaza entonces diga lo que diga saml2.requireSignedAuthnRequests, y los metadatos que este proveedor de identidad le sirve dicen WantAuthnRequestsSigned=\"true\"."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsSigned.what": {
+    "en": "e0f4d22138fd10d6",
+    "text": "TRUE cuando los metadatos dicen WantAssertionsSigned=\"true\": la aserción se firma incluso cuando saml2.signAssertion (o saml2SignAssertion) está desactivado — en modo producto; el modo desarrollo respeta el ajuste, que es un caso de prueba, y registra que el proveedor de servicios pidió otra cosa."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsEncrypted.what": {
+    "en": "0435ae5ea89e68d9",
+    "text": "TRUE cuando los metadatos consumidos publican un KeyDescriptor marcado use=\"encryption\" — el proveedor de servicios diciendo que tiene una clave para aserciones cifradas, para lo que los metadatos de SAML 2.0 no tienen atributo propio (los perfiles de interoperabilidad interpretan la clave como la petición). La aserción se CIFRA entonces para esa clave en todos los modos, diga lo que diga saml2.encryptAssertion."
+  },
+  "applications.schema.attributes.samlSpMetadataValidUntil.what": {
+    "en": "144abddd1e7267dc",
+    "text": "El validUntil EFECTIVO del documento consumido — el más temprano de cualquier EntitiesDescriptor envolvente, del EntityDescriptor y de su SPSSODescriptor. Un documento ya caducado se rechaza al consumirlo; una vez pasada esta fecha, toda solicitud del proveedor de servicios se RECHAZA (STS-SAML-0074) hasta que se consuma un documento más reciente."
+  },
+  "applications.schema.attributes.samlSpMetadataCacheDuration.what": {
+    "en": "14f91b25e0604839",
+    "text": "El cacheDuration EFECTIVO del documento consumido (el más corto de su cadena), como el xs:duration que llevaba. Una vez transcurrido desde que se consumió el documento, este queda OBSOLETO: el actualizador en segundo plano lo vuelve a obtener cuando puede (saml2.spMetadataRefresh), y sigue funcionando hasta su validUntil."
+  },
+  "applications.schema.attributes.samlSpMetadataConsumedAt.what": {
+    "en": "f4b47a01d6cdaafd",
+    "text": "Cuándo se consumió el documento por última vez, y cómo: `<ISO instant> <refresh|upload|mdq>` — `mdq` para uno obtenido del respondedor de Metadata Query, que el actualizador en segundo plano puede volver a obtener."
+  },
+  "applications.schema.attributes.samlSpMetadataSignature.what": {
+    "en": "918bec6e5d05e1d7",
+    "text": "Lo que encontró la comprobación de la propia firma del documento consumido: `verified`, `unsigned` o `signed-not-verified` (firmado, y sin samlSpMetadataSigningCertificate contra el que comprobarlo)."
+  },
+  "applications.schema.attributes.samlSpMetadataSigningCertificate.what": {
+    "en": "cdb98da69d5f24ce",
+    "text": "EL CERTIFICADO CON EL QUE DEBEN ESTAR FIRMADOS LOS METADATOS DE ESTE PROVEEDOR DE SERVICIOS, en DER base64. Con él definido, un documento sin firmar, o cuya firma no se verifica contra él, se RECHAZA y nada cambia en la entrada. Sin él, un documento firmado se consume y se registra como signed-not-verified: el acto de confianza es entonces la elección de URL (o de documento) por parte del operador, que es lo que es una actualización o carga explícita."
+  },
+  "applications.schema.attributes.saml2EncryptAssertion.what": {
+    "en": "759b4ebf4d0a40a8",
+    "text": "TRUE o FALSE: cifrar la aserción emitida a ESTE proveedor de servicios, prevaleciendo sobre saml2.encryptAssertion. De los cuatro, este es el que más vale tener por aplicación — un entorno donde un proveedor de servicios exige cifrado y los demás no pueden leerlo es el caso habitual, y un interruptor de todo el servicio no podría expresarlo."
+  },
+  "applications.schema.attributes.saml2EncryptionAlgorithm.what": {
+    "en": "fa273f083d4148cb",
+    "text": "El cifrado por bloques usado para este proveedor de servicios — aes256-gcm, aes128-gcm, aes256-cbc o aes128-cbc —, prevaleciendo sobre saml2.encryptionAlgorithm. Un valor que no sea uno de esos cuatro se IGNORA con una advertencia y se usa la elección de todo el servicio, exactamente como ocurriría con un número no interpretable."
+  },
+  "applications.schema.attributes.saml2KeyTransportAlgorithm.what": {
+    "en": "e2972659824b67ae",
+    "text": "Cómo se envuelve la clave de contenido para este proveedor de servicios — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) o rsa-1_5 —, prevaleciendo sobre saml2.keyTransportAlgorithm. Un dispositivo que solo acepta rsa-1_5 es la razón por la que esto es por aplicación y no una decisión tomada una vez para todo el servicio."
+  },
+  "applications.schema.attributes.saml2EncryptLogoutNameId.what": {
+    "en": "6d5adf9b1aaa6b01",
+    "text": "TRUE o FALSE: enviar <saml:EncryptedID> en lugar de <saml:NameID> en el LogoutRequest enviado a este proveedor de servicios, prevaleciendo sobre saml2.encryptLogoutNameId. Es independiente del interruptor de aserciones de arriba porque son capacidades independientes en toda biblioteca de proveedor de servicios que las tiene: una que descifra aserciones puede seguir esperando un NameID simple en un mensaje de cierre de sesión."
+  },
+  "applications.schema.attributes.oauthAccessTokenTtlS.what": {
+    "en": "a97604c8265b331c",
+    "text": "CUÁNTO VIVE UN TOKEN DE ACCESO EMITIDO A ESTE CLIENTE, en segundos, prevaleciendo sobre oauth2.accessTokenTtlS solo para él. Se convierte en el `exp` del token, así que se fija en el momento de la firma y nada aquí puede acortar un token ya emitido. Póngalo en 30 en un cliente para ver cómo ese cliente renueva mientras todos los demás siguen igual."
+  },
+  "applications.schema.attributes.oauthIdTokenTtlS.what": {
+    "en": "8cc6c14509612cb8",
+    "text": "Lo mismo para el ID Token de OIDC, prevaleciendo sobre oauth2.idTokenTtlS. Es independiente del del token de acceso porque los dos van a lectores distintos: un ID Token se consume una vez al iniciar sesión y un token de acceso se presenta mientras dure."
+  },
+  "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
+    "en": "47a623e69e617b6d",
+    "text": "Lo mismo para el token de actualización, prevaleciendo sobre oauth2.refreshTokenTtlS. Un valor igual o inferior a oauthAccessTokenTtlS es legal y es una concesión que nunca puede renovarse de forma útil — /admin/token-lifetimes informa de esa combinación para el par de todo el servicio, y aquí es igual de alcanzable."
+  },
+  "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
+    "en": "37eeca0107443e0c",
+    "text": "SOLO EN MODO RFC 9700: cuánto tiempo puede pasar una cadena de actualización sin usarse antes de cortarse, prevaleciendo sobre oauth2.refreshIdleSeconds para este cliente. Se mide desde la última vez que se canjeó cualquier token de la CADENA y no desde la emisión, de modo que un cliente activo conserva su concesión y uno inactivo no. Fuera del modo RFC 9700 nada lo lee, lo cual es una propiedad del ajuste y no de este atributo."
+  },
+  "applications.schema.attributes.oauthClaimsAccessToken.what": {
+    "en": "e284080e7c1bb9a6",
+    "text": "LOS CLAIMS DE TOKEN DE ACCESO PROPIOS DE ESTA APLICACIÓN, como un array JSON de filas como las de la página de claims personalizados del dominio. Se añaden a los claims de token de acceso del dominio para los tokens emitidos a este cliente, y una fila de la aplicación sustituye a la fila del dominio con el mismo nombre."
+  },
+  "applications.schema.attributes.oauthClaimsIdToken.what": {
+    "en": "bf6d6d58355a3d7d",
+    "text": "LOS CLAIMS DE ID TOKEN PROPIOS DE ESTA APLICACIÓN, como un array JSON de filas como las de la página de claims personalizados del dominio. Se añaden a los claims de ID Token del dominio para este cliente, y prevalecen por nombre."
+  },
+  "applications.schema.attributes.oauthClaimsUserinfo.what": {
+    "en": "45d44e8df029c130",
+    "text": "LOS CLAIMS DE USERINFO PROPIOS DE ESTA APLICACIÓN, como un array JSON de filas como las de la página de claims de UserInfo del dominio. Se añaden a los claims de UserInfo del dominio con los que se responde a este cliente, y prevalecen por nombre."
+  },
+  "applications.schema.attributes.oauthClaimAttributesAccessToken.what": {
+    "en": "0bb51f4496678312",
+    "text": "LA SELECCIÓN PROPIA DE ESTA APLICACIÓN de atributos del directorio para sus tokens de acceso, como un array JSON de nombres de atributo del catálogo de claims personalizados del dominio. Cuando está presente SUSTITUYE la selección del dominio para los tokens emitidos a este cliente; si falta, se usa la del dominio."
+  },
+  "applications.schema.attributes.oauthClaimAttributesIdToken.what": {
+    "en": "281e877a92a4cd99",
+    "text": "LA SELECCIÓN PROPIA DE ESTA APLICACIÓN de atributos del directorio para sus ID Tokens, un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
+  },
+  "applications.schema.attributes.oauthClaimAttributesUserinfo.what": {
+    "en": "bc1313ec18da0769",
+    "text": "LA SELECCIÓN PROPIA DE ESTA APLICACIÓN de atributos del directorio para la respuesta de UserInfo que se le da, un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
+  },
+  "applications.schema.attributes.oauthClaimsCombineAccessToken.what": {
+    "en": "0fdd9c637c2aed07",
+    "text": "CÓMO SE COMBINAN LOS CLAIMS DE TOKEN DE ACCESO DEL DOMINIO Y LOS PROPIOS DE ESTA APLICACIÓN (#395), tanto las filas escritas como los atributos del directorio marcados: application (solo los propios de esta aplicación), union (los del dominio y los propios), intersection (solo lo que tienen ambos) o realm (solo los del dominio). Sin definir, sus filas se añaden a las del dominio y prevalecen por nombre, y su selección sustituye a la del dominio. Una aplicación que no tiene nada propio recibe lo del dominio diga lo que diga esto."
+  },
+  "applications.schema.attributes.oauthClaimsCombineIdToken.what": {
+    "en": "5712c8d8fec06866",
+    "text": "CÓMO SE COMBINAN LOS CLAIMS DE ID TOKEN DEL DOMINIO Y LOS PROPIOS DE ESTA APLICACIÓN (#395), tanto las filas escritas como los atributos del directorio marcados: application (solo los propios de esta aplicación), union (los del dominio y los propios), intersection (solo lo que tienen ambos) o realm (solo los del dominio). Sin definir, sus filas se añaden a las del dominio y prevalecen por nombre, y su selección sustituye a la del dominio. Una aplicación que no tiene nada propio recibe lo del dominio diga lo que diga esto."
+  },
+  "applications.schema.attributes.oauthClaimsCombineUserinfo.what": {
+    "en": "114411a8522be187",
+    "text": "CÓMO SE COMBINAN LOS CLAIMS DE USERINFO DEL DOMINIO Y LOS PROPIOS DE ESTA APLICACIÓN (#395), tanto las filas escritas como los atributos del directorio marcados: application (solo los propios de esta aplicación), union (los del dominio y los propios), intersection (solo lo que tienen ambos) o realm (solo los del dominio). Sin definir, sus filas se añaden a las del dominio y prevalecen por nombre, y su selección sustituye a la del dominio. Una aplicación que no tiene nada propio recibe lo del dominio diga lo que diga esto."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaim.what": {
+    "en": "cf887c3be9a18ff1",
+    "text": "LOS CLAIMS DE IDENTIDAD QUE ESTE SERVIDOR DE RECURSOS QUIERE en los tokens de acceso dirigidos a él (uno de sus valores oauthAudience, o su client_id nombrado como scope), de entre los claims profile, email, address y phone de OpenID Connect Core sección 5.4. Cada uno se entrega solo cuando el scope que lo cubre se CONCEDIÓ, y en un token para varios servidores de recursos solo entra un claim que todos ellos declararon. Si falta, el token no lleva ninguno de estos claims de esta capa — preferred_username incluido."
+  },
+  "applications.schema.attributes.oauthPermissionClaims.what": {
+    "en": "81cd9d9de131a21b",
+    "text": "LOS CLAIMS QUE LLEVA CADA PERMISO DE ESTE SERVIDOR DE RECURSOS, como un objeto JSON que va de un nombre de permiso (uno de sus valores oauthPermission) a una lista de nombres de atributo del catálogo de claims del dominio. Un token de acceso dirigido a esta aplicación en el que se CONCEDIÓ un permiso lleva los valores de la persona para los atributos de ese permiso, con los nombres de claim del catálogo; conceder el permiso es la concesión de esos claims, incluido uno estándar de OpenID Connect. Se combinan con los claims del cliente según indique oauthAccessTokenClaimsCombine."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaimsCombine.what": {
+    "en": "bf5a0b995021c02e",
+    "text": "CÓMO SE COMBINAN LOS CLAIMS DE TOKEN DE ACCESO DEL CLIENTE Y LOS CLAIMS DECLARADOS DE ESTE SERVIDOR DE RECURSOS (oauthAccessTokenClaim) en un token dirigido a él: 'union' (el predeterminado), 'intersection' (solo los claims que llevan ambos), 'client' (solo los del cliente) o 'resource' (solo los declarados). Varios servidores de recursos que discrepan se combinan por intersección. No se entrega nada que una concesión no cubriera, se elija lo que se elija."
+  },
+  "applications.schema.attributes.oauthRevokeRefreshOnLogout.what": {
+    "en": "4a6e20c0380356cf",
+    "text": "TRUE o FALSE: si cerrar sesión revoca los tokens de actualización de este cliente, prevaleciendo sobre oauth2.revokeRefreshOnLogout. FALSE es el caso interesante y es la razón por la que vale la pena tenerlo por cliente — un cliente que puede volver a entrar renovando después de un cierre de sesión es un defecto real en despliegues reales, y esto lo hace reproducible para UN cliente mientras los demás se comportan bien."
+  },
+  "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
+    "en": "25b5b04c83819b5b",
+    "text": "SI UN INTERCAMBIO DE TOKENS RFC 8693 REALIZADO POR ESTE CLIENTE RECIBE UN `refresh_token` JUNTO AL TOKEN DE ACCESO INTERCAMBIADO, prevaleciendo sobre oauth2.tokenExchangeRefreshToken solo para él. Una de tres palabras: `never`, `when-requested` (el valor predeterminado de todo el servicio — el cliente lo pide con el `requested_token_type` de RFC 8693 sección 2.1 y solo lo recibe si lo pidió) o `always`.\n\nSE LEE EN EL CLIENTE QUE REALIZA EL INTERCAMBIO y no en la audiencia, porque el token de actualización se entrega al cliente: es la credencial de esa parte para guardar, revocar y finalmente canjear. El sujeto SOBRE el que trata el intercambio no tiene ninguna entrada en este registro en el caso interesante, ya que todo el sentido de un intercambio es un subject_token de otra parte.\n\n**SE APLICA A LAS FAMILIAS OAUTH 2.0 Y OPENID CONNECT Y A NINGUNA OTRA, y a diferencia de todos los demás atributos de aquí, eso SE HACE CUMPLIR.** Una entrada declarada para ninguna de las dos es rechazada por ambas puertas de la consola y por la API de administración, que nombran la familia que hay que marcar primero — porque un valor aquí es una política sobre el endpoint de token, y una entrada que ninguna solicitud de token puede nombrar la llevaría como si estuviera en vigor. El bloque de encima de esta fila lo argumenta. `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba.\n\nUN VALOR QUE NO SEA UNA DE LAS TRES PALABRAS NO ES UN ERROR EN EL MOMENTO DE LA ESCRITURA NI PASA EN SILENCIO: settingFor() emite una advertencia que nombra la entrada, el atributo y lo que contiene, y decide el ajuste de todo el servicio — la misma honestidad de tres estados que recibe cualquier otra anulación de esta entrada."
+  },
+  "applications.schema.attributes.appRequiredRole.what": {
+    "en": "03d0f9a2b65f3598",
+    "text": "Un rol que alguien debe tener antes de que a esta aplicación se le emita cualquier cosa — un token, una aserción, una respuesta de WS-Federation, una sesión. Multivalor, y basta con CUALQUIERA de ellos. AUSENTE SIGNIFICA TODO EL MUNDO, el rol integrado que tienen todos, y por eso una aplicación sin configurar no rechaza a nadie. La decisión la toma el PDP de XACML contra la política nombrada por xacml.issuancePolicy, no un if en un punto de emisión, de modo que el motivo de un rechazo es una política que alguien puede leer."
+  },
+  "applications.schema.attributes.appAllowedToDelegateTo.what": {
+    "en": "5308a92257a7b8f9",
+    "text": "LOS DESTINOS PARA LOS QUE ESTA APLICACIÓN PUEDE OBTENER UN TOKEN EN NOMBRE DE OTRA PERSONA, cuando es el INTERMEDIARIO de una solicitud OnBehalfOf / ActAs de WS-Trust o de un intercambio de tokens RFC 8693 — el análogo del msDS-AllowedToDelegateTo de Kerberos, en el lado frontal. Un identificador de aplicación (o la audiencia / AppliesTo literal) por valor. Se hace cumplir en modo producto; el modo desarrollo registra en /admin/delegation lo que se habría rechazado. appAllowedToActOnBehalfOf en el DESTINO es la otra forma de permitir el mismo par."
+  },
+  "applications.schema.attributes.appAllowedToActOnBehalfOf.what": {
+    "en": "ec2ab22c5113f585",
+    "text": "LOS INTERMEDIARIOS QUE ESTA APLICACIÓN ACEPTA como actuando en nombre de otra persona cuando es el DESTINO de una delegación — el análogo basado en recursos del msDS-AllowedToActOnBehalfOfOtherIdentity de Kerberos, definido en el lado posterior. Un identificador de aplicación intermediaria por valor."
+  },
+  "applications.schema.attributes.appDelegationSubjectGroup.what": {
+    "en": "ccd774803e78bb21",
+    "text": "LAS PERSONAS EN CUYO NOMBRE PUEDE ACTUAR ESTE INTERMEDIARIO, como DN de grupo: un sujeto debe ser miembro de uno de ellos. VACÍO SIGNIFICA CUALQUIERA que no esté protegido — una persona con stsNotDelegated, o un miembro de la lista Admin Read o Admin Write de la consola, nunca se delega diga lo que diga esto."
+  },
+  "applications.schema.attributes.appDelegationSemantics.what": {
+    "en": "9faf00ab16755dec",
+    "text": "LA SEMÁNTICA que permite esta aplicación: `delegation`, `impersonation` o ambas. Como ACTOR — el cliente de un intercambio de tokens, el solicitante de un OnBehalfOf / ActAs de WS-Trust, el servicio de una solicitud S4U de Kerberos — indica lo que esta aplicación puede HACER; vacío es solo delegación, así que suplantar a alguien requiere `impersonation` aquí (el TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION de Kerberos). Como SUJETO indica lo que puede hacerse COMO ella; vacío es ambas. Decide la política de emisión; este es uno de sus hechos."
+  },
+  "applications.schema.attributes.appDefaultDelegationSemantics.what": {
+    "en": "172f18f5cdd5396c",
+    "text": "`delegation` o `impersonation`: lo que es un acto del que forma parte esta aplicación cuando la solicitud no lo dice — primero el valor predeterminado del actor, después el del sujeto, después delegation.defaultSemantics."
+  },
+  "applications.schema.attributes.appNotDelegated.what": {
+    "en": "08d03ae79d14ab20",
+    "text": "TRUE o FALSE, FALSE de forma predeterminada: nadie puede actuar en nombre de esta aplicación, en ningún protocolo — NOT_DELEGATED, la contraparte para aplicaciones del stsNotDelegated de una persona."
+  },
+  "applications.schema.attributes.appMayAct.what": {
+    "en": "46cfc90a8de4561b",
+    "text": "El DN de UNA parte — una persona u otra aplicación — que esta aplicación nombra como su delegado: un token sobre ella lleva el may_act de RFC 8693 sección 4.4 que nombra a esa parte, según lo asigne la política de emisión, y un intercambio de ese token por cualquier otro se rechaza. La contraparte para una persona es stsMayAct."
+  },
+  "applications.schema.attributes.appGroupsClaim.what": {
+    "en": "01129d11979c9b3d",
+    "text": "TRUE o FALSE: si lo que se emite a esta aplicación lleva o no un claim de grupos, prevaleciendo sobre groups.claim. FALSE en una aplicación es la forma de poner a prueba un cliente que falla ante un claim inesperado sin quitarle el claim a todo lo demás."
+  },
+  "applications.schema.attributes.appGroupsClaimName.what": {
+    "en": "4fc6ecdda2fd1881",
+    "text": "Cómo SE LLAMA el claim de grupos para esta aplicación, prevaleciendo sobre groups.claimName. Este es el atributo que justifica que el grupo esté aquí: `groups`, `roles`, `memberOf` y un nombre de claim con forma de URI son todos habituales, difieren según la parte de confianza en todo despliegue real, y un único nombre para todo el servicio significaba que solo podía probarse uno a la vez."
+  },
+  "applications.schema.attributes.appGroupsClaimValue.what": {
+    "en": "68134f2525fc0453",
+    "text": "Si el claim lleva el nombre de cada grupo o su DN completo, prevaleciendo sobre groups.claimValue. Las partes de confianza realmente difieren: una compara por `cn` y la siguiente se escribió contra un DN de LDAP."
+  },
+  "applications.schema.attributes.appGroupsClaimFromMemberOf.what": {
+    "en": "a49254d4644665d9",
+    "text": "De dónde se leen los grupos para esta aplicación, prevaleciendo sobre groups.claimFromMemberOf — el atributo memberOf de la persona, o una búsqueda en el contenedor de grupos. Los dos coinciden en este directorio; vale la pena distinguirlos porque el memberOf de un directorio real puede ir con retraso."
+  },
+  "applications.schema.attributes.wsfedAssertionLifetimeMin.what": {
+    "en": "9a4a30909e2c05ca",
+    "text": "Cuánto tiempo es válida la aserción SAML 1.1 dentro de una respuesta de inicio de sesión de WS-Federation para ESTA parte de confianza, en minutos, prevaleciendo sobre wsfed.assertionLifetimeMin. Define las Conditions de la aserción y el wsu:Lifetime del RequestSecurityTokenResponse que la envuelve, de modo que el sobre y el documento de dentro no pueden discrepar. Es independiente de saml11AssertionLifetimeMin: una aplicación puede hablar ambos, y una sesión de WS-Federation y una aserción Browser/POST no se consumen de la misma manera."
+  },
+  "applications.schema.attributes.saml2CustomAttributes.what": {
+    "en": "6a7f74a34549ac13",
+    "text": "LOS ATRIBUTOS SAML 2.0 PROPIOS DE ESTE PROVEEDOR DE SERVICIOS, como un array JSON de filas como las de la página de atributos SAML personalizados del dominio (se permite un nameFormat). Se añaden a los atributos SAML 2.0 del dominio en las aserciones para esta audiencia, y prevalecen por nombre."
+  },
+  "applications.schema.attributes.saml11CustomAttributes.what": {
+    "en": "c1469888e73b177f",
+    "text": "LOS ATRIBUTOS SAML 1.1 PROPIOS DE ESTA PARTE DE CONFIANZA, como un array JSON de filas como las de la página de atributos SAML personalizados del dominio (se permite un namespace). Se añaden a los atributos SAML 1.1 del dominio en las aserciones para esta audiencia (SAML 1.1, WS-Federation, WS-Trust), y prevalecen por nombre."
+  },
+  "applications.schema.attributes.saml2ClaimAttributes.what": {
+    "en": "1975b37dcacff86c",
+    "text": "LA SELECCIÓN PROPIA DE ESTE PROVEEDOR DE SERVICIOS de atributos del directorio para sus aserciones SAML 2.0, un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
+  },
+  "applications.schema.attributes.saml11ClaimAttributes.what": {
+    "en": "bb6b41c7ea67806c",
+    "text": "LA SELECCIÓN PROPIA DE ESTA PARTE DE CONFIANZA de atributos del directorio para sus aserciones SAML 1.1 (SAML 1.1, WS-Federation, WS-Trust), un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
+  },
+  "applications.schema.attributes.saml2ClaimsCombine.what": {
+    "en": "d0a05b0063187eff",
+    "text": "CÓMO SE COMBINAN LOS ATRIBUTOS SAML 2.0 DEL DOMINIO Y LOS PROPIOS DE ESTA APLICACIÓN (#395), tanto las filas escritas como los atributos del directorio marcados: application (solo los propios de esta aplicación), union (los del dominio y los propios), intersection (solo lo que tienen ambos) o realm (solo los del dominio). Sin definir, sus filas se añaden a las del dominio y prevalecen por nombre, y su selección sustituye a la del dominio. Una aplicación que no tiene nada propio recibe lo del dominio diga lo que diga esto."
+  },
+  "applications.schema.attributes.saml11ClaimsCombine.what": {
+    "en": "a19640f716396460",
+    "text": "CÓMO SE COMBINAN LOS ATRIBUTOS SAML 1.1 DEL DOMINIO Y LOS PROPIOS DE ESTA APLICACIÓN (#395), tanto las filas escritas como los atributos del directorio marcados: application (solo los propios de esta aplicación), union (los del dominio y los propios), intersection (solo lo que tienen ambos) o realm (solo los del dominio). Sin definir, sus filas se añaden a las del dominio y prevalecen por nombre, y su selección sustituye a la del dominio. Una aplicación que no tiene nada propio recibe lo del dominio diga lo que diga esto."
+  },
+  "applications.schema.attributes.vcCredentialClaimAttributes.what": {
+    "en": "5df9a1b2f23cb7e9",
+    "text": "LA SELECCIÓN PROPIA DE ESTE CLIENTE de los atributos del directorio que lleva una Verifiable Credential, un array JSON de nombres de atributo del catálogo. Cuando está presente SUSTITUYE la selección de claims de credencial del dominio para las credenciales emitidas con los tokens de acceso de este cliente; los metadatos del emisor siguen anunciando la del dominio."
+  },
+  "applications.schema.attributes.saml2AssertionLifetimeMin.what": {
+    "en": "5980ad42371e28c5",
+    "text": "CUÁNTO TIEMPO SON VÁLIDAS LAS ASERCIONES DE ESTE PROVEEDOR DE SERVICIOS, en minutos, prevaleciendo sobre saml2.assertionLifetimeMin solo para él. Se convierte tanto en Conditions/NotOnOrAfter como en el SubjectConfirmationData/NotOnOrAfter bearer, ampliado en ambos extremos por saml.clockSkewS — que NO es por aplicación, porque es un hecho sobre los relojes de este entorno y no sobre una parte de confianza."
+  },
+  "applications.schema.attributes.saml2SignAssertion.what": {
+    "en": "119214c380ca0bfc",
+    "text": "TRUE o FALSE: firmar la <saml:Assertion> emitida a este proveedor de servicios, prevaleciendo sobre saml2.signAssertion solo para él. FALSE es un caso de prueba y no un error — un proveedor de servicios que acepta una aserción sin firmar tiene un agujero, y así se encuentra uno sin desactivar la firma para todas las demás aplicaciones a la vez. Esa es toda la razón de que esto sea por aplicación."
+  },
+  "applications.schema.attributes.saml2SignResponse.what": {
+    "en": "bb83449f1266566e",
+    "text": "TRUE o FALSE: firmar la <samlp:Response> que envuelve la aserción para este proveedor de servicios, prevaleciendo sobre saml2.signResponse. En el binding HTTP Redirect controla también la firma en la cadena de consulta de la sección 3.4.4.1, que es con la que realmente se verifica una respuesta por redirección."
+  },
+  "applications.schema.attributes.saml2NameIdFormat.what": {
+    "en": "c71975e6bdd39ec9",
+    "text": "El formato de NameID usado para este proveedor de servicios cuando el NameIDPolicy de su AuthnRequest no pide ninguno, prevaleciendo sobre saml2.nameIdFormat. Una solicitud que SÍ nombra un formato se sigue respondiendo con el que nombró — esto es el valor predeterminado, no una restricción, y deliberadamente NO se comprueba contra el samlNameIdFormat de al lado, que es la lista de formatos que este proveedor de servicios ha PEDIDO."
+  },
+  "applications.schema.attributes.saml2ArtifactTtlS.what": {
+    "en": "f6fd526344172dcd",
+    "text": "Durante cuánto tiempo puede resolverse un artefacto generado para este proveedor de servicios, en segundos, prevaleciendo sobre saml2.artifactTtlS. Un artefacto ADEMÁS es de un solo uso por largo que sea esto — resolverlo lo destruye, algo que exige la sección 3.6.4.1 y que ninguna duración puede expresar."
+  },
+  "applications.schema.attributes.saml11AssertionLifetimeMin.what": {
+    "en": "1c1e8ff577d70a0c",
+    "text": "El equivalente SAML 1.1 de saml2AssertionLifetimeMin, prevaleciendo sobre saml11.assertionLifetimeMin para esta parte de confianza. Es independiente del atributo 2.0 por la misma razón que los dos AJUSTES son independientes: los perfiles son implementaciones independientes que se consumen de forma distinta, y una aplicación declarada para ambos quiere legítimamente dos respuestas."
+  },
+  "applications.schema.attributes.saml11SignAssertion.what": {
+    "en": "6123c6863711aa4b",
+    "text": "TRUE o FALSE: firmar la <saml:Assertion> de SAML 1.1 para esta parte de confianza, prevaleciendo sobre saml11.signAssertion. El perfil Browser/POST EXIGE una aserción firmada (saml-profile-1.1 sección 4.2.1.4), así que FALSE aquí es exactamente el caso de prueba: una parte de confianza que la acepta de todos modos tiene un agujero."
+  },
+  "applications.schema.attributes.saml11SignResponse.what": {
+    "en": "b5c3ac0c3a3f20d3",
+    "text": "TRUE o FALSE: firmar la <samlp:Response> de SAML 1.1 para esta parte de confianza, prevaleciendo sobre saml11.signResponse, con la referencia nombrando ResponseID."
+  },
+  "applications.schema.attributes.saml11NameIdFormat.what": {
+    "en": "0e4deac01ea4ef16",
+    "text": "El formato de NameIdentifier usado para esta parte de confianza, prevaleciendo sobre saml11.nameIdFormat. SAML 1.1 no tiene mensaje de solicitud, así que nada puede pedir un formato y esto es lo único que lo decide — lo que lo convierte en el más útil de los dos atributos de formato por aplicación."
+  },
+  "applications.schema.attributes.saml11ArtifactTtlS.what": {
+    "en": "1887a455954e9b4f",
+    "text": "Durante cuánto tiempo puede resolverse un artefacto SAML 1.1 generado para esta parte de confianza, en segundos, prevaleciendo sobre saml11.artifactTtlS. Lo canjea, una vez, el respondedor SOAP del perfil Browser/Artifact."
+  },
+  "applications.schema.attributes.samlAuthnRequestSigned.what": {
+    "en": "2150507140b66231",
+    "text": "TRUE cuando el último AuthnRequest de este proveedor de servicios llevaba una firma — un ds:Signature envuelto en el binding POST, o el parámetro Signature de la sección 3.4.4.1 en el binding Redirect. ASIGNADO y no acumulado, porque es un hecho sobre la última solicitud y un historial de booleanos no diría nada."
+  },
+  "applications.schema.attributes.wsfedRealm.what": {
+    "en": "86782168726d7440",
+    "text": "EL WTREALM de una solicitud wsignin1.0 (sección 13.2.1) — el atributo identificador de WS-Federation. Se acumula, por la razón por la que lo hace todo identificador de aquí."
+  },
+  "applications.schema.attributes.wsfedReplyUrl.what": {
+    "en": "b68a4bfe89fb7da0",
+    "text": "ADONDE SE ENVÍA DE VUELTA UNA RESPUESTA DE INICIO DE SESIÓN para esta aplicación: el `wreply` de la sección 13.2.1, el URI de redirección de WS-Federation. Se escribía en samlAssertionConsumerService hasta el 2026-08-25, lo que ponía un wreply en el atributo que las páginas SAML leen para un assertion consumer service y para el respaldo de Single Logout — un atributo con las direcciones de retorno de dos protocolos, de modo que una aplicación WS-Federation parecía tener un ACS de SAML que nunca había nombrado. Dos hechos, dos atributos. Como el de SAML de al lado, SOLO SE COMPRUEBA EN MODO PRODUCTO: el modo desarrollo no rechaza ningún wreply, porque una simulación que rechazara eliminaría un caso de prueba en lugar de añadirlo; el modo producto solo envía a una dirección de esta lista y un avistamiento nunca añade una. Un wreply que registró el modo desarrollo se marca en appReturnAddressObserved y el modo producto lo rechaza hasta que se confirme; los valores registrados antes de que existiera esa marca no llevan ninguna y siguen necesitando revisión antes de pasar un dominio a producto."
+  },
+  "applications.schema.attributes.wsfedSignOutUri.what": {
+    "en": "493ac4121c2076ca",
+    "text": "ADONDE SE ENVÍA UN PING wsignoutcleanup1.0 para esta aplicación — el URI de cierre de sesión de WS-Federation, y el que esta tabla no tenía hasta el 2026-08-30. DECLARADO, no observado, lo que lo hace hermano de samlSingleLogoutService y no de wsfedReplyUrl: una limpieza se envía cuando termina una SESIÓN, y para entonces la solicitud que habría llevado un wreply ha terminado hace mucho.\n\n**EL CIERRE DE SESIÓN TODAVÍA NO LO LEE**, y eso se dice en lugar de darse a entender. `cleanupTargetsFor()` construye su lista a partir de `session.wsfedRealms`, que registra el wreply al que realmente fue cada respuesta de inicio de sesión — así que lo que este servicio contacta hoy es lo que OBSERVÓ, y este atributo es lo que un operador DECLARÓ. Son dos hechos distintos y el segundo es el que una persona que configura una aplicación puede indicar por adelantado. Conectarlo como respaldo para un dominio en el que se inició sesión sin wreply es el siguiente paso obvio y deliberadamente no se da aquí: este cambio añade el campo y el almacenamiento, y cambiar adónde va una limpieza es un cambio en lo que hace el protocolo."
+  },
+  "applications.schema.attributes.wstrustAppliesTo.what": {
+    "en": "9a8d1ca262be725c",
+    "text": "LA DIRECCIÓN APPLIESTO de un RequestSecurityToken — el servicio PARA el que se emite el token, y el atributo identificador de WS-Trust. Se acumula.\n\n**SE LEE**, cosa que no ocurría antes del 2026-08-27, y es la excepción de `oauthAudience` llegando a través de un segundo protocolo: un OnBehalfOf o ActAs que pide un token para llegar a `https://esb.example.com` se registra en /admin/delegation contra la APLICACIÓN que registró esa dirección, de modo que una cadena de saltos delegados se dibuja como una sola imagen y no como recuadros con nombres de URL que nada más en ella menciona. En desarrollo es una BÚSQUEDA y no un permiso — para un AppliesTo que nadie registró se emite y se registra literalmente; en producto se rechaza (#496). Véase forAppliesTo(), que pregunta primero a este atributo y después a `samlEntityId`."
+  },
+  "applications.schema.attributes.wstrustJwtScope.what": {
+    "en": "86ac83dbe366a17b",
+    "text": "LOS SCOPES DE OAUTH 2.0 QUE LLEVA UN JWT DE WS-TRUST PARA ESTA APLICACIÓN, un valor de scope por entrada (#485). Un JWT que WS-Trust emite con esta aplicación como AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) los lleva en su claim `scope`, delimitados por espacios (RFC 9068 sección 2.2.3); sin ninguno definido no lleva `scope`. Un token SAML no se ve afectado.\n\n**CADA UNO SE JUZGA COMO LOS DE UN TOKEN DE ACCESO OAUTH**, con esta aplicación como cliente: `oauthAllowedScope` declara lo que se le puede emitir (en producto; los scopes protegidos de este servicio en todos los modos), y decide la pregunta por scope de la política de emisión. Un valor que la política descarta se DEJA FUERA del token y se audita (STS-OAUTH-0579), nunca se emite. Una escritura que nombra un scope no declarado se acepta aquí, porque la declaración puede cambiar y el modo desarrollo concede scopes no declarados: declárelo también en oauthAllowedScope. Sobre un valor que la política descartará se ADVIERTE donde se define (#488): junto a este campo, en la respuesta de Guardar, y como `warnings` en las respuestas de escritura de /admin-api y en la vista de la aplicación."
+  },
+  "applications.schema.attributes.krb5ServicePrincipalName.what": {
+    "en": "2e8e5f607172bae7",
+    "text": "EL SPN, p. ej. HTTP/sts@EXAMPLE.COM — el atributo identificador de Kerberos v5. Un servicio Kerberos es una aplicación como las demás de aquí, y es aquella cuyo identificador este servicio puede haber creado bajo demanda (KRB5_SERVICE_DOMAINS). Se acumula, y aquí ese es el caso habitual y no el inusual: un servicio suele responder a varios SPN — HTTP/host y HTTP/host.example.com — y un KDC real los guarda todos contra una sola cuenta."
+  },
+  "applications.schema.attributes.krb5ClaimsPac.what": {
+    "en": "0abf4d44f51d3755",
+    "text": "LOS CLAIMS PAC PROPIOS DE ESTE SERVICIO, como un array JSON de filas como las de la página de claims PAC de Kerberos del dominio. Se añaden a los claims que lleva un ticket de servicio para uno de los SPN de esta aplicación (los del TGT a partir del cual se emitió), y una fila de la aplicación sustituye al claim con el mismo nombre. Solo mientras krb5.pacClaims esté activado."
+  },
+  "applications.schema.attributes.krb5TrustedForDelegation.what": {
+    "en": "3b66e9eeaaad2290",
+    "text": "TRUE o FALSE, FALSE de forma predeterminada: este servicio Kerberos es DE CONFIANZA PARA DELEGACIÓN — sin restricciones (el TRUSTED_FOR_DELEGATION de Active Directory). Sus tickets de servicio llevan ok-as-delegate, que indica a un cliente que puede reenviar su TGT aquí; quien tenga un TGT reenviado puede actuar como esa persona en cualquier parte. El TGT de una persona protegida nunca es reenviable, así que nunca se reenvía se defina como se defina esto. La delegación restringida (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) es la alternativa más segura."
+  },
+  "applications.schema.attributes.krb5ServiceKeys.what": {
+    "en": "35f24692c1cc40a5",
+    "text": "LAS CLAVES ALEATORIAS DE LARGA DURACIÓN DE UN PRINCIPAL DE SERVICIO, una por enctype, en UN solo valor: un documento JSON que nombra el SPN, el reino y el kvno junto a las claves, SELLADO bajo la clave de cifrado de claves dondequiera que esa clave sobreviva al proceso. Un solo valor en lugar de uno por enctype para que una clave no pueda moverse a otra entrada u otro kvno sin que falle el sello. Equivalente a una contraseña: se RETIENE en todas las páginas y en todas las respuestas de /admin-api, y la única vez que sale de este servicio es como el keytab que entrega una creación o una rotación."
+  },
+  "applications.schema.attributes.krb5ServiceKeyInfo.what": {
+    "en": "c7f1cd5d22b9cff1",
+    "text": "Lo que contiene `krb5ServiceKeys`, sin las claves: el kvno, los enctypes, cuándo se crearon las claves y si están selladas. Se escribe en el mismo acto que las claves, de modo que ambos no pueden describir generaciones distintas."
+  },
+  "applications.schema.attributes.appEnrolledCertificate.what": {
+    "en": "8aa24cf06f1d004f",
+    "text": "Un registro JSON por cada certificado emitido a esta aplicación mediante un protocolo de inscripción: número de serie, protocolo, perfil, sujeto, nombres, validez, quién lo pidió, si la clave se generó aquí, el certificado y su cadena de emisión, y una marca de revocación. Material público. Solo lo escribe common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appEnrolledPrivateKey.what": {
+    "en": "68a37a841eb0e1f0",
+    "text": "Una clave privada que ESTE SERVICIO generó para uno de los certificados de arriba (generación de clave en el servidor de EST, o el par de claves generado por el servidor desde la consola), como `<serial>:<PEM>`, sellada dondequiera que la clave de cifrado de claves sobreviva al proceso. Se RETIENE en todas las páginas y respuestas de /admin-api; se entrega una vez, en la emisión."
+  },
+  "applications.schema.attributes.appAcmeEabKey.what": {
+    "en": "a77a4c24f3169e88",
+    "text": "Claves de External Account Binding de ACME emitidas para esta aplicación, un registro JSON cada una: el id de clave, la clave HMAC sellada, su caducidad y la cuenta que vinculó. Una credencial operativa, RETENIDA en todas las páginas y respuestas de /admin-api."
+  },
+  "applications.schema.attributes.appScepChallenge.what": {
+    "en": "5cfc533567cbdfbe",
+    "text": "Contraseñas de desafío SCEP emitidas para esta aplicación, un registro JSON cada una: el id, un resumen SHA-256 del secreto, el perfil, la caducidad y cuándo se canjeó. RETENIDAS en todas las páginas y respuestas de /admin-api."
+  },
+  "applications.schema.attributes.appCertificateHostName.what": {
+    "en": "1ed851c949c198fb",
+    "text": "Un nombre DNS o una dirección IP para los que se puede emitir un certificado a esta aplicación mediante ACME, EST o SCEP. Registrar uno es toda la prueba de control: este servicio nunca contacta un nombre para validarlo. Lo define un administrador; lo lee common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appRegistrationJson.what": {
+    "en": "5766d34ddf2a5c0b",
+    "text": "EL REGISTRO RFC 7591 LITERAL, como JSON en un atributo. Está aquí porque RFC 7591 permite a un cliente registrar metadatos arbitrarios y la lectura de RFC 7592 tiene que devolver lo que se registró — algo que ningún conjunto fijo de atributos LDAP puede representar. Es el PUNTO DE PARTIDA cuando se reconstruye el registro y no la última palabra: todo miembro que también tenga un atributo de arriba se sobrescribe entonces A PARTIR de ese atributo, de modo que un ldapmodify de oauthRedirectUri es lo que hace cumplir el modo RFC 9700. Edítelo solo para cambiar un miembro que no tenga atributo propio."
+  },
+  "applications.schema.attributes.appRegistrationAccessToken.what": {
+    "en": "c7a3a95ccee6d6fb",
+    "text": "El token de acceso de registro de RFC 7592, que es lo que protege las operaciones de lectura, actualización y eliminación sobre este cliente. Sellado como oauthClientSecret dondequiera que el proceso tenga una clave de cifrado de claves duradera (desde el 2026-10-01), y nunca escrito en el registro de auditoría."
+  },
+  "applications.schema.attributes.oid4vpClientId.what": {
+    "en": "d40d3c0b11b45687",
+    "text": "EL CLIENT_ID DEL VERIFICADOR en una Authorization Request que pide una presentación — el atributo identificador de OpenID4VP. El propio verificador simulado de este servicio toma el suyo de la configuración (oid4vp.clientId) y no de un llamante, así que ese registro aparece la primera vez que se verifica una presentación; un valor declarado aquí es un verificador EXTERNO que alguien está configurando."
+  },
+  "applications.schema.attributes.federationPartnerId.what": {
+    "en": "6b7f63d65cdd8229",
+    "text": "CÓMO SE LLAMA A SÍ MISMO UN SOCIO DE FEDERACIÓN — el entityID de un proveedor de identidad externo, o su identificador de emisor cuando la relación habla OpenID Connect. LA RELACIÓN NO ESTÁ AQUÍ: los endpoints, el certificado y la asignación de atributos están bajo ou=federations y son contra lo que realmente verifica /federation/acs/{id} (véase federation/CLAUDE.md). Esta entrada es el socio como PARTE, y este atributo es el nombre por el que se le conoce — así que un valor aquí no federa con nadie, que es el único lugar de este servicio donde esa frase tiene peso."
+  },
+  "applications.schema.attributes.ldapBindDn.what": {
+    "en": "edb579c7a9932c00",
+    "text": "EL DN CON EL QUE SE ENLAZA UN CLIENTE DE DIRECTORIO en 389 o LDAPS 636. TODO BIND AQUÍ TIENE ÉXITO — cualquier DN, cualquier contraseña, anónimo —, así que nada escribirá nunca esto y nada lo leerá nunca; es donde un operador anota qué credencial se espera que use una aplicación, junto al resto de lo que es esa aplicación."
+  },
+  "applications.schema.attributes.scimClientId.what": {
+    "en": "9fa8008ba9df8d03",
+    "text": "CÓMO SE LLAMA UN CLIENTE DE APROVISIONAMIENTO EN /scim/v2 — el client_id de OAuth del que presenta un token, o el nombre de usuario que envía en Basic. Esa superficie autentica a su LLAMANTE en cualquiera de los seis esquemas que nombra RFC 7644 sección 2 y no un identificador de aplicación, así que no escribe nada aquí; el valor es una declaración, y la puerta de SCIM es la que decide si se exige una credencial en absoluto."
+  },
+  "applications.schema.attributes.acmeAllowedProfiles.what": {
+    "en": "de16295602b7cfb4",
+    "text": "LOS PERFILES ACME QUE SE PUEDEN EMITIR A ESTA APLICACIÓN. Cuando enumera algo, PREVALECE sobre acme.allowedProfiles para esta aplicación, de forma más amplia o más estrecha; vacío deja la lista del dominio. Los cinco perfiles de CA, OCSP y KDC nunca se emiten."
+  },
+  "applications.schema.attributes.acmeDefaultProfile.what": {
+    "en": "4b0f22f11ec6337b",
+    "text": "EL PERFIL QUE SE EMITE A ESTA APLICACIÓN MEDIANTE ACME CUANDO UNA SOLICITUD NO NOMBRA NINGUNO, prevaleciendo sobre acme.defaultProfile. Solo se usa mientras la lista en vigor para ella lo permita."
+  },
+  "applications.schema.attributes.acmeCertificateLifetimeDays.what": {
+    "en": "32178dcf7b3e4ef3",
+    "text": "Cuánto tiempo es válido un certificado emitido a esta aplicación mediante ACME, en días, prevaleciendo sobre acme.certificateLifetimeDays (más largo o más corto). Ningún certificado sobrevive a su CA emisora."
+  },
+  "applications.schema.attributes.estAllowedProfiles.what": {
+    "en": "fe0432c6af1e6225",
+    "text": "LOS PERFILES EST QUE SE PUEDEN EMITIR A ESTA APLICACIÓN. Cuando enumera algo, PREVALECE sobre est.allowedProfiles para esta aplicación, de forma más amplia o más estrecha; vacío deja la lista del dominio. Los cinco perfiles de CA, OCSP y KDC nunca se emiten."
+  },
+  "applications.schema.attributes.estDefaultProfile.what": {
+    "en": "c4ee79f2c43d72a3",
+    "text": "EL PERFIL QUE SE EMITE A ESTA APLICACIÓN MEDIANTE EST CUANDO UNA SOLICITUD NO NOMBRA NINGUNO, prevaleciendo sobre est.defaultProfile. Solo se usa mientras la lista en vigor para ella lo permita."
+  },
+  "applications.schema.attributes.estCertificateLifetimeDays.what": {
+    "en": "ea0b1720d4a2f466",
+    "text": "Cuánto tiempo es válido un certificado emitido a esta aplicación mediante EST, en días, prevaleciendo sobre est.certificateLifetimeDays (más largo o más corto). Ningún certificado sobrevive a su CA emisora."
+  },
+  "applications.schema.attributes.scepAllowedProfiles.what": {
+    "en": "c5d9d1351151d0c4",
+    "text": "LOS PERFILES SCEP QUE SE PUEDEN EMITIR A ESTA APLICACIÓN. Cuando enumera algo, PREVALECE sobre scep.allowedProfiles para esta aplicación, de forma más amplia o más estrecha; vacío deja la lista del dominio. Los cinco perfiles de CA, OCSP y KDC nunca se emiten."
+  },
+  "applications.schema.attributes.scepDefaultProfile.what": {
+    "en": "c1fa1a123597d8f1",
+    "text": "EL PERFIL QUE SE EMITE A ESTA APLICACIÓN MEDIANTE SCEP CUANDO UNA SOLICITUD NO NOMBRA NINGUNO, prevaleciendo sobre scep.defaultProfile. Solo se usa mientras la lista en vigor para ella lo permita."
+  },
+  "applications.schema.attributes.scepCertificateLifetimeDays.what": {
+    "en": "0c245cd0b371079a",
+    "text": "Cuánto tiempo es válido un certificado emitido a esta aplicación mediante SCEP, en días, prevaleciendo sobre scep.certificateLifetimeDays (más largo o más corto). Ningún certificado sobrevive a su CA emisora."
+  },
+  "applications.schema.attributes.estBasicAuthentication.what": {
+    "en": "d46cf350842998c4",
+    "text": "Si EST acepta el id de cliente y el secreto de esta aplicación (HTTP Basic, RFC 7030 sección 3.2.3), prevaleciendo sobre est.basicAuthentication: TRUE lo acepta y FALSE lo rechaza diga lo que diga el dominio; sin definir deja que decida el dominio."
+  },
+  "applications.schema.attributes.estCertificateAuthentication.what": {
+    "en": "a50d58c25992eab8",
+    "text": "Si EST acepta un certificado que este dominio emitió a esta aplicación (autenticación de cliente TLS, RFC 7030 sección 3.3.2), prevaleciendo sobre est.certificateAuthentication: TRUE lo acepta y FALSE lo rechaza; sin definir deja que decida el dominio."
+  },
+  "applications.schema.attributes.estServerKeyGeneration.what": {
+    "en": "7b442138976271e8",
+    "text": "Si /serverkeygen de EST (RFC 7030 sección 4.4) puede generar la clave de esta aplicación, prevaleciendo sobre est.serverKeyGeneration: TRUE lo permite y FALSE lo rechaza; sin definir deja que decida el dominio."
+  },
+  "applications.schema.attributes.enrollMaxCertificates.what": {
+    "en": "4f16c3693e154521",
+    "text": "Cuántos certificados inscritos no caducados (ACME, EST y SCEP en conjunto) puede tener esta aplicación, prevaleciendo sobre pki.enrollmentMaxCertificatesPerEntry (más o menos)."
+  },
+  "applications.schema.attributes.didPublicKeyJwk.what": {
+    "en": "0e71b81250b48154",
+    "text": "UNA CLAVE PÚBLICA QUE PUBLICA EL DOCUMENTO DID DE LA APLICACIÓN, un JWK por valor, cada uno un método de verificación JsonWebKey2020 nombrado por su kid (su huella RFC 7638 cuando no lleva ninguno) y listado bajo authentication y assertionMethod. Solo miembros públicos: un valor que lleve d, p, q, dp, dq, qi, oth, k o priv se rechaza. Genere un par de claves en la página de la aplicación y la mitad privada se entrega una vez y no se guarda aquí."
+  },
+  "applications.schema.attributes.didPrivateKeys.what": {
+    "en": "a302dcc5f0442754",
+    "text": "LAS MITADES PRIVADAS DE LAS CLAVES DID QUE GENERÓ ESTE SERVICIO, como un array JSON de JWK privados, SELLADAS en reposo bajo la clave de cifrado de claves como el par de claves RFC 7523 de una aplicación. Se guardan para que este servicio pueda firmar bajo demanda las Domain Linkage Credentials de la aplicación (la DIF Well-Known DID Configuration); una clave pegada a mano en didPublicKeyJwk no tiene mitad privada aquí y no puede firmar ninguna. Solo lo escribe Generar un par de claves."
+  },
+  "applications.schema.attributes.didService.what": {
+    "en": "e5ce72a596909938",
+    "text": "UN SERVICIO QUE NOMBRA EL DOCUMENTO DID, como <type>|<serviceEndpoint>: por ejemplo LinkedDomains|https://app.example.com. El tipo es un solo token; el endpoint, una URL http o https absoluta. Cada uno se convierte en una entrada service con el id <did>#service-<n>."
+  },
+  "applications.schema.attributes.didAlsoKnownAs.what": {
+    "en": "5a74e5a6c69ffbcd",
+    "text": "OTRO IDENTIFICADOR DE LA MISMA APLICACIÓN, publicado como alsoKnownAs del documento DID: un URI absoluto como el origen web de la aplicación o la URL de su client_id. DID Core lo convierte en una afirmación, no en una prueba; una parte de confianza lo comprueba."
+  },
+  "applications.schema.attributes.secretDestProvider.what": {
+    "en": "999c0334f7036e11",
+    "text": "QUÉ GESTOR DE SECRETOS ES ESTE DESTINO: aws (Secrets Manager, PutSecretValue), gcp (Secret Manager, AddSecretVersion), azure (Key Vault, setSecret), vault (un motor KV versión 2 de HashiCorp Vault u OpenBao, una escritura con check-and-set) o file (solo en modo desarrollo). Un servicio de gestión de claves no es un destino: guarda claves, no secretos."
+  },
+  "applications.schema.attributes.secretDestPayload.what": {
+    "en": "afacd48434fc8c13",
+    "text": "LO QUE ESCRIBE UN ENVÍO: password (la contraseña sola, el valor predeterminado) o json — {\"username\", \"password\", \"realm\", \"rotatedAt\"}, el objeto del que un lector saca la contraseña por su campo, como hacen las propias lecturas de secretos de este servicio (keys.kekField y similares). En Vault, cuyas versiones son mapas, password escribe el único campo que nombra secretDestField."
+  },
+  "applications.schema.attributes.secretDestRegion.what": {
+    "en": "b18c846aef149c6a",
+    "text": "aws: la región de AWS en la que están los secretos (us-east-1)."
+  },
+  "applications.schema.attributes.secretDestProject.what": {
+    "en": "6bb1d4dc14be4ba4",
+    "text": "gcp: el proyecto en el que está un nombre corto de secreto, de modo que una cuenta de servicio nombre su secreto como sts-svc-backup en lugar de projects/<project>/secrets/sts-svc-backup. Un nombre de recurso completo se toma tal cual."
+  },
+  "applications.schema.attributes.secretDestEndpoint.what": {
+    "en": "42bf9494550ebc2f",
+    "text": "azure: la URL del almacén (https://<name>.vault.azure.net). vault: la dirección de Vault u OpenBao (https://vault.example.com:8200). Solo https — la credencial de escritura y una contraseña pasan por ella."
+  },
+  "applications.schema.attributes.secretDestMount.what": {
+    "en": "364ce1b692cdde7c",
+    "text": "vault: dónde está montado el motor KV versión 2; secret cuando está vacío."
+  },
+  "applications.schema.attributes.secretDestField.what": {
+    "en": "22aeaa69eeb5f6d9",
+    "text": "vault, con la carga password: el campo de la versión en el que se escribe la contraseña; value cuando está vacío, que es el campo que leen de forma predeterminada las propias lecturas de Vault de este servicio."
+  },
+  "applications.schema.attributes.secretDestDirectory.what": {
+    "en": "ea50b002c10c07e7",
+    "text": "file (SOLO EN MODO DESARROLLO): el directorio absoluto en el que un nombre de secreto es un archivo. El archivo ya debe existir; un nombre que sale del directorio se rechaza."
+  },
+  "applications.schema.attributes.secretDestCaCertificates.what": {
+    "en": "2ddb41551cc111c9",
+    "text": "vault: los certificados PEM de la CA a la que encadena la escucha de Vault, de confianza junto a las raíces públicas. Los certificados son públicos; el certificado siempre se verifica."
+  },
+  "applications.schema.attributes.secretDestCredential.what": {
+    "en": "0e3e22596dd9d73c",
+    "text": "LA CREDENCIAL DE ESCRITURA DEL DESTINO, que puede escribir versiones de secretos nombrados y no debería poder hacer nada más: aws, un JSON {\"accessKeyId\", \"secretAccessKey\"[, \"sessionToken\"]}; gcp, el JSON de un archivo de clave de cuenta de servicio; azure, un JSON {\"tenantId\", \"clientId\", \"clientSecret\"}; vault, un token. Es independiente de las credenciales de solo lectura con las que este servicio lee su propia clave de cifrado de claves y la contraseña de su base de datos. Sellada con la clave de cifrado de claves cuando las claves persisten, RETENIDA en todas las páginas, respuestas de /admin-api y lecturas del directorio, y nunca registrada."
+  },
+  "applications.schema.attributes.scimClientBaseUrl.what": {
+    "en": "8576dcce5d9aa880",
+    "text": "EL URI BASE DEL SCIM REMOTO (RFC 7644 sección 1.3), con el segmento /v2 incluido cuando el proveedor de servicios lo usa: https://idp.example.com/scim/v2. Solo https (sección 7.2); sin consulta, fragmento ni información de usuario (sección 7.1)."
+  },
+  "applications.schema.attributes.scimClientEnabled.what": {
+    "en": "f0836917befa5243",
+    "text": "TRUE para enviar cambios y reconciliar; FALSE (el valor predeterminado) conserva la configuración y no envía nada."
+  },
+  "applications.schema.attributes.scimClientAuthMethod.what": {
+    "en": "fe00a32026bba611",
+    "text": "CÓMO SE AUTENTICA UNA SOLICITUD (RFC 7644 sección 2): basic (HTTP Basic con scimClientUsername y scimClientPassword), oauth2 (un token client_credentials de scimClientTokenEndpoint, enviado como token Bearer) o none (solo el certificado de cliente TLS, cuando hay uno configurado)."
+  },
+  "applications.schema.attributes.scimClientUsername.what": {
+    "en": "46d34680b8229ade",
+    "text": "basic: el nombre de usuario con el que el proveedor de servicios conoce a este cliente."
+  },
+  "applications.schema.attributes.scimClientPassword.what": {
+    "en": "0bd798150c823e27",
+    "text": "basic: la contraseña. Sellada con la clave de cifrado de claves cuando las claves persisten, RETENIDA en todas las páginas, respuestas de /admin-api y lecturas del directorio, y nunca registrada."
+  },
+  "applications.schema.attributes.scimClientTokenEndpoint.what": {
+    "en": "2fff62508823be4f",
+    "text": "oauth2: el endpoint de token del servidor de autorización en el que confía el proveedor de servicios. Solo https."
+  },
+  "applications.schema.attributes.scimClientOAuthClientId.what": {
+    "en": "7db4d9638e6d19a4",
+    "text": "oauth2: el client_id con el que este cliente está registrado allí."
+  },
+  "applications.schema.attributes.scimClientOAuthClientSecret.what": {
+    "en": "532cf20542b7031b",
+    "text": "oauth2: el secreto de cliente. Sellado, retenido y nunca registrado."
+  },
+  "applications.schema.attributes.scimClientOAuthClientAuth.what": {
+    "en": "ede4e8f4cfdb1611",
+    "text": "oauth2: cómo se autentica el cliente en el endpoint de token — client_secret_basic (el valor predeterminado) o client_secret_post (RFC 6749 sección 2.3.1)."
+  },
+  "applications.schema.attributes.scimClientOAuthScope.what": {
+    "en": "9f692d33ed80633f",
+    "text": "oauth2: el scope que se pide, separado por espacios (scim:write, para el propio /scim/v2 de este servicio). Vacío no pide ninguno."
+  },
+  "applications.schema.attributes.scimClientOAuthResource.what": {
+    "en": "b8d133b2b811132b",
+    "text": "oauth2: un indicador de recurso RFC 8707 enviado con la solicitud de token, cuando el servidor de autorización quiere uno."
+  },
+  "applications.schema.attributes.scimClientTlsSource.what": {
+    "en": "59a022632ff98966",
+    "text": "EL CERTIFICADO DE CLIENTE TLS que se presenta al proveedor de servicios: none (el valor predeterminado), issued (por la CA de este dominio, desde su CA emisora tls-client, revocable en /admin/pki) o uploaded (scimClientTlsCertificate y scimClientTlsPrivateKey). Se presenta diga lo que diga scimClientAuthMethod."
+  },
+  "applications.schema.attributes.scimClientTlsCertificate.what": {
+    "en": "b666cc747004775b",
+    "text": "El certificado de cliente, en PEM, seguido de su cadena. Público."
+  },
+  "applications.schema.attributes.scimClientTlsPrivateKey.what": {
+    "en": "93b05dbd701d0139",
+    "text": "La clave privada del certificado de cliente, en PEM. Sellada, retenida y nunca registrada."
+  },
+  "applications.schema.attributes.scimClientCaCertificates.what": {
+    "en": "cd2239779722a5f1",
+    "text": "Certificados PEM de una CA a la que encadena el certificado TLS del proveedor de servicios, de confianza junto a las raíces públicas. El certificado y su nombre de host siempre se verifican."
+  },
+  "applications.schema.attributes.scimClientScopeMode.what": {
+    "en": "372adf4f4a44227b",
+    "text": "A QUIÉN SE ENVÍA: all (todas las personas del dominio), groups (los miembros de scimClientScopeGroups) o filter (las personas que coinciden con scimClientScopeFilter). Alguien que sale del alcance se desaprovisiona allí."
+  },
+  "applications.schema.attributes.scimClientScopeGroups.what": {
+    "en": "8377e938c9251688",
+    "text": "alcance groups: los grupos cuyos miembros se envían, cada uno el cn o el DN de un grupo."
+  },
+  "applications.schema.attributes.scimClientScopeFilter.what": {
+    "en": "eb63610a69d08d21",
+    "text": "alcance filter: un filtro LDAP RFC 4515 con el que debe coincidir la entrada de una persona, como (department=Sales)."
+  },
+  "applications.schema.attributes.scimClientGroupMode.what": {
+    "en": "c83feac3531f87f7",
+    "text": "QUÉ GRUPOS SE ENVÍAN, cada uno solo con sus miembros dentro del alcance: none, selected (scimClientGroups), member-groups (todos los grupos en los que está una persona dentro del alcance) o all."
+  },
+  "applications.schema.attributes.scimClientGroups.what": {
+    "en": "b69fad674e7a8af5",
+    "text": "grupos seleccionados: cada uno el cn o el DN de un grupo."
+  },
+  "applications.schema.attributes.scimClientDeprovision.what": {
+    "en": "fa13a73140f18534",
+    "text": "QUÉ OCURRE ALLÍ cuando una persona se elimina aquí o sale del alcance: deactivate (active false, el valor predeterminado) o delete. Una cuenta deshabilitada aquí es siempre active false allí."
+  },
+  "applications.schema.attributes.scimClientReconcileMinutes.what": {
+    "en": "a40bdc8ff019b288",
+    "text": "CADA CUÁNTO SE RECONCILIA TODO EL ALCANCE, en minutos, mediante el planificador del clúster: se envían todas las personas y grupos dentro del alcance, y lo que el proveedor de servicios tiene bajo un externalId de este dominio y ya no está dentro del alcance se desaprovisiona. 0 (el valor predeterminado) solo reconcilia cuando lo pide un administrador."
+  },
+  "applications.schema.attributes.ssfReceiverId.what": {
+    "en": "25f9e6acd671b643",
+    "text": "CÓMO SE LLAMA UN RECEPTOR DE SHARED SIGNALS — aquello como lo que se autenticó cuando creó un flujo en /ssf/stream, que es también el `aud` de cada Security Event Token que lleva ese flujo. A diferencia de los cuatro identificadores solo declarativos de encima, este SÍ lo escribe el protocolo: crear un flujo registra un avistamiento, porque un receptor que se autentica y obtiene un flujo es exactamente el tipo de evento que este registro existe para guardar. Aun así no concede nada — un flujo es lo que decide qué recibe un receptor, y lleva su propia audiencia."
+  },
+  "applications.schema.attributes.ssfDeliveryEndpoint.what": {
+    "en": "1e2bc78133a2e93d",
+    "text": "ADONDE ESPERA ESTE RECEPTOR QUE SE LE ENVÍEN SUS EVENTOS — un endpoint de entrega RFC 8935. Es una DECLARACIÓN y nada la lee: un envío va al endpoint del FLUJO, que el receptor nombró al crearlo, y este servicio no tomará de una entrada de aplicación una URL que contactar: una URL registrada aquí es una nota sobre lo que es un receptor, y una URL en un flujo es una URL a la que este servicio abre una conexión. Deliberadamente, los dos no son el mismo almacén."
+  },
+  "applications.schema.attributes.ssfAllowedEvents.what": {
+    "en": "4f31fdedab6d1306",
+    "text": "QUÉ TIPOS DE EVENTO DE SHARED SIGNALS SE PUEDEN ENVIAR A UN FLUJO PROPIEDAD DE ESTA APLICACIÓN. Un valor por línea, cada uno o bien un perfil completo — `caep` (los ocho eventos de sesión) o `risc` (los catorce eventos de cuenta) — o bien un URI de tipo de evento, como https://schemas.openid.net/secevent/caep/event-type/session-revoked. VACÍO SIGNIFICA SIN RESTRICCIONES. Los propios eventos de verificación y de flujo actualizado de SSF siempre están permitidos. SE HACE CUMPLIR dos veces: a un flujo que esta aplicación crea o actualiza solo se le acuerdan los tipos permitidos aquí (cualquier otra cosa que pidiera falta en `events_delivered`, y el registro del flujo dice por qué), y cada entrega vuelve a comprobarlo, de modo que quitar un valor hace que los flujos existentes dejen de recibir ese tipo. El propietario es quien se autenticó en /ssf/stream, comparado con el identificador de esta entrada o con sus valores ssfReceiverId."
+  },
+  "applications.schema.attributes.ssfCaepIncludeReasons.what": {
+    "en": "059ef3d0fe452b85",
+    "text": "TRUE o FALSE: enviar reason_admin y reason_user en los eventos CAEP que llevan los flujos de este receptor. Ambos son miembros OPCIONALES (CAEP 1.0 sección 2), así que cualquiera de las dos respuestas es conforme."
+  },
+  "applications.schema.attributes.ssfCaepReasonLanguage.what": {
+    "en": "100441045f6dec57",
+    "text": "La etiqueta de idioma BCP 47 con la que se indexan los miembros de motivo de CAEP en los flujos de este receptor. En cualquier caso siguen siendo objetos indexados por una etiqueta."
+  },
+  "applications.schema.attributes.ssfCaepOmitEventTimestamp.what": {
+    "en": "64e3c89f9f918ec8",
+    "text": "TRUE o FALSE: omitir event_timestamp (OPCIONAL, CAEP 1.0 sección 2) de los eventos CAEP que llevan los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfRiscIncludeReasons.what": {
+    "en": "87fd9888a9716f80",
+    "text": "TRUE o FALSE: enviar reason_admin y reason_user en los eventos RISC que los definen, en los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfRiscReasonLanguage.what": {
+    "en": "f381d51fb9949509",
+    "text": "La etiqueta de idioma BCP 47 con la que se indexan los miembros de motivo de RISC en los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfRiscOmitEventTimestamp.what": {
+    "en": "f3d2b4cf9c458620",
+    "text": "TRUE o FALSE: omitir event_timestamp de los eventos RISC que lo definen, en los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfSigningAlgorithm.what": {
+    "en": "4e33e62e91d9c511",
+    "text": "El algoritmo JWS con el que se firman los Security Event Tokens de este receptor. Cada uno es uno para el que este transmisor publica una clave en su JWKS, de modo que el receptor siempre puede verificar."
+  },
+  "applications.schema.attributes.ssfMinVerificationInterval.what": {
+    "en": "3994c1382024d169",
+    "text": "Segundos: min_verification_interval (SSF 1.0 sección 8.1.1, proporcionado por el transmisor) en los flujos de este receptor. Un receptor que pida uno más corto se rechaza."
+  },
+  "applications.schema.attributes.ssfInactivityTimeoutS.what": {
+    "en": "5e2f9c2067c275ce",
+    "text": "Segundos: inactivity_timeout (SSF 1.0 sección 8.1.1, proporcionado por el transmisor) en los flujos de este receptor; 0 significa ninguno."
+  },
+  "applications.schema.attributes.ssfInactivityAction.what": {
+    "en": "ee8022952a9ec9a9",
+    "text": "Qué le ocurre a uno de los flujos de este receptor cuando vence su tiempo de inactividad."
+  },
+  "applications.schema.attributes.ssfVerificationEveryS.what": {
+    "en": "923b6f96adaf217c",
+    "text": "Segundos entre los eventos de verificación que este transmisor envía por su cuenta en los flujos de este receptor; 0 significa ninguno."
+  },
+  "applications.schema.attributes.ssfStreamStatusOnCreate.what": {
+    "en": "529d7f85e9b424fd",
+    "text": "El estado en el que empieza un flujo que crea este receptor."
+  },
+  "applications.schema.attributes.ssfMaxStreams.what": {
+    "en": "aea69ff44391bddd",
+    "text": "Cuántos flujos puede tener este receptor a la vez."
+  },
+  "applications.schema.attributes.ssfMaxSubjectsPerStream.what": {
+    "en": "c6bf17308cf86a2e",
+    "text": "Cuántos sujetos puede nombrar uno de los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfMaxQueuedEvents.what": {
+    "en": "bce67526a337e6c5",
+    "text": "Cuántos eventos no entregados guarda uno de los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfPollMaxEvents.what": {
+    "en": "7059c22de4f7bb2c",
+    "text": "El máximo de eventos que devuelve un sondeo del flujo de este receptor (RFC 8936 permite que un transmisor devuelva menos que maxEvents)."
+  },
+  "applications.schema.attributes.ssfDeadLetterMaxPerStream.what": {
+    "en": "d6a27411e99ce504",
+    "text": "Cuántas cartas muertas conserva uno de los flujos de este receptor."
+  },
+  "applications.schema.attributes.ssfPushTimeoutMs.what": {
+    "en": "68440f363578ed9e",
+    "text": "Milisegundos de espera para que responda el endpoint de envío de este receptor."
+  },
+  "applications.schema.attributes.ssfPushRetries.what": {
+    "en": "193c97284b3b02e8",
+    "text": "Cuántas veces se reintenta un envío fallido a este receptor antes de que se convierta en carta muerta."
+  },
+  "applications.schema.attributes.ssfPushRetryDelayMs.what": {
+    "en": "4e5bbb896a8e1382",
+    "text": "Milisegundos entre intentos de envío a este receptor."
+  },
+  "applications.schema.attributes.gnapInstanceId.what": {
+    "en": "5bf2a9c4ae9566c8",
+    "text": "Un identificador de instancia ESTÁTICO (RFC 9635 sección 2.3.1): la cadena que un cliente envía como `client` en lugar de su clave. La clave que debe probar entonces es gnapKey o gnapKeyReference de esta entrada. Los identificadores dinámicos que entrega el servidor de autorización (sección 3.5) no se escriben aquí."
+  },
+  "applications.schema.attributes.gnapKey.what": {
+    "en": "f0520a38e076cf8b",
+    "text": "La clave PÚBLICA de la instancia de cliente o del servidor de recursos, como el objeto de clave JSON de RFC 9635 sección 7.1: un método de prueba y exactamente uno de jwk, cert o cert#S256. Es la forma en que una solicitud por valor se asocia a esta entrada, por la huella de la clave."
+  },
+  "applications.schema.attributes.gnapKeyIdentity.what": {
+    "en": "e1ed7ac7ee02a735",
+    "text": "La identidad por huella de gnapKey (jkt:... para un JWK, x5t:... para un certificado), escrita cuando GNAP crea la entrada para que la clave pueda encontrarse sin volver a leerla."
+  },
+  "applications.schema.attributes.gnapKeyReference.what": {
+    "en": "d8aec54850661b34",
+    "text": "Una REFERENCIA DE CLAVE (RFC 9635 sección 7.1.1): la cadena opaca que un cliente envía como `key`. Se resuelve en gnapSymmetricKey cuando está definido, y en gnapKey en caso contrario."
+  },
+  "applications.schema.attributes.gnapKeyProof.what": {
+    "en": "1c6aefeeff99f7f3",
+    "text": "El método de prueba al que está vinculada una referencia de clave (sección 7.1.1: \"MUST be bound to a single proofing mechanism\"): httpsig, jwsd o jws. Predeterminado httpsig."
+  },
+  "applications.schema.attributes.gnapMtlsTrust.what": {
+    "en": "c51b28815693cab2",
+    "text": "Cómo se confía en una clave que este cliente prueba mediante TLS mutuo, solo para este cliente (#107): `pki` o `pinned`, como el gnap.mtlsTrust del dominio. Solo puede hacer el dominio MÁS ESTRICTO — `pki` donde el dominio usa fijación — y `pinned` se rechaza donde el dominio es pki (STS-REG-0196) y se ignora si después el dominio pasa a pki. Vacío sigue al dominio. Bajo pki, el certificado debe encadenar al almacén de confianza de clientes y haber sido emitido a esta entrada por este dominio, o llevar el único parámetro de sujeto RFC 8705 que registra (oauthTlsClientAuthSubjectDn o un atributo oauthTlsClientAuthSan*)."
+  },
+  "applications.schema.attributes.gnapSymmetricKey.what": {
+    "en": "ded5d8a8476372b4",
+    "text": "Un SECRETO COMPARTIDO para una referencia de clave, en base64url, de al menos 32 bytes — el único caso en que GNAP permite una clave simétrica, porque nunca viaja por la red (sección 7.1.2). Sellado con la clave de cifrado de claves cuando las claves persisten, retenido a los lectores LDAP en modo producto."
+  },
+  "applications.schema.attributes.gnapSymmetricAlg.what": {
+    "en": "6bdcccc92db67444",
+    "text": "El algoritmo con el que firma un secreto compartido: HS256 (predeterminado), HS384 o HS512 para jwsd y jws; hmac-sha256 para httpsig."
+  },
+  "applications.schema.attributes.gnapClassId.what": {
+    "en": "cf0254b61fae8a9c",
+    "text": "El class_id del software cliente (sección 2.3). Un valor registrado prevalece sobre el que lleva una solicitud."
+  },
+  "applications.schema.attributes.gnapDisplayUri.what": {
+    "en": "2eac54c277b83c17",
+    "text": "El display.uri del cliente, que se muestra en la página de aprobación (sección 2.3.2)."
+  },
+  "applications.schema.attributes.gnapLogoUri.what": {
+    "en": "15cc8de2d5eecf88",
+    "text": "El display.logo_uri del cliente. Solo se dibuja una imagen data:; cualquier otro URI se muestra como enlace (sección 11.16)."
+  },
+  "applications.schema.attributes.gnapFinishUri.what": {
+    "en": "5a8f71c45d66489d",
+    "text": "Un URI DE FINALIZACIÓN DE INTERACCIÓN (sección 2.5.2) al que se puede devolver a este cliente o enviarle. Una dirección de retorno: en modo producto, un URI de finalización que no esté listado aquí se rechaza."
+  },
+  "applications.schema.attributes.gnapInteractionStartModes.what": {
+    "en": "764406fc42ad4c3c",
+    "text": "Los modos de inicio de interacción que puede usar este cliente (redirect, app, user_code, user_code_uri). Vacío significa todos los modos que ofrece el servidor de autorización."
+  },
+  "applications.schema.attributes.gnapAllowedAccess.what": {
+    "en": "a9291497eb549cb6",
+    "text": "Los tipos de acceso y cadenas de referencia que este cliente puede solicitar, o que este servidor de recursos puede registrar. Vacío significa cualquiera."
+  },
+  "applications.schema.attributes.gnapBearerTokens.what": {
+    "en": "7b779b458f033217",
+    "text": "FALSE rechaza el indicador bearer para este cliente con invalid_flag."
+  },
+  "applications.schema.attributes.gnapSkipInteraction.what": {
+    "en": "83695731fd2cce04",
+    "text": "TRUE convierte esto en una instancia de cliente DE CONFIANZA (sección 2.3.3): una concesión que no pide información del sujeto se aprueba sin propietario del recurso y sin interacción, y una que lleva una aserción de usuario verificada se aprueba para esa persona. Solo se respeta para una entrada registrada, nunca para una que GNAP creó al verla."
+  },
+  "applications.schema.attributes.gnapAccessTokenFormat.what": {
+    "en": "453628f81688d935",
+    "text": "El formato de token RFC 9767 para los tokens emitidos a este cliente, o para este servidor de recursos: jwt-signed, jwt-encrypted, macaroon, biscuit o zcap."
+  },
+  "applications.schema.attributes.gnapAccessTokenLifetimeS.what": {
+    "en": "fc21e3ffa049e1a6",
+    "text": "La duración en segundos de los tokens de acceso emitidos a este cliente."
+  },
+  "applications.schema.attributes.gnapResourceServerUri.what": {
+    "en": "52d42256a31f2bd6",
+    "text": "Las ubicaciones de las que responde este servidor de recursos. Un derecho de acceso cuyas ubicaciones empiezan por una de estas tiene como audiencia esta entrada, y un token para él se genera con el formato, la clave JWE y la clave macaroon de este servidor de recursos."
+  },
+  "applications.schema.attributes.gnapOwnerLookupUri.what": {
+    "en": "c07831202c3c5254",
+    "text": "Dónde responde este servidor de recursos quién es el propietario de un recurso (#432 fase 5): una plantilla de URL https que contiene {identifier} una vez, en su ruta, p. ej. https://rs.example.com/owners/{identifier}. El servidor de autorización la obtiene con el identificador codificado con porcentajes en ese segmento y lee {\"owner\": \"<DN>\"} (404: no tiene propietario); la persona que aprueba un derecho que nombra el identificador debe ser esa persona o un miembro de ese grupo."
+  },
+  "applications.schema.attributes.gnapJweKey.what": {
+    "en": "754dbf2167a8ecea",
+    "text": "La clave de cifrado PÚBLICA de este servidor de recursos (un JWK) para tokens jwt-encrypted, de modo que solo este servidor de recursos pueda leerlos."
+  },
+  "applications.schema.attributes.gnapMacaroonKey.what": {
+    "en": "20db1983f230f494",
+    "text": "La CLAVE RAÍZ de macaroon con la que este servidor de recursos verifica sus tokens macaroon, en base64url. La escribe el servidor de autorización cuando el servidor de recursos registra por primera vez un conjunto de recursos; sellada con la clave de cifrado de claves cuando las claves persisten."
+  },
+  "applications.schema.attributes.gnapScopedSignals.what": {
+    "en": "2671ec903329beba",
+    "text": "FALSE excluye a esta aplicación web del alcance de Shared Signals: un flujo de su propiedad lleva entonces eventos sobre todo el mundo, como el de cualquier otro receptor."
+  },
+  "applications.schema.attributes.spiffeWorkloadId.what": {
+    "en": "57058ad7e2424d0b",
+    "text": "Un SPIFFE ID que se espera que tenga esta aplicación — spiffe://<trust domain>/<path>. Una identidad SPIFFE tiene una entrada PROPIA bajo ou=spiffe (véase spiffe/CLAUDE.md) y el registro de allí es contra lo que realmente se emite un SVID, así que esto no escribe nada ni lee nada: es el vínculo entre una aplicación de este registro y una identidad de aquel, indicado a mano porque ningún protocolo lo indica."
+  },
+  "applications.schema.attributes.appFederationRelationship.what": {
+    "en": "2353119c3b8b44f3",
+    "text": "LAS RELACIONES DE FEDERACIÓN A TRAVÉS DE LAS CUALES SE AUTENTICAN LOS USUARIOS DE ESTA APLICACIÓN — cada valor es el `fedId` de una entrada bajo ou=federations, en ESTE dominio de confianza, cuyo `fedRole` es service-provider. Ambas mitades se comprueban cuando se lee y no cuando se escribe: una relación del lado del proveedor de identidad va en el otro sentido (este servicio emite aserciones a ese socio, así que no hay nada en lo que iniciar sesión), y el registro es por dominio, de modo que un id que nombra una relación de otro dominio no nombra nada aquí.\n\nCONTIENE UNA LISTA, y eso es lo que permite a una aplicación ofrecer más de un proveedor de identidad. UN valor utilizable con la redirección automática activada es el caso para el que se añadió este atributo y no ha cambiado: el navegador va directamente a ese socio. VARIOS valores utilizables muestran /authn/select-idp, donde la persona elige cuál — descubrimiento del dominio de origen limitado a los socios de esta aplicación en lugar de realizado contra todas las relaciones que tiene este servicio. No necesitan compartir protocolo: un socio SAML 2.0 y uno OpenID Connect son dos valores aquí y dos botones allí, porque lo que nombra la lista es dónde se puede autenticar una persona y no cómo.\n\nUn valor que nombra una relación que este servicio no puede usar se INFORMA en la pantalla en lugar de descartarse, una línea por valor: una lista de tres cuya entrada central está deshabilitada no debe parecer una lista de dos.\n\nNO LO ESCRIBE NADIE. Ningún protocolo lo presenta y ningún avistamiento lo deriva — el proveedor de identidad de origen de una aplicación es un acuerdo que alguien hizo, no algo que este servicio pueda observar —, así que es editable y empieza vacío."
+  },
+  "applications.schema.attributes.appFederationAutoRedirect.what": {
+    "en": "f049a40c629458fa",
+    "text": "TRUE si una persona que inicia sesión en esta aplicación debe enviarse DIRECTAMENTE al socio nombrado arriba, sin la pantalla de inicio de sesión de por medio. Es el descubrimiento del dominio de origen hecho por configuración en lugar de preguntando, que es lo que realmente hace un despliegue con un único proveedor de identidad federado.\n\nEs TRUE DE FORMA PREDETERMINADA una vez que se nombra una relación, porque nombrar una y luego tener que pulsar un botón es el estado que nadie quiere; póngalo en FALSE para conservar la pantalla, donde los socios son entonces los únicos botones ofrecidos. Por tanto, un valor ausente significa aquí \"sí\" y no \"desconocido\", lo contrario de lo que RFC 7591 sección 2 hace significar a un booleano omitido — se dice en voz alta porque las dos reglas se encuentran en una misma entrada.\n\nCON VARIAS RELACIONES NOMBRADAS SIGNIFICA EXACTAMENTE LO QUE SIEMPRE SIGNIFICÓ — \"sin la pantalla de inicio de sesión\" — y lo que cambia es lo que eso deja. Con una es una redirección directa al socio. Con varias es el selector de /authn/select-idp: un botón por socio y ningún campo de contraseña, que es el trabajo de la pantalla de inicio de sesión hecho sin la pantalla de inicio de sesión. Lo que nunca significa es \"elegir uno por ellos\"; no hay ningún valor de un booleano que pueda decir cuál es el proveedor de identidad del empleador de alguien.\n\nFALSE con varias nombradas es por tanto la PANTALLA, con un botón por socio bajo el cuadro de contraseña — lo mismo que FALSE ha hecho siempre, con los socios en plural.\n\nSin ninguna relación nombrada no hace nada en absoluto, en lugar de ser un error: los dos se editan por separado y un valor que quedó de una relación que se borró no debería rechazar la siguiente escritura."
+  },
+  "applications.schema.attributes.appAuthnMechanism.what": {
+    "en": "7d4ba95b80f7683e",
+    "text": "LOS MECANISMOS CON LOS QUE LAS PERSONAS DE ESTA APLICACIÓN PUEDEN INICIAR SESIÓN, de la lista cerrada que usa fedAuthnMechanism: password, password-mfa, webauthn, spnego, wallet, federation. SI NO SE MARCA NINGUNO SE PERMITEN TODOS.\n\nSE HACE CUMPLIR en cada inicio de sesión desde navegador en la aplicación, en ambos modos: una persona cuya sesión no se basa en ningún mecanismo listado es enviada a iniciar sesión de nuevo con uno que sí lo esté, y un inicio de sesión hecho con uno que no lo está se rechaza. Las puertas que no son de navegador (la concesión de contraseña, WS-Trust, un bind LDAP) no están cubiertas.\n\nUno listado es también adonde va el inicio de sesión: `spnego` envía a la persona a /authn/spnego, con sesión iniciada mediante el ticket Kerberos que tiene su máquina; `wallet` a /authn/wallet; `federation` a las relaciones nombradas en appFederationRelationship; `password`, `password-mfa` y `webauthn` son la pantalla de inicio de sesión en sus tres formas. Varios listados muestran la pantalla ofreciendo solo esos.\n\nUn mecanismo que este servicio ha desactivado — `spnego` mientras krb5.spnegoAuthentication esté desactivado, `wallet` mientras oid4vp.signIn esté desactivado — se informa en la pantalla y no puede ofrecerse.\n\nNO LO ESCRIBE NADIE: ningún protocolo lo presenta, así que es editable y empieza vacío."
+  },
+  "applications.schema.attributes.appMfaMechanism.what": {
+    "en": "0cc6b4ecec8af7ad",
+    "text": "LOS SEGUNDOS FACTORES QUE PUEDEN USAR LAS PERSONAS DE ESTA APLICACIÓN: password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet. SI NO SE MARCA NINGUNO, LA POLÍTICA DE AUTENTICACIÓN DEL DOMINIO QUEDA COMO ESTÁ.\n\nSolo RESTRINGE esa política (Directorio > Políticas): un segundo factor que el dominio ha desactivado sigue desactivado aquí, y uno por correo electrónico sigue sin ofrecerse nunca mientras el dominio no pueda enviar correo. Indica QUÉ segundos factores, nunca SI se necesita uno — eso sigue correspondiendo al dominio, a la cuenta y al riesgo.\n\nLa pantalla de inicio de sesión solo pide un segundo factor listado aquí. A una persona que no tiene ninguno de ellos se le ofrece configurar uno (una llave de seguridad o una aplicación de autenticación, donde estén listadas) — después de dar el segundo factor que sí tiene, si tiene uno.\n\nSE HACE CUMPLIR en cada inicio de sesión desde navegador en la aplicación, en ambos modos: una persona cuya sesión dio un segundo factor no listado aquí es enviada a iniciar sesión de nuevo. Las puertas que no son de navegador (la concesión de contraseña, WS-Trust, un bind LDAP) no están cubiertas.\n\nNO LO ESCRIBE NADIE: ningún protocolo lo presenta, así que es editable y empieza vacío."
+  },
+  "devices.schema.objectClasses.device.what": {
+    "en": "d480f4c7cd3a1226",
+    "text": "cn, y los estándar owner y description."
+  },
+  "devices.schema.objectClasses.stsDevice.what": {
+    "en": "a8d77e5e94f00be8",
+    "text": "Todos los atributos stsDevice* de abajo: el tipo de propietario, las aplicaciones, las claves, la atestación, el cumplimiento, el estado, las etiquetas descriptivas, la inscripción y Native SSO."
+  },
+  "devices.schema.attributes.cn.what": {
+    "en": "e3e1cbc76383e39a",
+    "text": "El id del dispositivo, un UUID."
+  },
+  "devices.schema.attributes.owner.what": {
+    "en": "20552d2a82296c6e",
+    "text": "El DN de su único propietario: una persona o una aplicación."
+  },
+  "devices.schema.attributes.stsDeviceOwnerKind.what": {
+    "en": "7b8d9312393bf1b0",
+    "text": "person o application."
+  },
+  "devices.schema.attributes.description.what": {
+    "en": "18482faa4e7ecf07",
+    "text": "Su etiqueta."
+  },
+  "devices.schema.attributes.stsDeviceApplication.what": {
+    "en": "98905a8e55fa4198",
+    "text": "El DN de cada aplicación que lo usó."
+  },
+  "devices.schema.attributes.stsDeviceKey.what": {
+    "en": "500fcea967956d89",
+    "text": "Un valor JSON por clave: id, kind (x509, jwk, webauthn), thumbprint, label, added, addedBy, proof, attestation y el material público. Nunca un secreto."
+  },
+  "devices.schema.attributes.stsDeviceKeyThumbprint.what": {
+    "en": "28d0e44cd4e26efd",
+    "text": "<kind>:<thumbprint> por clave, derivado de stsDeviceKey en cada escritura para que un filtro LDAP pueda encontrar un dispositivo por su clave."
+  },
+  "devices.schema.attributes.stsDeviceCredentialId.what": {
+    "en": "5c367d4336aa3edd",
+    "text": "El id de credencial de cada clave WebAuthn vinculada, derivado de stsDeviceKey en cada escritura para que un inicio de sesión encuentre su dispositivo por índice."
+  },
+  "devices.schema.attributes.stsDeviceAttestation.what": {
+    "en": "c06a57ab13bda511",
+    "text": "attested cuando se verificó la atestación de alguna clave; si no, self-asserted. Derivado en cada escritura."
+  },
+  "devices.schema.attributes.stsDeviceCompliance.what": {
+    "en": "90630ca11c38c021",
+    "text": "compliant o not-compliant; ausente es desconocido."
+  },
+  "devices.schema.attributes.stsDeviceComplianceChange.what": {
+    "en": "ff1e956941db4c7c",
+    "text": "JSON: el último cambio de cumplimiento — status, previous, at, source (admin, mdm, test-control, caep), actor, reason."
+  },
+  "devices.schema.attributes.stsDeviceStatus.what": {
+    "en": "cae725abd42266df",
+    "text": "compromised; ausente es activo."
+  },
+  "devices.schema.attributes.stsDeviceStatusChange.what": {
+    "en": "5bd1d7f64e5bb6b1",
+    "text": "JSON: el último cambio de estado."
+  },
+  "devices.schema.attributes.stsDeviceRiskLevel.what": {
+    "en": "6a2a30b54f4d72c8",
+    "text": "LOW, MEDIUM o HIGH (los niveles de riesgo de CAEP); ausente es sin evaluar. Lo definen la puntuación de riesgo y un compromiso."
+  },
+  "devices.schema.attributes.stsDeviceRiskChange.what": {
+    "en": "cc0db159344881ab",
+    "text": "JSON: el último cambio de nivel de riesgo — level, previous, at, source (risk, compromise, admin), actor, reason."
+  },
+  "devices.schema.attributes.stsDeviceBrowser.what": {
+    "en": "16fa8dcc3a7975f0",
+    "text": "JSON: el estado de un navegador recordado (#265) — la generación del token, cuándo se emitieron este y el anterior, el navegador al que estaba vinculado y cuándo se dio en él por última vez el segundo factor. Ningún token ni ningún secreto."
+  },
+  "devices.schema.attributes.stsDevicePlatform.what": {
+    "en": "0d8e2225e2bd158d",
+    "text": "ios, ipados, android, macos, windows, linux, chromeos u other."
+  },
+  "devices.schema.attributes.stsDeviceModel.what": {
+    "en": "57494abd3e39355e",
+    "text": "Descriptivo."
+  },
+  "devices.schema.attributes.stsDeviceOs.what": {
+    "en": "57494abd3e39355e",
+    "text": "Descriptivo."
+  },
+  "devices.schema.attributes.stsDeviceEnrolment.what": {
+    "en": "f5796c5015933387",
+    "text": "JSON: method (native-sso, admin, portal, est, scep), at, actor."
+  },
+  "devices.schema.attributes.stsDeviceSecretHash.what": {
+    "en": "c7709d14767009ba",
+    "text": "SHA-256 de su device_secret de Native SSO. Retenido en toda lectura LDAP."
+  },
+  "devices.schema.attributes.stsDeviceSession.what": {
+    "en": "4e1ef4b44bea18f1",
+    "text": "La sesión de inicio de sesión para la que vale el secreto."
+  },
+  "devices.schema.attributes.stsDeviceLastUsed.what": {
+    "en": "8c5617e5acd3ea36",
+    "text": "Cuándo se usó por última vez, en ISO 8601."
+  },
+  "xacmlPolicies.schema.objectClasses.xacmlPolicy.what": {
+    "en": "df332e0eeff63c92",
+    "text": "Una Policy o PolicySet de XACML 3.0, guardada como el documento con el que se redactó. ESTE CONTENEDOR ES EL REPOSITORIO DE POLÍTICAS — un ldapmodify de xacmlPolicyDocument aquí cambia lo que decide el PDP en la siguiente solicitud."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyId.what": {
+    "en": "b1c3c568e23849c7",
+    "text": "El PolicyId o PolicySetId dentro del documento. DERIVADO en el momento de la escritura y usado para listar y para resolver un PolicyIdReference; la verdad es el documento."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyDocument.what": {
+    "en": "9bc6b993b0d6c0df",
+    "text": "El XML de XACML 3.0. ESTO ES LA POLÍTICA. Todo lo demás de la entrada se deriva de ello."
+  },
+  "xacmlPolicies.schema.attributes.xacmlVersion.what": {
+    "en": "ddb54fc06797469d",
+    "text": "El atributo Version del documento. Derivado."
+  },
+  "xacmlPolicies.schema.attributes.xacmlKind.what": {
+    "en": "90f98881070fc199",
+    "text": "\"Policy\" o \"PolicySet\". Derivado."
+  },
+  "xacmlPolicies.schema.attributes.xacmlCombiningAlgId.what": {
+    "en": "8457173a3dcce81d",
+    "text": "El algoritmo de combinación de reglas o de políticas que nombra el documento. Derivado, y mostrado en la consola porque es la línea de mayores consecuencias de una política."
+  },
+  "xacmlPolicies.schema.attributes.xacmlEnabled.what": {
+    "en": "9ba8d73484fcced4",
+    "text": "\"TRUE\" o \"FALSE\". Una política deshabilitada permanece en el repositorio y no se evalúa. NO es derivado — es lo único de aquí que es un hecho sobre el despliegue y no sobre el documento, y por eso es un atributo y no un comentario en el XML."
+  },
+  "xacmlPolicies.schema.attributes.xacmlIsRoot.what": {
+    "en": "b927978feb9fe3f1",
+    "text": "\"TRUE\" en la política desde la que parte el PDP. Un repositorio sin raíz no decide nada y lo dice; un repositorio con dos se rechaza en el momento de la escritura en lugar de elegir una."
+  },
+  "xacmlPolicies.schema.attributes.description.what": {
+    "en": "7aa4f682ef6437eb",
+    "text": "El propio <Description> del documento, cuando lo tiene."
+  },
+  "xacmlPeps.schema.objectClasses.xacmlPep.what": {
+    "en": "2b063c0577e29981",
+    "text": "Un Policy Enforcement Point remoto que se ha registrado en este Policy Decision Point. LA FILA ES UN REGISTRO Y NO UN PERMISO — un PEP que nunca se registra puede igualmente obtener el repositorio y aplicarlo. Lo que aporta una fila es un lugar en la consola y una dirección para el aviso de cambios."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepIdentity.what": {
+    "en": "aa1e6b32f2237675",
+    "text": "El DN con el que certificatePlan() nombra la identidad de este certificado. Un registro NO CREA NINGUNA ENTRADA ALLÍ — se reutiliza la regla de nomenclatura, no la creación de la entrada, porque un PEP es un componente y ou=users cuenta personas."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepCertificateSubject.what": {
+    "en": "a7bb93a757915e8c",
+    "text": "El sujeto completo del certificado de cliente con el que llegó el registro. Se guarda entero junto al DN porque el DN es la HOJA y esto es lo que realmente se presentó."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepThumbprint.what": {
+    "en": "caeb8d9bfef75798",
+    "text": "El x5t#S256 de RFC 8705 de ese certificado — el SHA-256 de su DER, en base64url. El mismo cálculo con el que el endpoint de token vincula un token de acceso vinculado a certificado, mediante la misma función, de modo que las dos escrituras no pueden divergir."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAuthenticated.what": {
+    "en": "0d3cc605fa81dd70",
+    "text": "\"TRUE\" cuando el registro llegó por una conexión con certificado de cliente, \"FALSE\" cuando xacml.pepRequireCertificate estaba desactivado y no lo llevaba. NO se oculta ni se confunde: un registro no autenticado es una fila que no probó nada, y la consola lo dice en la fila y no en una nota al pie."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepNotifyUrl.what": {
+    "en": "0b05ac938bf3376e",
+    "text": "Adónde enviar por POST el aviso de cambios, si el PEP dio una. EL AVISO NUNCA ES EL MECANISMO — un PEP obtiene a su propio intervalo y converge sin esto —, así que una URL ausente, rechazada o inalcanzable cuesta latencia y nada más."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepBias.what": {
+    "en": "b30e6c33ace1aeea",
+    "text": "El sesgo con el que el PEP remoto informa que se está ejecutando. LO INFORMA ÉL, nunca se define desde aquí: xacml.pepBias rige el PEP INTEGRADO en /xacml/protected y un control que pareciera definir uno remoto no haría nada en silencio."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepResource.what": {
+    "en": "b53451dce7081be1",
+    "text": "Lo que el PEP remoto dice que está protegiendo. Texto libre del PEP, mostrado como su propia afirmación sobre sí mismo."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepEnabled.what": {
+    "en": "d83c2cb6edef6347",
+    "text": "\"TRUE\" o \"FALSE\". Un PEP deshabilitado conserva su fila y sus contadores y no recibe avisos. NO deja de aplicar, y la consola lo dice — nada de aquí puede llegar a otro proceso y apagarlo."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRegisteredAt.what": {
+    "en": "edb9e97207f6ea2f",
+    "text": "Cuándo se registró este PEP por primera vez. Se conserva entre registros sucesivos, porque un componente que se reinicia cada hora es un hecho que vale la pena ver y una entrada cuya antigüedad se reiniciara en cada reinicio nunca podría mostrarlo."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
+    "en": "eca573eaea822db7",
+    "text": "El último latido u obtención. xacml.pepStaleAfterS es cuánto tiempo desde esto antes de que la consola diga \"obsoleto\" — lo cual no cambia nada de lo que hace este servicio, deliberadamente."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
+    "en": "44708a3c15a93cf6",
+    "text": "El resumen del repositorio que este PEP informó tener por última vez. Se compara con syncToken() para decidir si está AL DÍA, de modo que estar actualizado es algo que este servicio calcula y no algo que el PEP afirma."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyCount.what": {
+    "en": "f985e1174e1c1b66",
+    "text": "Cuántas políticas dice el PEP que cargó en esa obtención. Un recuento que discrepa del de este repositorio es la firma de un PEP que obtuvo correctamente y luego rechazó un documento."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepDecisions.what": {
+    "en": "ca35f28698ce6c91",
+    "text": "Las decisiones que el PEP remoto informa haber TOMADO, de forma acumulada. Su propio recuento, en su propio proceso — este servicio no las vio, y ese es el sentido de un PEP remoto."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAllowed.what": {
+    "en": "7a24f64947edb3c3",
+    "text": "Cuántas de ellas PERMITIÓ. Junto al recuento de decisiones en lugar de derivarse de él, porque la diferencia entre ambos es lo que realmente hicieron el sesgo y la regla de obligaciones."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRefused.what": {
+    "en": "820782cb1ba96ee7",
+    "text": "Cuántas RECHAZÓ, incluidos los Permit rechazados por una obligación que no pudo cumplir (sección 7.2)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepUndischargeable.what": {
+    "en": "a252138a66875fb2",
+    "text": "Cuántos de esos rechazos fueron una obligación incumplible en un Permit. Se cuentan aparte porque es el único resultado de aplicación que parece un error desde el lado del cliente y es la especificación funcionando."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepVersion.what": {
+    "en": "b6078cbbbfdb9576",
+    "text": "Lo que el PEP remoto dice que es. Texto libre."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
+    "en": "a4283bfe7916574e",
+    "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo. EL ÚNICO LUGAR DONDE SE REGISTRA UN AVISO FALLIDO, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Lo que el PEP dijo de sí mismo cuando se registró."
+  }
+}

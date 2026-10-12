@@ -18909,6 +18909,46 @@ function seedInternalApplications(options) {
   return made;
 }
 
+// THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
+// answers carry this module's tables: the directory's own page
+// (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
+// and drill-down (`/admin-api/applications`: KINDS, PROTOCOLS, and a schema
+// row's `what` as each attribute's note), and the create form's vocabulary
+// (`/admin-api/applications/new`: KINDS, PROTOCOLS, and `what` again on
+// every row of declarationAttributes()).
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/applications',
+  '/admin-api/applications',
+  '/admin-api/applications/new'
+]);
+
+/**
+ * Extracts this module's console prose (#543 phase 2b): each kind's label
+ * and sentence, each protocol family's label and sentence, and each object
+ * class's and attribute's `what`.
+ *
+ * `from` is NOT extracted: it is where a value comes from, written mostly as
+ * a route, a menu path or a protocol name ('POST /oauth2/register',
+ * 'Protocols → SCIM → Clients'), which a translation would have to keep.
+ * `familyWhy` is NOT extracted, though the schema answer carries it: it is
+ * the reason in familyRefusal()'s refusal, and refusals stay English (#539).
+ * `identifierName`, `overrides`, `where` and `kind` name identifiers.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily, for the reason every module of this namespace gives: required
+  // only when the extractor asks, so loading this module loads nothing new.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('applications.kinds', KINDS, ['label', 'what']),
+    harvest('applications.protocols', PROTOCOLS, ['label', 'what']),
+    harvest('applications.schema', SCHEMA, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Every application this service has ever been asked about, in one place: the
  * registry of `ou=applications`.
@@ -18919,6 +18959,10 @@ function seedInternalApplications(options) {
  * @namespace
  */
 module.exports = {
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,

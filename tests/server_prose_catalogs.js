@@ -40,6 +40,7 @@
 //      base; the view given is not modified.
 // ===========================================================================
 
+const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -80,10 +81,26 @@ async function run(t) {
     return c.tag;
   });
 
-  // A.
+  // A. The source's English comes from the TOOL, run as a child: it loads
+  // the whole protocol stack (a namespace's English may be in a registry
+  // its modules fill as they load), which this runner must not.
+  const run = childProcess.spawnSync(process.execPath,
+    [path.join(ROOT, 'tests', 'tools', 'prose-catalogs.js'), '--print-all'],
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+      timeout: 300000 });
+  let extracted = {};
+  try {
+    extracted = JSON.parse(run.stdout);
+  } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
+    extracted = {};
+  }
+  t.check(run.status === 0 && Object.keys(extracted).length > 0,
+          'A. the tool extracts every namespace from the loaded service',
+          'exit ' + run.status + ' ' + String(run.stderr || '').slice(-600));
   prose.namespaces().forEach(function (ns) {
     const file = path.join(DIRECTORY, ns, 'en.json');
-    const want = JSON.stringify(prose.extract(ns), null, 2) + '\n';
+    const want = JSON.stringify(extracted[ns] || {}, null, 2) + '\n';
     const have = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
     let first = '';
     if (want !== have) {
@@ -104,9 +121,11 @@ async function run(t) {
             'image (its header shows how)');
   });
 
-  // B and C.
+  // B and C, against en.json — which A has just held to the source.
   prose.namespaces().forEach(function (ns) {
-    const english = prose.extract(ns);
+    const enFile = path.join(DIRECTORY, ns, 'en.json');
+    const english = fs.existsSync(enFile)
+      ? JSON.parse(fs.readFileSync(enFile, 'utf8')) : {};
     fs.readdirSync(path.join(DIRECTORY, ns)).forEach(function (name) {
       const tag = name.replace(/\.json$/, '');
       t.check(tags.indexOf(tag) >= 0, 'B. ' + ns + '/' + name +
@@ -138,7 +157,22 @@ async function run(t) {
                   .replace(/\n/g, ' ') + ' against ' +
                   spansOf(english[key]).replace(/\n/g, ' ');
               }).join('; '));
-      const c = prose.coverage(ns, tag);
+      const c = { total: 0, current: 0, stale: [], missing: [], orphans: [] };
+      Object.keys(english).forEach(function (key) {
+        c.total++;
+        if (!entries[key]) {
+          c.missing.push(key);
+        } else if (entries[key].en === prose.hashOf(english[key])) {
+          c.current++;
+        } else {
+          c.stale.push(key);
+        }
+      });
+      Object.keys(entries).forEach(function (key) {
+        if (!(key in english)) {
+          c.orphans.push(key);
+        }
+      });
       const info = catalogs.filter(function (x) {
         return x.tag === tag;
       })[0];

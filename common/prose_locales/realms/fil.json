@@ -1,0 +1,194 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "Sariling issuer, signing key, mga authorization code, access at refresh token, refresh family, DPoP replay at nonce state, client-assertion replay state at mga pinangalanang authorization server. Per realm ang mga CLIENT REGISTRATION mula 2026-08-25, dahil ganoon ang directory: ang client na naka-register sa ilalim ng isang realm ay nasa ou=applications ng realm na iyon at hindi kilala ng bawat iba. Kabaligtaran ang sinasabi ng linyang ito hanggang noon. PER REALM DIN ANG RFC 9700 MODE — ang `oauth2.rfc9700`, at ang `oauth2.oauth21` na nagpapahiwatig nito, ay restart-only para sa process at puwedeng itakda sa isang realm, dahil walang bina-bind na socket ang realm — kaya kayang sumagot nang maluwag ng iisang process sa /oauth2/authorize at ipatupad ang BCP sa sa isang realm. Ang hindi madadala ng realm ay ang SCHEME: https o hindi ang main port, para sa bawat realm nang sabay-sabay, at iniuulat ng GET /oauth2/rfc9700 kung alin."
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "Authentication service"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "Sariling mga session at second factor — mga WebAuthn credential, TOTP secret at recovery code — kaya ang pag-sign in sa isang realm ay nagsa-sign in sa iyo sa realm na iyon lang. Iyon ang punto ng realm at hindi limitasyon nito. Ang kung SINO ka puwedeng mag-sign in ay shared lang sa diwang walang password na chine-check ang serbisyong ito kahit saan — ang TAO ay isang entry sa sariling directory ng realm. Ang admin console ang ISANG nagbabasa na tumatawid sa linyang ito: nagsa-sign in ito ng tao sa pamamagitan ng realm kung saan ito naabot, at itinatago ang SARILI nitong session sa DEFAULT realm, para makita ang iisang console session mula sa bawat realm. Sinasabi ng row sa ibaba kung sino ang puwedeng i-administer ng session na iyon."
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "Sariling entityID at providerID (sine-seed nang magkaiba kapag ginawa ang realm), sariling signing key, request state, mga artifact at per-service-provider metadata — kaya dala ng URL nito ang realm pati ang SP digest. Per realm ang mga SERVICE PROVIDER ENTRY, sa parehong dahilan ng mga OAuth client: mga application sila sa sariling directory ng realm."
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "Sariling token issuer at signing key."
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "Sariling entityID at signing key. Napapanatili ang single sign-on sa OAuth SA LOOB ng isang realm at hindi tumatawid sa mga realm, dahil hindi rin tumatawid ang session na sinasandalan nito."
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "Sariling mga credential offer, pre-authorized code, deferred transaction, issuance nonce at presentation transaction — at sariling sagot sa kung ano ang ina-assert ng credential at kung ano ang hinihingi ng verifier. Dala ng did:web identifier ang realm segment, na siyang naghihiwalay sa mga DID document ng dalawang realm."
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "Isang authorization server bawat realm (RFC 9635), na may sariling mga grant, continuation, interaction, user code, token, management handle, key-proof replay state at resource server connection (RFC 9767) — labindalawang store, bawat isa per realm at inaalis kasama nito. Ang GNAP client ay isang application sa sariling directory ng realm, at setting ng realm ang `gnap.enabled`, kaya puwedeng sumagot ang isang realm sa /gnap habang tumatanggi ang iba."
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "Shared Signals (SSF, CAEP, RISC)"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "Sariling transmitter: per realm ang mga stream, ang mga subject nila, ang mga queue at dead letter nila, at ang session register ng CAEP at account register ng RISC. Ine-emit ang event sa realm kung saan ito nangyari, at sine-seed bilang receiver sa bawat realm ang sariling console at portal ng serbisyong ito, kaya ang sariling realm lang ang naririnig ng bawat isa."
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "Sariling policy repository (ou=policies) at remote PEP register (ou=peps), parehong nasa directory ng realm. WALANG LAMAN sa simula ang repository ng bagong realm at hindi kailanman bumabalik sa sa default realm, na magdudugtong sa dalawang realm: built in at TINATAWAG ang dalawang policy na ginagamit ng serbisyong ito para pagpasyahan ang sarili nitong issuance at access, kaya nagpapasya sila sa bawat realm, at ang repository entry sa isang realm ay nag-o-override sa kanila roon lang. Pag-aari ng realm na pinag-register-an nito ang remote PEP, at in-iissue ng pep-tls Issuing CA ng realm na iyon ang HTTPS listener certificate nito."
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federation"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "Sariling mga relationship — nasa directory ng realm ang ou=federations — at sariling mga sign-in na nasa gitna pa, na may limit bawat realm para hindi mapaalis ng baha ng isang realm ang sa iba. Hindi matatapos sa /federation/acs/{id} ng ibang realm ang flow na sinimulan sa isang realm: vine-verify ang assertion laban sa certificate ng relationship sa realm na dinatnan nito."
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "User portal"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "Ang sariling account ng tao sa realm na kinaroroonan niya: nagsa-sign in ang portal sa pamamagitan ng sariling authorization server ng realm bilang client na naka-seed sa bawat realm, at binabasa at sinusulatan ng bawat pahina ang entry ng tao sa directory ng realm na iyon, na sumusunod sa password policy ng realm na iyon."
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "Global logout"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "Wala itong sariling state: binabasa ng /logout, /admin/logout at /admin/sessions ang mga store ng realm kung saan sila naabot, kaya tinatapos ng sign-out ang session ng realm na iyon at ang nakasakay rito, at walang anuman sa ibang realm."
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "Statistics at ang audit log"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "Binibilang at itinatala ng bawat realm ang nangyari sa ilalim ng sarili nitong prefix. Per realm din ang mga audit sequence number, kaya tuloy-tuloy ang mga row ng isang realm."
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "Ang mga endpoint AT ang store. Ang user na ginawa sa /scim/v2 ng isang realm ay isang entry sa ou=users ng realm na iyon at wala saanman — `partial` ang nakasulat sa row na ito at kabaligtaran ang sinasabi hanggang 2026-08-25, nang maging per realm ang directory. Wala pa ring sariling pasya ang SCIM tungkol dito: nagpo-provision ito sa directory, at ang directory ang hinahati."
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "Admin console at management API"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "2d1b64bdd91feaba",
+    "text": "Per realm ang bawat pahina at bawat operation — BINABASA at SINUSULATAN ng /admin/config ang realm kung saan ito naabot, at inililista ng /admin/users ang sariling mga tao ng realm. DALAWANG BESES hawak ang mga ADMIN ROLE, sinasadya, mula 2026-09-14 (#32): ang cn=admin-read at cn=admin-write ng DEFAULT realm ang SERVICE roster at nag-a-administer ng bawat realm, at bawat ibang realm ay may parehong dalawang group sa sarili nitong ou=groups, naka-seed na may `admin` account, na ang mga miyembro ay nag-a-administer ng realm NA IYON lang — tinatanggihan sa kanila ang bawat pahina at operation tungkol sa buong process (ang store, ang database, ang secret store, ang mga listener, ang debugger, ang explorer), ang paggawa o pag-alis ng realm, ang pagpapalit ng service Root, at ang mga per-process setting. Kaya walang ibinibigay ang sariling roster ng realm sa labas ng realm, na siyang nagpaging ligtas sa pagdagdag nito. Nagsa-sign in ang console ng tao sa pamamagitan ng realm kung saan ito naabot, at nagtatanong muna ang plain na /admin at /portal kung aling realm kapag may nakadepinang mga realm. Tinatanggap ng /admin-api ang token ng default realm kahit saan at ang sariling sts-management-api token ng realm sa realm na iyon lang."
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP (389 / 636)"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "ISANG DIRECTORY BAWAT REALM sa likod ng iisang socket — hiwalay na store, hindi subtree ng isang shared, mula 2026-08-25. Ang DN layout ang nakikita ng client: BAWAT REALM AY SARILING TREE, naka-root sa RFC 2247 mapping ng DOMAIN ng realm (mula 2026-09-18) — ang default realm sa mapping ng global.domain (dc=example,dc=com), ang realm na iyasec.io ang domain sa dc=iyasec,dc=io, at ang ginawa nang walang domain sa <id>.<global.domain>, na siyang dc=<id> sa ilalim ng base ng default realm na mayroon ang bawat realm noon. Pinapayagan ang domain sa loob ng domain ng ibang realm at hiwalay itong naming context. Kaya umiiral nang isang beses bawat realm ang ou=users, ou=groups, ou=applications, ou=federations at ang dalawang SPIFFE container at walang ibinabahagi — `none` ang nakasulat sa row na ito at sinasabing iisang mga tao ang nakikita ng bawat realm hanggang 2026-08-25. Nasa DN ang realm at hindi sa isang hinating store DAHIL walang path ang socket na mapaglalagyan ng segment: dumarating ang ldapsearch na may base DN at wala nang iba, kaya ang `-b dc=acme,dc=example,dc=com` lang ang paraan para makapagpangalan ng realm ang client, at gumagana ito. SINASAGOT ANG BAWAT OPERATION MULA SA STORE NA PINANGANGALANAN NG DN, mula 2026-08-25 at sa kahilingan ni rcbj — sinasabi ng linyang ito na ang subtree search mula sa naming context ay nagbabalik ng mga entry ng bawat realm, sa argumentong ang naming context AY ang buong tree. Iniwan nito ang port 389 bilang tanging pinto kung saan makikita ng isang realm ang mga tao, group at application ng ibang realm, habang ipinapakita ng console, /scim/v2 at ng group claim sa bawat realm ang sarili lang nito. Kaya ang `-b dc=example,dc=com` ay ang directory ng default realm, ang `-b dc=acme,dc=example,dc=com` ay sa acme, at naglalathala ang root DSE ng isang namingContexts value bawat realm para matuklasan sila ng client. Ang add, modify, delete, compare o base-scope search ay sinasagot sa realm na pinangangalanan ng DN nito, dahil ang pagsulat nang buo ng DN ang paraan ng client sa pagpapangalan ng realm sa socket na walang ibang mapaglalagyan nito; tinatanggihan ng LDAP_AFFECTS_MULTIPLE_DSAS (71) ang modifyDN na tatawid sa realm, dahil dalawang directory dito ang dalawang realm."
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "42fe03497278a0e3",
+    "text": "Isang KDC bawat trust realm sa SHARED na port 88, pinag-iiba ayon sa Kerberos realm name sa loob ng bawat request — ang discriminator na dala na ng protocol. Ginagawa ang realm na naka-OFF ang krb5.enabled; magtakda ng sariling krb5.realm (walang dalawang realm na puwedeng sumagot sa iisang pangalan) at i-on ito, at bubuo ang realm na iyon ng sariling principal database, mga pangmatagalang key at krbtgt, mula sa sarili nitong mga setting. Ang mga tao nito ay ang mga tao sa sarili nitong directory subtree. Nagra-route ayon sa pangalan ang raw UDP/TCP 88 at ang bare na /KdcProxy; naka-pin sa realm na iyon ang sariling /realm/<id>/KdcProxy ng realm at tinatanggihan ang pangalan ng ibang realm ng KDC_ERR_WRONG_REALM. Ang pag-aari pa rin ng PROCESS: ang dalawang socket, at ang development-mode trust na may krb5.trustedRealm — hindi nagtitiwala ang mga trust realm sa Kerberos ng isa't isa. Bago 2026-09-15, iisang KDC, iisang principal database at iisang realm name ang mayroon para sa buong process. Dala ng SPNEGO ang parehong mga ticket sa HTTP, kaya sumasagot ang mga route nito sa ilalim ng path prefix ng bawat realm gaya ng iba."
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "Certificate authority (CRL, OCSP)"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "ISANG ROOT PARA SA SERBISYO, ISANG INTERMEDIATE BAWAT REALM, at isang Issuing CA bawat use case sa ilalim ng bawat Intermediate, kaya ang certificate na in-issue ng isang realm ay hindi nagche-chain sa Intermediate ng ibang realm. Ang shared ay ang Root, na walang realm na nagmamay-ari. Pinangangalanan ang mga CRL, OCSP responder at chain ng isang {scope} segment sa /pki/... sa halip na ng realm prefix, dahil pumapasok ang mga address na iyon SA LOOB ng mga certificate at kinukuha ng mga client na walang alam sa mga realm ng serbisyong ito — at walang realm na nagmamay-ari ng Root, kaya hindi ito maisusulat gamit ang isa."
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "Certificate enrollment (ACME, EST, SCEP)"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "May sariling Issuing CA ang bawat isa sa tatlo sa ilalim ng Intermediate ng bawat realm, at sariling mga store bawat realm — ang mga account, order, authorization at nonce ng ACME (MAC sa realm ang nonce, kaya tinatanggihan ng isang realm ang sa iba), ang RA certificate at mga transaction ng SCEP. Pinagpapasyahan laban sa sariling directory ng realm kung sino ang puwedeng magkaroon ng certificate: nakatali sa isang entry sa iisang realm ang bawat ACME External Account Binding key, EST credential at SCEP challenge, at bumabagsak sa Intermediate check ang certificate na in-issue ng ibang realm. Naaabot ang EST sa path prefix O sa pagpapangalan ng realm sa posisyon ng EST label, /.well-known/est/<realm>/..., dahil hindi makapaglalagay ang EST client ng path sa harap ng well-known URI (#251). Ang shared ay ang per-address rate limit ng EST, na naka-key sa client address at hindi sa realm."
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "Ang bawat realm ay sariling federation entity: ang Entity Identifier nito ay ang issuer nito, ang mga Federation Entity Key, subordinate, Trust Anchor at Trust Mark nito ay mga entry sa sarili nitong ou=oidfed, at nasa ilalim ng sarili nitong prefix ang mga endpoint nito. SINASADYA at signed ang tumatawid sa mga realm: kapag naka-on ang oidfed.realmsAreSubordinates, ginagarantiyahan ng default realm ang bawat ibang realm at nagtitiwala sila rito, bawat chain ay vine-verify gaya ng iba — nire-resolve sa process sa halip na sa HTTP."
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "TLS certificate"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "ISANG CERTIFICATE PARA SA PROCESS, na ipinapakita ng main port, ng LDAPS 636 at ng listener ng embedded debugger. Ang ipinapakita ng socket ay katangian ng socket at hindi ng realm, at dala ng unang dalawa ang bawat realm. `TLS (8443 / 9443)` ang nakasulat sa row na ito hanggang 2026-09-16, nang burahin ang dalawang listener na iyon: pinagpapasyahan ang halaga ng client certificate kung saan ito GINAGAMIT, at iyon ay sa realm na dinatnan ng request."
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "ISANG TRUST DOMAIN, ISANG AUTHORITY, ISANG REGISTRY AT ISANG PARES NG gRPC SOCKET BAWAT REALM mula 2026-09-12 — `none` ang nakasulat sa row na ito hanggang noon at sinasabing iisang trust domain, iisang signing authority at apat na shared socket. **ANG DISCRIMINATOR AY ANG ENDPOINT ADDRESS AT HINDI ITO PUWEDENG MAGING IBA PA**: may path ang gRPC at iyon ang METHOD — itinakda ng specification na iyon ang `/SpiffeWorkloadAPI/FetchX509SVID` at ng sarili nila ang mga SPIRE API — kaya ang realm segment dito ay magiging method na walang conforming client na tumatawag. Ginagawa ang realm na nakatakda ang `spiffe.trustDomain` sa DOMAIN nito (mula 2026-09-18; `<realm>.<the process's>` ito bago nagkaroon ng domain ang mga realm) at naka-OFF ang SPIFFE; kapag in-on ito, binubuo ang mga authority ng realm na iyon at bina-bind ang sarili nitong Workload API at SPIRE Server API, sa mga Unix socket path na sine-seed nang gawin ang realm — at sa TCP lang kapag may nagbigay rito ng address (`spiffe.grpcHost`) at mga port, na wala sa realm kapag ginawa, dahil ang mamanahin nito ay ang sa default realm at naka-bind na. Per realm din ang mga join token, dahil credential ang join token para sumali sa isang trust domain. **ANG SHARED PA RIN AY ANG SARILING APAT NA SOCKET NG PROCESS**, na pag-aari ng default realm at nananatiling naka-bind anuman ang sabihin ng `spiffe.enabled` — ang socket na naglaho ay magmumukhang serbisyong tumigil. Sariling pag-aari ng realm ang mga FEDERATED bundle mula 2026-09-12, at walang puwedeng i-register sa ilalim ng trust domain na sine-serve ng anumang realm ng serbisyong ito."
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "Embedded debugger"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "Iisang listener para sa process (`debugger.port`), sina-sign in-an sa pamamagitan ng authorization server ng DEFAULT realm at bukas lang sa mga console administrator ng realm na iyon. Tinatanggihan dito ang sariling mga administrator ng isang realm, dahil surface ito ng process at hindi ng anumang realm."
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "Persistence at cluster"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "Iisang store para sa process — memory, isang LDIF file bawat realm, o iisang postgres database — at iisang cluster membership, lease at fencing token. Itinatago ng bawat per-realm store sa itaas ang mga row nito sa ilalim ng realm nito sa store na iyon at inaalis kasama ng realm; ang shared ay ang store mismo, ang connection dito at ang mga node na nagbabahagi nito."
+  }
+}

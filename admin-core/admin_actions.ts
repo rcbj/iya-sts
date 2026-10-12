@@ -698,6 +698,28 @@ const ROLE_MEMBER_KINDS = [
           'member of a role here.' }
 ];
 
+// THE ROLES NAMESPACE'S PART OF THIS MODULE (#543 phase 2b): the member
+// kinds' labels and sentences, which `/admin-api/roles` carries as
+// `memberKinds`. A label ('a person') is also substituted into the console's
+// own catalog messages by `web_roles.ts`; it is translated here all the same,
+// so the substituted word is the reader's language too.
+/** The routes whose answers carry this module's roles prose. */
+const PROSE_ROUTES = ['/admin-api/roles'];
+
+/**
+ * Extracts this module's part of the roles namespace (#543): the member
+ * kinds' `label` and `what`.
+ *
+ * @returns key → English
+ */
+function prose(): Record<string, string> {
+  helpers.log.debug("Entering prose().");
+  const out = serverProse.harvest('roles.memberKinds', ROLE_MEMBER_KINDS,
+                                  ['label', 'what']);
+  helpers.log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THE POLICIES' WRITES (2026-09-12; every kind since #64), behind
 // /admin/policies and POST /admin-api/policies/{action}.
@@ -9325,6 +9347,9 @@ export = {
   consentAction: slot.forward('consentAction'),
   ROLE_ACTIONS: ROLE_ACTIONS,
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
+  // #543: the roles namespace's routes and English, this module's part.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
   policiesAction: slot.forward('policiesAction'),

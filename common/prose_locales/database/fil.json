@@ -1,0 +1,98 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Lahat ng sasabihin ng PostgreSQL sa serbisyong ito tungkol sa sarili nito, at ang estado ng schema na pag-aari ng serbisyong ito roon."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "Ang persistence.mode ay \"{{mode}}\", kaya walang database na maiuulat ang serbisyong ito. Walang isinusulat na kahit ano ang `memory` at RFC 2849 file ang isinusulat ng `ldif` — walang connection, pool o catalog ang alinman sa dalawa. Itakda ang persistence.mode sa `postgres` (restart-only ito: binubuksan ang store bago mag-bind ang listener)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "Ang persistence.mode ay \"postgres\" at WALANG BUKAS NA STORE ang process na ito. Sira ito at hindi configuration: binubuksan ang store mula sa persistence.start() bago mag-bind ang listener, at fatal ang pagkabigo roon — kaya ang tumatakbong serbisyo sa ganitong estado ay nahintuan ng store mula sa ilalim nito. Pinangangalanan ng startup log kung ano ang nangyari."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "walang iniuulat na metrics function ang bukas na driver, na ang ibig sabihin ay build ng persistence_postgres.js na mas luma sa 2026-09-11."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "Aling PostgreSQL ito, BILANG sino nakakonekta ang serbisyong ito, at gaano na katagal tumatakbo ang server."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "Gaano karaming disk ang sinasakop ng database na ito."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Bawat counter na itinatago ng PostgreSQL para sa database na ito: mga commit at rollback, mga block na binasa laban sa mga block na nakita sa cache, mga tuple sa bawat direksyon, mga deadlock, mga temp file, at ang mga timing ng I/O at session kung saan kinokolekta ito ng server."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Mga query na kinansela dahil sa recovery conflict. Puro zero sa server na hindi standby, na siyang karaniwang kaso dito."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Ilang backend mayroon ang database na ito, laban sa limit ng server."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "Isang row bawat backend sa database na ito. Ang backend na pag-aari ng ibang role ay lumalabas bilang row na nakatago ang state at query nito, na siyang ipinapakita sa role na hindi pang-monitoring."
+  },
+  "postgres.probes.locks.what": {
+    "en": "9d8cff275d6437f5",
+    "text": "Mga lock na hawak at hinihintay, ayon sa mode. Ang naghihintay na lock sa isang mock ay halos palaging ang serbisyong ito na nakikipag-agawan sa sarili nito sa buong request-worker pool."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "Ang background writer. LABING-ISANG column bago ang PostgreSQL 17 at APAT mula 17, nang lumipat palabas nito ang mga checkpoint counter — kaya hinihingi nito ang lahat ng iyon sa halip na pangalanan ang alinman."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "Ang checkpointer. May sarili na itong view mula PostgreSQL 17; bago iyon, ang mga counter na ito ang buntot ng pg_stat_bgwriter sa itaas."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Pagbuo ng write-ahead log. PostgreSQL 14 pataas."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "WAL archiving. Puro zero maliban kung naka-on ang archive_mode, na hindi naka-on sa alinmang stack na ipinapadala ng repository na ito."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Mga standby na nag-i-stream mula sa server na ito. WALA ang karaniwang sagot, at ito rin ang ipinapakita sa role na walang pg_monitor kapag MAYROONG mga standby — kaya ang walang lamang table dito ay dalawang magkaibang katotohanan at sinasabi ng pahina kung alin ang hindi nito matukoy."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Bawat counter na itinatago ng PostgreSQL bawat table: mga sequential at index scan, mga tuple sa bawat direksyon, mga live at dead na row, at kung kailan huling na-vacuum at na-analyse ang bawat isa."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "Block I/O bawat table: gaano karami ang nanggaling sa buffer cache at gaano karami sa disk, para sa heap, mga index nito at TOAST nito."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "Gaano karaming disk ang sinasakop ng bawat table, hinati sa heap, mga index nito at TOAST nito, kasama ang row estimate ng planner."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Bawat index, gaano kadalas itong na-scan, gaano kalaki ito, at kung primary key o unique ito."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Bawat column ng bawat table na pag-aari ng serbisyong ito, kasama ang type nito, kung puwede itong null, at ang default nito."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Mga primary key, unique constraint, foreign key at check."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Bawat setting na binago ng isang operator mula sa built-in default nito, at kung saan ito itinakda — dagdag ang ilang mahalaga ginalaw man o hindi ng sinuman."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "Mga extension na naka-install sa database na ito."
+  }
+}

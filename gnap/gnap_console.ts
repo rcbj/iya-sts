@@ -105,6 +105,22 @@ const GNAP_ACTIONS = ['revoke-grant', 'delete-resource-set'];
 
 const STATES = ['processing', 'pending', 'approved', 'finalized'];
 
+// THE GNAP NAMESPACE (#543 phase 2b): what a multi-cell service's list of a
+// person's grants says it leaves out (`cellsNote()`). It reaches
+// `/admin-api/users` as `gnapGrants.cells.note` on a person's view; the
+// person's own `/portal/gnap` is not `/admin-api`, and draws it as it is.
+/**
+ * What a person's grant list says in a multi-cell service.
+ */
+const CELLS_NOTE = 'The grants this cell holds. A grant is made where its ' +
+  'client arrives and moves to its resource owner\'s home cell before it ' +
+  'is approved, so this is normally all of them; a grant whose client ' +
+  'instance is registered in another cell stays there and is listed and ' +
+  'revoked there.';
+
+/** The routes whose answers carry this module's prose. */
+const PROSE_ROUTES = ['/admin-api/users'];
+
 /**
  * What the two GNAP console pages and their `/admin-api` operations read and
  * do: one view model and one action, rendered by both doors (rule 7).
@@ -123,6 +139,22 @@ class GnapConsole {
    * `finalized`.
    */
   static readonly STATES = STATES;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the gnap namespace (#543): the multi-cell note on a person's
+   * grant list.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering GnapConsole.prose().");
+    helpers.log.debug("Leaving GnapConsole.prose().");
+    return { 'gnap.cells.note': CELLS_NOTE };
+  }
 
   /**
    * Builds the view model from the modules it reads.
@@ -320,11 +352,7 @@ class GnapConsole {
     log.debug("Leaving GnapConsole.cellsNote(). multi=" + multi);
     return multi
       ? { multiCell: true, cell: id, complete: false,
-          note: 'The grants this cell holds. A grant is made where its ' +
-                'client arrives and moves to its resource owner\'s home ' +
-                'cell before it is approved, so this is normally all of ' +
-                'them; a grant whose client instance is registered in ' +
-                'another cell stays there and is listed and revoked there.' }
+          note: CELLS_NOTE }
       : { multiCell: false, cell: '', complete: true, note: '' };
   }
 
@@ -776,6 +804,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   GNAP_ACTIONS: GnapConsole.GNAP_ACTIONS,
   STATES: GnapConsole.STATES,
+  // #543: the gnap namespace's routes and English.
+  PROSE_ROUTES: GnapConsole.PROSE_ROUTES,
+  prose: GnapConsole.prose,
   gnapView: slot.forward('gnapView'),
   gnapMonitorView: slot.forward('gnapMonitorView'),
   gnapAction: slot.forward('gnapAction'),

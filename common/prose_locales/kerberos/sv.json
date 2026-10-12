@@ -1,0 +1,34 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "Inget nyckelmaterial finns i det här svaret eller på sidan. En persons nycklar härleds från deras lösenord när det sätts eller verifieras och visas aldrig; en tjänsteprincipals keytab lämnas över EN GÅNG, av det skapande eller den rotation som gjorde den, och en persons keytab EN GÅNG, härledd från ett lösenord som finns till hands — det som en administratör sätter på personens sida, eller deras eget på /portal/kerberos."
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "Den här KDC:n är en PRODUKT-KDC: en person autentiserar sig med sitt eget lösenord genom de nycklar som lagras på deras katalogpost, och en person som inte har några avvisas med \"logga in en gång\"."
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "Den här KDC:n är en UTVECKLINGS-KDC: varje användare får nycklar från krb5.userPassword och personer får aldrig lagrade nycklar. Tjänsteprincipaler som skapas här används i båda lägena."
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "EN KDC PER FÖRTROENDESFÄR: det här är personerna och applikationerna i den förtroendesfär som den här sidan läses i, som principaler i dess egen Kerberos-sfär {{kerberosRealm}}."
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "DEN HÄR FÖRTROENDESFÄREN HAR INGEN KDC: {{reason}}. Sätt krb5.realm på sfären och slå på krb5.enabled för att ge den en; port 88 dirigerar en begäran efter Kerberos-sfärens namn i den."
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "Nycklar härleds EFTER att ett lösenord har satts eller verifierats och tar några tiotals millisekunder att komma på plats; tills de har gjort det avvisar KDC:n personen snarare än att godta en äldre nyckel."
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "Ett lösenordsbyte eller en rotation behåller den version den ersatte — högst krb5.retainedKeyVersions av dem, var och en i krb5.retainedKeyTtlS — så att en biljett som utfärdats under den fortfarande godtas tills den kan ha gått ut. En tidigare version ÖPPNAR bara en sådan biljett: ingenting utfärdas under den och ett gammalt lösenord loggar aldrig in. \"Ta bort tidigare versioner\" stänger fönstret genast, efter en kompromettering."
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "krb5.enabled är av för den"
+  }
+}

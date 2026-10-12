@@ -1,0 +1,1026 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "Varje cell i en tjänst som driftsätts som celler förseglar det den lagrar under en egen nyckel"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "En cell utan keys.cellKekProvider förseglar sina rader under tjänstens nyckelkrypteringsnyckel, så att dess rader skulle kunna öppnas i vilken cell som helst — godtagbart för celler som testas på en maskin."
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "En cell utan cellnyckel startar inte (STS-CELL-0003). De personer som har sin hemvist i en cell och det den skapar förseglas under en nyckel som bara finns i dess region och som inte öppnas i någon annan cell (#98). Encellsläget påverkas inte."
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "Ett presenterat lösenord verifieras"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "Inget lösenord kontrolleras i något protokoll. Inloggningsskärmen godtar vad som helst, en LDAP-bindning godtar vilket DN som helst med vilket lösenord som helst, en WS-Security UsernameToken läses för sitt namn och inte sin hemlighet, SCIM Basic släpper igenom vilket par som helst, och WS-Trust utfärdar till en anropare som inte presenterade något eller ett osignerat SAML-intyg."
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "Verifieras mot det hashade `userPassword` på personens katalogpost, vid var och en av de dörrarna. En person utan `userPassword` satt kan inte logga in alls. OAuth 2.0-lösenordsbeviljningen finns inte i produktläge, vilket innebär RFC 9700-läge (avsnitt 2.4). WS-Trust kräver en inloggningsuppgift och godtar ett intyg bara när den här sfären signerade det och det ligger inom sina Conditions."
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "En OpenID4VCI-slutpunkt godtar bara en åtkomsttoken som den här sfären kan verifiera"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "Slutpunkterna för credential, deferred credential och notification godtar vilken åtkomsttoken som helst och läser dess anspråk overifierade — OpenID4VCI låter auktoriseringsservern vara någon annan — så att en plånbok kan riktas mot den här utfärdaren med en token från var som helst."
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "En token som inte verifieras mot den här sfärens signeringsnyckel, eller som den här sfären har återkallat, avvisas med invalid_token (HTTP 401) innan något utfärdas."
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "En mottagen Security Event Token vars signatur inte verifieras avvisas"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "f339daad4628b362",
+    "text": "POST /ssf/receive och konsolens och portalens egna mottagare godtar den, registrerar den och säger varför den inte verifierades — debuggerns hållning — om inte ssf.receiveRequireSignature är påslaget. Ingenting agerar på den."
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "550da4b67dda6fd9",
+    "text": "Varje mottagare svarar 400 invalid_key, oavsett vad ssf.receiveRequireSignature säger (#117): /ssf/receive, som inte autentiserar någon, registrerar ingenting; konsolens och portalens mottagare, bakom sin ströms egen hemlighet, behåller den i sin inkorg markerad som avvisad."
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "Det som den här tjänstens egen konsol och portal gör med en CAEP- eller RISC-händelse de tar emot utförs"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "En verifierad händelse registreras i ytans signalinkorg tillsammans med vad signalsvarspolicyn tillät, och ingenting avslutas, om inte ssf.actOnSignalsInDevelopment är påslaget."
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "En verifierad händelse som signalsvarspolicyn tillåter — session-revoked, credential-change, en RISC-konto- eller -inloggningsuppgiftshändelse, en risk-level-change till HIGH, som standard — avslutar den mottagande ytans egna sessioner för den person den anger. En overifierad händelse leder aldrig till åtgärd i något läge."
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "Utfärdandepolicyns beslut om en autentiserings RISK upprätthålls"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "Varje inloggning bedöms och utfärdandepolicyn tillfrågas med dess riskfakta, och det den beslutar registreras på bedömningen — men ett risk-Deny åsidosätts och rollerna ensamma avgör, om inte risk.enforceInDevelopment är påslaget."
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "Ett risk-Deny behålls: en autentisering som policyn avvisar på grund av risk (HIGH, som standard) avvisas, och en som den begär step-up för (MEDIUM) ombeds om en andra faktor eller en säkerhetsnyckel där dörren kan fråga, och avvisas där den inte kan. När en persons risk ändras vidtas de reaktioner som riskresponspolicyn tillåter — allt avslutas vid HIGH, RISC credential-compromise; utvecklingsläget meddelar ändringen och registrerar resten som observerat."
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "Ett tokenutbyte enligt RFC 8693 godtar bara en subject_token och actor_token som den här sfären kan verifiera"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "En subject_token som den här sfären inte kan verifiera läses för sitt namn och byts ut ändå, och en actor_token läses och verifieras aldrig, så att en klient kan driva beviljningen med en token från vilken utfärdare som helst."
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "Båda måste verifieras mot den här sfärens signeringsnyckel, vara ej utgångna och inte återkallade, annars avvisas utbytet med invalid_request (HTTP 400, RFC 8693 avsnitt 2.2.2)."
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "Vem som får agera för vem avgörs vid WS-Trust OnBehalfOf / ActAs och tokenutbytet enligt RFC 8693"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "Varje delegering utfärdas. Policyn tillfrågas ändå och dess svar registreras på handlingen på /admin/delegation som \"would have been refused: ...\", och ett utbyte kan be om ett bredare scope än dess subject_token har."
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "Utfärdandepolicyn avgör (#186), utifrån delegeringsattributen (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated på applikationsposter; stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups och konsolens förteckning för personer). En avvisning är invalid_request eller invalid_target (RFC 8693 avsnitt 2.2.2) eller ett wst:RequestFailed SOAP Fault (WS-Trust 1.4 avsnitt 11). En person agerar bara om den har delegation.actorRole, och ett utbyte får inte vidga sin subject_tokens scope (invalid_scope)."
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "En klient utfärdas bara de scopes den har deklarerat"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "Varje scope som en klient ber om utfärdas, oavsett vad dess `oauthAllowedScope` listar. I BÅDA lägena utfärdas admin:read, admin:write, SCIM- och Shared Signals-scopes samt debuggerbehörigheten bara till en klient vars `oauthAllowedScope` listar dem."
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "Ett scope utanför klientens `oauthAllowedScope` avvisas med invalid_scope vid auktoriserings-, pushed authorization- och tokenslutpunkterna (STS-OAUTH-0578) och tas bort vid en uppdatering eller ett utbyte. En klient som inte listar något får det dokumenterade standardvärdet: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-scopes. Ett scope som anger en applikation eller en delegerad behörighet behåller sina egna regler."
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "En applikation utfärdas ingenting via ett protokoll som den inte är deklarerad för"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "appAllowedProtocol är en beskrivning: en token, ett intyg eller en biljett utfärdas oavsett vilket protokoll som frågade."
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "Utfärdandepolicyns regel protocol-not-declared avvisar ett utfärdande via en protokollfamilj som applikationen inte är deklarerad för (STS-XACML-0084): en ID Token till en applikation som bara är deklarerad för OAuth 2.0, ett SAML-intyg till en som är deklarerad för OpenID Connect. En applikation som inte är deklarerad för något avvisas inte."
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "En GNAP-åtkomsträttighet beviljas bara av en typ som katalogen över åtkomsttyper deklarerar"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "En rättighet av en typ som ingen resursapplikation deklarerar (oauthAuthorizationDetailsType) beviljas så som klienten bad om den."
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "Utfärdandepolicyns regel gnap-type-not-catalogued avvisar den vid beviljningsslutpunkten (request_denied, STS-GNAP-0810). RFC 9396 authorization_details avvisar en odeklarerad typ i båda lägena, som avsnitt 5 kräver."
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "En delegerad behörighet utfärdas bara till en klient som har beviljats den"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "En ej beviljad behörighet respekteras och registreras som ej beviljad, om inte oauth2.delegatedPermissionsEnforced är påslaget."
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "Avvisas med invalid_scope (STS-OAUTH-0155) oavsett vad oauth2.delegatedPermissionsEnforced säger: beviljandet är `oauthDelegatedPermission` på klientens post."
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "En federationspartner loggar bara in den person som dess subjekt är länkat till"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "En relation kan sätta fedSubjectPolicy till any-existing, vilket matchar det namn som partnern intygade direkt mot en lokal person — vilken person som helst, en administratör inräknad om inte fedMayAssertAdministrators är avstängt (standard). Varje annan policy beter sig som i produktläge."
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "any-existing avvisas, vid relationen (STS-FED-0095) och vid inloggningen (STS-FED-0094). En partner loggar in den post som dess (utfärdare, subjekt) är länkat till; ett olänkat subjekt som anger en befintlig person måste först logga in här som den personen (link-at-first-sign-in, standard), eller avvisas (pre-linked). Utvecklingsläge och produktläge behåller båda reglerna och avvisningen av konsoladministratörer."
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "En federationspartners SAML-utloggning är signerad av den partnern"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "En relation vars fedRequireSignedLogout är avstängt godtar en OSIGNERAD LogoutRequest eller LogoutResponse från sin partner. En signatur som finns verifieras mot fedSigningCertificate precis som i produktläge, och inställningen är påslagen för varje relation om inte någon stänger av den."
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "Varje SAML-utloggningsmeddelande från en partner måste vara signerat och verifieras mot relationens certifikat (saml-profiles-2.0-os avsnitt 4.4.4.1): ett osignerat avvisas (STS-FED-0115) oavsett vad fedRequireSignedLogout säger, och att stänga av inställningen avvisas (STS-FED-0132)."
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "En federationspartners intyg eller ID Token via frontkanalen är krypterad till relationens egen nyckel"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "Ett SAML 2.0- eller WS-Federation-intyg, eller en OpenID Connect-id_token via form_post, godtas i klartext. Ett som ÄR krypterat dekrypteras och hålls till samma algoritmlista som i produktläge."
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "Ett intyg i klartext eller en ID Token via frontkanalen i klartext avvisas (STS-FED-0140) om inte relationen sätter fedAllowUnencrypted, vilket dokumenteras med en varning. AES-CBC, rsa-1_5 och RSA1_5 avvisas i båda lägena (STS-FED-0139)."
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "48692c051ad2acee",
+    "text": "Inloggningsskärmen registrerar inte en säkerhetsnyckel för någon som inte har bevisat vem den är"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "2f86635eaf4572fb",
+    "text": "En lösenordslös inloggning som anger någon som inte har någon primär nyckel registrerar en på stället, utan att något lösenord läses — den första som gör anspråk på ett namn får det."
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "e773ade2b33e515a",
+    "text": "Den avvisas. En primär nyckel läggs till på /portal/keys bakom en session, via en aktiveringslänk eller av en operatör."
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "En säkerhetsnyckels attesteringsutsaga verifieras innan nyckeln registreras"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "webauthn.attestationPolicy är by-mode, vilket här är off: utsagans format registreras och ingenting i den kontrolleras. verify-if-present och require-trusted finns att välja."
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "by-mode är verify-if-present: varje utsaga verifieras med sin procedur enligt WebAuthn Level 3 avsnitt 8 (alla åtta formaten), dess kedja kontrolleras mot sfärens förtroendeankare och FIDO Metadata Services rötter, dess återkallelse konsulteras, och en modell som MDS rapporterar som komprometterad avvisas. none- och self-attestering godtas och registreras som ej betrodda. off avvisas vid skrivning och läses som by-mode."
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "En person som har eller måste ha en andra faktor nekas att använda enbart sitt lösenord vid dörrarna som bara tar lösenord"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "En LDAP simple bind, en WS-Security UsernameToken, SCIM och SSF HTTP Basic samt EST Basic godtar lösenordet som de godtar varje lösenord; inloggningsskärmen ber ändå om den andra faktorn."
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "2a529b7dda255daa",
+    "text": "Vid de fem dörrarna avvisas personens eget lösenord — besvarat exakt som ett felaktigt lösenord, och räknat mot hastighetsbegränsningen som ett sådant (STS-AUTHN-0213 endast på granskningsraden och i loggen) — när de har en autentiseringsapp eller en säkerhetsnyckel i mfa-rollen, eller en andra faktor krävs av dem (stsMfaRequired, autentiseringspolicyn). Ett APPLÖSENORD som de skapat på /portal/app-passwords, avgränsat till dörren, godtas i stället. authn.passwordAloneDoors anger dörrar som ändå godtar lösenordet, vilket sänker varje sådan person till en faktor där."
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "En person som har eller måste ha en andra faktor får ingen Kerberos-biljett på enbart ett lösenord"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "KDC:n utfärdar en TGT till en AS-REQ som förautentiserats med enbart lösenordet (PA-ENC-TIMESTAMP, eller FAST:s PA-ENCRYPTED-CHALLENGE), eftersom den godtar varje lösenord."
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "cddc7c3db475d360",
+    "text": "Den AS-REQ:en avvisas med KDC_ERR_POLICY (12), STS-KRB-0135, efter att lösenordet verifierats (ett felaktigt ger fortfarande KDC_ERR_PREAUTH_FAILED), när personen har en autentiseringsapp eller en säkerhetsnyckel i mfa-rollen, eller en andra faktor krävs av dem. En person med en autentiseringsapp får en biljett via RFC 6113 FAST-armering med RFC 6560 OTP-förautentisering — lösenord och kod i ett utbyte — och den bär RFC 8129-indikatorn `otp`. Ett applösenord är aldrig en Kerberos-nyckel."
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "En import av RFC 9728-metadata för skyddade resurser hålls till de regler som en klient av dokumentet följer"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "Ett dokument som hämtats från en URL importeras med en varning när dess `resource` inte matchar den well-known-URL det kom från (avsnitt 3.3) eller inte är https, och URL:en får lösas upp till loopback eller en privat adress."
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "Båda avvisas, och en URL som löses upp till en loopback-, privat, länklokal eller reserverad adress anropas inte — namnet löses upp en gång och anslutningen låses till den adress som kontrollerades. Ett felformat dokument avvisas i båda lägena."
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "E-post skickas, behålls inte; en e-postad länk anger den fastlåsta publika adressen"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "mail.transport `default` är CAPTURE-transporten: varje meddelande behålls med sin brödtext och visas på Övervakning → E-post i stället för att skickas, om inte en riktig transport är konfigurerad. En e-postad länk byggs på global.publicBaseUrl, eller på lyssnarens konfigurerade värd och port när den är tom — aldrig på begäran."
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` är `off`, och `capture` avvisas vid skrivning och vid start (STS-MAIL-0003), eftersom en fångad länk för lösenordsåterställning är en inloggningsuppgift i konsolen. En konfigurerad transport som inte kan byggas hindrar tjänsten från att starta (STS-MAIL-0002). En länk e-postas bara när global.publicBaseUrl är satt (STS-MAIL-0015)."
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "Ett tjänstekontos roterade lösenord skickas till en hemlighetshanterare, aldrig till den här containerns disk"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "En destination för hemlighetspush kan vara en FIL: en push skriver lösenordet i en befintlig fil under destinationens katalog, vilket är hur testsviten testar en rotation utan en hemlighetshanterare."
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "En destination som anger `file` rapporteras som oanvändbar och en push till den avvisas (STS-SECDEST-0006). AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault och en KV version 2-motor i Vault eller OpenBao återstår, var och en över verifierad TLS med destinationens egen skrivuppgift (#221)."
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "En utgående begäran verifierar certifikatet hos den som svarar och går inte ut över vanlig http"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "GNAP-push-avslutningar, SSF-push-leveranser, federationens bakkanaler och XACML PEP-knuffar respekterar sina …SkipTlsVerification-inställningar (verifiering avstängd, varnas vid varje begäran) och sina …AllowHttp-inställningar (vanlig http till vilken värd som helst). SPIRE:s spiffe.k8sSkipKubeletVerification respekteras också."
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "Varje …SkipTlsVerification-inställning, och spiffe.k8sSkipKubeletVerification, IGNORERAS — loggas en gång med sin kod — och avvisas vid skrivning via /admin och /admin-api (STS-CORE-0103); en privat CA nås via familjens …CaFile med verifiering påslagen. Vanlig http avvisas för SSF, federation och XACML oavsett vad …AllowHttp säger, och tillåts för en GNAP-push-avslutning bara till en loopback-adress (RFC 9635 avsnitt 2.5.2.1)."
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "En avsiktlig defekt gör inte ett svar felaktigt"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "oauth2.breakIdTokenNonce lägger en felaktig nonce i varje ID Token som borde bära en, ssf.breakSetSignature ändrar ett tecken i varje SET:s signatur, ssf.legacySubClaim lägger till det `sub`-anspråk som RFC 8417 avråder från bredvid `sub_id`, risc.googleSubjectType skriver den `subject_type`-medlem som RISC 1.0 avsnitt 3.1 säger att nya tjänster MUST NOT använda, och krb5.clockOffset flyttar KDC:ns klocka — var och en medan den är satt, så att en klients hantering av ett felaktigt svar kan testas."
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "Alla fem IGNORERAS där de läses — en sfär som bytts till produktläge med en fortfarande lagrad svarar korrekt, på maskinens klocka — loggas en gång per process (STS-CORE-0106), och avvisas vid skrivning via /admin, /admin-api och en sfärs inställningar (STS-CORE-0103)."
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "Ingen bruten algoritm används: SHA-1 i en signatur, eller RSA PKCS#1 v1.5-nyckeltransport"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "saml.signatureAlgorithm rsa-sha1 signerar varje XML-signatur med SHA-1, saml2.keyTransportAlgorithm rsa-1_5 (eller en applikations saml2KeyTransportAlgorithm) omsluter ett krypterat intygs nyckel med RSAES-PKCS1-v1_5, saml.allowSha1Signatures påslaget godtar SHA-1 i en signatur som den här tjänsten verifierar, pki.signatureAlgorithm sha1-rsa eller sha1-ecdsa (eller ett byggformulär som anger någon av dem) får en certifikatutfärdare att signera med SHA-1, och ett XML-element krypterat till den här tjänsten med rsa-1_5 packas upp, och scim.digestMd5 påslaget erbjuder och godtar MD5 i SCIM:s HTTP Digest. Var och en är avstängd om den inte sätts."
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "8e22d816464c845c",
+    "text": "Varje svagt värde IGNORERAS där det läses (loggas en gång, STS-CORE-0106) och avvisas vid skrivning (STS-CORE-0103, och STS-REG-0193 på en applikation): XML signeras med standardvärdet rsa-sha256, nycklar omsluts med rsa-oaep-mgf1p, en SHA-1-signatur avvisas, ett CA-bygge eller nyckelpar som anger SHA-1 avvisas (STS-PKI-0191) och ett som ärvts från en gren byggd i utvecklingsläge ersätts av nyckelns standardvärde, och en rsa-1_5-EncryptedKey avvisas innan den packas upp (STS-KEYS-0070) — XML Encryption 1.1 avsnitt 6.1.2. scim.digestMd5 saknar betydelse, eftersom produktläget inte erbjuder någon Digest alls (STS-SCIM-0056). De starkare värdena för varje inställning förblir tillgängliga. JOSE RSA1_5 avvisas i båda lägena."
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "En JWS verifieras bara med en nyckel av den storlek som RFC 7518 kräver"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "En RSA-nyckel under 2048 bitar (RFC 7518 avsnitt 3.3, RFC 8230 avsnitt 5 för COSE) och en HMAC-nyckel kortare än sin hashutdata (RFC 7518 avsnitt 3.2) — en kort client_secret under client_secret_jwt — verifieras fortfarande, så att en klient som har en kan testas. SVAGARE ÄN SPECIFIKATIONEN: båda är MUST."
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "Båda avvisas vid signaturkontrollen, i den delade verifieraren, i verifyJws() och (RSA) för en WebAuthn-nyckel. En skapad client_secret är 48 slumpmässiga byte som standard (oauth2.registeredSecretBytes), tillräckligt lång för HS512. I BÅDA lägena avvisas en tom HMAC-nyckel, en RSA-exponent under 3 eller jämn (en förfalskning, inte en svag nyckel), en RSA-modul med ROCA-fingeravtrycket (CVE-2017-15361), en JWK vars use inte är \"sig\" eller vars key_ops saknar \"verify\", och ett segment som inte är kanonisk base64url."
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "En XML ECDSA-signatur verifieras bara på en kurva med minst 256 bitar"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "En nyckel på vilken kurva som helst som node läser verifieras — secp160, secp192, secp224 bland dem — så att en partner på en sådan kan testas. SVAGARE ÄN NIST SP 800-57:s golv på 112 bitar för den minsta av dem."
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "cdb3f7be9fda1083",
+    "text": "Bara P-256, P-384, P-521, secp256k1 och brainpoolP256r1 och större verifieras; varje annan kurva avvisas (STS-KEYS-0077) och ett certifikat på en sådan registreras inte."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "Ingen Kerberos-nyckel, -biljett eller -utväxling använder en enctype som RFC 8429 utfasar (rc4-hmac)"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "krb5.enctypes är 18,17,20,19,23 som standard: varje konto har en rc4-hmac-nyckel bredvid sina AES-nycklar, rc4only-fixturen har inget annat, och en klient som bara erbjuder 23 får en biljett — så att en RC4-klient kan testas."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "f781591fe2d565a1",
+    "text": "Listan läses UTAN 23 (loggas en gång, STS-CORE-0106) och en skrivning som anger den avvisas (STS-CORE-0103). Ingen RC4-nyckel härleds, lagras eller läggs i en keytab för krbtgt, en tjänst eller en person; en nyckel eller en biljett av den enctypen används aldrig; en AS-REQ eller TGS-REQ som inte erbjuder något annat avvisas med KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); en RC4-sessionsnyckel eller -undernyckel i en TGS-REQ, en AP-REQ eller FAST-armering avvisas (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) är det som återstår."
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "Varje SAML-intyg är signerat, och varje SAML 1.1-Response"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "saml2.signAssertion, saml11.signAssertion och saml11.signResponse avstängda — tjänstevitt eller på en applikation — skickar ett osignerat intyg eller en osignerad SAML 1.1-Response, vilket är hur en förlitande part som godtar ett sådant hittas."
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "Alla tre IGNORERAS där de läses (STS-CORE-0106) och avvisas vid skrivning (STS-CORE-0103; STS-REG-0193 på en applikation). Ett SAML 2.0-intyg signeras oavsett bindning (saml-profiles-2.0-os 4.1.3.5 och 4.1.4.5 kräver det över POST), och en SAML 1.1-Response signeras (oasis-sstc-saml-bindings-1.1 4.1.2.4 kräver det i Browser/POST), tillsammans med sitt intyg. saml2.signResponse avstängt förblir tillåtet: med intyget signerat begär profilen inget mer."
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "Ett Workload API-anrop utan huvudet workload.spiffe.io avvisas"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "spiffe.requireSecurityHeader är påslaget som standard, som i produktläge; avstängt betjänar ett anrop utan huvudet."
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "Avvisas alltid (SPIFFE Workload Endpoint-specifikationen avsnitt 3, en härdningsåtgärd mot SSRF): avstängt IGNORERAS där det läses (STS-CORE-0106) och avvisas vid skrivning (STS-CORE-0103)."
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "Ett presenterat credential måste bära en statusreferens"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "oid4vp.requireStatusReference är all som standard, som i produktläge: varje credential som presenteras för OpenID4VP-verifieraren måste ange en status som löses upp till VALID, om inte dess betrodda utfärdare listas i oid4vp.statusOptionalIssuers. own-only undantar främmande credentials, och off — endast utvecklingsläge — godtar ett av den här sfärens egna utan referens, och ett ldp_vc vars presentation undanhöll dess credentialStatus."
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "off IGNORERAS där det läses (loggas en gång, STS-CORE-0106) och avvisas vid skrivning (STS-CORE-0103): ett credential från den här sfären utan statusreferens, eller ett ldp_vc som inte avslöjade sin credentialStatus, avvisas alltid. own-only och undantaget per utfärdare är tillåtna."
+  },
+  "mode.requirements.realm-chooser.what": {
+    "en": "c37334adfeccc2cb",
+    "text": "Sfärväljaren före inloggning listar varje sfär"
+  },
+  "mode.requirements.realm-chooser.development": {
+    "en": "7ace23d168380455",
+    "text": "En webbläsare utan session vid /admin eller /portal, på en tjänst med definierade förtroendesfärer, visas en lista över varje sfär att logga in genom."
+  },
+  "mode.requirements.realm-chooser.product": {
+    "en": "b3e379e5d61df6c0",
+    "text": "Samma sida ber om sfärens id i en textruta, så att driftsättningens sfärer inte publiceras för vem som helst som kan nå den."
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "Ett svar får skickas svagare än begärt"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "Ett intyg eller en token som borde ha krypterats och inte kunde det skickas i klartext, med en varning."
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "Avvisas."
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "Ett refererat objekt måste redan finnas"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "En användare, applikation, tjänsteprincipal eller auktoriseringsserver skapas första gången något anger den, vilket är det som låter en klient rikta sig mot den här tjänsten med vilken identifierare som helst och få ett fungerande utbyte."
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "Ett okänt namn VÄGRAS. Allt måste skapas i förväg, via konsolen, /admin-api, SCIM eller en LDAP-add."
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "Signeringsnycklar överlever en omstart"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "En ny signeringsnyckel genereras vid varje start och hålls i minnet. En token överlever inte en omstart — vilket är vad som gör den här tjänsten engångsbar, och `kid` härleds ur nyckelmaterialet så att två instanser aldrig kan publicera ett namn för två nycklar."
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "Genereras EN GÅNG och läses tillbaka från persistenslagret — som produktläge därför kräver — krypterad med AES-256-GCM under en nyckel som den här tjänsten aldrig genererar och aldrig lagrar, läst från en monterad fil, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault eller HashiCorp Vault."
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "En OAuth 2.0-/OIDC-applikation autentiserar sig som det den registrerades som"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "Ingenting krävs av någon: en klient får skicka enbart ett client_id, vad registreringen än deklarerar."
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "En KONFIDENTIELL klient — en vars registrering deklarerar någon annan token_endpoint_auth_method än \"none\", vilket omfattar en registrering som inte deklarerade någon alls (RFC 7591 avsnitt 2 sätter då client_secret_basic som standard) — måste visa upp den autentiseringsuppgiften, och den måste verifieras. En PUBLIK klient (en uttrycklig token_endpoint_auth_method=none) är TILLÅTEN och visar inte upp något, vilket är korrekt; det den i stället hålls till är raden nedan. Det var \"det finns inga publika klienter\" fram till 2026-09-17."
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "OAuth 2.0 Security BCP (RFC 9700) upprätthålls"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "Endast där oauth2.rfc9700 eller oauth2.oauth21 är satt, per process eller per sfär. Avstängd besvarar den här tjänsten en begäran som BCP:n skulle vägra — vilket är hur en klient prövas mot båda svaren."
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "ALLTID, vad de inställningarna än säger, och en sfär kan inte stänga av det. PKCE med S256 krävs av en publik klient, exakt matchning av omdirigerings-URI, ingen öppen omdirigering, ingen http-omdirigerings-URI utanför loopback, en challenge eller nonce som inte kan spelas upp igen, en nonce med varje id_token, ingen svarstyp som utfärdar en åtkomsttoken från auktoriseringsslutpunkten, och uppdateringstoken som roteras med upptäckt av återanvändning. Det är vad en publik klient hålls till I STÄLLET FÖR en autentiseringsuppgift, och det är därför en sådan alls kan tillåtas (2026-09-17)."
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "Vilka grants en publik klient får använda"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "Varje grant som den här tjänsten erbjuder, till vem som helst."
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "Auktoriseringskods- och refresh-granten, men inte client credentials-granten (RFC 6749 avsnitt 4.4 definierar den för konfidentiella klienter; OAuth 2.1 avsnitt 4.2 säger det rakt ut) eller resource owner password-granten (RFC 9700 avsnitt 2.4: den MUST NOT användas). En konfidentiell klient påverkas inte."
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "En anropare av /oauth2/introspect autentiserar sig"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "En RFC 7662 JSON-introspektion svarar vem som helst som har tokensträngen, utan någon klientautentiseringsuppgift. Ett RFC 9701 JWT-svar (Accept: application/token-introspection+jwt) är undantaget i båda lägena: dess aud namnger resursservern som frågade, så den anroparen måste autentisera sig som en klient med en registrerad autentiseringsuppgift, och vägras med 400 invalid_client annars."
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "Varje introspektionsbegäran måste autentisera sig som en klient med en autentiseringsuppgift som verifieras — client_secret_basic eller post, ett klientintyg eller ett RFC 8705-certifikat — och vägras med 401 invalid_client annars (400 för en JWT-begäran, RFC 9701 avsnitt 5)."
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "En anropare av /oauth2/revoke autentiserar sig och återkallar bara sin egen token"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "En RFC 7009-återkallelse utan klientautentiseringsuppgift återkallar varje åtkomst- eller uppdateringstoken som den här sfären utfärdat, för vem som helst som har tokensträngen. En anropare som FAKTISKT visar upp en autentiseringsuppgift hålls till det som produktläget håller den till: en autentiseringsuppgift som inte verifieras vägras med 401 invalid_client, och en token utfärdad till en annan klient vägras med invalid_grant."
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "Varje återkallelsebegäran måste komma från en klient: en konfidentiell visar upp en autentiseringsuppgift som verifieras (tokenslutpunktens metoder), en publik namnger sitt registrerade client_id, och allt annat vägras med 401 invalid_client (RFC 7009 avsnitt 2.1). En token utfärdad till en annan klient vägras med 400 invalid_grant och ingenting återkallas."
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "OpenID4VP-verifierarens x509_san_dns-namn är konfigurerat och tas aldrig från en begäran"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "Med oid4vp.x509DnsName tomt och global.publicBaseUrl inte fastlåst certifierar verifieraren den värd som en begäran kom till (ett certifikat per namn, högst sexton per sfär) och anger den som sin x509_san_dns-klientidentifierare."
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "Namnet är oid4vp.x509DnsName, eller värden i global.publicBaseUrl; utan någon av dem vägras en x509_san_dns-begäran (STS-VC-0110) — svars-URI:n byggs från samma värd, så ett Host-huvud skulle välja vart en signerad, betrodd begäran skickar presentationer. x509_hash behöver inget namn och påverkas inte."
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "En JWT-säkrad auktoriseringsbegäran är signerad, och en request_uri är HTTPS"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "Ett begäranobjekt signerat med `none` (OpenID Connect Core 6.1) accepteras om inte ett signerat krävs — av oauth2.requireSignedRequestObject, klientens post eller auktoriseringsserverns profil. En registrerad request_uri får vara vanlig http och får svara med vilken medietyp som helst; båda loggas."
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "b2ec3d6648490690",
+    "text": "Ett begäranobjekt måste vara signerat (RFC 9101 avsnitt 4) och vägras annars med invalid_request_object. En registrerad request_uri måste vara https och måste svara med application/oauth-authz-req+jwt eller application/jwt, annars vägras begäran med invalid_request_uri. I båda lägena hämtas en request_uri endast när klienten har registrerat den."
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "/admin-api kräver en åtkomsttoken och en roll"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "En OAuth 2.0-åtkomsttoken som bär admin:read eller admin:write, så länge adminApi.authRequired är på (standard). Avstängd: öppen. Det är vad testerna kör mot och vägen tillbaka in när ingen har en roll — vilket också betyder att vem som helst som kan nå den här porten kan ge sig själv båda rollerna genom den."
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "Samma åtkomsttoken, alltid. adminApi.authRequired=false vägras vid skrivning och ignoreras där den är lagrad: detta API:s grind är konsolens enda grind, så ingenting får öppna den. Vägen tillbaka in är adminApi.clientSecret, fastlåst före start."
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "/admin kräver en inloggning och en roll"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "Krävs — och har alltid krävts; inställningen som kunde stänga av det är borta. Inloggningen bakom kontrollerar inget lösenord, så det grinden bevisar är att någon skrev ett namn som har en roll."
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "Krävs, och inloggningen bakom verifierar autentiseringsuppgiften."
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "Konsolen öppnas inte för alla innan dess bootstrap-administratör har anlänt"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "Tills en sfärs bootstrap-administratör första gången loggar in på /admin — eller, där ingen såddes in, så länge förteckningen är tom — har varje inloggad person båda konsolrollerna i den sfären, så länge admin.openWhenEmpty är på. Varje inloggning med det kontot stänger fönstret."
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "Ingen har en roll på grund av fönstret, vad admin.openWhenEmpty än säger: endast förteckningen avgör. Tills bootstrap-administratören har gjort anspråk på konsolen respekteras dess roller endast från en LÖSENORDSinloggning via dess egen sfär (amr pwd, verifierad här, inte en federationspartner, ett certifikat, en plånbok eller en Kerberos-biljett), och endast den inloggningen gör anspråk på den (STS-ADMIN-0796); felsökaren och en sessions behörighet för certifikatregistrering väntar på anspråket. En sfär utan bootstrap-administratör och med en tom förteckning är stängd och loggas vid start (STS-ADMIN-0798); POST /admin-api/rbac/grant är vägen in."
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "ACME och EST kräver TLS; en registreringsuppgift verifieras"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "ACME (/enroll/acme) och EST (/.well-known/est) svarar även över vanlig HTTP och loggar att de gjorde det. Ett EST-lösenord kontrolleras inte (raden för autentiseringsuppgifter) och en applikations klienthemlighet krävs inte. En ACME External Account Binding-MAC och ett SCEP-utmaningslösenord VERIFIERAS, och vem ett certifikat får utfärdas för upprätthålls exakt som i produktläge: dig själv, eller vem som helst i sfären om du har Admin Write."
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "En begäran som inte kom över TLS vägras (STS-ENROLL-0060). EST verifierar kataloglösenordet och kräver klienthemligheten. Allt annat är som i utvecklingsläge."
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "/scim/v2 kräver en autentiseringsuppgift"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "Krävs i ett av de sex schemana i RFC 7644 avsnitt 2 — och har alltid krävts — utan att något av dem verifieras utöver sin form."
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "Krävs och verifieras. HTTP Digest erbjuds inte, eftersom RFC 7616 behöver lösenordet eller dess hash och en scrypt-hash kan kontrollera ingetdera; en HOBA-nyckel får registreras endast av den inloggade ägaren till ett befintligt konto, och en registrering skapar aldrig ett konto."
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "/ssf kräver en autentiseringsuppgift"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "Krävs i ett av de scheman som slutpunkterna accepterar — och har alltid krävts — utan att något verifieras utöver sin form."
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "Krävs och verifieras: en Basic-autentiseringsuppgift kontrolleras mot personens userPassword, och ssf.authBasic tar bort schemat."
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "En ny tjänst innehåller demonstrationsdata"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "Katalogen sås med tre personer, två grupper, ett bindningskonto och identiteterna remote-pep-1 och xacml-user-1 i de två XACML-rollgrupperna; KDC:n med fixturkonton, delegeringsregler och en betrodd sfär vars lösenord står i dess källkod; SPIFFE-registret med exempelposter; och varje person får genererade attribut för autentiseringsuppgifter."
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "Inget av det. Katalogen, principaldatabasen och registret innehåller det som konfigurerats eller provisionerats, och ingenting annat — de två XACML-rollgrupperna finns och är tomma, och KDC:n vägrar bygga krbtgt eller dess tjänstekonto på de lösenord som publiceras i det här förrådet."
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "Ett anspråksvärde får hittas på"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "En token namnger en persona — efternamnet `Mock`, en adress på sts.example med email_verified true — en autentiseringsuppgift fyller ett saknat attribut med ett genererat värde, en säkerhetshändelse namnger ett @example.com-subjekt, och en person utan registrerad identitetsverifiering besvaras med en under förtroenderamverket `urn:sts:demo` (OpenID Connect for Identity Assurance 1.0, #127)."
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "Ett värde kommer från personens katalogpost eller utelämnas; `verified_claims` lämnas ut endast från en verifiering som registrerats på posten, och email_verified är true endast för en verifierad adress: en som personen bevisat via en mejlad länk (#63), eller en som en betrodd källa skrev — en administratör (konsolen, /admin-api eller en LDAP-skrivning med Admin Write), SCIM, eller en federationspartner som inte angav email_verified false (#64)."
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "En SAML 2.0-tjänsteleverantörs begäran är signerad"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "En osignerad AuthnRequest eller LogoutRequest accepteras (saml2.requireSignedAuthnRequests=auto) om inte tjänsteleverantörens inlästa metadata anger AuthnRequestsSigned. En signatur som FINNS verifieras mot tjänsteleverantörens registrerade certifikat och vägras om den inte verifieras; utan registrerat certifikat registreras den som inte verifierad. Certifikatet som en begäran bär i sin KeyInfo registreras som OBSERVERAT — aldrig ett förtroendeankare — och ett intyg kan ändå krypteras till det när posten inte har något annat certifikat."
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "En osignerad AuthnRequest eller LogoutRequest vägras (STS-SAML-0063). En signatur verifieras exakt som i utvecklingsläge, och en som saknar registrerat certifikat att kontrolleras mot vägras som osignerad. Ett OBSERVERAT certifikat krypteras inte till förrän en operatör bekräftar det på SAML 2.0-sidan eller med POST /admin-api/saml2/confirm-signing-certificate."
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "En Metadata Query-uppslagning registrerar endast en tjänsteleverantör som en operatör eller ett förtroendeankare gått i god för"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "En begäran från ett okänt entityID startar en MDQ-uppslagning (saml2.mdqBaseUrl), och ett svar som beskriver den entiteten skapar applikationsposten, hållen till saml2.metadataTrustAnchors endast när sådana är satta. Åtgärden Importera från MDQ gör detsamma med eller utan ankare."
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "En uppslagning som startas av en begäran görs inte för ett okänt entityID när sfären saknar saml2.metadataTrustAnchors (STS-SAML-0080); med ankare skapar svaret posten endast när dess signatur verifieras mot ett av dem (STS-SAML-0081). En operatörs Importera från MDQ utan ankare vägras (STS-SAML-0084) om inte saml2.mdqImportWithoutAnchors är på. De vägrade entityID:na listas på SAML 2.0-sidan och i GET /admin-api/saml2 (mdqRefused)."
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "SAML-metadata och slutpunkter per leverantör svarar endast för en registrerad leverantör"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "GET /saml2/metadata/{sp} och /saml11/metadata/{rp} präglar ett signerat dokument för vilket namn som helst, och SSO-, SLO-, artefakt- och responder-slutpunkterna under {sp} eller {rp} svarar för det."
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "Var och en av de sökvägarna svarar 404 för ett namn som inte är en registrerad SAML 2.0-tjänsteleverantör (STS-SAML-0082) eller SAML 1.1-förlitande part (STS-SAML-0083). Dokumenten utan omfång är oförändrade."
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "En token utfärdas endast för en registrerad applikation (#496)"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "En WS-Trust-RST besvaras för vilken AppliesTo som helst, och för ingen (en token utan målgruppsbegränsning); en WS-Federation wsignin1.0 för vilken wtrealm som helst. Var och en utfärdas under det delade entityID:t, och applikationen förs in i registret vid sin första observation."
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "En RST vars AppliesTo inte leder till någon registrerad applikation (appRegisteredBy osatt — en observation är ingen registrering) vägras med wst:InvalidScope (STS-WSTRUST-0030), och en utan AppliesTo med wst:InvalidRequest (STS-WSTRUST-0031), för varje tokentyp och OnBehalfOf / ActAs, innan begäraren autentiseras eller något registreras. En wsignin1.0 vars wtrealm inte namnger någon registrerad förlitande part vägras med en 404-sida (STS-WSFED-0021) före inloggningsskärmen."
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "En OAuth 2.0-klient betjänas endast när den är registrerad (#496)"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "Auktoriseringsslutpunkten frågar ingenting om client_id utöver dess omdirigerings-URI:er, och tokenslutpunkten för in en klient den har sett innan den vägrar den. En RFC 8693-målgrupp som en observation fört in är ett mål, och ett intygs målgrupp som namnger en sådan är en förlitande part."
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "En auktoriseringsbegäran eller PAR som namnger ett client_id som ingen registrerat (appRegisteredBy osatt — en observation är ingen registrering) ger 400 på den här servern och omdirigeras aldrig (STS-OAUTH-0947; inget angivet: STS-OAUTH-0948); en tokenbegäran som namnger ett sådant ger 401 invalid_client (STS-OAUTH-0949) innan den räknas eller registreras. En RFC 8693-målgrupp eller resurs som namnger en oregistrerad applikation är policyns unregistered-target (invalid_target, STS-OAUTH-0793), och ett utväxlat intygs målgrupp måste vara en registrerad applikation under any-declared-relying-party."
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "En SAML-tjänsteleverantör eller förlitande part besvaras endast när den är registrerad (#496)"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "En AuthnRequest, en LogoutRequest och ett SAML 1.1-webbläsarflöde besvaras för vilken Issuer som helst; signaturkontrollen registrerar den, och en post som en observation fört in räknas som tjänsteleverantör på sökvägarna per SP."
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "En AuthnRequest vars Issuer inte är någon registrerad SAML 2.0-tjänsteleverantör (appRegisteredBy osatt — en observation är ingen registrering) ger en 403-sida innan dess signatur kontrolleras (STS-SAML-0103; endast en Metadata Query-uppslagning för ett okänt entityID köas fortfarande, under regeln om förtroendeankare); en LogoutRequest från en sådan avslutar ingenting (STS-SAML-0104); ett SAML 1.1-flöde för en oregistrerad förlitande part ger en 403-sida (STS-SAML-0105). Sökvägarna per SP, attributauktoriteten och SAML 1.1-respondern räknar endast en registrerad post, och en MDQ-uppslagning behandlar en oregistrerad post som okänd."
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "En GNAP-klient eller resursserver betjänas endast när den är registrerad (#496)"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "En okänd bevisad nyckel görs till en applikationspost vid första observation, och den postens nyckel och instansidentifierare accepteras därefter."
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "En okänd nyckel vägras (STS-GNAP-0082), och likaså en nyckel eller instansidentifierare som tillhör en post som ingen registrerat (appRegisteredBy osatt — en som skapats vid första observation är ingen registrering): 401 invalid_client eller invalid_resource_server (STS-GNAP-0902), innan posten observeras igen eller något utfärdas."
+  },
+  "mode.requirements.unregistered-resource-targets.what": {
+    "en": "c9e70b1944bd9dca",
+    "text": "En RFC 8707-resurs och en GNAP-rättighets platser namnger ett registrerat mål (#505)"
+  },
+  "mode.requirements.unregistered-resource-targets.development": {
+    "en": "09b7259e14c7de50",
+    "text": "Vilken absolut URI som helst accepteras som resurs vid auktoriserings-, PAR- och tokenslutpunkterna och blir tokens aud; en GNAP-plats som inte namnger någon resursserver utelämnas ur tokens målgrupp och rättigheten beviljas."
+  },
+  "mode.requirements.unregistered-resource-targets.product": {
+    "en": "b69c19d5b722a369",
+    "text": "En resurs (utanför en tokenutväxling, vars mål är policyns unregistered-target) och varje plats för en GNAP-åtkomsträttighet måste namnge ett registrerat mål: en av den här tjänstens egna resursservrar (standardresursindikatorn som UserInfo, SCIM, Shared Signals och OpenID4VCI accepterar; /admin-api; GNAP-demonstrationsresursservern) eller en applikation registrerad i förväg (appRegisteredBy satt — en observation är ingen registrering), genom dess oauthAudience, behörighetsbas-URI, client_id eller identifierare — den inbäddade felsökarens api är en sådan, insådd som registrerad. En GNAP-plats på eller under en registrerad resursservers gnapResourceServerUri namnger den också. Annars invalid_target: omdirigerad från auktoriseringsslutpunkten och 400 vid PAR (STS-OAUTH-0950), 400 vid tokenslutpunkten innan något förbrukas (STS-OAUTH-0951); för GNAP vägras begäran med invalid_request (STS-GNAP-0903), i stället för att rättigheten tas bort."
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "Ett svar går dit begäran säger"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "Vilken absolut URL som helst som en SAML AuthnRequest, en SAML 1.1-shire, en WS-Federation-wreply eller en plånbokslänk namnger används, registrerad eller inte — och en adress som en observation skriver på en applikationspost (eller en callback som konsolen eller portalen lär sig från ett Host-huvud) MARKERAS som observerad i appReturnAddressObserved."
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "Endast en adress registrerad på applikationens egen post — och en observation lägger aldrig till någon. En adress som fortfarande är markerad som observerad är INTE registrerad: utvecklingsläget satte den där och den vägras tills en operatör bekräftar den på applikationens sida eller med POST /admin-api/applications/confirm-address (STS-REG-0049). Adresser som registrerades innan observationer markerades saknar markering och behöver ändå granskas innan en sfär växlas. Konsolens och portalens egna callbacks lärs inte från en begärans Host-huvud (sätt global.publicBaseUrl), och ett WebAuthn RP ID som inte passar värden vägrar ceremonin i stället för att falla tillbaka på den."
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "Testkontroller är öppna"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "a8f1387d5a4a2093",
+    "text": "POST /tls/trust och /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (en enhets efterlevnad, utan omfånget device:compliance, #164), lösenorden på /krb5/principals, utloggning av en annan person med ?username=, öppen dynamisk klientregistrering, SAML 1.1-attributauktoriteten och HOBA-nyckelregistrering svarar alla vem som helst, en vägrad SCIM Digest-utmaning skriver ut det delade lösenordet, och konsolens restore-kerberos rensar en Kerberos-utloggningstidpunkt."
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "Var och en vägras, eller kräver den autentiseringsuppgift som dess administrativa motsvarighet redan kräver. En utloggning som namnger någon annan än den inloggade anroparen vägras vad logout.anyUser än säger. restore-kerberos vägras i konsolen och i /admin-api likaså, så en Kerberos-utloggning står kvar till den senaste tidpunkt då en biljett från före den kan vara giltig. Dynamisk klientregistrering vägras om inte oauth2.openRegistration är på — eller registreringen bär ett programvaruutlåtande som den här sfären litar på (den utfärdade det, eller en applikation deklarerar dess utfärdare) och oauth2.softwareStatementOpensRegistration är på, vilket är operatören som bestämmer vem som får registrera sig genom att bestämma vems utlåtanden som är betrodda."
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "En skrivning till katalogen över LDAP är auktoriserad"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "Vilken anslutning som helst får lägga till, ändra, byta namn på eller ta bort vilken post som helst i vilken sfär som helst, anonyma inräknade — vilket är det som låter ett test köra mot den råa socketen utan förberedelser."
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "En anonym anslutning skriver ingenting. En anslutning bunden som någon som har Admin Write — i standardsfärens katalog, och inte bara för att ingen roll ännu har någon medlem — skriver vad som helst. Alla andra får ändra endast sin EGEN post, och endast de attribut som ldap.selfWritableAttributes namnger; ett userPassword bland dem måste fortfarande uppfylla lösenordspolicyn. Vägran är LDAP-resultatkod 50, insufficientAccessRights. Det som detta inte täcker är LÄSNING: se directory-reads och directory-read-authorization."
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "En läsning av katalogen över LDAP kräver en bindning och returnerar aldrig en autentiseringsuppgift"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "Vilken anslutning som helst, anonym eller aldrig bunden, får söka och jämföra varje post och läsa varje attribut utom en Kerberos-nyckel, och får skriva createTimestamp, modifyTimestamp och entryDN som vilket annat attribut som helst."
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "En sökning eller jämförelse på en anslutning som inte har bundit som någon vägras med resultatkod 50, insufficientAccessRights — med undantag för rot-DSE:n, som en klient läser för att ta reda på var den ska binda. Attribut för autentiseringsuppgifter (userPassword, pwdHistory, klienthemligheter, åtkomsttoken för registrering, privata nycklar, TOTP-hemligheter, återställningskoder, aktiveringstoken och Kerberos-nycklar) returneras aldrig av en sökning, är osynliga för ett sök-FILTER så att det inte kan användas som orakel, och kan inte jämföras mot; en administratör är inte undantagen. createTimestamp, modifyTimestamp och entryDN kan inte skrivas av någon, med resultatkod 19, constraintViolation."
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "En läsning av katalogen över LDAP auktoriseras mot den identitet som band"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "Vilken anslutning som helst ser varje post och varje attribut utom en Kerberos-nyckel, och vilket DN som helst binder — en applikations inräknat — vilket är det som låter ett test köra mot den råa socketen utan förberedelser."
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "Den som har Admin Read eller Admin Write — i standardsfärens förteckning, som når varje sfär, eller i en sfärs egen, som når den sfären — läser varje post inom räckvidden. Alla andra läser sin EGEN post i sin helhet; av en annan person endast de attribut som ldap.directoryReadableAttributes namnger (inga som standard, så en annan person finns inte där alls); en grupp endast om de är medlem i den, och då dess cn, description och objectClass (även dess medlemmar med ldap.groupMembersReadable); och behållarna, med namn. Applikationer, federationer, policyer, roller, förtroendeankare och SPIFFE-registreringar är osynliga för dem. En post som läsaren inte får se svarar noSuchObject (32) exakt som en saknad post, ett attribut som de inte får läsa saknas i resultatet OCH för ett sökfilter, och en jämförelse mot ett sådant vägras med 50. Ett bindnings-DN som inte namnger en person — en applikations, en federations — vägras med 49 innan dess lösenord läses. Rot-DSE:n och en basläsning av en CRL-post förblir öppna, och autentiseringsuppgifter förblir undanhållna för alla."
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "En LDAP-bindning är konfidentiell, autentiserad och hastighetsbegränsad"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "Varje bindning lyckas utom en med lösenordet \"invalid\", på 389 och 636 likaså, anonyma och oautentiserade inräknade, utan gräns för hur många som misslyckas."
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "En anonym bindning vägras med resultatkod 48, inappropriateAuthentication, och ett DN med tomt lösenord med 53, unwillingToPerform (RFC 4513 avsnitt 5.1.1 och 5.1.2). En bindning som bär ett lösenord på den okrypterade lyssnaren vägras med 13, confidentialityRequired, innan lösenordet läses — använd LDAPS, eller stäng av ldap.plainListener. MISSLYCKADE bindningar räknas per bindnings-DN och per adress mot security.rateLimitPerIdentity och security.rateLimitPerAddress inom security.rateLimitWindowS, och en anropare över någon av gränserna vägras med 53 innan dess lösenord kontrolleras; en lyckad bindning nollställer sitt eget DN:s räknare, aldrig sin adress, och räknas aldrig."
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "SPIRE Server API kräver ett X509-SVID"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "Krävs över ömsesidig TLS och auktoriseras mot SPIRE:s egen tabell per metod; vem som helst får be den lokala socketen att prägla det SVID som släpper in dem."
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "Detsamma, över ett register som inte längre präglar en post åt vem som än frågar."
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "En anropare på SPIRE Server API:s Unix-socket är den betrodda entiteten `local` endast där socketens gräns håller"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "Varje anropare på socketen är `local` så länge spiffe.trustLocalSocket är på (standard): socketens filsystemsbehörigheter antas vara gränsen, så som en riktig spire-server antar."
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "Gränsen VERIFIERAS per anslutning: socketen måste ha skapats med 0600 och ligga i en katalog utan grupp- eller övriga bitar (STS-SPIFFE-0117), och motpartens kärn-uid, läst med SO_PEERCRED via den inbyggda modulen, måste vara den här tjänstens egen (STS-SPIFFE-0118; oläsbar, STS-SPIFFE-0119). En anropare som inte klarar något av detta är inte `local` och behöver en administratörs X509-SVID på TCP-porten."
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "SPIFFE-nodattestering (AttestAgent)"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "Varje typ VERIFIERAS av sin attestor eller vägras — join_token, x509pop, sshpop, tpm_devid, k8s_psat, http_challenge, aws_iid, gcp_iit, azure_imds — enligt vad sfären listar i spiffe.nodeAttestors."
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "Detsamma; ingenting i nodattesteringen skiljer sig mellan lägena."
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "SPIFFE-arbetslastattestering (Workload API:s Unix-socket)"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "En anropares kärnautentiseringsuppgifter och process läses vid anslutning (spiffe.workloadAttestors: unix, docker, k8s) där den inbyggda modulen är byggd; utan den betjänas socketen enbart på transportselektorer och säger det. Påstådda selektorer tros när spiffe.acceptAssertedSelectors är på, och med spiffe.attestWorkloads avstängd besvaras varje anropare med varje post."
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "Utan den inbyggda modulen betjänas Workload API-socketen INTE. Påstådda selektorer tros aldrig, och en anropare besvaras endast med de poster som dess selektorer matchar, vad spiffe.attestWorkloads än säger; båda inställningarna ignoreras där de läses (loggas en gång, STS-CORE-0106) och vägras vid skrivning (STS-CORE-0103)."
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "SPIFFE Workload API över TCP (spiffe.workloadPort)"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "Betjänas på spiffe.grpcHost, jokertecknet inräknat. En TCP-anropare attesteras inte — det finns ingen motpartsprocess att fråga — och identifieras av sin transport, den slutpunkt den nådde och sin källadress."
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "BETJÄNAS INTE (STS-SPIFFE-0120) om inte spiffe.workloadTcpSourceAuthenticated deklarerar att nätverket autentiserar källadresser (Workload Endpoint avsnitt 3), och då endast på en namngiven adress: ett jokertecken i spiffe.grpcHost vägras (STS-SPIFFE-0121). En sfär som växlats till produktläge med porten redan bunden vägrar varje anrop på den med samma koder."
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "En SPIFFE-registreringspost väljer något som identifierar en arbetslast"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "Vilka selektorer som helst, inga inräknat: en post enbart på transport:tcp utfärdas till varje TCP-anropare, och en påhittad post bär exakt det."
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "En post utan selektor, eller med enbart transport:- och endpoint:-selektorer, vägras i konsolen, /admin-api och SPIRE Server API (STS-SPIFFE-0122; INVALID_ARGUMENT per objekt där), och en som redan finns i registret besvarar ingen anropare (STS-SPIFFE-0123). En peer:-selektor matchar källadressen exakt — inga prefix, som i SPIRE."
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "Ett uppvisat certifikat kontrolleras mot återkallelse"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "SOFT-FAIL (pki.revocationCheck=auto). Ett certifikat som den här tjänsten utfärdat slås upp i dess eget register, hela kedjan, och ett återkallat vägras; ett från en annan utfärdare kontrolleras med OCSP-respondern och den CRL det namnger, och en status som inte kan hämtas eller verifieras accepteras och rapporteras."
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "HARD-FAIL (pki.revocationCheck=auto). Samma uppslagningar, och ett främmande certifikat vars status inte kan hämtas, verifieras eller litas på som färsk — eller som dess utfärdares responder inte känner till — VÄGRAS också: en angripare som kan blockera en hämtning kan inte förvandla \"återkallat\" till \"accepterat\". Detsamma gäller ett vars enda lista eller responder finns på en adress som den här tjänsten är konfigurerad att inte ringa upp (vanlig ldap: under pki.revocationLdap=ldaps, vilken ldap som helst med den avstängd, ett relativt namn utan pki.revocationLdapDirectory; STS-PKI-0188): utfärdaren publicerade en lista och det var den här tjänstens egen policy som hindrade att den lästes."
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "Ett främmande certifikat vars utfärdare inte namnger någon CRL och ingen OCSP-responder"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "ACCEPTERAS (pki.revocationRequireDistributionPoint=auto), och utlåtandet säger att det inte kunde kontrolleras: det finns ingen hämtning som en angripare kunde blockera, och en klientförfattares test-CA utan lista är det första de brukar bygga."
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "VÄGRAS under hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): ett certifikat utfärdat av en CA — inte självsignerat — som inte namnger någon distributionspunkt och ingen responder kan aldrig återkallas, så en stulen nyckel under det är giltig tills det löper ut. Ett som bär RFC 9608 noRevAvail accepteras, eftersom dess utfärdare deklarerade att ingen återkallelseinformation finns (avsnitt 4 hoppar över kontrollen). Att sätta inställningen till av accepterar resten, med en varning."
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "En GNAP-nyckel bevisad med ömsesidig TLS är ett certifikat som en betrodd utfärdare utfärdat till klienten"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "FASTLÅST (gnap.mtlsTrust=auto): TLS-klientcertifikatet måste vara det som nyckeln namnger — med tumavtryck, eller samma publika nyckel — och ett självsignerat accepteras (RFC 9635 avsnitt 7.3.2). Ingen kedja byggs. Ett certifikat som den här tjänsten eller en annan utfärdare ÅTERKALLAT vägras ändå (pki.revocationCheck)."
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI (gnap.mtlsTrust=auto, RFC 9635 avsnitt 11.4): certifikatet måste bygga en kedja till klientens förtroendelager, klara återkallelsekontrollen och vara BUNDET till klientens applikationspost — utfärdat till den av den här sfärens TLS-klientutfärdare, eller bära den enda RFC 8705-subjektparameter som posten registrerar (oauthTlsClientAuth*). Ett nytt certifikat från utfärdaren accepteras utan omregistrering, och dess tumavtryck registreras på posten. gnap.mtlsTrust=pinned stänger av detta för en sfär; en post får begära pki där sfären inte gör det, aldrig tvärtom."
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "Felsökaren för identitetsprotokoll är inbäddad, och vad dess api får ringa upp"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "PÅ (debugger.enabled=auto): dess egen lyssnare (debugger.port) betjänar felsökarens gränssnitt och vidarebefordrar /api till en barnprocess. API:t ringer upp vad en inloggad administratör än ber det om, privata nätverk inräknade."
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "AV om inte debugger.enabled=on. När den är på får api-barnprocessen en TILLÅTELSELISTA — den här tjänstens egna adresser och debugger.allowedDestinations — och vägrar varje annan destination, råa socketar inräknade."
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "En utgången klienthemlighet"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "ACCEPTERAS där en hemlighet kontrolleras, med en granskningsrad som säger att den hade gått ut."
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "VÄGRAS vid tokenslutpunkten (invalid_client, STS-OAUTH-0558), och som client_secret_jwt-nyckel, när utgångstiden i den hemlighetens post i oauthClientSecret har passerats. En applikation kan ha flera hemligheter, var och en med egen utgångstid; en rotation får de levande att gå ut efter oauth2.clientSecretOverlapS."
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "Signeringsnycklar roteras, med överlappning"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "ROTERAS INTE: nycklarna skapas på nytt vid varje start. Varje enhet bär ändå sina generationer, så en nästa eller pensionerad nyckel som skapats för hand publiceras och verifierar som i produktläge."
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "Varje enhet (sfär, användningsfall, algoritm) har en NÄSTA nyckel, publicerad i JWKS, i SAML- och WS-Federation-metadata och i /crypto/metadata innan den signerar något, befordrad var signing.rotationIntervalDays av jobbet signing.rotate; nyckeln den ersätter fortsätter att verifiera i signing.retiredKeyGraceDays eller den längsta tokenlivslängden, beroende på vilken som är längst."
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "Varje förtroendesfärs krbtgt-nyckel: var den kommer ifrån, och dess rotation"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "HÄRLEDD från krb5.krbtgtPassword (det publicerade standardvärdet), så att en läsare kan dekryptera varje TGT, och roteras INTE enligt schema. En rotation för hand på /admin/kerberos/principals fungerar här också: den ersätter den härledda nyckeln med en slumpmässig lagrad nyckel så länge katalogen håller den."
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "SLUMPMÄSSIG — RFC 3961 random-to-key för varje enctype i krb5.enctypes — skapad en gång per sfär, förseglad på katalogposten krbtgt/<REALM>@<REALM> och aldrig visad; krb5.krbtgtPassword ignoreras. Jobbet krb5.krbtgt-rotate ersätter den var krb5.krbtgtRotationIntervalDays, behåller versionen den ersatte så länge som en TGT under den längst kan leva (förnyelser inräknade), och roterar aldrig medan det fönstret fortfarande är öppet. \"Rotera och ogiltigförklara\" är Active Directorys dubbla återställning i en enda åtgärd: ingenting behålls och varje TGT i sfären vägras med KRB_AP_ERR_BADKEYVER."
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "En enhetsnyckel som visas upp utan verifierbar attestering vägras"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "En nyckel bevisad på /portal/devices (ett JWK-bevis, en länkad WebAuthn-autentiseringsuppgift) eller certifierad över EST eller SCEP för en enhet registreras utan attestering, eller med en som inte kedjar till devices.*TrustAnchors, och registreras som självdeklarerad."
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "En sådan nyckel vägras (STS-DEVICE-0024): endast en Android Key Attestation, ett Apple App Attest-utlåtande, en TPM-nyckelattestering eller en WebAuthn-attestering som verifierats och kedjat till ett ankare registrerar en nyckel. En administratör som anger en nyckel som värde utför en administratörs handling och accepteras i båda lägena, registrerat med bevis admin, självdeklarerad."
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "En Android-attestering vars återkallelse inte kunde kontrolleras är inte betrodd, där sfären säger så"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "Utan aktuell statuslista för Android-attestering (aldrig nedladdad, nedladdningen misslyckas eller inaktuell) registreras en Android-kedja som attesterad, dess återkallelse OKONTROLLERAD, vad devices.androidRevocationRequired än säger. En kedja som listan återkallar eller spärrar är självdeklarerad i båda lägena."
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "Detsamma som standard. Med devices.androidRevocationRequired på registreras en okontrollerad kedja som självdeklarerad: en enhetsnyckel vägras då (STS-DEVICE-0024) och ett WebAuthn android-key-utlåtande är inte betrott."
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "En TPM-nyckelattestering i en begäran om enhetscertifikat måste vara färsk"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "Ett TPM2_Certify-utlåtande vars extraData inte är en levande nonce utfärdad vid EST /nonce till samma klient och cookie (ingen hämtad, utgången, redan förbrukad, en annan klients, eller en begäran över SCEP, som saknar nonce-operation) behåller sin nivå och registreras med färskhet OBEVISAD och skälet. En nonce som matchar förbrukas."
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "Ett sådant utlåtande vägras (STS-DEVICE-0050): en uppfångad attestering som spelas upp igen i en ny begäran för samma nyckel är inte en nyckel som skapats och hålls i en TPM nu. Ett enhetscertifikat med TPM-attestering utfärdas därför endast över EST, efter /nonce (draft-ietf-lamps-attestation-freshness avsnitt 5.1)."
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "Återkallelse KONSULTERAS för ett uppvisat certifikat (se kravet ovan) och för ett REGISTRERAT certifikat när det verifierar något — registret, OCSP-respondern (en delegerad responders egen status inräknad) och den CRL som ett främmande certifikat namnger, över http, https och ldaps, med delta-CRL:er sammanslagna och indirekta CRL:er lästa per utfärdare, där deras signerare hämtas från listans caIssuers-adress när ingenting här har den. Det som återstår är begränsningar snarare än arbete: en NAKEN nyckel registrerad utan certifikat (en JWK utan x5c) namnger ingen utfärdare och ingen lista, så endast att ta bort den från posten hindrar den från att verifiera; vanlig ldap: ringas upp endast när pki.revocationLdap tillåter det; en distributionspunkt namngiven relativt sin CRL-utfärdare används endast med pki.revocationLdapDirectory satt och varje RDN envärd; och LDAPS 636 ber inte om något klientcertifikat, så ingenting konsulteras där."
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "TLS-servercertifikatet och SPIFFE JWT-utfärdaren persisteras INTE, i något av lägena: de hör till sina egna moduler och skapas på nytt vid varje start (om inte tls.certificateFile tillhandahåller certifikatet). En sfärs elva postkvantnycklar togs bort från den här raden 2026-09-12 — i produktläge skrivs de med sfärens nyckeluppsättning och återställs med den — och SPIFFE X.509-utfärdaren 2026-09-11: den är den här sfärens SPIFFE Issuing CA under tjänstens rot, så den persisteras i produktläge precis som resten av certifikatutfärdaren."
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "En privat nyckel DEKRYPTERAS I DEN HÄR PROCESSEN medan den signerar. Sedan 2026-09-06 är det chiffertexten som finns i minnet mellan signaturer, och `keys.plaintextRetention` bestämmer hur länge klartexten lever — men nyckelkrypteringsnyckeln finns också i minnet, så detta minskar värdet av en ÖGONBLICKSBILD (en kärndump, en utväxlad sida, en felsökare som kopplats på en stund) och skyddar mot ingenting som kan läsa det här minnet vid en tidpunkt det själv väljer och vänta på nästa signatur. En nyckel som den här processen verkligen inte kan läsa är en HSM, eller en KMS som signerar åt dig, och är en annan design snarare än en inställning. En JavaScript-sträng kan inte heller raderas: dekrypteringsbufferten nollställs och allt som gjorts av den släpps i stället för att raderas."
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "Produktläge skapar inga fixturprincipaler, ingen betrodd sfär och ingenting på begäran, och vägrar det publicerade tjänstelösenordet. Personer i katalogen autentiserar sig mot produkt-KDC:n med nycklar härledda från sitt eget lösenord när det sätts eller verifieras, förseglade på deras post (`stsKrb5Keys`); tjänsteprincipaler får slumpmässiga nycklar och en keytab som visas en gång på /admin/kerberos/principals. En persons keytab (#59) härleds från ett lösenord som finns till hands — deras eget på /portal/kerberos, eller ett som en administratör sätter med \"Återställ lösenord och ladda ned keytab\" — och läses aldrig ut ur lagringen. En lösenordsändring eller en rotation behåller versionen den ersatte — högst krb5.retainedKeyVersions, var och en i krb5.retainedKeyTtlS — så att en biljett utfärdad under den fortfarande accepteras tills den kan ha gått ut, medan förautentisering och utfärdande endast använder den aktuella nyckeln; \"Släpp tidigare versioner\" avslutar det fönstret. krbtgt-nyckeln är slumpmässig, lagrad och roterad sedan 2026-09-23 (kravet krbtgt-key ovan). Sedan 2026-09-15 har varje förtroendesfär vars krb5.enabled är på en egen KDC, en egen Kerberos-sfär och egna nycklar, på den delade porten."
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "att verifiera certifikatet hos den som svarar på en utgående begäran är inte valfritt där. Ange i stället en privat CA i den motsvarande inställningen för CA-fil."
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "ett avsiktligt fel får inte göra ett svar felaktigt där. Pröva en klient mot det i en sfär i utvecklingsläge."
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "en selektor som en arbetslast påstår om sig själv är ett påstående som ingenting har kontrollerat, och produktläge tror aldrig på en sådan."
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "Workload API besvarar där en anropare endast med de registreringsposter som dess attesterade selektorer matchar, aldrig med varje post."
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "en autentiseringsuppgift som den här sfären utfärdat och som saknar statusreferens kan vara en som har återkallats, så verifieraren kräver en där. own-only är tillåtet, och oid4vp.statusOptionalIssuers undantar en betrodd utfärdare som inte publicerar någon status."
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "SHA-1-signaturer, RSA PKCS#1 v1.5-nyckeltransport, MD5 i HTTP Digest och de Kerberos-enctypes som RFC 8429 utfasar (rc4-hmac) är knäckta, och produktläge använder aldrig någon av dem. De starkare värdena är tillåtna."
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "varje SAML-intyg, och varje SAML 1.1-Response, signeras där (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). Pröva en förlitande part mot ett osignerat i en sfär i utvecklingsläge."
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "varje WebAuthn-attesteringsutlåtande som anländer verifieras där, och ett förfalskat vägras i stället för att registreras. verify-if-present och require-trusted är tillåtna."
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "specifikationen SPIFFE Workload Endpoint (avsnitt 3) säger att ett anrop utan huvudet workload.spiffe.io MUST vägras."
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "krbtgt-nyckeln är slumpmässig där, skapad en gång per sfär och förvarad förseglad i katalogen, så inget lösenord läses för den."
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "hanterings-API:t kräver alltid en åtkomsttoken där, eftersom dess grind är administratörskonsolens enda grind; lås fast adminApi.clientSecret före start för att kunna prägla en."
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "inställningen är endast för utvecklingsläge."
+  }
+}

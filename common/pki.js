@@ -11387,6 +11387,52 @@ async function topUpScopeNow(scopeId, missing) {
 }
 
 // ---------------------------------------------------------------------------
+// TWO OF THE REPORT'S SENTENCES, as a table (#543 phase 2b), so that the pki
+// namespace can carry them and `common/server_prose.ts` refill an answer to
+// `GET /admin-api/pki` in a console reader's language. Each is what
+// `report()` wrote inline until #543, byte for byte. `revocation` is NOT
+// here and stays English: it embeds `revocation_status.js`'s policy
+// sentence, which is that module's prose and not this one's.
+// ---------------------------------------------------------------------------
+const REPORT_PROSE = Object.freeze({
+  encoder: 'common/vendored/x509.js — the parent project\'s own PKI code, ' +
+    'byte-identical, over pkijs and asn1js. One encoder for this service and ' +
+    'for that project\'s PKI / X.509 page.',
+  residencyPersisted: 'The CA private keys are in the persistence store, ' +
+    'sealed under the same key-encryption key as the signing keys, and ' +
+    'survive a restart.',
+  residencyMemory: 'The CA private keys are held in memory only. This ' +
+    'service is in development mode, where key material is generated per ' +
+    'start — a hierarchy built now is gone when this process exits.'
+});
+
+// The routes whose answers carry the pki namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/pki'];
+
+/**
+ * Extracts this module's part of the pki namespace (#543 phase 2b): what
+ * each tier, use case, subject kind and purpose is, and the report's
+ * sentences. A `label` is not harvested: it names a CA, and a subject kind's
+ * and a purpose's label is drawn beside data that names the same thing.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is required early, and server_prose.ts requires
+  // helpers.js and crypto.js, which may still be loading.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('pki.tiers', TIERS, ['what']),
+    harvest('pki.useCases', USE_CASES, ['what']),
+    harvest('pki.subjectKinds', SUBJECT_KINDS, ['what']),
+    harvest('pki.purposes', PURPOSES, ['what']),
+    harvest('pki.report', REPORT_PROSE, Object.keys(REPORT_PROSE)));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE REPORT `/admin/crypto-metadata` DRAWS. Every table in it is read from the
 // module that performs the algorithm — which for the encoding is the vendored
 // x509 module and for the hashing is `crypto.js` — rather than written here.
@@ -11421,9 +11467,7 @@ function report(realmId) {
                    kind: kind };
         }));
     }, []),
-    encoder: 'common/vendored/x509.js — the parent project\'s own PKI code, ' +
-             'byte-identical, over pkijs and asn1js. One encoder for this ' +
-             'service and for that project\'s PKI / X.509 page.',
+    encoder: REPORT_PROSE.encoder,
     // The two honest limits, said here so that every surface that draws this
     // report repeats them rather than each one deciding how to phrase it.
     // **THIS SENTENCE REVERSED ON 2026-09-11 AND THE OLD ONE IS WORTH KEEPING
@@ -11453,12 +11497,8 @@ function report(realmId) {
              ' Removing the key pair from an application\'s entry is a THIRD ' +
              'thing again — it stops this service trusting an assertion ' +
              'signed with that key, and puts nothing on any list.',
-    residency: keystore.persists()
-      ? 'The CA private keys are in the persistence store, sealed under the ' +
-        'same key-encryption key as the signing keys, and survive a restart.'
-      : 'The CA private keys are held in memory only. This service is in ' +
-        'development mode, where key material is generated per start — a ' +
-        'hierarchy built now is gone when this process exits.',
+    residency: keystore.persists() ? REPORT_PROSE.residencyPersisted
+                                   : REPORT_PROSE.residencyMemory,
     chain: chain
   };
   log.debug('Leaving report().');
@@ -13291,6 +13331,9 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * @namespace
  */
 module.exports = {
+  // --- the console prose (#543) ---
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   // --- sigstore signing certificates (#170) ---
   sigstoreSignerFacts: sigstoreSignerFacts,
   verifyEmbeddedScts: verifyEmbeddedScts,
