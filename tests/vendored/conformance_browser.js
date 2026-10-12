@@ -215,7 +215,8 @@ function person(o) {
   };
 }
 
-// The addresses the module asks a person to visit, not yet visited.
+// The addresses the module asks a person to visit, not yet visited, and how
+// many times the suite has recorded each address as visited.
 async function waitingUrls(o, id) {
   log.debug("Entering waitingUrls(). " + id);
   const r = await o.suite("GET", "api/runner/" + id);
@@ -230,9 +231,26 @@ async function waitingUrls(o, id) {
       out.push({ url: String(u), method: "GET" });
     }
   });
+  const seen = {};
+  (browserState.visited || []).forEach(function (u) {
+    seen[String(u)] = (seen[String(u)] || 0) + 1;
+  });
   log.debug("Leaving waitingUrls(). " + out.length);
-  return out;
+  return { urls: out, seen: seen };
 }
+
+// THE SAME ADDRESS ASKED FOR AGAIN IS ANOTHER VISIT. Two modules ask the
+// person to open the very same authorization request twice: the
+// reused-request_uri module (the first visit only loads the screen, the
+// second signs in) and attempt-reuse-request_uri (the second must meet this
+// service's refusal of a spent request_uri). The suite's BrowserControl keeps
+// `urls` and `visited` as LISTS — a visit report removes one occurrence from
+// the first and appends one to the second — so an address is asked for anew
+// when it is pending while the suite has recorded every visit this person
+// made to it. Until then a visit is queued or under way, and is not started
+// twice. Keyed by the address alone, the second request was never answered
+// and both modules waited out their time.
+const MAX_VISITS_PER_ADDRESS = 4;
 
 async function visitWaiting(o, id, info, handled, jars, actionFor) {
   log.debug("Entering visitWaiting(). " + id);
@@ -240,13 +258,16 @@ async function visitWaiting(o, id, info, handled, jars, actionFor) {
     log.debug("Leaving visitWaiting(). Not waiting.");
     return;
   }
-  const urls = await waitingUrls(o, id);
+  const waiting = await waitingUrls(o, id);
+  const urls = waiting.urls;
   for (let i = 0; i < urls.length; i++) {
     const key = id + " " + urls[i].url;
-    if (handled[key]) {
+    const made = handled[key] || 0;
+    if (made > (waiting.seen[urls[i].url] || 0) ||
+        made >= MAX_VISITS_PER_ADDRESS) {
       continue;
     }
-    handled[key] = true;
+    handled[key] = made + 1;
     const one = urls[i];
     await serially(async function () {
       log.debug("Entering the visit.");
