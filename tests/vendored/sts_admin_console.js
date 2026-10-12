@@ -3858,7 +3858,10 @@ function writeForms(stamp) {
     { path: "/admin/saml2#saml-tab-attributes", button: "Add",
       values: { name: "console_saml_" + stamp, value: "yes", set: "saml2" },
       expect: { text: "console_saml_" + stamp } },
-    { path: "/admin/saml2", button: "Register",
+    // The SAML 2.0 tab, named: /admin/saml2 opens on Metadata, and the
+    // read-back below reads the page's visible text, so the bare path drew a
+    // page whose service provider list was hidden in another tab.
+    { path: "/admin/saml2#saml-tab-saml2", button: "Register",
       values: { sp: "urn:console:" + stamp + ":sp" },
       expect: { text: "urn:console:" + stamp + ":sp" } },
     { path: "/admin/saml2#saml-tab-saml11", button: "Register",
