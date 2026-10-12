@@ -257,8 +257,10 @@ function childMain() {
     // 4. THE VERIFIER REFUSES IT
     // ==================================================================
     const barBrowser = w.browser();
-    const started = await w.request('GET', '/oid4vp/start?by=reference',
-                                    { browser: barBrowser });
+    // The bar door's start page (#582: its act at /vc-demo-api/start),
+    // read as the 302 it answered.
+    const started = await w.demoStart('/oid4vp/start?by=reference',
+                                      { browser: barBrowser });
     const barUrl = started.headers.location
       ? new URL(started.headers.location) : null;
     const barRo = barUrl ? w.decode((await w.request('GET',
@@ -338,8 +340,8 @@ function childMain() {
 
     async function presentToBarDoor(credential) {
       const who = w.browser();
-      const begun = await w.request('GET', '/oid4vp/start?by=reference',
-                                    { browser: who });
+      const begun = await w.demoStart('/oid4vp/start?by=reference',
+                                      { browser: who });
       const url = new URL(begun.headers.location);
       const ro = w.decode((await w.request('GET',
         w.pathOf(url.searchParams.get('request_uri')))).text);
@@ -474,7 +476,7 @@ function childMain() {
                       header: { alg: 'RS256', typ: 'JWT' } });
     }
     async function presentJwtVcToBarDoor(credential) {
-      const begun = await w.request('GET',
+      const begun = await w.demoStart(
         '/oid4vp/start?by=reference&format=jwt_vc_json',
         { browser: w.browser() });
       const url = new URL(begun.headers.location);
@@ -534,7 +536,7 @@ function childMain() {
     // one it began before the realm changed mode; the response endpoint is
     // the protocol's, served in both.
     async function beginAtBarDoor() {
-      const begun = await w.request('GET',
+      const begun = await w.demoStart(
         '/oid4vp/start?by=reference&format=ldp_vc',
         { browser: w.browser() });
       const url = new URL(begun.headers.location);

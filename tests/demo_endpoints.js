@@ -75,6 +75,11 @@ function childMain() {
     '/vc-api/resolve', '/vc-api/dereference',
     '/oid4vci/status-lists/bitstring/:purpose/publish',
     '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
+    // The demonstration issuer's and verifier's static surface (#582): its
+    // script and the API its five pages are drawn from.
+    '/issuer/demo.js', '/vc-demo-api', '/vc-demo-api/issuer',
+    '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
+    '/vc-demo-api/done',
     '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
     '/ssf/receive', '/ssf/received'];
   // A concrete path for a pattern.
@@ -322,7 +327,8 @@ function childMain() {
           offered.push('devices');
         }
         one.prefixes.forEach(function (prefix) {
-          if (['/vc-api', '/issuer', '/did', '/dpop', '/spnego']
+          if (['/vc-api', '/issuer', '/did', '/dpop', '/spnego',
+               '/vc-demo-api']
               .indexOf(prefix) >= 0) {
             offered.push(prefix);
           }

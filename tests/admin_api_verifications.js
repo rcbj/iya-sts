@@ -144,8 +144,12 @@ function childMain() {
          [!!writer, !!reader].join(','));
 
     // --- 1. by value: the request the page builds ---------------------------
-    const page = await call(port, 'GET',
-                            '/oid4vp/start?format=dc%2Bsd-jwt', '');
+    // THE PAGE'S START IS AN ACT ON `/vc-demo-api` SINCE #582: its shell,
+    // its view and `POST /vc-demo-api/start`, whose `location` is the
+    // address the page's 302 named (read here as that 302).
+    const vcDemo = require(ROOT_DIR + '/tests/tools/vc_demo');
+    const page = await vcDemo.start({ port: port, jar: {},
+                                      query: { format: 'dc+sd-jwt' } });
     let r = await call(port, 'POST', '/admin-api/verifications/start',
                        writer, { format: 'dc+sd-jwt' });
     let j = r.json || {};
@@ -181,6 +185,24 @@ function childMain() {
            JSON.stringify(names) + ' differ=' + JSON.stringify(differ));
     }
     const byValueState = j.state;
+    // The page's QR code for another device (#582): the request's URI,
+    // carrying the same parameters but the fresh nonce and state.
+    const qrPage = await vcDemo.start({ port: port, jar: {},
+      query: { format: 'dc+sd-jwt', mode: 'cross-device' } });
+    const qrView = qrPage.view || {};
+    const fromQr = /^openid4vp:\/\/\?/.test(String(qrView.requestUri))
+      ? paramsOf('https://x.invalid/?' +
+                 String(qrView.requestUri).slice('openid4vp://?'.length))
+      : {};
+    note(qrPage.status === 200 && qrView.kind === 'request' &&
+         typeof qrView.state === 'string' && fromQr.state === qrView.state &&
+         JSON.stringify(Object.keys(fromQr).sort()) ===
+           JSON.stringify(Object.keys(paramsOf(j.walletUrl || '')).sort()) &&
+         qrView.walletUrl.split('?')[1] ===
+           String(qrView.requestUri).slice('openid4vp://?'.length),
+         '1d. the page\'s QR view carries the openid4vp:// URI — the same ' +
+         'parameters, and the wallet link the same query',
+         qrPage.status + ' ' + JSON.stringify(qrView).slice(0, 300));
 
     // --- 2. by reference --------------------------------------------------
     r = await call(port, 'POST', '/admin-api/verifications/start', writer,
@@ -239,6 +261,15 @@ function childMain() {
          sameAsPage(j, decided.json),
          '3b. once a verdict is on the transaction, both doors answer it',
          r.status + ' ' + r.text.slice(0, 300));
+    const doneView = await vcDemo.done({ port: port, state: byValueState });
+    const dv = doneView.view || {};
+    note(doneView.status === 200 && dv.kind === 'done' &&
+         dv.received === true && dv.accepted === true &&
+         JSON.stringify(dv.claims) ===
+           JSON.stringify([{ name: 'given_name', value: 'Ada' }]),
+         '3c. and the closing page\'s view (/vc-demo-api/done, #582) says ' +
+         'what was decided', doneView.status + ' ' +
+         JSON.stringify(dv).slice(0, 300));
 
     // --- 4. the open list, and an unknown state -----------------------------
     r = await call(port, 'GET', '/admin-api/verifications', reader);
