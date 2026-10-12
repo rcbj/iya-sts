@@ -5,7 +5,7 @@ nav_order: 13
 
 # GNAP
 
-> **Development mode only (#585):** `/gnap/rs/resource`, `/gnap/rs/spend`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/gnap/rs/resource`, `/gnap/rs/spend` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts is an **authorization server for the Grant Negotiation and
 Authorization Protocol** ([RFC 9635](https://www.rfc-editor.org/rfc/rfc9635))
@@ -283,7 +283,7 @@ for one and requires none. How that certificate is trusted is
 
 | Model | What is required | Default in |
 |---|---|---|
-| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
+| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/admin/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
 | `pinned` (section 7.3.2) | the certificate is the one the key names, by thumbprint or public key; self-signed is allowed and no chain is built | development (`auto`) |
 
 **A revoked certificate is refused in both models**, under

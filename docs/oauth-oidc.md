@@ -4,7 +4,7 @@ title: OAuth 2.0 & OpenID Connect
 
 # OAuth 2.0 and OpenID Connect
 
-> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/gnap/rs/spend`, `/dpop/nonce-mode` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/gnap/rs/spend` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts is a full **OAuth 2.0 authorization server**
 ([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749)) and **OpenID Connect
@@ -1934,9 +1934,10 @@ endpoints on this page:
   works unchanged for every credential format.
 * **The nonce request has two shapes**: the authorization server asks with a
   400 JSON body, a resource server with a 401 `WWW-Authenticate` challenge.
-  `POST /dpop/nonce-mode`, a non-spec switch listed as such on
-  `/admin/sts-metadata`, writes `oauth2.dpopNonceRequired` for the realm it is
-  reached in; product mode refuses it.
+  Whether nonces are demanded is the per-realm setting
+  `oauth2.dpopNonceRequired`, on the OAuth 2.0 / OIDC page or through
+  `POST /admin-api/config/set`, in either mode (the test control
+  `/dpop/nonce-mode` was deleted by #597).
 * **A foreign token's `cnf.jkt` is only a claim.** For a token this service
   did not issue (accepted by the OpenID4VCI endpoints in development), anyone
   could have written it; the binding is real only for tokens issued here,

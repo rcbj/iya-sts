@@ -4,8 +4,6 @@ title: Devices
 
 # Devices
 
-> **Development mode only (#585):** `/devices/test/compliance` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 This service keeps a **device register**: every phone, computer and host a
 trust realm knows, each an entry under `ou=devices` in the realm's directory
 ([LDAP schema](ldap-schema.md)), owned by **one** person or **one**
@@ -43,7 +41,7 @@ says the same from the running build, and is the one to trust.
   when the credential was registered).
 * **Compliance**: `compliant`, `not-compliant` or `unknown` (where every device
   starts), with the previous value and who set it — an administrator, an MDM
-  or posture feed, or development's test control ([below](#compliance)).
+  or posture feed, or a partner's CAEP signal ([below](#compliance)).
 * **Status and risk**: a device can be marked **compromised**, which ends the
   sessions it authenticated and revokes what it was trusted with
   ([below](#a-compromised-or-removed-device)); and it carries a risk level —
@@ -280,7 +278,6 @@ counts changes by source, day by day.
 |---|---|---|
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
 | An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else, whose application is a member of the `DEVICE_COMPLIANCE` role. |
-| The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
 | A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A federation partner whose Shared Signals this realm receives, as the `signal-response` policy permits (#153, #373). A device manager is an `ssf` relationship on **Federation** (#374). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
 ### Integrating an MDM or posture feed
@@ -396,8 +393,7 @@ has vouched for it. An event goes out only when the sent value changes —
 `unknown` → `not-compliant` is no event, `unknown` → `compliant` is
 `not-compliant` → `compliant`, and an administrator setting a compliant
 device back to `unknown` is `compliant` → `not-compliant`.
-`initiating_entity` is `admin` for an administrator and `system` for the feed
-and the test control.
+`initiating_entity` is `admin` for an administrator and `system` for the feed.
 
 **Credential types.** A certificate is `x509` with its issuer and serial; a
 linked WebAuthn credential is `fido2-platform` or `fido2-roaming`. A device's
@@ -558,10 +554,10 @@ difference: **product refuses a key a device or its owner presents without
 an attestation that verified and chained to a trusted root** (a portal key
 proof, a linked WebAuthn credential, an EST or SCEP device certificate);
 development registers it as self-asserted. An administrator's key entered by
-value is accepted in both, recorded as self-asserted. **The compliance test
-control, `POST /devices/test/compliance`, is development mode only**: a
-product realm has no such endpoint and answers it as an unregistered path
-(#585), and the MDM feed under `device:compliance` is the door.
+value is accepted in both, recorded as self-asserted. **There is no
+compliance test control**: `POST /devices/test/compliance` was deleted
+(#597), and the MDM feed under `device:compliance` is the door in both
+modes.
 
 ### Attestation trust
 

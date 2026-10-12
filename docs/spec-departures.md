@@ -4,7 +4,7 @@ title: Departures from the specifications
 
 # Departures from the specifications
 
-> **Development mode only (#585):** `/issuer/offer`, `/xacml/protected`, `/tls/trust`, `/tls/trust/clear`, `/ssf/receive` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/xacml/protected`, `/ssf/receive` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 This page lists every place where iya-sts's **default** behaviour departs from
 what a specification requires (MUST, SHALL, REQUIRED) or recommends (SHOULD,
@@ -231,8 +231,6 @@ This applies to every TLS listener: the main port, LDAPS 636 and the embedded de
 | What iya-sts does by default | What the specification says | Product mode | Changing it |
 |---|---|---|---|
 | **Stricter.** TLS 1.2 offers only four ECDHE AES-GCM suites. There is no RSA key exchange, CBC, finite-field DHE or CCM, so a TLS 1.2 peer that offers only `TLS_RSA_WITH_AES_128_CBC_SHA` fails the handshake. | [RFC 5246 section 9](https://www.rfc-editor.org/rfc/rfc5246#section-9): unless an application profile says otherwise, a TLS 1.2 application MUST implement `TLS_RSA_WITH_AES_128_CBC_SHA`. | Same. | `tls.ciphers`, default the [RFC 9325](https://www.rfc-editor.org/rfc/rfc9325) (BCP 195) list. See [TLS](tls.md). |
-
-In development, `POST /tls/trust` and `POST /tls/trust/clear` let anybody add or clear client-certificate trust anchors. No specification covers this, but it decides whose certificates count; a product process does not have either route (#585; see [TLS](tls.md)).
 
 ## OpenID4VCI, OpenID4VP and verifiable credentials
 
