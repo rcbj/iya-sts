@@ -3385,7 +3385,9 @@ class AdminApi {
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API credential status action.");
         },
-        actions: ['suspend', 'reinstate', 'revoke'].map(function (action) {
+        // `any`: the publish action below carries a body of another shape.
+        actions: ['suspend', 'reinstate', 'revoke'].map(function (action):
+          any {
           return {
             action: action,
             operationId: action + 'Credential',
