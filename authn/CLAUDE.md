@@ -230,7 +230,7 @@ Every page in that table also carries **Start over** (`start-over`, below).
   wallet's pages as a second factor are not given one**: they are the
   wallet surface's, and their own "another way" link returns to the step's
   page, which has it. `tests/authn_mfa_api.js` section 11 holds it (a
-  mutant that does not put the record back fails four of its checks).
+  mutant that does not put the record back fails 11c, 11d, 11g and 11j).
 
 * **WHAT A PAGE MAY BE DRAWN FOR IS `stepProblem()`**, which both the
   shell's GET (the 400 the page always answered) and the view ask: an

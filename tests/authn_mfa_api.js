@@ -120,6 +120,8 @@ function childMain() {
          /^\/authn\/totp\?mfa=/.test(s.answer.location),
          '1a. a person holding an app is answered the code page\'s address',
          s.answer.text);
+    // Every view a step's page is drawn from, for 11k.
+    const drawn = [{ path: '/authn/totp', view: s.opened.view }];
     const shell = s.opened.shell;
     const csp = String(shell.headers['content-security-policy'] || '');
     note(shell.status === 200 &&
@@ -287,6 +289,7 @@ function childMain() {
          rc.view.backup.remaining === set.codes.length,
          '6b. its page says what it stands in for and how many are left',
          rc.text);
+    drawn.push({ path: '/authn/backup-code', view: rc.view });
     r = await screen.stepAct({ port: port, jar: s.jar, opened: rc,
       op: 'backup-code', body: { code: 'AAAAA-AAAAA' } });
     note(r.apiStatus === 400 && r.next === 'refused',
@@ -308,6 +311,7 @@ function childMain() {
          s.opened.view.setup.optional === false,
          '7a. a required second factor answers the set-up step\'s choice',
          s.opened.text);
+    drawn.push({ path: '/authn/mfa-setup', view: s.opened.view });
     r = await act(s, 'skip', {});
     note(r.apiStatus === 400 && /cannot be ignored/.test(r.errors.join(' ')),
          '7b. Ignore is refused on a required step', r.text);
@@ -325,6 +329,7 @@ function childMain() {
          !/<svg|data:image/.test(enrolling.text),
          '7d. its view carries the otpauth: URI the browser draws, and no ' +
          'picture', enrolling.text.slice(0, 300));
+    drawn.push({ path: '/authn/mfa-setup', view: enrolling.view });
     const uriSecret = new URL(String(k.uri)).searchParams.get('secret');
     const good = totp.codeAt(uriSecret);
     r = await act(s, 'setup/confirm',
@@ -342,6 +347,7 @@ function childMain() {
          s.opened.view.webauthn.mode === 'create',
          '8a. ticking the passkey box answers its enrolment page',
          s.opened.text);
+    drawn.push({ path: '/authn/webauthn', view: s.opened.view });
     r = await act(s, 'webauthn/options', {});
     const c = r.json || {};
     note(r.apiStatus === 200 && c.mode === 'create' && c.challenge &&
@@ -459,6 +465,34 @@ function childMain() {
          credentials.passwordResetRequired('am-pat') === true,
          '11j. the forced password change starts over, changing nothing',
          r.text);
+    // Every page draws the control, a real button the runtime sends as the
+    // start-over act (`web_authn.ts` reads `action`).
+    drawn.push({ path: '/authn/password-change', view: pcOpened.view });
+    const AuthnPages = require(ROOT_DIR + '/authn/web_authn_pages');
+    const messages = require(ROOT_DIR + '/common/web_messages');
+    const flat = {};
+    ['authn', 'emailFactor'].forEach(function (ns) {
+      const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
+        'locales', ns, 'en.json'), 'utf8'));
+      Object.keys(own).forEach(function (key) {
+        flat[ns + '.' + key] = own[key];
+      });
+    });
+    const tr = messages.WebTranslator.fromData({ catalogs: { en: flat },
+      negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                    direction: 'ltr', matched: true } });
+    const missing = drawn.filter(function (one) {
+      const html = AuthnPages.render(one.path, one.view,
+        { t: tr, error: '', notice: '', query: {} });
+      return !/<button type="submit" class="secondary" id="start-over" name="action" value="start-over">Start over<\/button>/
+        .test(html) || /<form[^>]*>(?:(?!<\/form>)[\s\S])*<form/.test(html);
+    }).map(function (one) {
+      return one.path + ' ' + ((one.view && one.view.setup &&
+                                one.view.setup.state) || '');
+    });
+    note(drawn.length === 6 && missing.length === 0,
+         '11k. every step page draws Start over, as a form of its own',
+         missing.join(', '));
 
     // --- 10. the id in the audit log -------------------------------------
     const rows = audit.list().filter(function (row) {
