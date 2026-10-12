@@ -151,6 +151,14 @@ const OVERDUE_FLOOR_MS = 60 * 1000;
 // `{{setting}}` a setting's name and a `{{cron}}` an expression: data, so
 // carried over as they are. `since` is an ISO time, or `PARAMS.sinceStart`.
 //
+// **A TEMPLATE MATCHES ANY WHOLE STRING OF ITS SHAPE** on these routes,
+// a run's result, a job's own off reason and an error among them, so each
+// carries enough literal text to be nobody else's (#543 follow-up): it was
+// 'every {{span}}' and '{{setting}} is 0', which refilled any string that
+// began "every " or ended " is 0". The schedule's two interval sentences
+// carry a parenthesis, as the cron one does, and the off reason says what
+// a 0 does.
+//
 // NOT HERE, ON PURPOSE: a run's `why` (an abandoned attempt, a time limit, a
 // job's own error) is failure text beside an STS-SCHED code, and errors stay
 // English (#539); `requestRun()`'s and `requestStepDown()`'s refusals for
@@ -160,8 +168,8 @@ const SENTENCES = Object.freeze({
   // `scheduleText()`.
   onDemand: 'on demand only',
   cron: 'cron {{cron}} (UTC)',
-  every: 'every {{span}}',
-  everyFrom: 'every {{span}}, from {{setting}}',
+  every: 'every {{span}} (a fixed interval)',
+  everyFrom: 'every {{span}} (from {{setting}})',
   noInterval: 'no interval (0)',
   noIntervalFrom: 'no interval (0), from {{setting}}',
   // `nextRunOf()`'s `overdueWhy`.
@@ -171,7 +179,8 @@ const SENTENCES = Object.freeze({
   // `serviceOffReason()`: the scheduler's own three reasons a job is off.
   offScheduler: 'scheduler.enabled is off',
   offListed: 'named in scheduler.disabledJobs',
-  offZero: '{{setting}} is 0',
+  offZero: '{{setting}} is 0, so the job is off',
+  offZeroFixed: 'its interval is 0, so the job is off',
   // `clockSource()`: whose clock the report's figures are on.
   clockProcess: 'this process',
   clockDatabase: 'the database'
@@ -179,8 +188,7 @@ const SENTENCES = Object.freeze({
 
 // The phrases that only ever appear INSIDE one of the sentences above.
 const PARAMS = Object.freeze({
-  sinceStart: 'this service started',
-  interval: 'its interval'
+  sinceStart: 'this service started'
 });
 
 // The routes whose answers carry the scheduler namespace's prose (#543):
@@ -1018,8 +1026,11 @@ class Scheduler {
     }
     if (!job.manualOnly && !job.cron && !(this.intervalMs(job) > 0)) {
       log.debug("Leaving Scheduler.serviceOffReason(). No interval.");
-      return sentence(SENTENCES.offZero,
-                      { setting: job.everySetting || PARAMS.interval });
+      // A job with no setting has a sentence of its own, not 'its interval'
+      // put where a setting's name goes.
+      return job.everySetting
+        ? sentence(SENTENCES.offZero, { setting: job.everySetting })
+        : sentence(SENTENCES.offZeroFixed);
     }
     log.debug("Leaving Scheduler.serviceOffReason(). None.");
     return '';
