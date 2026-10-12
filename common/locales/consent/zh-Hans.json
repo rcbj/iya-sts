@@ -1,5 +1,5 @@
 {
-  "title": "允许访问？— 模拟授权服务器",
+  "title": "允许访问？— 授权服务器",
   "heading": "允许访问？",
   "signedInAs": "已在 <code>{base}</code> 以 <code>{username}</code> 身份登录",
   "asking": "<strong>{client}</strong> 正在请求代表您进行访问。",

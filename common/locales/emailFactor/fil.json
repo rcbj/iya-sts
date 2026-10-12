@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — mock na serbisyo sa pagpapatunay",
+  "shell.title": "{title} — serbisyo sa pagpapatunay",
   "checkEmail": "Tingnan ang iyong email",
   "signingInAs": "Nagsa-sign in bilang <code>{name}</code>",
   "secondFactorFor": "Pangalawang factor para kay <code>{name}</code>",

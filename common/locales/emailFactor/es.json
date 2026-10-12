@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — servicio de autenticación simulado",
+  "shell.title": "{title} — servicio de autenticación",
   "checkEmail": "Revise su correo",
   "signingInAs": "Iniciando sesión como <code>{name}</code>",
   "secondFactorFor": "Segundo factor para <code>{name}</code>",

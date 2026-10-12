@@ -1,5 +1,5 @@
 {
-  "title": "Autoriser l’accès ? — serveur d’autorisation fictif",
+  "title": "Autoriser l’accès ? — serveur d’autorisation",
   "heading": "Autoriser l’accès ?",
   "signedInAs": "Connecté en tant que <code>{username}</code> sur <code>{base}</code>",
   "asking": "<strong>{client}</strong> demande un accès en votre nom.",
