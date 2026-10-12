@@ -782,16 +782,6 @@ class ProtocolStack {
     this.build('oid4vc/vc_verifier', require('../oid4vc/vc_verifier'),
                'VcVerifier');
     this.register(app, require('../oid4vc/vc_verifier'), 'oid4vc/vc_verifier');
-    // 14-demo. THE DEMONSTRATION ISSUER'S AND VERIFIER'S API AND SCRIPT
-    // (#582): `/vc-demo-api` and `/issuer/demo.js`, which the five pages'
-    // shells (still registered by `vc_offers` and `vc_verifier`, where
-    // their routes always were) are drawn from. After both, whose views and
-    // acts it answers; neither collides with anything.
-    require('../oid4vc/vc_demo_api');
-    this.build('oid4vc/vc_demo_api', require('../oid4vc/vc_demo_api'),
-               'VcDemoApi');
-    this.register(app, require('../oid4vc/vc_demo_api'),
-                  'oid4vc/vc_demo_api');
     // #194-#199: the W3C VC-API test endpoints (/vc-api/*), a TEST CONTROL
     // over the libraries above — the Data Integrity suites, the status lists
     // and the data model. After the verifier, whose libraries it reads; it
@@ -801,6 +791,17 @@ class ProtocolStack {
     require('../oid4vc/vc_api');
     this.build('oid4vc/vc_api', require('../oid4vc/vc_api'), 'VcApi');
     this.register(app, require('../oid4vc/vc_api'), 'oid4vc/vc_api');
+    // 14-demo. THE DEMONSTRATION ISSUER'S AND VERIFIER'S API AND SCRIPT
+    // (#582): `/vc-demo-api` and `/issuer/demo.js`, which the five pages'
+    // shells (still registered by `vc_offers` and `vc_verifier`, where
+    // their routes always were) are drawn from. After both, whose views and
+    // acts it answers, and after the VC-API beside them; neither path
+    // collides with anything.
+    require('../oid4vc/vc_demo_api');
+    this.build('oid4vc/vc_demo_api', require('../oid4vc/vc_demo_api'),
+               'VcDemoApi');
+    this.register(app, require('../oid4vc/vc_demo_api'),
+                  'oid4vc/vc_demo_api');
     // -------------------------------------------------------------------------
     // 14a. AND A PRESENTATION AS A SIGN-IN (2026-09-17, #38): /authn/wallet,
     // which turns a verified presentation of a credential this realm issued

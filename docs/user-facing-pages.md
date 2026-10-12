@@ -210,6 +210,14 @@ the same bytes as before. A person's own offer into their own wallet is the
 portal's (`/portal/wallet`, #589), and an administrator starts and reads a
 verification at `/admin-api/verifications` (#587).
 
+**Since #582 the five pages are static pages**, drawn in the browser's own
+language from `/vc-demo-api`, so they need JavaScript; with scripts blocked
+they say so. Opening the offer or the start no longer makes anything by
+itself: the page's script makes the offer or the request once the page is
+drawn, then sends the browser to the wallet, or draws the QR code from the
+offer's or the request's URI. The request's QR page checks every few seconds
+whether the wallet has answered, and moves on to the outcome.
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for
@@ -218,8 +226,9 @@ translation:
 - **The embedded protocol debugger**, on its own listener (`debugger.port`). It
   is a separate application from the parent project.
 - **Demonstration pages** that exist only in development mode: the sample
-  credential issuer ("Mock University") at `/oid4vci/…` and the sample
-  verifier ("The Bar Door") at `/oid4vp/verifier`.
+  credential issuer ("Mock University") at `/issuer` and the sample
+  verifier ("The Bar Door") at `/oid4vp/verifier`, translated since #582 —
+  see *The demonstration issuer and verifier* above.
 - **Operator and diagnostic views**: `/tls` and its sub-pages, `/xacml`, and
   the SPIFFE, SCIM and Shared Signals status pages.
 - **Error pages**: "This request could not be completed" and every other
