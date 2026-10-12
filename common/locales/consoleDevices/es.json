@@ -167,6 +167,8 @@
   "monitorHtml.leadBefore": "Lo que contiene el registro de este dominio, contado ahora, y lo que le ocurrió: cada registro, eliminación y desalojo al llegar una persona a <code>devices.maxPerPerson</code>, conservados hasta <code>devices.eventsKept</code>, y cada cambio de cumplimiento según quién lo hizo: admin, mdm, test-control, caep",
   "monitorHtml.since": " (el más antiguo es del {since})",
   "monitorHtml.leadAfter": ". Un dispositivo quitado con un <code>ldapdelete</code> en el socket no es un evento aquí: el registro nunca lo ve.",
+  "monitorHtml.tabRegister": "El registro, contado ahora",
+  "monitorHtml.tabActivity": "Actividad en este proceso",
   "monitorHtml.byOwner": "Por propietario",
   "monitorHtml.byCompliance": "Por cumplimiento",
   "monitorHtml.byRisk": "Por nivel de riesgo",

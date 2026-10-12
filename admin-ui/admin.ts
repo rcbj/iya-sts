@@ -4519,7 +4519,8 @@ class AdminConsole {
        'kerberos-tab-claims', 'kerberos-tab-principals',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-profiles'],
+       'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
+       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||

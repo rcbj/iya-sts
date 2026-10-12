@@ -184,9 +184,13 @@ class CachesPage {
     const replays = json.caches.filter(function (c: Json): boolean {
       return c.kind === 'replay';
     });
-    const table = '<h3>' + t.html('consoleCaches.headCaches') + '</h3>' +
+    // TABS (2026-10-12, `WebPages.protocolTabs()`): the caches, the replay
+    // stores and the other nodes; what is not held here is Metadata.
+    const table = '<h3 data-tab="caches">' +
+      t.html('consoleCaches.headCaches') + '</h3>' +
       self.tableOf(caches, t) +
-      '<h3>' + t.html('consoleCaches.headReplay') + '</h3>' +
+      '<h3 data-tab="replay">' + t.html('consoleCaches.headReplay') +
+      '</h3>' +
       kit.note(t.html('consoleCaches.replayNote'),
                t.text('consoleCaches.replayNoteLabel')) +
       self.tableOf(replays, t);
@@ -216,7 +220,8 @@ class CachesPage {
     t = t || kit.context().t;
     const self = this;
     if (!list || !list.length) {
-      return '<h3>' + t.html('consoleCaches.headOtherNodes') + '</h3>' +
+      return '<h3 data-tab="nodes">' +
+        t.html('consoleCaches.headOtherNodes') + '</h3>' +
         kit.note(t.html('consoleCaches.noOtherNodes'),
                  t.text('consoleCaches.nothingToShow'));
     }
@@ -254,7 +259,8 @@ class CachesPage {
         t.html('consoleCaches.thHitRatio') + '</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></details>';
     }).join('');
-    return '<h3>' + t.html('consoleCaches.headOtherNodes') + '</h3>' +
+    return '<h3 data-tab="nodes">' +
+      t.html('consoleCaches.headOtherNodes') + '</h3>' +
       kit.note(t.html('consoleCaches.otherNodesNote'),
                t.text('consoleCaches.otherNodesNoteLabel')) +
       sections;
@@ -337,7 +343,9 @@ class CachesPage {
                   '</code>' : '—') + '</td>' +
         '</tr>';
     }).join('');
-    const table = '<h3>' + t.html('consoleCaches.headEntries') + '</h3>' +
+    // One store's page draws its entries as the tab after Metadata.
+    const table = '<h3 data-tab="entries">' +
+      t.html('consoleCaches.headEntries') + '</h3>' +
       kit.perPageForm(PAGE, 'cache', c.name, json.entriesPaging.perPage,
                         t.html('consoleCaches.entriesOrder')) +
       nav.head +

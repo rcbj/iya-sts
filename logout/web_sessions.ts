@@ -127,7 +127,9 @@ class SessionsPage {
       '<a href="/logout">' + t.html('consoleSessions.revokeLink') + '</a>' +
       t.html('consoleSessions.revokeAfter')) +
 
-      '<h2>' + t.html('consoleSessions.hLive') + '</h2>' +
+      // A TAB PER LIST (2026-10-12): the lead, the tiles and the kinds are
+      // Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="live">' + t.html('consoleSessions.hLive') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
@@ -177,7 +179,8 @@ class SessionsPage {
       // section that disappeared with the setting would hide exactly those.
       // What changes with the setting is the sentence, not the presence.
       // ---------------------------------------------------------------------
-      '<h2>' + t.html('consoleSessions.hUnauthenticated') + '</h2>' +
+      '<h2 data-tab="unauthenticated">' +
+      t.html('consoleSessions.hUnauthenticated') + '</h2>' +
 
       kit.note(t.html('consoleSessions.unauthLead')) +
 
@@ -202,7 +205,7 @@ class SessionsPage {
             n: json.unauthenticatedHeld, held: json.held }))
         : kit.note(t.html('consoleSessions.unauthNone'))) +
 
-      kit.note('<a href="/admin/logout">' +
+      '<div data-metadata>' + kit.note('<a href="/admin/logout">' +
       t.html('consoleSessions.linkLogout') + '</a>' +
       t.html('consoleSessions.linkLogoutAfter') + ' &middot; <a ' +
       'href="/admin/tokens">' + t.html('consoleSessions.linkTokens') +
@@ -214,7 +217,7 @@ class SessionsPage {
       'href="/admin/sessions?format=json">' +
       t.html('consoleSessions.linkJson') + '</a> &middot; ' +
       '<a href="/admin-api/sessions">' + t.html('consoleSessions.linkApi') +
-      '</a>');
+      '</a>') + '</div>';
 
     return inner;
   }

@@ -369,13 +369,16 @@ class GnapPage {
     const inner =
       kit.note(t.html('consoleGnap.monitorIntro', { since: json.since })) +
       tiles +
-      '<h2>' + t.html('consoleGnap.tokensByFormat') +
+      // A TAB PER TABLE (2026-10-12): the intro and the tiles above, and the
+      // closing note and links, are Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="formats">' + t.html('consoleGnap.tokensByFormat') +
       '</h2><table><thead><tr>' + Object.keys(
           json.tokensByFormat).map(function (f) {
         return '<th>' + esc(f) + '</th>';
       }).join('') + '</tr></thead><tbody><tr>' + formatRow +
       '</tr></tbody></table><h2 ' +
-      'id="list-page">' + t.html('consoleGnap.applications') + '</h2>' +
+      'id="list-page" data-tab="applications">' +
+      t.html('consoleGnap.applications') + '</h2>' +
       nav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thApplication') +
       '</th><th>' + t.html('consoleGnap.thRole') + '</th><th>' +
@@ -397,6 +400,7 @@ class GnapPage {
       nav.foot +
       // The link is markup a message cannot carry (#539), so the sentence
       // is the words before it, the link's text, and the words after.
+      '<div data-metadata>' +
       kit.note(t.html('consoleGnap.noReset') + '<a ' +
         'href="/admin/audit">' + t.html('consoleGnap.auditLog') + '</a>' +
         t.html('consoleGnap.noResetEnd')) +
@@ -404,7 +408,7 @@ class GnapPage {
       '· ' +
       '<code>GET /admin-api/gnap/monitor</code> · <a ' +
       'href="/admin/gnap">' + t.html('consoleGnap.linkSettings') +
-      '</a></p>';
+      '</a></p></div>';
     return inner;
   }
 }
