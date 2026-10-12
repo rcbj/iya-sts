@@ -2175,14 +2175,21 @@ const REQUIREMENTS = [
     development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
-                 'ssf.receiveRequireSignature is on. Nothing acts on it.',
+                 'ssf.receiveRequireSignature is on. Nothing acts on it. A ' +
+                 'federation partner\'s Shared Signals, pushed to ' +
+                 '/federation/signals/{id} or polled, are treated the same: ' +
+                 'an unverified SET is recorded on the relationship\'s ' +
+                 'inbox as unverified and acted on in no way, unless ' +
+                 'ssf.receiveRequireSignature is on.',
     product: 'The console\'s and portal\'s receivers answer 400 ' +
              'invalid_key, whatever ssf.receiveRequireSignature says ' +
              '(#117), and keep it on their inbox marked refused. ' +
              '/ssf/receive is a development endpoint and is not there ' +
-             '(#585).',
-    // ssf_transmitters.ts asks the same predicate of a federation partner's
-    // Shared Signals (#373, #374), which the sentences above do not name.
+             '(#585). A federation partner\'s unverified SET is refused ' +
+             'invalid_key too — HTTP 400 to a push to ' +
+             '/federation/signals/{id}, and in setErrs on the next poll ' +
+             'request for a polled one — kept on the relationship\'s inbox ' +
+             'marked refused, and never acted on.',
     where: 'ssf/ssf.ts, ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
