@@ -48,6 +48,9 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
 const portalSignin = require("./portal_signin.js");
+// THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
+// page's view and the collection, bound as the pages bind them.
+const walletSignin = require("./wallet_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -230,12 +233,14 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
-// The wait page's wallet link, its request_uri, and the request object.
+// The wait page's wallet link, its request_uri, and the request object —
+// from the wait page's view (#574), for the browser that started it.
 async function walletRequest(who, waitUrl) {
   log.debug("Entering walletRequest().");
-  const waiting = await hop(who, "GET", waitUrl);
-  const open = /id="wallet-open" href="([^"]+)"/.exec(waiting.text);
-  const walletUrl = open ? new URL(unescapeHtml(open[1])) : null;
+  const state = walletSignin.fromWaitUrl(waitUrl).state;
+  const waiting = await walletSignin.view(base, who, state);
+  const view = (waiting.json && waiting.json.view) || {};
+  const walletUrl = view.sameDevice ? new URL(view.sameDevice) : null;
   const requestUri = walletUrl ? walletUrl.searchParams.get("request_uri") :
                                  "";
   const ro = requestUri ? await hop(null, "GET", requestUri) : null;
@@ -244,8 +249,9 @@ async function walletRequest(who, waitUrl) {
            request: ro && ro.status === 200 ? payloadOf(ro.text) : null };
 }
 
-// An authorization request to the sign-in screen, and its self-issued link
-// followed to the wait page.
+// An authorization request to the sign-in screen — a static surface (#571),
+// whose view's `wallet.siop` is the self-issued link — and the start that
+// link's page makes (#574), to the wait page.
 async function startSignIn(who) {
   log.debug("Entering startSignIn().");
   const pair = pkce();
@@ -254,11 +260,19 @@ async function startSignIn(who) {
       redirect_uri: REDIRECT_URI, scope: "openid", state: "s-" + STAMP,
       nonce: "n-" + STAMP, code_challenge: pair.challenge,
       code_challenge_method: "S256" }).toString());
+  const authnId = new URL(authorized.location || base, base).searchParams
+    .get("authn") || "";
   const screen = await hop(who, "GET", authorized.location);
-  const link = /id="siop-signin" href="([^"]+)"/.exec(screen.text);
-  const door = link ? await hop(who, "GET", unescapeHtml(link[1])) : null;
-  const out = { pair: pair, screen: screen, link: link ? link[1] : "",
-                door: door };
+  const screenView = authnId ? await hop(who, "GET", base +
+    "/authn-api/pending/" + encodeURIComponent(authnId)) : null;
+  const wallet = screenView && screenView.json && screenView.json.view &&
+                 screenView.json.view.wallet;
+  const link = (wallet && wallet.siop) || "";
+  const started = link ? await walletSignin.start(base, who,
+    { authn: authnId, siop: "1" }) : null;
+  const door = started ? started.door : null;
+  const out = { pair: pair, screen: screen, screenView: screenView,
+                link: link, door: door, started: started };
   if (door && door.status === 303) {
     out.waitUrl = door.location;
     Object.assign(out, await walletRequest(who, door.location));
@@ -280,6 +294,11 @@ async function answer(request, idToken) {
 async function finish(who, location, pair) {
   log.debug("Entering finish().");
   let at = location;
+  // THE WALLET SENDS THE PERSON BACK TO THE WAIT PAGE, whose runtime
+  // collects the sign-in (#574): the collection names where to go on.
+  if (/\/authn\/wallet\/wait\?/.test(String(at || ""))) {
+    at = (await walletSignin.collect(base, who, at)).location;
+  }
   for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     const r = await hop(who, "GET", at);
@@ -362,8 +381,8 @@ async function test() {
   check("the sign-in screen offers a self-issued ID, and it starts a signed " +
         "SIOPv2 request: response_type id_token, scope openid, section 8 " +
         "client_metadata", function () {
-    assert.ok(s.link, "no siop-signin link: " +
-              s.screen.text.replace(/\s+/g, " ").slice(0, 400));
+    assert.ok(s.link, "no self-issued link in the screen's view: " +
+              (s.screenView ? s.screenView.text.slice(0, 400) : ""));
     assert.ok(s.request, "no request object: " + (s.door && s.door.status));
     assert.strictEqual(headerOf(s.jwt).typ, "oauth-authz-req+jwt");
     assert.strictEqual(s.request.response_type, "id_token");
@@ -398,8 +417,9 @@ async function test() {
   const unknownKey = walletKey();
   const unknown = await answer(t.request, selfIssued(unknownKey,
     t.request.client_id, t.request.nonce));
-  const unknownPage = await hop(stranger, "GET", unknown.json &&
-    unknown.json.redirect_uri ? unknown.json.redirect_uri : t.waitUrl);
+  const unknownPage = await walletSignin.collect(base, stranger,
+    unknown.json && unknown.json.redirect_uri ? unknown.json.redirect_uri
+                                              : t.waitUrl);
   check("a key nobody enrolled verifies and signs nobody in", function () {
     assert.strictEqual(unknown.status, 200, unknown.text.slice(0, 300));
     assert.strictEqual(unknownPage.status, 403,
@@ -417,13 +437,13 @@ async function test() {
   });
 
   log.info("=== 5. a person enrols their own key ===");
-  const nobody = await hop(jar(), "GET", base +
-                           "/authn/wallet?siop=1&enrol=1");
+  const nobody = (await walletSignin.start(base, jar(),
+                                          { siop: "1", enrol: "1" })).door;
   check("a browser with no session cannot start an enrolment", function () {
     assert.strictEqual(nobody.status, 403, nobody.text.slice(0, 300));
   });
-  const door = await hop(browser, "GET", base +
-                         "/authn/wallet?siop=1&enrol=1");
+  const door = (await walletSignin.start(base, browser,
+                                         { siop: "1", enrol: "1" })).door;
   const enrolReq = door.status === 303 ?
     await walletRequest(browser, door.location) : {};
   const second = walletKey();
@@ -431,7 +451,8 @@ async function test() {
     selfIssued(second, enrolReq.request.client_id,
                enrolReq.request.nonce)) : null;
   const collected = proved && proved.json ?
-    await hop(browser, "GET", proved.json.redirect_uri) : null;
+    await walletSignin.collect(base, browser, proved.json.redirect_uri) :
+    null;
   r = await hop(null, "GET", api + "/users/self-issued-subjects?user=" +
                 encodeURIComponent(HOLDER));
   check("the signed-in person proves a new key with their wallet, lands on " +

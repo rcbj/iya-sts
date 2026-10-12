@@ -34,7 +34,8 @@
 //
 // The sign-in screen (#571) draws three pages from views alone: the screen
 // in the states its view can name, the federation chooser and the forced
-// password change.
+// password change — and, since #574, the wallet's start and wait pages, the
+// QR code and a refusal.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -208,6 +209,66 @@ function authnCases(root) {
   ];
 }
 
+/**
+ * The wallet sign-in's cases (#574): the start page; the wait page with the
+ * Digital Credentials API button and a QR code offered, in English and in
+ * French, as a second factor and as an enrolment; the QR page itself; and
+ * a refusal with the presentation's checks, and one back to the portal.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function walletCases(root) {
+  log.debug("Entering walletCases().");
+  const en = { t: translatorFor(root, 'wallet', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/authn/wallet/wait?authn=abc&state=s1' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'wallet', ['fr', 'en']) });
+  const wait = {
+    wallet: 'wait', state: 's1', kind: 'wallet', secondFactor: false,
+    authn: 'abc', mfa: '', enrol: false,
+    dcRequest: { protocol: 'openid4vp-v1-signed',
+                 data: { request: 'eyJ.<a&b>.sig' } },
+    sameDevice: 'https://wallet.example/present?client_id=x&request_uri=' +
+                'https%3A%2F%2Fsts.example%2Foid4vp%2Frequest%2Fs1',
+    qr: 'openid4vp://?client_id=x&request_uri=https%3A%2F%2Fsts.example' +
+        '%2Foid4vp%2Frequest%2Fs1',
+    expiresIn: 297, pollSeconds: 3, protocol: 'OAuth 2.0 <authorize>',
+    verifier: 'x509_san_dns:sts.example', back: '/authn/login?authn=abc',
+    backKind: 'screen' };
+  log.debug("Leaving walletCases().");
+  return [
+    { label: 'the wallet start page', path: '/authn/wallet',
+      view: { wallet: 'start', kind: 'wallet', secondFactor: true },
+      ctx: en },
+    { label: 'the wallet wait page, every door, in English',
+      path: '/authn/wallet/wait', view: wait, ctx: en },
+    { label: 'the wallet wait page, every door, in French',
+      path: '/authn/wallet/wait', view: wait, ctx: fr },
+    { label: 'the wallet wait page, an enrolment with no QR code',
+      path: '/authn/wallet/wait', ctx: en,
+      view: Object.assign({}, wait, { kind: 'enrol', enrol: true,
+        qr: '', dcRequest: null, back: '/portal/self-issued',
+        backKind: 'portal' }) },
+    { label: 'the wallet QR page', path: '/authn/wallet/wait', view: wait,
+      ctx: Object.assign({}, en, { query: { qr: '1' } }) },
+    { label: 'a wallet refusal with the presentation\'s checks',
+      path: '/authn/wallet/wait', ctx: en,
+      view: { wallet: 'refused', heading: 'Nobody was signed in',
+              retry: '/authn/wallet?authn=abc',
+              verdict: 'presentation.verified',
+              checks: [{ ok: true, name: 'Signature', detail: 'ES256 <ok>' },
+                       { ok: false, name: 'Register', detail: 'not issued' }],
+              back: '/authn/login?authn=abc', backKind: 'screen' } },
+    { label: 'a wallet refusal with nothing to go back to',
+      path: '/authn/wallet', ctx: fr,
+      view: { wallet: 'refused', heading: 'Nothing is waiting for this ' +
+              'sign-in', retry: '', verdict: '', checks: [], back: '',
+              backKind: 'none' } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -224,5 +285,9 @@ module.exports = [
   { name: 'the sign-in screen',
     pages: 'authn/web_authn_pages.ts', global: 'StsAuthn',
     bundle: 'authn/authn.bundle.js', runtime: 'authn/authn-spa.js',
-    cases: authnCases }
+    cases: function (root) {
+      log.debug("Entering the sign-in screen's cases.");
+      log.debug("Leaving the sign-in screen's cases.");
+      return authnCases(root).concat(walletCases(root));
+    } }
 ];
