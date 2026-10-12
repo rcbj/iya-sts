@@ -1917,10 +1917,38 @@ class WebPages {
       '/admin/caep': 'ssf-tab-caep',
       '/admin/risc': 'ssf-tab-risc'
     };
+    // A link may carry a fragment of its own (`#find-sessq`, the CAEP search
+    // box): that anchor is inside its tab's panel, so it opens the tab and is
+    // kept; a link with none gets the tab's.
+    html = html.replace(
+      /href="(\/admin\/ssf|\/admin\/caep|\/admin\/risc)(\?[^"#]*)?(#[^"]*)?"/g,
+      function (_match: string, path: string, query: string,
+                fragment: string): string {
+        return 'href="/admin/ssf' + (query || '') +
+          (fragment || '#' + paths[path]) + '"';
+      });
+    // A GET form (the CAEP and RISC searches) submits to its action, and
+    // /admin/caep and /admin/risc are tabs of this page, not pages: a search
+    // pressed there answered 404 (sts_admin_console, 2026-10-12). A POST form
+    // is an act the console resolves through its operation's `mirrors`, which
+    // still name those paths, so it is left alone.
     return html.replace(
-      /href="(\/admin\/ssf|\/admin\/caep|\/admin\/risc)(\?[^"#]*)?"/g,
-      function (_match: string, path: string, query: string): string {
-        return 'href="/admin/ssf' + (query || '') + '#' + paths[path] + '"';
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        if (/method="post"/i.test(attrs)) {
+          return match;
+        }
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0], 'action="/admin/ssf' +
+          (target[2] || '') + (target[3] || '#' + paths[target[1]]) + '"');
       });
   }
 
