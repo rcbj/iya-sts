@@ -316,18 +316,20 @@ class ProtocolEndpoints {
                             // A partner's Shared Signals push (#373).
                             '/federation/signals/:id',
                             '/authn/select-idp'].map(route),
-      '/admin/totp': ['/authn/totp', '/portal/mfa'].map(route),
-      '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),
-      '/admin/webauthn': ['/authn/webauthn', '/portal/keys',
-                          '/portal/remove-key'].map(route),
+      // The portal's doors are its `/account-api` operations since #568.
+      '/admin/totp': ['/authn/totp', '/account-api/mfa'].map(route),
+      '/admin/backup-codes': ['/authn/backup-code',
+                              '/account-api/mfa'].map(route),
+      '/admin/webauthn': ['/authn/webauthn', '/account-api/keys',
+                          '/account-api/keys/remove'].map(route),
       // DEVICE REGISTRATION (#164, #218): the doors a device arrives and is
       // recognised through today — Native SSO's token endpoint and its
       // revocation of a device_secret, and the owner's own list. Phase 2's
       // EST, SCEP and portal enrolment add theirs here.
       '/admin/device-registration': ['/oauth2/token', '/oauth2/revoke',
-                                     '/portal/devices',
-                                     '/portal/devices/challenge',
-                                     '/portal/devices/proof',
+                                     '/account-api/devices',
+                                     '/account-api/devices/challenge',
+                                     '/account-api/devices/proof',
                                      '/.well-known/est/:label/simpleenroll',
                                      '/enroll/scep'].map(route),
       '/admin/kerberos': [this.socket('kdc'), this.socket('krb5-service'),
@@ -361,7 +363,7 @@ class ProtocolEndpoints {
       ].map(route),
       // ===== Claims Providers endpoints row (#147) =====
       '/admin/claim-providers': [
-        '/portal/claim-sources', '/portal/claim-sources/callback'
+        '/account-api/claim-sources', '/portal/claim-sources/callback'
       ].map(route),
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
