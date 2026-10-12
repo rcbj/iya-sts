@@ -66,7 +66,22 @@ class SsfTransmittersPage {
    * @returns the HTML
    */
   static body(json: Json, ctx?: Json): string {
-    const t = (ctx || kit.context()).t;
+    const c = ctx || kit.context();
+    const t = c.t;
+    // THE THREE LISTS THAT GROW ARE PAGED (#313's sweep): what arrived on
+    // `receivedPage`, the blocks on `blocksPage`, the locks on `locksPage`,
+    // each from the answer's own `paging`, every other parameter carried.
+    // An answer without `paging` (the server-side page before the cutover
+    // hands its report through whole) draws no control.
+    const params = kit.pageParamsOf(c.query || {});
+    const paging = json.paging || {};
+    const navOf = function (name: string): Json {
+      return paging[name] ? kit.pageNavPair(PAGE, params, paging[name], t)
+        : { head: '', foot: '' };
+    };
+    const blockNav = navOf('blocks');
+    const lockNav = navOf('locks');
+    const receivedNav = navOf('received');
     const link = function (id: string): string {
       return '<a href="/admin/federation?relationship=' +
         encodeURIComponent(id) + '#signals"><code>' + esc(id) +
@@ -116,7 +131,7 @@ class SsfTransmittersPage {
     const blocks = json.blocks.length
       ? '<h3 data-tab="blocks">' +
         t.html('consoleSsfTransmitters.blocks.heading') +
-        '</h3><table><thead><tr><th>' +
+        '</h3>' + blockNav.head + '<table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.since') + '</th><th>' +
@@ -125,12 +140,12 @@ class SsfTransmittersPage {
           return '<tr><td>' + esc(b.username) + '</td><td>' +
             link(b.relationship) + '</td><td>' + esc(b.at) + '</td><td>' +
             '<code>' + esc(b.event) + '</code></td></tr>';
-        }).join('') + '</tbody></table>'
+        }).join('') + '</tbody></table>' + blockNav.foot
       : '';
     const locks = json.locks.length
       ? '<h3 data-tab="locks">' +
         t.html('consoleSsfTransmitters.locks.heading') +
-        '</h3><table><thead><tr><th>' +
+        '</h3>' + lockNav.head + '<table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.since') +
@@ -138,7 +153,7 @@ class SsfTransmittersPage {
         json.locks.map(function (l: Json): string {
           return '<tr><td>' + esc(l.username) + '</td><td>' +
             link(l.relationship) + '</td><td>' + esc(l.at) + '</td></tr>';
-        }).join('') + '</tbody></table>'
+        }).join('') + '</tbody></table>' + lockNav.foot
       : '';
     const received = json.received.length ? json.received.map(function (r:
                                                                        Json) {
@@ -181,7 +196,7 @@ class SsfTransmittersPage {
       blocks + locks +
       '<h3 data-tab="arrived">' +
       t.html('consoleSsfTransmitters.arrived.heading') +
-      '</h3><table><thead><tr><th>' +
+      '</h3>' + receivedNav.head + '<table><thead><tr><th>' +
       t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.when') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.events') + '</th><th>' +
@@ -189,6 +204,7 @@ class SsfTransmittersPage {
       t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.reactions') +
       '</th></tr></thead><tbody>' + received + '</tbody></table>' +
+      receivedNav.foot +
       '<p class="links" data-metadata><a href="' + PAGE +
       '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/ssf/transmitters</code></p>';

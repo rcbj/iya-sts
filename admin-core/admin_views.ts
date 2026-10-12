@@ -6917,6 +6917,11 @@ class AdminViews {
     if (!signalsReporter) {
       log.debug("Leaving AdminViews.ssfJson(). Not installed.");
       return { installed: false, enabled: false, streamDetail: [],
+               streamTotals: { streams: 0, enabled: 0, delivered: 0,
+                               failed: 0, waiting: 0, dead: 0,
+                               deadLetters: 0 },
+               paging: { streams: this.pagingJson(this.pagingOf(
+                 req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
                receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
                statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
@@ -6929,8 +6934,48 @@ class AdminViews {
     // may be set to and the event types this transmitter can send.
     report.statuses = signalsReporter.statuses.slice();
     report.eventTypes = signalsReporter.eventTypes();
+    // THE STREAM CARDS ARE PAGED (#313's sweep, 2026-10-12). One card per
+    // stream in the realm, and `ssf.maxStreams` bounds each receiver rather
+    // than how many receivers there are, so the cards are a page moved by
+    // `streamsPage`. `stream` narrows them to one, EXACT, which is what the
+    // dead letters' stream links carry so a card is found whatever page it
+    // would be on. The tiles above the cards count the WHOLE transmitter,
+    // so `streamTotals` is taken here, before the narrowing and the slice.
+    const all = report.streamDetail || [];
+    report.streamTotals = {
+      streams: all.length,
+      enabled: all.filter(function (row) {
+        return row.status === 'enabled';
+      }).length,
+      delivered: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.delivered) || 0);
+      }, 0),
+      failed: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.failed) || 0);
+      }, 0),
+      waiting: all.reduce(function (n, row) {
+        return n + (row.queue || []).length;
+      }, 0),
+      dead: all.filter(function (row) {
+        return row.dead;
+      }).length,
+      deadLetters: all.reduce(function (n, row) {
+        return n + (row.deadLetters || []).length;
+      }, 0)
+    };
+    const wanted = this.queryOne(req.query || {}, 'stream').trim();
+    const matched = wanted
+      ? all.filter(function (row) {
+          return String(row.stream_id) === wanted;
+        })
+      : all;
+    const page = this.pagedRows(req.query || {}, matched,
+      { name: 'streams', noun: 'streams' });
+    report.streamDetail = page.shown;
+    report.streamFilter = wanted || null;
+    report.paging = { streams: this.pagingJson(page.paging) };
     log.debug("Leaving AdminViews.ssfJson(). " + report.streamDetail.length +
-              " stream(s).");
+              " of " + all.length + " stream(s).");
     return report;
   }
 

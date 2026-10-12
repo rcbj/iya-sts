@@ -16554,6 +16554,18 @@ class AdminApi {
                      'it goes back only to the receiver that set it, at ' +
                      'GET /ssf/stream.',
         mirrors: 'GET /admin/ssf',
+        parameters: [
+          { name: 'stream', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Only this stream. An exact stream id; applied ' +
+                         'before the streams are paged.' },
+          { name: 'streamsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the streams. Clamped, like every ' +
+                         'page parameter here.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
         responseDescription: 'The transmitter, its streams and what it has ' +
                              'received.',
         responseSchema: { $ref: '#/components/schemas/Ssf' },

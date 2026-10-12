@@ -4288,9 +4288,15 @@ const SCHEMAS = {
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
-                     'back through.',
+                     'back through. One page of the streams, moved by ' +
+                     '`streamsPage` and described by `paging.streams`; ' +
+                     '`stream` narrows it to one.',
         items: { type: 'object' }
       },
+      streamTotals: openObject(
+        'Counted over every stream, before `streamDetail` is narrowed and ' +
+        'paged: `streams`, `enabled`, `delivered`, `failed`, `waiting`, ' +
+        '`dead` and `deadLetters`.', {}),
       deadLetters: {
         type: 'object',
         description: 'The dead-letter and push-cap settings in force, and ' +
