@@ -291,13 +291,6 @@ async function apiPost(path, body) {
   return { status: r.status, body: parsed, raw: raw };
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
 // ---------------------------------------------------------------------------
 // EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
 // ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).

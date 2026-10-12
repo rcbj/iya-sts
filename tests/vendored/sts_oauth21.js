@@ -166,8 +166,6 @@ function asciiDescription(body) {
     String((body && body.error_description) || ""));
 }
 
-// One browser, manual redirects and a cookie jar of its own, for
-// `sts_consent.js`'s reason: which redirect comes back IS the assertion.
 // The cookies an `/authn-api` answer set, into a browser's jar (#571).
 function keepCookies(b, answer) {
   log.debug("Entering keepCookies().");
@@ -196,6 +194,8 @@ function jarHeader(b) {
   }).join("; ");
 }
 
+// One browser, manual redirects and a cookie jar of its own, for
+// `sts_consent.js`'s reason: which redirect comes back IS the assertion.
 function browser() {
   log.debug("Entering browser().");
   const jar = {};

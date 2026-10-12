@@ -143,7 +143,6 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
-// One browser, with a cookie jar.
 // The cookies an `/authn-api` answer set, into a browser's jar (#571).
 function keepCookies(b, answer) {
   log.debug("Entering keepCookies().");
@@ -172,6 +171,7 @@ function jarHeader(b) {
   }).join("; ");
 }
 
+// One browser, with a cookie jar.
 function browser() {
   log.debug("Entering browser().");
   const jar = {};
@@ -225,21 +225,6 @@ function browser() {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 // Follows redirects from `path`, signing in with the password where the
