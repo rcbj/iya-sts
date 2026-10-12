@@ -1475,6 +1475,10 @@
     "en": "f2d18b738357010b",
     "text": "Isang sapilitang pagpapalit ng password"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Simulan muli ang pag-sign in mula sa pagpapalit ng password"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Ang ipinapakita ng page ng isang sign-in step"
@@ -1526,6 +1530,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Gamitin ang isang emailed na sign-in link"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Simulan muli ang pag-sign in mula sa isang hakbang"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",

@@ -1475,6 +1475,10 @@
     "en": "f2d18b738357010b",
     "text": "強制變更密碼"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "從密碼變更處重新開始登入"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "登入步驟頁面顯示的內容"
@@ -1526,6 +1530,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "用掉以電子郵件寄送的登入連結"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "從某個步驟重新開始登入"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",

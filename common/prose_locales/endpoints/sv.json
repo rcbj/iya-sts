@@ -1475,6 +1475,10 @@
     "en": "f2d18b738357010b",
     "text": "Ett påtvingat lösenordsbyte"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Börja om en inloggning från lösenordsbytet"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Vad ett inloggningstegs sida visar"
@@ -1526,6 +1530,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Förbruka en mejlad inloggningslänk"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Börja om en inloggning från ett steg"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",

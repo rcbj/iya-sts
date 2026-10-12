@@ -7944,6 +7944,12 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'A forced password change', specs: [],
     what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
           'stores the new one and continues the sign-in.' },
+  { path: '/authn-api/password-change/:id/start-over',
+    group: 'Authentication',
+    name: 'Start a sign-in over from the password change', specs: [],
+    what: 'NON-SPEC (2026-10-12). The forced password change\'s Start over: ' +
+          'nothing is changed, and the pending sign-in it carries is put ' +
+          'back for the sign-in screen.' },
   // #572, #573: the steps after the screen.
   { path: '/authn-api/mfa/:id', group: 'Authentication',
     name: 'What a sign-in step\'s page shows', specs: [],
@@ -8000,6 +8006,12 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Spend a mailed sign-in link', specs: [],
     what: 'NON-SPEC (#573). The Continue button of the page the link ' +
           'lands on, only in the browser that asked for it.' },
+  { path: '/authn-api/mfa/:id/start-over', group: 'Authentication',
+    name: 'Start a sign-in over from a step', specs: [],
+    what: 'NON-SPEC (2026-10-12). Every step page\'s Start over: the step ' +
+          'is ended with whatever it held, no session is started, and the ' +
+          'pending sign-in it carries is put back for the sign-in screen, ' +
+          'so the original request still completes.' },
   { path: '/authn/fingerprint.js', group: 'Authentication',
     name: 'Browser fingerprint script (optional)',
     specs: [],
