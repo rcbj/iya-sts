@@ -52,6 +52,7 @@
   "hEnrolled": "Registrerade certifikat",
   "hNotDo": "Vad SCEP här inte gör",
   "hMode": "Läge",
+  "hSettings": "Inställningar",
   "realmMode": "<strong>Den här sfären är i läget {mode}.</strong>",
   "development": "Utveckling:",
   "product": "Produkt:",

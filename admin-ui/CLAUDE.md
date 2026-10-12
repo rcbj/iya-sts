@@ -4890,6 +4890,13 @@ knowing before changing it.
   `/admin/spiffe/entries` and the rest are no console pages. Links between
   tabs are rewritten by `certTabLinks()`; a former page's `?format=json` link
   is drawn as its operation's address.
+* **THE ACME, EST AND SCEP TABS ARE SUB-TABS TOO (2026-10-12, rcbj)**, one
+  per section (`cert-acme-ca` … `cert-scep-settings`, every id in
+  `admin.ts`'s `CERT_SUB_TAB_IDS`): each renderer hands its sections to
+  `kit.subTabbedPanels()`, the intro notes above them and the links below.
+  The sub-tab's label is the section's heading, so SCEP's section methods'
+  own `<h2>` is taken off by `kit.untitled()`. The EAB keys' anchor is
+  `#cert-acme-eab` (it was `#eab`).
 * **A drill-down is drawn in place of the tabs**: `?entry=` (the row's
   `drill`, so the trail knows it) and `?agent=`.
 

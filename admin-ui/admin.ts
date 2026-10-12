@@ -2737,13 +2737,21 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
 }));
 
 // PROTOCOLS → CERT ISSUANCE AS TABS (rcbj, 2026-10-12): Metadata and one
-// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page.
+// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page, and
+// the ACME, EST and SCEP tabs one sub-tab per section.
 // `admin-ui/web_pages.ts` draws them; the stylesheet needs the ids to mark
 // the tab being read.
 const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
   'cert-tab-scep', 'cert-tab-spiffe'];
 const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
-  'cert-spiffe-agents', 'cert-spiffe-brokers'];
+  'cert-spiffe-agents', 'cert-spiffe-brokers', 'cert-acme-ca',
+  'cert-acme-profiles', 'cert-acme-eab', 'cert-acme-accounts',
+  'cert-acme-certificates', 'cert-acme-host-names', 'cert-acme-mode',
+  'cert-acme-settings', 'cert-est-ca', 'cert-est-profiles',
+  'cert-est-credentials', 'cert-est-issue', 'cert-est-host-names',
+  'cert-est-certificates', 'cert-est-settings', 'cert-scep-ca',
+  'cert-scep-profiles', 'cert-scep-challenges', 'cert-scep-host-names',
+  'cert-scep-certificates', 'cert-scep-exceptions', 'cert-scep-settings'];
 
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells

@@ -412,13 +412,29 @@ class ScepPage {
     const inner =
       kit.note(t.html('consoleScep.intro') + ' ' +
         (json.enabled ? '' : t.html('consoleScep.turnedOff'))) +
-      this.sectionAuthority(json, t) +
-      this.sectionProfiles(json, t) +
-      this.sectionChallenges(ctx, json) + this.sectionHostNames(json, t) +
-      this.sectionCertificates(ctx, json) + this.sectionExceptions(json, t) +
-      SettingsForms.forms(json.settings,
-                          '/admin/cert-issuance#cert-tab-scep', undefined,
-                          t) +
+      // EACH SECTION A SUB-TAB (2026-10-12): the SCEP tab of Protocols →
+      // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
+      // CERT_SUB_TAB_IDS. A section's own heading is the sub-tab's label.
+      kit.subTabbedPanels(t.text('console.nav.scep'), [
+        { id: 'cert-scep-ca', label: t.text('consoleScep.hIssuingCa'),
+          html: kit.untitled(this.sectionAuthority(json, t)) },
+        { id: 'cert-scep-profiles', label: t.text('consoleScep.hProfiles'),
+          html: kit.untitled(this.sectionProfiles(json, t)) },
+        { id: 'cert-scep-challenges',
+          label: t.text('consoleScep.hChallenges'),
+          html: kit.untitled(this.sectionChallenges(ctx, json)) },
+        { id: 'cert-scep-host-names', label: t.text('consoleScep.hHostNames'),
+          html: kit.untitled(this.sectionHostNames(json, t)) },
+        { id: 'cert-scep-certificates',
+          label: t.text('consoleScep.hEnrolled'),
+          html: kit.untitled(this.sectionCertificates(ctx, json)) },
+        { id: 'cert-scep-exceptions', label: t.text('consoleScep.hNotDo'),
+          html: kit.untitled(this.sectionExceptions(json, t)) },
+        { id: 'cert-scep-settings', label: t.text('consoleScep.hSettings'),
+          html: SettingsForms.forms(json.settings,
+                                    '/admin/cert-issuance#cert-scep-settings',
+                                    undefined, t) }
+      ]) +
       '<p class="links"><a href="/admin/scep?format=json">JSON</a> · ' +
       '<code>GET /admin-api/scep</code> · <a href="/admin/scep/monitor">' +
       t.html('consoleScep.linkMonitor') + '</a> · ' +
