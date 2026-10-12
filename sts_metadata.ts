@@ -6946,6 +6946,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
           'direction that message is really defined for.',
     demo: true },
+  { path: '/wsfed/rp/mock-rp.js', group: 'WS-Federation',
+    name: 'The mock relying party\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /wsfed/rp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/wsfed/rp/api/start', group: 'WS-Federation',
+    name: 'The mock relying party\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Mints a wctx and answers, as facts, the sign-in ' +
+          'requests the mock relying party offers — the start page\'s ' +
+          'view. Language-free; no-store.',
+    demo: true },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -7121,6 +7136,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'an artifact, in process rather than by this service making a SOAP ' +
           'call to itself.',
     demo: true },
+  { path: '/saml2/sp/mock-rp.js', group: 'SAML 2.0',
+    name: 'The mock service provider\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /saml2/sp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/saml2/sp/api/start', group: 'SAML 2.0',
+    name: 'The mock service provider\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Mints a RelayState for each of the four ' +
+          'AuthnRequests the mock service provider offers, signs three with ' +
+          'this service\'s key, and answers them as facts — the start ' +
+          'page\'s view. Language-free; no-store.',
+    demo: true },
 
   // --- SAML 1.1 ---
   { path: '/saml11', group: 'SAML 1.1', name: 'What the profile is',
@@ -7234,6 +7265,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'profile does not. It resolves an artifact IN PROCESS rather than ' +
           'by this service making a SOAP call to itself, and reloading the ' +
           'result page demonstrates the one-shot rule rather than erroring.',
+    demo: true },
+  { path: '/saml11/rp/mock-rp.js', group: 'SAML 1.1',
+    name: 'The mock relying party\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /saml11/rp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/saml11/rp/api/start', group: 'SAML 1.1',
+    name: 'The mock relying party\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Answers, as facts, the two browser profiles\' ' +
+          'starts at the inter-site transfer service that the mock relying ' +
+          'party offers — the start page\'s view. Language-free; no-store.',
     demo: true },
 
   // --- Federation ---

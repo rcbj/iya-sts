@@ -1175,6 +1175,14 @@
     "en": "1f62bc9e9246c363",
     "text": "Mock relying party (hindi spec endpoint)"
   },
+  "endpoints.route./wsfed/rp/mock-rp.js.name": {
+    "en": "88afe93636f1cffa",
+    "text": "Ang script ng mock relying party"
+  },
+  "endpoints.route./wsfed/rp/api/start.name": {
+    "en": "e4478ae2c9c051a7",
+    "text": "Ang panimulang view ng mock relying party"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
@@ -1235,6 +1243,14 @@
     "en": "a09df9ed92de4454",
     "text": "Mock service provider (hindi spec endpoint)"
   },
+  "endpoints.route./saml2/sp/mock-rp.js.name": {
+    "en": "9f26130381002d3a",
+    "text": "Ang script ng mock service provider"
+  },
+  "endpoints.route./saml2/sp/api/start.name": {
+    "en": "7e3ea418703ad450",
+    "text": "Ang panimulang view ng mock service provider"
+  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
@@ -1270,6 +1286,14 @@
   "endpoints.route./saml11/rp.name": {
     "en": "1f62bc9e9246c363",
     "text": "Mock relying party (hindi spec endpoint)"
+  },
+  "endpoints.route./saml11/rp/mock-rp.js.name": {
+    "en": "88afe93636f1cffa",
+    "text": "Ang script ng mock relying party"
+  },
+  "endpoints.route./saml11/rp/api/start.name": {
+    "en": "e4478ae2c9c051a7",
+    "text": "Ang panimulang view ng mock relying party"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",
