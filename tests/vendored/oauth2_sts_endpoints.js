@@ -35,6 +35,8 @@
 // The STS mock is located from WSTRUST_STS_URL, as the other STS-backed tests
 // are; OAUTH_METADATA_URL overrides the metadata URL outright.
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require('commander');
@@ -193,17 +195,6 @@ async function person(username) {
   log.debug("Leaving person().");
 }
 
-// The two hidden fields the sign-in screen posts back.
-function screenFields(page) {
-  log.debug("Entering screenFields().");
-  log.debug("Leaving screenFields().");
-  return {
-    authn_id: (page.match(/name="authn_id" value="([^"]+)"/) || [])[1],
-    csrf_token: (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] ||
-        ""
-  };
-}
-
 function get(url, options) {
   log.debug("Entering get().");
   log.debug("Leaving get().");
@@ -296,8 +287,8 @@ function parseRedirect(location) {
 // a redirect rather than a form:
 //
 //   GET  /oauth2/authorize   -> 302 to /authn/login?authn=...
-//   GET  /authn/login        -> the form
-//   POST /authn/login        -> back to /oauth2/authorize, with a session cookie
+//   GET  /authn/login        -> the screen (a static page since #571)
+//   /authn-api               -> back to /oauth2/authorize, with a session cookie
 //   GET  /oauth2/authorize   -> the authorization response
 //
 // options.username  who to sign in as (their name ends up in the tokens)
@@ -365,43 +356,29 @@ async function signInAndAuthorize(meta, params, options) {
     return out;
   }
 
-  // The screen, at its own URL. It is a GET, which is what makes it a service
-  // rather than a page rendered inside somebody else's endpoint.
-  r = await get(first.indexOf("http") === 0 ? first : meta.issuer + first,
-    options.cookie ? { headers: { cookie: options.cookie } } : {});
-  assert.strictEqual(r.status, 200,
+  // THE SCREEN, AT ITS OWN URL — a static page since #571, whose view and
+  // acts are `/authn-api`'s, through the one helper. The act's answer names
+  // where to go and the browser goes there with a GET, as it followed the
+  // form's 303. RFC 9700 section 4.12's point — a 307 would replay the
+  // credentials onto the next hop — cannot arise: the answer is JSON, and
+  // the browser's next request carries nothing it was sent.
+  const signedIn = await authnSignin.submit(meta.issuer,
+    first.indexOf("http") === 0 ? first : meta.issuer + first,
+    { action: options.action || "login", username: username,
+      password: options.password || "any-password" },
+    { cookie: options.cookie || "" });
+  assert.ok(signedIn.view,
     "the authentication service should show the sign-in screen, got HTTP " +
-        r.status + ".");
-  const page = await r.text();
-  const fields = screenFields(page);
-  const authnId = fields.authn_id;
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-
-  r = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: username,
-               password: options.password || "any-password",
-                 action: options.action || "login",
-                 csrf_token: fields.csrf_token })
-  });
-  // The sign-in form is a POST and the answer to it is a redirect. WHICH
-  // redirect is the interesting part, and it is asserted the way RFC 9700
-  // section 4.12 states it rather than as one exact code: 303 is what the mock
-  // sends now and what the BCP asks for, 302 is what it sent before and what
-  // most servers send, and **307 is the one that is forbidden** — it replays
-  // the method and the body, which on this request is the username and
-  // password, onto whatever the redirect names. Pinning 302 exactly made this
-  // fail the day the mock started doing the more correct thing, and it never
-  // checked the code the specification actually cares about.
-  assert.ok(r.status === 303 || r.status === 302,
-    "submitting the sign-in form should redirect, got HTTP " + r.status + ".");
-  assert.notStrictEqual(r.status, 307,
-    "RFC 9700 section 4.12: a credential-bearing POST must not be answered " +
-    "with 307, which replays the method and the body onto the next hop.");
-  const cookie = String(r.headers.get("set-cookie") || "").split(";")[0];
-  let next = r.headers.get("location");
-  if (next.indexOf("http") !== 0) next = meta.issuer + next;
+        signedIn.status + ".");
+  const page = signedIn.view;
+  assert.strictEqual(signedIn.next, "redirect",
+    "submitting the sign-in screen should answer where to go next, got " +
+    signedIn.status + " " + JSON.stringify(signedIn.json));
+  const cookie = signedIn.next === "redirect" &&
+    !/[?&]authn_error=/.test(signedIn.location)
+    ? (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) || [])[1] || ""
+    : "";
+  let next = signedIn.location;
 
   // Cancel comes back to the authorization endpoint as well, carrying
   // authn_error rather than being answered at the screen: the service does not
@@ -519,26 +496,32 @@ async function testLoginScreen(meta, verify) {
   assert.ok(!/code=/.test(toService),
     "nothing should be issued on the way to signing in.");
 
+  // THE SCREEN IS A STATIC PAGE SINCE #571: its own URL answers the
+  // shell, and what it offers is the view `/authn-api` answers.
   const screen = await get(toService.indexOf("http") === 0 ? toService
     : meta.issuer + toService);
   assert.strictEqual(screen.status, 200,
       "the sign-in screen should be served at its own URL.");
   assert.ok(/text\/html/.test(screen.headers.get("content-type") || ""),
             "the sign-in screen should be HTML.");
-  const page = await screen.text();
-  assert.ok(/<form[^>]+action="\/authn\/login"/.test(page),
-            "the sign-in screen should post to /authn/login.");
-  assert.ok(/id="username"/.test(page) && /id="password"/.test(page),
-    "the sign-in screen should ask for a username and a password.");
-  assert.ok(/name="authn_id" value="[^"]+"/.test(page),
-            "the form should carry the request it interrupted.");
-  assert.ok(page.indexOf('value="prefilled-user"') !== -1,
+  assert.ok(/\/authn\/signin\.js/.test(await screen.text()),
+            "the sign-in screen should be the static surface's shell.");
+  const opened = await authnSignin.screen(meta.issuer, toService);
+  const view = opened.view || {};
+  assert.ok(view.screen === true && view.password === true,
+    "the sign-in screen should ask for a username and a password: " +
+    JSON.stringify(view));
+  assert.ok(opened.id && view.id === opened.id,
+            "the view should be the request it interrupted.");
+  assert.strictEqual(view.hint, "prefilled-user",
     "login_hint should pre-fill the username field.");
-  assert.ok(page.indexOf(CLIENT_ID) !== -1 && page.indexOf(REDIRECT_URI) !== -1,
+  const rows = JSON.stringify(view.details || []);
+  assert.ok(rows.indexOf(CLIENT_ID) !== -1 &&
+            rows.indexOf(REDIRECT_URI) !== -1,
     "the sign-in screen should say which client and redirect_uri it is " +
     "signing in for — the service knows nothing about OAuth, so those rows " +
         "are what the authorization endpoint passed it.");
-  assert.ok(!/code=/.test(page),
+  assert.ok(!/code=/.test(JSON.stringify(opened.json)),
             "nothing should be issued before the user signs in.");
   log.info("[login] OK — an unauthenticated authorization request is sent to " +
            "the authentication service, which shows the form.");
@@ -651,22 +634,17 @@ async function testLoginScreen(meta, verify) {
         "Got: " + forced.headers.get("location"));
   // …and the return URL it stashed must have had `prompt` taken off it, or the
   // person comes back, is sent to sign in again, and never leaves.
-  const forcedScreen = await get(meta.issuer + forced.headers.get("location"));
-  const forcedFields = screenFields(await forcedScreen.text());
   await person("prompted.user");
-  const forcedDone = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: forcedFields.authn_id, username: "prompted.user",
-                 password: PERSON_PASSWORD, action: "login",
-                 csrf_token: forcedFields.csrf_token })
-  });
-  assert.ok(forcedDone.headers.get("location"),
-    "signing in at the forced prompt should redirect onwards, got HTTP " +
-        forcedDone.status + ".");
-  assert.ok(!/[?&]prompt=/.test(forcedDone.headers.get("location") || ""),
+  const forcedDone = await authnSignin.submit(meta.issuer,
+    meta.issuer + forced.headers.get("location"),
+    { action: "login", username: "prompted.user",
+      password: PERSON_PASSWORD });
+  assert.ok(forcedDone.next === "redirect" && forcedDone.location,
+    "signing in at the forced prompt should answer where to go onwards, " +
+    "got " + forcedDone.status + " " + JSON.stringify(forcedDone.json));
+  assert.ok(!/[?&]prompt=/.test(forcedDone.location),
     "the return URL must drop prompt, or signing in loops for ever. Got: " +
-        forcedDone.headers.get("location"));
+        forcedDone.location);
   const silent = await authorize(meta, fresh({ prompt: "none" }));
   assert.strictEqual(silent.params.get("error"), "login_required",
     "prompt=none with no session must fail rather than show UI. Got: " +
@@ -683,26 +661,19 @@ async function testLoginScreen(meta, verify) {
                      "even the cancel keeps state.");
 
   const started = await get(meta.authorization_endpoint + "?" + form(fresh()));
-  const noName = await get(meta.issuer + started.headers.get("location"));
-  const noNameFields = screenFields(await noName.text());
-  const authnId = noNameFields.authn_id;
-  const blank = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: "", password: "x",
-               action: "login", csrf_token: noNameFields.csrf_token })
-  });
-  assert.strictEqual(blank.status, 200,
-      "an empty username should re-show the form, not redirect.");
-  assert.ok(/Enter a username/.test(await blank.text()),
-            "the form should say what was wrong.");
-  const refused = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: "carol", password: "invalid",
-               action: "login", csrf_token: noNameFields.csrf_token })
-  });
-  assert.ok(/Authentication failed for carol/.test(await refused.text()),
+  const noName = await authnSignin.screen(meta.issuer,
+    started.headers.get("location"));
+  const blank = await authnSignin.submit(meta.issuer, noName.id,
+    { action: "login", username: "", password: "x" }, { screen: noName });
+  assert.strictEqual(blank.next, "refused",
+      "an empty username should be refused, not redirect: " +
+      blank.status + " " + JSON.stringify(blank.json));
+  assert.ok(/Enter a username/.test(blank.errors.join(" ")),
+            "the refusal should say what was wrong.");
+  const refused = await authnSignin.submit(meta.issuer, noName.id,
+    { action: "login", username: "carol", password: "invalid" },
+    { screen: noName });
+  assert.ok(/Authentication failed for carol/.test(refused.errors.join(" ")),
     'the reserved password "invalid" should be refused at the sign-in ' +
         'screen too.');
   log.info("[login] OK — cancel, a missing username and the reserved " +
