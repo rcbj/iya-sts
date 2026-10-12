@@ -14376,9 +14376,9 @@ class AdminApi {
       // -----------------------------------------------------
       //
       // A GET and a POST, and unlike SCIM's the POST is not optional:
-      // /admin/ssf has FOUR CONTROLS on it — set a status, transmit an event,
-      // delete a stream, clear what has been received — and rule 7 is about
-      // controls. Every one of them calls the same function the console's form
+      // /admin/ssf has CONTROLS on it — set a status, transmit an event,
+      // delete a stream (what has been received went with `POST /ssf/receive`,
+      // #593) — and rule 7 is about controls. Every one of them calls the same function the console's form
       // posts to, with `action` taken from the URL instead of from a hidden
       // input.
       //
@@ -16882,24 +16882,7 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'How many were dropped, or a refusal naming ' +
-                                 'the stream_id.' },
-
-          { action: 'clear-received', operationId: 'clearSsfReceived',
-            summary: 'Drop what has been pushed AT this service',
-            description: 'Empties the list `POST /ssf/receive` fills — this ' +
-                         'service acting as a RECEIVER, which is the roles ' +
-                         'reversed and what a client acting as the ' +
-                         'TRANSMITTER pushes to. It touches no stream and no ' +
-                         'queue: those are the transmitter half and have ' +
-                         'nothing to do with this one.',
-            requestBodyRequired: false,
-            requestBody: {
-              type: 'object',
-              properties: {},
-              examples: [{}],
-              additionalProperties: false
-            },
-            responseDescription: 'How many were dropped.' }
+                                 'the stream_id.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -17157,8 +17140,8 @@ class AdminApi {
             description: 'Forgets what has been said about every session. ' +
                          'Nobody is signed out, no stream is touched and no ' +
                          'queued event is dropped — those are the SSF half, ' +
-                         'at POST /admin-api/ssf/delete and ' +
-                         '/clear-received.\n\nIt is worth knowing what this ' +
+                         'at POST /admin-api/ssf/delete.\n\nIt is worth ' +
+                         'knowing what this ' +
                          'throws away: rows for sessions this service NO ' +
                          'LONGER HOLDS are the only evidence that ' +
                          'those sessions existed and were revoked, ' +

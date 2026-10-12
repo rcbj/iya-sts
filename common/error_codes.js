@@ -14754,19 +14754,24 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0022',
     summary: 'A Security Event Token was pushed at /ssf/receive while this ' +
-      'service is not accepting pushed events (ssf.receiveEnabled).',
-    spec: 'HTTP 501 {err: invalid_request}' },
+      'service is not accepting pushed events (ssf.receiveEnabled). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted; the test ' +
+      'peer is that push receiver',
+    spec: 'HTTP 501 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0023',
-    summary: 'A push at /ssf/receive carried an empty body.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+    summary: 'A push at /ssf/receive carried an empty body. Retired ' +
+      '2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0024',
     summary: 'A Security Event Token pushed at /ssf/receive did not verify, ' +
-      'in product mode or while ssf.receiveRequireSignature is on (#117).',
-    spec: 'HTTP 400 {err: invalid_key}' },
+      'in product mode or while ssf.receiveRequireSignature is on (#117). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_key}', retired: true },
   { code: 'STS-SSF-0025',
     summary: 'A Security Event Token pushed at /ssf/receive could not be ' +
-      'read as a SET; it was recorded anyway.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+      'read as a SET; it was recorded anyway. Retired 2026-10-12 (#593): ' +
+      'POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0026',
     summary: 'An event was not transmitted on a stream because the stream ' +
       'does not deliver that event type.',
@@ -15092,16 +15097,15 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0105',
     summary: 'A Security Event Token delivered to one of this service\'s ' +
-      'receivers carries an iss other than its stream\'s, or one ' +
-      'ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was ' +
-      'recorded and refused.',
+      'receivers carries an iss other than its stream\'s (SSF 1.0 section ' +
+      '4.1.6); it was recorded and refused.',
     spec: 'HTTP 400 {err: invalid_issuer}' },
   { code: 'STS-SSF-0106',
     summary: 'A Security Event Token pushed at POST /ssf/receive is ' +
       'addressed to no audience ssf.receiveAudiences lists; it was recorded ' +
-      'and ' +
-      'refused.',
-    spec: 'HTTP 400 {err: invalid_audience}' },
+      'and refused. Retired 2026-10-12 (#593): POST /ssf/receive was ' +
+      'deleted',
+    spec: 'HTTP 400 {err: invalid_audience}', retired: true },
   { code: 'STS-SSF-0107',
     summary: 'An access token (OAuth or GNAP) carried the Shared Signals ' +
       'scope an operation needs, and the client it was issued to no longer ' +

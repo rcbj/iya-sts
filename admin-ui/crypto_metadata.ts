@@ -1659,19 +1659,7 @@ class CryptoMetadata {
                'is an HMAC-SHA256 chain under a key derived per resource ' +
                'server. It also signs an HTTP response with RFC 9421 when a ' +
                'client instance asks for one.',
-        verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it ' +
-                  'presented: an RFC 9421 HTTP message signature (with the ' +
-                  'body covered by an RFC 9530 Content-Digest), a mutual TLS ' +
-                  'certificate (revocation consulted; a chain to the client ' +
-                  'truststore and a binding to the application entry under ' +
-                  'gnap.mtlsTrust=pki, product\'s default), a detached JWS ' +
-                  'over the body or an attached ' +
-                  'JWS carrying it. A key rotation is verified under BOTH ' +
-                  'keys. A resource server calling introspection or ' +
-                  'registration is proofed the same way, and every token ' +
-                  'format is verified at introspection and at the ' +
-                  'demonstration resource server.',
-        withoutDemos: { verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, ' +
+        verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, ' +
                   'by the key it presented: an RFC 9421 HTTP message ' +
                   'signature (with the body covered by an RFC 9530 ' +
                   'Content-Digest), a mutual TLS certificate (revocation ' +
@@ -1682,7 +1670,7 @@ class CryptoMetadata {
                   'rotation is verified under BOTH keys. A resource server ' +
                   'calling introspection or registration is proofed the ' +
                   'same way, and every token format is verified at ' +
-                  'introspection.' },
+                  'introspection.',
         encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the ' +
                   'resource server\'s own key (RSA-OAEP-256 or ' +
                   'ECDH-ES+A256KW, with `gnap.jweEnc`) when its application ' +
@@ -2402,23 +2390,10 @@ class CryptoMetadata {
                'signature takes up to a second and runs on libuv\'s thread ' +
                'pool, so this service answers throughout and the receiver ' +
                'waits.',
-        verifies: 'A Security Event Token pushed AT this service at `POST ' +
-                  '/ssf/receive` — the roles reversed — against its own ' +
-                  'JWKS, which is the only key it has. A SET signed by ' +
-                  'anybody else is reported as NOT VERIFIABLE HERE rather ' +
-                  'than as invalid, and is ACCEPTED anyway unless ' +
-                  '`ssf.receiveRequireSignature` is on: a receiver that ' +
-                  'refused could not show anybody what arrived or why it did ' +
-                  'not verify, which is the question being asked. It also ' +
-                  'verifies the access token on every stream management ' +
-                  'call, through the same check every other protected ' +
-                  'endpoint here uses.',
-        withoutDemos: { verifies: 'The access token on every stream ' +
-                  'management call, through the same check every other ' +
-                  'protected endpoint here uses, and a SET pushed to the ' +
-                  'console\'s or the portal\'s own receiver against this ' +
-                  'service\'s JWKS. /ssf/receive is a development endpoint ' +
-                  '(#585).' },
+        verifies: 'The access token on every stream management call, ' +
+                  'through the same check every other protected endpoint ' +
+                  'here uses, and a SET pushed to the console\'s or the ' +
+                  'portal\'s own receiver against this service\'s JWKS.',
         encrypts: 'Nothing. SSF has no encrypted-SET profile — RFC 8417 ' +
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +

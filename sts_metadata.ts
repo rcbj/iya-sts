@@ -730,9 +730,9 @@ const SPECS: Spec[] = [
               'Authorization header, treats 202 as delivery, and reads a 400 ' +
               '{err, description} as the receiver REFUSING — which is a ' +
               'different outcome from a network failure and is recorded as ' +
-              'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
-              'the roles reversed, so a client can be the transmitter, ' +
-              'checking the typ, iss and aud of what arrives. A failed push ' +
+              'one. The console\'s and portal\'s own receivers RECEIVE on ' +
+              'that profile, checking the typ, iss and aud of what ' +
+              'arrives. A failed push ' +
               'is retried ssf.pushRetries times — 0 by default, ' +
               'deliberately, see ssf/ssf_http.ts — and then goes to the ' +
               'stream\'s dead-letter queue.' },
@@ -4165,31 +4165,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'person can see it. RFC 8936 has no stream_id member because a ' +
           'real poll endpoint is per stream; this transmitter publishes one ' +
           'URL, so the id goes in the body.' },
-  { path: '/ssf/receive', group: 'Shared Signals',
-    name: 'A Security Event Token pushed AT this service',
-    specs: ['rfc8935', 'rfc8417'],
-    what: 'THE ROLES REVERSED, and not an SSF endpoint: a transmitter has to ' +
-          'have somewhere to push, so this service is a RECEIVER here for a ' +
-          'client\'s benefit. It ACCEPTS a SET whose signature does not ' +
-          'verify and reports why, which is exactly right for a debugger — a ' +
-          'receiver that refused could not show anybody what arrived or why ' +
-          'it did not verify, which is the question being asked. ' +
-          'ssf.receiveRequireSignature turns the 400 invalid_key on, which ' +
-          'is what a real receiver does. The verification is against THIS ' +
-          'service\'s own key, the only one it has, so a SET signed by ' +
-          'somebody else is "not verifiable here" rather than invalid.',
-    demo: true },
-  { path: '/ssf/received', group: 'Shared Signals', name: 'What has been ' +
-      'pushed here',
-    specs: ['rfc8935'],
-    what: 'Not an SSF endpoint either. Everything POST /ssf/receive has ' +
-          'taken, with what each one decoded to, whether its signature ' +
-          'verified and whether it carried the application/secevent+jwt ' +
-          'media type RFC 8417 section 2.3 specifies — a receiver that ' +
-          'dispatches on the type, and several do, drops a SET sent as a ' +
-          'plain JWT with no error anybody sees.',
-    demo: true },
-
   { path: '/scim', group: 'SCIM', name: 'What the SCIM surface is',
     specs: ['rfc7642', 'rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616',
             'rfc7486', 'rfc4511', 'rfc4519'],
@@ -5917,7 +5892,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/ssf/:action', group: 'Management API',
     name: 'Change a stream, or transmit an event',
     specs: ['openapi', 'ssf', 'rfc8935', 'rfc8936'],
-    what: 'status, transmit, delete and clear-received — the same four the ' +
+    what: 'status, transmit, delete, revive, clear-dead-letters and verify ' +
+          '— the actions the ' +
           'console\'s forms post, through the same action function, with the ' +
           'action taken from the URL instead of a hidden input. THERE IS ' +
           'DELIBERATELY NO `create`: a stream carries a delivery endpoint ' +

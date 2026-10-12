@@ -95,8 +95,7 @@ import serverProse = require('../common/server_prose');
 
 const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
                       '/ssf/status', '/ssf/subjects/add',
-                      '/ssf/subjects/remove', '/ssf/verify', '/ssf/poll',
-                      '/ssf/receive', '/ssf/received'];
+                      '/ssf/subjects/remove', '/ssf/verify', '/ssf/poll'];
 // The Protocols pages with no row, each with the reason. A page here is one
 // that lists its endpoints itself; `tests/protocol_endpoints.js` fails on a
 // Protocols page that is in neither table.

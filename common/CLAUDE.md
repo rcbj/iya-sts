@@ -4001,9 +4001,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    there — `seq` is monotonic only within one process, so the sort is by TIME,
    and the cap is per process. **The test to apply to the next `merge: 'own'`
    store is not "is it declared right" but "does everything that REPORTS it
-   fan in"**: three stores in this service still do not, and each is a page
+   fan in"**: two stores in this service still do not, and each is a page
    that under-reports rather than a page that is wrong —
-   `admin_stats.scimCounts`, `admin_stats.users` and `ssf_streams.received`.
+   `admin_stats.scimCounts` and `admin_stats.users` (`ssf_streams.received`
+   was the third, until #593 deleted it with `POST /ssf/receive`).
 
    **`record()` CANNOT THROW.** The whole body is wrapped and a caller must
    never guard it — the fourth place that rule applies (after `audit()`,

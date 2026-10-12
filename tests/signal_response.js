@@ -25,9 +25,8 @@
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
-//      receiver, whatever ssf.receiveRequireSignature says, and has no
-//      /ssf/receive at all (#585, Express's own 404); development still
-//      accepts one at /ssf/receive and records it.
+//      receiver, whatever ssf.receiveRequireSignature says; and there is no
+//      /ssf/receive in either mode (#593 deleted it; Express's own 404).
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -329,35 +328,29 @@ function childMain() {
                                                              : 'AAAA');
     };
     config.setOverride('ssf.receiveRequireSignature', false);
+    // DELETED BY #593: the test peer is that push receiver now, so a SET
+    // pushed at /ssf/receive finds an unrouted path in development too.
     const devReceive = await pushAtReceive(forgedToken());
     config.setOverride('global.mode', 'product');
     let prodInternal = null;
-    let prodReceive = null;
     try {
       prodInternal = push('session-revoked', erin, {}, true);
-      prodReceive = await pushAtReceive(forgedToken());
     } finally {
       config.clearOverride('global.mode');
       config.clearOverride('ssf.receiveRequireSignature');
       server.close();
     }
-    // Development passes the signature step and RECORDS it; this test's
-    // issuer is not the listener's own, so it is then refused for that.
-    note(!/invalid_key/.test(devReceive.text) &&
-         /has been recorded/.test(devReceive.text),
-         'F1. development gets an unverified SET past the signature step at ' +
-         '/ssf/receive and records it, as the debugger needs',
+    note(devReceive.status === 404 &&
+         /Cannot POST \/ssf\/receive/.test(devReceive.text),
+         'F1. there is no /ssf/receive, in development either (#593)',
          devReceive.status + ' ' + devReceive.text.slice(0, 200));
     note(prodInternal.status === 400 &&
          prodInternal.body.err === 'invalid_key' &&
-         prodInternal.entry.reactions.length === 0 &&
-         prodReceive.status === 404 &&
-         /Cannot POST \/ssf\/receive/.test(prodReceive.text),
+         prodInternal.entry.reactions.length === 0,
          'F2. product refuses one at the console\'s receiver with ' +
-         'invalid_key, the setting off (#117), and has no /ssf/receive ' +
-         '(#585)',
-         JSON.stringify([prodInternal.status, prodReceive.status,
-                         prodReceive.text.slice(0, 200)]));
+         'invalid_key, the setting off (#117)',
+         JSON.stringify([prodInternal.status,
+                         prodInternal.body && prodInternal.body.err]));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

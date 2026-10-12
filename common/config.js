@@ -12534,10 +12534,9 @@ const SETTINGS = [
   { key: 'ssf.maxReceivedEvents', group: 'SSF', label: 'Received events kept',
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
-    description: 'How many SETs POST /ssf/receive keeps for /admin/ssf to ' +
-                 'show. That endpoint is this service acting as a RECEIVER, ' +
-                 'which is what the debugger pushes to when the roles are ' +
-                 'the other way round; the oldest are dropped past this.' },
+    description: 'How many delivered SETs each of this service\'s own ' +
+                 'receivers (the console\'s and the portal\'s) keeps in its ' +
+                 'inbox, per realm; the oldest are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -12564,37 +12563,6 @@ const SETTINGS = [
                  'for a verification event. A read scope is not enough for ' +
                  'any of those, which is the first place in this service ' +
                  'besides SCIM where two scopes differ in what they permit.' },
-
-  { key: 'ssf.receiveEnabled', group: 'SSF', label: 'Accept pushed events',
-    env: 'STS_SSF_RECEIVE_ENABLED', type: 'bool', dflt: true, runtime: true,
-    description: 'Whether POST /ssf/receive accepts a Security Event Token ' +
-                 'pushed AT this service — the roles reversed, with the ' +
-                 'debugger as the transmitter. It verifies the signature ' +
-                 'when it can find a key and reports what it read either ' +
-                 'way, because a receiver that refused an unverifiable ' +
-                 'event would be unable to show a person WHY it was ' +
-                 'unverifiable. Off answers 501. Development mode only: a ' +
-                 'product realm has no /ssf/receive (#585).' },
-
-  { key: 'ssf.receiveAudiences', group: 'SSF',
-    label: 'Audiences POST /ssf/receive answers to',
-    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
-    description: 'The `aud` values the debugger-facing receiver at ' +
-                 'POST /ssf/receive accepts. A SET addressed to none of ' +
-                 'them is recorded and refused with invalid_audience, as a ' +
-                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
-                 'URL in this realm, which is the name a transmitter can ' +
-                 'discover without being told one.' },
-
-  { key: 'ssf.receiveIssuers', group: 'SSF',
-    label: 'Issuers POST /ssf/receive accepts',
-    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
-    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
-                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
-                 'from any other issuer is recorded and refused with ' +
-                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
-                 'issuer — the only issuer whose SETs this receiver can ' +
-                 'verify, since it holds no other key.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',

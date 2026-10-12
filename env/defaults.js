@@ -1006,9 +1006,6 @@ var config = {
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
-    receiveEnabled: true,                                                                                                                                 // Accept pushed events
-    receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
-    receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
     foreignPollS: 30,                                                                                                                                     // Partner signals poll interval (s)
     foreignPollMaxEvents: 50,                                                                                                                             // Events asked per partner poll

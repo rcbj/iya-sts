@@ -154,7 +154,7 @@ const APPLICATIONS = [
     what: 'Provisioning into the directory.',
     prefixes: ['/scim'], exact: [] },
   { id: 'ssf', label: 'Shared Signals',
-    what: 'The Shared Signals transmitter and receiver.',
+    what: 'The Shared Signals transmitter.',
     prefixes: ['/ssf', '/.well-known/ssf-configuration'], exact: [] },
   // `/gnap-api` IS THE INTERACTION PAGES' API (#578): the pages are a
   // static surface drawn from it, so the two are one application on one
