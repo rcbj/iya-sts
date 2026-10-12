@@ -3632,20 +3632,50 @@ const ENDPOINTS: EndpointEntry[] = [
           'rather than a browser redirect.' },
   { path: '/gnap/code', group: 'GNAP', name: 'User code entry',
     specs: ['rfc9635'],
-    what: 'Sections 4.1.2 and 4.1.3: GET draws the form a person types a ' +
-          'user code into, or takes the code on the query for user_code_uri; ' +
-          'POST spends it. Rate limited per address, and a code is ' +
-          'single-use and case-folded.' },
+    what: 'Sections 4.1.2 and 4.1.3: the page a person types a user code ' +
+          'into, for user_code and user_code_uri alike. A page of GNAP\'s ' +
+          'interaction surface since #578: the code goes to ' +
+          '/gnap-api/code, which spends it. Rate limited per address, and ' +
+          'a code is single-use and case-folded.' },
   { path: '/gnap/approve/:id', group: 'GNAP', name: 'Resource owner approval',
     specs: ['rfc9635'],
     what: 'The page that asks the signed-in resource owner whether the ' +
-          'client instance may have what it asked for, one right at a time, ' +
-          'and the form that answers it. Protected by the session and a CSRF ' +
+          'client instance may have what it asked for, one right at a time. ' +
+          'A page of GNAP\'s interaction surface since #578: the answer goes ' +
+          'to /gnap-api/approve/{id}, protected by the session and a CSRF ' +
           'token. An approval is remembered in the consent register when ' +
           'gnap.rememberApprovals is on, so the same request from the same ' +
-          'application is not asked twice. On a redirect finish it returns ' +
-          'to the registered finish URI with the interaction hash; on push ' +
-          'it POSTs the hash to it.' },
+          'application is not asked twice. On a redirect finish the browser ' +
+          'returns to the registered finish URI with the interaction hash; ' +
+          'on push the hash is POSTed to it.' },
+  { path: '/gnap/interaction.js', group: 'GNAP',
+    name: 'The interaction pages\' script', specs: [],
+    what: 'NON-SPEC (#578). The runtime and renderers of GNAP\'s ' +
+          'interaction pages in one file, built by build-typescript.sh ' +
+          '(gnap/gnap-interaction-spa.js) and served precompressed: it ' +
+          'draws /gnap/code and /gnap/approve/{id} from /gnap-api and sends ' +
+          'their acts there, and draws the pages a shell carries.' },
+  { path: '/gnap-api', group: 'GNAP', name: 'The interaction API index',
+    specs: [],
+    what: 'NON-SPEC (#578). The operations of GNAP\'s interaction API, ' +
+          'each with the page or control it is the door of (mirrors). ' +
+          'Language-free.' },
+  { path: '/gnap-api/code', group: 'GNAP',
+    name: 'Enter a GNAP user code', specs: [],
+    what: 'NON-SPEC door to sections 4.1.2 and 4.1.3 (#578). GET answers ' +
+          'the user code page\'s CSRF token; POST spends a code — JSON, an ' +
+          'Origin of this service and X-CSRF-Token bound to the sts_session ' +
+          'cookie — and names the approval page it leads to. Rate limited ' +
+          'per address.' },
+  { path: '/gnap-api/approve/:id', group: 'GNAP',
+    name: 'Answer a GNAP approval', specs: [],
+    what: 'NON-SPEC door to section 4 (#578). GET answers what the ' +
+          'approval page asks the signed-in resource owner, as facts, or ' +
+          'sends the browser back to the page where it must sign in or ' +
+          'step up first; POST is the answer — the rights left ticked, the ' +
+          'limits as lowered, and whether to say who they are — bound as ' +
+          'every act is, and answers the finish URI to go to or what to ' +
+          'say.' },
   { path: '/.well-known/gnap-as-rs', group: 'GNAP', name: 'Resource server ' +
       'discovery',
     specs: ['rfc9767'],
