@@ -1,0 +1,14 @@
+{
+  "scim.doesNotDo.scope": {
+    "en": "bbf9a990cb80b46c",
+    "text": "UN SCOPE ACCORDE, ET RIEN D’AUTRE N’EN LIT. scim:read et scim:write sont la première exigence de scope de tout ce service, et elles ne s’appliquent qu’à ces points de terminaison — aucune autre surface ici ne lit de scope, et en détenir un ne confère rien au-delà de /scim/v2. Notez aussi que seuls les schémas OAuth portent des scopes : Basic, Digest, HOBA, un témoin et un certificat client authentifient un appelant qui peut alors faire les deux, si bien qu’un appelant qui ne peut pas obtenir de scope peut simplement utiliser un autre schéma. Chaque schéma a son propre interrupteur précisément pour cette raison."
+  },
+  "auth.schemes.cookie": {
+    "en": "b558e5c68d9956f1",
+    "text": "La session d’authentification unique du navigateur dont ce service dispose déjà — celle qu’établit /authn/login et que partage WS-Federation —, proposée ici parce que la section 2 la nomme : « clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider ». C’est ce qui permet à un appel SCIM depuis une page de ce service de fonctionner sans second identifiant. Il n’y a pas de défi pour elle : un serveur ne peut pas demander un témoin dans WWW-Authenticate ; elle est donc utilisée lorsqu’elle est présente et jamais exigée."
+  },
+  "auth.policy.others": {
+    "en": "e23c0683e2f710ad",
+    "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un témoin de session et un certificat client ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
+  }
+}

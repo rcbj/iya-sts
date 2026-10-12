@@ -1,0 +1,14 @@
+{
+  "crypto.families.email-codes-and-links.signs": {
+    "en": "469daea0865e7d80",
+    "text": "Rien. Un code ou un lien est un secret aléatoire vérifié par rapport à un hachage stocké de celui-ci ; le message qui le transporte n’est signé par DKIM que lorsque le transport SMTP est configuré pour cela (voir Courriel)."
+  },
+  "crypto.families.email-codes-and-links.verifies": {
+    "en": "3368b2038045996a",
+    "text": "Un code ou un jeton de lien présenté, par rapport au hachage scrypt de l’étape de connexion, avec crypto.verifySecret() sur le pool de workers ; et la liaison d’un lien au navigateur, sous la forme du SHA-256 du témoin défini lors de son envoi."
+  },
+  "crypto.families.email-codes-and-links.hashes": {
+    "en": "f7ea8e1a659a8cce",
+    "text": "Chaque secret UNE SEULE FOIS, avec crypto.hashSecret() (scrypt), lorsqu’il est créé — le code ou le jeton lui-même n’est jamais stocké, et le canal de courriel supprime le corps d’un message envoyé. Le témoin de liaison en SHA-256."
+  }
+}
