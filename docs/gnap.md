@@ -5,6 +5,8 @@ nav_order: 13
 
 # GNAP
 
+> **Development mode only (#585):** `/gnap/rs/resource`, `/gnap/rs/spend`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is an **authorization server for the Grant Negotiation and
 Authorization Protocol** ([RFC 9635](https://www.rfc-editor.org/rfc/rfc9635))
 and speaks the **resource server connections** of
@@ -840,7 +842,7 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.pushTimeoutMs` | `STS_GNAP_PUSH_TIMEOUT_MS` | `5000` | yes | How long a push finish may take. |
 | `gnap.jweEnc` | `STS_GNAP_JWE_ENC` | `A256GCM` | yes | The `enc` of a `jwt-encrypted` token encrypted to a resource server's own key; one encrypted to this server is always `dir` with `A256GCM`. |
 | `gnap.accessTokenCertificateHeader` | `STS_GNAP_ACCESS_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | Whether a `jwt-signed` or `jwt-encrypted` token's JWS names its signing certificate chain (`x5u`, `x5c`, `both`, `none`); see [PKI](pki.md#a-signed-token-names-its-certificate-chain). |
-| `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | Runs `/gnap/rs/resource`, which judges a token in any of the five formats and answers the RS-first challenge. |
+| `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | Runs `/gnap/rs/resource`, which judges a token in any of the five formats and answers the RS-first challenge. Development mode only (#585). |
 | `gnap.ownerLookupCacheS` | `STS_GNAP_OWNER_LOOKUP_CACHE_S` | `60` | yes | How long the owner a resource server's gnapOwnerLookupUri named for an identifier is held before it is asked again (#432 phase 5): a grant asks at its request, on its approval page and at issue. A failed lookup is never held. 0 asks every time; a longer one keeps a former owner able to approve for that long after the resource server says otherwise. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |

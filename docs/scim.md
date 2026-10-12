@@ -4,6 +4,8 @@ title: SCIM
 
 # SCIM
 
+> **Development mode only (#585):** `/tls/trust` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **SCIM 2.0 service provider** at `/scim/v2`
 ([RFC 7642](https://www.rfc-editor.org/rfc/rfc7642),
 [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643),

@@ -787,11 +787,14 @@ second catalogue. What is more than a number, and what
   moved to the user portal: `/portal/wallet`, over
   `GET /account-api/credentials/offerable` and
   `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
-  `portal/web_wallet.ts`, the QR code by `portal/web_qr.ts`). In product
-  `/issuer/offer?mode=cross-device|deferred` now answers 303 to
-  `/portal/wallet`, and `STS-VC-0027` (a "continue without signing in"
-  session refused there) is retired; the demo pages become development-only
-  in #585. A same-device offer grants nothing and is not gated.
+  `portal/web_wallet.ts`, the QR code by `portal/web_qr.ts`), and
+  `STS-VC-0027` (a "continue without signing in" session refused there) is
+  retired. **The `/issuer` pages are development-only since #585**: a
+  product realm answers them as unregistered paths (Express's own 404). From
+  #589 until then a product realm's pre-authorized request was sent on to
+  `/portal/wallet` (303); that was dropped, because a demonstration in a
+  product realm is not there at all, and nothing depended on the redirect.
+  A same-device offer grants nothing and is not gated.
   **ONE FUNCTION MAKES EVERY OFFER**: `VcOffers.makeOffer()` — the
   CAEP presentation, `buildCredentialOffer()`, the sweep of expired state, the
   reference stored and cell-stamped, the `openid-credential-offer://` URI and
@@ -971,8 +974,10 @@ did:key), a credential's status is an index `vc_status.ts` allocates, and a
 status change is `vc_status.setStatus()` — the act `/admin/vc-status`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
-**A TEST CONTROL** (`mode.opensTestControls()`): in a product realm every
-route is a 404 (`STS-VC-0100`). An endpoint that signs whatever it is handed
+**A TEST CONTROL** (`mode.servesDemoEndpoints()`, #585): every route carries
+`common/app.js`'s `demoOnly` mark, so a product realm answers as for a path
+nothing is registered on (Express's own 404; until #585 a 404 of this
+module's own, `STS-VC-0100`, retired). An endpoint that signs whatever it is handed
 with a realm's key is what a conformance suite needs and no deployment
 should expose. **AND AUTHENTICATED ANYWAY**, the way
 `vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
@@ -1072,3 +1077,7 @@ read the SAME thing:
 parameter but the fresh nonce and state; the result object byte for byte),
 and `sts_oid4vp_wallet.js` drives the demonstration once more in development
 so it is not left untested.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/issuer`, `/issuer/offer`, `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/{state}`, the readbacks `/oid4vci/last_request` and `/oid4vci/notification/{id}`, `/did/generate` and the VC-API test endpoints with the status-list publish hook. **Not** `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`, which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`) uses and #569's rule keeps unchanged. The verifier-request tab links the demonstration page (`verifierPage`) only where it is served. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

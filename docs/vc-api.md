@@ -4,6 +4,8 @@ title: W3C VC-API test endpoints
 
 # The W3C VC-API test endpoints and the W3C test suites
 
+> **Development mode only (#585):** `/vc-api/*` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 The W3C Verifiable Credentials and DID Working Groups test implementations
 with their own suites, and those suites drive an issuer and a verifier
 through the endpoints of the W3C CCG's

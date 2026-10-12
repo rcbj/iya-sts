@@ -5,6 +5,8 @@ nav_order: 16
 
 # Accepted tokens
 
+> **Development mode only (#585):** `/ssf/receive` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 Every door on this service that takes a token from a caller, what it must be to
 get through, and what happens in each mode. It is a companion to
 [What is not checked](what-is-not-checked.md), which covers passwords,

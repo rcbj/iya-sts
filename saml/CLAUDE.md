@@ -1550,3 +1550,7 @@ person is homed in another cell restarts at home (D9) and comes back there,
 where the mock's context is not — so the mock reports an unsolicited response.
 They are test aids; a real relying party keeps its own state. Held in process
 by `tests/cell_saml_federation.js`.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/saml2/sp` and `/saml11/rp`, the mock service provider and relying party. The pages that pointed at them (`/saml2`, `/saml11`, the refusal hints, the console's SAML pages through the view's `mockServiceProvider` / `mockRelyingParty`) drop them in a product realm, and **the mock SP's implicit trust anchor** (`implicitCertificatesFor()`) applies only where it is served. The product jobs' SP is the test peer (#586). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

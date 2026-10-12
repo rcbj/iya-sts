@@ -4,6 +4,8 @@ title: User-facing pages
 
 # User-facing pages
 
+> **Development mode only (#585):** `/oid4vp/verifier`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 These are all the things this service shows a person in a browser, an inbox or
 an authenticator prompt. Everything else it serves is for programs: token,
 metadata and discovery endpoints, the management API, SCIM, Kerberos and LDAP.

@@ -4,6 +4,8 @@ title: OpenID4VCI
 
 # OpenID for Verifiable Credential Issuance
 
+> **Development mode only (#585):** `/issuer`, `/issuer/offer`, `/oid4vci/last_request`, `/oid4vci/notification/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **Credential Issuer** for
 [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html),
 and its own authorization server is the one the issuer metadata names by
@@ -106,8 +108,9 @@ means the whole configured set.
   * `mode=deferred` (H.3): the same, for a credential that takes time to
     produce.
 
-  In product mode `/issuer/offer` makes no pre-authorized offer: a
-  cross-device or deferred request is sent to `/portal/wallet` (303).
+  In product mode `/issuer` and `/issuer/offer` are not there at all — a
+  realm in product mode answers them as unregistered paths. A person makes a
+  pre-authorized offer for their own wallet on `/portal/wallet` instead.
 * **A credential about yourself, into your own wallet** (`/portal/wallet`,
   #589). A person signed in to the [user portal](user-facing-pages.md#the-user-portal)
   chooses a credential configuration and *now* (H.2) or *later* (H.3,
@@ -298,7 +301,7 @@ unverifiable, not invalid: it is somebody else's conforming document.
 |---|---|---|
 | Access token at the credential, deferred and notification endpoints | Any token is accepted and its claims read unverified, because OpenID4VCI lets the authorization server be somebody else | A token that does not verify against this realm's key, or that this realm revoked, is refused `invalid_token` (401) |
 | Claim values | What the entry lacks is invented from the username, deterministically, in fictional ranges | Nothing is invented; an attribute the entry does not hold is absent |
-| `/issuer/offer` for a cross-device or deferred offer | Mints a pre-authorized code for `oid4vci.offerUsername`, for anybody | Mints nothing: the browser is sent to `/portal/wallet`, where a signed-in person makes an offer for their own wallet (#589). A same-device offer grants nothing and is not gated |
+| `/issuer/offer` for a cross-device or deferred offer | Mints a pre-authorized code for `oid4vci.offerUsername`, for anybody | Not there: the issuer's pages are development only (#585); a signed-in person makes an offer for their own wallet on `/portal/wallet` (#589) |
 | `/portal/wallet` (`POST /account-api/credentials/offers`) | A pre-authorized offer for the signed-in person, on their sign-on session | The same |
 | Wrong Transaction Codes | Not counted | Counted across the cluster; the `oid4vci.txCodeMaxAttempts`th spends the code |
 | The `wallet` query parameter | Any URL | Only `oid4vci.walletUrl` or one in `oid4vci.allowedWalletUrls`; anything else is an open redirect and refused |

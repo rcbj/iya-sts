@@ -4,6 +4,8 @@ title: OpenID4VP
 
 # OpenID for Verifiable Presentations, wallet sign-in and DIDs
 
+> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all

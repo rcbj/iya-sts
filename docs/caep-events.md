@@ -5,6 +5,8 @@ nav_order: 11
 
 # The eight CAEP events, and what makes each one fire
 
+> **Development mode only (#585):** `/issuer/offer` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This service is a **CAEP transmitter**. The Continuous Access Evaluation Profile
 1.0 (final, 2 September 2025) is a vocabulary about **sessions** spoken over
 [Shared Signals](https://openid.net/specs/openid-sharedsignals-framework-1_0.html);

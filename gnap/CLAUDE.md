@@ -1194,3 +1194,7 @@ the check and adds nothing, as before). Behind
 `unregistered-resource-targets` row on `/admin/mode`; development is
 unchanged. `tests/registered_targets.js` (T5) holds it in both modes,
 through `judgeRequested()` on a `GnapGrants` built in the test.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/gnap/rs/resource` and `/gnap/rs/spend`. **Its defaults follow it**: a token for nobody in particular is audienced to it, it is one of this service's registered targets, and `urn:iya-sts:gnap:demo` is catalogued, only where it is served (`mode.servesDemoEndpoints()` and `gnap.demoResourceServer`), and the console's endpoint list drops it otherwise. The product jobs use the test peer's type (`gnap_flow.js`'s `peer: true`) or a type of their own (`sts_gnap_mtls`, and `sts_gnap_delegation`'s ordinary grant). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
