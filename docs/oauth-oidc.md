@@ -982,7 +982,9 @@ for (OpenID Connect Core section 5.6.2, and the Claims Aggregation draft).
    (`<realm>/portal/claim-sources/callback`). Its UserInfo responses must be
    signed.
 2. **A person links the provider** on `/portal/claim-sources`. They sign in
-   and agree at the provider, and come back linked. Their tokens there are
+   and agree at the provider, and come back linked. The link finishes only
+   in the browser that started it, and only while the sign-in it was started
+   from lasts; if it cannot be finished, the page says why. Their tokens there are
    kept sealed on their own directory entry. An administrator sees every link
    and can revoke one.
 3. **A relying party asks for one of those claims by name** with the `claims`

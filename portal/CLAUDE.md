@@ -1631,6 +1631,21 @@ other portal page's 303 is still a bare path (`portal_ciba.ts`, the MFA
 pages), which is the same defect in a non-default realm and is left for its
 own change.
 
+**THE CALLBACK IS BOUND TO THE BROWSER BY A COOKIE OF ITS OWN, NOT BY THE
+SIGN-ON COOKIE (2026-10-12).** #568 first bound it to the browser's
+`sts_session`; but that cookie is one per origin at `Path=/` whatever realm
+minted it (`authn/CLAUDE.md`, `consoleSession()`), so a provider that is
+another trust realm on the same origin overwrote it at its own sign-in, and
+every such link was refused `STS-PORTAL-0300` while the page said nothing —
+`sts_claims_aggregation` found it, with the refusal's text lost on a static
+shell. Link's answer now sets `sts_claim_link`, a random secret scoped to
+the realm's callback path (HttpOnly, SameSite=Lax), the flow keeps its
+SHA-256, and the callback wants that cookie (`0300`) and the sign-on session
+the token was issued on still live and the person's, asked by its id
+(`STS-PORTAL-0303`). The cookie is cleared on every callback. The page draws
+the callback's `problem` and `done` from its operation's `problem` and
+`notice`.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a

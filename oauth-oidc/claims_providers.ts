@@ -700,12 +700,14 @@ class ClaimsProviders {
    * @param id - the provider id
    * @param base - the request's base URL
    * @param sessionId - the sign-on session the person started it from: the
-   *   callback is honoured only in a browser holding that session (#568)
+   *   callback is honoured only while that session is live (#568)
+   * @param binding - the SHA-256 of the secret the starting browser was
+   *   handed in a cookie: the callback is honoured only in that browser
    * @returns `{ ok: true, location }` to send the browser to, or `{ ok: false,
    *   code, why }`
    */
   beginLink(username: string, id: string, base: string,
-            sessionId?: string): Json {
+            sessionId?: string, binding?: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.beginLink(). " + id);
     const provider = this.get(id);
@@ -718,18 +720,20 @@ class ClaimsProviders {
     const verifier = stsCrypto.randomBytes(32).toString('base64url');
     const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     const redirectUri = base + CALLBACK_PATH;
-    // THE SIGN-ON SESSION IT WAS STARTED FROM (#568). The portal held a
-    // session cookie of its own until it became a static application, and
-    // the callback asked for it, so a browser that was not the person's
-    // could not finish their link — the account-linking CSRF, in which
-    // somebody starts a link on their own account and sends the provider's
-    // address to a victim, whose provider account then lands on the
-    // attacker's entry. The portal's API holds no cookie, so the flow names
-    // the sign-on session instead and the callback asks the browser's
-    // (`flowFor()`, `portal_claim_sources.ts`).
+    // THE BROWSER AND THE SIGN-ON SESSION IT WAS STARTED FROM (#568). The
+    // portal held a session cookie of its own until it became a static
+    // application, and the callback asked for it, so a browser that was not
+    // the person's could not finish their link — the account-linking CSRF,
+    // in which somebody starts a link on their own account and sends the
+    // provider's address to a victim, whose provider account then lands on
+    // the attacker's entry. The portal's API holds no cookie, so the start
+    // hands the browser a binding cookie of its own and the flow keeps its
+    // digest, with the sign-on session the token was issued on; the callback
+    // asks for both (`flowFor()`, `portal_claim_sources.ts`).
     flows.set(state, { username: String(username), provider: id,
                        verifier: verifier, redirectUri: redirectUri,
-                       session: String(sessionId || ''), at: now() });
+                       session: String(sessionId || ''),
+                       binding: String(binding || ''), at: now() });
     const target = new URL(provider.authorizationEndpoint);
     target.searchParams.set('response_type', 'code');
     target.searchParams.set('client_id', provider.clientId);
@@ -744,13 +748,15 @@ class ClaimsProviders {
 
   // WHOSE A LINK REQUEST IS, read without spending it (#568): the callback
   // has no portal session to name the person, so it asks the flow, and then
-  // checks the browser holds the sign-on session the flow was started from.
+  // checks the browser holds the binding cookie the flow was started with
+  // and that the sign-on session it was started from is still live.
   /**
-   * The person and sign-on session a live link request belongs to.
+   * The person, sign-on session and browser binding a live link request
+   * belongs to.
    *
    * @param state - the callback's `state`
-   * @returns `{ username, session }`, or null for a request that is unknown
-   *   or expired
+   * @returns `{ username, session, binding }`, or null for a request that is
+   *   unknown or expired
    */
   flowFor(state: string): Json {
     const { log, now } = this.deps;
@@ -762,7 +768,8 @@ class ClaimsProviders {
     }
     log.debug("Leaving ClaimsProviders.flowFor().");
     return { username: String(flow.username),
-             session: String(flow.session || '') };
+             session: String(flow.session || ''),
+             binding: String(flow.binding || '') };
   }
 
   // The provider sent the person back. Resolves { ok, provider } or

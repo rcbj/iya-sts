@@ -20076,8 +20076,8 @@ const CODES = [
       'is a static application since #568 and nothing is posted to it.',
     spec: 'HTTP 404' },
   { code: 'STS-PORTAL-0300',
-    summary: 'A Claims Provider\'s callback arrived in a browser whose ' +
-      'sign-on session is not the one the link was started from, so it was ' +
+    summary: 'A Claims Provider\'s callback arrived in a browser that does ' +
+      'not hold the binding cookie the link was started with, so it was ' +
       'refused (#568: the account-linking CSRF the portal session closed).',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0301',
@@ -20088,6 +20088,11 @@ const CODES = [
   { code: 'STS-PORTAL-0302',
     summary: 'The access policy refused a Claims Provider\'s callback ' +
       '(user-portal, manage-own).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0303',
+    summary: 'A Claims Provider\'s callback was refused because the sign-on ' +
+      'session the link was started from has ended, or is no longer the ' +
+      'person\'s.',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0310',
     summary: 'A device challenge or link could not be bound: the account ' +
