@@ -2559,6 +2559,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). Sinasagot ng GET kung kaninong password ang kailangang palitan; iniimbak ng POST ang bago at ipinagpapatuloy ang sign-in."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Ang Magsimula muli ng sapilitang pagpapalit ng password: walang binabago, at ibinabalik sa screen ng pag-sign in ang nakabinbing pag-sign in na dala nito."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). Ang view ng page ng isang second-factor o emailed-factor step (?page=), bilang mga fact at walang salita, at ang CSRF token na dala ng mga aksiyon nito; tinatanggihan kung hindi kailanman maiguguhit ang page para sa step. Ang id ay bearer capability at hindi kailanman nilo-log."
@@ -2610,6 +2614,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Ang Continue button ng page na binubuksan ng link, sa browser lamang na humingi nito."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Ang Magsimula muli ng bawat pahina ng hakbang: tinatapos ang hakbang kasama ang lahat ng hawak nito, walang sesyong sinisimulan, at ibinabalik sa screen ng pag-sign in ang nakabinbing pag-sign in na dala nito, kaya natatapos pa rin ang orihinal na kahilingan."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",

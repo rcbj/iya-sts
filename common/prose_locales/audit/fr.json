@@ -191,6 +191,10 @@
     "en": "9f66bf08890386c9",
     "text": "Quelqu’un a configuré un second facteur requis à la connexion"
   },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "Quelqu’un a quitté une étape de connexion et a recommencé la connexion"
+  },
   "audit.actions.portal.mfa.started.label": {
     "en": "d51f6daad15168fd",
     "text": "Un nouveau secret d’application d’authentification a été montré à quelqu’un"

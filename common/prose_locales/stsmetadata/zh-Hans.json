@@ -2559,6 +2559,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 应答谁的密码必须更改；POST 存储新密码并继续登录。"
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12)。强制更改密码的“重新开始”：不做任何更改，并将其承载的待处理登录放回登录屏幕。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC（#572、#573）。第二因素或电子邮件因素步骤页面（?page=）的视图，只有事实而没有文字，以及其操作所携带的 CSRF 令牌；在该页面永远无法为此步骤绘制时拒绝。该 id 是一种持有者能力，绝不会被记录到日志。"
@@ -2610,6 +2614,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC（#573）。链接所到页面上的“继续”按钮，仅在请求该链接的浏览器中有效。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12)。每个步骤页面的“重新开始”：结束该步骤及其持有的一切，不启动会话，并将其承载的待处理登录放回登录屏幕，因此原始请求仍会完成。"
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",

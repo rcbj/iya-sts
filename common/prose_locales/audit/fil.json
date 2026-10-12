@@ -191,6 +191,10 @@
     "en": "9f66bf08890386c9",
     "text": "May taong nag-set up ng kinakailangang second factor sa sign-in"
   },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "May umalis sa isang hakbang ng pag-sign in at nagsimula muli"
+  },
   "audit.actions.portal.mfa.started.label": {
     "en": "d51f6daad15168fd",
     "text": "May taong pinakitaan ng bagong authenticator-app secret"
