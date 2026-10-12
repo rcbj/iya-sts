@@ -413,9 +413,13 @@ function harvest(prefix: string, table: unknown,
 // the `/admin-api` routes whose answers carry its prose, as the registration
 // loop names them (`res.locals.proseRoute`) — and `prose()`, its English by
 // key, its keys prefixed so that two modules of a namespace cannot collide.
-// A namespace's catalogs are `common/prose_locales/<ns>/`.
+// A namespace's catalogs are `common/prose_locales/<ns>/`. An entry may be
+// `{ path, routes, prose }` instead, naming other exports: a module whose
+// `PROSE_ROUTES`/`prose()` are one namespace's and which offers a part of
+// another (`admin_views.ts`, kerberos's, holds the delegation map keys).
 // ---------------------------------------------------------------------------
-const PHRASE_MODULES: Record<string, string[]> = {
+const PHRASE_MODULES: Record<string, Array<string | { path: string,
+  routes: string, prose: string }>> = {
   // Directory → Policies: every kind's tables, its `describe()` templates
   // and the page's own sentences.
   policies: ['../admin-core/policy_kinds'],
@@ -460,7 +464,9 @@ const PHRASE_MODULES: Record<string, string[]> = {
   roles: ['./roles', '../admin-core/admin_actions', '../admin-ui/admin_rbac'],
   // Directory → Delegation: the modes, types and roles, and the map keys
   // drawn as markup, each a filled template.
-  delegation: ['./delegation'],
+  delegation: ['./delegation',
+               { path: '../admin-core/admin_views',
+                 routes: 'MAP_KEY_PROSE_ROUTES', prose: 'mapKeyProse' }],
   // Protocols → Device registration: enrolment, recognition and the notes.
   devices: ['../admin-ui/devices_admin'],
   // A person's GNAP grants, where this service runs several cells.
@@ -625,16 +631,18 @@ class ServerProse {
     const out: Record<string, ProseSource> = {};
     Object.keys(PHRASE_MODULES).forEach(function (ns) {
       out[ns] = phraseSource(function () {
-        const mods = PHRASE_MODULES[ns].map(function (path) {
-          return require(path);
+        const parts = PHRASE_MODULES[ns].map(function (entry) {
+          const spec = typeof entry === 'string'
+            ? { path: entry, routes: 'PROSE_ROUTES', prose: 'prose' } : entry;
+          return { mod: require(spec.path), spec: spec };
         });
         return {
-          routes: mods.reduce(function (all, mod) {
-            return all.concat(mod.PROSE_ROUTES || []);
+          routes: parts.reduce(function (all, part) {
+            return all.concat(part.mod[part.spec.routes] || []);
           }, []),
           extract: function () {
-            return mods.reduce(function (all, mod) {
-              return Object.assign(all, mod.prose());
+            return parts.reduce(function (all, part) {
+              return Object.assign(all, part.mod[part.spec.prose]());
             }, {});
           }
         };

@@ -838,6 +838,17 @@ const KERBEROS_NO_KDC_REASON = 'krb5.enabled is off for it';
  */
 const PROSE_ROUTES = ['/admin-api/kerberos/principals'];
 
+// The routes whose answers carry the two pictures' keys (#543): this
+// module's part of the DELEGATION namespace, offered under its own names
+// because `PROSE_ROUTES` and `prose()` are the kerberos namespace's.
+const MAP_KEY_PROSE_ROUTES = [
+  '/admin-api/delegation/user',
+  '/admin-api/delegation/application',
+  '/admin-api/console/delegation/map',
+  '/admin-api/console/delegation/chain',
+  '/admin-api/console/federation/map'
+];
+
 interface AdminViewsDeps {
   log: typeof helpers.log;
   baseUrlOf: typeof helpers.baseUrlOf;
@@ -949,6 +960,10 @@ class AdminViews {
    * namespace's (#543).
    */
   static readonly PROSE_ROUTES = PROSE_ROUTES;
+  /**
+   * The routes whose answers carry the map keys (the delegation namespace).
+   */
+  static readonly MAP_KEY_PROSE_ROUTES = MAP_KEY_PROSE_ROUTES;
 
   /**
    * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
@@ -13380,6 +13395,7 @@ export = {
   // #543: the kerberos namespace's routes and English, and the two keys'
   // English for the delegation namespace (`common/delegation.js`).
   PROSE_ROUTES: AdminViews.PROSE_ROUTES,
+  MAP_KEY_PROSE_ROUTES: AdminViews.MAP_KEY_PROSE_ROUTES,
   prose: AdminViews.prose,
   mapKeyProse: AdminViews.mapKeyProse,
   apiGateStateOf: slot.forward('apiGateStateOf'),
