@@ -89,23 +89,23 @@
   },
   "mode.requirements.delegation-policy.development": {
     "en": "89d3215a1960b7f3",
-    "text": "Se emite toda delegación. Igualmente se consulta a la política y su respuesta se registra en el acto en /admin/delegation como \"se habría rechazado: ...\", y un intercambio puede pedir un scope más amplio que el de su subject_token."
+    "text": "Se emite toda delegación. Igualmente se consulta a la política y su respuesta se registra en el acto en /admin/delegation como \"se habría rechazado: ...\", y un intercambio puede pedir un ámbito más amplio que el de su subject_token."
   },
   "mode.requirements.delegation-policy.product": {
     "en": "fe19fc117becfe0b",
-    "text": "Decide la política de emisión (#186), a partir de los atributos de delegación (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated en las entradas de aplicación; stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups y la lista de la consola para las personas). Un rechazo es invalid_request o invalid_target (RFC 8693 sección 2.2.2) o un SOAP Fault wst:RequestFailed (WS-Trust 1.4 sección 11). Una persona solo actúa si tiene delegation.actorRole, y un intercambio no puede ampliar el scope de su subject_token (invalid_scope)."
+    "text": "Decide la política de emisión (#186), a partir de los atributos de delegación (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated en las entradas de aplicación; stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups y la lista de la consola para las personas). Un rechazo es invalid_request o invalid_target (RFC 8693 sección 2.2.2) o un SOAP Fault wst:RequestFailed (WS-Trust 1.4 sección 11). Una persona solo actúa si tiene delegation.actorRole, y un intercambio no puede ampliar el ámbito de su subject_token (invalid_scope)."
   },
   "mode.requirements.declared-scopes.what": {
     "en": "24912ad15f5cdcc7",
-    "text": "A un cliente se le emiten solo los scopes que declaró"
+    "text": "A un cliente se le emiten solo los ámbitos que declaró"
   },
   "mode.requirements.declared-scopes.development": {
     "en": "1c76373a91206e5a",
-    "text": "Se emite cualquier scope que pida un cliente, diga lo que diga su `oauthAllowedScope`. En AMBOS modos, admin:read, admin:write, los scopes de SCIM y de Shared Signals y el permiso del depurador solo se emiten a un cliente cuyo `oauthAllowedScope` los enumera."
+    "text": "Se emite cualquier ámbito que pida un cliente, diga lo que diga su `oauthAllowedScope`. En AMBOS modos, admin:read, admin:write, los ámbitos de SCIM y de Shared Signals y el permiso del depurador solo se emiten a un cliente cuyo `oauthAllowedScope` los enumera."
   },
   "mode.requirements.declared-scopes.product": {
     "en": "33fcb48e8c17655e",
-    "text": "Un scope fuera del `oauthAllowedScope` del cliente se rechaza con invalid_scope en los endpoints de autorización, de autorización enviada y de token (STS-OAUTH-0578) y se retira de una renovación o de un intercambio. Un cliente que no enumera nada recibe el valor predeterminado documentado: openid, profile, email, address, phone, offline_access y los scopes de OpenID4VCI de este dominio. Un scope que nombra una aplicación o un permiso delegado conserva sus propias reglas."
+    "text": "Un ámbito fuera del `oauthAllowedScope` del cliente se rechaza con invalid_scope en los endpoints de autorización, de autorización enviada y de token (STS-OAUTH-0578) y se retira de una renovación o de un intercambio. Un cliente que no enumera nada recibe el valor predeterminado documentado: openid, profile, email, address, phone, offline_access y los ámbitos de OpenID4VCI de este dominio. Un ámbito que nombra una aplicación o un permiso delegado conserva sus propias reglas."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -341,7 +341,7 @@
   },
   "mode.requirements.signed-assertions.development": {
     "en": "38123244c09ef3c2",
-    "text": "saml2.signAssertion, saml11.signAssertion y saml11.signResponse desactivados — en todo el servicio o en una aplicación — envían una aserción sin firmar o una Response de SAML 1.1 sin firmar, que es como se encuentra una parte de confianza que la acepta."
+    "text": "saml2.signAssertion, saml11.signAssertion y saml11.signResponse desactivados — en todo el servicio o en una aplicación — envían una aserción sin firmar o una Response de SAML 1.1 sin firmar, que es como se encuentra una parte que confía que la acepta."
   },
   "mode.requirements.signed-assertions.product": {
     "en": "aa7a88c57793c53d",
@@ -537,7 +537,7 @@
   },
   "mode.requirements.console-bootstrap-window.product": {
     "en": "80feb38828e08d3d",
-    "text": "Nadie tiene un rol por la ventana, diga lo que diga admin.openWhenEmpty: solo decide la lista. Hasta que el administrador de arranque haya reclamado la consola, sus roles solo se respetan a partir de un inicio de sesión con CONTRASEÑA a través de su propio dominio (amr pwd, verificado aquí, no un socio de federación, un certificado, una cartera o un ticket Kerberos), y solo ese inicio de sesión la reclama (STS-ADMIN-0796); el depurador y la autoridad de inscripción de certificados de una sesión esperan a la reclamación. Un dominio sin administrador de arranque y con la lista vacía queda cerrado y se registra en el log al arrancar (STS-ADMIN-0798); POST /admin-api/rbac/grant es la forma de entrar."
+    "text": "Nadie tiene un rol por la ventana, diga lo que diga admin.openWhenEmpty: solo decide la lista. Hasta que el administrador de arranque haya reclamado la consola, sus roles solo se respetan a partir de un inicio de sesión con CONTRASEÑA a través de su propio dominio (amr pwd, verificado aquí, no un socio de federación, un certificado, una billetera o un ticket Kerberos), y solo ese inicio de sesión la reclama (STS-ADMIN-0796); el depurador y la autoridad de inscripción de certificados de una sesión esperan a la reclamación. Un dominio sin administrador de arranque y con la lista vacía queda cerrado y se registra en el log al arrancar (STS-ADMIN-0798); POST /admin-api/rbac/grant es la forma de entrar."
   },
   "mode.requirements.certificate-enrollment.what": {
     "en": "e1e5d0112481b526",
@@ -633,7 +633,7 @@
   },
   "mode.requirements.saml-unregistered-providers.product": {
     "en": "5a56aaa1243f844e",
-    "text": "Cada una de esas rutas responde 404 para un nombre que no es un proveedor de servicios SAML 2.0 registrado (STS-SAML-0082) ni una parte de confianza SAML 1.1 registrada (STS-SAML-0083). Los documentos sin ámbito no cambian."
+    "text": "Cada una de esas rutas responde 404 para un nombre que no es un proveedor de servicios SAML 2.0 registrado (STS-SAML-0082) ni una parte que confía SAML 1.1 registrada (STS-SAML-0083). Los documentos sin ámbito no cambian."
   },
   "mode.requirements.unregistered-applications.what": {
     "en": "f59ad1efb04f3196",
@@ -645,7 +645,7 @@
   },
   "mode.requirements.unregistered-applications.product": {
     "en": "ad9954edbb251dbb",
-    "text": "Un RST cuyo AppliesTo no se resuelve en ninguna aplicación registrada (appRegisteredBy sin definir — una observación no es un registro) se rechaza con wst:InvalidScope (STS-WSTRUST-0030), y uno sin AppliesTo con wst:InvalidRequest (STS-WSTRUST-0031), para todo tipo de token y OnBehalfOf / ActAs, antes de que se autentique al solicitante o se registre nada. Un wsignin1.0 cuyo wtrealm no nombra ninguna parte de confianza registrada se rechaza con una página 404 (STS-WSFED-0021) antes de la pantalla de inicio de sesión."
+    "text": "Un RST cuyo AppliesTo no se resuelve en ninguna aplicación registrada (appRegisteredBy sin definir — una observación no es un registro) se rechaza con wst:InvalidScope (STS-WSTRUST-0030), y uno sin AppliesTo con wst:InvalidRequest (STS-WSTRUST-0031), para todo tipo de token y OnBehalfOf / ActAs, antes de que se autentique al solicitante o se registre nada. Un wsignin1.0 cuyo wtrealm no nombra ninguna parte que confíe registrada se rechaza con una página 404 (STS-WSFED-0021) antes de la pantalla de inicio de sesión."
   },
   "mode.requirements.unregistered-oauth-clients.what": {
     "en": "264387e4eb558328",
@@ -653,7 +653,7 @@
   },
   "mode.requirements.unregistered-oauth-clients.development": {
     "en": "5a23e83731e4dd69",
-    "text": "El endpoint de autorización no pregunta nada sobre el client_id más allá de sus URI de redirección, y el endpoint de token archiva un cliente que ha visto antes de rechazarlo. Una audiencia de RFC 8693 archivada por una observación es un destino, y la audiencia de una aserción que nombra una es una parte de confianza."
+    "text": "El endpoint de autorización no pregunta nada sobre el client_id más allá de sus URI de redirección, y el endpoint de token archiva un cliente que ha visto antes de rechazarlo. Una audiencia de RFC 8693 archivada por una observación es un destino, y la audiencia de una aserción que nombra una es una parte que confía."
   },
   "mode.requirements.unregistered-oauth-clients.product": {
     "en": "6b65fe6221534e38",
@@ -661,7 +661,7 @@
   },
   "mode.requirements.unregistered-saml-providers.what": {
     "en": "15c793bc36671f22",
-    "text": "Un proveedor de servicios o parte de confianza SAML solo recibe respuesta cuando está registrado (#496)"
+    "text": "Un proveedor de servicios o parte que confía SAML solo recibe respuesta cuando está registrado (#496)"
   },
   "mode.requirements.unregistered-saml-providers.development": {
     "en": "a0d68da6bdce5cb8",
@@ -669,7 +669,7 @@
   },
   "mode.requirements.unregistered-saml-providers.product": {
     "en": "121d2314a39e79b5",
-    "text": "Un AuthnRequest cuyo Issuer no es un proveedor de servicios SAML 2.0 registrado (appRegisteredBy sin definir — una observación no es un registro) es una página 403 antes de comprobar su firma (STS-SAML-0103; solo se sigue encolando una consulta Metadata Query para un entityID desconocido, bajo la regla del ancla de confianza); un LogoutRequest de uno no termina nada (STS-SAML-0104); un flujo SAML 1.1 para una parte de confianza no registrada es una página 403 (STS-SAML-0105). Las rutas por SP, la autoridad de atributos y el respondedor SAML 1.1 solo cuentan una entrada registrada, y una consulta MDQ trata una entrada no registrada como desconocida."
+    "text": "Un AuthnRequest cuyo Issuer no es un proveedor de servicios SAML 2.0 registrado (appRegisteredBy sin definir — una observación no es un registro) es una página 403 antes de comprobar su firma (STS-SAML-0103; solo se sigue encolando una consulta Metadata Query para un entityID desconocido, bajo la regla del ancla de confianza); un LogoutRequest de uno no termina nada (STS-SAML-0104); un flujo SAML 1.1 para una parte que confía no registrada es una página 403 (STS-SAML-0105). Las rutas por SP, la autoridad de atributos y el respondedor SAML 1.1 solo cuentan una entrada registrada, y una consulta MDQ trata una entrada no registrada como desconocida."
   },
   "mode.requirements.unregistered-gnap-clients.what": {
     "en": "60ada07c629c3794",
@@ -701,7 +701,7 @@
   },
   "mode.requirements.return-addresses.development": {
     "en": "6c6eccc7e6bfce66",
-    "text": "Se usa cualquier URL absoluta que nombre un AuthnRequest de SAML, un shire de SAML 1.1, un wreply de WS-Federation o un enlace de cartera, registrada o no — y una dirección que una observación escribe en una entrada de aplicación (o un callback que la consola o el portal aprende de un encabezado Host) se MARCA como observada en appReturnAddressObserved."
+    "text": "Se usa cualquier URL absoluta que nombre un AuthnRequest de SAML, un shire de SAML 1.1, un wreply de WS-Federation o un enlace de billetera, registrada o no — y una dirección que una observación escribe en una entrada de aplicación (o un callback que la consola o el portal aprende de un encabezado Host) se MARCA como observada en appReturnAddressObserved."
   },
   "mode.requirements.return-addresses.product": {
     "en": "c9aeb6e9c45812da",
@@ -973,7 +973,7 @@
   },
   "mode.notYet.kerberos-keys.what": {
     "en": "0529f94b9d0cd311",
-    "text": "El modo producto no crea principales de prueba, ni dominio de confianza, ni nada bajo demanda, y rechaza la contraseña de servicio publicada. Las personas del directorio se autentican ante el KDC de producto con claves derivadas de su propia contraseña cuando se establece o verifica, selladas en su entrada (`stsKrb5Keys`); los principales de servicio reciben claves aleatorias y un keytab que se muestra una vez en /admin/kerberos/principals. El keytab de una persona (#59) se deriva de una contraseña disponible — la suya en /portal/kerberos, o una que un administrador establece con \"Restablecer contraseña y descargar keytab\" — y nunca se lee del almacenamiento. Un cambio de contraseña o una rotación conserva la versión reemplazada — como máximo krb5.retainedKeyVersions, cada una durante krb5.retainedKeyTtlS — de modo que un ticket emitido bajo ella se sigue aceptando hasta que pudiera haber caducado, mientras que la preautenticación y la emisión usan solo la clave actual; \"Descartar versiones anteriores\" cierra esa ventana. La clave krbtgt es aleatoria, almacenada y rotada desde el 2026-09-23 (el requisito krbtgt-key anterior). Desde el 2026-09-15 cada dominio de confianza con krb5.enabled activado tiene un KDC, un reino Kerberos y claves propias, en el puerto compartido."
+    "text": "El modo producto no crea principales de prueba, ni dominio de confianza, ni nada bajo demanda, y rechaza la contraseña de servicio publicada. Las personas del directorio se autentican ante el KDC de producto con claves derivadas de su propia contraseña cuando se establece o verifica, selladas en su entrada (`stsKrb5Keys`); los principales de servicio reciben claves aleatorias y un keytab que se muestra una vez en /admin/kerberos/principals. El keytab de una persona (#59) se deriva de una contraseña disponible — la suya en /portal/kerberos, o una que un administrador establece con \"Restablecer contraseña y descargar keytab\" — y nunca se lee del almacenamiento. Un cambio de contraseña o una rotación conserva la versión reemplazada — como máximo krb5.retainedKeyVersions, cada una durante krb5.retainedKeyTtlS — de modo que un ticket emitido bajo ella se sigue aceptando hasta que pudiera haber caducado, mientras que la preautenticación y la emisión usan solo la clave actual; \"Descartar versiones anteriores\" cierra esa ventana. La clave krbtgt es aleatoria, almacenada y rotada desde el 2026-09-23 (el requisito krbtgt-key anterior). Desde el 2026-09-15 cada dominio de confianza con krb5.enabled activado tiene un KDC, un dominio Kerberos y claves propias, en el puerto compartido."
   },
   "mode.why.skipsOutboundTlsVerification": {
     "en": "ed44b27a848b9e29",
@@ -1001,7 +1001,7 @@
   },
   "mode.why.issuesUnsignedAssertions": {
     "en": "ee4b4a8ecd3ef9b3",
-    "text": "allí toda aserción SAML, y toda Response de SAML 1.1, está firmada (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). Pruebe una parte de confianza contra una sin firmar en un dominio en modo de desarrollo."
+    "text": "allí toda aserción SAML, y toda Response de SAML 1.1, está firmada (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). Pruebe una parte que confía contra una sin firmar en un dominio en modo de desarrollo."
   },
   "mode.why.acceptsUnverifiedAttestation": {
     "en": "3f571035da5396d2",

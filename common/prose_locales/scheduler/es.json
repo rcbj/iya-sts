@@ -353,7 +353,7 @@
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
-    "text": "Historial de ejecuciones del programador"
+    "text": "Historial de ejecuciones del planificador"
   },
   "sched.jobs.scheduler.history.describe": {
     "en": "395a5d6b46d20680",
@@ -533,14 +533,14 @@
   },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
-    "text": "Se pidió al líder del programador que se retirara. Lo hace en su siguiente tick, y otro nodo asume el liderazgo en su siguiente latido."
+    "text": "Se pidió al líder del planificador que se retirara. Lo hace en su siguiente tick, y otro nodo asume el liderazgo en su siguiente latido."
   },
   "schedAdmin.message.queued": {
     "en": "651740d298354de6",
-    "text": "Hay una ejecución de {{job}} en cola. El líder del programador la inicia en su siguiente tick."
+    "text": "Hay una ejecución de {{job}} en cola. El líder del planificador la inicia en su siguiente tick."
   },
   "schedAdmin.message.queuedAgain": {
     "en": "29c8136a0695fb5e",
-    "text": "Hay una ejecución de {{job}} en cola (ya había una; es esta). El líder del programador la inicia en su siguiente tick."
+    "text": "Hay una ejecución de {{job}} en cola (ya había una; es esta). El líder del planificador la inicia en su siguiente tick."
   }
 }

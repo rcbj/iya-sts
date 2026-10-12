@@ -645,7 +645,7 @@
   },
   "endpoints.route./admin-api/worker-pools.name": {
     "en": "8bf5d84f5ee5dd08",
-    "text": "Grupos de trabajadores"
+    "text": "Grupos de workers"
   },
   "endpoints.route./admin-api/node-health.name": {
     "en": "6a14636c8aef5de3",
@@ -1337,19 +1337,19 @@
   },
   "endpoints.route./authn/wallet.name": {
     "en": "762000c7e5e841a9",
-    "text": "Iniciar sesión con una cartera"
+    "text": "Iniciar sesión con una billetera"
   },
   "endpoints.route./authn/wallet/wait.name": {
     "en": "b5fe1c58e2d72833",
-    "text": "Inicio de sesión con cartera: esperar y finalizar"
+    "text": "Inicio de sesión con billetera: esperar y finalizar"
   },
   "endpoints.route./authn/wallet/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
-    "text": "Inicio de sesión con cartera: la respuesta de la Digital Credentials API"
+    "text": "Inicio de sesión con billetera: la respuesta de la Digital Credentials API"
   },
   "endpoints.route./authn/wallet.js.name": {
     "en": "61ec0700cb9645d2",
-    "text": "Script de inicio de sesión con cartera"
+    "text": "Script de inicio de sesión con billetera"
   },
   "endpoints.route./authn/password-factor.name": {
     "en": "153eb47c253809aa",
@@ -1961,7 +1961,7 @@
   },
   "endpoints.socket.kdcRealm": {
     "en": "bf03c3bc314da5cf",
-    "text": "Key Distribution Center (realm {{realm}})"
+    "text": "Key Distribution Center (dominio {{realm}})"
   },
   "endpoints.socket.krb5Service": {
     "en": "a510f49fab5cf00e",

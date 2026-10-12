@@ -57,7 +57,7 @@
   },
   "ldap.service.sentences.searchScopeRealms": {
     "en": "a9a6103ce6cbf322",
-    "text": "una búsqueda de subárbol responde sobre el dominio de confianza desde cuyo DN base comenzó. {{contexts}} son los contextos; una entrada que pertenece a otro dominio se filtra de una búsqueda con base por encima de ella, y se alcanza buscando desde la base propia de ese dominio. Una operación que nombra UN DN — add, modify, delete, compare o una búsqueda con alcance base — se responde dondequiera que esté ese DN, porque escribir el DN completo nombra el dominio"
+    "text": "una búsqueda de subárbol responde sobre el dominio de confianza desde cuyo DN base comenzó. {{contexts}} son los contextos; una entrada que pertenece a otro dominio se filtra de una búsqueda con base por encima de ella, y se alcanza buscando desde la base propia de ese dominio. Una operación que nombra UN DN — add, modify, delete, compare o una búsqueda con ámbito base — se responde dondequiera que esté ese DN, porque escribir el DN completo nombra el dominio"
   },
   "ldap.service.sentences.searchScopeOne": {
     "en": "55b2bbab540dbbb4",
@@ -733,7 +733,7 @@
   },
   "applications.schema.attributes.oauthAssertionCertificateChain.what": {
     "en": "b7a32cc9139e6bd2",
-    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a una hoja. La RAÍZ no está incluida deliberadamente: una raíz es un ancla de confianza, y una parte de confianza que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
+    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a una hoja. La RAÍZ no está incluida deliberadamente: una raíz es un ancla de confianza, y una parte que confía que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
   },
   "applications.schema.attributes.oauthAssertionPrivateKey.what": {
     "en": "8b668a69fa54d2c9",
@@ -765,7 +765,7 @@
   },
   "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
     "en": "49df2430d4c7cf4c",
-    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a la hoja de arriba. La RAÍZ no está incluida deliberadamente, por la razón que da la fila de la cadena JWT: una parte de confianza que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
+    "text": "La CA emisora y la CA intermedia, en PEM, en ese orden — lo que acompaña a la hoja de arriba. La RAÍZ no está incluida deliberadamente, por la razón que da la fila de la cadena JWT: una parte que confía que la aceptara porque llegó en la cadena estaría aceptando un certificado que se avala a sí mismo."
   },
   "applications.schema.attributes.oauthSamlAssertionPrivateKey.what": {
     "en": "63981c5c57f70802",
@@ -993,7 +993,7 @@
   },
   "applications.schema.attributes.oauthAccessTokenClaim.what": {
     "en": "cf887c3be9a18ff1",
-    "text": "LOS CLAIMS DE IDENTIDAD QUE ESTE SERVIDOR DE RECURSOS QUIERE en los tokens de acceso dirigidos a él (uno de sus valores oauthAudience, o su client_id nombrado como scope), de entre los claims profile, email, address y phone de OpenID Connect Core sección 5.4. Cada uno se entrega solo cuando el scope que lo cubre se CONCEDIÓ, y en un token para varios servidores de recursos solo entra un claim que todos ellos declararon. Si falta, el token no lleva ninguno de estos claims de esta capa — preferred_username incluido."
+    "text": "LOS CLAIMS DE IDENTIDAD QUE ESTE SERVIDOR DE RECURSOS QUIERE en los tokens de acceso dirigidos a él (uno de sus valores oauthAudience, o su client_id nombrado como ámbito), de entre los claims profile, email, address y phone de OpenID Connect Core sección 5.4. Cada uno se entrega solo cuando el ámbito que lo cubre se CONCEDIÓ, y en un token para varios servidores de recursos solo entra un claim que todos ellos declararon. Si falta, el token no lleva ninguno de estos claims de esta capa — preferred_username incluido."
   },
   "applications.schema.attributes.oauthPermissionClaims.what": {
     "en": "81cd9d9de131a21b",
@@ -1049,11 +1049,11 @@
   },
   "applications.schema.attributes.appGroupsClaimName.what": {
     "en": "4fc6ecdda2fd1881",
-    "text": "Cómo SE LLAMA el claim de grupos para esta aplicación, prevaleciendo sobre groups.claimName. Este es el atributo que justifica que el grupo esté aquí: `groups`, `roles`, `memberOf` y un nombre de claim con forma de URI son todos habituales, difieren según la parte de confianza en todo despliegue real, y un único nombre para todo el servicio significaba que solo podía probarse uno a la vez."
+    "text": "Cómo SE LLAMA el claim de grupos para esta aplicación, prevaleciendo sobre groups.claimName. Este es el atributo que justifica que el grupo esté aquí: `groups`, `roles`, `memberOf` y un nombre de claim con forma de URI son todos habituales, difieren según la parte que confía en todo despliegue real, y un único nombre para todo el servicio significaba que solo podía probarse uno a la vez."
   },
   "applications.schema.attributes.appGroupsClaimValue.what": {
     "en": "68134f2525fc0453",
-    "text": "Si el claim lleva el nombre de cada grupo o su DN completo, prevaleciendo sobre groups.claimValue. Las partes de confianza realmente difieren: una compara por `cn` y la siguiente se escribió contra un DN de LDAP."
+    "text": "Si el claim lleva el nombre de cada grupo o su DN completo, prevaleciendo sobre groups.claimValue. Las partes que confían realmente difieren: una compara por `cn` y la siguiente se escribió contra un DN de LDAP."
   },
   "applications.schema.attributes.appGroupsClaimFromMemberOf.what": {
     "en": "a49254d4644665d9",
@@ -1061,7 +1061,7 @@
   },
   "applications.schema.attributes.wsfedAssertionLifetimeMin.what": {
     "en": "9a4a30909e2c05ca",
-    "text": "Cuánto tiempo es válida la aserción SAML 1.1 dentro de una respuesta de inicio de sesión de WS-Federation para ESTA parte de confianza, en minutos, prevaleciendo sobre wsfed.assertionLifetimeMin. Define las Conditions de la aserción y el wsu:Lifetime del RequestSecurityTokenResponse que la envuelve, de modo que el sobre y el documento de dentro no pueden discrepar. Es independiente de saml11AssertionLifetimeMin: una aplicación puede hablar ambos, y una sesión de WS-Federation y una aserción Browser/POST no se consumen de la misma manera."
+    "text": "Cuánto tiempo es válida la aserción SAML 1.1 dentro de una respuesta de inicio de sesión de WS-Federation para ESTA parte que confía, en minutos, prevaleciendo sobre wsfed.assertionLifetimeMin. Define las Conditions de la aserción y el wsu:Lifetime del RequestSecurityTokenResponse que la envuelve, de modo que el sobre y el documento de dentro no pueden discrepar. Es independiente de saml11AssertionLifetimeMin: una aplicación puede hablar ambos, y una sesión de WS-Federation y una aserción Browser/POST no se consumen de la misma manera."
   },
   "applications.schema.attributes.saml2CustomAttributes.what": {
     "en": "6a7f74a34549ac13",
@@ -1069,7 +1069,7 @@
   },
   "applications.schema.attributes.saml11CustomAttributes.what": {
     "en": "c1469888e73b177f",
-    "text": "LOS ATRIBUTOS SAML 1.1 PROPIOS DE ESTA PARTE DE CONFIANZA, como un array JSON de filas como las de la página de atributos SAML personalizados del dominio (se permite un namespace). Se añaden a los atributos SAML 1.1 del dominio en las aserciones para esta audiencia (SAML 1.1, WS-Federation, WS-Trust), y prevalecen por nombre."
+    "text": "LOS ATRIBUTOS SAML 1.1 PROPIOS DE ESTA PARTE QUE CONFÍA, como un array JSON de filas como las de la página de atributos SAML personalizados del dominio (se permite un namespace). Se añaden a los atributos SAML 1.1 del dominio en las aserciones para esta audiencia (SAML 1.1, WS-Federation, WS-Trust), y prevalecen por nombre."
   },
   "applications.schema.attributes.saml2ClaimAttributes.what": {
     "en": "1975b37dcacff86c",
@@ -1077,7 +1077,7 @@
   },
   "applications.schema.attributes.saml11ClaimAttributes.what": {
     "en": "bb6b41c7ea67806c",
-    "text": "LA SELECCIÓN PROPIA DE ESTA PARTE DE CONFIANZA de atributos del directorio para sus aserciones SAML 1.1 (SAML 1.1, WS-Federation, WS-Trust), un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
+    "text": "LA SELECCIÓN PROPIA DE ESTA PARTE QUE CONFÍA de atributos del directorio para sus aserciones SAML 1.1 (SAML 1.1, WS-Federation, WS-Trust), un array JSON de nombres de atributo del catálogo, que sustituye la selección del dominio cuando está presente."
   },
   "applications.schema.attributes.saml2ClaimsCombine.what": {
     "en": "d0a05b0063187eff",
@@ -1093,7 +1093,7 @@
   },
   "applications.schema.attributes.saml2AssertionLifetimeMin.what": {
     "en": "5980ad42371e28c5",
-    "text": "CUÁNTO TIEMPO SON VÁLIDAS LAS ASERCIONES DE ESTE PROVEEDOR DE SERVICIOS, en minutos, prevaleciendo sobre saml2.assertionLifetimeMin solo para él. Se convierte tanto en Conditions/NotOnOrAfter como en el SubjectConfirmationData/NotOnOrAfter bearer, ampliado en ambos extremos por saml.clockSkewS — que NO es por aplicación, porque es un hecho sobre los relojes de este entorno y no sobre una parte de confianza."
+    "text": "CUÁNTO TIEMPO SON VÁLIDAS LAS ASERCIONES DE ESTE PROVEEDOR DE SERVICIOS, en minutos, prevaleciendo sobre saml2.assertionLifetimeMin solo para él. Se convierte tanto en Conditions/NotOnOrAfter como en el SubjectConfirmationData/NotOnOrAfter bearer, ampliado en ambos extremos por saml.clockSkewS — que NO es por aplicación, porque es un hecho sobre los relojes de este entorno y no sobre una parte que confía."
   },
   "applications.schema.attributes.saml2SignAssertion.what": {
     "en": "119214c380ca0bfc",
@@ -1113,23 +1113,23 @@
   },
   "applications.schema.attributes.saml11AssertionLifetimeMin.what": {
     "en": "1c1e8ff577d70a0c",
-    "text": "El equivalente SAML 1.1 de saml2AssertionLifetimeMin, prevaleciendo sobre saml11.assertionLifetimeMin para esta parte de confianza. Es independiente del atributo 2.0 por la misma razón que los dos AJUSTES son independientes: los perfiles son implementaciones independientes que se consumen de forma distinta, y una aplicación declarada para ambos quiere legítimamente dos respuestas."
+    "text": "El equivalente SAML 1.1 de saml2AssertionLifetimeMin, prevaleciendo sobre saml11.assertionLifetimeMin para esta parte que confía. Es independiente del atributo 2.0 por la misma razón que los dos AJUSTES son independientes: los perfiles son implementaciones independientes que se consumen de forma distinta, y una aplicación declarada para ambos quiere legítimamente dos respuestas."
   },
   "applications.schema.attributes.saml11SignAssertion.what": {
     "en": "6123c6863711aa4b",
-    "text": "TRUE o FALSE: firmar la <saml:Assertion> de SAML 1.1 para esta parte de confianza, prevaleciendo sobre saml11.signAssertion. El perfil Browser/POST EXIGE una aserción firmada (saml-profile-1.1 sección 4.2.1.4), así que FALSE aquí es exactamente el caso de prueba: una parte de confianza que la acepta de todos modos tiene un agujero."
+    "text": "TRUE o FALSE: firmar la <saml:Assertion> de SAML 1.1 para esta parte que confía, prevaleciendo sobre saml11.signAssertion. El perfil Browser/POST EXIGE una aserción firmada (saml-profile-1.1 sección 4.2.1.4), así que FALSE aquí es exactamente el caso de prueba: una parte que confía que la acepta de todos modos tiene un agujero."
   },
   "applications.schema.attributes.saml11SignResponse.what": {
     "en": "b5c3ac0c3a3f20d3",
-    "text": "TRUE o FALSE: firmar la <samlp:Response> de SAML 1.1 para esta parte de confianza, prevaleciendo sobre saml11.signResponse, con la referencia nombrando ResponseID."
+    "text": "TRUE o FALSE: firmar la <samlp:Response> de SAML 1.1 para esta parte que confía, prevaleciendo sobre saml11.signResponse, con la referencia nombrando ResponseID."
   },
   "applications.schema.attributes.saml11NameIdFormat.what": {
     "en": "0e4deac01ea4ef16",
-    "text": "El formato de NameIdentifier usado para esta parte de confianza, prevaleciendo sobre saml11.nameIdFormat. SAML 1.1 no tiene mensaje de solicitud, así que nada puede pedir un formato y esto es lo único que lo decide — lo que lo convierte en el más útil de los dos atributos de formato por aplicación."
+    "text": "El formato de NameIdentifier usado para esta parte que confía, prevaleciendo sobre saml11.nameIdFormat. SAML 1.1 no tiene mensaje de solicitud, así que nada puede pedir un formato y esto es lo único que lo decide — lo que lo convierte en el más útil de los dos atributos de formato por aplicación."
   },
   "applications.schema.attributes.saml11ArtifactTtlS.what": {
     "en": "1887a455954e9b4f",
-    "text": "Durante cuánto tiempo puede resolverse un artefacto SAML 1.1 generado para esta parte de confianza, en segundos, prevaleciendo sobre saml11.artifactTtlS. Lo canjea, una vez, el respondedor SOAP del perfil Browser/Artifact."
+    "text": "Durante cuánto tiempo puede resolverse un artefacto SAML 1.1 generado para esta parte que confía, en segundos, prevaleciendo sobre saml11.artifactTtlS. Lo canjea, una vez, el respondedor SOAP del perfil Browser/Artifact."
   },
   "applications.schema.attributes.samlAuthnRequestSigned.what": {
     "en": "2150507140b66231",
@@ -1153,7 +1153,7 @@
   },
   "applications.schema.attributes.wstrustJwtScope.what": {
     "en": "86ac83dbe366a17b",
-    "text": "LOS SCOPES DE OAUTH 2.0 QUE LLEVA UN JWT DE WS-TRUST PARA ESTA APLICACIÓN, un valor de scope por entrada (#485). Un JWT que WS-Trust emite con esta aplicación como AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) los lleva en su claim `scope`, delimitados por espacios (RFC 9068 sección 2.2.3); sin ninguno definido no lleva `scope`. Un token SAML no se ve afectado.\n\n**CADA UNO SE JUZGA COMO LOS DE UN TOKEN DE ACCESO OAUTH**, con esta aplicación como cliente: `oauthAllowedScope` declara lo que se le puede emitir (en producto; los scopes protegidos de este servicio en todos los modos), y decide la pregunta por scope de la política de emisión. Un valor que la política descarta se DEJA FUERA del token y se audita (STS-OAUTH-0579), nunca se emite. Una escritura que nombra un scope no declarado se acepta aquí, porque la declaración puede cambiar y el modo desarrollo concede scopes no declarados: declárelo también en oauthAllowedScope. Sobre un valor que la política descartará se ADVIERTE donde se define (#488): junto a este campo, en la respuesta de Guardar, y como `warnings` en las respuestas de escritura de /admin-api y en la vista de la aplicación."
+    "text": "LOS ÁMBITOS DE OAUTH 2.0 QUE LLEVA UN JWT DE WS-TRUST PARA ESTA APLICACIÓN, un valor de ámbito por entrada (#485). Un JWT que WS-Trust emite con esta aplicación como AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) los lleva en su claim `scope`, delimitados por espacios (RFC 9068 sección 2.2.3); sin ninguno definido no lleva `scope`. Un token SAML no se ve afectado.\n\n**CADA UNO SE JUZGA COMO LOS DE UN TOKEN DE ACCESO OAUTH**, con esta aplicación como cliente: `oauthAllowedScope` declara lo que se le puede emitir (en producto; los ámbitos protegidos de este servicio en todos los modos), y decide la pregunta por ámbito de la política de emisión. Un valor que la política descarta se DEJA FUERA del token y se audita (STS-OAUTH-0579), nunca se emite. Una escritura que nombra un ámbito no declarado se acepta aquí, porque la declaración puede cambiar y el modo desarrollo concede ámbitos no declarados: declárelo también en oauthAllowedScope. Sobre un valor que la política descartará se ADVIERTE donde se define (#488): junto a este campo, en la respuesta de Guardar, y como `warnings` en las respuestas de escritura de /admin-api y en la vista de la aplicación."
   },
   "applications.schema.attributes.krb5ServicePrincipalName.what": {
     "en": "2e8e5f607172bae7",
@@ -1169,7 +1169,7 @@
   },
   "applications.schema.attributes.krb5ServiceKeys.what": {
     "en": "35f24692c1cc40a5",
-    "text": "LAS CLAVES ALEATORIAS DE LARGA DURACIÓN DE UN PRINCIPAL DE SERVICIO, una por enctype, en UN solo valor: un documento JSON que nombra el SPN, el reino y el kvno junto a las claves, SELLADO bajo la clave de cifrado de claves dondequiera que esa clave sobreviva al proceso. Un solo valor en lugar de uno por enctype para que una clave no pueda moverse a otra entrada u otro kvno sin que falle el sello. Equivalente a una contraseña: se RETIENE en todas las páginas y en todas las respuestas de /admin-api, y la única vez que sale de este servicio es como el keytab que entrega una creación o una rotación."
+    "text": "LAS CLAVES ALEATORIAS DE LARGA DURACIÓN DE UN PRINCIPAL DE SERVICIO, una por enctype, en UN solo valor: un documento JSON que nombra el SPN, el dominio y el kvno junto a las claves, SELLADO bajo la clave de cifrado de claves dondequiera que esa clave sobreviva al proceso. Un solo valor en lugar de uno por enctype para que una clave no pueda moverse a otra entrada u otro kvno sin que falle el sello. Equivalente a una contraseña: se RETIENE en todas las páginas y en todas las respuestas de /admin-api, y la única vez que sale de este servicio es como el keytab que entrega una creación o una rotación."
   },
   "applications.schema.attributes.krb5ServiceKeyInfo.what": {
     "en": "c7f1cd5d22b9cff1",
@@ -1285,7 +1285,7 @@
   },
   "applications.schema.attributes.didAlsoKnownAs.what": {
     "en": "5a74e5a6c69ffbcd",
-    "text": "OTRO IDENTIFICADOR DE LA MISMA APLICACIÓN, publicado como alsoKnownAs del documento DID: un URI absoluto como el origen web de la aplicación o la URL de su client_id. DID Core lo convierte en una afirmación, no en una prueba; una parte de confianza lo comprueba."
+    "text": "OTRO IDENTIFICADOR DE LA MISMA APLICACIÓN, publicado como alsoKnownAs del documento DID: un URI absoluto como el origen web de la aplicación o la URL de su client_id. DID Core lo convierte en una afirmación, no en una prueba; una parte que confía lo comprueba."
   },
   "applications.schema.attributes.secretDestProvider.what": {
     "en": "999c0334f7036e11",
@@ -1365,7 +1365,7 @@
   },
   "applications.schema.attributes.scimClientOAuthScope.what": {
     "en": "9f692d33ed80633f",
-    "text": "oauth2: el scope que se pide, separado por espacios (scim:write, para el propio /scim/v2 de este servicio). Vacío no pide ninguno."
+    "text": "oauth2: el ámbito que se pide, separado por espacios (scim:write, para el propio /scim/v2 de este servicio). Vacío no pide ninguno."
   },
   "applications.schema.attributes.scimClientOAuthResource.what": {
     "en": "b8d133b2b811132b",
@@ -1389,19 +1389,19 @@
   },
   "applications.schema.attributes.scimClientScopeMode.what": {
     "en": "372adf4f4a44227b",
-    "text": "A QUIÉN SE ENVÍA: all (todas las personas del dominio), groups (los miembros de scimClientScopeGroups) o filter (las personas que coinciden con scimClientScopeFilter). Alguien que sale del alcance se desaprovisiona allí."
+    "text": "A QUIÉN SE ENVÍA: all (todas las personas del dominio), groups (los miembros de scimClientScopeGroups) o filter (las personas que coinciden con scimClientScopeFilter). Alguien que sale del ámbito se desaprovisiona allí."
   },
   "applications.schema.attributes.scimClientScopeGroups.what": {
     "en": "8377e938c9251688",
-    "text": "alcance groups: los grupos cuyos miembros se envían, cada uno el cn o el DN de un grupo."
+    "text": "ámbito groups: los grupos cuyos miembros se envían, cada uno el cn o el DN de un grupo."
   },
   "applications.schema.attributes.scimClientScopeFilter.what": {
     "en": "eb63610a69d08d21",
-    "text": "alcance filter: un filtro LDAP RFC 4515 con el que debe coincidir la entrada de una persona, como (department=Sales)."
+    "text": "ámbito filter: un filtro LDAP RFC 4515 con el que debe coincidir la entrada de una persona, como (department=Sales)."
   },
   "applications.schema.attributes.scimClientGroupMode.what": {
     "en": "c83feac3531f87f7",
-    "text": "QUÉ GRUPOS SE ENVÍAN, cada uno solo con sus miembros dentro del alcance: none, selected (scimClientGroups), member-groups (todos los grupos en los que está una persona dentro del alcance) o all."
+    "text": "QUÉ GRUPOS SE ENVÍAN, cada uno solo con sus miembros dentro del ámbito: none, selected (scimClientGroups), member-groups (todos los grupos en los que está una persona dentro del ámbito) o all."
   },
   "applications.schema.attributes.scimClientGroups.what": {
     "en": "b69fad674e7a8af5",
@@ -1409,11 +1409,11 @@
   },
   "applications.schema.attributes.scimClientDeprovision.what": {
     "en": "fa13a73140f18534",
-    "text": "QUÉ OCURRE ALLÍ cuando una persona se elimina aquí o sale del alcance: deactivate (active false, el valor predeterminado) o delete. Una cuenta deshabilitada aquí es siempre active false allí."
+    "text": "QUÉ OCURRE ALLÍ cuando una persona se elimina aquí o sale del ámbito: deactivate (active false, el valor predeterminado) o delete. Una cuenta deshabilitada aquí es siempre active false allí."
   },
   "applications.schema.attributes.scimClientReconcileMinutes.what": {
     "en": "a40bdc8ff019b288",
-    "text": "CADA CUÁNTO SE RECONCILIA TODO EL ALCANCE, en minutos, mediante el planificador del clúster: se envían todas las personas y grupos dentro del alcance, y lo que el proveedor de servicios tiene bajo un externalId de este dominio y ya no está dentro del alcance se desaprovisiona. 0 (el valor predeterminado) solo reconcilia cuando lo pide un administrador."
+    "text": "CADA CUÁNTO SE RECONCILIA TODO EL ÁMBITO, en minutos, mediante el planificador del clúster: se envían todas las personas y grupos dentro del ámbito, y lo que el proveedor de servicios tiene bajo un externalId de este dominio y ya no está dentro del ámbito se desaprovisiona. 0 (el valor predeterminado) solo reconcilia cuando lo pide un administrador."
   },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
@@ -1597,7 +1597,7 @@
   },
   "applications.schema.attributes.gnapScopedSignals.what": {
     "en": "2671ec903329beba",
-    "text": "FALSE excluye a esta aplicación web del alcance de Shared Signals: un flujo de su propiedad lleva entonces eventos sobre todo el mundo, como el de cualquier otro receptor."
+    "text": "FALSE excluye a esta aplicación web del ámbito de Shared Signals: un flujo de su propiedad lleva entonces eventos sobre todo el mundo, como el de cualquier otro receptor."
   },
   "applications.schema.attributes.spiffeWorkloadId.what": {
     "en": "57058ad7e2424d0b",

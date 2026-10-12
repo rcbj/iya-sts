@@ -317,7 +317,7 @@
   },
   "crypto.standards.c14n.what": {
     "en": "ca991439b4559070",
-    "text": "LA EXCLUSIVA ES ESENCIAL Y ES LA PREDETERMINADA EN TODAS PARTES AQUÍ. Una aserción se firma de forma independiente y luego se incrusta dentro de un RSTR, una Response o un `wresult` que declara prefijos propios, así que la c14n INCLUSIVA arrastraría esas declaraciones de los ancestros al digest en el momento de la verificación — la firma falla entonces para cada usuario de confianza mientras verifica perfectamente aquí, que es la peor forma de error que perseguir."
+    "text": "LA EXCLUSIVA ES ESENCIAL Y ES LA PREDETERMINADA EN TODAS PARTES AQUÍ. Una aserción se firma de forma independiente y luego se incrusta dentro de un RSTR, una Response o un `wresult` que declara prefijos propios, así que la c14n INCLUSIVA arrastraría esas declaraciones de los ancestros al digest en el momento de la verificación — la firma falla entonces para cada parte que confía mientras verifica perfectamente aquí, que es la peor forma de error que perseguir."
   },
   "crypto.standards.wss.coverage": {
     "en": "08017a57e61d5832",
@@ -369,7 +369,7 @@
   },
   "crypto.standards.webauthn.coverage": {
     "en": "4610e926ac80ab7d",
-    "text": "partial: la mitad del usuario de confianza. Las firmas de registro y de aserción se verifican realmente, y también las DECLARACIONES de atestación (#105) — los ocho formatos, sus cadenas y el FIDO Metadata Service — según webauthn.attestationPolicy."
+    "text": "partial: la mitad de la parte que confía. Las firmas de registro y de aserción se verifican realmente, y también las DECLARACIONES de atestación (#105) — los ocho formatos, sus cadenas y el FIDO Metadata Service — según webauthn.attestationPolicy."
   },
   "crypto.standards.webauthn.what": {
     "en": "ea84aed02de27496",
@@ -765,7 +765,7 @@
   },
   "crypto.families.saml-1-1.verifies": {
     "en": "8398fc2b7e6fdb17",
-    "text": "Sus propios artefactos, para el usuario de confianza simulado."
+    "text": "Sus propios artefactos, para la parte que confía simulada."
   },
   "crypto.families.saml-1-1.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -781,11 +781,11 @@
   },
   "crypto.families.ws-federation.signs": {
     "en": "038da0701eacf8e7",
-    "text": "La aserción SAML dentro del `wresult`, en la versión que haya pedido el usuario de confianza, mediante el firmante compartido."
+    "text": "La aserción SAML dentro del `wresult`, en la versión que haya pedido la parte que confía, mediante el firmante compartido."
   },
   "crypto.families.ws-federation.verifies": {
     "en": "35faf906b09d64d8",
-    "text": "El usuario de confianza simulado en `/wsfed/rp` verifica esa aserción comprobación por comprobación, y se le dice QUÉ elemento verificar en lugar de tomar el primer `<ds:Signature>` del documento — el defecto que tenían cuatro verificadores distintos de aquí."
+    "text": "La parte que confía simulada en `/wsfed/rp` verifica esa aserción comprobación por comprobación, y se le dice QUÉ elemento verificar en lugar de tomar el primer `<ds:Signature>` del documento — el defecto que tenían cuatro verificadores distintos de aquí."
   },
   "crypto.families.ws-federation.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -1041,7 +1041,7 @@
   },
   "crypto.families.webauthn-ctap.signs": {
     "en": "4da1e2515e736e7d",
-    "text": "Nada. Firma el AUTENTICADOR; este servicio es el usuario de confianza, que es la mitad que solo comprueba."
+    "text": "Nada. Firma el AUTENTICADOR; este servicio es la parte que confía, que es la mitad que solo comprueba."
   },
   "crypto.families.webauthn-ctap.verifies": {
     "en": "d8daa1e1b9b11704",
