@@ -453,6 +453,8 @@ function vendoredJobs(options) {
                 conformance: !!entry.conformance,
                 // Needs a SAML interoperability peer (#189-#192); likewise.
                 samlPeer: String(entry.samlPeer || ''),
+                // Needs the test peer (#586); likewise.
+                testPeer: !!entry.testPeer,
                 // A job may raise its own watchdog and may not lower it; see
                 // runJob(), where that rule is enforced rather than trusted.
                 timeoutMs: Number(entry.timeoutMs) || 0,
@@ -2028,6 +2030,26 @@ async function main() {
                   'one the interoperability of the SAML profiles with ' +
                   job.samlPeer + ' is unchecked, and what stands is the ' +
                   'local SAML jobs and tests/saml_interop_findings.js.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
+    if (job.testPeer && !process.env.STS_TEST_PEER_URL) {
+      // A DELIBERATE EXCLUSION, as the two above are (#586): the test peer
+      // is the far party of the protocol this job drives — a resource
+      // server, since the service's own demonstration one is development
+      // only (#585) — and ./run-tests.sh starts it in every local mode,
+      // handing the job STS_TEST_PEER_URL. An AWS target has none.
+      const why = 'no STS_TEST_PEER_URL: this run brought up no test peer ' +
+                  '(tests/peer/). ./run-tests.sh does in every local mode; ' +
+                  'an AWS target has none, so in this run the resource ' +
+                  'server this job presents its tokens at is unchecked, and ' +
+                  'what stands is the job\'s run in the local modes and ' +
+                  'tests/test_peer.js.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
       log.debug('Leaving runOne(). Not run.');

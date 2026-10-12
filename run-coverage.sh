@@ -481,6 +481,12 @@ else
     # catcher: the sections that read a delivered message are SKIPPED and
     # say so, and the rest still run.
     -e MAILPIT_API_URL=
+    # AND THE TEST PEER'S, THE FIFTH (#586): the compose file defaults
+    # `STS_TEST_PEER_URL=http://test-peer:9600` for a hand run beside the
+    # container, and `--no-deps` starts none. Emptied, the jobs that need the
+    # peer are SKIPPED by the runner with the reason (`testPeer` in
+    # MANIFEST.js) and the sections that need it skip and say so.
+    -e STS_TEST_PEER_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.

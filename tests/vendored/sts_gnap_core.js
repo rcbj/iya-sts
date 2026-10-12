@@ -25,6 +25,14 @@
 // `/admin-api` operations (`gnapGrants` on /users?user=, revoke-grant with
 // `user`).
 //
+// THE RESOURCE SERVER IS THE TEST PEER'S (#586), in every mode: the
+// service's demonstration one is development only since #585. The peer is
+// registered in the realm as an ordinary GNAP resource server, the rights
+// asked for are of the type it declares, and it judges each presented token
+// by RFC 9767 introspection and the key proof it checks itself
+// (`gnap_flow.js`, `peer: true`). A run with no peer — an AWS target —
+// reports this job SKIPPED (`testPeer` in MANIFEST.js).
+//
 // Everything runs in a THROWAWAY TRUST REALM, with `gnap.continueWaitS` at zero
 // so no grant has to sleep its default five seconds; the job raises it for the
 // one section that asserts `too_fast` and sets it back to zero after. Realms
@@ -73,7 +81,8 @@ var PASSWORD = "gnap-core-Passw0rd!-" + String(Date.now()).slice(-6);
 // with sts_gnap_rs.js and sts_gnap_signals.js; the names below are the ones
 // this file has always used.
 const h = require("./gnap_flow.js").harness({ base: base, realm: REALM,
-                                              password: PASSWORD, log: log });
+                                              password: PASSWORD, log: log,
+                                              peer: true });
 var api = h.api;
 var realmBase = h.realmBase;
 var realmApi = h.realmApi;
@@ -125,6 +134,8 @@ async function test() {
            "created " +
       "the realm");
   await setting("gnap.continueWaitS", 0);
+  // THE RESOURCE SERVER (#586): the test peer, registered in this realm.
+  await h.usePeer();
   // THE PUSH LISTENER'S CA, NOT A SKIP OF VERIFICATION (#171): product mode
   // ignores gnap.pushSkipTlsVerification, so section 6's listener presents a
   // certificate from a CA this job makes now, and the service is told to
@@ -170,7 +181,8 @@ async function test() {
                              realmBase + "/gnap/resource");
         });
   r = await gnap.rawRequest("GET", RS, {});
-  check("the demonstration RS answers an unauthenticated request with the " +
+  check("the resource server (the test peer) answers an unauthenticated " +
+        "request with the " +
         "RS-first challenge (section 9.1)", function () {
           assert.strictEqual(r.status, 401);
           assert.ok(/^GNAP /.test(r.headers["www-authenticate"]),
@@ -362,7 +374,8 @@ async function test() {
         "bearer");
   });
   r = await es.send("GET", RS, { token: token.value });
-  check("the demonstration RS accepts the bound token with an HTTP signature",
+  check("the resource server accepts the bound token with an HTTP " +
+        "signature",
         function () {
     assert.strictEqual(r.status, 200, r.text);
     assert.strictEqual(r.json.format, "jwt-signed");
@@ -1099,7 +1112,10 @@ async function test() {
   // =========================================================================
   log.info("=== 14. realm isolation ===");
   const isolated = await redirectGrant(es, OWNER);
-  r = await es.send("GET", base + "/gnap/rs/resource",
+  // The default realm's resource server: the test peer again, registered
+  // THERE, and introspecting at the default realm's authorization server.
+  const elsewhere = await h.peerFor(base, api);
+  r = await es.send("GET", elsewhere.RS,
                     { token: isolated.released.access_token.value });
   check("a token from this realm is refused by the default realm's resource " +
         "server", function () {

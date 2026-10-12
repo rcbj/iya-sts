@@ -18,18 +18,38 @@
 // Every refusal is read as its GNAP ERROR CODE (RFC 9635 section 3.6), never by
 // its status alone, and every response a refusal arrives in must be `no-store`.
 //
-// It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its only
-// requires are `assert`, node's crypto and `gnap_client.js`.
+// THE RESOURCE SERVER, WITH `peer: true` (#586). The service's
+// demonstration resource server (`/gnap/rs/resource`, `/gnap/rs/spend`) is
+// development only since #585, so a job that presents its tokens at a
+// resource server in every mode asks for the TEST PEER's instead
+// (tests/peer/peer_gnap.js): `h.RS`, `h.SPEND` and `h.DEMO` then name the
+// peer's resource, spend operation and access type, and `h.usePeer()`, once
+// the realm exists, configures a peer tenant for it and REGISTERS the peer
+// there as an ordinary GNAP resource server — its key, its address, and the
+// type declared with the demonstration type's limits — so a right of that
+// type naming no location is audienced to the peer. Without the option
+// nothing changes: `h.RS` is the demonstration resource server, as the jobs
+// not yet moved (sts_gnap_rs, sts_gnap_signals, sts_gnap_mtls) still use.
+//
+// It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its
+// requires are `assert`, node's crypto, `gnap_client.js` and `test_peer.js`.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const gnap = require("./gnap_client.js");
+const testPeer = require("./test_peer.js");
 
-// `options`: { base, realm, password, log }. Answers the harness bound to them.
-// An EMPTY realm is the DEFAULT realm (#497): the chain jobs leave their
-// entries there, as the other protocols' chain jobs do, for the delegation
-// picture. `realmBase` and `realmApi` are then the service's own.
+// The access type the peer's resource server serves, declared in the realm
+// by the job (`usePeer()`); the peer's default, so a tenant configured
+// without one agrees.
+const PEER_TYPE = "urn:iya-sts:test-peer:resource";
+
+// `options`: { base, realm, password, log, peer }. Answers the harness bound
+// to them. An EMPTY realm is the DEFAULT realm (#497): the chain jobs leave
+// their entries there, as the other protocols' chain jobs do, for the
+// delegation picture. `realmBase` and `realmApi` are then the service's own.
+// `peer` puts the resource server on the test peer (above).
 function harness(options) {
   const base = options.base;
   const REALM = options.realm || "";
@@ -45,7 +65,22 @@ function harness(options) {
                  realmApi: realmApi,
                  GRANT: GRANT, FINISH: FINISH, DEMO: DEMO, RS: realmBase +
                      "/gnap/rs/resource",
+                 SPEND: realmBase + "/gnap/rs/spend",
+                 peer: null,
                  checks: 0 };
+  // The peer's names are fixed NOW, before any request, because the jobs
+  // copy `h.RS` and `h.DEMO` into constants at load. The URLs are built on
+  // STS_TEST_PEER_URL — the address this runner dials and so the one its
+  // signatures cover.
+  const peerTenant = options.peer && testPeer.available()
+    ? testPeer.tenantId("gnap-" + (REALM || "default")) : null;
+  if (peerTenant) {
+    const at = testPeer.url() + "/t/" + encodeURIComponent(peerTenant);
+    self.DEMO = PEER_TYPE;
+    self.RS = at + "/gnap/resource";
+    self.SPEND = at + "/gnap/spend";
+  }
+  const accessType = self.DEMO;
 
   // Every finish URI a key is registered with (2026-09-21). Product mode uses
   // only a registered one (STS-GNAP-0101), so a job finishing anywhere but
@@ -331,7 +366,7 @@ function harness(options) {
   self.readAccess = function (action) {
     log.debug("Entering readAccess().");
     log.debug("Leaving readAccess().");
-    return [{ type: DEMO, actions: [action || "read", "write"] }];
+    return [{ type: accessType, actions: [action || "read", "write"] }];
   };
 
   // A grant request from `client` with the usual interaction.
@@ -430,6 +465,50 @@ function harness(options) {
               String(r.raw).slice(0, 200));
     log.debug("Leaving subjectOf().");
     return subject;
+  };
+
+  // THE PEER, REGISTERED IN A REALM (#586): a tenant configured for
+  // `realmBaseOf`, and a GNAP resource-server application in that realm
+  // with the tenant's key and address, declaring the peer's type with the
+  // demonstration type's limits. Answers the tenant's view. `usePeer()` is
+  // this harness's realm, under the names fixed above; `peerFor(base, api)`
+  // is any other — the default realm, to show it is another authorization
+  // server.
+  const registerPeer = async function (tenantName, realmBaseOf, realmApiOf) {
+    log.debug("Entering registerPeer(). " + tenantName);
+    const view = await testPeer.tenant(tenantName, realmBaseOf, base,
+                                       { gnap: { type: PEER_TYPE } });
+    const identifier = "gnap-peer-rs-" + tenantName;
+    await self.ok(realmApiOf + "/applications/create", {
+      identifier: identifier, kind: "gnap-resource-server",
+      name: "Test peer resource server " + tenantName,
+      protocols: ["gnap", "oauth2"],
+      fields: testPeer.gnapResourceServerFields(view)
+    }, "registered the test peer's resource server " + identifier);
+    await self.ok(realmApiOf + "/applications/set-access-type", {
+      application: identifier, type: PEER_TYPE, actions: view.gnap.actions,
+      limits: testPeer.SPEND_LIMITS }, "declared " + PEER_TYPE + " on " +
+      identifier);
+    log.debug("Leaving registerPeer().");
+    return Object.assign({ identifier: identifier }, view);
+  };
+  self.usePeer = async function () {
+    log.debug("Entering usePeer().");
+    assert.ok(peerTenant, "this job's resource server is the test peer, " +
+      "and there is none: " + testPeer.skipReason("the GNAP resource " +
+      "server"));
+    self.peer = await registerPeer(peerTenant, realmBase, realmApi);
+    log.debug("Leaving usePeer().");
+    return self.peer;
+  };
+  self.peerFor = async function (otherBase, otherApi) {
+    log.debug("Entering peerFor().");
+    const view = await registerPeer(testPeer.tenantId("gnap-other"),
+                                    otherBase, otherApi);
+    log.debug("Leaving peerFor().");
+    return Object.assign({ RS: testPeer.url() + "/t/" +
+                               encodeURIComponent(view.tenant) +
+                               "/gnap/resource" }, view);
   };
 
   self.createRealm = async function (name) {

@@ -29,12 +29,14 @@
 //      an acr value, a negative age) with the stored values read back
 //      unchanged;
 //   c. a password sign-in with `resource=<API>` gives a token with acr "1",
-//      the stand-in resource answers it 401 with section 3's challenge and
-//      both auth-params, and client-authenticated introspection carries acr
-//      and auth_time (section 6.2);
-//   d. what the stand-in resource refuses BEFORE any step-up question: a
-//      token for the default audience, no token (both 401 invalid_token),
-//      an application the realm has no entry for (404);
+//      the API's resource server answers it 401 with section 3's challenge
+//      and both auth-params, and client-authenticated introspection carries
+//      acr and auth_time (section 6.2);
+//   d. what the resource server refuses BEFORE any step-up question: a
+//      token for the default audience, no token (both 401 invalid_token), a
+//      resource it does not serve (404), and the API's token at the same
+//      API as the DEFAULT realm's resource server sees it (401: another
+//      issuer);
 //   e. STEP-UP TO mfa END TO END — an authenticator enrolled at
 //      `/portal/mfa`, `acr_values=mfa` on the one-factor session sent to
 //      the sign-in screen rather than answered, the screen demanding the
@@ -56,6 +58,23 @@
 //      token asking the same page's operation for the same row.
 //
 // ---------------------------------------------------------------------------
+// THE RESOURCE SERVER IS THE TEST PEER'S (#586).
+//
+// It was the service's own stand-in,
+// `/oauth2/step-up/resource/{application}`, which is development only since
+// #585 — and a resource server that is part
+// of the authorization server proved less than it seemed: it read the
+// requirement off the entry the AS also reads. The API is now
+// `tests/peer/peer_stepup.js`, a separate container that knows the
+// requirement the way a real API does (the job configures it there, as it
+// writes it on the entry), verifies the RFC 9068 token against the realm's
+// published key set, and answers the challenge the job asserts in exactly
+// the stand-in's shape. A run with no peer — an AWS target — reports this
+// job SKIPPED (`testPeer` in MANIFEST.js). The monitor's `stepUpChallenged`
+// counter therefore moves only for UserInfo's challenge now: the peer's
+// challenges happen in another process, which is the point.
+//
+// ---------------------------------------------------------------------------
 // WHY IT IS THIS REPOSITORY'S OWN (`local: true`).
 //
 // `tests/CLAUDE.md`'s third reason: A CONSOLE CONTROL WITH A PROTOCOL
@@ -64,8 +83,9 @@
 // requirement is a setting written through `/admin-api/config`, and the
 // counters are read on `/admin-api/oauth2/monitor` and `/admin/oauth2/monitor`
 // — while every assertion that matters is made at `/oauth2/authorize`,
-// `/oauth2/token`, `/oauth2/introspect`, `/oauth2/userinfo` and the stand-in
-// resource. A repository holding one of those two doors could not make it.
+// `/oauth2/token`, `/oauth2/introspect`, `/oauth2/userinfo` and the API's
+// resource server. A repository holding one of those two doors could not
+// make it.
 //
 // ---------------------------------------------------------------------------
 // THE CONSOLE HALF, AND WHY IT IS DRIVEN THE WAY IT IS.
@@ -96,6 +116,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -138,6 +159,10 @@ const ALICE = names.usernameFor("su-alice");
 const BOB = names.usernameFor("su-bob");
 const OPERATOR = names.usernameFor("su-operator");
 const UNMEETABLE = "urn:example:stepup:gold";
+// The test peer's two tenants (#586): the API in this realm, and the same
+// API as the DEFAULT realm's resource server would see it.
+let peerView = null;
+let peerDefaultView = null;
 
 // A section that stops being called takes its assertions with it and the run
 // still says "passed"; this is the floor that notices.
@@ -463,10 +488,11 @@ async function tokenFromSession(b, extra) {
   return tokens;
 }
 
-function stepUpResource(token, application) {
+// The API, at the test peer's RFC 9470 resource server (#586).
+function stepUpResource(token, application, view) {
   log.debug("Entering stepUpResource().");
   log.debug("Leaving stepUpResource().");
-  return send(base + R + "/oauth2/step-up/resource/" +
+  return send((view || peerView).stepUp.base +
               encodeURIComponent(application || RESOURCE),
               { headers: token ? { Authorization: "Bearer " + token } : {} });
 }
@@ -717,6 +743,24 @@ async function theApplications() {
     assert.strictEqual(attributeOf(entry, "oauthStepUpAcrValues"), "mfa");
     assert.strictEqual(attributeOf(entry, "oauthStepUpMaxAge"), "600");
   });
+
+  // THE API ITSELF, at the test peer (#586): the same requirement, known to
+  // the resource server the way a real API knows its own — configured
+  // there, as it was written on the entry above — and a second tenant that
+  // is the same API as the DEFAULT realm's resource server sees it.
+  const resources = {};
+  resources[RESOURCE] = { audience: API, acr_values: "mfa", max_age: 600 };
+  peerView = await testPeer.tenant(testPeer.tenantId("stepup-" + STAMP),
+                                   base + R, base,
+                                   { stepUp: { resources: resources } });
+  peerDefaultView = await testPeer.tenant(
+    testPeer.tenantId("stepup-default-" + STAMP), base, base,
+    { stepUp: { resources: resources } });
+  check("the test peer serves the API, with the requirement the entry " +
+        "declares", function () {
+    assert.deepStrictEqual(peerView.stepUp.resources[RESOURCE],
+                           resources[RESOURCE]);
+  });
   log.debug("Leaving theApplications().");
 }
 
@@ -757,7 +801,8 @@ async function aOneFactorTokenIsChallenged() {
   });
 
   r = await stepUpResource(tokens.access_token);
-  check("SECTION 3: the stand-in resource answers the one-factor token 401 " +
+  check("SECTION 3: the API's resource server answers the one-factor token " +
+        "401 " +
         "with error=\"insufficient_user_authentication\" under Bearer",
         function () {
     assert.strictEqual(r.status, 401, r.status + " " + r.raw.slice(0, 300));
@@ -822,15 +867,27 @@ async function theResourceRefusesFirst(held) {
     assert.ok(!/acr_values=/.test(r.challenge), r.challenge);
   });
   r = await stepUpResource(held.oneFactor, "su-nobody-" + STAMP);
-  check("an application the realm has no entry for is 404", function () {
+  check("a resource the resource server does not serve is 404", function () {
     assert.strictEqual(r.status, 404, r.raw.slice(0, 300));
   });
-  r = await send(base + "/oauth2/step-up/resource/" +
-                 encodeURIComponent(RESOURCE),
-                 { headers: { Authorization: "Bearer " + held.oneFactor } });
-  check("and the application is the REALM's: the default realm has no " +
-        "such entry and answers 404", function () {
-    assert.strictEqual(r.status, 404, r.status + " " + r.raw.slice(0, 300));
+  r = await stepUpResource(held.oneFactor, RESOURCE, peerDefaultView);
+  check("and the token is the REALM's: the same API as the default " +
+        "realm's resource server sees it refuses it, 401 invalid_token — " +
+        "another issuer's token, not a step-up question", function () {
+    assert.strictEqual(r.status, 401, r.status + " " + r.raw.slice(0, 300));
+    assert.strictEqual(r.body.error, "invalid_token", r.raw.slice(0, 300));
+    assert.ok(!/insufficient_user_authentication/.test(r.challenge),
+              r.challenge);
+  });
+  const arrived = await testPeer.received(peerView.tenant, "step-up", 0);
+  check("THE PEER RECORDS WHAT IT DECIDED: a challenge and refusals for this " +
+        "realm's API, read back from the far end", function () {
+    const decisions = arrived.events.map(function (one) {
+      return one.decision;
+    });
+    assert.ok(decisions.indexOf("challenged") >= 0, JSON.stringify(decisions));
+    assert.ok(decisions.indexOf("refused") >= 0, JSON.stringify(decisions));
+    assert.ok(decisions.indexOf("unknown") >= 0, JSON.stringify(decisions));
   });
   log.debug("Leaving theResourceRefusesFirst().");
 }
@@ -939,7 +996,8 @@ async function stepUpToMfa(held) {
       JSON.stringify([at.amr, idt.amr]));
   });
   const r = await stepUpResource(tokens.access_token);
-  check("THE RESOURCE THAT CHALLENGED ANSWERS THE STEPPED-UP TOKEN 200, " +
+  check("THE RESOURCE SERVER THAT CHALLENGED ANSWERS THE STEPPED-UP TOKEN " +
+        "200, " +
         "met:true, naming the requirement and the token's acr", function () {
     assert.strictEqual(r.status, 200, r.status + " " + r.raw.slice(0, 300));
     assert.strictEqual(r.body.met, true);
@@ -948,8 +1006,7 @@ async function stepUpToMfa(held) {
                            { acr_values: "mfa", max_age: 600 });
     assert.strictEqual(r.body.token.acr, "mfa");
     assert.strictEqual(r.body.token.client_id, CLIENT);
-    // An auth-scheme is case-insensitive (RFC 9110 section 11.1), and the
-    // resource reports it the way `presentedAccessToken()` normalised it.
+    // An auth-scheme is case-insensitive (RFC 9110 section 11.1).
     assert.ok(/^bearer$/i.test(r.body.token.scheme), r.body.token.scheme);
     assert.ok(r.body.token.authenticated_seconds_ago <= 600,
               String(r.body.token.authenticated_seconds_ago));
@@ -1156,7 +1213,8 @@ async function theMonitor() {
   check("THIS CLIENT'S ROW MOVED FOR EVERY EVENT THIS JOB CAUSED: sent to " +
         "sign in again for acr, met after signing in, met by the session, " +
         "unmet, login_required, sent to sign in with no session, and the " +
-        "challenges its tokens met", function () {
+        "challenge its token met at UserInfo — the API's are the test " +
+        "peer's, in another process (#586)", function () {
     assert.ok(row, "no row for " + CLIENT);
     assert.ok(c.stepUpReauthAcr >= 2, JSON.stringify(c));
     assert.ok(c.stepUpMetAfterSignIn >= 1, JSON.stringify(c));
@@ -1164,7 +1222,7 @@ async function theMonitor() {
     assert.ok(c.stepUpUnmet >= 1, JSON.stringify(c));
     assert.ok(c.stepUpLoginRequired >= 1, JSON.stringify(c));
     assert.ok(c.stepUpSignIn >= 1, JSON.stringify(c));
-    assert.ok(c.stepUpChallenged >= 2, JSON.stringify(c));
+    assert.ok(c.stepUpChallenged >= 1, JSON.stringify(c));
     assert.strictEqual(c.stepUpReauthMaxAge, 0, JSON.stringify(c));
   });
   check("the section's totals are at least this client's", function () {
@@ -1235,9 +1293,9 @@ program
   .name("sts_step_up")
   .description("RFC 9470 step-up authentication over HTTP in a throwaway " +
       "realm: acr_values_supported, a resource application's requirement " +
-      "and its two refusals, the stand-in resource's challenge and what it " +
-      "refuses first, acr and auth_time in introspection, a one-factor " +
-      "session sent to sign in again and stepped up to mfa with a TOTP " +
+      "and its two refusals, the test peer's resource server's challenge " +
+      "and what it refuses first, acr and auth_time in introspection, a " +
+      "one-factor session sent to sign in again and stepped up to mfa with a TOTP " +
       "code, the hierarchy, login_required, " +
       "unmet_authentication_requirements and invalid_request, UserInfo " +
       "under oauth2.stepUpAcrValues, and the monitor's step-up section.")

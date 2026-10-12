@@ -21,10 +21,15 @@
 //      on the approval page; the token says 30 — read by this job's OWN
 //      decoding of the jwt-signed token, with the grant it counts against —
 //      and a raised amount posted to the page is refused.
-//   3. THE DEMONSTRATION RESOURCE SERVER SPENDS (`POST /gnap/rs/spend`): 20,
-//      then 20 refused (403 insufficient_scope), a failing operation
-//      refunded (502), 10 more to exactly 30, and one more refused; another
-//      currency refused.
+//   3. THE RESOURCE SERVER SPENDS — the TEST PEER's (#586), in every mode,
+//      since the demonstration one (`POST /gnap/rs/spend`) is development
+//      only (#585): 20, then 20 refused (403 insufficient_scope), a failing
+//      operation refunded (502), 10 more to exactly 30, and one more
+//      refused; another currency refused. The peer keeps the totals per
+//      grant, as rcbj's decision 2 on #432 has a resource server do, from
+//      the limits and grant_id RFC 9767 introspection hands it. A run with
+//      no peer — an AWS target — reports this job SKIPPED (`testPeer` in
+//      MANIFEST.js).
 //   4. THE ABSENT OWNER ON /portal/ciba (#432 phase 6's flow): a request
 //      naming somebody who does not own the identifier waits on their
 //      portal and their approval is REFUSED there; one naming the owner is
@@ -68,7 +73,9 @@ const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnaplim").replace(/[^a-z0-9-]/g, "").slice(0, 30),
   password: PASSWORD,
-  log: log
+  log: log,
+  // The resource server that spends is the test peer's (#586).
+  peer: true
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-lim-owner");
@@ -125,6 +132,9 @@ async function test() {
   log.info("Driving GNAP ownership and limits at " + h.realmBase);
   await h.createRealm("GNAP ownership and limits");
   await h.setting("gnap.continueWaitS", 0);
+  // The resource server section 3 spends at (#586): the test peer,
+  // registered in this realm, declaring the type section 2 asks for.
+  await h.usePeer();
   // The jwt-signed format, so this job can read the token's claims itself.
   await h.setting("gnap.accessTokenFormat", "jwt-signed");
   await h.ensurePerson(OWNER);
@@ -270,13 +280,13 @@ async function test() {
   });
 
   // =========================================================================
-  // 3. THE DEMONSTRATION RESOURCE SERVER KEEPS THE TOTALS.
+  // 3. THE RESOURCE SERVER (THE TEST PEER) KEEPS THE TOTALS.
   // =========================================================================
-  log.info("=== 3. the demonstration resource server spends ===");
+  log.info("=== 3. the resource server (the test peer) spends ===");
   const spend = function (json) {
     log.debug("Entering spend().");
     log.debug("Leaving spend().");
-    return payer.send("POST", h.realmBase + "/gnap/rs/spend",
+    return payer.send("POST", h.SPEND,
                       { token: spendToken.value, json: json });
   };
   r = await spend({ amount: "20", currency: "EUR" });
@@ -312,7 +322,7 @@ async function test() {
     assert.strictEqual(r.status, 403, r.text);
     assert.ok(/EUR/.test(r.json.error_description), r.text);
   });
-  r = await payer.send("POST", h.realmBase + "/gnap/rs/spend",
+  r = await payer.send("POST", h.SPEND,
                        { json: { amount: "1", currency: "EUR" } });
   check("3g. with no token: the RS-first challenge", function () {
     assert.strictEqual(r.status, 401, r.text);
