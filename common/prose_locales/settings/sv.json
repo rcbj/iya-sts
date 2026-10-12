@@ -4828,8 +4828,8 @@
     "text": "Användarnamn för erbjudande"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "Vems autentiseringsuppgift som de utfärdarinitierade erbjudandesidorna bygger. Anspråken kommer från den personens katalogpost."
+    "en": "695af4bfbf87397a",
+    "text": "Vem ett förauktoriserat erbjudande namnger när den som gör det inte namnger någon. Ingen dörr gör det sedan demonstrationsutfärdaren lämnade tjänsten (#594): portalens erbjudande namnger den inloggade personen."
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "Sidan under plånbokens URL som ett Credential Offer lämnas till. Standardvärdet är debuggerns egen plånbokssida."
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "Andra plånboks-URL:er som en erbjudandelänk får ange (produkt)"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "I PRODUKTLÄGE: de plånboks-URL:er utöver oid4vci.walletUrl som frågeparametern `wallet` på /issuer/offer får ange. Varje annan avvisas, eftersom en erbjudandelänk som skickar slutanvändaren dit dess frågesträng säger är en öppen omdirigering som bär en förauktoriserad kod. Utvecklingsläget godtar vilken URL som helst, vilket är hur en plånbok på en bärbar dator riktas mot den här tjänsten."
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "Algoritm som autentiseringsuppgifter signeras med"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential och /did/generates did:web-autentiseringsuppgift använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och mock-verifieraren kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med."
+    "en": "33357292a8570238",
+    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och mock-verifieraren kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "Hur länge Domain Linkage Credential på /.well-known/did-configuration.json anger att det är giltigt. Det signeras per begäran, så detta är fönstret under vilket en cachad kopia kan tros på."
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "Livslängd för intyg från /did/generate (s)"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "Hur länge det SD-JWT VC som /did/generate signerar med den DID det lämnar tillbaka är giltigt."
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "Client Identifier-prefix för en signerad begäran"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "Hur en plånbok ska autentisera en SIGNERAD begäran (OpenID4VP avsnitt 5.9). pre-registered: oid4vp.clientId, som plånboken känner till via en annan kanal. decentralized_identifier: sfärens did:web, där begäran signeras med en nyckel som dess dokument listar. verifier_attestation: en Verifier Attestation JWT i begärans `jwt`-huvud — oid4vp.verifierAttestation, eller en som den här sfären signerar åt sig själv, vilken en plånbok litar på bara om den litar på den här sfären. openid_federation: den här sfärens entity identifier, vars Entity Configuration finns på /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, ett dNSName i Verifierns certifikat, vars kedja begäran bär i x5c. x509_hash: SHA-256 för det certifikatet. Båda signerar med oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate visar certifikatet och båda Client Identifiers. /oid4vp/start?client_id_prefix= väljer per begäran. En osignerad begäran använder alltid redirect_uri."
+    "en": "8e5bc19e401b8880",
+    "text": "Hur en plånbok ska autentisera en SIGNERAD begäran (OpenID4VP avsnitt 5.9). pre-registered: oid4vp.clientId, som plånboken känner till via en annan kanal. decentralized_identifier: sfärens did:web, där begäran signeras med en nyckel som dess dokument listar. verifier_attestation: en Verifier Attestation JWT i begärans `jwt`-huvud — oid4vp.verifierAttestation, eller en som den här sfären signerar åt sig själv, vilken en plånbok litar på bara om den litar på den här sfären. openid_federation: den här sfärens entity identifier, vars Entity Configuration finns på /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, ett dNSName i Verifierns certifikat, vars kedja begäran bär i x5c. x509_hash: SHA-256 för det certifikatet. Båda signerar med oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate visar certifikatet och båda Client Identifiers. En verifieringsstarts client_id_prefix väljer per begäran. En osignerad begäran använder alltid redirect_uri."
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "Andra plånboks-URL:er som en begäranlänk får ange (produkt)"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "I PRODUKTLÄGE, de plånboks-URL:er utöver oid4vp.walletUrl som frågeparametern `wallet` på Verifierns startsida får ange; varje annan avvisas som en öppen omdirigering. Utvecklingsläge accepterar vilken URL som helst."
+    "en": "12e0e5f89e591fc8",
+    "text": "I PRODUKTLÄGE de plånboks-URL:er utöver oid4vp.walletUrl som en verifieringsstarts `wallet` får ange; alla andra avvisas som öppen omdirigering. Utveckling accepterar vilken URL som helst."
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "Logga in med en plånbok"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "Erbjud \"Logga in med en plånbok\" på /authn/login och besvara /authn/wallet: en OpenID4VP-begäran — via Digital Credentials API, eller via länk på samma enhet — efter ett intyg som den här sfären utfärdat, i vilket format som helst som oid4vp.signInFormats anger, vars verifierade presentation — inklusive ett färskt innehavarbevis — startar en session för den katalogpost som intyget utfärdades för, och fortsätter med det flöde som väntade vid inloggningsskärmen. En plånbok kan också vara den andra faktorn efter ett lösenord, och en andra faktor efterfrågas efter en plånbok där begäran kräver två. Ett intyg från någon annan utfärdare, eller ett som utfärdats på en åtkomsttoken som den här tjänsten inte utfärdade, verifieras fortfarande och loggar inte in någon. Av tar bort knappen och stänger dörren; Verifiern på /oid4vp/verifier påverkas inte."
+    "en": "0f2c1a100385463b",
+    "text": "Erbjud \"Logga in med en plånbok\" på /authn/login och besvara /authn/wallet: en OpenID4VP-begäran — via Digital Credentials API, eller via länk på samma enhet — efter ett intyg som den här sfären utfärdat, i vilket format som helst som oid4vp.signInFormats anger, vars verifierade presentation — inklusive ett färskt innehavarbevis — startar en session för den katalogpost som intyget utfärdades för, och fortsätter med det flöde som väntade vid inloggningsskärmen. En plånbok kan också vara den andra faktorn efter ett lösenord, och en andra faktor efterfrågas efter en plånbok där begäran kräver två. Ett intyg från någon annan utfärdare, eller ett som utfärdats på en åtkomsttoken som den här tjänsten inte utfärdade, verifieras fortfarande och loggar inte in någon. Av tar bort knappen och stänger dörren; en verifiering som en administratör startar påverkas inte."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

@@ -76,8 +76,8 @@
     "text": "与主端口（{{port}}）提供的证书和密钥相同。它是{{provenance}}：GET /tls/server-certificate 以 PEM 形式提供它。两个套接字共用一个信任锚，这就是它们共享证书的原因。"
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "23f1b072b3557932",
-    "text": "当 <name> 首次通过任何协议向本服务进行身份验证时，会出现条目 uid=<name>,{{usersDn}}。LDAP 绑定不会创建条目（它出示的是 DN，不是用户名），OAuth 客户端也不会。经验证的 TLS 客户端证书是唯一本身已是 DN 的身份：其条目保留主体自身的叶 RDN——CN=alice,O=Example 对应 cn=alice,{{usersDn}}——或者在整个主体已位于 {{baseDn}} 之下时保留整个主体，完整的主体、颁发者、序列号和有效期作为 x509* 属性保存在条目上，这些是本服务自己的名称，而不是模式的一部分。去中心化标识符是第三种形式，既不是名称也不是 DN：已签发凭据的 did:jwk 主体、任何向 OID4VP 验证方出示的 DID、/did/generate 铸造的 DID。其条目位于 uid=did-<该 DID 的 SHA-256 的 12 位十六进制>,{{usersDn}}——完整写出的 did:jwk 是一个数百字符的 DN，其中大部分是密钥材料——标识符本身作为 didSubject 完整保存在条目上，其方法保存为 didMethod。请按 didSubject 而不是 uid 搜索此人：在这些条目上，uid 是摘要，didSubject 才是身份。"
+    "en": "7e10a7e3ec45179d",
+    "text": "当 <name> 首次通过任何协议向本服务进行身份验证时，会出现条目 uid=<name>,{{usersDn}}。LDAP 绑定不会创建条目（它出示的是 DN，不是用户名），OAuth 客户端也不会。经验证的 TLS 客户端证书是唯一本身已是 DN 的身份：其条目保留主体自身的叶 RDN——CN=alice,O=Example 对应 cn=alice,{{usersDn}}——或者在整个主体已位于 {{baseDn}} 之下时保留整个主体，完整的主体、颁发者、序列号和有效期作为 x509* 属性保存在条目上，这些是本服务自己的名称，而不是模式的一部分。去中心化标识符是第三种形式，既不是名称也不是 DN：已签发凭据的 did:jwk 主体、任何向 OID4VP 验证方出示的 DID。其条目位于 uid=did-<该 DID 的 SHA-256 的 12 位十六进制>,{{usersDn}}——完整写出的 did:jwk 是一个数百字符的 DN，其中大部分是密钥材料——标识符本身作为 didSubject 完整保存在条目上，其方法保存为 didMethod。请按 didSubject 而不是 uid 搜索此人：在这些条目上，uid 是摘要，didSubject 才是身份。"
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

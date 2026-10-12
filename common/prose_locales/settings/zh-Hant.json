@@ -4828,8 +4828,8 @@
     "text": "提供對象使用者名稱"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "簽發者起始的提供頁面為誰建構認證。聲明來自該人的目錄項目。"
+    "en": "695af4bfbf87397a",
+    "text": "當預先授權要約的發出者未指明任何人時，該要約所指明的人。自示範簽發者離開本服務（#594）以來，沒有入口這樣做：入口網站的要約指明已登入的人。"
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "錢包 URL 下接收 Credential Offer 的頁面。預設為除錯工具自己的錢包頁面。"
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "提供連結可指定的其他錢包 URL（產品）"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "在產品模式下，/issuer/offer 上的 `wallet` 查詢參數除了 oid4vci.walletUrl 之外可指定的錢包 URL。其他任何 URL 都會被拒絕，因為依查詢字串將終端使用者送往任意位置的提供連結，是攜帶預先授權代碼的開放式重新導向。開發模式接受任何 URL，這是將筆記型電腦上的錢包指向此服務的方式。"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "簽署認證所用的演算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，模擬 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
+    "en": "33357292a8570238",
+    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，模擬 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "/.well-known/did-configuration.json 中的 Domain Linkage Credential 宣稱其有效多久。它在每次要求時簽署，因此這是快取副本可被採信的時間窗。"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "/did/generate 憑證有效期（秒）"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "/did/generate 以其傳回之 DID 簽署的 SD-JWT VC 有效多久。"
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "已簽署要求的 Client Identifier 前置詞"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "錢包應如何驗證「已簽署」的要求（OpenID4VP section 5.9）。pre-registered：oid4vp.clientId，錢包以頻外方式得知。decentralized_identifier：領域的 did:web，要求以其文件所列的金鑰簽署。verifier_attestation：要求的 `jwt` 標頭中的 Verifier Attestation JWT——oid4vp.verifierAttestation，或此領域為自己簽署的一份，錢包只有在信任此領域時才會信任它。openid_federation：此領域的實體識別碼，其 Entity Configuration 位於 /.well-known/openid-federation。x509_san_dns：oid4vp.x509DnsName，驗證器憑證的一個 dNSName，要求在 x5c 中攜帶其憑證鏈。x509_hash：該憑證的 SHA-256。兩者都以 oid4vp.x509SigningAlgorithm 簽署；/oid4vp/verifier-certificate 顯示該憑證與兩種 Client Identifier。/oid4vp/start?client_id_prefix= 可依每個要求選擇。未簽署的要求一律使用 redirect_uri。"
+    "en": "8e5bc19e401b8880",
+    "text": "錢包應如何驗證「已簽署」的要求（OpenID4VP section 5.9）。pre-registered：oid4vp.clientId，錢包以頻外方式得知。decentralized_identifier：領域的 did:web，要求以其文件所列的金鑰簽署。verifier_attestation：要求的 `jwt` 標頭中的 Verifier Attestation JWT——oid4vp.verifierAttestation，或此領域為自己簽署的一份，錢包只有在信任此領域時才會信任它。openid_federation：此領域的實體識別碼，其 Entity Configuration 位於 /.well-known/openid-federation。x509_san_dns：oid4vp.x509DnsName，驗證器憑證的一個 dNSName，要求在 x5c 中攜帶其憑證鏈。x509_hash：該憑證的 SHA-256。兩者都以 oid4vp.x509SigningAlgorithm 簽署；/oid4vp/verifier-certificate 顯示該憑證與兩種 Client Identifier。驗證啟動的 client_id_prefix 可依每個要求選擇。未簽署的要求一律使用 redirect_uri。"
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "要求連結可指名的其他錢包 URL（產品模式）"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "在「產品模式」下，除 oid4vp.walletUrl 之外，驗證器起始頁面上的 `wallet` 查詢參數可指名的錢包 URL；其他任何 URL 都會被視為開放式重新導向而拒絕。開發模式接受任何 URL。"
+    "en": "12e0e5f89e591fc8",
+    "text": "在產品模式下，除 oid4vp.walletUrl 外，驗證啟動的 `wallet` 可以指明的錢包 URL；其他任何 URL 都會作為開放式重新導向而被拒絕。開發模式接受任何 URL。"
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "以錢包登入"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "在 /authn/login 上提供「以錢包登入」並回應 /authn/wallet：一個 OpenID4VP 要求——透過 Digital Credentials API，或在同一裝置上透過連結——要求此領域簽發的、屬於 oid4vp.signInFormats 所列任一格式的憑證，其已驗證的出示（包括新的持有者證明）會為該憑證所簽發對象的目錄項目啟動工作階段，並繼續登入畫面上等待中的任何流程。錢包也可以作為密碼之後的第二因素，而在要求需要兩個因素時，錢包之後也會要求第二因素。來自其他簽發者的憑證，或依非此服務簽發之存取權杖所簽發的憑證，仍會通過驗證，但不會讓任何人登入。關閉會移除按鈕並關上這道門；/oid4vp/verifier 上的驗證器不受影響。"
+    "en": "0f2c1a100385463b",
+    "text": "在 /authn/login 上提供「以錢包登入」並回應 /authn/wallet：一個 OpenID4VP 要求——透過 Digital Credentials API，或在同一裝置上透過連結——要求此領域簽發的、屬於 oid4vp.signInFormats 所列任一格式的憑證，其已驗證的出示（包括新的持有者證明）會為該憑證所簽發對象的目錄項目啟動工作階段，並繼續登入畫面上等待中的任何流程。錢包也可以作為密碼之後的第二因素，而在要求需要兩個因素時，錢包之後也會要求第二因素。來自其他簽發者的憑證，或依非此服務簽發之存取權杖所簽發的憑證，仍會通過驗證，但不會讓任何人登入。關閉會移除按鈕並關上這道門；管理員啟動的驗證不受影響。"
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

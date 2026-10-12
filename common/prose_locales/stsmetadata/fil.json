@@ -2056,8 +2056,8 @@
     "text": "binabago ang laman ng bawat SUSUNOD na Verifiable Credential, AT sumusulat sa LDAP directory"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "3264a8d2e2af1287",
-    "text": "NON-SPEC. Kung ano ang hinihingi ng mock Verifier sa /oid4vp/verifier sa isang wallet, sa aling credential format, at ang dcql_query na binubuo nila — mula sa function na bumubuo ng tunay, kaya ito ang susunod na Authorization Request sa halip na paglalarawan nito. Sinasabi rin ng bawat row ng katalogo kung kasalukuyang mina-mint ng ISSUER ang claim na iyon. Kapareho ng GET /admin/vc-verifier-config."
+    "en": "356223783345c682",
+    "text": "HINDI SPEC. Kung ano ang hinihingi ng OID4VP Verifier sa isang wallet, sa anong credential format, at ang dcql_query na binubuo nila — mula sa function na bumubuo ng totoong request, kaya ito ang susunod na Authorization Request at hindi paglalarawan nito. Sinasabi rin ng bawat row ng catalogue kung kasalukuyang mina-mint ng ISSUER ang claim na iyon. Sumasalamin sa GET /admin/vc-verifier-config."
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2068,16 +2068,24 @@
     "text": "binabago ang dcql_query ng bawat SUSUNOD na OID4VP Authorization Request"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "NON-SPEC (#587). Ang /oid4vp/start ng administrator, sa pamamagitan ng parehong function: pinangangalanan ng body ang pinangangalanan ng query ng page na iyon (format, by, client_id_prefix, response_type, response_mode, mode, wallet), at JSON ang sagot — ang state, ang wallet URL na pinagre-redirect-an ng same-device na start, ang openid4vp:// (o siopv2://) URI na dala ng cross-device QR code, at ang request_uri by reference — sa halip na redirect. Sinasagot sa bawat mode. Kapareho ng form na Start a verification sa /admin/vc."
+    "en": "5c53718a6c9ef2b0",
+    "text": "HINDI SPEC (#587). Kung saan nagsisimula ang beripikasyon, para sa administrator o application na may Admin Write (#594: isa rito ang bar door ng development companion). Pinapangalanan ng body ang format, by, client_id_prefix, response_type, response_mode, mode, wallet, at redirect_uri — ang page ng tumatawag na pinagpapadalhan ng Response Endpoint sa wallet pagkatapos, isa sa mga nakarehistrong redirect URI ng tumatawag na client kung saan rehistradong address lang ang tinatanggap. JSON ang sagot: ang state, ang wallet URL na pinupuntahan ng pagsisimula sa parehong device, ang openid4vp:// (o siopv2://) URI na dala ng QR code para sa ibang device, at ang request_uri kung by reference. Sinasagot sa bawat mode. Sumasalamin sa form na Start a verification sa /admin/vc."
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "bumubuo ng OID4VP Authorization Request at nire-record ang transaction nito"
   },
   "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "NON-SPEC (#587). Kapag may ?state=, ang hatol na sinasagot ng /oid4vp/result/:state, mula sa parehong function (404 para sa state na walang record); kapag wala, ang mga bukas na verification ng realm at kung ano ang napagpasyahan ng bawat isa, pinakabago muna — ang listahang iginuguhit ng Verifier request tab. Hindi nakalista ang wallet sign-in."
+    "en": "ceb50a3bb3405239",
+    "text": "HINDI SPEC (#587). Sa ?state=, ang ipinasya ng Verifier — bawat check at ang mga isiniwalat na claim (404 para sa state na walang record); kung wala, ang mga bukas na beripikasyon ng realm at ang ipinasya ng bawat isa, pinakabago muna — ang listahang iginuguhit ng tab na Verifier request. Hindi inililista ang wallet sign-in."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/last-request.what": {
+    "en": "d4af7f3693d7a14e",
+    "text": "HINDI SPEC (#594). Kung paano dumating ang huling Credential Request ng OpenID4VCI issuer: ang media type nito at, kung naka-encrypt, ang kid, alg at enc ng JWE nito — hindi kailanman ang request. Hindi mapapatunayan ng wallet na nag-encrypt ito; ang issuer lang ang nakakaalam kung ano ang dumating. Admin Read; hanggang #594 ang /oid4vci/last_request na para lamang sa development."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/notifications.what": {
+    "en": "0a95a0766878a671",
+    "text": "HINDI SPEC (#594). Sa ?id=, ang sinabi ng wallet sa Notification Endpoint tungkol sa credential na pinapangalanan ng notification_id na iyon: ang event, ang paglalarawan nito at kung kailan (404 para sa id na hindi in-issue ng issuer na ito). Admin Read; hanggang #594 ang /oid4vci/notification/:id na para lamang sa development."
   },
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
@@ -2855,45 +2863,9 @@
     "en": "dfd57a70ba809091",
     "text": "Section 11: iniuulat ng wallet kung ano ang ginawa nito sa credential. Vina-validate at nire-record."
   },
-  "stsmetadata.endpoints./oid4vci/notification/:id.what": {
-    "en": "f24e1023bd81678a",
-    "text": "NON-SPEC, para sa mga test: ang iniulat ng wallet laban sa isang notification_id."
-  },
-  "stsmetadata.endpoints./oid4vci/last_request.what": {
-    "en": "55716420ece93ddf",
-    "text": "NON-SPEC, para sa mga test: kung dumating nang encrypted ang huling Credential Request, at kung paano."
-  },
   "stsmetadata.endpoints./oid4vci/credential-offer/:id.what": {
     "en": "68a05b1b31fe7152",
     "text": "Inihahain ang offer na kinuha sa pamamagitan ng credential_offer_uri."
-  },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "948a7409a3fb1a86",
-    "text": "Appendix H.1: kung saan nagsisimula ang isang End-User ng daloy na sinimulan ng issuer. Isang page ng static surface ng demonstration mula #582, iginuguhit mula sa /vc-demo-api/issuer."
-  },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "47aafb085693f976",
-    "text": "Ang page na bumubuo ng offer at ipinapadala ang browser sa wallet o ipinapakita ito bilang QR code. Pinipili ng ?mode=cross-device (H.2) at ?mode=deferred (H.3) ang pre-authorized code grant na may Transaction Code. Isang page ng static surface ng demonstration mula #582: walang nililikha ang GET, at ginagawa ng script nito ang offer sa POST /vc-demo-api/offer."
-  },
-  "stsmetadata.endpoints./issuer/demo.js.what": {
-    "en": "873440e0c0834837",
-    "text": "NON-SPEC (#582). Ang runtime at mga renderer ng mga page ng demonstration issuer at verifier sa iisang file, binuo ng build-typescript.sh (oid4vc/vc-demo-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start at /oid4vp/done mula sa /vc-demo-api, doon ginagawa ang kanilang mga offer at request, at iginuguhit ang mga QR code."
-  },
-  "stsmetadata.endpoints./vc-demo-api.what": {
-    "en": "f0d867a593ea76ea",
-    "text": "NON-SPEC (#582). Ang mga operation ng API ng OpenID4VC demonstration, bawat isa kasama ang page o control na pinto nito (mirrors). Walang wika."
-  },
-  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
-    "en": "68d3f0eed386add2",
-    "text": "NON-SPEC (#582). Ang pinagkukunan ng pagguhit ng /issuer: ang credential configuration na inaalok, ang wallet at ang issuer."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.what": {
-    "en": "17204bdcd2333d91",
-    "text": "NON-SPEC na pinto sa OpenID4VCI section 4 at Appendix H (#582). Sinasagot ng GET ang view ng offer page at ang CSRF token nito, sinuri ang query at walang na-mint; ginagawa ng POST ang offer — JSON, isang Origin ng serbisyong ito at X-CSRF-Token na nakatali sa cookie na sts_session — sa parehong makeOffer() na ginagamit ng portal, at sumasagot ng wallet na pupuntahan (location) o ng view ng QR page: ang openid-credential-offer URI, ang link ng wallet at ang Transaction Code."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
-    "en": "2f295f0c5407473c",
-    "text": "Nagmi-mint ng offer ang POST"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -2955,37 +2927,9 @@
     "en": "590e41dd0e817cfb",
     "text": "sumasagot ng 404 maliban kung idineklara ang application para sa did family at may key ito"
   },
-  "stsmetadata.endpoints./did/generate.what": {
-    "en": "a5a93d3c52cea4cc",
-    "text": "NON-SPEC, para sa mga test at para subukan ang DID Tools page: nagmi-mint ang ?method=jwk ng sariwang P-256 key at nagbabalik ng did:jwk kasama ang credential na pinirmahan nito; ibinabalik ng ?method=web ang sariling did:web ng serbisyong ito kasama ang isang pinirmahan ng RS256 key na inilalathala ng dokumento nito. Ang DID na walang pinirmahang anuman ay mapa-parse lamang, hindi mave-verify."
-  },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
     "text": "Pinatutunayang iisang entity ang origin na ito at ang DID na ito. Para sa did:web ito ang tanging hindi paikot na patunay: ang pag-resolve ng did:web:host ay nangangahulugang pagkuha mula sa host."
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "179e4cfdad61673b",
-    "text": "Kung saan nagsisimula ang isang presentation: humihingi ang verifier, sumasagot ang wallet. Isang page ng static surface ng demonstration mula #582, iginuguhit mula sa /vc-demo-api/verifier."
-  },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "2fce28c03d8db666",
-    "text": "Ang page na nagsisimula ng presentation: response_type=vp_token na may DCQL query, bagong nonce at response_mode=direct_post, ipinapasa bilang value o sa pamamagitan ng reference, na may QR screen para sa ibang device. Pinapangalanan ng `client_id_prefix` ang Client Identifier Prefix ng ITONG request (section 5.9) at ginagawa itong pirmado; sinesertipikahan muna ng x509 prefix ang Verifier (#230). Isang page ng static surface ng demonstration mula #582: walang nililikha ang GET, at sinisimulan ng script nito ang request sa POST /vc-demo-api/start."
-  },
-  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
-    "en": "905f6536ecad196e",
-    "text": "NON-SPEC (#582). Ang pinagkukunan ng pagguhit ng /oid4vp/verifier: ang mga claim na hinihingi ng Verifier, ang uri ng credential, ang format, ang iniiwan ng isang ldp_vc request, at kung saan nagpo-post ang wallet."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.what": {
-    "en": "e4075c708b0e75f9",
-    "text": "NON-SPEC na pinto sa OpenID4VP (#582). Sinasagot ng GET ang view ng start page at ang CSRF token nito, sinuri ang query at walang binuo; sinisimulan ng POST ang request — nakatali gaya ng bawat kilos — sa parehong startVerification() na ginagamit ng POST /admin-api/verifications/start, at sumasagot ng wallet na pupuntahan (location) o ng view ng QR page: ang openid4vp URI, ang link ng wallet at ang state na tinatanong ng page."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.effect": {
-    "en": "722eefdf9a57521a",
-    "text": "Bumubuo ng request ang POST"
-  },
-  "stsmetadata.endpoints./vc-demo-api/done.what": {
-    "en": "662a67fbe8c42ffe",
-    "text": "NON-SPEC (#582). Ang pinagkukunan ng pagguhit ng /oid4vp/done para sa ?state=: kung may dumating na presentation at tinanggap ito, ang mga claim nito at ang hiningi; tinatanong ito ng QR page. Hindi sinasagot ang transaksyon ng isang wallet sign-in."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -2998,14 +2942,6 @@
   "stsmetadata.endpoints./oid4vp/response.what": {
     "en": "a0c3cbde113f8f11",
     "text": "Kung saan nagpo-POST ang wallet ng vp_token — at, para sa SIOPv2 request (#129), ang self-issued na id_token, sa pamamagitan ng direct_post o sa browser sa pamamagitan ng form_post — at kung saan ito tunay na vine-verify: issuer signature (kasama ang post-quantum), bawat Disclosure digest laban sa _sd, ang Key Binding JWT kasama ang sd_hash — o ang VP JWT, o ang Data Integrity holder proof — ang validity window, ang status list ng credential, at kung dumating ang mga hininging claim. Para sa transaction na sinimulan sa /authn/wallet, pinagpapasyahan din nito KUNG SINO ang isa-sign in ng presentation, sumasagot nang minsan, at ibinabalik ang same-device wallet na may response_code; itinatakda ang session mismo sa susunod na request ng browser, hindi kailanman sa isang ito, na sa wallet."
-  },
-  "stsmetadata.endpoints./oid4vp/result/:state.what": {
-    "en": "6a76827ac70fae49",
-    "text": "NON-SPEC, para sa step 3 ng wallet at para sa mga test: ang per-check na hatol para sa isang presentation."
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "32b182a1f19bad6a",
-    "text": "Kung saan napupunta ang End-User pagkatapos ng presentation mula sa ibang device. Isang page ng static surface ng demonstration mula #582, iginuguhit mula sa /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

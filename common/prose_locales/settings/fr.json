@@ -4828,8 +4828,8 @@
     "text": "Nom d’utilisateur de l’offre"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "La personne dont les pages d’offre initiées par l’émetteur construisent le justificatif. Les revendications proviennent de l’entrée d’annuaire de cette personne."
+    "en": "695af4bfbf87397a",
+    "text": "Qui une offre pré-autorisée nomme quand celui qui la fait ne nomme personne. Aucune porte ne le fait depuis que l’émetteur de démonstration a quitté le service (#594) : l’offre du portail nomme la personne connectée."
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "La page, sous l’URL du portefeuille, à laquelle une Credential Offer est transmise. La valeur par défaut est la page de portefeuille propre au débogueur."
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "Autres URL de portefeuille qu’un lien d’offre peut nommer (mode produit)"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "EN MODE PRODUIT, les URL de portefeuille, outre oid4vci.walletUrl, que le paramètre de requête `wallet` de /issuer/offer peut nommer. Toute autre est refusée, car un lien d’offre qui envoie l’utilisateur final là où l’indique sa chaîne de requête est une redirection ouverte transportant un code pré-autorisé. Le mode développement accepte n’importe quelle URL, ce qui permet de pointer vers ce service un portefeuille installé sur un portable."
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "Algorithme de signature des justificatifs"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilisent le Domain Linkage Credential de la DID Configuration et le justificatif did:web de /did/generate. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur fictif s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé."
+    "en": "33357292a8570238",
+    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilise le Domain Linkage Credential de la DID Configuration. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur fictif s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "La durée de validité annoncée par la Domain Linkage Credential publiée à /.well-known/did-configuration.json. Elle est signée à chaque requête ; c’est donc la fenêtre pendant laquelle une copie en cache peut être crue."
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "Durée de vie de l’attestation de /did/generate (s)"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "La durée de validité de la SD-JWT VC que /did/generate signe avec le DID qu’il renvoie."
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "Préfixe d’identifiant client d’une requête signée"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "La manière dont un portefeuille doit authentifier une requête SIGNÉE (OpenID4VP section 5.9). pre-registered : oid4vp.clientId, que le portefeuille connaît par un autre canal. decentralized_identifier : le did:web du domaine, la requête étant signée avec une clé que son document liste. verifier_attestation : un Verifier Attestation JWT dans l’en-tête `jwt` de la requête — oid4vp.verifierAttestation, ou un JWT que ce domaine signe pour lui-même, auquel un portefeuille ne fait confiance que s’il fait confiance à ce domaine. openid_federation : l’identifiant d’entité de ce domaine, dont l’Entity Configuration est à /.well-known/openid-federation. x509_san_dns : oid4vp.x509DnsName, un dNSName du certificat du vérificateur, dont la requête transporte la chaîne dans x5c. x509_hash : le SHA-256 de ce certificat. Les deux signent avec oid4vp.x509SigningAlgorithm ; /oid4vp/verifier-certificate affiche le certificat et les deux identifiants client. /oid4vp/start?client_id_prefix= choisit par requête. Une requête non signée utilise toujours redirect_uri."
+    "en": "8e5bc19e401b8880",
+    "text": "La manière dont un portefeuille doit authentifier une requête SIGNÉE (OpenID4VP section 5.9). pre-registered : oid4vp.clientId, que le portefeuille connaît par un autre canal. decentralized_identifier : le did:web du domaine, la requête étant signée avec une clé que son document liste. verifier_attestation : un Verifier Attestation JWT dans l’en-tête `jwt` de la requête — oid4vp.verifierAttestation, ou un JWT que ce domaine signe pour lui-même, auquel un portefeuille ne fait confiance que s’il fait confiance à ce domaine. openid_federation : l’identifiant d’entité de ce domaine, dont l’Entity Configuration est à /.well-known/openid-federation. x509_san_dns : oid4vp.x509DnsName, un dNSName du certificat du vérificateur, dont la requête transporte la chaîne dans x5c. x509_hash : le SHA-256 de ce certificat. Les deux signent avec oid4vp.x509SigningAlgorithm ; /oid4vp/verifier-certificate affiche le certificat et les deux identifiants client. Le client_id_prefix d’un démarrage de vérification choisit par requête. Une requête non signée utilise toujours redirect_uri."
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "Autres URL de portefeuille qu’un lien de requête peut nommer (produit)"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "EN MODE PRODUIT, les URL de portefeuille, en plus de oid4vp.walletUrl, que le paramètre de requête `wallet` de la page de démarrage du vérificateur peut nommer ; toute autre est refusée comme redirection ouverte. Le développement accepte n’importe quelle URL."
+    "en": "12e0e5f89e591fc8",
+    "text": "EN MODE PRODUIT, les URL de portefeuille autres que oid4vp.walletUrl que peut nommer le `wallet` d’un démarrage de vérification ; toute autre est refusée comme redirection ouverte. Le développement accepte n’importe quelle URL."
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "Connexion avec un portefeuille"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "Propose « Se connecter avec un portefeuille » sur /authn/login et répond à /authn/wallet : une requête OpenID4VP — par la Digital Credentials API, ou par lien sur le même appareil — pour une attestation émise par ce domaine, dans tout format que nomme oid4vp.signInFormats, dont la présentation vérifiée — y compris une preuve de détenteur récente — ouvre une session pour l’entrée de l’annuaire pour laquelle l’attestation a été émise, et poursuit le flux qui attendait à l’écran de connexion. Un portefeuille peut aussi servir de second facteur après un mot de passe, et un second facteur est demandé après un portefeuille lorsque la requête en exige deux. Une attestation de tout autre émetteur, ou émise sur un jeton d’accès que ce service n’a pas émis, est toujours vérifiée mais ne connecte personne. Désactivé retire le bouton et ferme la porte ; le vérificateur à /oid4vp/verifier n’est pas concerné."
+    "en": "0f2c1a100385463b",
+    "text": "Propose « Se connecter avec un portefeuille » sur /authn/login et répond à /authn/wallet : une requête OpenID4VP — par la Digital Credentials API, ou par lien sur le même appareil — pour une attestation émise par ce domaine, dans tout format que nomme oid4vp.signInFormats, dont la présentation vérifiée — y compris une preuve de détenteur récente — ouvre une session pour l’entrée de l’annuaire pour laquelle l’attestation a été émise, et poursuit le flux qui attendait à l’écran de connexion. Un portefeuille peut aussi servir de second facteur après un mot de passe, et un second facteur est demandé après un portefeuille lorsque la requête en exige deux. Une attestation de tout autre émetteur, ou émise sur un jeton d’accès que ce service n’a pas émis, est toujours vérifiée mais ne connecte personne. Désactivé retire le bouton et ferme la porte ; une vérification qu’un administrateur démarre n’est pas concernée."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

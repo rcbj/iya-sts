@@ -724,8 +724,8 @@
     "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "f576a305a27eb0c9",
-    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
+    "en": "af795b0ed0acd819",
+    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

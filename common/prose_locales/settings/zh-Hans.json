@@ -4828,8 +4828,8 @@
     "text": "发放对象用户名"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "签发者发起的发放页面为谁构建凭证。声明来自此人的目录条目。"
+    "en": "695af4bfbf87397a",
+    "text": "当预授权要约的发出者未指明任何人时，该要约所指明的人。自演示颁发者离开本服务（#594）以来，没有入口这样做：门户的要约指明已登录的人。"
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "钱包 URL 下接收凭证发放的页面。默认值是调试器自己的钱包页面。"
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "发放链接可指明的其他钱包 URL（产品模式）"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "在产品模式下，除 oid4vci.walletUrl 之外，/issuer/offer 上的 `wallet` 查询参数可以指明的钱包 URL。其他任何 URL 都会被拒绝，因为一个按其查询字符串把终端用户送往任意地方的发放链接，就是一个携带预授权码的开放重定向。开发模式接受任何 URL，笔记本电脑上的钱包就是这样指向本服务的。"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "凭证签名算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 和 /did/generate 的 did:web 凭证所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，模拟验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。"
+    "en": "33357292a8570238",
+    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，模拟验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "/.well-known/did-configuration.json 处的域链接凭证所声明的有效时长。它在每次请求时签署，因此这是缓存副本可被信任的时间窗。"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "/did/generate 凭证有效期（秒）"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "/did/generate 使用其返回的 DID 签署的 SD-JWT VC 的有效时长。"
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "已签名请求的客户端标识符前缀"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "钱包如何认证已签名的请求（OpenID4VP 第 5.9 节）。pre-registered：oid4vp.clientId，钱包通过带外方式获知。decentralized_identifier：领域的 did:web，请求用其文档所列的密钥签署。verifier_attestation：请求的 `jwt` 头中的验证方证明 JWT——oid4vp.verifierAttestation，或此领域为自己签署的证明，钱包仅在信任此领域时才会信任它。openid_federation：此领域的实体标识符，其实体配置位于 /.well-known/openid-federation。x509_san_dns：oid4vp.x509DnsName，验证方证书中的一个 dNSName，请求在 x5c 中携带其证书链。x509_hash：该证书的 SHA-256。两者都使用 oid4vp.x509SigningAlgorithm 签署；/oid4vp/verifier-certificate 显示该证书和两个客户端标识符。/oid4vp/start?client_id_prefix= 可按请求选择。未签名的请求始终使用 redirect_uri。"
+    "en": "8e5bc19e401b8880",
+    "text": "钱包如何认证已签名的请求（OpenID4VP 第 5.9 节）。pre-registered：oid4vp.clientId，钱包通过带外方式获知。decentralized_identifier：领域的 did:web，请求用其文档所列的密钥签署。verifier_attestation：请求的 `jwt` 头中的验证方证明 JWT——oid4vp.verifierAttestation，或此领域为自己签署的证明，钱包仅在信任此领域时才会信任它。openid_federation：此领域的实体标识符，其实体配置位于 /.well-known/openid-federation。x509_san_dns：oid4vp.x509DnsName，验证方证书中的一个 dNSName，请求在 x5c 中携带其证书链。x509_hash：该证书的 SHA-256。两者都使用 oid4vp.x509SigningAlgorithm 签署；/oid4vp/verifier-certificate 显示该证书和两个客户端标识符。验证启动的 client_id_prefix 可按请求选择。未签名的请求始终使用 redirect_uri。"
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "请求链接可指定的其他钱包 URL（产品模式）"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "在产品模式下，验证方起始页上的 `wallet` 查询参数除 oid4vp.walletUrl 之外还可以指定的钱包 URL；其他任何 URL 都会作为开放重定向被拒绝。开发模式接受任何 URL。"
+    "en": "12e0e5f89e591fc8",
+    "text": "在产品模式下，除 oid4vp.walletUrl 外，验证启动的 `wallet` 可以指明的钱包 URL；其他任何 URL 都会作为开放重定向被拒绝。开发模式接受任何 URL。"
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "使用钱包登录"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "在 /authn/login 上提供“使用钱包登录”并响应 /authn/wallet：一个 OpenID4VP 请求——通过 Digital Credentials API，或在同一设备上通过链接——请求此领域签发的、采用 oid4vp.signInFormats 所列任一格式的凭证；其经验证的出示（包括新的持有者证明）会为该凭证所签发给的目录条目开始一个会话，并继续在登录界面等待的任何流程。钱包也可以作为密码之后的第二因素；当请求要求两个因素时，在钱包之后还会要求第二因素。来自任何其他颁发者的凭证，或基于非本服务签发的访问令牌签发的凭证，仍然可以验证，但不会让任何人登录。关闭会移除该按钮并关闭这一入口；/oid4vp/verifier 处的验证方不受影响。"
+    "en": "0f2c1a100385463b",
+    "text": "在 /authn/login 上提供“使用钱包登录”并响应 /authn/wallet：一个 OpenID4VP 请求——通过 Digital Credentials API，或在同一设备上通过链接——请求此领域签发的、采用 oid4vp.signInFormats 所列任一格式的凭证；其经验证的出示（包括新的持有者证明）会为该凭证所签发给的目录条目开始一个会话，并继续在登录界面等待的任何流程。钱包也可以作为密码之后的第二因素；当请求要求两个因素时，在钱包之后还会要求第二因素。来自任何其他颁发者的凭证，或基于非本服务签发的访问令牌签发的凭证，仍然可以验证，但不会让任何人登录。关闭会移除该按钮并关闭这一入口；管理员启动的验证不受影响。"
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

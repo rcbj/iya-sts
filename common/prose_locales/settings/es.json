@@ -4828,8 +4828,8 @@
     "text": "Nombre de usuario de la oferta"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "De quién es la credencial que construyen las páginas de oferta iniciadas por el emisor. Los claims vienen de la entrada de directorio de esa persona."
+    "en": "695af4bfbf87397a",
+    "text": "A quién nombra una oferta preautorizada cuando quien la hace no nombra a nadie. Ninguna puerta lo hace desde que el emisor de demostración salió del servicio (#594): la oferta del portal nombra a la persona que inició sesión."
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "La página bajo la URL de la billetera a la que se entrega una Credential Offer. El predeterminado es la propia página de billetera del depurador."
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "Otras URL de billetera que puede nombrar un enlace de oferta (modo producto)"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "EN MODO PRODUCTO, las URL de billetera, además de oid4vci.walletUrl, que puede nombrar el parámetro de consulta `wallet` de /issuer/offer. Cualquier otra se rechaza, porque un enlace de oferta que envía al usuario final adonde diga su cadena de consulta es una redirección abierta que lleva un código preautorizado. Desarrollo acepta cualquier URL, que es como se apunta a este servicio una billetera en un portátil."
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "Algoritmo de firma de las credenciales"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usan la Domain Linkage Credential de la DID Configuration y la credencial did:web de /did/generate. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier mock comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó."
+    "en": "33357292a8570238",
+    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usa la Domain Linkage Credential de la DID Configuration. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier mock comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "Durante cuánto tiempo la Domain Linkage Credential en /.well-known/did-configuration.json declara ser válida. Se firma en cada solicitud, así que esta es la ventana durante la que puede creerse una copia en caché."
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "Vigencia de la credencial de /did/generate (s)"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "Durante cuánto tiempo es válida la SD-JWT VC que /did/generate firma con el DID que devuelve."
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "Prefijo del Client Identifier de una solicitud firmada"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "Cómo debe autenticar una billetera una solicitud FIRMADA (OpenID4VP sección 5.9). pre-registered: oid4vp.clientId, que la billetera conoce por otro canal. decentralized_identifier: el did:web del dominio, con la solicitud firmada con una clave que su documento enumera. verifier_attestation: un Verifier Attestation JWT en la cabecera `jwt` de la solicitud — oid4vp.verifierAttestation, o uno que este dominio firma para sí mismo, en el que una billetera confía solo si confía en este dominio. openid_federation: el identificador de entidad de este dominio, cuya Entity Configuration está en /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, un dNSName del certificado del verificador, cuya cadena la solicitud lleva en x5c. x509_hash: el SHA-256 de ese certificado. Ambos firman con oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate muestra el certificado y ambos Client Identifiers. /oid4vp/start?client_id_prefix= lo elige por solicitud. Una solicitud sin firmar siempre usa redirect_uri."
+    "en": "8e5bc19e401b8880",
+    "text": "Cómo debe autenticar una billetera una solicitud FIRMADA (OpenID4VP sección 5.9). pre-registered: oid4vp.clientId, que la billetera conoce por otro canal. decentralized_identifier: el did:web del dominio, con la solicitud firmada con una clave que su documento enumera. verifier_attestation: un Verifier Attestation JWT en la cabecera `jwt` de la solicitud — oid4vp.verifierAttestation, o uno que este dominio firma para sí mismo, en el que una billetera confía solo si confía en este dominio. openid_federation: el identificador de entidad de este dominio, cuya Entity Configuration está en /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, un dNSName del certificado del verificador, cuya cadena la solicitud lleva en x5c. x509_hash: el SHA-256 de ese certificado. Ambos firman con oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate muestra el certificado y ambos Client Identifiers. El client_id_prefix de un inicio de verificación lo elige por solicitud. Una solicitud sin firmar siempre usa redirect_uri."
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "Otras URL de billetera que puede nombrar un enlace de solicitud (producto)"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "EN MODO PRODUCTO, las URL de billetera, además de oid4vp.walletUrl, que puede nombrar el parámetro de consulta `wallet` de la página de inicio del verificador; cualquier otra se rechaza como redirección abierta. El desarrollo acepta cualquier URL."
+    "en": "12e0e5f89e591fc8",
+    "text": "EN MODO PRODUCTO, las URL de billetera además de oid4vp.walletUrl que puede nombrar el `wallet` de un inicio de verificación; cualquier otra se rechaza como redirección abierta. Desarrollo acepta cualquier URL."
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "Iniciar sesión con una billetera"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "Ofrece «Iniciar sesión con una billetera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una billetera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una billetera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; el verificador en /oid4vp/verifier no se ve afectado."
+    "en": "0f2c1a100385463b",
+    "text": "Ofrece «Iniciar sesión con una billetera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una billetera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una billetera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; una verificación que inicia un administrador no se ve afectada."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

@@ -2056,8 +2056,8 @@
     "text": "變更每一個「未來」Verifiable Credential 包含的內容，「並且」寫入 LDAP 目錄"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "3264a8d2e2af1287",
-    "text": "非規範。/oid4vp/verifier 的模擬 Verifier 向錢包要求什麼、以哪種認證格式，以及它們所建構的 dcql_query——來自建構真實請求的同一個函式，因此它就是下一個 Authorization Request，而非對它的描述。每個目錄列也會說明「簽發者」目前是否產生該宣告。對應 GET /admin/vc-verifier-config。"
+    "en": "356223783345c682",
+    "text": "非規範。OID4VP 驗證器向錢包索取什麼、採用哪種憑證格式，以及它們建立的 dcql_query——來自建立真實要求的同一函式，因此它是下一個 Authorization Request，而不是對它的描述。每個目錄列也說明簽發者目前是否簽發該宣告。對應 GET /admin/vc-verifier-config。"
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2068,16 +2068,24 @@
     "text": "變更每一個「未來」OID4VP Authorization Request 的 dcql_query"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "非規範（#587）。管理員的 /oid4vp/start，透過同一個函式：主體指名該頁面查詢所指名的內容（format、by、client_id_prefix、response_type、response_mode、mode、wallet），而回答是 JSON——state、同裝置啟動時重新導向的錢包 URL、跨裝置 QR code 所承載的 openid4vp://（或 siopv2://）URI，以及以參照方式提供的 request_uri——而不是重新導向。在每種模式下都會回應。對應 /admin/vc 上的「開始驗證」表單。"
+    "en": "5c53718a6c9ef2b0",
+    "text": "非規範（#587）。驗證開始的地方，供管理員或持有 Admin Write 的應用程式使用（#594：開發 companion 的 bar door 就是一個）。要求本文指明 format、by、client_id_prefix、response_type、response_mode、mode、wallet 與 redirect_uri——Response Endpoint 隨後將錢包送往的呼叫者頁面，在僅接受已註冊位址之處，必須是呼叫用戶端已註冊的重新導向 URI 之一。回應為 JSON：state、同裝置啟動所前往的錢包 URL、跨裝置 QR 碼所攜帶的 openid4vp://（或 siopv2://）URI，以及依參照時的 request_uri。在所有模式下都會回應。對應 /admin/vc 上的 Start a verification 表單。"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "建構一個 OID4VP Authorization Request 並記錄其交易"
   },
   "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "非規範（#587）。帶有 ?state= 時，回傳 /oid4vp/result/:state 所回答的判定，來自同一個函式（沒有記錄的 state 回傳 404）；不帶時，回傳此領域尚未結束的驗證及各自的判定，最新的在前——即 Verifier 請求分頁所繪製的清單。錢包登入不會列出。"
+    "en": "ceb50a3bb3405239",
+    "text": "非規範（#587）。使用 ?state= 時，驗證器的決定——每項檢查與揭露的宣告（對於沒有紀錄的 state 回傳 404）；不使用時，回傳該領域中未結束的驗證以及每個驗證的決定，最新的在前——即 Verifier request 分頁所繪製的清單。錢包登入不會列出。"
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/last-request.what": {
+    "en": "d4af7f3693d7a14e",
+    "text": "非規範（#594）。OpenID4VCI 簽發者最近一次 Credential Request 是如何到達的：其媒體類型，以及加密時其 JWE 的 kid、alg 與 enc——從不包括要求本身。錢包無法證明自己有加密；只有簽發者知道到達了什麼。Admin Read；在 #594 之前是僅限開發的 /oid4vci/last_request。"
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/notifications.what": {
+    "en": "0a95a0766878a671",
+    "text": "非規範（#594）。使用 ?id= 時，錢包就該 notification_id 所指明的憑證告訴 Notification Endpoint 的內容：事件、其描述以及時間（對於此簽發者未簽發的 id 回傳 404）。Admin Read；在 #594 之前是僅限開發的 /oid4vci/notification/:id。"
   },
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
@@ -2855,45 +2863,9 @@
     "en": "dfd57a70ba809091",
     "text": "Section 11：錢包回報其如何處理認證。經過驗證並記錄。"
   },
-  "stsmetadata.endpoints./oid4vci/notification/:id.what": {
-    "en": "f24e1023bd81678a",
-    "text": "非規範，供測試使用：錢包針對某個 notification_id 回報的內容。"
-  },
-  "stsmetadata.endpoints./oid4vci/last_request.what": {
-    "en": "55716420ece93ddf",
-    "text": "非規範，供測試使用：最近一次 Credential Request 是否以加密方式抵達，以及如何加密。"
-  },
   "stsmetadata.endpoints./oid4vci/credential-offer/:id.what": {
     "en": "68a05b1b31fe7152",
     "text": "提供透過 credential_offer_uri 擷取的提議。"
-  },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "948a7409a3fb1a86",
-    "text": "附錄 H.1：終端使用者開始由簽發者發起之流程的地方。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/issuer 繪製。"
-  },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "47aafb085693f976",
-    "text": "建立要約並將瀏覽器送往錢包或將其顯示為 QR 碼的頁面。?mode=cross-device (H.2) 與 ?mode=deferred (H.3) 選擇附交易碼的預先授權碼授權。自 #582 起為示範靜態介面的一個頁面：GET 不建立任何內容，其指令碼在 POST /vc-demo-api/offer 建立要約。"
-  },
-  "stsmetadata.endpoints./issuer/demo.js.what": {
-    "en": "873440e0c0834837",
-    "text": "NON-SPEC (#582)。示範簽發者與驗證者頁面的執行階段與轉譯器，合為一個檔案，由 build-typescript.sh 建置（oid4vc/vc-demo-spa.js）並以預先壓縮的形式提供：它從 /vc-demo-api 繪製 /issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start 與 /oid4vp/done，在那裡建立它們的要約與要求，並繪製 QR 碼。"
-  },
-  "stsmetadata.endpoints./vc-demo-api.what": {
-    "en": "f0d867a593ea76ea",
-    "text": "NON-SPEC (#582)。OpenID4VC 示範 API 的操作，每項都附有其作為入口的頁面或控制項（mirrors）。與語言無關。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
-    "en": "68d3f0eed386add2",
-    "text": "NON-SPEC (#582)。/issuer 的繪製來源：所提供的憑證設定、錢包與簽發者。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.what": {
-    "en": "17204bdcd2333d91",
-    "text": "NON-SPEC，OpenID4VCI 第 4 節與附錄 H 的入口（#582）。GET 回應要約頁面的檢視及其 CSRF 權杖，查詢已檢查且未簽發任何內容；POST 建立要約——JSON、本服務的 Origin 以及繫結到 sts_session Cookie 的 X-CSRF-Token——透過入口網站所用的同一個 makeOffer()，並回應要前往的錢包（location）或 QR 頁面的檢視：openid-credential-offer URI、錢包連結與交易碼。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
-    "en": "2f295f0c5407473c",
-    "text": "POST 簽發一個要約"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -2955,37 +2927,9 @@
     "en": "590e41dd0e817cfb",
     "text": "除非應用程式已宣告屬於 did 系列且具有金鑰，否則回應 404"
   },
-  "stsmetadata.endpoints./did/generate.what": {
-    "en": "a5a93d3c52cea4cc",
-    "text": "非規範，供測試及試用 DID Tools 頁面使用：?method=jwk 會產生一把新的 P-256 金鑰，並傳回一個 did:jwk 及以其簽署的認證；?method=web 傳回本服務自己的 did:web，以及一份由其文件所公布之 RS256 金鑰簽署的認證。沒有任何以其簽署之內容的 DID 只能被剖析，無法被驗證。"
-  },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
     "text": "證明此來源與此 DID 是同一實體。對 did:web 而言，這是唯一非循環的證明：解析 did:web:host 就意味著擷取 host。"
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "179e4cfdad61673b",
-    "text": "出示開始之處：驗證者提出要求，錢包作出回應。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/verifier 繪製。"
-  },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "2fce28c03d8db666",
-    "text": "開始出示的頁面：response_type=vp_token，附上 DCQL 查詢、新的 nonce 與 response_mode=direct_post，以值或以參照傳遞，並為跨裝置提供 QR 畫面。`client_id_prefix` 指名此要求的用戶端識別碼前置字串（第 5.9 節）並使其簽署；x509 前置字串會先為驗證者核發憑證（#230）。自 #582 起為示範靜態介面的一個頁面：GET 不建立任何內容，其指令碼在 POST /vc-demo-api/start 開始要求。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
-    "en": "905f6536ecad196e",
-    "text": "NON-SPEC (#582)。/oid4vp/verifier 的繪製來源：驗證者要求的聲明、憑證類型、格式、ldp_vc 要求省略的內容，以及錢包的傳送位址。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.what": {
-    "en": "e4075c708b0e75f9",
-    "text": "NON-SPEC，OpenID4VP 的入口（#582）。GET 回應開始頁面的檢視及其 CSRF 權杖，查詢已檢查且未建立任何內容；POST 開始要求——與每個動作一樣受繫結——透過 POST /admin-api/verifications/start 所用的同一個 startVerification()，並回應要前往的錢包（location）或 QR 頁面的檢視：openid4vp URI、錢包連結以及頁面輪詢的狀態。"
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.effect": {
-    "en": "722eefdf9a57521a",
-    "text": "POST 建立一個要求"
-  },
-  "stsmetadata.endpoints./vc-demo-api/done.what": {
-    "en": "662a67fbe8c42ffe",
-    "text": "NON-SPEC (#582)。/oid4vp/done 針對 ?state= 的繪製來源：是否收到出示並獲接受、其聲明以及要求了什麼；QR 頁面會輪詢它。錢包登入的交易不予回應。"
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -2998,14 +2942,6 @@
   "stsmetadata.endpoints./oid4vp/response.what": {
     "en": "a0c3cbde113f8f11",
     "text": "錢包 POST vp_token 之處——對於 SIOPv2 請求（#129），則是自行簽發的 id_token，以 direct_post 或透過瀏覽器以 form_post 傳送——也是真正驗證它的地方：簽發者簽章（包括後量子）、每個 Disclosure 摘要對 _sd 的比對、包括 sd_hash 的 Key Binding JWT——或 VP JWT，或 Data Integrity 持有者證明——有效期間、認證的狀態清單，以及所要求的宣告是否送達。對於在 /authn/wallet 開始的交易，它也決定出示讓「誰」登入，只回應一次，並以 response_code 將同裝置錢包送回；工作階段本身是在瀏覽器的下一個請求上設定，絕不在這個請求上，因為這個請求是錢包的。"
-  },
-  "stsmetadata.endpoints./oid4vp/result/:state.what": {
-    "en": "6a76827ac70fae49",
-    "text": "非規範，供錢包的步驟 3 及測試使用：出示的逐項檢查判定。"
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "32b182a1f19bad6a",
-    "text": "跨裝置出示後終端使用者抵達之處。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/done 繪製。"
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

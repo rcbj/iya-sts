@@ -1763,10 +1763,6 @@
     "en": "4c2dcc105ba5c4f2",
     "text": "在產品模式下，預先授權代碼能承受多少次錯誤的 Transaction Code。最後一次會「使用掉」它，因此五位數的代碼無法在提供的有效期內於權杖端點被猜中；終端用戶需向簽發者要求新的提供。開發模式不計數，因此可以依測試需要任意多次地驅動錢包走錯誤代碼路徑。"
   },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "在產品模式下，/issuer/offer 上的 `wallet` 查詢參數除了 oid4vci.walletUrl 之外可指定的錢包 URL。其他任何 URL 都會被拒絕，因為依查詢字串將終端用戶送往任意位置的提供連結，是攜帶預先授權代碼的開放式重新導向。開發模式接受任何 URL，這是將手提電腦上的錢包指向此服務的方式。"
-  },
   "oid4vci.requestEncryptionEncValues|description": {
     "en": "d27aede1b225c46f",
     "text": "credential_request_encryption 公告並接受的內容加密演算法。只實作了 A128GCM 與 A256GCM；在此指定的其他任何演算法都會被忽略並發出警告，而不會被公告，因為誇大的元數據比說得少的元數據更糟。"
@@ -1774,10 +1770,6 @@
   "oid4vci.responseEncryptionRequired|description": {
     "en": "b149f9ff634e07f5",
     "text": "開啟時，未要求加密回應（credential_response_encryption）的認證要求會被拒絕，且元數據會指出 encryption_required: true。"
-  },
-  "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。元數據的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，模擬 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
   },
   "oid4vci.credentialCertificateHeader|description": {
     "en": "91cae7f95584d095",
@@ -1814,10 +1806,6 @@
   "oid4vp.requestObjectCertificateHeader|description": {
     "en": "7bae5787a6f84891",
     "text": "模擬驗證器簽署的「Request Object」（RFC 9101，以參照傳遞的要求）是否指出簽署它之金鑰的證書鏈。`x5u`（預設值）是此服務上該證書鏈的地址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的證書鏈，葉證書在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張證書的 CRL 發布點、OCSP 回應程式與 caIssuers 地址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得證書的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，地址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得證書的金鑰會加密任何內容。可依領域設定。"
-  },
-  "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "錢包應如何驗證「已簽署」的要求（OpenID4VP section 5.9）。pre-registered：oid4vp.clientId，錢包以頻外方式得知。decentralized_identifier：領域的 did:web，要求以其文件所列的金鑰簽署。verifier_attestation：要求的 `jwt` 標頭中的 Verifier Attestation JWT——oid4vp.verifierAttestation，或此領域為自己簽署的一份，錢包只有在信任此領域時才會信任它。openid_federation：此領域的實體識別碼，其 Entity Configuration 位於 /.well-known/openid-federation。x509_san_dns：oid4vp.x509DnsName，驗證器證書的一個 dNSName，要求在 x5c 中攜帶其證書鏈。x509_hash：該證書的 SHA-256。兩者都以 oid4vp.x509SigningAlgorithm 簽署；/oid4vp/verifier-certificate 顯示該證書與兩種 Client Identifier。/oid4vp/start?client_id_prefix= 可依每個要求選擇。未簽署的要求一律使用 redirect_uri。"
   },
   "oid4vp.x509DnsName|description": {
     "en": "de449adfa5dc57ee",
