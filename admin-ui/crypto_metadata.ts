@@ -855,8 +855,9 @@ const KEY_ESTABLISHMENT: Readonly<Record<string, string>> = Object.freeze({
 // and are NOT listed: their prose is not harvested yet.
 const PROSE_ROUTES = ['/admin-api/crypto'];
 
-// One identity service's row: the four verbs, the prose, the envelopes it
-// cites from STANDARDS, and its algorithm table, read when it is called.
+// One identity service's row: the four verbs, the prose, the keys it holds
+// of its own, the envelopes it cites from STANDARDS, and its algorithm table,
+// read when it is called.
 interface Family {
   name: string;
   signs: string;
@@ -1065,7 +1066,7 @@ class CryptoMetadata {
       return {
         key: slug(row.name),
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
-        decrypts: row.decrypts, hashes: row.hashes,
+        decrypts: row.decrypts, hashes: row.hashes, keys: row.keys || '',
         whatItDoesNot: row.whatItDoesNot || '',
         algorithms: tables[i].map(function (one) {
           return {
@@ -1087,7 +1088,7 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'whatItDoesNot', 'what', 'how']),
+               'keys', 'whatItDoesNot', 'what', 'how']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),
@@ -3867,6 +3868,10 @@ class CryptoMetadata {
           signs: row.signs, verifies: row.verifies,
           encrypts: row.encrypts, decrypts: row.decrypts,
           hashes: row.hashes,
+          // The keys the family holds OF ITS OWN, beside the realm's signing
+          // keys — written by eight families and carried by none until #543's
+          // review found it. Empty where the family has nothing to say.
+          keys: row.keys || '',
           whatItDoesNot: row.whatItDoesNot,
           envelopes: row.envelopes.slice(0),
           algorithms: row.algorithms().map(function (one) {

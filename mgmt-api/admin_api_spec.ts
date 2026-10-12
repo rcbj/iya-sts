@@ -1613,6 +1613,10 @@ const SCHEMAS = {
           encrypts: { type: 'string' },
           decrypts: { type: 'string' },
           hashes: { type: 'string' },
+          keys: { type: 'string',
+                  description: 'The keys the family holds of its own, ' +
+                    'beside the realm\'s signing keys; empty when it has ' +
+                    'nothing to add.' },
           whatItDoesNot: { type: 'string' },
           envelopes: { type: 'array', items: { type: 'string' },
                        description: 'Keys into `standards` below.' },
