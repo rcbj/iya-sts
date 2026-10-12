@@ -5199,6 +5199,30 @@ either, and the requirement rows say so. `tests/sender_constraints.js` and
 `tests/fapi2_units.js` hold both lists to "the console and the portal,
 nothing else".
 
+**AND UNDER A FAPI PROFILE THEY SIGN IN AT ALL (#568)**, which needed four
+more pieces, each found by running the FAPI jobs with the static portal:
+
+* **PAR (RFC 9126)** where the metadata requires it (FAPI 2.0): the runtimes
+  push from the browser (`admin-ui/web_spa_client.ts`,
+  `authorizationRequestUrl()`), with NO DPoP proof on the push — one there
+  binds the code to a key the callback's page load does not hold — and
+  FAPI 2.0's *a push authenticates its client* (`parAuthenticationRefusal`)
+  exempts the two clients, which have nothing to authenticate with.
+* **The advertised-method check** at the token and PAR endpoints
+  (`token_endpoint_auth_methods_supported`, STS-OAUTH-0198) exempts them:
+  the profile advertises no `none`, so without it the confidential-only
+  exemption exempted nothing.
+* **The signed request object** a profile requires (FAPI 1.0 Advanced, 2.0
+  Message Signing) is not required of them — `request_object.ts`'s
+  `signedRequired(client, profile, clientId)`, the one reading every path
+  asks: they hold no key to sign one with. An operator's
+  `oauth2.requireSignedRequestObject` or the entry's own flag still binds
+  them. The requirement rows say so.
+* **JARM** where the realm offers only JWT-secured response modes (2.0
+  Message Signing): requested, and verified in the browser
+  (`openAuthorizationResponse()`: the signature against the realm's JWKS with
+  WebCrypto, `iss`, `aud`, `exp`) before its code is believed.
+
 **THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
 `issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
 before it narrows the gated scopes, with the session's `amr` and

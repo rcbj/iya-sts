@@ -461,6 +461,13 @@ other. Neither is a setting:
 Each rule checks both the client's id and its declared method. A seeded entry
 that an operator changed back to a confidential method is not affected.
 
+Under a FAPI profile the two clients also push their authorization requests
+where the realm requires it (RFC 9126), and ask for and verify a JARM
+response where the realm offers no other response mode. They are not
+required to sign their request objects, because a public client in a browser
+holds no registered key; an explicit `oauth2.requireSignedRequestObject`
+still applies to them.
+
 ### Requiring a sender constraint — five settings
 
 Neither mode requires DPoP or mutual TLS. OAuth 2.1 section 4.3.1 lets a public
