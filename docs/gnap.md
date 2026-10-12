@@ -43,8 +43,11 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/token/{handle}` | POST · DELETE | rotate, including client key rotation · revoke (section 6) |
 | `/gnap/interact/{id}` | GET | the redirect interaction start (4.1.1) |
 | `/gnap/app/{id}` | GET | the app interaction start (4.1.4) |
-| `/gnap/code` | GET · POST | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
-| `/gnap/approve/{id}` | GET · POST | the resource owner's approval page |
+| `/gnap/code` | GET | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
+| `/gnap/approve/{id}` | GET | the resource owner's approval page |
+| `/gnap-api/code` | GET · POST | the user code page's API: the code is sent here |
+| `/gnap-api/approve/{id}` | GET · POST | the approval page's API: what it asks, and the answer |
+| `/gnap/interaction.js`, `/gnap-api` | GET | the interaction pages' script, and the index of their API |
 | `/.well-known/gnap-as-rs` | GET | resource server discovery (RFC 9767 section 3.1) |
 | `/gnap/introspect` | POST | token introspection (RFC 9767 section 3.3) |
 | `/gnap/resource` | POST | resource set registration (RFC 9767 section 3.4) |
@@ -56,6 +59,19 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/rs/spend` | POST | the demonstration resource server's operation that spends against a right's [limits](#limits) |
 
 In a trust realm every path is under `/realm/{id}`.
+
+**The pages a person reads — the user code page, the approval page, and what
+is said after a decision or a refusal — run as a script in the browser**
+(since #578): `/gnap/code` and `/gnap/approve/{id}` answer a small document
+that loads `/gnap/interaction.js`, which draws the page in the browser's
+language from `/gnap-api` and sends the person's answer there. **A browser
+with scripts blocked is told it needs them, and nothing else is drawn.** What
+a client instance sees is unchanged: a start link's redirect to the approval
+page, the redirect back to its finish URI with `hash` and `interact_ref` —
+the browser goes to the same address — or the push. `/gnap-api` takes JSON
+from a page of this service only (its `Origin`, and an `X-CSRF-Token` bound
+to the browser's `sts_session` cookie); it is not an API for a client
+instance.
 
 ## What is supported
 

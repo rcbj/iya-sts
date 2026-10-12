@@ -909,6 +909,61 @@ header argues the design; what a reader needs here:
   `oauth-oidc/CLAUDE.md` 3am. `interaction` and `consentActions` need
   nothing there: the consent screen asks for every detail every time.
 
+## The interaction pages are a static surface (#578, 2026-10-12)
+
+#569 converts every page a person reads into a static application on
+#570's foundation (`common/CLAUDE.md` 3cl), and GNAP's interaction is one
+ticket of it. `gnap_interact.ts`'s header argues the design; what a reader
+needs here:
+
+* **WHAT A PERSON READS IS DRAWN IN THE BROWSER**: the user code page, the
+  approval page, and what is said after (`done`, `sent`, a refusal), by
+  `/gnap/interaction.js` (`web_gnap_interact.ts` over
+  `web_gnap_interact_pages.ts` and `web_gnap_interact_views.ts`, the
+  `bundle_surface` "GNAP's interaction pages") from `/gnap-api`, in the
+  browser's language from the `gnap` catalogs #539 wrote. Errors English.
+  **Script is required**: the shell's `<noscript>` says so.
+* **WHAT A CLIENT INSTANCE SEES DID NOT CHANGE** (#569's rule): the start
+  modes' 303 and their 400 refusals (the shell now, with the code and the
+  status it always had), and every finish through
+  `grants.finishInteraction()`. The approval page's GET still answers each
+  redirect it answered — the sign-in screen, a step-up, the finish after a
+  cancelled sign-in or a remembered approval, a grant forwarded to its owner
+  — and answers the shell only where it drew the page. **An answer on
+  `/gnap-api` sends the browser to the finish URI by `location`**, the same
+  address with the same `hash` and `interact_ref` the 303 named.
+* **A PAGE THAT ONLY SAYS SOMETHING** is the shell with its view in
+  `data-sts-state` (`kerberos/spnego_authn.ts`'s arrangement, #575): the
+  state exists only on that response.
+* **ITS OWN SURFACE AND API, NOT THE SIGN-IN SURFACE'S.** The paths are the
+  `gnap` hosted application's (#472), possibly on a listener of its own,
+  where a shell could neither load `/authn/signin.js` nor call `/authn-api`
+  under `script-src 'self'` / `connect-src 'self'`; and an approval is
+  placed by its interaction handle (`/gnap-api/approve` an `artifact` row
+  like `/gnap/approve`, `/gnap-api/code` the handler's, as `/gnap/code`),
+  where `/authn-api` is placed by a login name. `/gnap-api` is in the `gnap`
+  application's prefixes.
+* **THE SESSION IS THE `sts_session` COOKIE** (#569's decision 3), no token.
+  An act is bound as `/authn-api`'s are (#571): JSON (0410), an `Origin`
+  this service answers on (0411), `X-CSRF-Token` = `websecurity.tokenFor()`
+  of the cookie's session (0412) — `/gnap/code` and `/gnap/approve` are on
+  `authn.ts`'s `ARRIVAL_PATHS`, so the shell mints the cookie. A request a
+  peer cell relayed (`req.stsCellRelay`) was bound where it arrived.
+* **THE OPERATIONS**: `GET /gnap-api` (the index, each operation with the
+  control it `mirrors`), `GET|POST /gnap-api/code`, `GET|POST
+  /gnap-api/approve/{id}`. The view is facts (`approvalView()`): the client
+  as registered and as declared, each right as the request's own, the limit
+  controls drawn by the server (`limitsHtml`, as `/portal/ciba`'s view
+  carries them), what was narrowed, the subject asked for, the finish. Where
+  the page's GET has a redirect to answer first, a view or an act answers
+  `next: page` and the page's own address. A refusal that leaves the page
+  standing (a stale token, a raised limit) is `{ ok: false, errors }` and
+  the page is drawn again; one that ends it carries a `problem` view. `POST
+  /gnap/code` and `POST /gnap/approve/{id}` are gone; STS-GNAP-0407 (the
+  form's CSRF check) is retired.
+* **THE PORTAL'S GNAP PAGES ARE NOT THESE**: `/portal/gnap` and the absent
+  owner's `/portal/ciba` are the portal's (#568), over `/account-api`.
+
 ## Error codes
 
 `STS-GNAP-NNNN`, registered in `common/error_codes.js`:
@@ -918,7 +973,7 @@ header argues the design; what a reader needs here:
 | 0001–0199 | keys, request walkers, subjects (0073: a user assertion issued to another client, #497), the grant engine, the routes |
 | 0200–0299 | HTTP message signatures, Content-Digest, proofs |
 | 0300–0399 | access rights and the token formats |
-| 0400–0499 | the resource-owner pages |
+| 0400–0499 | the resource-owner pages; 0410–0412 an act on `/gnap-api` refused at its binding (#578) |
 | 0500–0599 | the RS-facing endpoints and the demonstration resource server |
 | 0600–0649 | the push finish |
 | 0650–0699 | the console, the monitor, application entries |
@@ -933,8 +988,8 @@ header argues the design; what a reader needs here:
 | 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); the demonstration resource server's spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded, 0877 a refund that could not be made) |
 | 0890–0901 | #432 phase 6: a right dropped at issue for an approval without the page (0890) or short of its acr (0891); a trusted client that must interact (0892) or has no session for an acr (0893); an absent owner's time run out (0894); a derivation beyond the original needing its owner (0895) or short of the original's acr (0896); the owner's queue full (0897), the owner homed in another cell (0898), an unmet step-up (0899), the notice not queued (0900), an unknown owner (0901) |
 
-`tests/error_codes.js` carries `gnapError(res` and `interactionError(res` as
-failure patterns.
+`tests/error_codes.js` carries `gnapError(res`, `interactionError(res` and
+`apiRefusal(res` as failure patterns.
 
 ## Tests
 
@@ -955,6 +1010,7 @@ failure patterns.
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
 | `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone |
 | `tests/vendored/sts_gnap_interaction.js` | the same over HTTP: `never` without interaction, the trusted client against `always` and a consent action, a remembered `always` drawing the page again, an `mfa` type's step-up and refusal, and an absent owner approving and denying on `/portal/ciba` while the client polls |
+| `tests/gnap_interact_api.js` | #578 in a child serving the whole stack: the shells and their policy, the bundle, the index, the start mode's 303 and its 400 refusals, the approval page's redirect to the sign-in screen, a cancelled sign-in's finish with a verified hash, the view (facts, `csrf`, `next: page` with no session), the binding (415, 403 three ways, an unknown field, a bad limit control), Allow answering the finish URI with the section 4.2.3 hash and only the ticked right approved, a second answer refused, Deny's done view, the user code case-folded and spent once, the old form POSTs gone, and the compiled renderer drawing the API's view. The pages' renderers are held by `tests/web_surfaces.js`'s round trip |
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
@@ -965,7 +1021,9 @@ failure patterns.
 | `tests/vendored/sts_gnap_mtls.js` | #107 against a running service: the same, with the realm's own certificates from the Credentials door and a foreign authority whose leaf names a CRL the job serves |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client
-written from the RFCs) and `gnap_flow.js` (the resource owner and harness).
+written from the RFCs) and `gnap_flow.js` (the resource owner and harness),
+which since #578 reads the approval page's view and answers it over
+`/gnap-api` as the page does (`reachApproval()`, `answer()`, `enterCode()`).
 
 **Every format is independently verified since 2026-09-22 (#43).** A zcap
 token's Ed25519Signature2020 proof needed RDF dataset canonicalization, which
