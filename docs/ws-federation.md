@@ -221,8 +221,19 @@ There is one per trust realm, and a `wctx` minted in one realm is not recognised
 in another.
 
 Its page is drawn in your browser (#581) and needs script: the start page
-from `GET /wsfed/rp/api/start`, and the verdict from the page the response was
-posted to. What it sends and how it receives a response are unchanged.
+from `GET /wsfed/rp/api/start`. What it sends and what it checks are unchanged.
+
+**It answers as a real relying party does (#590).** A response that passes
+every check opens a session of the relying party's OWN — an HttpOnly,
+SameSite=Lax cookie scoped to `/wsfed/rp` (under the realm's prefix), Secure
+over TLS, lasting `wsfed.mockRpSessionTtlMin` — and is answered with a 303 to
+`/wsfed/rp`, whose page asks `GET /wsfed/rp/api/session` who is signed in.
+Nothing about the verdict is in an address or in the answer to the POST. A
+response that fails keeps its 200 and `STS-WSFED-0016`, opens no session, and
+is shown once from the session (an earlier session stays signed in). Its own
+**Sign out** (`POST /wsfed/rp/sign-out`) ends that session and goes on to this
+identity provider's `wsignout1.0`, and the `wsignoutcleanup1.0` image the
+identity provider's sign-out fetches ends it too.
 
 ### Not implemented
 
@@ -252,6 +263,7 @@ same in both modes. See [What is not checked](what-is-not-checked.md).
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock relying party remembers a `wctx` it minted. |
+| `wsfed.mockRpSessionTtlMin` | `STS_WSFED_MOCK_RP_SESSION_TTL_MIN` | `15` | yes | How long a session the mock relying party opens of its own lasts (#590). |
 
 The assertion's issuer, signature algorithm, skew and attributes are the shared
 `saml.*` settings and the SAML attribute sets — see the

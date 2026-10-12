@@ -12073,15 +12073,16 @@ is what a person reads; "participant" is a protocol peer's door.
 | Family | Route | Called by | Kind | After #581 |
 |---|---|---|---|---|
 | WS-Federation (`ws-federation/wsfed.ts`) | `GET /wsfed/rp` | a person | page: its realm, a fresh `wctx`, the six sign-in requests (SAML 1.1, SAML 2.0, the 200512 RSTR Collection, `wfresh=0`, the two `wauth` demands), the sign-out, the metadata | the shell; the view is `GET /wsfed/rp/api/start`'s, which mints the `wctx` |
-| | `GET /wsfed/rp?wa=wsignoutcleanup1.0` | `/wsfed`'s and `/logout`'s sign-out documents, as a one-pixel image (front-channel cleanup) | participant | **unchanged, server-drawn**: an image fetch, not a page anybody reads |
-| | `POST /wsfed/rp` (`wa`, `wresult`, `wctx`) | the browser, auto-posted by `/wsfed`'s sign-in response (section 13.2.3) | participant, and the page that shows its verdict | the RECEIVING is unchanged — the same fields read, the same verification, `200` whatever the verdict, `STS-WSFED-0016` on a failed check; the answer is the shell with the verdict in `data-sts-state`, drawn in the browser |
+| | `GET /wsfed/rp?wa=wsignoutcleanup1.0` | `/wsfed`'s and `/logout`'s sign-out documents, as a one-pixel image (front-channel cleanup) | participant | **unchanged, server-drawn**: an image fetch, not a page anybody reads; since #590 it ends the relying party's own session |
+| | `POST /wsfed/rp` (`wa`, `wresult`, `wctx`) | the browser, auto-posted by `/wsfed`'s sign-in response (section 13.2.3) | participant | the RECEIVING is unchanged — the same fields read, the same verification; since #590 a pass is a 303 and a session of its own, a refusal `200` with `STS-WSFED-0016` (below) |
 | SAML 2.0 (`saml/saml2_sso.ts`) | `GET /saml2/sp` | a person | page: its entityID, four AuthnRequests on the Redirect binding (three signed with this service's key, asking for the response on POST, Redirect and Artifact; one unsigned), Single Logout, its metadata | the shell; the view is `GET /saml2/sp/api/start`'s, which mints the four `RelayState`s and signs the requests |
-| | `GET /saml2/sp?SAMLResponse=…` | the browser, on the HTTP Redirect binding | participant + verdict | as `POST /wsfed/rp`: verified as before, `200`, `STS-SAML-0022` on a failed check, the verdict in the shell's state |
-| | `GET /saml2/sp?SAMLart=…` | the browser, on the HTTP Artifact binding; resolved IN PROCESS, once | participant + verdict | the same; an artifact that does not resolve is still `200` with `STS-SAML-0021` |
-| | `POST /saml2/sp` | the browser, on the HTTP POST and POST-SimpleSign bindings | participant + verdict | as above |
+| | `GET /saml2/sp?SAMLResponse=…` | the browser, on the HTTP Redirect binding | participant | as `POST /wsfed/rp`: verified as before; a pass a 303 and a session, a refusal `200` with `STS-SAML-0022` (#590) |
+| | `GET /saml2/sp?SAMLart=…` | the browser, on the HTTP Artifact binding; resolved IN PROCESS, once | participant | the same; an artifact that does not resolve is still `200` with `STS-SAML-0021` |
+| | `POST /saml2/sp` | the browser, on the HTTP POST and POST-SimpleSign bindings | participant | as above |
+| | `GET\|POST /saml2/sp` carrying a LogoutRequest or a LogoutResponse | this identity provider, through the browser, at the service provider's ACS (#590) | participant | its Single Logout endpoint: see *#590*, below |
 | SAML 1.1 (`saml/saml11_sso.ts`) | `GET /saml11/rp` | a person | page: its providerId and the two profiles' starts at the inter-site transfer service | the shell; the view is `GET /saml11/rp/api/start`'s |
-| | `POST /saml11/rp` (`SAMLResponse`, `TARGET`) | the browser, Browser/POST (section 4.2) | participant + verdict | `200`, `STS-SAML-0043` on a failed check, the verdict in the shell's state |
-| | `GET /saml11/rp?SAMLart=…&TARGET=…` | the browser, Browser/Artifact (section 4.1); resolved in process, once | participant + verdict | the same; a spent artifact is still `400` with `STS-SAML-0042` |
+| | `POST /saml11/rp` (`SAMLResponse`, `TARGET`) | the browser, Browser/POST (section 4.2) | participant | a pass a 303 to TARGET and a session (#590); a refusal `200` with `STS-SAML-0043` |
+| | `GET /saml11/rp?SAMLart=…&TARGET=…` | the browser, Browser/Artifact (section 4.1); resolved in process, once | participant | the same; a spent artifact is still `400` with `STS-SAML-0042` |
 | OpenID Provider Commands (`oauth-oidc/command_mock_rp.ts`) | `POST /oauth2/commands/mock-rp` | this realm's provider, as a client's `command_endpoint` | participant | **unchanged**: JSON and event streams, no page |
 | | `GET /oauth2/commands/mock-rp?client_id=` | a test | a JSON readback | **unchanged**: no page |
 
@@ -12099,9 +12100,9 @@ are the test peer's (`tests/peer/`, #586), not this service's.
 
 | Module | What it is |
 |---|---|
-| `mock_rp_surface.ts` (`MockRpSurface`, server, a static utility class) | `FAMILIES` (the three bases), `shell(req, family, view)` and `sendShell(req, res, status, family, view)` — the shell through `ShellDocument.document()`, `data-sts-mock-rp` naming the family and `data-sts-state` carrying a verdict, sent with the status its CALLER decided (the receiving door's own, so a spent SAML 1.1 artifact is still 400) after the caller marked its error code; `registerRoutes(app, family, start)` — `<base>/mock-rp.js` and `GET <base>/api/start` (JSON, `no-store`), both `demoOnly`. |
+| `mock_rp_surface.ts` (`MockRpSurface`, server, a static utility class) | `FAMILIES` (the three bases and each one's session-lifetime setting), `shell(req, family)` and `sendShell(req, res, status, family)` — the shell through `ShellDocument.document()`, `data-sts-mock-rp` naming the family and no state since #590, sent with the status its CALLER decided after it marked its error code; the relying parties' own sessions (#590, below): `signIn()`, `refuse()`, `hold()`, `held()`, `end()`, `endWhere()`, `sessionView()`; `registerRoutes(app, family, { start, signOut? })` — `<base>/mock-rp.js`, `GET <base>/api/start` and `GET <base>/api/session` (JSON, `no-store`) and `POST <base>/sign-out`, all `demoOnly`. |
 | `web_mock_rp_pages.ts` (`StsMockRp`) | One page row per family (`/wsfed/rp`, `/saml2/sp`, `/saml11/rp`), each drawing whichever view it is handed by its `kind` — `start`, `result`, SAML 2.0's `unresolved`, SAML 1.1's `spent` — in the `mockRp` catalogs' words. A check's name and detail, a claim, an attribute, a refusal's reason and the document as it arrived are the model's English, escaped. |
-| `web_mock_rp.ts` (`common/mock-rp-spa.js`) | `WebSurface` with the base the shell names; draws the shell's verdict and fetches nothing, or asks the start view; leaves EVERY link to the browser (a sign-in request, a sign-out and the artifact loaded again are protocol messages, and Start another sign-in loads the page afresh because the start view mints); redraws from the view in hand on a language change. |
+| `web_mock_rp.ts` (`common/mock-rp-spa.js`) | `WebSurface` with the base the shell names; asks `<base>/api/session` and draws what the session holds, or asks the start view where it holds nothing or the address says `?start=1`; leaves EVERY link to the browser (a sign-in request and the artifact loaded again are protocol messages, and Start another sign-in loads the page afresh because the start view mints) and the one form too (the relying party's own Sign out, a real form POST); redraws from the view in hand on a language change. |
 | `web_card_css.ts`'s `MOCK_RP_CSS` | The wide card, the checks, the tables, the document, SAML 1.1's two starts as buttons — scoped to `.mockrp`. |
 
 **One surface for the three, not one per family**: the pages are one page in
@@ -12113,17 +12114,14 @@ its own base, inside its family's hosted application's prefix, so a mapped
 family loads both from its own listener and `common/hosted_applications.js`
 gains nothing.
 
-**THE VERDICT TRAVELS IN THE SHELL, NOT UNDER A REFERENCE (a departure from
-#581's plan, step 1).** The plan was: the receiving endpoint keeps the result
-under a short-lived reference and answers a 303 to the page. It was built
-the other way, for three reasons. (1) The receiving door is an assertion
-consumer, and #569's rule — and the brief for #581 — keeps a protocol
-endpoint's status and headers as they were; a 303 changes them. (2) A view
-that exists only on one response is what `data-sts-state` is for
-(`kerberos/spnego_authn.ts`, #575; GNAP, #578). (3) A reference would be a
-bearer URL to a person's assertion, held in a store the cluster replicates,
-for a page that never needed one. What the shell carries is exactly what the
-server-drawn page showed, to the same browser.
+**THE VERDICT TRAVELLED IN THE SHELL UNTIL #590.** #581 built it there, a
+departure from its own plan (a short-lived reference and a 303), for three
+reasons: a 303 changes an assertion consumer's status, `data-sts-state` is
+what a view that exists on one response is for, and a reference is a bearer
+URL to a person's assertion. #590 replaced it — see the next section — and
+answers all three: the 303 is what a real relying party's assertion consumer
+answers, the view now exists for as long as a session does, and there is no
+bearer reference in any URL, only the relying party's own cookie.
 
 **What did not convert, and why**: the WS-Federation cleanup request (an
 image the identity provider's sign-out documents fetch); every request the
@@ -12133,3 +12131,61 @@ the Provider Commands mock (JSON); the verification itself
 reports. SAML 1.1's check details were drawn unescaped until #581 — a detail
 naming `<DoNotCacheCondition>` lost the name in the browser — and are text
 now.
+
+### #590: THEY BEHAVE AS REAL RELYING PARTIES (2026-10-12)
+
+rcbj on #590: "I want the test to effectively replicate a real world scenario
+it is trying to test." A real relying party consumes a response at its
+endpoint, opens a session of its OWN, and sends the browser on to its
+application, which learns who is signed in from its own back end. So:
+
+* **A RESPONSE THAT PASSES** opens a session (`MockRpSurface.signIn()`): any
+  session the browser held there is ended first (rotation, as against
+  fixation), the verdict's facts and the subject's names are held, and the
+  answer is a **303** to the family's page — POST, redirect, GET. SAML 1.1's
+  goes to `TARGET` when it names the relying party's own page, Shibboleth's
+  behaviour; any other `TARGET` is never followed (an open redirector).
+* **THE PAGE ASKS ITS OWN BACK END**: `GET <base>/api/session` with the
+  cookie answers the session's verdict, a held refusal ONCE, or nothing (and
+  the runtime asks the start view). No verdict is in an address or in the
+  answer that received the response.
+* **A REFUSAL KEEPS ITS STATUS AND CODE** (`STS-WSFED-0016`, `STS-SAML-0021`,
+  `0022`, `0042`, `0043`), because those are the behaviour the suite tests;
+  it opens no session, and the refusal is held once — on the live session
+  the browser already has (which stays signed in: a forged POST must not
+  sign anybody out) or on a session holding nothing else. The answer is the
+  shell, which asks.
+* **THE COOKIE**: `sts_mockrp_<family>` (`__Secure-` in front over TLS; not
+  `__Host-`, which would need `Path=/`), HttpOnly, SameSite=Lax, Secure where
+  the request reached a TLS listener (`req.secure`, which a request worker
+  computes from the front's `x-forwarded-proto`), `Path` the family's page
+  under the realm's prefix, `Max-Age` the family's
+  `*.mock*SessionTtlMin` (15). Its value is never stored: the key is its
+  SHA-256.
+* **THE STORE** is `mockRp.sessions`, `realms.map()` at its declaration,
+  persisted (`retain: 'age'`, `expiresAt` its own `expires`, tombstoned —
+  every key a random handle written once), so the GET after the 303 finds
+  the session wherever it lands, as `wsfed.rpContexts` finds its wctx; a
+  cell's LOCAL tier (`persistence/tiers.js`), and in a cell deployment the
+  browser is pinned (`/wsfed`, `/saml2`, `/saml11` are `affinity`; the new
+  paths have rows of their own). Bounded at 1,000 per realm (a constant: no
+  operator tunes a mock), expired rows refused at the read and ejected by
+  `caches.eject-expired` — no timer.
+* **ITS SESSION ENDS** on its own sign-out (`POST <base>/sign-out`, a real
+  form; SameSite=Lax keeps a cross-site POST from carrying the cookie) and
+  on a logout message the family has: WS-Federation's `wsignoutcleanup1.0`
+  image (by cookie); a SAML 2.0 LogoutRequest from this identity provider
+  (by NameID and SessionIndex, as a real service provider finds them —
+  `endWhere()` — and answered with a signed LogoutResponse to `/saml2/slo`,
+  Requester and `STS-SAML-0111` when it fails its checks). WS-Federation's
+  sign-out goes on to `wsignout1.0`; SAML 2.0's sends a signed
+  LogoutRequest (SP-initiated Single Logout) and checks the LogoutResponse
+  that comes back (`STS-SAML-0110`), its RelayState kept in `spContexts`;
+  SAML 1.1 has no logout. **No back channel**: WS-Federation defines none,
+  and this identity provider sends a SAML LogoutRequest only through the
+  browser.
+* **WHAT THIS SERVICE SENDS IS UNCHANGED.** The service provider's ACS is
+  its SLO endpoint because that is where `logoutReturnAddressFor()` already
+  sends a mock's logout messages; nothing on the identity provider's side
+  was touched.
+

@@ -213,7 +213,7 @@ something named it.
 
 `/saml11/rp` is the default assertion consumer and a test harness. It starts a
 flow on either profile, accepts a Browser/POST response or an artifact (which it
-resolves under the same one-shot rule, so reloading the result page shows the
+resolves under the same one-shot rule, so loading the artifact again shows the
 second attempt refused), and verifies the Response check by check: SAML version,
 status, `Recipient`, `InResponseTo`, both signatures, `AssertionID`, issuer,
 audience, validity window, the confirmation method against the profile, the
@@ -221,8 +221,19 @@ audience, validity window, the confirmation method against the profile, the
 subject and the attributes.
 
 Its page is drawn in your browser (#581) and needs script: the start page
-from `GET /saml11/rp/api/start`, and the verdict from the page the response was
-posted to. What it sends and how it receives a response are unchanged.
+from `GET /saml11/rp/api/start`. What it sends and what it checks are unchanged.
+
+**It answers as a real relying party does (#590).** A response that passes
+every check opens a session of the relying party's OWN — an HttpOnly,
+SameSite=Lax cookie scoped to `/saml11/rp` (under the realm's prefix), Secure
+over TLS, lasting `saml11.mockRpSessionTtlMin` — and is answered with a 303 to
+`TARGET` when that names its own page (the start view sets
+`/saml11/rp?done=1`, and any other `TARGET` is never followed) or to
+`/saml11/rp`; the page asks `GET /saml11/rp/api/session` who is signed in. A
+response that fails keeps its status and code (200 and `STS-SAML-0043`; a
+spent artifact 400 and `STS-SAML-0042`), opens no session, and is shown once
+from the session. Its **Sign out** (`POST /saml11/rp/sign-out`) ends its
+session; SAML 1.1 has no logout, so the identity provider is not told.
 
 ### Not implemented
 
@@ -267,6 +278,7 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions kept per realm for `AssertionIDReference`, oldest out first. |
+| `saml11.mockRpSessionTtlMin` | `STS_SAML11_MOCK_RP_SESSION_TTL_MIN` | `15` | yes | How long a session the mock relying party opens of its own lasts (#590). |
 
 The shared `saml.*` settings — signature algorithm, canonicalization, SHA-1
 verification, clock skew, the metadata organisation — are in the

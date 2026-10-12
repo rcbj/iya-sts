@@ -480,8 +480,28 @@ the validity window — and checks that its own `RelayState` came back unaltered
 specification.
 
 Its page is drawn in your browser (#581) and needs script: the start page
-from `GET /saml2/sp/api/start`, and the verdict from the page the response was
-posted to. What it sends and how it receives a response are unchanged.
+from `GET /saml2/sp/api/start`. What it sends and what it checks are unchanged.
+
+**It answers as a real service provider does (#590).** A Response that passes
+every check, on any binding, opens a session of the service provider's OWN —
+an HttpOnly, SameSite=Lax cookie scoped to `/saml2/sp` (under the realm's
+prefix), Secure over TLS, lasting `saml2.mockSpSessionTtlMin` — and is
+answered with a 303 to `/saml2/sp`, whose page asks `GET /saml2/sp/api/session`
+who is signed in. A Response that fails keeps its 200 and `STS-SAML-0022` (an
+artifact that does not resolve, `STS-SAML-0021`), opens no session, and is
+shown once from the session.
+
+It is also its own **Single Logout** endpoint — its ACS, where this identity
+provider sends a service provider's logout messages when it has no other
+address. Its **Sign out** (`POST /saml2/sp/sign-out`) ends its session and
+sends a signed LogoutRequest naming the NameID and SessionIndex it was given
+to `/saml2/slo` (SP-initiated Single Logout); the LogoutResponse that comes
+back is checked — issuer, Destination, `InResponseTo`, status, signature
+(`STS-SAML-0110` when one fails) — and shown once. A LogoutRequest from this
+identity provider (the links its identity-provider-initiated logout and
+`/logout` draw) ends the sessions it names and is answered with a signed
+LogoutResponse on the Redirect binding: Success, or Requester when its checks
+fail and nothing was ended (`STS-SAML-0111`).
 
 ### The assertion settings every application inherits
 
@@ -611,6 +631,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a LogoutResponse goes when the service provider registered no SingleLogoutService. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the person signs in — and how old its `IssueInstant` may be. |
 | `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock service provider remembers a RelayState it minted. |
+| `saml2.mockSpSessionTtlMin` | `STS_SAML2_MOCK_SP_SESSION_TTL_MIN` | `15` | yes | How long a session the mock service provider opens of its own lasts (#590). |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Redirect-binding Response longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The size cap on a fetched or uploaded service provider metadata document. |
 | `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Refetch stale service provider metadata in the background; expiry is enforced either way. |
