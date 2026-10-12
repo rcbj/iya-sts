@@ -197,7 +197,7 @@
 // ---------------------------------------------------------------------------
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const NetworkInspector = require("selenium-webdriver/bidi/networkInspector.js");
 const browserFlags = require("./browser_flags.js");
@@ -1322,7 +1322,11 @@ let signedInAs = "";
 // would a person, who signs in again. Nothing is granted here.
 async function typeTheSignIn(driver, username) {
   log.debug("Entering typeTheSignIn(). username=" + username);
-  const field = await driver.findElement(By.css("input[name='username']"));
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): the form is waited for before it is filled.
+  const field = await driver.wait(
+    until.elementLocated(By.css("input[name='username']")), 15000,
+    "the sign-in screen never drew its form");
   await field.clear();
   await field.sendKeys(username);
   const secret = await driver.findElement(By.css("input[name='password']"));
