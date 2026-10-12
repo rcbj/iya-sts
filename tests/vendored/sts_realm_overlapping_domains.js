@@ -49,6 +49,8 @@
 // authorization server and management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -307,20 +309,13 @@ async function signInRefused(realm, username, password) {
   assert.ok(/\/authn\/login$/.test(screenAt.pathname),
     "the authorization request at " + realm.domain + " should reach the " +
     "sign-in screen; it answered " + first.status + " " + screenAt);
-  const page = await (await fetch(screenAt, { redirect: "manual" })).text();
-  const authnId = (page.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  const csrf = (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] ||
-               "";
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  const posted = await fetch(screenAt.origin + screenAt.pathname, {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ authn_id: authnId, username: username,
-                                password: password, action: "login",
-                                csrf_token: csrf }).toString() });
-  const back = posted.headers.get("location") || "";
-  const refused = !(posted.status >= 300 && posted.status < 400 &&
-                    /\/oauth2\/authorize/.test(back));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, in the
+  // realm the screen was served under.
+  const posted = await authnSignin.submit(screenAt.origin +
+    screenAt.pathname.replace(/\/authn\/login$/, ""), screenAt.toString(),
+    { action: "login", username: username, password: password });
+  const refused = !(posted.next === "redirect" &&
+                    /\/oauth2\/authorize/.test(posted.location));
   log.debug("Leaving signInRefused(). " + refused + " (" + posted.status +
             ")");
   return refused;
