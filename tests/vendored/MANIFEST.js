@@ -1262,9 +1262,12 @@ const JOBS = [
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
   // account commands, the callback, automatic suspend and reactivate, a
-  // resumed tenant stream and a retried delivery, against the mock relying
-  // party. `local: true`.
-  { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // resumed tenant stream and a retried delivery, against the TEST PEER's
+  // relying party since #596 (the service's mock was deleted, #591 P5), so
+  // `testPeer: true`: SKIPPED, with the reason, in a run with no peer.
+  // `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true,
+    testPeer: true },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking
