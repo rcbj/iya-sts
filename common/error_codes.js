@@ -17969,13 +17969,17 @@ const CODES = [
       'then refuse with 403' },
   { code: 'STS-XACML-0014',
     summary: 'The embedded demonstration PEP at GET /xacml/protected refused ' +
-      'the subject because the decision was not one its bias allows.',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'the subject because the decision was not one its bias allows. ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0015',
     summary: 'The embedded demonstration PEP refused a Permit because the ' +
       'decision carried an obligation it cannot discharge (XACML 3.0 ' +
-      'section 7.2).',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'section 7.2). ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0016',
     summary: 'GET /xacml was asked with a format or bias query parameter ' +
       'outside its allowed values.',
