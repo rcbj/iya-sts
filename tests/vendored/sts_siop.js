@@ -510,8 +510,11 @@ async function test() {
   const w = await startSignIn(later);
   const removed = await answer(w.request, selfIssued(key,
     w.request.client_id, w.request.nonce));
-  const removedPage = await hop(later, "GET", removed.json &&
-                                removed.json.redirect_uri || w.waitUrl);
+  // THE WAIT PAGE'S ANSWER OVER `/authn-api/wallet` (#574), as section 4
+  // reads it: the page is a shell, and the refusal is its status act's.
+  const removedPage = await walletSignin.collect(base, later,
+    removed.json && removed.json.redirect_uri ? removed.json.redirect_uri
+                                              : w.waitUrl);
   check("a removed key signs nobody in", function () {
     assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
     assert.strictEqual(removedPage.status, 403,
