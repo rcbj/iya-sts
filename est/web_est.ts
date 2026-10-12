@@ -356,8 +356,11 @@ class EstPage {
    * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static countTable(title, rows, t) {
-    return '<h3>' + esc(title) + '</h3><table><tbody>' + (rows.length
+  static countTable(title, rows, t, tab?) {
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h3' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h3><table><tbody>' + (rows.length
       ? rows.map(function (row) {
         return '<tr><td><code>' + esc(row.name) + '</code></td><td ' +
                'class="num">' + row.count + '</td></tr>';
@@ -413,12 +416,18 @@ class EstPage {
                         n: json.processes }) +
         ' <a href="/admin/audit">' + t.html('consoleEst.auditLog') +
         '</a>.') + tiles +
-      self.countTable(t.text('consoleEst.byOperation'), json.operations, t) +
-      self.countTable(t.text('consoleEst.byProfile'), json.profiles, t) +
-      self.countTable(t.text('consoleEst.byPrincipal'), json.principals, t) +
-      self.countTable(t.text('consoleEst.byErrorCode'), json.errorCodes, t) +
-      self.countTable(t.text('consoleEst.byStatus'), json.statuses, t) +
-      '<h2 id="list-page">' + t.html('consoleEst.recent') + '</h2>' +
+      self.countTable(t.text('consoleEst.byOperation'), json.operations, t,
+                      'operations') +
+      self.countTable(t.text('consoleEst.byProfile'), json.profiles, t,
+                      'profiles') +
+      self.countTable(t.text('consoleEst.byPrincipal'), json.principals, t,
+                      'principals') +
+      self.countTable(t.text('consoleEst.byErrorCode'), json.errorCodes, t,
+                      'codes') +
+      self.countTable(t.text('consoleEst.byStatus'), json.statuses, t,
+                      'statuses') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleEst.recent') +
+      '</h2>' +
       nav.head +
       '<table><thead><tr><th>' + t.html('consoleEst.thAt') + '</th><th>' +
       t.html('consoleEst.thOperation') + '</th><th>' +
@@ -431,8 +440,10 @@ class EstPage {
       '</th><th>' + t.html('consoleEst.serial') + '</th></tr></thead><tbody>' +
       recentRows +
       '</tbody></table>' + nav.foot +
-      kit.note(t.html('consoleEst.noReset')) +
-      '<p class="links"><a href="/admin/est/monitor?format=json">JSON</a> ' +
+      '<div data-metadata>' + kit.note(t.html('consoleEst.noReset')) +
+      '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/est/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/est/monitor</code> · <a ' +
       'href="/admin/est">EST</a></p>';
     return inner;

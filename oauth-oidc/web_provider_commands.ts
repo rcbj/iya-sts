@@ -297,7 +297,10 @@ class ProviderCommandsPage {
         (state ? t.html('consoleProviderCommands.nothingIn',
                         { state: state })
                : t.html('consoleProviderCommands.nothing')) + '</td></tr>';
-      return '<h3 id="kind-' + esc(k.id) + '">' + esc(k.title) + '</h3>' +
+      // A TAB PER KIND (2026-10-12), named by the kind's id; the note and
+      // the state filter above are Metadata (`WebPages.protocolTabs()`).
+      return '<h3 id="kind-' + esc(k.id) + '" data-tab="' + esc(k.id) +
+        '">' + esc(k.title) + '</h3>' +
         '<p class="sub">' +
         t.html('consoleProviderCommands.counts',
                { pending: k.counts.pending, sent: k.counts.sent,
@@ -312,8 +315,9 @@ class ProviderCommandsPage {
         '</tbody></table>';
     }).join('');
     return kit.note(t.html('consoleProviderCommands.deliveriesNote')) +
-      filter + kinds + '<p class="links"><a href="' + DELIVERIES +
-      '?format=json">JSON</a> · <code>GET /admin-api/deliveries</code></p>';
+      filter + kinds + '<p class="links" data-metadata><a href="' +
+      DELIVERIES + '?format=json">JSON</a> · ' +
+      '<code>GET /admin-api/deliveries</code></p>';
   }
 }
 

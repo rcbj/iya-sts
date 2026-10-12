@@ -117,6 +117,8 @@
   "dataset.activeVersion": ": versión <code>{version}</code>, {rows} filas, publicada {at}",
   "dataset.rollBack": "Volver a {version}",
   "lookup.heading": "Consultar una dirección",
+  "datasets.heading": "Conjuntos de datos",
+  "import.heading": "Cargar un conjunto de datos",
   "lookup.label": "Qué dicen los conjuntos de datos sobre",
   "lookup.button": "Consultar",
   "upload.heading": "Subir un archivo",

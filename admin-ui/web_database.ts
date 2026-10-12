@@ -416,7 +416,12 @@ class DatabasePage {
     }
     const words = SECTION_WORDS(t)[section.group] ||
       { heading: kit.esc(section.heading), blurb: section.blurb };
-    return '<h3>' + words.heading + '</h3>' +
+    // ONE TAB PER GROUP OF PROBES (2026-10-12, `WebPages.protocolTabs()`):
+    // `server`, `activity`, `background`, `schema`, `configuration`. The
+    // tiles, the notes, the computed ratios, the drift check and what could
+    // not be collected are Metadata.
+    return '<h3 data-tab="' + kit.esc(section.group.toLowerCase()) + '">' +
+      words.heading + '</h3>' +
       kit.note(words.blurb) +
       ids.map(function (id) {
         const probe = json.probes[id];

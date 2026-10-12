@@ -297,9 +297,14 @@ class ListenersPage {
         }).join('') + '</tbody></table>' +
         kit.note(t.html('consoleListeners.inForceNote'));
     };
+    // METADATA FIRST (2026-10-12): the tiles and what is wrong or worth
+    // knowing, ahead of the listeners, as on every page drawn as tabs.
     const panels: Json[] = [
+      { id: 'listeners-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: tiles + status },
       { id: 'tab-listeners', label: t.text('consoleListeners.tabListeners'),
-        html: status + builtIn },
+        html: builtIn },
       { id: 'tab-custom', label: t.text('consoleListeners.customLabel'),
         html: customPanel },
       { id: 'tab-applications',
@@ -326,7 +331,7 @@ class ListenersPage {
                     html: inForce(one.policy, one.http) +
                           kit.note(t.html('consoleListeners.customTabNote')) });
     });
-    return tiles + kit.tabbedPanels('listeners', panels);
+    return kit.tabbedPanels('listeners', panels);
   }
 }
 

@@ -66,5 +66,8 @@
   "noStores": "Ninguno de los dos secretos se lee de un almacén, así que no hay nada que informar.",
   "perStore": "Un bloque por almacén y no por secreto: dos secretos guardados en el mismo sitio comparten todo lo de abajo, y preguntar dos veces al mismo almacén si está sellado sería esta página inventando un desacuerdo que luego tendría que mostrar.",
   "holds": "Contiene:",
-  "nothingPublished": "Este proveedor no publica nada sobre el propio almacén más allá de lo que ya figura en el secreto de arriba &mdash; un gestor de secretos en la nube es un punto de conexión y una política de acceso, y todo lo que diga lo dice sobre el secreto."
+  "nothingPublished": "Este proveedor no publica nada sobre el propio almacén más allá de lo que ya figura en el secreto de arriba &mdash; un gestor de secretos en la nube es un punto de conexión y una política de acceso, y todo lo que diga lo dice sobre el secreto.",
+  "tab.keys": "Claves de cifrado",
+  "tab.database": "Contraseñas de la base de datos",
+  "tab.mail": "Secretos de correo"
 }

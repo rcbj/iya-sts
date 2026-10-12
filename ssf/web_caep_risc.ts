@@ -691,7 +691,10 @@ class CaepRiscPage {
       }).length, t.text('consoleCaepRisc.tile.streamsCaep')) +
       '</div>' +
 
-      '<h2>' + t.html('consoleCaepRisc.sessions.heading') + '</h2>' +
+      // A TAB PER LIST (2026-10-12): the tiles above and the closing links
+      // are Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="sessions">' + t.html('consoleCaepRisc.sessions.heading') +
+      '</h2>' +
       kit.note(t.html('consoleCaepRisc.sessions.drillNote')) +
       kit.sectionSearchForm({
         path: '/admin/caep-sessions', query: ctx.query,
@@ -715,7 +718,8 @@ class CaepRiscPage {
       rows + '</table>' +
       sessNav.foot +
 
-      '<h2>' + t.html('consoleCaepRisc.sessions.whereHeading') + '</h2>' +
+      '<h2 data-tab="streams">' +
+      t.html('consoleCaepRisc.sessions.whereHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.sessions.zeroNote')) +
       '<table><tr><th>' + t.html('consoleCaepRisc.th.stream') +
       '</th><th>aud</th><th>' + t.html('consoleCaepRisc.th.status') +
@@ -725,7 +729,8 @@ class CaepRiscPage {
       t.html('consoleCaepRisc.th.caepTypes') + '</th></tr>' + streamRows +
       '</table>' +
 
-      '<h2>' + t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
+      '<h2 data-tab="applications">' +
+      t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.sessions.perApp1')) +
       kit.note(t.html('consoleCaepRisc.sessions.perApp2')) +
       kit.note(t.html('consoleCaepRisc.sessions.perApp3')) +
@@ -788,14 +793,14 @@ class CaepRiscPage {
           kit.note(t.html('consoleCaepRisc.sessions.clearNote'))
         : '') +
 
-      kit.note('<a href="/admin/caep">' +
+      '<div data-metadata>' + kit.note('<a href="/admin/caep">' +
       t.html('consoleCaepRisc.links.caepSettings') + '</a> &middot; ' +
       '<a href="/admin/ssf">' + t.html('consoleCaepRisc.links.streams') +
       '</a> &middot; ' +
       '<a href="/admin/metrics">' +
       t.html('consoleCaepRisc.links.heldSessions') + '</a> ' +
       '&middot; <a href="/admin/caep-sessions?format=json">' +
-      t.html('consoleCaepRisc.links.asJson') + '</a>');
+      t.html('consoleCaepRisc.links.asJson') + '</a>') + '</div>';
 
     // WHAT THE BROWSER WAS SHOWN, BESIDE THE WHOLE LIST RATHER THAN INSTEAD
     // OF IT — the arrangement /admin/delegation's configured half already
@@ -1112,7 +1117,10 @@ class CaepRiscPage {
       }).length, t.text('consoleCaepRisc.tile.streamsRisc')) +
       '</div>' +
 
-      '<h2>' + t.html('consoleCaepRisc.accounts.heading') + '</h2>' +
+      // A TAB PER LIST (2026-10-12): the tiles above and the closing links
+      // are Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="accounts">' + t.html('consoleCaepRisc.accounts.heading') +
+      '</h2>' +
       kit.note(t.html('consoleCaepRisc.accounts.drillNote')) +
       kit.sectionSearchForm({
         path: '/admin/risc-accounts', query: ctx.query,
@@ -1136,7 +1144,8 @@ class CaepRiscPage {
         rows + '</table>') +
       acctNav.foot +
 
-      '<h2>' + t.html('consoleCaepRisc.accounts.whereHeading') + '</h2>' +
+      '<h2 data-tab="streams">' +
+      t.html('consoleCaepRisc.accounts.whereHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.accounts.zeroNote')) +
       '<table><tr><th>' + t.html('consoleCaepRisc.th.stream') +
       '</th><th>aud</th><th>' + t.html('consoleCaepRisc.th.status') +
@@ -1146,7 +1155,8 @@ class CaepRiscPage {
       t.html('consoleCaepRisc.th.riscTypes') + '</th></tr>' + streamRows +
       '</table>' +
 
-      '<h2>' + t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
+      '<h2 data-tab="applications">' +
+      t.html('consoleCaepRisc.perAppHeading') + '</h2>' +
       kit.note(t.html('consoleCaepRisc.accounts.perApp')) +
       kit.sectionSearchForm({
         path: '/admin/risc-accounts', query: ctx.query,
@@ -1189,7 +1199,7 @@ class CaepRiscPage {
           kit.note(t.html('consoleCaepRisc.accounts.clearNote'))
         : '') +
 
-      kit.note('<a href="/admin/risc">' +
+      '<div data-metadata>' + kit.note('<a href="/admin/risc">' +
       t.html('consoleCaepRisc.links.caepSettings') + '</a> &middot; ' +
       '<a href="/admin/caep-sessions">' +
       t.html('consoleCaepRisc.links.sessionsSaid') + '</a> &middot; ' +
@@ -1198,7 +1208,7 @@ class CaepRiscPage {
       '<a href="/admin/users">' + t.html('consoleCaepRisc.links.people') +
       '</a> &middot; ' +
       '<a href="/admin/risc-accounts?format=json">' +
-      t.html('consoleCaepRisc.links.asJson') + '</a>');
+      t.html('consoleCaepRisc.links.asJson') + '</a>') + '</div>';
 
     return inner;
   }

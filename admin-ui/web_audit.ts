@@ -141,7 +141,10 @@ class AuditPage {
 
       kit.note(t.html('consoleAudit.observesItself')) +
 
-      '<h2>' + t.html('consoleAudit.whatHappened') + '</h2>' +
+      // TWO TABS (2026-10-12; `WebPages.protocolTabs()`): what happened and
+      // the settings; the notes above and the legend below are Metadata.
+      '<h2 data-tab="events">' + t.html('consoleAudit.whatHappened') +
+      '</h2>' +
       // No `page` input in this form, deliberately: changing a filter or the
       // page size returns to page 1. Carrying the old page number over would
       // land somebody on page 6 of a two-page result and the clamp in
@@ -227,6 +230,7 @@ class AuditPage {
 
       kit.note(t.html('consoleAudit.seqNote')) +
 
+      '<div data-metadata>' +
       '<h3>' + t.html('consoleAudit.whereRowsComeFrom') + '</h3>' +
       kit.note(t.html('consoleAudit.sixCategories')) +
       '<ul>' + json.categories.map(function (entry) {
@@ -242,7 +246,7 @@ class AuditPage {
 
       kit.note(t.html('consoleAudit.fromNote')) +
 
-      kit.note(t.html('consoleAudit.inMemory')) +
+      kit.note(t.html('consoleAudit.inMemory')) + '</div>' +
 
       // THE TWO SETTINGS ARE ON THIS PAGE NOW rather than being described
       // here and typed in somewhere else. `audit.protocolCalls` is the reason

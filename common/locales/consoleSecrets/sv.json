@@ -66,5 +66,8 @@
   "noStores": "Ingen av hemligheterna läses från en lagring, så det finns inget att rapportera.",
   "perStore": "Ett block per lagring och inte per hemlighet: två hemligheter på samma ställe delar allt nedan, och att fråga samma lagring två gånger om den är förseglad vore sidan som hittar på en oenighet som den sedan måste visa.",
   "holds": "Innehåller:",
-  "nothingPublished": "Den här leverantören publicerar inget om själva lagringen utöver det som redan står på hemligheten ovan &mdash; en molnbaserad hemlighetshanterare är en slutpunkt och en åtkomstpolicy, och allt den säger gäller hemligheten."
+  "nothingPublished": "Den här leverantören publicerar inget om själva lagringen utöver det som redan står på hemligheten ovan &mdash; en molnbaserad hemlighetshanterare är en slutpunkt och en åtkomstpolicy, och allt den säger gäller hemligheten.",
+  "tab.keys": "Krypteringsnycklar",
+  "tab.database": "Databaslösenord",
+  "tab.mail": "E-posthemligheter"
 }

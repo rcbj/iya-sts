@@ -290,7 +290,65 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/ldap/policies': ['entries'],
   '/admin/ldap/peps': ['entries'],
   '/admin/ldap/spiffe': ['entries', 'agents'],
-  '/admin/ldap/devices': ['entries']
+  '/admin/ldap/devices': ['entries'],
+  // MONITORING AND SERVER CONFIGURATION (rcbj, 2026-10-12), the pages with
+  // more than one section; each renderer marks its own. Listeners draws
+  // tabs of its own and is not here.
+  '/admin/metrics': ['calls', 'tokens', 'artifacts', 'sessions'],
+  '/admin/sessions': ['live', 'unauthenticated'],
+  '/admin/tokens': ['invalidate', 'issued'],
+  '/admin/delegation': ['happened', 'chains', 'register', 'kerberos',
+                        'policy'],
+  '/admin/caep-sessions': ['sessions', 'streams', 'applications'],
+  '/admin/risc-accounts': ['accounts', 'streams', 'applications'],
+  '/admin/signals': ['events', 'clear'],
+  '/admin/ssf/transmitters': ['relationships', 'blocks', 'locks', 'arrived'],
+  '/admin/ssf/dead-letters': ['when', 'why', 'streams', 'letters', 'process',
+                              'settings'],
+  // One tab per outbound delivery kind (`oauth-oidc/outbound_delivery.ts`):
+  // a kind added there owes its id here.
+  '/admin/deliveries': ['backchannel-logout', 'ciba', 'cell-ops',
+                        'provider-commands'],
+  '/admin/consent': ['globals', 'recorded'],
+  '/admin/xacml/monitor': ['figures', 'points'],
+  '/admin/gnap/monitor': ['formats', 'applications'],
+  '/admin/acme/monitor': ['operations', 'profiles', 'codes', 'statuses',
+                          'principals', 'recent'],
+  '/admin/est/monitor': ['operations', 'profiles', 'principals', 'codes',
+                         'statuses', 'recent'],
+  '/admin/scep/monitor': ['operations', 'failinfo', 'codes', 'profiles',
+                          'principals', 'recent'],
+  '/admin/oauth2/monitor': ['par', 'stepup'],
+  '/admin/scim/monitor': ['calls', 'resources', 'clients', 'schemes',
+                          'responses', 'recent', 'written'],
+  '/admin/logout': ['lookup', 'backchannel', 'settings'],
+  '/admin/database': ['server', 'activity', 'background', 'schema',
+                      'configuration'],
+  '/admin/encryption': ['classes', 'datakeys'],
+  '/admin/secrets': ['keys', 'database', 'mail', 'stores'],
+  '/admin/caches': ['caches', 'replay', 'nodes', 'entries'],
+  '/admin/worker-pools': ['request', 'surface'],
+  '/admin/node-health': ['cpu', 'memory', 'processes', 'ecs', 'machine'],
+  '/admin/scheduler': ['leader', 'jobs', 'runs', 'commands', 'settings'],
+  '/admin/devices/monitor': ['register', 'activity', 'days'],
+  '/admin/risk': ['assessments', 'standings', 'lookup', 'datasets', 'import',
+                  'providers', 'failures', 'settings'],
+  '/admin/risk-scoring': ['assessments', 'signals', 'decisions', 'process'],
+  '/admin/audit': ['events', 'settings'],
+  '/admin/error-codes': ['subsystems', 'codes'],
+  '/admin/realms': ['realms', 'define', 'settings'],
+  '/admin/config': ['index', 'settings'],
+  '/admin/mode': ['requirements', 'development', 'notyet'],
+  '/admin/persistence': ['settings'],
+  '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
+  '/admin/mail': ['test', 'verify', 'messages', 'settings'],
+  '/admin/rbac': ['holders', 'grant', 'settings'],
+  '/admin/debugger': ['settings'],
+  '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
+                          'specifications'],
+  '/admin/keys': ['rotation', 'keys', 'settings'],
+  '/admin/crypto-metadata': ['families', 'material', 'hashing', 'signatures',
+                             'encryption', 'post-quantum', 'standards']
 };
 
 /**
@@ -1269,6 +1327,12 @@ class WebPages {
                                      close < 0 ? end : close)) });
       }
       m = tag.exec(text);
+    }
+    // A page that draws no marked section this time — the mail page's one
+    // template, a list with no rows to act on — is drawn as it was: a bar
+    // holding one Metadata tab says nothing.
+    if (!sections.some(function (one: Json) { return !!one.tab; })) {
+      return String(html || '');
     }
     let metadata = '';
     const tabs: Json = {};
