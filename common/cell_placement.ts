@@ -118,6 +118,13 @@ const ROWS: Row[] = [
     why: 'the public surfaces\' card and locale catalogs, the same files ' +
          'in every cell (#570)' },
   { prefix: '/logo.png', strategy: 'local', why: 'a static image' },
+  { prefix: '/home.js', strategy: 'local',
+    why: 'the front door\'s script, the same file in every cell (#579)' },
+  { prefix: '/home.css', strategy: 'local',
+    why: 'the front door\'s stylesheet, the same in every cell (#579)' },
+  { prefix: '/home-api', strategy: 'local',
+    why: 'the front door\'s view is the build, the mode and the ' +
+         'listeners, the same in every cell (#579)' },
   { prefix: '/tos', strategy: 'local', why: 'a static page' },
   { prefix: '/policy', strategy: 'local', why: 'a static page' },
   { prefix: '/did.json', strategy: 'local',

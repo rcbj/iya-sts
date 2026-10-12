@@ -500,7 +500,7 @@ The quickest ways to read it:
 
 ```bash
 curl -sk https://localhost:8081/admin-api | head -8   # version, build, commit, stamped
-curl -sk https://localhost:8081/                      # the front page's version line
+curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 

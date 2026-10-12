@@ -92,7 +92,9 @@ interface SurfaceOptions {
   // The catalog namespaces its pages draw.
   namespaces: string[];
   // Wraps a page's body (and the chooser) in the surface's frame; the body
-  // as it is where left out.
+  // as it is where left out. Its context carries the page's `view` where a
+  // page is drawn (#579: the front door's band is drawn from it), and none
+  // on a problem page, which draws its own card.
   frame?: (body: string, ctx: Json) => string;
   // What follows a title in the document's title.
   brand?: string;
@@ -246,7 +248,10 @@ class WebSurface extends WebPage {
                  (flash.message ? '<div class="ok">' +
                     WebSurface.esc(flash.message) + '</div>' : '');
     const title = v.page.title ? v.page.title(v.json, ctx) : 'IYA STS';
-    this.put(title, said + v.page.render(v.json, ctx), ctx);
+    // The frame is handed the view as well (#579); the renderer is not, so
+    // what it draws is a function of its view and the context alone.
+    this.put(title, said + v.page.render(v.json, ctx),
+             Object.assign({ view: v.json }, ctx));
   }
 
   /**

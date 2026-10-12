@@ -66,6 +66,12 @@ started the sign-in.
 | Front door | `/` | Finds the console, the portal and the documentation | Yes |
 | Choose your realm | at `/admin` and `/portal` | Says which realm to sign in through, where trust realms exist | Yes |
 
+**Since #579 the front door is a static page**, the first of the public
+pages to become one: the browser draws it, in its own language, from
+`GET /home-api/front` — a JSON view of the version, the mode and the five
+links — so it needs JavaScript; with scripts blocked it says so and links
+the documentation.
+
 ## The user portal
 
 A person's own account, at `/portal`. **Since #568 it is a static

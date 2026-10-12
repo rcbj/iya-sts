@@ -206,6 +206,12 @@ bundle_surface "the admin console" admin-ui/web_pages.ts StsConsole \
 bundle_surface "the user portal" portal/web_portal_pages.ts StsPortal \
   portal/portal.bundle.js portal/web_portal.ts portal/portal-spa.js
 
+# THE FRONT DOOR (#579), the first public surface: `home/home.bundle.js`
+# (`StsHome`, `web_home_pages.ts`) and `home/home-spa.js` (`web_home.ts`),
+# served at `/home.js` — `home-spa.js` because `home/home.js` is `home.ts`.
+bundle_surface "the front door" home/web_home_pages.ts StsHome \
+  home/home.bundle.js home/web_home.ts home/home-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).
