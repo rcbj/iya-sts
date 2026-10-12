@@ -11,6 +11,10 @@
     "en": "23bfd6168fa5fd44",
     "text": "En SPNEGO-skyddad sida annonseras här"
   },
+  "endpoints.route./spnego/pages.js.name": {
+    "en": "f32f6a1508ae1e7b",
+    "text": "SPNEGO-sidornas skript"
+  },
   "endpoints.route./spnego/protected.name": {
     "en": "8c763f4b490426dd",
     "text": "Den skyddade resursen"
@@ -334,6 +338,10 @@
   "endpoints.route./tls.name": {
     "en": "80219fab36a81bcc",
     "text": "Vad TLS-slutpunkten är"
+  },
+  "endpoints.route./tls/pages.js.name": {
+    "en": "02629f4022cc882e",
+    "text": "TLS-sidornas skript"
   },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",

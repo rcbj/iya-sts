@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "Indica que /spnego/protected existe, qué nombre de entidad principal de servicio hay detrás, qué mecanismos se aceptan y qué parámetros de consulta hacen fallar la negociación de una forma concreta. Nada de eso está en el propio intercambio del protocolo: un cliente tiene que derivar el SPN de la URL y encontrar el KDC en su propia configuración, razón por la cual tantos fallos de SPNEGO no dejan ninguna evidencia en la red. Agregue ?format=json."
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583). El entorno de ejecución y los renderizadores de las dos páginas de demostración de SPNEGO, en un único archivo construido por build-typescript.sh (kerberos/spnego-pages-spa.js) y servido precomprimido: dibuja /spnego, y el cuerpo de cada respuesta que da /spnego/protected, a partir del estado que lleva cada envoltorio. El estado de la negociación y su cabecera WWW-Authenticate no están entre lo que dibuja."
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "Responde 401 con un \"WWW-Authenticate: Negotiate\" desnudo a una solicitud no autenticada, y 200 con un AP-REP en ese encabezado a una válida. Las comprobaciones Kerberos son las de krb5_service.js, sin cambios: este endpoint añade la negociación y el HTTP que la transporta, y ningún código de protocolo propio."
@@ -1070,6 +1074,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "El certificado que presenta este servicio, el almacén de confianza de clientes contra el que verifica y lo que hace esta implementación con un certificado de cliente. EL PUERTO PRINCIPAL PIDE UNO EN CADA CONEXIÓN Y NO EXIGE NINGUNO, así que presentarlo es decisión del propio cliente. Dos escuchas propias de esta familia (8443, que lo pedía, y 9443, que lo exigía) se eliminaron el 2026-09-16 junto con el informe de conexión que servían. Lo que vale un certificado se decide donde se USA: GET /tls/sign-in para una sesión, el endpoint de token para RFC 8705, /xacml y /scim/v2 para los suyos. Agregue ?format=json."
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583). El entorno de ejecución y los renderizadores de las dos páginas de diagnóstico TLS, en un único archivo construido por build-typescript.sh (tls/tls-pages-spa.js) y servido precomprimido: dibuja /tls y /tls/forwarded a partir del estado que lleva cada envoltorio — el objeto que responde el ?format=json de cada una, construido sobre la solicitud que pidió la página — y envía las dos acciones de la página /tls a POST /tls/trust y POST /tls/trust/clear como JSON."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

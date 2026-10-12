@@ -11,6 +11,10 @@
     "en": "23bfd6168fa5fd44",
     "text": "此处公布一个受 SPNEGO 保护的页面"
   },
+  "endpoints.route./spnego/pages.js.name": {
+    "en": "f32f6a1508ae1e7b",
+    "text": "SPNEGO 页面的脚本"
+  },
   "endpoints.route./spnego/protected.name": {
     "en": "8c763f4b490426dd",
     "text": "受保护的资源"
@@ -334,6 +338,10 @@
   "endpoints.route./tls.name": {
     "en": "80219fab36a81bcc",
     "text": "TLS 端点是什么"
+  },
+  "endpoints.route./tls/pages.js.name": {
+    "en": "02629f4022cc882e",
+    "text": "TLS 页面的脚本"
   },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
