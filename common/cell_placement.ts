@@ -291,6 +291,12 @@ const ROWS: Row[] = [
     why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml2/sp/mock-rp.js', strategy: 'local',
     why: 'the mock service provider\'s pages\' script (#581)' },
+  // THE MOCK SERVICE PROVIDER'S OWN SESSION (#590): held in the cell the
+  // browser is pinned to, where the POST that opened it landed.
+  { prefix: '/saml2/sp/api/session', strategy: 'affinity', browser: true,
+    why: 'the mock service provider\'s own session (#590)' },
+  { prefix: '/saml2/sp/sign-out', strategy: 'affinity', browser: true,
+    why: 'ends the mock service provider\'s own session (#590)' },
   { prefix: '/saml2/ars', strategy: 'handler',
     handler: 'saml/saml2_sso.ts',
     why: 'an artifact is resolved by the cell that minted it (D10)' },
@@ -305,6 +311,12 @@ const ROWS: Row[] = [
     why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml11/rp/mock-rp.js', strategy: 'local',
     why: 'the mock relying party\'s pages\' script (#581)' },
+  // THE MOCK RELYING PARTY'S OWN SESSION (#590): held in the cell the
+  // browser is pinned to, where the POST that opened it landed.
+  { prefix: '/saml11/rp/api/session', strategy: 'affinity', browser: true,
+    why: 'the mock relying party\'s own session (#590)' },
+  { prefix: '/saml11/rp/sign-out', strategy: 'affinity', browser: true,
+    why: 'ends the mock relying party\'s own session (#590)' },
   { prefix: '/saml11/responder', strategy: 'handler',
     handler: 'saml/saml11_sso.ts',
     why: 'an artifact or attribute query is answered where it belongs' },
@@ -313,6 +325,12 @@ const ROWS: Row[] = [
   { prefix: '/wsfed/autopost.js', strategy: 'local', why: 'a static script' },
   { prefix: '/wsfed/rp/mock-rp.js', strategy: 'local',
     why: 'the mock relying party\'s pages\' script (#581)' },
+  // THE MOCK RELYING PARTY'S OWN SESSION (#590): held in the cell the
+  // browser is pinned to, where the POST that opened it landed.
+  { prefix: '/wsfed/rp/api/session', strategy: 'affinity', browser: true,
+    why: 'the mock relying party\'s own session (#590)' },
+  { prefix: '/wsfed/rp/sign-out', strategy: 'affinity', browser: true,
+    why: 'ends the mock relying party\'s own session (#590)' },
   { prefix: '/sts', strategy: 'handler', handler: 'ws-trust/wstrust.ts',
     why: 'a UsernameToken names its person, verified at home' },
   { prefix: '/federation', strategy: 'affinity', browser: true,

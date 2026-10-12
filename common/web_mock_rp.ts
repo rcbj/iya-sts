@@ -17,18 +17,23 @@
 //
 //   * WHICH MOCK THIS IS: the shell's `data-sts-mock-rp` names the family,
 //     and its base is the surface's base.
-//   * A VERDICT THE SHELL CARRIES: what a receiving door verified exists
-//     only on that response (`mock_rp_surface.ts`), so it is drawn from
-//     `data-sts-state` and nothing is fetched.
-//   * EVERY LINK IS THE BROWSER'S: a sign-in request, a sign-out, the
-//     metadata and the artifact loaded again are protocol messages, and
-//     Start another sign-in loads the page afresh — the start view MINTS a
-//     relying party's state, and a verdict's own URL is the receiving door
-//     (reloaded, a POST sent again or an artifact asked again: the one-shot
-//     demonstration). So nothing is followed in place, and the history is
+//   * THE APPLICATION ASKS ITS OWN BACK END (#590): a mock relying party
+//     answers a response that passed with a session of its own and a 303
+//     to its page, as a real one does, so the page asks
+//     `<base>/api/session` — with the cookie the browser sends — who is
+//     signed in, or what was refused; and the start view where the session
+//     holds nothing, or where the address asks for it (`?start=1`, Start
+//     another sign-in while signed in).
+//   * EVERY LINK IS THE BROWSER'S: a sign-in request, the metadata and the
+//     artifact loaded again are protocol messages, and Start another
+//     sign-in loads the page afresh — the start view MINTS a relying
+//     party's state. So nothing is followed in place, and the history is
 //     the browser's own.
-//   * NO ACTS: nothing here posts, so there is no API index and no CSRF
-//     token to carry; the start view is a GET.
+//   * THE ONE FORM IS THE BROWSER'S TOO: the relying party's own Sign out,
+//     posted as a form to `<base>/sign-out`, which ends the session and
+//     answers with a 303 — a relying party's sign-out, not an API call.
+//     So the runtime handles the language chooser and lets every other
+//     form go.
 //
 // `mock-rp-spa.js` and never `mock_rp_surface.js` on disk, the name of the
 // compiled server module beside it.
@@ -71,50 +76,36 @@ class MockRpSurfaceRuntime extends WebSurface {
   }
 
   /**
-   * The state the shell carried, or null where it carried none or it does
-   * not read.
-   *
-   * @param env - the browser's objects
-   * @returns `{ view }`, or null
-   */
-  static embeddedState(env: Json): Json {
-    const text = WebPage.attribute(env, 'data-sts-state');
-    if (!text) {
-      return null;
-    }
-    try {
-      const state = JSON.parse(text);
-      return state && typeof state === 'object' && state.view ? state : null;
-    } catch (e) {
-      // Not JSON: the page asks the start view instead.
-      return null;
-    }
-  }
-
-  /**
-   * Draws the page the location names: the verdict the shell carries, or
-   * the start view its operation answers.
+   * Draws the page the location names: what the relying party's session
+   * holds, or the start view its operation answers where it holds nothing
+   * or the address asks for the start (`?start=1`).
    *
    * @returns nothing
    */
   async route(): Promise<void> {
-    const state = MockRpSurfaceRuntime.embeddedState(this.env);
-    if (!state) {
+    const query = WebPage.queryOf(this.env.location.search);
+    if (query.start) {
       await super.route();
       return;
     }
-    const query = WebPage.queryOf(this.env.location.search);
     this.t = await this.i18n.load({ uiLocales: query.ui_locales || '' });
-    this.lastAnswer = state;
+    const answer = await this.publicJson('GET', this.options.base +
+                                                '/api/session');
+    const json = answer.json || {};
+    if (answer.status !== 200 || !json.view) {
+      await super.route();
+      return;
+    }
+    this.lastAnswer = json;
     this.view = { page: this.find(this.options.base) || this.options.pages[0],
-                  query: query, json: state.view };
+                  query: query, json: json.view };
     this.drawView();
   }
 
   /**
    * Draws the page in hand again in the language just chosen — from the
-   * view in hand: a verdict has nothing to fetch it again from, and asking
-   * the start view again would mint new state for nothing.
+   * view in hand: a refusal is answered once, and asking the start view
+   * again would mint new state for nothing.
    *
    * @returns nothing
    */
@@ -145,6 +136,20 @@ class MockRpSurfaceRuntime extends WebSurface {
    */
   onClick(_event: Json): void {
     // Nothing is prevented: the browser follows the link.
+  }
+
+  /**
+   * Handles the language chooser, and leaves every other form — the
+   * relying party's own Sign out — to the browser, which posts it.
+   *
+   * @param event - the submit event
+   * @returns nothing
+   */
+  onSubmit(event: Json): void {
+    const self = this;
+    this.i18n.onSubmit(event, function () {
+      self.redraw();
+    });
   }
 }
 

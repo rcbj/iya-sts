@@ -688,6 +688,7 @@ var config = {
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
     mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
+    mockSpSessionTtlMin: 15,                                               // Mock service provider session lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -708,7 +709,8 @@ var config = {
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
-    assertionCacheMax: 500                                                 // Assertions kept for AssertionIDReference
+    assertionCacheMax: 500,                                                // Assertions kept for AssertionIDReference
+    mockRpSessionTtlMin: 15                                                // Mock relying party session lifetime (minutes)
   },
 
   // --- WS-Trust --------------------------------------------------------
@@ -722,7 +724,8 @@ var config = {
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
     assertionLifetimeMin: 60, // Assertion lifetime (minutes)
-    mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
+    mockRpContextTtlMin: 30,  // Mock relying party wctx lifetime (minutes)
+    mockRpSessionTtlMin: 15   // Mock relying party session lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------

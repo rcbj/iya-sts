@@ -2399,38 +2399,49 @@ class WsFederation {
 
     // THE MOCK RELYING PARTY (#581): its pages are a static surface. The
     // start page is the shell, its view asked of `/wsfed/rp/api/start`
-    // (which mints the wctx); the verdict is the shell carrying it. What it
-    // does as a relying party is unchanged.
-    MockRpSurface.registerRoutes(app, 'wsfed', (req) => {
-      return this.mockRpStartView(req);
+    // (which mints the wctx). SINCE #590 IT BEHAVES AS A REAL RELYING PARTY:
+    // a sign-in response that passes opens a session of its own and is
+    // answered with a 303 to its application page, which reads the verdict
+    // from `/wsfed/rp/api/session`; its own sign-out ends that session and
+    // sends the browser to this identity provider's `wsignout1.0`, as a
+    // relying party's sign-out does.
+    MockRpSurface.registerRoutes(app, 'wsfed', {
+      start: (req) => {
+        return this.mockRpStartView(req);
+      },
+      signOut: (req) => {
+        return realms.currentPrefix() + this.mockRpSignOut(baseUrlOf(req));
+      }
     });
 
     app.get(RP_PATH, demoOnly, (req, res) => {
       log.debug("Entering the mock relying party (GET).");
 
-      // A cleanup request arriving at the relying party, which is the direction
-      // wsignoutcleanup1.0 is actually defined for. A real RP drops its own
-      // session here; this one has none and says so rather than pretending.
-      // A PROTOCOL PARTICIPANT'S DOOR, NOT A PAGE (#581): the identity
-      // provider's sign-out documents fetch it as a one-pixel image, so it
-      // answers exactly as it did, server-drawn.
+      // A cleanup request arriving at the relying party, which is the
+      // direction wsignoutcleanup1.0 is actually defined for. A PROTOCOL
+      // PARTICIPANT'S DOOR, NOT A PAGE (#581): the identity provider's
+      // sign-out documents fetch it as a one-pixel image, so it answers as
+      // it always did, server-drawn — and since #590 it does what a real
+      // relying party does here: it ENDS ITS OWN SESSION, the one the
+      // image fetch's cookie names, and clears the cookie.
       if (String(req.query.wa || '') === 'wsignoutcleanup1.0') {
+        const ended = MockRpSurface.end(req, res, 'wsfed');
         log.debug("Leaving the mock relying party. A cleanup request was " +
-                  "received.");
+                  "received; " + (ended ? 'its session ended.'
+                                        : 'it held none.'));
         return this.sendPage(res, 200, 'Cleanup received — mock relying party',
           '<h1>Cleanup received</h1><div class="ok">This relying party was ' +
-          'sent ' +
-          '<code>wa=wsignoutcleanup1.0</code> and would drop its own session ' +
-          'here.</div><p>It holds none: it verifies a sign-in response and ' +
-          'shows ' +
-          'it, and keeps nothing afterwards. The identity provider fetched ' +
-          'this ' +
-          'URL as a one-pixel image from its sign-out page, which is ' +
-          'front-channel logout.</p><p><a ' +
-          'href="' + RP_PATH + '">Start another ' +
-              'sign-in</a></p>');
+          'sent <code>wa=wsignoutcleanup1.0</code> and ' +
+          (ended ? 'ended its own session' + (ended.subject
+            ? ' for <code>' + this.deps.xmlEscape(ended.subject) + '</code>'
+            : '') + '.'
+                 : 'held no session for this browser, so there was nothing ' +
+                   'to end.') + '</div><p>The identity provider fetched ' +
+          'this URL as a one-pixel image from its sign-out page, which is ' +
+          'front-channel logout.</p><p><a href="' + RP_PATH + '">Back to ' +
+          'the relying party</a></p>');
       }
-      MockRpSurface.sendShell(req, res, 200, 'wsfed', null);
+      MockRpSurface.sendShell(req, res, 200, 'wsfed');
       log.debug("Leaving the mock relying party (GET). The shell.");
       return undefined;
     });
@@ -2443,16 +2454,9 @@ class WsFederation {
       logArtifact('WS-Federation sign-in response', 'as received by the mock ' +
                                                     'relying party', params);
       const verdict = this.verifySignInResponse(params, realm);
-      // 200 whatever the verdict: the POST was answered, and the verdict is the
-      // document. A 400 here would be this relying party reporting on the
-      // identity provider's behaviour with a status code the browser attributes
-      // to itself.
-      if (!verdict.ok) {
-        errorCodes.mark(res, 'STS-WSFED-0016');
-      }
-      // THE VERDICT IS DRAWN IN THE BROWSER (#581), from the shell's state:
-      // the facts the page printed, and the words the `mockRp` catalog's.
-      MockRpSurface.sendShell(req, res, 200, 'wsfed', {
+      // The facts of the verdict, which the page draws in the `mockRp`
+      // catalog's words (#581).
+      const view = {
         kind: 'result', family: 'wsfed', realm: realm, ok: !!verdict.ok,
         assertionVersion: verdict.assertionVersion || '',
         subject: verdict.subject || '',
@@ -2462,10 +2466,24 @@ class WsFederation {
         claims: verdict.claims.map((c) => {
           return { uri: c.uri, value: c.value };
         }),
-        document: String(params.wresult || ''),
-        signOut: this.mockRpSignOut(base)
-      });
-      log.debug("Leaving the mock relying party (POST). ok=" + verdict.ok);
+        document: String(params.wresult || '')
+      };
+      if (verdict.ok) {
+        // A REAL RELYING PARTY'S ANSWER (#590): its own session, and a 303
+        // to its application, which asks its own back end who is signed in.
+        MockRpSurface.signIn(req, res, 'wsfed', view,
+                             { subject: verdict.subject || '' });
+        log.debug("Leaving the mock relying party (POST). Signed in.");
+        return;
+      }
+      // 200, whatever the verdict, as it always was: the POST was answered,
+      // and a 400 here would be this relying party reporting on the identity
+      // provider's behaviour with a status code the browser attributes to
+      // itself. No session is opened; the refusal is held once for the page,
+      // which asks for it.
+      errorCodes.mark(res, 'STS-WSFED-0016');
+      MockRpSurface.refuse(req, res, 200, 'wsfed', view);
+      log.debug("Leaving the mock relying party (POST). Refused.");
     });
     log.debug("Leaving WsFederation.registerRoutes().");
   }

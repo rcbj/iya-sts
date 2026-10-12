@@ -749,11 +749,20 @@ class Saml2Sso {
 
     // THE MOCK SERVICE PROVIDER (#581): its pages are a static surface. The
     // start page is the shell, its view asked of `/saml2/sp/api/start`
-    // (which mints the RelayStates and signs the requests); a response
-    // arriving here is received and verified as it always was, and answered
-    // with the shell carrying the verdict.
-    MockRpSurface.registerRoutes(app, 'saml2', function (req) {
-      return self.mockSpStartView(req);
+    // (which mints the RelayStates and signs the requests). SINCE #590 IT
+    // BEHAVES AS A REAL SERVICE PROVIDER: a Response that passes opens a
+    // session of its own and is answered with a 303 to its application page,
+    // which reads the verdict from `/saml2/sp/api/session`; its own sign-out
+    // ends that session and sends a signed LogoutRequest to this identity
+    // provider (SP-initiated Single Logout), and a LogoutRequest the
+    // identity provider sends it ends the session it names.
+    MockRpSurface.registerRoutes(app, 'saml2', {
+      start: function (req) {
+        return self.mockSpStartView(req);
+      },
+      signOut: function (req, ended) {
+        return self.mockSpSignOut(req, ended);
+      }
     });
 
     app.get(SP_PATH, demoOnly, function (req, res) {
@@ -762,17 +771,17 @@ class Saml2Sso {
       const spEntityId = base + SP_PATH;
       const acsUrl = base + SP_PATH;
 
-      // A response can also arrive HERE by GET — the HTTP Redirect binding for
-      // a response, and the artifact binding's SAMLart. Both are answered by
-      // the same verification the POST below runs, because what arrived is the
-      // same document.
+      // A message can also arrive HERE by GET — the HTTP Redirect binding
+      // for a response, a LogoutRequest or a LogoutResponse, and the
+      // artifact binding's SAMLart. Each is answered by the same handling
+      // the POST below runs, because what arrived is the same document.
       const params: any = self.paramsOf(req);
-      if (params.SAMLResponse || params.SAMLart) {
-        log.debug("Leaving the mock service provider (GET). A response " +
+      if (params.SAMLResponse || params.SAMLart || params.SAMLRequest) {
+        log.debug("Leaving the mock service provider (GET). A message " +
                   "arrived on a GET binding.");
         return self.receiveAtMockSp(req, res, params, base, spEntityId, acsUrl);
       }
-      MockRpSurface.sendShell(req, res, 200, 'saml2', null);
+      MockRpSurface.sendShell(req, res, 200, 'saml2');
       log.debug("Leaving the mock service provider (GET). The shell.");
       return undefined;
     });
@@ -5972,21 +5981,32 @@ class Saml2Sso {
 
   // The mock service provider's assertion consumer: the RECEIVING is what
   // it always was — the artifact resolved once, in process, or the response
-  // decoded; verified check by check; the RelayState spent; 200 whatever
-  // the verdict, with its error code — and only the drawing moved (#581):
-  // the answer is the shell carrying the verdict's facts.
+  // decoded; verified check by check; the RelayState spent; a refusal 200
+  // with its error code (#581). SINCE #590 IT ANSWERS AS A REAL SERVICE
+  // PROVIDER: a Response that passes opens a session of its own and is
+  // answered with a 303 to the application page, which reads the verdict
+  // from the session; a refusal opens none and is held there once. It is
+  // also the service provider's Single Logout endpoint — a service
+  // provider's ACS and its SLO endpoint are commonly the same handler, and
+  // this identity provider sends a LogoutRequest or LogoutResponse for it
+  // here (`logoutReturnAddressFor()`'s last answer) — so the root element
+  // decides which of the three it is.
   private receiveAtMockSp(req, res, params, base, spEntityId, acsUrl) {
-    const { errorCodes } = this.deps;
+    const { errorCodes, validation } = this.deps;
     const { log, logArtifact } = this.deps.helpers;
     log.debug("Entering Saml2Sso.receiveAtMockSp().");
     const relayState = String(params.RelayState || '');
+    if (params.SAMLRequest) {
+      log.debug("Leaving Saml2Sso.receiveAtMockSp(). A LogoutRequest.");
+      return this.mockSpLogoutRequest(req, res, params, base, spEntityId);
+    }
     let xml = '';
     let arrived = '';
     if (params.SAMLart) {
       const resolved = this.resolveForMockSp(String(params.SAMLart));
       if (!resolved.ok) {
         errorCodes.mark(res, 'STS-SAML-0021');
-        MockRpSurface.sendShell(req, res, 200, 'saml2', {
+        MockRpSurface.refuse(req, res, 200, 'saml2', {
           kind: 'unresolved', family: 'saml2', why: resolved.why });
         log.debug("Leaving Saml2Sso.receiveAtMockSp(). The artifact did " +
                   "not resolve.");
@@ -5997,19 +6017,19 @@ class Saml2Sso {
     } else {
       xml = this.decodeMessage(String(params.SAMLResponse || ''));
       arrived = req.method === 'POST' ? 'post' : 'redirect';
+      const read = validation.parseXml(xml, 'SAML message');
+      const root = read.ok && read.value ? read.value.documentElement : null;
+      if (root && root.localName === 'LogoutResponse') {
+        log.debug("Leaving Saml2Sso.receiveAtMockSp(). A LogoutResponse.");
+        return this.mockSpLogoutResponse(req, res, params, xml, base,
+                                         spEntityId);
+      }
     }
     logArtifact('SAML 2.0 Response', 'as received by the mock service provider',
                 xml);
     const verdict = this.verifyResponse(xml, spEntityId, acsUrl, relayState);
     if (relayState) spContexts.delete(relayState);
-    // 200 whatever the verdict: the request was answered, and the verdict is
-    // the document. A 400 here would be this service provider reporting on the
-    // identity provider's behaviour with a status code the browser attributes
-    // to itself.
-    if (!verdict.ok) {
-      errorCodes.mark(res, 'STS-SAML-0022');
-    }
-    MockRpSurface.sendShell(req, res, 200, 'saml2', {
+    const view = {
       kind: 'result', family: 'saml2', entityId: spEntityId,
       arrived: arrived, ok: !!verdict.ok, subject: verdict.subject || '',
       checks: verdict.checks.map(function (c) {
@@ -6022,8 +6042,298 @@ class Saml2Sso {
       document: xml,
       singleLogout: SLO_PATH,
       artifactResolution: ARS_PATH
+    };
+    if (verdict.ok) {
+      MockRpSurface.signIn(req, res, 'saml2', view, {
+        subject: verdict.subject || '',
+        nameIdFormat: verdict.nameIdFormat || '',
+        sessionIndex: verdict.sessionIndex || '' });
+      log.debug("Leaving Saml2Sso.receiveAtMockSp(). Signed in.");
+      return undefined;
+    }
+    // 200 whatever the verdict, as it always was: the request was answered.
+    // A 400 here would be this service provider reporting on the identity
+    // provider's behaviour with a status code the browser attributes to
+    // itself.
+    errorCodes.mark(res, 'STS-SAML-0022');
+    MockRpSurface.refuse(req, res, 200, 'saml2', view);
+    log.debug("Leaving Saml2Sso.receiveAtMockSp(). Refused.");
+    return undefined;
+  }
+
+  // A detached or enveloped signature on a logout message from THIS
+  // identity provider, assessed against its own certificates — the trust
+  // this service provider has in the identity provider whose metadata it
+  // would be configured from. Unsigned is a supported state
+  // (`saml2.signResponse` off), as it is on a Response.
+  private mockSpLogoutSignature(req, params, xml, rootLocalName, field) {
+    const { requestSignature } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.mockSpLogoutSignature(). " + rootLocalName);
+    const assessed = requestSignature.assess({
+      binding: req.method === 'POST' ? 'post' : 'redirect',
+      rawQuery: this.rawQueryOf(req), params: params, xml: xml,
+      rootLocalName: rootLocalName, messageField: field, fields: {},
+      implicitCertificates: this.deps.helpers.ownRsaCertificates('xml')
+        .map(function (one: any): string {
+          return stsCrypto.stripPem(one.certPem);
+        })
     });
-    log.debug("Leaving Saml2Sso.receiveAtMockSp(). ok=" + verdict.ok);
+    const ok = !assessed.signed || assessed.outcome === 'verified';
+    log.debug("Leaving Saml2Sso.mockSpLogoutSignature(). " +
+              assessed.outcome);
+    return { name: 'the ' + rootLocalName + ' signature verifies', ok: ok,
+             detail: assessed.signed
+               ? (assessed.outcome === 'verified'
+                 ? (assessed.sigAlg || 'signed') + ', ' + assessed.binding +
+                   ' binding'
+                 : assessed.why || assessed.outcome)
+               : 'unsigned — saml2.signResponse is off, which is a ' +
+                 'supported state' };
+  }
+
+  /**
+   * The mock service provider's own sign-out (#590): its session has
+   * ended, and where it held a signed-in person a signed LogoutRequest
+   * naming them goes to this identity provider on the Redirect binding —
+   * SP-initiated Single Logout (saml-profiles-2.0-os section 4.4). Its
+   * RelayState is this service provider's state, so the LogoutResponse can
+   * be matched to it when it comes back.
+   *
+   * @param req - the request
+   * @param ended - the session that ended, or null
+   * @returns where the browser goes; '' for the application page
+   */
+  mockSpSignOut(req: any, ended: any): string {
+    const { baseUrlOf, log, randomId } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.mockSpSignOut().");
+    if (!ended || !ended.signedIn) {
+      log.debug("Leaving Saml2Sso.mockSpSignOut(). Nobody was signed in.");
+      return '';
+    }
+    const base = baseUrlOf(req);
+    const spEntityId = base + SP_PATH;
+    const destination = base + SLO_PATH;
+    const built = this.spLogoutRequest(spEntityId, destination,
+                                       String(ended.subject || ''),
+                                       String(ended.nameIdFormat || ''),
+                                       String(ended.sessionIndex || ''));
+    // 128 bits (#65), section 13's floor for a value that looks up state.
+    const relayState = 'sp-' + randomId(16);
+    spContexts.set(relayState, { requestId: built.id, binding: 'logout',
+                                 expires: Date.now() + this.spContextTtlMs() });
+    let query = 'SAMLRequest=' +
+      encodeURIComponent(this.encodeRedirect(built.xml)) +
+      '&RelayState=' + encodeURIComponent(relayState);
+    const sigAlg = this.deps.documentSettings.signatureOptions().sigAlg;
+    query += '&SigAlg=' + encodeURIComponent(sigAlg);
+    query += '&Signature=' +
+      encodeURIComponent(this.signQueryString(query, sigAlg));
+    this.deps.helpers.logArtifact('SAML 2.0 LogoutRequest', 'as sent by the ' +
+                                  'mock service provider', built.xml);
+    log.debug("Leaving Saml2Sso.mockSpSignOut(). A LogoutRequest goes to " +
+              destination + ".");
+    return destination + '?' + query;
+  }
+
+  // The mock service provider's LogoutRequest (#590): its Issuer, the
+  // identity provider's SLO endpoint as Destination, the NameID it was
+  // given in the format it was given, and the SessionIndex the assertion
+  // carried — what saml-core-2.0-os section 3.7.1 asks of a service
+  // provider ending a session.
+  private spLogoutRequest(spEntityId, destination, nameId, nameIdFormat,
+                          sessionIndex) {
+    const { genId, iso, log, xmlEscape } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.spLogoutRequest().");
+    const id = genId();
+    const xml =
+      '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
+        NS_SAML + '" ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) +
+        '" Destination="' + xmlEscape(destination) + '">' +
+        '<saml:Issuer>' + xmlEscape(spEntityId) + '</saml:Issuer>' +
+        '<saml:NameID' + (nameIdFormat ? ' Format="' +
+          xmlEscape(nameIdFormat) + '"' : '') + '>' + xmlEscape(nameId) +
+        '</saml:NameID>' +
+        (sessionIndex ? '<samlp:SessionIndex>' + xmlEscape(sessionIndex) +
+          '</samlp:SessionIndex>' : '') +
+      '</samlp:LogoutRequest>';
+    log.debug("Leaving Saml2Sso.spLogoutRequest(). id=" + id);
+    return { id: id, xml: xml };
+  }
+
+  // THE LogoutResponse TO THE MOCK SERVICE PROVIDER'S OWN SIGN-OUT (#590):
+  // checked as a service provider checks one — it is a LogoutResponse from
+  // this identity provider, to here, answering the request it sent, with a
+  // Success status and a signature that verifies — and the outcome held for
+  // the application page to show once, after a 303 to it. The session ended
+  // when the sign-out began, whatever this says: a service provider does
+  // not keep a person signed in because the identity provider's answer was
+  // wrong.
+  private mockSpLogoutResponse(req, res, params, xml, base, spEntityId) {
+    const { errorCodes, validation } = this.deps;
+    const { firstByLocal, log, logArtifact, textByLocal } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.mockSpLogoutResponse().");
+    logArtifact('SAML 2.0 LogoutResponse', 'as received by the mock service ' +
+                'provider', xml);
+    const checks = [];
+    const add = function (name, ok, detail) {
+      log.debug("Entering add().");
+      checks.push({ name: name, ok: !!ok, detail: String(detail) });
+      log.debug("Leaving add().");
+    };
+    const read = validation.parseXml(xml, 'LogoutResponse');
+    const root = read.ok ? read.value.documentElement : null;
+    add('it is a samlp:LogoutResponse',
+        !!root && root.localName === 'LogoutResponse',
+        root ? '<' + root.localName + '>' : 'nothing parsed');
+    if (root) {
+      const issuer = textByLocal(root, 'Issuer');
+      add('the issuer is this identity provider',
+          issuer === this.idpEntityId(), issuer || '(none)');
+      const destination = root.getAttribute('Destination') || '';
+      add('Destination names this service provider',
+          !destination || destination === base + SP_PATH,
+          destination || '(none, which section 3.4.5.2 allows unsigned)');
+      const relayState = String(params.RelayState || '');
+      const known = spContexts.get(relayState);
+      const inResponseTo = root.getAttribute('InResponseTo') || '';
+      add('its InResponseTo is the LogoutRequest this service provider sent',
+          !!known && known.binding === 'logout' &&
+          inResponseTo === known.requestId,
+          known ? (inResponseTo || '(none)') + ', expected ' + known.requestId
+                : 'this service provider has no record of the request — the ' +
+                  'RelayState was altered, or it did not sign out from ' +
+                  SP_PATH);
+      if (relayState) spContexts.delete(relayState);
+      const statusEl = firstByLocal(root, 'StatusCode');
+      const status = statusEl ? (statusEl.getAttribute('Value') || '') : '';
+      add('the status is Success', status === STATUS_SUCCESS,
+          status || '(no StatusCode)');
+      checks.push(this.mockSpLogoutSignature(req, params, xml,
+                                             'LogoutResponse',
+                                             'SAMLResponse'));
+    }
+    const ok = checks.every(function (c) { return c.ok; });
+    if (!ok) {
+      errorCodes.mark(res, 'STS-SAML-0110');
+    }
+    MockRpSurface.hold(req, res, 'saml2', {
+      kind: 'signedOut', family: 'saml2', entityId: spEntityId, ok: ok,
+      checks: checks, document: xml });
+    // error-code: none — marked above where the checks failed; a sign-out goes on to the page either way.
+    res.set('Cache-Control', 'no-store')
+       .redirect(303, MockRpSurface.appPath('saml2'));
+    log.debug("Leaving Saml2Sso.mockSpLogoutResponse(). ok=" + ok);
+    return undefined;
+  }
+
+  // A LogoutRequest THIS IDENTITY PROVIDER SENT THE MOCK SERVICE PROVIDER
+  // (#590) — from its own identity-provider-initiated Single Logout or
+  // `/logout`'s page, which name each service provider a session signed in
+  // to with the request ready to send. Checked as a service provider checks
+  // one; the sessions it names (by NameID and SessionIndex, as a real
+  // service provider finds them, since the request is the identity
+  // provider's and need not carry this browser's cookie) end; and the
+  // answer is what section 4.4.4.2 says it is: a LogoutResponse back to the
+  // identity provider's Single Logout service, on the Redirect binding and
+  // signed, Success or — where the checks failed and nothing was ended —
+  // Requester.
+  private mockSpLogoutRequest(req, res, params, base, spEntityId) {
+    const { errorCodes, validation } = this.deps;
+    const { firstByLocal, genId, iso, log, logArtifact, textByLocal,
+            xmlEscape } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.mockSpLogoutRequest().");
+    const xml = this.decodeMessage(String(params.SAMLRequest || ''));
+    logArtifact('SAML 2.0 LogoutRequest', 'as received by the mock service ' +
+                'provider', xml);
+    const checks = [];
+    const add = function (name, ok, detail) {
+      log.debug("Entering add().");
+      checks.push({ name: name, ok: !!ok, detail: String(detail) });
+      log.debug("Leaving add().");
+    };
+    const read = validation.parseXml(xml, 'LogoutRequest');
+    const root = read.ok ? read.value.documentElement : null;
+    add('it is a samlp:LogoutRequest',
+        !!root && root.localName === 'LogoutRequest',
+        root ? '<' + root.localName + '>' : 'nothing parsed');
+    let nameId = '';
+    let sessionIndex = '';
+    let requestId = '';
+    if (root && root.localName === 'LogoutRequest') {
+      requestId = root.getAttribute('ID') || '';
+      const issuer = textByLocal(root, 'Issuer');
+      add('the issuer is this identity provider',
+          issuer === this.idpEntityId(), issuer || '(none)');
+      const destination = root.getAttribute('Destination') || '';
+      add('Destination names this service provider',
+          !destination || destination === base + SP_PATH,
+          destination || '(none)');
+      checks.push(this.mockSpLogoutSignature(req, params, xml,
+                                             'LogoutRequest', 'SAMLRequest'));
+      const nameEl = firstByLocal(root, 'NameID');
+      nameId = nameEl ? (nameEl.textContent || '').trim() : '';
+      add('it names a subject', !!nameId,
+          nameId || (firstByLocal(root, 'EncryptedID')
+            ? 'an EncryptedID, which this service provider holds no key ' +
+              'to read'
+            : '(none)'));
+      sessionIndex = textByLocal(root, 'SessionIndex');
+      add('it names a SessionIndex', !!sessionIndex,
+          sessionIndex || '(none) — section 3.7.1 lets it be left out, ' +
+          'and then it would end every session of the subject');
+    }
+    const ok = checks.every(function (c) { return c.ok; });
+    let ended = 0;
+    if (ok) {
+      const names = function (one) {
+        return one.subject === nameId &&
+          (!sessionIndex || one.sessionIndex === sessionIndex);
+      };
+      const mine = MockRpSurface.held(req, 'saml2');
+      if (mine && names(mine.session)) {
+        MockRpSurface.end(req, res, 'saml2');
+        ended += 1;
+      }
+      ended += MockRpSurface.endWhere('saml2', names);
+    } else {
+      errorCodes.mark(res, 'STS-SAML-0111');
+      log.warn(errorCodes.tag('STS-SAML-0111') + 'saml2: the mock service ' +
+               'provider refused a LogoutRequest: ' + checks.filter(
+                 function (c) { return !c.ok; }).map(function (c) {
+                 return c.name + ' (' + c.detail + ')';
+               }).join('; ') + '.');
+    }
+    log.info('saml2: the mock service provider received a LogoutRequest' +
+             (nameId ? ' for ' + nameId : '') + ' and ended ' + ended +
+             ' session(s).');
+    const destination = base + SLO_PATH;
+    const id = genId();
+    const response =
+      '<samlp:LogoutResponse xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
+        NS_SAML + '" ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) +
+        '" Destination="' + xmlEscape(destination) + '"' +
+        (requestId ? ' InResponseTo="' + xmlEscape(requestId) + '"' : '') +
+        '><saml:Issuer>' + xmlEscape(spEntityId) + '</saml:Issuer>' +
+        '<samlp:Status><samlp:StatusCode Value="' +
+        (ok ? STATUS_SUCCESS : STATUS_REQUESTER) + '"/></samlp:Status>' +
+      '</samlp:LogoutResponse>';
+    logArtifact('SAML 2.0 LogoutResponse', 'as sent by the mock service ' +
+                'provider', response);
+    let query = 'SAMLResponse=' +
+      encodeURIComponent(this.encodeRedirect(response));
+    if (params.RelayState) {
+      query += '&RelayState=' + encodeURIComponent(String(params.RelayState));
+    }
+    const sigAlg = this.deps.documentSettings.signatureOptions().sigAlg;
+    query += '&SigAlg=' + encodeURIComponent(sigAlg);
+    query += '&Signature=' +
+      encodeURIComponent(this.signQueryString(query, sigAlg));
+    // error-code: none — marked above where the checks failed; the answer is a LogoutResponse either way.
+    res.set('Cache-Control', 'no-store')
+       .redirect(303, destination + '?' + query);
+    log.debug("Leaving Saml2Sso.mockSpLogoutRequest(). ok=" + ok + ", " +
+              ended + " ended.");
     return undefined;
   }
 }

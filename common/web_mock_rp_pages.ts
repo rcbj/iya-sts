@@ -10,11 +10,13 @@
 //
 // `/wsfed/rp`, `/saml2/sp` and `/saml11/rp` are one static surface
 // (`common/CLAUDE.md` 3cm, `common/mock_rp_surface.ts`): each a start page,
-// drawn from `GET <base>/api/start`, and a verdict, drawn from the state the
-// receiving answer's shell carries — WS-Federation's sign-in response, a
-// SAML 2.0 Response on any of its bindings or an artifact that did not
-// resolve, a SAML 1.1 Browser/POST or Browser/Artifact verdict or a spent
-// artifact.
+// drawn from `GET <base>/api/start`, and a verdict, drawn from what the
+// relying party's own session holds (`GET <base>/api/session`, #590) —
+// WS-Federation's sign-in response, a SAML 2.0 Response on any of its
+// bindings, an artifact that did not resolve or the LogoutResponse to its
+// own sign-out, a SAML 1.1 Browser/POST or Browser/Artifact verdict or a
+// spent artifact — with the session beside it: who is signed in, and the
+// relying party's own Sign out.
 //
 // The markup is what the three modules' handlers drew, in the `mockRp`
 // catalogs' words (#539), on the card (`/web/card.css`, `.card.mockrp`). A
@@ -78,12 +80,19 @@ const SAML2_ARRIVED: Record<string, string> = {
   redirect: 'mockRp.saml2.result.sub.redirect',
   artifact: 'mockRp.saml2.result.sub.artifact'
 };
+// The note under each family's own Sign out (#590).
+const SIGN_OUT_NOTES: Record<string, string> = {
+  wsfed: 'mockRp.wsfed.session.signOutNote',
+  saml2: 'mockRp.saml2.session.signOutNote',
+  saml11: 'mockRp.saml11.session.signOutNote'
+};
 const TITLES: Record<string, string> = {
   'wsfed start': 'mockRp.wsfed.title.start',
   'wsfed result': 'mockRp.wsfed.title.result',
   'saml2 start': 'mockRp.saml2.title.start',
   'saml2 result': 'mockRp.saml2.title.result',
   'saml2 unresolved': 'mockRp.saml2.title.unresolved',
+  'saml2 signedOut': 'mockRp.saml2.title.signedOut',
   'saml11 start': 'mockRp.saml11.title.start',
   'saml11 spent': 'mockRp.saml11.title.spent'
 };
@@ -136,6 +145,40 @@ class MockRpPages {
   static document(heading: string, text: string, t: Json): string {
     return '<h2>' + heading + '</h2><pre>' +
       (text ? esc(text) : t.html('mockRp.nothing')) + '</pre>';
+  }
+
+  /**
+   * The relying party's own session beside a verdict (#590): who is signed
+   * in and until when, with its Sign out — a form the browser posts — or,
+   * beside a refusal, whether an earlier session is still open.
+   *
+   * @param family - `wsfed`, `saml2` or `saml11`
+   * @param view - the verdict, its `session` what the session view said
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static session(family: string, view: Json, t: Json): string {
+    const about = (view && view.session) || {};
+    const base = BASES[family];
+    const again = '<p><a href="' + base + '?start=1">' +
+      t.html('mockRp.startAnother') + '</a></p>';
+    if (about.signedIn && view.ok) {
+      return '<h2>' + t.html('mockRp.session.heading') + '</h2>' +
+        '<p>' + t.html('mockRp.session.opened') + '</p><p>' +
+        t.html('mockRp.session.until', { subject: about.subject,
+                                         expires: about.expires }) +
+        '</p><form method="post" action="' + base + '/sign-out">' +
+        '<button type="submit">' + t.html('mockRp.session.signOut') +
+        '</button></form><p class="sub">' + t.html(SIGN_OUT_NOTES[family]) +
+        '</p>' + again;
+    }
+    if (about.signedIn) {
+      return '<div class="meta"><div>' +
+        t.html('mockRp.session.stillSignedIn') + '</div></div><p><a href="' +
+        base + '">' + t.html('mockRp.session.back') + '</a></p>';
+    }
+    return '<div class="meta"><div>' + t.html('mockRp.session.refused') +
+      '</div></div>' + again;
   }
 
   /**
@@ -197,11 +240,7 @@ class MockRpPages {
         : '') +
       MockRpPages.document(t.html('mockRp.wsfed.result.document'),
                            view.document, t) +
-      '<p><a href="' + BASES.wsfed + '">' +
-      t.html('mockRp.startAnother') + '</a> &middot; <a href="' +
-      esc(view.signOut) + '">' + t.html('mockRp.wsfed.signOut') +
-      '</a></p><div class="meta"><div>' +
-      t.html('mockRp.wsfed.result.keepsNothing') + '</div></div>';
+      MockRpPages.session('wsfed', view, t);
   }
 
   /**
@@ -275,16 +314,14 @@ class MockRpPages {
         : '') +
       MockRpPages.document(t.html('mockRp.saml2.result.document'),
                            view.document, t) +
-      '<p><a href="' + BASES.saml2 + '">' + t.html('mockRp.startAnother') +
-      '</a> &middot; <a href="' + esc(view.singleLogout) + '">' +
-      t.html('mockRp.saml2.signOut') + '</a></p><div class="meta"><div>' +
-      t.html('mockRp.saml2.result.keepsNothing') + '</div>' +
       (arrived === 'artifact'
-        ? '<div>' + t.html('mockRp.saml2.result.inProcess',
-                           { ars: view.artifactResolution }) + ' <a href="' +
+        ? '<div class="meta"><div>' +
+          t.html('mockRp.saml2.result.inProcess',
+                 { ars: view.artifactResolution }) + ' <a href="' +
           esc(view.artifactResolution) + '">' +
-          t.html('mockRp.saml2.result.arsPage') + '</a></div>'
-        : '') + '</div>';
+          t.html('mockRp.saml2.result.arsPage') + '</a></div></div>'
+        : '') +
+      MockRpPages.session('saml2', view, t);
   }
 
   /**
@@ -297,8 +334,31 @@ class MockRpPages {
   static saml2Unresolved(view: Json, t: Json): string {
     return '<h1>' + t.html('mockRp.saml2.unresolved.heading') + '</h1>' +
       '<div class="err">' + esc(view.why) + '</div><p>' +
-      t.html('mockRp.saml2.unresolved.note') + '</p><p><a href="' +
-      BASES.saml2 + '">' + t.html('mockRp.startAnother') + '</a></p>';
+      t.html('mockRp.saml2.unresolved.note') + '</p>' +
+      MockRpPages.session('saml2', view, t);
+  }
+
+  /**
+   * SAML 2.0's page after its own sign-out (#590): the identity provider's
+   * LogoutResponse, checked.
+   *
+   * @param view - `{ entityId, ok, checks, document }`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static saml2SignedOut(view: Json, t: Json): string {
+    return '<h1>' + t.html('mockRp.saml2.signedOut.heading') + '</h1>' +
+      '<p class="sub">' + t.html('mockRp.saml2.signedOut.sub',
+                                 { entityId: view.entityId }) + '</p>' +
+      (view.ok
+        ? '<div class="ok">' + t.html('mockRp.saml2.signedOut.ok') + '</div>'
+        : '<div class="err">' + t.html('mockRp.saml2.signedOut.notOk') +
+          '</div>') +
+      MockRpPages.checks(view.checks, t) +
+      MockRpPages.document(t.html('mockRp.saml2.signedOut.document'),
+                           view.document, t) +
+      '<p><a href="' + BASES.saml2 + '?start=1">' +
+      t.html('mockRp.startAnother') + '</a></p>';
   }
 
   /**
@@ -367,26 +427,26 @@ class MockRpPages {
       MockRpPages.document(artifact
         ? t.html('mockRp.saml11.result.documentArtifact')
         : t.html('mockRp.saml11.result.documentPost'), view.document, t) +
-      '<div class="row"><a class="button secondary" href="' + BASES.saml11 +
-      '">' + t.html('mockRp.saml11.again') + '</a>' +
       (artifact && view.again
-        ? '<a class="button secondary" href="' +
-          esc(view.again) + '">' + t.html('mockRp.saml11.reload') + '</a>'
-        : '') + '</div>';
+        ? '<div class="row"><a class="button secondary" href="' +
+          esc(view.again) + '">' + t.html('mockRp.saml11.reload') +
+          '</a></div>'
+        : '') +
+      MockRpPages.session('saml11', view, t);
   }
 
   /**
    * SAML 1.1's page for a spent artifact.
    *
+   * @param view - `{ session }`, what the session view said beside it
    * @param t - the translator
    * @returns the HTML
    */
-  static saml11Spent(t: Json): string {
+  static saml11Spent(view: Json, t: Json): string {
     return '<h1>' + t.html('mockRp.saml11.result.artifact') + '</h1>' +
       '<div class="err">' + t.html('mockRp.saml11.spent.err') + '</div><p>' +
-      t.html('mockRp.saml11.spent.note') + '</p><div class="row"><a ' +
-      'class="button" href="' + BASES.saml11 + '">' +
-      t.html('mockRp.saml11.startAgain') + '</a></div>';
+      t.html('mockRp.saml11.spent.note') + '</p>' +
+      MockRpPages.session('saml11', view || {}, t);
   }
 
   /**
@@ -424,13 +484,16 @@ class MockRpPages {
       if (kind === 'result') {
         return MockRpPages.saml2Result(view, t);
       }
+      if (kind === 'signedOut') {
+        return MockRpPages.saml2SignedOut(view, t);
+      }
       return kind === 'unresolved' ? MockRpPages.saml2Unresolved(view, t)
                                    : MockRpPages.saml2Start(view, t);
     }
     if (kind === 'result') {
       return MockRpPages.saml11Result(view, t);
     }
-    return kind === 'spent' ? MockRpPages.saml11Spent(t)
+    return kind === 'spent' ? MockRpPages.saml11Spent(view, t)
                             : MockRpPages.saml11Start(view, t);
   }
 
@@ -469,8 +532,9 @@ class MockRpPages {
 }
 
 /**
- * A family's page row: its path, the start view's operation, and the
- * renderer and title for whichever view it is handed.
+ * A family's page row: its path, the start view's operation (the session
+ * view is asked first, by the runtime), and the renderer and title for
+ * whichever view it is handed.
  *
  * @param family - `wsfed`, `saml2` or `saml11`
  * @returns the row

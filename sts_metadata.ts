@@ -6992,7 +6992,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'own realm, the validity window, and the wctx round trip (an ' +
           'identity provider that re-encoded it produces the same symptom as ' +
           'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
-          'direction that message is really defined for.',
+          'direction that message is really defined for. Since #590 it is a ' +
+          'relying party with a session of its own: a response that passes ' +
+          'is answered with a 303 to this page, which reads the verdict from ' +
+          '/wsfed/rp/api/session; a refusal keeps its 200 and its error ' +
+          'code; the cleanup ends that session.',
     demo: true },
   { path: '/wsfed/rp/mock-rp.js', group: 'WS-Federation',
     name: 'The mock relying party\'s script', specs: [],
@@ -7000,14 +7004,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying parties\' pages in one file, built by ' +
           'build-typescript.sh (common/mock-rp-spa.js) and served ' +
           'precompressed under each family\'s own path: it draws the start ' +
-          'page from /wsfed/rp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
+          'page from /wsfed/rp/api/start and, since #590, the verdict from ' +
+          '/wsfed/rp/api/session — what the mock relying party\'s own ' +
+          'session holds.',
     demo: true },
   { path: '/wsfed/rp/api/start', group: 'WS-Federation',
     name: 'The mock relying party\'s start view', specs: [],
     what: 'NON-SPEC (#581). Mints a wctx and answers, as facts, the sign-in ' +
           'requests the mock relying party offers — the start page\'s ' +
           'view. Language-free; no-store.',
+    demo: true },
+  { path: '/wsfed/rp/api/session', group: 'WS-Federation',
+    name: 'The mock relying party\'s session', specs: [],
+    what: 'NON-SPEC (#590). The mock relying party\'s application asking ' +
+          'its own back end who is signed in: with the cookie its session ' +
+          'was opened with (HttpOnly, SameSite=Lax, scoped to /wsfed/rp), ' +
+          'it answers that session\'s verdict, or a refusal once, or ' +
+          'nothing. JSON; no-store.',
+    demo: true },
+  { path: '/wsfed/rp/sign-out', group: 'WS-Federation',
+    name: 'The mock relying party\'s own sign-out', specs: [],
+    what: 'NON-SPEC (#590). Ends the mock relying party\'s session and ' +
+          'answers a 303 to this identity provider\'s wsignout1.0, with the ' +
+          'relying party as wreply — a relying party\'s sign-out.',
     demo: true },
 
   // --- SAML 2.0 ---
@@ -7190,7 +7209,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'validity window, the bearer SubjectConfirmationData that section ' +
           '4.1.4.2 requires, and the RelayState round trip. It also resolves ' +
           'an artifact, in process rather than by this service making a SOAP ' +
-          'call to itself.',
+          'call to itself. Since #590 it is a service provider with a ' +
+          'session of its own: a Response that passes is answered with a 303 ' +
+          'to this page, which reads the verdict from /saml2/sp/api/session; ' +
+          'a refusal keeps its 200 and its error code; and it is its own ' +
+          'Single Logout endpoint, ending the session a LogoutRequest names ' +
+          'and checking the LogoutResponse to its own sign-out.',
     demo: true },
   { path: '/saml2/sp/mock-rp.js', group: 'SAML 2.0',
     name: 'The mock service provider\'s script', specs: [],
@@ -7198,8 +7222,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying parties\' pages in one file, built by ' +
           'build-typescript.sh (common/mock-rp-spa.js) and served ' +
           'precompressed under each family\'s own path: it draws the start ' +
-          'page from /saml2/sp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
+          'page from /saml2/sp/api/start and, since #590, the verdict from ' +
+          '/saml2/sp/api/session — what the mock service provider\'s own ' +
+          'session holds.',
     demo: true },
   { path: '/saml2/sp/api/start', group: 'SAML 2.0',
     name: 'The mock service provider\'s start view', specs: [],
@@ -7207,6 +7232,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'AuthnRequests the mock service provider offers, signs three with ' +
           'this service\'s key, and answers them as facts — the start ' +
           'page\'s view. Language-free; no-store.',
+    demo: true },
+  { path: '/saml2/sp/api/session', group: 'SAML 2.0',
+    name: 'The mock service provider\'s session', specs: [],
+    what: 'NON-SPEC (#590). The mock service provider\'s application asking ' +
+          'its own back end who is signed in: with the cookie its session ' +
+          'was opened with (HttpOnly, SameSite=Lax, scoped to /saml2/sp), ' +
+          'it answers that session\'s verdict, or a refusal once, or ' +
+          'nothing. JSON; no-store.',
+    demo: true },
+  { path: '/saml2/sp/sign-out', group: 'SAML 2.0',
+    name: 'The mock service provider\'s own sign-out', specs: [],
+    what: 'NON-SPEC (#590). Ends the mock service provider\'s session and, ' +
+          'where somebody was signed in, answers a 303 carrying a signed ' +
+          'LogoutRequest to this identity provider\'s Single Logout service ' +
+          'on the Redirect binding — SP-initiated Single Logout.',
     demo: true },
 
   // --- SAML 1.1 ---
@@ -7328,8 +7368,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'request, the confirmation method matching the profile, and the ' +
           'DoNotCacheCondition that Browser/POST carries and the artifact ' +
           'profile does not. It resolves an artifact IN PROCESS rather than ' +
-          'by this service making a SOAP call to itself, and reloading the ' +
-          'result page demonstrates the one-shot rule rather than erroring.',
+          'by this service making a SOAP call to itself, and loading the ' +
+          'artifact again demonstrates the one-shot rule rather than ' +
+          'erroring. Since #590 it is a relying party with a session of its ' +
+          'own: a response that passes is answered with a 303 to TARGET (its ' +
+          'own page), which reads the verdict from /saml11/rp/api/session; a ' +
+          'refusal keeps its status and its error code.',
     demo: true },
   { path: '/saml11/rp/mock-rp.js', group: 'SAML 1.1',
     name: 'The mock relying party\'s script', specs: [],
@@ -7337,14 +7381,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying parties\' pages in one file, built by ' +
           'build-typescript.sh (common/mock-rp-spa.js) and served ' +
           'precompressed under each family\'s own path: it draws the start ' +
-          'page from /saml11/rp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
+          'page from /saml11/rp/api/start and, since #590, the verdict from ' +
+          '/saml11/rp/api/session — what the mock relying party\'s own ' +
+          'session holds.',
     demo: true },
   { path: '/saml11/rp/api/start', group: 'SAML 1.1',
     name: 'The mock relying party\'s start view', specs: [],
     what: 'NON-SPEC (#581). Answers, as facts, the two browser profiles\' ' +
           'starts at the inter-site transfer service that the mock relying ' +
           'party offers — the start page\'s view. Language-free; no-store.',
+    demo: true },
+  { path: '/saml11/rp/api/session', group: 'SAML 1.1',
+    name: 'The mock relying party\'s session', specs: [],
+    what: 'NON-SPEC (#590). The mock relying party\'s application asking ' +
+          'its own back end who is signed in: with the cookie its session ' +
+          'was opened with (HttpOnly, SameSite=Lax, scoped to /saml11/rp), ' +
+          'it answers that session\'s verdict, or a refusal once, or ' +
+          'nothing. JSON; no-store.',
+    demo: true },
+  { path: '/saml11/rp/sign-out', group: 'SAML 1.1',
+    name: 'The mock relying party\'s own sign-out', specs: [],
+    what: 'NON-SPEC (#590). Ends the mock relying party\'s session and ' +
+          'answers a 303 to its page. SAML 1.1 defines no logout, so the ' +
+          'identity provider is not told.',
     demo: true },
 
   // --- Federation ---

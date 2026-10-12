@@ -8671,6 +8671,19 @@ const SETTINGS = [
                  'trip. It is that page\'s own state and nothing to do with ' +
                  'the identity provider\'s.' },
 
+  // #590: the mock relying parties keep a session of their own, as a real
+  // relying party does, and it is short-lived on purpose.
+  { key: 'saml2.mockSpSessionTtlMin', group: 'SAML 2.0',
+    label: 'Mock service provider session lifetime (minutes)',
+    env: 'STS_SAML2_MOCK_SP_SESSION_TTL_MIN', type: 'int', dflt: 15, min: 1,
+    max: 1440, runtime: true,
+    description: 'How long a session /saml2/sp — the NON-SPEC mock service ' +
+                 'provider — opens of its own lasts, once a Response passes ' +
+                 'its checks: its cookie\'s lifetime and its row\'s. Its own ' +
+                 'sign-out and a LogoutRequest from the identity provider ' +
+                 'end it sooner. Nothing to do with the identity ' +
+                 'provider\'s session.' },
+
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
     env: 'STS_SAML2_REDIRECT_WARN_LENGTH', type: 'int', dflt: 8000,
@@ -8957,6 +8970,15 @@ const SETTINGS = [
                  'AssertionIDReference. Oldest out first. Was the constant ' +
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
 
+  { key: 'saml11.mockRpSessionTtlMin', group: 'SAML 1.1',
+    label: 'Mock relying party session lifetime (minutes)',
+    env: 'STS_SAML11_MOCK_RP_SESSION_TTL_MIN', type: 'int', dflt: 15, min: 1,
+    max: 1440, runtime: true,
+    description: 'How long a session /saml11/rp — the NON-SPEC mock relying ' +
+                 'party — opens of its own lasts, once a response passes its ' +
+                 'checks (#590): its cookie\'s lifetime and its row\'s. Its ' +
+                 'own sign-out ends it sooner; SAML 1.1 defines no logout.' },
+
   // --- WS-Trust ------------------------------------------------------------
 
   { key: 'wstrust.tokenLifetimeMin', group: 'WS-Trust',
@@ -9044,6 +9066,16 @@ const SETTINGS = [
                  'remembers a wctx it minted so it can check the round trip. ' +
                  'Its own state and nobody else\'s. Was the constant ' +
                  'RP_CONTEXT_TTL_MS in wsfed.js.' },
+
+  { key: 'wsfed.mockRpSessionTtlMin', group: 'WS-Federation',
+    label: 'Mock relying party session lifetime (minutes)',
+    env: 'STS_WSFED_MOCK_RP_SESSION_TTL_MIN', type: 'int', dflt: 15, min: 1,
+    max: 1440, runtime: true,
+    description: 'How long a session /wsfed/rp — the NON-SPEC mock relying ' +
+                 'party — opens of its own lasts, once a sign-in response ' +
+                 'passes its checks (#590): its cookie\'s lifetime and its ' +
+                 'row\'s. Its own sign-out and a wsignoutcleanup1.0 end it ' +
+                 'sooner.' },
 
   // --- TLS -----------------------------------------------------------------
   // -------------------------------------------------------------------------

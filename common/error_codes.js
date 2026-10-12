@@ -9538,11 +9538,13 @@ const CODES = [
   { code: 'STS-SAML-0021',
     summary: 'The mock SAML 2.0 service provider was handed an artifact that ' +
       'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 200 error page' },
+    spec: 'HTTP 200 shell; the page reads the refusal from the mock ' +
+      'service provider\'s session, once (#590)' },
   { code: 'STS-SAML-0022',
     summary: 'A response delivered to the mock SAML 2.0 service provider ' +
       'failed at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    spec: 'HTTP 200 shell; the page reads the failed checks from the mock ' +
+      'service provider\'s session, once (#590)' },
   { code: 'STS-SAML-0023',
     summary: 'A SAML 2.0 assertion could not be signed and was returned ' +
       'unsigned.',
@@ -9632,11 +9634,13 @@ const CODES = [
   { code: 'STS-SAML-0042',
     summary: 'The mock SAML 1.1 relying party was handed an artifact that ' +
       'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 shell; the page reads the refusal from the mock ' +
+      'relying party\'s session, once (#590)' },
   { code: 'STS-SAML-0043',
     summary: 'A response delivered to the mock SAML 1.1 relying party failed ' +
       'at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    spec: 'HTTP 200 shell; the page reads the failed checks from the mock ' +
+      'relying party\'s session, once (#590)' },
   { code: 'STS-SAML-0044',
     summary: 'A service provider metadata refresh named an application that ' +
       'is not in the registry.',
@@ -9993,6 +9997,20 @@ const CODES = [
       'on a second factor the relying party does not allow ' +
       '(appMfaMechanism, #475).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0110',
+    summary: 'The LogoutResponse the identity provider sent back to the ' +
+      'mock SAML 2.0 service provider\'s own sign-out failed at least one ' +
+      'of its checks (issuer, Destination, InResponseTo, status, ' +
+      'signature). The service provider\'s session had already ended (#590).',
+    spec: 'HTTP 303 to /saml2/sp, which reads the failed checks from the ' +
+      'mock service provider\'s session, once' },
+  { code: 'STS-SAML-0111',
+    summary: 'A LogoutRequest delivered to the mock SAML 2.0 service ' +
+      'provider failed at least one of its checks (issuer, Destination, ' +
+      'signature, a NameID and SessionIndex), so it ended no session (#590).',
+    spec: 'HTTP 303 to the identity provider\'s Single Logout service with ' +
+      'a LogoutResponse whose status is Requester (saml-profiles-2.0-os ' +
+      'section 4.4.4.2)' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -10246,7 +10264,8 @@ const CODES = [
   { code: 'STS-WSFED-0016',
     summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
       'response that failed one or more of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    spec: 'HTTP 200 shell; the page reads the failed checks from the mock ' +
+      'relying party\'s session, once (#590)' },
   { code: 'STS-WSFED-0017',
     summary: 'A WS-Federation sign-in reached a session whose sign-in ' +
       'mechanism the relying party does not allow (appAuthnMechanism, ' +

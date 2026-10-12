@@ -3382,6 +3382,24 @@ class Saml11Sso {
     }, extra || {});
   }
 
+  // Where a session this relying party opened sends the browser (#590):
+  // TARGET, when it names this relying party's own page — what Shibboleth's
+  // assertion consumer does with it, and why the start view sets it to
+  // `/saml11/rp?done=1` — and the application page otherwise. A TARGET that
+  // names anywhere else is never followed: it is the relying party's state,
+  // echoed by the identity provider, and following it would make this page
+  // an open redirector.
+  private mockRpLanding(base, target) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.mockRpLanding().");
+    const own = base + RP_PATH;
+    const t = target === null ? '' : String(target);
+    const mine = t === own || t.indexOf(own + '?') === 0;
+    log.debug("Leaving Saml11Sso.mockRpLanding(). " +
+              (mine ? 'TARGET' : 'the application page'));
+    return mine ? t : MockRpSurface.appPath('saml11');
+  }
+
   // The mock relying party's assertion consumer. THREE things can arrive here
   // and they are told apart by what they carry: a form POST with `SAMLResponse`
   // is the Browser/POST profile, a GET with `SAMLart` is the Browser/Artifact
@@ -3389,9 +3407,11 @@ class Saml11Sso {
   //
   // THE RECEIVING IS WHAT IT ALWAYS WAS (#581) — the same fields read, the
   // artifact resolved once in process, the same checks, the same statuses
-  // (200, and 400 for a spent artifact) and the same error codes — and only
-  // the drawing moved: the answer is the shell, carrying the verdict's facts
-  // where something arrived, and asking the start view where nothing did.
+  // for a refusal (200, and 400 for a spent artifact) and the same error
+  // codes. SINCE #590 IT ANSWERS AS A REAL RELYING PARTY: a response that
+  // passes opens a session of its own and is answered with a 303 to TARGET
+  // (`mockRpLanding()`), and the page reads the verdict from
+  // `/saml11/rp/api/session`; a refusal opens none and is held there once.
   private mockRelyingParty(req, res) {
     const { baseUrlOf, errorCodes, genId, log, logArtifact } = this.deps;
     log.debug("Entering Saml11Sso.mockRelyingParty(). method=" + req.method);
@@ -3408,27 +3428,32 @@ class Saml11Sso {
                                        'profile',
                   xml);
       const result = this.verifyResponse(xml, rpId, acsUrl, 'post');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-SAML-0043');
+      const view = this.mockRpResult(result, 'post', xml, target, null);
+      if (result.ok) {
+        MockRpSurface.signIn(req, res, 'saml11', view,
+                             { subject: result.subject || '' },
+                             this.mockRpLanding(base, target));
+        log.debug("Leaving Saml11Sso.mockRelyingParty(). A POST-profile " +
+                  "response signed the person in.");
+        return;
       }
-      MockRpSurface.sendShell(req, res, 200, 'saml11',
-                              this.mockRpResult(result, 'post', xml, target,
-                                                null));
+      errorCodes.mark(res, 'STS-SAML-0043');
+      MockRpSurface.refuse(req, res, 200, 'saml11', view);
       log.debug("Leaving Saml11Sso.mockRelyingParty(). A POST-profile " +
-                "response was verified.");
+                "response was refused.");
       return;
     }
 
     if (params.SAMLart) {
       const artifact = String(params.SAMLart);
       // Resolved in process — see resolveForMockRp(). The one-shot rule applies
-      // here exactly as it does on the wire, which is what makes reloading this
-      // page a demonstration rather than a bug.
+      // here exactly as it does on the wire, which is what makes loading the
+      // artifact again a demonstration rather than a bug.
       const held = this.resolveForMockRp(artifact);
       if (!held) {
         errorCodes.mark(res, 'STS-SAML-0042');
-        MockRpSurface.sendShell(req, res, 400, 'saml11',
-                                { kind: 'spent', family: 'saml11' });
+        MockRpSurface.refuse(req, res, 400, 'saml11',
+                             { kind: 'spent', family: 'saml11' });
         log.debug("Leaving Saml11Sso.mockRelyingParty(). The artifact did " +
                   "not resolve.");
         return;
@@ -3445,24 +3470,30 @@ class Saml11Sso {
                   response.xml);
       const result = this.verifyResponse(response.xml, rpId, acsUrl,
                                          'artifact');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-SAML-0043');
-      }
       // `again` is this very request, to load once more: the artifact is
       // spent, and the second attempt is refused — the demonstration. Built
       // from what arrived rather than `req.originalUrl`, which carries the
       // realm's prefix the browser adds to every link itself.
       const again = RP_PATH + '?SAMLart=' + encodeURIComponent(artifact) +
         (target === null ? '' : '&TARGET=' + encodeURIComponent(target));
-      MockRpSurface.sendShell(req, res, 200, 'saml11',
-        this.mockRpResult(result, 'artifact', response.xml, target,
-                          { artifact: artifact, again: again }));
+      const view = this.mockRpResult(result, 'artifact', response.xml, target,
+                                     { artifact: artifact, again: again });
+      if (result.ok) {
+        MockRpSurface.signIn(req, res, 'saml11', view,
+                             { subject: result.subject || '' },
+                             this.mockRpLanding(base, target));
+        log.debug("Leaving Saml11Sso.mockRelyingParty(). An artifact-" +
+                  "profile assertion signed the person in.");
+        return;
+      }
+      errorCodes.mark(res, 'STS-SAML-0043');
+      MockRpSurface.refuse(req, res, 200, 'saml11', view);
       log.debug("Leaving Saml11Sso.mockRelyingParty(). An artifact-profile " +
-                "assertion was verified.");
+                "assertion was refused.");
       return;
     }
 
-    MockRpSurface.sendShell(req, res, 200, 'saml11', null);
+    MockRpSurface.sendShell(req, res, 200, 'saml11');
     log.debug("Leaving Saml11Sso.mockRelyingParty(). The shell.");
   }
 
@@ -3619,8 +3650,13 @@ class Saml11Sso {
 
     // THE MOCK RELYING PARTY (#581): its pages are a static surface — the
     // start view at `/saml11/rp/api/start` and the script beside it.
-    MockRpSurface.registerRoutes(app, 'saml11', (req) => {
-      return this.mockRpStartView(req);
+    // Since #590 a relying party with a session of its own, whose sign-out
+    // ends it and comes back to its page: SAML 1.1 defines no logout, so
+    // there is no identity provider to tell.
+    MockRpSurface.registerRoutes(app, 'saml11', {
+      start: (req) => {
+        return this.mockRpStartView(req);
+      }
     });
     app.get(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));
     app.post(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));

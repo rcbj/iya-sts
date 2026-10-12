@@ -1817,6 +1817,7 @@ how this service behaves as an identity provider in a browser profile.
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a <samlp:LogoutResponse> goes when the service provider has no SingleLogoutService registered — neither from its consumed metadata nor declared on its entry. Without this the fallback is the assertion consumer service URL that application last used, which is stated on the page rather than done quietly. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the browser is at the sign-in screen. |
 | `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock service provider at /saml2/sp remembers a RelayState it minted. |
+| `saml2.mockSpSessionTtlMin` | `STS_SAML2_MOCK_SP_SESSION_TTL_MIN` | `15` | yes | How long a session the non-spec mock service provider at /saml2/sp opens of its own lasts, once a Response passes its checks (#590). |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Response on the HTTP Redirect binding longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action or uploaded on the SAML 2.0 page. |
 | `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Whether the background refresher fetches a stale service provider metadata document again (past its `cacheDuration`, or halfway to `validUntil`) from its URL or the MDQ responder. A failed fetch changes nothing. Expiry is enforced either way. |
@@ -1850,6 +1851,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry under ou=applications the first time a relying party is named — by a TARGET arriving, by a metadata document being fetched, or by an artifact being resolved. Off means the browser profiles still work and /admin/saml11 stays empty, which is what somebody driving a load test wants and nobody else does. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a SAML 1.1 browser flow is held while the browser is at the sign-in screen. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions the SAML 1.1 responder keeps per realm for `<samlp:AssertionIDReference>`. |
+| `saml11.mockRpSessionTtlMin` | `STS_SAML11_MOCK_RP_SESSION_TTL_MIN` | `15` | yes | How long a session the non-spec mock relying party at /saml11/rp opens of its own lasts, once a response passes its checks (#590). |
 
 ### WS-Trust
 
@@ -1865,6 +1867,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
 | `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
+| `wsfed.mockRpSessionTtlMin` | `STS_WSFED_MOCK_RP_SESSION_TTL_MIN` | `15` | yes | How long a session the non-spec mock relying party at /wsfed/rp opens of its own lasts, once a sign-in response passes its checks (#590). |
 
 ### TLS
 
