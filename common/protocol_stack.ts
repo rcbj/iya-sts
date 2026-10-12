@@ -466,6 +466,30 @@ class ProtocolStack {
                'PortalMail');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
+    // THE ACCOUNT API (#568), `/account-api`: the user portal's only door
+    // since the portal became a static application. Its operations are the
+    // portal's page modules' own (built above, and the seven `account_*`
+    // modules built here), gathered when its routes are registered — right
+    // after the portal's, which collide with none of them. It reaches the
+    // authorization server's modules only when a request arrives.
+    this.build('portal/account_overview', require('../portal/account_overview'),
+               'AccountOverview');
+    this.build('portal/account_password', require('../portal/account_password'),
+               'AccountPassword');
+    this.build('portal/account_keys', require('../portal/account_keys'),
+               'AccountKeys');
+    this.build('portal/account_mfa', require('../portal/account_mfa'),
+               'AccountMfa');
+    this.build('portal/account_signing_key', require('../portal/account_signing_key'),
+               'AccountSigningKey');
+    this.build('portal/account_activation', require('../portal/account_activation'),
+               'AccountActivation');
+    this.build('portal/account_reset', require('../portal/account_reset'),
+               'AccountReset');
+    this.build('account-api/account_api',
+               require('../account-api/account_api'), 'AccountApi');
+    this.register(app, require('../account-api/account_api'),
+                  'account-api/account_api');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
     // both halves are dependencies rather than preferences. AFTER, because it
     // reads that module's session to check that the person answering is the

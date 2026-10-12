@@ -73,9 +73,14 @@ const APPLICATIONS = [
           'SPNEGO and certificate sign-ins, and the sign-out.',
     prefixes: ['/authn', '/logout', '/.well-known/hoba'],
     exact: ['/tls/sign-in'] },
+  // `/account-api` IS THE PORTAL'S (#568): the portal is a static
+  // application that draws every page from it, so the two are one
+  // application on one listener and the portal never has to be told where
+  // its own API is.
   { id: 'portal', label: 'User portal', session: true,
-    what: 'The pages that belong to the person looking at them.',
-    prefixes: ['/portal'], exact: [] },
+    what: 'The pages that belong to the person looking at them, and the ' +
+          'account API they are drawn from.',
+    prefixes: ['/portal', '/account-api'], exact: [] },
   { id: 'admin-console', label: 'Admin console', rescued: true,
     what: 'The console at /admin, its script and its pages.',
     prefixes: ['/admin'], exact: [] },

@@ -194,6 +194,14 @@ export = class RegisteredTargets {
                 "management API.");
       return 'the management API (/admin-api)';
     }
+    // THE ACCOUNT API (#568), the user portal's only door: this realm's
+    // `/account-api`, which is what the portal asks for as its `resource` and
+    // what `account-api/account_api.ts` accepts as a token's audience.
+    if (wanted === base + '/account-api') {
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
+                "account API.");
+      return 'the account API (/account-api)';
+    }
     if (config.value('gnap.demoResourceServer') !== false &&
         wanted === base + GNAP_DEMO_RESOURCE_PATH) {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The GNAP " +

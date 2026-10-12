@@ -385,10 +385,11 @@ const ADVANCED_REQUIREMENTS = [
     title: 'Public clients are not supported',
     note: 'token_endpoint_auth_method none is refused at registration and ' +
           'at the token and PAR endpoints.' +
-          ' ONE EXCEPTION (#446): the seeded sts-admin-console client, ' +
-          'when it is a public client, may use the token and PAR ' +
-          'endpoints. Every token issued to it is DPoP-bound, and the ' +
-          'console does not conform to this profile.' },
+          ' TWO EXCEPTIONS (#446, #568): the seeded sts-admin-console ' +
+          'and sts-user-portal clients, when they are public clients, may ' +
+          'use the token and PAR endpoints. Every token issued to them is ' +
+          'DPoP-bound, and the console and the portal do not conform to ' +
+          'this profile.' },
   { id: 'par-pkce', section: '5.2.2 item 18', level: 'SHALL',
     enforced: 'yes',
     title: 'A pushed request uses PKCE with S256',
@@ -419,10 +420,11 @@ const FAPI2_REQUIREMENTS = [
     enforced: 'yes', title: 'Confidential clients only',
     note: 'A public client is refused at registration and at the token and ' +
           'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' +
-          ' ONE EXCEPTION (#446): the seeded sts-admin-console client, ' +
-          'when it is a public client, may use the token and PAR ' +
-          'endpoints. Every token issued to it is DPoP-bound, and the ' +
-          'console does not conform to this profile.' },
+          ' TWO EXCEPTIONS (#446, #568): the seeded sts-admin-console ' +
+          'and sts-user-portal clients, when they are public clients, may ' +
+          'use the token and PAR endpoints. Every token issued to them is ' +
+          'DPoP-bound, and the console and the portal do not conform to ' +
+          'this profile.' },
   { id: 'sender-constrained', section: '5.3.2.1 items 4-5', level: 'SHALL',
     enforced: 'yes',
     title: 'Only sender-constrained access tokens, by mTLS or DPoP',
@@ -987,11 +989,16 @@ function clientIdentifierRefusal(ids) {
 // before, and the console's own tokens are still sender-constrained, which
 // is the half of the profile's intent that survives.
 // ---------------------------------------------------------------------------
+// AND THE USER PORTAL SINCE #568 (2026-10-12), on the same terms and for the
+// same reason: rcbj's decision made it a static application and a public
+// client whose every token is DPoP-bound, and a realm with a confidential-only
+// profile on would otherwise have no portal. It does not conform there
+// either, and the requirement rows say so.
 /**
  * The hosted clients allowed to be public clients under a profile that
- * supports none: the admin console.
+ * supports none: the admin console and the user portal.
  */
-const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console'];
+const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console', 'sts-user-portal'];
 
 /**
  * Tells whether a client is the public client the confidential-only profiles

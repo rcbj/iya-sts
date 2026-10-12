@@ -54,6 +54,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import SpaClient = require('./web_spa_client');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
@@ -89,15 +90,7 @@ const NEEDS_SIGN_IN = { needsSignIn: true };
 /**
  * The static console's runtime: sign-in, DPoP, routing and forms.
  */
-class ConsoleRuntime {
-  private env: Json;
-  private prefix: string;
-  private accessToken: string;
-  private refreshToken: string;
-  private expiresAt: number;
-  private key: Json;
-  private publicJwk: Json;
-  private nonce: string;
+class ConsoleRuntime extends SpaClient {
   private shell: Json;
   // The console's translator (#539 phase 5), from the shell's `locale`.
   private t: Json;
@@ -109,15 +102,6 @@ class ConsoleRuntime {
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
   private spec: Json;
-  // WHERE THE AUTHORIZATION SERVER, THE API AND THE SIGN-IN SERVICE ARE when
-  // they are not on the console's own listener (#472): their bases, the
-  // realm prefix included, from the shell's `data-sts-*` attributes; '' where
-  // they are here, which is every service without a custom listener.
-  private elsewhere: Json;
-  // WHO SIGNED IN (#508): the ID Token's `sub`, so a sign-in again in a
-  // popup is known to be the same person before a request waiting on it is
-  // sent for them.
-  private subject: string;
   // The sign-in again in progress, while the session that ended is replaced
   // (#508): its one-use values, the requests waiting on it and the channel
   // the popup answers on. Null when none is.
@@ -135,14 +119,13 @@ class ConsoleRuntime {
    *   out) and `formDataOf` (a form's FormData)
    */
   constructor(env: Json) {
-    this.env = env;
-    this.prefix = ConsoleRuntime.prefixOf(env.location.pathname);
-    this.accessToken = '';
-    this.refreshToken = '';
-    this.expiresAt = 0;
-    this.key = null;
-    this.publicJwk = null;
-    this.nonce = '';
+    // The OAuth half — the key, the proofs, the tokens, the addresses of the
+    // authorization server and the API — is `SpaClient`'s, shared with the
+    // portal (#568).
+    super(env, ConsoleRuntime.prefixOf(env.location.pathname), {
+      clientId: CLIENT_ID, scope: SCOPE,
+      elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
+                   '/logout': 'data-sts-authn' } });
     this.shell = null;
     this.t = kit.context().t;
     this.shellPrefix = '';
@@ -151,17 +134,8 @@ class ConsoleRuntime {
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
-    this.subject = '';
     this.reauth = null;
     this.submitting = null;
-    const root = env.document && env.document.documentElement;
-    const read = function (name: string): string {
-      return root && typeof root.getAttribute === 'function'
-        ? String(root.getAttribute(name) || '').replace(/\/+$/, '') : '';
-    };
-    this.elsewhere = { '/oauth2': read('data-sts-oauth'),
-                       '/admin-api': read('data-sts-api'),
-                       '/logout': read('data-sts-authn') };
   }
 
   // --- paths ---------------------------------------------------------------
@@ -196,138 +170,7 @@ class ConsoleRuntime {
     return rest;
   }
 
-  /**
-   * Parses a query string into an object, the last value of a repeated
-   * name winning as express's own parser does for a single value.
-   *
-   * @param search - `?a=1&b=2` or ''
-   * @returns the query
-   */
-  static queryOf(search: string): Json {
-    const out = {};
-    new URLSearchParams(String(search || '').replace(/^\?/, ''))
-      .forEach(function (value, name) {
-        out[name] = value;
-      });
-    return out;
-  }
-
-  // --- encoding and crypto -------------------------------------------------
-
-  /**
-   * Base64url without padding.
-   *
-   * @param bytes - the bytes
-   * @returns the encoding
-   */
-  static b64u(bytes: Uint8Array): string {
-    let s = '';
-    for (let i = 0; i < bytes.length; i++) {
-      s += String.fromCharCode(bytes[i]);
-    }
-    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  /**
-   * Random bytes, base64url.
-   *
-   * @param n - how many bytes
-   * @returns the encoding
-   */
-  random(n: number): string {
-    const bytes = new Uint8Array(n);
-    this.env.crypto.getRandomValues(bytes);
-    return ConsoleRuntime.b64u(bytes);
-  }
-
-  /**
-   * SHA-256 of a string, base64url.
-   *
-   * @param text - the string
-   * @returns the digest's encoding
-   */
-  async sha256(text: string): Promise<string> {
-    const digest = await this.env.crypto.subtle.digest('SHA-256',
-      new TextEncoder().encode(text));
-    return ConsoleRuntime.b64u(new Uint8Array(digest));
-  }
-
-  // THE KEY IS MADE NON-EXTRACTABLE, which is the condition rcbj attached
-  // to a public console: the private key can sign and cannot be exported, so
-  // a script that reads this page can use the key while the page lives and
-  // cannot carry it away. Only the public half is exported, for the proof's
-  // header.
-  /**
-   * Makes this page load's DPoP key, once.
-   *
-   * @returns nothing
-   */
-  async ensureKey(): Promise<void> {
-    if (this.key) {
-      return;
-    }
-    const pair = await this.env.crypto.subtle.generateKey(
-      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
-    const jwk = await this.env.crypto.subtle.exportKey('jwk',
-                                                         pair.publicKey);
-    this.key = pair;
-    this.publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
-  }
-
-  // RFC 9449 section 4.2: `typ` dpop+jwt, the public key in the header, and
-  // `jti`, `htm`, `htu` (no query, no fragment), `iat`, `ath` with an access
-  // token and `nonce` once a server has given one. WebCrypto's ECDSA
-  // signature is r || s, which is JOSE's ES256 form already.
-  /**
-   * Makes a DPoP proof for one request.
-   *
-   * @param method - the request's method
-   * @param url - the request's URL; its query and fragment are dropped
-   * @param accessToken - the access token it is sent with, or ''
-   * @returns the proof
-   */
-  async proof(method: string, url: string,
-              accessToken: string): Promise<string> {
-    await this.ensureKey();
-    const now = this.env.now ? this.env.now() : Date.now();
-    const header = { typ: 'dpop+jwt', alg: 'ES256', jwk: this.publicJwk };
-    const claims: Json = {
-      jti: this.random(16), htm: method.toUpperCase(),
-      htu: String(url).replace(/[?#].*$/, ''), iat: Math.floor(now / 1000)
-    };
-    if (accessToken) {
-      claims.ath = await this.sha256(accessToken);
-    }
-    if (this.nonce) {
-      claims.nonce = this.nonce;
-    }
-    const enc = function (obj) {
-      return ConsoleRuntime.b64u(new TextEncoder().encode(
-        JSON.stringify(obj)));
-    };
-    const input = enc(header) + '.' + enc(claims);
-    const signature = await this.env.crypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' }, this.key.privateKey,
-      new TextEncoder().encode(input));
-    return input + '.' + ConsoleRuntime.b64u(new Uint8Array(signature));
-  }
-
   // --- the authorization server --------------------------------------------
-
-  /**
-   * This realm's address for one of its paths.
-   *
-   * @param path - `/oauth2/token`, `/admin-api/...`
-   * @returns the absolute URL
-   */
-  url(path: string): string {
-    const elsewhere = this.elsewhere || {};
-    const first = '/' + String(path || '').split(/[/?#]/)[1];
-    if (elsewhere[first]) {
-      return elsewhere[first] + path;
-    }
-    return this.env.location.origin + this.prefix + path;
-  }
 
   /**
    * The origin the management API answers on: this page's, or the API's
@@ -365,95 +208,6 @@ class ConsoleRuntime {
       verifier: verifier, state: state, returnTo: returnTo,
       prefix: this.prefix }));
     this.env.location.assign(await this.authorizeUrl(state, verifier));
-  }
-
-  // A token endpoint answer with `error: use_dpop_nonce` is retried once
-  // with the nonce it sent (RFC 9449 section 8).
-  /**
-   * Posts a form to the token endpoint with a DPoP proof.
-   *
-   * @param form - the form fields
-   * @returns the response's JSON and status
-   */
-  async tokenRequest(form: Json): Promise<Json> {
-    const endpoint = this.url('/oauth2/token');
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.env.fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-                   'DPoP': await this.proof('POST', endpoint, '') },
-        body: new URLSearchParams(form).toString()
-      });
-      this.keepNonce(res);
-      const json = await res.json().catch(function () {
-        return {};
-      });
-      if (res.status === 400 && json.error === 'use_dpop_nonce' &&
-          attempt === 0) {
-        continue;
-      }
-      return { status: res.status, json: json };
-    }
-    return { status: 400, json: { error: 'use_dpop_nonce' } };
-  }
-
-  /**
-   * Keeps the tokens a token endpoint answered with.
-   *
-   * @param json - the token response
-   * @returns nothing
-   */
-  keepTokens(json: Json): void {
-    const now = this.env.now ? this.env.now() : Date.now();
-    this.accessToken = String(json.access_token || '');
-    // ROTATED: a refresh answers a new refresh token, and the old one is
-    // spent. One that answered none keeps the one in hand.
-    if (json.refresh_token) {
-      this.refreshToken = String(json.refresh_token);
-    }
-    this.expiresAt = now + (Number(json.expires_in) || 300) * 1000;
-    // WHO IT IS FOR (#508), from the ID Token the token endpoint answered
-    // this page directly. Read, not verified: it is compared with the one
-    // this page signed in with, never trusted for anything the API decides.
-    const subject = ConsoleRuntime.subjectOf(json.id_token);
-    if (subject) {
-      this.subject = subject;
-    }
-  }
-
-  /**
-   * The `sub` of an ID Token, read without verifying it.
-   *
-   * @param idToken - the compact JWT, or nothing
-   * @returns the subject, or ''
-   */
-  static subjectOf(idToken: Json): string {
-    const parts = String(idToken || '').split('.');
-    if (parts.length !== 3) {
-      return '';
-    }
-    try {
-      const text = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-      return String(JSON.parse(text).sub || '');
-    } catch (e) {
-      // Not a JWT this page can read: no subject, which a sign-in again
-      // then treats as a different person.
-      return '';
-    }
-  }
-
-  /**
-   * Keeps the nonce a response carried, for the next proof.
-   *
-   * @param res - a fetch response
-   * @returns nothing
-   */
-  keepNonce(res: Json): void {
-    const nonce = res && res.headers && res.headers.get
-      ? res.headers.get('DPoP-Nonce') : '';
-    if (nonce) {
-      this.nonce = nonce;
-    }
   }
 
   /**

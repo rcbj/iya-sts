@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4281** of them, in **45** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4301** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,8 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 230
 * [Management API (`STS-API`)](#sts-api) — 81
-* [User portal (`STS-PORTAL`)](#sts-portal) — 84
+* [User portal (`STS-PORTAL`)](#sts-portal) — 85
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 170
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -4674,6 +4675,35 @@ Raised from: portal/.
 | `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |
 | `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
 | `STS-PORTAL-0245` | A person's rename of one of their passkeys on /portal/keys was refused: the name was not one, or the id is not one of theirs (#470). | HTTP 400 page |
+| `STS-PORTAL-0246` | A method other than GET was sent to a /portal path: the portal is a static application since #568 and nothing is posted to it. | HTTP 404 |
+
+## STS-ACCOUNT
+
+**Account API.** The user portal's API, /account-api: the access token it takes (this realm's, DPoP-bound, account:manage, a live sign-on session), the access policy, and the checks on every request before an operation runs.
+
+Raised from: account-api/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ACCOUNT-0001` | A request to /account-api presented no access token. | RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP) |
+| `STS-ACCOUNT-0002` | An /account-api access token was not issued by this realm's authorization server, or its signature does not verify. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0003` | An /account-api access token had expired. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0004` | An /account-api access token's typ header was not at+jwt (an ID Token or a refresh token presented as one). | RFC 9068 section 4 |
+| `STS-ACCOUNT-0005` | An /account-api access token named an issuer this realm does not publish at the address it was presented at. | RFC 9068 section 4 |
+| `STS-ACCOUNT-0006` | An /account-api access token was audienced to another resource. | RFC 9068 section 4; RFC 8707 |
+| `STS-ACCOUNT-0007` | An /account-api access token has been revoked or disowned, or the account it was issued to is disabled. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0008` | An /account-api access token was issued on a sign-on session that has since ended. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0009` | A certificate-bound /account-api access token was presented on a connection without its certificate. | RFC 8705 section 3.1 |
+| `STS-ACCOUNT-0010` | A DPoP-bound /account-api access token was presented as a Bearer token. | RFC 9449 section 7.1 |
+| `STS-ACCOUNT-0011` | The DPoP proof sent with an /account-api request was refused, or a nonce was wanted. | RFC 9449 sections 4.3 and 8 |
+| `STS-ACCOUNT-0012` | An /account-api access token names no person (a client's own token). | HTTP 403 |
+| `STS-ACCOUNT-0013` | An /account-api access token does not carry account:manage. | RFC 6750 section 3.1 insufficient_scope |
+| `STS-ACCOUNT-0014` | The client an /account-api access token was issued to no longer declares account:manage. | HTTP 403 |
+| `STS-ACCOUNT-0015` | The access policy refused an /account-api request (user-portal, read or manage-own). | HTTP 403 |
+| `STS-ACCOUNT-0016` | An /account-api request's query did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0017` | An /account-api request body was not JSON. | HTTP 415 |
+| `STS-ACCOUNT-0018` | An /account-api request body did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0019` | An /account-api operation threw; answered 500. | HTTP 500 |
 
 ## STS-LOGOUT
 

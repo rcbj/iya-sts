@@ -415,6 +415,15 @@ const SUBSYSTEMS = [
     where: 'portal/',
     what: 'The pages that belong to the person looking at them, and account ' +
           'activation.' },
+  // THE ACCOUNT API (#568): the portal's only door since it became a static
+  // application. Its gate and its route wrapper; a refusal an operation
+  // makes keeps the PORTAL code it had as a page.
+  { id: 'ACCOUNT', label: 'Account API',
+    where: 'account-api/',
+    what: 'The user portal\'s API, /account-api: the access token it takes ' +
+          '(this realm\'s, DPoP-bound, account:manage, a live sign-on ' +
+          'session), the access policy, and the checks on every request ' +
+          'before an operation runs.' },
   { id: 'LOGOUT', label: 'Sign-out',
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
@@ -20024,6 +20033,81 @@ const CODES = [
       'was refused: the name was not one, or the id is not one of theirs ' +
       '(#470).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0246',
+    summary: 'A method other than GET was sent to a /portal path: the portal ' +
+      'is a static application since #568 and nothing is posted to it.',
+    spec: 'HTTP 404' },
+  { code: 'STS-ACCOUNT-0001',
+    summary: 'A request to /account-api presented no access token.',
+    spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
+  { code: 'STS-ACCOUNT-0002',
+    summary: 'An /account-api access token was not issued by this realm\'s ' +
+      'authorization server, or its signature does not verify.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0003',
+    summary: 'An /account-api access token had expired.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0004',
+    summary: 'An /account-api access token\'s typ header was not at+jwt (an ' +
+      'ID Token or a refresh token presented as one).',
+    spec: 'RFC 9068 section 4' },
+  { code: 'STS-ACCOUNT-0005',
+    summary: 'An /account-api access token named an issuer this realm does ' +
+      'not publish at the address it was presented at.',
+    spec: 'RFC 9068 section 4' },
+  { code: 'STS-ACCOUNT-0006',
+    summary: 'An /account-api access token was audienced to another ' +
+      'resource.',
+    spec: 'RFC 9068 section 4; RFC 8707' },
+  { code: 'STS-ACCOUNT-0007',
+    summary: 'An /account-api access token has been revoked or disowned, or ' +
+      'the account it was issued to is disabled.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0008',
+    summary: 'An /account-api access token was issued on a sign-on session ' +
+      'that has since ended.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0009',
+    summary: 'A certificate-bound /account-api access token was presented on ' +
+      'a connection without its certificate.',
+    spec: 'RFC 8705 section 3.1' },
+  { code: 'STS-ACCOUNT-0010',
+    summary: 'A DPoP-bound /account-api access token was presented as a ' +
+      'Bearer token.',
+    spec: 'RFC 9449 section 7.1' },
+  { code: 'STS-ACCOUNT-0011',
+    summary: 'The DPoP proof sent with an /account-api request was refused, ' +
+      'or a nonce was wanted.',
+    spec: 'RFC 9449 sections 4.3 and 8' },
+  { code: 'STS-ACCOUNT-0012',
+    summary: 'An /account-api access token names no person (a client\'s own ' +
+      'token).',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0013',
+    summary: 'An /account-api access token does not carry account:manage.',
+    spec: 'RFC 6750 section 3.1 insufficient_scope' },
+  { code: 'STS-ACCOUNT-0014',
+    summary: 'The client an /account-api access token was issued to no ' +
+      'longer declares account:manage.',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0015',
+    summary: 'The access policy refused an /account-api request ' +
+      '(user-portal, read or manage-own).',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0016',
+    summary: 'An /account-api request\'s query did not validate against its ' +
+      'operation\'s schema.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ACCOUNT-0017',
+    summary: 'An /account-api request body was not JSON.',
+    spec: 'HTTP 415' },
+  { code: 'STS-ACCOUNT-0018',
+    summary: 'An /account-api request body did not validate against its ' +
+      'operation\'s schema.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ACCOUNT-0019',
+    summary: 'An /account-api operation threw; answered 500.',
+    spec: 'HTTP 500' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +

@@ -183,6 +183,39 @@ if [ -f "$BUNDLE_ENTRY" ]; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# AND THE USER PORTAL (#568), on the console's pattern and for its reasons:
+# `portal/portal.bundle.js`, the renderers alone under the global
+# `StsPortal` (`web_portal_pages.ts`), which `tests/portal_web_bundle.js`
+# draws every page with; and `portal/portal-spa.js`, the runtime with every
+# renderer, MINIFIED, which is what a browser loads at `/portal/portal.js`.
+# On disk it is NOT `portal/portal.js`: that is the server module `portal.ts`
+# compiles to, and the bundle once overwrote it.
+# ---------------------------------------------------------------------------
+PORTAL_PAGES=portal/web_portal_pages.ts
+if [ -f "$PORTAL_PAGES" ]; then
+  ESBUILD=tests/node_modules/.bin/esbuild
+  BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
+  BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
+// SPDX-License-Identifier: BUSL-1.1"
+  echo "build-typescript.sh: bundling the user portal for a browser" \
+       "(esbuild portal/web_portal.ts)"
+  "$ESBUILD" "$PORTAL_PAGES" --bundle --platform=browser --format=iife \
+    --global-name=StsPortal --target=es2022 --charset=ascii \
+    --legal-comments=none --log-level=warning \
+    --banner:js="$BUNDLE_BANNER" --outfile=portal/portal.bundle.js
+  "$ESBUILD" portal/web_portal.ts --bundle --platform=browser --format=iife \
+    --target=es2022 --charset=ascii --legal-comments=none --minify \
+    --log-level=warning --banner:js="$BUNDLE_BANNER" \
+    --outfile=portal/portal-spa.js
+  for out in portal/portal.bundle.js portal/portal-spa.js; do
+    if [ ! -s "$out" ]; then
+      echo "build-typescript.sh: esbuild wrote no $out" >&2
+      exit 1
+    fi
+  done
+fi
+
 if [ "$STRIP" = true ]; then
   # The list is taken BEFORE anything is deleted, so the count is honest.
   STRIPPED="$(sources | wc -l | tr -d ' ')"
@@ -204,15 +237,17 @@ fi
 # Accept-Encoding`; nothing is compressed per request for this file, which is
 # the one large thing a browser downloads (1.47 MB; 322 KB as brotli and
 # 419 KB as gzip on 2026-10-05).
-# Only the console's own files are compressed: an /admin-api or protocol
+# Only the console's and the portal's own scripts (#568, the same step) are
+# compressed: an /admin-api, /account-api or protocol
 # answer often carries a secret beside text the caller chose, which is what
 # BREACH reads through compression.
 # ---------------------------------------------------------------------------
-if [ -f admin-ui/console.js ]; then
-  node -e '
+for PACKED in admin-ui/console.js portal/portal-spa.js; do
+if [ -f "$PACKED" ]; then
+  PACKED="$PACKED" node -e '
     const fs = require("fs");
     const zlib = require("zlib");
-    const file = "admin-ui/console.js";
+    const file = process.env.PACKED;
     const raw = fs.readFileSync(file);
     fs.writeFileSync(file + ".br", zlib.brotliCompressSync(raw, { params: {
       [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
@@ -224,3 +259,4 @@ if [ -f admin-ui/console.js ]; then
                 fs.statSync(file + ".gz").size + " as gzip");
   '
 fi
+done
