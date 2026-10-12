@@ -34,8 +34,9 @@
 //
 // The sign-in screen (#571) draws three pages from views alone: the screen
 // in the states its view can name, the federation chooser and the forced
-// password change — and, since #574, the wallet's start and wait pages, the
-// QR code and a refusal.
+// password change; the SPNEGO sign-in's three bodies (#575), from the
+// state their shell carries; and the wallet's start and wait pages (#574),
+// the QR code and a refusal.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -179,6 +180,11 @@ function authnCases(root) {
               siop: '' } });
   const nothing = Object.assign({}, everything, { screen: false,
     partners: null, kerberos: null, wallet: null });
+  const spnegoEn = { t: translatorFor(root, 'spnego', ['en']), query: {},
+                     prefix: '', origin: 'https://sts.example',
+                     here: '/authn/spnego' };
+  const spnegoFr = Object.assign({}, spnegoEn,
+    { t: translatorFor(root, 'spnego', ['fr', 'en']) });
   log.debug("Leaving authnCases().");
   return [
     { label: 'the sign-in screen, every door, in English',
@@ -205,7 +211,48 @@ function authnCases(root) {
               notice: 'The password you signed in with has appeared in a ' +
                       'data breach.' },
       ctx: Object.assign({}, en, { error: 'The two passwords are not the ' +
-                                          'same.' }) }
+                                          'same.' }) },
+    // THE SPNEGO SIGN-IN'S BODIES (#575), drawn from the state the shell
+    // carries: the first 401, the 403 when off, the signed-in page.
+    { label: 'the SPNEGO challenge, for a waiting request, in French',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'challenge',
+              pending: { id: 'abc', protocol: 'OIDC <code>',
+                         application: 'urn:app:<one>' },
+              spn: 'HTTP/sts.example', realm: 'EXAMPLE.COM',
+              hosts: ['sts.example', 'other.example'], checks: null },
+      ctx: Object.assign({}, spnegoFr, { here: '/authn/spnego?authn=abc' }) },
+    { label: 'the SPNEGO challenge, reached directly',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'challenge', pending: null,
+              spn: 'HTTP/sts.example', realm: 'EXAMPLE.COM', hosts: [],
+              checks: [{ name: 'a check', ok: false, detail: '<x>' }] },
+      ctx: spnegoEn },
+    { label: 'the SPNEGO door off, with the demonstration',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'off',
+              setting: 'krb5.spnegoAuthentication',
+              demoPath: '/spnego/protected',
+              pending: { id: 'abc', protocol: 'SAML 2.0', application: '' } },
+      ctx: spnegoEn },
+    { label: 'signed in with a Kerberos ticket, two factors',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'signed-in', username: 'alice & co',
+              principal: 'alice@EXAMPLE.COM', session: 's1',
+              subject: 'urn:uuid:1', flags: ['pre-authent'],
+              indicators: ['otp'], amr: ['pwd', 'otp'], acr: 'mfa',
+              mechanism: 'Kerberos 5', bare: false, mic: true,
+              checks: [{ name: 'the ticket decrypts', ok: true,
+                         detail: 'yes' }] },
+      ctx: spnegoEn },
+    { label: 'signed in with a bare ticket claiming nothing, in French',
+      path: '/authn/spnego',
+      view: { door: 'spnego', kind: 'signed-in', username: 'bob',
+              principal: 'bob@PARTNER.COM', session: 's2',
+              subject: 'urn:uuid:2', flags: [], indicators: [], amr: [],
+              acr: '0', mechanism: 'Kerberos 5', bare: true, mic: false,
+              checks: null },
+      ctx: spnegoFr }
   ];
 }
 

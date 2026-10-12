@@ -536,6 +536,30 @@ async function theIndicator(tcp, ctx, otpTgt, qTgt) {
   log.debug("Leaving theIndicator().");
 }
 
+// THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its
+// 403 when off and its signed-in 200 are the sign-in surface's shell, and
+// what the page is drawn from is `data-sts-state` on its `<html>` — the
+// browser draws it with script; a client that runs none reads it here.
+function spnegoState(body) {
+  log.debug("Entering spnegoState().");
+  const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(body || ""));
+  if (!m) {
+    log.debug("Leaving spnegoState(). None.");
+    return null;
+  }
+  const raw = m[1].replace(/&quot;/g, "\"").replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  let state = null;
+  try {
+    state = JSON.parse(raw);
+  } catch (e) {
+    log.debug("Caught in spnegoState(): " + ((e && e.message) || e));
+    state = null;
+  }
+  log.debug("Leaving spnegoState().");
+  return state && state.view ? state.view : null;
+}
+
 async function spnegoCountsIt(tcp, otpTgt) {
   log.debug("Entering spnegoCountsIt().");
   log.info("=== 7. /authn/spnego counts the indicator ===");
@@ -566,10 +590,11 @@ async function spnegoCountsIt(tcp, otpTgt) {
         "pwd and otp, acr mfa", function () {
           assert.strictEqual(r.status, 200, body.slice(0, 300));
           assert.ok(cookie, "no session cookie");
-          assert.ok(/pwd, otp/.test(body) && /<code>mfa<\/code>/.test(body),
+          const view = spnegoState(body);
+          assert.ok(view && JSON.stringify(view.amr) === '["pwd","otp"]' &&
+                    view.acr === "mfa",
                     "the page does not show amr pwd, otp and acr mfa: " +
-                    body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
-                      .slice(0, 600));
+                    JSON.stringify(view));
         });
   let listed = null;
   for (let i = 0; i < 20 && !listed; i++) {

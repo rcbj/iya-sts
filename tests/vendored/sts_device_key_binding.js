@@ -466,9 +466,13 @@ async function test() {
   });
 
   log.info("=== 6. the authorization request, and ML-DSA ===");
-  const naked = authorizeUrl(client, { scope: "openid bound_key" });
-  const refused = await follow(browser, await hop(browser, "GET",
-                                                   naked.url));
+  // THE REQUEST THAT SUCCEEDS GOES FIRST, BECAUSE IT SIGNS THE PERSON IN.
+  // RFC 9700 section 4.11.2 (product mode implies that mode): an error is
+  // redirected to the client only once somebody is signed in, and is shown
+  // as a 400 otherwise. Until #568 this jar was signed in by the portal's
+  // device approval above; since then the portal signs in with a jar of its
+  // own, so the refused request, sent first, was shown rather than
+  // redirected, in product mode only.
   const pq = newKey("ML-DSA-44");
   const asked = authorizeUrl(client, { scope: "openid bound_key",
                                        dpop_jkt: pq.jkt });
@@ -479,6 +483,9 @@ async function test() {
     grant_type: "authorization_code", code: code, redirect_uri: RP_REDIRECT,
     code_verifier: asked.verifier }),
     headers: { DPoP: proof(pq, TOKEN, { c_s256: sha256(code) }) } });
+  const naked = authorizeUrl(client, { scope: "openid bound_key" });
+  const refused = await follow(browser, await hop(browser, "GET",
+                                                   naked.url));
   check("bound_key without dpop_jkt is refused; an ML-DSA-44 key binds the " +
         "ID Token", function () {
     assert.ok(/[?&]error=invalid_request/.test(refused.location),

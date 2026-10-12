@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * The card's two stylesheets. A static utility class of constants.
+ * The card's stylesheets. A static utility class of constants.
  */
 class WebCardCss {
   /**
@@ -43,8 +43,28 @@ class WebCardCss {
     'bel{display:inline;margin:0 4px 0 0}';
 
   /**
+   * The WIDE card (#575): the SPNEGO sign-in's pages carry tables — the
+   * service principal, the ticket's flags, the acceptor's checks — that do
+   * not fit the 380-pixel card, so `.card.wide` lifts the width and every
+   * rule below is scoped to it, leaving every other page of the card as it
+   * was. The values are `kerberos/spnego.js`'s page shell's, where these
+   * pages were drawn until #575.
+   */
+  static readonly WIDE_CSS =
+    '.card.wide{width:auto;max-width:52rem;margin:2rem;line-height:1.45}.wid' +
+    'e h2{font-size:1em;margin:1.4em 0 .4em}.wide table{border-collapse:coll' +
+    'apse;width:100%;margin:.5rem 0 1rem;font-size:.85em}.wide th,.wide td{b' +
+    'order:1px solid #ddd;padding:.35rem .55rem;text-align:left;vertical-ali' +
+    'gn:top}.wide th{background:#f0f0f5}.wide .pass{color:#0b6b4f;font-weigh' +
+    't:600;white-space:nowrap}.wide .fail{color:#b00020;font-weight:600;whit' +
+    'e-space:nowrap}.wide .ok{background:#e8f5e9;border:1px solid #a5d6a7;pa' +
+    'dding:8px 10px;border-radius:5px;font-size:.9em;margin-bottom:12px}.wid' +
+    'e code{font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;border-r' +
+    'adius:3px;word-break:break-all}.wide a{color:#12107c}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
-   * with the consent screen.
+   * with the consent screen; the wide card's rules after the chooser's.
    */
   static readonly CARD_CSS =
     'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;bac' +
@@ -77,7 +97,7 @@ class WebCardCss {
     '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
     'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
     'block;font-size:.75em}' +
-    WebCardCss.CHOOSER_CSS;
+    WebCardCss.CHOOSER_CSS + WebCardCss.WIDE_CSS;
 }
 
 export = WebCardCss;
