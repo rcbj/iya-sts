@@ -138,16 +138,18 @@ class AccountApiPage {
           AccountApiPage.operation(method, path, op));
       });
     });
-    return '<div class="card"><h1>Account API</h1>' +
+    // THE DOCUMENT'S LINK IS A PLAIN LINE, not `kit.note()`'s, which folds
+    // a long note away — and this one is what the page is for.
+    return '<div class="card">' +
       AccountApiPage.prose(info.description || '') +
-      kit.note('<strong>' + kit.esc(info.title || '') + '</strong> ' +
+      '<p><strong>' + kit.esc(info.title || '') + '</strong> ' +
         kit.esc(info.version || '') + ' — ' + kit.esc(view.paths) +
         ' paths, ' + kit.esc(view.operations) + ' operations, at <code>' +
         kit.esc(((doc.servers || [])[0] || {}).url || '') +
         '</code>. The document: <a href="' + kit.esc(view.url) +
         '" target="_blank" rel="noopener">' + kit.esc(view.url) +
         '</a>. Nothing on this page calls the API: every operation acts on ' +
-        'the signed-in person\'s own account, with their token.') +
+        'the signed-in person\'s own account, with their token.</p>' +
       '</div>' +
       order.filter(function (tag) {
         return byTag[tag];
