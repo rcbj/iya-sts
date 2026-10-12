@@ -159,6 +159,10 @@
     "en": "2d0556abc166bc57",
     "text": "以上皆無。目錄、主體數據庫與登錄只保存經設定或佈建的內容，別無其他——兩個 XACML 角色群組存在但為空，而 KDC 拒絕以本儲存庫中公開的密碼建立 krbtgt 或其服務帳戶。"
   },
+  "mode.requirements.test-double.what": {
+    "en": "f06cf29c4a61e31d",
+    "text": "服務元數據文件表明本服務是測試替身"
+  },
   "mode.requirements.saml-request-signatures.development": {
     "en": "6958e9df9b9440fb",
     "text": "未簽署的 AuthnRequest 或 LogoutRequest 會被接受（saml2.requireSignedAuthnRequests=auto），除非服務提供者已取用的元數據表明 AuthnRequestsSigned。「確實」存在的簽章會依服務提供者已註冊的證書驗證，驗證失敗則拒絕；若無已註冊的證書，則記錄為未驗證。請求在其 KeyInfo 中攜帶的證書會記錄為「觀察到的」——絕不作為信任錨點——而當項目沒有其他證書時，仍可能以它加密斷言。"

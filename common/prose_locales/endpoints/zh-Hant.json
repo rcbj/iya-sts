@@ -451,6 +451,10 @@
     "en": "657c84b412c86001",
     "text": "入口網站的 Shared Signals 接收端點"
   },
+  "endpoints.route./portal/claim-sources/start.name": {
+    "en": "088ae53146e71c4d",
+    "text": "已連結的宣告來源——將瀏覽器繫結至連結"
+  },
   "endpoints.route./portal/claim-sources/callback.name": {
     "en": "152919279ecea855",
     "text": "已連結的宣告來源——提供者的回應"

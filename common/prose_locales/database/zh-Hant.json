@@ -31,9 +31,37 @@
     "en": "6e2726560995b06c",
     "text": "TLS，sslmode={{sslmode}}；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉），對於 compose 堆疊所產生的自我簽署憑證組而言，這是如實的設定。無論如何連線都是加密的。"
   },
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS——連線字串未設定 sslmode，而本服務一律透過 TLS 連線至每個資料庫；伺服器憑證會以此程序的信任錨點驗證。"
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "72c099a645436b71",
+    "text": "TLS——連線字串未設定 sslmode，而本服務一律透過 TLS 連線至每個資料庫；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉）。無論如何連線都是加密的。"
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS，sslmode=prefer——僅透過 TLS 連線：對於 prefer，libpq 會退回為明文連線，而本服務絕不這麼做；伺服器憑證會以此程序的信任錨點驗證。"
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "8c3bb76819b4a57f",
+    "text": "TLS，sslmode=prefer——僅透過 TLS 連線：對於 prefer，libpq 會退回為明文連線，而本服務絕不這麼做；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉）。無論如何連線都是加密的。"
+  },
+  "persistence.status.tlsVerifyModeVerified": {
+    "en": "d0f0103a58a0771c",
+    "text": "TLS，sslmode={{sslmode}}；伺服器憑證會以此程序的信任錨點驗證，因為 persistence.databaseTlsRejectUnauthorized 已開啟——在此由該設定決定，而非 sslmode。"
+  },
+  "persistence.status.tlsVerifyModeUnverified": {
+    "en": "7e1c0146c2ab82ec",
+    "text": "TLS，sslmode={{sslmode}}——但伺服器憑證「不」驗證：本服務是否驗證取決於 persistence.databaseTlsRejectUnauthorized（已關閉），而非 sslmode。連線是加密的，但伺服器的身分未經驗證。"
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "「不連線」——sslmode={{sslmode}} 要求明文連線，而本服務絕不開啟這種連線，因此不會以此連線字串啟動。"
+  },
   "persistence.status.tlsUnknown": {
-    "en": "7638b0543b0b19a9",
-    "text": "未知——連線字串不是 URL，因此無法從中讀出 sslmode。"
+    "en": "7c0ce538219125e3",
+    "text": "「不連線」——連線字串不是 postgres:// URL，因此無法判斷它是否會以明文連線，本服務也不會以它啟動。"
   },
   "persistence.status.notAUrl": {
     "en": "1d1d46012eed0b29",

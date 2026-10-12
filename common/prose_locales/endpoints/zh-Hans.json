@@ -451,6 +451,10 @@
     "en": "657c84b412c86001",
     "text": "门户的共享信号接收端点"
   },
+  "endpoints.route./portal/claim-sources/start.name": {
+    "en": "088ae53146e71c4d",
+    "text": "已连接的声明来源——将浏览器绑定到链接"
+  },
   "endpoints.route./portal/claim-sources/callback.name": {
     "en": "152919279ecea855",
     "text": "已连接的声明来源——提供方的应答"

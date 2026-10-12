@@ -272,8 +272,8 @@
     "text": "一种规范化，一次 SHA-256，一个位置——在 2026-08-27 之前，这里有两套实现。"
   },
   "crypto.standards.dpop.coverage": {
-    "en": "da82595d1a834c49",
-    "text": "full：第 4.3 节的全部十二项检查、访问令牌和刷新令牌上的 `cnf.jkt` 绑定、`dpop_jkt`、`jti` 重放检测，以及两种形式的 nonce 握手。并非必需——nonce 模式让证明更新鲜，而不是强制要求证明。"
+    "en": "97405f66eaffc812",
+    "text": "full：第 4.3 节的全部十二项检查、访问令牌“和”刷新令牌上的 `cnf.jkt` 绑定、`dpop_jkt`、`jti` 重放检测，以及两种形式的 nonce 握手。默认并非必需——nonce 模式让证明更新鲜，而不是强制要求证明——但领域可以要求它：在每个资源上使用 `oauth2.accessTokenRequireDpop`，在令牌端点上使用 `oauth2.refreshTokenRequireDpop`，两者默认均关闭。FAPI 配置文件要求发送方约束（DPoP 或双向 TLS），而管理控制台和用户门户的公共客户端始终绑定 DPoP。"
   },
   "crypto.standards.dpop.what": {
     "en": "fd2e6cef9f5dc069",
@@ -467,6 +467,90 @@
     "en": "fed52b623a3769f0",
     "text": "证书签名默认使用 SHA-256，若层级结构以 SHA-384 或 SHA-512 构建则使用它们。证书指纹以及派生已签发 `kid` 所用的 RFC 7638 JWK 指纹同样使用 SHA-256——本服务中 kid 处处都由密钥材料派生，因此两个实例不可能在两个密钥上发布同一个名称。**提供 SHA-1，并将其标记为弱算法**：“我的技术栈会拒绝 SHA-1 证书吗？”是调试器应当能够提出的问题，而没有任何东西默认使用它。"
   },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "“整个服务只有一个根密钥对”，每个信任领域一个中间 CA，进程也有一个，每个中间 CA 之下按用例各一个签发 CA，另外每签发一个密钥对就多一个。CA 私钥从不离开此进程。应用的私钥“会”离开：它在签发时交出一次，并以 `oauthAssertionPrivateKey` 写入该应用的目录条目——**凡是该密钥比进程存活更久之处，都在与其上层层级结构相同的密钥加密密钥下以 AES-256-GCM 封存**，因此目录转储、ldif 文件、数据库行或备份中保存的都是密文。控制台和管理 API 会为持有凭据的调用方打开它，因为运维人员无法取走的已签发密钥对，就是谁也无法使用的已签发密钥对。在“开发”模式下则以明文写入，因为那里的密钥加密密钥是临时的，无法像条目那样在重启后存续。无论哪种情况，本服务都“不”保留第二份副本。“并且自 2026-09-11 起，人员也可以持有一个”，以 `stsAssertionPrivateKey` 存放在其自己的 `ou=users` 条目上，以相同的密钥、相同的机制封存。区别在于“取出”的方式：应用的由 `applications.js` 为持有凭据的读取者打开，而人员的由签发操作交出一次、此后不再交出，因为这里没有任何东西会通过能打开它的模块来绘制人员的条目。"
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "证书编码"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "d40c79caa059f986",
+    "text": "X.509 v3、DER，通过 pkijs 和 asn1js——common/vendored/x509.js，即父项目自己的 PKI 代码，逐字节相同。本服务与该项目的 PKI / X.509 页面使用同一个编码器。"
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "提供的 CA 密钥算法"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "提供的证书签名算法"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "其中有意提供并标记为弱的"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "三个层级"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "证书指纹"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "对 DER 计算 SHA-256"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "所签发密钥的 `kid`"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "RFC 7638 JWK 指纹，SHA-256，截断为 16 个字符"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "发布的吊销信息"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "RFC 5280 CRL 和 RFC 6960 OCSP，“每个证书颁发机构各一份”——列表由颁发者签名，因此按领域各一份的列表将没有有效的颁发者。使用 CA 本身签名，而不是委托的响应者证书（RFC 6960 第 4.2.2.2 节），因此客户端可以用其已有的信任锚验证。本服务签发的每张证书都会通过纯 http 和 ldap 指明其自己的 CRL，并在 Authority Information Access 中指明其响应者——绝不使用 https 或 ldaps，RFC 5280 第 8 节指出 CA 不应（SHOULD NOT）将其写入扩展中。"
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "吊销检查"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "吊销检查——如何信任外部 CRL"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "其签名对照“颁发者”的证书（所出示证书链中的上一张证书）验证，其颁发者名称必须匹配，带有本服务未实现的关键扩展的 CRL 不可用（RFC 5280 第 6.3.3 节），其使用期限至 nextUpdate 或 pki.revocationCrlMaxAgeS 两者中较早者为止。传输不进行证书检查：签名本身就是身份验证，而且 CRL 服务器自己的证书通常链接到被检查的 CA。“间接” CRL 对照所出示证书指明的 cRLIssuer 的证书验证，该证书必须带有 cRLSign 并链接到所出示的路径——取自证书链、本服务的证书颁发机构、pki.revocationCrlIssuersFile，或 CRL 自身 Authority Information Access 中的 caIssuers 地址；“增量” CRL 则对照与其基础 CRL 相同的签名者。列表通过 http、https 或 ldaps 获取（仅在 pki.revocationLdap 允许时才使用纯 ldap）；ldaps 目录的证书必须链接到 node 的证书存储或 pki.revocationLdapCaFile。位于不会被连接的地址上的列表属于无法确定的状态，在硬失败模式下会被拒绝（STS-PKI-0188）；未指明任何列表和响应者的证书在产品模式下会被拒绝（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190），而带有 RFC 9608 noRevAvail 的证书则不检查。"
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "吊销检查——如何信任外部 OCSP 响应"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "请求携带 SHA-1 CertID（RFC 5019 配置文件的标识符，而非签名）和 32 个八位字节的 nonce。响应必须由证书的颁发者签名，或由颁发者以 id-kp-OCSPSigning 为其证书签名的委托响应者签名（RFC 6960 第 4.2.2.2 节）；回显不同的 nonce 会被视为重放而拒绝；thisUpdate 和 nextUpdate 必须在 pki.revocationClockSkewS 范围内保持新鲜。委托响应者“自身”的状态会在其证书指明的 CRL 上查询（绝不通过 OCSP），除非它带有 id-pkix-ocsp-nocheck；已吊销者的应答不予采用，状态未知者的应答在硬失败模式下也不予采用。"
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "吊销检查——“已注册”的证书"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "已注册而非出示的证书——RFC 7523 密钥的 x5c、RFC 7522 证书、fedSigningCertificate 或联合合作方密钥的 x5c、oid4vp.trustedIssuerCertificates 中的证书——在用于验证签名时会以相同方式检查，其颁发者从其自身的 caIssuers 地址获取。没有证书的裸密钥没有可检查的内容，并会如实报告。"
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "CA 私钥存放位置"
+  },
   "crypto.families.user-portal.signs": {
     "en": "504f3616f5efd7b5",
     "text": "无。门户不签发任何令牌、断言或证书——它更改凭据，而不是铸造凭据。"
@@ -487,6 +571,34 @@
     "en": "54242a9694c34ec7",
     "text": "密码和激活令牌都使用 scrypt（RFC 7914，N=2^15，r=8，p=1），各带 16 个随机字节的盐，存储为 `$scrypt$N$r$p$salt$hash`，这样日后可以提高成本而不会使已存储的内容失效。**不是摘要**：密码熵很低，对其进行快速哈希，离被字典还原出密码只有一步之遥。CSRF 令牌使用 HMAC 下的 SHA-256，这是另一项工作——确保表单的真实性，而不是保护静态存储的机密。"
   },
+  "crypto.families.user-portal.keys": {
+    "en": "b1cf1ce0bb050d19",
+    "text": "没有自己的密钥。CSRF 令牌是在每个进程生成、且刻意“不”持久化的密钥下计算的 HMAC-SHA256——CSRF 令牌只在会话的生存期内有意义，而会话不会在重启后存续，因此能存续的密钥什么也保护不了，只会多一个静态存储的机密。"
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "20e9dc8c3361fe3e",
+    "text": "静态存储的密码和激活令牌"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "7e9dc006d728159d",
+    "text": "scrypt，N=32768，r=8，p=1，32 字节密钥，16 字节随机盐"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "比较两者"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "常量时间相等比较"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "03f3221c7fc527a5",
+    "text": "CSRF 令牌"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "3829178c0011f20f",
+    "text": "以每进程密钥对会话 ID 计算 HMAC-SHA256"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "五种访问令牌格式，其中三种不是 JWT。jwt-signed 与这里的其他所有 JWT 经过同一个签名器，其头部 `typ` 为 gnap-at+jwt（#157）；biscuit 用领域的 Ed25519 密钥签名（Biscuit 自己的块签名）；ZCAP-LD 能力携带一个使用 gnap.zcapCryptosuite 所指定套件的 Data Integrity 证明——默认 eddsa-jcs-2022，使用领域的后量子密钥时为 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或者为了兼容使用 Ed25519Signature2020；macaroon 是在按资源服务器派生的密钥下的 HMAC-SHA256 链。当客户端实例请求时，它还会用 RFC 9421 为 HTTP 响应签名。"
@@ -506,6 +618,10 @@
   "crypto.families.gnap.hashes": {
     "en": "a478d2fd912623b6",
     "text": "Content-Digest 使用 SHA-256 和 SHA-512；第 4.2.3 节的交互哈希可使用 node 能计算的任何 Named Information 哈希方法（SHA-2 和 SHA-3，包括截断形式）；JWK 指纹、证书指纹和已记住批准的摘要使用 SHA-256；JWS 证明中的 `ath` 使用访问令牌的 SHA-256。"
+  },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "客户端实例的密钥就是客户端的身份——JWK、证书、证书指纹，或对应用条目上某个密钥的引用。共享对称密钥（gnapSymmetricKey）和 macaroon 根密钥（gnapMacaroonKey）在进程密钥加密密钥下静态封存。macaroon 密钥和 dir 密钥是以 HKDF-SHA256 从领域机密派生的，各自带有一个域分隔符。"
   },
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
@@ -555,6 +671,10 @@
     "en": "de5f85f4b8049f51",
     "text": "SHA-256 用于计算作为每个密钥 kid 的 RFC 7638 指纹，以及以注册表条目所涉及的实体或标记来命名该条目。"
   },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "每个领域一个 Federation Entity Key 表（oidfed.signingAlg，默认 ES256，也提供 ML-DSA），位于领域的 ou=oidfed 条目上，凡是密钥持久化之处，其私钥部分都在密钥加密密钥下封存；下一个密钥会提前发布，已退役的密钥在 oidfed.keyOverlapDays 期间继续发布，并为 Historical Keys 端点永久保留，其私钥部分在退役时丢弃。每个 Trust Anchor 和下级实体的固定密钥是登记册中的公钥。"
+  },
   "crypto.families.openid-federation.whatItDoesNot": {
     "en": "bb73b0a66ac9741b",
     "text": "它不在联合端点上对客户端进行身份验证（8.8——“none”是默认值，也是这里唯一的方法），它也不会用协议密钥签名联合声明，反之亦然。"
@@ -590,6 +710,10 @@
   "crypto.families.xacml.hashes": {
     "en": "cb519e6f900e9b51",
     "text": "一处，而且与安全无关。远程 PEP 的同步令牌是对每个已启用策略的文档以及哪个是根策略计算的 SHA-256——这是 PEP 询问“是否有任何变化”并得到 304 的廉价方式，仅此而已。它不对任何东西进行身份验证，也不与调用方作为凭据提供的任何内容比较，因此即使换成 CRC 也依然正确。"
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "无。没有任何类型的密钥参与作出决策。"
   },
   "crypto.families.xacml.whatItDoesNot": {
     "en": "6d7c9938306101b5",
@@ -684,20 +808,28 @@
     "text": "刷新令牌加密（加密到本领域自己的密钥）"
   },
   "crypto.families.federation.signs": {
-    "en": "4db5ac4dfde3c53a",
-    "text": "它发送给外部身份提供者的 SAML 2.0 `<AuthnRequest>`，采用封装签名，以 RSA-SHA256 基于排他性 c14n 签名——与这里其他所有文档经过的是同一个签名器。"
+    "en": "4f58817f19139f26",
+    "text": "它发送给外部身份提供者的 SAML 2.0 `<AuthnRequest>`，采用封装签名，以 RSA-SHA256 基于排他性 c14n 签名——与这里其他所有文档经过的是同一个签名器——以及通知合作方此处发生注销的 `<LogoutRequest>`，采用封装签名，或采用 Redirect 绑定的分离式查询签名。"
   },
   "crypto.families.federation.verifies": {
-    "en": "d99d0a0b18dab6e8",
-    "text": "这是该功能的全部意义所在。合作方的 SAML Response 及其中的 Assertion 各自分别检查，且各自都对照关系上配置的证书——绝不对照文档在其自身 `ds:KeyInfo` 中携带的证书，而这正是天真的实现会跳过的检查。合作方的 ID 令牌则作为普通 JWS，对照合作方发布的密钥验证。"
+    "en": "b986e6fffdabc6e3",
+    "text": "“这是该功能的全部意义所在”。合作方的 SAML Response 及其中的 Assertion 各自“分别”检查，且各自都对照关系上配置的证书——绝不对照文档在其自身 `ds:KeyInfo` 中携带的证书，而这正是天真的实现会跳过的检查。合作方的 ID 令牌则作为普通 JWS，对照合作方发布的密钥验证。合作方的“注销”——SAML `<LogoutRequest>` 或 Back-Channel Logout Token——对照相同的已配置密钥验证，未签名的会被拒绝，除非该关系关闭 `fedRequireSignedLogout`，而只有开发模式允许这样做。"
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "合作方加密到联合关系自身密钥的内容：`<EncryptedAssertion>`、已验证断言或 `<LogoutRequest>` 中的 `<EncryptedID>` 或 `<EncryptedAttribute>`、WS-Federation 令牌，以及 JWE ID 令牌或 Logout Token——且仅限该关系接受的那一种密钥管理算法和那一种内容加密算法。断言的签名在其明文上验证，Response 的签名在到达时的密文上验证；JWE 必须包含已签名的 JWT。每种解密失败都得到同一个应答，因此 ACS 不会成为预言机（oracle）。"
   },
   "crypto.families.federation.hashes": {
     "en": "2d3c2fd5b62d8002",
     "text": "合作方 `DigestMethod` 所指明的任何算法，取自下方的内置副本表。"
   },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "每个 SAML 2.0、WS-Federation 或 OpenID Connect 联合关系一个加密密钥对，在创建关系时生成：在领域中间 CA 之下的 RSA 3072 或 EC P-256，或者对于 OpenID Connect 为 X-Wing 或 ML-KEM-768，它们不带证书。凡是密钥持久化之处，其私钥部分都在密钥加密密钥下封存；轮换会将被替换的密钥保留 `federation.encryptionKeyGraceS`，且只发布当前密钥。它签名的内容，使用领域的签名密钥签名。"
+  },
   "crypto.families.federation.whatItDoesNot": {
-    "en": "b16bd8c2a0b0e24a",
-    "text": "它不解密合作方加密的断言，也不处理联合注销。关卡同时设在签名者和主体上（#109）：通过签名验证之后，只有与合作方主体相关联的那个人才会被登录。这是这里唯一一个缺少检查就会导致进程中每个协议都被绕过身份验证的界面——参见 federation/CLAUDE.md。"
+    "en": "76366a6354696014",
+    "text": "它不加密其发送的任何内容，也不就会话向任何合作方轮询：登录后影响会话的，是合作方的注销（会结束会话），以及登录时合作方发送的 SAML `SessionNotOnOrAfter`（为会话设定上限）。在产品模式下，除非该关系设置了 `fedAllowUnencrypted`，否则它会拒绝经过浏览器的明文断言；AES-CBC 和 RSA PKCS #1 v1.5 在所有模式下均被拒绝。“关卡同时设在签名者和主体上”（#109）：通过签名验证之后，只有与合作方主体相关联的那个人才会被登录。这是这里唯一一个缺少检查就会导致进程中每个协议都被绕过身份验证的界面——参见 federation/CLAUDE.md。"
   },
   "crypto.families.federation.algorithms.0.what": {
     "en": "7c3206a1a259cf99",
@@ -710,6 +842,30 @@
   "crypto.families.federation.algorithms.2.what": {
     "en": "1a25a971a5ba739e",
     "text": "入站 ID 令牌"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "加密密钥类型"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "XML Encryption 密钥管理，以下之一"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "XML Encryption 内容加密，以下之一"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "JWE 密钥管理，以下之一"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "JWE 内容加密，以下之一"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "在所有模式下均拒绝"
   },
   "crypto.families.saml-2-0.signs": {
     "en": "cae50b198b378a2b",
@@ -804,8 +960,8 @@
     "text": "RequestSecurityTokenResponse 中的 SAML 断言（1.1 或 2.0），经过共享签名器。"
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "74c8911543a69c43",
-    "text": "它读取请求方的 `<wsse:Security>` 凭据以及已签名请求中的 `<ds:X509Certificate>`——后者用于确定要加密给谁。它不检查其背后的密码。"
+    "en": "e1450965d276d357",
+    "text": "它“读取”请求方的 `<wsse:Security>` 凭据以及已签名请求中的 `<ds:X509Certificate>`——后者用于确定要“加密”给谁。在产品模式下，UsernameToken 的密码会对照该人员的 `userPassword` 或应用的客户端密钥验证；开发模式则照单全收，保留值 `invalid` 除外。"
   },
   "crypto.families.ws-trust.encrypts": {
     "en": "fa359afa3450379c",
@@ -816,8 +972,8 @@
     "text": "Reference 摘要使用 SHA-256。"
   },
   "crypto.families.ws-trust.whatItDoesNot": {
-    "en": "37c796f7428c337a",
-    "text": "它不管控委托：要求为他人签发令牌的 RST 会得到应答。它也不生成自己的已签名 SOAP 信封——参见下方的 WS-Security，那一行说明了本服务对该规范做什么、不做什么。"
+    "en": "a65f60d0f2191130",
+    "text": "它不会应答每一个为他人请求令牌的请求：`OnBehalfOf`（模拟）和 `ActAs`（委托）由签发策略根据请求方和主体条目上的委托控制来决定——在产品模式下拒绝，在开发模式下则记录为本会被拒绝的情况。它也不生成自己的已签名 SOAP 信封——参见下方的 WS-Security，那一行说明了本服务对该规范做什么、不做什么。"
   },
   "crypto.families.ws-trust.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -1227,6 +1383,10 @@
     "en": "6817583ce52ea878",
     "text": "SHA-256，用于账户密钥指纹（RFC 7638）、Replay-Nonce MAC，以及条目记录上每张证书的指纹。"
   },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "每个信任领域一个 ACME 签发 CA 密钥，位于领域中间 CA 之下；每个账户的公钥（至少 2048 位的 RSA、P-256/P-384/P-521 或 Ed25519），以公开 JWK 形式保存，并按其 RFC 7638 指纹查找；客户端为每张证书使用的自己的密钥；以及每次运行的一个机密，Replay-Nonce MAC 由其派生，与派生出的请求工作进程共享，且从不写下。"
+  },
   "crypto.families.acme.whatItDoesNot": {
     "en": "61718f6daa70f201",
     "text": "从不接触任何私钥：ACME 只接受 CSR。后量子账户密钥会被拒绝，因为其密钥类型没有 RFC 7638 指纹，而账户是通过其密钥查找的。KEM 密钥无法获得证书，因为它不能为持有证明签名。JWS 采用 RFC 8555 要求的扁平化 JSON 序列化，本服务只在这里读取这种形式。"
@@ -1267,6 +1427,10 @@
     "en": "78ff84df2eb09c64",
     "text": "SHA-256，用于条目记录上每张证书的指纹。"
   },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "每个信任领域一个 EST 签发 CA 密钥，位于领域中间 CA 之下；客户端为其注册的一切所使用的自己的密钥；以及对于 /serverkeygen，在此按模板的算法生成的密钥对（包括用于 key-encipherment 的 ML-KEM），只返回一次。"
+  },
   "crypto.families.est.whatItDoesNot": {
     "en": "0fbae781db5fb46b",
     "text": "完整的 CMC、tls-unique 通道绑定（TLS 1.3 没有该绑定）以及加密的服务器生成密钥。KEM 密钥无法通过 /simpleenroll 注册，因为它不能为持有证明签名。"
@@ -1306,6 +1470,10 @@
   "crypto.families.scep.hashes": {
     "en": "47b332491bb2a39b",
     "text": "质询机密、CSR 和签名者密钥的 SHA-256，用于事务幂等；以及上述消息摘要算法。"
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "每个信任领域一个 SCEP 签发 CA 密钥，以及每个领域一个 RA 密钥对——scep.raKeyAlgorithm 指定的 RSA，是该 CA 签发的叶证书，保存在领域的 PKI 行中（在产品模式下与层级结构一同封存），并在到期前三十天内重新签发。请求者的密钥从不可见。"
   },
   "crypto.families.scep.whatItDoesNot": {
     "en": "4a19c5629d38be11",

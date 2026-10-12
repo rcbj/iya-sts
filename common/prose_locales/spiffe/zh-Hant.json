@@ -156,12 +156,12 @@
     "text": "工作負載取得多個 SVID 時營運者的指引——`internal`、`external`。原封不動地傳遞給 Workload API；此處沒有任何東西會讀取它。"
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "為 TRUE 時，持有者可以呼叫 SPIRE Server API 的管理方法。「記錄但不強制」，與本服務中其他每項授權事實一樣：此處沒有任何呼叫會因缺少它而被拒絕。"
+    "en": "fefc555630e7c657",
+    "text": "為 TRUE 時，持有者可以透過相互 TLS 呼叫 SPIRE Server API 的管理方法——項目、代理程式、套件組、聯盟關係、鑄造 SVID。在兩種模式下皆「強制執行」：當呼叫端身分的某個未過期項目帶有此旗標，或 spiffe.adminIds 列出它時，伺服器 API 會將該呼叫端視為 `admin`，並對兩者皆非的遠端呼叫端拒絕這些方法（私有 Unix 通訊端的 `local` 呼叫端是另一條途徑）。每次呼叫時都會讀取，因此變更會套用於下一次呼叫。"
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "為 TRUE 時，持有者是可以要求中繼 CA（NewDownstreamX509CA）的下游 SPIRE 伺服器。記錄但不強制。"
+    "en": "16aab8ec2a97d549",
+    "text": "為 TRUE 時，持有者是可以要求中繼 CA（NewDownstreamX509CA）並發布 JWT 或 WIT 授權機構的下游 SPIRE 伺服器。在兩種模式下皆「強制執行」：沒有任何未過期項目標記為下游的呼叫端會被拒絕這些方法，且此旗標不授予其他任何權限。"
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",

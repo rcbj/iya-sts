@@ -19,6 +19,10 @@
     "en": "8b5e4bb62b24c1f7",
     "text": "此信任领域没有 KDC：{{reason}}。请在该领域上设置 krb5.realm 并开启 krb5.enabled，为其提供一个 KDC；端口 88 按请求中的 Kerberos 领域名称路由请求。"
   },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "“此信任领域的 KDC 已开启但无法使用”：{{reason}}。其 Kerberos 领域为 {{kerberosRealm}}。"
+  },
   "kerberos.notes.window": {
     "en": "f23c2b84dd49da4d",
     "text": "密钥在密码被设置或验证之后派生，需要几十毫秒才能就位；在此之前，KDC 会拒绝此人，而不是接受较旧的密钥。"

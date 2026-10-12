@@ -8,12 +8,12 @@
     "text": "關閉：{{setting}} 為 0，因此每個請求都由前端程序本身在單一線程上回應。"
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "已放棄：{{failed}} 個背景工作線程啟動失敗，集區已停止啟動它們（STS-WORKER-0023）。託管介面改送到請求集區。"
+    "en": "db7b7ee1f099024a",
+    "text": "已放棄：{{failed}} 個背景工作線程啟動失敗，集區已停止啟動它們。託管介面改送到請求集區。"
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "已放棄：{{failed}} 個背景工作線程啟動失敗，集區已停止啟動它們（STS-WORKER-0023）。每個請求都由前端程序回應。"
+    "en": "ced50089d8744adc",
+    "text": "已放棄：{{failed}} 個背景工作線程啟動失敗，集區已停止啟動它們。每個請求都由前端程序回應。"
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

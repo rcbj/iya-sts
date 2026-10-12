@@ -76,8 +76,8 @@
     "text": "用户名和密码"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "本服务自己的登录界面，它不检查密码。这是一般情况，也是未设置机制且其他方面都没有意见时的回退选项。"
+    "en": "3c7b942fed61a172",
+    "text": "本服务自己的登录界面：用户名和密码，密码在产品模式下会验证，在开发模式下则不验证。这是一般情况，也是未设置机制且其他方面都没有意见时的回退选项。"
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Kerberos 票据（SPNEGO）"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "集成身份验证。此人被发送到 /authn/spnego，它以 401 和 WWW-Authenticate: Negotiate 应答，并根据其客户端发回的服务票据让其登录（RFC 4559 基于 RFC 4178 基于 RFC 4121）。无需输入任何内容，也不绘制任何界面。它是这里唯一依赖于本服务真正验证的凭据的机制——其他所有登录方式都采用给定的名称——会话随后声明的内容读自票据自身的标志：pre-authent 为 amr [\"pwd\"]，hw-authent 为 [\"hwk\"]，两者都有则两者都记录，两者都不声明的票据则什么也不记录。无法获取票据的客户端会看到一个链接到登录界面的页面，因为在任何未针对此主机进行配置的浏览器中，单纯的 401 Negotiate 都是死胡同。"
+    "en": "0f52a102d4c01229",
+    "text": "“集成身份验证”。此人被发送到 /authn/spnego，它以 401 和 WWW-Authenticate: Negotiate 应答，并根据其客户端发回的服务票据让其登录（RFC 4559 基于 RFC 4178 基于 RFC 4121）。无需输入任何内容，也不绘制任何界面。与安全密钥或钱包一样，它依赖于本服务在所有模式下都会验证的凭据——登录界面的密码只在产品模式下验证——会话随后声明的内容读自“票据”自身的标志：pre-authent 为 amr [\"pwd\"]，hw-authent 为 [\"hwk\"]，两者都有则两者都记录，两者都不声明的票据则“什么也不记录”。无法获取票据的客户端会看到一个链接到登录界面的页面，因为在任何未针对此主机进行配置的浏览器中，单纯的 401 Negotiate 都是死胡同。"
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "本服务处于哪一端：service-provider（使用方）或 identity-provider（断言方）。一个关系就是一个方向——参见标题。"
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "saml2、saml11、wsfed、oidc、oauth2 之一。"
+    "en": "06ec8c6d5bce784c",
+    "text": "saml2、saml11、wsfed、oidc、oauth2 之一——五种登录协议——或 ssf，即只发送 Shared Signals、不让任何人登录的合作方。"
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "本服务"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "登录界面，它不检查密码"
+    "en": "85a969d1a113b8c5",
+    "text": "登录界面（用户名和密码）"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

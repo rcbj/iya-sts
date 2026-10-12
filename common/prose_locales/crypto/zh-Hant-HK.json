@@ -63,6 +63,10 @@
     "en": "c0a4c4242da20c76",
     "text": "此處每把公開金鑰的發布方式，以及讀取客戶端自身金鑰的方式。DPoP 所繫結的就是 RFC 7638 指紋。"
   },
+  "crypto.standards.dpop.coverage": {
+    "en": "97405f66eaffc812",
+    "text": "full：section 4.3 的全部十二項檢查、存取權杖「與」重新整理權杖上的 `cnf.jkt` 繫結、`dpop_jkt`、`jti` 重送偵測，以及兩種形式的 nonce 交握。預設並非必要——nonce 模式讓證明更新鮮，而非強制使用——但領域可以要求它：在每個資源上使用 `oauth2.accessTokenRequireDpop`，在權杖端點上使用 `oauth2.refreshTokenRequireDpop`，兩者預設皆關閉。FAPI 設定檔要求發送者約束（DPoP 或相互 TLS），而管理主控台與用戶入口網站的公開客戶端一律繫結 DPoP。"
+  },
   "crypto.standards.mtls.coverage": {
     "en": "d10a6eaf8ebf09b2",
     "text": "partial：兩種客戶端驗證方法以及證書繫結的存取權杖。它將已驗證的證書轉換為「指紋」，而絕不轉換為登入。"
@@ -119,6 +123,42 @@
     "en": "fed52b623a3769f0",
     "text": "證書簽章預設使用 SHA-256，若階層以 SHA-384 或 SHA-512 建立則使用它們。證書指紋以及衍生出所簽發 `kid` 的 RFC 7638 JWK 指紋，同樣使用 SHA-256——本服務各處的 kid 都由金鑰數據衍生，因此兩個實例無法以同一個名稱發布兩把金鑰。**有提供 SHA-1，並標示為弱**：「我的堆疊會拒絕 SHA-1 證書嗎？」是偵錯工具應該能夠提出的問題，而沒有任何項目預設使用它。"
   },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "「整個服務只有一組 Root 金鑰組」，每個信任領域一個 Intermediate，程序也有一個，每個 Intermediate 之下依使用情境各一個 Issuing CA，再加上每簽發一組金鑰組就多一組。CA 私密金鑰絕不離開此程序。應用程式的私密金鑰「則會」離開：它在簽發時交出一次，並以 `oauthAssertionPrivateKey` 寫入該應用程式的目錄項目——**凡是該金鑰存續超過程序之處，都以與其上層階層相同的金鑰加密金鑰進行 AES-256-GCM 密封**，因此目錄傾印、ldif 檔案、數據庫列或備份中保存的都是密文。主控台與管理 API 會為持有認證資料的呼叫端開啟它，因為操作人員無法取回的已簽發金鑰組，就是沒有人能使用的已簽發金鑰組。在「開發」模式下則以明文寫入，因為那裡的金鑰加密金鑰是暫時性的，無法像項目一樣在重新啟動後存續。無論哪種情況，本服務都「不」保留第二份複本。「而且自 2026-09-11 起，人員也可以持有一組」，以 `stsAssertionPrivateKey` 存放在其自己的 `ou=users` 項目上，以相同金鑰、相同機制密封。差別在於「取出」的方式：應用程式的由 `applications.js` 為具備認證資料的讀取者開啟，而人員的由簽發動作交出一次、此後不再交出，因為此處沒有任何東西會透過能開啟它的模組來繪製人員的項目。"
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "證書編碼"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "提供的證書簽章演算法"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "證書指紋"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "RFC 5280 CRL 與 RFC 6960 OCSP，「每個核證機關各一份」——清單由簽發者簽署，因此每個領域一份的清單將沒有有效的簽發者。以 CA 本身簽署，而非委派的回應程式證書（RFC 6960 第 4.2.2.2 節），因此客戶端可用其已有的錨點驗證。本服務簽發的每張證書都會透過純 http 與 ldap 指明其自己的 CRL，並在 Authority Information Access 中指明其回應程式——絕不使用 https 或 ldaps，RFC 5280 第 8 節表示 CA 不應（SHOULD NOT）將其寫入擴充中。"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "其簽章會對照「簽發者」的證書（所出示鏈中的上一張證書）驗證，其簽發者名稱必須相符，帶有本服務未實作之關鍵擴充的 CRL 無法使用（RFC 5280 第 6.3.3 節），且其使用期限至 nextUpdate 或 pki.revocationCrlMaxAgeS 兩者中較早者為止。傳輸不做證書檢查：簽章本身就是驗證，而且 CRL 伺服器自己的證書通常鏈結至受檢查的 CA。「間接」CRL 會對照所出示證書指名之 cRLIssuer 的證書驗證，該證書必須帶有 cRLSign 並鏈結至所出示的路徑——取自鏈、本服務的核證機關、pki.revocationCrlIssuersFile，或 CRL 自身 Authority Information Access 中的 caIssuers 地址；「差異」CRL 則對照與其基礎 CRL 相同的簽署者。清單透過 http、https 或 ldaps 擷取（僅在 pki.revocationLdap 允許時才使用純 ldap）；ldaps 目錄的證書必須鏈結至 node 的存放區或 pki.revocationLdapCaFile。位於不會連線之地址的清單，屬於無法確立的狀態，在硬性失敗下會被拒絕（STS-PKI-0188）；未指明任何清單與回應程式的證書在產品模式下會被拒絕（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190），而帶有 RFC 9608 noRevAvail 的證書則不檢查。"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "請求帶有 SHA-1 CertID（RFC 5019 設定檔的識別碼，而非簽章）與 32 個八位元組的 nonce。回應必須由證書的簽發者簽署，或由簽發者以 id-kp-OCSPSigning 簽署其證書的委派回應程式簽署（RFC 6960 第 4.2.2.2 節）；回傳不同的 nonce 會被視為重放而拒絕；thisUpdate 與 nextUpdate 必須在 pki.revocationClockSkewS 內保持新鮮。委派回應程式「自身」的狀態會在其證書指明的 CRL 上查詢（絕不透過 OCSP），除非它帶有 id-pkix-ocsp-nocheck；已撤銷者的回答不予採用，狀態未知者的回答在硬性失敗下也不予採用。"
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "撤銷檢查——「已註冊」的證書"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "已註冊而非出示的證書——RFC 7523 金鑰的 x5c、RFC 7522 證書、fedSigningCertificate 或聯盟夥伴金鑰的 x5c、oid4vp.trustedIssuerCertificates 中的證書——在用來驗證簽章時會以相同方式檢查，其簽發者從其自身的 caIssuers 地址擷取。沒有證書的裸金鑰沒有可檢查的內容，並會如此回報。"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "五種存取權杖格式，其中三種不是 JWT。jwt-signed 經過與此處所有其他 JWT 相同的簽署器，其標頭 `typ` 為 gnap-at+jwt（#157）；biscuit 以領域的 Ed25519 金鑰簽署（Biscuit 本身的區塊簽章）；ZCAP-LD 能力攜帶 gnap.zcapCryptosuite 所指名套件的 Data Integrity 證明——預設為 eddsa-jcs-2022，搭配領域的後量子金鑰時為 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或為相容性而使用 Ed25519Signature2020；macaroon 是以每個資源伺服器衍生的金鑰建立的 HMAC-SHA256 鏈。當客戶端實例要求時，它也會以 RFC 9421 簽署 HTTP 回應。"
@@ -130,6 +170,10 @@
   "crypto.families.gnap.hashes": {
     "en": "a478d2fd912623b6",
     "text": "Content-Digest 使用 SHA-256 與 SHA-512；第 4.2.3 節的互動雜湊可使用 node 能計算的任何 Named Information 雜湊方法（SHA-2 與 SHA-3，包括截斷形式）；JWK 指紋、證書指紋與已記住核准的摘要使用 SHA-256；JWS 證明中的 `ath` 使用存取權杖的 SHA-256。"
+  },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "客戶端實例的金鑰就是客戶端的身分——JWK、證書、證書指紋，或指向應用程式項目上某把金鑰的參照。共用對稱金鑰（gnapSymmetricKey）與 macaroon 根金鑰（gnapMacaroonKey）以程序的金鑰加密金鑰進行靜態密封。macaroon 金鑰與 dir 金鑰是以 HKDF-SHA256 從領域秘密衍生而來，各自帶有一個網域分隔值。"
   },
   "crypto.families.openid-federation.whatItDoesNot": {
     "en": "bb73b0a66ac9741b",
@@ -168,8 +212,12 @@
     "text": "客戶端斷言"
   },
   "crypto.families.federation.verifies": {
-    "en": "d99d0a0b18dab6e8",
-    "text": "這是此功能的全部重點。夥伴的 SAML Response 及其中的 Assertion，各自「分別」檢查，且各自對照該關係上設定的證書——絕不對照文件在其自身 `ds:KeyInfo` 中攜帶的證書，而那正是天真的實作會略過的檢查。夥伴的 ID Token 則作為一般 JWS，對照夥伴發布的金鑰驗證。"
+    "en": "b986e6fffdabc6e3",
+    "text": "「這是此功能的全部重點」。夥伴的 SAML Response 及其中的 Assertion，各自「分別」檢查，且各自對照該關係上設定的證書——絕不對照文件在其自身 `ds:KeyInfo` 中攜帶的證書，而那正是天真的實作會略過的檢查。夥伴的 ID Token 則作為一般 JWS，對照夥伴發布的金鑰驗證。夥伴的「登出」——SAML `<LogoutRequest>` 或 Back-Channel Logout Token——對照相同的已設定金鑰驗證，未簽署者會被拒絕，除非該關係關閉 `fedRequireSignedLogout`，而這只有開發模式允許。"
+  },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "每個 SAML 2.0、WS-Federation 或 OpenID Connect 關係一組加密金鑰組，在建立關係時產生：在領域的 Intermediate 之下的 RSA 3072 或 EC P-256，或者對 OpenID Connect 而言為 X-Wing 或 ML-KEM-768，它們不帶證書。凡是金鑰會持久保存之處，其私密部分都以金鑰加密金鑰密封；輪替會將被取代的金鑰保留 `federation.encryptionKeyGraceS`，且只發布目前的金鑰。它所簽署的內容，以領域的簽章金鑰簽署。"
   },
   "crypto.families.saml-2-0.signs": {
     "en": "cae50b198b378a2b",
@@ -186,6 +234,10 @@
   "crypto.families.saml-2-0.whatItDoesNot": {
     "en": "30efb1054d4e7582",
     "text": "除非 saml.allowSha1Signatures 開啟，否則它不接受 SHA-1 簽章——在產品模式下絕不接受，產品模式也從不以 rsa-sha1 簽署、以 rsa-1_5 包裝或解開金鑰——而 MD5、MAC 或有狀態的雜湊式簽章則一概不接受。對於它未持有證書、卻開啟了加密的服務提供者，在開發模式下會以「明文」取得斷言並大聲告知，在產品模式下則被拒絕；元數據發布了加密金鑰的服務提供者，在兩種模式下都會被加密給它。"
+  },
+  "crypto.families.ws-trust.verifies": {
+    "en": "e1450965d276d357",
+    "text": "它會「讀取」請求者的 `<wsse:Security>` 認證資料，以及已簽署請求中的 `<ds:X509Certificate>`——後者用來找出要「加密」給誰。在產品模式下，UsernameToken 的密碼會對照該人員的 `userPassword` 或應用程式的客戶端密碼驗證；開發模式則照單全收，保留值 `invalid` 除外。"
   },
   "crypto.families.ws-trust.encrypts": {
     "en": "fa359afa3450379c",
@@ -295,6 +347,10 @@
     "en": "6817583ce52ea878",
     "text": "帳戶金鑰指紋（RFC 7638）、Replay-Nonce MAC，以及項目記錄上每張證書的指紋，皆使用 SHA-256。"
   },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "每個信任領域一把 ACME Issuing CA 金鑰，位於領域 Intermediate 之下；每個帳戶的公開金鑰（至少 2048 位元的 RSA、P-256/P-384/P-521 或 Ed25519），以公開 JWK 形式保存，並依其 RFC 7638 指紋查找；客戶端為每張證書使用的自己的金鑰；以及每次執行的一個秘密，Replay-Nonce MAC 由其衍生，與分支出的請求背景工作程序共用，且絕不寫下。"
+  },
   "crypto.families.acme.whatItDoesNot": {
     "en": "61718f6daa70f201",
     "text": "它從不接觸任何私密金鑰：ACME 只接受 CSR。後量子帳戶金鑰會被拒絕，因為其金鑰類型沒有 RFC 7638 指紋，而帳戶是依其金鑰尋找的。KEM 金鑰無法取得證書，因為它無法簽署持有證明。JWS 採用 RFC 8555 所要求的「扁平化」JSON 序列化，本服務只在此處讀取這種格式。"
@@ -319,6 +375,10 @@
     "en": "78ff84df2eb09c64",
     "text": "項目記錄上每張證書的指紋使用 SHA-256。"
   },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "每個信任領域一把 EST Issuing CA 金鑰，位於領域 Intermediate 之下；客戶端為其註冊的一切所使用的自己的金鑰；以及對 /serverkeygen 而言，在此以範本的演算法產生的金鑰組（包括用於 key-encipherment 的 ML-KEM），只回傳一次。"
+  },
   "crypto.families.est.algorithms.3.what": {
     "en": "e81949dda7a6dd17",
     "text": "證書容器"
@@ -334,6 +394,10 @@
   "crypto.families.scep.encrypts": {
     "en": "e41a0442f653089f",
     "text": "「成功」CertRep 的 certs-only 內容，針對請求者的簽署者證書加密：RSAES-PKCS1-v1_5 金鑰傳輸，以及請求所使用的 AES-CBC 金鑰長度。"
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "每個信任領域一把 SCEP Issuing CA 金鑰，以及每個領域一組 RA 金鑰組——scep.raKeyAlgorithm 的 RSA，為該 CA 的葉證書，保存在領域的 PKI 列中（在產品模式下與階層一同密封），並在到期前三十天內重新簽發。請求者的金鑰從未被看到。"
   },
   "crypto.hashing.fixed.1.what": {
     "en": "789f03952b2a25a9",

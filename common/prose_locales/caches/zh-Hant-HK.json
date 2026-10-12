@@ -246,5 +246,9 @@
   "caches.notListed.0.what": {
     "en": "441b01b35e9c6547",
     "text": "SAML 服務提供者元數據"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "直到數據集版本被啟用"
   }
 }

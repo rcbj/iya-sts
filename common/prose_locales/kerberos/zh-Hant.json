@@ -19,6 +19,10 @@
     "en": "8b5e4bb62b24c1f7",
     "text": "此信任領域沒有 KDC：{{reason}}。請在領域上設定 krb5.realm 並開啟 krb5.enabled 以提供一個；連接埠 88 會依請求內的 Kerberos 領域名稱路由請求。"
   },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "「此信任領域的 KDC 已開啟但無法使用」：{{reason}}。其 Kerberos 領域為 {{kerberosRealm}}。"
+  },
   "kerberos.notes.window": {
     "en": "f23c2b84dd49da4d",
     "text": "金鑰在密碼被設定或驗證「之後」衍生，需要數十毫秒才會生效；在此之前，KDC 會拒絕該人，而不是接受較舊的金鑰。"

@@ -76,8 +76,8 @@
     "text": "使用者名稱與密碼"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "本服務自己的登入畫面，它不檢查任何密碼。這是一般情況，也是未設定機制在沒有其他任何意見時所採用的方式。"
+    "en": "3c7b942fed61a172",
+    "text": "本服務自己的登入畫面：使用者名稱與密碼，密碼在產品模式下會驗證，在開發模式下則不會。這是一般情況，也是未設定機制在沒有其他任何意見時所採用的方式。"
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Kerberos 票證（SPNEGO）"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "「整合式驗證」。人員被送往 /authn/spnego，它以 401 及 WWW-Authenticate: Negotiate 回應，並依其用戶端送回的服務票證讓他們登入（RFC 4559 建立在 RFC 4178 之上，再建立在 RFC 4121 之上）。不必輸入任何內容，也不繪製任何畫面。它是此處唯一建立在本服務真正驗證之憑證上的機制——其他每種登入都接受所給的名稱——而工作階段接著主張的內容是從「票證」自身的旗標讀取：pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未主張的票證則「什麼都沒有」。無法取得票證的用戶端會看到一個連結到登入畫面的頁面，因為在每個未針對此主機設定的瀏覽器中，單純的 401 Negotiate 都是死路。"
+    "en": "0f52a102d4c01229",
+    "text": "「整合式驗證」。人員被送往 /authn/spnego，它以 401 及 WWW-Authenticate: Negotiate 回應，並依其用戶端送回的服務票證讓他們登入（RFC 4559 建立在 RFC 4178 之上，再建立在 RFC 4121 之上）。不必輸入任何內容，也不繪製任何畫面。如同安全金鑰或錢包，它建立在本服務於每種模式下都會驗證的認證資料上——登入畫面的密碼只在產品模式下驗證——而工作階段接著主張的內容是從「票證」自身的旗標讀取：pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未主張的票證則「什麼都沒有」。無法取得票證的用戶端會看到一個連結到登入畫面的頁面，因為在每個未針對此主機設定的瀏覽器中，單純的 401 Negotiate 都是死路。"
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "本服務是哪一端：service-provider（它使用）或 identity-provider（它斷言）。一個關係就是一個方向——請參閱標頭。"
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "saml2、saml11、wsfed、oidc、oauth2 其中之一。"
+    "en": "06ec8c6d5bce784c",
+    "text": "saml2、saml11、wsfed、oidc、oauth2 其中之一——五種登入協定——或 ssf，即只傳送 Shared Signals、不讓任何人登入的夥伴。"
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "本服務"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "登入畫面，它不檢查任何密碼"
+    "en": "85a969d1a113b8c5",
+    "text": "登入畫面（使用者名稱與密碼）"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

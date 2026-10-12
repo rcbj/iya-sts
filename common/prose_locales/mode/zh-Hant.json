@@ -587,6 +587,18 @@
     "en": "2d0556abc166bc57",
     "text": "以上皆無。目錄、主體資料庫與登錄只保存經設定或佈建的內容，別無其他——兩個 XACML 角色群組存在但為空，而 KDC 拒絕以本儲存庫中公開的密碼建立 krbtgt 或其服務帳戶。"
   },
+  "mode.requirements.test-double.what": {
+    "en": "f06cf29c4a61e31d",
+    "text": "服務中繼資料文件表明本服務是測試替身"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "241755f4aaf4cb6b",
+    "text": "GET /admin-api/sts-metadata 中的 `testDouble` 為 true：本服務不檢查任何密碼、不驗證任何存取權杖，而端點清單不得被解讀為聲稱它會這麼做。"
+  },
+  "mode.requirements.test-double.product": {
+    "en": "252476cbd5f62e18",
+    "text": "`testDouble` 為 false：密碼會被驗證、存取權杖會被驗證，而文件也如此表明。"
+  },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",
     "text": "宣告值可以是虛構的"
