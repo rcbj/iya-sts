@@ -98,6 +98,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const zlib = require("zlib");
 const { Command, Option } = require("commander");
@@ -311,14 +313,22 @@ async function throughTheScreens(cookies, started, username) {
   let r = started.r;
   let landed = started.landed;
   for (let step = 0; step < 4 && r.status === 200; step += 1) {
-    if (/name="authn_id"/.test(r.body)) {
-      const b = hiddenFields(r.body);
-      b.set("username", username);
-      b.set("password", PERSON_PASSWORD);
-      b.set("action", "login");
-      ({ r, landed } = await follow(cookies, base + "/authn/login", {
-        method: "POST", body: b.toString(),
-        headers: { "content-type": "application/x-www-form-urlencoded" } }));
+    // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571, a static page over
+    // `/authn-api`: answered through the one helper, and the flow followed
+    // from where its answer says, as from the form's 303.
+    if (/\/authn\/signin\.js/.test(r.body)) {
+      const answer = await authnSignin.submit(base, r.url,
+        { action: "login", username: username, password: PERSON_PASSWORD },
+        { cookie: cookies && cookies.has() ? cookies.header() : "" });
+      if (cookies) {
+        cookies.take({ headers: answer.headers });
+      }
+      if (answer.next !== "redirect") {
+        r = { status: answer.status, headers: answer.headers,
+              body: JSON.stringify(answer.json), url: r.url };
+        break;
+      }
+      ({ r, landed } = await follow(cookies, answer.location));
     } else if (/\/oauth2\/consent/.test(r.body)) {
       const b = hiddenFields(r.body);
       b.set("action", "allow");
@@ -914,7 +924,7 @@ async function sessionStillSignsIn(cookies, application) {
   log.debug("Leaving sessionStillSignsIn().");
   // A login screen drawn in the body is the same answer as login_required and
   // arrives when the flow did not redirect at all.
-  return !/name="authn_id"/.test(started.r.body || "");
+  return !/\/authn\/signin\.js/.test(started.r.body || "");
 }
 
 async function issuedFor(username) {
