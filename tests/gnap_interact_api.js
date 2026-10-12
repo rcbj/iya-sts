@@ -90,13 +90,16 @@ function childMain() {
 
     // A grant waiting for interaction, as `startInteraction()` leaves one:
     // a redirect start link, a user code, and the finish asked for.
-    const made = function (finish, access) {
+    // `unstarted` leaves it as a start mode would find it; every other grant
+    // has had its interaction started, as one the approval page is asked
+    // about always has.
+    const made = function (finish, unstarted) {
       const now = Math.floor(Date.now() / 1000);
       const grant = store.newGrant({
         as: 'default', grantEndpoint: ORIGIN + '/gnap',
         client: { identifier: CLIENT, key: null, proof: 'httpsig',
                   display: { name: 'GIA <client>', declared: ['name'] } },
-        request: { tokens: [{ label: '', bearer: false, access: access || [
+        request: { tokens: [{ label: '', bearer: false, access: [
           'gia-ref-' + SUFFIX, { type: 'gia-type', actions: ['read'] }] }],
                    multiple: false, subject: null, interact: null },
         ro: null, decision: null, delivered: false, polls: 0,
@@ -113,7 +116,8 @@ function childMain() {
           ? { method: 'redirect', uri: FINISH,
               nonce: 'gia-cn-' + SUFFIX } : finish,
         serverNonce: 'gia-sn-' + crypto.randomBytes(6).toString('hex'),
-        expiresAt: now + 600, started: null, decided: false,
+        expiresAt: now + 600, started: unstarted ? null : 'redirect',
+        decided: false,
         decision: null, interactRef: null, approvalId: store.handle(18) };
       store.putInteraction('approve:' + interaction.approvalId, grant.id);
       store.putInteraction('redirect:' + rid, grant.id);
@@ -196,7 +200,7 @@ function childMain() {
          JSON.stringify(ops));
 
     // --- 3. the protocol's answers -------------------------------------------
-    const one = made();
+    const one = made(undefined, true);
     const jar = {};
     r = await get(jar, '/gnap/interact/' + one.rid);
     note(r.status === 303 && r.headers.location === one.approve &&
@@ -346,7 +350,7 @@ function childMain() {
          'done view', r.status + ' ' + r.text.slice(0, 300));
 
     // --- 7. the user code ----------------------------------------------------
-    const coded = made();
+    const coded = made(undefined, true);
     r = await get(codeJar, '/gnap-api/code');
     const codeCsrf = r.json && r.json.csrf;
     note(r.status === 200 && r.json.view.kind === 'code' && !!codeCsrf,

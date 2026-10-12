@@ -151,8 +151,7 @@ const APPLICATIONS = [
   // static surface drawn from it, so the two are one application on one
   // listener, as `/authn` and `/authn-api` are.
   { id: 'gnap', label: 'GNAP', session: true,
-    what: 'The GNAP authorization server, its interaction pages and the ' +
-          'API they are drawn from.',
+    what: 'The GNAP authorization server and its interaction pages.',
     prefixes: ['/gnap', '/gnap-api', '/.well-known/gnap-as-rs'], exact: [] },
   { id: 'xacml', label: 'XACML',
     what: 'The policy decision point, its policies and the remote PEPs\' ' +
