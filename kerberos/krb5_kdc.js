@@ -4954,8 +4954,10 @@ function replyFromResult(result) {
   return reply;
 }
 
-// What a socket calls for one complete message. Resolves the reply bytes,
-// never rejects: a failure is a KRB-ERROR the client can act on.
+// What a socket's complete message comes to once no router has placed it
+// elsewhere (`answerFromSocket()`, below), and what `answerMessage()` runs
+// for a message another cell relayed here. Resolves the reply bytes, never
+// rejects: a failure is a KRB-ERROR the client can act on.
 async function answerSocketMessage(bytes, transport, address, port) {
   log.debug('Entering answerSocketMessage(). transport=' + transport);
   const pool = requestPool();
@@ -4997,6 +4999,135 @@ async function answerSocketMessage(bytes, transport, address, port) {
   }
   log.debug('Leaving answerSocketMessage(). Answered by a worker.');
   return reply;
+}
+
+// ---------------------------------------------------------------------------
+// THE MESSAGE ROUTER: A PORT-88 MESSAGE ANSWERED IN ITS CLIENT'S HOME CELL
+// (#98, #588, 2026-10-12).
+//
+// In a service deployed as cells a person's keys, disabled flag, second
+// factor, PAC facts and sign-out instant are all in their HOME cell
+// (`kerberos/CLAUDE.md`, *Cells*), and MS-KKDCP has relayed a request there
+// since 2026-09-28 (`krb5_home.ts`'s `POST /KdcProxy`, ahead of ours). The
+// raw sockets had no such seam: a traveller whose packets reached a visiting
+// cell's port 88 was answered THERE — an unknown principal in product, a
+// freshly made one in development. This is the seam.
+//
+// `setMessageRouter(fn)` installs one function that both sockets ask before
+// they answer a complete message themselves:
+//
+//   fn(bytes, { transport: 'tcp' | 'udp', peer: { address, port } })
+//
+// It may answer
+//   * a Buffer (or Uint8Array) — the reply, written and framed by the socket
+//     exactly as one this module made: the TCP length prefix, and on UDP
+//     RFC 4120 section 7.2.1's size limit, so an oversized RELAYED reply is
+//     KRB_ERR_RESPONSE_TOO_BIG and the client retries over TCP, as it would
+//     have for one made here (rcbj's decision on #588); a refusal it carries
+//     under this module's Symbol is recorded on the transport's audit row;
+//   * `{ reply, refusal }` — the same, with the refusal carried in the clear
+//     because it crossed a process boundary (a structured clone, or JSON
+//     from another cell) that drops a Symbol; `replyFromResult()` puts it
+//     back, the very function a worker's answer goes through;
+//   * null (or an empty reply) — go on, and the message is answered here as
+//     it always was.
+// A router that THROWS is logged (STS-KRB-0206) and the message is answered
+// here: a placement that failed must not leave a client waiting for a reply
+// that never comes, and the KDC's own answer is what it got before this seam.
+//
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file is in the parent
+// project's tests-image COPY closure (`kerberos/CLAUDE.md`), so it requires
+// nothing new: `krb5_home.ts` installs the router from outside
+// (`common/protocol_stack.ts`, right after requiring this file), and only in a
+// service deployed as cells. With no router — single-cell mode, and every
+// in-process loader of this file — `answerFromSocket()` calls
+// `answerSocketMessage()` and nothing else, byte for byte what the sockets
+// did before. No realm is passed, because the sockets have none: `routeOf()`
+// chooses it from the Kerberos realm NAME in the bytes, at home as here.
+//
+// `answerMessage(bytes, transport, client)` is the other half: what a socket
+// would answer for a message, with no socket — the home cell runs it for a
+// request another cell relayed. It is `answerSocketMessage()` (the request
+// pool, else `handleMessage()`) inside the client's audit source, so a
+// relayed message is answered by the SAME code, in a worker where there is
+// one, and every row it causes names the client the visiting cell saw. It
+// never asks the router: a relayed message is answered where it was sent, one
+// hop (`common/cell_channel.ts`).
+// ---------------------------------------------------------------------------
+let messageRouter = null;
+
+function setMessageRouter(fn) {
+  log.debug('Entering setMessageRouter().');
+  if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+    log.debug('Leaving setMessageRouter(). Not a function.');
+    throw new TypeError('krb5: setMessageRouter() takes a function or null.');
+  }
+  messageRouter = fn || null;
+  log.debug('Leaving setMessageRouter(). ' +
+            (messageRouter ? 'Installed.' : 'Cleared.'));
+}
+
+// What a router answered, as a reply a socket writes; null to go on.
+function routedReply(answer) {
+  log.debug('Entering routedReply().');
+  if (answer === null || answer === undefined) {
+    log.debug('Leaving routedReply(). Not routed.');
+    return null;
+  }
+  if (answer instanceof Uint8Array) {
+    // Returned as it is, not copied: a copy would drop the refusal a reply
+    // made by errorReply() carries under its Symbol.
+    log.debug('Leaving routedReply(). Bytes.');
+    return answer.length ? answer : null;
+  }
+  log.debug('Leaving routedReply(). A result.');
+  return replyFromResult(answer);
+}
+
+// What a socket calls for one complete message: the router first, where one
+// is installed, and then `answerSocketMessage()`. Resolves the reply bytes,
+// never rejects.
+async function answerFromSocket(bytes, transport, address, port) {
+  log.debug('Entering answerFromSocket(). transport=' + transport);
+  const router = messageRouter;
+  if (!router) {
+    log.debug('Leaving answerFromSocket(). No router.');
+    return answerSocketMessage(bytes, transport, address, port);
+  }
+  let reply = null;
+  try {
+    reply = routedReply(await router(bytes, {
+      transport: transport,
+      peer: { address: String(address || ''), port: Number(port) || 0 }
+    }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KRB-0206') + 'krb5: the message router ' +
+              'failed on a ' + transport + ' message from ' +
+              (address || '?') + ': ' +
+              String((e && e.message) || e).replace(/\.$/, '') +
+              '. The message is answered here.');
+    reply = null;
+  }
+  if (reply) {
+    log.debug('Leaving answerFromSocket(). Answered by the router.');
+    return reply;
+  }
+  log.debug('Leaving answerFromSocket(). Answered here.');
+  return answerSocketMessage(bytes, transport, address, port);
+}
+
+// A message with no socket — see the header above. `client` is
+// `{ address, port }` as the socket that received it saw them.
+function answerMessage(bytes, transport, client) {
+  log.debug('Entering answerMessage(). transport=' + transport);
+  const c = client || {};
+  const message = (bytes && typeof bytes.length === 'number')
+    ? Buffer.from(bytes) : Buffer.alloc(0);
+  log.debug('Leaving answerMessage().');
+  return audit.withSource({ address: String(c.address || '') }, function () {
+    return answerSocketMessage(message, String(transport || 'tcp'),
+                               c.address, c.port);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -5097,10 +5228,12 @@ function startTcp(port) {
         if (buffer.length < 4 + declared) return;
         const message = buffer.subarray(4, 4 + declared);
         buffer = buffer.subarray(4 + declared);
-        // Answered in a request worker where there is one — see
-        // answerSocketMessage() above; the framing stays here.
-        answerSocketMessage(message, 'tcp', socket.remoteAddress,
-                            socket.remotePort).then(function (reply) {
+        // Answered in the client's home cell where a router places it
+        // there, else in a request worker where there is one — see
+        // answerFromSocket() and answerSocketMessage() above; the framing
+        // stays here.
+        answerFromSocket(message, 'tcp', socket.remoteAddress,
+                         socket.remotePort).then(function (reply) {
           const framed = Buffer.alloc(4 + reply.length);
           framed.writeUInt32BE(reply.length, 0);
           Buffer.from(reply).copy(framed, 4);
@@ -5151,12 +5284,14 @@ function startUdp(port) {
   // The datagram's sender on every audit row it causes — see startTcp().
   socket.on('message', function (message, rinfo) {
     audit.withSource({ address: rinfo.address }, function () {
-      answerSocketMessage(message, 'udp', rinfo.address,
-                          rinfo.port).then(function (reply) {
+      answerFromSocket(message, 'udp', rinfo.address,
+                       rinfo.port).then(function (reply) {
         // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not
         // fit in a datagram, and a client then retries over TCP. Reproducing
         // that is worth more than sending an oversized datagram, because the
-        // retry is the behaviour a client has to get right.
+        // retry is the behaviour a client has to get right. A reply another
+        // cell made is held to the same limit (#588, rcbj's decision): the
+        // client sees the same behaviour wherever its datagram landed.
         if (reply.length > udpMaxReplyBytes()) {
           log.info('krb5: the reply is ' + reply.length +
                    ' bytes, too big for UDP; answering ' +
@@ -5473,6 +5608,13 @@ module.exports = {
   answerSocketMessage: answerSocketMessage,
   registerWorkerOperation: registerWorkerOperation,
   refusalOf: refusalOf,
+  // THE CELLS SEAM (#588): `kerberos/krb5_home.ts` installs the router and
+  // answers a relayed message with answerMessage(); errorReply() is how it
+  // refuses one it cannot place (a home unreachable, a hard geofence).
+  setMessageRouter: setMessageRouter,
+  answerMessage: answerMessage,
+  answerFromSocket: answerFromSocket,
+  errorReply: errorReply,
   KDC_PORT: KDC_PORT,
   // The Kerberos realm of the AMBIENT trust realm — a getter since 2026-09-15,
   // for `krb5_principals.js`'s reason.

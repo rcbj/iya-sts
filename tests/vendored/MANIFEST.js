@@ -1451,6 +1451,9 @@ const JOBS = [
   //                           cell B, and /admin/cells draws both cells
   //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
   //                           at A is verified at home (D2)
+  //   sts_cells_kerberos.js   an AS and a TGS exchange at cell B's TCP 88
+  //                           for a person homed at A are answered at home,
+  //                           a sign-out at A included (#588)
   //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
   //                           cell_link.js): fail-closed refuses a refresh,
   //                           a sign-in and a bind; fail-open refreshes a
@@ -1466,6 +1469,7 @@ const JOBS = [
   { file: 'sts_cells_rehome.js',         browser: false, local: true },
   { file: 'sts_cells_console.js',        browser: false, local: true },
   { file: 'sts_cells_ldap.js',           browser: false, local: true },
+  { file: 'sts_cells_kerberos.js',       browser: false, local: true },
   { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

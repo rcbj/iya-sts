@@ -1809,26 +1809,67 @@ and `krb5_principals.js` and edits none of them; nothing in the COPY closure req
 * A cross-realm ticket, a multi-component name, a service's own ticket, or a
   message that does not decode is the KDC's to answer, where it arrived.
 
-**THE EXCEPTION: THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED.** `listen()`
-in `krb5_kdc.js` starts them and hands each message to the module-private
-`handleMessage()` with no hook between the socket and the answer, and none has
-been added. So a traveller whose `krb5.conf` names port 88 and whose packets
-reach a visiting cell is answered THERE: an unknown principal in product (their keys
-are at home), a freshly made one in development. MS-KKDCP is placed; port 88 is
-not. **What would close it**, in `krb5_kdc.js` HERE — the KDC is this
-repository's own, and the parent has no copy of it — is one exported seam — a
-`setMessageRouter(fn)` whose `fn(bytes, { transport, peer })` is awaited by
-`startTcp()` and `startUdp()` before `handleMessage()` and may answer the reply
-bytes itself (relayed, here, as an inter-cell operation that runs
-`handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
-is already the decision such a router would make; the operation it would call
-does not exist yet, because nothing could reach it. **It was filed as
-rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)** while the KDC was
-believed to be the parent's (#585 corrected that, 2026-10-12); the work is
-this repository's. That ticket also asks for an exported
-`answerMessage(bytes, transport)` — the home cell needs to run what `handleMessage()` does on bytes that arrived without a socket.
+**AND THE RAW SOCKETS ON TCP AND UDP 88 (#588, 2026-10-12).** Until this
+date they were the exception: `listen()` handed each message to the KDC's
+own answer with no hook in between, so a traveller whose `krb5.conf` names
+port 88 and whose packets reached a visiting cell was answered THERE — an
+unknown principal in product (their keys are at home), a freshly made one in
+development. #317 on the parent project asked for the seam while the KDC was
+believed to be the parent's; #585 corrected that reading, and the work moved
+here as #588, **which supersedes rcbj/id-proto-debugger#317** (rcbj closes it
+there). The seam is two exports of `krb5_kdc.js` and nothing else in it:
 
-Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.
+* **`setMessageRouter(fn)`.** `startTcp()` and `startUdp()` call
+  `answerFromSocket()`, which awaits `fn(bytes, { transport: 'tcp' | 'udp',
+  peer: { address, port } })` before `answerSocketMessage()`. A Buffer — or
+  `{ reply, refusal }`, the refusal in the clear because it crossed a process
+  or a cell and lost its Symbol (`replyFromResult()`, the worker path's own
+  function, puts it back) — is the reply, written by the socket exactly as one
+  made here: the TCP length prefix, and on UDP RFC 4120 section 7.2.1's size
+  limit, so an oversized RELAYED reply is `KRB_ERR_RESPONSE_TOO_BIG` and the
+  client retries over TCP wherever its datagram landed (**rcbj's decision on
+  #588**). Null goes on to the KDC here. A throw is logged (`STS-KRB-0206`)
+  and the message answered here, as before the seam. **With no router — every
+  in-process loader of this file, and single-cell mode — `answerFromSocket()`
+  calls `answerSocketMessage()` and nothing else**, byte for byte what the
+  sockets did. No realm is passed: the sockets have none, and `routeOf()`
+  chooses it from the Kerberos realm name in the bytes, at home as here.
+* **`answerMessage(bytes, transport, client)`.** What a socket would answer,
+  with no socket: `answerSocketMessage()` (a request worker where there is
+  one, else `handleMessage()`) inside the client's audit source. The home
+  cell runs it for a relayed message, so it is answered by the same code as
+  its own port 88, by the trust realm whose Kerberos name the request carries,
+  and every row it causes names the client the visiting cell saw. It never
+  asks the router — one hop.
+
+**`krb5_home.ts` fills both from OUTSIDE the closure.** `install(kdc)` is
+called by `common/protocol_stack.ts` just after it requires the KDC, with the
+KDC — handed in, because `krb5_home` requiring the JavaScript KDC would
+register its `/KdcProxy` ahead of 14c's. It registers the inter-cell
+operation **`kdc-message`** (`{ message, transport, address, port }`, the
+message base64; answered by `answerRelayed()` through `answerMessage()`, the
+reply base64 with its refusal; no message is `STS-KRB-0208`) in every mode,
+as every module's operations are, and sets the router only when
+`cells.isMulti()` (`cells.id` is restart-only). `routeMessage()` makes the
+SAME decision as the MS-KKDCP route — `clientOf()`, then the routing index —
+so the two doors cannot disagree; what it does not route (a cross-realm
+ticket, a multi-component name, a service's own ticket, a message that does
+not decode, a person homed here) is answered where it arrived. A realm's hard
+geofence refuses with `KDC_ERR_POLICY` (12) under the serve policy's code; a
+home that cannot be reached, or answers nothing, is `KDC_ERR_SVC_UNAVAILABLE`
+(29, `STS-KRB-0207`), fail-closed as a relayed MS-KKDCP request is 503 —
+answering it here instead would be the exception this closed.
+
+**The parent project's COPY closure is unchanged**: `krb5_kdc.js` gained two
+exports (and exports `errorReply` and `answerFromSocket` beside them) and no
+require. The parent's four in-process Kerberos jobs set no router.
+
+Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`
+— MS-KKDCP, and since #588 the real TCP and UDP listeners on an ephemeral port
+with the operation's own handler behind a stubbed `call()`: relayed and framed,
+homed here, a router that throws, the UDP size limit on a relayed reply, an
+unreachable home, a geofence, single-cell mode and no router. Over a real
+two-cell stack, `tests/vendored/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 
 ---
 
@@ -2029,10 +2070,11 @@ already required lazily here (`catchUpWithWorkers()`), and `request_worker`
 is required only when `STS_REQUEST_WORKER` is set, which the parent's
 in-process jobs never set; both requires are guarded.
 
-**CELLS (#98, #317).** `answerSocketMessage()` is now the one function both
-sockets call before `handleMessage()`, which is where the message router
-#317 asks the parent project for would sit. Port 88 is still not placed in
-the client's home cell.
+**CELLS (#98, #588).** Both sockets call `answerFromSocket()`, which asks
+the message router (*Cells*, above) before `answerSocketMessage()`; a
+message relayed from another cell reaches `answerSocketMessage()` through
+`answerMessage()`, so it is dispatched to a worker at home exactly as one
+arriving on home's own port 88.
 
 Tests: `tests/kdc_broker_operations.js` sections 1 to 5 (the real pool with a
 stub worker thread, the two fallbacks, a dying worker, the table, a whole AS
