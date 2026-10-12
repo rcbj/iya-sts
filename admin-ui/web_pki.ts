@@ -101,9 +101,13 @@ class PkiPage {
     if (!chain) {
       return '';
     }
-    // A tier's label and what it is for are the view's. The tip's second
-    // argument is what it always was: the tip takes a length there, and a
-    // string in it changes nothing a reader sees.
+    // A tier's label and what it is for are the view's. What it is for is
+    // drawn as a note under the row (folded when longer than a line, its
+    // first sentence the summary). It was `kit.tip(tier.what, 'What the …
+    // is for')` until the #543 follow-up: a tip is a ` title="…"` ATTRIBUTE,
+    // and placed as the cell's content it showed as text; and its second
+    // argument is a length, so the string there cut the description to
+    // nothing but an ellipsis. Nothing is said only in a tooltip anyway.
     const rows = chain.tiers.map(function (tier) {
       return '<tr>' +
         '<td><strong>' + esc(tier.label) + '</strong></td>' +
@@ -120,9 +124,8 @@ class PkiPage {
         '&hellip;</code><br>' +
         CertificateDialogView.link('/admin/pki', tier.thumbprint, 'pki-chain',
                                    undefined, t) +
-        '</td></tr><tr><td ' +
-        'colspan="6">' + kit.tip(tier.what,
-          'What the ' + tier.label + ' is for') + '</td></tr>';
+        '</td></tr><tr><td colspan="6">' + kit.note(esc(tier.what)) +
+        '</td></tr>';
     }).join('');
     return '<table><thead><tr><th>' + t.html('consolePki.thTier') +
            '</th><th>' + t.html('consolePki.thSubject') + '</th><th>' +
