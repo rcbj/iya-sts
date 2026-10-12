@@ -24,7 +24,9 @@
 //      options are rewritten as data — and the bridge's answer survives
 //      structured cloning, as a Worker's data must; and
 //      `databaseConnection()` hands them to a process that is not the
-//      service (the risk loader, `cell_convert`).
+//      service (the risk loader, `cell_convert`). A DIRECTORY is read too,
+//      every `.crt` and `.pem` in it — the cells stack's databases share
+//      their certificates in one, as `<CN>.crt`.
 //   C. A FILE NAMED AND UNUSABLE IS REFUSED under STS-STORE-0079: a path
 //      that does not exist, and a file holding no certificate (a private
 //      key named by mistake), both from `databaseTlsCa()` and as the
@@ -203,6 +205,24 @@ async function run(t) {
               'the service (the risk loader, cell_convert)');
       t.equal(connection.verifyTls, true, 'with verifyTls: true');
     });
+    const shared = path.join(dir, 'shared');
+    const other = stsCrypto.selfSignedRsaCertificate({
+      commonName: 'postgres-global' });
+    fs.mkdirSync(shared);
+    fs.writeFileSync(path.join(shared, 'postgres.crt'), made.certPem);
+    fs.writeFileSync(path.join(shared, 'postgres-global.crt'), other.certPem);
+    fs.writeFileSync(path.join(shared, '.postgres-cellb.crt.tmp'),
+                     'half a certificate');
+    fs.writeFileSync(path.join(shared, 'README'), 'not a certificate');
+    await withEnvironment({ STS_DATABASE_TLS_CA_FILE: shared },
+    async function () {
+      const pem = persistence.databaseTlsCa();
+      t.check(pem.indexOf(made.certB64.slice(0, 64)) >= 0 &&
+              pem.indexOf(other.certB64.slice(0, 64)) >= 0 &&
+              (pem.match(/-----BEGIN CERTIFICATE-----/g) || []).length === 2,
+              'a directory is read: both databases\' certificates, and ' +
+              'neither the hidden temporary file nor the README');
+    });
 
     // -------------------------------------------------------------------
     // C. A FILE NAMED AND UNUSABLE IS REFUSED, STS-STORE-0079.
@@ -234,6 +254,16 @@ async function run(t) {
               /holds no PEM certificate/.test(why),
               'a file holding no certificate (a private key named by ' +
               'mistake) is refused under STS-STORE-0079 too', why);
+    });
+    const empty = path.join(dir, 'empty');
+    fs.mkdirSync(empty);
+    await withEnvironment({ STS_DATABASE_TLS_CA_FILE: empty },
+    async function () {
+      const why = await refusalOf(function () {
+        return persistence.databaseTlsCa();
+      });
+      t.check(/\[STS-STORE-0079\]/.test(why),
+              'and so is a directory with no certificate in it', why);
     });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

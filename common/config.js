@@ -15694,8 +15694,9 @@ const SETTINGS = [
   // inside the postgres container — could be verified only by adding it to
   // NODE_EXTRA_CA_CERTS, which trusts it for EVERY outbound connection this
   // process makes: a federation partner, a JWKS, a mail relay. This names a
-  // PEM file trusted for the database connections ONLY, in place of the
-  // default trust store for them; `persistence.databaseTlsCa()` reads it,
+  // PEM file (or a directory of them, for the cells stack's two databases)
+  // trusted for the database connections ONLY, in place of the default
+  // trust store for them; `persistence.databaseTlsCa()` reads it,
   // and a file named and unreadable, or holding no certificate, stops the
   // service at start (STS-STORE-0079) rather than dialling with a trust
   // anchor nobody chose.
@@ -15708,11 +15709,13 @@ const SETTINGS = [
     description: 'A PEM file of CA certificates trusted for the connections ' +
                  'to the database ONLY, in place of this process\'s default ' +
                  'trust store for them; nothing else this service dials ' +
-                 'trusts them. Empty uses the default trust store (with ' +
-                 'NODE_EXTRA_CA_CERTS). A file that is named and cannot be ' +
-                 'read, or holds no certificate, stops the service at start. ' +
-                 'The compose stack sets it to the certificate its postgres ' +
-                 'container generates, shared read-only without the key.' },
+                 'trusts them. It may name a directory instead, and then ' +
+                 'every .crt and .pem file in it is read. Empty uses the ' +
+                 'default trust store (with NODE_EXTRA_CA_CERTS). A file ' +
+                 'that is named and cannot be read, or holds no certificate, ' +
+                 'stops the service at start. The compose stack sets it to ' +
+                 'the certificate its postgres container generates, shared ' +
+                 'read-only without the key.' },
 
   // -------------------------------------------------------------------------
   // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the

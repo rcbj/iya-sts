@@ -1819,13 +1819,21 @@ function verifiesDatabaseTls() {
 // file or a truncated copy named by mistake is refused here and not at the
 // handshake.
 //
+// **IT MAY NAME A DIRECTORY**, and then every `.crt` and `.pem` file in it
+// (not hidden, not below it, in name order) is read: the cells stack's
+// three databases each share their certificate in one directory as
+// `<CN>.crt` (`postgres/generate-tls.sh`), and a cell dials two of them
+// with the one setting. A directory with no such file is refused like a
+// file with no certificate.
+//
 // Read on every call: it is called at start, by a status report and by a
 // tool, never on a request path, and a cached copy would be one more thing
 // that could disagree with the file.
 // ---------------------------------------------------------------------------
 /**
- * Returns the PEM text of `persistence.databaseTlsCaFile`'s certificates, or
- * '' when the setting is empty.
+ * Returns the PEM text of `persistence.databaseTlsCaFile`'s certificates —
+ * the file's, or every `.crt` and `.pem` file's in the directory it names —
+ * or '' when the setting is empty.
  *
  * @returns the certificates, PEM
  * @throws {Error} tagged STS-STORE-0079 when the file cannot be read or
@@ -1839,9 +1847,19 @@ function databaseTlsCa() {
     log.debug("Leaving databaseTlsCa(). None named.");
     return '';
   }
+  const fs = require('fs');
   let text = '';
   try {
-    text = require('fs').readFileSync(file, 'utf8');
+    if (fs.statSync(file).isDirectory()) {
+      text = fs.readdirSync(file).filter(function (name) {
+        return /^[^.].*\.(crt|pem)$/i.test(name) &&
+          fs.statSync(require('path').join(file, name)).isFile();
+      }).sort().map(function (name) {
+        return fs.readFileSync(require('path').join(file, name), 'utf8');
+      }).join('\n');
+    } else {
+      text = fs.readFileSync(file, 'utf8');
+    }
   } catch (e) {
     log.debug("Caught in databaseTlsCa(): " + ((e && e.message) || e));
     log.debug("Leaving databaseTlsCa(). Unreadable.");
