@@ -41,7 +41,7 @@
   "oneObject": "un objeto, {n} atributos",
   "cannotAsk": "no se puede pedir en este formato",
   "hExtras": "Pedidas y fuera del catálogo",
-  "extrasNote": "Nada de lo que emite este servicio las lleva, y eso es lo que hace que valga la pena pedirlas: es la única forma de ver qué hace una cartera con una solicitud que no puede satisfacer y qué dice este Verifier al comprobarla. Están marcadas abajo para que guardar la tabla de arriba las conserve; desmarca una para dejar de pedirla.",
+  "extrasNote": "Nada de lo que emite este servicio las lleva, y eso es lo que hace que valga la pena pedirlas: es la única forma de ver qué hace una cartera con una solicitud que no puede satisfacer y qué dice este Verifier al comprobarla. Están marcadas abajo para que guardar la tabla de arriba las conserve; desmarque una para dejar de pedirla.",
   "thIn": "Incluida",
   "notIssued": "no es una claim que emita este servicio",
   "noNotSelected": "no — no seleccionada en ",

@@ -19,7 +19,7 @@
   "not.restart": "<strong>NADA DE LO QUE ESTE SERVICIO GENERA SOBREVIVE A UN REINICIO, y un reinicio no es una recarga.</strong> Los contadores, los registros de tokens y artefactos, el anillo de auditoría, las sesiones, los códigos de autorización y los tickets Kerberos están todos en memoria, y la clave de firma se REGENERA en cada arranque — así que un token emitido por el proceso anterior ya no se verifica con el JWKS publicado. Es deliberado y no una limitación, y es lo que hace imposible lo demás: un archivo de estadísticas, o un token guardado, que sobreviviera a la clave con la que se firmó sería peor que nada.",
   "not.surviveOn": "<strong>TRES COSAS SÍ SOBREVIVEN en este proceso</strong>, porque <code>persistence.mode</code> es <code>{mode}</code>: el directorio integrado — que también es el registro de aplicaciones, el registro de federación y el registro SPIFFE —, el registro de dominios de confianza y los ajustes cambiados en estas páginas. Son las cosas que alguien ESCRIBIÓ.",
   "not.surviveOff": "TRES COSAS PUEDEN HACERSE PERSISTENTES y no lo son en este proceso — el directorio integrado, los dominios de confianza y los ajustes cambiados aquí.",
-  "not.see": "Consulta",
+  "not.see": "Consulte",
   "link.persistence": "Persistencia",
   "not.seeEnd": ".",
   "not.offByDefault": ", que está desactivada por defecto.",
@@ -60,5 +60,5 @@
   "test.metadata": "— cada endpoint que registró este proceso, que es la lista con la que contrastar las suposiciones de un cliente en lugar de esta página.",
   "test.map": "para el grafo, y <code>?format=svg</code> solo para el dibujo — la única página de aquí con una cuarta forma.",
   "test.with": "con",
-  "undescribed": "esta página no tiene descripción en <code>SECTIONS</code>. Se añadió a la navegación y no se describió aquí; la lista que estás leyendo se deriva de esa tabla, así que esta fila es el aviso y no un hueco."
+  "undescribed": "esta página no tiene descripción en <code>SECTIONS</code>. Se añadió a la navegación y no se describió aquí; la lista que está leyendo se deriva de esa tabla, así que esta fila es el aviso y no un hueco."
 }

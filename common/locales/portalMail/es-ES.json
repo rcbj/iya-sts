@@ -1,4 +1,7 @@
 {
-  "forgot.title": "¿Has olvidado tu contraseña?",
-  "forgot.heading": "¿Has olvidado tu contraseña?"
+  "done.verifySent": "Se ha enviado un enlace a {address}. Sígalo en {minutes, plural, one {# minuto} other {# minutos}} para verificarla.",
+  "done.changeSent": "Se ha enviado un enlace a {address}. Su dirección cambiará a esta cuando siga el enlace, en {minutes, plural, one {# minuto} other {# minutos}}; hasta entonces sigue siendo {current}.",
+  "done.changeSentUnset": "Se ha enviado un enlace a {address}. Su dirección cambiará a esta cuando siga el enlace, en {minutes, plural, one {# minuto} other {# minutos}}; hasta entonces sigue sin definir.",
+  "forgot.title": "¿Ha olvidado su contraseña?",
+  "forgot.heading": "¿Ha olvidado su contraseña?"
 }

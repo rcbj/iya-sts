@@ -1,3 +1,18 @@
 {
-  "federation.signedIn.thrownAway": "<strong>Se descartaron {n} atributo(s)</strong> porque nada asigna sus nombres. Es a propósito: este directorio no tiene esquema, así que un atributo escrito con un nombre no reconocido se aceptaría en silencio y nada informaría nunca de que el nombre era incorrecto. Añade una asignación en"
+  "common.noSession": "No había ninguna sesión que terminar. De todos modos, se ha borrado la cookie.",
+  "saml2.sessionEnded": "La sesión de {username} ha terminado. Es la sesión que comparten los lados OAuth 2.0 / OIDC y WS-Federation, así que también se ha cerrado en ellos.",
+  "saml2.logoutResponse.heading": "Ha llegado aquí una LogoutResponse",
+  "saml2.logoutResponse.ok": "Se ha registrado y se ha descartado.",
+  "wsfed.sessionEnded": "La sesión de {username} ha terminado. Era la sesión que comparte el lado OAuth 2.0 / OIDC, así que también se ha cerrado en ese lado.",
+  "wsfed.cleanupOnly": "Era una solicitud <code>wsignoutcleanup1.0</code>, así que se ha descartado la sesión y no se han enviado más solicitudes de limpieza: un proveedor de identidad que las reenviara a todos al recibir una limpieza entraría en un bucle con quien la envió.",
+  "wsfed.pingNote": "Cada una se ha cargado como una imagen de un píxel al cargarse esta página (cierre de sesión por el canal frontal), y los enlaces de arriba son las mismas URL, para que un fallo se vea en lugar de adivinarse.",
+  "federation.signedIn.prefixed": "(se ha aplicado federation.usernamePrefix)",
+  "federation.signedIn.notWritten": "nada asigna este nombre, así que NO se ha escrito",
+  "federation.signedIn.thrownAway": "<strong>Se han descartado {n} atributo(s)</strong> porque nada asigna sus nombres. Es a propósito: este directorio no tiene esquema, así que un atributo escrito con un nombre no reconocido se aceptaría en silencio y nada informaría nunca de que el nombre era incorrecto. Añada una asignación en",
+  "federation.slo.partnerSignedYouOut": "El socio {partner} ha cerrado la sesión de usted, y este servicio ha terminado la sesión que había iniciado para usted:",
+  "federation.slo.partnerConfirmed": "Ha cerrado sesión aquí, y {partner} ha confirmado que también la ha cerrado allí.",
+  "federation.slo.confirm.lead": "{partner} ha pedido a este servicio que termine la sesión que le inició (WS-Federation <code>{wa}</code>).",
+  "federation.slo.sentBack": "Ha cerrado sesión aquí, y {partner} le ha devuelto desde su propio cierre de sesión.",
+  "federation.slo.frontchannelNote": "{partner} ha cargado esta página en un marco para terminar la sesión que le inició aquí.",
+  "federation.partners.note": "Ha iniciado sesión aquí mediante estos proveedores de identidad, y su sesión allí sigue activa. Cada uno es un enlace o un formulario y no una redirección automática: esta página no ejecuta ningún script, e irse a un socio es un clic deliberado."
 }

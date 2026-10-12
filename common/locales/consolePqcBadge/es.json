@@ -9,6 +9,6 @@
   "legendComposite": " es una clave COMPUESTA: una sola clave con una mitad poscuántica y una mitad clásica, y ambas deben verificarse. ",
   "legendKem": " es una clave poscuántica de ESTABLECIMIENTO de claves, que no firma nada. ",
   "legendHybridLabel": "clave ML-DSA-65 alternativa",
-  "legendHybrid": " es una clave CLÁSICA cuyo certificado también lleva una clave poscuántica alternativa — la clave en sí no es poscuántica. Pasa el puntero sobre un icono para ver el algoritmo. Una clave sin icono es clásica (RSA, ECDSA o EdDSA). Lo que decide es el algoritmo de la propia clave, no la firma de su certificado: una clave ML-DSA certificada por una CA RSA se marca, y una clave RSA certificada por una CA ML-DSA no.",
+  "legendHybrid": " es una clave CLÁSICA cuyo certificado también lleva una clave poscuántica alternativa — la clave en sí no es poscuántica. Pase el puntero sobre un icono para ver el algoritmo. Una clave sin icono es clásica (RSA, ECDSA o EdDSA). Lo que decide es el algoritmo de la propia clave, no la firma de su certificado: una clave ML-DSA certificada por una CA RSA se marca, y una clave RSA certificada por una CA ML-DSA no.",
   "legendTitle": "Pares de claves poscuánticos"
 }

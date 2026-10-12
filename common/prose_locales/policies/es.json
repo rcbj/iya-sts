@@ -361,7 +361,7 @@
   },
   "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
     "en": "dc03d1b953cb0b33",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a una persona que inicia sesión en un navegador que eligió recordar no se le vuelve a pedir su segundo factor dentro del período indicado abajo desde la última vez que lo dio en ese navegador. NUNCA en la consola de administración, el portal de usuario ni el depurador de protocolos; nunca para un administrador; nunca mientras el riesgo del inicio de sesión sea medio o superior; y el inicio de sesión es entonces de UN factor para toda parte de confianza (amr [\"pwd\"] y acr \"1\", como solo una contraseña), así que a una aplicación que pida \"mfa\" se le rechaza. El navegador se reconoce mediante una cookie al portador: quien copie la cookie también omite el segundo factor, hasta que se detecte la copia."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a una persona que inicia sesión en un navegador que eligió recordar no se le vuelve a pedir su segundo factor dentro del período indicado abajo desde la última vez que lo dio en ese navegador. NUNCA en la consola de administración, el portal de usuario ni el depurador de protocolos; nunca para un administrador; nunca mientras el riesgo del inicio de sesión sea medio o superior; y el inicio de sesión es entonces de UN factor para toda parte que confía (amr [\"pwd\"] y acr \"1\", como solo una contraseña), así que a una aplicación que pida \"mfa\" se le rechaza. El navegador se reconoce mediante una cookie al portador: quien copie la cookie también omite el segundo factor, hasta que se detecte la copia."
   },
   "authn.FIELDS.rememberedBrowserDays.unit": {
     "en": "ab51004e9d71a485",
@@ -465,7 +465,7 @@
   },
   "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
     "en": "dc03d1b953cb0b33",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a una persona que inicia sesión en un navegador que eligió recordar no se le vuelve a pedir su segundo factor dentro del período indicado abajo desde la última vez que lo dio en ese navegador. NUNCA en la consola de administración, el portal de usuario ni el depurador de protocolos; nunca para un administrador; nunca mientras el riesgo del inicio de sesión sea medio o superior; y el inicio de sesión es entonces de UN factor para toda parte de confianza (amr [\"pwd\"] y acr \"1\", como solo una contraseña), así que a una aplicación que pida \"mfa\" se le rechaza. El navegador se reconoce mediante una cookie al portador: quien copie la cookie también omite el segundo factor, hasta que se detecte la copia."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a una persona que inicia sesión en un navegador que eligió recordar no se le vuelve a pedir su segundo factor dentro del período indicado abajo desde la última vez que lo dio en ese navegador. NUNCA en la consola de administración, el portal de usuario ni el depurador de protocolos; nunca para un administrador; nunca mientras el riesgo del inicio de sesión sea medio o superior; y el inicio de sesión es entonces de UN factor para toda parte que confía (amr [\"pwd\"] y acr \"1\", como solo una contraseña), así que a una aplicación que pida \"mfa\" se le rechaza. El navegador se reconoce mediante una cookie al portador: quien copie la cookie también omite el segundo factor, hasta que se detecte la copia."
   },
   "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
     "en": "c5aa4b7f04ffeb9b",
@@ -641,7 +641,7 @@
   },
   "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, los requisitos de segundo factor de la política de autenticación no se aplican a una cuenta de servicio de este dominio, ni tampoco el rechazo de una contraseña sola en las puertas de contraseña (#101). El amr de la cuenta sigue indicando solo pwd, así que a una parte de confianza que pida más se le rechaza. MÁS DÉBIL: una cuenta con solo una contraseña es una cuenta que puede usar cualquiera que tenga la contraseña."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, los requisitos de segundo factor de la política de autenticación no se aplican a una cuenta de servicio de este dominio, ni tampoco el rechazo de una contraseña sola en las puertas de contraseña (#101). El amr de la cuenta sigue indicando solo pwd, así que a una parte que confía que pida más se le rechaza. MÁS DÉBIL: una cuenta con solo una contraseña es una cuenta que puede usar cualquiera que tenga la contraseña."
   },
   "serviceAccount.FIELDS.allowBrowserSignIn.label": {
     "en": "4ed97ae3678854cb",
@@ -777,7 +777,7 @@
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
     "en": "f86f6d62a8cfc303",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, los requisitos de segundo factor de la política de autenticación no se aplican a una cuenta de servicio de este dominio, ni tampoco el rechazo de una contraseña sola en las puertas de contraseña (#101). El amr de la cuenta sigue indicando solo pwd, así que a una parte de confianza que pida más se le rechaza. MÁS DÉBIL: una cuenta con solo una contraseña es una cuenta que puede usar cualquiera que tenga la contraseña."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, los requisitos de segundo factor de la política de autenticación no se aplican a una cuenta de servicio de este dominio, ni tampoco el rechazo de una contraseña sola en las puertas de contraseña (#101). El amr de la cuenta sigue indicando solo pwd, así que a una parte que confía que pida más se le rechaza. MÁS DÉBIL: una cuenta con solo una contraseña es una cuenta que puede usar cualquiera que tenga la contraseña."
   },
   "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
     "en": "ea2f29b5622a8b61",
@@ -985,7 +985,7 @@
   },
   "passkey.FIELDS.enforcePinLength.what": {
     "en": "31c7ae2d055f6bb6",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, el registro pide al autenticador su longitud mínima de PIN (CTAP 2.1 sección 12.4, la extensión minPinLength), la anota en la llave y rechaza una llave cuyo mínimo sea inferior al de la fila siguiente, en el registro y en cada inicio de sesión. Una llave solo responde a las partes de confianza a las que se configuró para informar (CTAP 2.1 setMinPINLength con este RP ID); cualquier otra llave, y cualquier llave de acceso de plataforma o sincronizada, no informa, y se rechaza salvo que la fila subsiguiente esté activada."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, el registro pide al autenticador su longitud mínima de PIN (CTAP 2.1 sección 12.4, la extensión minPinLength), la anota en la llave y rechaza una llave cuyo mínimo sea inferior al de la fila siguiente, en el registro y en cada inicio de sesión. Una llave solo responde a las partes que confían a las que se configuró para informar (CTAP 2.1 setMinPINLength con este RP ID); cualquier otra llave, y cualquier llave de acceso de plataforma o sincronizada, no informa, y se rechaza salvo que la fila subsiguiente esté activada."
   },
   "passkey.FIELDS.minPinLength.unit": {
     "en": "25d939ffd0d79b73",
@@ -1005,7 +1005,7 @@
   },
   "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
     "en": "40c28fef42d19166",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA, que es la lectura estricta: mientras se aplique la longitud de PIN, se rechaza una llave que no la informe. Activado, esa llave se acepta y solo un mínimo informado se somete a la regla, de modo que la regla obliga entonces solo a las llaves configuradas para informar a esta parte de confianza."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA, que es la lectura estricta: mientras se aplique la longitud de PIN, se rechaza una llave que no la informe. Activado, esa llave se acepta y solo un mínimo informado se somete a la regla, de modo que la regla obliga entonces solo a las llaves configuradas para informar a esta parte que confía."
   },
   "passkey.FIELDS.enforceAttestationAtSignIn.label": {
     "en": "659120b1356b126b",
@@ -1097,7 +1097,7 @@
   },
   "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
     "en": "31c7ae2d055f6bb6",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, el registro pide al autenticador su longitud mínima de PIN (CTAP 2.1 sección 12.4, la extensión minPinLength), la anota en la llave y rechaza una llave cuyo mínimo sea inferior al de la fila siguiente, en el registro y en cada inicio de sesión. Una llave solo responde a las partes de confianza a las que se configuró para informar (CTAP 2.1 setMinPINLength con este RP ID); cualquier otra llave, y cualquier llave de acceso de plataforma o sincronizada, no informa, y se rechaza salvo que la fila subsiguiente esté activada."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, el registro pide al autenticador su longitud mínima de PIN (CTAP 2.1 sección 12.4, la extensión minPinLength), la anota en la llave y rechaza una llave cuyo mínimo sea inferior al de la fila siguiente, en el registro y en cada inicio de sesión. Una llave solo responde a las partes que confían a las que se configuró para informar (CTAP 2.1 setMinPINLength con este RP ID); cualquier otra llave, y cualquier llave de acceso de plataforma o sincronizada, no informa, y se rechaza salvo que la fila subsiguiente esté activada."
   },
   "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
     "en": "a636cf708ad6bf10",
@@ -1105,7 +1105,7 @@
   },
   "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
     "en": "40c28fef42d19166",
-    "text": "DESACTIVADO DE FORMA PREDETERMINADA, que es la lectura estricta: mientras se aplique la longitud de PIN, se rechaza una llave que no la informe. Activado, esa llave se acepta y solo un mínimo informado se somete a la regla, de modo que la regla obliga entonces solo a las llaves configuradas para informar a esta parte de confianza."
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA, que es la lectura estricta: mientras se aplique la longitud de PIN, se rechaza una llave que no la informe. Activado, esa llave se acepta y solo un mínimo informado se somete a la regla, de modo que la regla obliga entonces solo a las llaves configuradas para informar a esta parte que confía."
   },
   "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
     "en": "dcf08d219b55b2ed",

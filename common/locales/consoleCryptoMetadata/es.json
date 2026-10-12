@@ -95,7 +95,7 @@
   "thMode": "Modo",
   "thNote": "Nota",
   "bytes": "{n} bytes",
-  "cbcNote": "<strong>La familia CBC-HMAC está aquí porque es lo que obtiene por defecto un cliente de OpenID Connect.</strong> Registra <code>userinfo_encrypted_response_alg</code> sin decir nada de <code>enc</code>, y la sección 2 de la especificación de registro ya ha elegido <code>A128CBC-HS256</code> por ti. Un servicio que solo hablara AES-GCM rechazaría la respuesta cifrada más común que existe, y al cliente le parecería que ha rechazado la solicitud.",
+  "cbcNote": "<strong>La familia CBC-HMAC está aquí porque es lo que obtiene por defecto un cliente de OpenID Connect.</strong> Registra <code>userinfo_encrypted_response_alg</code> sin decir nada de <code>enc</code>, y la sección 2 de la especificación de registro ya ha elegido <code>A128CBC-HS256</code> por usted. Un servicio que solo hablara AES-GCM rechazaría la respuesta cifrada más común que existe, y al cliente le parecería que ha rechazado la solicitud.",
   "xmlEncLead": "La opción configurada es la que usará realmente la próxima aserción cifrada; ambos ajustes se pueden editar en",
   "xmlEncNow": ". Ahora mismo: cifrado por bloques <code>{cipher}</code>, transporte de claves <code>{transport}</code>,",
   "assertionsEncrypted": "aserciones cifradas",
@@ -206,7 +206,7 @@
   "rotateNote": " — la clave siguiente de cada una pasa a ser la actual y la clave a la que sustituye sigue verificando durante su periodo de gracia.",
   "emergency": "Rotación de emergencia",
   "emergencyNote": "Para claves que se presumen <strong>comprometidas</strong>. Cada clave de cada unidad se sustituye por una clave NUEVA — también las siguientes ya publicadas — sin periodo de gracia; sus certificados se revocan por keyCompromise; se sustituyen las claves de los tokens de actualización; y se cierra CADA sesión de este dominio, enviando CAEP session-revoked y RISC sessions-revoked. Todo lo ya emitido deja de verificarse al instante. No se puede deshacer.",
-  "typeToConfirm": "Escribe <code>compromised</code> para confirmar:",
+  "typeToConfirm": "Escriba <code>compromised</code> para confirmar:",
   "rotateEveryKey": "Rotar todas las claves ahora",
   "residencyNothing": "<strong>Aquí nada se guarda cifrado en memoria, porque aquí nada se escribe.</strong> Este servicio genera su clave de firma al arrancar y la conserva mientras se ejecuta — no hay texto cifrado AL que purgar una clave descifrada, así que <code>keys.plaintextRetention</code> no significa nada en esta configuración. Es el almacén de claves lo que hace que se aplique, y <code>keys.source</code> es lo que lo activa.",
   "residencyHeading": "Cuánto tiempo permanece descifrada una clave privada",
@@ -234,7 +234,7 @@
   "names": "Nombres",
   "validTo": "Válido hasta",
   "notExportableHead": "<strong>No exportable.</strong>",
-  "notExportablePq": "Las claves poscuánticas se crean en el PRIMER USO — una generación de clave SLH-DSA tarda casi dos segundos — así que esta página deliberadamente no las crea. Consulta <code>/oauth2/jwks</code> en este dominio y vuelve.",
+  "notExportablePq": "Las claves poscuánticas se crean en el PRIMER USO — una generación de clave SLH-DSA tarda casi dos segundos — así que esta página deliberadamente no las crea. Consulte <code>/oauth2/jwks</code> en este dominio y vuelva.",
   "notExportableNone": "No hay ninguna codificación interoperable para entregar esta clave.",
   "keystoreFormat": "Formato del almacén de claves",
   "p12": "(.p12 — contraseña obligatoria)",
@@ -242,5 +242,5 @@
   "passwordHint": "obligatoria para PKCS#12; cifra la mitad privada de los demás",
   "downloadKey": "Descargar",
   "publicOnly": "<strong>Solo la mitad PÚBLICA.</strong> RFC 9964 define los miembros públicos de una clave AKP y el tratamiento de la semilla privada aún está cambiando, así que no hay ninguna codificación privada interoperable que entregar. Un archivo que ninguna biblioteca lee sería peor que decirlo.",
-  "passwordNote": "<strong>La contraseña es OBLIGATORIA para PKCS#12 y opcional para los otros tres</strong>, donde cifra la mitad privada (PKCS#8 para PEM y DER, PBES2 como .jwe para JWK). Déjala vacía y la clave privada sale en claro, que suele ser lo que quieres de una simulación y nunca lo que quieres en ningún otro sitio."
+  "passwordNote": "<strong>La contraseña es OBLIGATORIA para PKCS#12 y opcional para los otros tres</strong>, donde cifra la mitad privada (PKCS#8 para PEM y DER, PBES2 como .jwe para JWK). Déjela vacía y la clave privada sale en claro, que suele ser lo que quiere de una simulación y nunca lo que quiere en ningún otro sitio."
 }

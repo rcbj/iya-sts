@@ -13,7 +13,7 @@
   "why404": "No existe esa ruta en el almacén. Para un secreto KV versión 2, suele significar que el motor está montado en otro sitio o que el secreto aún no se ha escrito.",
   "why400": "El almacén rechazó la propia solicitud. Un motor KV versión 1 responde así a una ruta de versión 2, que es la causa habitual.",
   "whyEnoent": "No existe ese archivo. En un servicio en modo DESARROLLO es normal: no se conserva nada, así que la clave de cifrado de claves nunca se lee y el archivo que indica no tiene por qué existir. En modo producto, sería un servicio que no arrancaría.",
-  "whyEacces": "El archivo existe y este proceso no puede leerlo. Revisa el propietario del montaje en lugar de la ruta.",
+  "whyEacces": "El archivo existe y este proceso no puede leerlo. Revise el propietario del montaje en lugar de la ruta.",
   "whyTimeout": "El almacén no respondió dentro de <code>keys.storeProbeTimeoutMs</code>. Ese límite acota una sonda y no la página, así que las demás de abajo se consultaron igualmente.",
   "whySdk": "El SDK de este proveedor no está instalado. Deliberadamente no es una dependencia de este servicio — ante todo es una simulación, y cinco SDK de nube que nadie usa irían en cada instalación — así que el mensaje de arriba indica el paquete que hay que instalar.",
   "tookMs": "{ms} ms",

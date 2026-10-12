@@ -1,0 +1,22 @@
+{
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "Los valores c_nonce entregados a las carteras, para que la prueba de una solicitud de credencial nombre uno que emitió este emisor, y lo use una sola vez."
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "Registro de inicio de sesión con cartera"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "Las credenciales que este dominio emitió para una persona con un token de acceso que verificó, que son las únicas con las que una cartera puede iniciar sesión — indexadas por un resumen del JWT firmado por el emisor, o para ldp_vc por la clave del titular y la persona."
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "Cada solicitud de presentación que este Verifier está esperando — la de la puerta del bar y la de un inicio de sesión con cartera, esta última con la solicitud de la Digital Credentials API, su modo de respuesta y la clave con la que se cifra su respuesta."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "la respuesta de una cartera encontró la solicitud para la que se hizo"
+  }
+}

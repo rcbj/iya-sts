@@ -393,7 +393,7 @@
   },
   "caches.store.krb5.authenticator-replay.description": {
     "en": "bd92a375c1ba17cd",
-    "text": "Cada autenticador que aceptó el servicio protegido, para que un AP-REQ capturado no pueda presentarse dos veces. Por dominio de confianza: el dominio cuyo reino Kerberos emitió el ticket."
+    "text": "Cada autenticador que aceptó el servicio protegido, para que un AP-REQ capturado no pueda presentarse dos veces. Por dominio de confianza: el dominio cuyo dominio Kerberos emitió el ticket."
   },
   "caches.store.krb5.authenticator-replay.bound": {
     "en": "f80dfee6019f5638",
