@@ -50,6 +50,9 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import totp = require('../common/totp');
+// The mode (common/mode.js): which sentence the page's "what this is" card
+// says about the rest of the credentials (#543 round 2).
+import mode = require('../common/mode');
 import backupCodes = require('../common/backup_codes');
 import validation = require('../common/validation');
 
@@ -245,6 +248,10 @@ class AccountMfa {
     const detail: Json = mechanisms.totpDetail || null;
     const out: Json = {
       username: username,
+      // Whether a presented password is verified in this realm: the about
+      // card said "any password is accepted" in every mode until #543's
+      // round 2.
+      verifiesCredentials: mode.verifiesCredentials(),
       totp: {
         enrolled: !!mechanisms.totp, usable: !!mechanisms.totpUsable,
         detail: mechanisms.totp && detail

@@ -22593,9 +22593,12 @@ class AdminApi {
         operationId: 'getConsoleDashboard',
         summary: 'What the console\'s front page draws',
         description: 'The totals `GET /admin-api/status` answers, with the ' +
-                     'base URL, what is persisted and the console sections ' +
+                     'base URL, what is persisted, whether a presented ' +
+                     'password is verified in this realm ' +
+                     '(`verifiesCredentials`) and the console sections ' +
                      'the caller may see, which is what `/admin` draws.',
-        members: ['base', 'persistence', 'sections'] },
+        members: ['base', 'persistence', 'verifiesCredentials',
+                  'sections'] },
       { of: 'getNewApplicationForm', path: '/console/applications/new',
         operationId: 'getConsoleNewApplicationForm',
         summary: 'Everything the new application form is drawn from',

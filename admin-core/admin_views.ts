@@ -4573,7 +4573,14 @@ class AdminViews {
         paging: this.pagingJson(paging),
         knownActors: knownActors,
         settings: configSettingsJson ? configSettingsJson('/admin/audit')
-          : null
+          : null,
+        // WHAT THE PAGE'S CLOSING NOTE IS ABOUT (#543 round 2): whether a
+        // presented password is verified in this realm, and whether this log
+        // is persisted with what this service mints (product mode on a
+        // postgres store). The note said "in memory … checks no password
+        // anywhere" in every configuration until then.
+        verifiesCredentials: mode.verifiesCredentials(),
+        persisted: !!(persistence.mintedStatus() || {}).persisting
       }
     };
   }

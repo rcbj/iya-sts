@@ -1054,7 +1054,12 @@ class CryptoMetadataPage {
       t.html('consoleCryptoMetadata.nextDoor') + ' ' +
       (residency.persisting
         ? t.html('consoleCryptoMetadata.persisted') + ' '
-        : t.html('consoleCryptoMetadata.defensible') + ' ') +
+        // Not persisted: development's "protecting nothing", or product's
+        // warning that the key is live until the process exits (#543
+        // round 2).
+        : t.html(report.verifiesCredentials
+            ? 'consoleCryptoMetadata.notPersistedProduct'
+            : 'consoleCryptoMetadata.defensible') + ' ') +
       t.html('consoleCryptoMetadata.needsWrite'));
 
     html += self.renderResidency(residency, t);

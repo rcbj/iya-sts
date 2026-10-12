@@ -351,7 +351,10 @@ class MfaPages {
       '</h2><p class="note">' + t.html('portal.mfa.about',
         { digits: String(totp.digits), period: String(totp.period) }) +
       '</p><p class="note">' + t.html('portal.mfa.aboutSecond') +
-      '</p><p class="note">' + t.html('portal.mfa.aboutChecked') +
+      '</p><p class="note">' +
+      // Per mode (#543 round 2): "any password is accepted" is development's.
+      t.html(view.verifiesCredentials ? 'portal.mfa.aboutCheckedProduct'
+                                      : 'portal.mfa.aboutChecked') +
       '</p></div>';
   }
 

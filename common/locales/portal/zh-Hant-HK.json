@@ -27,7 +27,7 @@
   "attest.google": "；Google 回報其證明證書為 {status}",
   "keys.withoutUsername": "不需用戶名稱",
   "mfa.makeAppPasswordAfter": "，供使用其中某個入口的客戶端使用。",
-  "mfa.aboutChecked": "驗證碼<strong>在每種模式下都會正確核對</strong>。此模擬服務上大多數認證都不會核對——任何密碼都會被接受——但若一次性密碼驗證程式接受任意六位數，那就不是寬鬆，而是故障，也就沒有任何東西可以用來測試客戶端了。",
+  "mfa.aboutChecked": "驗證碼<strong>在每種模式下都會正確核對</strong>。在開發模式下，這裡大多數認證都不會核對——任何密碼都會被接受——但若一次性密碼驗證程式接受任意六位數，那就不是寬鬆，而是故障，也就沒有任何東西可以用來測試客戶端了。",
   "codes.onlyTime": "<strong>這是它們唯一一次顯示。</strong>您確認後，本服務會儲存每個復原碼的<em>雜湊</em>——與儲存您密碼相同的 scrypt 雜湊——因此它能核對您輸入的復原碼，但永遠無法將其印出。請先將它們抄下、打印，或存入密碼管理工具。",
   "signingKey.samlHow": "<strong>如何使用它。</strong>建立一個 SAML 2.0 <code>&lt;Assertion&gt;</code>，其 <code>&lt;Issuer&gt;</code> 與 <code>&lt;Subject&gt;&lt;NameID&gt;</code> 都是 <code>{who}</code>，<code>&lt;Audience&gt;</code> 與 bearer <code>&lt;SubjectConfirmationData Recipient&gt;</code> 為 <code>{endpoint}</code>，並將 <code>NotOnOrAfter</code> 設為一兩分鐘之後。使用此金鑰以封裝式 XML 簽章簽署，將文件以 base64url 編碼，然後作為 RFC 7522 第 2.1 節的授權許可提交至權杖端點。本服務會將簽章與其為您保存的證書比對，指紋為 <code>{thumbprint}</code>。",
   "signingKey.certificate": "您的證書（公開——這是任何人都可以持有的那一半）",

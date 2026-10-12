@@ -94,7 +94,11 @@ class DashboardPage {
       t.html('consoleDashboard.not.droppedOn') + ' ' +
       link('/admin/audit', t.html('consoleDashboard.link.audit')) +
       t.html('consoleDashboard.not.rememberB')) +
-      kit.bullet(t.html('consoleDashboard.not.password')) +
+      // The console's own door, per mode (#543 round 2): the answer's
+      // `verifiesCredentials` chooses, as `persistence` chooses above.
+      kit.bullet(t.html(json.verifiesCredentials
+        ? 'consoleDashboard.not.passwordProduct'
+        : 'consoleDashboard.not.password')) +
       kit.bullet(t.html('consoleDashboard.not.enforceA') + ' ' +
       link('/admin/oauth2', t.html('consoleDashboard.link.oauth')) + ' ' +
       t.html('consoleDashboard.not.enforceB') + ' ' +

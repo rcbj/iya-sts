@@ -4673,6 +4673,9 @@ class CryptoMetadata {
         plaintextHeld: store.plaintextHeld
       },
       formats: keystore.keystoreFormats(),
+      // Which sentence the page's warning carries where the keys are not
+      // persisted (#543 round 2): "protecting nothing" is development's.
+      verifiesCredentials: mode.verifiesCredentials(),
       keys: rows,
       // THE ROTATION STATE (#42/#48): every signing unit's current, next and
       // retired keys and the schedule — what the Rotate controls act on.

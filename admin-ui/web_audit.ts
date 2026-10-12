@@ -246,7 +246,11 @@ class AuditPage {
 
       kit.note(t.html('consoleAudit.fromNote')) +
 
-      kit.note(t.html('consoleAudit.inMemory')) + '</div>' +
+      // Per mode and per store (#543 round 2): where the log lives and
+      // whether a password behind its rows was checked.
+      kit.note(t.html(!json.verifiesCredentials ? 'consoleAudit.inMemory'
+        : json.persisted ? 'consoleAudit.persistedProduct'
+          : 'consoleAudit.inMemoryProduct')) + '</div>' +
 
       // THE TWO SETTINGS ARE ON THIS PAGE NOW rather than being described
       // here and typed in somewhere else. `audit.protocolCalls` is the reason

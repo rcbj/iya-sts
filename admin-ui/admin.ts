@@ -5394,6 +5394,10 @@ class AdminConsole {
       base: baseUrlOf(req),
       persistence: { enabled: !!stored.enabled,
                      mode: stored.enabled ? String(stored.mode || '') : '' },
+      // Which of the two sentences about the console's own door is true in
+      // this realm (#543 round 2): it said "It checks no password" in every
+      // mode.
+      verifiesCredentials: mode.verifiesCredentials(),
       sections: this.visibleSections(gateStateFor(req))
     });
     log.debug("Leaving AdminConsole.dashboardJson().");
