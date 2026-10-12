@@ -9,10 +9,15 @@
 // WHAT THE SIX W3C VC AND DID SUITE JOBS SHARE (#194-#199, 2026-09-26). Not a
 // job.
 //
-//   * setUp()        a THROWAWAY DEVELOPMENT REALM — the VC-API adapter
-//                    (oid4vc/vc_api.ts) is a test control, closed in
-//                    product, and a realm's mode is its own, so this runs in
-//                    every local mode — with a client that may be issued
+//   * setUp()        a THROWAWAY DEVELOPMENT REALM with the W3C VC API
+//                    turned on (oid4vc/vc_api.ts; `vcApi.enabled` is off by
+//                    default since it became a product surface, #598, and
+//                    `vcApi.maxPerWindow` is raised past what a suite sends
+//                    in a window) — development because the client is made
+//                    by open registration, a development door; the VC API
+//                    asks for the same token in both modes, and
+//                    `sts_vc_api_product.js` holds it in a product realm —
+//                    with a client that may be issued
 //                    `vc-api:issue` and `vc-api:verify` (this service's own
 //                    protected scopes, declared by an administrator) and a
 //                    token carrying both. The suites authenticate the way
@@ -101,7 +106,8 @@ async function setUp(prefix) {
   const realmBase = root + "/realm/" + realm;
   await ok(root + "/admin-api/realms/create", { id: realm,
     domain: realm + ".example.net", name: "W3C suite " + realm,
-    overrides: { "global.mode": "development" } },
+    overrides: { "global.mode": "development", "vcApi.enabled": true,
+                 "vcApi.maxPerWindow": 100000 } },
     "created the development realm " + realm);
   await ok(realmBase + "/admin-api/config/set",
            { key: "oauth2.openRegistration", value: true },

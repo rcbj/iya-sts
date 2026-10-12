@@ -1739,10 +1739,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List credential"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "Maglathala ng status list (VC-API, test control)"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Deferred credential endpoint"
@@ -1792,40 +1788,40 @@
     "text": "BBS public key"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "Ang mga VC-API issuer (test control)"
+    "en": "73b838a87b15b09a",
+    "text": "Ang mga issuer ng VC API"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "Mag-issue ng credential (VC-API, test control)"
+    "en": "36e4ff37d0083d67",
+    "text": "Maglabas ng kredensyal (VC API)"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "I-verify ang isang credential (VC-API, test control)"
+    "en": "7f67271e211b78e1",
+    "text": "I-verify ang isang kredensyal (VC API)"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "I-verify ang isang presentation (VC-API, test control)"
+    "en": "f0ace30e55e137f1",
+    "text": "I-verify ang isang presentasyon (VC API)"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "Patunayan ang isang presentation (VC-API, test control)"
+    "en": "96508bdaea6f7f69",
+    "text": "Patunayan ang isang presentasyon (VC API)"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "Kumuha ng selective disclosure (VC-API, test control)"
+    "en": "4af3df1e4c1f2f99",
+    "text": "Kumuha ng piling pagsisiwalat (VC API)"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "Baguhin ang status ng isang credential (VC-API, test control)"
+    "en": "d231bdc923e68f8a",
+    "text": "Baguhin ang status ng isang kredensyal (VC API)"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "I-resolve ang isang DID (test control)"
+    "en": "39c91a22e95b0c2e",
+    "text": "I-resolve ang isang DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "I-dereference ang isang DID URL (test control)"
+    "en": "a7044c968ef56722",
+    "text": "I-dereference ang isang DID URL"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

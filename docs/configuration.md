@@ -1978,6 +1978,13 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oidfed.resolveCacheMax` | `STS_OIDFED_RESOLVE_CACHE_MAX` | `1000` | yes | How many resolved Trust Chains a realm keeps; the oldest is dropped for a new one. |
 | `oidfed.clockSkewS` | `STS_OIDFED_CLOCK_SKEW_S` | `60` | yes | The leeway on iat and exp when a federation statement is read (3.2). |
 
+### W3C VC API
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `vcApi.enabled` | `STS_VC_API_ENABLED` | `false` | yes | Serve the W3C CCG Verifiable Credentials API (VCALM) at `/vc-api` in this realm (#598): issue, prove, derive, verify, status changes and DID resolution, behind an access token carrying `vc-api:issue` or `vc-api:verify` in every mode, signing with keys of its own. **Off by default**, because it signs documents its caller wrote; off, every `/vc-api` path answers 501 — the feature is off, the URL is not wrong (as `scim.enabled` and `ssf.enabled` do). [`vc-api.md`](vc-api.md). |
+| `vcApi.maxPerWindow` | `STS_VC_API_MAX_PER_WINDOW` | `600` | yes | How many `/vc-api` calls one client, and one address, may make per `security.rateLimitWindowS` window in a realm; past it, 429 with `Retry-After`. |
+
 ### Kerberos
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |

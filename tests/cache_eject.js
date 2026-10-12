@@ -119,7 +119,7 @@ function childMain() {
       'revocation.ca-certificates', 'revocation.crl', 'revocation.failures',
       'revocation.ocsp', 'risk.standings', 'scim.digest-nonce-counts',
       'scim.digest-nonces', 'scim.hoba-challenges', 'scim.hoba-signatures',
-      // The VC-API test adapter's issued credentials (#194-#199): a row
+      // The W3C VC API's issued credentials (#194-#199, #598): a row
       // expires with the credential's validity or a default window.
       'vc-api.issued',
       // The rows an attribute source returned, held for a burst of sign-ins

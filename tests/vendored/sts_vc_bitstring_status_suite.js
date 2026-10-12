@@ -131,13 +131,20 @@ async function change(ctx, vc, purpose, status) {
   return r;
 }
 
-// The list an entry names, as the suite reads it: JSON-LD, then published.
+// The list an entry names, as the suite reads it: published, then JSON-LD.
+// THE PUBLISH IS AN OPERATOR'S ACT SINCE #598 — `POST /admin-api/vc-status/
+// publish`, Admin Write, with the run's admin token the preload presents —
+// where it was the VC API's own test hook beside the list; the purpose is
+// the list URL's last segment.
 async function listOf(ctx, entry) {
   log.debug("Entering listOf().");
-  const published = await kit.call("POST", entry.statusListCredential +
-                                   "/publish", { headers: bearer(ctx),
-                                                 json: {} });
-  assert.strictEqual(published.status, 204, "publish: " + published.status);
+  const purpose = String(entry.statusListCredential).split("/").pop();
+  const published = await kit.call("POST", ctx.realmBase +
+                                   "/admin-api/vc-status/publish",
+                                   { json: { purpose: purpose } });
+  assert.strictEqual(published.status, 200, "publish: " + published.status +
+                     " " + published.text.slice(0, 300));
+  assert.strictEqual(published.json.purpose, purpose);
   const r = await kit.call("GET", entry.statusListCredential, { headers: {
     Accept: "application/ld+json, application/json" } });
   assert.strictEqual(r.status, 200, "the list: " + r.text.slice(0, 300));
