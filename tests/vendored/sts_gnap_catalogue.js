@@ -53,6 +53,8 @@
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -528,16 +530,16 @@ async function test() {
         if (res.location.indexOf(RP_REDIRECT) === 0) {
           break;
         }
+        // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE
+        // #571: signed in through the one helper, with this browser's jar.
+        if (/\/authn\/login\?authn=/.test(res.location)) {
+          res = await authnSignin.signInWithJar(h.realmBase,
+            h.absolute(res.location),
+            { action: "login", username: OWNER, password: PASSWORD },
+            rp.jar);
+          continue;
+        }
         res = await rp.go("GET", res.location);
-        continue;
-      }
-      const authnId = (res.text.match(/name="authn_id" value="([^"]+)"/) ||
-                       [])[1];
-      if (res.status === 200 && authnId) {
-        res = await rp.go("POST", "/realm/" + h.realm + "/authn/login",
-                          { authn_id: authnId, username: OWNER,
-                            password: PASSWORD, action: "login",
-                            csrf_token: h.csrfOf(res.text) });
         continue;
       }
       const consentAction = (res.text.match(
