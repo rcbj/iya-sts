@@ -1076,12 +1076,28 @@
     "text": "Elimina todas las anclas (una de tls.trustAnchorsFile hasta el siguiente arranque), de modo que solo sigue verificándose un certificado que encadene a la raíz del servicio (de confianza junto al almacén mientras tls.trustIssuedClientCertificates está activado). Solo POST. Un control de prueba de desarrollo que el modo producto rechaza; las puertas con control de acceso eliminan un ancla a la vez y no tienen vaciado."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "eb8b48d2f0b2811a",
-    "text": "Qué es este servicio, en una tarjeta: el proyecto en GitHub, sus incidencias, el sitio de documentación y las dos superficies de esta instancia a las que acude una persona en lugar de un cliente: la consola de administración y el portal de usuario. NO enumera ningún endpoint a propósito: esta página es la lista, se genera, y un conjunto de destacados escrito a mano en la portada sería una segunda copia que nada comprueba. Fue una ruta sin enrutar hasta el 2026-08-24, así que la respuesta a la primera URL que escribe una persona era el \"Cannot GET /\" de Express."
+    "en": "4c29594ca1759528",
+    "text": "Qué es este servicio, en una tarjeta: el proyecto en GitHub, sus incidencias, el sitio de documentación y las dos superficies de esta instancia a las que va una persona y no un cliente — la consola de administración y el portal de usuario. NO lista ningún endpoint, a propósito — esta página es la lista, se genera, y una selección escrita a mano en la puerta principal sería una segunda copia que nada comprueba. Fue una ruta sin enrutar hasta el 2026-08-24, así que la respuesta a la primera URL que escribe una persona era el \"Cannot GET /\" de Express. Desde #579 es una superficie estática: esto responde el shell, y /home.js dibuja la tarjeta en el idioma del navegador a partir de /home-api/front."
+  },
+  "stsmetadata.endpoints./home.js.what": {
+    "en": "676325f92b405058",
+    "text": "NON-SPEC (#579). El runtime y el renderizador de la puerta principal en un solo archivo, sobre el runtime compartido de las superficies públicas, construido por build-typescript.sh (home/home-spa.js) y servido precomprimido. Público: nada en él es secreto."
+  },
+  "stsmetadata.endpoints./home.css.what": {
+    "en": "537f7ad79d6753da",
+    "text": "NON-SPEC (#579). Las reglas propias de la puerta principal sobre /web/card.css: la tarjeta más ancha, la banda detrás del logotipo, la línea de versión, la advertencia y las filas de enlaces."
+  },
+  "stsmetadata.endpoints./home-api.what": {
+    "en": "1d1e5557766a5710",
+    "text": "NON-SPEC (#579). Las operaciones de la API de la puerta principal, cada una con la página de la que es la puerta (mirrors), como /account-api lista las suyas. Público y sin idioma."
+  },
+  "stsmetadata.endpoints./home-api/front.what": {
+    "en": "e608f6ceb4c13f9a",
+    "text": "NON-SPEC (#579). Todo lo que dibuja la página de inicio, como hechos y sin palabras: el nombre, la versión y su compilación, si un inicio de sesión comprueba la contraseña y si la consola está protegida, el logotipo, y los cinco enlaces como identificadores y direcciones — los de la consola y del portal en la escucha que los responde (#472). Público, no-store; no lista ningún endpoint, como la página nunca lo hizo."
   },
   "stsmetadata.endpoints./logo.png.what": {
-    "en": "95200a712bee24b8",
-    "text": "La única imagen que sirve este servicio: el logotipo del proyecto principal, redimensionado y reducido a 31 kB, leído del disco una vez al arrancar. Si no se pudo leer, esto responde 404 con sus propias palabras en lugar de las de Express, y la portada se dibuja sin él."
+    "en": "3ecb997587060c27",
+    "text": "El logotipo de la página de inicio, `home/assets/logo.png`, leído del disco una vez al arrancar. La página de inicio es una página estática desde #579 y lo nombra en `GET /home-api/front` (`logo`), con `null` cuando no se pudo leer; entonces esta ruta responde 404 con sus propias palabras en lugar de las de Express."
   },
   "stsmetadata.endpoints./realms.what": {
     "en": "bfc05d15d7d40bc2",

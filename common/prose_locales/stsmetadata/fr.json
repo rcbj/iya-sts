@@ -1076,12 +1076,28 @@
     "text": "Supprime toutes les ancres — celles de tls.trustAnchorsFile jusqu’au prochain démarrage — de sorte que seul un certificat remontant à la Root du service (approuvée à côté du magasin de confiance tant que tls.trustIssuedClientCertificates est activé) est encore vérifié. POST uniquement. Un contrôle de test de développement que le mode produit refuse ; les portes sous contrôle d’accès suppriment une ancre à la fois et n’ont pas d’opération clear."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "eb8b48d2f0b2811a",
-    "text": "Ce qu’est ce service, en une carte : le projet sur GitHub, ses tickets, le site de documentation, et les deux surfaces de cette instance vers lesquelles se rend une personne plutôt qu’un client — la console d’administration et le portail utilisateur. Il ne liste AUCUN point de terminaison à dessein — cette page est la liste, elle est générée, et une sélection de points forts écrite à la main sur la page d’accueil en serait une seconde copie que rien ne vérifie. C’était un chemin sans route jusqu’au 2026-08-24 ; la réponse à la première URL que saisit une personne était donc le \"Cannot GET /\" d’Express."
+    "en": "4c29594ca1759528",
+    "text": "Ce qu’est ce service, en une carte : le projet sur GitHub, ses tickets, le site de documentation, et les deux surfaces de cette instance vers lesquelles va une personne plutôt qu’un client — la console d’administration et le portail utilisateur. Elle ne liste AUCUN point de terminaison, délibérément — cette page est la liste, elle est générée, et une sélection écrite à la main sur la porte d’entrée en serait une seconde copie que rien ne vérifie. C’était un chemin non routé jusqu’au 2026-08-24, si bien que la réponse à la première URL qu’une personne tape était le « Cannot GET / » d’Express. Depuis #579, c’est une surface statique : ceci répond le shell, et /home.js dessine la carte dans la langue du navigateur à partir de /home-api/front."
+  },
+  "stsmetadata.endpoints./home.js.what": {
+    "en": "676325f92b405058",
+    "text": "NON-SPEC (#579). Le runtime et le moteur de rendu de la porte d’entrée en un seul fichier, au-dessus du runtime partagé des surfaces publiques, construit par build-typescript.sh (home/home-spa.js) et servi précompressé. Public : rien dedans n’est secret."
+  },
+  "stsmetadata.endpoints./home.css.what": {
+    "en": "537f7ad79d6753da",
+    "text": "NON-SPEC (#579). Les règles propres à la porte d’entrée au-dessus de /web/card.css : la carte plus large, le bandeau derrière le logo, la ligne de version, l’avertissement et les rangées de liens."
+  },
+  "stsmetadata.endpoints./home-api.what": {
+    "en": "1d1e5557766a5710",
+    "text": "NON-SPEC (#579). Les opérations de l’API de la porte d’entrée, chacune avec la page dont elle est la porte (mirrors), comme /account-api liste les siennes. Public et sans langue."
+  },
+  "stsmetadata.endpoints./home-api/front.what": {
+    "en": "e608f6ceb4c13f9a",
+    "text": "NON-SPEC (#579). Tout ce que dessine la page d’accueil, sous forme de faits et sans mots : le nom, la version et son build, si une connexion vérifie le mot de passe et si la console est protégée, le logo, et les cinq liens sous forme d’identifiants et d’adresses — ceux de la console et du portail sur l’écouteur qui leur répond (#472). Public, no-store ; elle ne liste aucun point de terminaison, comme la page ne l’a jamais fait."
   },
   "stsmetadata.endpoints./logo.png.what": {
-    "en": "95200a712bee24b8",
-    "text": "La seule image que sert ce service : le logo du projet parent, redimensionné et réduit à 31 ko, lu sur le disque une fois au démarrage. S’il n’a pas pu être lu, ce chemin répond 404 avec ses propres mots plutôt qu’avec ceux d’Express, et la page d’accueil est affichée sans lui."
+    "en": "3ecb997587060c27",
+    "text": "Le logo de la page d’accueil, `home/assets/logo.png`, lu sur le disque une fois au démarrage. La page d’accueil est une page statique depuis #579 et le nomme dans `GET /home-api/front` (`logo`), avec `null` lorsqu’il n’a pas pu être lu ; cette route répond alors 404 avec ses propres mots plutôt que ceux d’Express."
   },
   "stsmetadata.endpoints./realms.what": {
     "en": "bfc05d15d7d40bc2",

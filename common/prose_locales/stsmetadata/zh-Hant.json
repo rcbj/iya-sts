@@ -1076,12 +1076,28 @@
     "text": "移除所有信任錨點——tls.trustAnchorsFile 中的信任錨點則移除至下次啟動為止——因此只有鏈結至服務 Root 的憑證（在 tls.trustIssuedClientCertificates 開啟時與信任存放區並列受信任）仍能通過驗證。僅限 POST。這是產品模式會拒絕的開發用測試控制項；設有閘門的入口一次移除一個信任錨點，沒有清除功能。"
   },
   "stsmetadata.endpoints./.what": {
-    "en": "eb8b48d2f0b2811a",
-    "text": "以一張卡片說明本服務是什麼：GitHub 上的專案、其議題、文件網站，以及此執行個體上由人（而非用戶端）前往的兩個介面——管理主控台與使用者入口網站。它刻意「不」列出任何端點——這個頁面就是清單，而且是自動產生的，在首頁手寫一組重點會成為沒有任何東西檢查的第二份複本。在 2026-08-24 之前它是未路由的路徑，因此人最先輸入的那個 URL 得到的回答是 Express 的「Cannot GET /」。"
+    "en": "4c29594ca1759528",
+    "text": "本服務是什麼，以一張卡片說明：GitHub 上的專案、其問題、文件網站，以及本執行個體上供人（而非用戶端）前往的兩個介面——管理主控台與使用者入口網站。它刻意「不」列出任何端點——本頁就是那份清單，它是產生的，而在前門手寫一組重點會成為沒有人檢查的第二份副本。直到 2026-08-24 它都是未路由的路徑，所以人們輸入的第一個 URL 得到的回應是 Express 的「Cannot GET /」。自 #579 起它是靜態介面：這裡回應外殼，由 /home.js 依據 /home-api/front 以瀏覽器的語言繪製卡片。"
+  },
+  "stsmetadata.endpoints./home.js.what": {
+    "en": "676325f92b405058",
+    "text": "NON-SPEC（#579）。前門的執行階段與轉譯器合為一個檔案，建立於公開介面共用的執行階段之上，由 build-typescript.sh（home/home-spa.js）建置並以預先壓縮的形式提供。公開：其中沒有任何機密。"
+  },
+  "stsmetadata.endpoints./home.css.what": {
+    "en": "537f7ad79d6753da",
+    "text": "NON-SPEC（#579）。前門在 /web/card.css 之上的自有規則：較寬的卡片、標誌後方的色帶、版本列、警告與連結列。"
+  },
+  "stsmetadata.endpoints./home-api.what": {
+    "en": "1d1e5557766a5710",
+    "text": "NON-SPEC（#579）。前門 API 的作業，每一項都附上其作為入口的頁面（mirrors），與 /account-api 列出自己的作業方式相同。公開，且不含語言。"
+  },
+  "stsmetadata.endpoints./home-api/front.what": {
+    "en": "e608f6ceb4c13f9a",
+    "text": "NON-SPEC（#579）。首頁繪製的所有內容，以事實而非文字提供：名稱、版本及其組建、登入是否檢查密碼以及主控台是否受保護、標誌，以及作為識別碼與位址的五個連結——主控台與入口網站的連結位於回應它們的接聽程式上（#472）。公開，no-store；它不列出任何端點，正如該頁面從未列出過。"
   },
   "stsmetadata.endpoints./logo.png.what": {
-    "en": "95200a712bee24b8",
-    "text": "本服務唯一提供的圖片：上層專案的標誌，經縮放並縮減至 31 kB，於啟動時從磁碟讀取一次。若無法讀取，此端點會以自己的措辭而非 Express 的措辭回應 404，首頁則在沒有它的情況下繪製。"
+    "en": "3ecb997587060c27",
+    "text": "首頁的標誌 `home/assets/logo.png`，於啟動時從磁碟讀取一次。自 #579 起首頁是靜態頁面，並在 `GET /home-api/front`（`logo`）中指出它，無法讀取時為 `null`；此時此路由以自己的措辭而非 Express 的措辭回應 404。"
   },
   "stsmetadata.endpoints./realms.what": {
     "en": "bfc05d15d7d40bc2",

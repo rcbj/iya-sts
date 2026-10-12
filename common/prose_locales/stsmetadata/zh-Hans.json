@@ -1076,12 +1076,28 @@
     "text": "删除所有信任锚——来自 tls.trustAnchorsFile 的信任锚直到下次启动前被删除——因此只有链接到服务根证书的证书（在 tls.trustIssuedClientCertificates 打开时与信任库并列受信任）仍能通过验证。仅限 POST。这是产品模式会拒绝的开发测试控件；设有关卡的入口一次删除一个信任锚，并且没有清空功能。"
   },
   "stsmetadata.endpoints./.what": {
-    "en": "eb8b48d2f0b2811a",
-    "text": "用一张卡片说明本服务是什么：GitHub 上的项目、其议题、文档站点，以及本实例上供人（而非客户端）访问的两个界面——管理控制台和用户门户。它刻意不列出任何端点——本页面就是那份列表，它是自动生成的，而在首页上手写一组重点将是一份无人检查的第二副本。在 2026-08-24 之前它是一个未路由的路径，因此人们首先输入的那个 URL 得到的应答是 Express 的 “Cannot GET /”。"
+    "en": "4c29594ca1759528",
+    "text": "本服务是什么，用一张卡片说明：GitHub 上的项目、其问题、文档站点，以及本实例上供人（而非客户端）访问的两个界面——管理控制台和用户门户。它刻意不列出任何端点——本页就是那份列表，它是生成的，而在前门手写一组要点将成为没人检查的第二份副本。直到 2026-08-24 它都是一个未路由的路径，因此人们输入的第一个 URL 得到的回答是 Express 的“Cannot GET /”。自 #579 起它是一个静态界面：这里回答外壳，由 /home.js 根据 /home-api/front 以浏览器的语言绘制卡片。"
+  },
+  "stsmetadata.endpoints./home.js.what": {
+    "en": "676325f92b405058",
+    "text": "NON-SPEC（#579）。前门的运行时和渲染器合为一个文件，构建于公共界面共享的运行时之上，由 build-typescript.sh（home/home-spa.js）构建并以预压缩形式提供。公开：其中没有任何机密。"
+  },
+  "stsmetadata.endpoints./home.css.what": {
+    "en": "537f7ad79d6753da",
+    "text": "NON-SPEC（#579）。前门在 /web/card.css 之上的自有规则：更宽的卡片、徽标后的色带、版本行、警告和链接行。"
+  },
+  "stsmetadata.endpoints./home-api.what": {
+    "en": "1d1e5557766a5710",
+    "text": "NON-SPEC（#579）。前门 API 的操作，每个都附带其作为入口的页面（mirrors），与 /account-api 列出自己的操作方式相同。公开，且不含语言。"
+  },
+  "stsmetadata.endpoints./home-api/front.what": {
+    "en": "e608f6ceb4c13f9a",
+    "text": "NON-SPEC（#579）。首页绘制的全部内容，以事实而非文字给出：名称、版本及其构建、登录是否检查密码以及控制台是否受保护、徽标，以及作为标识符和地址的五个链接——控制台和门户的链接位于回答它们的监听器上（#472）。公开，no-store；它不列出任何端点，正如该页面从未列出过。"
   },
   "stsmetadata.endpoints./logo.png.what": {
-    "en": "95200a712bee24b8",
-    "text": "本服务提供的唯一图片：父项目的徽标，已缩放并压缩到 31 kB，在启动时从磁盘读取一次。如果无法读取，它会用自己的话应答 404，而不是 Express 的话，首页则不带徽标绘制。"
+    "en": "3ecb997587060c27",
+    "text": "首页的徽标 `home/assets/logo.png`，在启动时从磁盘读取一次。自 #579 起首页是一个静态页面，并在 `GET /home-api/front`（`logo`）中给出它，无法读取时为 `null`；此时该路由以自己的措辞而非 Express 的措辞回答 404。"
   },
   "stsmetadata.endpoints./realms.what": {
     "en": "bfc05d15d7d40bc2",

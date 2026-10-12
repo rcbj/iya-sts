@@ -1076,12 +1076,28 @@
     "text": "Inaalis ang bawat anchor — ang sa tls.trustAnchorsFile hanggang sa susunod na pag-start — kaya ang certificate lang na nagcha-chain sa service Root (pinagkakatiwalaan sa tabi ng truststore habang naka-on ang tls.trustIssuedClientCertificates) ang nave-verify pa. POST lang. Isang development test control na tinatanggihan ng product mode; ang mga pintong may gate ay nag-aalis ng isang anchor bawat pagkakataon at walang clear."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "eb8b48d2f0b2811a",
-    "text": "Kung ano ang serbisyong ito, sa iisang card: ang project sa GitHub, ang mga issue nito, ang documentation site, at ang dalawang surface sa instance na ito na pinupuntahan ng tao at hindi ng client — ang admin console at ang user portal. Sadyang WALANG inililistang endpoint — ang page na ito ang listahan, ginagawa ito nang awtomatiko, at ang isinulat-kamay na hanay ng mga highlight sa harapang pinto ay magiging ikalawang kopya nito na walang sumusuri. Unrouted path ito hanggang 2026-08-24, kaya ang sagot sa nag-iisang URL na unang tina-type ng tao ay ang \"Cannot GET /\" ng Express."
+    "en": "4c29594ca1759528",
+    "text": "Kung ano ang serbisyong ito, sa iisang card: ang proyekto sa GitHub, ang mga issue nito, ang site ng dokumentasyon, at ang dalawang surface sa instance na ito na pinupuntahan ng isang tao sa halip na ng isang client — ang admin console at ang user portal. SADYANG WALA itong inililistang endpoint — ang page na ito ang listahan, ito ay nabubuo, at ang isang hanay ng mga highlight na isinulat sa kamay sa front door ay magiging pangalawang kopya nito na walang sumusuri. Ito ay isang hindi naka-route na path hanggang 2026-08-24, kaya ang sagot sa unang URL na tina-type ng isang tao ay ang \"Cannot GET /\" ng Express. Mula #579, isa itong static na surface: sinasagot nito ang shell, at iginuguhit ng /home.js ang card sa wika ng browser mula sa /home-api/front."
+  },
+  "stsmetadata.endpoints./home.js.what": {
+    "en": "676325f92b405058",
+    "text": "NON-SPEC (#579). Ang runtime at renderer ng front door sa iisang file sa ibabaw ng shared runtime ng mga pampublikong surface, binuo ng build-typescript.sh (home/home-spa.js) at inihahain nang precompressed. Pampubliko: walang lihim dito."
+  },
+  "stsmetadata.endpoints./home.css.what": {
+    "en": "537f7ad79d6753da",
+    "text": "NON-SPEC (#579). Ang sariling mga patakaran ng front door sa ibabaw ng /web/card.css: ang mas malapad na card, ang band sa likod ng logo, ang linya ng bersyon, ang babala at ang mga hanay ng link."
+  },
+  "stsmetadata.endpoints./home-api.what": {
+    "en": "1d1e5557766a5710",
+    "text": "NON-SPEC (#579). Ang mga operasyon ng front door API, bawat isa kasama ang page na pinto nito (mirrors), gaya ng paglilista ng /account-api sa sarili nito. Pampubliko at walang wika."
+  },
+  "stsmetadata.endpoints./home-api/front.what": {
+    "en": "e608f6ceb4c13f9a",
+    "text": "NON-SPEC (#579). Lahat ng iginuguhit ng front page, bilang mga katotohanan at walang mga salita: ang pangalan, ang bersyon at ang build nito, kung sinusuri ng isang sign-in ang password at kung gated ang console, ang logo, at ang limang link bilang mga id at address — ang sa console at sa portal sa listener na sumasagot sa mga ito (#472). Pampubliko, no-store; wala itong inililistang endpoint, gaya ng hindi kailanman ginawa ng page."
   },
   "stsmetadata.endpoints./logo.png.what": {
-    "en": "95200a712bee24b8",
-    "text": "Ang nag-iisang larawang inihahain ng serbisyong ito: ang logo ng parent project, binago ang laki at pinaliit sa 31 kB, binabasa mula sa disk nang isang beses sa startup. Kung hindi ito mabasa, sumasagot ito ng 404 sa sarili nitong salita sa halip na sa salita ng Express, at iginuguhit ang front page nang wala ito."
+    "en": "3ecb997587060c27",
+    "text": "Ang logo ng front page, `home/assets/logo.png`, binabasa mula sa disk nang isang beses sa pagsisimula. Static na page na ang front page mula #579 at pinangangalanan ito sa `GET /home-api/front` (`logo`), na may `null` kapag hindi ito mabasa; sasagot ang route na ito ng 404 sa sarili nitong mga salita sa halip na sa mga salita ng Express."
   },
   "stsmetadata.endpoints./realms.what": {
     "en": "bfc05d15d7d40bc2",

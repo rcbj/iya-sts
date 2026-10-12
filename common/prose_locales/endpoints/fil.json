@@ -343,6 +343,22 @@
     "en": "a064be014d290217",
     "text": "Ang front page"
   },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "Ang script ng front page"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "Ang stylesheet ng front page"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "Ang index ng front door API"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "Ang view ng front page"
+  },
   "endpoints.route./logo.png.name": {
     "en": "5d9164ce79341469",
     "text": "Ang logo sa front page"

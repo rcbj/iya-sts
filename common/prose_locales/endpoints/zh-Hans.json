@@ -343,6 +343,22 @@
     "en": "a064be014d290217",
     "text": "首页"
   },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "首页的脚本"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "首页的样式表"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "前门 API 索引"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "首页的视图"
+  },
   "endpoints.route./logo.png.name": {
     "en": "5d9164ce79341469",
     "text": "首页上的徽标"
