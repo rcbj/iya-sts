@@ -3836,7 +3836,8 @@ const WRITE_REFUSALS = {
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.',
-  // #585: the one row is xacml.pepBias, read only by /xacml/protected.
+  // #585: the one row was xacml.pepBias, read only by /xacml/protected; both
+  // went to the remote PEP in #596 and no row asks this now.
   servesDemoEndpoints:
     'it configures a demonstration endpoint, and product serves none of ' +
     'them. Try it in a development realm.',

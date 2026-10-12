@@ -11758,8 +11758,9 @@ const SETTINGS = [
   // is deliberate in a service whose every other surface is a turnstile. A
   // PDP's whole output is a decision; a flag that made it answer Permit when
   // it could not decide would not be a mock of anything, it would be a broken
-  // PDP. What IS configurable is what happens at the PEP — see
-  // `xacml.pepBias`, which is the PEP's decision and not the PDP's.
+  // PDP. What happens at a PEP is the PEP's own configuration: the remote
+  // PEP's `PEP_BIAS` (`xacml.pepBias`, the demonstration PEP's, went with it
+  // to the `xacml-pep` container in #596).
   { key: 'xacml.enabled', group: 'XACML', label: 'XACML enabled',
     env: 'STS_XACML_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the XACML 3.0 endpoints under /xacml answer. ' +
@@ -11778,28 +11779,6 @@ const SETTINGS = [
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
                  'refuses the CREATE and logs; it never evicts.' },
-
-  { key: 'xacml.pepBias', group: 'XACML',
-    label: 'What the embedded PEP does with a non-Permit',
-    env: 'STS_XACML_PEP_BIAS', type: 'enum',
-    enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
-    runtime: true,
-    // DEVELOPMENT-ONLY (#585): the one reader is /xacml/protected, a
-    // demonstration endpoint product does not serve, so a product realm
-    // holding permit-biased would be a value nothing reads that looks like a
-    // policy loosened.
-    onlyWhile: 'servesDemoEndpoints',
-    description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
-                 'the whole reason it is a setting. XACML section 7.2 lets a ' +
-                 'PEP be deny-biased (anything that is not Permit is a ' +
-                 'refusal) or permit-biased (anything that is not Deny is ' +
-                 'allowed), and real deployments differ. Deny-biased is the ' +
-                 'default because it is what a PEP protecting anything ' +
-                 'should be; permit-biased exists so that a client can see ' +
-                 'what the other choice does to an Indeterminate, which is ' +
-                 'the case the two disagree about and the one nobody tests. ' +
-                 'Development mode only: its one reader, /xacml/protected, ' +
-                 'is a demonstration endpoint (#585).' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -11826,10 +11805,9 @@ const SETTINGS = [
   // is a surprise to anybody who has already read the first.
   //
   // WHAT IS NOT HERE IS A SETTING THAT CHANGES A REMOTE PEP'S BIAS. A remote
-  // PEP is a SEPARATE PROCESS with its own configuration, and `xacml.pepBias`
-  // governs the EMBEDDED one at /xacml/protected and nothing else. A row here
-  // that appeared to set a remote PEP's bias would be a control that silently
-  // did nothing, which is worse than no control: the remote one reports the
+  // PEP is a SEPARATE PROCESS with its own configuration (`PEP_BIAS`). A row
+  // here that appeared to set a remote PEP's bias would be a control that
+  // silently did nothing, which is worse than no control: the remote one reports the
   // bias it is actually running with on every heartbeat, and the console shows
   // that rather than what this service would have chosen for it.
   { key: 'xacml.remotePeps', group: 'XACML',
