@@ -12,7 +12,6 @@
   "unsolicited": "Inicio de sesión iniciado por el proveedor de identidad: una Response no solicitada al proveedor de servicios que nombra <code>providerId</code> (<code>saml2.unsolicitedSso</code>).",
   "aa": "La autoridad de atributos: un <code>{element}</code> SOAP, el perfil Assertion Query and Request.",
   "metadata": "Los metadatos firmados del proveedor de identidad. <code>{scoped}</code> es un documento PROPIO para ese proveedor de servicios —un entityID distinto y endpoints distintos— y se genera para cualquier {sp} que se pida.",
-  "sp": "Un proveedor de servicios simulado. NON-SPEC, el servicio consumidor de aserciones predeterminado, y el lugar donde una respuesta puede verificarse comprobación por comprobación sin un segundo servicio.",
   "perSp": "Metadatos por proveedor de servicios",
   "perSpLead": "Cada proveedor de servicios obtiene sus propios endpoints bajo su propia ruta, con el único entityID de este proveedor de identidad, el emisor OAuth del realm. Pida <code>{path}</code> y se genera; el entityID puede ser una URL codificada con porcentajes o un nombre simple:",
   "generic": "Los endpoints genéricos son <code>{sso}</code>, <code>{slo}</code> y <code>{ars}</code>. Se comportan de forma idéntica: el ámbito en la ruta decide qué proveedor de identidad se nombra a sí mismo en la respuesta, y el propio Issuer del AuthnRequest decide para quién es la aserción en cualquier caso."

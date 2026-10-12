@@ -151,8 +151,7 @@ function run(t) {
     log.debug("Leaving resolveFor().");
     return returnAddress.resolve({
       requested: requested, registered: known.registered,
-      unconfirmed: known.unconfirmed,
-      fallback: 'https://idp.test/saml2/sp', attribute: ACS,
+      unconfirmed: known.unconfirmed, attribute: ACS,
       parameter: 'AssertionConsumerServiceURL', application: spId
     });
   };

@@ -21,8 +21,9 @@
 //       nobody registered gets the same name, and in product it is refused
 //       (#496, STS-WSTRUST-0030);
 //   U4. WS-Federation, both modes: the assertion (SAML 2.0 and 1.1) carries
-//       the issuer, and the mock relying party's issuer check holds it to
-//       that name, for a registered wtrealm and for one nobody registered;
+//       the issuer, and its signature verifies as this service's, for a
+//       registered wtrealm and for one nobody registered (the mock relying
+//       party's issuer check did this until #592 deleted it);
 //   U5. WS-Federation metadata, both modes: the shared document and
 //       /wsfed/metadata/{rp} (by identifier and by slug) name the issuer
 //       at the request's base; an unregistered segment is a 404
@@ -55,6 +56,8 @@ const SAML11 = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-' +
   'profile-1.1#SAMLV1.1';
 const JWT = 'urn:ietf:params:oauth:token-type:jwt';
 const SP_URL = 'https://in-sp.example';
+// A WS-Federation relying party's reply address, a stand-in (#592).
+const REPLY_URL = 'https://in-rp.example/wsfed';
 const UNREG_URL = 'https://in-unregistered.example';
 const UNREG_REALM = 'urn:in-unregistered-rp';
 const BASE = 'https://sts.in.example';
@@ -139,7 +142,9 @@ function fakeRes() {
 }
 
 // A WS-Federation sign-in response for `realm`, the wresult the page
-// carries, and the mock relying party's verdict over it for that realm.
+// carries, and whether its assertion's signature verifies as this service's.
+// The reply address is a stand-in nothing answers at: the response is read
+// off the page, never POSTed.
 function wsfedIssued(realm, tokenType) {
   log.debug("Entering wsfedIssued().");
   const wsfed = require('../ws-federation/wsfed');
@@ -149,23 +154,18 @@ function wsfedIssued(realm, tokenType) {
                     user: { username: 'in-alice' }, events: [] };
   const res = fakeRes();
   instance.issueSignInResponse({}, res, { wa: 'wsignin1.0', wtrealm: realm },
-                               session, realm, BASE + '/wsfed/rp',
+                               session, realm, REPLY_URL,
                                tokenType || wsfed.SAML2_TOKEN_TYPE);
   const m = /name="wresult" value="([^"]*)"/.exec(res.body);
   const wresult = m ? unescapeXml(m[1]) : '';
   const s2 = /<saml:Issuer>([^<]*)<\/saml:Issuer>/.exec(wresult);
   const s11 = /<saml:Assertion [^>]*\bIssuer="([^"]*)"/.exec(wresult);
-  const verdict = wresult
-    ? instance.verifySignInResponse({ wa: 'wsignin1.0', wresult: wresult },
-                                    realm)
-    : { checks: [] };
-  const check = (verdict.checks || []).filter(function (c) {
-    return c.name === 'the issuer is this service';
-  })[0];
+  const signed = !!wresult &&
+    instance.verifyAssertionSignature(wresult, 'Assertion').ok;
   log.debug("Leaving wsfedIssued().");
   return { status: res.statusCode,
            issuer: s2 ? s2[1] : (s11 ? s11[1] : ''),
-           rpIssuerCheck: !!(check && check.ok),
+           signed: signed,
            body: res.body.slice(0, 300) };
 }
 
@@ -303,12 +303,12 @@ function wsfedIssuers(t) {
       const unreg = wsfedIssued(UNREG_REALM, wsfed.SAML2_TOKEN_TYPE);
       t.check(s2.status === 200 && s2.issuer === expected &&
               s11.status === 200 && s11.issuer === expected &&
-              s2.rpIssuerCheck && s11.rpIssuerCheck &&
+              s2.signed && s11.signed &&
               unreg.status === 200 && unreg.issuer === expected &&
-              unreg.rpIssuerCheck,
+              unreg.signed,
               'U4. ' + m + ': a WS-Federation assertion (SAML 2.0 and 1.1), ' +
-              'registered wtrealm or not, carries the issuer, and the mock ' +
-              'relying party\'s issuer check holds it to that name',
+              'registered wtrealm or not, carries the issuer, and its ' +
+              'signature verifies as this service\'s',
               JSON.stringify([s2, s11, unreg]));
     });
   });
@@ -385,7 +385,7 @@ function inRealm(t, defaultIssuer) {
       const app = applications.createApplication({
         identifier: 'in-app', protocols: ['wstrust', 'wsfed', 'saml2'],
         fields: { wstrustAppliesTo: [SP_URL],
-                  wsfedReplyUrl: [BASE + '/wsfed/rp'] } });
+                  wsfedReplyUrl: [REPLY_URL] } });
       t.check(app && app.ok, 'precondition: the application was registered',
               JSON.stringify(app));
       // handleRst() is handed BASE itself, as a caller with no request.

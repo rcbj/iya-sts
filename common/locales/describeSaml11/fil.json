@@ -9,12 +9,10 @@
   "sso": "ang inter-site transfer service — ang pangalan ng SAML 1.1 sa tinatawag ng SAML 2.0 na Single Sign-On service",
   "responder": "ang SAML responder, sa SOAP. Nire-resolve ang mga artifact, nagbabalik ng mga assertion ayon sa AssertionID, at sumasagot sa AttributeQuery at AuthenticationQuery — ang attribute authority na kalahati ng SAML 1.1",
   "metadata": "naka-sign na metadata. Isang SAML 2.0 metadata document na naglalarawan sa isang SAML 1.1 identity provider, na siyang talagang kinokonsumo ng bawat relying party",
-  "rp": "isang mock relying party, para subukan ang dalawang profile at makita ang mga tsek",
   "different": "Ano ang pinagkaiba nito sa SAML 2.0",
   "noRequest": "<strong>Walang request message.</strong> Walang AuthnRequest, kaya hindi kailanman nagpapakilala ang relying party, hindi kailanman humihingi ng binding, NameID format o authentication context, at hindi kailanman tumatanggap ng error — walang sasagutin.",
   "noSlo": "<strong>Walang Single Logout.</strong> Dumating ito kasama ng SAML 2.0.",
   "spellings": "<strong>Iba-iba ang baybay sa kabuuan.</strong> <code>AssertionID</code> hindi <code>ID</code>, isang <code>Issuer</code> na attribute hindi element, isang status code na QName hindi URI, <code>AudienceRestrictionCondition</code> hindi <code>AudienceRestriction</code>, at isang signature na HULI sa isang assertion at UNA sa isang response.",
   "artifact": "<strong>Isang 42-byte na artifact</strong>, type 0x0001, samantalang ang sa SAML 2.0 ay 44 bytes at type 0x0004.",
-  "tryIt": "Subukan ito sa mock relying party",
   "theMetadata": "Ang metadata"
 }

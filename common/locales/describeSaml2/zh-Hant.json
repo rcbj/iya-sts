@@ -12,7 +12,6 @@
   "unsolicited": "由身分識別提供者發起的登入：向 <code>providerId</code> 所指名的服務提供者傳送未經要求的 Response（<code>saml2.unsolicitedSso</code>）。",
   "aa": "屬性授權單位：SOAP <code>{element}</code>，即 Assertion Query and Request 設定檔。",
   "metadata": "已簽署的身分識別提供者中繼資料。<code>{scoped}</code> 是該服務提供者「專屬」的文件——不同的 entityID 與不同的端點——並會為所要求的任何 {sp} 即時產生。",
-  "sp": "模擬服務提供者。NON-SPEC，預設的判斷提示取用者服務，也是無須第二個服務即可逐項驗證回應的地方。",
   "perSp": "各服務提供者的中繼資料",
   "perSpLead": "每個服務提供者在自己的路徑下都有自己的端點，使用此身分識別提供者唯一的 entityID，即該領域的 OAuth 簽發者。要求 <code>{path}</code> 即會即時產生——entityID 可以是百分比編碼的 URL 或一般名稱：",
   "generic": "通用端點為 <code>{sso}</code>、<code>{slo}</code> 與 <code>{ars}</code>。它們的行為完全相同——路徑中的範圍決定由哪個身分識別提供者在回答中自稱，而無論如何，判斷提示是給誰的都由 AuthnRequest 本身的 Issuer 決定。"

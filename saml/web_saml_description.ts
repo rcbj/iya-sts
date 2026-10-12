@@ -11,9 +11,8 @@
 // The two SAML identity providers' description pages, from the views their
 // shells carry (`saml2_sso.ts`'s and `saml11_sso.ts`'s `descriptionView()`,
 // `common/description_pages.ts`): what each profile is here, its endpoints
-// — the mock service provider and the mock relying party only where the
-// realm is served them (#585: the view names them as null otherwise) — and,
-// for 2.0, how per-service-provider metadata is minted.
+// and, for 2.0, how per-service-provider metadata is minted. The mock
+// service provider and relying party they once listed were deleted (#592).
 //
 // The words are the `describeSaml2` and `describeSaml11` catalogs', and
 // their English is what the server drew until #584; the paths, the
@@ -77,10 +76,6 @@ class WebSamlDescription {
        t.html('describeSaml2.metadata', { scoped: scoped(p.metadata),
                                           sp: '{sp}' })]
     ];
-    // The mock service provider only where this realm is served it (#585).
-    if (p.sp) {
-      rows.push([D.link(p.sp, esc(p.sp)), t.html('describeSaml2.sp')]);
-    }
     const example = String(p.metadata) + '/example-sp';
     return '<h1>' + t.html('describeSaml2.heading') + '</h1>' +
       D.p(t.html('describeSaml2.sub', { entityId: v.idpEntityId,
@@ -130,10 +125,6 @@ class WebSamlDescription {
       [D.code(p.responder), t.html('describeSaml11.responder')],
       [D.link(p.metadata, esc(p.metadata)), t.html('describeSaml11.metadata')]
     ];
-    // The mock relying party only where this realm is served it (#585).
-    if (p.rp) {
-      rows.push([D.link(p.rp, esc(p.rp)), t.html('describeSaml11.rp')]);
-    }
     return '<h1>' + t.html('describeSaml11.heading') + '</h1>' +
       D.p(t.html('describeSaml11.sub'), 'sub') +
       D.p(D.linked(t, 'describeSaml11.lead', {}, {
@@ -148,9 +139,7 @@ class WebSamlDescription {
               t.html('describeSaml11.spellings'),
               t.html('describeSaml11.artifact')]) +
       '<div class="row">' +
-      (p.rp ? '<a href="' + esc(p.rp) + '"><button>' +
-              t.html('describeSaml11.tryIt') + '</button></a> ' : '') +
-      '<a href="' + esc(v.metadata) + '"><button class="secondary">' +
+      '<a href="' + esc(v.metadata) + '"><button class="secondary">'
       t.html('describeSaml11.theMetadata') + '</button></a></div>';
   }
 }
