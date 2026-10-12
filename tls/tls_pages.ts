@@ -244,6 +244,7 @@ class TlsPages {
   // `error`, English.
   private static refuse(res: Json, status: number, why: string): void {
     log.debug("Entering TlsPages.refuse(). " + status);
+    // error-code: none — every caller marks its code (STS-TLS-0049..0051) first.
     res.status(status).set('Cache-Control', 'no-store').json({ error: why });
     log.debug("Leaving TlsPages.refuse().");
   }

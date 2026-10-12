@@ -41,17 +41,27 @@ const ADVERT_PATH = '/spnego';
 const PROTECTED_PATH = '/spnego/protected';
 const SIGN_IN_PATH = '/authn/spnego';
 
-// The heading each verdict code gets, by its catalog key; anything not here
-// is a REJECT, and they share one page (`spnego.js`'s `HEADINGS`).
-const HEADINGS: Record<string, string> = {
-  'no-authorization': 'noAuthorization',
-  'wrong-scheme': 'wrongScheme',
-  'empty-token': 'emptyToken',
-  'no-mech-token': 'noMechToken',
-  'ticket-refused': 'ticketRefused',
-  'request-mic': 'requestMic',
-  'accepted': 'accepted'
+// The heading and the title each verdict code gets, by their catalog keys;
+// anything not here is a REJECT, and they share one page (`spnego.js`'s
+// `HEADINGS`). Every key whole, so `tests/i18n_catalogs.js` E finds each.
+const HEADINGS: Record<string, [string, string]> = {
+  'no-authorization': ['spnegoPages.verdict.noAuthorization.heading',
+                       'spnegoPages.verdict.noAuthorization.title'],
+  'wrong-scheme': ['spnegoPages.verdict.wrongScheme.heading',
+                   'spnegoPages.verdict.wrongScheme.title'],
+  'empty-token': ['spnegoPages.verdict.emptyToken.heading',
+                  'spnegoPages.verdict.emptyToken.title'],
+  'no-mech-token': ['spnegoPages.verdict.noMechToken.heading',
+                    'spnegoPages.verdict.noMechToken.title'],
+  'ticket-refused': ['spnegoPages.verdict.ticketRefused.heading',
+                     'spnegoPages.verdict.ticketRefused.title'],
+  'request-mic': ['spnegoPages.verdict.requestMic.heading',
+                  'spnegoPages.verdict.requestMic.title'],
+  'accepted': ['spnegoPages.verdict.accepted.heading',
+               'spnegoPages.verdict.accepted.title']
 };
+const REJECTED: [string, string] = ['spnegoPages.verdict.rejected.heading',
+                                    'spnegoPages.verdict.rejected.title'];
 
 /**
  * The SPNEGO demonstration pages' renderers. A static utility class.
@@ -91,22 +101,21 @@ class WebSpnegoViews {
       return ctx.t.text('spnegoPages.advert.title');
     }
     if (kind === 'verdict') {
-      return ctx.t.text('spnegoPages.verdict.' +
-                        WebSpnegoViews.headingKey(view) + '.title');
+      return ctx.t.text(WebSpnegoViews.headingKeys(view)[1]);
     }
     return 'SPNEGO';
   }
 
   /**
-   * A verdict's heading key: its code's, or the REJECTED page's.
+   * A verdict's heading and title keys: its code's, or the REJECTED page's.
    *
    * @param v - the `verdict` view
-   * @returns the key under `spnegoPages.verdict.`
+   * @returns `[heading key, title key]`
    */
-  static headingKey(v: Json): string {
+  static headingKeys(v: Json): [string, string] {
     const code = String((v && v.code) || '');
     return Object.prototype.hasOwnProperty.call(HEADINGS, code)
-      ? HEADINGS[code] : 'rejected';
+      ? HEADINGS[code] : REJECTED;
   }
 
   /**
@@ -151,9 +160,8 @@ class WebSpnegoViews {
       .map(function (one: Json): string {
         return WebSpnegoViews.mech(one.oid, one.name);
       }).join('<br>');
-    const knob = function (query: string, key: string): string {
-      return '<li><code>?' + query + '</code> ' +
-        t.html('spnegoPages.advert.' + key) + '</li>';
+    const knob = function (query: string, said: string): string {
+      return '<li><code>?' + query + '</code> ' + said + '</li>';
     };
     return '<h1>' + t.html('spnegoPages.advert.heading') +
       '</h1><p class="sub">' + t.html('spnegoPages.advert.lead') +
@@ -178,9 +186,11 @@ class WebSpnegoViews {
       '</td></tr></table><p>' + t.html('spnegoPages.advert.notInExchange') +
       '</p><h2>' + t.html('spnegoPages.advert.misconfig') + '</h2><p>' +
       t.html('spnegoPages.advert.misconfigLead') + '</p><ul>' +
-      knob('mic=require', 'mic') + knob('mech=none', 'mech') +
-      knob('mutual=off', 'mutual') + '</ul><p class="sub"><a href="' +
-      ADVERT_PATH + '?format=json">' + t.html('spnegoPages.advert.asJson') +
+      knob('mic=require', t.html('spnegoPages.advert.mic')) +
+      knob('mech=none', t.html('spnegoPages.advert.mech')) +
+      knob('mutual=off', t.html('spnegoPages.advert.mutual')) +
+      '</ul><p class="sub"><a href="' + ADVERT_PATH + '?format=json">' +
+      t.html('spnegoPages.advert.asJson') +
       '</a> · <a href="/krb5/principals">' +
       t.html('spnegoPages.advert.principals') + '</a> · <a ' +
       'href="/admin/sts-metadata">' + t.html('spnegoPages.advert.everything') +
@@ -196,57 +206,63 @@ class WebSpnegoViews {
    * @returns the markup
    */
   static detail(v: Json, t: Json): string {
-    const d = function (key: string, params?: Json): string {
-      return t.html('spnegoPages.detail.' + key, params);
-    };
     const offered: Json[] = Array.isArray(v.offered) ? v.offered : [];
     const names: Json[] = Array.isArray(v.offeredNames) ? v.offeredNames : [];
     const supported: Json[] = Array.isArray(v.supported) ? v.supported : [];
     switch (v.code) {
       case 'no-authorization':
-        return '<p>' + d('noAuthorization') + '</p><p>' +
-          d('noAuthorizationWork', { spn: String(v.spn || '') }) + '</p>';
+        return '<p>' + t.html('spnegoPages.detail.noAuthorization') +
+          '</p><p>' + t.html('spnegoPages.detail.noAuthorizationWork',
+                             { spn: String(v.spn || '') }) + '</p>';
       case 'wrong-scheme':
         return '<div class="err">' +
-          d('wrongScheme', { scheme: String(v.scheme || '') }) + '</div>';
+          t.html('spnegoPages.detail.wrongScheme',
+                 { scheme: String(v.scheme || '') }) + '</div>';
       case 'empty-token':
-        return '<div class="err">' + d('emptyToken') + '</div>';
+        return '<div class="err">' +
+          t.html('spnegoPages.detail.emptyToken') + '</div>';
       case 'undecodable':
-        return '<p>' + d('undecodable') + '</p>';
+        return '<p>' + t.html('spnegoPages.detail.undecodable') + '</p>';
       case 'no-common-mechanism':
-        return '<p>' + d('offered', { count: offered.length }) + ' ' +
+        return '<p>' + t.html('spnegoPages.detail.offered',
+                              { count: offered.length }) + ' ' +
           offered.map(function (oid: Json, i: number): string {
             return WebSpnegoViews.mech(oid, names[i]);
           }).join(', ') + '. ' +
           (supported.length
-            ? d('supports') + ' ' + supported.map(function (oid: Json) {
+            ? t.html('spnegoPages.detail.supports') + ' ' +
+              supported.map(function (oid: Json): string {
                 return WebSpnegoViews.mech(oid, '');
               }).join(', ') + '.'
-            : d('supportsNothing')) + '</p>';
+            : t.html('spnegoPages.detail.supportsNothing')) + '</p>';
       case 'no-mech-token':
-        return '<p>' + d('noMechToken',
-                         { mech: String(v.selectedName || '') }) + '</p>';
-      case 'non-kerberos-mechanism':
-        return '<p>' + d('nonKerberos', { mech: String(v.selected || '') }) +
+        return '<p>' + t.html('spnegoPages.detail.noMechToken',
+                              { mech: String(v.selectedName || '') }) +
           '</p>';
+      case 'non-kerberos-mechanism':
+        return '<p>' + t.html('spnegoPages.detail.nonKerberos',
+                              { mech: String(v.selected || '') }) + '</p>';
       case 'ticket-refused':
-        return '<div class="err">' + d('ticketRefused') + '</div><p>' +
-          d('ticketRefusedWhy') + '</p>';
+        return '<div class="err">' +
+          t.html('spnegoPages.detail.ticketRefused') + '</div><p>' +
+          t.html('spnegoPages.detail.ticketRefusedWhy') + '</p>';
       case 'bad-mech-list-mic':
         // TWO WORDINGS FOR ONE CODE, and the distinction is the verdict's:
         // on the first token the MIC was computed over the wrong bytes; on
         // the continuation the client got its one task wrong.
-        return '<p>' + (v.continuation ? d('badMicContinuation')
-                                       : d('badMic')) + '</p>';
+        return '<p>' + (v.continuation
+          ? t.html('spnegoPages.detail.badMicContinuation')
+          : t.html('spnegoPages.detail.badMic')) + '</p>';
       case 'mic-required':
         return '<p>' + esc(v.requirementReason) + '</p>';
       case 'request-mic':
-        return '<p>' + d('requestMic') + '</p><p>' + d('requestMicAnswer') +
-          '</p>';
+        return '<p>' + t.html('spnegoPages.detail.requestMic') + '</p><p>' +
+          t.html('spnegoPages.detail.requestMicAnswer') + '</p>';
       case 'no-pending-continuation':
-        return '<p>' + d('noPending') + '</p>';
+        return '<p>' + t.html('spnegoPages.detail.noPending') + '</p>';
       case 'continuation-no-mic':
-        return '<p>' + d('continuationNoMic') + '</p>';
+        return '<p>' + t.html('spnegoPages.detail.continuationNoMic') +
+          '</p>';
       default:
         return '';
     }
@@ -261,13 +277,13 @@ class WebSpnegoViews {
    * @returns the body
    */
   static refused(v: Json, t: Json): string {
-    const key = WebSpnegoViews.headingKey(v);
-    const rejected = key === 'rejected';
+    const keys = WebSpnegoViews.headingKeys(v);
+    const rejected = keys === REJECTED;
     // The banner is the REASON, drawn only where the heading has not said
     // it already: the bare-challenge pages put their sentence in the
     // detail, where it reads as an explanation.
     return '<h1 id="spnego-verdict">' +
-      t.html('spnegoPages.verdict.' + key + '.heading') + '</h1>' +
+      t.html(keys[0]) + '</h1>' +
       (rejected ? '<div class="err" id="spnego-reason">' + esc(v.reason) +
                   '</div>' : '') +
       WebSpnegoViews.detail(v, t) +
@@ -289,36 +305,39 @@ class WebSpnegoViews {
    * @returns the body
    */
   static accepted(v: Json, t: Json): string {
-    const a = function (key: string, params?: Json): string {
-      return t.html('spnegoPages.accepted.' + key, params);
-    };
     const client = String(v.client || '') ||
       t.text('spnegoPages.accepted.unknown');
     return '<h1 id="spnego-verdict">' +
       t.html('spnegoPages.verdict.accepted.heading') +
       '</h1><div class="ok" id="spnego-client">' +
-      a('as', { client: client, spn: String(v.spn || '') }) + '</div><p>' +
-      a('content') +
-      '</p><table><tr><th>' + a('what') + '</th><th>' + a('value') +
-      '</th></tr><tr><td>' + a('client') + '</td><td><code>' +
+      t.html('spnegoPages.accepted.as',
+             { client: client, spn: String(v.spn || '') }) + '</div><p>' +
+      t.html('spnegoPages.accepted.content') + '</p><table><tr><th>' +
+      t.html('spnegoPages.accepted.what') + '</th><th>' +
+      t.html('spnegoPages.accepted.value') + '</th></tr><tr><td>' +
+      t.html('spnegoPages.accepted.client') + '</td><td><code>' +
       esc(client) + '</code></td></tr><tr><td>' +
-      a('mechanism') + '</td><td>' +
+      t.html('spnegoPages.accepted.mechanism') + '</td><td>' +
       WebSpnegoViews.mech(v.selected, v.selectedName) + '</td></tr><tr><td>' +
-      a('negotiation') + '</td><td>' +
-      (v.rawKerberos ? a('bare') : a('spnego')) + '</td></tr><tr><td>' +
-      'mechListMIC</td><td>' +
+      t.html('spnegoPages.accepted.negotiation') + '</td><td>' +
+      (v.rawKerberos ? t.html('spnegoPages.accepted.bare')
+                     : t.html('spnegoPages.accepted.spnego')) +
+      '</td></tr><tr><td>mechListMIC</td><td>' +
       (v.micVerified
-        ? '<span class="pass">' + a('verified') + '</span>'
-        : '<span class="fail">' + a('notSent') + '</span> — ' +
-          esc(v.requirementReason)) + '</td></tr><tr><td>' + a('mutual') +
+        ? '<span class="pass">' + t.html('spnegoPages.accepted.verified') +
+          '</span>'
+        : '<span class="fail">' + t.html('spnegoPages.accepted.notSent') +
+          '</span> — ' + esc(v.requirementReason)) +
+      '</td></tr><tr><td>' + t.html('spnegoPages.accepted.mutual') +
       '</td><td>' +
       (v.mutual
-        ? a('mutualYes')
+        ? t.html('spnegoPages.accepted.mutualYes')
         : v.mutualOff
-          ? '<span class="fail">' + a('none') + '</span> — ' + a('mutualOff')
-          : a('mutualNone')) + '</td></tr>' +
-      (v.micNote ? '<tr><td>' + a('note') + '</td><td>' + esc(v.micNote) +
-                   '</td></tr>' : '') +
+          ? '<span class="fail">' + t.html('spnegoPages.accepted.none') +
+            '</span> — ' + t.html('spnegoPages.accepted.mutualOff')
+          : t.html('spnegoPages.accepted.mutualNone')) + '</td></tr>' +
+      (v.micNote ? '<tr><td>' + t.html('spnegoPages.accepted.note') +
+                   '</td><td>' + esc(v.micNote) + '</td></tr>' : '') +
       '</table>' +
       (Array.isArray(v.checks)
         ? '<h2>' + t.html('spnegoPages.checked') + '</h2>' +
