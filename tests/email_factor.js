@@ -97,6 +97,7 @@ function childMain() {
     const mail = require(ROOT + '/common/mail');
     const mailFactor = require(ROOT + '/common/mail_factor');
     const authnPolicy = require(ROOT + '/common/authn_policy');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -137,6 +138,34 @@ function childMain() {
                  one.split('=')[1];
         })[0] || '';
       };
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, in a browser of its own; where the act names a step's page
+      // (`next: mfa`), that page is opened with a GET, as the screen's
+      // runtime sends the browser there — the page the form's POST was
+      // answered with until #571, carrying both responses' cookies. A
+      // refusal is the act's own JSON answer.
+      const screenAct = async function (id, fields) {
+        const jar = {};
+        const answer = await authnScreen.submit({ port: port, jar: jar,
+          at: '/authn/login?authn=' + id, fields: fields });
+        if (answer.next !== 'mfa') {
+          return { status: answer.apiStatus || answer.status,
+                   headers: answer.headers, text: answer.text,
+                   answer: answer };
+        }
+        const page = await authnScreen.call({ port: port, jar: jar,
+          method: 'GET', path: answer.location });
+        page.headers = Object.assign({}, page.headers, {
+          'set-cookie': [].concat(answer.headers['set-cookie'] || [],
+                                  page.headers['set-cookie'] || []) });
+        page.answer = answer;
+        return page;
+      };
+      const viewOf = async function (id) {
+        const opened = await authnScreen.open({ port: port, jar: {},
+          at: '/authn/login?authn=' + id });
+        return opened.view || {};
+      };
       const mfaIdOf = function (res) {
         return (res.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] ||
           '';
@@ -169,14 +198,15 @@ function childMain() {
       // 1. OFF BY DEFAULT
       // ==================================================================
       let authnId = await startSignIn();
-      let r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-      note(r.status === 200 && !/kc-email-code/.test(r.text) &&
-           !/kc-email-link/.test(r.text),
+      let view = await viewOf(authnId);
+      note(view.email && view.email.code === false &&
+           view.email.link === false,
            '1a. the built-in policy offers no emailed first factor',
-           r.status);
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-bo', action: 'email-code' });
-      note(r.status === 200 && /does not offer an emailed code/.test(r.text) &&
+           JSON.stringify(view.email));
+      let r = null;
+      r = await screenAct(authnId,
+        { username: 'ef-bo', action: 'email-code' });
+      note(r.status === 400 && /does not offer an emailed code/.test(r.text) &&
            !cookieOf(r),
            '1b. a hand-made POST asking for one is refused at the door',
            r.status + ' ' + r.text.slice(0, 200));
@@ -207,8 +237,8 @@ function childMain() {
       // ==================================================================
       let before = idsFor('ef-amy');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-amy',
+      r = await screenAct(authnId,
+        { username: 'ef-amy',
           password: 'Email-Factor-1!', action: 'login' });
       let mfaId = mfaIdOf(r);
       note(r.status === 200 && /Check your email/.test(r.text) && mfaId &&
@@ -256,8 +286,8 @@ function childMain() {
       // 4. THE STEP ENDS, AND A RESEND TOO SOON IS REFUSED
       // ==================================================================
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-amy',
+      r = await screenAct(authnId,
+        { username: 'ef-amy',
           password: 'Email-Factor-1!', action: 'login' });
       mfaId = mfaIdOf(r);
       r = await request(port, 'POST', '/authn/email-code',
@@ -278,11 +308,12 @@ function childMain() {
       // ==================================================================
       before = idsFor('ef-bo');
       authnId = await startSignIn();
-      r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-      note(/kc-email-code/.test(r.text) && /kc-email-link/.test(r.text),
-           '5a. with the policy on, the sign-in screen offers both');
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-bo', action: 'email-code' });
+      view = await viewOf(authnId);
+      note(view.email && view.email.code === true && view.email.link === true,
+           '5a. with the policy on, the sign-in screen offers both',
+           JSON.stringify(view.email));
+      r = await screenAct(authnId,
+        { username: 'ef-bo', action: 'email-code' });
       mfaId = mfaIdOf(r);
       // The language chooser's return path (#539) carries the step's own
       // random id (`?mfa=`), as the hidden field does: masked the same way.
@@ -303,8 +334,8 @@ function childMain() {
       for (const who of ['ef-nobody-here', 'ef-dee']) {
         const beforeWho = idsFor(who);
         authnId = await startSignIn();
-        r = await request(port, 'POST', '/authn/login',
-          { authn_id: authnId, username: who, action: 'email-code' });
+        r = await screenAct(authnId,
+          { username: who, action: 'email-code' });
         pages.push(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID')
           .replace(/mfa=[A-Za-z0-9_-]{20,}/g, 'mfa=ID')
           .replace(new RegExp(who, 'g'), 'WHO'));
@@ -324,8 +355,8 @@ function childMain() {
            '6a. ef-cy opts in to a link');
       before = idsFor('ef-cy');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-cy',
+      r = await screenAct(authnId,
+        { username: 'ef-cy',
           password: 'Email-Factor-1!', action: 'login' });
       mfaId = mfaIdOf(r);
       const binding = cookieOf(r, 'sts_email_binding');
@@ -373,8 +404,8 @@ function childMain() {
            '7a. ef-eve opts in');
       for (let round = 0; round < 2; round += 1) {
         authnId = await startSignIn();
-        r = await request(port, 'POST', '/authn/login',
-          { authn_id: authnId, username: 'ef-eve',
+        r = await screenAct(authnId,
+          { username: 'ef-eve',
             password: 'Email-Factor-1!', action: 'login' });
         mfaId = mfaIdOf(r);
         for (let i = 0; i < 3; i += 1) {
@@ -394,8 +425,8 @@ function childMain() {
       config.setOverride('mail.transport', 'off');
       try {
         authnId = await startSignIn();
-        r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-        note(!/kc-email-code/.test(r.text) && !/kc-email-link/.test(r.text) &&
+        view = await viewOf(authnId);
+        note(view.email && !view.email.code && !view.email.link &&
              !credentials.mechanismsFor('ef-amy').mailFactor.held,
              '8a. where mail is not working nothing emailed is offered, and ' +
              'nobody holds an emailed factor');

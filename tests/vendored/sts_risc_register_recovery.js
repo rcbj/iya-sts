@@ -44,6 +44,8 @@
 // sign-in.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const portal = require("./portal_signin.js");
 const nodeCrypto = require("crypto");
@@ -152,11 +154,40 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, with a cookie jar.
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -193,21 +224,6 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function decode(token) {
@@ -402,12 +418,16 @@ async function signInWithRecoveryCode(who, code) {
   let spent = false;
   for (let i = 0; i < 10 && (r.status === 302 || r.status === 303); i++) {
     if (/\/authn\/login\?authn=/.test(r.location)) {
-      const page = await b.go("GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+      // answer read as the form's POST was — the code page fetched from
+      // the address it names.
+      const answer = await authnSignin.submit(base + R, r.location,
+        { action: "login", username: who, password: PASSWORD },
+        { cookie: jarHeader(b), headers: { "User-Agent": AGENT } });
+      keepCookies(b, answer);
+      r = await authnSignin.asFormAnswer(answer, function (m, u) {
+        return b.go(m, u);
+      });
       if (r.status === 200) {
         const link = (String(r.text)
           .match(/href="([^"]*\/authn\/backup-code\?mfa=[^"]+)"/) || [])[1];

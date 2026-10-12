@@ -671,6 +671,55 @@ class EmailFactor {
     log.debug("Leaving EmailFactor.beginSecondFactor().");
   }
 
+  // A SECOND FACTOR ASKED FOR BY THE SIGN-IN SCREEN (#571): the step exists
+  // and the first message is sent now, as `beginSecondFactor()` sends it;
+  // the screen is a static surface whose act answers the step's address,
+  // and `GET` of that page draws the code or waiting page for an armed step.
+  // A message that could not be sent is said there, once (`emailNotice`).
+  /**
+   * Arms an emailed second factor for the sign-in screen's act: the first
+   * code or link is sent, and a refusal to send is kept for the page.
+   *
+   * @param req - the request
+   * @param res - the response (a link's binding cookie is set on it)
+   * @param mfaId - the id of the pending second-factor step
+   */
+  async armSecondFactor(req: any, res: any, mfaId: string): Promise<void> {
+    const { log, authn } = this.deps;
+    log.debug("Entering EmailFactor.armSecondFactor().");
+    const step = authn.mfaStepFor(mfaId);
+    const kind = step ? this.kindOfFactor(step.factor) : '';
+    if (!step || !kind) {
+      log.debug("Leaving EmailFactor.armSecondFactor(). No step.");
+      return;
+    }
+    const armed = await this.arm(req, res, mfaId, step, kind);
+    if (!armed.ok) {
+      this.deps.errorCodes.mark(res, armed.code);
+      const held = authn.mfaStepFor(mfaId);
+      if (held) {
+        held.emailNotice = armed.why + ' Use another way to finish ' +
+                           'signing in, if you have one.';
+        authn.saveMfaStep(mfaId, held);
+      }
+    }
+    log.debug("Leaving EmailFactor.armSecondFactor().");
+  }
+
+  // A sentence a sign-in act left for the page it sent the browser to
+  // (#571), said once.
+  private noticeOf(mfaId: string, step: any): string {
+    const { log, authn } = this.deps;
+    log.debug("Entering EmailFactor.noticeOf().");
+    const said = String((step && step.emailNotice) || '');
+    if (said) {
+      delete step.emailNotice;
+      authn.saveMfaStep(mfaId, step);
+    }
+    log.debug("Leaving EmailFactor.noticeOf().");
+    return said;
+  }
+
   // A FIRST FACTOR, from the sign-in screen's two buttons.
   /**
    * Starts an emailed code or link as a first factor from the sign-in
@@ -695,14 +744,14 @@ class EmailFactor {
       log.info('authn: an emailed ' + kind + ' was asked for as a first ' +
                'factor and this realm does not offer one.');
       errorCodes.mark(res, 'STS-AUTHN-0260');
-      authn.sendLoginPageFor(res, base, record, 'This realm does not offer ' +
+      authn.refuseAtScreen(res, record, 'This realm does not offer ' +
         'an emailed ' + kind + ' as a way to sign in.');
       log.debug("Leaving EmailFactor.beginFirstFactor(). Not offered.");
       return;
     }
     if (record.forceKey || record.forcePasswordless || record.lockedUsername) {
       errorCodes.mark(res, 'STS-AUTHN-0260');
-      authn.sendLoginPageFor(res, base, record, 'This sign-in asks for a ' +
+      authn.refuseAtScreen(res, record, 'This sign-in asks for a ' +
         'security key or a password, and an emailed ' + kind + ' answers ' +
         'neither.');
       log.debug("Leaving EmailFactor.beginFirstFactor(). Demanded else.");
@@ -711,7 +760,7 @@ class EmailFactor {
     const allowed = await websecurity.attemptShared('sign-in', req, username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0008');
-      authn.sendLoginPageFor(res, base, record, allowed.detail);
+      authn.refuseAtScreen(res, record, allowed.detail, 429);
       log.debug("Leaving EmailFactor.beginFirstFactor(). Rate limited.");
       return;
     }
@@ -743,9 +792,13 @@ class EmailFactor {
       errorCodes.mark(res, 'STS-AUTHN-0261');
     }
     await this.arm(req, res, mfaId, step, kind);
-    this.send(res, 200, kind === 'code'
-      ? this.codePage(mfaId, step, '', false)
-      : this.waitPage(mfaId, step, '', false));
+    // SINCE #571 THE SCREEN'S ACT ANSWERS THE STEP'S ADDRESS (`/authn-api`),
+    // and that page's GET draws the code or waiting page for the armed step
+    // — the same page whatever the reason, decoy included.
+    void base;
+    authn.stepAnswer(res, 'mfa', 'email-' + kind, mfaId,
+                     kind === 'code' ? authn.EMAIL_CODE_PATH
+                                     : authn.EMAIL_LINK_PATH, 'mfa');
     log.debug("Leaving EmailFactor.beginFirstFactor().");
   }
 
@@ -875,8 +928,9 @@ class EmailFactor {
       return;
     }
     const armed = step.emailState && step.emailState.kind === 'code';
-    this.send(res, 200, armed ? this.codePage(mfaId, step, '', false)
-                              : this.askPage(mfaId, step, 'code', ''));
+    const notice = this.noticeOf(mfaId, step);
+    this.send(res, 200, armed ? this.codePage(mfaId, step, notice, false)
+                              : this.askPage(mfaId, step, 'code', notice));
     log.debug("Leaving EmailFactor.handleCodeGet().");
   }
 
@@ -992,8 +1046,9 @@ class EmailFactor {
       return;
     }
     const armed = step.emailState && step.emailState.kind === 'link';
-    this.send(res, 200, armed ? this.waitPage(mfaId, step, '', false)
-                              : this.askPage(mfaId, step, 'link', ''));
+    const notice = this.noticeOf(mfaId, step);
+    this.send(res, 200, armed ? this.waitPage(mfaId, step, notice, false)
+                              : this.askPage(mfaId, step, 'link', notice));
     log.debug("Leaving EmailFactor.handleLinkGet().");
   }
 
@@ -1217,5 +1272,6 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   BINDING_COOKIE: EmailFactor.BINDING_COOKIE,
   beginSecondFactor: slot.forward('beginSecondFactor'),
-  beginFirstFactor: slot.forward('beginFirstFactor')
+  beginFirstFactor: slot.forward('beginFirstFactor'),
+  armSecondFactor: slot.forward('armSecondFactor')
 };

@@ -41,6 +41,8 @@
 // 1–3 SKIP and say so; section 0 runs everywhere.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -302,9 +304,35 @@ async function toSignIn(b) {
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
             "the portal did not lead to the sign-in screen: " + r.status +
             " -> " + r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(hiddenValue(r.text, "authn_id"), "no authn_id on the screen");
+  // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: what it
+  // offers is its view, opened with this browser's cookies.
+  const at = new URL(r.location, base).toString();
+  const opened = await authnSignin.screen(realmBase(), at,
+    { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+  opened.setCookies.forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    b.jar[pair.slice(0, pair.indexOf("="))] =
+      pair.slice(pair.indexOf("=") + 1);
+  });
+  assert.ok(opened.view, "no sign-in screen: " + opened.status + " " +
+            JSON.stringify(opened.json));
   log.debug("Leaving toSignIn().");
+  return { status: opened.status, url: at, view: opened.view };
+}
+
+// One act at the screen `toSignIn()` opened, over `/authn-api` (#571) with
+// this browser's jar: read as the form's 303 was, except that an act
+// answering a second-factor step — an emailed code or link — is followed
+// to that step's page, which the form drew in answer to its POST.
+async function screenAct(b, screen, fields) {
+  log.debug("Entering screenAct(). " + fields.action);
+  const r = await authnSignin.signInWithJar(realmBase(), screen.url, fields,
+    b.jar, { headers: { "User-Agent": AGENT } });
+  if (r.answer.next === "mfa") {
+    log.debug("Leaving screenAct(). The step's page.");
+    return b.go("GET", r.location);
+  }
+  log.debug("Leaving screenAct(). " + r.answer.next);
   return r;
 }
 
@@ -423,9 +451,8 @@ async function aCodeAsTheSecondFactor(fields) {
   // Opted in from the portal, signed in on a password alone the first time.
   const b = browser(who);
   let r = await toSignIn(b);
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           password: PASSWORD, action: "login" }));
+  r = await screenAct(b, r,
+    { action: "login", username: who, password: PASSWORD });
   r = await finish(b, r);
   // THE PORTAL'S OWN TOKEN, through the sign-on session just set (#568).
   const p = await portal.signInToThePortal(realmBase(), who, null,
@@ -446,9 +473,8 @@ async function aCodeAsTheSecondFactor(fields) {
   });
   const c = browser(who + "-2");
   r = await toSignIn(c);
-  r = await c.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           password: PASSWORD, action: "login" }));
+  r = await screenAct(c, r,
+    { action: "login", username: who, password: PASSWORD });
   const mfaId = hiddenValue(r.text, "mfa_id");
   check("1. the next sign-in mails a code and asks for it", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
@@ -498,14 +524,13 @@ async function aCodeAsTheFirstFactor() {
   let r = await toSignIn(b);
   check("2. the sign-in screen offers \"Email me a sign-in code\"",
         function () {
-    assert.ok(/id="kc-email-code"/.test(r.text), r.text.slice(0, 300));
+    assert.ok(r.view.email && r.view.email.code === true,
+              JSON.stringify(r.view));
   });
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;
   });
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           action: "email-code" }));
+  r = await screenAct(b, r, { action: "email-code", username: who });
   // Every per-request identifier, a bare value or one inside a return path
   // (since #539 the language chooser's `return` carries the step's id).
   const page = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
@@ -528,9 +553,7 @@ async function aCodeAsTheFirstFactor() {
   const nobody = "nobody" + who;
   const d = browser(nobody);
   r = await toSignIn(d);
-  r = await d.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: nobody,
-           action: "email-code" }));
+  r = await screenAct(d, r, { action: "email-code", username: nobody });
   check("2. an unknown name gets the SAME page — no enumeration", function () {
     assert.strictEqual(r.status, 200);
     assert.strictEqual(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
@@ -550,9 +573,7 @@ async function aLink() {
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;
   });
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           action: "email-link" }));
+  r = await screenAct(b, r, { action: "email-link", username: who });
   const mfaId = hiddenValue(r.text, "mfa_id");
   check("3. the waiting page, which refreshes itself", function () {
     assert.strictEqual(r.status, 200);

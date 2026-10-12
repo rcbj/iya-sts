@@ -806,18 +806,22 @@ async function signIn(driver, username) {
     log.debug("Leaving signIn(). No gate.");
     return false;
   }
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): its form exists once the page has drawn it.
+  await driver.wait(async function () {
+    return (await driver.findElements(By.css("input[name='username']")))
+      .length > 0;
+  }, 15000, "the sign-in screen never drew its form.");
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
-  // THE PASSWORD FORM'S OWN BUTTON, not the page's first: since #539 the
-  // screen carries a language chooser, a form of its own with a submit
-  // button drawn above this one.
-  const button = await secret.findElement(
-      By.xpath("ancestor::form//button[@type='submit' or not(@type)] | " +
-               "ancestor::form//input[@type='submit']"));
+  // THE PASSWORD FORM'S OWN BUTTON, Sign In, not the page's first: since
+  // #539 the screen carries a language chooser, a form of its own with a
+  // submit button drawn above this one.
+  const button = await driver.findElement(By.id("kc-login"));
   await button.click();
   // An administrator is OFFERED a second factor since #246, on a page drawn
   // at the same URL; this suite ignores it, as rcbj asked ("just click

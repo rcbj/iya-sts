@@ -104,6 +104,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -330,6 +332,27 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// The service's sign-in screen at `url`, answered with a password over
+// `/authn-api` (#571, `authn_signin.js`) with this jar's cookies, and
+// answered in `hop()`'s shape: a 303 to where the act says the walk goes
+// next, as the form's POST was answered.
+async function signInAt(cookies, url, username) {
+  log.debug("Entering signInAt(). " + username);
+  const at = new URL(url);
+  const answer = await authnSignin.submit(at.origin +
+    at.pathname.replace(/\/authn\/login$/, ""), url,
+    { action: "login", username: username, password: PASSWORD },
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving signInAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
 // Did this response START a session? A refusal must not — and the session
 // cookie is the first place that would show, before any listing catches up.
 function startsSession(r) {
@@ -399,6 +422,13 @@ async function toTheDoor(cookies, startUrl, username) {
         log.debug("Leaving toTheDoor(). A redirect to the ACS.");
         return { method: "GET", url: next, fields: null, trail: trail };
       }
+      // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper where the walk is sent to it.
+      if (/\/authn\/login\?authn=/.test(next)) {
+        trail.screens.push({ kind: "sign-in", at: next });
+        r = await signInAt(cookies, next, username);
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -406,9 +436,6 @@ async function toTheDoor(cookies, startUrl, username) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -417,13 +444,6 @@ async function toTheDoor(cookies, startUrl, username) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "id_token" in f.fields || "code" in f.fields);
     });
-    if (signIn) {
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      trail.screens.push({ kind: "sign-in", at: to });
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: username, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       trail.screens.push({ kind: "consent", at: to });

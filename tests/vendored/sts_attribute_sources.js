@@ -35,6 +35,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -144,6 +146,8 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, where, body) {
       log.debug("Entering go(). " + method + " " + where);
       const headers = { "User-Agent": AGENT };
@@ -182,21 +186,6 @@ function browser(name) {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // An authorization request; follows a sign-in when there is no session.
 async function authorize(b, state) {
   log.debug("Entering authorize(). state=" + state);
@@ -208,14 +197,13 @@ async function authorize(b, state) {
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
       /\/authn\/login\?authn=/.test(r.location)) {
-    const page = await b.go("GET", r.location);
-    assert.strictEqual(page.status, 200, "the sign-in screen: " +
-                       page.status + " " + page.text.slice(0, 300));
-    const fields = hiddenFields(page.text);
-    fields.username = ALICE;
-    fields.password = PASSWORD;
-    fields.action = "login";
-    const posted = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SCREEN OVER `/authn-api` (#571), with this browser's jar and
+    // User-Agent; the answer is read as the form's 303 was.
+    const posted = await authnSignin.signInWithJar(base + R, r.location,
+      { action: "login", username: ALICE, password: PASSWORD }, b.jar,
+      { headers: { "User-Agent": AGENT } });
+    assert.ok(posted.answer.view, "the sign-in screen: " +
+              posted.answer.status + " " + JSON.stringify(posted.answer.json));
     r = await b.go("GET", posted.location);
   }
   log.debug("Leaving authorize(). " + r.status);

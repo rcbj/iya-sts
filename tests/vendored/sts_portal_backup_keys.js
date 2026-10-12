@@ -66,6 +66,8 @@
 // missing-token refusal: the token, not a cookie, is what a request carries.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -320,6 +322,23 @@ function browser() {
   log.debug("Entering browser().");
   const jar = new Map();
   const self = {
+    // Set-Cookie lines into the jar: a response's, or an `/authn-api`
+    // answer's (#571).
+    keep(set) {
+      log.debug("Entering keep().");
+      set.forEach(function (one) {
+        const pair = String(one).split(";")[0];
+        const eq = pair.indexOf("=");
+        if (eq < 0) return;
+        const name = pair.slice(0, eq);
+        const value = pair.slice(eq + 1);
+        // An empty value is a CLEAR — how a sign-out takes a cookie away — and
+        // keeping it would send `name=` for ever, which the service reads as a
+        // session id it has never heard of rather than as no cookie at all.
+        if (!value) { jar.delete(name); } else { jar.set(name, value); }
+      });
+      log.debug("Leaving keep().");
+    },
     get cookie() {
       log.debug("Entering cookie().");
       log.debug("Leaving cookie().");
@@ -338,18 +357,7 @@ function browser() {
       const r = await fetch(absolute(path),
                             { method: method, redirect: "manual",
                                               headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const eq = pair.indexOf("=");
-        if (eq < 0) return;
-        const name = pair.slice(0, eq);
-        const value = pair.slice(eq + 1);
-        // An empty value is a CLEAR — how a sign-out takes a cookie away — and
-        // keeping it would send `name=` for ever, which the service reads as a
-        // session id it has never heard of rather than as no cookie at all.
-        if (!value) { jar.delete(name); } else { jar.set(name, value); }
-      });
+      self.keep(r.headers.getSetCookie ? r.headers.getSetCookie() : []);
       log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                csp: r.headers.get("content-security-policy") || "",
@@ -624,9 +632,28 @@ async function startSignIn(b, root) {
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
     "the portal's authorization request did not ask for a sign-in: " +
     r.status + " -> " + r.location);
+  const screenAt = r.location;
   r = await b.go("GET", r.location);
+  // The screen's address, which the sign-in's act names (#571).
+  r.screenAt = screenAt;
   log.debug("Leaving startSignIn().");
   return r;
+}
+
+// THE SIGN-IN SCREEN'S ACT OVER `/authn-api` (#571), through the one helper,
+// at the screen `startSignIn()` reached, answered as the form's POST was: the
+// security-key page of the step the act names fetched from its address, as
+// the browser fetches it, or the redirect or refusal.
+async function screenSubmit(b, r, fields) {
+  log.debug("Entering screenSubmit().");
+  const answer = await authnSignin.submit(base, r.screenAt, fields,
+                                          { cookie: b.cookie });
+  b.keep(answer.headers.getSetCookie());
+  const page = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
+  log.debug("Leaving screenSubmit(). " + answer.next);
+  return page;
 }
 
 // Follows the sign-in's redirects back through the authorization endpoint
@@ -650,12 +677,8 @@ async function signIn(door, authenticator) {
   log.debug("Entering signIn(). door=" + door);
   const b = browser();
   let r = await startSignIn(b, base);
-  const authnId = hidden(r.text, "authn_id");
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: PERSON,
-                        password: PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  r = await screenSubmit(b, r, { username: PERSON, password: PASSWORD,
+                                 action: "login" });
   if (r.status === 200) {
     assert.ok(authenticator,
       "a second factor was asked for and this call brought no authenticator: " +
@@ -1070,10 +1093,8 @@ async function eitherKeySignsThemIn(first, second) {
   const stranger = makeAuthenticator("never enrolled");
   const b = browser();
   let r = await startSignIn(b, base);
-  r = await b.go("POST", "/authn/login",
-    form({ authn_id: hidden(r.text, "authn_id"), username: PERSON,
-           password: PASSWORD, action: "login",
-           csrf_token: csrfOf(r.text) }));
+  r = await screenSubmit(b, r, { username: PERSON, password: PASSWORD,
+                                 action: "login" });
   const refused = await b.go("POST", "/authn/webauthn",
     form({ mfa_id: hidden(r.text, "mfa_id"), mode: "get",
            credential: JSON.stringify(
@@ -1271,12 +1292,8 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
   // A PASSWORDLESS SIGN-IN WITH THE KEY: the box ticked, no password.
   const s = browser();
   let r = await startSignIn(s, base);
-  const authnId = hidden(r.text, "authn_id");
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  r = await s.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: NEWCOMER,
-                        webauthn_only: "1", action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  r = await screenSubmit(s, r, { username: NEWCOMER, webauthn_only: "1",
+                                 action: "login" });
   const mode = attr(r.text, "data-mode");
   check("THE SIGN-IN SCREEN ASKS FOR THE KEY THEY HOLD rather than enrolling " +
         "one or asking for a password", function () {

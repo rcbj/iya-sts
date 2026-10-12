@@ -70,8 +70,11 @@ type Json = any;
 interface SurfacePage {
   // The page's path, without the realm's prefix: `/authn/login`.
   path: string;
-  // The GET operation its view is the answer of, without the prefix.
-  operation: string;
+  // The GET operation its view is the answer of, without the prefix — asked
+  // with the location's query; or, where a page's operation names its
+  // resource in the PATH (#571's `/authn-api/pending/{id}`), a function of
+  // the query answering the whole path.
+  operation: string | ((query: Json) => string);
   // Draws the page's body from the view and the context.
   render: (json: Json, ctx: Json) => string;
   // The document's title for the view, as text.
@@ -114,6 +117,9 @@ class WebSurface extends WebPage {
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
   protected drawnAt: string;
+  // The whole answer the page in hand was drawn from — its view and what
+  // the API answered beside it (#571: the sign-in screen's `csrf`).
+  protected lastAnswer: Json;
 
   /**
    * Makes the runtime.
@@ -136,6 +142,7 @@ class WebSurface extends WebPage {
     this.view = null;
     this.flash = null;
     this.drawnAt = '';
+    this.lastAnswer = null;
   }
 
   // --- paths ---------------------------------------------------------------
@@ -272,24 +279,47 @@ class WebSurface extends WebPage {
       return;
     }
     const qs = new URLSearchParams(query).toString();
-    const answer = await this.publicJson('GET', page.operation +
-                                         (qs ? '?' + qs : ''));
+    const answer = await this.publicJson('GET',
+      typeof page.operation === 'function' ? page.operation(query)
+                                           : page.operation +
+                                             (qs ? '?' + qs : ''));
     const json = answer.json || {};
     if (answer.json === null) {
       this.drawProblem('This page could not be drawn',
         'The service answered ' + answer.status + ' with no JSON.');
       return;
     }
+    // ANOTHER PAGE INSTEAD (#571: a chooser with fewer than two partners
+    // left is the sign-in screen): the address is replaced, not added to.
+    if (json.go && answer.status === 200 && this.env.history) {
+      this.env.history.replaceState(null, '', this.prefix + String(json.go));
+      await this.route();
+      return;
+    }
+    // A REFUSED VIEW IS A PROBLEM PAGE: with no view there is nothing for
+    // the page's renderer to draw (#571: a pending id that expired).
+    if ((answer.status !== 200 || json.ok === false) && !json.view) {
+      this.view = null;
+      this.drawProblem('This page could not be drawn',
+        (json.errors || []).join(' ') ||
+        'The service answered ' + answer.status + '.');
+      return;
+    }
     // A person's own language, where the API answered it, outranks the
-    // browser's (#539's order); the translator is loaded again with it.
-    if (json.preferredLanguage && json.preferredLanguage.value) {
-      this.t = await this.i18n.load({ uiLocales: query.ui_locales || '',
+    // browser's (#539's order), and so does a `ui_locales` the API holds
+    // for the request in progress (#571: the protocol request's, kept on
+    // the pending sign-in); the translator is loaded again with them.
+    const ui = query.ui_locales || String(json.uiLocales || '');
+    if ((json.preferredLanguage && json.preferredLanguage.value) ||
+        ui !== (query.ui_locales || '')) {
+      this.t = await this.i18n.load({ uiLocales: ui,
                                       own: json.preferredLanguage });
     }
     if (answer.status !== 200 || json.ok === false) {
       this.flash = { error: (json.errors || []).join(' ') ||
                             'The service answered ' + answer.status + '.' };
     }
+    this.lastAnswer = json;
     this.view = { page: page, query: query, json: json.view || json };
     this.drawView();
   }

@@ -4754,8 +4754,9 @@ const CODES = [
       'carried a pending sign-in id that failed input validation.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0002',
-    summary: 'The sign-in form POST failed input validation (an unknown ' +
-      'action, an oversized field, a malformed id).',
+    summary: 'An act on the sign-in API (/authn-api, the sign-in form ' +
+      'until #571) failed input validation: a field the operation does not ' +
+      'take, an oversized field, a malformed value.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0003',
     summary: 'No sign-in is pending under the id the sign-in screen, the ' +
@@ -4771,23 +4772,28 @@ const CODES = [
     summary: 'The issuance policy refused an unauthenticated (\'continue ' +
       'without signing in\') session for the application at the ' +
       'sign-in screen.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0006',
     summary: 'The sign-in form was submitted with no username.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0007',
     summary: 'A passwordless security-key sign-in was asked for where the ' +
       'calling protocol demanded a second factor.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0008',
     summary: 'Too many sign-in attempts for this identity or address; the ' +
       'password check was not attempted (rate limiter lockout).',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 429, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0009',
     summary: 'The issuance policy refused a session for the application to ' +
       'the person who just authenticated at the sign-in screen (a ' +
       'required role is not held).',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0010',
     summary: 'The issuance policy refused to start a sign-on session at the ' +
       'session funnel, for a door other than the sign-in screen ' +
@@ -6078,6 +6084,25 @@ const CODES = [
       'policy a passkey question (#536); the passkey rules read from the ' +
       'facts decided instead.',
     spec: 'none: the passkey is decided by the same rules' },
+  { code: 'STS-AUTHN-0325',
+    summary: 'An act on the sign-in API (/authn-api, #571) did not carry a ' +
+      'JSON body (Content-Type: application/json), which a cross-site form ' +
+      'cannot send.',
+    spec: 'HTTP 415, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0326',
+    summary: 'An act on the sign-in API (/authn-api, #571) carried no Origin ' +
+      'header, or one this service does not answer on: it was not sent by ' +
+      'a page of this service.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0327',
+    summary: 'An act on the sign-in API (/authn-api, #571) carried no ' +
+      'X-CSRF-Token, or one that is not the token of the session its ' +
+      'sts_session cookie names, or the browser holds no session at all.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0328',
+    summary: 'An operation of the sign-in API (/authn-api, #571) threw; the ' +
+      'browser is told the sign-in could not continue.',
+    spec: 'HTTP 500, { ok: false, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

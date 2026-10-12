@@ -172,8 +172,8 @@
     "text": "partial：RFC 7644 第 2 节所委托的框架——401 状态、每个提供的方案对应一个标头的 WWW-Authenticate 质询，以及 Authorization 凭据。仅由 SCIM 端点使用；本服务的其他接口都不会拒绝什么都不出示的调用方。"
   },
   "stsmetadata.specs.rfc7617.coverage": {
-    "en": "f431d155e1e05311",
-    "text": "full：作为方案完整实现。在开发模式下它什么都不验证：任何用户名配任何密码都会被接受，保留的“invalid”除外，这使得 401 仍然可以触发。在产品模式下，密码对照此人经过哈希的 userPassword 验证。质询中带有 charset=\"UTF-8\"。RFC 7644 第 2 节明确表示不鼓励使用此方案；之所以提供它，是因为它是配置客户端最常遇到的方案。"
+    "en": "cdb324ba2271a536",
+    "text": "full：作为方案完整实现，但它什么都不验证：任何用户名配任何密码都会被接受，保留的“invalid”除外，这使得 401 仍然可以触发。质询中带有 charset=\"UTF-8\"。RFC 7644 第 2 节明确表示不鼓励使用此方案；之所以提供它，是因为它是配置客户端最常遇到的方案。"
   },
   "stsmetadata.specs.rfc7616.coverage": {
     "en": "6c2a5e112e24f781",
@@ -200,8 +200,8 @@
     "text": "mock：树、根 DSE 和 namingContexts 是真实的；架构则完全不存在。不强制任何 objectClass，不按语法或匹配规则检查任何属性，也没有子架构子条目——因此条目可以携带客户端愿意发送的任何属性，而真实的目录会拒绝。仍有三条结构规则得到执行，因为缺少它们会让客户端学到错误的东西：add 需要其父条目存在，delete 需要叶条目，没有值的属性不存在。"
   },
   "stsmetadata.specs.rfc4513.coverage": {
-    "en": "e45e6b179ab6ffec",
-    "text": "partial：此处具备的部分是“传输”而不是身份验证：简单 bind（第 5.1 节）是唯一提供的方法——没有 SASL，因此没有 EXTERNAL，也没有 DIGEST-MD5。在开发模式下它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功，636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证；在产品模式下，人员的密码会被验证，并且只能通过 636。“未”实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在“产品”模式下，简单 bind “确实”会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
+    "en": "fdb211b1eff2926a",
+    "text": "partial：此处具备的部分是传输而不是身份验证：简单 bind（第 5.1 节）是唯一提供的方法——没有 SASL，因此没有 EXTERNAL，也没有 DIGEST-MD5——而且它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功。636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证。未实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在产品模式下，简单 bind 确实会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
   },
   "stsmetadata.specs.rfc4514.coverage": {
     "en": "d74d5f5a23a41bdb",
@@ -236,8 +236,8 @@
     "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。"
   },
   "stsmetadata.specs.wss-username.coverage": {
-    "en": "c5aef113bcfa15ab",
-    "text": "mock：在开发模式下，两个成员都存在时即接受 UsernameToken，不检查任何密码，只有字面值“invalid”会被拒绝，以便负面测试可以强制失败。在产品模式下会验证密码——人员的密码对照其经过哈希的 userPassword，应用的密码对照其客户端密钥。"
+    "en": "56599a9305e981eb",
+    "text": "mock：两个成员都存在时即接受 UsernameToken。从不检查任何密码，只有字面值“invalid”会被拒绝，以便负面测试可以强制失败。"
   },
   "stsmetadata.specs.saml2.coverage": {
     "en": "4130e450d1b1bdcd",
@@ -2344,16 +2344,16 @@
     "text": "与协议无关的注销，也是此处唯一同时涉及全部十六个协议族的端点。GET 列出本服务仍为某个身份持有的一切——每个浏览器单点登录会话、在会话上登录过的每个 OIDC 依赖方、WS-Federation realm 和 SAML 2.0 服务提供方、它仍可吊销的每个令牌、每个未完成的授权码和预授权码、以其身份绑定的每个目录连接，以及 Kerberos 票据状况——每项旁都有一个复选框。POST 结束所勾选的项，而一项都不勾选的 POST 就是全局注销，这是默认行为，也是重点所在。它还会发送只有浏览器才能发送的内容：前端通道注销 iframe、wsignoutcleanup1.0 图像，以及以链接形式提供的 SAML LogoutRequest。它无法传达的内容会连同原因一起列出——已颁发的断言、服务票据或 SVID 自 2026-09-05 起在此处被否认，但在外部无法召回，因为出示它们时没有任何东西会咨询本服务，隐藏它们会让全局注销看起来已经完整，而实际上并非如此。不需要任何控制台角色；没有会话时，它会将浏览器送往 /authn/login 再返回。logout.anyUser 决定在开发模式下 ?username= 能否指定别人，在开发模式下它授予的权限不会超过以其身份登录所能获得的；在产品模式下，无论该设置如何，注销只能指定已登录的调用方本人。可添加 ?format=json。"
   },
   "stsmetadata.endpoints./authn/login.what": {
-    "en": "972fceb1febddd19",
-    "text": "“认证服务”。携带用户名和密码的 POST 以 303 应答，绝不以 307 应答（RFC 9700 section 4.12）：307 会保留方法和请求体，因此浏览器会把这些凭据重复发送给重定向所指向的任何地方——而登录之后，那是调用方协议拼出的 URL。此处每个需要识别某个人的协议，都会带着包含其完整请求的返回 URL 将此人送到这一个界面，并在建立会话 Cookie 后将其带回——GET 渲染界面，POST 接收所输入的内容。在开发模式下不检查任何密码，所输入的用户名成为之后每个令牌、断言和凭证中的身份；在产品模式下，会验证密码，或领域的认证策略所允许的密钥或代码。它对将人送到这里的协议一无所知：界面上“显示”的关于被中断请求的内容由调用方提供，拒绝则以 authn_error=access_denied 返回，由“调用方”将其转换为其自身规范所规定的拒绝形式。会检查返回 URL 是否为本服务上的路径——一个在让人登录后会重定向到任何地方的认证服务，就是一个前面挂着登录界面的钓鱼工具。"
+    "en": "e9ee3b7a9c0f9b18",
+    "text": "认证服务。自 #571 起为静态界面：此处应答外壳页面，由 /authn/signin.js 根据 /authn-api/pending/{id} 绘制界面，并将所输入的内容以 JSON 发送到那里；应答指明下一步，浏览器以 GET 跟随它，就像它过去跟随表单所得到的 303 应答一样（RFC 9700 section 4.12）。此处每个需要识别某个人的协议，都会带着包含其完整请求的返回 URL 将此人送到这一个界面，并在建立会话 Cookie 后将其带回。不检查任何密码；所输入的用户名成为之后每个令牌、断言和凭证中的身份。它对将人送到这里的协议一无所知：界面上显示的关于被中断请求的内容由调用方提供，拒绝则以 authn_error=access_denied 返回，由调用方将其转换为其自身规范所规定的拒绝形式。会检查返回 URL 是否为本服务上的路径——一个在让人登录后会重定向到任何地方的认证服务，就是一个前面挂着登录界面的钓鱼工具。"
   },
   "stsmetadata.endpoints./authn/login.effect": {
     "en": "b378a16d7104eaca",
     "text": "为另一个端点送到这里的请求显示登录界面；需要 ?authn= id，因此不带参数访问时应答 400"
   },
   "stsmetadata.endpoints./authn/select-idp.what": {
-    "en": "c9ad54489526f240",
-    "text": "主领域发现，收窄到单个应用。ou=applications 下的条目可以在 appFederationRelationship 中指定多个联合关系——一个 SAML 2.0 合作方加一个 OpenID Connect 合作方是常见组合——当其中不止一个可用时，绘制的是此页面而不是登录界面。每个合作方一个按钮，没有密码字段，也完全没有表单：按钮是链接，因为这里的表单控件会提交到登录处理程序，而它凭输入的名称让人登录——这恰恰是一个将认证联合出去的应用已经声明不想要的东西。只指定一个关系时仍会直接重定向过去，永远不会看到此页面，这正是 appFederationAutoRedirect 一贯的行为；该设置的意思是“不经过登录界面”，而绝不是“不经过任何页面”，因为布尔值无论取什么都无法说明某人的雇主是哪个身份提供方。指向本服务无法使用的关系的值——已禁用、只配置了一半、身份提供方一侧，或不在本领域中——会在这里显示出来而不是被丢弃：三个中有一个被禁用的列表会绘制两个按钮，而两个按钮恰好也是正确的两项列表所绘制的。列表在绘制此页面时重新读取，而不是取自产生它的重定向，如果剩下的合作方少于两个，则改为绘制登录界面。"
+    "en": "fc63738fcb8fa10c",
+    "text": "主领域发现，收窄到单个应用。ou=applications 下的条目可以在 appFederationRelationship 中指定多个联合关系——一个 SAML 2.0 合作方加一个 OpenID Connect 合作方是常见组合——当其中不止一个可用时，绘制的是此页面而不是登录界面。每个合作方一个按钮，没有密码字段，也完全没有表单：按钮是链接，因为这里的表单控件会提交到登录处理程序，而它凭输入的名称让人登录——这恰恰是一个将认证联合出去的应用已经声明不想要的东西。只指定一个关系时仍会直接重定向过去，永远不会看到此页面，这正是 appFederationAutoRedirect 一贯的行为；该设置的意思是“不经过登录界面”，而绝不是“不经过任何页面”，因为布尔值无论取什么都无法说明某人的雇主是哪个身份提供方。指向本服务无法使用的关系的值——已禁用、只配置了一半、身份提供方一侧，或不在本领域中——会在这里显示出来而不是被丢弃：三个中有一个被禁用的列表会绘制两个按钮，而两个按钮恰好也是正确的两项列表所绘制的。列表在绘制此页面时重新读取，而不是取自产生它的重定向，如果剩下的合作方少于两个，则改为绘制登录界面。自 #571 起为静态页面，根据 /authn-api/pending/{id}/partners 绘制。"
   },
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
@@ -2448,8 +2448,8 @@
     "text": "设置选择器 Cookie，写入已登录者的 preferredLanguage，并以 303 返回该页面"
   },
   "stsmetadata.endpoints./authn/password-change.what": {
-    "en": "689017c222f839e6",
-    "text": "强制更改密码（2026-09-13）。对于条目带有 pwdReset TRUE 的人——这是 draft-behera 属性，设置在服务于默认领域中创建的引导管理员上——密码步骤成功后会来到这里而不是直接登录，此端点会要求输入两次新密码。新密码经由 credentials.setPassword() 处理，因此在产品模式下适用密码策略及其历史记录；成功后 pwdReset 被清除，写入一条 authn.password.changed 审计记录，登录过程与密码步骤原本的完全一样继续，包括第二因素。需要由该步骤生成的 ?change= id，因此不带参数访问时应答 400。在此处完成更改之前，其他每个验证密码的入口在产品模式下都会拒绝这样的账户（STS-AUTHN-0142）"
+    "en": "23a22fe7e56b9cc7",
+    "text": "强制更改密码（2026-09-13）。对于条目带有 pwdReset TRUE 的人——这是 draft-behera 属性，设置在服务于默认领域中创建的引导管理员上——密码步骤成功后会来到这里而不是直接登录，此端点会要求输入两次新密码。新密码经由 credentials.setPassword() 处理，因此在产品模式下适用密码策略及其历史记录；成功后 pwdReset 被清除，写入一条 authn.password.changed 审计记录，登录过程与密码步骤原本的完全一样继续，包括第二因素。需要由该步骤生成的 ?change= id，因此不带参数访问时应答 400。在此处完成更改之前，其他每个验证密码的入口在产品模式下都会拒绝这样的账户（STS-AUTHN-0142）。自 #571 起为静态页面，根据 /authn-api/password-change/{id} 绘制，该接口也接收新密码。"
   },
   "stsmetadata.endpoints./authn/password-change.effect": {
     "en": "57397014da369a33",
@@ -2471,9 +2471,57 @@
     "en": "be3fd55c22c005b5",
     "text": "代码验证通过后建立单点登录会话"
   },
+  "stsmetadata.endpoints./authn/signin.js.what": {
+    "en": "67232bcc1fd0a54a",
+    "text": "NON-SPEC（#571）。登录界面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（authn/authn-spa.js）并以预压缩形式提供：它根据 /authn-api 绘制 /authn/login、/authn/select-idp 和 /authn/password-change，并把它们的操作发送到那里。公开：其中没有任何机密内容。"
+  },
+  "stsmetadata.endpoints./authn-api.what": {
+    "en": "fbfe4ed0573429d0",
+    "text": "NON-SPEC（#571）。登录 API 的各项操作，每项都附有它作为其入口的页面或控件（mirrors）。公开，且与语言无关。"
+  },
+  "stsmetadata.endpoints./authn-api/openapi.json.what": {
+    "en": "fc5ff96a29d2920c",
+    "text": "NON-SPEC（#571）。根据操作表及其请求体模式生成。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id.what": {
+    "en": "6e1b11acf74c82d5",
+    "text": "NON-SPEC（#571）。待处理登录的界面视图，只有事实而没有文字，以及其操作所携带的 CSRF 令牌。该 id 是一种持有者能力，绝不会被记录到日志。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
+    "en": "278e1af859a5f658",
+    "text": "NON-SPEC（#571）。选择器的视图，根据应用的条目重新解析。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
+    "en": "f09b8dc5712df29f",
+    "text": "NON-SPEC（#571）。登录按钮：JSON、本服务的 Origin，以及浏览器会话的 X-CSRF-Token。与原来的表单一样受速率限制、进行风险评分并由签发策略决定；应答指明下一步。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": {
+    "en": "85aa0429d3e5d77f",
+    "text": "NON-SPEC（#571）。取消：调用方得到 access_denied。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
+    "en": "092b3cc9235cb1b0",
+    "text": "NON-SPEC（#571）。在 authn.unauthenticatedSessions 开启时。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
+    "en": "f654c3c6f076950a",
+    "text": "NON-SPEC（#571）。在认证策略接受这种方式时。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": {
+    "en": "e5938cba85629757",
+    "text": "NON-SPEC（#571）。用于不带用户名的通行密钥的一次性挑战。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
+    "en": "e992662e8638f8c3",
+    "text": "NON-SPEC（#571）。仪式的结果，在要求用户验证的条件下进行验证。"
+  },
+  "stsmetadata.endpoints./authn-api/password-change/:id.what": {
+    "en": "3543dc9d779cc445",
+    "text": "NON-SPEC（#571）。GET 应答谁的密码必须更改；POST 存储新密码并继续登录。"
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
-    "en": "f386b79461f3dffb",
-    "text": "NON-SPEC（#62 P6）。仅在本领域开启 risk.fingerprinting 时提供——否则返回 404——此时登录界面成为第九个带脚本的页面：FingerprintJS（MIT，v5；它在浏览器中运行且不发送任何东西，其使用情况上报已关闭）在一个隐藏字段中放入 visitorId，服务只保留其带密钥的摘要，并将其作为此人从未用过的设备来评分。没有它，表单也能工作。默认关闭：它属于个人数据，是否开启由运营方决定，并应在风险评分页面所述的隐私影响评估之后进行。"
+    "en": "ac75feb49bdcac8d",
+    "text": "NON-SPEC（#62 P6）。仅在本领域开启 risk.fingerprinting 时提供——否则返回 404——此时登录界面会在其自身脚本旁加载它：FingerprintJS（MIT，v5；它在浏览器中运行且不发送任何东西，其使用情况上报已关闭）计算出一个由登录发送的 visitorId，服务只保留其带密钥的摘要，并将其作为此人从未用过的设备来评分。没有它，登录也能工作。默认关闭：它属于个人数据，是否开启由运营方决定，并应在风险评分页面所述的隐私影响评估之后进行。"
   },
   "stsmetadata.endpoints./authn/webauthn.js.what": {
     "en": "1ac86ac809b57d92",
@@ -3148,8 +3196,8 @@
     "text": "一个模拟的授权服务器和 OpenID 提供方：全部五种授权、PKCE、DPoP、自省、吊销、动态注册、UserInfo 和 RP 发起的注销，并可按需提供任意数量的命名授权服务器。RFC 9700 模式开启该 BCP 的各项拒绝，OAuth 2.1 模式（draft-ietf-oauth-v2-1-16）开启这些拒绝并增加其自身的拒绝。"
   },
   "stsmetadata.protocols.User portal.what": {
-    "en": "835d40e9ff6eaabb",
-    "text": "“它不是协议”，之所以有一张卡片，是因为此页面会报告没有任何卡片认领的端点组——这条规则让新的协议族无法悄无声息地出现，在这里付出这个代价，比让规则附带条件更值得。“这是本服务中第一个属于正在查看它的那个人的界面”：此处其他所有浏览器页面都是为别人准备的——登录界面是另一个协议流程中的一步，同意界面问一个问题就离开，/admin 是给运营人员用的，并受两个角色的关卡保护。这里是一个人查看本身份提供方了解其哪些信息、并更改其认证方式的地方：其密码、其安全密钥，以及每个安全密钥是主凭据还是第二因素。它是“独立于管理控制台的应用”，除本服务授权服务器上的单点登录会话外与之不共享任何东西：两者都是公共 OAuth 客户端（此处为 sts-user-portal），各自在内存中持有自己绑定 DPoP 的令牌。/portal/activate 是其无需认证的那一半，通过 /admin-api 或 SCIM 预配的人在那里使用一次性、有时限的激活链接来设置凭据——静态存储时像密码一样哈希、有速率限制、在设置完成时而非打开链接时用掉，并且绝不会让任何人登录。“自 #568 起，它是基于 /account-api 的静态应用”（即下面的 Account API 组）：每个页面和每个表单对应一个操作，此人始终是令牌的主体，由其自己的 OpenAPI 文档描述。"
+    "en": "a7d3632ce94cdd27",
+    "text": "它不是协议，之所以有一张卡片，是因为此页面会报告没有任何卡片认领的端点组——这条规则让新的协议族无法悄无声息地出现，在这里付出这个代价，比让规则附带条件更值得。这是本服务中第一个属于正在查看它的那个人的界面：此处其他所有浏览器页面都是为别人准备的——登录界面是另一个协议流程中的一步，同意界面问一个问题就离开，/admin 是给运营人员用的，并受两个角色的关卡保护。这里是一个人查看本身份提供方了解其哪些信息、并更改其认证方式的地方：其密码、其安全密钥，以及每个安全密钥是主凭据还是第二因素。它是独立于管理控制台的应用，除会话外与之不共享任何东西。/portal/activate 是其无需认证的那一半，通过 /admin-api 或 SCIM 预配的人在那里使用一次性、有时限的激活链接来设置凭据——静态存储时像密码一样哈希、有速率限制、在设置完成时而非打开链接时用掉，并且绝不会让任何人登录。自 #568 起，它是基于 /account-api（即下面的 Account API 组）的静态应用：每个页面和每个表单对应一个操作，此人始终是令牌的主体，由其自己的 OpenAPI 文档描述。"
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

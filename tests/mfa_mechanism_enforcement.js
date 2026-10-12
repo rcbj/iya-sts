@@ -55,6 +55,8 @@ function childMain() {
   const ROOT = process.env.WSI_ROOT;
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
+  // The sign-in screen over `/authn-api` since #571.
+  const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
   walletKit.boot().then(async function (w) {
     try {
@@ -231,10 +233,11 @@ function childMain() {
     };
     const passwordStep = async function (who, username, application) {
       const id = w.pendingSignIn({ begin: { application: application } });
-      return w.request('POST', '/authn/login', {
-        browser: who,
-        form: { authn_id: id, username: username, password: 'anything',
-                action: 'login' } });
+      // Over `/authn-api` since #571, and the page the answer names.
+      return authnScreen.follow({ port: w.port, jar: who.cookies,
+        at: '/authn/login?authn=' + id,
+        fields: { action: 'login', username: username,
+                  password: 'anything' } });
     };
     const dana = await withApp('mfa-dana');
     await make('mfa-keys-only');

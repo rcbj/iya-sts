@@ -52,6 +52,8 @@
 // point rather than a cost.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -374,6 +376,22 @@ async function reachTheSignInScreen(b) {
   return started.location.replace(/.*authn=/, "").replace(/&.*/, "");
 }
 
+// THE SIGN-IN SCREEN'S ACT OVER `/authn-api` (#571), through the one helper,
+// for the pending sign-in `authnId` names, answered as the form's POST was:
+// the page of the step the act names (here the security-key page) fetched
+// from its address, as the browser fetches it, or the redirect or refusal.
+async function signInAt(b, authnId, fields) {
+  log.debug("Entering signInAt().");
+  const answer = await authnSignin.submit(base, authnId, fields,
+                                          { cookie: b.cookie });
+  b.cookie = answer.cookie;
+  const page = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
+  log.debug("Leaving signInAt(). " + answer.next);
+  return page;
+}
+
 // Complete whichever ceremony the security-key page is drawing. Returns the
 // page's own answer, so a caller can assert what came back.
 async function completeCeremony(b, page, authenticator) {
@@ -437,9 +455,9 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
 
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           use_webauthn: "1", action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      use_webauthn: "1", action: "login" });
   check("a person holding no key is offered the ENROLMENT ceremony — which " +
         "is this service's enrol-on-first-use behaviour and is unchanged",
     function () {
@@ -568,9 +586,9 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
 
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   check("A PASSWORD ALONE NO LONGER SIGNS THEM IN. The checkbox is untouched " +
         "and the security-key step is demanded anyway, because the account " +
         "is CONFIGURED for two factors — which is what `mfaRequired` means " +
@@ -627,9 +645,9 @@ async function somebodyElsesAuthenticatorIsRefused() {
   const stranger = makeAuthenticator();
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   assert.ok(/wa-data/.test(page.text),
     "the security-key page was not drawn for the refusal case.");
 
@@ -664,9 +682,9 @@ async function theUseYourKeyInsteadLinkWorks() {
   log.info("=== the use-your-key-instead link is reachable ===");
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   const mfaId = hidden(page.text, "mfa_id");
   const drawn = await b.go("GET", "/authn/webauthn?mfa=" +
                            encodeURIComponent(mfaId));
@@ -712,9 +730,9 @@ async function anOperatorCanClearItAndTheDemandStops(authenticator) {
 
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   check("SO A PASSWORD ALONE SIGNS THEM IN AGAIN, which is what makes the " +
         "clear the way back for somebody who lost their key rather than a " +
         "button that reports success and changes nothing", function () {

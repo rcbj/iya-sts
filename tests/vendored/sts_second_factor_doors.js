@@ -42,6 +42,8 @@
 //
 // OWNED HERE (local: true): this repository's own doors, portal and API.
 // ---------------------------------------------------------------------------
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
@@ -157,6 +159,15 @@ async function resetSetting(key) {
   log.debug("Leaving resetSetting().");
 }
 
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // ---------------------------------------------------------------------------
 // ONE BROWSER, with a cookie jar and manual redirects.
 // ---------------------------------------------------------------------------
@@ -164,6 +175,7 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -200,21 +212,6 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function b64u(buffer) {
@@ -637,19 +634,20 @@ async function test() {
   if (product) {
     const s = browser("app-at-login");
     let r = await s.go("GET", portalAuthorizeUrl());
-    for (let hop = 0; hop < 6 && !/name="authn_id"/.test(r.text); hop++) {
+    for (let hop = 0; hop < 6 && !/\/authn\/login\?authn=/.test(r.location);
+         hop++) {
       r = await s.go("GET", r.location);
     }
-    const fields = hiddenFields(r.text);
-    fields.username = ALICE;
-    fields.password = shown;
-    fields.action = "login";
-    const posted = await s.go("POST", R + "/authn/login", form(fields));
+    // THE SCREEN OVER `/authn-api` (#571), through the one helper.
+    const posted = await authnSignin.submit(base + R, r.location,
+      { action: "login", username: ALICE, password: shown },
+      { cookie: jarHeader(s) });
     check("the app password is REFUSED at the sign-in screen", function () {
-      assert.strictEqual(posted.status, 200,
-                         "the screen let it through: " + posted.location);
-      assert.ok(/Authentication failed/.test(posted.text),
-                posted.text.slice(0, 400));
+      assert.strictEqual(posted.next, "refused",
+                         "the screen let it through: " + posted.next + " " +
+                         posted.location);
+      assert.ok(/Authentication failed/.test(posted.errors.join(" ")),
+                JSON.stringify(posted.json).slice(0, 400));
     });
   } else {
     log.info("  (development checks no password at the sign-in screen)");

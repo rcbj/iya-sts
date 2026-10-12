@@ -6,7 +6,9 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 
 | File | What it is |
 |---|---|
-| `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
+| `authn.ts` | The sign-in screen's views and acts, the session store, and the pending-authentication record. |
+| `authn_api.ts` | **`/authn-api` (#571)**: the sign-in screen's API — the operation table, the CSRF binding, the body schemas and the OpenAPI document. The logic is `authn.ts`'s. See *The sign-in screen is a static surface*, below. |
+| `web_authn.ts`, `web_authn_pages.ts`, `web_authn_login.ts`, `web_authn_select.ts`, `web_authn_password.ts` | **The sign-in surface in the browser (#571)**: the runtime (`authn-spa.js`, served at `/authn/signin.js`) and the renderers of `/authn/login`, `/authn/select-idp` and `/authn/password-change`. `web_` modules (`common/CLAUDE.md` 3cl). |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
@@ -66,6 +68,98 @@ record crossing a directory boundary for no gain.
 never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
+
+## THE SIGN-IN SCREEN IS A STATIC SURFACE OVER `/authn-api` (#571, 2026-10-12)
+
+**What changed is the page and the door; nothing a sign-in decides.** #569
+converts every human-facing page to a static application on #570's
+foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
+
+* **`/authn/login`, `/authn/select-idp` and `/authn/password-change` answer
+  the SHELL** (`signInShell()`, `ShellDocument`), which mints the
+  `sts_session` arrival cookie for a browser without one (they are on
+  `ARRIVAL_PATHS`) and loads `/authn/signin.js`. An unknown id is refused at
+  the shell as it always was (400, `invalid_request`), and the chooser's GET
+  still sends a browser with fewer than two partners to the screen with a
+  303. **Script is required** (rcbj on #569): the `<noscript>` says so and no
+  form is drawn.
+* **The form POSTs are DELETED.** Their bodies are `screenAct()` and
+  `passwordChangeAct()`, moved whole and called by `authn_api.ts`. The page
+  builders became VIEWS — `screenView()`, `selectIdpView()`,
+  `passwordChangeView()` — every decision the markup was drawn under, as
+  facts and no words; `web_authn_login.ts` and its siblings draw them in the
+  `authn` catalogs' words with the element ids the screen always had.
+* **THE ANSWER IS THE NEXT STEP** (`authn.ts`, *What the sign-in screen's
+  acts answer*): `redirect` (to `record.returnTo`, still checked as a path
+  on this service; the `sts_session` cookie set on that answer), `mfa`
+  (`step` and the address of the page that draws it, by its own GET),
+  `password-change`, `home-cell` (#98's restart: the start's method, address
+  and fields, sent by the runtime exactly as the re-post page sent them), or
+  `refused` with the English sentence and no error code. One copy of the
+  logic answers both kinds of door: `answersJson(res)` (`res.locals.authnApi`,
+  set by the API) is asked at the one line where a page was sent, and a
+  second-factor page's FORM (#572 converts them) gets a 303 instead — its
+  refusal goes on the record as `screenError` and is shown by the view.
+* **`GET /authn/webauthn` draws an ENROLMENT ceremony for a step the screen
+  minted for it** (`step.atSignIn`), which only the POST's answer used to
+  draw; never for a step minted for another factor.
+* **An emailed factor** is armed by the act (`armSecondFactor()`, or
+  `beginFirstFactor()` for a first factor) and drawn by its page's GET; a
+  message that could not be sent is said there once (`emailNotice`).
+
+### `/authn-api`
+
+| Operation | What |
+|---|---|
+| `GET /authn-api` | the index: each operation and the page or control it `mirrors` (`action` naming the screen's button) |
+| `GET /authn-api/openapi.json` | generated from the table and the zod bodies (`account_api_spec.ts`'s converter) |
+| `GET /authn-api/pending/{id}` | the screen's view, `csrf`, `uiLocales`, a locked person's `preferredLanguage` |
+| `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
+| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body |
+| `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
+
+**UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
+`authn_id` was. It is never logged here, and `common/audit.js`'s
+`redactedPath()` takes it out of an HTTP row's target and the call log
+(`/authn-api/pending/(redacted)/password`).
+
+**EVERY ACT IS BOUND** (rcbj's decision 2 on #571), checked before the id
+is looked up: `Content-Type: application/json` (`STS-AUTHN-0325`, 415), an
+`Origin` in `cors.ownOrigins()` (`STS-AUTHN-0326`, 403), and
+`X-CSRF-Token` equal to `websecurity.tokenFor()` of the `sts_session`
+cookie's session id (`STS-AUTHN-0327`, 403) — **a request with no session is
+refused**, unlike `checkCsrf()`'s no-session pass, because every act follows
+a shell that minted one. A handler that throws answers 500
+(`STS-AUTHN-0328`). Rate limits, risk scoring, lockout, the issuance policy,
+the restart at home and the audit rows are `screenAct()`'s, exactly the
+form's (`STS-AUTHN-0008` is now a 429).
+
+**Placement (#98)**: `/authn-api` is a `handler` row naming `authn.ts`,
+whose `screenAct()` finds the home cell from the login name; `/authn/signin.js`
+is `local`. `hosted_applications.js` puts `/authn-api` in the `authn`
+application.
+
+### The browser
+
+`web_authn.ts` (`AuthnSurface extends WebSurface`): acts as JSON with the
+view's `csrf`; the button an act is read off the index (`mirrors` and
+`action`) and a control no operation is the door of is refused; the passkey
+with no username — `passkey/options`, then `navigator.credentials.get()`
+with user verification required, the autofill armed with conditional
+mediation where the browser has it and NOT armed again after a refused
+passkey, a credential nobody holds signalled (section 5.1.10) — over
+`common/web_webauthn.ts`, the byte helpers the portal's ceremonies share;
+the fingerprint by loading `/authn/fingerprint.js` beside the bundle (a
+library is not a `web_` module and cannot be bundled into one), whose glue
+leaves the visitorId on `window.stsDeviceFingerprint` too.
+`/authn/webauthn.js` is still served, for `/authn/webauthn` until #572.
+
+**Tests**: `tests/authn_api.js` (the shell, the index, the view, every
+binding refusal, every act and its next step, the redacted audit row, the
+form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
+`tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
+the walk every in-process test signs in through, and over HTTP every job
+signs in through `tests/vendored/authn_signin.js`.
 
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
@@ -1530,7 +1624,7 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
-## THE SIGN-IN SCREEN MAY CARRY ONE SCRIPT: THE BROWSER FINGERPRINT (2026-09-22, #62 P6)
+## THE BROWSER FINGERPRINT (2026-09-22, #62 P6; the screen's bundle loads it since #571)
 
 **Only while `risk.fingerprinting` is on in the realm — off by default**
 (rcbj's decision). The argument the root CLAUDE.md asks for, made from
@@ -1830,10 +1924,11 @@ by default since 2026-10-10, off before — `webauthn.usernameless` until #527; 
 `passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`
 before a username is read:
 
-* **The challenge is on the PENDING RECORD**, minted when the screen is drawn
-  (`passkeyChallengeFor()`), because conditional mediation starts the
-  ceremony as the page loads; the POST takes it whatever happens, and the
-  next drawing mints another. Single-use across the cluster through
+* **The challenge is on the PENDING RECORD**, minted by `POST
+  /authn-api/pending/{id}/passkey/options` since #571 (`passkeyOptions()`;
+  it was minted when the screen was drawn), which the page asks as it loads
+  because conditional mediation starts the ceremony then; the act takes it
+  whatever happens, and the next options mint another. Single-use across the cluster through
   `spendAssertion()`, like every assertion.
 * **Who it is comes from the handle** (`credentials.ownerOfUserHandle()`, an
   index in `ldap_server.js` that is checked on a hit and rebuilt on a miss
@@ -1857,12 +1952,11 @@ before a username is read:
   realm answers on the same RP ID, and a credential this realm cannot place
   may be another realm's, or a person homed in another cell — and the
   signal would hide it from their credential manager for good.
-* **The screen runs `/authn/webauthn.js` while it is offered** — the root
-  CLAUDE.md's scripted-page row. *Sign in with a passkey* is a real submit
-  button, after Sign In so Enter still means Sign In; the script posts the
-  assertion through two hidden inputs (`passkey_credential`, and an
-  `action=passkey` input it enables). `sendLoginPage()` reads whether to
-  relax `script-src` off the markup.
+* **The screen's own bundle runs it since #571** (*The sign-in screen is a
+  static surface*, above): `POST /authn-api/pending/{id}/passkey/options`
+  arms the challenge, `…/passkey` takes the assertion. Until then
+  `/authn/webauthn.js` ran it, with a real submit button for a browser
+  without script.
 * **Across cells** the handle never leaves home (`cell_sessions.ts`'s
   credential pattern covers `webauthn`), so a usernameless sign-in answers
   only people homed in the cell that drew the screen; anybody else types

@@ -1965,7 +1965,7 @@ function recordHttp(req, res, detail) {
   // The URL WITHOUT its query string. The query is on the row as a detail where
   // it is interesting, and a path that carried it would make every distinct
   // ?page= a different-looking row for the same page view.
-  const path = String(req.originalUrl || '/').split('?')[0];
+  const path = redactedPath(String(req.originalUrl || '/').split('?')[0]);
   if (isQuietProbe(req, res, path)) {
     log.debug("Leaving recordHttp(). A successful liveness probe; not " +
               "recorded.");
@@ -2036,6 +2036,24 @@ function recordHttp(req, res, detail) {
 // than secrets — with the one exception below, which is not a rule that can be
 // relaxed: an OAuth 2.0 authorization CODE and an id_token_hint travel in a
 // query string, and both are credentials.
+// AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
+// sign-in's id and a forced password change's step id, each a bearer
+// capability over that sign-in, and the operation's path carries it. The row
+// keeps the operation and drops the id.
+const REDACTED_PATHS = /(\/authn-api\/(?:pending|password-change)\/)[^/?#]+/g;
+
+/**
+ * A request path with any capability it carries replaced by `(redacted)`.
+ *
+ * @param path - the path, without its query
+ * @returns the path a row or a log line may carry
+ */
+function redactedPath(path) {
+  log.debug("Entering redactedPath().");
+  log.debug("Leaving redactedPath().");
+  return String(path || '').replace(REDACTED_PATHS, '$1(redacted)');
+}
+
 const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'assertion', 'client_secret', 'password',
                              'credential', 'vp_token', 'response'];
@@ -2350,6 +2368,7 @@ function prose() {
  */
 module.exports = {
   CATEGORIES: CATEGORIES,
+  redactedPath: redactedPath,
   ACTIONS: ACTIONS,
   OUTCOMES: OUTCOMES,
   audit: audit,

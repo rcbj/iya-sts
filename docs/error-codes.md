@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4299** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4303** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 284
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 288
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1161,14 +1161,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-AUTHN-0001` | A request to the sign-in screen or the federation chooser carried a pending sign-in id that failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0002` | The sign-in form POST failed input validation (an unknown action, an oversized field, a malformed id). | invalid_request (HTTP 400) |
+| `STS-AUTHN-0002` | An act on the sign-in API (/authn-api, the sign-in form until #571) failed input validation: a field the operation does not take, an oversized field, a malformed value. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0003` | No sign-in is pending under the id the sign-in screen, the federation chooser or the form POST named: it expired, was already spent, or never existed. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0004` | The person pressed Cancel at the sign-in screen; the calling protocol is told the user declined. | HTTP 303 back to the calling protocol with authn_error=access_denied |
-| `STS-AUTHN-0005` | The issuance policy refused an unauthenticated ('continue without signing in') session for the application at the sign-in screen. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0006` | The sign-in form was submitted with no username. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0007` | A passwordless security-key sign-in was asked for where the calling protocol demanded a second factor. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0008` | Too many sign-in attempts for this identity or address; the password check was not attempted (rate limiter lockout). | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0009` | The issuance policy refused a session for the application to the person who just authenticated at the sign-in screen (a required role is not held). | HTTP 200 sign-in page, redrawn with the reason |
+| `STS-AUTHN-0005` | The issuance policy refused an unauthenticated ('continue without signing in') session for the application at the sign-in screen. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0006` | The sign-in form was submitted with no username. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0007` | A passwordless security-key sign-in was asked for where the calling protocol demanded a second factor. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0008` | Too many sign-in attempts for this identity or address; the password check was not attempted (rate limiter lockout). | the sign-in API's refusal (HTTP 429, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0009` | The issuance policy refused a session for the application to the person who just authenticated at the sign-in screen (a required role is not held). | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
 | `STS-AUTHN-0010` | The issuance policy refused to start a sign-on session at the session funnel, for a door other than the sign-in screen (federation, SPNEGO, client certificate, WS-Trust, a second-factor screen). | — |
 | `STS-AUTHN-0011` | A sign-out was asked for and there was no session to end: it had already expired or been signed out. | — |
 | `STS-AUTHN-0012` | An arrival session could not be started for a browser reaching a protocol front door; the request continued without one. | — |
@@ -1444,6 +1444,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0322` | A passkey was refused by a rule of the realm's own issuance policy (#536) that named no error code of its own and gave a reason the built-in passkey rules do not give. | the ceremony's page or the sign-in screen, with the reason |
 | `STS-AUTHN-0323` | No issuance policy, not even the built-in one, gave a verdict on a passkey question (#536); the passkey rules read from the facts answered instead. A defect: the built-in document should always answer. | none: the passkey is decided by the same rules |
 | `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0325` | An act on the sign-in API (/authn-api, #571) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
+| `STS-AUTHN-0326` | An act on the sign-in API (/authn-api, #571) carried no Origin header, or one this service does not answer on: it was not sent by a page of this service. | HTTP 403, { ok: false, errors } |
+| `STS-AUTHN-0327` | An act on the sign-in API (/authn-api, #571) carried no X-CSRF-Token, or one that is not the token of the session its sts_session cookie names, or the browser holds no session at all. | HTTP 403, { ok: false, errors } |
+| `STS-AUTHN-0328` | An operation of the sign-in API (/authn-api, #571) threw; the browser is told the sign-in could not continue. | HTTP 500, { ok: false, errors } |
 
 ## STS-OAUTH
 

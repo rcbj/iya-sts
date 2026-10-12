@@ -51,6 +51,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -240,16 +242,18 @@ async function signIn(who, clientId, scope, extra) {
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it went to " + r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login" }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in form should redirect, got " + r.status);
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; this
+  // browser keeps one cookie, the session the sign-in set.
+  const signedIn = await authnSignin.submit(base, absolute(r.location),
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookie });
+  assert.strictEqual(signedIn.next, "redirect",
+    "the sign-in should answer where to go, got " + signedIn.status + " " +
+    JSON.stringify(signedIn.json));
+  b.cookie = (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) ||
+              [])[1] || "";
   assert.ok(b.cookie, "signing in should establish a session.");
-  r = await b.go("GET", r.location);
+  r = await b.go("GET", signedIn.location);
   log.debug("Leaving signIn(). " + r.status + " " + r.location);
   return { b: b, r: r };
 }

@@ -37,6 +37,8 @@
 // requires are `assert`, node's crypto, `gnap_client.js` and `test_peer.js`.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const gnap = require("./gnap_client.js");
@@ -303,21 +305,22 @@ function harness(options) {
     const approve = r.location;
     r = await b.go("GET", approve);
     if (r.status === 303 && /\/authn\/login\?authn=/.test(r.location)) {
-      r = await b.go("GET", r.location);
-      const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) ||
-                       [])[1];
-      assert.ok(authnId,
-                "the sign-in screen carries an authn_id: " +
-                r.text.slice(0, 300));
-      r = await b.go("POST", (REALM ? "/realm/" + REALM : "") +
-                     "/authn/login",
-                     { authn_id: authnId, username: who, password: PASSWORD,
-                       action: "login",
-                       csrf_token: self.csrfOf(r.text) });
-      assert.ok(r.status === 303,
-                "the sign-in redirects back; got " + r.status + " " +
-                r.text.slice(0, 300));
-      r = await b.go("GET", r.location);
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
+      // this browser's cookies kept in its jar.
+      const signedIn = await authnSignin.submit(realmBase, r.location,
+        { action: "login", username: who, password: PASSWORD },
+        { cookie: Object.keys(b.jar).map(function (k) {
+          return k + "=" + b.jar[k];
+        }).join("; ") });
+      signedIn.setCookies.forEach(function (one) {
+        const pair = String(one).split(";")[0];
+        const name = pair.split("=")[0];
+        b.jar[name] = pair.slice(name.length + 1);
+      });
+      assert.ok(signedIn.next === "redirect",
+                "the sign-in answers where to go back to; got " +
+                signedIn.status + " " + JSON.stringify(signedIn.json));
+      r = await b.go("GET", signedIn.location);
     }
     log.debug("Leaving reachApproval().");
     return { approve: approve, page: r };

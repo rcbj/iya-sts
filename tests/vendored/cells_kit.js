@@ -38,6 +38,8 @@
 // ===========================================================================
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
@@ -318,19 +320,18 @@ async function browse(jar, url, opts) {
 }
 
 /**
- * The hidden sign-in fields of a sign-in screen.
+ * Whether an answer is the sign-in screen: its shell (#571), which the
+ * service answers only for a pending sign-in the answering cell holds — an
+ * unknown id is refused.
  *
- * @param page - the screen's HTML
- * @returns `{ authnId, csrf }`
+ * @param r - `browse()`'s answer
+ * @returns whether it is
  */
-function signInFields(page) {
-  log.debug("Entering signInFields().");
-  const authnId = (String(page).match(/name="authn_id" value="([^"]+)"/) ||
-                   [])[1] || "";
-  const csrf = (String(page).match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  log.debug("Leaving signInFields().");
-  return { authnId: authnId, csrf: csrf };
+function isSignIn(r) {
+  log.debug("Entering isSignIn().");
+  log.debug("Leaving isSignIn().");
+  return !!r && r.status === 200 &&
+         /\/authn\/signin\.js/.test(String(r.text || ""));
 }
 
 /**
@@ -692,6 +693,53 @@ function authorizeUrl(realmBase, clientId, redirectUri, pair, state) {
 }
 
 /**
+ * Answers a sign-in screen with a password, over `/authn-api` as the
+ * screen's page does since #571 (`authn_signin.js`), and answers what the
+ * form's POST answered, in `browse()`'s shape: a 303 and the `location`
+ * the act names — where the flow goes on, or for a traveller the start it
+ * restarts at home (#98 D9) — and a restart whose start was a POST as the
+ * page that re-posted it, whose form `drive()` then sends: the screen's
+ * runtime builds and submits that form, and this draws it as the page
+ * #98 drew it did.
+ *
+ * @param jar - the browser's cookies, taken from every answer
+ * @param screenUrl - the sign-in screen's absolute address
+ * @param username - the login name
+ * @param password - the password
+ * @returns a promise of `{ status, location, text, set, answer }`
+ */
+async function postScreen(jar, screenUrl, username, password) {
+  log.debug("Entering postScreen().");
+  const at = new URL(screenUrl);
+  const answer = await authnSignin.submit(at.origin +
+    at.pathname.replace(/\/authn\/login$/, ""), at.toString(),
+    { action: "login", username: username, password: password },
+    { cookie: jar.header() });
+  const set = jar.take({ headers: answer.headers });
+  const form = answer.next === "home-cell" ? answer.form : null;
+  if (form && String(form.method).toUpperCase() === "POST") {
+    const esc = function (v) {
+      return String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;");
+    };
+    log.debug("Leaving postScreen(). A re-post.");
+    return { status: 200, location: "", set: set, answer: answer,
+             text: "<form method=\"post\" action=\"" + esc(form.action) +
+               "\">" + Object.keys(form.fields || {}).map(function (k) {
+                 return "<input type=\"hidden\" name=\"" + esc(k) +
+                   "\" value=\"" + esc(form.fields[k]) + "\">";
+               }).join("") + "<button type=\"submit\">Continue</button>" +
+               "</form>" };
+  }
+  const to = form ? new URL(String(form.action), at.origin).toString()
+                  : answer.location;
+  log.debug("Leaving postScreen(). " + answer.next);
+  return { status: to ? 303 : answer.status, location: to || "",
+           text: answer.text || JSON.stringify(answer.json), set: set,
+           answer: answer };
+}
+
+/**
  * Starts an authorization request and answers its sign-in screen with a
  * password: the request, the redirect to the screen, the screen, the POST.
  *
@@ -699,9 +747,10 @@ function authorizeUrl(realmBase, clientId, redirectUri, pair, state) {
  * @param start - the authorization request's URL
  * @param username - the login name
  * @param password - the password
- * @returns a promise of `{ first, screen, posted }`, each `browse()`'s
- *   answer — `posted` is the login POST's, whose `location` is where the
- *   flow goes on (or, for a traveller, where it restarts)
+ * @returns a promise of `{ first, screen, posted }` — `posted` is
+ *   `postScreen()`'s answer, whose `location` is where the flow goes on (or,
+ *   for a traveller, where it restarts); `screen` is a stand-in since #571,
+ *   the screen being a static page whose view `postScreen()` reads
  */
 async function signInScreen(jar, start, username, password) {
   log.debug("Entering signInScreen().");
@@ -709,15 +758,10 @@ async function signInScreen(jar, start, username, password) {
   assert.ok(first.status >= 300 && first.status < 400 && first.location,
     "the authorization request did not send the browser to a sign-in " +
     "screen: " + first.status + " " + said(first.text));
-  const screen = await browse(jar, first.location);
-  const fields = signInFields(screen.text);
-  assert.ok(fields.authnId, "no sign-in screen at " + first.location + ": " +
-    screen.status + " " + said(screen.text));
-  const at = new URL(first.location);
-  const posted = await browse(jar, at.origin + at.pathname,
-    { form: { authn_id: fields.authnId, username: username,
-              password: password, action: "login",
-              csrf_token: fields.csrf } });
+  assert.ok(/\/authn\/login\?authn=/.test(first.location),
+    "no sign-in screen at " + first.location);
+  const screen = { status: 0, text: "" };
+  const posted = await postScreen(jar, first.location, username, password);
   log.debug("Leaving signInScreen(). " + posted.status);
   return { first: first, screen: screen, posted: posted };
 }
@@ -855,7 +899,7 @@ module.exports = {
   until: until,
   Jar: Jar,
   browse: browse,
-  signInFields: signInFields,
+  isSignIn: isSignIn,
   drive: drive,
   said: said,
   pkce: pkce,
@@ -870,6 +914,7 @@ module.exports = {
   jwksAt: jwksAt,
   authorizeUrl: authorizeUrl,
   signInScreen: signInScreen,
+  postScreen: postScreen,
   tokenCall: tokenCall,
   claimsOf: claimsOf,
   entryUuidIn: entryUuidIn,

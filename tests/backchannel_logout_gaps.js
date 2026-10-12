@@ -114,6 +114,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const errorCodes = require(ROOT + '/common/error_codes');
@@ -223,22 +224,12 @@ function childMain() {
       let r = await request(port, 'GET', authorize(id, scope));
       const to = String(r.headers.location || '');
       if (/\/authn\/login/.test(to)) {
-        const page = await request(port, 'GET',
-                                   to.replace(/^https?:\/\/[^/]+/, ''));
-        const form = {};
-        (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-          function (tag) {
-            const name = /name="([^"]+)"/.exec(tag);
-            const value = /value="([^"]*)"/.exec(tag);
-            if (name) {
-              form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-            }
-          });
-        form.username = 'bcg-alice';
-        form.password = 'anything';
-        form.action = 'login';
-        const posted = await request(port, 'POST', '/authn/login',
-                                     { form: form });
+        // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+        // act, this test's jar kept; read as the 303 the form answered.
+        const posted = await screen.submit({ port: port, jar: jar,
+          at: String(to.replace(/^https?:\/\/[^/]+/, '')),
+          fields: { action: 'login', username: 'bcg-alice',
+                    password: 'anything' } });
         r = await request(port, 'GET', String(posted.headers.location || '')
           .replace(/^https?:\/\/[^/]+/, ''));
       }

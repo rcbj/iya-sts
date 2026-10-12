@@ -379,13 +379,17 @@ async function signIn(driver, withKey) {
   // starts a conditional passkey request as it loads, the virtual
   // authenticator answers it with nobody choosing, and a key that is only a
   // second factor is refused and the screen drawn again — without the
-  // autofill this time (data-autofill="0"). Typing into the first screen
-  // while that post is under way would type into a page being replaced.
+  // autofill this time. Typing into the first screen while that act is
+  // under way would type into a page being replaced. Since #571 the page is
+  // drawn by its script, and the username field says whether the autofill
+  // is armed (`autocomplete="username webauthn"`) or not.
   const settleBy = Date.now() + 2000;
   for (;;) {
     const marker = await driver.executeScript(
-      "var p = document.getElementById('wa-passkey');" +
-      "return p ? (p.getAttribute('data-autofill') || 'armed') : 'none';")
+      "var u = document.getElementById('username');" +
+      "if (!u) { return 'navigating'; }" +
+      "return /webauthn/.test(u.getAttribute('autocomplete') || '')" +
+      " ? 'armed' : '0';")
       .catch(function (e) {
         // The page was being replaced as the script ran: not settled yet.
         log.debug("Caught in signIn(): " + ((e && e.message) || e));
@@ -398,13 +402,18 @@ async function signIn(driver, withKey) {
       setTimeout(resolve, 100);
     });
   }
+  await waitFor(driver, async function () {
+    return present(driver, "#username");
+  }, "the sign-in screen never drew its form.");
   const name = await driver.findElement(By.css("input[name='username']"));
   await name.clear();
   await name.sendKeys(PERSON);
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(PASSWORD);
-  await secret.submit();
+  // Sign In, clicked: the page sends the act to /authn-api (#571); a native
+  // submit would go around its script to a path that is only the shell.
+  await (await driver.findElement(By.id("kc-login"))).click();
   await waitFor(driver, async function () {
     const p = await path(driver);
     return (p.indexOf("/portal") === 0 && p.indexOf("/authn") < 0) ||

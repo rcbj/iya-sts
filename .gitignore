@@ -85,3 +85,8 @@ home/home.bundle.js
 home/home-spa.js
 home/home-spa.js.br
 home/home-spa.js.gz
+# The sign-in screen's (#571), the same kind of file.
+authn/authn.bundle.js
+authn/authn-spa.js
+authn/authn-spa.js.br
+authn/authn-spa.js.gz

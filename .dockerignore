@@ -187,3 +187,6 @@ portal/portal-spa.js*
 # And the front door's (#579), for the same reason.
 home/home.bundle.js
 home/home-spa.js*
+# And the sign-in screen's (#571), for the same reason.
+authn/authn.bundle.js
+authn/authn-spa.js*

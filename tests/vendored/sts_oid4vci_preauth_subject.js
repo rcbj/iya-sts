@@ -35,6 +35,8 @@
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -147,6 +149,8 @@ function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -188,21 +192,6 @@ function browser() {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // Follows redirects from `path`, signing in as HOLDER where the sign-in
 // screen appears, until a page answers 200 or a redirect leaves for `stopAt`.
 async function follow(b, path, stopAt) {
@@ -212,12 +201,14 @@ async function follow(b, path, stopAt) {
     if (stopAt && r.location.indexOf(stopAt) === 0) {
       break;
     }
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = HOLDER;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+    // signed in through the one helper, with this browser's jar, where the
+    // flow is sent to it; the answer is read as the form's 303 was.
+    if ((r.status === 302 || r.status === 303) &&
+        /\/authn\/login\?authn=/.test(r.location)) {
+      r = await authnSignin.signInWithJar(base, r.location,
+        { action: "login", username: HOLDER, password: PASSWORD }, b.jar,
+        { headers: { "User-Agent": AGENT } });
       continue;
     }
     if (r.status !== 302 && r.status !== 303) {

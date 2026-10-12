@@ -34,6 +34,8 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -141,11 +143,40 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, with a cookie jar.
 function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    jar: jar,
     // The cookies held, as a Cookie header: the sign-on session the static
     // portal's sign-in is answered from (#568).
     cookieHeader() {
@@ -196,42 +227,33 @@ function browser() {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // Follows redirects from `path`, signing in with the password where the
 // sign-in screen appears, until a page answers 200 or a redirect leaves for
 // `stopAt`.
 async function follow(b, path, stopAt) {
   log.debug("Entering follow(). " + path);
+  let at = path;
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
     if (stopAt && r.location.indexOf(stopAt) === 0) {
       break;
     }
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = ALICE;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SIGN-IN SCREEN'S SHELL (#571): signed in over `/authn-api`
+    // through the one helper, its answer read as the form's POST was.
+    if (r.status === 200 && /\/authn\/signin\.js/.test(r.text)) {
+      const answer = await authnSignin.submit(base, at,
+        { action: "login", username: ALICE, password: PASSWORD },
+        { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+      keepCookies(b, answer);
+      r = await authnSignin.asFormAnswer(answer, function (m, u) {
+        return b.go(m, u);
+      });
       continue;
     }
     if (r.status !== 302 && r.status !== 303) {
       break;
     }
+    at = r.location;
     r = await b.go("GET", r.location);
   }
   log.debug("Leaving follow(). " + r.status);

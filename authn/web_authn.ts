@@ -1,0 +1,501 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: web_authn.ts
+//
+// ---------------------------------------------------------------------------
+// THE SIGN-IN SURFACE'S RUNTIME (#571, 2026-10-12).
+//
+// `authn/authn-spa.js`, served at `/authn/signin.js`, is built from this. It
+// is the public surfaces' runtime (`common/web_surface.ts`) over the sign-in
+// page table (`web_authn_pages.ts`), with what a sign-in needs beyond a form
+// sent as JSON:
+//
+//   * THE CSRF BINDING (rcbj's decision 2 on #571): every act carries
+//     `X-CSRF-Token` — the `csrf` the page's view answered, the token of the
+//     browser's `sts_session` cookie — and `Content-Type: application/json`;
+//     the browser adds the `Origin` (`authn/authn_api.ts` checks all three).
+//   * WHICH OPERATION A BUTTON IS: the screen is one form with several
+//     submit buttons, and each button's `action` is one operation, read off
+//     the API's index (`mirrors` and `action`) — a control no operation is
+//     the door of is refused rather than guessed, the surface's rule.
+//   * THE NEXT STEP an act answers: `redirect`, `mfa` and `password-change`
+//     navigate to `location`; `home-cell` sends the form it names exactly as
+//     the re-post page #98 drew did (its method, its address, its fields);
+//     a refusal draws the screen again with the sentence, from a fresh view.
+//   * THE PASSKEY WITH NO USERNAME (#474): the button and the username
+//     field's autofill (conditional mediation, WebAuthn Level 3 section
+//     5.1.4) run the ceremony here — `/authn/webauthn.js` did it for the
+//     server-drawn screen — over `POST …/passkey/options` and `POST
+//     …/passkey`, a refused credential nobody holds signalled to the
+//     credential manager (section 5.1.10), and the autofill not armed again
+//     after a refusal, or an authenticator that answers it unasked loops.
+//   * THE BROWSER FINGERPRINT (#62 P6), only where the view says the realm
+//     asks for one: `/authn/fingerprint.js` loaded beside this script — the
+//     library is not a `web_` module and cannot be bundled into one — and
+//     its visitorId sent with the act.
+//
+// `authn-spa.js` and never `authn.js` on disk: `authn/authn.js` is the server
+// module `authn.ts` compiles to, and the bundle would overwrite it.
+//
+// A `web_` MODULE: it requires other `web_` modules only and logs nothing.
+// Its browser objects arrive in `env`.
+// ---------------------------------------------------------------------------
+
+import WebSurface = require('../common/web_surface');
+import WebPage = require('../common/web_page');
+import WebWebAuthn = require('../common/web_webauthn');
+import AuthnPages = require('./web_authn_pages');
+
+type Json = any;
+
+declare const HTMLFormElement: any;
+
+// The script the fingerprint comes from, and the window member it leaves
+// the visitorId in.
+const FINGERPRINT_SCRIPT = '/authn/fingerprint.js';
+
+/**
+ * The sign-in surface's runtime.
+ */
+class AuthnSurface extends WebSurface {
+  // The sentence the last act was refused with, drawn once.
+  private actError: string;
+  // Whether the passkey autofill may be armed (not after a refused passkey).
+  private autofill: boolean;
+  // The conditional ceremony in flight, to abort for the button's own.
+  private pendingAutofill: Json;
+  // The RP ID of the last ceremony, for a signal.
+  private rpId: string;
+  // Whether the fingerprint's script is on the page.
+  private fingerprintLoaded: boolean;
+
+  /**
+   * Makes the runtime.
+   *
+   * @param env - the browser's objects
+   */
+  constructor(env: Json) {
+    super(env, { base: '/authn', api: '/authn-api',
+                 pages: AuthnPages.PAGES, namespaces: ['authn'],
+                 frame: AuthnPages.frame, brand: '' });
+    this.actError = '';
+    this.autofill = true;
+    this.pendingAutofill = null;
+    this.rpId = '';
+    this.fingerprintLoaded = false;
+  }
+
+  /**
+   * The context a renderer is handed: the surface's, with the refusal of
+   * the last act and whether the autofill is armed.
+   *
+   * @param query - the location's query
+   * @returns the context
+   */
+  context(query: Json): Json {
+    const ctx = super.context(query);
+    ctx.error = this.actError;
+    ctx.autofill = this.autofill;
+    return ctx;
+  }
+
+  /**
+   * Puts a page in the document, then wires what a page of this surface
+   * runs: the passkey autofill and the fingerprint.
+   *
+   * @param title - the document's title
+   * @param body - the page's body
+   * @param ctx - the context
+   * @returns nothing
+   */
+  put(title: string, body: string, ctx: Json): void {
+    super.put(title, body, ctx);
+    this.actError = '';
+    const view = ctx && ctx.view;
+    if (!view) {
+      return;
+    }
+    if (view.fingerprint) {
+      this.loadFingerprint();
+    }
+    if (view.passkey && this.autofill) {
+      this.armAutofill();
+    }
+  }
+
+  // --- the act ---------------------------------------------------------------
+
+  /**
+   * The pending sign-in's or the step's id, off the location.
+   *
+   * @returns the id
+   */
+  idHere(): string {
+    const query = WebPage.queryOf(this.env.location.search);
+    return String(query.authn || query.change || '');
+  }
+
+  /**
+   * Sends an act: JSON, with the page's CSRF token.
+   *
+   * @param path - the operation's path, its `{id}` filled
+   * @param body - the act's fields
+   * @returns `{ status, json }`
+   */
+  async send(path: string, body: Json): Promise<Json> {
+    const csrf = String((this.lastAnswer && this.lastAnswer.csrf) || '');
+    const res = await this.env.fetch(this.url(path), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Accept': 'application/json',
+                 'Content-Type': 'application/json',
+                 'X-CSRF-Token': csrf },
+      body: JSON.stringify(body) });
+    const json = await res.json().catch(function () {
+      return null;
+    });
+    return { status: res.status, json: json };
+  }
+
+  /**
+   * The operation a form's button is, from the API's index.
+   *
+   * @param path - the surface's path the form is on
+   * @param action - the button's `action`, for the screen
+   * @returns the operation, or null
+   */
+  operationFor(path: string, action: string): Json {
+    const rows = (this.indexRows || []).filter(function (op: Json) {
+      return op.method === 'POST' && op.mirrors === 'POST ' + path &&
+        (path !== '/authn/login' || op.action === action);
+    });
+    return rows.length ? rows[0] : null;
+  }
+
+  // The index's operations, once.
+  private indexRows: Json[] | null = null;
+
+  /**
+   * Reads the API's index, once.
+   *
+   * @returns whether it is in hand
+   */
+  async ensureIndex(): Promise<boolean> {
+    if (this.indexRows) {
+      return true;
+    }
+    const index = await this.publicJson('GET', '/authn-api');
+    if (index.status !== 200 || !index.json) {
+      return false;
+    }
+    this.indexRows = index.json.operations || [];
+    return true;
+  }
+
+  /**
+   * The fingerprint to send, where the script computed one.
+   *
+   * @returns the visitorId, or ''
+   */
+  fingerprint(): string {
+    const field = this.env.document.getElementById &&
+      this.env.document.getElementById('device-fp');
+    const own = field && field.value ? String(field.value) : '';
+    return own || String((this.env.window &&
+                          this.env.window.stsDeviceFingerprint) || '');
+  }
+
+  /**
+   * Sends a form of this surface to the operation its button is.
+   *
+   * @param form - the form
+   * @param submitter - the button pressed, if any
+   * @returns nothing
+   */
+  async submit(form: Json, submitter: Json): Promise<void> {
+    const target = new URL(form.getAttribute('action') || this.here(),
+                           this.env.location.href);
+    const path = this.surfacePath(target.pathname) || '';
+    const fields = this.formFields(form, submitter);
+    const pressed = String(fields.action || 'login');
+    const action = pressed === 'email-code' || pressed === 'email-link'
+      ? 'email' : pressed;
+    if (!await this.ensureIndex()) {
+      this.refused('The service\'s API could not be reached.');
+      return;
+    }
+    const op = action === 'passkey'
+      ? this.operationFor(path, 'passkey') : this.operationFor(path, action);
+    if (!op) {
+      this.refused('This control has no API operation (' + path + ' ' +
+                   action + '), so the page refuses it rather than guess.');
+      return;
+    }
+    if (action === 'passkey') {
+      await this.passkey(false);
+      return;
+    }
+    const fp = this.fingerprint();
+    const remember = fields.remember_browser ? '1' : undefined;
+    let body: Json = {};
+    if (action === 'login') {
+      body = { username: fields.username, password: fields.password,
+               use_webauthn: fields.use_webauthn ? '1' : undefined,
+               webauthn_only: fields.webauthn_only ? '1' : undefined,
+               remember_browser: remember, device_fp: fp || undefined };
+    } else if (action === 'anonymous') {
+      body = { remember_browser: remember, device_fp: fp || undefined };
+    } else if (action === 'email') {
+      body = { username: fields.username,
+               kind: pressed === 'email-link' ? 'link' : 'code',
+               remember_browser: remember, device_fp: fp || undefined };
+    } else if (path === '/authn/password-change') {
+      body = { new_password: fields.new_password,
+               confirm_password: fields.confirm_password };
+    }
+    const answer = await this.send(String(op.path)
+      .replace('{id}', encodeURIComponent(this.idHere())), body);
+    await this.next(answer);
+  }
+
+  /**
+   * Draws the screen again with a refusal on it, from a fresh view.
+   *
+   * @param why - the sentence, English
+   * @returns nothing
+   */
+  refused(why: string): void {
+    this.actError = why;
+    this.route();
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT AN ACT ANSWERED: the next step.
+  // ---------------------------------------------------------------------------
+  /**
+   * Follows an act's answer.
+   *
+   * @param answer - `{ status, json }`
+   * @returns nothing
+   */
+  async next(answer: Json): Promise<void> {
+    const json = answer.json;
+    if (!json) {
+      this.refused('The service answered ' + answer.status + '.');
+      return;
+    }
+    if (json.ok && (json.next === 'redirect' || json.next === 'mfa' ||
+                    json.next === 'password-change') && json.location) {
+      this.env.location.assign(String(json.location));
+      return;
+    }
+    if (json.ok && json.next === 'home-cell' && json.form) {
+      this.sendForm(json.form);
+      return;
+    }
+    if (json.passkey) {
+      this.autofill = !!json.passkey.autofill;
+      this.signalUnknown(String(json.passkey.unknownCredential || ''));
+    }
+    this.refused((json.errors || []).join(' ') ||
+                 'The service answered ' + answer.status + '.');
+  }
+
+  /**
+   * Sends the form a restart at the home cell names, as the page #98 drew
+   * sent it: a GET is followed, a POST is posted with its fields.
+   *
+   * @param form - `{ method, action, fields }`
+   * @returns nothing
+   */
+  sendForm(form: Json): void {
+    if (String(form.method).toUpperCase() !== 'POST') {
+      this.env.location.assign(String(form.action));
+      return;
+    }
+    const doc = this.env.document;
+    const el = doc.createElement('form');
+    el.method = 'post';
+    el.action = String(form.action);
+    Object.keys(form.fields || {}).forEach(function (name) {
+      const input = doc.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = String(form.fields[name]);
+      el.appendChild(input);
+    });
+    doc.body.appendChild(el);
+    // A native submit: the protocol request goes to its endpoint as it
+    // arrived, which is not this surface's to send as JSON.
+    HTMLFormElement.prototype.submit.call(el);
+  }
+
+  // --- the passkey -----------------------------------------------------------
+
+  /**
+   * The ceremony's request options from the armed challenge.
+   *
+   * @param armed - `POST …/passkey/options`'s answer
+   * @returns the publicKey options
+   */
+  static requestOptions(armed: Json): Json {
+    const o = armed.options || {};
+    return { challenge: WebWebAuthn.bytes(armed.challenge),
+             rpId: o.rpId || armed.rpId, allowCredentials: [],
+             hints: o.hints && o.hints.length ? o.hints : undefined,
+             userVerification: 'required', timeout: o.timeout || 60000 };
+  }
+
+  /**
+   * Arms a ceremony on the pending sign-in.
+   *
+   * @returns the armed options, or null with the refusal drawn
+   */
+  async armPasskey(): Promise<Json> {
+    const answer = await this.send('/authn-api/pending/' +
+      encodeURIComponent(this.idHere()) + '/passkey/options', {});
+    if (!answer.json || !answer.json.ok) {
+      await this.next(answer);
+      return null;
+    }
+    this.rpId = String(answer.json.rpId || '');
+    return answer.json;
+  }
+
+  /**
+   * Sends a ceremony's result (or why there is none) to the sign-in.
+   *
+   * @param credential - the assertion's JSON form, or `{ error, message }`
+   * @returns nothing
+   */
+  async sendPasskey(credential: Json): Promise<void> {
+    const remember = this.env.document.getElementById &&
+      this.env.document.getElementById('remember_browser');
+    const answer = await this.send('/authn-api/pending/' +
+      encodeURIComponent(this.idHere()) + '/passkey', {
+        credential: JSON.stringify(credential),
+        remember_browser: remember && remember.checked ? '1' : undefined,
+        device_fp: this.fingerprint() || undefined });
+    await this.next(answer);
+  }
+
+  /**
+   * The button's ceremony, or the autofill's.
+   *
+   * @param conditional - the autofill's (conditional mediation)
+   * @returns nothing
+   */
+  async passkey(conditional: boolean): Promise<void> {
+    const nav = this.env.navigator;
+    if (!conditional && this.pendingAutofill) {
+      this.pendingAutofill.abort();
+      this.pendingAutofill = null;
+    }
+    const armed = await this.armPasskey();
+    if (!armed) {
+      return;
+    }
+    if (!nav || !nav.credentials) {
+      await this.sendPasskey({ error: 'NotSupportedError',
+                               message: 'no WebAuthn in this browser' });
+      return;
+    }
+    const ask: Json = { publicKey: AuthnSurface.requestOptions(armed) };
+    if (conditional) {
+      this.pendingAutofill = new this.env.window.AbortController();
+      ask.mediation = 'conditional';
+      ask.signal = this.pendingAutofill.signal;
+    }
+    let credential: Json = null;
+    try {
+      const a = await nav.credentials.get(ask);
+      credential = a ? WebWebAuthn.asserted(a) : null;
+    } catch (e) {
+      // An aborted or declined autofill is the page going on as a form.
+      if (conditional) {
+        return;
+      }
+      credential = { error: e && e.name, message: e && e.message };
+    }
+    if (conditional) {
+      this.pendingAutofill = null;
+    }
+    if (credential) {
+      await this.sendPasskey(credential);
+    }
+  }
+
+  /**
+   * Arms the username field's passkey autofill where the browser has it.
+   *
+   * @returns nothing
+   */
+  armAutofill(): void {
+    const PKC = this.env.window && this.env.window.PublicKeyCredential;
+    if (this.pendingAutofill || !PKC ||
+        !PKC.isConditionalMediationAvailable ||
+        !this.env.window.AbortController) {
+      return;
+    }
+    const self = this;
+    PKC.isConditionalMediationAvailable().then(function (yes: boolean) {
+      if (yes && !self.pendingAutofill) {
+        return self.passkey(true);
+      }
+      return null;
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  /**
+   * Tells the credential manager of a credential this realm holds for
+   * nobody (WebAuthn Level 3 section 5.1.10), where the answer named one.
+   *
+   * @param credentialId - the credential's id, or ''
+   * @returns nothing
+   */
+  signalUnknown(credentialId: string): void {
+    const PKC = this.env.window && this.env.window.PublicKeyCredential;
+    if (!credentialId || !PKC || !PKC.signalUnknownCredential) {
+      return;
+    }
+    PKC.signalUnknownCredential({ rpId: this.rpId,
+                                  credentialId: credentialId })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  // --- the fingerprint -------------------------------------------------------
+
+  /**
+   * Loads `/authn/fingerprint.js` once, where the view asks for it.
+   *
+   * @returns nothing
+   */
+  loadFingerprint(): void {
+    if (this.fingerprintLoaded || !this.env.document.createElement) {
+      return;
+    }
+    this.fingerprintLoaded = true;
+    const el = this.env.document.createElement('script');
+    el.src = this.url(FINGERPRINT_SCRIPT);
+    this.env.document.head.appendChild(el);
+  }
+}
+
+declare const window: any;
+declare const document: any;
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  new AuthnSurface({
+    fetch: window.fetch.bind(window), location: window.location,
+    history: window.history, document: document,
+    navigator: window.navigator, window: window
+  }).start();
+}
+
+export = AuthnSurface;

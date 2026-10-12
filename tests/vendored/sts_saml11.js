@@ -130,6 +130,8 @@
 // typed. A test that asserted otherwise would be asserting a bug.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require('./authn_signin');
 const assert = require('assert');
 const http = require('http');
 const https = require('https');
@@ -261,6 +263,22 @@ function request(method, path, body, headers) {
   });
 }
 
+// THE SIGN-IN SCREEN OVER `/authn-api` (#571), through the one helper: the
+// screen's address, a name and PASSWORD, answered as the form's POST was — a
+// 303 to where the flow goes on, or the refusal's status and text — with
+// this job's cookie kept.
+async function screenSignIn(location, username) {
+  const signed = await authnSignin.submit(BASE, location,
+    { action: 'login', username: username, password: PASSWORD },
+    { cookie: cookie });
+  cookie = signed.cookie;
+  return signed.next === 'redirect'
+    ? { status: 303, headers: { location: signed.location }, body: '' }
+    : { status: signed.status, headers: {},
+        body: typeof signed.text === 'string' ? signed.text
+                                              : JSON.stringify(signed.json) };
+}
+
 function form(obj) {
   return Object.keys(obj).map(function (k) {
     return encodeURIComponent(k) + '=' + encodeURIComponent(obj[k]);
@@ -376,10 +394,7 @@ async function signIn(query, username) {
 async function resume(path, username) {
   let res = await request('GET', path);
   if (res.status === 303 && /\/authn\/login/.test(res.headers.location || '')) {
-    const id = decodeURIComponent(/authn=([^&]+)/.exec(res.headers.location)[1]);
-    res = await request('POST', '/authn/login',
-                        form({ authn_id: id, username: username,
-                               password: PASSWORD, action: 'login' }), FORM);
+    res = await screenSignIn(res.headers.location, username);
   }
   let hops = 0;
   while ((res.status === 302 || res.status === 303) && hops++ < 8) {
@@ -697,7 +712,8 @@ async function theSaml2SessionIsShared(who) {
   const fields = hiddenFieldsOf(res.body);
   check('THE SAME SESSION ANSWERS IT: a SAML 2.0 Response with no sign-in ' +
         'screen, posted to the peer',
-        res.status === 200 && !!fields.SAMLResponse && !fields.authn_id &&
+        res.status === 200 && !!fields.SAMLResponse &&
+        !/\/authn\/signin\.js/.test(res.body) &&
         formActionOf(res.body) === peer2.urls.saml2Acs,
         'status ' + res.status + ' ' + formActionOf(res.body));
   res = await request('POST', peer2.urls.saml2Acs, form(fields), FORM);
@@ -729,12 +745,7 @@ async function theWsfedRelyingPartyReceives(wreply, who) {
   for (let hops = 0; hops < 10; hops++) {
     if ((res.status === 302 || res.status === 303) &&
         /\/authn\/login/.test(res.headers.location || '')) {
-      const id = decodeURIComponent(
-        /authn=([^&]+)/.exec(res.headers.location)[1]);
-      res = await request('POST', '/authn/login',
-                          form({ authn_id: id, username: who,
-                                 password: PASSWORD, action: 'login' }),
-                          FORM);
+      res = await screenSignIn(res.headers.location, who);
       continue;
     }
     const where = (res.headers.location || '').replace(BASE, '');

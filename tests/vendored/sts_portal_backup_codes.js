@@ -49,6 +49,8 @@
 // in place; the Copy button is the runtime's, so `/portal/copy.js` is gone.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
@@ -171,6 +173,25 @@ function absolute(location) {
     ? String(location) : base + String(location || "");
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
 function browser(name) {
   log.debug("Entering browser().");
   const self = {
@@ -261,13 +282,6 @@ async function apiPost(path, body) {
   }
   log.debug("Leaving apiPost().");
   return { status: r.status, body: parsed, raw: raw };
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -417,13 +431,16 @@ async function signIn(door, who, onSecondFactor) {
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was — a second factor's page fetched
+  // from the address the answer names, as the browser fetches it.
+  const answer = await authnSignin.submit(base, r.location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookieHeader() });
+  keepCookies(b, answer);
+  r = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   if (r.status === 200) {
     assert.ok(onSecondFactor,
       "the sign-in screen asked for something more and this call was not " +

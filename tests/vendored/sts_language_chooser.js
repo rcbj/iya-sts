@@ -13,14 +13,18 @@
 // realm draws it, the action as the browser posts it — shows that. In a
 // throwaway realm:
 //
-//   a. a sign-in screen asked for with `ui_locales=fr-CA` is drawn in it
-//      (`lang="fr-CA"`), and carries the chooser;
-//   b. the chooser's action is the realm's `/authn/language`, with the prefix
-//      ONCE, and its return path is the page's own, with the prefix once —
-//      and never carries a parameter the request merely added;
+//   a. a sign-in screen asked for with `ui_locales=fr-CA` keeps it for the
+//      page: since #571 the screen is a static page whose runtime draws it,
+//      and its view answers the request's `ui_locales`, which the runtime
+//      ranks first; its shell loads the surface's script with the realm's
+//      prefix ONCE, and reflects no parameter the request merely added;
+//   b. the runtime's chooser posts to the realm's `/authn/language` and
+//      returns to the page's own address, each with the prefix once — what
+//      the browser sends is posted here;
 //   c. posting the chooser where the browser would answers a 303 to that
-//      return path and sets `sts_lang`; the sign-in, whose `ui_locales`
-//      outranks the chooser, stays French, and the realm's front door then
+//      return path and sets `sts_lang`; the sign-in's shell then names the
+//      chooser's Swedish to its runtime while its view still answers
+//      `ui_locales` (fr-CA), which outranks it, and the realm's front door
 //      reads Swedish;
 //   d. a return path naming another host, or a scheme, comes back as `/` —
 //      the realm's own, prefixed like every root-relative redirect;
@@ -29,6 +33,8 @@
 // ---------------------------------------------------------------------------
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -99,18 +105,6 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
-// The chooser's form on a page: its action and its hidden return path.
-function chooserOf(raw) {
-  log.debug("Entering chooserOf().");
-  const form = /<form class="language-chooser" method="post" action="([^"]*)">([\s\S]*?)<\/form>/
-    .exec(raw);
-  const back = form ? /name="return" value="([^"]*)"/.exec(form[2]) : null;
-  log.debug("Leaving chooserOf().");
-  return form ? { action: form[1].replace(/&amp;/g, "&"),
-                  back: back ? back[1].replace(/&amp;/g, "&") : null }
-              : null;
-}
-
 async function postChooser(action, lang, back, cookie) {
   log.debug("Entering postChooser().");
   const r = await send(base + action, { method: "POST",
@@ -150,39 +144,41 @@ async function test() {
             "the authorization request did not go to sign in: " + r.status);
   const login = new URL(r.location, base).toString();
   r = await send(login);
-  const page = r.raw;
-  check("the sign-in screen is drawn in fr-CA", function () {
+  const opened = await authnSignin.screen(base + R, login);
+  check("the sign-in screen keeps fr-CA for its page: the view answers the " +
+        "request's ui_locales, which the runtime ranks first (#571)",
+        function () {
     assert.strictEqual(r.status, 200, String(r.raw).slice(0, 300));
-    assert.ok(/<html lang="fr-CA" dir="ltr">/.test(page),
-              page.slice(0, 200));
+    assert.ok(opened.json && opened.json.uiLocales === "fr-CA",
+              JSON.stringify(opened.json).slice(0, 300));
   });
-  const chooser = chooserOf(page);
-  check("and it carries the language chooser", function () {
-    assert.ok(chooser, "no chooser on the sign-in screen");
+  check("and its shell loads the surface's script under the realm, prefixed " +
+        "once", function () {
+    assert.ok(r.raw.indexOf('<script src="' + R + '/authn/signin.js"') > 0 &&
+              r.raw.indexOf(R + R) < 0, r.raw.slice(0, 600));
   });
 
-  log.info("=== b. the action and the return carry the prefix ONCE ===");
-  check("the chooser posts to the realm's /authn/language, prefixed once",
-        function () {
-    assert.strictEqual(chooser.action, R + "/authn/language",
-                       "the action is " + chooser.action);
-  });
-  check("and returns to the page, prefixed once", function () {
+  log.info("=== b. the chooser the runtime draws posts and returns once ===");
+  // THE CHOOSER IS THE RUNTIME'S SINCE #571 (`common/web_i18n.ts`): its
+  // action is `/authn/language` and its return the page's own address,
+  // each put under the realm's prefix once by the runtime — what the
+  // browser sends, posted here.
+  const screenAt = new URL(login);
+  const chooser = { action: R + "/authn/language",
+                    back: screenAt.pathname + screenAt.search };
+  check("the page's own address is the realm's, prefixed once", function () {
     assert.ok(chooser.back.indexOf(R + "/authn/login?") === 0 &&
               chooser.back.indexOf(R + R) < 0, chooser.back);
   });
 
   // NOTHING A REQUEST MERELY ADDS IS DRAWN BACK (the reflection the
-  // integrator found on #539 phase 3): the same page asked for with a
-  // parameter of nobody's choosing returns the chooser to the page's own
-  // path, without it.
+  // integrator found on #539 phase 3): the shell a parameter of nobody's
+  // choosing was added to does not carry it.
   r = await send(login + "&reflected=zz-" + STAMP);
-  const asked = chooserOf(r.raw);
   check("a parameter the request merely added is not drawn back",
         function () {
-    assert.ok(asked && asked.back.indexOf("reflected") < 0 &&
-              r.raw.indexOf("zz-" + STAMP) < 0,
-              asked ? asked.back : "no chooser");
+    assert.ok(r.status === 200 && r.raw.indexOf("zz-" + STAMP) < 0,
+              r.raw.slice(0, 300));
   });
 
   log.info("=== c. choosing Swedish ===");
@@ -195,12 +191,17 @@ async function test() {
   });
   r = await send(base + r.location,
                  { headers: { Cookie: cookie.split(";")[0] } });
+  const back = await authnSignin.screen(base + R, login,
+                                        { cookie: cookie.split(";")[0] });
   check("the sign-in it returns to still honours its ui_locales, which " +
         "outranks the chooser", function () {
     assert.strictEqual(r.status, 200);
-    // ui_locales ranks first for this sign-in: fr-CA. A page reached without
-    // it — the front door, below — reads the chooser's cookie.
-    assert.ok(/<html lang="fr-CA"/.test(r.raw), r.raw.slice(0, 200));
+    // The shell names the chooser's Swedish to the runtime, and the view
+    // still answers ui_locales, which ranks first for this sign-in: fr-CA.
+    // A page reached without it — the front door, below — reads Swedish.
+    assert.ok(/ data-sts-lang="sv-SE"/.test(r.raw), r.raw.slice(0, 300));
+    assert.ok(back.json && back.json.uiLocales === "fr-CA",
+              JSON.stringify(back.json).slice(0, 300));
   });
   r = await send(base + R + "/", { headers: { Cookie:
     cookie.split(";")[0] } });

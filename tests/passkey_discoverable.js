@@ -229,17 +229,6 @@ function childMain() {
     return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
       : '';
   };
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name && !/ disabled/.test(tag)) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -252,6 +241,8 @@ function childMain() {
     const webauthnPolicy = require(ROOT + '/authn/webauthn_policy');
     const ldap = require(ROOT + '/ldap/ldap_server');
     const audit = require(ROOT + '/common/audit');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -290,15 +281,32 @@ function childMain() {
           code_challenge: nodeCrypto.createHash('sha256').update(verifier)
             .digest('base64url'),
           code_challenge_method: 'S256' }).toString());
-      const screen = await b.go('GET', String(start.headers.location || ''));
-      return { b: b, screen: screen, verifier: verifier };
+      // THE SCREEN IS A STATIC PAGE SINCE #571: its shell, and the view
+      // its page is drawn from (`/authn-api/pending/{id}`).
+      const opened = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location || '') });
+      return { b: b, screen: opened.shell, opened: opened,
+               view: opened.view || {}, verifier: verifier };
     };
-    // The screen's usernameless form, posted with an assertion.
-    const usernameless = async function (s, credential) {
-      const form = hiddenFields(s.screen.text);
-      form.action = 'passkey';
-      form.passkey_credential = credential ? JSON.stringify(credential) : '';
-      return s.b.go('POST', '/authn/login', { form: form });
+    // The ceremony's challenge, armed as the screen's page arms it
+    // (`…/passkey/options`); the whole answer as `challengeAnswer()`.
+    const challengeAnswer = function (s) {
+      return authnScreen.passkeyOptions({ port: port, jar: s.b.jar,
+                                          opened: s.opened });
+    };
+    const challengeOf = async function (s) {
+      return (await challengeAnswer(s)).challenge;
+    };
+    // The usernameless act, sent with an assertion (`…/passkey`).
+    const usernameless = function (s, credential) {
+      return authnScreen.act({ port: port, jar: s.b.jar, opened: s.opened,
+        path: '/authn-api/pending/' + encodeURIComponent(s.opened.id) +
+              '/passkey',
+        body: { credential: credential ? JSON.stringify(credential) : '' } });
+    };
+    // A refused act: the API's 400 and its sentence.
+    const refusedAct = function (posted) {
+      return posted.apiStatus === 400 && posted.next === 'refused';
     };
     // Follows a finished sign-in to the code and redeems it.
     const idTokenOf = async function (s, posted) {
@@ -332,27 +340,23 @@ function childMain() {
     passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
                                                 { allowUsernameless: false }));
     let s = await screenFor();
-    note(s.screen.status === 200 && !/id="wa-passkey"/.test(s.screen.text) &&
-         !/autocomplete="username webauthn"/.test(s.screen.text),
-         '1a. OFF: the screen draws no passkey button and no ' +
-         'autofill token', s.screen.status + ' ' + s.screen.text.slice(0, 160));
+    note(s.screen.status === 200 && s.view.passkey === false,
+         '1a. OFF: the screen\'s view offers no passkey (no button, no ' +
+         'autofill token)', s.screen.status + ' ' +
+         JSON.stringify(s.view.passkey));
     let posted = await usernameless(s, null);
-    note(posted.status === 200 && !(posted.status === 302 ||
-                                    posted.status === 303) &&
-         codeRecorded('STS-AUTHN-0301'),
-         '1b. and a posted action=passkey is refused with STS-AUTHN-0301',
-         posted.status + ' ' + posted.text.slice(0, 200));
+    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0301'),
+         '1b. and a passkey act is refused with STS-AUTHN-0301',
+         posted.apiStatus + ' ' + posted.text.slice(0, 200));
 
     // 2. A key registered at the sign-in screen (development's first use),
     // created under a minted handle.
     const alice = makeAuthenticator(RPID, ORIGIN);
     s = await screenFor();
-    let form = hiddenFields(s.screen.text);
-    form.username = 'pkd-alice';
-    form.password = '';
-    form.webauthn_only = '1';
-    form.action = 'login';
-    const step = await s.b.go('POST', '/authn/login', { form: form });
+    // The step's page, `GET /authn/webauthn?mfa=…`, which the act names.
+    const step = await authnScreen.follow({ port: port, jar: s.b.jar,
+      opened: s.opened, fields: { action: 'login', username: 'pkd-alice',
+                                  password: '', webauthn_only: '1' } });
     const givenHandle = dataAttribute(step.text, 'userid');
     note(dataAttribute(step.text, 'mode') === 'create' &&
          credentials.isUserHandle(givenHandle) &&
@@ -380,17 +384,18 @@ function childMain() {
          '(#527)', JSON.stringify(turnedOn.errors || []));
     s = await screenFor();
     const csp = String(s.screen.headers['content-security-policy'] || '');
-    note(/id="wa-passkey-go"[^>]*value="passkey"/.test(s.screen.text) &&
-         /autocomplete="username webauthn"/.test(s.screen.text) &&
-         /<script src="\/authn\/webauthn\.js">/.test(s.screen.text) &&
+    const armed = await challengeAnswer(s);
+    note(s.view.passkey === true &&
+         /<script src="\/authn\/signin\.js"/.test(s.screen.text) &&
          /script-src 'self'/.test(csp) && /frame-ancestors/.test(csp) &&
-         JSON.parse(dataAttribute(s.screen.text, 'options', 'wa-passkey') ||
-                    '{}').userVerification === 'required',
-         '3a. ON: the screen draws the real button, the autofill token, the ' +
-         'script under script-src \'self\' (framing kept), and asks for user ' +
-         'verification', csp);
-    posted = await usernameless(s, alice.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey')));
+         armed.apiStatus === 200 && armed.challenge &&
+         armed.rpId === RPID &&
+         (armed.options || {}).userVerification === 'required',
+         '3a. ON: the view offers the passkey (the button and the autofill ' +
+         'token), the shell runs its script under script-src \'self\' ' +
+         '(framing kept), and the armed ceremony asks for user verification',
+         csp + ' ' + armed.text);
+    posted = await usernameless(s, alice.assert(armed.challenge));
     const claims = await idTokenOf(s, posted);
     note(claims && JSON.stringify(claims.amr) === '["hwk","user"]' &&
          claims.acr === 'mfa',
@@ -400,56 +405,54 @@ function childMain() {
 
     // 4. Replay.
     s = await screenFor();
-    const once = alice.assert(dataAttribute(s.screen.text, 'challenge',
-                                            'wa-passkey'));
+    const once = alice.assert(await challengeOf(s));
     posted = await usernameless(s, once);
     note(posted.status === 302 || posted.status === 303,
          '4a. (a fresh usernameless sign-in)', posted.status);
     const again = await screenFor();
+    await challengeOf(again);
     posted = await usernameless(again, once);
-    note(posted.status === 200,
+    note(refusedAct(posted),
          '4b. the same assertion on another screen is refused — its ' +
          'challenge is not that screen\'s', posted.status);
 
     // 5. No user verification.
     s = await screenFor();
-    posted = await usernameless(s, alice.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey'), { uv: false }));
-    note(posted.status === 200 &&
+    posted = await usernameless(s, alice.assert(await challengeOf(s),
+                                                { uv: false }));
+    note(refusedAct(posted) &&
          /could not sign you in/.test(posted.text),
          '5. an assertion WITHOUT user verification is refused, whatever ' +
          'webauthn.userVerification says', posted.status);
     // A REFUSED ATTEMPT DOES NOT ARM THE AUTOFILL AGAIN (2026-10-10): an
     // authenticator that answers a conditional request unasked would loop.
-    note(dataAttribute(posted.text, 'autofill', 'wa-passkey') === '0' &&
-         !/autocomplete="username webauthn"/.test(posted.text) &&
-         /id="wa-passkey-go"/.test(posted.text),
-         '5b. and the screen it redraws keeps the passkey button but does ' +
-         'not start the autofill request again', posted.text.slice(0, 120));
+    note(posted.json && posted.json.passkey &&
+         posted.json.passkey.autofill === false,
+         '5b. and the refusal tells the page not to start the autofill ' +
+         'request again (the button stays: the view still offers it)',
+         posted.text.slice(0, 200));
     s = await screenFor();
-    note(dataAttribute(s.screen.text, 'autofill', 'wa-passkey') !== '0' &&
-         /autocomplete="username webauthn"/.test(s.screen.text),
-         '5c. a fresh screen still offers the autofill');
+    note(s.view.passkey === true,
+         '5c. a fresh screen still offers the passkey, and its page the ' +
+         'autofill');
 
     // 6. A handle nobody holds.
     s = await screenFor();
     const stranger = credentials.newUserHandle();
-    posted = await usernameless(s, alice.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey'),
-      { handle: stranger }));
-    note(posted.status === 200 && codeRecorded('STS-AUTHN-0302') &&
-         dataAttribute(posted.text, 'unknown', 'wa-passkey') ===
-           alice.credentialId,
+    posted = await usernameless(s, alice.assert(await challengeOf(s),
+                                                { handle: stranger }));
+    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0302') &&
+         posted.json.passkey &&
+         posted.json.passkey.unknownCredential === alice.credentialId,
          '6. a handle nobody holds is STS-AUTHN-0302, and the page names ' +
          'the credential for signalUnknownCredential', posted.status);
 
     // 7. Somebody else's handle.
     const bobHandle = credentials.userHandleOf('pkd-bob', { mint: true });
     s = await screenFor();
-    posted = await usernameless(s, alice.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey'),
-      { handle: bobHandle }));
-    note(posted.status === 200 && credentials.isUserHandle(bobHandle),
+    posted = await usernameless(s, alice.assert(await challengeOf(s),
+                                                { handle: bobHandle }));
+    note(refusedAct(posted) && credentials.isUserHandle(bobHandle),
          '7. alice\'s credential presented under bob\'s handle is refused',
          posted.status);
 
@@ -459,22 +462,18 @@ function childMain() {
     credentials.addKey('pkd-legacy', { credentialId: legacy.credentialId,
       publicKeyJwk: legacy.jwk }, 'primary');
     s = await screenFor();
-    posted = await usernameless(s, legacy.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey')));
-    note(posted.status === 200 && codeRecorded('STS-AUTHN-0304') &&
+    posted = await usernameless(s, legacy.assert(await challengeOf(s)));
+    note(refusedAct(posted) && codeRecorded('STS-AUTHN-0304') &&
          /Type your username/.test(posted.text) &&
-         !dataAttribute(posted.text, 'unknown', 'wa-passkey'),
+         !(posted.json.passkey || {}).unknownCredential,
          '8a. a key from before #474 is told to type its username, and is ' +
          'not reported unknown', posted.status + ' ' +
          posted.text.slice(0, 200));
     const typed = async function (handle) {
       const t = await screenFor();
-      const f = hiddenFields(t.screen.text);
-      f.username = 'pkd-legacy';
-      f.password = '';
-      f.webauthn_only = '1';
-      f.action = 'login';
-      const st = await t.b.go('POST', '/authn/login', { form: f });
+      const st = await authnScreen.follow({ port: port, jar: t.b.jar,
+        opened: t.opened, fields: { action: 'login', username: 'pkd-legacy',
+                                    password: '', webauthn_only: '1' } });
       const id = (st.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
       return t.b.go('POST', '/authn/webauthn', { form: {
         mfa_id: id, mode: 'get',
@@ -498,19 +497,19 @@ function childMain() {
     credentials.addKey('pkd-carol', { credentialId: carol.credentialId,
       publicKeyJwk: carol.jwk, userHandle: carolHandle }, 'mfa');
     s = await screenFor();
-    posted = await usernameless(s, carol.assert(
-      dataAttribute(s.screen.text, 'challenge', 'wa-passkey')));
-    note(posted.status === 200,
+    posted = await usernameless(s, carol.assert(await challengeOf(s)));
+    note(refusedAct(posted),
          '9. a SECOND-FACTOR key does not sign anybody in without a password',
          posted.status);
 
     // 10. The real button, script blocked.
     s = await screenFor();
+    await challengeOf(s);
     posted = await usernameless(s, null);
-    note(posted.status === 200 && /needs JavaScript/.test(posted.text) &&
+    note(refusedAct(posted) && /needs JavaScript/.test(posted.text) &&
          codeRecorded('STS-AUTHN-0022'),
-         '10. the button with the script blocked is told the ceremony needs ' +
-         'JavaScript', posted.status);
+         '10. a passkey act carrying no ceremony is told the ceremony needs ' +
+         'JavaScript', posted.apiStatus);
 
     // 11. The portal's enrolment, and a passkey's resident key.
     const begun = credentials.beginKeyEnrolment('pkd-bob',
@@ -538,7 +537,7 @@ function childMain() {
     config.setOverride('webauthn.primaryAllowed', false);
     try {
       s = await screenFor();
-      note(!/id="wa-passkey"/.test(s.screen.text),
+      note(s.view.passkey === false,
            '12. webauthn.primaryAllowed off takes the usernameless sign-in ' +
            'away');
     } finally {

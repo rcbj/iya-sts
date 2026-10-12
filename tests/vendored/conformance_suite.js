@@ -204,13 +204,16 @@ const SUITE_AGENT = new https.Agent(suiteCa
   ? { ca: suiteCa, keepAlive: true }
   : { rejectUnauthorized: false, keepAlive: true });
 
-function suite(method, path, body) {
+// `contentType`, when given, sends `body` as it is under that type (an image
+// uploaded as a data: URL is text/plain); otherwise a body is JSON.
+function suite(method, path, body, contentType) {
   log.debug("Entering suite(). " + method + " " + path);
-  const payload = body ? JSON.stringify(body) : "";
+  const payload = !body ? "" : contentType ? String(body)
+                                           : JSON.stringify(body);
   return new Promise(function (resolve, reject) {
     const req = https.request(new URL(SUITE + path), {
       method: method, agent: SUITE_AGENT,
-      headers: body ? { "Content-Type": "application/json",
+      headers: body ? { "Content-Type": contentType || "application/json",
                         "Content-Length": Buffer.byteLength(payload) } : {}
     }, function (res) {
       let raw = "";

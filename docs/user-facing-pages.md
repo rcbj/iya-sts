@@ -46,6 +46,14 @@ started the sign-in.
 | Moving to the home cell | (inside a sign-in) | Is sent on to the region that holds the account | Yes, no chooser |
 | Language chooser | `/authn/language` | Every page above posts here when another language is chosen | n/a (it only redirects) |
 
+**Since #571 the sign-in screen, the identity-provider chooser and the
+forced password change are static pages**: the browser draws them, in its
+own language, from [`/authn-api`](authn-api.md) and sends what was typed
+there, so they need JavaScript; with scripts blocked the page says so. A
+passkey with no username, and the browser fingerprint where a realm turns
+it on, run in the same script. The second-factor pages below them are still
+drawn by the server.
+
 ## Consent, hand-offs and signing out
 
 | Page | Path | What a person does there | Language |

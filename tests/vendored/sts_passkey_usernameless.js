@@ -49,6 +49,8 @@
 // operation's answers (`portalPages()`).
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -490,17 +492,41 @@ async function theSignInScreen() {
   assert.ok(/\/authn\/login\?authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
+  // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: the shell
+  // (its policy and its script), the view (what it offers), and — where it
+  // offers a passkey — the ceremony armed as its page arms it, by
+  // `POST …/passkey/options` (`armed`: the challenge, the RP ID, the
+  // options).
   const screen = await b.go("GET", started.location);
+  const opened = await authnSignin.screen(base, started.location,
+                                          { cookie: b.cookie });
+  b.cookie = opened.cookie;
+  let armed = null;
+  if (opened.view && opened.view.passkey) {
+    const options = await authnSignin.passkeyOptions(base, opened);
+    armed = options.json && options.json.ok ? options.json : null;
+  }
   log.debug("Leaving theSignInScreen().");
-  return { b: b, screen: screen };
+  return { b: b, screen: screen, opened: opened, view: opened.view || {},
+           armed: armed, challenge: armed ? armed.challenge : "" };
 }
 
 // The screen's usernameless door, posted with an assertion (or none).
 async function withoutAUsername(s, credential) {
   log.debug("Entering withoutAUsername().");
-  const r = await s.b.go("POST", "/authn/login", form({
-    authn_id: hidden(s.screen.text, "authn_id"), action: "passkey",
-    passkey_credential: credential ? JSON.stringify(credential) : "" }));
+  // The ceremony's result to `POST …/passkey` (#571), or nothing — what the
+  // page's button sends where the browser ran no ceremony — read as the
+  // form's POST was: a 303 back to the request, or the refusal, its
+  // sentence the text.
+  const answer = await authnSignin.act(base, "/authn-api/pending/" +
+    encodeURIComponent(s.opened.id) + "/passkey",
+    { credential: credential ? JSON.stringify(credential) : "" },
+    { cookie: s.b.cookie, csrf: s.opened.csrf });
+  s.b.cookie = answer.cookie;
+  const r = { status: answer.next === "redirect" ? 303 : answer.status,
+              location: answer.location, answer: answer,
+              text: answer.errors.join(" ") ||
+                    JSON.stringify(answer.json) };
   log.debug("Leaving withoutAUsername().");
   return r;
 }
@@ -585,26 +611,26 @@ async function signingInWithNoUsername(authenticator) {
   log.debug("Entering signingInWithNoUsername().");
   log.info("=== signing in with a passkey and no username ===");
   let s = await theSignInScreen();
-  check("THE SCREEN DRAWS A REAL SUBMIT BUTTON, THE AUTOFILL TOKEN AND THE " +
-        "CEREMONY SCRIPT, under script-src 'self' with frame-ancestors kept, " +
-        "and asks for user verification", function () {
-    assert.ok(/id="wa-passkey-go"[^>]*value="passkey"/.test(s.screen.text),
-      "no passkey button: " + String(s.screen.text).slice(0, 400));
-    assert.ok(/autocomplete="username webauthn"/.test(s.screen.text),
-      "the username field offers no passkeys.");
+  check("THE SCREEN OFFERS THE PASSKEY — its view says so, which the page " +
+        "draws as the button and the username field's autofill — its shell " +
+        "loads the surface's script under script-src 'self' with " +
+        "frame-ancestors kept, and the armed ceremony asks for user " +
+        "verification", function () {
+    assert.strictEqual(s.view.passkey, true,
+      "the view offers no passkey: " + JSON.stringify(s.view).slice(0, 400));
+    assert.ok(s.armed && s.challenge, "no ceremony could be armed.");
     // Under the realm's prefix: the service rewrites every root-relative
     // src on a realm's page as it is sent (`app.js`'s withRealmLinks()).
-    assert.ok(/<script src="(\/realm\/[^/"]+)?\/authn\/webauthn\.js">/
-      .test(s.screen.text), "the ceremony script is not loaded.");
+    assert.ok(/<script src="(\/realm\/[^/"]+)?\/authn\/signin\.js"/
+      .test(s.screen.text), "the surface's script is not loaded.");
     assert.ok(/script-src 'self'/.test(s.screen.csp) &&
               /frame-ancestors/.test(s.screen.csp), s.screen.csp);
-    assert.strictEqual(JSON.parse(attr(s.screen.text, "options",
-                                       "wa-passkey") || "{}")
-      .userVerification, "required");
+    assert.strictEqual((s.armed.options || {}).userVerification,
+                       "required");
   });
 
   let r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   const session = await sessionOf(PERSON);
   check("A USERNAMELESS ASSERTION SIGNS ITS OWNER IN — the user handle named " +
         "the account — and the session records amr [\"hwk\",\"user\"] and " +
@@ -622,29 +648,30 @@ async function signingInWithNoUsername(authenticator) {
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey"), { uv: false }));
+    s.challenge, { uv: false }));
   check("AN ASSERTION WITHOUT USER VERIFICATION IS REFUSED, whatever " +
         "webauthn.userVerification says", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/could not sign you in/.test(r.text),
       String(r.text).slice(0, 300));
   });
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey"),
+    s.challenge,
     { handle: nodeCrypto.randomBytes(64).toString("base64url") }));
   check("a user handle nobody holds signs nobody in", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/could not sign you in/.test(r.text),
       String(r.text).slice(0, 300));
   });
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, null);
-  check("THE REAL BUTTON WITH THE SCRIPT BLOCKED is told the ceremony needs " +
-        "JavaScript, rather than the page doing nothing", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+  check("THE PASSKEY OPERATION WITH NO CEREMONY'S RESULT is told the " +
+        "ceremony needs JavaScript, rather than being answered nothing",
+        function () {
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/needs JavaScript/.test(r.text), String(r.text).slice(0, 300));
   });
   log.debug("Leaving signingInWithNoUsername().");
@@ -658,19 +685,19 @@ async function offByDefault(authenticator, savePolicy) {
   log.info("=== the passkey policy's allowUsernameless: on by default, " +
            "then off ===");
   const first = await theSignInScreen();
-  check("AT ITS DEFAULT THE SCREEN DRAWS THE PASSKEY BUTTON", function () {
-    assert.ok(/id="wa-passkey"/.test(first.screen.text),
-      "the passkey button is not drawn at the default.");
+  check("AT ITS DEFAULT THE SCREEN OFFERS THE PASSKEY", function () {
+    assert.strictEqual(first.view.passkey, true,
+      "the passkey is not offered at the default.");
   });
   await savePolicy(false);
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge") || "none"));
+    s.challenge || "none"));
   check("OFF, THE SCREEN DRAWS NO PASSKEY BUTTON AND THE DOOR REFUSES, " +
         "naming the setting", function () {
-    assert.ok(!/id="wa-passkey"/.test(s.screen.text),
-      "the passkey button is drawn with the setting off.");
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(s.view.passkey, false,
+      "the passkey is offered with the setting off.");
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/allowUsernameless/.test(r.text),
       String(r.text).slice(0, 300));
   });
@@ -753,13 +780,13 @@ async function syncedPasskeys(deviceBound) {
   const before = await codeCount("STS-AUTHN-0313");
   let s = await theSignInScreen();
   let r = await withoutAUsername(s, syncedKey.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   const after = await codeCount("STS-AUTHN-0313");
   check("UNDER disallow THE SYNCED KEY REGISTERED BEFORE SIGNS NOBODY IN: " +
         "the screen says why, and an audit row carries STS-AUTHN-0313",
     function () {
-      assert.strictEqual(r.status, 200, "it answered " + r.status + " " +
-                         r.location);
+      assert.strictEqual(r.answer.next, "refused", "it answered " +
+                         r.status + " " + r.location);
       assert.ok(/device-bound passkeys/.test(r.text),
         String(r.text).slice(0, 400));
       assert.ok(after > before, "no new STS-AUTHN-0313 row (" + before +
@@ -767,7 +794,7 @@ async function syncedPasskeys(deviceBound) {
     });
   s = await theSignInScreen();
   r = await withoutAUsername(s, deviceBound.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   check("while the device-bound key from A still signs in", function () {
     assert.ok(r.status === 302 || r.status === 303,
       "it answered " + r.status + " " + String(r.text).slice(0, 300));

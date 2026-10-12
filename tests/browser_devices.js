@@ -93,7 +93,7 @@ function childMain() {
         req.end(body);
       });
     };
-    return { go: go, jar: jar };
+    return { go: go, jar: jar, userAgent: userAgent };
   }
   const hiddenFields = function (html) {
     const form = {};
@@ -118,6 +118,7 @@ function childMain() {
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -176,15 +177,24 @@ function childMain() {
            i++) {
         at = await b.go('GET', pathOf(at.headers.location));
       }
+      // THE SCREEN OVER `/authn-api` (#571): its view, then the act, in
+      // this browser's jar; a step the act names (the code) is opened with
+      // a GET, as the screen's page sends the browser there.
       const screen = pathOf(at.headers.location);
-      const page = await b.go('GET', screen);
-      const form = Object.assign(hiddenFields(page.text), {
-        username: username, password: 'anything', action: 'login' });
+      const page = await authnScreen.open({ port: port, jar: b.jar,
+        userAgent: b.userAgent, at: screen });
+      const fields = { username: username, password: 'anything',
+                       action: 'login' };
       if (remember) {
-        form.remember_browser = '1';
+        fields.remember_browser = '1';
       }
-      return { page: page, answer: await b.go('POST', screen.split('?')[0],
-                                             { form: form }) };
+      const answer = await authnScreen.follow({ port: port, jar: b.jar,
+        userAgent: b.userAgent, at: screen, opened: page, fields: fields });
+      // Every cookie the act and the page set, as this browser reads them.
+      answer.setCookie = [].concat(
+        (answer.answer && answer.answer.headers['set-cookie']) || [],
+        (answer.headers && answer.headers['set-cookie']) || []);
+      return { page: page, answer: answer };
     };
     const secret = { value: '' };
     const codeStep = function (b, answer, step) {
@@ -240,7 +250,7 @@ function childMain() {
       totp.codeAt(begun.secret, Date.now() - 4 * 30000));
     const b1 = browser(port, CHROME);
     const first = await passwordStep(b1, authorizeAt, 'bd-alice', true);
-    note(/name="remember_browser"/.test(first.page.text),
+    note(!!(first.page.view && first.page.view.remember),
          'B1. the sign-in screen offers "Remember this browser"');
     note(first.answer.status === 200 && /one-time code/i.test(first.answer.text),
          'B2. a person with an authenticator app is asked for the code',

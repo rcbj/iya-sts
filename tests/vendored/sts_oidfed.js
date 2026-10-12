@@ -52,6 +52,8 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -353,6 +355,21 @@ async function toTheAcs(cookies, startUrl, username, password) {
         log.debug("Leaving toTheAcs(). At the ACS.");
         return { first: first, url: next, hops: hops };
       }
+      // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper, its answer read as the form's 303.
+      if (/\/authn\/login\?authn=/.test(next)) {
+        const at = new URL(next);
+        const answer = await authnSignin.submit(at.origin +
+          at.pathname.replace(/\/authn\/login$/, ""), next,
+          { action: "login", username: username, password: password },
+          { cookie: cookies.header() });
+        cookies.take({ headers: answer.headers });
+        r = { status: answer.next === "redirect" ? 303 : answer.status,
+              body: answer.next === "redirect" ? ""
+                : JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
       r = await browse(cookies, next);
       continue;
     }
@@ -360,20 +377,16 @@ async function toTheAcs(cookies, startUrl, username, password) {
       break;
     }
     const forms = hiddenForms(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
-    const form = signIn || consent;
-    if (!form) {
+    if (!consent) {
       break;
     }
-    r = await browse(cookies, new URL(form.action || r.url, r.url).toString(),
-      Object.assign({}, form.fields, signIn
-        ? { username: username, password: password, action: "login" }
-        : { action: "allow", decision: "allow" }));
+    r = await browse(cookies,
+      new URL(consent.action || r.url, r.url).toString(),
+      Object.assign({}, consent.fields,
+                    { action: "allow", decision: "allow" }));
   }
   log.debug("Leaving toTheAcs(). Never reached it.");
   throw new Error("never reached the ACS: HTTP " + r.status + " at " + r.url +

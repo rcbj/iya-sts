@@ -177,6 +177,8 @@ function childMain() {
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
     const realms = require(ROOT + '/common/realms');
@@ -368,19 +370,29 @@ function childMain() {
     // ====================================================================
     // 1. THE SCREEN, AND THE SWITCH
     // ====================================================================
+    // THE SCREEN IS A STATIC PAGE SINCE #571, drawn from its view.
+    const viewOf = async function (id) {
+      return (await authnScreen.open({ port: port, jar: {},
+        at: '/authn/login?authn=' + id })).view || {};
+    };
     let authnId = pendingSignIn();
-    let r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-    note(r.status === 200 && r.text.indexOf('id="wallet-signin" href="' +
-      '/authn/wallet?authn=' + authnId + '"') >= 0,
+    let view = await viewOf(authnId);
+    note(view.wallet && view.wallet.state === 'offered' &&
+         view.wallet.href === '/authn/wallet?authn=' + authnId,
          '1a. the sign-in screen offers "Sign in with a wallet" for this ' +
-         'pending authentication', r.status);
+         'pending authentication', JSON.stringify(view.wallet));
+    // THE SERVICE'S BASE POLICY, which pages with no script of their own
+    // keep: a refusal answered at the screen's path carries it (the screen
+    // itself is a static page since #571, `script-src 'self'`).
+    let r = await request(port, 'GET', '/authn/login?authn=nosuchsignin');
     const screenCsp = r.headers['content-security-policy'];
     await realms.run(DEFAULT, function () {
       config.setOverride('oid4vp.signIn', 'false');
     });
-    r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-    note(r.status === 200 && r.text.indexOf('wallet-signin') < 0,
-         '1b. with oid4vp.signIn off the button is gone', r.status);
+    view = await viewOf(authnId);
+    note(view.id && !view.wallet,
+         '1b. with oid4vp.signIn off the button is gone',
+         JSON.stringify(view.wallet));
     r = await request(port, 'GET', '/authn/wallet?authn=' + authnId,
                       { browser: browser() });
     note(r.status === 403 && r.code === 'STS-VC-0052' &&
@@ -390,10 +402,9 @@ function childMain() {
       config.clearOverride('oid4vp.signIn');
     });
     const mfaId = pendingSignIn({ begin: { forceMfa: true } });
-    r = await request(port, 'GET', '/authn/login?authn=' + mfaId);
-    note(r.text.indexOf('wallet-signin') >= 0 &&
-         r.text.indexOf('wallet-mfa-note') >= 0 &&
-         r.text.indexOf('wallet-withheld') < 0,
+    view = await viewOf(mfaId);
+    note(view.wallet && view.wallet.state === 'offered' &&
+         view.wallet.mfaNote === true,
          '1d. a request demanding two factors IS offered the wallet since ' +
          '#38\'s follow-ups, and is told a second factor follows');
     r = await request(port, 'GET', '/authn/wallet?authn=' + mfaId,
@@ -634,10 +645,9 @@ function childMain() {
     // ====================================================================
     const browser3 = browser();
     const bobId = pendingSignIn();
-    r = await request(port, 'POST', '/authn/login', {
-      browser: browser3,
-      form: { authn_id: bobId, username: 'wsi-bob', password: 'x',
-              action: 'login' } });
+    r = await authnScreen.submit({ port: port, jar: browser3.cookies,
+      at: '/authn/login?authn=' + bobId,
+      fields: { action: 'login', username: 'wsi-bob', password: 'x' } });
     const bobSession = await realms.run(DEFAULT, function () {
       const found = authn.cookieSession({ headers: { cookie: 'sts_session=' +
         browser3.cookies.sts_session } }, authn.SESSION_COOKIE);

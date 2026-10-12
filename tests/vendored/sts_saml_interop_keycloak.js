@@ -445,9 +445,10 @@ async function nameIdFormats(w) {
 async function serviceHasSession(w, b) {
   log.debug("Entering serviceHasSession().");
   const walked = await signIn(w, b, "");
-  const onScreen = kit.formsIn(walked.last.body).some(function (f) {
-    return "authn_id" in f.fields;
-  });
+  // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
+  // is /authn/signin.js, and where the walk stops when it has no name.
+  const onScreen = /\/authn\/signin\.js/.test(String(walked.last &&
+                                                      walked.last.body || ""));
   log.debug("Leaving serviceHasSession(). " + !onScreen);
   return !onScreen;
 }

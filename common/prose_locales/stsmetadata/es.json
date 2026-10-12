@@ -172,8 +172,8 @@
     "text": "partial: el marco en el que delega la sección 2 de RFC 7644 — el estado 401, el desafío WWW-Authenticate con un encabezado por esquema ofrecido y la credencial Authorization. Lo usan solo los endpoints SCIM; ninguna otra superficie de este servicio rechaza a un llamante que no presenta nada."
   },
   "stsmetadata.specs.rfc7617.coverage": {
-    "en": "f431d155e1e05311",
-    "text": "full como esquema. En modo de desarrollo no verifica nada: se acepta cualquier nombre de usuario con cualquier contraseña salvo la reservada \"invalid\", que mantiene alcanzable un 401. En modo producto la contraseña se verifica contra el userPassword con hash de la persona. charset=\"UTF-8\" está en el desafío. La sección 2 de RFC 7644 DESACONSEJA este esquema en esos términos; se ofrece porque es el que más a menudo encuentra un cliente de aprovisionamiento."
+    "en": "cdb324ba2271a536",
+    "text": "full como esquema, y no verifica nada: se acepta cualquier nombre de usuario con cualquier contraseña salvo la reservada \"invalid\", que mantiene alcanzable un 401. charset=\"UTF-8\" está en el desafío. La sección 2 de RFC 7644 DESACONSEJA este esquema en esos términos; se ofrece porque es el que más a menudo encuentra un cliente de aprovisionamiento."
   },
   "stsmetadata.specs.rfc7616.coverage": {
     "en": "6c2a5e112e24f781",
@@ -200,8 +200,8 @@
     "text": "mock: el árbol, el root DSE y namingContexts son reales; EL ESQUEMA NO ESTÁ EN ABSOLUTO. No se aplica ningún objectClass, ningún atributo se comprueba contra una sintaxis o una regla de coincidencia, y no hay subentrada de subesquema — así que una entrada puede llevar cualquier atributo que un cliente quiera enviar, lo que un directorio real rechazaría. Se siguen aplicando tres reglas estructurales, porque su ausencia enseñaría a un cliente algo falso: un add necesita a su padre, un delete necesita una hoja, y un atributo sin valores no existe."
   },
   "stsmetadata.specs.rfc4513.coverage": {
-    "en": "e45e6b179ab6ffec",
-    "text": "partial, y la parte que está aquí es el TRANSPORTE y no la autenticación: el bind simple (sección 5.1) es el único método ofrecido — sin SASL, así que sin EXTERNAL ni DIGEST-MD5. En modo de desarrollo no autentica a nadie, ya que todo bind tiene éxito salvo con la contraseña literal \"invalid\", y lo que aporta TLS en el 636 es confidencialidad para una contraseña que nunca se iba a verificar, lo cual vale la pena para un cliente que tiene que demostrar que sabe hacer LDAPS y vale la pena decirlo en voz alta para que nadie interprete TLS como autenticación; en modo producto se verifica la contraseña de una persona, y solo sobre el 636. StartTLS (sección 3) NO está implementado: es una operación extendida y el submódulo ldapjs sobre el que está construido este servicio no implementa ninguna, y este repositorio no parchea ese submódulo. Vale la pena saber cuál de los dos estandarizó realmente este documento — StartTLS está aquí; ldaps:// es el esquema de facto que dejó de lado, por lo que ningún RFC define lo que habla todo cliente. El certificado se emite bajo la raíz propia de este servicio, se regenera en cada arranque (salvo que tls.certificateFile proporcione uno) y se comparte con el puerto principal, así que un cliente lo verifica en cada ejecución: obtenga la cadena de GET /tls/server-certificate en lugar de recurrir a LDAPTLS_REQCERT=never, que además ocultaría lo único que vale la pena comprobar aquí. En modo PRODUCTO un bind simple SÍ se verifica, lo que convierte el 389 en una contraseña en claro: ldap.plainListener desactiva esa escucha y el servicio avisa al arrancar mientras esté activada. Sección 6.1: \"Access control should always be applied when reading sensitive information\" — el modo producto lo hace, por identidad enlazada (ldap/directory_read_policy.ts)."
+    "en": "fdb211b1eff2926a",
+    "text": "partial, y la parte que está aquí es el TRANSPORTE y no la autenticación: el bind simple (sección 5.1) es el único método ofrecido — sin SASL, así que sin EXTERNAL ni DIGEST-MD5 — y no autentica a nadie, ya que todo bind tiene éxito salvo con la contraseña literal \"invalid\". Lo que aporta TLS en el 636 es confidencialidad para una contraseña que nunca se iba a verificar, lo cual vale la pena para un cliente que tiene que demostrar que sabe hacer LDAPS y vale la pena decirlo en voz alta para que nadie interprete TLS como autenticación. StartTLS (sección 3) NO está implementado: es una operación extendida y el submódulo ldapjs sobre el que está construido este servicio no implementa ninguna, y este repositorio no parchea ese submódulo. Vale la pena saber cuál de los dos estandarizó realmente este documento — StartTLS está aquí; ldaps:// es el esquema de facto que dejó de lado, por lo que ningún RFC define lo que habla todo cliente. El certificado se emite bajo la raíz propia de este servicio, se regenera en cada arranque (salvo que tls.certificateFile proporcione uno) y se comparte con el puerto principal, así que un cliente lo verifica en cada ejecución: obtenga la cadena de GET /tls/server-certificate en lugar de recurrir a LDAPTLS_REQCERT=never, que además ocultaría lo único que vale la pena comprobar aquí. En modo PRODUCTO un bind simple SÍ se verifica, lo que convierte el 389 en una contraseña en claro: ldap.plainListener desactiva esa escucha y el servicio avisa al arrancar mientras esté activada. Sección 6.1: \"Access control should always be applied when reading sensitive information\" — el modo producto lo hace, por identidad enlazada (ldap/directory_read_policy.ts)."
   },
   "stsmetadata.specs.rfc4514.coverage": {
     "en": "d74d5f5a23a41bdb",
@@ -236,8 +236,8 @@
     "text": "partial: Issue, Renew, Validate y Cancel sobre SOAP 1.1 y 1.2. Las firmas de solicitud no se verifican. OnBehalfOf y ActAs los decide la política de emisión (#186, las reglas que comparten el intercambio de tokens y Kerberos S4U) — OnBehalfOf pide suplantación y ActAs delegación, la semántica de delegación de las entradas debe permitirlo, el AppliesTo debe ser una aplicación registrada que las relaciones de delegación permitan, y un solicitante que sea una persona necesita delegation.actorRole — y se rechazan con un fallo wst:RequestFailed (sección 11) en modo producto; ambos elementos a la vez son wst:InvalidRequest; desarrollo registra lo que se habría rechazado. En modo PRODUCTO (2026-09-12) cada operación necesita una credencial — un UsernameToken verificado contra el directorio, o una aserción SAML que firmó este STS y dentro de sus Conditions — y un OnBehalfOf/ActAs necesita la propia credencial del solicitante y una aserción así dentro de él; desarrollo no acepta ninguna, como siempre. En ambos modos un wst:Lifetime solicitado se limita (wstrust.maxTokenLifetimeMin) y el AuthnContext de la aserción emitida nombra la credencial en lugar de una contraseña."
   },
   "stsmetadata.specs.wss-username.coverage": {
-    "en": "c5aef113bcfa15ab",
-    "text": "mock en modo de desarrollo: un UsernameToken se acepta cuando están presentes ambos miembros y no se comprueba ninguna contraseña, salvo que el literal \"invalid\" se rechaza para que una prueba negativa pueda forzar un fallo. En modo producto la contraseña se verifica — la de una persona contra su userPassword con hash, la de una aplicación contra sus secretos de cliente."
+    "en": "56599a9305e981eb",
+    "text": "mock: un UsernameToken se acepta cuando están presentes ambos miembros. Nunca se verifica ninguna contraseña, salvo que el literal \"invalid\" se rechaza para que una prueba negativa pueda forzar un fallo."
   },
   "stsmetadata.specs.saml2.coverage": {
     "en": "4130e450d1b1bdcd",
@@ -473,7 +473,7 @@
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
     "en": "09c64395f4956173",
-    "text": "full (#151), como OpenID Provider, donde oauth2.providerCommands esté activado (desactivado de forma predeterminada): command_endpoint registrado (DCR, consola, API; https, sin fragmento); Command Tokens de tipo command+jwt y firmados como el ID Token del cliente, de dos minutos como máximo, con los claims de la sección 5 por comando (sub solo en los comandos de cuenta, metadata solo en metadata, authentication_provider solo en migrate, nunca nonce; tenant es el id del dominio; aud_sub enviado y aprendido); los diez comandos de cuenta y sus variantes _async en la cola saliente duradera compartida, leyendo las respuestas y errores de la sección 3; metadata registrando lo que admite cada parte que confía; los cinco comandos de inquilino en streaming leídos como Server-Sent Events y reanudados con Last-Event-ID; el endpoint de callback para resultados asíncronos y las solicitudes de metadata y audit_tenant; un registro de estado de cuentas por parte que confía; suspend, reactivate, delete, maintain e invalidate automáticos ante cambios en el directorio y cierres de sesión globales, solo para una parte que confía que haya listado el comando. Una parte que confía simulada responde a cada comando en desarrollo. FALTA: actuar como parte que confía de otro OP."
+    "text": "full (#151), como OpenID Provider, donde oauth2.providerCommands esté activado (desactivado de forma predeterminada): command_endpoint registrado (DCR, consola, API; https, sin fragmento); Command Tokens de tipo command+jwt y firmados como el ID Token del cliente, de dos minutos como máximo, con los claims de la sección 5 por comando (sub solo en los comandos de cuenta, metadata solo en metadata, authentication_provider solo en migrate, nunca nonce; tenant es el id del dominio; aud_sub enviado y aprendido); los diez comandos de cuenta y sus variantes _async en la cola saliente duradera compartida, leyendo las respuestas y errores de la sección 3; metadata registrando lo que admite cada parte que confía; los cinco comandos de tenant en streaming leídos como Server-Sent Events y reanudados con Last-Event-ID; el endpoint de callback para resultados asíncronos y las solicitudes de metadata y audit_tenant; un registro de estado de cuentas por parte que confía; suspend, reactivate, delete, maintain e invalidate automáticos ante cambios en el directorio y cierres de sesión globales, solo para una parte que confía que haya listado el comando. Una parte que confía simulada responde a cada comando en desarrollo. FALTA: actuar como parte que confía de otro OP."
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",
@@ -2344,16 +2344,16 @@
     "text": "EL CIERRE DE SESIÓN INDEPENDIENTE DEL PROTOCOLO, y el único endpoint de aquí que trata de las dieciséis familias a la vez. GET lista todo lo que este servicio todavía mantiene para una identidad (cada sesión de inicio de sesión en el navegador, cada parte que confía OIDC, dominio de WS-Federation y proveedor de servicios SAML 2.0 en los que se inició sesión con una, cada token que todavía puede revocar, cada autorización y código preautorizado pendientes, cada conexión de directorio enlazada como esa identidad, y la situación de los tickets Kerberos) con una casilla junto a cada uno. POST termina lo que se marcó, y un POST que no marca NADA es un cierre de sesión GLOBAL, que es el valor predeterminado y la idea. También envía lo que solo puede enviar un navegador: los iframes de Front-Channel Logout, las imágenes wsignoutcleanup1.0 y las LogoutRequest de SAML como enlaces. LO QUE NO PUEDE COMUNICAR SE LISTA CON EL MOTIVO: una aserción, un ticket de servicio o un SVID ya emitidos quedan DESAUTORIZADOS aquí desde el 2026-09-05 y fuera de alcance allá fuera, porque nada consulta a este servicio cuando se presenta uno, y ocultarlos haría que un cierre de sesión global pareciera completo cuando no lo es. No se necesita ningún rol de la consola; sin sesión envía el navegador a /authn/login y de vuelta. logout.anyUser decide si ?username= puede nombrar a otra persona en modo de DESARROLLO, donde no concede nada que no concediera iniciar sesión como ella; en modo PRODUCTO un cierre de sesión solo nombra al llamante con sesión iniciada, diga lo que diga ese ajuste. Añada ?format=json."
   },
   "stsmetadata.endpoints./authn/login.what": {
-    "en": "972fceb1febddd19",
-    "text": "EL SERVICIO DE AUTENTICACIÓN. El POST que lleva un nombre de usuario y una contraseña se responde con un 303 y nunca con un 307 (RFC 9700 sección 4.12): un 307 conserva el método y el cuerpo, así que el navegador repetiría esas credenciales a dondequiera que apunte la redirección, que tras un inicio de sesión es una URL que compuso el protocolo llamante. Todo protocolo de aquí que necesita identificar a una persona la envía a esta única pantalla con una URL de retorno que lleva su propia solicitud completa, y la recupera con una cookie de sesión establecida: GET dibuja la pantalla, POST recibe lo que se escribió. En modo de desarrollo no se comprueba ninguna contraseña y el nombre de usuario escrito se convierte en la identidad de cada token, aserción y credencial que siguen; en modo producto se verifica la contraseña, o la clave o el código que permita la política de autenticación del dominio. No sabe nada del protocolo que envió a nadie aquí: lo que la pantalla MUESTRA sobre la solicitud que interrumpió lo proporciona el llamante, y un rechazo vuelve como authn_error=access_denied para que el LLAMANTE lo convierta en lo que su propia especificación diga que es un rechazo. Se comprueba que la URL de retorno sea una ruta de este servicio: un servicio de autenticación que redirige a cualquier sitio tras iniciar la sesión de alguien es una herramienta de phishing con una pantalla de inicio de sesión delante."
+    "en": "e9ee3b7a9c0f9b18",
+    "text": "EL SERVICIO DE AUTENTICACIÓN. Una superficie estática desde #571: esto responde con el armazón, y /authn/signin.js dibuja la pantalla a partir de /authn-api/pending/{id} y envía allí lo que se escribió como JSON; la respuesta nombra el paso siguiente, y el navegador lo sigue con un GET, igual que seguía el 303 con el que se respondía al formulario (RFC 9700 sección 4.12). Todo protocolo de aquí que necesita identificar a una persona la envía a esta única pantalla con una URL de retorno que lleva su propia solicitud completa, y la recupera con una cookie de sesión establecida. No se comprueba ninguna contraseña; el nombre de usuario escrito se convierte en la identidad de cada token, aserción y credencial que siguen. No sabe nada del protocolo que envió a nadie aquí: lo que la pantalla MUESTRA sobre la solicitud que interrumpió lo proporciona el llamante, y un rechazo vuelve como authn_error=access_denied para que el LLAMANTE lo convierta en lo que su propia especificación diga que es un rechazo. Se comprueba que la URL de retorno sea una ruta de este servicio: un servicio de autenticación que redirige a cualquier sitio tras iniciar la sesión de alguien es una herramienta de phishing con una pantalla de inicio de sesión delante."
   },
   "stsmetadata.endpoints./authn/login.effect": {
     "en": "b378a16d7104eaca",
     "text": "muestra la pantalla de inicio de sesión para una solicitud que otro endpoint envió aquí; necesita un id ?authn=, así que seguirlo sin él responde 400"
   },
   "stsmetadata.endpoints./authn/select-idp.what": {
-    "en": "c9ad54489526f240",
-    "text": "DESCUBRIMIENTO DEL DOMINIO DE ORIGEN, ACOTADO A UNA APLICACIÓN. Una entrada bajo ou=applications puede nombrar VARIAS relaciones de federación en appFederationRelationship (un socio SAML 2.0 y uno OpenID Connect son la pareja habitual) y cuando más de una es utilizable se dibuja esta página en lugar de la pantalla de inicio de sesión. Un botón por socio, sin campo de contraseña y sin ningún formulario: los botones son enlaces, porque un control de formulario aquí enviaría al gestor de inicio de sesión, que inicia la sesión de alguien con un nombre escrito, justo lo que una aplicación que federa su autenticación ha dicho que no quiere. Nombrar exactamente una relación sigue redirigiendo directamente a ella y esta página nunca se ve, que es lo que siempre ha hecho appFederationAutoRedirect; ese ajuste significa «sin la pantalla de inicio de sesión» y nunca «sin una página», porque no hay ningún valor de un booleano que pueda decir cuál es el proveedor de identidad del empleador de alguien. Un valor que nombra una relación que este servicio no puede usar (desactivada, a medio configurar, del lado del proveedor de identidad o ausente de este dominio) se IMPRIME aquí en lugar de descartarse: una lista de tres con una desactivada dibuja dos botones, y dos botones es exactamente lo que dibuja una lista correcta de dos. La lista se vuelve a leer cuando se dibuja esta página en lugar de tomarse de la redirección que la produjo, y si quedan menos de dos socios se dibuja en su lugar la pantalla de inicio de sesión."
+    "en": "fc63738fcb8fa10c",
+    "text": "DESCUBRIMIENTO DEL DOMINIO DE ORIGEN, ACOTADO A UNA APLICACIÓN. Una entrada bajo ou=applications puede nombrar VARIAS relaciones de federación en appFederationRelationship (un socio SAML 2.0 y uno OpenID Connect son la pareja habitual) y cuando más de una es utilizable se dibuja esta página en lugar de la pantalla de inicio de sesión. Un botón por socio, sin campo de contraseña y sin ningún formulario: los botones son enlaces, porque un control de formulario aquí enviaría al gestor de inicio de sesión, que inicia la sesión de alguien con un nombre escrito, justo lo que una aplicación que federa su autenticación ha dicho que no quiere. Nombrar exactamente una relación sigue redirigiendo directamente a ella y esta página nunca se ve, que es lo que siempre ha hecho appFederationAutoRedirect; ese ajuste significa «sin la pantalla de inicio de sesión» y nunca «sin una página», porque no hay ningún valor de un booleano que pueda decir cuál es el proveedor de identidad del empleador de alguien. Un valor que nombra una relación que este servicio no puede usar (desactivada, a medio configurar, del lado del proveedor de identidad o ausente de este dominio) se IMPRIME aquí en lugar de descartarse: una lista de tres con una desactivada dibuja dos botones, y dos botones es exactamente lo que dibuja una lista correcta de dos. La lista se vuelve a leer cuando se dibuja esta página en lugar de tomarse de la redirección que la produjo, y si quedan menos de dos socios se dibuja en su lugar la pantalla de inicio de sesión. Una página estática desde #571, dibujada a partir de /authn-api/pending/{id}/partners."
   },
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
@@ -2448,8 +2448,8 @@
     "text": "establece la cookie del selector, escribe el preferredLanguage de una persona con sesión iniciada y vuelve a la página con un 303"
   },
   "stsmetadata.endpoints./authn/password-change.what": {
-    "en": "689017c222f839e6",
-    "text": "EL CAMBIO DE CONTRASEÑA OBLIGATORIO (2026-09-13). Un paso de contraseña que tuvo éxito para alguien cuya entrada lleva pwdReset TRUE (el atributo de draft-behera, establecido en el administrador inicial que el servicio crea en el dominio predeterminado) llega aquí en lugar de iniciar la sesión, y este endpoint pide dos veces una contraseña nueva. La contraseña nueva pasa por credentials.setPassword(), así que la política de contraseñas y su historial se aplican en modo producto; si tiene éxito, se borra pwdReset, se escribe una fila de auditoría authn.password.changed y el inicio de sesión continúa exactamente como lo habría hecho el paso de contraseña, segundo factor incluido. Necesita un id ?change= acuñado por ese paso, así que seguirlo sin él responde 400. Cualquier otra puerta que verifica una contraseña rechaza una cuenta así en modo producto (STS-AUTHN-0142) hasta que el cambio se haga aquí"
+    "en": "23a22fe7e56b9cc7",
+    "text": "EL CAMBIO DE CONTRASEÑA OBLIGATORIO (2026-09-13). Un paso de contraseña que tuvo éxito para alguien cuya entrada lleva pwdReset TRUE (el atributo de draft-behera, establecido en el administrador inicial que el servicio crea en el dominio predeterminado) llega aquí en lugar de iniciar la sesión, y este endpoint pide dos veces una contraseña nueva. La contraseña nueva pasa por credentials.setPassword(), así que la política de contraseñas y su historial se aplican en modo producto; si tiene éxito, se borra pwdReset, se escribe una fila de auditoría authn.password.changed y el inicio de sesión continúa exactamente como lo habría hecho el paso de contraseña, segundo factor incluido. Necesita un id ?change= acuñado por ese paso, así que seguirlo sin él responde 400. Cualquier otra puerta que verifica una contraseña rechaza una cuenta así en modo producto (STS-AUTHN-0142) hasta que el cambio se haga aquí. Una página estática desde #571, dibujada a partir de /authn-api/password-change/{id}, que también recibe la contraseña nueva."
   },
   "stsmetadata.endpoints./authn/password-change.effect": {
     "en": "57397014da369a33",
@@ -2471,9 +2471,57 @@
     "en": "be3fd55c22c005b5",
     "text": "establece la sesión de inicio de sesión una vez que un código verifica"
   },
+  "stsmetadata.endpoints./authn/signin.js.what": {
+    "en": "67232bcc1fd0a54a",
+    "text": "NON-SPEC (#571). El entorno de ejecución y los renderizadores de la superficie de inicio de sesión en un solo archivo, generado por build-typescript.sh (authn/authn-spa.js) y servido precomprimido: dibuja /authn/login, /authn/select-idp y /authn/password-change a partir de /authn-api y envía allí sus acciones. Público: nada de lo que contiene es secreto."
+  },
+  "stsmetadata.endpoints./authn-api.what": {
+    "en": "fbfe4ed0573429d0",
+    "text": "NON-SPEC (#571). Las operaciones de la API de inicio de sesión, cada una con la página o el control del que es la puerta (mirrors). Pública e independiente del idioma."
+  },
+  "stsmetadata.endpoints./authn-api/openapi.json.what": {
+    "en": "fc5ff96a29d2920c",
+    "text": "NON-SPEC (#571). Generado a partir de la tabla de operaciones y sus esquemas de cuerpo."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id.what": {
+    "en": "6e1b11acf74c82d5",
+    "text": "NON-SPEC (#571). La vista de la pantalla para un inicio de sesión pendiente, como hechos y sin palabras, y el token CSRF que llevan sus acciones. El id es una capacidad al portador y nunca se registra en el log."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
+    "en": "278e1af859a5f658",
+    "text": "NON-SPEC (#571). La vista del selector, resuelta de nuevo a partir de la entrada de la aplicación."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
+    "en": "f09b8dc5712df29f",
+    "text": "NON-SPEC (#571). El botón Iniciar sesión: JSON, un Origin de este servicio y el X-CSRF-Token de la sesión del navegador. Con limitación de tasa, puntuado por riesgo y decidido por la política de emisión como lo era el formulario; la respuesta nombra el paso siguiente."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": {
+    "en": "85aa0429d3e5d77f",
+    "text": "NON-SPEC (#571). Cancelar: al llamante se le responde access_denied."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
+    "en": "092b3cc9235cb1b0",
+    "text": "NON-SPEC (#571). Donde authn.unauthenticatedSessions está activado."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
+    "en": "f654c3c6f076950a",
+    "text": "NON-SPEC (#571). Donde la política de autenticación acepta uno."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": {
+    "en": "e5938cba85629757",
+    "text": "NON-SPEC (#571). Un desafío de un solo uso para una llave de acceso sin nombre de usuario."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
+    "en": "e992662e8638f8c3",
+    "text": "NON-SPEC (#571). El resultado de la ceremonia, verificado con la verificación de usuario requerida."
+  },
+  "stsmetadata.endpoints./authn-api/password-change/:id.what": {
+    "en": "3543dc9d779cc445",
+    "text": "NON-SPEC (#571). GET responde de quién es la contraseña que debe cambiar; POST guarda la nueva y continúa el inicio de sesión."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
-    "en": "f386b79461f3dffb",
-    "text": "NON-SPEC (#62 P6). Se sirve solo mientras risk.fingerprinting está activo en el dominio (404 en caso contrario), y entonces la pantalla de inicio de sesión es la novena página con script: FingerprintJS (MIT, v5; se ejecuta en el navegador y no envía nada, con su ping de uso desactivado) pone un visitorId en un campo oculto, y el servicio guarda solo un resumen con clave de él, puntuado como un dispositivo que esta persona nunca usó. El formulario funciona sin él. Desactivado por defecto: son datos personales, y activarlo es decisión del operador, tras la evaluación de impacto en la privacidad que describe la página de puntuación de riesgo."
+    "en": "ac75feb49bdcac8d",
+    "text": "NON-SPEC (#62 P6). Se sirve solo mientras risk.fingerprinting está activo en el dominio (404 en caso contrario), y entonces la pantalla de inicio de sesión lo carga junto a su propio script: FingerprintJS (MIT, v5; se ejecuta en el navegador y no envía nada, con su ping de uso desactivado) calcula un visitorId que el inicio de sesión envía, y el servicio guarda solo un resumen con clave de él, puntuado como un dispositivo que esta persona nunca usó. El inicio de sesión funciona sin él. Desactivado por defecto: son datos personales, y activarlo es decisión del operador, tras la evaluación de impacto en la privacidad que describe la página de puntuación de riesgo."
   },
   "stsmetadata.endpoints./authn/webauthn.js.what": {
     "en": "1ac86ac809b57d92",
@@ -2657,7 +2705,7 @@
   },
   "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
     "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, solo en desarrollo (#151): el command_endpoint de una parte que confía que comprueba un Command Token como pide la sección 9 y responde a cada comando de cuenta y de inquilino, incluidos los flujos; GET muestra lo que contiene. 404 en modo producto."
+    "text": "NON-SPEC, solo en desarrollo (#151): el command_endpoint de una parte que confía que comprueba un Command Token como pide la sección 9 y responde a cada comando de cuenta y de tenant, incluidos los flujos; GET muestra lo que contiene. 404 en modo producto."
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",
@@ -3148,8 +3196,8 @@
     "text": "Un servidor de autorización y OpenID Provider simulado: las cinco concesiones, PKCE, DPoP, introspección, revocación, registro dinámico, UserInfo y cierre de sesión iniciado por el RP, con tantos servidores de autorización con nombre como se hayan pedido. El modo RFC 9700 activa los rechazos de la BCP, y el modo OAuth 2.1 (draft-ietf-oauth-v2-1-16) activa esos y añade los suyos."
   },
   "stsmetadata.protocols.User portal.what": {
-    "en": "835d40e9ff6eaabb",
-    "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión de inicio de sesión en el servidor de autorización de este servicio: cada una es un cliente OAuth público (aquí sts-user-portal) que guarda en memoria su propio token vinculado a DPoP. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
+    "en": "a7d3632ce94cdd27",
+    "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

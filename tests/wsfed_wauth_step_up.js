@@ -209,20 +209,11 @@ function childMain() {
     return found ? found[1].replace(/&amp;/g, '&') : '';
   };
 
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const audit = require(ROOT + '/common/audit');
     const credentials = require(ROOT + '/common/credentials');
@@ -253,14 +244,13 @@ function childMain() {
     // The screen as a person uses it, answering every hop. `code` is the
     // one-time code for the second-factor screen, when it is shown.
     const signIn = async function (b, first, username, code) {
-      const page = await b.go('GET', first.headers.location);
-      const form = hiddenFields(page.text);
-      form.username = username;
-      form.password = 'anything';
-      form.action = 'login';
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      let posted = await b.go('POST', screen, { form: form });
+      // A STATIC PAGE SINCE #571: its view, and the act, whose step's page
+      // is opened as the screen's page opens it.
+      const page = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(first.headers.location) });
+      let posted = await authnScreen.follow({ port: port, jar: b.jar,
+        opened: page, fields: { action: 'login', username: username,
+                                password: 'anything' } });
       let totpPage = null;
       if (code && posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
         totpPage = posted;
@@ -319,8 +309,9 @@ function childMain() {
                         totp.codeAt(began.secret, t0 + 30000));
     note(/step_up_honoured=1/.test(done.back),
          'b2. the return address carries the one-attempt marker', done.back);
-    note(/id="use_webauthn"[^>]*checked disabled/.test(done.page.text),
-         'b3. the sign-in screen demands the second factor', '');
+    note(done.page.view && done.page.view.demands.mfa === true,
+         'b3. the sign-in screen demands the second factor (its view: the ' +
+         'passkey box checked and disabled)', '');
     note(done.totpPage !== null, 'b4. and asks for the one-time code',
          done.posted.status);
     note(assertionSays(done.final, MFA),
@@ -337,23 +328,22 @@ function childMain() {
     note(toSignIn(first),
          'c1. a HARDWARE wauth on a session that used a code and no key is ' +
          'sent to sign in again', first.status + ' ' + first.headers.location);
-    const keyScreen = await alice.go('GET', first.headers.location);
-    note(/id="use_webauthn"[^>]*checked disabled/.test(keyScreen.text) &&
-         /id="webauthn_only"/.test(keyScreen.text) &&
-         !/id="webauthn_only"[^>]*disabled/.test(keyScreen.text) &&
-         /demands a passkey/.test(keyScreen.text),
+    const keyScreen = await authnScreen.open({ port: port, jar: alice.jar,
+      at: String(first.headers.location) });
+    const kv = keyScreen.view || { demands: {}, keys: {} };
+    note(kv.demands.key === true && kv.demands.mfa === false &&
+         kv.keys.mfaAllowed === true && kv.keys.primaryAllowed === true &&
+         !kv.locked,
          'c2. and the screen offers EXACTLY the two choices that meet it — ' +
          'the key alone (passwordless, not disabled) or the key after a ' +
-         'password (checked and disabled) — and says so',
-         (keyScreen.text.match(/<label class="chk">[\s\S]{0,240}/g) ||
-          []).join(' | ').slice(0, 400));
-    const keyForm = hiddenFields(keyScreen.text);
-    keyForm.username = 'wa-alice';
-    keyForm.password = 'anything';
-    keyForm.action = 'login';
-    const refusedNoKey = await alice.go('POST', '/authn/login',
-                                        { form: keyForm });
-    note(refusedNoKey.status === 200 &&
+         'password (checked and disabled) — and says so (its view: the ' +
+         'key demanded, two factors not, both boxes allowed)',
+         JSON.stringify({ demands: kv.demands, keys: kv.keys }));
+    const refusedNoKey = await authnScreen.submit({ port: port,
+      jar: alice.jar, opened: keyScreen,
+      fields: { action: 'login', username: 'wa-alice',
+                password: 'anything' } });
+    note(refusedNoKey.apiStatus === 400 &&
          /This request needs a passkey/.test(refusedNoKey.text),
          'c3. a person who holds a SECOND FACTOR and no key is told so ' +
          'rather than walked through a ceremony that would enrol one — the ' +
@@ -389,8 +379,9 @@ function childMain() {
     note(toSignIn(first),
          'e1. with no session the demand goes to the sign-in screen',
          first.headers.location);
-    const page = await carol.go('GET', first.headers.location);
-    note(/id="use_webauthn"[^>]*checked disabled/.test(page.text),
+    const page = await authnScreen.open({ port: port, jar: carol.jar,
+      at: String(first.headers.location) });
+    note(page.view && page.view.demands.mfa === true,
          'e2. and the screen demands the second factor from the start');
 
     // --- f. an unknown method ---------------------------------------------------
@@ -407,17 +398,12 @@ function childMain() {
     const withKey = async function (username, passwordless) {
       const b = browser(port);
       const start = await b.go('GET', signInUrl({ wauth: KEY }));
-      const screen = await b.go('GET', start.headers.location);
-      const form = hiddenFields(screen.text);
-      form.username = username;
-      form.action = 'login';
-      if (passwordless) {
-        form.webauthn_only = '1';
-        form.password = '';
-      } else {
-        form.password = 'anything';
-      }
-      const step = await b.go('POST', '/authn/login', { form: form });
+      const screen = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location) });
+      const step = await authnScreen.follow({ port: port, jar: b.jar,
+        opened: screen, fields: { action: 'login', username: username,
+          password: passwordless ? '' : 'anything',
+          webauthn_only: passwordless ? '1' : '' } });
       const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
                      [])[1];
       const challenge = dataAttribute(step.text, 'challenge');
@@ -463,14 +449,12 @@ function childMain() {
     const codeAttempt = await (async function () {
       const b = browser(port);
       const start = await b.go('GET', signInUrl({ wauth: KEY }));
-      const screen = await b.go('GET', start.headers.location);
-      const form = hiddenFields(screen.text);
       // Somebody who holds NO second factor: the demand takes them to the
       // key ceremony, which is the step a code is posted at below.
-      form.username = 'wa-codeless';
-      form.password = 'anything';
-      form.action = 'login';
-      const step = await b.go('POST', '/authn/login', { form: form });
+      const step = await authnScreen.follow({ port: port, jar: b.jar,
+        at: String(start.headers.location),
+        fields: { action: 'login', username: 'wa-codeless',
+                  password: 'anything' } });
       const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
                      [])[1];
       return b.go('POST', '/authn/totp', { form: {

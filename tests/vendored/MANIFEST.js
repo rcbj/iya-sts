@@ -97,8 +97,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // copy beside it rather than one over there.
 //
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
-// are THREE, all coverage of this working tree's own pages, which is why
-// `--no-browser` names them when it leaves them out.
+// are THREE that are coverage of this working tree's own pages, which is why
+// `--no-browser` names them when it leaves them out — and, since #571, the
+// four OpenID conformance drivers whose plans sign somebody in, which play
+// the suite's person in Chrome (`conformance_browser.js`) because the
+// suite's own browser cannot run the scripted sign-in screen. Those stay in
+// their conformance lanes: one Chrome each, one page at a time.
 // `sts_admin_console.js` walks every page; `sts_xacml_editor.js` drives ONE
 // page in depth — the guided policy editor, whose forty forms per render, whose
 // menus and whose nested-form hazard are markup rather than behaviour, and are
@@ -403,7 +407,10 @@ const JOBS = [
   // true`: GNAP exists here and nowhere else. Entries are left standing.
   { file: 'sts_gnap_chain_impersonation.js', browser: false, local: true },
   { file: 'sts_gnap_chain_delegation.js', browser: false, local: true },
-  { file: 'sts_dpop.js',                 browser: false },
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, which
+  // is a static surface over /authn-api since #571, through
+  // `authn_signin.js`; the parent's copy posts the form that is gone.
+  { file: 'sts_dpop.js',                 browser: false, local: true },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
   // copy anywhere to sync from. Three jobs because there are three parties —
@@ -1272,7 +1279,7 @@ const JOBS = [
   // hands the job as CONFORMANCE_SUITE_URL. An hour's watchdog: the plans
   // took about sixteen minutes together on 2026-09-24. `local: true`: this
   // repository's authorization server.
-  { file: 'sts_fapi_conformance.js',     browser: false, local: true,
+  { file: 'sts_fapi_conformance.js',     browser: true, local: true,
     conformance: true, timeoutMs: 3600000, lane: 'conformance-fapi' },
   // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
   // OpenID Provider certification profiles, oidcc-test-plan's client
@@ -1281,7 +1288,7 @@ const JOBS = [
   // `conformance_suite.js` (LOCAL_HELPERS) and fail on an unexplained
   // WARNING as well as a FAILED module. `local: true`: this repository's
   // OpenID Provider.
-  { file: 'sts_oidcc_conformance.js',    browser: false, local: true,
+  { file: 'sts_oidcc_conformance.js',    browser: true, local: true,
     conformance: true, timeoutMs: 10800000, lane: 'conformance' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
@@ -1291,13 +1298,13 @@ const JOBS = [
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
   // and for the Trust Anchor, and the plan in which the suite plays a whole
   // federation and a realm is the OpenID Provider that joined it.
-  { file: 'sts_oidfed_conformance.js',   browser: false, local: true,
+  { file: 'sts_oidfed_conformance.js',   browser: true, local: true,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
   // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
   // operator, delivering the offer and the transaction code.
-  { file: 'sts_oid4vci_conformance.js',  browser: false, local: true,
+  { file: 'sts_oid4vci_conformance.js',  browser: true, local: true,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
@@ -1558,7 +1565,6 @@ const HELPERS = [
   // says a missing helper looks like.
   'page_load.js',
   'random_username.js',
-  'sts_applications.js',
   'wait_for.js',
   'env/local.js'
 ];
@@ -1577,6 +1583,14 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
+  // static surface over /authn-api since #571, through `authn_signin.js`;
+  // it was a copy of the parent's (listed in HELPERS until then).
+  'sts_applications.js',
+  // The sign-in screen over `/authn-api` (#571): the shell, the view and
+  // the act, with the CSRF binding — what every job that signs somebody in
+  // at /authn/login goes through since the screen became a static surface.
+  'authn_signin.js',
   // The console's sign-in and a client of the operations its pages are
   // drawn from (#446). Copied from the parent on 2026-09-06 and written here
   // since; the static console (#446) made it a different helper from the
@@ -1590,6 +1604,11 @@ const LOCAL_HELPERS = [
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).
   'conformance_suite.js',
+  // The person in front of the conformance suite (#571, rcbj's decision):
+  // headless Chrome, one per job and one page at a time, opening each
+  // address a module asks a person to visit and signing in on the real
+  // scripted screen, which the suite's own HtmlUnit browser cannot draw.
+  'conformance_browser.js',
   // A Kerberos client over raw TCP 88 and MS-KKDCP — AS, TGS, the GSS-wrapped
   // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
   // the service's codec for the encodings and works out key usages and
