@@ -45,6 +45,8 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -184,6 +186,8 @@ function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, url, body) {
       log.debug("Entering go(). " + method + " " + url);
       const headers = {};
@@ -223,21 +227,6 @@ function browser() {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // An authorization code flow in `realm`, signing ALICE in with her password,
 // and the ID Token it yields, with the nonce that was asked for.
 async function idTokenFlow(realm) {
@@ -257,14 +246,12 @@ async function idTokenFlow(realm) {
             "the authorization endpoint should send the browser to sign in; " +
             "it answered " + r.status + " " + r.location + " " +
             r.text.slice(0, 300));
-  const page = await b.go("GET", r.location);
-  const fields = hiddenFields(page.text);
-  assert.ok(fields.authn_id, "the sign-in screen carries no authn_id: " +
-            page.text.slice(0, 300));
-  fields.username = ALICE;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  r = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), with this browser's jar; the
+  // answer is read as the form's 303 was.
+  r = await authnSignin.signInWithJar(base + R, r.location,
+    { action: "login", username: ALICE, password: PASSWORD }, b.jar);
+  assert.ok(r.answer.view, "the sign-in screen: " + r.answer.status + " " +
+            JSON.stringify(r.answer.json));
   for (let hops = 0; hops < 6 &&
        (r.status === 302 || r.status === 303) &&
        String(r.location).indexOf(REDIRECT) !== 0; hops++) {

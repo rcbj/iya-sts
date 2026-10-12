@@ -76,6 +76,8 @@
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const path = require("path");
@@ -204,6 +206,8 @@ function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, where, body, type) {
       log.debug("Entering go(). " + method + " " + where);
       const headers = {};
@@ -254,21 +258,6 @@ function form(o) {
   log.debug("Entering form().");
   log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 // Signs in to this realm's portal through its code flow, landing on `where`.
@@ -1088,14 +1077,11 @@ async function test() {
   };
   const signInAt = async function (rb, location) {
     log.debug("Entering signInAt().");
-    const page = await rb.go("GET", location);
-    assert.strictEqual(page.status, 200, "the sign-in screen: " +
-                       page.status + " " + page.text.slice(0, 300));
-    const fields = hiddenFields(page.text);
-    fields.username = OWNER;
-    fields.password = PASSWORD;
-    fields.action = "login";
-    const posted = await rb.go("POST", R + "/authn/login", form(fields));
+    // THE SCREEN OVER `/authn-api` (#571), with this browser's jar.
+    const posted = await authnSignin.signInWithJar(root + R, location,
+      { action: "login", username: OWNER, password: PASSWORD }, rb.jar);
+    assert.ok(posted.answer.view, "the sign-in screen: " +
+              posted.answer.status + " " + JSON.stringify(posted.answer.json));
     log.debug("Leaving signInAt(). " + posted.status);
     return posted.location;
   };
