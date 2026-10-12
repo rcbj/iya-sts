@@ -218,6 +218,36 @@ drawn, then sends the browser to the wallet, or draws the QR code from the
 offer's or the request's URI. The request's QR page checks every few seconds
 whether the wallet has answered, and moves on to the outcome.
 
+## The protocol families' description pages
+
+Six protocol families answer a page at the root of their own path that
+says what the family is here: its endpoints, its settings as they are in
+force, and what it checks and does not. No specification defines any of
+these six paths — each is this service's own documentation, written for a
+person — so they are converted (issue #584). The endpoints beneath them are
+the protocols' and are not. Issue #584 inventoried them on 2026-10-12,
+before turning them into static pages:
+
+| Page | Path | What a person sees | Handler, before #584 | Gate | Answers by request |
+|---|---|---|---|---|---|
+| SAML 2.0 | `/saml2` | The identity provider's entityID and base; the six endpoints (SSO, artifact resolution, SLO, IdP-initiated SSO, the attribute authority, metadata) and, in development only (#585), the mock service provider; how per-service-provider metadata is minted, with two examples; the generic endpoints as absolute URLs | `saml/saml2_sso.ts`, `GET /saml2` (`sendPage()`) | none | HTML only; no JSON form |
+| SAML 1.1 | `/saml11` | The two browser profiles and the responder; the three endpoints and, in development only, the mock relying party; four ways SAML 1.1 differs from 2.0; a link to the metadata and, in development, a button to the mock relying party | `saml/saml11_sso.ts`, `GET /saml11` (`describeProfilePage()`) | none | HTML only; no JSON form |
+| XACML 3.0 | `/xacml` | Whether XACML is on; the repository's policy counts and root; every endpoint with the role it requires (the embedded PEP's demonstration only in development); how a caller gets in (the client certificate, the two groups, or enforcement off); the embedded PEP (development only); remote enforcement points and the sync token; the Policy Information Point over HTTP; what is not here yet | `xacml/xacml.ts`, `GET /xacml` (`description()` and an inline page) | a verified client certificate holding XACML_USER (`xacmlAccess()`, before the query is read); 403 otherwise, or 200 to anybody with `xacml.enforceAccess` off | `?format=json` → the description as JSON; `?format=` other than `json`, `xml`, `html` → 400 `STS-XACML-0016`; anything else HTML |
+| Shared Signals | `/ssf` | The issuer and whether SSF is on; that SSF is the pipe, not the vocabulary; the metadata URL; every endpoint; the event types and whether each is offered; the signing algorithm; the RFC 9493 subject formats and complex-subject members; the authentication schemes; the streams that exist now; what it does not do; the things that can be made to fail | `ssf/ssf.ts`, `GET /ssf` (`description()` and `pageShell()`) | none | `?format=json` (any case) → the description as JSON; anything else HTML |
+| SCIM 2.0 | `/scim` | The base URL and whether SCIM is on; that the endpoints require a credential and what is checked of it, per mode; what `active: false` does; the directory it provisions into and its counts; why the `id` is the DN; every authentication scheme and the access-control policy; the endpoints; what it does not do; the things that can be made to fail; the User mapping | `scim/scim.ts`, `GET /scim` (`description()` and `pageShell()`) | none (not `/scim/v2`) | `?format=json` (any case) → the description as JSON; anything else HTML |
+| SPIFFE | `/spiffe` | The trust domain; whether SPIFFE is on and the issuing authority is ready; what is attested and what is not; whether the SPIRE Server API authenticates; the bundle endpoint; the authorities and the trust anchors; the Workload API, SPIRE Server API and Broker API listeners and methods; who may call the SPIRE Server API and SPIRE's per-method table; what is not checked and what is refused; the registry; links elsewhere | `spiffe/spiffe_server.ts`, `GET /spiffe` (`description()` and `page()`) | none | `?format=json` (exactly) → the description as JSON; anything else HTML |
+
+Every one answered 200, `Cache-Control: no-store`, `text/html`, drawn by the
+server under the service's `script-src 'none'`, in English only.
+
+**What is not a page here, and is unchanged by #584**, because a
+specification defines it: every SAML 2.0 and SAML 1.1 endpoint — the bare
+`GET /saml2/sso`, `GET /saml2/ars`, `GET /saml11/sso` and
+`GET /saml11/responder` descriptions included, and the bare `GET /wsfed` —
+`/xacml/pdp`, `/xacml/policies`, `/xacml/pep/*`, `POST /xacml/pip`,
+`/.well-known/ssf-configuration` and the stream endpoints, `/scim/v2/*`, and
+the SPIFFE bundle endpoints.
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for
