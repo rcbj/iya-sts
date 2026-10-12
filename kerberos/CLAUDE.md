@@ -54,10 +54,13 @@ JavaScript in its in-process Kerberos jobs. So each stays JavaScript (#50
 cannot convert it), and a new `require` reachable from one owes the parent a
 COPY line in the commit that bumps its `sts/` pin (root `CLAUDE.md`, *The parent project's paths
 into this repository*, below). **None of the three is a vendored copy**, and
-they are edited here — `spnego.js` by rcbj's ruling of 2026-10-12 on #585,
-after the root file's "the parent project's locked Kerberos files" had been
-read as making `/spnego` and `/spnego/protected` unchangeable here. The eight
-codec files above are the ones that may not be edited.
+they are edited here — rcbj's ruling of 2026-10-12 on #585, for `spnego.js`
+first and then for the KDC's two, after the root file's "the parent
+project's locked Kerberos files" had been read as making them unchangeable
+here. Reasoning that rested on that reading ("the KDC is locked and cannot
+place its own") was reworded the same day; the designs it explained stand,
+and are now argued from the closure. The eight codec files above are the
+ones that may not be edited.
 
 **`spnego.js` must stay after `krb5_service.js` in the require order**, and that is a
 dependency rather than a preference: it calls that module's `accept()` for every
@@ -1216,8 +1219,8 @@ its kvno, enctypes, source and a fingerprint of the file — never a key or the 
 `personKerberosState()` is the public half for the two pages and the user page's JSON
 (`kerberos`): principal, KDC kind, the key info attribute. Nothing is opened.
 
-**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET**: the three locked files and
-`krb5_principals.js` are untouched; `portal_kerberos.ts` requires the register LAZILY,
+**NO NEW REQUIRE REACHES THE PARENT PROJECT'S COPY SET**: the three files in it and
+`krb5_principals.js` gain no require; `portal_kerberos.ts` requires the register LAZILY,
 because the portal is built at 8a, long before the Kerberos modules.
 
 `tests/kerberos_person_keytab.js` holds it in a product and a development child: each
@@ -1787,10 +1790,10 @@ cell, and the request travels rather than the data (#98 §5, D2).
 registered just before `krb5_kdc.js` is required (require order 14c): it
 unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
 its home over the inter-cell channel, and calls `next()` for everything else —
-after which the KDC's own handler runs unchanged. The KDC is one of the parent
-project's locked files, so this is the only way to put a check in front of it
-here. It requires the vendored codec and `krb5_principals.js` and edits none of
-them; nothing in the COPY closure requires it, so **the closure is unchanged**.
+after which the KDC's own handler runs unchanged. It sits IN FRONT of the KDC
+rather than inside `krb5_kdc.js` so that the KDC's require closure, which the
+parent's tests image copies, does not grow. It requires the vendored codec
+and `krb5_principals.js` and edits none of them; nothing in the COPY closure requires it, so **the closure is unchanged**.
 
 * **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos
   realm. A FAST-armored AS-REQ is routed by its OUTER body — the inner cannot be
@@ -1808,21 +1811,22 @@ them; nothing in the COPY closure requires it, so **the closure is unchanged**.
 
 **THE EXCEPTION: THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED.** `listen()`
 in `krb5_kdc.js` starts them and hands each message to the module-private
-`handleMessage()` with no hook between the socket and the answer, and the file
-is locked. So a traveller whose `krb5.conf` names port 88 and whose packets reach
-a visiting cell is answered THERE: an unknown principal in product (their keys
+`handleMessage()` with no hook between the socket and the answer, and none has
+been added. So a traveller whose `krb5.conf` names port 88 and whose packets
+reach a visiting cell is answered THERE: an unknown principal in product (their keys
 are at home), a freshly made one in development. MS-KKDCP is placed; port 88 is
-not. **What the parent project would need to add** to close it, in
-`common/krb5`'s copy of the KDC, is one exported seam — a
+not. **What would close it**, in `krb5_kdc.js` HERE — the KDC is this
+repository's own, and the parent has no copy of it — is one exported seam — a
 `setMessageRouter(fn)` whose `fn(bytes, { transport, peer })` is awaited by
 `startTcp()` and `startUdp()` before `handleMessage()` and may answer the reply
 bytes itself (relayed, here, as an inter-cell operation that runs
 `handleMessage()` at home) or `null` to go on. `krb5_home.ts`'s `clientOf()`
 is already the decision such a router would make; the operation it would call
-does not exist yet, because nothing could reach it. **Filed as
-rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)**, which also asks
-for an exported `answerMessage(bytes, transport)` — the home cell needs to run
-what `handleMessage()` does on bytes that arrived without a socket.
+does not exist yet, because nothing could reach it. **It was filed as
+rcbj/id-proto-debugger#317 (2026-09-28, rcbj's decision)** while the KDC was
+believed to be the parent's (#585 corrected that, 2026-10-12); the work is
+this repository's. That ticket also asks for an exported
+`answerMessage(bytes, transport)` — the home cell needs to run what `handleMessage()` does on bytes that arrived without a socket.
 
 Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`.
 

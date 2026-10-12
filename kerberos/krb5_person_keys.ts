@@ -143,7 +143,8 @@
 //     (`Krb5PersonKeysDeps`): the logger, the settings, the realm registry,
 //     the key store, the credential store, the application registry, the
 //     audit log, the error codes, the Kerberos codec and principal database
-//     (both locked, JavaScript, and required as they were), the keytab writer
+//     (both JavaScript in the parent's COPY set, and required as they were),
+//     the keytab writer
 //     and `common/crypto.js`. The principal database is typed by what this
 //     file reads of it, because several of those members are getters its
 //     `module.exports` gains after the object literal.
@@ -196,7 +197,7 @@ interface DirectoryHooks {
   serviceKeyInfos(): Json[];
 }
 
-// What this file reads of the (locked, JavaScript) principal database.
+// What this file reads of the (JavaScript) principal database.
 interface PrincipalDatabase {
   readonly REALM: string;
   readonly KDC_ETYPES: number[];
@@ -994,7 +995,7 @@ class Krb5PersonKeys {
     }
     // A SERVICE ACCOUNT WHOSE POLICY CLOSES THE KERBEROS DOOR (#221) is
     // refused here too, in every mode and with the same KDC_ERR_CLIENT_REVOKED:
-    // the KDC is locked (kerberos/CLAUDE.md) and asks this one question about
+    // the KDC (kerberos/krb5_kdc.js) asks this one question about
     // whether a client may have a ticket at all, and "this account may not
     // use Kerberos" is that question's answer. The log says which it was.
     const { credentials } = this.deps;
