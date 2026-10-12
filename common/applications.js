@@ -18717,9 +18717,14 @@ function internalApplications() {
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
       // Declared OAuth 2.0 and OpenID Connect, the console's reason.
+      // `account:manage` (#568) beside the OpenID scopes: the portal asks
+      // for it on every sign-in, and asking a person whether their own
+      // account page may show them their own account is the question this
+      // row's argument already answered.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
                     oauthGlobalConsent: ['openid', 'profile', 'email',
-                                         'offline_access'] },
+                                         'offline_access',
+                                         'account:manage'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -18734,8 +18739,16 @@ function internalApplications() {
                                     '/portal'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'private_key_jwt'
+        // `account:manage` (#568): the one scope `/account-api` takes,
+        // declared by this client alone among the seeded ones.
+        scope: 'openid profile email offline_access account:manage',
+        // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
+        // #446 pattern): the portal is a static application signing in in
+        // the browser with PKCE, so it holds no credential — and every token
+        // issued to it is DPoP-bound to a key the browser cannot export
+        // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
+        // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
       } },
     { identifier: 'sts-management-api',
       name: 'Management API',
@@ -18909,6 +18922,46 @@ function seedInternalApplications(options) {
   return made;
 }
 
+// THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
+// answers carry this module's tables: the directory's own page
+// (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
+// and drill-down (`/admin-api/applications`: KINDS, PROTOCOLS, and a schema
+// row's `what` as each attribute's note), and the create form's vocabulary
+// (`/admin-api/applications/new`: KINDS, PROTOCOLS, and `what` again on
+// every row of declarationAttributes()).
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/applications',
+  '/admin-api/applications',
+  '/admin-api/applications/new'
+]);
+
+/**
+ * Extracts this module's console prose (#543 phase 2b): each kind's label
+ * and sentence, each protocol family's label and sentence, and each object
+ * class's and attribute's `what`.
+ *
+ * `from` is NOT extracted: it is where a value comes from, written mostly as
+ * a route, a menu path or a protocol name ('POST /oauth2/register',
+ * 'Protocols → SCIM → Clients'), which a translation would have to keep.
+ * `familyWhy` is NOT extracted, though the schema answer carries it: it is
+ * the reason in familyRefusal()'s refusal, and refusals stay English (#539).
+ * `identifierName`, `overrides`, `where` and `kind` name identifiers.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily, for the reason every module of this namespace gives: required
+  // only when the extractor asks, so loading this module loads nothing new.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('applications.kinds', KINDS, ['label', 'what']),
+    harvest('applications.protocols', PROTOCOLS, ['label', 'what']),
+    harvest('applications.schema', SCHEMA, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Every application this service has ever been asked about, in one place: the
  * registry of `ou=applications`.
@@ -18919,6 +18972,10 @@ function seedInternalApplications(options) {
  * @namespace
  */
 module.exports = {
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,

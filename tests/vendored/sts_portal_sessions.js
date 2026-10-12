@@ -24,9 +24,18 @@
 //
 // Later sections added more, each argued above its own function: an
 // activation link ends at a sign-in that works, no page links to a bare
-// `/authn/login`, each surface's Sign out button ends the sign-on session
-// behind it, and `/portal/applications` lists what the issuance policy
-// permits.
+// `/authn/login`, each surface's Sign out ends the sign-on session behind
+// it, and `/portal/applications` lists what the issuance policy permits.
+//
+// **BOTH SURFACES ARE STATIC APPLICATIONS NOW** — the console since #446, the
+// portal since #568. Each signs in in the browser as a public client and holds
+// a DPoP-bound token, so a sign-in makes ONE session, the identity
+// provider's; each draws its pages from its API (`/admin-api`,
+// `/account-api`) and sends its forms there. So the portal is driven here as
+// its page drives it (`portal_signin.js`): pages are their operations' views
+// drawn by the portal's own renderers, forms are those operations, and "the
+// cookie no longer works" is "the token is refused and the next
+// authorization request meets the sign-in screen".
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE, WHICH IS THE FIRST QUESTION tests/CLAUDE.md ASKS.
@@ -62,6 +71,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
 const signin = require("./console_signin.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -201,15 +211,6 @@ function browser(name) {
   return self;
 }
 
-// A BARE `/portal` DRAWS THE REALM CHOOSER once a service has trust realms
-// (2026-09-14, #32), and the suite nearly always has some. The chooser's own
-// `?realm=default` is what a script names to skip it, so every portal door
-// this file signs in through, or asks whether a browser is anybody, names it.
-// `sts_realm_administrators.js` asserts the chooser itself. The console has
-// no chooser since the cutover (#446): every `/admin` path answers the same
-// static shell, and the console signs in where it was opened.
-const PORTAL_DOOR = "/portal?realm=default";
-
 async function get(path) {
   log.debug("Entering get().");
   const r = await fetch(api + path);
@@ -301,11 +302,16 @@ function sidOfCookie(value) {
   return dot > 0 ? text.slice(0, dot) : text;
 }
 
+// The session a sign-in at a surface made. Since #446 (the console) and #568
+// (the portal) neither surface holds a session of its own, so it is the
+// sign-on session; the surface cookies are read first only for a browser that
+// still carries one from before.
 function sessionIdOf(b) {
   log.debug("Entering sessionIdOf().");
   log.debug("Leaving sessionIdOf().");
   return sidOfCookie(b.jar[SURFACE_COOKIES.admin] ||
-                     b.jar[SURFACE_COOKIES.portal]);
+                     b.jar[SURFACE_COOKIES.portal] ||
+                     b.jar[SIGN_ON_COOKIE]);
 }
 
 function signOnIdOf(b) {
@@ -338,31 +344,6 @@ async function rowFor(id) {
          null;
 }
 
-// ---------------------------------------------------------------------------
-// SIGN IN AT A DOOR. Both doors send an unauthenticated browser to the same
-// screen — that is `authn.js` owning the session and every family reaching it
-// through `beginAuthentication()` — so one function drives both, and WHICH
-// door it started at is what the session's `protocol` should then say.
-// ---------------------------------------------------------------------------
-// **IT IS AN AUTHORIZATION CODE FLOW SINCE 2026-09-06 AND WAS A REDIRECT TO THE
-// SIGN-IN SCREEN BEFORE IT.** `/admin` and `/portal` are RELYING PARTIES of
-// this service's own authorization server now — `sts-admin-console` and
-// `sts-user-portal`, both ordinary entries under `ou=applications` — so an
-// unauthenticated request is answered with a redirect to `/oauth2/authorize`
-// and the sign-in screen is reached because the AUTHORIZATION ENDPOINT decides
-// it needs one.
-//
-// **THE HOPS ARE ASSERTED RATHER THAN FOLLOWED BLINDLY**, which is the whole
-// reason this helper does not just turn redirect-following on: what is worth
-// checking is that the FIRST hop goes to the authorization endpoint as the
-// right client, and that the LAST one comes back to that surface's registered
-// redirect URI with a code. A `redirect: "follow"` fetch would assert that
-// signing in works and nothing at all about which protocol did it.
-//
-// The browser ends up holding TWO cookies and that is the design: the sign-on
-// session (`sts_session`, the identity provider's) and the surface's own
-// (`sts_admin` or `sts_portal`, established from the ID Token). The
-// jar in `browser()` keys cookies by name, so it holds both.
 // THE CONSOLE'S ROSTER IS IN FORCE WHEREVER SOMEBODY ADMINISTERS THE SERVICE
 // (2026-09-18). A development-mode stack with an empty roster admits anybody
 // to /admin; a deployment with an administrator — testidp, and any product
@@ -398,92 +379,6 @@ async function revokeConsoleGrants() {
   log.debug("Leaving revokeConsoleGrants().");
 }
 
-async function signInAt(door, who, password) {
-  log.debug("Entering signInAt(). door=" + door);
-  await ensurePerson(who);
-  if (/^\/admin(\/|\?|$)/.test(door)) {
-    await grantConsoleRead(who);
-  }
-  const b = browser(who);
-  let r = await b.go("GET", door);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    door + " should send an unauthenticated browser to the AUTHORIZATION " +
-    "ENDPOINT; it answered " + r.status + " -> " + r.location);
-  assert.ok(/client_id=sts-(admin-console|user-portal)/.test(r.location),
-    "the authorization request should name one of this service's own two " +
-    "seeded clients; it was " + r.location);
-  assert.ok(/code_challenge=/.test(r.location) &&
-            /code_challenge_method=S256/.test(r.location),
-    "PKCE is always sent and there is no setting to turn it off; the " +
-    "authorization request was " + r.location);
-
-  // The authorization endpoint, which finds no sign-on session and sends the
-  // browser to the screen.
-  r = await b.go("GET", r.location);
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
-    "the authorization endpoint should send a browser with no sign-on " +
-    "session to the sign-in screen; it " +
-    "answered " + r.status + " -> " + r.location);
-
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: password || PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
-  // An administrator is OFFERED a second factor since #246 (the Admin Read
-  // grant above makes `who` one); this job ignores it, as rcbj asked.
-  const offerId = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
-    ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
-  if (offerId) {
-    r = await b.go("POST", "/authn/mfa-setup",
-                   form({ mfa_id: offerId, action: "ignore" }));
-  }
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in form should redirect, got " + r.status + " " +
-    String(r.text).slice(0, 200));
-
-  // Back to the authorization endpoint, which now has a sign-on session and
-  // answers with a code at the surface's registered redirect URI.
-  r = await b.go("GET", r.location);
-  assert.ok(/\/(admin|portal)\/callback\?/.test(r.location) &&
-            /[?&]code=/.test(r.location),
-    "the authorization endpoint should come back to the surface's registered " +
-    "redirect URI with a code; it answered " + r.status + " -> " + r.location);
-
-  // And the callback, which redeems the code and establishes the surface's own
-  // session. THIS is the hop that sets the cookie the surface then reads.
-  r = await b.go("GET", r.location);
-  assert.ok(r.status === 303 || r.status === 302,
-    "the callback should redirect to the page that was asked for; it answered " +
-    r.status + " " + String(r.text).slice(0, 300));
-  assert.ok(b.cookie, "completing the flow should establish a session cookie.");
-  log.debug("Leaving signInAt(). " + sessionIdOf(b));
-  return b;
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-// Follow redirects to wherever they end, bounded. Used where the assertion is
-// about the DESTINATION rather than the journey — `signInAt()` asserts every
-// hop by hand precisely because there the journey is the subject.
-async function follow(b, r, hops) {
-  log.debug("Entering follow().");
-  let at = r;
-  for (let i = 0; i < (hops || 6) &&
-                  (at.status === 302 || at.status === 303); i++) {
-    at = await b.go("GET", at.location);
-  }
-  log.debug("Leaving follow().");
-  return at;
-}
-
 // ---------------------------------------------------------------------------
 // 1. THE ADMIN CONSOLE.
 //
@@ -511,6 +406,73 @@ async function signInToConsole(who) {
   b.console = client;
   log.debug("Leaving signInToConsole(). " + signOnIdOf(b));
   return b;
+}
+
+// ---------------------------------------------------------------------------
+// THE PORTAL, SIGNED IN AS ITS PAGE SIGNS IN (#568): the public client
+// `sts-user-portal`, PKCE, a DPoP-bound token for `/account-api`
+// (`portal_signin.js`). The browser this answers holds the sign-on cookie the
+// walk set, the portal's client as `b.portal`, and `b.draw()` — a page drawn
+// as the portal's runtime draws it: the operation its row in the page table
+// names (`web_portal_pages.ts`) and the row's own renderer, in the reader's
+// language, answered `{ status, text, json }`.
+// ---------------------------------------------------------------------------
+async function signInToPortal(who, password) {
+  log.debug("Entering signInToPortal(). who=" + who);
+  await ensurePerson(who);
+  const client = await portalSignin.signInToThePortal(base, who, log,
+    { password: password || PASSWORD });
+  const b = browser(who);
+  String(client.cookie || "").split("; ").forEach(function (pair) {
+    const name = pair.split("=")[0];
+    if (name) {
+      b.jar[name] = pair.slice(name.length + 1);
+    }
+  });
+  b.cookie = b.cookieHeader();
+  b.portal = client;
+  b.draw = async function (path, query) {
+    log.debug("Entering draw(). " + path);
+    const table = portalSignin.portalBundle();
+    const row = table.PAGES.filter(function (one) {
+      return one.path === path;
+    })[0];
+    assert.ok(row, "the portal draws no page at " + path);
+    const qs = new URLSearchParams(query || {}).toString();
+    const answer = await client.api("GET", row.operation +
+                                           (qs ? "?" + qs : ""));
+    if (b.me === undefined) {
+      b.me = (await client.api("GET", "/account-api/me")).json;
+    }
+    const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+    const html = answer.status === 200 && answer.json
+      ? row.render(answer.json, { t: t, query: query || {}, prefix: "",
+                                  origin: base, me: b.me,
+                                  locale: b.me && b.me.locale,
+                                  version: b.me && b.me.version,
+                                  here: path })
+      : "";
+    log.debug("Leaving draw().");
+    return { status: answer.status, text: html, json: answer.json };
+  };
+  log.debug("Leaving signInToPortal(). " + signOnIdOf(b));
+  return b;
+}
+
+// A NEW AUTHORIZATION REQUEST FROM A BROWSER, as the portal's page would send
+// one: where the authorization endpoint sends it says whether the browser is
+// anybody — a code at `/portal/callback` for a live sign-on session, the
+// sign-in screen for none.
+async function portalAuthorize(b) {
+  log.debug("Entering portalAuthorize().");
+  const r = await b.go("GET", "/oauth2/authorize?" + form({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: base + "/portal/callback",
+    scope: "openid account:manage", state: "probe",
+    code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    code_challenge_method: "S256", resource: base + "/account-api" }));
+  log.debug("Leaving portalAuthorize(). " + r.status + " " + r.location);
+  return r;
 }
 
 async function theConsoleSignInCreatesASession() {
@@ -573,7 +535,8 @@ async function theConsoleSignInCreatesASession() {
 // screen rather than coming straight back in.
 async function theConsoleSignOutEndsIt(b, who) {
   log.debug("Entering theConsoleSignOutEndsIt().");
-  log.info("=== " + who + " signs out of the console at /logout ===");
+  log.info("=== " + who + " signs out of " +
+           (b.portal ? "the portal" : "the console") + " at /logout ===");
   const signOnId = signOnIdOf(b);
   assert.ok(signOnId && await rowFor(signOnId),
     "precondition: " + who + "'s sign-on session should be listed");
@@ -607,24 +570,32 @@ async function theConsoleSignOutEndsIt(b, who) {
         "session " + signOnId + " is still listed after the sign-out");
     });
 
-  const renewed = await b.console.refresh();
-  check("AND THE CONSOLE'S REFRESH TOKEN IS REFUSED — a sign-out that left " +
-        "the page able to renew its token would sign nobody out of the " +
-        "console", function () {
+  const renewed = await (b.portal || b.console).refresh();
+  check("AND THE " + (b.portal ? "PORTAL'S" : "CONSOLE'S") + " REFRESH " +
+        "TOKEN IS REFUSED — a sign-out that left the page able to renew its " +
+        "token would sign nobody out", function () {
       assert.notStrictEqual(renewed.status, 200,
         "the refresh grant answered 200 after the sign-out: " +
         JSON.stringify(renewed.json).slice(0, 200));
     });
 
+  if (b.portal) {
+    const asked = await b.portal.api("GET", "/account-api/me");
+    check("and the portal's access token is refused at /account-api — it " +
+          "died with the sign-on session it was issued on", function () {
+      assert.strictEqual(asked.status, 401, asked.text.slice(0, 200));
+    });
+  }
   // THE COOKIE BUYS NOTHING EITHER: a new authorization request from the
   // same browser ends at the sign-in screen, not at the console's callback.
-  const authorize = await b.go("GET", "/oauth2/authorize?" + form({
+  const authorize = b.portal ? await portalAuthorize(b)
+                             : await b.go("GET", "/oauth2/authorize?" + form({
     response_type: "code", client_id: "sts-admin-console",
     redirect_uri: base + "/admin/callback",
     scope: "openid admin:read admin:write", state: "after-signout",
     code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
     code_challenge_method: "S256", resource: base + "/admin-api" }));
-  check("and the console's next authorization request ends at the SIGN-IN " +
+  check("and the surface's next authorization request ends at the SIGN-IN " +
         "SCREEN: the authorization endpoint has no session to answer with",
     function () {
       assert.ok(/\/authn\/login\?authn=/.test(authorize.location),
@@ -651,25 +622,34 @@ async function theConsoleSignOutEndsIt(b, who) {
 async function thePortalSignInCreatesASession() {
   log.debug("Entering thePortalSignInCreatesASession().");
   log.info("=== the user portal: sign in, and the session is listed ===");
-  const b = await signInAt(PORTAL_DOOR, OWNER);
-  const id = sessionIdOf(b);
+  const before = (await liveSessions(OWNER)).length;
+  const b = await signInToPortal(OWNER);
+  const id = signOnIdOf(b);
   const row = await rowFor(id);
 
-  check("signing in at /portal creates a session the management API lists",
+  check("signing in to /portal creates a session the management API lists",
     function () {
       assert.ok(row, "no row for session " + id);
     });
-  check("named for the person and for the PORTAL, so the two doors are told " +
-        "apart in the register even though they share one session store",
+  check("named for the person, and it is the SIGN-ON SESSION — the portal's " +
+        "sign-in makes no session of its own since #568: the page holds a " +
+        "token, and the identity provider holds the one session",
     function () {
       assert.strictEqual(row.username, OWNER);
-      assert.strictEqual(row.protocol, "User portal");
+      assert.strictEqual(row.kind, "Browser sign-on session");
+    });
+  const after = await liveSessions(OWNER);
+  check("THE COUNT WENT UP BY EXACTLY ONE: no portal session beside it",
+    function () {
+      assert.strictEqual(after.length, before + 1,
+        JSON.stringify(after.map(function (one) { return one.kind; })));
     });
 
-  const page = await b.go("GET", "/portal");
-  check("and the portal answers 200 for them", function () {
-    assert.strictEqual(page.status, 200);
-  });
+  const page = await b.draw("/portal");
+  check("and the portal's Overview is drawn for them from its operation",
+    function () {
+      assert.strictEqual(page.status, 200, JSON.stringify(page.json));
+    });
   check("showing THEIR name", function () {
     assert.ok(page.text.indexOf(OWNER) >= 0,
       "the portal page does not name " + OWNER);
@@ -689,20 +669,21 @@ async function thePortalSignInCreatesASession() {
 async function oneUserCannotReachAnother(owner) {
   log.debug("Entering oneUserCannotReachAnother().");
   log.info("=== a signed-in person cannot reach another's portal account ===");
-  const b = await signInAt(PORTAL_DOOR, INTRUDER);
+  const b = await signInToPortal(INTRUDER);
 
   // EVERY PARAMETER A FUTURE AUTHOR MIGHT PLAUSIBLY READ, with the owner's
   // name in it. A handler that grew `req.query.user` would fail here on the
   // day it was written rather than on the day somebody noticed.
-  const q = form({ user: OWNER, username: OWNER, id: OWNER, uid: OWNER,
-                   sub: OWNER,
-                   dn: "uid=" + OWNER + ",ou=users,dc=example,dc=com",
-                   account: OWNER, as: OWNER });
-  const page = await b.go("GET", "/portal?" + q);
+  // Since #568 these go to the page's operation, `GET /account-api/overview`,
+  // which is where a handler could grow the bug now.
+  const q = { user: OWNER, username: OWNER, id: OWNER, uid: OWNER,
+              sub: OWNER, dn: "uid=" + OWNER + ",ou=users,dc=example,dc=com",
+              account: OWNER, as: OWNER };
+  const page = await b.draw("/portal", q);
   check("the portal answers the intruder's own page, not a refusal — the " +
         "parameters are IGNORED rather than obeyed or rejected, which is " +
         "what reading the identity from the session means", function () {
-      assert.strictEqual(page.status, 200);
+      assert.strictEqual(page.status, 200, JSON.stringify(page.json));
     });
   check("IT NAMES THE INTRUDER", function () {
     assert.ok(page.text.indexOf(INTRUDER) >= 0,
@@ -718,17 +699,16 @@ async function oneUserCannotReachAnother(owner) {
 
   // THE WRITE, WHICH IS THE HALF A RENDERED PAGE CANNOT PROVE. The audit log
   // is the one place this service records who a change was attributed to.
-  const csrf = csrfOf((await b.go("GET", "/portal")).text);
-  assert.ok(csrf, "the portal draws no csrf_token to post back.");
-  const wrote = await b.go("POST", "/portal/password",
-    form({ csrf_token: csrf, username: OWNER, user: OWNER,
-           current: PASSWORD, next: "IntruderChosen123!",
-           confirm: "IntruderChosen123!" }));
+  // The form's operation, `POST /account-api/password`, with the owner's
+  // name in every member a handler might read beside the three it takes.
+  const wrote = await b.portal.act("/portal/password",
+    { username: OWNER, user: OWNER, current: PASSWORD,
+      next: "IntruderChosen123!", confirm: "IntruderChosen123!" });
   check("a password change naming somebody else is accepted or refused, but " +
         "either way it answers — it is not a crash", function () {
-      assert.ok(wrote.status === 303 || wrote.status === 302 ||
-                wrote.status === 200 || wrote.status === 403,
-        "unexpected " + wrote.status);
+      assert.ok(wrote.status === 200 || wrote.status === 400 ||
+                wrote.status === 403,
+        "unexpected " + wrote.status + " " + wrote.text.slice(0, 200));
     });
 
   const audit = await get("/audit?per=200");
@@ -773,7 +753,7 @@ async function oneUserCannotReachAnother(owner) {
 // SEES; the cookie no longer working is what actually matters, and a bug that
 // removed the row and left the session usable would pass the first alone.
 // ---------------------------------------------------------------------------
-async function signingOutInvalidatesIt(b, who, door) {
+async function signingOutInvalidatesIt(b, who) {
   log.debug("Entering signingOutInvalidatesIt().");
   log.info("=== " + who + " signs out ===");
   const id = sessionIdOf(b);
@@ -792,27 +772,25 @@ async function signingOutInvalidatesIt(b, who, door) {
         "session " + id + " is still listed after a sign-out");
     });
 
-  // THE HALF THE LIST CANNOT SHOW. The cookie is deliberately re-presented:
-  // this is the assertion that fails for a sign-out that forgot the row and
-  // left the credential working.
-  const again = await b.go("GET", door);
-  check("AND THE COOKIE NO LONGER WORKS — presenting it at " + door +
-        " sends the browser back to the sign-in screen rather than to the " +
-        "page. A row removed from a register and a credential that stops " +
-        "being accepted are different claims, and only the second is a " +
-        "sign-out", function () {
-      assert.ok(again.status === 302 || again.status === 303,
-        door + " answered " + again.status + " to a signed-out cookie; it " +
-        "should have started a new sign-in");
-      // **IT IS THE AUTHORIZATION ENDPOINT AND NOT THE SIGN-IN SCREEN SINCE
-      // 2026-09-06**, and that is the same assertion rather than a weaker one:
-      // these two surfaces are relying parties now, so a request they do not
-      // recognise starts a new authorization request — which is what reaches
-      // the screen. What is being checked is unchanged: the presented cookie
-      // bought nothing.
-      assert.ok(/\/oauth2\/authorize\?/.test(again.location),
-        "it redirected to " + again.location + " rather than starting a new " +
-        "authorization request");
+  // THE HALF THE LIST CANNOT SHOW: the credentials are deliberately
+  // re-presented. Since #568 the portal's credential is its token, and the
+  // browser's is the sign-on cookie — so the token must be refused and the
+  // cookie must buy no code at the authorization endpoint. A row removed from
+  // a register and a credential that stops being accepted are different
+  // claims, and only the second is a sign-out.
+  const asked = await b.portal.api("GET", "/account-api/me");
+  check("AND THE PORTAL'S TOKEN NO LONGER WORKS — /account-api refuses it, " +
+        "because it died with the sign-on session it was issued on",
+    function () {
+      assert.strictEqual(asked.status, 401, asked.text.slice(0, 200));
+    });
+  const again = await portalAuthorize(b);
+  check("AND THE COOKIE NO LONGER WORKS — the portal's next authorization " +
+        "request ends at the sign-in screen rather than with a code",
+    function () {
+      assert.ok(/\/authn\/login\?authn=/.test(again.location),
+        "the authorization endpoint answered " + again.status + " -> " +
+        again.location + " to a signed-out cookie");
     });
 
   const audit = await get("/audit?per=200");
@@ -859,6 +837,9 @@ async function anActivationLinkEndsAtAUsableSignIn() {
     "POST /admin-api/users/create should create " + NEWCOMER +
     "; it answered " +
     created.status + " " + String(created.raw).slice(0, 300));
+  // Created here, by the activation's own door, so the sign-in at the end of
+  // this section must not try to create them again.
+  createdPeople[NEWCOMER] = true;
   const link = String((created.body || {}).activationUrl || "");
   check("creating a user with credential=activation hands back a link, once",
     function () {
@@ -870,139 +851,116 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   // **THE WHOLE OF THIS SECTION IS DRIVEN WITH NO SESSION, WHICH IS THE
   // PREMISE RATHER THAN A CONVENIENCE.** A password-set link is followed by
   // somebody who cannot sign in yet — that is what it is FOR — so every
-  // assertion here is about an unauthenticated browser, and the cookie jar is
-  // checked at each step rather than assumed empty. A step that quietly
-  // started working only because a session existed would be a step that fails
-  // for the one person this flow is written for.
-  const b = browser(NEWCOMER);
-  let r = await b.go("GET", link);
-  check("the activation link opens the setup form for a browser holding no " +
-        "sign-in — nobody following a password-set link can have one",
-    function () {
-      assert.strictEqual(r.status, 200);
-    });
-  // **HOW "HOLDING NO SESSION" IS ASKED CHANGED ON 2026-09-07**, and the
-  // paragraph above still means every word of what it says. It used to be
-  // `b.cookie === ""`, which stopped being the same question when `authn.js`
-  // began minting an ARRIVAL SESSION for every cookie-less request at a
-  // protocol front door — so this browser is handed one by the very request
-  // that opens the link, before it has typed anything.
+  // assertion here is about a browser that is signed in to nobody.
   //
-  // That session names the `anonymous` principal, carries
-  // `authenticated: false` and `chosen: false`, and `sessionOf()` refuses to
-  // hand one to anybody: the browser holds a COOKIE and holds no SIGN-IN, and
-  // those were the same sentence until they were not. What this section is
-  // about is somebody who CANNOT sign in yet, so the assertion is that they
-  // still cannot — asked of `/portal`, which sends an unauthenticated browser
-  // to the authorization endpoint (see signInAt()). A step that had quietly
-  // started working because a session existed is exactly what this catches,
-  // and it catches it where the old line could not: a real sign-on session
-  // would send them to their account instead.
-  const notSignedIn = await b.go("GET", PORTAL_DOOR);
+  // **SINCE #568 THE LINK IS A PAGE OF THE STATIC PORTAL**: opening it loads
+  // the portal's document, whose script asks `GET /account-api/activation`
+  // with the link's own query, and the form posts to `POST
+  // /account-api/activation` — operations that take no token and spend the
+  // link. This browser opens the link as a person's would (it is handed the
+  // anonymous arrival cookie on the way, which signs nobody in), and the
+  // operations are asked as the page asks them.
+  const b = browser(NEWCOMER);
+  const linked = new URL(link, base);
+  let r = await b.go("GET", link);
+  check("the activation link opens the portal's document for a browser " +
+        "holding no sign-in", function () {
+      assert.strictEqual(r.status, 200);
+      assert.ok(/<script src="\/portal\/portal\.js"/.test(r.text),
+        "the link did not answer the portal's document: " +
+        String(r.text).slice(0, 200));
+    });
+  const opened = await portalSignin.nobody(base, "GET",
+    "/account-api/activation" + linked.search);
+  check("and its operation answers the setup form — nobody following a " +
+        "password-set link can be signed in, and none is asked for",
+    function () {
+      assert.ok(opened.status === 200 && opened.json &&
+                opened.json.step === "setup",
+        "GET /account-api/activation answered " + opened.status + " " +
+        opened.text.slice(0, 300));
+    });
+  // AN ANONYMOUS ARRIVAL SESSION IS NOT A SIGN-IN (2026-09-07): the cookie
+  // the document handed over names nobody, so the portal's authorization
+  // request from this browser meets the sign-in screen.
+  const notSignedIn = await portalAuthorize(b);
   check("and that browser is signed in to NOBODY — the cookie it now holds " +
         "names an anonymous arrival session and not a person",
     function () {
-      assert.ok(/\/oauth2\/authorize\?/.test(notSignedIn.location),
-        "/portal should still send this browser to the authorization " +
-        "endpoint; it answered " + notSignedIn.status + " -> " +
+      assert.ok(/\/authn\/login\?authn=/.test(notSignedIn.location),
+        "the authorization endpoint answered " + notSignedIn.status + " -> " +
         notSignedIn.location + ". The jar holds " + b.cookie);
     });
-  const token = (r.text.match(/name="token" value="([^"]+)"/) || [])[1];
-  assert.ok(token, "the activation form carries no token to post back.");
+  const token = linked.searchParams.get("token");
+  assert.ok(token, "the activation link carries no token.");
 
   const password = "Activated-Pw1!-" + Date.now();
-  r = await b.go("POST", "/portal/activate",
-                 form({ user: NEWCOMER, token: token, password: password,
-                        confirm: password, key_role: "none",
-                        csrf_token: csrfOf(r.text) }));
-  check("setting a password spends the link and answers the account-ready page",
-    function () {
-      assert.strictEqual(r.status, 200);
-      assert.ok(/ready/i.test(r.text),
-        "the activation POST did not answer the account-ready page: " +
+  r = await portalSignin.nobody(base, "POST", "/account-api/activation",
+    { user: NEWCOMER, token: token, password: password, confirm: password,
+      key_role: "none", step: "setup" });
+  check("setting a password spends the link and answers the account-ready " +
+        "step", function () {
+      assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+      assert.ok(r.json && r.json.view && r.json.view.step === "ready",
+        "the activation did not answer the account-ready step: " +
         String(r.text).slice(0, 300));
     });
 
   // AND IT SIGNS NOBODY IN, which is `portal/CLAUDE.md`'s rule and the whole
   // difference between a SETUP link and a MAGIC link: spending it proves
-  // possession of a link, which is not the credential just configured. A
-  // session minted here would be a standing bypass of the mechanism the person
-  // is in the middle of choosing, and the page that follows has to offer a way
-  // to sign in precisely BECAUSE of that.
-  //
-  // **ASKED OF `/portal` AND NOT OF THE COOKIE JAR, AND HERE THAT IS THE ONLY
-  // THING THAT CAN WORK.** The jar has held an anonymous arrival session since
-  // the link was opened, so "is it empty" stopped being this question.
-  // Comparing the VALUE would not have rescued it either: `startSession()`
-  // upgrades an arrival row IN PLACE and keeps its id, precisely so the cookie
-  // the browser already has goes on naming the session — so a real sign-in
-  // here would leave the jar holding the same string it held a moment ago.
-  // Only asking a gated page whether this browser is anybody tells them apart.
-  const stillNobody = await b.go("GET", PORTAL_DOOR);
+  // possession of a link, which is not the credential just configured.
+  const stillNobody = await portalAuthorize(b);
   check("and it establishes NO session — the last step of setup is to go and " +
         "use the credential, not to be let in by the link that set it",
     function () {
-      assert.ok(/\/oauth2\/authorize\?/.test(stillNobody.location),
-        "spending the activation link signed this browser in: /portal " +
-        "answered " + stillNobody.status + " -> " + stillNobody.location +
-        " instead of sending it to the authorization endpoint. The jar holds " +
-        b.cookie);
+      assert.ok(/\/authn\/login\?authn=/.test(stillNobody.location),
+        "spending the activation link signed this browser in: the " +
+        "authorization endpoint answered " + stillNobody.status + " -> " +
+        stillNobody.location + ". The jar holds " + b.cookie);
     });
 
   // THE ASSERTION THE DEFECT WOULD HAVE FAILED. A bare `/authn/login` is a
-  // page nobody can be sent to, so the link out of this page must carry a
-  // pending id or go somewhere that mints one.
-  const signIn = (r.text.match(/<a href="([^"]*)"[^>]*>\s*Sign in\s*<\/a>/) ||
-                  [])[1];
-  check("the account-ready page offers a way to sign in, and it is NOT a " +
+  // page nobody can be sent to, so the link out of the account-ready step
+  // must go somewhere that STARTS a sign-in: the step is drawn here with the
+  // portal's own renderer.
+  const table = portalSignin.portalBundle();
+  const activation = table.PAGES.filter(function (one) {
+    return one.path === "/portal/activate";
+  })[0];
+  const ready = activation.render(r.json.view, {
+    t: table.messages.WebTranslator.fromData(null), query: {}, prefix: "",
+    origin: base, me: null, locale: null, version: null,
+    here: "/portal/activate" });
+  // The step's last link: the one under the prose, after what was set up.
+  const links = ready.match(/<a href="[^"]*"/g) || [];
+  const signIn = links.length
+    ? links[links.length - 1].slice('<a href="'.length, -1) : "";
+  check("the account-ready step offers a way to sign in, and it is NOT a " +
         "bare /authn/login — that endpoint answers 400 to a request naming " +
         "no pending record, so this button used to end the whole flow on an " +
         "error page", function () {
-      assert.ok(signIn, "no Sign in link on the account-ready page.");
+      assert.ok(signIn, "no Sign in link on the account-ready step: " +
+                        ready.slice(0, 400));
       assert.ok(!/^\/authn\/login$/.test(signIn),
-        "the account-ready page links to a bare " + signIn + ", which " +
-        "answers 400: there is no sign-in waiting under that id");
+        "the account-ready step links to a bare " + signIn);
+      assert.ok(/^\/portal(\/|$|\?)/.test(signIn),
+        "the link should be a portal page, whose script starts a sign-in; " +
+        "it is " + signIn);
     });
 
-  // AND FOLLOWING IT, because a link that is merely different is not a link
-  // that works.
-  // FOLLOWED TO THE SCREEN, however many hops that is. It was two before
-  // 2026-09-06 and is three now that `/portal` is a relying party — the page
-  // goes to `/oauth2/authorize`, which goes to the sign-in screen — and the
-  // assertion is about where it LANDS rather than about the shape of the
-  // journey, which the flow assertions in `signInAt()` cover. Bounded, so a
-  // redirect loop fails here as a loop rather than as a hang.
-  r = await b.go("GET", signIn);
-  for (let hop = 0; hop < 5 && (r.status === 302 || r.status === 303); hop++) {
-    r = await b.go("GET", r.location);
-  }
-  check("following it reaches a sign-in screen with a pending record behind " +
-        "it rather than an error", function () {
-      assert.strictEqual(r.status, 200,
-        "following " + signIn + " answered " + r.status + " " +
-        String(r.text).slice(0, 300));
-      assert.ok(/name="authn_id" value="/.test(r.text),
-        "the page reached from the account-ready link carries no authn_id, " +
-        "so it is not the sign-in screen: " + String(r.text).slice(0, 300));
+  // AND FOLLOWING IT, as the portal's page does: an authorization request,
+  // which reaches the sign-in screen with a pending record, and the
+  // credential just set up signs them in.
+  const followed = await b.go("GET", signIn);
+  check("following it opens the portal's document, which starts the " +
+        "sign-in", function () {
+      assert.strictEqual(followed.status, 200, String(followed.status));
     });
-
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: NEWCOMER,
-                        password: password, action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  const newcomer = await signInToPortal(NEWCOMER, password);
   check("and the credential just set up signs them in", function () {
-    assert.ok(r.status === 303 || r.status === 302,
-      "the sign-in form answered " + r.status + " " +
-      String(r.text).slice(0, 300));
-    assert.ok(b.cookie, "signing in established no session cookie.");
+    assert.ok(newcomer.portal.token, "no token was issued");
   });
-
-  // The rest of the code flow: back to the authorization endpoint, which now
-  // has a sign-on session, then to `/portal/callback` with a code, then to the
-  // page. Followed rather than asserted hop by hop — `signInAt()` is where the
-  // hops themselves are the subject.
-  const landed = await follow(b, r);
+  const landed = await newcomer.draw("/portal");
   check("landing on their OWN account page, which is the only destination an " +
         "activation link can name: it belongs to no application and there is " +
         "no flow in progress to resume", function () {
@@ -1011,7 +969,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
         "the portal page does not name " + NEWCOMER);
     });
   log.debug("Leaving anActivationLinkEndsAtAUsableSignIn().");
-  return b;
+  return newcomer;
 }
 
 // ---------------------------------------------------------------------------
@@ -1064,121 +1022,18 @@ async function noPageLinksToABareSignInScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// 6. THE SIGN OUT BUTTON ON EACH SURFACE, AND THE SESSION BEHIND IT
-//    (2026-09-06).
+// 6. THE SIGN OUT ON EACH SURFACE ENDS THE SIGN-ON SESSION BEHIND IT.
 //
-// `/admin` and `/portal` each draw a Sign out button of their own now, and the
-// claim worth asserting is NOT that the surface session ends — a button that
-// deleted only its own row would pass every check a person could make on the
-// page it lands on. It is that **the SIGN-ON session behind it ends too**.
-//
-// That is what makes the button work at all. These two surfaces are relying
-// parties: a request with no surface session starts an authorization request,
-// and if the sign-on session is still live the authorization endpoint answers
-// with a code, the callback mints a new surface session, and the person is back
-// where they started having pressed Sign out. The defect is invisible on the
-// page that says "you are signed out" and shows up on the NEXT CLICK.
-//
-// So this drives both surfaces, and asserts three things per surface: the
-// surface session is gone from the register, the sign-on session is gone from
-// it too, and the browser — still holding both cookies — ends at the SIGN-IN
-// SCREEN when it asks for the door again rather than back inside it.
+// This section drove the portal's own Sign out button — a form posting to
+// `/portal/signout` with a CSRF token, ending the portal's relying-party
+// session AND its sign-on session — until #568. Since then the portal is the
+// console's case: its Sign out is the protocol-independent `/logout`, and
+// there is only the sign-on session to end. So `theConsoleSignOutEndsIt()`
+// above drives both surfaces, and the claim is unchanged: the sign-on
+// session leaves the register, the surface's refresh token (and, for the
+// portal, its access token) is refused, and the browser's next authorization
+// request ends at the sign-in screen rather than coming straight back in.
 // ---------------------------------------------------------------------------
-async function theSignOutButtonEndsBothSessions(door, surface, who) {
-  log.debug("Entering theSignOutButtonEndsBothSessions().");
-  log.info("=== " + who + " presses Sign out on " + door + " ===");
-  const b = await signInAt(door, who);
-  const surfaceId = sessionIdOf(b);
-  const signOnId = signOnIdOf(b);
-  assert.ok(surfaceId && signOnId,
-    "precondition: signing in at " + door + " should leave the browser " +
-    "holding both cookies; it holds " + JSON.stringify(Object.keys(b.jar)));
-  assert.ok(await rowFor(surfaceId),
-    "precondition: the surface session should be listed");
-  assert.ok(await rowFor(signOnId),
-    "precondition: the sign-on session should be listed");
-
-  // THE TOKEN IS TAKEN OFF THE PAGE THAT DRAWS THE BUTTON, which is the point
-  // of asking for the page first: a token this test computed would prove the
-  // handler accepts a token, and what is wanted is that the CONTROL works.
-  const page = await b.go("GET", door);
-  const shown = new RegExp('<form[^>]+action="[^"]*' + surface +
-                           '/signout"[^>]*>([\\s\\S]*?)</form>').exec(
-                               page.text);
-  check(door + " draws the Sign out form", function () {
-    assert.ok(shown,
-      door + " should draw a form posting to " + surface + "/signout. What " +
-      "it drew begins: " + String(page.text).slice(0, 300));
-  });
-  const csrf = (shown[1].match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  check("and it carries this session's CSRF token", function () {
-    assert.ok(csrf,
-      "the sign-out form carries no csrf_token, and the handler requires one " +
-      "— so the button as drawn would be refused. The form is: " +
-      shown[1].slice(0, 200));
-  });
-
-  const refused = await b.go("POST", surface + "/signout", form({}));
-  check("a sign-out with no token is REFUSED, which is not a nicety: a " +
-        "sign-out fired from another site is the classic harmless CSRF that " +
-        "is not", function () {
-      assert.strictEqual(refused.status, 403,
-        surface + "/signout answered " + refused.status + " to a form with " +
-        "no csrf_token");
-    });
-  assert.ok(await rowFor(surfaceId),
-    "and the refused sign-out must have ended nothing");
-
-  const out = await b.go("POST", surface + "/signout",
-                         form({ csrf_token: csrf }));
-  check("pressing it answers a page saying so rather than a redirect — a 303 " +
-        "back to the door would be indistinguishable from the button doing " +
-        "nothing until the next click", function () {
-      assert.strictEqual(out.status, 200,
-        surface + "/signout answered " + out.status);
-      assert.ok(/signed out/i.test(out.text),
-        "and the page should say so: " + String(out.text).slice(0, 300));
-    });
-
-  const surfaceGone = await rowFor(surfaceId);
-  const signOnGone = await rowFor(signOnId);
-  check("BOTH sessions are gone from GET /admin-api/sessions — the " +
-        "surface's own AND the sign-on session it was derived from",
-    function () {
-      assert.strictEqual(surfaceGone, null,
-        "the " + surface + " session " + surfaceId + " is still listed");
-      assert.strictEqual(signOnGone, null,
-        "THE SIGN-ON SESSION " + signOnId + " SURVIVED THE SIGN-OUT. That is " +
-        "the defect this section exists for: the surface session is gone, " +
-        "the page says signed out, and the next request runs the " +
-        "authorization code flow, meets this session, and comes straight " +
-        "back in with nothing typed.");
-    });
-
-  // AND THE COOKIES BUY NOTHING. Both are re-presented deliberately — the jar
-  // drops what the sign-out cleared, so this is the state a real browser is in.
-  const again = await b.go("GET", door);
-  check("asking for " + door + " again starts a new authorization request",
-    function () {
-      assert.ok(again.status === 302 || again.status === 303,
-        door + " answered " + again.status + " after the sign-out");
-      assert.ok(/\/oauth2\/authorize\?/.test(again.location),
-        "it went to " + again.location);
-    });
-  const authorize = await b.go("GET", again.location);
-  check("and that request ends at the SIGN-IN SCREEN, which is the whole " +
-        "claim: the authorization endpoint has no session to answer with",
-    function () {
-      assert.ok(/\/authn\/login\?authn=/.test(authorize.location),
-        "the authorization endpoint answered " + authorize.status + " to " +
-        authorize.location + " rather than sending the browser to the " +
-        "sign-in screen. If that is a callback carrying a code, the sign-on " +
-        "session is still live and this surface's Sign out button is signing " +
-        "nobody out.");
-    });
-  log.debug("Leaving theSignOutButtonEndsBothSessions().");
-}
 
 // ---------------------------------------------------------------------------
 // 7. THE APPLICATIONS PAGE, AND THE FOUR PAGES THE PORTAL BECAME (2026-09-06).
@@ -1305,7 +1160,7 @@ function pageCountOf(text) {
 // asserting it against one page was asserting it about the alphabet.
 async function everyListedApplication(b) {
   log.debug("Entering everyListedApplication().");
-  const first = await b.go("GET", "/portal/applications");
+  const first = await b.draw("/portal/applications");
   assert.strictEqual(first.status, 200,
     "the applications page answered " + first.status + " " +
     String(first.text).slice(0, 200));
@@ -1313,7 +1168,7 @@ async function everyListedApplication(b) {
   let names = listedApplications(first.text);
   let text = first.text;
   for (let at = 2; at <= pages; at += 1) {
-    const next = await b.go("GET", "/portal/applications?page=" + at);
+    const next = await b.draw("/portal/applications", { page: at });
     assert.strictEqual(next.status, 200,
       "page " + at + " of the applications list answered " + next.status);
     names = names.concat(listedApplications(next.text));
@@ -1382,10 +1237,13 @@ async function theApplicationsPageIsDecidedByThePolicy() {
     "creating the Shared Signals receiver answered " + r.status + " " +
     String(r.raw).slice(0, 300));
 
-  const b = await signInAt(PORTAL_DOOR, who);
+  const b = await signInToPortal(who);
 
   // ------------------------------------------------------------------
-  // THE FOUR PAGES, and the column that joins them.
+  // THE FOUR PAGES. Since #568 the column is the portal's frame, drawn by
+  // its runtime around every page (`web_portal_shell.ts`), and each page is
+  // its operation's view drawn by its row's renderer — so what is asserted
+  // per page is that it draws, for the person, from its operation.
   // ------------------------------------------------------------------
   const pages = [["/portal", "Overview"],
                  ["/portal/applications", "Applications"],
@@ -1393,23 +1251,14 @@ async function theApplicationsPageIsDecidedByThePolicy() {
                  // "Passkeys" since #470, which renamed the page.
                  ["/portal/keys", "Passkeys"]];
   for (const [path, label] of pages) {
-    const page = await b.go("GET", path);
-    check(path + " answers 200 for the person signed in", function () {
+    const page = await b.draw(path);
+    check(path + " (" + label + ") is drawn for the person signed in, from " +
+          "its operation", function () {
       assert.strictEqual(page.status, 200,
         path + " answered " + page.status + " " +
-        String(page.text).slice(0, 200));
+        JSON.stringify(page.json).slice(0, 200));
+      assert.ok(page.text.length > 0, path + " drew nothing");
     });
-    check("and its navigation marks \"" + label + "\" as the page being " +
-          "drawn — the column is one table, so a page missing from it is a " +
-          "page with no way in", function () {
-        assert.ok(page.text.indexOf('<span class="here" aria-current="page">' +
-                                    label + "</span>") >= 0,
-          path + " does not mark " + label + " as current. It drew: " +
-          (page.text.match(/aria-current="page">[^<]*/g) || []).join(", "));
-        assert.ok(/href="\/portal\/applications"/.test(page.text) ||
-                  label === "Applications",
-          path + " draws no link to the applications page.");
-      });
   }
 
   // ------------------------------------------------------------------
@@ -1503,7 +1352,7 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   // ------------------------------------------------------------------
   const countersBefore = await issuanceCounters();
   const auditBefore = await issuanceAuditRows();
-  const again = await b.go("GET", "/portal/applications");
+  const again = await b.draw("/portal/applications");
   assert.strictEqual(again.status, 200,
     "the applications page answered " + again.status + " on a second load.");
   const countersAfter = await issuanceCounters();
@@ -1559,7 +1408,7 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   // ------------------------------------------------------------------
   // PAGINATION, AND THE SHAPE OF `page`.
   // ------------------------------------------------------------------
-  const clamped = await b.go("GET", "/portal/applications?page=9999");
+  const clamped = await b.draw("/portal/applications", { page: 9999 });
   check("a page number past the end is CLAMPED to the last real page rather " +
         "than answering an empty table — a bookmark to page 40 of a list " +
         "that has shrunk to three is not an error", function () {
@@ -1568,7 +1417,8 @@ async function theApplicationsPageIsDecidedByThePolicy() {
       assert.ok(listedApplications(clamped.text).length > 0,
         "?page=9999 drew an empty table.");
     });
-  const badPage = await b.go("GET", "/portal/applications?page=not-a-number");
+  const badPage = await b.draw("/portal/applications",
+                               { page: "not-a-number" });
   check("and a `page` that is not a number is refused as a BAD SHAPE by the " +
         "validator rather than being parsed by the handler", function () {
       assert.strictEqual(badPage.status, 400,
@@ -1580,16 +1430,21 @@ async function theApplicationsPageIsDecidedByThePolicy() {
   // later is a page the rule has to be checked on again, which is the whole
   // reason that rule is written down.
   // ------------------------------------------------------------------
-  const nominated = await b.go("GET", "/portal/applications?user=" + OWNER +
-                               "&username=" + OWNER + "&subject=" + OWNER);
+  const nominated = await b.draw("/portal/applications",
+    { user: OWNER, username: OWNER, subject: OWNER });
   check("naming somebody else in every parameter this page could plausibly " +
         "have read changes nothing: it is drawn for the session's own person",
     function () {
       assert.ok(nominated.status === 200 || nominated.status === 400,
         "it answered " + nominated.status);
       if (nominated.status === 200) {
-        assert.ok(nominated.text.indexOf(who) >= 0,
-          "the page was not drawn for " + who + ".");
+        // DRAWN FOR THE TOKEN'S PERSON (#568): the page is its cards, the
+        // name is in the frame, so what shows whose list this is is the
+        // application only `who` was just granted the role for.
+        assert.ok(listedApplications(nominated.text).indexOf(narrowedName) >=
+                  0 || pageCountOf(nominated.text) > 1,
+          "the page was not drawn for " + who + ": " + narrowedName +
+          " is not listed.");
         assert.ok(nominated.text.indexOf(OWNER) < 0,
           "the page names " + OWNER + ", who was named in a parameter.");
       }
@@ -1609,7 +1464,6 @@ async function test() {
   check("both sessions are live at once and are DIFFERENT sessions — one " +
         "store does not mean one session", function () {
       assert.notStrictEqual(signOnIdOf(operator), signOnIdOf(owner));
-      assert.notStrictEqual(signOnIdOf(operator), sessionIdOf(owner));
     });
 
   const intruder = await oneUserCannotReachAnother(owner);
@@ -1617,16 +1471,17 @@ async function test() {
   const newcomer = await anActivationLinkEndsAtAUsableSignIn();
   await noPageLinksToABareSignInScreen();
 
-  // THE TWO SURFACES' OWN SIGN OUT BUTTONS, each in a browser of its own so
-  // that nothing above is signed out from underneath it.
-  await theSignOutButtonEndsBothSessions(PORTAL_DOOR, "/portal",
-                                         usernameFor("portal-signout"));
-  // The console's is `/logout` since the cutover (#446): it holds no
-  // session of its own for a button of its own to end.
+  // THE TWO SURFACES' SIGN OUTS, each in a browser of its own so that
+  // nothing above is signed out from underneath it. Both are `/logout`: the
+  // console since the cutover (#446), the portal since #568 — neither holds
+  // a session of its own for a button of its own to end.
+  const portalSignout = usernameFor("portal-signout");
+  await theConsoleSignOutEndsIt(await signInToPortal(portalSignout),
+                                portalSignout);
   const consoleSignout = usernameFor("console-signout");
   await theConsoleSignOutEndsIt(await signInToConsole(consoleSignout),
                                 consoleSignout);
-  await signingOutInvalidatesIt(newcomer, NEWCOMER, PORTAL_DOOR);
+  await signingOutInvalidatesIt(newcomer, NEWCOMER);
 
   // SECTION 7 RUNS BEFORE THE THREE SIGN-OUTS BELOW, in a browser of its own,
   // so that nothing it signs in is signed out from underneath the sections
@@ -1638,13 +1493,12 @@ async function test() {
   // portal is a Shared Signals receiver whose default signal-response policy
   // ends that person's sessions on it — so the session section 3 made is
   // gone by now, correctly. They sign in with the password they chose.
-  const intruderAgain = await signInAt(PORTAL_DOOR, INTRUDER,
-                                       "IntruderChosen123!");
+  const intruderAgain = await signInToPortal(INTRUDER, "IntruderChosen123!");
   log.debug("intruder session before sign-out: " +
             sessionIdOf(intruder) + " replaced by " +
             sessionIdOf(intruderAgain));
-  await signingOutInvalidatesIt(intruderAgain, INTRUDER, PORTAL_DOOR);
-  await signingOutInvalidatesIt(owner, OWNER, PORTAL_DOOR);
+  await signingOutInvalidatesIt(intruderAgain, INTRUDER);
+  await signingOutInvalidatesIt(owner, OWNER);
   await theConsoleSignOutEndsIt(operator, OPERATOR);
 
   // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section that

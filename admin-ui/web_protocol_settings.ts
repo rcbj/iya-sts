@@ -124,8 +124,10 @@ class ProtocolSettingsPage {
       // therefore FOLD it — and the summary of that fold is a truncation of
       // the first two link texts, so the only controls in the row end up
       // behind a summary made of their own words. Every other link row in
-      // this console is a `<p class="sub">` for the same reason.
-      '<p class="sub">' + (view.links || []).map(function (link) {
+      // this console is a `<p class="sub">` for the same reason. Metadata's,
+      // on a page drawn as tabs (`data-metadata`, 2026-10-12).
+      '<p class="sub" data-metadata>' + (view.links || []).map(
+        function (link) {
         return '<a href="' + kit.esc(link.href) + '">' + kit.esc(link.what) +
                '</a>';
       }).concat(['<a href="' + kit.esc(view.page) +

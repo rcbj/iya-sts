@@ -20,8 +20,9 @@
 //
 // Since #432 phase 7 it also holds what a PERSON sees: section 7 refuses a
 // user reference presented by a client it was not given to and checks the
-// subject is released once; section 15 drives `/portal/gnap` (list, CSRF, a
-// stranger's grant refused, revoke, the audit actor) and the per-person
+// subject is released once; section 15 drives `/portal/gnap` — the static
+// portal over /account-api since #568 (list, a revoke with no token refused,
+// a stranger's grant refused, revoke, the audit actor) and the per-person
 // `/admin-api` operations (`gnapGrants` on /users?user=, revoke-grant with
 // `user`).
 //
@@ -48,6 +49,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const testCa = require("./outbound_test_ca.js");
+const portalSignin = require("./portal_signin.js");
 
 // The CA section 6's push listener is certified by, made in section 0, and the
 // path the service reads its certificate at (null: no shared directory).
@@ -1138,18 +1140,17 @@ async function test() {
   const ownerGrantId = ownerGrant.pending.continue.uri.split("/").pop();
   const strangerGrant = await redirectGrant(es, STRANGER);
   const strangerGrantId = strangerGrant.pending.continue.uri.split("/").pop();
-  // The OWNER's browser, signed in to the realm, through the portal's own
-  // code flow.
-  const ownerBrowser = ownerGrant.browser;
+  // THE OWNER'S PORTAL (#568): the static portal signs them in as its
+  // public client with PKCE and a DPoP-bound token for the realm's
+  // /account-api, and the page is that API's answer drawn by the portal's
+  // renderers.
+  const ownerPortal = await portalSignin.signInToThePortal(h.realmBase, OWNER,
+    null, { password: PASSWORD });
   const portalPage = async function (path) {
     log.debug("Entering portalPage().");
-    let page = await ownerBrowser.go("GET", "/realm/" + REALM + path);
-    for (let hop = 0; hop < 8 && (page.status === 302 || page.status === 303);
-         hop++) {
-      page = await ownerBrowser.go("GET", page.location);
-    }
+    const drawn = await ownerPortal.draw(path);
     log.debug("Leaving portalPage().");
-    return page;
+    return { status: drawn.status, text: drawn.html, json: drawn.json };
   };
   let page = await portalPage("/portal/gnap");
   check("/portal/gnap lists the person's own grant with a Revoke form, and " +
@@ -1161,15 +1162,15 @@ async function test() {
     assert.ok(/Revoke this grant/.test(page.text), "no Revoke form");
     assert.ok(!/<script/i.test(page.text), "a script on the page");
   });
-  const portalCsrf = h.csrfOf(page.text);
-  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
-                            { grant: ownerGrantId });
-  check("a revoke without its CSRF token is refused 403", function () {
-    assert.strictEqual(r.status, 403, r.text.slice(0, 200));
+  // A REVOKE WITH NO ACCESS TOKEN (#568: what the CSRF token was, the
+  // person's DPoP-bound token now is — a page on another site holds none).
+  const anonymous = await fetch(h.realmBase + "/account-api/gnap", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ grant: ownerGrantId }) });
+  check("a revoke with no access token is refused 401", function () {
+    assert.strictEqual(anonymous.status, 401, String(anonymous.status));
   });
-  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
-                            { grant: strangerGrantId,
-                              csrf_token: portalCsrf });
+  r = await ownerPortal.act("/portal/gnap", { grant: strangerGrantId });
   check("a revoke naming another person's grant is refused 400 and changes " +
         "nothing (STS-PORTAL-0163)", function () {
     assert.strictEqual(r.status, 400, r.text.slice(0, 200));
@@ -1179,11 +1180,12 @@ async function test() {
   check("…the other person's token still works", function () {
     assert.strictEqual(r.status, 200, r.text);
   });
-  r = await ownerBrowser.go("POST", "/realm/" + REALM + "/portal/gnap",
-                            { grant: ownerGrantId, csrf_token: portalCsrf });
-  check("revoking their own grant answers 303 back to the page", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 200));
-    assert.ok(/\/portal\/gnap\?/.test(r.location), r.location);
+  r = await ownerPortal.act("/portal/gnap", { grant: ownerGrantId });
+  check("revoking their own grant answers back to the page", function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 200));
+    assert.ok(r.json && r.json.ok &&
+              /^\/portal\/gnap(\?|$)/.test(String(r.json.go || "")),
+              r.text.slice(0, 200));
   });
   r = await es.send("GET", RS,
                     { token: ownerGrant.released.access_token.value });

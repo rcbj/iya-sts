@@ -1577,6 +1577,10 @@ const LOCAL_HELPERS = [
   // since; the static console (#446) made it a different helper from the
   // parent's, which signs in to a cookie-holding console.
   'console_signin.js',
+  // The portal's sign-in and a client of the operations its pages are drawn
+  // from (#568): the static portal signs in as the public client
+  // `sts-user-portal` and draws every page from `/account-api`.
+  'portal_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).

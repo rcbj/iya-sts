@@ -4566,213 +4566,38 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal', group: 'User portal',
     name: 'A person\'s own account',
     specs: [],
-    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE ' +
-          'PERSON LOOKING AT IT. Every other browser surface here is for ' +
-          'somebody else — the sign-in screen is a step in another ' +
-          'protocol\'s flow, the consent screen asks one question and ' +
-          'leaves, /admin is for an operator and is gated on two roles. This ' +
-          'shows a person what this identity provider knows about them and ' +
-          'lets them change how they authenticate: their password, and their ' +
-          'security keys and whether each is a primary credential or a ' +
-          'second factor. **IT IS FOUR PAGES BEHIND A NAVIGATION COLUMN OF ' +
-          'ITS OWN SINCE 2026-09-06** and this path is the OVERVIEW — who ' +
-          'you are, a summary of how you sign in, and the wider of the two ' +
-          'sign-outs. The password form and the security-key list moved to ' +
-          'pages of their own, and /portal/applications joined them. The ' +
-          'column is not the console\'s: that shell draws forty ' +
-          'administrative pages, a realm chooser and a gate asking whether ' +
-          'this person holds Admin Read, none of which belongs in front of ' +
-          'somebody managing their own account. IT IS A SEPARATE APPLICATION ' +
-          'FROM THE ADMIN CONSOLE and shares nothing with it but the ' +
-          'session, because there is one answer here to "who is this ' +
-          'browser" and a second would eventually disagree. THE IDENTITY ' +
-          'COMES FROM THE SESSION AND NEVER FROM THE REQUEST — no route here ' +
-          'takes a username, an id or a DN from a query string or a body, so ' +
-          'there is no parameter for anybody to change (OWASP A01). Every ' +
-          'form carries a CSRF token, changing a password requires the ' +
-          'current one even though the person is signed in, and both are ' +
-          'rate limited.' },
-  { path: '/portal/email', group: 'User portal',
-    name: 'Your email address, its verification, and what was sent to you',
+    what: 'NON-SPEC. THE FIRST SURFACE IN THIS SERVICE THAT BELONGS TO THE ' +
+          'PERSON LOOKING AT IT, and a STATIC APPLICATION since #568: this ' +
+          'path and every one under it answer the same document, which ' +
+          'loads the portal\'s script and stylesheet. The script signs in ' +
+          'as the public client sts-user-portal (PKCE, DPoP-bound tokens ' +
+          'held in memory, account:manage) and draws every page in the ' +
+          'browser from /account-api, and every act it performs is an ' +
+          '/account-api operation — the admin console\'s pattern (#446). ' +
+          'Nothing here is gated: the document carries no fact and no ' +
+          'credential, and the API is the only gate. A method other than ' +
+          'GET is answered 404. A bare /portal on a service with realms asks ' +
+          'which realm first (common/realm_chooser.ts).' },
+  { path: '/portal/*', group: 'User portal', name: 'Every portal page',
     specs: [],
-    effect: 'sends a verification link, or declines optional messages',
-    what: 'NON-SPEC (#63). Signed in. The address on the person\'s own ' +
-          'entry and whether it is verified, a button that mails a ' +
-          'single-use verification link to it, the categories of message ' +
-          'with the one that may be declined (notifications; security ' +
-          'notices and requested links may not), and what this service ' +
-          'sent them — never a body. CSRF-protected; the identity is the ' +
-          'session\'s.' },
-  { path: '/portal/verify-email', group: 'User portal',
-    name: 'Follow an address verification link',
-    specs: [],
-    effect: 'records the address as verified and spends the link',
-    what: 'NON-SPEC (#63). Unauthenticated: the TOKEN is the credential, ' +
-          'as on /portal/activate. The GET spends nothing and draws a ' +
-          'button, so a mail scanner that opens every link verifies ' +
-          'nothing; the POST records stsMailVerified as the address the ' +
-          'link was sent to, if the entry still has it. Hashed at rest, ' +
-          'single use, valid for mail.verificationTtlMinutes, rate limited, ' +
-          'and every failure is one sentence.' },
-  { path: '/portal/forgot-password', group: 'User portal',
-    name: 'Ask for a password reset link by mail',
-    specs: [],
-    effect: 'mails a /portal/reset-password link to the account\'s address',
-    what: 'NON-SPEC (#63). Unauthenticated; linked from the sign-in screen. ' +
-          'A person names their account by username or by the address on ' +
-          'it, and a single-use reset link is mailed to that address (a ' +
-          'verified one, by default) — the password they have keeps ' +
-          'working until it is used. The answer is ONE SENTENCE whatever ' +
-          'happened and is sent before the work is done. RISC ' +
-          'recovery-activated is sent with the person as the initiating ' +
-          'entity. Rate limited per account and per address; 404 where it ' +
-          'is not offered (mail.selfServiceReset, a transport, product ' +
-          'mode).' },
-  { path: '/portal/reset-password', group: 'User portal',
-    name: 'Spend a password reset link and choose a new password',
-    specs: [],
-    effect: 'sets a new password, clears pwdReset and spends the link',
-    what: 'NON-SPEC. THE SECOND UNAUTHENTICATED PAGE OF THE PORTAL ' +
-          '(2026-09-13), and like /portal/activate it takes a username ' +
-          'because nobody is signed in and what authorises it is the TOKEN. ' +
-          'An administrator issued the link from the person\'s /admin/users ' +
-          'page or POST /admin-api/users/issue-password-reset, which removed ' +
-          'the password they had and signed them out of everything. The link ' +
-          'is hashed at rest, single use, valid for ' +
-          'security.passwordResetTtlMinutes, rate limited on the GET and the ' +
-          'POST, and answers every failure with one sentence. The new ' +
-          'password goes through credentials.setPassword(), so the realm\'s ' +
-          'password policy and history apply in product mode; it is spent ' +
-          'when the password is stored, and a CAEP credential-change ' +
-          '(password, create) is sent. It signs nobody in: the page links to ' +
-          '/portal, whose sign-in asks for any second factor as usual.'
-  },
-  { path: '/portal/activate', group: 'User portal',
-    name: 'Spend an activation link and set up a credential',
-    specs: [],
-    effect: 'sets a password and/or enrols a security key, and spends the link',
-    what: 'NON-SPEC. THE UNAUTHENTICATED HALF OF THE PORTAL, and the only ' +
-          'route on it that takes an identity from the request — because ' +
-          'nobody is signed in yet and what authorises it is the TOKEN, ' +
-          'which is a credential. Somebody provisioned through /admin-api, ' +
-          'SCIM or an LDAP add arrives with no way to authenticate; an ' +
-          'administrator issues them a single-use, time-limited URL and they ' +
-          'choose a password, a security key, or both — and for a key, ' +
-          'whether it is a primary credential or a second factor. The link ' +
-          'is HASHED at rest like a password, rate limited at both the GET ' +
-          'and the POST, and SPENT WHEN THE SETUP FINISHES rather than when ' +
-          'it is opened, because a link burned by a mail scanner or a ' +
-          'browser prefetch would strand the person it was for. IT DOES NOT ' +
-          'SIGN ANYBODY IN: spending it proves possession of a link, not of ' +
-          'the credential just configured, so the last step is to go and use ' +
-          'it. Every way it can fail answers the same sentence, so the page ' +
-          'cannot be used to discover which usernames have an activation ' +
-          'outstanding.' },
-  { path: '/portal/callback', group: 'User portal',
-    name: 'The portal\'s OIDC redirect URI', specs: ['oidc'],
-    what: 'WHERE THE USER PORTAL COMES BACK FROM THIS SERVICE\'S OWN ' +
-          'AUTHORIZATION SERVER (2026-09-06). The portal is a REGISTERED ' +
-          'CLIENT — `sts-user-portal`, seeded under ou=applications in EVERY ' +
-          'realm, because the portal reads the ambient realm\'s session — ' +
-          'and it signs people in with the ordinary authorization code flow ' +
-          'rather than by reading the sign-on session directly. Code and ' +
-          'state arrive here, the code is redeemed at /oauth2/token with the ' +
-          'client secret and a PKCE verifier, the ID Token is verified ' +
-          'against /oauth2/jwks, and the session the portal then holds is ' +
-          'ITS OWN, in its own cookie, derived from the sign-on session and ' +
-          'ended with it. It grants nothing on its own: the state must be ' +
-          'one this service minted, it is single-use, and every refusal is ' +
-          'drawn rather than redirected.',
-    coverage: 'full — the authorization code flow with PKCE and a confirmed ' +
-              'nonce, as a client. The refresh token is discarded and the ' +
-              'access token is never presented anywhere: the flow buys one ' +
-              'thing here, an ID Token saying who signed in.' },
-  { path: '/portal/password', group: 'User portal',
-    name: 'Change your own password',
-    specs: [],
-    effect: 'replaces the password on the signed-in person\'s own entry',
-    what: 'NON-SPEC. A PAGE AND A HANDLER ON ONE PATH SINCE 2026-09-06: the ' +
-          'GET draws the form, which used to be a card on /portal, and the ' +
-          'POST answers it. One path rather than two because a form and the ' +
-          'handler that answers it living on separate addresses is a ' +
-          'distinction nobody could state a reason for. Four controls in one ' +
-          'handler and each is a different item on the OWASP list: the CSRF ' +
-          'token this session\'s forms carry, a rate limit so the ' +
-          'current-password check is not an oracle, RE-AUTHENTICATION (the ' +
-          'current password is required even though the person is signed in, ' +
-          'because a browser left open on a shared machine must not be an ' +
-          'account takeover), and the identity taken from the session rather ' +
-          'than the body.' },
-  { path: '/portal/applications', group: 'User portal',
-    name: 'Applications you can sign in to',
-    specs: ['rfc6749', 'oidc', 'saml2', 'ws-federation'],
-    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE TO PUT THE APPLICATION ' +
-          'REGISTRY AND THE ISSUANCE POLICY TOGETHER AND ANSWER A QUESTION A ' +
-          'PERSON RATHER THAN AN OPERATOR WOULD ASK (2026-09-06): where will ' +
-          'this identity provider actually sign me in? Every row was decided ' +
-          'by `common/issuance_gate.js` — THE SAME CALL the token endpoint, ' +
-          'both SAML profiles, WS-Federation, WS-Trust and the KDC make ' +
-          'before they issue anything — so this page and those endpoints ' +
-          'cannot disagree. Working the answer out here instead, from ' +
-          '`appRequiredRole` and the roles the person holds, would have been ' +
-          'a SECOND implementation of the rule and the first thing to ' +
-          'diverge the moment somebody edited the issuance policy on ' +
-          '/admin/xacml/policies. It asks once per application per distinct ' +
-          'issuance kind, because `kind` becomes the XACML action-id and a ' +
-          'policy may legitimately say something different about an ID Token ' +
-          'from what it says about a SAML assertion. IT LISTS WHAT THE ' +
-          'POLICY PERMITS AND NAMES NOTHING IT DOES NOT — the refused ' +
-          'entries are counted, and so are the registry entries that are not ' +
-          'sign-in destinations at all (a Shared Signals receiver, a SCIM ' +
-          'client, an LDAP binder, a SPIFFE workload). It is a DRY RUN and ' +
-          'says so to the PEP: nothing is issued, so nothing is written to ' +
-          'the audit log as a refusal and nothing is counted on ' +
-          '/admin/xacml/monitor as a decision this service acted on. ' +
-          'Paginated, and it stops at 1,000 entries — evaluating a policy ' +
-          'per row happens on the one thread that answers every socket this ' +
-          'service holds. THERE IS NO LAUNCH BUTTON, deliberately: this ' +
-          'service implements identity-provider-initiated sign-on in none of ' +
-          'the four browser profiles, so a link would have to invent a ' +
-          'request the application never asked for.',
-    coverage: 'full for what it claims — it reports the issuance decision ' +
-              'and does not start a sign-in. What it cannot show is an ' +
-              'application nobody has registered: this registry records an ' +
-              'application on FIRST SIGHT, so something no client has ever ' +
-              'presented an identifier for and no operator has created is ' +
-              'not there to be listed.' },
-  { path: '/portal/signals', group: 'User portal',
-    name: 'Your security activity',
-    specs: ['ssf', 'caep', 'risc'],
-    what: 'NON-SPEC PAGE OVER A SPECIFIED FEED. THIS PORTAL IS A REGISTERED ' +
-          'SHARED SIGNALS RECEIVER SINCE 2026-09-10: it has a stream of its ' +
-          'own (`sts-user-portal`), seeded per trust realm, asking for every ' +
-          'CAEP and every RISC event type, delivered by RFC 8935 PUSH to the ' +
-          'endpoint below. This page draws what arrived, narrowed to the ' +
-          'events whose subject is the SIGNED-IN PERSON. That narrowing is ' +
-          'the whole of the page\'s security: one stream carries events ' +
-          'about everybody this portal serves, because a receiver is told ' +
-          'about the people it serves and there is one of it, so the filter ' +
-          'is on the way OUT and the person is composed from the session and ' +
-          'from nothing else. IT FAILS CLOSED — an identifier this service ' +
-          'cannot resolve to an account (a phone number, an opaque id it did ' +
-          'not compose) is NOT shown, because showing one person another ' +
-          'person\'s account lockout is a disclosure and failing to show ' +
-          'somebody one of their own is an incomplete page. THE LIST HAS NO ' +
-          'CONTROL: a person may not clear the record of what was said ' +
-          'about their own account, so the Clear is the console\'s at ' +
-          '/admin/signals. THE ONE CONTROL (#146, 2026-09-22) is RISC ' +
-          'section 2.8\'s: the POST moves the account holder\'s own ' +
-          'participation — opt-out-initiated, opt-out-cancelled, opt-in — ' +
-          'only along the state diagram, and opt-out-effective is sent by ' +
-          'the risc.opt-out-effective scheduler job after ' +
-          'risc.optOutDelayHours, never by the person.',
-    coverage: 'full for what it claims. It shows every delivered event this ' +
-              'service could match to the signed-in person and says, on the ' +
-              'page, that a subject it cannot match is left out rather than ' +
-              'guessed at. It is not the transmitter\'s record: what this ' +
-              'service SENT is /admin/ssf, and what it BELIEVES about a ' +
-              'session or an account is /admin/caep-sessions and ' +
-              '/admin/risc-accounts.' },
+    what: 'NON-SPEC. The same document as /portal, for every portal path ' +
+          '(#568): the path names the page and the browser reads it, so a ' +
+          'deep link — an activation or reset link, /portal/device?' +
+          'user_code=, a CIBA request — and the history work. ' +
+          '/portal/callback is where a sign-in comes back with a code; ' +
+          'serving the shell registers it on the portal\'s client entry ' +
+          '(learnt in development, refused in product unless registered). ' +
+          'The pages an activation, reset or verification link opens are ' +
+          'drawn for nobody, from operations that take no token.' },
+  { path: '/portal/portal.js', group: 'User portal',
+    name: 'The portal\'s script', specs: [],
+    what: 'NON-SPEC. The static portal (#568): its runtime, every page\'s ' +
+          'renderer and its WebAuthn ceremonies in one file, built by ' +
+          'build-typescript.sh and served precompressed. Public, like the ' +
+          'document: nothing in it is secret.' },
+  { path: '/portal/portal.css', group: 'User portal',
+    name: 'The portal\'s stylesheet', specs: [],
+    what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
   { path: '/portal/signals/receive', group: 'User portal',
     name: 'The portal\'s Shared Signals receive endpoint',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
@@ -4804,97 +4629,6 @@ const ENDPOINTS: EndpointEntry[] = [
               'implement RFC 8936 poll at this end — this receiver is a push ' +
               'receiver — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
-  { path: '/portal/keys', group: 'User portal',
-    name: 'Your passkeys',
-    specs: ['webauthn'],
-    what: 'NON-SPEC. The passkey page (#470), drawn to the passkey ' +
-          'management guidelines: one Passkeys heading over two groups — ' +
-          'passkeys on your devices (backup eligible, or a platform ' +
-          'authenticator) and passkeys on security keys — each row an icon, ' +
-          'a name (the owner\'s, else the provider FIDO MDS names where a ' +
-          'BLOB is loaded, else a short credential-manager table), Created, ' +
-          'Last used, Rename and Remove, and a Details fold with the role, ' +
-          'algorithm, attestation, AAGUID, backup state and transports. Two ' +
-          'calls to action, Create a passkey and Use a security key, begin ' +
-          'a registration ceremony (WebAuthn Level 3 section 7.1) with ' +
-          'hints (section 5.4.8) and excludeCredentials; the new passkey ' +
-          'is offered a nickname afterwards. Where no other realm is ' +
-          'defined the page sends the Signal API\'s accepted credentials ' +
-          'and user details (section 5.1.10).' },
-  { path: '/portal/rename-key', group: 'User portal',
-    name: 'Rename one of your own passkeys',
-    specs: [],
-    effect: 'changes the name of a WebAuthn credential on the person\'s ' +
-            'entry',
-    what: 'NON-SPEC (#470). The credential id comes from the body and the ' +
-          'USERNAME does not, /portal/remove-key\'s rule: the id is looked ' +
-          'up among this person\'s own keys. At most 60 characters and no ' +
-          'control characters; an empty name restores the default (the ' +
-          'provider\'s or the group\'s). Audited; no CAEP event, because a ' +
-          'name says nothing about what the key proves.' },
-  { path: '/portal/language', group: 'User portal',
-    name: 'Set or remove the language on your own entry',
-    specs: [],
-    effect: 'writes or removes preferredLanguage on the person\'s entry',
-    what: 'NON-SPEC (#539). The Overview\'s Language and region card posts ' +
-          'here: signed in, CSRF, and the USERNAME from the session, ' +
-          '/portal/remove-key\'s rule. A BCP 47 tag a catalog answers is ' +
-          'written to preferredLanguage (RFC 2798 section 2.7) through the ' +
-          'person editor and set as the language chooser\'s cookie; an ' +
-          'empty one removes the attribute, so the browser\'s ' +
-          'Accept-Language decides again. A tag no catalog answers is ' +
-          'refused (STS-I18N-0008). Answers 303 to /portal?done=language.' },
-  { path: '/portal/mfa', group: 'User portal',
-    name: 'Your authenticator app',
-    specs: ['rfc6238', 'rfc4226'],
-    effect: 'enrols or removes the signed-in person\'s own one-time password ' +
-            'secret',
-    what: 'NON-SPEC page over RFC 6238. THE FIRST PAGE IN THIS SERVICE THAT ' +
-          'HANDS SOMEBODY A CREDENTIAL rather than taking one: it mints a ' +
-          'shared secret, draws it as a QR code (an SVG this server ' +
-          'rendered, as a data: URI, because every page of this portal is ' +
-          'script-src \'none\') and as a transcribable base32 string beside ' +
-          'it, and asks for a code back. **TWO STEPS, AND THE FIRST WRITES ' +
-          'NOTHING** — an unconfirmed secret on somebody\'s entry would be a ' +
-          'second factor they cannot produce, so nothing reaches the ' +
-          'directory until a code proves the app has it. One secret per ' +
-          'person and enrolling again REPLACES, because a six-digit code ' +
-          'names no credential and two secrets would mean trying both. The ' +
-          'identity is the session\'s and there is no parameter for it: a ' +
-          'username read from this body would let anybody signed in enrol ' +
-          'THEIR OWN app as somebody else\'s second factor, which is a ' +
-          'takeover rather than a leak.' },
-  { path: '/portal/certificates', group: 'User portal',
-    name: 'Your certificates: ACME and SCEP credentials, enrolled certificates',
-    specs: ['rfc8555', 'rfc7030', 'rfc8894'],
-    effect: 'makes, deletes and revokes the signed-in person\'s own ' +
-            'enrollment credentials and certificates',
-    what: 'NON-SPEC page. Where a person makes an ACME External Account ' +
-          'Binding key (RFC 8555 section 7.3.4) or a SCEP challenge password ' +
-          '(RFC 8894 section 2.2) FOR THEMSELVES — each bound to their own ' +
-          'directory entry, shown once on a 200 page — lists the certificates ' +
-          'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
-          'the session\'s; nothing on the form names a person.' },
-  { path: '/portal/delegate', group: 'User portal',
-    name: 'Who may act for you — your RFC 8693 may_act',
-    specs: ['rfc8693'],
-    effect: 'names or clears the one party who may act for the signed-in ' +
-            'person (stsMayAct)',
-    what: 'NON-SPEC page (#108). A person names, by its DN, the one ' +
-          'person or ' +
-          'application who may act for them; every access token issued ' +
-          'about them then carries RFC 8693 section 4.4\'s may_act naming ' +
-          'that party, and a token exchange of one by anybody else is ' +
-          'refused invalid_request in every mode. The identity is the ' +
-          'session\'s; the form names only the delegate.' },
-  { path: '/portal/claim-sources', group: 'User portal',
-    name: 'Connected claim sources — linking a Claims Provider',
-    specs: ['oidc-claims-aggregation'],
-    effect: 'lists the realm\'s Claims Providers, links one by sending the ' +
-            'person to it, and unlinks one',
-    what: 'NON-SPEC page (#147): the setup phase of Claims Aggregation, ' +
-          'the person\'s. Link runs an authorization code flow with PKCE ' +
-          'to the provider.' },
   { path: '/portal/claim-sources/callback', group: 'User portal',
     name: 'Connected claim sources — the provider\'s answer',
     specs: ['oidc-claims-aggregation'],
@@ -4902,245 +4636,6 @@ const ENDPOINTS: EndpointEntry[] = [
             'from its signed claims, and seals the tokens on their entry',
     what: 'The redirect URI a Claims Provider sends the person back to ' +
           '(#147).' },
-  { path: '/portal/ciba', group: 'User portal',
-    name: 'Sign-in requests — answering OpenID Connect CIBA',
-    specs: ['oidc-ciba'],
-    effect: 'lists the CIBA requests waiting for the signed-in person, ' +
-            'approves or denies one, and sets their user code',
-    what: 'NON-SPEC page (#131): CIBA\'s authentication device. Each ' +
-          'request shows its client, scopes and binding_message; an ' +
-          'approval that asks for more than the session proved offers a ' +
-          'stronger sign-in first.' },
-  { path: '/portal/device', group: 'User portal',
-    name: 'Sign in a device — RFC 8628\'s verification URI',
-    specs: ['rfc8628'],
-    effect: 'finds the device waiting with the code typed, shows its ' +
-            'client and scopes, and approves or denies it',
-    what: 'NON-SPEC page (#150): the verification URI. A code, typed or ' +
-          'prefilled, only brings the request up; approving is a second ' +
-          'act (section 5.4).' },
-  { path: '/portal/devices', group: 'User portal',
-    name: 'Your devices — ou=devices, and Native SSO',
-    specs: ['oidc-native-sso', 'webauthn'],
-    effect: 'lists the signed-in person\'s devices and removes one; ' +
-            'registers one by a key proof over a challenge (a JWS, an ' +
-            'Android Key Attestation, an Apple App Attest statement) or by ' +
-            'linking a WebAuthn platform credential with a fresh assertion',
-    what: 'NON-SPEC page (#130, #164 phase 2). The device entries the ' +
-          'person owns, their keys and attestation, the applications that ' +
-          'used each, and whether its Native SSO secret is live. The ' +
-          'identity is the session\'s; the forms name only the device or ' +
-          'the credential. The link step runs /authn/webauthn.js.' },
-  { path: '/portal/copy.js', group: 'User portal',
-    name: 'Recovery codes Copy script', specs: [],
-    what: 'NON-SPEC (#224). The script behind the Copy all codes button on ' +
-          '/portal/mfa, loaded only by the one response that shows a freshly ' +
-          'generated set of recovery codes: it writes the read-only box of ' +
-          'codes, one per line, to the clipboard. It sends nothing; with it ' +
-          'blocked the button stays hidden and the box is copied by hand.' },
-  { path: '/portal/devices/challenge', group: 'User portal',
-    name: 'Device enrolment challenge (JSON)',
-    specs: [],
-    effect: 'issues a challenge bound to the portal session, for a device ' +
-            'app to sign or attest',
-    what: 'NON-SPEC (#164 phase 2). application/json only. Answers ' +
-          '{ challenge, audience, typ, expires_at, proof_endpoint }; one ' +
-          'per session, answered once, devices.challengeTtlSeconds.' },
-  { path: '/portal/devices/proof', group: 'User portal',
-    name: 'Device key proof (JSON)',
-    specs: [],
-    effect: 'registers the signed-in person\'s device by a JWS over the ' +
-            'challenge, or an Apple App Attest statement',
-    what: 'NON-SPEC (#164 phase 2). application/json only. A ' +
-          'device-key-proof+jwt JWS (an Android Key Attestation in x5c) ' +
-          'or { app_attest: { key_id, attestation } }; 201 with the ' +
-          'device, or 400 with the reason. Product refuses a key with no ' +
-          'attestation that chained to a trusted root.' },
-  { path: '/portal/self-issued', group: 'User portal',
-    name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
-    specs: ['siopv2'],
-    effect: 'lists and removes the signed-in person\'s enrolled self-issued ' +
-            'subjects; "Enrol a wallet" starts a SIOPv2 request at ' +
-            '/authn/wallet?siop=1&enrol=1',
-    what: 'NON-SPEC page (#129). A person enrols a wallet key by PROVING ' +
-          'it — their wallet answers a SIOPv2 request from the session ' +
-          'they already hold, and the verified subject is enrolled for ' +
-          'them — never by typing a DID. The identity is the session\'s; ' +
-          'the removal form names only the subject.' },
-  { path: '/portal/app-passwords', group: 'User portal',
-    name: 'Your app passwords, for the doors that take only a password',
-    specs: ['rfc4513', 'rfc7617', 'rfc7030'],
-    effect: 'makes and revokes the signed-in person\'s own app passwords',
-    what: 'NON-SPEC page (#101). In product mode a person who holds a ' +
-          'second factor, or of whom one is required, is refused their own ' +
-          'password at the five doors that cannot ask for one — an LDAP ' +
-          'bind (RFC 4513), a WS-Security UsernameToken, SCIM and SSF HTTP ' +
-          'Basic (RFC 7617) and EST Basic (RFC 7030 section 3.2.3). Here ' +
-          'they make an APP PASSWORD for such a client instead: generated, ' +
-          'SHOWN ONCE on the 200 that answers the form, stored as a scrypt ' +
-          'hash, named, and scoped to one or more of those doors — accepted ' +
-          'there and NEVER at a browser sign-in. It lists each one with its ' +
-          'last use and revokes one (a CAEP credential-change). The identity ' +
-          'is the session\'s; nothing on the form names a person. A real ' +
-          'submit button and no script.' },
-  { path: '/portal/kerberos', group: 'User portal',
-    name: 'Your Kerberos principal, and a keytab from your own password',
-    specs: ['rfc4120', 'rfc3961'],
-    effect: 'makes the signed-in person a keytab for their own principal, ' +
-            'shown once; changes nothing on the account',
-    what: 'NON-SPEC page (#59). Shows the signed-in person\'s Kerberos ' +
-          'principal in this realm and the PUBLIC half of their keys (kvno, ' +
-          'enctypes), and makes them an MIT keytab (format 0x502) from their ' +
-          'CURRENT PASSWORD, typed on the form and verified first — which is ' +
-          'also the re-authentication a password-equivalent export needs, ' +
-          'counted against the password change\'s budget. RFC 3961 ' +
-          'string-to-key over that password and the account\'s salt, at the ' +
-          'current kvno only, checked against the key the KDC holds before ' +
-          'it is handed over; a stored key is never read back out. SHOWN ' +
-          'ONCE on the 200 that answers the form, no-store, and not kept. In ' +
-          'development mode the KDC keys every user from krb5.userPassword, ' +
-          'so the keytab holds that key and the page says so. The identity ' +
-          'is the session\'s; nothing on the form names a person. A real ' +
-          'submit button and no script.' },
-  { path: '/portal/sign-ins', group: 'User portal',
-    name: 'Your recent sign-ins, and whether each was you',
-    specs: [],
-    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
-            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
-            'risk at HIGH, which ends everything they hold',
-    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
-          'assessments of the last thirty days — when, from where (the city, ' +
-          'country and network the datasets named), with what browser and ' +
-          'system, through which door, at what level — each with two ' +
-          'buttons until answered. "This was me" is recorded for ' +
-          'calibration and lowers the person\'s standing to LOW only when ' +
-          'said from another, low-risk session. "This wasn\'t me" puts the ' +
-          'standing at HIGH (reported-not-me), which the risk-response ' +
-          'policy answers — every session ended, RISC told the credential is ' +
-          'compromised. The identity is the session\'s; the assessment ' +
-          'named must be the person\'s own. Real submit buttons and no ' +
-          'script.' },
-  { path: '/portal/consents', group: 'User portal',
-    name: 'What you have agreed applications may ask for, and withdrawing it',
-    specs: ['rfc6749', 'oidc'],
-    effect: 'withdraws one of the signed-in person\'s own consents, or ' +
-            'everything they agreed to for one application, and revokes ' +
-            'every token issued under it',
-    what: 'NON-SPEC page for a spec behaviour (#172). The signed-in ' +
-          'person\'s own recorded consents — oauthConsent on their entry — ' +
-          'one card per application, each scope with a Withdraw form and ' +
-          'the application with a Withdraw-everything form. A withdrawal is ' +
-          'what /admin/consent\'s revoke-consent and ' +
-          'revoke-application-consent do, through the same functions: the ' +
-          'tokens the application holds for them under it are revoked on ' +
-          'every node, and the instant is recorded, so a refresh token ' +
-          'granted before it is refused even after they agree again (RFC ' +
-          '6749 sections 1.5 and 6, OIDC Core section 11 for ' +
-          'offline_access). A scope under global consent is not theirs to ' +
-          'withdraw and is not listed. The identity is the session\'s; the ' +
-          'form names only an application and a scope, checked against the ' +
-          'person\'s own entry. Paged by application. Real submit buttons ' +
-          'and no script.' },
-  { path: '/portal/gnap', group: 'User portal',
-    name: 'The GNAP grants you gave, and revoking one',
-    specs: ['rfc9635'],
-    effect: 'revokes one of the signed-in person\'s own GNAP grants and ' +
-            'every token issued under it',
-    what: 'NON-SPEC page for a spec behaviour (#432). Every GNAP grant the ' +
-          'signed-in person is the resource owner of — approved by them, ' +
-          'or acted on by a trusted client presenting a verified assertion ' +
-          'about them — with the access rights it holds (limits included), ' +
-          'the tokens issued under it (label, format, expiry, state; never ' +
-          'a value), its own lifetime and, once finalized, why: issued, ' +
-          'revoked, rejected or expired. Revoke is the client\'s RFC 9635 ' +
-          'section 5.4 act performed for them, through the one path the ' +
-          'client\'s DELETE and the console take: the tokens revoked, the ' +
-          'grant finalized as revoked, CAEP session-revoked sent. The ' +
-          'identity is the session\'s; the form names only a grant, ' +
-          'checked against the person\'s own. The same view as the ' +
-          'GNAP grants tab of /admin/users and gnapGrants in ' +
-          '/admin-api/users?user=. Under cells, this cell\'s grants, and ' +
-          'the page says so. Paged; real submit buttons and no script.' },
-  { path: '/portal/signing-key', group: 'User portal',
-    name: 'Your own RFC 7523 signing key',
-    specs: ['rfc7521', 'rfc7523', 'rfc5280'],
-    effect: 'issues, replaces or removes the signed-in person\'s own ' +
-            'assertion signing key pair',
-    what: 'NON-SPEC page over RFC 7523 section 2.1. THE SECOND PAGE IN THIS ' +
-          'PORTAL THAT HANDS SOMEBODY A CREDENTIAL rather than taking one, ' +
-          'and the only door in this service where the person a key pair is ' +
-          'FOR is the one who issues it: a leaf signed by this realm\'s ' +
-          'Issuing CA, written onto their own entry as stsAssertion*, with ' +
-          'the private half SHOWN ONCE on the page that comes back and ' +
-          'sealed at rest afterwards — nothing here, on /admin/pki or in ' +
-          '/admin-api opens it again, so generating replaces and there is no ' +
-          'second chance at a copy. **THE KEY\'S WHOLE AUTHORITY IS *this is ' +
-          'me***: an assertion signed with it that names anybody else as ' +
-          '`sub` is refused, on the registered key and on a certificate ' +
-          'presented in x5c alike, because the leaf carries ' +
-          'urn:sts:person:<name> as a URI subjectAltName. The identity is ' +
-          'the session\'s and the form has no name field — one would let ' +
-          'anybody signed in write a key pair onto somebody else\'s entry. ' +
-          'Generate is RATE LIMITED where nothing else on these pages is: an ' +
-          'RSA key pair is CPU on the one thread every protocol here answers ' +
-          'on. `pki.personSelfService` turns the offer off without touching ' +
-          'a key anybody already holds, and a realm with no certificate ' +
-          'authority draws no button at all.' },
-  { path: '/portal/signout', group: 'User portal',
-    name: 'Sign out of the portal', specs: [],
-    effect: 'ends the portal session and the sign-on session behind it',
-    what: 'NON-SPEC. The Sign out button in the corner of every portal page ' +
-          '— the account pages\' own shell draws it — and the same ' +
-          'two-session act the console\'s is: this portal is a relying party ' +
-          'with a session of its own, so ending it alone would leave the ' +
-          'sign-on session live and the next page would sign the person ' +
-          'straight back in. It carries the CSRF token every form here does, ' +
-          'and a sign-out asked of a browser with no session is answered ' +
-          'rather than refused — somebody signed out already is in the state ' +
-          'they were asking for. **It is the narrower of the two sign-outs ' +
-          'on that page**: /logout, at the foot of it, ends every session ' +
-          'and credential this identity holds in every protocol.' },
-  { path: '/portal/remove-key', group: 'User portal',
-    name: 'Remove one of your own passkeys',
-    specs: [],
-    effect: 'removes an enrolled WebAuthn credential from the person\'s entry',
-    what: 'NON-SPEC. The credential id comes from the body and the USERNAME ' +
-          'does not, which is what keeps it safe: the id is looked up among ' +
-          'this person\'s own keys, so one belonging to somebody else ' +
-          'matches nothing. IT REFUSES TO REMOVE THE LAST WAY IN — a person ' +
-          'with no password whose only primary key this is would be locked ' +
-          'out by their own click, and an identity provider that allows that ' +
-          'has a support queue rather than a security control.' },
-  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13). Its own listener is NOT on
-  // this router — it is an express app of its own on `debugger.port`, the
-  // blind spot the KDC's and the directory's sockets are — so it is described
-  // here, in the row for the page that reports it.
-
-
-
-  // ---------------------------------------------------------------------------
-  // THE EIGHT PROTOCOL SETTINGS PAGES, added 2026-08-27 when every family's
-  // appconfig rows moved off /admin/config and onto the page for the family
-  // they configure. Each of these families had settings and no page, which is
-  // why they are new rather than the settings having been added to something
-  // that already existed. They are `group: 'Admin'` like every other console
-  // page: what they configure is a protocol, but what they ARE is a page of
-  // this console.
-  // ---------------------------------------------------------------------------
-
-  // --- Management API ---
-  //
-  // NON-SPEC, all of it, and it is the /admin console's own surface over JSON:
-  // every page's `?format=json` view and every one of its forms, at a path a
-  // script can use. The rows are short on purpose — the OpenAPI document at
-  // /admin-api/openapi.json carries the detail, is built from the same table
-  // that registers these routes, and cannot go stale in the way a hand-written
-  // description can.
-  //
-  // The four POST rows are ONE express pattern each, behind every action in
-  // them: `/admin-api/tokens/:action` serves six real URLs. That is why they
-  // are listed with the parameter rather than as twenty-four rows, and why they
-  // are not linkable here.
   { path: '/admin-api', group: 'Management API', name: 'Management API index',
     specs: ['openapi'],
     what: 'NON-SPEC. What the API is and every operation in it, each naming ' +
@@ -5171,6 +4666,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
+  { path: '/admin-api/account-api', group: 'Management API',
+    name: 'The account API\'s OpenAPI document', specs: ['openapi'],
+    what: 'NON-SPEC (#568). The OpenAPI document of /account-api, the user ' +
+          'portal\'s API, for the realm the call is in — the one ' +
+          '/account-api/openapi.json publishes — with where it is published ' +
+          'and how many operations it holds. The console\'s Account API ' +
+          'page is drawn from it.' },
   { path: '/admin-api/console/language',
     group: 'Admin console API',
     name: 'The console\'s language, for yourself', specs: ['bcp47'],
@@ -7214,6 +6716,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'absent claims member as the whole credential. A request already ' +
           'in flight keeps the claims it was built with. Mirrors POST ' +
           '/admin/vc-verifier-config.' },
+  { path: '/admin-api/verifications/start', group: 'Management API',
+    name: 'Start a verification',
+    specs: ['oid4vp', 'siopv2', 'rfc9101'],
+    effect: 'builds an OID4VP Authorization Request and records its ' +
+            'transaction',
+    what: 'NON-SPEC (#587). The administrator\'s /oid4vp/start, through the ' +
+          'same function: the body names what that page\'s query names ' +
+          '(format, by, client_id_prefix, response_type, response_mode, ' +
+          'mode, wallet), and the answer is JSON — the state, the wallet ' +
+          'URL a same-device start redirects to, the openid4vp:// (or ' +
+          'siopv2://) URI a cross-device QR code carries, and the ' +
+          'request_uri by reference — rather than a redirect. Answered in ' +
+          'every mode. Mirrors the Start a verification form on ' +
+          '/admin/vc.' },
+  { path: '/admin-api/verifications', group: 'Management API',
+    name: 'A verification\'s outcome',
+    specs: ['oid4vp'],
+    what: 'NON-SPEC (#587). With ?state=, the verdict /oid4vp/result/:state ' +
+          'answers, from the same function (404 for a state with no ' +
+          'record); without, the realm\'s open verifications and what each ' +
+          'decided, newest first — the list the Verifier request tab ' +
+          'draws. A wallet sign-in is not listed.' },
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',
@@ -9447,7 +8971,7 @@ const PROTOCOLS: Protocol[] = [
           'authorization servers as have been asked for. RFC 9700 mode ' +
           'turns the BCP\'s refusals on, and OAuth 2.1 mode ' +
           '(draft-ietf-oauth-v2-1-16) turns those on and adds its own.' },
-  { name: 'User portal', groups: ['User portal'],
+  { name: 'User portal', groups: ['User portal', 'Account API'],
     specs: [],
     // **THE ONE CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION, AND IT
     // SAYS SO IN A FIELD RATHER THAN BY HAVING AN EMPTY LIST.** Every other
@@ -9475,7 +8999,10 @@ const PROTOCOLS: Protocol[] = [
           'single-use, time-limited activation link to set up a credential — ' +
           'hashed at rest like a password, rate limited, spent when the ' +
           'setup finishes rather than when the link is opened, and never ' +
-          'signing anybody in.' },
+          'signing anybody in. SINCE #568 IT IS A STATIC APPLICATION over ' +
+          '/account-api, the Account API group below: an operation per page ' +
+          'and per form, the person always the token\'s subject, described ' +
+          'by its own OpenAPI document.' },
   { name: 'GNAP', groups: ['GNAP'],
     specs: ['rfc9635', 'rfc9767', 'rfc9421', 'rfc9530'],
     what: 'An authorization server for the Grant Negotiation and ' +
@@ -10055,6 +9582,51 @@ class StsMetadata {
     return out;
   }
 
+  /**
+   * The account API's endpoint rows, from its operation table (#568).
+   *
+   * @returns one row per path
+   */
+  accountApiEndpoints(): EndpointEntry[] {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.accountApiEndpoints().");
+    let ops: any[] = [];
+    try {
+      ops = require('./account-api/account_api').operations();
+    } catch (e) {
+      // No account API in this process (a module loaded on its own): its
+      // routes are not registered either, so nothing goes undescribed.
+      log.debug("Caught in StsMetadata.accountApiEndpoints(): " +
+                ((e && e.message) || e));
+      ops = [];
+    }
+    const byPath = new Map<string, any[]>();
+    ops.forEach(function (op) {
+      if (!byPath.has(op.path)) {
+        byPath.set(op.path, []);
+      }
+      byPath.get(op.path).push(op);
+    });
+    const out: EndpointEntry[] = [];
+    byPath.forEach(function (rows, path) {
+      out.push({ path: path, group: 'Account API',
+        name: rows.map(function (op) {
+          return op.summary;
+        }).join('; '),
+        specs: ['openapi'],
+        what: 'NON-SPEC (#568). ' + rows.map(function (op) {
+          return op.method + ': ' + op.description +
+            (op.mirrors ? ' The door of the portal\'s ' + op.mirrors + '.'
+                        : '') +
+            (op.access === 'person' ? ''
+              : ' Takes no token' + (op.access === 'link'
+                ? ': it spends the single-use link it carries.' : '.'));
+        }).join(' ') });
+    });
+    log.debug("Leaving StsMetadata.accountApiEndpoints(). " + out.length);
+    return out;
+  }
+
   // Join the router's paths to their descriptions, and report both kinds of
   // drift.
   /**
@@ -10070,6 +9642,14 @@ class StsMetadata {
     log.debug("Entering StsMetadata.describeEndpoints().");
     const described = new Map<string, EndpointEntry>();
     ENDPOINTS.forEach(function (e) {
+      described.set(e.path, e);
+    });
+    // THE ACCOUNT API'S ROWS ARE ITS OPERATION TABLE'S (#568), not a second
+    // hand-written copy: the table registers the routes and builds the
+    // OpenAPI document, so a row read from it cannot go stale, and an
+    // operation cannot exist undescribed. One row per path, its methods'
+    // summaries and the portal page or form each is the door of.
+    this.accountApiEndpoints().forEach(function (e) {
       described.set(e.path, e);
     });
 
@@ -10333,5 +9913,7 @@ export = {
   PROTOCOLS: PROTOCOLS,
   ENDPOINTS: ENDPOINTS,
   registeredRoutes: slot.forward('registeredRoutes'),
+  // The account API's rows, from its own table (#568).
+  accountApiEndpoints: slot.forward('accountApiEndpoints'),
   describeEndpoints: slot.forward('describeEndpoints')
 };

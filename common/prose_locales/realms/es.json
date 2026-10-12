@@ -1,0 +1,194 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "Su propio emisor, clave de firma, códigos de autorización, tokens de acceso y de actualización, familias de actualización, estado de reproducción y de nonce de DPoP, estado de reproducción de aserciones de cliente y servidores de autorización con nombre. Los REGISTROS DE CLIENTES son por dominio desde el 2026-08-25, porque el directorio lo es: un cliente registrado en un dominio vive en el ou=applications de ese dominio y es desconocido para todos los demás. Esta línea decía lo contrario hasta entonces. EL MODO RFC 9700 TAMBIÉN ES POR DOMINIO — `oauth2.rfc9700`, y `oauth2.oauth21` que lo implica, solo cambian con un reinicio para el proceso y se pueden definir en un dominio, porque un dominio no enlaza ningún socket — así que un mismo proceso puede responder de forma permisiva en /oauth2/authorize y aplicar la BCP en el de un dominio. Lo que un dominio no puede traer consigo es un ESQUEMA: el puerto principal es https o no lo es, para todos los dominios a la vez, y GET /oauth2/rfc9700 informa de cuál."
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "Servicio de autenticación"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "Sus propias sesiones y segundos factores — credenciales WebAuthn, secretos TOTP y códigos de recuperación — de modo que iniciar sesión en un dominio solo inicia sesión en ese dominio. Esa es la razón de ser de un dominio, no una limitación. La identidad COMO la que puede iniciar sesión solo se comparte en el sentido de que este servicio no comprueba ninguna contraseña en ningún sitio — la PERSONA es una entrada en el propio directorio del dominio. La consola de administración es el ÚNICO lector que cruza esta línea: inicia la sesión de una persona a través del dominio en el que se accede a ella, y mantiene su PROPIA sesión en el dominio PREDETERMINADO, para que una sesión de consola pueda encontrarse desde todos los dominios. La fila siguiente dice a quién puede administrar esa sesión."
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "Su propio entityID y providerID (sembrados distintos al crear el dominio), su propia clave de firma, estado de solicitudes, artefactos y metadatos por proveedor de servicios — cuya URL por tanto lleva el dominio además del resumen del SP. Las ENTRADAS DE PROVEEDORES DE SERVICIOS son por dominio, por la misma razón que los clientes OAuth: son aplicaciones en el propio directorio del dominio."
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "Su propio emisor de tokens y clave de firma."
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "Su propio entityID y clave de firma. El inicio de sesión único con OAuth se conserva DENTRO de un dominio y no cruza dominios, porque la sesión en la que se apoya tampoco lo hace."
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "Sus propias ofertas de credenciales, códigos preautorizados, transacciones diferidas, nonces de emisión y transacciones de presentación — y su propia respuesta a qué afirma una credencial y qué pide el verificador. El identificador did:web lleva el segmento del dominio, que es lo que mantiene separados los documentos DID de dos dominios."
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "Un servidor de autorización por dominio (RFC 9635), con sus propias concesiones, continuaciones, interacciones, códigos de usuario, tokens, identificadores de gestión, estado de reproducción de pruebas de clave y conexiones de servidores de recursos (RFC 9767) — doce almacenes, cada uno por dominio y eliminado con él. Un cliente GNAP es una aplicación en el propio directorio del dominio, y `gnap.enabled` es un ajuste del dominio, así que un dominio puede responder en /gnap mientras otro lo rechaza."
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "Shared Signals (SSF, CAEP, RISC)"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "Su propio transmisor: los flujos, sus sujetos, sus colas y mensajes no entregados, y el registro de sesiones de CAEP y el de cuentas de RISC son por dominio. Un evento se emite en el dominio en el que ocurrió, y la consola y el portal propios de este servicio se siembran como receptores en todos los dominios, así que cada uno oye solo a su propio dominio."
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "Su propio repositorio de políticas (ou=policies) y registro de PEP remotos (ou=peps), ambos en el directorio del dominio. El repositorio de un dominio nuevo empieza VACÍO y nunca recurre al del dominio predeterminado, lo que acoplaría dos dominios: las dos políticas con las que este servicio decide su propia emisión y acceso están integradas y se LLAMAN, así que deciden en todos los dominios, y una entrada del repositorio en un dominio las anula solo allí. Un PEP remoto pertenece al dominio en el que está registrado, y el certificado de su escucha HTTPS lo emite la CA emisora pep-tls de ese dominio."
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federación"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "Sus propias relaciones — ou=federations está en el directorio del dominio — y sus propios inicios de sesión en curso, limitados por dominio para que la avalancha de un dominio no pueda expulsar los de otro. Un flujo iniciado en un dominio no puede terminar en el /federation/acs/{id} de otro dominio: la aserción se verifica contra el certificado de una relación del dominio al que llega."
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "Portal de usuario"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "La propia cuenta de una persona en el dominio en el que está: el portal inicia sesión a través del propio servidor de autorización del dominio como un cliente sembrado en todos los dominios, y cada página lee y escribe la entrada de la persona en el directorio de ese dominio, sujeta a la política de contraseñas de ese dominio."
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "Cierre de sesión global"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "No tiene estado propio: /logout, /admin/logout y /admin/sessions leen los almacenes del dominio en el que se accede a ellos, así que un cierre de sesión termina la sesión de ese dominio y lo que depende de ella, y nada en otro dominio."
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "Estadísticas y registro de auditoría"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "Cada dominio cuenta y registra lo que ocurrió bajo su propio prefijo. Los números de secuencia de auditoría también son por dominio, así que las filas de un dominio son contiguas."
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "Los endpoints Y el almacén. Un usuario creado mediante el /scim/v2 de un dominio es una entrada en el ou=users de ese dominio y no existe en ningún otro sitio — esta fila decía `partial` y afirmaba lo contrario hasta el 2026-08-25, cuando el directorio pasó a ser por dominio. SCIM sigue sin tomar ninguna decisión propia al respecto: aprovisiona en el directorio, y el directorio es lo que está particionado."
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "Consola de administración y API de administración"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "2d1b64bdd91feaba",
+    "text": "Cada página y cada operación es por dominio — /admin/config LEE y ESCRIBE el dominio en el que se accede a ella, y /admin/users lista las personas propias del dominio. Los ROLES DE ADMINISTRACIÓN se mantienen DOS VECES, deliberadamente, desde el 2026-09-14 (#32): cn=admin-read y cn=admin-write del dominio PREDETERMINADO son la lista del SERVICIO y administran todos los dominios, y cada uno de los demás dominios tiene los mismos dos grupos en su propio ou=groups, sembrados con una cuenta `admin`, cuyos miembros administran SOLO ESE dominio — se les deniega toda página y operación sobre el proceso completo (el almacén, la base de datos, el almacén de secretos, las escuchas, el depurador, el explorador), crear o eliminar un dominio, reemplazar la raíz del servicio y los ajustes por proceso. Por tanto, la lista propia de un dominio no concede nada fuera del dominio, que es lo que hizo seguro añadirla. La consola inicia la sesión de una persona a través del dominio en el que se accede a ella, y los /admin y /portal sin prefijo preguntan primero qué dominio cuando hay dominios definidos. /admin-api acepta el token del dominio predeterminado en todas partes y el token sts-management-api propio de un dominio solo en ese dominio."
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP (389 / 636)"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "UN DIRECTORIO POR DOMINIO detrás de un solo socket — un almacén separado, no un subárbol de uno compartido, desde el 2026-08-25. La disposición de los DN es lo que ve un cliente: CADA DOMINIO ES UN ÁRBOL PROPIO, con raíz en la correspondencia RFC 2247 del DOMINIO DNS del dominio (desde el 2026-09-18) — el dominio predeterminado en la de global.domain (dc=example,dc=com), un dominio cuyo dominio DNS es iyasec.io en dc=iyasec,dc=io, y uno creado sin dominio DNS en <id>.<global.domain>, que es el dc=<id> bajo la base del dominio predeterminado que tenían todos los dominios antes. Se permite un dominio DNS dentro del de otro dominio y es un contexto de nombres separado. Así, ou=users, ou=groups, ou=applications, ou=federations y los dos contenedores SPIFFE existen una vez por dominio y no comparten nada — esta fila decía `none` y afirmaba que todos los dominios veían las mismas personas hasta el 2026-08-25. El dominio está en el DN y no en un almacén particionado PORQUE el socket no tiene ruta en la que poner un segmento: un ldapsearch llega con un DN base y nada más, así que `-b dc=acme,dc=example,dc=com` es la única forma en que un cliente podría nombrar un dominio, y funciona. CADA OPERACIÓN SE RESPONDE DESDE EL ALMACÉN QUE NOMBRA EL DN, desde el 2026-08-25 y a petición de rcbj — esta línea decía que una búsqueda de subárbol desde el contexto de nombres devuelve las entradas de todos los dominios, con el argumento de que un contexto de nombres ES el árbol completo. Eso dejaba el puerto 389 como la única puerta por la que un dominio podía ver las personas, grupos y aplicaciones de otro, mientras que la consola, /scim/v2 y el claim de grupos mostraban a cada dominio solo los suyos. Así, `-b dc=example,dc=com` es el directorio del dominio predeterminado, `-b dc=acme,dc=example,dc=com` es el de acme, y el root DSE publica un valor namingContexts por dominio para que un cliente pueda descubrirlos. Una operación add, modify, delete, compare o una búsqueda de ámbito base se responde en el dominio que nombra su DN, porque escribir el DN completo es la forma en que un cliente nombra un dominio en un socket que no tiene otro sitio donde ponerlo; un modifyDN que cruzaría un dominio se rechaza con LDAP_AFFECTS_MULTIPLE_DSAS (71), ya que aquí dos dominios son dos directorios."
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "42fe03497278a0e3",
+    "text": "Un KDC por dominio de confianza en el puerto 88 COMPARTIDO, distinguidos por el nombre del reino Kerberos dentro de cada solicitud — el discriminador que el protocolo ya lleva. Un dominio se crea con krb5.enabled DESACTIVADO; defina un krb5.realm propio (dos dominios no pueden responder a un mismo nombre) y actívelo, y ese dominio construye una base de datos de principales, claves de largo plazo y un krbtgt propios, a partir de sus propios ajustes. Sus personas son las personas de su propio subárbol de directorio. UDP/TCP 88 sin procesar y un /KdcProxy sin prefijo enrutan por el nombre; el /realm/<id>/KdcProxy propio de un dominio está fijado a ese dominio y rechaza el nombre de otro dominio con KDC_ERR_WRONG_REALM. Lo que sigue siendo del PROCESO: los dos sockets, y la confianza del modo de desarrollo con krb5.trustedRealm — los dominios de confianza no confían en el Kerberos de los demás. Antes del 2026-09-15 había un KDC, una base de datos de principales y un nombre de reino para todo el proceso. SPNEGO lleva los mismos tickets por HTTP, así que sus rutas responden bajo el prefijo de ruta de cada dominio como cualquier otra."
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "Autoridad de certificación (CRL, OCSP)"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "UNA RAÍZ PARA EL SERVICIO, UNA INTERMEDIA POR DOMINIO y una CA emisora por caso de uso bajo cada intermedia, de modo que un certificado emitido por un dominio no encadena a la intermedia de otro dominio. Lo compartido es la raíz, que no pertenece a ningún dominio. Las CRL, los respondedores OCSP y las cadenas se nombran con un segmento {scope} en /pki/... en lugar de con el prefijo del dominio, porque esas direcciones van DENTRO de los certificados y las obtienen clientes que no saben nada de los dominios de este servicio — y la raíz no pertenece a ningún dominio, así que no podría escribirse con uno."
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "Inscripción de certificados (ACME, EST, SCEP)"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "Cada uno de los tres tiene una CA emisora propia bajo la intermedia de cada dominio, y almacenes propios por dominio — las cuentas, pedidos, autorizaciones y nonces de ACME (un nonce es un MAC sobre el dominio, así que el de un dominio lo rechaza otro), el certificado de RA y las transacciones de SCEP. Quién puede tener un certificado se decide contra el propio directorio del dominio: una clave de External Account Binding de ACME, una credencial de EST y un desafío de SCEP están vinculados cada uno a una entrada de un dominio, y un certificado emitido por otro dominio no supera la comprobación de la intermedia. A EST se llega por el prefijo de ruta O nombrando el dominio en la posición de etiqueta de EST, /.well-known/est/<realm>/..., porque un cliente EST no puede poner una ruta delante de un URI well-known (#251). Lo compartido es el límite de frecuencia por dirección de EST, cuya clave es la dirección del cliente y no el dominio."
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "Cada dominio es una entidad de federación propia: su Entity Identifier es su emisor, sus Federation Entity Keys, subordinados, Trust Anchors y Trust Marks son entradas en su propio ou=oidfed, y sus endpoints están bajo su propio prefijo. Lo que cruza dominios es DELIBERADO y está firmado: con oidfed.realmsAreSubordinates activado, el dominio predeterminado avala a todos los demás dominios y estos confían en él, verificándose cada cadena como cualquier otra — resuelta en proceso y no por HTTP."
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "Certificado TLS"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "UN CERTIFICADO PARA EL PROCESO, presentado por el puerto principal, por LDAPS 636 y por la escucha del depurador integrado. Lo que presenta un socket es una propiedad del socket y no de un dominio, y los dos primeros transportan todos los dominios. Esta fila decía `TLS (8443 / 9443)` hasta el 2026-09-16, cuando se eliminaron esas dos escuchas: lo que vale un certificado de cliente se decide donde se USA, y eso es en el dominio al que llegó la solicitud."
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "UN DOMINIO DE CONFIANZA SPIFFE, UNA AUTORIDAD, UN REGISTRO Y UN PAR DE SOCKETS gRPC POR DOMINIO desde el 2026-09-12 — esta fila decía `none` hasta entonces y hablaba de un dominio de confianza, una autoridad de firma y cuatro sockets compartidos. **EL DISCRIMINADOR ES LA DIRECCIÓN DEL ENDPOINT Y NO PODRÍA HABER SIDO OTRA COSA**: gRPC tiene una ruta y es el MÉTODO — `/SpiffeWorkloadAPI/FetchX509SVID` lo fija esa especificación y las API de SPIRE las suyas — así que un segmento de dominio en ella sería un método al que ningún cliente conforme llama. Un dominio se crea con `spiffe.trustDomain` definido como su DOMINIO DNS (desde el 2026-09-18; antes de que los dominios tuvieran uno era `<realm>.<the process's>`) y con SPIFFE DESACTIVADO; activarlo construye las autoridades de ese dominio y enlaza una Workload API y una API de SPIRE Server propias, en rutas de socket Unix sembradas cuando se creó el dominio — y en TCP solo cuando alguien le da una dirección (`spiffe.grpcHost`) y puertos, que un dominio no tiene al crearse, porque los que heredaría son los del dominio predeterminado y ya están enlazados. Los join tokens también son por dominio, porque un join token es una credencial para unirse a un dominio de confianza. **LO QUE SIGUE COMPARTIDO SON LOS CUATRO SOCKETS PROPIOS DEL PROCESO**, que pertenecen al dominio predeterminado y siguen enlazados diga lo que diga `spiffe.enabled` — un socket que desapareciera se leería como un servicio que se ha detenido. Los bundles FEDERADOS son propios de cada dominio desde el 2026-09-12, y ninguno puede registrarse bajo un dominio de confianza que sirva algún dominio de este servicio."
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "Depurador integrado"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "Una escucha para el proceso (`debugger.port`), en la que se inicia sesión a través del servidor de autorización del dominio PREDETERMINADO y abierta solo a los administradores de consola de ese dominio. Se deniega a los administradores propios de un dominio, porque es una superficie del proceso y no de ningún dominio."
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "Persistencia y clúster"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "Un almacén para el proceso — memoria, un archivo LDIF por dominio o una base de datos postgres — y una pertenencia al clúster, concesión y token de fencing. Cada almacén por dominio anterior guarda sus filas bajo su dominio en ese almacén y se elimina con el dominio; lo compartido es el almacén en sí, la conexión a él y los nodos que lo comparten."
+  }
+}

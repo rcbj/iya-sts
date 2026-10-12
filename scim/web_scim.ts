@@ -254,8 +254,10 @@ class ScimPage {
       mappingTable(json.mapping.user) +
 
       '<h2>' + t.html('consoleScim.groupMapping') + '</h2>' +
-      mappingTable(json.mapping.group) +
+      mappingTable(json.mapping.group);
 
+    // The server's settings, a tab of their own (2026-10-12).
+    const serverSettings =
       // THIS PAGE USED TO SAY IT HAD NO CONTROLS, and the sentence it said it
       // in was the one every other page here cited: "a form here would be a
       // second door to one setting". What that argument was actually
@@ -270,8 +272,9 @@ class ScimPage {
       'href="/admin/users">' + t.html('consoleScim.linkUsers') + '</a> ' +
       t.html('consoleScim.and') + ' <a ' +
       'href="/admin/groups">' + t.html('consoleScim.linkGroups') + '</a>' +
-      t.html('consoleScim.fullStop')) +
-
+      t.html('consoleScim.fullStop'));
+    // The page's links, on Metadata.
+    const footer =
       kit.note('<a href="/scim">' + t.html('consoleScim.footerForAPerson') +
       '</a> &middot; ' +
       '<a href="/admin/scim/monitor">' + t.html('consoleScim.footerAskedToDo') +
@@ -282,13 +285,15 @@ class ScimPage {
       '</a> &middot; <a href="/admin/ldap/service">' +
       t.html('consoleScim.footerDirectory') + '</a>');
 
-    // TWO TABS (#552, rcbj): Server is everything this page drew before;
-    // Clients is the outbound SCIM clients and their shared settings.
+    // METADATA FIRST (rcbj, 2026-10-12): the realm's endpoints and everything
+    // the page explains or reports — the traffic counts, the mappings, what
+    // each operation does — then Server (its settings) and Clients (#552).
     return kit.tabbedPanels('scim', [
+      { id: 'scim-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: (endpoints || '') + inner + footer },
       { id: 'server', label: t.text('consoleScimClients.tabServer'),
-        html: inner },
-      { id: 'endpoints', label: t.text('consolePages.endpoints'),
-        html: endpoints || '' },
+        html: serverSettings },
       { id: 'clients', label: t.text('consoleScimClients.tabClients'),
         html: ScimClientsPage.tab(ctx, json.scimClients) +
               SettingsForms.forms(json.settings, '/admin/scim',

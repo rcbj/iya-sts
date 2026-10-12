@@ -239,7 +239,8 @@ class GnapPage {
       t.html('consoleGnap.zcap',
              { controller: material ? material.zcap.controller : '' }) +
       '</td></tr></table><h2 ' +
-      'id="list-grantsPage">' + t.html('consoleGnap.grants') + '</h2><p ' +
+      'id="list-grantsPage" data-tab="grants">' + t.html('consoleGnap.grants') +
+      '</h2><p ' +
       'class="sub">' + stateLinks + ' — ' +
       t.html('consoleGnap.grantCount', { n: json.grants.paging.total }) +
       '</p>' + grantNav.head +
@@ -253,7 +254,7 @@ class GnapPage {
       '<th>' + t.html('consoleGnap.thUpdated') +
       '</th><th></th></tr></thead><tbody>' + grantRows +
       '</tbody></table>' + grantNav.foot +
-      '<h2 id="list-resourcesPage">' +
+      '<h2 id="list-resourcesPage" data-tab="resources">' +
       t.html('consoleGnap.registeredResourceSets') + '</h2>' +
       resourceNav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thReference') +
@@ -264,9 +265,10 @@ class GnapPage {
       '<th>' + t.html('consoleGnap.thRegistered') + '</th><th>' +
       '</th></tr></thead><tbody>' + resourceRows +
       '</tbody></table>' + resourceNav.foot +
-      '<h2>' + t.html('consoleGnap.settings') + '</h2>' +
+      '<h2 data-tab="settings">' + t.html('consoleGnap.settings') + '</h2>' +
       SettingsForms.forms(json.settings, '/admin/gnap', undefined, t) +
-      '<p class="links"><a href="/admin/gnap?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="/admin/gnap?format=json">' +
+      'JSON</a> · ' +
       '<code>GET ' +
       '/admin-api/gnap</code> · <a href="/admin/gnap/monitor">' +
       t.html('consoleGnap.linkMonitor') + '</a> · <a ' +

@@ -3640,13 +3640,13 @@ const SETTINGS = [
   { key: 'workers.fanout', group: 'Global',
     label: 'Dispatched paths with no session affinity',
     env: 'STS_WORKERS_FANOUT', type: 'string',
-    dflt: '/scim,/xacml,/admin-api',
+    dflt: '/scim,/xacml,/admin-api,/account-api',
     runtime: false, perProcess: true,
     restartReason: 'the workers this spreads requests across are forked ' +
                    'before the listener binds',
     description: 'A comma-separated list of path prefixes that go to the ' +
                  'least-loaded request worker instead of being stuck to the ' +
-                 'session or flow they belong to. These three carry their ' +
+                 'session or flow they belong to. These four carry their ' +
                  'own credential on every request and name their own target, ' +
                  'so nothing about one request has to be remembered to ' +
                  'answer the next. EVERYTHING ELSE DISPATCHED HOLDS AFFINITY ' +

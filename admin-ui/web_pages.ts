@@ -107,6 +107,7 @@ import DelegationPage = require('./web_delegation');
 import DashboardPage = require('./web_dashboard');
 import StsMetadataPage = require('./web_sts_metadata');
 import ExplorerPage = require('./web_explorer');
+import AccountApiPage = require('./web_account_api');
 import WebAnswers = require('./web_answers');
 
 type Json = any;
@@ -241,6 +242,66 @@ function certComposition(): Json {
 
 const CERT_COMPOSITION = certComposition();
 
+// EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (rcbj, 2026-10-12). The pages
+// under Protocols that were drawn as one long column of sections are cut
+// into tabs by `protocolTabs()`: a section whose heading carries
+// `data-tab="<name>"` is that tab, and everything else — the lead notes, the
+// endpoints, what explains the protocol or reports its state — is the
+// Metadata tab, which is first. A renderer marks its own sections; this
+// table names each page's tabs, in order, so the stylesheet can mark the
+// tab being read (`admin.ts`, which reads `PROTOCOL_TAB_IDS`) and a test
+// can hold the renderers to it: a tab name drawn and not listed here fails
+// `tests/console_web_bundle.js`. A listed tab may be absent where the page
+// draws nothing for it (PKI's issue forms before a hierarchy exists).
+const PROTOCOL_TABS: Record<string, string[]> = {
+  '/admin/delegation-settings': ['register', 'settings'],
+  '/admin/federation': ['relationships', 'add', 'settings'],
+  '/admin/oidfed': ['keys', 'subordinates', 'collection', 'anchors',
+                    'marks', 'resolve', 'settings'],
+  '/admin/commands': ['clients', 'send', 'accounts', 'tenants',
+                      'deliveries'],
+  '/admin/claim-providers': ['providers', 'register', 'links'],
+  '/admin/gnap': ['grants', 'resources', 'settings'],
+  '/admin/totp': ['settings'],
+  '/admin/backup-codes': ['settings'],
+  '/admin/webauthn': ['settings'],
+  '/admin/device-registration': ['settings'],
+  '/admin/ldap': ['settings'],
+  '/admin/wstrust': ['settings'],
+  '/admin/wsfed': ['settings'],
+  '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
+                 'people', 'revocation', 'workbench', 'settings'],
+  '/admin/tls': [],
+  '/admin/tls/trust': ['anchors', 'add']
+};
+
+/**
+ * The id prefix of a Protocols page's tabs: its path under `/admin`.
+ *
+ * @param path - the page's path
+ * @returns `gnap`, `tls-trust`
+ */
+function protocolSlug(path: string): string {
+  return String(path).replace(/^\/admin\//, '').replace(/[^a-z0-9]+/gi, '-');
+}
+
+/**
+ * Every tab id `protocolTabs()` can draw: the stylesheet's list.
+ *
+ * @returns the ids
+ */
+function protocolTabIds(): string[] {
+  const out: string[] = [];
+  Object.keys(PROTOCOL_TABS).forEach(function (path) {
+    const slug = protocolSlug(path);
+    out.push(slug + '-tab-metadata');
+    PROTOCOL_TABS[path].forEach(function (name) {
+      out.push(slug + '-tab-' + name);
+    });
+  });
+  return out;
+}
+
 const PAGES: WebPage[] = [
   { path: '/admin/acme/monitor', title: 'ACME enrollments',
     operation: '/admin-api/acme/monitor',
@@ -359,6 +420,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ExplorerPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/account-api', title: 'Account API',
+    operation: '/admin-api/account-api', render: AccountApiPage.render },
   { path: '/admin/sts-metadata', title: 'Service metadata',
     operation: '/admin-api/sts-metadata',
     render: function (view: Json, ctx?: Json): string {
@@ -911,6 +974,16 @@ class WebPages {
   static readonly PAGES = PAGES;
 
   /**
+   * The Protocols pages drawn as tabs by `protocolTabs()`, and their tabs.
+   */
+  static readonly PROTOCOL_TABS = PROTOCOL_TABS;
+
+  /**
+   * Every tab id `protocolTabs()` can draw, for the stylesheet.
+   */
+  static readonly PROTOCOL_TAB_IDS = protocolTabIds();
+
+  /**
    * The rendering kit, for the runtime that draws the shell around a page.
    */
   static readonly kit = WebKit;
@@ -1098,6 +1171,138 @@ class WebPages {
       { id: 'cert-tab-spiffe', label: t.text('console.nav.spiffe'),
         html: spiffe }
     ]);
+  }
+
+  // THE SPLITTER (2026-10-12). It cuts only at a heading at the TOP LEVEL
+  // of the page — outside every form, table, list and block — so no panel
+  // can hold half an element. An `<h2>` starts a section; an `<h3>` starts
+  // one only where no `<h2>` section is open (PKI, Provider Commands and
+  // Claims Providers head their sections with `<h3>`; elsewhere an `<h3>`
+  // is a heading inside its `<h2>`'s section). A section is a tab when its
+  // heading carries `data-tab`, which the tab's label then replaces; two
+  // sections naming one tab are one tab. A block marked `data-metadata`
+  // (a page's closing links) returns to Metadata. The rest, in page order,
+  // is Metadata.
+  /**
+   * Draws a Protocols page as tabs, Metadata first.
+   *
+   * @param path - the page's path, a key of `PROTOCOL_TABS`
+   * @param html - the page as drawn, its endpoints added
+   * @param t - the page's translator
+   * @returns the page as tabs
+   */
+  static protocolTabs(path: string, html: string, t: Json): string {
+    const slug = protocolSlug(path);
+    const blocks = ['div', 'form', 'table', 'details', 'section', 'ul', 'ol',
+                    'fieldset', 'nav', 'dl', 'p', 'aside'];
+    // A block marked `data-outside-tabs` — the certificate details dialog —
+    // is drawn after the tabs, not inside whichever one it followed.
+    const outside: string[] = [];
+    let text = String(html || '');
+    let cut = /<([a-zA-Z0-9]+)\b[^>]*\bdata-outside-tabs\b[^>]*>/.exec(text);
+    while (cut) {
+      const inner = /<(\/?)([a-zA-Z0-9]+)\b[^>]*?(\/?)>/g;
+      inner.lastIndex = cut.index;
+      let level = 0;
+      let end = text.length;
+      let one = inner.exec(text);
+      while (one) {
+        if (blocks.indexOf(one[2].toLowerCase()) >= 0 && !one[3]) {
+          level += one[1] ? -1 : 1;
+          if (level === 0) {
+            end = one.index + one[0].length;
+            break;
+          }
+        }
+        one = inner.exec(text);
+      }
+      outside.push(text.slice(cut.index, end));
+      text = text.slice(0, cut.index) + text.slice(end);
+      cut = /<([a-zA-Z0-9]+)\b[^>]*\bdata-outside-tabs\b[^>]*>/.exec(text);
+    }
+    const tag = /<(\/?)([a-zA-Z0-9]+)\b[^>]*?(\/?)>/g;
+    const sections: Json[] = [{ level: 0, tab: null, at: 0, start: 0 }];
+    let depth = 0;
+    let m = tag.exec(text);
+    while (m) {
+      const name = m[2].toLowerCase();
+      if (blocks.indexOf(name) >= 0) {
+        // A block marked `data-metadata` — a page's closing links — goes
+        // back to Metadata from whatever tab it follows.
+        if (!m[1] && depth === 0 && /\bdata-metadata\b/.test(m[0])) {
+          sections.push({ level: 0, tab: null, at: m.index,
+                          start: m.index });
+        }
+        depth += m[1] ? -1 : (m[3] ? 0 : 1);
+      } else if (!m[1] && depth === 0 && (name === 'h2' || name === 'h3') &&
+                 (name === 'h2' ||
+                  sections[sections.length - 1].level !== 2)) {
+        const close = text.indexOf('</' + name + '>', m.index);
+        const end = close < 0 ? m.index + m[0].length
+                              : close + name.length + 3;
+        const marked = /\bdata-tab="([^"]+)"/.exec(m[0]);
+        const id = /\bid="([^"]+)"/.exec(m[0]);
+        sections.push({ level: name === 'h2' ? 2 : 3,
+                        tab: marked ? marked[1] : null, at: m.index,
+                        start: end, id: id ? id[1] : '',
+                        label: WebPages.textOf(
+                          text.slice(m.index + m[0].length,
+                                     close < 0 ? end : close)) });
+      }
+      m = tag.exec(text);
+    }
+    let metadata = '';
+    const tabs: Json = {};
+    const order: string[] = [];
+    sections.forEach(function (one: Json, n: number) {
+      const stop = n + 1 < sections.length ? sections[n + 1].at : text.length;
+      if (!one.tab) {
+        metadata += text.slice(one.at, stop);
+        return;
+      }
+      if (!tabs[one.tab]) {
+        tabs[one.tab] = { label: one.label, html: '' };
+        order.push(one.tab);
+      }
+      // The heading goes, its label being the tab's; an id it carried
+      // stays, since a form's answer may return to it.
+      tabs[one.tab].html += (one.id
+        ? '<span id="' + WebKit.esc(one.id) + '"></span>' : '') +
+        text.slice(one.start, stop);
+    });
+    return WebKit.tabbedPanels(slug + '-pages', [
+      { id: slug + '-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: metadata }
+    ].concat(order.map(function (name) {
+      return { id: slug + '-tab-' + name, label: tabs[name].label,
+               html: tabs[name].html };
+    }))) + outside.join('');
+  }
+
+  // A heading's text, for a tab's label (which `tabbedPanels()` escapes):
+  // its markup taken off and the entities the renderers write put back.
+  /**
+   * The text of a fragment of markup.
+   *
+   * @param html - the fragment
+   * @returns its text
+   */
+  static textOf(html: string): string {
+    const named: Json = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+                          nbsp: ' ', mdash: '—', ndash: '–', rsaquo: '›',
+                          lsaquo: '‹', hellip: '…', middot: '·' };
+    return String(html || '').replace(/<[^>]*>/g, '')
+      .replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+        function (whole: string, code: string): string {
+          if (code.charAt(0) === '#') {
+            const n = code.charAt(1).toLowerCase() === 'x'
+              ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+            return isFinite(n) ? String.fromCodePoint(n) : whole;
+          }
+          return Object.prototype.hasOwnProperty.call(named,
+            code.toLowerCase()) ? named[code.toLowerCase()] : whole;
+        }).replace(/\s+/g, ' ').trim();
   }
 
   // METADATA, ONE SECTION PER PROTOCOL (rcbj, 2026-10-12): forty-odd rows
@@ -1542,6 +1747,11 @@ class WebPages {
     }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
+    }
+    if (PROTOCOL_TABS[page.path]) {
+      return WebPages.protocolTabs(page.path,
+        WebPages.withEndpoints(page.render(view, context), view, context.t),
+        context.t);
     }
     return WebPages.withEndpoints(page.render(view, context), view,
                                   context.t);

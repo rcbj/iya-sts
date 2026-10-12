@@ -27,8 +27,10 @@
 //      `revoke-global-consent` revokes the grant it covered; re-adding it
 //      revives nothing, and a new sign-in works without being asked.
 //   f. THE PERSON THEMSELVES, on `/portal/consents`: the page lists what they
-//      agreed, the Withdraw form revokes the grant, and the page refuses a
-//      post without its CSRF token and one naming nothing of theirs. And
+//      agreed, the Withdraw form revokes the grant, and its operation refuses
+//      a request with no access token and one naming nothing of theirs —
+//      since #568 the page is drawn from `/account-api` and the form posts
+//      there, the person signed in as the static portal is. And
 //      (#537) the global consents that answered for them at sign-in are
 //      listed under Administrative consents, with no Withdraw form, and one
 //      the administrator takes away is no longer listed.
@@ -43,6 +45,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -356,78 +359,34 @@ async function globalConsent() {
 
 // ---------------------------------------------------------------------------
 // f. THE PORTAL.
+//
+// SINCE #568 THE PORTAL IS A STATIC APPLICATION over `/account-api`: the
+// person signs in to it as the public client `sts-user-portal` — on the
+// sign-on session section e left in `cookie`, so single sign-on answers the
+// flow with no screen — and the page is its operation's view, drawn by the
+// portal's own renderers (`portal_signin.js`). The Withdraw form is that
+// operation's POST. The CSRF refusal this section asserted went with the
+// portal's session cookie: a request is a DPoP-bound token now, and one with
+// no token is what is refused.
 // ---------------------------------------------------------------------------
-function jarFrom(header) {
-  log.debug("Entering jarFrom().");
-  const jar = {};
-  String(header || "").split(/;\s*/).forEach(function (pair) {
-    const name = pair.split("=")[0];
-    if (name) {
-      jar[name] = pair.slice(name.length + 1);
-    }
-  });
-  log.debug("Leaving jarFrom().");
-  return jar;
-}
-
-async function browse(jar, method, url, body) {
-  log.debug("Entering browse(). " + method + " " + url);
-  const headers = { cookie: Object.keys(jar).map(function (k) {
-    return k + "=" + jar[k];
-  }).join("; ") };
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/x-www-form-urlencoded";
-  }
-  const r = await fetch(url, { method: method, redirect: "manual",
-                               headers: headers, body: body });
-  (r.headers.getSetCookie ? r.headers.getSetCookie() : [])
-    .forEach(function (one) {
-      const pair = String(one).split(";")[0];
-      const name = pair.split("=")[0];
-      const value = pair.slice(name.length + 1);
-      if (value === "") {
-        delete jar[name];
-      } else {
-        jar[name] = value;
-      }
-    });
-  const location = r.headers.get("location") || "";
-  log.debug("Leaving browse(). " + r.status);
-  return { status: r.status, text: await r.text(),
-           location: location ? new URL(location, url).toString() : "" };
-}
-
-// GET a portal page, following the portal's own code flow on the sign-on
-// session the jar holds.
-async function portalPage(jar, path) {
-  log.debug("Entering portalPage().");
-  let r = await browse(jar, "GET", realmBase + path);
-  for (let hop = 0; hop < 8 && (r.status === 302 || r.status === 303);
-       hop++) {
-    r = await browse(jar, "GET", r.location);
-  }
-  assert.strictEqual(r.status, 200, path + " should draw; it answered " +
-                     r.status + " " + r.text.slice(0, 300));
-  log.debug("Leaving portalPage().");
-  return r;
-}
-
 async function portal() {
   log.debug("Entering portal().");
   log.info("=== f. the person withdraws on /portal/consents ===");
   const grant = await tokens(A, "openid profile");
-  const jar = jarFrom(cookie);
-  let page = await portalPage(jar, "/portal/consents");
+  const client = await portalSignin.signInToThePortal(realmBase, ALICE, log,
+                                                      { cookie: cookie });
+  let page = await client.draw("/portal/consents");
   check("the page lists the person's own consent to A, with a Withdraw form",
         function () {
-    assert.ok(page.text.indexOf(A.client_id) >= 0, "client not listed");
-    assert.ok(/name="action" value="scope"/.test(page.text),
+    assert.strictEqual(page.status, 200, JSON.stringify(page.json));
+    assert.ok(page.html.indexOf(A.client_id) >= 0, "client not listed");
+    assert.ok(/name="action" value="scope"/.test(page.html),
               "no Withdraw form");
-    assert.ok(!/<script/i.test(page.text), "a script on the page");
+    assert.ok(!/<script/i.test(page.html), "a script on the page");
   });
   // ADMINISTRATIVE CONSENTS (#537): section e signed alice in to B, whose
   // openid and profile are consented for everybody.
-  const administrative = page.text.split('id="administrative-consents"')[1] ||
+  const administrative = page.html.split('id="administrative-consents"')[1] ||
     "";
   check("the global consents B's sign-in applied are listed under " +
         "Administrative consents, with no Withdraw form", function () {
@@ -441,32 +400,32 @@ async function portal() {
               "a Withdraw form in the administrative section");
   });
   check("and B is not among the person's own consents", function () {
-    const own = page.text.split('id="administrative-consents"')[0];
+    const own = page.html.split('id="administrative-consents"')[0];
     assert.ok(own.indexOf(B.client_id) < 0, "B listed as the person's own");
   });
-  const csrf = (page.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  let r = await browse(jar, "POST", realmBase + "/portal/consents",
-    new URLSearchParams({ action: "scope", client: A.client_id,
-                          scope: "profile" }).toString());
-  check("a post without its CSRF token is refused 403", function () {
-    assert.strictEqual(r.status, 403, r.text.slice(0, 200));
+  const bare = await fetch(realmBase + "/account-api/consents", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "scope", client: A.client_id,
+                           scope: "profile" }) });
+  check("a withdrawal with no access token is refused 401 (#568: the token " +
+        "replaced the CSRF token)", function () {
+    assert.strictEqual(bare.status, 401, String(bare.status));
   });
-  r = await browse(jar, "POST", realmBase + "/portal/consents",
-    new URLSearchParams({ action: "scope", client: B.client_id,
-                          scope: "profile", csrf_token: csrf }).toString());
+  let r = await client.act("/portal/consents",
+    { action: "scope", client: B.client_id, scope: "profile" });
   check("a post naming nothing of the person's own is refused 400 — B's " +
         "profile is under GLOBAL consent, not theirs", function () {
     assert.strictEqual(r.status, 400, r.text.slice(0, 200));
   });
   const renewedBefore = await renewed(grant.refresh_token, A,
                                       "the grant refreshes before");
-  r = await browse(jar, "POST", realmBase + "/portal/consents",
-    new URLSearchParams({ action: "scope", client: A.client_id,
-                          scope: "profile", csrf_token: csrf }).toString());
-  check("the Withdraw form answers 303 back to the page", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 200));
-    assert.ok(/\/portal\/consents\?/.test(r.location), r.location);
+  r = await client.act("/portal/consents",
+    { action: "scope", client: A.client_id, scope: "profile" });
+  check("the Withdraw form's operation answers ok, back to the page",
+        function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 200));
+    assert.ok(r.json && r.json.ok && /\/portal\/consents/.test(
+      String(r.json.go || "")), r.text.slice(0, 200));
   });
   r = await refresh(renewedBefore.refresh_token, A);
   const accessAfter = await active(renewedBefore.access_token, A);
@@ -474,18 +433,18 @@ async function portal() {
     refused(r, 400, "invalid_grant");
     assert.strictEqual(accessAfter, false);
   });
-  page = await portalPage(jar, "/portal/consents");
+  page = await client.draw("/portal/consents");
   check("and profile is no longer listed for A", function () {
-    const own = page.text.split('id="administrative-consents"')[0];
+    const own = page.html.split('id="administrative-consents"')[0];
     assert.ok(!/<code>profile<\/code>/.test(own), "profile still listed");
   });
   await ok(realmApi + "/consent/revoke-global-consent",
     { client: B.client_id, scope: "profile" }, "withdrew B's profile");
-  page = await portalPage(jar, "/portal/consents");
+  page = await client.draw("/portal/consents");
   // B's CARD, not the whole section: the person signed in to the portal
   // through its own seeded client, whose global consent covers profile too,
   // so the section rightly lists a profile row for that application.
-  const after = ((page.text.split('id="administrative-consents"')[1] || "")
+  const after = ((page.html.split('id="administrative-consents"')[1] || "")
     .split('<div class="card">').filter(function (card) {
       return card.indexOf(B.client_id) >= 0;
     })[0]) || "";

@@ -121,7 +121,8 @@ class ClaimsProvidersPage {
         '" name="' + name + '" autocomplete="off"></label>' +
         (hint ? ' <span class="sub">' + hint + '</span>' : '') + '<br>';
     };
-    const add = '<h3>' + t.html('consoleClaimsProviders.addHeading') +
+    const add = '<h3 data-tab="register">' +
+      t.html('consoleClaimsProviders.addHeading') +
       '</h3>' +
       '<form method="post" action="' + PAGE + '" id="claim-provider-add">' +
       '<input type="hidden" name="action" value="add-provider">' +
@@ -161,6 +162,9 @@ class ClaimsProvidersPage {
     return kit.note(t.html('consoleClaimsProviders.noteA') + '<code ' +
         'id="claim-provider-callback">' + esc(json.redirectUri) +
         '</code>' + t.html('consoleClaimsProviders.noteB')) +
+      // The register is the first tab (2026-10-12); the note is Metadata.
+      '<h3 data-tab="providers">' +
+      t.html('consoleClaimsProviders.providersHeading') + '</h3>' +
       '<table><thead><tr><th>' + t.html('consoleClaimsProviders.colProvider') +
       '</th><th>' + t.html('consoleClaimsProviders.colIssuer') + '</th><th>' +
       t.html('consoleClaimsProviders.colEndpoints') + '</th>' +
@@ -168,7 +172,8 @@ class ClaimsProvidersPage {
       t.html('consoleClaimsProviders.colClaims') + '</th><th>' +
       t.html('consoleClaimsProviders.colDelivery') + '</th><th></th></tr>' +
       '</thead><tbody>' + providers + '</tbody></table>' + add +
-      '<h3>' + t.html('consoleClaimsProviders.linksHeading') +
+      '<h3 data-tab="links">' +
+      t.html('consoleClaimsProviders.linksHeading') +
       '</h3><table><thead><tr><th>' +
       t.html('consoleClaimsProviders.colPerson') + '</th><th>' +
       t.html('consoleClaimsProviders.colProvider') + '</th>' +
@@ -176,7 +181,8 @@ class ClaimsProvidersPage {
       t.html('consoleClaimsProviders.colLinked') + '</th><th>' +
       t.html('consoleClaimsProviders.colToken') + '</th><th></th></tr>' +
       '</thead><tbody>' + links + '</tbody></table>' +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="' + PAGE +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/claim-providers</code></p>';
   }
 }

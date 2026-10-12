@@ -24,6 +24,7 @@
   "title.crypto-metadata": "密码学",
   "title.home": "管理控制台",
   "title.api-explorer": "API 浏览器",
+  "title.account-api": "账户 API",
   "title.sts-metadata": "服务元数据",
   "title.delegation": "委托",
   "title.delegation-allowed": "允许的映射",

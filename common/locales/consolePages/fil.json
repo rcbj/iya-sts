@@ -24,6 +24,7 @@
   "title.crypto-metadata": "Cryptography",
   "title.home": "Admin console",
   "title.api-explorer": "API explorer",
+  "title.account-api": "Account API",
   "title.sts-metadata": "Metadata ng serbisyo",
   "title.delegation": "Delegation",
   "title.delegation-allowed": "Ang mga pinapayagang mapping",

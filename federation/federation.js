@@ -4557,6 +4557,85 @@ function recordFailure(id, why) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE CONSOLE PROSE OF THIS REGISTER (#543 phase 2b): the `federation`
+// namespace's share. The tables above reach three `/admin-api` answers —
+// the relationship list and drill-down (`roles`, `protocols`, `schema`, the
+// labels of a select's values), the directory's own view of
+// `ou=federations` (the whole SCHEMA), and the federation picture — and the
+// server translates a string of those answers that is EXACTLY one of these.
+//
+// What is NOT here, on purpose: a protocol's `family` and `spec` (a name and
+// a citation), an object class's `where` other than "this service" (an RFC
+// number), the `needs` lists (attribute names), and `readinessOf()`'s
+// `missing` entries — each an attribute name, some with a parenthesis of
+// prose after it, so data and prose in one string, which stays English.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this register's prose.
+ */
+const PROSE_ROUTES = ['/admin-api/federation', '/admin-api/ldap/federations',
+                      '/admin-api/console/federation/map'];
+
+/**
+ * Re-keys a table by the member that names each row, so that a harvested key
+ * names the row rather than its position.
+ *
+ * @param rows - the table
+ * @param idMember - the member holding each row's id
+ * @param members - the prose members to keep
+ * @returns id → the row's prose members
+ */
+function proseById(rows, idMember, members) {
+  log.debug("Entering proseById(). " + idMember);
+  const out = {};
+  rows.forEach(function (row) {
+    const kept = {};
+    members.forEach(function (name) {
+      if (typeof row[name] === 'string') {
+        kept[name] = row[name];
+      }
+    });
+    out[row[idMember]] = kept;
+  });
+  log.debug("Leaving proseById().");
+  return out;
+}
+
+/**
+ * Extracts this register's console prose for the `federation` namespace: the
+ * roles, protocols, sign-in mechanisms and subject policies, and the schema's
+ * object classes and attributes.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, because `server_prose` requires `config.js` and `helpers.js`
+  // at its load, and this module is required by much that they reach.
+  const harvest = require('./../common/server_prose').harvest;
+  const out = Object.assign({},
+    harvest('fed.roles', proseById(ROLES, 'role',
+                                   ['label', 'short', 'what']),
+            ['label', 'short', 'what']),
+    harvest('fed.protocols', proseById(PROTOCOLS, 'protocol',
+                                       ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.mechanisms', proseById(MECHANISMS, 'mechanism',
+                                        ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.subjectPolicies', proseById(SUBJECT_POLICIES, 'policy',
+                                             ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.schema', SCHEMA, ['what']));
+  // The two short phrases the directory's view draws in a column of their
+  // own, once each rather than once per row that carries them.
+  out['fed.schema.where.thisService'] = 'this service';
+  out['fed.schema.from.thisRegister'] = 'this register';
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The federation register: every relationship with a foreign identity service
  * in one trust realm, held in the directory under `ou=federations`, with its
@@ -4565,6 +4644,9 @@ function recordFailure(id, why) {
  * @namespace
  */
 module.exports = {
+  // The `federation` namespace's routes and English (#543).
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   clientSecretOf: clientSecretOf,
   PATHS: PATHS,
   ROLES: ROLES,

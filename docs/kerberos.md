@@ -313,6 +313,13 @@ and is refused `KRB_AP_ERR_BADKEYVER` after that.
   versions** (`drop-previous-service-keys`, `drop-previous-person-keys`) ends
   the window at once — after a compromise, say — leaving the current key
   untouched.
+* `GET /admin-api/kerberos/principals` also answers the KDC's
+  `accountPolicy` (#587): `anyUsernameAuthenticates` (whether a name nobody
+  registered is created on first sight — development only),
+  `neverCreated` (the names that stay unknown on purpose) and `serviceHosts`
+  (the hosts a service principal is created for). They are the facts
+  `/krb5/principals` publishes, read from the same places, without either
+  shared password.
 
 ### A second factor over Kerberos: FAST and OTP
 

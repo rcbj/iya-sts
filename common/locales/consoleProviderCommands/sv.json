@@ -44,5 +44,6 @@
   "nothingIn": "Inget i tillståndet {state}.",
   "counts": "{pending} väntande, {sent} skickade, <strong>{dead} döda</strong>",
   "colWhat": "Vad",
-  "deliveriesNote": "<strong>Varje utgående leverans</strong> som den här tjänsten skickar med POST till en adress som en klient registrerat, på den enda beständiga kön: var och en är en sparad rad, försökt en gång för klustret under ett hämtat lån, försökt igen med fördröjning när en tidsgräns, ett anslutningsfel, 5xx, 408 eller 429 gör det värt det, och annars ett <strong>dött brev</strong> — skickas igen bara när en operatör trycker på Försök igen, vilket startar en ny generation."
+  "deliveriesNote": "<strong>Varje utgående leverans</strong> som den här tjänsten skickar med POST till en adress som en klient registrerat, på den enda beständiga kön: var och en är en sparad rad, försökt en gång för klustret under ett hämtat lån, försökt igen med fördröjning när en tidsgräns, ett anslutningsfel, 5xx, 408 eller 429 gör det värt det, och annars ett <strong>dött brev</strong> — skickas igen bara när en operatör trycker på Försök igen, vilket startar en ny generation.",
+  "clientsHeading": "Förlitande parter"
 }

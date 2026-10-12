@@ -7012,6 +7012,27 @@ function create(options) {
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');
 
+// The routes whose answers carry the database namespace's prose (#543): the
+// probes' sentences, which `GET /admin-api/database` carries as each
+// probe's `what`.
+const PROSE_ROUTES = ['/admin-api/database'];
+
+// No log line, for `poolMax()`'s reason: this module's logger arrives with
+// create(), and the namespace is extracted without one.
+/**
+ * Extracts this module's part of the database namespace (#543 phase 2b):
+ * what each catalog probe asks. A probe's `group` is not harvested: it is
+ * the heading `admin-ui/web_database.ts` files it under, and that table is
+ * the renderer's.
+ *
+ * @returns key → English
+ */
+function prose() {
+  // LAZILY, for `persistence.js`'s reason: this driver is loaded by it.
+  return require('../common/server_prose').harvest('postgres.probes',
+    METRIC_PROBES, ['what']);
+}
+
 /**
  * The postgres persistence driver: the shared store, and the change log that
  * several processes coordinate through.
@@ -7021,6 +7042,8 @@ capabilities.provide('directory.concurrent-writes');
  * @namespace
  */
 module.exports = {
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   create: create,
   // For `tests/database_metrics.js`, which checks that every probe is
   // GROUPED into a section the page actually draws — a probe in a group the

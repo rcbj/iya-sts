@@ -295,6 +295,11 @@ import riskDatasets = require('../risk/risk_datasets');
 import mailTemplates = require('../common/mail_templates');
 import identityAssurance = require('../common/identity_assurance');
 import federation = require('../federation/federation');
+// THE OPENID4VP VERIFIER (#587): `POST /verifications/start` builds its
+// request through the Verifier's own `startVerification()`, and the
+// document's closed sets are its START_VOCABULARY. A converted route module
+// loaded at 11–14, so this is a cache hit that registers nothing (rule 1).
+import vcVerifier = require('../oid4vc/vc_verifier');
 // And six LEAVES the filters and the PKI and XACML actions are held to (#86):
 // the audit vocabulary, the delegation register's types, the used-assertion
 // history's formats, the issuance kinds, the ISO 3166 alpha-2 codes and
@@ -3137,6 +3142,53 @@ class AdminApi {
           log.debug("Entering the management API mode endpoint.");
           self.sendJson(res, 200, modeAdmin.modeView());
           log.debug("Leaving the management API mode endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // THE ACCOUNT API'S DOCUMENT (#568). The user portal's API,
+      // `/account-api`, publishes its OpenAPI document itself at
+      // `/account-api/openapi.json`, to anybody, because it carries no secret;
+      // this is the same document for the console's *Account API* page, which
+      // draws it from here like every page — the realm's, since the account
+      // API is per realm. It describes and calls nothing: every operation of
+      // that API acts on the signed-in person's own account.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/account-api', tag: 'Service',
+        operationId: 'getAccountApi',
+        summary: 'The account API\'s OpenAPI document',
+        description: 'The OpenAPI 3.1 document of `/account-api` — the ' +
+                     'user portal\'s API — for the realm the call is in ' +
+                     '(`document`), where that API publishes it (`url`), ' +
+                     'and how many paths and operations it holds. The ' +
+                     'same document `GET /account-api/openapi.json` ' +
+                     'answers, built from the table that registers those ' +
+                     'routes.',
+        mirrors: 'GET /admin/account-api',
+        responseDescription: 'The document and where it is published.',
+        responseSchema: { type: 'object', properties: {
+          url: { type: 'string', description: 'Where the account API ' +
+                 'publishes the document itself.' },
+          paths: { type: 'integer', description: 'Paths in the document.' },
+          operations: { type: 'integer',
+                        description: 'Operations in it.' },
+          document: { type: 'object',
+                      description: 'The OpenAPI 3.1 document.' } } },
+        handler: function (req, res) {
+          log.debug("Entering the management API account API endpoint.");
+          // LAZILY, for the explorer's reason: the account API gathers its
+          // operations from the portal's page modules when its routes are
+          // registered, and this file is loaded later than that anyway.
+          const accountApi = require('../account-api/account_api');
+          const document = accountApi.document(req);
+          let operations = 0;
+          Object.keys(document.paths || {}).forEach(function (path) {
+            operations += Object.keys(document.paths[path]).length;
+          });
+          self.sendJson(res, 200, {
+            url: helpers.baseUrlOf(req) + '/account-api/openapi.json',
+            paths: Object.keys(document.paths || {}).length,
+            operations: operations, document: document });
+          log.debug("Leaving the management API account API endpoint.");
         } },
 
       // ---------------------------------------------------------------------
@@ -11029,7 +11081,11 @@ class AdminApi {
                      'separate and their disagreeing is a state to report ' +
                      'rather than one to prevent: a Verifier asking for a ' +
                      'claim nothing here issues is the only way to exercise ' +
-                     'what a wallet does with a request it cannot satisfy.',
+                     'what a wallet does with a request it cannot satisfy.' +
+                     '\n\n`recentVerifications` (#587) is `GET ' +
+                     '/verifications` without a `state` — the open ' +
+                     'verifications and their outcomes the tab lists under ' +
+                     'its Start a verification form.',
         mirrors: 'GET /admin/vc',
         responseDescription: 'The request as it now stands.',
         responseSchema: { $ref: '#/components/schemas/VerifierRequest' },
@@ -11174,6 +11230,214 @@ class AdminApi {
             },
             responseDescription: 'The format now in force.' }
         ] },
+
+      // ---------------------------------------------------------------------
+      // STARTING A VERIFICATION AND READING ITS OUTCOME (#587, 2026-10-12).
+      //
+      // The administrator's twin of the demonstration Verifier's
+      // `/oid4vp/start` and `/oid4vp/result/:state`, which become
+      // development-only (#585) — and an operator in product mode still needs
+      // a way to ask a wallet for a presentation and read what was decided.
+      // Both call the Verifier's own `startVerification()` and
+      // `verificationOutcome()`, the functions those pages call, so the
+      // request built here is the request the page builds.
+      //
+      // THE START CALLS THE VERIFIER RATHER THAN AN `admin-core` ACTION, and
+      // that is the one departure from "every operation that changes
+      // something calls an action": building a request reads the REQUEST's
+      // origin a dozen times below it — the Response URI, the did:web, the
+      // OpenID Federation entity identifier, the x509 name — and an action
+      // never sees a request (`tests/admin_actions_layer.js`). Nothing is
+      // lost: the console's form posts to THIS operation, so there is no
+      // second admin door to share it with, and the Verifier is where the
+      // page shares it. The require is a cache hit — the Verifier is loaded
+      // at 11–14 and registers nothing when required (rule 1).
+      // ---------------------------------------------------------------------
+      { method: 'POST', path: BASE + '/verifications/start',
+        tag: 'Verifier request',
+        operationId: 'startVerification',
+        summary: 'Start an OpenID4VP verification: build a request for a ' +
+                 'wallet',
+        description: 'Builds a presentation request exactly as the ' +
+                     'Verifier\'s `/oid4vp/start` does — the same ' +
+                     'function — and answers how a wallet is handed it ' +
+                     'instead of sending a browser there: `walletUrl` (the ' +
+                     'wallet\'s presentation address with the request on ' +
+                     'its query, what a same-device start redirects to), ' +
+                     '`requestUri` (the `openid4vp://` URI, or SIOPv2\'s ' +
+                     '`siopv2://` for an ID Token alone, that a ' +
+                     'cross-device QR code carries), `query` itself, and ' +
+                     '— by reference — the `request_uri` the wallet ' +
+                     'fetches the signed Request Object from. `state` ' +
+                     'names it; `GET /verifications?state=` reads its ' +
+                     'outcome.\n\nThe body names what the page\'s query ' +
+                     'names, every member optional: `format` (a format ' +
+                     'id, `GET /verifier-request` lists them; the ' +
+                     'configured default when absent), `by` (`value` or ' +
+                     '`reference`), `client_id_prefix` (a signed ' +
+                     'request\'s Client Identifier Prefix — naming one ' +
+                     'asks for a request by reference), `response_type`, ' +
+                     '`response_mode`, `mode` (`same-device` or ' +
+                     '`cross-device`, which only says which of the two ' +
+                     'addresses a caller means to use) and `wallet` (held ' +
+                     'to `oid4vp.walletUrl` and `oid4vp.allowedWalletUrls` ' +
+                     'wherever only registered addresses are accepted).' +
+                     '\n\nWhat the request ASKS FOR is the Verifier ' +
+                     'request\'s configuration (`/verifier-request`), ' +
+                     'frozen onto the transaction now. Refused as the page ' +
+                     'refuses: 400 for what the request names wrongly ' +
+                     '(STS-VC-0032) and for a wallet this realm will not ' +
+                     'send a request to (STS-VC-0033), and 500 with the ' +
+                     'builder\'s own code where no request can be built — ' +
+                     'a Verifier Attestation this realm cannot use ' +
+                     '(STS-VC-0092), an x509 Client Identifier with ' +
+                     'nothing to certify (STS-VC-0110 to STS-VC-0113). ' +
+                     'Answered in every mode: this is an administrator ' +
+                     'asking, not the demonstration.',
+        mirrors: 'POST /admin/vc#vc-tab-verifier-request',
+        parameters: [],
+        requestBodyRequired: false,
+        requestBody: {
+          type: 'object',
+          properties: {
+            format: { type: 'string',
+                      description: 'A format id: ' +
+                                   vcVerifier.START_VOCABULARY.format
+                                     .join(', ') + '. Not a closed set ' +
+                                   'here, as on `/verifier-request/format`: ' +
+                                   'a form-encoded `+` arrives as a space ' +
+                                   'and is put back, and the Verifier ' +
+                                   'refuses anything else by name.' },
+            by: { type: 'string',
+                  enum: vcVerifier.START_VOCABULARY.by },
+            client_id_prefix: { type: 'string',
+              enum: vcVerifier.START_VOCABULARY.client_id_prefix },
+            response_type: { type: 'string',
+              enum: vcVerifier.START_VOCABULARY.response_type },
+            response_mode: { type: 'string',
+              enum: vcVerifier.START_VOCABULARY.response_mode },
+            mode: { type: 'string',
+                    enum: vcVerifier.START_VOCABULARY.mode },
+            wallet: { type: 'string',
+                      description: 'Where to send the holder, if not ' +
+                                   '`oid4vp.walletUrl`.' }
+          },
+          examples: [{ format: 'dc+sd-jwt', by: 'reference' }],
+          additionalProperties: false
+        },
+        responseDescription: '`state`, `walletUrl`, `requestUri`, `query`, ' +
+                             'the `request_uri` by reference, and what was ' +
+                             'asked.',
+        responseSchema: { type: 'object',
+          description: '`ok`, `message`, `state`, `nonce`, `mode`, ' +
+                       '`format`, `responseType`, `responseMode`, ' +
+                       '`byReference`, `clientId`, `requested`, ' +
+                       '`dcql_query`, `expiresAt`, `wallet`, `walletUrl`, ' +
+                       '`requestUri`, `query` and, by reference, ' +
+                       '`request_uri`.' },
+        handler: async function (req, res) {
+          log.debug("Entering the management API verification start.");
+          const body = Object.assign({}, parseBody(req));
+          // A form-encoded body decodes `dc+sd-jwt`'s `+` to a space;
+          // `vpConfigAction()` puts it back for the same reason.
+          if (body.format) {
+            body.format = String(body.format).replace(/ /g, '+');
+          }
+          const started: any = await vcVerifier.startVerification(req, body,
+                                                                  'body');
+          if (!started.ok) {
+            errorCodes.mark(res, started.code);
+            self.sendJson(res, started.status,
+                          { ok: false, errors: [started.error] });
+            log.debug("Leaving the management API verification start. " +
+                      "Refused.");
+            return;
+          }
+          const record = started.record;
+          const answer: any = {
+            ok: true,
+            message: 'Verification ' + record.state + ' started. Send the ' +
+                     'wallet to ' + started.walletUrl + ' — or show it ' +
+                     started.requestUri + ' — and read the outcome with ' +
+                     'GET /admin-api/verifications?state=' +
+                     encodeURIComponent(record.state) + '.',
+            state: record.state,
+            nonce: record.nonce,
+            mode: started.mode,
+            format: record.format,
+            responseType: record.responseType,
+            responseMode: record.responseMode,
+            byReference: !!record.byReference,
+            clientId: record.clientId,
+            requested: record.requested || [],
+            dcql_query: record.request.dcql_query,
+            expiresAt: new Date(record.expires).toISOString(),
+            wallet: started.wallet,
+            walletUrl: started.walletUrl,
+            requestUri: started.requestUri,
+            query: started.query
+          };
+          if (record.byReference) {
+            answer.request_uri = baseUrlOf(req) + '/oid4vp/request/' +
+                                 record.id;
+          }
+          self.sendJson(res, 200, answer);
+          log.debug("Leaving the management API verification start. state=" +
+                    record.state);
+        } },
+
+      { method: 'GET', path: BASE + '/verifications',
+        tag: 'Verifier request',
+        operationId: 'getVerifications',
+        summary: 'A verification\'s outcome, or the verifications still ' +
+                 'open',
+        description: 'With `state`: what the Verifier decided — the object ' +
+                     '`/oid4vp/result/:state` answers, from the same ' +
+                     'function, with `found: true`: `state`, `nonce`, ' +
+                     '`client_id`, `requested`, `dcql_query`, `received` ' +
+                     '(whether a wallet has answered) and `verdict` (`ok`, ' +
+                     '`checks`, `claims`, `disclosed`, …, null until it ' +
+                     'answers). A state this realm holds no record of is ' +
+                     '404 with `found: false` (STS-VC-0042), as on the ' +
+                     'result page.\n\nWithout `state`: the realm\'s open ' +
+                     'verifications, newest first — at most `limit` of ' +
+                     '`total` — each its `state`, what was asked ' +
+                     '(`format`, `responseType`, `responseMode`, ' +
+                     '`byReference`, `clientId`, `requested`), ' +
+                     '`expiresAt`, and what was decided (`received`, `ok`, ' +
+                     '`decidedAt`, the disclosed claim NAMES, ' +
+                     '`failedChecks`, a wallet\'s `error`). A wallet ' +
+                     'SIGN-IN is not listed: it is a person signing in, ' +
+                     'not a verification an administrator asked for. The ' +
+                     'Verifier request tab draws this list.',
+        mirrors: 'GET /admin/vc',
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The `state` `POST /verifications/start` ' +
+                         'answered.' }
+        ],
+        responseDescription: 'One outcome, or the open verifications.',
+        responseSchema: { type: 'object',
+          description: '`found` and the outcome, or `verifications`, ' +
+                       '`total` and `limit`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API verifications endpoint.");
+          const json: any = adminViews.presentationVerificationsJson(req);
+          if (json.found === false) {
+            errorCodes.mark(res, 'STS-VC-0042');
+            self.sendJson(res, 404, { ok: false, found: false,
+              state: json.state,
+              errors: ['No such presentation: this realm holds no ' +
+                       'verification with state "' + json.state + '". ' +
+                       'An expired one is removed by the sweep.'] });
+            log.debug("Leaving the management API verifications endpoint. " +
+                      "Unknown state.");
+            return;
+          }
+          self.sendJson(res, 200, json);
+          log.debug("Leaving the management API verifications endpoint.");
+        } },
 
       // The authorization server profiles — what each discovery document
       // publishes.

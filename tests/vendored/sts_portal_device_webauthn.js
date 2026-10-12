@@ -32,14 +32,16 @@
 //   2. A PLATFORM KEY, ENROLLED IN THE BROWSER. An `internal` authenticator,
 //      enrolled as "Built into this device", stored with `attachment:
 //      platform` — the one fact that makes it linkable.
-//   3. THE SCRIPT BLOCKED (the root CLAUDE.md's submit-button rule). With
-//      script execution off, the armed page still draws its real button, and
-//      pressing it posts a `link-finish` that is answered with a sentence
-//      saying the browser ran no ceremony — and links nothing.
-//   4. THE LINK. The armed response carries `script-src 'self'` and keeps
-//      `frame-ancestors`; pressing the button runs the script and the
-//      platform authenticator signs. Development links the key; PRODUCT
-//      REFUSES IT, and the refusal is what is asserted there — see
+//   3. THE SCRIPT BLOCKED. Since #568 the portal IS a script — a static
+//      application drawn from `/account-api` — so the submit-button rule
+//      that once held this page (the root CLAUDE.md) no longer applies to
+//      it: with script execution off, the shell's `<noscript>` says the
+//      portal needs one, no page is drawn, and nothing is linked.
+//   4. THE LINK. The portal's shell carries `script-src 'self'` and keeps
+//      `frame-ancestors`; pressing the button runs the portal's own
+//      ceremony (`portal/web_portal_webauthn.ts`, since #568 — it was
+//      `/authn/webauthn.js`) and the platform authenticator signs.
+//      Development links the key; PRODUCT REFUSES IT, and the refusal is what is asserted there — see
 //      modeOfTheService() for why a virtual authenticator's key can never
 //      be attested.
 //   5. (development) THE DEVICE SHOWS THE KEY, on the page and through
@@ -50,6 +52,12 @@
 //      its last use moves. Both are written to the directory, so they read
 //      the same from whichever process or node answers.
 //   7. THE BROWSER LOGGED NOTHING SEVERE: no CSP violation, no failed load.
+//
+// SINCE #568 THE BROWSER RUNS THE STATIC PORTAL: every `/portal/*` path is
+// one shell whose script signs in as the public client `sts-user-portal`
+// (the sign-in screen is reached exactly as before), draws each page from
+// its `/account-api` operation and sends each form there. The sections
+// below read the page the script draws, as a person does.
 //
 // MUTATION-TESTED (2026-10-06), each against a copy of the compiled
 // service: the armed page's `script-src 'self'` relaxation dropped (caught
@@ -308,6 +316,21 @@ async function path(driver) {
   return p;
 }
 
+// OPENS A PORTAL PAGE AND WAITS FOR IT TO BE DRAWN (#568). A page load is
+// the static portal starting again: it signs in silently on the sign-on
+// session the browser holds, asks the page's operation and draws it. The
+// frame's navigation column is drawn last of all and the shell has none, so
+// its presence at the page's own address is the page drawn.
+async function openPage(driver, where) {
+  log.debug("Entering openPage(). " + where);
+  await driver.get(url(where));
+  await waitFor(driver, async function () {
+    return (await path(driver)) === where &&
+      await present(driver, ".side nav");
+  }, where + " was never drawn.");
+  log.debug("Leaving openPage().");
+}
+
 // THE AUTHENTICATOR, one at a time — WebDriver keeps a single virtual
 // authenticator per session. Both verify the user and consent without a
 // person, which is what a test authenticator is for.
@@ -423,7 +446,7 @@ async function signIn(driver, withKey) {
 // it a nickname in the form the page opens once it is registered.
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
-  await driver.get(url("/portal/keys"));
+  await openPage(driver, "/portal/keys");
   const buttons = await driver.findElements(
     By.css("button[name='kind'][value='" + kind + "']"));
   assert.ok(buttons.length === 1,
@@ -462,23 +485,18 @@ async function enrol(driver, kind, label) {
   return key;
 }
 
-// The armed `/portal/devices` page as a SERVER answers it, read with the
-// browser's own session: the policy header is what WebDriver cannot show,
-// and this is a GET, which changes nothing.
+// THE POLICY THE PORTAL IS SERVED UNDER, read from the server: WebDriver
+// cannot show a response header. Since #568 every `/portal/*` path answers
+// the one shell document, so this is the policy the page the browser is
+// showing runs under; what is ARMED is read from the browser's own page.
 async function armedResponse(driver) {
   log.debug("Entering armedResponse().");
-  const cookies = await driver.manage().getCookies();
-  const agent = await driver.executeScript("return navigator.userAgent;");
-  const r = await fetch(url("/portal/devices"), {
-    redirect: "manual",
-    headers: { cookie: cookies.map(function (c) {
-      return c.name + "=" + c.value;
-    }).join("; "), "user-agent": String(agent) }
-  });
-  const text = await r.text();
+  const r = await fetch(url("/portal/devices"), { redirect: "manual" });
+  await r.text();
+  const armed = await present(driver, "#wa-data[data-mode='get']");
   log.debug("Leaving armedResponse().");
   return { status: r.status, csp: String(r.headers
-    .get("content-security-policy") || ""), text: text };
+    .get("content-security-policy") || ""), armed: armed };
 }
 
 // THE KIND /portal/keys DRAWS FOR ONE KEY — the Kind row of its Details
@@ -488,7 +506,7 @@ async function armedResponse(driver) {
 // because a closed `<details>` hides its text from WebDriver's getText().
 async function kindDrawnFor(driver, label) {
   log.debug("Entering kindDrawnFor().");
-  await driver.get(url("/portal/keys"));
+  await openPage(driver, "/portal/keys");
   const cells = await driver.findElements(By.xpath(
     "//li[.//div[@class='name' and normalize-space()='" + label + "']]" +
     "//tr[th='Kind']/td"));
@@ -521,7 +539,7 @@ async function aRoamingKeyIsRefused(driver) {
       JSON.stringify(roamingKind));
   });
 
-  await driver.get(url("/portal/devices"));
+  await openPage(driver, "/portal/devices");
   const text = await bodyText(driver);
   const offered = await driver.findElements(By.css(
     "#dev-cred option[value='" + roaming.credentialId + "']"));
@@ -572,7 +590,7 @@ async function aPlatformKeyIsEnrolled(driver) {
 // form would: the browser sends it, and the page must refuse it.
 async function aForcedRoamingLinkIsRefused(driver, roaming) {
   log.debug("Entering aForcedRoamingLinkIsRefused().");
-  await driver.get(url("/portal/devices"));
+  await openPage(driver, "/portal/devices");
   await driver.executeScript(
     "var s = document.getElementById('dev-cred');" +
     "var o = document.createElement('option');" +
@@ -595,7 +613,7 @@ async function aForcedRoamingLinkIsRefused(driver, roaming) {
 // Fills the link form for a NEW device and presses Link it.
 async function beginTheLink(driver, platform) {
   log.debug("Entering beginTheLink().");
-  await driver.get(url("/portal/devices"));
+  await openPage(driver, "/portal/devices");
   const choice = await driver.findElements(By.css(
     "#dev-cred option[value='" + platform.credentialId + "']"));
   assert.strictEqual(choice.length, 1,
@@ -617,41 +635,33 @@ async function beginTheLink(driver, platform) {
 // ---------------------------------------------------------------------------
 async function withTheScriptBlocked(driver, platform) {
   log.debug("Entering withTheScriptBlocked().");
-  log.info("=== 3. with the script blocked, the button is the mechanism ===");
+  log.info("=== 3. with the script blocked, the portal says it needs one ===");
   await driver.sendDevToolsCommand("Emulation.setScriptExecutionDisabled",
                                    { value: true });
+  let text = "";
+  let drawn = true;
   try {
-    await beginTheLink(driver, platform);
-    const go = await driver.findElements(By.id("wa-go"));
-    const real = await driver.findElements(By.css(
-      "#wa-form button[type='submit']"));
-    check("the armed page draws the ceremony's button AND a real submit " +
-          "button under it", function () {
-      assert.strictEqual(go.length, 1, "no #wa-go button");
-      assert.strictEqual(real.length, 1,
-        "no submit button in #wa-form: with the script blocked the page " +
-        "would do nothing");
-    });
-    // Pressing the ceremony's own button does nothing with no script, which
-    // is what a person with script blocked meets first.
-    await go[0].click();
-    await real[0].click();
-    await waitFor(driver, async function () {
-      return /did not run the ceremony/i.test(await bodyText(driver));
-    }, "the real button's link-finish with no assertion was not answered " +
-       "with the page's sentence");
+    await driver.get(url("/portal/devices"));
+    text = await bodyText(driver);
+    drawn = await present(driver, "#dev-cred");
   } finally {
     await driver.sendDevToolsCommand("Emulation.setScriptExecutionDisabled",
                                      { value: false });
   }
   const held = await devicesOf(PERSON);
-  check("the page says the browser ran no ceremony, and nothing is " +
-        "linked", function () {
-    assert.ok(!held.some(function (d) {
-      return webauthnKeyOf(d, platform.credentialId);
-    }), "a device holds the platform key after a ceremony that never ran: " +
-        JSON.stringify(held));
-  });
+  check("THE PORTAL IS A SCRIPT SINCE #568: with script blocked the shell " +
+        "says the portal needs one, draws no page, and nothing is linked",
+    function () {
+      assert.ok(/is a script that runs in your browser/.test(text),
+        "the shell does not say the portal needs script: " +
+        text.slice(0, 400));
+      assert.strictEqual(drawn, false,
+        "a page was drawn with script blocked");
+      assert.ok(!held.some(function (d) {
+        return webauthnKeyOf(d, platform.credentialId);
+      }), "a device holds the platform key after a ceremony that never " +
+          "ran: " + JSON.stringify(held));
+    });
   log.debug("Leaving withTheScriptBlocked().");
 }
 
@@ -666,10 +676,9 @@ async function theLink(driver, platform, product) {
   check("the armed page is served script-src 'self' for its one script, " +
         "and keeps frame-ancestors", function () {
     assert.strictEqual(armed.status, 200,
-      "GET /portal/devices with the browser's session answered " +
-      armed.status);
-    assert.ok(/data-mode="get"/.test(armed.text),
-      "the page fetched with the browser's session is not the armed one");
+      "GET /portal/devices answered " + armed.status);
+    assert.ok(armed.armed,
+      "the page the browser is showing is not the armed one");
     assert.ok(/frame-ancestors /.test(armed.csp),
       "the armed page's policy dropped frame-ancestors: " + armed.csp);
     // `script-src` alone: the portal's `style-src` allows inline styles,
@@ -735,7 +744,7 @@ async function theDeviceShowsTheKey(driver, platform) {
     assert.strictEqual((device.attestation || {}).level, "self-asserted",
       "the device's attestation: " + JSON.stringify(device.attestation));
   });
-  await driver.get(url("/portal/devices"));
+  await openPage(driver, "/portal/devices");
   const rows = await driver.findElements(By.xpath(
     "//tr[td[1][normalize-space()='" + DEVICE_LABEL + "']]"));
   const row = rows.length ? await rows[0].getText() : "";
@@ -818,9 +827,10 @@ async function theBrowserLogIsClean(driver) {
     // none; it is the browser's request rather than the page's.
     return message.indexOf("/favicon.ico") < 0;
   }).filter(function (message) {
-    // THE REFUSALS THIS FILE PROVOKES: the forced roaming link and the
-    // ceremony that never ran are each answered 400 on purpose.
-    return !(/\/portal\/devices/.test(message) &&
+    // THE REFUSALS THIS FILE PROVOKES: the forced roaming link is answered
+    // 400 on purpose — by `/account-api/devices`, the form's operation since
+    // #568, where it was `/portal/devices`.
+    return !(/\/(portal|account-api)\/devices/.test(message) &&
              /status of 400/.test(message));
   });
   check("the browser logged nothing severe — no policy violation, no " +
@@ -896,7 +906,9 @@ async function test() {
     // A FLOOR ON THE COUNT, for sts_admin_console.js's reason: a section
     // that stops being called takes its assertions with it and the run
     // still says "passed".
-    const floor = product ? 10 : 15;
+    // One fewer since #568: section 3 is one check where the submit-button
+    // rule made it two.
+    const floor = product ? 9 : 14;
     assert.ok(checks >= floor,
       "only " + checks + " checks ran; this file makes " + floor + " in " +
       (product ? "product" : "development") + " mode, so a " +

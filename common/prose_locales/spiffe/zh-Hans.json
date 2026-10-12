@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "本地"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "调用通过 Unix 域套接字到达。真正的 SPIRE 服务器会完全信任其私有套接字——spire-server CLI 就是这样工作的——访问控制就是套接字的文件系统权限。开发模式假定该边界成立；产品模式则按连接验证它：套接字设为 0600，位于其他用户无法访问的目录中，且调用方的内核 uid 是本服务自己的。`spiffe.trustLocalSocket` 可将其关闭，这会使套接字像 TCP 端口一样要求 SVID，这也是检验客户端“在套接字上被拒绝”路径的唯一方式。"
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "代理"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "调用方出示了一个 X509-SVID，其 SPIFFE ID 是代理 id（/spire/agent/...），并指明一个本服务器已证明且未封禁的代理。被封禁的代理会在这里被拒绝，而不仅仅是在 AttestAgent 处，这使得 /admin/spiffe/agents 上的封禁对已持有 SVID 的调用方也有意义。"
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "管理员"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "调用方的 SPIFFE ID 列于 `spiffe.adminIds` 中，或者该身份的某个注册条目被标记为 `admin`。两者都支持，因为 SPIRE 两者都有：admin_ids 不需要条目，而条目上的标志是运维人员在控制台上设置的。正是它让远程调用方能够管理注册条目。"
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "下游"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "调用方身份的某个注册条目被标记为 `downstream`——即嵌套的 SPIRE 服务器，它可以请求中间 CA 并发布颁发机构，但不能做其他任何事情。"
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "匿名"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "未出示凭据，或出示了但未验证通过。仍有两个方法对其开放，而且必须开放：AttestAgent，因为代理在该调用给它 SVID 之前没有 SVID；以及 GetBundle，因为信任包在设计上就是公开的。"
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "仅适用于 SPIRE Server API。其 TCP 端口使用双向 TLS：调用方出示来自本信任域的 X509-SVID，本服务对照信任包和证书自身的有效期窗口进行验证，从 URI subjectAltName（绝不从主体）中取得 SPIFFE ID，将其归类为 local、agent、admin 或 downstream，并逐行对照 SPIRE 自己的 policy_data.json 对方法进行授权。其 Unix 套接字是 `local` 实体，不需要凭据，spire-server CLI 正是这样访问真正的服务器的。Workload API 有意完全不受这一切影响：其规范规定，客户端 MUST NOT 被要求进行身份验证。"
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "TCP 端口会请求客户端证书，但不强制要求，因为 AttestAgent 对没有 SVID 的调用方开放——代理在该调用给它 SVID 之前没有 SVID。请从信任包端点获取信任包，对照它验证本服务器，然后进行证明。"
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "被接受的凭据在这里与其他凭据一样是一个身份：它进入十六个协议族都使用的同一个漏斗，因此其持有人会出现在 /admin/users 上，并在 ou=users 下获得一个目录条目——以摘要命名，条目上以 `spiffeSubject` 携带标识符，当同一身份经由其他途径再次到达时会被重用。有三种接受方式会这样做：通过双向 TLS 的 X509-SVID（每个连接一次）、代理证明，以及在 ValidateJWTSVID 处验证的 JWT-SVID。签发是第四种进入方式，不属于这三种之一：本信任域为其铸造 X509-SVID 的每个身份都会获得同样的条目，以经过验证的 TLS 客户端证书所写入的同样六个 `x509*` 属性携带该证书——是赋值而不是追加，因为 SVID 每过半个有效期就会重新铸造——旁边还有 `x509svidsIssued` 和两个时间戳。它不计为一次身份验证，因为被签发凭据并不是出示凭据。"
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "条目还记录该身份是否仍可以在这里被签发凭据——`spiffeCredentialStatus`，旁边附有原因。这不是证书状态，也没有任何东西会读回它：SPIFFE 没有吊销机制，已签发的 SVID 在过期之前都能对照信任包验证通过，无论目录怎么说。它记录的是终止身份获得新凭据能力的三件事——其最后一个注册条目被删除、其代理被封禁、其代理被删除——每一件都是可逆的，逆转时也以同样的方式记录。条目永远不会被移除。"
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "关闭（spiffe.workloadPort 为 0）"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "提供（开发模式，未经证明）"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "不提供（产品模式，未声明源地址已验证）"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "不提供（产品模式，通配绑定地址）"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "提供（产品模式，已声明源地址已验证）"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "SPIRE 默认签发的类型，也是 X509-SVID 规范推荐的类型。出于同样的原因，这里也以它为默认值。"
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "更大的曲线，适用于固定使用该曲线的客户端。"
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "更大。值得注意的是，大约每 256 个 P-521 签名中就有一个比其他 255 个短一个字节，这是一个真实存在的互操作性边界情况，也是 x509.js 为此专门提供一个函数的原因。"
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "X509-SVID 规范允许的 RSA 下限。生成较慢——在启动时会有明显感觉——并且会产生大得多的 SVID。"
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "启动时需要数秒才能生成，在纳闷信任包端点为何还没应答之前，值得先知道这一点。"
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "规范允许用于 X.509。不可用于 JWT 颁发机构：本服务的 JWS 实现 jsonwebtoken 不支持 EdDSA 签名。"
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "每个条目都带有的抽象类。"
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "唯一合适的已注册类：它带来 cn 和 description，因此注册条目的名称是一个标准属性，尽管条目的其他任何方面都无法如此。ou=applications 出于同样的原因使用同一个类。"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "自创的。没有任何已注册的 LDAP 模式包含 SPIFFE ID、父 ID 或选择器——SPIRE 将其条目保存在 SQL 中，其他任何东西都不在任何地方保存它们——因此没有可以借用的。"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "自创的，原因相同，用于 ou=agents 下的条目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "键：条目 id，即 SPIRE Server API 所称的 `id`，也是 BatchUpdateEntry 和 BatchDeleteEntry 所指明的内容。在这里生成为 32 个十六进制字符，且永不重用。条目自己的 cn 是它的缩短形式，因此应以这个属性进行搜索——与隔壁容器中 appIdentifier 的安排相同。"
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "RDN 值：条目 id。"
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "此条目授予的身份——签发给匹配工作负载的 SPIFFE ID。如果它不是有效的 SPIFFE ID、属于另一个信任域，或位于保留的 /spire 路径之下，则会被拒绝。"
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "谁可以签发它：此条目所挂靠的代理（或本服务器）的 SPIFFE ID。它决定 GetAuthorizedEntries 和 SyncAuthorizedEntries 会告诉代理哪些条目：位于其自己的 SPIFFE ID 或与其选择器匹配的节点别名之下的条目；BatchNewX509SVID 和 NewJWTSVID 会拒绝代理请求任何其他条目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "每个选择器一个值，写作 `type:value`——`unix:uid:1000`、`k8s:ns:default`、`docker:label:app:web`。类型是第一个冒号之前的全部内容，值是其余的全部内容（包括冒号），这就是它们存储为一个字符串而不是一对值的原因：在每个冒号处拆分，正是 `docker:label:app:web` 变成一个没人写过的选择器的原因。"
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "此条目产生的 X509-SVID 的有效期，以秒为单位。不设置或为 0 表示使用 spiffe.svidTtl。"
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "JWT-SVID 的同类设置。不设置或为 0 表示使用 spiffe.jwtSvidTtl。"
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "在 SPIFFE ID 之外添加到 SVID 的 DNS subjectAltName。它使 SVID 可被那些检查主机名而无法读取 SPIFFE ID 的 TLS 软件使用。"
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "其信任包会交给持有此身份的工作负载的信任域名称——X509SVIDResponse.federated_bundles。在这里没有信任包的名称会被记录，只是不贡献任何内容，因为在信任包到达之前就配置好联合关系是正常的事件顺序。"
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "当工作负载获得多个 SVID 时运维人员给出的指引——`internal`、`external`。原样传递给 Workload API；这里没有任何东西读取它。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "8a9a63bc0fea2453",
+    "text": "当持有人可以调用 SPIRE Server API 的管理方法时为 TRUE。与本服务中其他所有授权事实一样，只记录而不强制执行：这里没有任何调用会因缺少它而被拒绝。"
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "093ab596c5763625",
+    "text": "当持有人是可以请求中间 CA（NewDownstreamX509CA）的下游 SPIRE 服务器时为 TRUE。只记录，不强制执行。"
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "当 SVID 要写入 SVID 存储插件而不是交给工作负载时为 TRUE。只记录而不据此行动——本服务没有存储插件。"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "条目本身停止生效的时间，以自纪元以来的秒数表示。与 SVID 有效期不同：它使注册退役。过期的条目会被保留并报告为已过期，而不是被删除，因为消失的条目与从未有人创建的条目无法区分。"
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "每次更改时递增。SPIRE Server API 会发布它，代理用它来区分“我持有的条目是最新的”和“我持有一个条目”。"
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "此条目的来源：`seed`、`console`、`api`、`grpc`、`auto`（为不匹配任何条目的工作负载虚构的）或 `ldap`。用来区分虚构的条目和有人有意创建的条目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "针对此条目已签发了多少个 SVID。每次更改时赋值——一个累积多个值的计数器毫无意义——而且这是目录条目中的一个实时数字，真正的目录不会保存这种东西。"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime，针对它的最近一次签发时间。"
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime。与条目自己的 createTimestamp 并存，因为 SPIRE Server API 以数字形式发布 `created_at`，读者应能看出两者是同一时刻。"
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "一行说明此条目来自何处的文字。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "代理条目的键：代理自己的 SPIFFE ID，始终位于保留的 /spire/agent 路径之下。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "验证该代理的节点证明器——`join_token`，以及领域在 spiffe.nodeAttestors 中指明的其他类型。这里没有任何证明器能验证的类型会在 AttestAgent 处被拒绝，绝不会被记录。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "证明产生的选择器。出于同样的原因，根据代理发送的内容虚构。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "调用了 BanAgent 时为 TRUE。被封禁的代理会在 AttestAgent 和 RenewAgent 处被拒绝——这是本服务中为数不多的拒绝之一——因为无法封禁的代理会让封禁按钮成为谎言。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "证明器能否在无需运维人员介入的情况下再次运行。会报告给代理，由代理决定如何处理。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "对代理当前 SVID 的 DER 计算的 SHA-256，即 spire.api.types.Agent 所携带的内容，运维人员借此区分具有同一身份的两个代理。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "该 SVID 的过期时间，以自纪元以来的秒数表示。"
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime，此代理首次证明的时间。"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime，最近一次的时间。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "它已证明或续订的次数。赋值，而不是累积。"
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "本服务"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "本注册表"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "调用方"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "代理"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "无凭据。此套接字是 `local` 实体，被完全信任，spire-server CLI 正是这样工作的。"
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "无凭据，来自以本服务自己的 uid 运行的进程：产品模式会按连接验证套接字是私有的，并从内核读取调用方的 uid，之后才将其视为 `local` 实体。"
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "这里没有任何人是 `local` 实体：产品模式要验证套接字的边界，但无法做到（{{reason}}）。请在 TCP 端口上出示管理员的 X509-SVID。"
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "无法读取对端的 uid——{{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "即使在这里也需要 X509-SVID（spiffe.trustLocalSocket 已关闭）。"
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "无，而且必须无：Workload Endpoint 规范禁止要求凭据。"
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "双向 TLS。请对照信任包验证本服务器，出示您自己的 X509-SVID，并预期会按方法进行授权。"
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "无——身份验证已关闭，因此此端口是普通 gRPC，每个方法都对所有人开放。"
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "无，而且必须无：Workload Endpoint 规范禁止要求凭据。已声明网络会对源地址进行身份验证（spiffe.workloadTcpSourceAuthenticated），因此调用方会得到其 peer: 地址所选择的条目。"
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "无，而且必须无：Workload Endpoint 规范禁止要求凭据。这里没有任何东西对调用方进行证明（开发模式）：部署需通过其他手段保护此端口，或者不暴露它。"
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "这里没有任何东西在监听。"
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "双向 TLS。请对照信任包将本服务器验证为 spiffe://<trust domain>/spire/server，出示 spiffe.brokers 中指明的某个代理商的 X509-SVID，并在每次调用时发送 broker.spiffe.io: true。"
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "此处无法进行工作负载证明：{{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "套接字不是私有的"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "内核为调用方进程报告的 uid、gid 和附加组，以及其可执行文件的路径和 SHA-256。"
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "调用方进程所在的 Docker 容器，以 Docker Engine 报告的标签、环境变量和镜像为准。"
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "调用方进程所在的 Kubernetes pod 和容器，以节点的 kubelet 报告为准。"
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "承载调用方进程的 systemd 单元，以 systemd 通过 D-Bus 报告的为准：其 id 及其单元文件。"
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "无法读取对端的进程，因此只证明其 uid 和 gid"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "对端位于另一个 pid 命名空间（pid 0），因此只证明其 uid 和 gid——共享 pid 命名空间才能证明其余部分"
+  }
+}

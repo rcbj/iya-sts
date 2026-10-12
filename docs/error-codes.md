@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4282** of them, in **45** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4297** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,8 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 230
 * [Management API (`STS-API`)](#sts-api) — 81
-* [User portal (`STS-PORTAL`)](#sts-portal) — 84
+* [User portal (`STS-PORTAL`)](#sts-portal) — 89
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 170
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -3318,8 +3319,8 @@ Raised from: oid4vc/.
 | `STS-VC-0029` | A Credential Offer fetched by reference (credential_offer_uri) does not exist or has expired. | invalid_request (HTTP 404) |
 | `STS-VC-0030` | Product mode: a pre-authorized code was spent after reaching oid4vci.txCodeMaxAttempts wrong Transaction Codes. | — |
 | `STS-VC-0031` | A certificate in oid4vp.trustedIssuerCertificates could not be read and is ignored by the Verifier. | — |
-| `STS-VC-0032` | The OID4VP Verifier page's or presentation start endpoint's query parameters failed input validation. | HTTP 400 plain text |
-| `STS-VC-0033` | Where only registered addresses are accepted, the presentation start's wallet parameter named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 plain text |
+| `STS-VC-0032` | The OID4VP Verifier page's or presentation start endpoint's query parameters — or the body of POST /admin-api/verifications/start, which starts one the same way (#587) — failed input validation. | HTTP 400 plain text; HTTP 400 JSON `errors` at /admin-api |
+| `STS-VC-0033` | Where only registered addresses are accepted, the presentation start's wallet parameter (or POST /admin-api/verifications/start's `wallet`) named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 plain text; HTTP 400 JSON `errors` at /admin-api |
 | `STS-VC-0034` | The QR code for a cross-device OID4VP Authorization Request could not be rendered. | HTTP 500 plain text |
 | `STS-VC-0035` | An OID4VP Request Object fetched by request_uri does not exist. | invalid_request (HTTP 404) |
 | `STS-VC-0036` | An OID4VP Authorization Response was posted with a state for which no Authorization Request is outstanding. | invalid_request (HTTP 400) |
@@ -3328,7 +3329,7 @@ Raised from: oid4vc/.
 | `STS-VC-0039` | A presented SD-JWT Disclosure is not base64url-encoded JSON. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0040` | A presented SD-JWT Disclosure hashes to a digest the issuer never signed. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0041` | A presentation failed one or more of the OID4VP Verifier's checks (issuer signature, disclosures, key binding, nonce, audience, validity or requested claims). | invalid_request (HTTP 400) |
-| `STS-VC-0042` | The non-spec presentation result endpoint was asked for a state it has no record of. | invalid_request (HTTP 404) |
+| `STS-VC-0042` | The non-spec presentation result endpoint — or GET /admin-api/verifications?state= (#587) — was asked for a state it has no record of. | invalid_request (HTTP 404); HTTP 404 JSON `errors` at /admin-api |
 | `STS-VC-0043` | The key credentials are signed with is not in this realm's key set, so the DID document cannot publish it. | — |
 | `STS-VC-0044` | The BBS public key could not be published in the DID document. | — |
 | `STS-VC-0045` | The path-form /did.json was requested for a DID that has no path; did:web resolves it at the well-known location. | not_found (HTTP 404) |
@@ -3378,7 +3379,7 @@ Raised from: oid4vc/.
 | `STS-VC-0089` | An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, whose register holds the status) disclosed no credentialStatus entry, though the request asked for it and oid4vp.requireStatusReference requires one. | invalid_request (HTTP 400) |
 | `STS-VC-0090` | A self-issued ID Token (SIOPv2, #129) was refused: it did not verify (iss not sub, a subject key that did not resolve or match, a bad signature, the wrong aud or nonce, expired or too old), or with vp_token id_token its subject was not the presentation's holder. | invalid_request (HTTP 400), or a 303 for form_post |
 | `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
+| `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 (JSON `errors` at POST /admin-api/verifications/start) |
 | `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
 | `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
@@ -3393,10 +3394,10 @@ Raised from: oid4vc/.
 | `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
 | `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
 | `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
-| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 text/plain at /oid4vp/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST /admin-api/verifications/start); the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST /admin-api/verifications/start); 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST /admin-api/verifications/start); 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST /admin-api/verifications/start); 409 JSON at /oid4vp/verifier-certificate |
 | `STS-VC-0114` | An application DID document was asked for and none is advertised: no such application in this realm, one not declared for the did family, or one with no key in didPublicKeyJwk. | HTTP 404 JSON at /applications/{application}/did.json |
 | `STS-VC-0115` | An application Domain Linkage Credential could not be signed: the application has no DID document, the origin is not one of its LinkedDomains services, or none of its published keys has a private half this service kept. | none (a console or management API refusal, HTTP 400) |
 
@@ -4600,14 +4601,14 @@ Raised from: portal/.
 | `STS-PORTAL-0007` | An activation chose no way to sign in: no password, and no security key used instead of one. | HTTP 400 page |
 | `STS-PORTAL-0008` | A new password set from the portal (at activation or on the password page) was refused by the password policy or could not be written. | HTTP 400 page |
 | `STS-PORTAL-0009` | An authenticator app was asked for during an activation and its enrolment could not be started; the activation finished without it. | — |
-| `STS-PORTAL-0010` | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
-| `STS-PORTAL-0011` | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
-| `STS-PORTAL-0012` | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
-| `STS-PORTAL-0013` | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
+| `STS-PORTAL-0010` *(retired)* | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
+| `STS-PORTAL-0011` *(retired)* | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
+| `STS-PORTAL-0012` *(retired)* | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
+| `STS-PORTAL-0013` *(retired)* | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
 | `STS-PORTAL-0014` | The portal's directory slot was offered a filler without personEntry() and was not installed; the Overview falls back to what the session carries. | — |
 | `STS-PORTAL-0015` | Reading the signed-in person's directory entry for the Overview threw; the page fell back to what the session carries. | — |
 | `STS-PORTAL-0016` | The QR code for an authenticator app enrolment could not be rendered; the secret is offered for typing only. | — |
-| `STS-PORTAL-0017` | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0017` *(retired)* | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0018` | Confirming an authenticator app code was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0019` | A password change was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0020` | Self-service signing key generation was tried too often and the rate limiter refused it. | HTTP 429 page |
@@ -4651,7 +4652,7 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
-| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0083` *(retired)* | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 | `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
@@ -4665,9 +4666,9 @@ Raised from: portal/.
 | `STS-PORTAL-0094` | An unlink on /portal/claim-sources named a Claims Provider the person has no link to (#147). | none (a portal page, HTTP 400) |
 | `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
 | `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
-| `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
-| `STS-PORTAL-0098` | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
-| `STS-PORTAL-0099` | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0097` *(retired)* | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0098` *(retired)* | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0099` *(retired)* | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 | `STS-PORTAL-0100` | A security key was chosen during an activation beside a password and its enrolment could not be started; the activation went on without it. | — |
 | `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
 | `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |
@@ -4675,6 +4676,39 @@ Raised from: portal/.
 | `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |
 | `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
 | `STS-PORTAL-0245` | A person's rename of one of their passkeys on /portal/keys was refused: the name was not one, or the id is not one of theirs (#470). | HTTP 400 page |
+| `STS-PORTAL-0246` | A method other than GET was sent to a /portal path: the portal is a static application since #568 and nothing is posted to it. | HTTP 404 |
+| `STS-PORTAL-0300` | A Claims Provider's callback arrived in a browser whose sign-on session is not the one the link was started from, so it was refused (#568: the account-linking CSRF the portal session closed). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0301` | A claim-source link was not started: the account API token is placed on no sign-on session the registry still holds, so the callback could never be bound to it. | HTTP 400 |
+| `STS-PORTAL-0302` | The access policy refused a Claims Provider's callback (user-portal, manage-own). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0310` | A device challenge or link could not be bound: the account API token's sign-on session is not known (the token registry dropped it), so the person is asked to sign in again. | HTTP 400 |
+
+## STS-ACCOUNT
+
+**Account API.** The user portal's API, /account-api: the access token it takes (this realm's, DPoP-bound, account:manage, a live sign-on session), the access policy, and the checks on every request before an operation runs.
+
+Raised from: account-api/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ACCOUNT-0001` | A request to /account-api presented no access token. | RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP) |
+| `STS-ACCOUNT-0002` | An /account-api access token was not issued by this realm's authorization server, or its signature does not verify. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0003` | An /account-api access token had expired. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0004` | An /account-api access token's typ header was not at+jwt (an ID Token or a refresh token presented as one). | RFC 9068 section 4 |
+| `STS-ACCOUNT-0005` | An /account-api access token named an issuer this realm does not publish at the address it was presented at. | RFC 9068 section 4 |
+| `STS-ACCOUNT-0006` | An /account-api access token was audienced to another resource. | RFC 9068 section 4; RFC 8707 |
+| `STS-ACCOUNT-0007` | An /account-api access token has been revoked or disowned, or the account it was issued to is disabled. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0008` | An /account-api access token was issued on a sign-on session that has since ended. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0009` | A certificate-bound /account-api access token was presented on a connection without its certificate. | RFC 8705 section 3.1 |
+| `STS-ACCOUNT-0010` | A DPoP-bound /account-api access token was presented as a Bearer token. | RFC 9449 section 7.1 |
+| `STS-ACCOUNT-0011` | The DPoP proof sent with an /account-api request was refused, or a nonce was wanted. | RFC 9449 sections 4.3 and 8 |
+| `STS-ACCOUNT-0012` | An /account-api access token names no person (a client's own token). | HTTP 403 |
+| `STS-ACCOUNT-0013` | An /account-api access token does not carry account:manage. | RFC 6750 section 3.1 insufficient_scope |
+| `STS-ACCOUNT-0014` | The client an /account-api access token was issued to no longer declares account:manage. | HTTP 403 |
+| `STS-ACCOUNT-0015` | The access policy refused an /account-api request (user-portal, read or manage-own). | HTTP 403 |
+| `STS-ACCOUNT-0016` | An /account-api request's query did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0017` | An /account-api request body was not JSON. | HTTP 415 |
+| `STS-ACCOUNT-0018` | An /account-api request body did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0019` | An /account-api operation threw; answered 500. | HTTP 500 |
 
 ## STS-LOGOUT
 

@@ -135,15 +135,16 @@ function childMain() {
     eq(two(function () {
       return codeOf(fapi.clientAuthenticationRefusal('none',
                                                      'sts-user-portal'));
-    }), 'STS-OAUTH-0580', 'C. the portal is not: it keeps its ' +
-                          'backend-for-frontend');
+    }), null, 'C. the user portal as a public client is the other ' +
+              'exception (#568)');
     eq(two(function () {
       return codeOf(fapi.clientAuthenticationRefusal('client_secret_basic',
                                                      'sts-admin-console'));
     }), 'STS-OAUTH-0580', 'C. nor is the console with a method the ' +
                           'profile refuses');
-    eq(fapi.PUBLIC_CLIENT_EXEMPT.join(','), 'sts-admin-console',
-       'C. the exemption list is the admin console, nothing else');
+    eq(fapi.PUBLIC_CLIENT_EXEMPT.join(','),
+       'sts-admin-console,sts-user-portal',
+       'C. the exemption list is the console and the portal, nothing else');
 
     // --- D ----------------------------------------------------------------
     const register = function (meta) {

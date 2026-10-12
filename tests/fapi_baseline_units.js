@@ -253,11 +253,11 @@ function childMain() {
     }), 'I. every requirement row has a unique id and a known enforcement');
 
     // --- J ----------------------------------------------------------------
-    // The console is the one public client a FAPI realm allows since the
-    // cutover (#446, rcbj's decision 2): it holds no credential at all, and
-    // its tokens are DPoP-bound. The portal still signs in on the server.
+    // The console and the portal are the two public clients a FAPI realm
+    // allows (#446, #568): they hold no credential at all, and their tokens
+    // are DPoP-bound.
     [['sts-admin-console', 'none'],
-     ['sts-user-portal', 'private_key_jwt']].forEach(function (pair) {
+     ['sts-user-portal', 'none']].forEach(function (pair) {
       const id = pair[0];
       const entry = applications.clientConfigOf(id);
       if (note(!!(entry && entry.registered),

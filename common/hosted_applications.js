@@ -73,9 +73,14 @@ const APPLICATIONS = [
           'SPNEGO and certificate sign-ins, and the sign-out.',
     prefixes: ['/authn', '/logout', '/.well-known/hoba'],
     exact: ['/tls/sign-in'] },
+  // `/account-api` IS THE PORTAL'S (#568): the portal is a static
+  // application that draws every page from it, so the two are one
+  // application on one listener and the portal never has to be told where
+  // its own API is.
   { id: 'portal', label: 'User portal', session: true,
-    what: 'The pages that belong to the person looking at them.',
-    prefixes: ['/portal'], exact: [] },
+    what: 'The pages that belong to the person looking at them, and the ' +
+          'account API they are drawn from.',
+    prefixes: ['/portal', '/account-api'], exact: [] },
   { id: 'admin-console', label: 'Admin console', rescued: true,
     what: 'The console at /admin, its script and its pages.',
     prefixes: ['/admin'], exact: [] },
@@ -303,6 +308,33 @@ function labelOf(id) {
   return byId[String(id)] ? byId[String(id)].label : String(id);
 }
 
+// THE LISTENERS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b), this file's
+// part: each application's label and sentence, which `GET
+// /admin-api/listeners` carries in `applications` (`listener_map.js`'s
+// `mappingView()`). The ids, prefixes and paths are not prose.
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/listeners'];
+
+/**
+ * Extracts this file's part of the listeners namespace (#543 phase 2b):
+ * each hosted application's label and sentence.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const out = require('./server_prose').harvest('listeners.applications',
+                                                APPLICATIONS,
+                                                ['label', 'what']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 module.exports = {
   EVERYWHERE: EVERYWHERE,
   classify: classify,
@@ -310,5 +342,7 @@ module.exports = {
   isApplication: isApplication,
   sessionApplications: sessionApplications,
   rescuedApplications: rescuedApplications,
-  labelOf: labelOf
+  labelOf: labelOf,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "Les clés de chiffrement des données elles-mêmes (#391) : une par domaine et par classe de données ci-dessous, chacune enveloppée et désenveloppée sous la clé de chiffrement de clé"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "Chiffrement d’enveloppe : chaque valeur est chiffrée sous une clé de chiffrement des données, et seules les clés de chiffrement des données sont chiffrées sous la clé de chiffrement de clé. Un enveloppement compte ici comme un chiffrement et un désenveloppement comme un déchiffrement ; un processus désenveloppe chaque clé une fois et la conserve, si bien que ces chiffres restent faibles quel que soit ce qui est scellé."
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "Les propres clés de signature de ce service, une ligne par domaine de confiance — et, dans la même ligne depuis le 2026-09-12, la clé de chiffrement des requêtes d’attestation OpenID4VCI de ce domaine"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "Une clé privée qui survit au processus. En mode produit, elles sont générées UNE SEULE FOIS et relues à chaque démarrage, ce qui permet à un jeton émis hier d’être vérifié aujourd’hui — et c’est exactement pourquoi la ligne ne peut pas être en clair. Ce qui réside dans ce processus est le TEXTE CHIFFRÉ : `keys.plaintextRetention` décide combien de temps une clé déchiffrée est conservée après avoir été utilisée."
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "L’autorité de certification : la Root du service, chaque Intermediate et chaque Issuing CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "Des clés privées d’AC, qui ne quittent jamais ce processus. Elles sont délibérément dans la MÊME famille de lignes et sous la même clé : un magasin propre à `pki.js` aurait été une seconde réponse à *où ce service conserve-t-il une clé privée*, et la seconde réponse est celle que personne ne pense à renouveler."
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "Les paires de clés de signature d’assertion que `/admin/pki` émet pour les applications — `oauthAssertionPrivateKey` et `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "C’était le DERNIER élément de clé privée de ce service stocké en clair, jusqu’au 2026-09-10. Il est scellé AU REPOS et ouvert pour un lecteur passé par `applications.js` — ainsi `/admin/applications` remet toujours à un opérateur le PEM qu’il est venu chercher, tandis qu’un `ldapsearch` sur TCP 389, un fichier LDIF, une ligne de base de données et une sauvegarde de l’un ou l’autre contiennent `$aesgcm$…`."
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "Les secrets client OAuth d’une application — `oauthClientSecret`, un enregistrement scellé par secret (le secret, son identifiant, son expiration et sa description)"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "Quiconque en détient un s’authentifie en tant que ce client, et c’est aussi la clé HMAC de `client_secret_jwt` et des ID Tokens HS256. Scellé au repos depuis le 2026-10-01 sous une clé de chiffrement de clé durable, ouvert pour un lecteur passé par `applications.js`, et masqué aux lecteurs LDAP en mode produit. Une valeur écrite avant cette date reste en clair jusqu’à la prochaine écriture du secret."
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "Le jeton d’accès d’enregistrement RFC 7592 d’une application — `appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "Quiconque le détient lit, modifie ou supprime l’enregistrement du client, et la lecture renvoie le secret client. Scellé au repos depuis le 2026-10-01 sous une clé de chiffrement de clé durable, ouvert pour les points de terminaison RFC 7592 et pour un lecteur passé par `applications.js`."
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "Le secret client d’une relation de fédération — `fedClientSecret`, l’identifiant propre de ce service au point de terminaison de jeton du partenaire"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "Il est ENVOYÉ au service de quelqu’un d’autre ; il doit donc être récupérable — scellé, et non haché. Scellé au repos depuis le 2026-10-01 sous une clé de chiffrement de clé durable ; aucune page ni aucune réponse d’API ne le renvoie."
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "Les attributs de chaque entrée d’annuaire, en entier — personnes, groupes, applications, appareils, relations de fédération"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "La décision de rcbj sur #391 (phase 6) : une copie de la table de l’annuaire n’est pas une liste de personnes. Le DN reste lisible, de même que les NOMS d’attributs ; les valeurs que compare une recherche sont conservées sous forme de condensats à clé à côté du blob. Une valeur scellée isolément (un secret TOTP, des clés Kerberos) est de nouveau scellée à l’intérieur. Un magasin fichier (ldif) conserve les entrées telles que le système de fichiers les protège."
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "Le NOM sous lequel une ligne émise est classée — souvent l’identifiant lui-même : un identifiant de session, un artefact SAML, un identifiant de jeton"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Un identifiant de session est le cookie et un artefact s’échange en le présentant ; un nom en clair constituait donc un identifiant utilisable dans un vidage. Depuis #222, la ligne est trouvée par le condensat à clé du nom et le nom est scellé, ouvert uniquement par une restauration ou par le lecteur d’une modification."
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "L’émetteur, l’identifiant d’assertion, le client et le sujet de l’historique des assertions utilisées — qui a présenté quel document RFC 7523 ou RFC 7522 au sujet de qui"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "Ils nomment des personnes et des relations dans une table que partagent tous les nœuds. Scellés depuis #222 ; la ligne est toujours trouvée par sa clé de condensat, et la recherche textuelle de la console se fait en mémoire sur les lignes les plus récentes. Un magasin fichier (ldif) les conserve tels que le système de fichiers les protège : il les relit avant que le magasin de clés n’ait démarré."
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "Un paramètre secret modifié pendant que le service fonctionne — aujourd’hui `scim.digestPassword`, le mot de passe HTTP Digest que partagent tous les noms d’utilisateur SCIM"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "Un paramètre marqué secret est un identifiant, et les paramètres enregistrés sont par ailleurs du JSON en clair. Scellé là où il est écrit depuis #222 (`persistence/sealed_settings.js`) ; la configuration en cours d’exécution, la console et l’API le voient comme auparavant."
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "Les vérifications d’identité d’une personne — `stsIdaVerification` (OpenID Connect for Identity Assurance), dont les preuves portent des numéros de documents"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "Ce n’est pas un identifiant, mais des données personnelles qu’aucune sauvegarde ne devrait contenir de façon lisible. Scellées au repos depuis le 2026-10-01 sous une clé de chiffrement de clé durable — celle de la cellule d’origine lorsqu’il y en a une — et masquées à toute lecture LDAP."
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "Le secret partagé d’une instance de client GNAP pour une référence de clé — `gnapSymmetricKey` (RFC 9635 section 7.1.1)"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "Quiconque le détient peut signer des requêtes GNAP EN TANT QUE cette instance de client : une clé HMAC constitue les deux moitiés de l’identifiant. Scellé au repos sous la clé de chiffrement de clé du processus lorsque les clés sont persistées, ouvert pour un lecteur passé par `applications.js`, et masqué aux lecteurs LDAP en mode produit."
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "La clé racine de macaron d’un serveur de ressources GNAP — `gnapMacaroonKey` (RFC 9767 section 2.2)"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "Un macaron est vérifié avec sa clé RACINE, et la même clé peut en émettre un : quiconque la détient peut émettre des jetons que ce serveur de ressources acceptera. La clé est dérivée par serveur de ressources à partir du secret du domaine, et écrite sur l’entrée — scellée — uniquement pour que l’opérateur du serveur de ressources ait un endroit où la récupérer."
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "L’identifiant d’écriture d’une destination de secrets — `secretDestCredential` (#221) : la clé, le jeton ou le compte de service avec lequel ce service écrit le mot de passe renouvelé d’un compte de service dans un gestionnaire de secrets"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "Quiconque le détient peut écrire les mots de passe que lisent d’autres systèmes. Scellé au repos lorsque les clés sont persistées et — contrairement à la clé de signature d’une application — MASQUÉ également à tout lecteur : il n’est ouvert que pour l’envoi qui l’utilise, et n’est jamais affiché, révélé ni renvoyé par `/admin-api`."
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "Les identifiants d’un client SCIM sortant (#552) — `scimClientPassword`, `scimClientOAuthClientSecret` et `scimClientTlsPrivateKey` : ce avec quoi ce service s’authentifie auprès d’un fournisseur de services SCIM distant, ou de son point de terminaison de jeton"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "Quiconque les détient peut créer, modifier et supprimer des comptes chez le fournisseur d’identité distant. Scellés au repos lorsque les clés sont persistées et MASQUÉS à tout lecteur, comme l’identifiant d’une destination de secrets : ouverts uniquement pour la requête qui les utilise."
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "Les paires de clés de signature d’assertion que `/admin/pki` émet pour une PERSONNE — `stsAssertionPrivateKey` (2026-09-11) et, pour RFC 7522, `stsSamlAssertionPrivateKey` (2026-09-13)"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "Le même mécanisme que celui de l’application ci-dessus, et délibérément pas un nouveau, avec une différence qui tient aux deux détenteurs : la clé privée d’une application est OUVERTE pour un lecteur passé par `applications.js`, et rien n’affiche l’entrée d’une personne par un module qui ouvrirait la sienne — celle-ci est donc remise UNE SEULE FOIS, par l’acte qui la crée, et n’est plus ensuite que du texte chiffré partout. L’alternative était une page de console qui afficherait la clé privée d’une personne à chaque visite."
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "La clé privée de chiffrement d’une relation de fédération (#168) — ce avec quoi est déchiffrée une assertion ou un ID Token chiffré par un partenaire, une ligne par clé dans `fedEncryptionKey`"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "Quiconque la détient lit toutes les assertions que ce partenaire a chiffrées pour ce service — l’identifiant et les attributs de la personne, précisément ce que le chiffrement tient à l’écart du navigateur. Scellée au repos partout où les clés sont persistées, et masquée — texte chiffré compris — à toute recherche LDAP, toute page et toute réponse de `/admin-api`, qui ne portent que le certificat et la clé publique."
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "Les clés Kerberos à long terme stockées — celles d’une personne de l’annuaire, dérivées de son propre mot de passe (`stsKrb5Keys`), et les clés aléatoires d’un principal de service (`krb5ServiceKeys`) (2026-09-12)"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "ÉQUIVALENTES À UN MOT DE PASSE : une clé Kerberos à long terme est ce en quoi le mot de passe est transformé, et quiconque la détient peut obtenir des tickets en tant que ce principal sans connaître le mot de passe. Elle est donc scellée partout où la clé de chiffrement de clé survit au processus, le nom et une empreinte du hachage du mot de passe sont scellés AVEC elle afin qu’une valeur ne puisse être déplacée vers une autre entrée ni conservée après un changement de mot de passe, et elle est MASQUÉE — texte chiffré compris — à toute page, toute recherche LDAP et toute réponse de `/admin-api`. La clé d’un principal de service quitte ce service une seule fois, sous la forme du keytab que remet sa création ou son renouvellement."
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "Le secret partagé RFC 6238 de toute personne ayant enregistré une application d’authentification — `stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "LE SEUL IDENTIFIANT DE CET ANNUAIRE QUI PEUT ÊTRE RELU. Vérifier un code signifie le CALCULER ; il ne peut donc pas être haché comme l’est `userPassword` — et `/admin/ldap/directory` affiche par conception chaque attribut de chaque entrée ; sans le scellement, un vidage de l’annuaire afficherait donc un second facteur fonctionnel."
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "Le jeu de codes de récupération à usage unique émis lors de l’enregistrement d’un second facteur"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "Chiffrés PLUTÔT QUE HACHÉS, et la raison est une décision produit plutôt que cryptographique : une personne peut relire ses codes restants sur `/portal/mfa`. **Cela a été inversé le 2026-09-11 et cette ligne est conservée pour les jeux écrits avant cette date** — un nouveau jeu est HACHÉ avec scrypt et n’est pas scellé du tout, car un hachage n’est pas un secret. Les DÉCOMPTES se trouvent hors du blob scellé ; toute page qui indique *7 sur 10 inutilisés* peut donc le faire sans l’ouvrir — y compris pour un jeu que ce processus ne peut pas déchiffrer."
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "Tout ce que ce processus ÉMET — sessions, jetons, codes d’autorisation, artefacts, principaux Kerberos, caches anti-rejeu, compteurs et journal d’audit"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "Le plus récent et le plus volumineux. Il est réservé au mode produit sur postgres parce que c’est la seule configuration dans laquelle quoi que ce soit en est persisté : le mode développement régénère la clé de signature à chaque démarrage, si bien qu’un jeton restauré ne serait vérifié contre rien, et le magasin `ldif` écrit des fichiers entiers à chaque vidage et n’en contient rien, dans aucun des deux modes."
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "Mots de passe — `userPassword`, et les jetons d’activation à côté"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "HACHÉS, et non chiffrés, ce qui est plus fort et non plus faible. scrypt avec N à 2^15, et rien dans ce service ne peut en relire un — c’est la règle : un secret que ce service VÉRIFIE est haché, et un secret qu’il doit PRÉSENTER est chiffré. Les deux mécanismes ci-dessus relèvent du second type et l’indiquent."
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "Secrets client, jetons d’accès d’enregistrement RFC 7592 et secrets client de fédération, SANS clé de chiffrement de clé durable"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "En clair uniquement là où le processus ne détient aucune clé de chiffrement de clé durable — en mode développement, ou dans un domaine en mode produit sur un conteneur de développement — car sceller sous une clé éphémère laisserait un identifiant qui ne s’ouvre plus avec rien après un redémarrage. Avec une clé durable, les trois sont scellés : voir leurs lignes ci-dessus."
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "Les onze clés post-quantiques par domaine, le certificat de serveur TLS et les autorités SPIFFE"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "PAS DU TOUT PERSISTÉS, dans aucun des deux modes ; il n’y a donc rien au repos à sceller. Les trois sont nommés dans le `NOT_YET` de `common/mode.js` plutôt que laissés à découvrir, car *non stocké* et *non protégé* se lisent de la même façon de l’extérieur et ne sont pas la même chose."
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "Ce que ce service chiffre AU REPOS, avec quelle clé, sous quel algorithme, et combien de fois c’est arrivé dans ce processus."
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "La clé de chiffrement de clé est lue auprès du fournisseur ci-dessus au démarrage, avant que l’écouteur ne soit lié. Ce service ne la génère jamais et ne l’écrit jamais, et un service qui ne peut pas la lire NE DÉMARRE PAS — il n’en génère pas une de remplacement pour continuer, car cela empêcherait silencieusement la vérification de tous les jetons qu’il a jamais émis, chez la partie de confiance de quelqu’un d’autre."
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "Ce service est en mode développement ; rien de ce qu’il détient ne survit au processus et la clé de chiffrement de clé est ÉPHÉMÈRE : générée à chaque exécution, jamais écrite, et utilisée uniquement pour que le pool de workers de requêtes puisse partager les lignes émises au cours d’une exécution. Sceller un attribut d’annuaire sous cette clé serait PIRE que le laisser en clair — l’entrée survit à un redémarrage dans les magasins `ldif` et `postgres` mais pas la clé ; la valeur reviendrait donc sous forme de déchet permanent. C’est pourquoi le test à chaque point d’écriture est `keystore.persists()` plutôt que `keystore.sealed()`."
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM et délibérément pas CBC : GCM est AUTHENTIFIÉ ; un texte chiffré que quelqu’un a modifié échoue donc au déchiffrement au lieu de produire une clé subtilement différente. Une clé de signature déchiffrée en octets erronés produirait des signatures que rien ne peut vérifier, et l’échec apparaîtrait chez une partie de confiance sous la forme « la signature est invalide » — aussi loin de la cause que possible. La clé de chiffrement de clé NE CHIFFRE JAMAIS DE VALEUR (#391) : chaque valeur est chiffrée sous une clé de chiffrement des données — 256 bits aléatoires, une par domaine et par classe de données — et ce sont les clés de chiffrement des données qu’enveloppe la clé de chiffrement de clé. Un processus désenveloppe chacune une fois et la conserve ; une clé détenue dans un service de gestion de clés est donc sollicitée par clé de données, jamais par valeur, et renouveler la clé de chiffrement de clé ré-enveloppe une poignée de clés au lieu de rechiffrer le magasin."
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "IL Y A UNE SEULE CLÉ DE CHIFFREMENT DE CLÉ POUR CE SERVICE, ET NON UNE PAR DOMAINE DE CONFIANCE, ET UNE CLÉ DE CHIFFREMENT DES DONNÉES PAR DOMAINE ET PAR CLASSE DE DONNÉES (#391). Aucune clé de chiffrement des données n’est partagée entre domaines ; une valeur d’un domaine n’est donc jamais scellée sous une clé sous laquelle le sont les valeurs d’un autre domaine. Mais chaque clé de chiffrement des données est enveloppée sous l’unique clé de chiffrement de clé ; un domaine n’est donc PAS une frontière indépendante au repos : quiconque peut lire cette clé peut désenvelopper les clés de données de tous les domaines, et la renouveler ré-enveloppe celles de tous les domaines à la fois."
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "TOUT CE QUI NE FIGURE PAS DANS LA TABLE CI-DESSUS EST EN CLAIR DANS LE MAGASIN — les entrées d’annuaire, les groupes, les applications, les domaines et les paramètres, et en mode développement presque tout. Ce service scelle les identifiants et les clés privées et rien d’autre, délibérément : le chiffrement au niveau des colonnes laisse le texte en clair dans le journal d’écriture anticipée, dans les fichiers temporaires lorsqu’un tri déborde, dans un pg_dump, sur les réplicas et dans les journaux de requêtes ; la couche qui couvre un magasin entier se situe donc SOUS la base de données plutôt qu’à l’intérieur. Cette couche relève de l’opérateur — LUKS ou un jeu de données ZFS chiffré sous PGDATA, un disque cloud avec une clé gérée par le client, ou l’un des forks de PostgreSQL qui disposent de TDE, puisque la version communautaire n’en a pas. docs/encryption-at-rest.md est la description des options rédigée par ce dépôt."
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "ET LA CLÉ NE DOIT PAS RÉSIDER SUR LE DISQUE QU’ELLE PROTÈGE. Un fichier de clé sur le même volume non chiffré que le magasin remet les deux moitiés à quiconque emporte le volume ; c’est acceptable pour une pile de développement et c’est pourquoi le fournisseur `file` est la valeur par défaut, mais ce n’est pas un déploiement. keys.kekProvider sélectionne plutôt un magasin de secrets."
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Compté à l’UNIQUE entonnoir par lequel passent les deux opérations — `encryptWithDek()` et `decryptWithDek()` de `crypto.js`, les enveloppements et désenveloppements des clés de chiffrement des données elles-mêmes figurant sous `data-keys` — plutôt qu’aux points d’appel, car un total assemblé à partir des points d’appel est faux dès que quelqu’un en ajoute un autre, et l’est SILENCIEUSEMENT. La ventilation ci-dessous se fait par un LIBELLÉ que transmet chaque point d’appel ; un appelant qui n’en transmet aucun est tout de même compté, sous `(unlabelled)`. CES CHIFFRES VALENT POUR TOUT LE PROCESSUS ET NON PAR DOMAINE — une clé de chiffrement de clé appartient au processus ; ventiler le décompte par domaine reviendrait donc à compter le domaine dans lequel se trouvait une requête — et ils sont en mémoire : un redémarrage est la façon d’en obtenir un vide."
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "UN ÉCHEC EST PRESQUE TOUJOURS LA MAUVAISE CLÉ DE CHIFFREMENT DE CLÉ — un secret renouvelé, ou un magasin transporté d’un déploiement à l’autre — et il constitue un chiffre à part plutôt que d’être fondu dans les déchiffrements, car neuf cents déchiffrements et neuf cents déchiffrements avec quatre cents échecs sont des rapports très différents. La suite dépend de ce qui était lu : une clé de signature qui ne s’ouvre pas est FATALE au démarrage, une ligne de session est abandonnée, et un second facteur qui ne s’ouvre pas empêche la personne de se connecter jusqu’à ce qu’un opérateur efface l’enregistrement — jamais une absence silencieuse, qui supprimerait un contrôle de sécurité."
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "Ni une valeur scellée ni une valeur ouverte n’apparaît nulle part sur cette page ni dans ce document. Une valeur scellée est une clé privée, un secret partagé ou les codes de récupération de quelqu’un, et afficher l’une ou l’autre moitié reviendrait à remettre exactement ce que le scellement existe pour protéger. /admin/ldap/directory est l’endroit où une enveloppe `$aesgcm$…` peut être vue, sous un titre qui indique qu’il s’agit du magasin tel que le voit l’annuaire."
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "Le scellement protège ce qui est ÉCRIT ; ce que contient le magasin décide donc de la part de la table ci-dessus qui est accessible à qui que ce soit. Un magasin `memory` n’écrit rien ; rien de ce qu’il contient ne survit donc à ce processus pour être lu."
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "Une clé de chiffrement des données par domaine et par classe de données scelle toutes les valeurs de cette classe ; la clé de chiffrement de clé ne fait qu’envelopper les clés de données. Une clé de données RENOUVELÉE est remplacée : elle ouvre toujours ce qu’elle a scellé, rien de nouveau n’est scellé sous elle, et la tâche de rechiffrement rescelle ce qu’elle a scellé puis la détruit. Une clé DÉRIVÉE est fabriquée à partir de la clé de chiffrement de clé à chaque exécution là où rien ne survit au processus, et n’est jamais stockée ni renouvelée."
+  }
+}

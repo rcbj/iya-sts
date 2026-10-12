@@ -346,6 +346,7 @@ function harvest(prefix: string, table: unknown,
       return;
     }
     if (Array.isArray(value)) {
+      const used = new Set<string>();
       value.forEach(function (one, i) {
         const id = one && typeof one === 'object'
           ? IDS.map(function (name) {
@@ -354,7 +355,15 @@ function harvest(prefix: string, table: unknown,
             return typeof v === 'string' && v;
           })[0]
           : '';
-        walk(one, path + '.' + (id || String(i)), depth + 1);
+        // TWO ELEMENTS WITH ONE ID (an audit action's `category` is shared
+        // by many) would collide and one message would be lost: the second
+        // and later take their index as well.
+        let at = path + '.' + (id || String(i));
+        if (used.has(at)) {
+          at = at + '#' + i;
+        }
+        used.add(at);
+        walk(one, at, depth + 1);
       });
       return;
     }
@@ -377,6 +386,68 @@ function harvest(prefix: string, table: unknown,
   log.debug("Leaving harvest(). " + Object.keys(out).length);
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// THE PHRASE NAMESPACES (#543 phase 2): namespace → the modules whose prose
+// it is, by require path from here. Each module exports `PROSE_ROUTES` —
+// the `/admin-api` routes whose answers carry its prose, as the registration
+// loop names them (`res.locals.proseRoute`) — and `prose()`, its English by
+// key, its keys prefixed so that two modules of a namespace cannot collide.
+// A namespace's catalogs are `common/prose_locales/<ns>/`.
+// ---------------------------------------------------------------------------
+const PHRASE_MODULES: Record<string, string[]> = {
+  // Directory → Policies: every kind's tables, its `describe()` templates
+  // and the page's own sentences.
+  policies: ['../admin-core/policy_kinds'],
+  // Server configuration → Mode: the requirements and the refusal reasons.
+  mode: ['./mode'],
+  // Server configuration → Realms: what is separated, and what is shared.
+  realms: ['./realms'],
+  // Monitoring → Audit: the categories and the actions.
+  audit: ['./audit'],
+  // Server configuration → Listeners: the sockets and the hosted
+  // applications on them.
+  listeners: ['../admin-ui/listeners_admin', './hosted_applications',
+              './listener_map'],
+  // Directory → the LDAP pages, and the application register's schema
+  // wherever the applications pages carry it.
+  ldap: ['../ldap/ldap_server', './applications', './devices',
+         '../xacml/xacml_store', '../xacml/xacml_pep_registry'],
+  // Federation: the roles, protocols, mechanisms, subject policies and the
+  // relationship schema, and the map's labels.
+  federation: ['../federation/federation', '../federation/federation_graph'],
+  // Protocols → SPIFFE: who authenticates where, the key types, the
+  // registry's schema and the attestors.
+  spiffe: ['../spiffe/spiffe_auth', '../spiffe/spiffe_ca',
+           '../spiffe/spiffe_registry', '../spiffe/spiffe_server',
+           '../spiffe/spiffe_peer'],
+  // Protocols → SCIM and Monitoring → SCIM: the operations, what it does
+  // not do, the endpoints, the reachable negatives and the policy.
+  scim: ['./admin_stats', '../scim/scim', '../scim/scim_auth'],
+  // Server configuration → PKI: the tiers, use cases, subject kinds,
+  // purposes, residency and revocation reasons.
+  pki: ['./pki', './pki_revocation'],
+  // Monitoring → Encryption: the data classes and the page's notes.
+  encryption: ['../admin-ui/encryption_admin'],
+  // Monitoring → Secrets: each secret's notes.
+  secrets: ['../admin-ui/secrets_admin'],
+  // Monitoring → Database: what the page is, why it is or is not drawn,
+  // and each probe.
+  database: ['../admin-ui/database_admin', '../persistence/persistence',
+             '../persistence/persistence_postgres'],
+  // Directory → Roles and the console's roster: the built-in roles, the
+  // member kinds, the console's own roles and the roles schema.
+  roles: ['./roles', '../admin-core/admin_actions', '../admin-ui/admin_rbac'],
+  // Directory → Delegation: the modes, types and roles, and the map keys
+  // drawn as markup, each a filled template.
+  delegation: ['./delegation'],
+  // Protocols → Device registration: enrolment, recognition and the notes.
+  devices: ['../admin-ui/devices_admin'],
+  // A person's GNAP grants, where this service runs several cells.
+  gnap: ['../gnap/gnap_console'],
+  // Protocols → Kerberos → Principals: the page's notes.
+  kerberos: ['../admin-core/admin_views']
+};
 
 /**
  * Builds the settings source: `config.js`'s `SETTINGS` rows, keyed
@@ -498,6 +569,39 @@ class ServerProse {
   }
 
   /**
+   * Builds the phrase namespaces from `PHRASE_MODULES`: each a phrase
+   * source over the union of its modules' `PROSE_ROUTES` and `prose()`,
+   * every module required LAZILY — they require this one to fill their
+   * templates, and a require at load would close a cycle.
+   *
+   * @returns namespace → source
+   */
+  static phraseNamespaces(): Record<string, ProseSource> {
+    log.debug("Entering ServerProse.phraseNamespaces().");
+    const out: Record<string, ProseSource> = {};
+    Object.keys(PHRASE_MODULES).forEach(function (ns) {
+      out[ns] = phraseSource(function () {
+        const mods = PHRASE_MODULES[ns].map(function (path) {
+          return require(path);
+        });
+        return {
+          routes: mods.reduce(function (all, mod) {
+            return all.concat(mod.PROSE_ROUTES || []);
+          }, []),
+          extract: function () {
+            return mods.reduce(function (all, mod) {
+              return Object.assign(all, mod.prose());
+            }, {});
+          }
+        };
+      });
+    });
+    log.debug("Leaving ServerProse.phraseNamespaces(). " +
+              Object.keys(out).length);
+    return out;
+  }
+
+  /**
    * Builds a phrase source; see `phraseSource()`.
    */
   static phraseSource = phraseSource;
@@ -537,20 +641,8 @@ class ServerProse {
     log.debug("Leaving ServerProse.defaultDeps().");
     return { log: log, errorCodes: errorCodes,
              directory: path.join(__dirname, 'prose_locales'),
-             sources: {
-               settings: settingsSource(),
-               // Directory → Policies (#543 phase 2): every kind's tables,
-               // its `describe()` templates and the page's own sentences.
-               policies: phraseSource(function () {
-                 // LAZY: the policy modules require this one to fill their
-                 // templates, so a require at load would close a cycle.
-                 const kinds = require('../admin-core/policy_kinds');
-                 return { routes: kinds.PROSE_ROUTES,
-                          extract: function () {
-                            return kinds.prose();
-                          } };
-               })
-             } };
+             sources: Object.assign({ settings: settingsSource() },
+                                    ServerProse.phraseNamespaces()) };
   }
 
   /**

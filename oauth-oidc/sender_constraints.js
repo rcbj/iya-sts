@@ -122,14 +122,18 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 // entry is still confidential (`private_key_jwt`, which it is until the
 // console's cutover) nothing here applies to it, and no other public client
 // is touched: `oauth2.accessTokenRequireDpop` and
-// `oauth2.refreshTokenRequireDpop` remain the realm's own question. The
-// portal is NOT listed: it keeps its backend-for-frontend (#444, D9).
+// `oauth2.refreshTokenRequireDpop` remain the realm's own question.
+//
+// **THE USER PORTAL JOINED IT ON #568 (2026-10-12)**: it was left out while
+// it kept its backend-for-frontend (#444, D9), and rcbj's decision on #568
+// made it the console's pattern — a static application, a public client,
+// every token DPoP-bound. Same condition, same two checks.
 // ---------------------------------------------------------------------------
 /**
  * The hosted clients that are DPoP-bound whenever they are public clients:
- * the admin console.
+ * the admin console and the user portal.
  */
-const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console'];
+const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 
 /**
  * Tells whether a client is one that must be DPoP-bound because it is the

@@ -44,6 +44,33 @@ The bar door's endpoints:
 | `GET /oid4vp/result/{state}` | non-standard: the verdict, so a wallet page or a test can read it |
 | `GET /oid4vp/done` | the Verifier's closing page |
 
+**An administrator starts one through the management API** (#587), in every
+mode: `POST /admin-api/verifications/start` (Admin Write) takes what
+`/oid4vp/start`'s query takes — `format`, `by`, `client_id_prefix`,
+`response_type`, `response_mode`, `mode` and `wallet`, all optional — builds
+the request with the same function, and answers JSON instead of a redirect:
+the `state`, the `walletUrl` a same-device start sends the holder to, the
+`requestUri` (`openid4vp://`, or `siopv2://` for an ID Token alone) a
+cross-device QR code carries, and the `request_uri` of a request by
+reference. `GET /admin-api/verifications?state=` (Admin Read) answers what
+`/oid4vp/result/{state}` answers, with `found: true`, and 404 for a state with
+no record; without `state` it lists the realm's open verifications, newest
+first, each with what it asked and what it decided (claim names, never a
+value). A wallet sign-in is not listed there. The console's twin is the
+*Start a verification* form and the *Open verifications* list on the
+Verifiable Credentials page's Verifier request tab.
+
+```bash
+curl -s -X POST "$STS/admin-api/verifications/start" \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"format":"dc+sd-jwt","by":"reference"}'
+curl -s "$STS/admin-api/verifications?state=$STATE" \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+The demonstration pages above are being made development-only (#585); these
+two operations are what a product deployment, and its tests, use instead.
+
 A request **by value** uses the `redirect_uri:` client identifier prefix. A
 request **by reference** uses the configured `oid4vp.clientId` and a Request
 Object ([RFC 9101](https://www.rfc-editor.org/rfc/rfc9101)) signed with this

@@ -26,7 +26,8 @@
 //      REMOVES the password, is refused once expired, and sends
 //      credential-change (password, revoke) and
 //      account-credential-change-required.
-//   3. OVER HTTP, /portal/reset-password draws the form for a good link,
+//   3. OVER HTTP, /account-api/reset-password (the static portal's page's
+//      operations since #568) answers the form for a good link,
 //      answers one sentence for a bad one, refuses a mismatch, sets the
 //      password, spends the link, and sends credential-change (password,
 //      create, initiated by the user).
@@ -91,6 +92,24 @@ function childMain() {
         });
       });
       req.end(body);
+    });
+  }
+
+  // A JSON BODY, as the static portal sends a form to `/account-api` (#568).
+  function requestJson(port, method, urlPath, body) {
+    return new Promise(function (resolve) {
+      const text = JSON.stringify(body || {});
+      const req = http.request({ host: '127.0.0.1', port: port, path: urlPath,
+        method: method, headers: { 'content-type': 'application/json',
+          'content-length': Buffer.byteLength(text) } }, function (res) {
+        let out = '';
+        res.on('data', function (c) { out += c; });
+        res.on('end', function () {
+          resolve({ status: res.statusCode, headers: res.headers,
+                    text: out });
+        });
+      });
+      req.end(text);
     });
   }
 
@@ -243,34 +262,49 @@ function childMain() {
       }), '2e. a credential-change (password, revoke) was queued');
 
       // ====================================================================
-      // 3. /portal/reset-password OVER HTTP
+      // 3. THE RESET LINK OVER HTTP. Since #568 the portal is a static
+      // application: the link's page is drawn in the browser from
+      // `GET /account-api/reset-password`, and its form is
+      // `POST /account-api/reset-password` — both taking no token, the
+      // link's `user` and `token` the credential, a JSON body.
       // ====================================================================
       const server = http.createServer(app);
       await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
       const port = server.address().port;
-      const resetPath = '/portal/reset-password';
+      const resetPath = '/account-api/reset-password';
+      const json = function (r) {
+        try {
+          return JSON.parse(r.text);
+        } catch (e) {
+          // Not JSON: the assertion below names the text.
+          return {};
+        }
+      };
       let r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
                             encodeURIComponent(token));
-      note(r.status === 200 && /Choose a new password/.test(r.text),
-           '3a. a good link draws the form', r.status);
+      note(r.status === 200 && !json(r).refused &&
+           json(r).username === 'ctl-alice',
+           '3a. a good link answers the form\'s view', r.status + ' ' +
+           r.text.slice(0, 200));
       r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
                         encodeURIComponent(token.slice(0, -2) + 'zz'));
       note(r.status === 400 && /not valid/.test(r.text),
            '3b. a bad link answers the one sentence', r.status);
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-456!',
           confirm: 'Other-Pass-456!' });
       note(r.status === 400 && /do not match/.test(r.text),
            '3c. two different passwords are refused', r.status);
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-456!',
           confirm: 'New-Pass-456!' });
-      note(r.status === 200 && /Your password is set/.test(r.text),
+      note(r.status === 200 && json(r).ok === true && json(r).view &&
+           json(r).view.done === true,
            '3d. a good password is set', r.status + ' ' + r.text.slice(0, 80));
       note(credentials.hasPassword('ctl-alice') &&
            !credentials.checkPasswordReset('ctl-alice', token).ok,
            '3e. the entry has a password and the link is spent');
-      r = await request(port, 'POST', resetPath,
+      r = await requestJson(port, 'POST', resetPath,
         { user: 'ctl-alice', token: token, password: 'New-Pass-789!',
           confirm: 'New-Pass-789!' });
       note(r.status === 400, '3f. the spent link is refused', r.status);

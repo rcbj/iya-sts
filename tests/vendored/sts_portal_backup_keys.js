@@ -54,6 +54,16 @@
 // one exchange from one implementation would let a shared misunderstanding
 // pass. `sts_webauthn_second_factor.js` beside it carries the same fixture for
 // the same reason and drives the SIGN-IN door; this one drives the PORTAL.
+//
+// ---------------------------------------------------------------------------
+// SINCE #568 THE PORTAL IS A STATIC APPLICATION, and this job drives it the
+// way its runtime does: the sign-in walk ends at the sign-on session and
+// `portal_signin.js` takes the portal's DPoP-bound token from it; a page is
+// its `/account-api` operation's answer drawn by the portal's own renderers,
+// and a form is that operation sent its fields as JSON (`portalPages()`). A
+// write answers 200 with what it did where it answered 303, a passkey just
+// made is named by the answer's `go`, and the CSRF refusal is now the
+// missing-token refusal: the token, not a cookie, is what a request carries.
 // ===========================================================================
 
 const assert = require("assert");
@@ -357,6 +367,142 @@ function browser() {
 // it. `sts_realm_administrators.js` asserts the chooser itself.
 const PORTAL_DOOR = "/portal?realm=default";
 
+// ---------------------------------------------------------------------------
+// THE PORTAL'S PAGES SINCE #568, BEHIND THE VERB THIS JOB ALWAYS USED.
+//
+// The portal is a static application since #568: `/portal/*` answers one
+// shell document, every page is drawn in the browser from an `/account-api`
+// operation and every form is sent there as JSON, with a DPoP-bound token
+// and no CSRF field. `portalPages()` keeps this job's `go(method, path,
+// body)` and does what the portal's runtime does instead of what the server
+// used to: a GET asks the operation that MIRRORS the page and draws its
+// answer with the portal's own renderers (`portal/portal.bundle.js`); a POST
+// sends the form's fields to the operation that mirrors the form. What comes
+// back is the page as the browser would show it — `text` the drawn markup
+// with any refusal or message above it, `location` an answer's `go`, `csp`
+// the shell's policy — so an assertion about what the page SAYS still reads
+// the page. A signed-in page takes `client`, the portal's client
+// (`portal_signin.js`); a page drawn for nobody (an activation link) takes
+// none.
+// ---------------------------------------------------------------------------
+const portalSignin = require("./portal_signin.js");
+
+// The forms that post to a path with no page of its own, and the page whose
+// view their answer carries.
+const DRAWN_ON = { "/portal/remove-key": "/portal/keys",
+                   "/portal/rename-key": "/portal/keys" };
+
+function portalPages(root, client) {
+  log.debug("Entering portalPages().");
+  const rootPath = new URL(root + "/").pathname.replace(/\/+$/, "");
+  let translator = null;
+  const translate = async function () {
+    log.debug("Entering translate().");
+    if (!translator) {
+      const table = portalSignin.portalBundle();
+      let locale = null;
+      if (client) {
+        const me = await client.api("GET", "/account-api/me");
+        locale = me.json && me.json.locale;
+      } else {
+        const said = await portalSignin.nobody(root, "GET",
+                                               "/account-api/locale");
+        locale = said.json && said.json.locale;
+      }
+      translator = table.messages.WebTranslator.fromData(locale);
+    }
+    log.debug("Leaving translate().");
+    return translator;
+  };
+  const operation = async function (method, page) {
+    log.debug("Entering operation().");
+    const ops = await portalSignin.operationsOf(root);
+    log.debug("Leaving operation().");
+    return ops.filter(function (op) {
+      return op.mirrors === method + " " + page;
+    })[0] || null;
+  };
+  const call = async function (op, method, target, body) {
+    log.debug("Entering call().");
+    log.debug("Leaving call().");
+    return op.access === "person" ? client.api(method, target, body)
+                                  : portalSignin.nobody(root, method, target,
+                                                        body);
+  };
+  const draw = async function (page, view, query) {
+    log.debug("Entering draw().");
+    const row = portalSignin.portalBundle().PAGES.filter(function (one) {
+      return one.path === page;
+    })[0];
+    if (!row || !view) {
+      log.debug("Leaving draw(). Nothing to draw.");
+      return "";
+    }
+    const t = await translate();
+    log.debug("Leaving draw().");
+    return row.render(view, { t: t, query: query || {}, prefix: "",
+                              origin: new URL(root).origin, me: null,
+                              locale: null, version: null, here: page });
+  };
+  const said = function (json) {
+    log.debug("Entering said().");
+    log.debug("Leaving said().");
+    return (json && Array.isArray(json.errors) ? json.errors.join(" ") + " "
+                                               : "") +
+           (json && json.message ? String(json.message) + " " : "");
+  };
+  log.debug("Leaving portalPages().");
+  return {
+    client: client,
+    go: async function (method, path, body) {
+      log.debug("Entering go().");
+      // A root-relative path is under `root`, the realm's prefix added
+      // where the caller left it off, as this job's browser read one.
+      const raw = String(path);
+      const url = /^https?:\/\//i.test(raw) ? new URL(raw)
+        : new URL(new URL(root).origin +
+                  (rootPath && raw.indexOf(rootPath + "/") === 0 ? raw
+                                                                 : rootPath +
+                                                                   raw));
+      const page = url.pathname.slice(rootPath.length) || "/portal";
+      const query = {};
+      url.searchParams.forEach(function (value, name) {
+        if (name !== "realm") {
+          query[name] = value;
+        }
+      });
+      const op = await operation(method, page);
+      assert.ok(op, "no /account-api operation mirrors " + method + " " +
+                page);
+      if (method === "GET") {
+        const qs = new URLSearchParams(query).toString();
+        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""));
+        const view = r.json && r.json.view ? r.json.view : r.json;
+        const shell = await fetch(root + page + url.search);
+        log.debug("Leaving go(). GET " + page);
+        return { status: r.status, json: r.json,
+                 text: said(r.json) + await draw(page, view, query),
+                 location: "",
+                 csp: shell.headers.get("content-security-policy") || "" };
+      }
+      const fields = {};
+      new URLSearchParams(String(body || "")).forEach(function (value, name) {
+        if (name === "csrf_token") {
+          return;
+        }
+        fields[name] = Object.prototype.hasOwnProperty.call(fields, name)
+          ? [].concat(fields[name], value) : value;
+      });
+      const r = await call(op, "POST", op.path, fields);
+      log.debug("Leaving go(). POST " + page);
+      return { status: r.status, json: r.json,
+               text: said(r.json) + await draw(DRAWN_ON[page] || page,
+                                               r.json && r.json.view, {}),
+               location: (r.json && r.json.go) || "", csp: "" };
+    }
+  };
+}
+
 async function get(path) {
   log.debug("Entering get().");
   const r = await fetch(api + path);
@@ -447,19 +593,63 @@ async function factorsFor(who) {
   return r.body.factors || {};
 }
 
-// Sign in at a portal door through the code flow, answering a security-key
-// step with `authenticator` when one is asked for.
-async function signIn(door, authenticator) {
-  log.debug("Entering signIn().");
-  const b = browser();
-  let r = await b.go("GET", door);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    door + " did not send an unauthenticated browser to the authorization " +
-    "endpoint: " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
+// ---------------------------------------------------------------------------
+// THE SIGN-IN, AS THE STATIC PORTAL STARTS IT (#568).
+//
+// `/portal` no longer redirects anybody: the shell signs in IN THE BROWSER
+// as the public client `sts-user-portal`. So the walk starts where that
+// script starts it — the shell first (serving it registers the realm's
+// `/portal/callback`), then the authorization request with PKCE — and runs
+// the sign-in screen and its second-factor step exactly as a person would,
+// which `portal_signin.js` does not (it knows no security key). The walk
+// ends holding the SIGN-ON session; `portal_signin.js` then redeems the
+// portal's own code against it, by single sign-on, for the DPoP-bound token
+// every portal page is drawn with.
+// ---------------------------------------------------------------------------
+async function startSignIn(b, root) {
+  log.debug("Entering startSignIn().");
+  const prefix = new URL(root + "/").pathname.replace(/\/+$/, "");
+  let r = await b.go("GET", prefix + PORTAL_DOOR);
+  assert.strictEqual(r.status, 200, "the portal's shell answered " +
+    r.status);
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  r = await b.go("GET", prefix + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: root + "/portal/callback",
+    scope: "openid account:manage",
+    state: nodeCrypto.randomBytes(16).toString("base64url"),
+    code_challenge: sha256(Buffer.from(verifier)).toString("base64url"),
+    code_challenge_method: "S256", resource: root + "/account-api"
+  }).toString());
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
-    "the authorization endpoint did not ask for a sign-in: " + r.location);
+    "the portal's authorization request did not ask for a sign-in: " +
+    r.status + " -> " + r.location);
   r = await b.go("GET", r.location);
+  log.debug("Leaving startSignIn().");
+  return r;
+}
+
+// Follows the sign-in's redirects back through the authorization endpoint
+// to the portal's callback; the code there is the shell's, not this job's.
+async function finishSignIn(b, r) {
+  log.debug("Entering finishSignIn().");
+  for (let i = 0; i < 5 && (r.status === 302 || r.status === 303) &&
+       !/\/portal\/callback\?/.test(r.location); i++) {
+    r = await b.go("GET", r.location);
+  }
+  assert.ok(/\/portal\/callback\?/.test(r.location),
+    "the sign-in did not come back to the portal: " + r.status + " -> " +
+    r.location);
+  log.debug("Leaving finishSignIn().");
+}
+
+// Sign in to the portal, answering a security-key step with `authenticator`
+// when one is asked for; `door` is the page the job goes on to read. Answers
+// `portalPages()` over the portal's client, with the sign-on walk's `cookie`.
+async function signIn(door, authenticator) {
+  log.debug("Entering signIn(). door=" + door);
+  const b = browser();
+  let r = await startSignIn(b, base);
   const authnId = hidden(r.text, "authn_id");
   assert.ok(authnId, "the sign-in screen carries no authn_id.");
   r = await b.go("POST", "/authn/login",
@@ -481,12 +671,13 @@ async function signIn(door, authenticator) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in did not complete: " + r.status + " " +
     String(r.text).slice(0, 400));
-  r = await b.go("GET",
-                 r.location);   // the authorization endpoint, with a code
-  r = await b.go("GET", r.location);   // the callback, which mints the session
-  assert.ok(b.cookie, "completing the flow established no session cookie.");
+  await finishSignIn(b, r);
+  const client = await portalSignin.signInToThePortal(base, PERSON, null,
+                                                       { cookie: b.cookie });
+  const pages = portalPages(base, client);
+  pages.cookie = b.cookie;
   log.debug("Leaving signIn().");
-  return b;
+  return pages;
 }
 
 // Drive `/portal/keys`'s two-step enrolment with one authenticator.
@@ -499,7 +690,7 @@ async function enrolAt(b, authenticator, role, label, kind) {
   const begun = await b.go("POST", "/portal/keys",
     form({ action: "begin", role: role, kind: kind || "security-key",
            csrf_token: csrfOf(page.text) }));
-  assert.ok(begun.status === 303,
+  assert.ok(begun.status === 200 && begun.json && begun.json.ok,
     "beginning the enrolment answered " + begun.status + " " +
     String(begun.text).slice(0, 400));
   page = await b.go("GET", "/portal/keys");
@@ -512,7 +703,7 @@ async function enrolAt(b, authenticator, role, label, kind) {
            csrf_token: csrfOf(page.text) }));
   let prompt = null;
   let renamed = null;
-  if (done.status === 303) {
+  if (done.status === 200 && done.location) {
     prompt = await b.go("GET", done.location);
     if (label) {
       renamed = await b.go("POST", "/portal/rename-key",
@@ -542,8 +733,8 @@ async function twoCallsToAction(b) {
   let page = await b.go("GET", "/portal/keys");
   check("the page is headed Passkeys and offers the two calls to action, " +
         "Create a passkey first", function () {
-    assert.ok(/<title>Passkeys/.test(page.text) || />Passkeys</.test(page.text),
-      "the page is not headed Passkeys: " + String(page.text).slice(0, 600));
+    // The heading is the frame's since #568, drawn from the column's table
+    // (`web_portal_kit.ts`); the page's own body is what is drawn here.
     const create = page.text.indexOf('name="kind" value="passkey"');
     const key = page.text.indexOf('name="kind" value="security-key"');
     assert.ok(create >= 0 && key >= 0,
@@ -562,7 +753,7 @@ async function twoCallsToAction(b) {
     const begun = await b.go("POST", "/portal/keys",
       form({ action: "begin", role: "mfa", kind: kind,
              csrf_token: csrfOf(page.text) }));
-    assert.strictEqual(begun.status, 303, "arming answered " + begun.status);
+    assert.strictEqual(begun.status, 200, "arming answered " + begun.status);
     const armed = await b.go("GET", "/portal/keys");
     // The attribute is HTML-escaped JSON.
     const options = JSON.parse((attr(armed.text, "data-options") || "{}")
@@ -635,10 +826,9 @@ async function thePortalCanEnrolAKey(first) {
       String(page.text).slice(0, 500));
   });
 
-  check("AND IT RELAXES `script-src` TO `'self'` WHILE KEEPING " +
-        "`frame-ancestors` — the seventh scripted page in this service and " +
-        "the first in this portal. A ceremony is a browser API call and " +
-        "there is no markup that makes one; the relaxation goes through " +
+  check("AND ITS SHELL ALLOWS `script-src 'self'` WHILE KEEPING " +
+        "`frame-ancestors` — the portal is a script since #568, and the " +
+        "ceremony is its runtime's. The relaxation goes through " +
         "app.contentSecurityPolicy(), which is what stops the framing clause " +
         "being lost with the page still working", function () {
     assert.ok(/script-src 'self'/.test(page.csp),
@@ -666,7 +856,7 @@ async function thePortalCanEnrolAKey(first) {
   const armed = await b.go("POST", "/portal/keys",
     form({ action: "begin", role: "mfa",
            csrf_token: csrfOf((await b.go("GET", "/portal/keys")).text) }));
-  assert.strictEqual(armed.status, 303, "arming answered " + armed.status);
+  assert.strictEqual(armed.status, 200, "arming answered " + armed.status);
   const armedPage = await b.go("GET", "/portal/keys");
   const wrongId = await b.go("POST", "/portal/keys",
     form({ action: "finish", enrolment_id: "not-the-one-in-progress",
@@ -690,22 +880,22 @@ async function thePortalCanEnrolAKey(first) {
 
   const enrolled = await enrolAt(b, first, "mfa", "the one at my desk");
   check("and a real ceremony against it enrols the key", function () {
-    assert.strictEqual(enrolled.done.status, 303,
+    assert.strictEqual(enrolled.done.status, 200,
       "the enrolment answered " + enrolled.done.status + " " +
       String(enrolled.done.text).slice(0, 500));
   });
 
-  check("THE NICKNAME IS ASKED FOR AFTER THE CEREMONY (#470): the redirect " +
+  check("THE NICKNAME IS ASKED FOR AFTER THE CEREMONY (#470): the answer " +
         "names the new passkey and the page opens its rename form, filled " +
         "with the default name — a security key's, since this one cannot be " +
         "backed up and is cross-platform", function () {
     assert.ok(/[?&]named=/.test(String(enrolled.done.location)),
-      "the redirect names no passkey: " + enrolled.done.location);
+      "the answer names no passkey: " + enrolled.done.location);
     assert.ok(/Give your security key a nickname/.test(enrolled.prompt.text),
       "no nickname prompt: " + String(enrolled.prompt.text).slice(0, 600));
     assert.ok(/name="label"[^>]*value="Security key"/.test(
       enrolled.prompt.text), "the prompt does not hold the default name");
-    assert.strictEqual(enrolled.renamed && enrolled.renamed.status, 303,
+    assert.strictEqual(enrolled.renamed && enrolled.renamed.status, 200,
       "the rename answered " + (enrolled.renamed && enrolled.renamed.status));
   });
 
@@ -754,30 +944,34 @@ async function thePortalCanEnrolAKey(first) {
   const notTheirs = await b.go("POST", "/portal/rename-key",
     form({ credentialId: makeAuthenticator("nobody's").idB64, label: "mine",
            csrf_token: csrfOf(listed.text) }));
-  const noCsrf = await b.go("POST", "/portal/rename-key",
-    form({ credentialId: first.idB64, label: "forged" }));
+  // NO TOKEN, where the portal's form once carried a CSRF token (#568): the
+  // DPoP-bound token is what a request needs now, and one without it is
+  // refused before the rename is looked at.
+  const noToken = await fetch(base + "/account-api/keys/rename", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ credentialId: first.idB64, label: "forged" }) });
   check("a rename is refused for a name over 60 characters, for an id that " +
-        "is not one of theirs, and without the CSRF token", function () {
+        "is not one of theirs, and without the portal's token", function () {
     assert.strictEqual(tooLong.status, 400, "too long: " + tooLong.status);
     assert.ok(/at most 60 characters/.test(tooLong.text),
       String(tooLong.text).slice(0, 300));
     assert.strictEqual(notTheirs.status, 400, "not theirs: " +
       notTheirs.status);
-    assert.strictEqual(noCsrf.status, 403, "no CSRF token: " + noCsrf.status);
+    assert.strictEqual(noToken.status, 401, "no token: " + noToken.status);
   });
   const restored = await b.go("POST", "/portal/rename-key",
     form({ credentialId: first.idB64, label: "",
            csrf_token: csrfOf(listed.text) }));
   const afterRestore = await factorsFor(PERSON);
   check("an EMPTY name restores the default", function () {
-    assert.strictEqual(restored.status, 303, "it answered " + restored.status);
+    assert.strictEqual(restored.status, 200, "it answered " + restored.status);
     assert.strictEqual(afterRestore.keys[0].label, "Security key",
       JSON.stringify(afterRestore.keys[0]));
   });
   const back = await b.go("POST", "/portal/rename-key",
     form({ credentialId: first.idB64, label: "the one at my desk",
            csrf_token: csrfOf(listed.text) }));
-  assert.strictEqual(back.status, 303, "renaming back answered " +
+  assert.strictEqual(back.status, 200, "renaming back answered " +
     back.status);
   log.debug("Leaving thePortalCanEnrolAKey().");
   return b;
@@ -817,7 +1011,7 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
                                "passkey");
   check("A DIFFERENT AUTHENTICATOR IS ACCEPTED, which is the whole feature",
     function () {
-      assert.strictEqual(backup.done.status, 303,
+      assert.strictEqual(backup.done.status, 200,
         "the backup was refused: " + backup.done.status + " " +
         String(backup.done.text).slice(0, 400));
     });
@@ -875,9 +1069,7 @@ async function eitherKeySignsThemIn(first, second) {
 
   const stranger = makeAuthenticator("never enrolled");
   const b = browser();
-  let r = await b.go("GET", PORTAL_DOOR);
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
+  let r = await startSignIn(b, base);
   r = await b.go("POST", "/authn/login",
     form({ authn_id: hidden(r.text, "authn_id"), username: PERSON,
            password: PASSWORD, action: "login",
@@ -987,7 +1179,7 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
   assert.ok(url,
             "no activation URL came back: " + String(issued.raw).slice(0, 300));
 
-  const b = browser();
+  const b = portalPages(base, null);
   const setup = await b.go("GET", url);
   const token = hidden(setup.text, "token");
   assert.ok(token, "the setup form carries no token: " +
@@ -1000,7 +1192,7 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
            kind: "passkey" }));
   check("CHOOSING A KEY INSTEAD OF A PASSWORD DRAWS THE CEREMONY rather than " +
         "finishing — the activation page registers the key, authorised by " +
-        "the link, with script-src relaxed to 'self' and frame-ancestors " +
+        "the link, under a shell with script-src 'self' and frame-ancestors " +
         "kept", function () {
     assert.strictEqual(armed.status, 200,
       "it answered " + armed.status + " " + String(armed.text).slice(0, 400));
@@ -1010,10 +1202,10 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
     assert.ok(attr(armed.text, "data-challenge"), "no challenge on the page.");
     assert.ok(!/Your account is ready/.test(armed.text),
       "the activation finished before any key was registered.");
-    assert.ok(/script-src 'self'/.test(armed.csp),
-      "the policy does not allow the ceremony script: " + armed.csp);
-    assert.ok(/frame-ancestors/.test(armed.csp),
-      "the framing clause is gone: " + armed.csp);
+    assert.ok(/script-src 'self'/.test(setup.csp),
+      "the policy does not allow the ceremony script: " + setup.csp);
+    assert.ok(/frame-ancestors/.test(setup.csp),
+      "the framing clause is gone: " + setup.csp);
   });
 
   // THE BROWSER RAN NO CEREMONY: the real button under the script. The step
@@ -1078,9 +1270,7 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
 
   // A PASSWORDLESS SIGN-IN WITH THE KEY: the box ticked, no password.
   const s = browser();
-  let r = await s.go("GET", PORTAL_DOOR);
-  r = await s.go("GET", r.location);
-  r = await s.go("GET", r.location);
+  let r = await startSignIn(s, base);
   const authnId = hidden(r.text, "authn_id");
   assert.ok(authnId, "the sign-in screen carries no authn_id.");
   r = await s.go("POST", "/authn/login",

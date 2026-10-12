@@ -1,0 +1,130 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "信任錨點。自我簽署，三者中存留期最長，也是階層中唯一必須以頻外方式交給信賴方的憑證——其下的一切都隨憑證鏈傳遞。"
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "由根憑證簽署。它的存在是為了讓根憑證的金鑰只使用一次後便擱置不動：此處遭入侵可藉由重新簽發此層修復，而根憑證遭入侵則完全無法修復。pathLen 為 1，因此它可以再簽署一個 CA，不能更深。"
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "由中繼憑證簽署，也是唯一簽署本服務所發出任何東西的層級。pathLen 為 0——它簽署「末端」憑證而不再簽署任何 CA，這使得「應用程式憑證無法用來產生另一張憑證」成為編碼本身的特性，而不是本服務的行為規矩。"
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "此領域用來簽署 JWT 的金鑰——RS256 背後的 RSA 金鑰、四條 ECDSA 曲線、兩條 Edwards 曲線，以及產生時的十一把後量子金鑰。這是用戶端依據 /oauth2/jwks 進行驗證的對象。"
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "簽署 XML 文件者：SAML 2.0 與 1.1 斷言與回應、WS-Federation、WS-Trust，以及個別服務提供者的中繼資料。它是與上一項「分開」的授權單位，即使目前同一把 RSA 金鑰兼做兩項工作——為 SAML 而信任本服務的信賴方，並不因此對其 OAuth 權杖表達任何立場，而兩個簽發 CA 正是讓這一點得以表達的方式。"
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "為 RFC 7521 與 RFC 7523 簽發給「應用程式」的簽署金鑰組——用於用戶端斷言或 JWT bearer 授權許可。這是此模組在階層擴充出其他 CA 之前就擁有的簽發 CA，現以能表明它是五者中哪一個的名稱命名。"
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "在 LDAPS 636、global.https 開啟時的主連接埠，以及內嵌偵錯工具接聽程式上提供的憑證——此使用案例仍以其命名的 8443 與 9443 接聽程式已於 2026-09-16 刪除。它屬於「程序」範圍，因為那些通訊端就是如此：一張憑證回應每個領域，因此若由某領域的中繼憑證簽署，就等於讓一個領域為其他每個領域的前門擔保。"
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "以單元方式部署之服務的節點在單元間通道（cells.port）上彼此出示的憑證，作為伺服器與用戶端，各自在 urn:sts:cell: subjectAltName 中指名其單元。存留期短，由各節點重新產生，且從不記錄。對端只有出示此授權單位簽發的末端憑證才會被接受。在單一單元模式下不使用。"
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "此領域產生的每個 X509-SVID 所由簽署的 X.509 授權單位。自 2026-09-11 起屬於「領域」範圍——在此之前它位於程序中繼憑證之下、自我簽署，且完全在此樹之外。信任「錨點」不受此次移動影響，而這正是重點：套件組發布的是每個領域共用的服務根憑證，因此任何領域之授權單位簽署的 SVID 都能依同一個錨點驗證，而其憑證鏈仍表明是哪個領域簽發的。"
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "遠端 XACML 原則執行點在其 HTTPS 接聽程式上提供的憑證。屬於「領域」範圍，因為遠端 PEP 是針對一個領域註冊並執行該領域的原則，所以為其前門擔保的授權單位就是該領域的。從 /admin/xacml/peps 或 POST /admin-api/xacml/issue-pep-certificate 簽發給「已註冊」的 PEP；私密金鑰只交付一次，本服務不保留任何副本。"
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "自訂 HTTPS 接聽程式（#472：服務的為 listeners.custom，領域自己的為 listeners.realm）在其定義未指名憑證檔案時，為其主機名稱出示的憑證。屬於「領域」範圍，因為接聽程式屬於一個領域——服務的接聽程式則屬於預設領域。每個接聽程式在每個節點上一張；私密金鑰絕不離開提供服務的節點。"
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "此領域的 KDC 用來簽署其 PKINIT 回覆的憑證（RFC 4556）：其擴充金鑰使用方式中為 id-pkinit-KPKdc，id-pkinit-san 中為該領域的票證授予服務 krbtgt/REALM@REALM。每個程序一張，於首次使用 PKINIT 時產生；私密金鑰絕不離開產生它的程序。"
+  },
+  "pki.useCases.acme.what": {
+    "en": "85c88fe668bcb64d",
+    "text": "透過 ACME（RFC 8555）在 /enroll/acme 簽發的憑證，簽發給已為其簽發 External Account Binding 金鑰的個人或應用程式項目。每張末端憑證都在 urn:sts:person: 或 urn:sts:application: subjectAltName 中指名該項目。"
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "透過 EST（RFC 7030）在 /.well-known/est 簽發的憑證，簽發給以密碼、用戶端密碼或領域簽發之用戶端憑證驗證的項目，或——對管理員而言——請求所指名的項目。這是本服務可以產生金鑰組的唯一註冊途徑（/serverkeygen）。"
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "透過 SCEP（RFC 8894）在 /enroll/scep 簽發的憑證，簽發給已為其簽發單次使用挑戰密碼的項目。SCEP 用來加密請求的 RA 憑證也是此 CA 的末端憑證，使用 RSA 金鑰，因為 SCEP 的金鑰傳輸是 RSA。"
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "903e048677f8ab58",
+    "text": "使用者在使用者入口網站上自行簽發的 TLS 用戶端憑證：clientAuth、該人的 urn:sts:person: 名稱，以及以 PKCS#12 只交付一次的私密金鑰。此授權單位簽發的憑證可在此領域中於主連接埠的 GET /tls/sign-in 讓持有者登入；本服務其他任何授權單位簽發的憑證則不行，儘管它們全都鏈結到同一個根憑證。"
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "已註冊的 OAuth 用戶端或信賴方。其金鑰組會寫入其在 ou=applications 中的自身項目。"
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "ou=users 中的某人。其金鑰組簽署的 RFC 7523 第 2.1 節斷言只能「關於其本人」，不能關於其他任何人——請參閱 common/person_assertions.js，拒絕的理由在那裡論述。"
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "JWS 簽署金鑰。其公開部分會以 JWKS（oauthAssertionJwks）寫入應用程式，並在 x5c 中攜帶憑證鏈，這就是 RFC 7523 註冊金鑰的方式。"
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "XML Signature 金鑰。其憑證會以 PEM（oauthSamlAssertionCertificate）寫入應用程式，因為 SAML 沒有 JWKS，而一方為該設定檔註冊的「就是」憑證。"
+  },
+  "pki.report.encoder": {
+    "en": "e62315ba46619e60",
+    "text": "common/vendored/x509.js——上層專案自己的 PKI 程式碼，逐位元組相同，建構於 pkijs 與 asn1js 之上。本服務與該專案的 PKI / X.509 頁面共用同一個編碼器。"
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "CA 私密金鑰位於持續性儲存區中，以與簽署金鑰相同的金鑰加密金鑰密封，並在重新啟動後保留。"
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "CA 私密金鑰只保存在記憶體中。本服務處於開發模式，金鑰材料每次啟動都會產生——現在建立的階層會在此程序結束時消失。"
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "未提供原因。RFC 5280 第 5.3.1 節規定此值 SHOULD 省略原因代碼擴充，因此以此方式撤銷的項目完全不帶原因——這就是「unspecified」在傳輸上的意義。"
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "已知或懷疑私密金鑰落入他人之手。這是唯一表明憑證從未安全、而不僅是不再需要的原因。"
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "CA 自身的金鑰遭入侵。用於中繼 CA 或簽發 CA，其下的一切也應視為遭入侵。"
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "主體的名稱或隸屬關係已變更，因此憑證所述不再屬實。"
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "已簽發替代憑證。**這是本服務在輪替或重新簽發憑證時使用的原因**，也是任何這類清單上最常見的項目。"
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "主體已停止從事該憑證原本用途的事務。"
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "暫時停權。**唯一可以「撤回」的原因**——其他一切都是永久的，而驗證程式有權在 CRL 表明其仍為最新的期間快取永久撤銷。"
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "主體已不再有權享有憑證所宣稱的事物。"
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "屬性授權單位的金鑰遭入侵。列於此處僅為完整起見：本服務不簽發屬性憑證。"
+  }
+}

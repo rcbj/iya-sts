@@ -9651,10 +9651,13 @@ class OAuth2Server {
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
                        (outer.request_uri !== undefined &&
                         outer.request_uri !== '');
-    if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
-        !client.require_signed_request_object &&
-        !self.deps.fapi.requiresSignedRequestObject() &&
-        self.capabilitiesFor(req).require_signed_request_object !== true) {
+    // `signedRequired()` is the one reading of the requirement — the setting,
+    // the entry, the authorization server's metadata and FAPI — including
+    // the hosted public clients' exemption (#568).
+    if (!jwtSecured &&
+        !requestObject.signedRequired(client,
+                                      self.authorizationProfileOf(req),
+                                      String(outer.client_id || ''))) {
       log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);
@@ -10543,7 +10546,8 @@ class OAuth2Server {
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
-                                     self.authorizationProfileOf(req))) {
+                                     self.authorizationProfileOf(req),
+                                     clientId)) {
       log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). Pushed " +
                 "plain, and a " +
                 "signed request object is now required.");
@@ -13624,8 +13628,14 @@ class OAuth2Server {
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client,
       applications.clientConfigOf(client.client_id) || {});
+    // THE TWO HOSTED PUBLIC CLIENTS (#446, #568) authenticate with `none`
+    // where a confidential-only profile advertises no such method: the
+    // profile's exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT) read for the
+    // metadata the profile writes, or the exemption would exempt nothing.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(String(declaredMethod)) < 0) {
+        advertisedAuth.indexOf(String(declaredMethod)) < 0 &&
+        !self.deps.fapi.publicClientExempt(client.client_id,
+                                           declaredMethod)) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
                 " does not advertise " + declaredMethod + ".");
       errorCodes.mark(res, 'STS-OAUTH-0198');
@@ -17683,8 +17693,10 @@ class OAuth2Server {
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client, registered);
+    // The hosted public clients' exemption, as at the token endpoint.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(declaredMethod) < 0) {
+        advertisedAuth.indexOf(declaredMethod) < 0 &&
+        !self.deps.fapi.publicClientExempt(clientId, declaredMethod)) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
                 " does not " +
                 "advertise " + declaredMethod + ".");
@@ -17763,8 +17775,11 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     // FAPI 2.0 section 5.3.2.2 item 4 (#140): a push authenticates its client.
+    // The hosted public clients (#446, #568) push with nothing to
+    // authenticate with: the profile's exemption, read here too.
     const fapiPushed = fapi.parAuthenticationRefusal(
-      !!observation.authenticated);
+      !!observation.authenticated ||
+      fapi.publicClientExempt(clientId, declaredMethod));
     if (fapiPushed) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: an " +
                 "unauthenticated push.");
@@ -17934,7 +17949,7 @@ class OAuth2Server {
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
     } else {
-      if (requestObject.signedRequired(registered, profile)) {
+      if (requestObject.signedRequired(registered, profile, clientId)) {
         log.debug("Leaving OAuth2Server.parRequest(). A signed request " +
                   "object is required.");
         return refuse(400, 'invalid_request', 'This push carries plain ' +

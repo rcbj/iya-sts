@@ -187,6 +187,7 @@
   "nav.debugger": "协议调试器",
   "nav.sts-metadata": "服务元数据",
   "nav.api-explorer": "API 浏览器",
+  "nav.account-api": "账户 API",
   "nav.keys": "密钥对",
   "nav.crypto-metadata": "密码学",
   "shell.language": "语言",

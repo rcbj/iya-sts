@@ -1,0 +1,1026 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "Ang bawat cell ng serbisyong naka-deploy bilang mga cell ay nagse-seal ng iniimbak nito sa ilalim ng sarili nitong key"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "Ang cell na walang keys.cellKekProvider ay nagse-seal ng mga row nito sa ilalim ng key-encryption key ng serbisyo, kaya mabubuksan ang mga row nito sa anumang cell — katanggap-tanggap para sa mga cell na sinusubok sa iisang makina."
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "Hindi nagsisimula ang cell na walang cell key (STS-CELL-0003). Ang mga taong naka-home sa isang cell at ang mga ginagawa nito ay naka-seal sa ilalim ng key na nasa rehiyon lang nito, at hindi nabubuksan sa ibang cell (#98). Hindi naaapektuhan ang single-cell mode."
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "Vine-verify ang ipinakitang password"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "Walang password na sinusuri sa anumang protocol. Tinatanggap ng sign-in screen ang kahit ano, tinatanggap ng LDAP bind ang anumang DN na may anumang password, binabasa ang WS-Security UsernameToken para sa pangalan nito at hindi sa secret nito, pumapasa ang SCIM Basic sa anumang pares, at nag-iissue ang WS-Trust sa caller na walang ipinakita o nagpakita ng hindi naka-sign na SAML assertion."
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "Vine-verify laban sa naka-hash na `userPassword` sa directory entry ng tao, sa bawat isa sa mga pintong iyon. Ang taong walang naitakdang `userPassword` ay hindi makakapag-sign in. Hindi umiiral ang OAuth 2.0 password grant sa product mode, na nagpapahiwatig ng RFC 9700 mode (section 2.4). Nangangailangan ng credential ang WS-Trust, at tumatanggap lang ng assertion kapag ang realm na ito ang nag-sign nito at nasa loob ito ng Conditions nito."
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "Tumatanggap lang ang isang OpenID4VCI endpoint ng access token na kayang i-verify ng realm na ito"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "Tumatanggap ang credential, deferred credential at notification endpoint ng anumang access token at binabasa ang mga claim nito nang hindi vine-verify — pinapayagan ng OpenID4VCI na iba ang authorization server — kaya maitututok ang isang wallet sa issuer na ito gamit ang token mula saanman."
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "Ang token na hindi nagve-verify laban sa signing key ng realm na ito, o na ni-revoke ng realm na ito, ay tinatanggihan nang invalid_token (HTTP 401) bago may ma-issue."
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "Tinatanggihan ang natanggap na Security Event Token na ang signature ay hindi nagve-verify"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "f339daad4628b362",
+    "text": "Tinatanggap ito ng POST /ssf/receive at ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito."
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "550da4b67dda6fd9",
+    "text": "Sumasagot ang bawat receiver ng 400 invalid_key, anuman ang sabihin ng ssf.receiveRequireSignature (#117): ang /ssf/receive, na walang ina-authenticate, ay walang itinatala; ang mga receiver ng console at portal, sa likod ng sariling secret ng kanilang stream, ay iniingatan ito sa kanilang inbox na may markang tinanggihan."
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "Isinasagawa ang ginagawa ng sariling console at portal ng serbisyong ito sa CAEP o RISC event na natatanggap nila"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "Ang na-verify na event ay itinatala sa signal inbox ng surface kasama ang pinahintulutan ng signal-response policy, at walang tinatapos, maliban kung naka-on ang ssf.actOnSignalsInDevelopment."
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "Ang na-verify na event na pinahihintulutan ng signal-response policy — session-revoked, credential-change, isang RISC account o credential event, isang risk-level-change sa HIGH, bilang default — ay tumatapos sa sariling mga session ng tumatanggap na surface para sa taong pinapangalanan nito. Hindi kailanman kinikilusan ang hindi na-verify na event sa alinmang mode."
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "Ipinapatupad ang mga pasya ng issuance policy tungkol sa RISK ng isang authentication"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "Sinusuri ang bawat sign-in at tinatanong ang issuance policy kasama ang mga risk fact nito, at itinatala sa assessment ang pinagpasyahan nito — ngunit isinasantabi ang risk Deny at ang mga role lang ang nagpapasya, maliban kung naka-on ang risk.enforceInDevelopment."
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "Pinapanatili ang risk Deny: ang authentication na tinatanggihan ng policy dahil sa risk (HIGH, bilang default) ay tinatanggihan, at ang hinihingan nito ng step-up (MEDIUM) ay hinihingan ng second factor o security key kung saan kayang humingi ng pinto, at tinatanggihan kung saan hindi. Kapag nagbago ang risk ng isang tao, isinasagawa ang mga reaksyong pinahihintulutan ng risk-response policy — tinatapos ang lahat sa HIGH, RISC credential-compromise; inaanunsyo ng development ang pagbabago at itinatala ang iba bilang naobserbahan."
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "Tumatanggap lang ang RFC 8693 token exchange ng subject_token at actor_token na kayang i-verify ng realm na ito"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "Ang subject_token na hindi kayang i-verify ng realm na ito ay binabasa para sa pangalan nito at ine-exchange pa rin, at ang actor_token ay binabasa at hindi kailanman vine-verify, kaya mapapatakbo ng isang client ang grant gamit ang token mula sa anumang issuer."
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "Pareho silang dapat mag-verify laban sa signing key ng realm na ito, hindi expired at hindi ni-revoke, kung hindi ay tinatanggihan ang exchange nang invalid_request (HTTP 400, RFC 8693 section 2.2.2)."
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "Pinagpapasyahan kung sino ang puwedeng kumilos para kanino sa WS-Trust OnBehalfOf / ActAs at sa RFC 8693 token exchange"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "Ini-issue ang bawat delegation. Tinatanong pa rin ang policy at itinatala ang sagot nito sa akto sa /admin/delegation bilang \"would have been refused: ...\", at puwedeng humingi ang exchange ng scope na mas malawak kaysa sa sa subject_token nito."
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "Ang issuance policy ang nagpapasya (#186), mula sa mga delegation attribute (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, appDelegationSubjectGroup, appDelegationSemantics, appNotDelegated sa mga application entry; stsNotDelegated, stsDelegationSemantics, delegation.protectedGroups at ang console roster para sa mga tao). Ang pagtanggi ay invalid_request o invalid_target (RFC 8693 section 2.2.2) o isang wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). Kumikilos lang ang tao kapag hawak niya ang delegation.actorRole, at hindi puwedeng palawakin ng exchange ang scope ng subject_token nito (invalid_scope)."
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "Ini-issue lang sa client ang mga scope na idineklara nito"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "Ini-issue ang anumang scope na hinihingi ng client, anuman ang nakalista sa `oauthAllowedScope` nito. Sa PAREHONG mode, ang admin:read, admin:write, ang mga SCIM at Shared Signals scope at ang debugger permission ay ini-issue lang sa client na ang `oauthAllowedScope` ay naglilista ng mga ito."
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "Ang scope na wala sa `oauthAllowedScope` ng client ay tinatanggihan nang invalid_scope sa authorization, pushed authorization at token endpoint (STS-OAUTH-0578) at inaalis sa refresh o exchange. Ang client na walang inililista ay nakakakuha ng dokumentadong default: openid, profile, email, address, phone, offline_access at ang mga OpenID4VCI scope ng realm na ito. Ang scope na nagpapangalan ng application o delegated permission ay may sariling mga patakaran."
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "Walang ini-issue sa application sa pamamagitan ng protocol na hindi ito idineklara"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "Paglalarawan lang ang appAllowedProtocol: ini-issue ang token, assertion o ticket alinmang protocol ang humingi."
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "Tinatanggihan ng protocol-not-declared rule ng issuance policy ang issuance sa pamamagitan ng protocol family na hindi idineklara para sa application (STS-XACML-0084): ID Token sa application na idineklara para sa OAuth 2.0 lang, SAML assertion sa idineklara para sa OpenID Connect. Hindi tinatanggihan ang application na walang idineklara."
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "Ipinagkakaloob lang ang GNAP access right na may type na idinedeklara ng access-type catalogue"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "Ang right na may type na hindi idinedeklara ng anumang resource application (oauthAuthorizationDetailsType) ay ipinagkakaloob ayon sa hiningi ng client."
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "Tinatanggihan ito ng gnap-type-not-catalogued rule ng issuance policy sa grant endpoint (request_denied, STS-GNAP-0810). Tinatanggihan ng RFC 9396 authorization_details ang hindi idineklarang type sa parehong mode, ayon sa hinihingi ng section 5."
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "Ini-issue lang ang delegated permission sa client na pinagkalooban nito"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "Sinusunod ang hindi ipinagkaloob na permission at itinatala bilang hindi ipinagkaloob, maliban kung naka-on ang oauth2.delegatedPermissionsEnforced."
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "Tinatanggihan nang invalid_scope (STS-OAUTH-0155) anuman ang sabihin ng oauth2.delegatedPermissionsEnforced: ang grant ay ang `oauthDelegatedPermission` sa entry ng client."
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "Sina-sign in lang ng federation partner ang taong naka-link sa subject nito"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "Puwedeng itakda ng relationship ang fedSubjectPolicy sa any-existing, na direktang itinutugma ang pangalang in-assert ng partner sa isang lokal na tao — kahit sinong tao, kasama ang administrator maliban kung naka-off ang fedMayAssertAdministrators (ang default). Ang bawat ibang policy ay kumikilos tulad ng sa product."
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "Tinatanggihan ang any-existing, sa relationship (STS-FED-0095) at sa sign-in (STS-FED-0094). Sina-sign in ng partner ang entry na naka-link sa (issuer, subject) nito; ang hindi naka-link na subject na nagpapangalan ng umiiral na tao ay dapat munang mag-sign in dito bilang taong iyon (link-at-first-sign-in, ang default), o tinatanggihan (pre-linked). Pinapanatili ng development at product ang mga patakaran at ang pagtanggi sa console administrator."
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "Naka-sign ng partner na iyon ang SAML sign-out ng isang federation partner"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "Ang relationship na naka-off ang fedRequireSignedLogout ay tumatanggap ng HINDI NAKA-SIGN na LogoutRequest o LogoutResponse mula sa partner nito. Ang signature na naroroon ay vine-verify laban sa fedSigningCertificate eksakto tulad ng sa product, at naka-on ang setting para sa bawat relationship maliban kung may pumatay nito."
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "Ang bawat SAML logout message mula sa partner ay dapat naka-sign at nagve-verify laban sa certificate ng relationship (saml-profiles-2.0-os section 4.4.4.1): tinatanggihan ang hindi naka-sign (STS-FED-0115) anuman ang sabihin ng fedRequireSignedLogout, at tinatanggihan ang pagpatay sa setting (STS-FED-0132)."
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "Naka-encrypt para sa sariling key ng relationship ang assertion o front-channel ID Token ng isang federation partner"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "Tinatanggap nang walang encryption ang SAML 2.0 o WS-Federation assertion, o ang OpenID Connect id_token sa pamamagitan ng form_post. Ang NAKA-ENCRYPT ay dine-decrypt at pinanghahawakan sa parehong listahan ng algorithm tulad ng sa product."
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "Tinatanggihan ang plaintext na assertion o front-channel ID Token (STS-FED-0140) maliban kung itinatakda ng relationship ang fedAllowUnencrypted, na dokumentado nang may babala. Tinatanggihan ang AES-CBC, rsa-1_5 at RSA1_5 sa parehong mode (STS-FED-0139)."
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "48692c051ad2acee",
+    "text": "Hindi nag-e-enrol ang sign-in screen ng security key para sa taong hindi pa napapatunayan kung sino siya"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "2f86635eaf4572fb",
+    "text": "Ang passwordless na sign-in na nagpapangalan ng taong walang hawak na primary key ay nag-e-enrol ng isa agad, nang walang binabasang password — ang unang taong umangkin sa pangalan ang nakakakuha nito."
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "e773ade2b33e515a",
+    "text": "Tinatanggihan ito. Ang primary key ay idinadagdag sa /portal/keys sa likod ng session, sa pamamagitan ng activation link, o ng isang operator."
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "Vine-verify ang attestation statement ng security key bago i-register ang key"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "Ang webauthn.attestationPolicy ay by-mode, na dito ay off: itinatala ang format ng statement at walang sinusuri rito. Naroroon ang verify-if-present at require-trusted para itakda."
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "Ang by-mode ay verify-if-present: vine-verify ang bawat statement sa pamamagitan ng procedure ng WebAuthn Level 3 section 8 nito (lahat ng walong format), sinusuri ang chain nito laban sa mga anchor ng realm at sa mga root ng FIDO Metadata Service, kinokonsulta ang revocation nito, at tinatanggihan ang modelong iniuulat ng MDS na compromised. Tinatanggap ang none at self attestation at itinatala bilang hindi pinagkakatiwalaan. Tinatanggihan ang off sa pagsulat at binabasa bilang by-mode."
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "Ang taong may hawak o dapat may hawak ng second factor ay tinatanggihan sa password lang sa mga password-only na pinto"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "Tinatanggap ng LDAP simple bind, WS-Security UsernameToken, SCIM at SSF HTTP Basic at EST Basic ang password tulad ng pagtanggap nila sa bawat password; humihingi pa rin ng second factor ang sign-in screen."
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "2a529b7dda255daa",
+    "text": "Sa limang pintong iyon, tinatanggihan ang sariling password ng tao — sinasagot eksakto tulad ng maling password, at binibilang laban sa rate limit bilang isa (STS-AUTHN-0213 sa audit row at sa log lang) — tuwing may hawak siyang authenticator app o security key sa mfa role, o hinihingan siya ng second factor (stsMfaRequired, ang authentication policy). Ang APP PASSWORD na ginawa niya sa /portal/app-passwords, naka-scope sa pinto, ang tinatanggap sa halip. Pinapangalanan ng authn.passwordAloneDoors ang mga pintong tumatanggap pa rin ng password, na nagbababa sa bawat ganoong tao sa iisang factor doon."
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "Ang taong may hawak o dapat may hawak ng second factor ay hindi nakakakuha ng Kerberos ticket sa password lang"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "Nag-iissue ang KDC ng TGT sa AS-REQ na pre-authenticated gamit ang password lang (PA-ENC-TIMESTAMP, o ang PA-ENCRYPTED-CHALLENGE ng FAST), tulad ng pagtanggap nito sa bawat password."
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "cddc7c3db475d360",
+    "text": "Ang AS-REQ na iyon ay tinatanggihan nang KDC_ERR_POLICY (12), STS-KRB-0135, pagkatapos ma-verify ang password (ang mali ay KDC_ERR_PREAUTH_FAILED pa rin), tuwing may hawak ang tao na authenticator app o security key sa mfa role, o hinihingan siya ng second factor. Ang taong may authenticator app ay nakakakuha ng ticket sa pamamagitan ng RFC 6113 FAST armor na may RFC 6560 OTP pre-authentication — password at code sa iisang exchange — at may dala itong RFC 8129 indicator na `otp`. Hindi kailanman Kerberos key ang app password."
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "Pinanghahawakan ang RFC 9728 protected resource metadata import sa mga patakarang sinusunod ng client ng document"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "Ang document na kinuha mula sa isang URL ay ini-import nang may warning kapag ang `resource` nito ay hindi tumutugma sa well-known URL na pinagmulan nito (section 3.3) o hindi https, at puwedeng mag-resolve ang URL sa loopback o private address."
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "Pareho silang tinatanggihan, at hindi tinatawagan ang URL na nagre-resolve sa loopback, private, link-local o reserved address — nireresolba ang pangalan nang isang beses at ini-pin ang connection sa address na sinuri. Tinatanggihan ang malformed na document sa parehong mode."
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "Ipinapadala ang mail, hindi iniingatan; pinapangalanan ng naka-mail na link ang naka-pin na public address"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "Ang mail.transport na `default` ay ang CAPTURE transport: iniingatan ang bawat message kasama ang body nito at ipinapakita sa Monitoring → Mail sa halip na ipadala, maliban kung may naka-configure na tunay na transport. Ang naka-mail na link ay binubuo sa global.publicBaseUrl, o sa naka-configure na host at port ng listener kapag walang laman iyon — hindi kailanman sa request."
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "Ang `default` ay `off`, at tinatanggihan ang `capture` sa pagsulat at sa pagsisimula (STS-MAIL-0003), dahil ang na-capture na password reset link ay isang credential sa console. Ang naka-configure na transport na hindi mabuo ay pumipigil sa pagsisimula ng serbisyo (STS-MAIL-0002). Nagme-mail lang ng link kapag itinakda ang global.publicBaseUrl (STS-MAIL-0015)."
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "Ang na-rotate na password ng isang service account ay pinu-push sa isang secrets manager, hindi kailanman sa disk ng container na ito"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "Ang secret push destination ay puwedeng isang FILE: isinusulat ng push ang password sa umiiral na file sa ilalim ng directory ng destination, na siyang paraan ng test suite para subukin ang rotation nang walang secrets manager."
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "Ang destination na nagpapangalan ng `file` ay iniuulat na hindi magagamit at tinatanggihan ang push dito (STS-SECDEST-0006). Nananatili ang AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault at ang Vault o OpenBao KV version 2 engine, bawat isa sa na-verify na TLS gamit ang sariling write credential ng destination (#221)."
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "Vine-verify ng outbound request ang certificate ng sinumang sumasagot, at hindi ito lumalabas sa plain http"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "Sinusunod ng mga GNAP push finish, SSF push delivery, mga back channel ng federation at mga XACML PEP nudge ang kanilang mga …SkipTlsVerification setting (naka-off ang verification, binababalaan sa bawat request) at ang kanilang mga …AllowHttp setting (plain http sa anumang host). Sinusunod din ang spiffe.k8sSkipKubeletVerification ng SPIRE."
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "Ang bawat …SkipTlsVerification setting, at ang spiffe.k8sSkipKubeletVerification, ay BINABALEWALA — nilo-log nang isang beses kasama ang code nito — at tinatanggihan sa pagsulat sa pamamagitan ng /admin at /admin-api (STS-CORE-0103); naaabot ang private CA sa pamamagitan ng …CaFile ng pamilya na naka-on ang verification. Tinatanggihan ang plain http para sa SSF, federation at XACML anuman ang sabihin ng …AllowHttp, at pinapayagan para sa GNAP push finish sa loopback address lang (RFC 9635 section 2.5.2.1)."
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "Hindi ginagawang mali ng sinadyang depekto ang isang response"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "Naglalagay ang oauth2.breakIdTokenNonce ng maling nonce sa bawat ID Token na dapat may dalang isa, binabago ng ssf.breakSetSignature ang isang character ng signature ng bawat SET, idinadagdag ng ssf.legacySubClaim ang `sub` claim na hindi hinihikayat ng RFC 8417 katabi ng `sub_id`, isinusulat ng risc.googleSubjectType ang `subject_type` member na sinasabi ng RISC 1.0 section 3.1 na HINDI DAPAT gamitin ng mga bagong serbisyo, at inililipat ng krb5.clockOffset ang orasan ng KDC — bawat isa habang nakatakda ito, para masubok ang paghawak ng client sa maling sagot."
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "BINABALEWALA ang lahat ng lima kung saan binabasa ang mga ito — ang realm na inilipat sa product na may nakatago pang isa ay sumasagot nang tama, sa orasan ng makina — nilo-log nang isang beses bawat process (STS-CORE-0106), at tinatanggihan sa pagsulat sa pamamagitan ng /admin, /admin-api at mga setting ng realm (STS-CORE-0103)."
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "Walang ginagamit na sirang algorithm: SHA-1 sa isang signature, o RSA PKCS#1 v1.5 key transport"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "Ang saml.signatureAlgorithm na rsa-sha1 ay nagsa-sign ng bawat XML signature gamit ang SHA-1, ang saml2.keyTransportAlgorithm na rsa-1_5 (o ang saml2KeyTransportAlgorithm ng isang application) ay binabalot ang key ng naka-encrypt na assertion gamit ang RSAES-PKCS1-v1_5, ang naka-on na saml.allowSha1Signatures ay tumatanggap ng SHA-1 sa signature na vine-verify ng serbisyong ito, ang pki.signatureAlgorithm na sha1-rsa o sha1-ecdsa (o ang build form na nagpapangalan ng alinman) ay nagpapa-sign sa certificate authority gamit ang SHA-1, at ina-unwrap ang XML element na naka-encrypt para sa serbisyong ito gamit ang rsa-1_5, at ang naka-on na scim.digestMd5 ay nag-aalok at tumatanggap ng MD5 sa HTTP Digest ng SCIM. Naka-off ang bawat isa maliban kung itinakda."
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "8e22d816464c845c",
+    "text": "BINABALEWALA ang bawat mahinang value kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103, at STS-REG-0193 sa isang application): sina-sign ang XML gamit ang default na rsa-sha256, binabalot ang mga key gamit ang rsa-oaep-mgf1p, tinatanggihan ang SHA-1 signature, tinatanggihan ang CA build o key pair na nagpapangalan ng SHA-1 (STS-PKI-0191) at ang minana mula sa branch na binuo sa development ay pinapalitan ng default ng key, at tinatanggihan ang rsa-1_5 EncryptedKey bago ito i-unwrap (STS-KEYS-0070) — XML Encryption 1.1 section 6.1.2. Walang saysay ang scim.digestMd5, dahil walang anumang Digest na iniaalok ang product (STS-SCIM-0056). Nananatiling available ang mas malalakas na value ng bawat setting. Tinatanggihan ang JOSE RSA1_5 sa parehong mode."
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "Vine-verify lang ang JWS gamit ang key na may laking hinihingi ng RFC 7518"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "Ang RSA key na mas mababa sa 2048 bit (RFC 7518 section 3.3, RFC 8230 section 5 para sa COSE) at ang HMAC key na mas maikli kaysa sa hash output nito (RFC 7518 section 3.2) — isang maikling client_secret sa ilalim ng client_secret_jwt — ay nagve-verify pa rin, kaya masusubok ang client na may hawak nito. MAS MAHINA KAYSA SA SPECIFICATION: parehong MUST ang mga ito."
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "Pareho silang tinatanggihan sa pagsuri ng signature, sa shared verifier, sa verifyJws() at (RSA) para sa WebAuthn key. Ang ginawang client_secret ay 48 random byte bilang default (oauth2.registeredSecretBytes), sapat ang haba para sa HS512. Sa PAREHONG mode, tinatanggihan ang walang lamang HMAC key, ang RSA exponent na mas mababa sa 3 o even (isang forgery, hindi mahinang key), ang RSA modulus na may ROCA fingerprint (CVE-2017-15361), ang JWK na ang use ay hindi \"sig\" o ang key_ops ay walang \"verify\", at ang segment na hindi canonical na base64url."
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "Vine-verify lang ang XML ECDSA signature sa curve na hindi bababa sa 256 bit"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "Nagve-verify ang key sa anumang curve na nababasa ng node — kasama ang secp160, secp192, secp224 — kaya masusubok ang partner na gumagamit ng isa. MAS MAHINA KAYSA SA 112-bit na minimum ng NIST SP 800-57 para sa pinakamaliit sa mga ito."
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "cdb3f7be9fda1083",
+    "text": "Ang P-256, P-384, P-521, secp256k1 at brainpoolP256r1 at mas malaki lang ang nagve-verify; tinatanggihan ang anumang ibang curve (STS-KEYS-0077) at hindi nire-register ang certificate sa isa."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "Walang Kerberos key, ticket o exchange na gumagamit ng enctype na dine-deprecate ng RFC 8429 (rc4-hmac)"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "Ang krb5.enctypes ay 18,17,20,19,23 bilang default: ang bawat account ay may rc4-hmac key katabi ng mga AES key nito, walang iba ang rc4only fixture, at ang client na nag-aalok lang ng 23 ay nakakakuha ng ticket — kaya masusubok ang RC4 client."
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "f781591fe2d565a1",
+    "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) ang natitira."
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "Naka-sign ang bawat SAML assertion, at ang bawat SAML 1.1 Response"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "Ang naka-off na saml2.signAssertion, saml11.signAssertion at saml11.signResponse — para sa buong serbisyo o sa isang application — ay nagpapadala ng hindi naka-sign na assertion o hindi naka-sign na SAML 1.1 Response, na siyang paraan para matagpuan ang relying party na tumatanggap nito."
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "BINABALEWALA ang lahat ng tatlo kung saan binabasa ang mga ito (STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103; STS-REG-0193 sa isang application). Naka-sign ang SAML 2.0 assertion anuman ang binding (hinihingi ito ng saml-profiles-2.0-os 4.1.3.5 at 4.1.4.5 sa POST), at naka-sign ang SAML 1.1 Response (hinihingi ito ng oasis-sstc-saml-bindings-1.1 4.1.2.4 sa Browser/POST), kasama ang assertion nito. Nananatiling pinapayagan ang naka-off na saml2.signResponse: kapag naka-sign ang assertion, wala nang hinihingi pa ang profile."
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "Tinatanggihan ang Workload API call na walang workload.spiffe.io header"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "Naka-on ang spiffe.requireSecurityHeader bilang default, tulad ng sa product; sine-serve ng off ang call na walang header."
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "Palaging tinatanggihan (ang SPIFFE Workload Endpoint specification section 3, isang hakbang na pampatibay laban sa SSRF): BINABALEWALA ang off kung saan ito binabasa (STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103)."
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "Ang ipinakitang credential ay dapat may dalang status reference"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "Ang oid4vp.requireStatusReference ay all bilang default, tulad ng sa product: ang bawat credential na ipinakita sa OpenID4VP Verifier ay dapat magpangalan ng status na nagre-resolve sa VALID, maliban kung nakalista ang pinagkakatiwalaang issuer nito sa oid4vp.statusOptionalIssuers. Inaalis ng own-only ang mga banyagang credential, at ang off — sa development lang — ay tumatanggap ng sariling credential ng realm na ito na walang reference, at ng ldp_vc na ang presentation ay nagtago ng credentialStatus nito."
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "BINABALEWALA ang off kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa pagsulat (STS-CORE-0103): palaging tinatanggihan ang credential ng realm na ito na walang status reference, o ang ldp_vc na hindi nagbunyag ng credentialStatus nito. Pinapayagan ang own-only at ang per-issuer na exemption."
+  },
+  "mode.requirements.realm-chooser.what": {
+    "en": "c37334adfeccc2cb",
+    "text": "Inililista ng realm chooser bago ang sign-in ang bawat realm"
+  },
+  "mode.requirements.realm-chooser.development": {
+    "en": "7ace23d168380455",
+    "text": "Ang browser na walang session sa /admin o /portal, sa serbisyong may mga trust realm na nakadepina, ay ipinapakitaan ng listahan ng bawat realm na mapag-si-sign in-an."
+  },
+  "mode.requirements.realm-chooser.product": {
+    "en": "b3e379e5d61df6c0",
+    "text": "Humihingi ang parehong page ng id ng realm sa isang text box, kaya hindi inilalathala ang mga realm ng deployment sa sinumang nakakaabot dito."
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "Puwedeng lumabas ang response na mas mahina kaysa sa hiningi"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "Ang assertion o token na dapat sanang naka-encrypt at hindi ito nagawa ay ipinapadala nang walang encryption, nang may warning."
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "Tinatanggihan."
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "Dapat umiiral na ang tinutukoy na object"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "Ginagawa ang user, application, service principal o authorization server sa unang pagkakataong may magpangalan nito, na siyang nagpapahintulot sa isang client na ituro ang serbisyong ito gamit ang anumang identifier at makakuha ng gumaganang exchange."
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "TINATANGGIHAN ang hindi kilalang pangalan. Dapat gawin nang maaga ang lahat, sa pamamagitan ng console, /admin-api, SCIM o isang LDAP add."
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "Nananatili ang mga signing key pagkatapos ng restart"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "Gumagawa ng bagong signing key sa bawat pag-start at hinahawakan ito sa memory. Hindi nananatili ang isang token pagkatapos ng restart — iyon ang nagpapaging disposable sa serbisyong ito, at hinango ang `kid` mula sa key material kaya hindi kailanman makakapaglathala ang dalawang instance ng iisang pangalan para sa dalawang key."
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "Ginagawa nang ISANG BESES at binabasa pabalik mula sa persistence store — kaya kailangan ito ng product mode — naka-encrypt gamit ang AES-256-GCM sa ilalim ng key na hindi kailanman ginagawa at hindi kailanman iniimbak ng serbisyong ito, na binabasa mula sa naka-mount na file, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault o HashiCorp Vault."
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "Nag-a-authenticate ang isang OAuth 2.0 / OIDC application ayon sa kung paano ito nag-register"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "Walang hinihingi kaninuman: puwedeng client_id lang ang ipadala ng isang client, anuman ang idineklara ng registration nito."
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "Ang isang CONFIDENTIAL client — isa na ang registration ay nagdedeklara ng anumang token_endpoint_auth_method maliban sa \"none\", kasama ang registration na walang idineklara (ginagawa itong client_secret_basic ng RFC 7591 section 2 bilang default) — ay dapat magpakita ng credential na iyon at dapat itong ma-verify. PINAPAYAGAN ang isang PUBLIC client (isang tahasang token_endpoint_auth_method=none) at wala itong ipinapakita, na tama; ang ipinapatupad dito sa halip ay ang row sa ibaba. \"walang public client\" ito hanggang 2026-09-17."
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "Ipinapatupad ang OAuth 2.0 Security BCP (RFC 9700)"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "Kung saan lang nakatakda ang oauth2.rfc9700 o oauth2.oauth21, bawat process o bawat realm. Kapag naka-off, sinasagot ng serbisyong ito ang request na tatanggihan ng BCP — ganito sinusubok ang isang client laban sa parehong sagot."
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "PALAGI, anuman ang sabihin ng mga setting na iyon, at hindi ito mao-off ng isang realm. Kailangan ng PKCE na may S256 mula sa public client, eksaktong pagtutugma ng redirect URI, walang open redirect, walang http redirect URI na labas sa loopback, challenge o nonce na hindi mare-replay, nonce sa anumang id_token, walang response type na nag-iissue ng access token mula sa authorization endpoint, at mga refresh token na nagro-rotate na may reuse detection. Ito ang ipinapatupad sa public client SA HALIP na credential, at ito ang dahilan kung bakit puwede itong payagan (2026-09-17)."
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "Aling mga grant ang puwedeng gamitin ng public client"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "Bawat grant na iniaalok ng serbisyong ito, para sa kahit sino."
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "Ang authorization code at refresh grant, at hindi ang client credentials grant (dinedepina ito ng RFC 6749 section 4.4 para sa mga confidential client; tahasang sinasabi ito ng OAuth 2.1 section 4.2) o ang resource owner password grant (RFC 9700 section 2.4: HINDI ito DAPAT gamitin). Hindi apektado ang confidential client."
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "Nag-a-authenticate ang tumatawag sa /oauth2/introspect"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "Sinasagot ng RFC 7662 JSON introspection ang kahit sinong may hawak ng token string, nang walang client credential. Ang RFC 9701 JWT response (Accept: application/token-introspection+jwt) ang eksepsiyon sa parehong mode: pinangangalanan ng aud nito ang resource server na nagtanong, kaya dapat mag-authenticate ang tumatawag na iyon bilang client na may credential na naka-file, at tinatanggihan ng 400 invalid_client kung hindi."
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "Bawat introspection request ay dapat mag-authenticate bilang client na may credential na nave-verify — client_secret_basic o post, isang client assertion, o isang RFC 8705 certificate — at tinatanggihan ng 401 invalid_client kung hindi (400 para sa JWT request, RFC 9701 section 5)."
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "Nag-a-authenticate ang tumatawag sa /oauth2/revoke, at sariling token lang nito ang nire-revoke"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "Ang RFC 7009 revocation na walang client credential ay nagre-revoke ng anumang access o refresh token na in-issue ng realm na ito, para sa kahit sinong may hawak ng token string. Ang tumatawag na NAGPAPAKITA ng credential ay pinapanagot sa ipinapatupad ng product: tinatanggihan ng 401 invalid_client ang credential na hindi nave-verify, at tinatanggihan ng invalid_grant ang token na in-issue sa ibang client."
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "Bawat revocation request ay dapat manggaling sa isang client: nagpapakita ang confidential client ng credential na nave-verify (ang mga method ng token endpoint), pinangangalanan ng public client ang naka-register nitong client_id, at tinatanggihan ng 401 invalid_client ang anumang iba pa (RFC 7009 section 2.1). Tinatanggihan ng 400 invalid_grant ang token na in-issue sa ibang client at walang nire-revoke."
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "Naka-configure ang x509_san_dns name ng OpenID4VP Verifier, at hindi kailanman kinukuha mula sa request"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "Kapag walang laman ang oid4vp.x509DnsName at hindi naka-pin ang global.publicBaseUrl, sine-certify ng Verifier ang host na dinatnan ng request (isang certificate bawat pangalan, labing-anim ang pinakamarami bawat realm) at pinangangalanan ito bilang x509_san_dns Client Identifier nito."
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "Ang pangalan ay ang oid4vp.x509DnsName, o ang host ng global.publicBaseUrl; kapag wala ang dalawa, tinatanggihan ang x509_san_dns request (STS-VC-0110) — binubuo ang Response URI mula sa parehong host, kaya ang Host header ang pipili kung saan ipapadala ng isang signed at pinagkakatiwalaang request ang mga presentation. Walang kailangang pangalan ang x509_hash at hindi ito apektado."
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "Signed ang isang JWT-secured authorization request, at HTTPS ang isang request_uri"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "Tinatanggap ang request object na signed gamit ang `none` (OpenID Connect Core 6.1) maliban kung kailangan ang signed — ng oauth2.requireSignedRequestObject, ng entry ng client o ng profile ng authorization server. Puwedeng plain http ang naka-register na request_uri at puwede itong sumagot ng anumang media type; parehong nilo-log ang mga ito."
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "b2ec3d6648490690",
+    "text": "Dapat signed ang request object (RFC 9101 section 4) at tinatanggihan ng invalid_request_object kung hindi. Dapat https ang naka-register na request_uri at dapat itong sumagot ng application/oauth-authz-req+jwt o application/jwt, o tatanggihan ang request ng invalid_request_uri. Sa parehong mode, kinukuha lang ang request_uri kapag in-register ito ng client."
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "Nangangailangan ang /admin-api ng access token at role"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "Isang OAuth 2.0 access token na may dalang admin:read o admin:write, habang naka-on ang adminApi.authRequired (ang default). Kapag naka-off: bukas. Ito ang pinapatakbo ng mga test at ang daan pabalik kapag walang may hawak ng role — na nangangahulugan ding kahit sino na makaabot sa port na ito ay puwedeng magbigay sa sarili ng parehong role sa pamamagitan nito."
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "Ang parehong access token, palagi. Tinatanggihan sa write ang adminApi.authRequired=false at binabalewala kung saan ito naka-store: ang gate ng API na ito ang tanging gate ng console, kaya walang puwedeng magbukas nito. Ang daan pabalik ay ang adminApi.clientSecret, na naka-pin bago ang pag-start."
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "Nangangailangan ang /admin ng sign-in at role"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "Kailangan — at palagi itong kailangan; wala na ang setting na puwedeng mag-off nito. Walang password na chine-check ang sign-in sa likod nito, kaya ang pinapatunayan lang ng gate ay may nag-type ng pangalang may hawak na role."
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "Kailangan, at vine-verify ng sign-in sa likod nito ang credential."
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "Hindi binubuksan ang console sa lahat bago dumating ang bootstrap administrator nito"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "Hanggang unang mag-sign in sa /admin ang bootstrap administrator ng isang realm — o, kung walang na-seed, habang walang laman ang roster — hawak ng bawat naka-sign in na tao ang parehong console role sa realm na iyon, habang naka-on ang admin.openWhenEmpty. Isinasara ng anumang sign-in ng account na iyon ang window."
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "Walang may hawak ng role dahil sa window, anuman ang sabihin ng admin.openWhenEmpty: ang roster lang ang nagpapasya. Hanggang ma-claim ng bootstrap administrator ang console, iginagalang lang ang mga role nito mula sa PASSWORD sign-in sa sarili nitong realm (amr pwd, vine-verify dito, hindi isang federation partner, certificate, wallet o Kerberos ticket), at ang sign-in na iyon lang ang nagke-claim dito (STS-ADMIN-0796); naghihintay sa claim ang debugger at ang certificate-enrollment authority ng isang session. Ang realm na walang bootstrap administrator at walang laman ang roster ay sarado at nilo-log sa startup (STS-ADMIN-0798); ang POST /admin-api/rbac/grant ang daan papasok."
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "Nangangailangan ng TLS ang ACME at EST; vine-verify ang enrollment credential"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "Sumasagot din ang ACME (/enroll/acme) at EST (/.well-known/est) sa plain HTTP at nilo-log na ginawa nila iyon. Hindi chine-check ang EST password (ang row ng credentials) at hindi kailangan ang client secret ng application. VINE-VERIFY ang ACME External Account Binding MAC at ang SCEP challenge password, at ang kung para kanino puwedeng i-issue ang certificate ay ipinapatupad nang eksakto gaya sa product: ikaw mismo, o kahit sino sa realm kung hawak mo ang Admin Write."
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "Tinatanggihan ang request na hindi dumating sa TLS (STS-ENROLL-0060). Vine-verify ng EST ang password sa directory at kinakailangan ang client secret. Ang lahat ng iba pa ay gaya sa development."
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "Nangangailangan ang /scim/v2 ng credential"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "Kailangan sa isa sa anim na scheme ng RFC 7644 section 2 — at palagi itong kailangan — nang walang vine-verify sa alinman lampas sa hugis nito."
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "Kailangan at vine-verify. Hindi iniaalok ang HTTP Digest, dahil kailangan ng RFC 7616 ang password o ang hash nito at hindi kayang i-check ng scrypt hash ang alinman; puwedeng mag-register ng HOBA key ang naka-sign in na may-ari lang ng isang umiiral na account, at hindi kailanman gumagawa ng account ang pag-register nito."
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "Nangangailangan ang /ssf ng credential"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "Kailangan sa isa sa mga scheme na tinatanggap ng mga endpoint — at palagi itong kailangan — nang walang vine-verify lampas sa hugis nito."
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "Kailangan at vine-verify: chine-check ang Basic credential laban sa userPassword ng tao, at inaalis ng ssf.authBasic ang scheme."
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "May demonstration data ang bagong serbisyo"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "Sine-seed ang directory ng tatlong tao, dalawang group, isang bind account, at ang mga identity na remote-pep-1 at xacml-user-1 sa dalawang XACML role group; ang KDC ng mga fixture account, delegation rule at isang pinagkakatiwalaang realm na ang mga password ay nakasulat sa source nito; ang SPIFFE registry ng mga sample entry; at binibigyan ang bawat tao ng mga ginawang credential attribute."
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "Wala ni isa. Ang hawak ng directory, ng principal database at ng registry ay ang na-configure o na-provision, at wala nang iba — umiiral ang dalawang XACML role group at walang laman, at tumatanggi ang KDC na buuin ang krbtgt o ang service account nito gamit ang mga password na nakalathala sa repository na ito."
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "Puwedeng imbentuhin ang isang claim value"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "Pinangangalanan ng token ang isang persona — family name na `Mock`, isang address sa sts.example na may email_verified na true — pinupunan ng credential ang wala na attribute ng ginawang value, pinangangalanan ng security event ang isang @example.com na subject, at ang taong walang naitalang identity verification ay sinasagot ng isa sa ilalim ng trust framework na `urn:sts:demo` (OpenID Connect for Identity Assurance 1.0, #127)."
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "Nanggagaling ang value sa directory entry ng tao o inaalis; inilalabas lang ang `verified_claims` mula sa verification na naitala sa entry, at true lang ang email_verified para sa verified na address: isa na pinatunayan ng tao sa pamamagitan ng ipinadalang link (#63), o isa na isinulat ng pinagkakatiwalaang source — isang administrator (ang console, /admin-api, o isang LDAP write na may hawak na Admin Write), SCIM, o isang federation partner na hindi nagsabing email_verified false (#64)."
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "Signed ang request ng isang SAML 2.0 service provider"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "Tinatanggap ang unsigned na AuthnRequest o LogoutRequest (saml2.requireSignedAuthnRequests=auto) maliban kung sinasabi ng na-consume na metadata ng service provider ang AuthnRequestsSigned. Ang signature na NAROROON ay vine-verify laban sa naka-register na certificate ng service provider at tinatanggihan kung hindi ito nave-verify; kapag walang naka-register na certificate, itinatala ito bilang hindi na-verify. Itinatala bilang OBSERVED ang certificate na dala ng request sa KeyInfo nito — hindi kailanman trust anchor — at puwede pa ring i-encrypt dito ang assertion kapag walang ibang certificate ang entry."
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "Tinatanggihan ang unsigned na AuthnRequest o LogoutRequest (STS-SAML-0063). Vine-verify ang signature nang eksakto gaya sa development, at ang walang naka-register na certificate na mapag-che-check-an ay tinatanggihan bilang unsigned. Hindi ine-encrypt sa OBSERVED na certificate hangga't hindi ito kinukumpirma ng operator sa SAML 2.0 page o sa POST /admin-api/saml2/confirm-signing-certificate."
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "Nagre-register lang ang Metadata Query lookup ng service provider na ginarantiyahan ng operator o ng trust anchor"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "Ang request mula sa hindi kilalang entityID ay nagsisimula ng MDQ lookup (saml2.mdqBaseUrl), at ang sagot na naglalarawan sa entity na iyon ay gumagawa ng application entry, na sinusuri laban sa saml2.metadataTrustAnchors kapag may nakatakda lang. Ganoon din ang ginagawa ng Import from MDQ action, may anchor man o wala."
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "Hindi ginagawa ang lookup na sinimulan ng request para sa hindi kilalang entityID kapag walang saml2.metadataTrustAnchors ang realm (STS-SAML-0080); kapag may anchor, gumagawa ng entry ang sagot kapag nave-verify lang ang signature nito laban sa isa sa mga iyon (STS-SAML-0081). Tinatanggihan ang Import from MDQ ng operator na walang anchor (STS-SAML-0084) maliban kung naka-on ang saml2.mdqImportWithoutAnchors. Nakalista ang mga tinanggihang entityID sa SAML 2.0 page at sa GET /admin-api/saml2 (mdqRefused)."
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "Sumasagot lang ang per-provider na SAML metadata at mga endpoint para sa naka-register na provider"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "Gumagawa ang GET /saml2/metadata/{sp} at /saml11/metadata/{rp} ng signed na dokumento para sa anumang pangalan, at sumasagot para dito ang mga SSO, SLO, artifact at responder endpoint sa ilalim ng {sp} o {rp}."
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "Sumasagot ng 404 ang bawat isa sa mga path na iyon para sa pangalang hindi naka-register na SAML 2.0 service provider (STS-SAML-0082) o SAML 1.1 relying party (STS-SAML-0083). Hindi nagbabago ang mga unscoped na dokumento."
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "Nag-iissue lang ng token para sa naka-register na application (#496)"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "Sinasagot ang WS-Trust RST para sa anumang AppliesTo, at para sa wala (token na walang audience restriction); ang WS-Federation wsignin1.0 para sa anumang wtrealm. In-iissue ang bawat isa sa ilalim ng shared na entityID, at ifina-file ang application sa register sa unang pagkakita rito."
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "Ang RST na ang AppliesTo ay hindi tumutukoy sa anumang naka-register na application (hindi nakatakda ang appRegisteredBy — hindi registration ang pagkakita) ay tinatanggihan ng wst:InvalidScope (STS-WSTRUST-0030), at ang walang AppliesTo ng wst:InvalidRequest (STS-WSTRUST-0031), para sa bawat token type at OnBehalfOf / ActAs, bago ma-authenticate ang requester o may maitala. Ang wsignin1.0 na ang wtrealm ay hindi tumutukoy sa naka-register na relying party ay tinatanggihan ng 404 page (STS-WSFED-0021) bago ang sign-in screen."
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "Sine-serve lang ang OAuth 2.0 client kapag naka-register (#496)"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "Walang itinatanong ang authorization endpoint tungkol sa client_id lampas sa mga redirect URI nito, at ifina-file ng token endpoint ang client na nakita nito bago ito tanggihan. Ang RFC 8693 audience na na-file ng pagkakita ay isang target, at ang audience ng assertion na tumutukoy rito ay isang relying party."
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "Ang authorization request o PAR na nagpapangalan ng client_id na walang nag-register (hindi nakatakda ang appRegisteredBy — hindi registration ang pagkakita) ay 400 sa server na ito, hindi kailanman nire-redirect (STS-OAUTH-0947; walang pinangalanan: STS-OAUTH-0948); ang token request na nagpapangalan ng isa ay 401 invalid_client (STS-OAUTH-0949) bago ito mabilang o maitala. Ang RFC 8693 audience o resource na nagpapangalan ng hindi naka-register na application ay ang unregistered-target ng policy (invalid_target, STS-OAUTH-0793), at ang audience ng na-exchange na assertion ay dapat naka-register na application sa ilalim ng any-declared-relying-party."
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "Sinasagot lang ang SAML service provider o relying party kapag naka-register (#496)"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "Sinasagot ang AuthnRequest, LogoutRequest at SAML 1.1 browser flow para sa anumang Issuer; itinatala ito ng signature check, at ang entry na na-file ng pagkakita ay binibilang bilang service provider sa mga per-SP path."
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "Ang AuthnRequest na ang Issuer ay hindi naka-register na SAML 2.0 service provider (hindi nakatakda ang appRegisteredBy — hindi registration ang pagkakita) ay 403 page bago i-check ang signature nito (STS-SAML-0103; ang Metadata Query lookup lang para sa hindi kilalang entityID ang naka-queue pa rin, sa ilalim ng trust-anchor rule); walang tinatapos ang LogoutRequest mula sa isa (STS-SAML-0104); ang SAML 1.1 flow para sa hindi naka-register na relying party ay 403 page (STS-SAML-0105). Ang mga per-SP path, ang attribute authority at ang SAML 1.1 responder ay bumibilang lang ng naka-register na entry, at itinuturing ng MDQ lookup na hindi kilala ang hindi naka-register na entry."
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "Sine-serve lang ang GNAP client o resource server kapag naka-register (#496)"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "Ang hindi kilalang napatunayang key ay ginagawang application entry sa unang pagkakita, at tinatanggap mula noon ang key at instance identifier ng entry na iyon."
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "Tinatanggihan ang hindi kilalang key (STS-GNAP-0082), at ganoon din ang key o instance identifier na pag-aari ng entry na walang nag-register (hindi nakatakda ang appRegisteredBy — hindi registration ang ginawa sa unang pagkakita): 401 invalid_client o invalid_resource_server (STS-GNAP-0902), bago makita ulit ang entry o may ma-issue."
+  },
+  "mode.requirements.unregistered-resource-targets.what": {
+    "en": "c9e70b1944bd9dca",
+    "text": "Pinangangalanan ng RFC 8707 resource at ng mga location ng GNAP right ang isang naka-register na target (#505)"
+  },
+  "mode.requirements.unregistered-resource-targets.development": {
+    "en": "09b7259e14c7de50",
+    "text": "Tinatanggap ang anumang absolute URI bilang resource sa authorization, PAR at token endpoint at nagiging aud ito ng token; ang GNAP location na walang pinangangalanang resource server ay iniiwan sa labas ng audience ng token at ibinibigay ang right."
+  },
+  "mode.requirements.unregistered-resource-targets.product": {
+    "en": "b69c19d5b722a369",
+    "text": "Ang resource (labas sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat location ng GNAP access right ay dapat magpangalan ng naka-register na target: isa sa sariling mga resource server ng serbisyong ito (ang default resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; ang GNAP demonstration resource server) o isang application na naka-register nang maaga (nakatakda ang appRegisteredBy — hindi registration ang pagkakita), ayon sa oauthAudience, permission base URI, client_id o identifier nito — isa rito ang api ng embedded debugger, na naka-seed bilang registered. Pinangangalanan din ito ng GNAP location na nasa o nasa ilalim ng gnapResourceServerUri ng naka-register na resource server. Kung hindi, invalid_target: nire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi tinatanggal ang right."
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "Pumupunta ang response kung saan sinasabi ng request"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "Ginagamit ang anumang absolute URL na pinangangalanan ng SAML AuthnRequest, SAML 1.1 shire, WS-Federation wreply o wallet link, naka-register man o hindi — at ang address na isinusulat ng pagkakita sa application entry (o callback na natututunan ng console o portal mula sa Host header) ay MINAMARKAHAN bilang observed sa appReturnAddressObserved."
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "Ang address lang na naka-register sa sariling entry ng application — at hindi kailanman nagdaragdag ng isa ang pagkakita. HINDI naka-register ang address na naka-marka pa ring observed: inilagay ito roon ng development at tinatanggihan ito hangga't hindi kinukumpirma ng operator sa pahina ng application o sa POST /admin-api/applications/confirm-address (STS-REG-0049). Ang mga address na naitala bago minarkahan ang mga pagkakita ay walang marka at kailangan pa ring suriin bago ilipat ang isang realm. Hindi natututunan mula sa Host header ng request ang sariling mga callback ng console at portal (itakda ang global.publicBaseUrl), at ang WebAuthn RP ID na hindi tugma sa host ay tumatanggi sa ceremony sa halip na bumalik dito."
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "Bukas ang mga test control"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "a8f1387d5a4a2093",
+    "text": "Ang POST /tls/trust at /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (ang compliance ng isang device, nang walang device:compliance scope, #164), ang mga password sa /krb5/principals, ang pag-sign out ng ibang tao gamit ang ?username=, ang bukas na dynamic client registration, ang SAML 1.1 attribute authority at ang HOBA key registration ay sumasagot lahat sa kahit sino, ipinapakita ng tinanggihang SCIM Digest challenge ang shared password, at binubura ng restore-kerberos ng console ang Kerberos sign-out instant."
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "Tinatanggihan ang bawat isa, o nangangailangan ng credential na kailangan na ng katumbas nitong administrative. Tinatanggihan ang sign-out na nagpapangalan ng kahit sino maliban sa naka-sign in na tumatawag, anuman ang sabihin ng logout.anyUser. Tinatanggihan ang restore-kerberos sa console at sa /admin-api, kaya nananatili ang Kerberos sign-out hanggang sa pinakahuling oras na puwedeng maging valid ang ticket mula bago ito. Tinatanggihan ang dynamic client registration maliban kung naka-on ang oauth2.openRegistration — o may dalang software statement ang registration na pinagkakatiwalaan ng realm na ito (ito ang nag-issue nito, o idinedeklara ng application ang issuer nito) at naka-on ang oauth2.softwareStatementOpensRegistration, na siyang pagpapasya ng operator kung sino ang puwedeng mag-register sa pamamagitan ng pagpapasya kung kaninong mga statement ang pagkakatiwalaan."
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "Awtorisado ang write sa directory sa LDAP"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "Puwedeng mag-add, mag-modify, mag-rename o mag-delete ang anumang connection ng anumang entry sa anumang realm, kasama ang mga anonymous — ito ang nagpapahintulot sa isang test na patakbuhin ang raw socket nang walang setup."
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "Walang isinusulat ang anonymous na connection. Ang connection na naka-bind bilang taong may hawak na Admin Write — sa directory ng default realm, at hindi lang dahil wala pang miyembro ang anumang role — ay nagsusulat ng kahit ano. Ang iba ay puwedeng mag-modify lang ng SARILI nilang entry, at ng mga attribute lang na pinangangalanan ng ldap.selfWritableAttributes; dapat pa ring sumunod sa password policy ang userPassword sa mga iyon. Ang pagtanggi ay LDAP result code 50, insufficientAccessRights. Ang hindi sakop nito ay ang PAGBASA: tingnan ang directory-reads at directory-read-authorization."
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "Nangangailangan ng bind ang pagbasa sa directory sa LDAP, at hindi kailanman nagbabalik ng credential"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "Ang anumang connection, anonymous man o hindi kailanman na-bind, ay puwedeng mag-search at mag-compare ng bawat entry at magbasa ng bawat attribute maliban sa Kerberos key, at puwedeng magsulat ng createTimestamp, modifyTimestamp at entryDN gaya ng anumang ibang attribute."
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "Ang search o compare sa connection na hindi pa naka-bind bilang isang tao ay tinatanggihan ng result code 50, insufficientAccessRights — maliban sa root DSE, na binabasa ng client para malaman kung saan magba-bind. Ang mga credential attribute (userPassword, pwdHistory, client secret, registration access token, private key, TOTP secret, recovery code, activation token at Kerberos key) ay hindi kailanman ibinabalik ng search, hindi nakikita ng search FILTER para hindi ito magamit bilang oracle, at hindi mako-compare; hindi eksepsiyon ang administrator. Hindi maisusulat ninuman ang createTimestamp, modifyTimestamp at entryDN, na may result code 19, constraintViolation."
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "Awtorisado ang pagbasa sa directory sa LDAP laban sa identity na nag-bind"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "Nakikita ng anumang connection ang bawat entry at bawat attribute maliban sa Kerberos key, at nagba-bind ang anumang DN — kasama ang sa application — ito ang nagpapahintulot sa isang test na patakbuhin ang raw socket nang walang setup."
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "Ang taong may hawak na Admin Read o Admin Write — sa roster ng default realm, na umaabot sa bawat realm, o sa sariling roster ng isang realm, na umaabot sa realm na iyon — ay nagbabasa ng bawat entry na sakop. Ang iba ay nagbabasa ng buong SARILI nilang entry; sa ibang tao, ang mga attribute lang na pinangangalanan ng ldap.directoryReadableAttributes (wala bilang default, kaya wala roon ang ibang tao); ang group kung miyembro lang sila nito, at saka ang cn, description at objectClass nito (pati ang mga miyembro nito kapag may ldap.groupMembersReadable); at ang mga container, ayon sa pangalan. Hindi nila nakikita ang mga application, federation, policy, role, trust anchor at SPIFFE registration. Ang entry na hindi puwedeng makita ng nagbabasa ay sumasagot ng noSuchObject (32) nang eksakto gaya ng nawawala, ang attribute na hindi nila puwedeng basahin ay wala sa resulta AT sa search filter, at tinatanggihan ng 50 ang compare laban dito. Ang bind DN na hindi tumutukoy sa isang tao — ang sa application, ang sa federation — ay tinatanggihan ng 49 bago basahin ang password nito. Nananatiling bukas ang root DSE at ang base read ng CRL entry, at nananatiling itinatago ang mga credential sa lahat."
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "Confidential, authenticated at rate limited ang LDAP bind"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "Nagtatagumpay ang bawat bind maliban sa may password na \"invalid\", sa 389 at 636 pareho, kasama ang mga anonymous at unauthenticated, nang walang limitasyon kung ilan ang mabibigo."
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "Tinatanggihan ang anonymous na bind ng result code 48, inappropriateAuthentication, at ang DN na may walang lamang password ng 53, unwillingToPerform (RFC 4513 sections 5.1.1 at 5.1.2). Ang bind na may dalang password sa plain listener ay tinatanggihan ng 13, confidentialityRequired, bago basahin ang password — gumamit ng LDAPS, o i-off ang ldap.plainListener. Binibilang ang mga NABIGONG bind bawat bind DN at bawat address laban sa security.rateLimitPerIdentity at security.rateLimitPerAddress sa loob ng security.rateLimitWindowS, at ang tumatawag na lumampas sa alinman ay tinatanggihan ng 53 bago i-check ang password nito; binubura ng matagumpay na bind ang counter ng sarili nitong DN, hindi kailanman ang sa address nito, at hindi kailanman ito binibilang."
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "Nangangailangan ng X509-SVID ang SPIRE Server API"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "Kailangan sa mutual TLS at awtorisado laban sa sariling per-method table ng SPIRE; kahit sino ay puwedeng humiling sa local socket na gumawa ng SVID na magpapapasok sa kanila."
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "Pareho, sa isang registry na hindi na gumagawa ng entry para sa kung sinumang humiling."
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "Ang tumatawag sa Unix socket ng SPIRE Server API ay ang pinagkakatiwalaang `local` entity lang kung saan buo ang hangganan ng socket"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "Bawat tumatawag sa socket ay `local` habang naka-on ang spiffe.trustLocalSocket (ang default): ipinapalagay na ang filesystem permission ng socket ang hangganan, gaya ng ipinapalagay ng totoong spire-server."
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "VINE-VERIFY ang hangganan bawat connection: dapat ginawang 0600 ang socket at nasa directory na walang group o other bit (STS-SPIFFE-0117), at ang kernel uid ng peer, na binabasa gamit ang SO_PEERCRED sa pamamagitan ng native module, ay dapat ang sa serbisyong ito (STS-SPIFFE-0118; hindi mabasa, STS-SPIFFE-0119). Ang tumatawag na bumagsak sa alinman ay hindi `local` at nangangailangan ng X509-SVID ng administrator sa TCP port."
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "SPIFFE node attestation (AttestAgent)"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "VINE-VERIFY ng attestor nito ang bawat type o tinatanggihan — join_token, x509pop, sshpop, tpm_devid, k8s_psat, http_challenge, aws_iid, gcp_iit, azure_imds — ayon sa inililista ng realm sa spiffe.nodeAttestors."
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "Pareho; walang anumang tungkol sa node attestation na naiiba ayon sa mode."
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "SPIFFE workload attestation (ang Workload API Unix socket)"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "Binabasa sa connect ang kernel credentials at process ng tumatawag (spiffe.workloadAttestors: unix, docker, k8s) kung saan naka-build ang native module; kung wala ito, sine-serve ang socket batay lang sa mga transport selector at sinasabi ito. Pinaniniwalaan ang mga asserted selector kapag naka-on ang spiffe.acceptAssertedSelectors, at kapag naka-off ang spiffe.attestWorkloads, sinasagot ang bawat tumatawag ng bawat entry."
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "Kung walang native module, HINDI sine-serve ang Workload API socket. Hindi kailanman pinaniniwalaan ang mga asserted selector, at sinasagot lang ang tumatawag ng mga entry na tugma sa mga selector nito, anuman ang sabihin ng spiffe.attestWorkloads; binabalewala ang parehong setting kung saan binabasa ang mga ito (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan sa write (STS-CORE-0103)."
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "Ang SPIFFE Workload API sa TCP (spiffe.workloadPort)"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "Sine-serve sa spiffe.grpcHost, kasama ang wildcard. Hindi na-a-attest ang TCP caller — walang peer process na matatanong — at kinikilala ito ayon sa transport nito, sa endpoint na naabot nito at sa source address nito."
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "HINDI SINE-SERVE (STS-SPIFFE-0120) maliban kung idinedeklara ng spiffe.workloadTcpSourceAuthenticated na ina-authenticate ng network ang mga source address (Workload Endpoint section 3), at kahit noon ay sa isang pinangalanang address lang: tinatanggihan ang wildcard na spiffe.grpcHost (STS-SPIFFE-0121). Ang realm na inilipat sa product habang naka-bind na ang port ay tumatanggi sa bawat tawag dito gamit ang parehong mga code."
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "Pumipili ang SPIFFE registration entry ng isang bagay na kumikilala sa workload"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "Anumang selector, kasama ang wala: ang entry na transport:tcp lang ay in-iissue sa bawat TCP caller, at iyon mismo ang dala ng inimbentong entry."
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "Ang entry na walang selector, o mga transport: at endpoint: lang, ay tinatanggihan sa console, /admin-api at SPIRE Server API (STS-SPIFFE-0122; INVALID_ARGUMENT bawat item doon), at ang nasa registry na ay hindi sumasagot sa anumang tumatawag (STS-SPIFFE-0123). Eksaktong tumutugma ang peer: selector sa source address — walang prefix, gaya sa SPIRE."
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "Chine-check ang revocation ng ipinapakitang certificate"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "SOFT-FAIL (pki.revocationCheck=auto). Ang certificate na in-issue ng serbisyong ito ay hinahanap sa sarili nitong register, ang buong chain, at tinatanggihan ang revoked; ang galing sa ibang authority ay chine-check sa OCSP responder at sa CRL na pinangangalanan nito, at ang status na hindi makuha o ma-verify ay tinatanggap at iniuulat."
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "HARD-FAIL (pki.revocationCheck=auto). Ang parehong mga lookup, at TINATANGGIHAN din ang foreign certificate na ang status ay hindi makuha, ma-verify o mapagkatiwalaang sariwa — o hindi alam ng responder ng issuer nito: hindi magagawang \"accepted\" ang \"revoked\" ng attacker na kayang humarang sa isang fetch. Ganoon din ang certificate na ang tanging list o responder ay nasa address na naka-configure ang serbisyong ito na huwag i-dial (plain ldap: sa ilalim ng pki.revocationLdap=ldaps, anumang ldap kapag naka-off ito, relative name nang walang pki.revocationLdapDirectory; STS-PKI-0188): naglathala ang issuer ng list at ang sariling policy ng serbisyong ito ang pumigil sa pagbasa nito."
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "Foreign certificate na ang issuer ay walang pinangangalanang CRL at OCSP responder"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "TINATANGGAP (pki.revocationRequireDistributionPoint=auto), at sinasabi ng verdict na hindi ito na-check: walang fetch na mahaharang ng attacker, at ang test CA na walang list ng isang client author ang karaniwang unang ginagawa nila."
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "TINATANGGIHAN sa ilalim ng hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): ang certificate na in-issue ng CA — hindi self-signed — na walang pinangangalanang distribution point at responder ay hindi kailanman mare-revoke, kaya valid ang ninakaw na key sa ilalim nito hanggang mag-expire ito. Tinatanggap ang may dalang RFC 9608 noRevAvail, dahil idineklara ng issuer nito na walang umiiral na revocation information (nilalaktawan ng section 4 ang check). Kapag itinakda sa off ang setting, tinatanggap ang iba pa, na may babala."
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "Ang GNAP key na pinatunayan ng mutual TLS ay isang certificate na in-issue sa client ng pinagkakatiwalaang authority"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "PINNED (gnap.mtlsTrust=auto): ang TLS client certificate ay dapat ang pinangangalanan ng key — ayon sa thumbprint, o parehong public key — at tinatanggap ang self-signed (RFC 9635 section 7.3.2). Walang binubuong chain. Tinatanggihan pa rin ang certificate na NI-REVOKE ng serbisyong ito o ng ibang authority (pki.revocationCheck)."
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI (gnap.mtlsTrust=auto, RFC 9635 section 11.4): dapat makabuo ang certificate ng chain papunta sa client truststore, pumasa sa revocation check, at maging NAKATALI sa application entry ng client — in-issue rito ng TLS client authority ng realm na ito, o may dalang iisang RFC 8705 subject parameter na nire-register ng entry (oauthTlsClientAuth*). Tinatanggap ang bagong certificate mula sa authority nang walang muling pag-register, at itinatala ang thumbprint nito sa entry. Ino-off ito ng gnap.mtlsTrust=pinned para sa isang realm; puwedeng humingi ng pki ang entry kung saan hindi ito hinihingi ng realm, hindi kailanman ang kabaligtaran."
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "Naka-embed ang identity protocol debugger, at kung ano ang puwedeng i-dial ng api nito"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "ON (debugger.enabled=auto): sine-serve ng sarili nitong listener (debugger.port) ang debugger UI at ipinapasa ang /api sa isang child process. Dina-dial ng api ang anumang hilingin ng naka-sign in na administrator, kasama ang mga private network."
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "OFF maliban kung debugger.enabled=on. Kapag naka-on, binibigyan ang api child ng ALLOW-LIST — ang sariling mga address ng serbisyong ito at ang debugger.allowedDestinations — at tinatanggihan ang bawat ibang destination, kasama ang mga raw socket."
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "Expired na client secret"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "TINATANGGAP kung saan chine-check ang secret, na may audit row na nagsasabing expired na ito."
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "TINATANGGIHAN sa token endpoint (invalid_client, STS-OAUTH-0558), at bilang client_secret_jwt key, kapag lumipas na ang expiry sa record ng secret na iyon sa oauthClientSecret. Puwedeng humawak ang application ng ilang secret, bawat isa may sariling expiry; inililipat ng rotation ang mga live na secret para mag-expire pagkatapos ng oauth2.clientSecretOverlapS."
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "Nire-rotate ang mga signing key, na may overlap"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "HINDI NIRE-ROTATE: ginagawang bago ang mga key sa bawat pag-start. Dala pa rin ng bawat unit ang mga generation nito, kaya ang next o retired key na ginawa nang mano-mano ay inilalathala at nave-verify gaya sa product."
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "Bawat unit (realm, use case, algorithm) ay may hawak na NEXT key, na inilalathala sa JWKS, sa SAML at WS-Federation metadata at sa /crypto/metadata bago ito pumirma ng anuman, at pino-promote bawat signing.rotationIntervalDays ng signing.rotate job; patuloy na nagve-verify ang key na pinalitan nito nang signing.retiredKeyGraceDays o ang pinakamahabang token lifetime, alinman ang mas mahaba."
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "Ang krbtgt key ng bawat trust realm: kung saan ito nanggagaling, at ang rotation nito"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "HINANGO mula sa krb5.krbtgtPassword (ang nakalathalang default), kaya kayang i-decrypt ng sinumang nagbabasa ang bawat TGT, at HINDI nire-rotate ayon sa schedule. Gumagana rin dito ang mano-manong rotation sa /admin/kerberos/principals: pinapalitan nito ang hinangong key ng random na naka-store na key hangga't hawak ito ng directory."
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "RANDOM — RFC 3961 random-to-key para sa bawat enctype sa krb5.enctypes — ginagawa nang isang beses bawat realm, naka-seal sa directory entry na krbtgt/<REALM>@<REALM> at hindi kailanman ipinapakita; binabalewala ang krb5.krbtgtPassword. Pinapalitan ito ng krb5.krbtgt-rotate job bawat krb5.krbtgtRotationIntervalDays, at itinatago ang version na pinalitan nito hangga't puwedeng mabuhay ang TGT sa ilalim nito (kasama ang mga renewal), at hindi kailanman nagro-rotate habang bukas pa ang window na iyon. Ang \"Rotate and invalidate\" ay ang double reset ng Active Directory sa iisang kilos: walang itinatago at tinatanggihan ng KRB_AP_ERR_BADKEYVER ang bawat TGT sa realm."
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "Tinatanggihan ang device key na ipinakita nang walang nave-verify na attestation"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "Ang key na pinatunayan sa /portal/devices (isang JWK proof, isang naka-link na WebAuthn credential) o sine-certify sa EST o SCEP para sa isang device ay nire-register nang walang attestation, o may attestation na hindi nagche-chain sa devices.*TrustAnchors, at itinatala bilang self-asserted."
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "Tinatanggihan ang ganoong key (STS-DEVICE-0024): Android Key Attestation, Apple App Attest statement, TPM key attestation o WebAuthn attestation lang na na-verify at nag-chain sa isang anchor ang nagre-register ng key. Ang administrator na naglalagay ng key ayon sa value ay kilos ng administrator at tinatanggap sa parehong mode, itinatala bilang proof admin, self-asserted."
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "Hindi pinagkakatiwalaan ang Android attestation na hindi na-check ang revocation, kung saan sinasabi ito ng realm"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "Kapag walang kasalukuyang Android attestation status list (hindi kailanman na-download, bumabagsak ang download, o luma na), itinatala ang Android chain bilang attested, ang revocation nito ay UNCHECKED, anuman ang sabihin ng devices.androidRevocationRequired. Ang chain na nire-revoke o sine-suspend ng list ay self-asserted sa parehong mode."
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "Pareho bilang default. Kapag naka-on ang devices.androidRevocationRequired, itinatala bilang self-asserted ang unchecked na chain: tinatanggihan noon ang device key (STS-DEVICE-0024) at hindi pinagkakatiwalaan ang WebAuthn android-key statement."
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "Dapat sariwa ang TPM key attestation sa device certificate request"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "Ang TPM2_Certify statement na ang extraData ay hindi live na nonce na in-issue sa EST /nonce sa parehong client at cookie (walang kinuha, expired, nagamit na, sa ibang client, o request sa SCEP, na walang nonce operation) ay nananatili sa level nito at itinatala na may freshness na UNPROVEN at ang dahilan. Ginagastos ang nonce na tumutugma."
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "Tinatanggihan ang ganoong statement (STS-DEVICE-0050): ang nakuhang attestation na ni-replay sa bagong request para sa parehong key ay hindi key na ginawa at hawak sa TPM ngayon. Kaya in-iissue lang sa EST ang device certificate na may TPM attestation, pagkatapos ng /nonce (draft-ietf-lamps-attestation-freshness section 5.1)."
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "KINOKONSULTA ang revocation para sa ipinapakitang certificate (tingnan ang requirement sa itaas) at para sa NAKA-REGISTER na certificate kapag may vine-verify ito — ang register, ang OCSP responder (kasama ang sariling status ng delegated responder) at ang CRL na pinangangalanan ng foreign certificate, sa http, https at ldaps, pinagsasama ang mga delta CRL, binabasa ang mga indirect CRL bawat issuer at kinukuha ang signer nito mula sa caIssuers address ng list kung saan walang humahawak nito rito. Ang natitira ay mga limitasyon sa halip na trabaho: ang BARE key na naka-register nang walang certificate (JWK na walang x5c) ay walang pinangangalanang issuer at list, kaya ang pag-alis lang nito sa entry ang pumipigil sa pag-verify nito; dina-dial lang ang plain ldap: kapag pinapayagan ito ng pki.revocationLdap; ginagamit lang ang distribution point na pinangalanan nang relative sa CRL issuer nito kapag nakatakda ang pki.revocationLdapDirectory at single-valued ang bawat RDN; at walang hinihinging client certificate ang LDAPS 636, kaya walang kinokonsulta roon."
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "HINDI pine-persist ang TLS server certificate at ang SPIFFE JWT authority, sa alinmang mode: pag-aari sila ng sarili nilang mga module at ginagawa ulit sa bawat pag-start (maliban kung ibinibigay ng tls.certificateFile ang certificate). Natanggal sa row na ito ang labing-isang post-quantum key ng isang realm noong 2026-09-12 — sa product mode, isinusulat sila kasama ng key set ng realm at ibinabalik kasama nito — at ang SPIFFE X.509 authority noong 2026-09-11: ito ang SPIFFE Issuing CA ng realm na ito sa ilalim ng service Root, kaya nagpe-persist ito sa product mode nang eksakto gaya ng iba pang bahagi ng certificate authority."
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "Ang private key ay DINE-DECRYPT SA PROCESS NA ITO habang pumipirma ito. Mula 2026-09-06, ang ciphertext ang nananatili sa pagitan ng mga signature, at ang `keys.plaintextRetention` ang nagpapasya kung gaano katagal nabubuhay ang plaintext — pero nananatili rin ang key-encryption key, kaya pinapaliit lang nito ang halaga ng isang SNAPSHOT (isang core dump, isang na-swap na page, isang debugger na saglit na naka-attach) at walang dinedepensahan laban sa anumang kayang magbasa ng memory na ito sa sandaling pinili nito at maghintay sa susunod na signature. Ang key na tunay na hindi mababasa ng process na ito ay isang HSM, o isang KMS na pumipirma para sa iyo, at ibang disenyo ito sa halip na isang setting. Hindi rin mabubura ang isang JavaScript string: zine-zero ang decrypt buffer at ang lahat ng ginawa mula rito ay ini-release sa halip na binubura."
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "Walang ginagawang fixture principal, pinagkakatiwalaang realm o anumang on demand ang product mode, at tinatanggihan nito ang nakalathalang service password. Nag-a-authenticate ang mga tao sa directory sa product KDC gamit ang mga key na hinango mula sa sarili nilang password kapag itinakda o na-verify ito, naka-seal sa kanilang entry (`stsKrb5Keys`); nakakakuha ang mga service principal ng mga random key at keytab na ipinapakita nang isang beses sa /admin/kerberos/principals. Hinahango ang keytab ng isang tao (#59) mula sa password na hawak — ang sarili nila sa /portal/kerberos, o isa na itinakda ng administrator gamit ang \"Reset password and download keytab\" — at hindi kailanman binabasa mula sa storage. Itinatago ng pagpapalit ng password o ng rotation ang version na pinalitan nito — hanggang krb5.retainedKeyVersions, bawat isa nang krb5.retainedKeyTtlS — kaya tinatanggap pa rin ang ticket na in-issue sa ilalim nito hanggang sa puwede na itong mag-expire, habang ang kasalukuyang key lang ang ginagamit sa pre-authentication at issuance; tinatapos ng \"Drop previous versions\" ang window na iyon. Random, naka-store at nire-rotate ang krbtgt key mula 2026-09-23 (ang krbtgt-key requirement sa itaas). Mula 2026-09-15, bawat trust realm na naka-on ang krb5.enabled ay may sariling KDC, Kerberos realm at mga key, sa shared port."
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "hindi opsyonal doon ang pag-verify sa certificate ng sinumang sumasagot sa outbound request. Pangalanan na lang ang private CA sa katugmang CA file setting."
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "hindi puwedeng gawing mali ng sinasadyang depekto ang isang response doon. Subukan ang client laban dito sa isang development realm."
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "ang selector na ina-assert ng workload tungkol sa sarili nito ay claim na walang nag-check, at hindi kailanman naniniwala ang product sa isa."
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "sinasagot lang doon ng Workload API ang tumatawag ng mga registration entry na tugma sa mga attested selector nito, hindi kailanman ng bawat entry."
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "ang credential na in-issue ng realm na ito na walang ipinapakitang status reference ay maaaring na-revoke, kaya nangangailangan ng isa ang Verifier doon. Pinapayagan ang own-only, at iniexempt ng oid4vp.statusOptionalIssuers ang pinagkakatiwalaang issuer na walang inilalathalang status."
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "sira na ang mga SHA-1 signature, RSA PKCS#1 v1.5 key transport, MD5 sa HTTP Digest at ang mga Kerberos enctype na dine-deprecate ng RFC 8429 (rc4-hmac), at hindi kailanman ginagamit ng product ang alinman sa mga ito. Pinapayagan ang mas malalakas na value."
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "signed doon ang bawat SAML assertion, at bawat SAML 1.1 Response (saml-profiles-2.0-os 4.1.4.5, oasis-sstc-saml-bindings-1.1 4.1.2.4). Subukan ang relying party laban sa unsigned sa isang development realm."
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "vine-verify doon ang bawat WebAuthn attestation statement na dumarating, at tinatanggihan ang peke sa halip na itala. Pinapayagan ang verify-if-present at require-trusted."
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "sinasabi ng SPIFFE Workload Endpoint specification (section 3) na DAPAT tanggihan ang tawag na walang workload.spiffe.io header."
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "random doon ang krbtgt key, ginagawa nang isang beses bawat realm at itinatagong naka-seal sa directory, kaya walang password na binabasa para dito."
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "palaging nangangailangan doon ng access token ang management API, dahil ang gate nito ang tanging gate ng admin console; i-pin ang adminApi.clientSecret bago ang pag-start para makagawa ng isa."
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "para sa development mode lang ang setting."
+  }
+}

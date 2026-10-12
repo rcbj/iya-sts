@@ -187,6 +187,7 @@
   "nav.debugger": "Protocol debugger",
   "nav.sts-metadata": "Service metadata",
   "nav.api-explorer": "API explorer",
+  "nav.account-api": "Account API",
   "nav.keys": "Key pairs",
   "nav.crypto-metadata": "Cryptography",
   "shell.language": "Language",

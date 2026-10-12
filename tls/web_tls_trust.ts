@@ -125,7 +125,8 @@ class TlsTrustPage {
       (json.doors.testControls.open
         ? t.html('consoleTlsTrust.controlsOpen')
         : t.html('consoleTlsTrust.controlsRefused'))) +
-      '<h2>' + t.html('consoleTlsTrust.anchors') + '</h2>' + nav.head +
+      '<h2 data-tab="anchors">' + t.html('consoleTlsTrust.anchors') +
+      '</h2>' + nav.head +
       '<table><tr><th>' + t.html('consoleTlsTrust.thSubject') + '</th><th>' +
       t.html('consoleTlsTrust.thIssuer') + '</th><th>' +
       t.html('consoleTlsTrust.thSerial') + '</th>' +
@@ -137,7 +138,8 @@ class TlsTrustPage {
                       undefined, undefined, t) +
 
       (mayChange
-        ? '<h2>' + t.html('consoleTlsTrust.addAnchors') + '</h2>' +
+        ? '<h2 data-tab="add">' + t.html('consoleTlsTrust.addAnchors') +
+          '</h2>' +
           kit.note(t.html('consoleTlsTrust.addNote')) +
           '<form method="post" action="/admin/tls/trust">' +
           '<input type="hidden" name="action" value="add">' +

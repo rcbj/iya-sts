@@ -124,6 +124,13 @@ interface DatabaseAdminDeps {
 // from, and that module may not require this one.
 const SECTIONS = DatabasePage.SECTIONS;
 
+// What the page is, the one sentence of its own the answer carries (#543
+// phase 2b): a constant so that the database namespace can carry it. The
+// probes' sentences are `persistence/persistence_postgres.js`'s, and why
+// there is no database is `persistence/persistence.js`'s.
+const WHAT = 'Everything PostgreSQL will tell this service about itself, ' +
+  'and the state of the schema this service owns in it.';
+
 /**
  * Monitoring → Database: everything PostgreSQL will tell this service about
  * itself, and the state of the schema this service owns in it.
@@ -133,6 +140,23 @@ class DatabaseAdmin {
    * See the module's `SECTIONS`.
    */
   static readonly SECTIONS = SECTIONS;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = ['/admin-api/database'];
+
+  /**
+   * Extracts this module's part of the database namespace (#543 phase 2b):
+   * the page's own sentence.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering DatabaseAdmin.prose().");
+    helpers.log.debug("Leaving DatabaseAdmin.prose().");
+    return { 'database.what': WHAT };
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -305,8 +329,7 @@ class DatabaseAdmin {
     log.debug("Leaving DatabaseAdmin.databaseJson().");
     return persistence.databaseMetrics().then(function (report: Json) {
       const out: Json = {
-        what: 'Everything PostgreSQL will tell this service about itself, ' +
-              'and the state of the schema this service owns in it.',
+        what: WHAT,
         available: !!report.available,
         mode: report.mode,
         ok: !!report.ok
@@ -425,6 +448,8 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   DatabaseAdmin: DatabaseAdmin,
+  PROSE_ROUTES: DatabaseAdmin.PROSE_ROUTES,
+  prose: DatabaseAdmin.prose,
   /**
    * Installs the instance the composition root built and runs its
    * wire step; a second install is refused.

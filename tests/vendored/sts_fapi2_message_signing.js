@@ -29,6 +29,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -342,6 +343,27 @@ function halfHash(value) {
   return digest.subarray(0, 16).toString("base64url");
 }
 
+// THE STATIC PORTAL'S SIGN-IN (#568): in the browser, as the public client
+// `sts-user-portal` with PKCE and a DPoP-bound token — the one public client
+// besides the console a FAPI profile lets through (`fapi.js`
+// PUBLIC_CLIENT_EXEMPT) — driven the way its runtime drives it, then the
+// account API asked who it is. Answers `{ problem, me }`.
+async function portalSignsIn(who, password) {
+  log.debug("Entering portalSignsIn().");
+  let problem = "";
+  let me = null;
+  try {
+    const portal = await portalSignin.signInToThePortal(absolute(R), who,
+      null, { password: password });
+    me = await portal.api("GET", "/account-api/me");
+  } catch (e) {
+    log.debug("Caught in portalSignsIn(): " + ((e && e.message) || e));
+    problem = String((e && e.message) || e);
+  }
+  log.debug("Leaving portalSignsIn().");
+  return { problem: problem, me: me };
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving FAPI 2.0 Message Signing at " + base + R);
@@ -522,15 +544,13 @@ async function test() {
   });
 
   log.info("=== f. the portal ===");
-  const portal = browser("portal");
-  r = await follow(portal, await portal.go("GET", R + "/portal"), ALICE,
-                   { shown: 0 });
-  check("the portal signs its person in under the profile — a signed " +
-        "request pushed, a JARM response verified", function () {
-    assert.ok(r.status === 200 || (r.status === 302 &&
-              /\/portal/.test(r.location)),
-              r.status + " " + r.location + " " + r.text.slice(0, 400));
-    assert.ok(!/cannot sign/i.test(r.text), r.text.slice(0, 400));
+  const signedIn = await portalSignsIn(ALICE, PASSWORD);
+  check("the portal signs its person in under the profile, as its static " +
+        "runtime does — and its account API answers them", function () {
+    assert.strictEqual(signedIn.problem, "", signedIn.problem.slice(0, 600));
+    assert.ok(signedIn.me && signedIn.me.status === 200 &&
+              signedIn.me.json.user.username === ALICE,
+              signedIn.me ? signedIn.me.text.slice(0, 300) : "no answer");
   });
 
   assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +

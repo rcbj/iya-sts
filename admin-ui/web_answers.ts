@@ -993,7 +993,7 @@ class WebAnswers {
       '<h2>certbot</h2><pre>' + kit.esc(result.certbot) + '</pre>' +
       '<p class="links"><a href="' + kit.esc(back) + '">' +
       t.html('consoleAnswers.back') + '</a> · ' +
-      '<a href="/admin/cert-issuance#eab">' +
+      '<a href="/admin/cert-issuance#cert-acme-eab">' +
       t.html('consoleAnswers.eab.backToAcme') +
       '</a></p>';
   }
