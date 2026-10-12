@@ -149,6 +149,18 @@ const LIST_PARAMS = {
   '/admin/est/monitor': ['per', 'page'],
   '/admin/scep': ['per', 'certificatesPage', 'credentialsPage'],
   '/admin/scep/monitor': ['per', 'page'],
+  // PROTOCOLS → CERT ISSUANCE (2026-10-12): the four families' lists on one
+  // page, each tab's names carrying its prefix (`admin-ui/web_pages.ts`,
+  // `CERT_PANELS`), so the trail back from an entry or an agent keeps every
+  // tab where the reader left it. The renderers still read their former
+  // pages' rows above and below, with the page's names given back.
+  '/admin/cert-issuance': ['per', 'acmeCertificatesPage',
+                           'acmeCredentialsPage', 'acmeAccountsPage',
+                           'acmeHostNamesPage', 'estCertificatesPage',
+                           'scepCertificatesPage', 'scepCredentialsPage',
+                           'entriesQ', 'entriesOrigin', 'entriesPage',
+                           'agentsQ', 'agentsPage', 'brokersQ',
+                           'brokersPage'],
   // The pushed-request filter and both lists' paging (2026-09-13). The page
   // rebuilds a Withdraw's `back` from its own copy of this list, because
   // `listViewFromBack()` is not exported; the two must name the same keys.

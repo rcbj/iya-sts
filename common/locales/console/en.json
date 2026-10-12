@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "Registration entries",
   "nav.spiffe-agents": "Agents",
   "nav.spiffe-brokers": "Brokers",
+  "nav.cert-issuance": "Cert issuance",
+  "nav.spiffe-trust-domain": "Trust domain",
   "nav.tls": "TLS / mutual TLS",
   "nav.tls-trust": "Client-certificate truststore",
   "nav.users": "Users",

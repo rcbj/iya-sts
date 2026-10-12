@@ -281,7 +281,8 @@ class UsersPage {
       kit.note(t.html('consoleUsers.body.spiffeBefore') +
       '<a href="/admin/ldap/directory">' +
       t.html('consoleUsers.body.theDirectory') + '</a>' +
-      t.html('consoleUsers.body.spiffeAnd') + '<a href="/admin/spiffe">' +
+      t.html('consoleUsers.body.spiffeAnd') +
+      '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
 

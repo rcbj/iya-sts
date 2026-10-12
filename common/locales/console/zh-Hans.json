@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "注册条目",
   "nav.spiffe-agents": "代理",
   "nav.spiffe-brokers": "代理中介",
+  "nav.cert-issuance": "证书签发",
+  "nav.spiffe-trust-domain": "信任域",
   "nav.tls": "TLS / 双向 TLS",
   "nav.tls-trust": "客户端证书信任库",
   "nav.users": "用户",

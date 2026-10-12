@@ -10,6 +10,7 @@
   "title.attribute-sources": "Attribute sources",
   "title.authorization-servers": "Authorization servers",
   "title.caches": "Caches",
+  "title.cert-issuance": "Cert issuance",
   "title.audit": "Audit log",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP sessions — one session",

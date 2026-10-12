@@ -465,15 +465,18 @@ function childMain() {
 
     // --- 9. the console pages, as the static console draws them -------------
     // Each page is its `/admin-api` operation's answer drawn by its renderer
-    // (#446), asked in realm A past the API's token gate.
+    // (#446), asked in realm A past the API's token gate. ACME is the ACME
+    // tab of Protocols → Cert issuance since 2026-10-12, its answer composed
+    // into that page's view as `acme`.
     const drawer = require(ROOT_DIR + '/tests/tools/console_page.js')
       .consolePage(ROOT_DIR);
     const inA = function (work) {
       return realms.run(realms.get(A), work);
     };
     const page = await inA(function () {
-      return drawer.draw('/admin/acme', {});
+      return drawer.draw('/admin/cert-issuance', {});
     });
+    const acmeView = (page.json && page.json.acme) || {};
     note(page.status === 200 &&
          /\/enroll\/acme\/directory/.test(page.html) &&
          /Create EAB key/.test(page.html) &&
@@ -485,11 +488,12 @@ function childMain() {
          'and no HMAC key',
          String(page.html).slice(0, 200));
     const apiJson = (await api(A, '/acme')).body;
-    note(JSON.stringify(Object.keys(page.json).filter(function (k) {
+    note(JSON.stringify(Object.keys(acmeView).filter(function (k) {
       return k !== 'protocolEndpoints';
     }).sort()) === JSON.stringify(Object.keys(apiJson).filter(function (k) {
       return k !== 'protocolEndpoints';
-    }).sort()) && page.json.certificates.paging.total ===
+    }).sort()) && acmeView.certificates &&
+         acmeView.certificates.paging.total ===
          apiJson.certificates.paging.total,
          'the page is drawn from GET /admin-api/acme\'s answer (rule 7)');
     const monitorPage = await inA(function () {

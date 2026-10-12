@@ -256,17 +256,42 @@ class ProtocolEndpoints {
         // The wallet sign-in (#38), whose four settings are on this page.
         '/authn/wallet', '/authn/wallet/wait'
       ].map(route),
-      '/admin/spiffe': [this.route('/spiffe'), this.route('/spiffe/bundle'),
-                        this.route('/spiffe/federated/:trustDomain'),
-                        this.socket('spiffe-workload'),
-                        this.socket('spiffe-server')],
-      '/admin/spiffe/entries': [this.socket('spiffe-server'),
-                                this.socket('spiffe-workload')],
-      '/admin/spiffe/agents': [this.socket('spiffe-server'),
-                               this.route('/spiffe/bundle')],
-      // The SPIFFE Broker API's own listener (#170).
-      '/admin/spiffe/brokers': [this.socket('spiffe-broker'),
-                                this.route('/spiffe/bundle')],
+      // CERTIFICATE ISSUANCE (2026-09-13; one page since 2026-10-12): ACME,
+      // EST, SCEP and SPIFFE, on the Metadata tab of `/admin/cert-issuance`.
+      // Each family's rows are its registered Express paths, owned by that
+      // family's build (acme/, est/, scep/), and SPIFFE's its three HTTP
+      // routes and the sockets the router cannot see — the Workload API, the
+      // SPIRE Server API and the Broker API's own listener (#170).
+      '/admin/cert-issuance': [
+        // ===== ACME endpoints =====
+        '/enroll/acme/directory', '/enroll/acme/new-nonce',
+        '/enroll/acme/new-account', '/enroll/acme/new-order',
+        '/enroll/acme/account/:id', '/enroll/acme/account/:id/orders',
+        '/enroll/acme/order/:id', '/enroll/acme/order/:id/finalize',
+        '/enroll/acme/authz/:id', '/enroll/acme/challenge/:id',
+        '/enroll/acme/cert/:id', '/enroll/acme/revoke-cert',
+        '/enroll/acme/key-change', '/enroll/acme/renewal-info/:id',
+        // ===== EST endpoints =====
+        '/.well-known/est/cacerts', '/.well-known/est/simpleenroll',
+        '/.well-known/est/simplereenroll', '/.well-known/est/serverkeygen',
+        '/.well-known/est/csrattrs', '/.well-known/est/fullcmc',
+        '/.well-known/est/:label/cacerts',
+        '/.well-known/est/:label/simpleenroll',
+        '/.well-known/est/:label/simplereenroll',
+        '/.well-known/est/:label/serverkeygen',
+        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc',
+        // draft-ietf-lamps-attestation-freshness section 5.1 (#257).
+        '/.well-known/est/nonce', '/.well-known/est/:label/nonce',
+        // ===== SCEP endpoints =====
+        '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',
+        '/enroll/scep/:profile/pkiclient.exe'
+      ].map(route).concat([
+        // ===== SPIFFE endpoints =====
+        this.route('/spiffe'), this.route('/spiffe/bundle'),
+        this.route('/spiffe/federated/:trustDomain'),
+        this.socket('spiffe-workload'), this.socket('spiffe-server'),
+        this.socket('spiffe-broker')
+      ]),
       '/admin/xacml': [
         '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
@@ -326,32 +351,6 @@ class ProtocolEndpoints {
                      this.route('/tls/trust/clear')],
       '/admin/tls/trust': [this.socket('tls'), this.route('/tls/trust'),
                            this.route('/tls/trust/clear')],
-      // CERTIFICATE ENROLLMENT (2026-09-13). Each row is the family's
-      // registered Express paths, owned by that family's build; see acme/, est/
-      // and scep/.
-      // ===== ACME endpoints row =====
-      '/admin/acme': [
-        '/enroll/acme/directory', '/enroll/acme/new-nonce',
-        '/enroll/acme/new-account', '/enroll/acme/new-order',
-        '/enroll/acme/account/:id', '/enroll/acme/account/:id/orders',
-        '/enroll/acme/order/:id', '/enroll/acme/order/:id/finalize',
-        '/enroll/acme/authz/:id', '/enroll/acme/challenge/:id',
-        '/enroll/acme/cert/:id', '/enroll/acme/revoke-cert',
-        '/enroll/acme/key-change', '/enroll/acme/renewal-info/:id'
-      ].map(route),
-      // ===== EST endpoints row =====
-      '/admin/est': [
-        '/.well-known/est/cacerts', '/.well-known/est/simpleenroll',
-        '/.well-known/est/simplereenroll', '/.well-known/est/serverkeygen',
-        '/.well-known/est/csrattrs', '/.well-known/est/fullcmc',
-        '/.well-known/est/:label/cacerts',
-        '/.well-known/est/:label/simpleenroll',
-        '/.well-known/est/:label/simplereenroll',
-        '/.well-known/est/:label/serverkeygen',
-        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc',
-        // draft-ietf-lamps-attestation-freshness section 5.1 (#257).
-        '/.well-known/est/nonce', '/.well-known/est/:label/nonce'
-      ].map(route),
       // ===== OpenID Federation endpoints row (#132) =====
       '/admin/oidfed': [
         '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',
@@ -367,11 +366,6 @@ class ProtocolEndpoints {
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
         '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
-      ].map(route),
-      // ===== SCEP endpoints row =====
-      '/admin/scep': [
-        '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',
-        '/enroll/scep/:profile/pkiclient.exe'
       ].map(route)
     };
   }

@@ -134,7 +134,7 @@ Three more limits, all honest rather than missing:
 * **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
   per call, holding no session. The registry can end an identity's ability to
   obtain *another* SVID, which is a ban rather than a logout; that lives at
-  `/admin/spiffe`.
+  `/admin/cert-issuance#cert-spiffe-overview`.
 
 ## Front-channel logout
 

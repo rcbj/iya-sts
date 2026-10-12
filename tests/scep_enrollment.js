@@ -504,10 +504,12 @@ async function checkConsole(t) {
           'refused, absolute URLs');
   // THE PAGE IS THE OPERATION'S ANSWER, drawn (#446): asked of GET
   // /admin-api/scep and drawn by its renderer, as the static console draws
-  // it.
+  // it — the SCEP tab of Protocols → Cert issuance since 2026-10-12, its
+  // answer composed into that page's view as `scep`.
   const drawn = await require('./tools/console_page.js')
-    .consolePage(__dirname + '/..').draw('/admin/scep', { per: '1000' });
-  const page = JSON.parse(JSON.stringify(drawn.json || {}));
+    .consolePage(__dirname + '/..').draw('/admin/cert-issuance',
+                                         { per: '1000' });
+  const page = JSON.parse(JSON.stringify((drawn.json || {}).scep || {}));
   delete page.protocolEndpoints;
   t.equal(JSON.stringify(Object.keys(page).sort()),
           JSON.stringify(Object.keys(view).sort()),

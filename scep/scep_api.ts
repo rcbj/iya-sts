@@ -187,7 +187,7 @@ class ScepApi {
                      'documented exceptions; the mode; and the ' +
                      '`scep.*` settings, which are written through POST ' +
                      '/admin-api/config/set-many.',
-        mirrors: 'GET /admin/scep',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'per', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1, maximum: 1000 },

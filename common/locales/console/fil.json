@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "Mga registration entry",
   "nav.spiffe-agents": "Mga agent",
   "nav.spiffe-brokers": "Mga broker",
+  "nav.cert-issuance": "Pag-issue ng certificate",
+  "nav.spiffe-trust-domain": "Trust domain",
   "nav.tls": "TLS / mutual TLS",
   "nav.tls-trust": "Truststore ng client certificate",
   "nav.users": "Mga user",

@@ -174,8 +174,9 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    direct Protocols page** with Metadata first, then Settings, Policies, Policy
    editor, Remote PEPs and Try a decision. The former policy, editor, PEP and
    decision pages feed those tabs; XACML decisions remain a separate Monitoring
-   page.    the other pages are **SPIFFE** (SPIFFE, registration entries, agents) and
-   **Kerberos** (since 2026-09-13, now one direct Protocols page with Metadata,
+   page. **Cert issuance** is one direct Protocols page since 2026-10-12, its
+   ACME, EST, SCEP and SPIFFE pages tabs and SPIFFE's four sub-tabs (the
+   section at *CERT ISSUANCE*, below). **Kerberos** (since 2026-09-13, now one direct Protocols page with Metadata,
    Settings, PAC claims and Principals tabs; the former leaf pages feed those
    tabs and keep their own API operations). **SSF** is also one direct
    Protocols page with Metadata, Shared Signals, CAEP and RISC tabs; each
@@ -194,8 +195,8 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    holding it, so `upTo()` and the trail cannot tell a grouped page from an
    ungrouped one; `consoleJson().pages` leaves out hidden aliases; and **a group may hold a group** since
    2026-10-01 (it read *nesting stops at one level* until then) — the one case
-   is Cert issuance › SPIFFE, below, and `groupPages()` is the walk that
-   flattens every depth. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
+   was Cert issuance › SPIFFE, a page of tabs since 2026-10-12, and
+   `groupPages()` is still the walk that flattens every depth. The markup is an `<li>` holding a heading and a `<ul>`, INSIDE the
    section's list rather than a second list beside it: a group is three of that
    list's items said together, and a sibling list would tell a screen reader the
    section ended where the group began.
@@ -4849,6 +4850,45 @@ Nothing else moved: the paths, the modules that draw the pages and every
 nothing below it. `sectionPages()` splices a group's pages in where the group
 sits, so the page walk, the sidebar and `admin_api.js`'s parity all see the
 same list they did.
+
+## …AND ON 2026-10-12 THE PROTOCOLS GROUP BECAME ONE PAGE OF TABS
+
+rcbj's ask, after OAuth, SAML, VC, XACML, SSF and Kerberos: the same tab
+pattern for Protocols → Cert issuance, with SPIFFE's pages as sub-tabs of one
+tab. **`/admin/cert-issuance`** is a direct Protocols page: Metadata (every
+endpoint of the four families, once each), ACME, EST, SCEP, and SPIFFE, whose
+sub-tabs are Trust domain, Registration entries, Agents and Brokers. The
+Monitoring group is unchanged: three monitors under the same heading.
+`admin-ui/web_pages.ts` draws it (`certIssuance()`); five things are worth
+knowing before changing it.
+
+* **Each tab is still its family's renderer over its family's operation.**
+  The page's own operation is SPIFFE's trust domain (`/admin-api/spiffe`,
+  which reads no parameter) and the other six are composed in under their
+  `CERT_PANELS` keys (`acme`, `est`, `scep`, `spiffeEntries`, `spiffeAgents`,
+  `spiffeBrokers`). All seven GETs mirror `GET /admin/cert-issuance`, so each
+  answers the page's whole endpoint list; the POSTs still mirror their former
+  pages, so a form posts where its operation always took it.
+* **ONE ADDRESS, SEVEN LISTS, SHARED NAMES.** ACME, EST and SCEP all page on
+  `certificatesPage`, ACME and SCEP on `credentialsPage`, and the three SPIFFE
+  lists search `q` and page on `page`. On this page each tab's names carry its
+  prefix (`estCertificatesPage`, `entriesQ`, `agentsPage`): the row's
+  `composeParams` asks each operation by its own names, `certContext()` hands
+  the renderer its own names, and `certTabLinks()` gives what it drew the
+  page's names back — in its links, its pager's `#list-` anchor and its filter
+  form, whose ids take the tab's prefix so two tabs' forms are not one
+  control. `per` is shared; `entry` and `agent` are one tab's each. A new list
+  on a tab owes its names in `CERT_PANELS` and in `LIST_PARAMS`.
+* **`composeParams` is a row member any page may use**, and
+  `WebPages.composeRequests()` is the one reading of a row's composition: the
+  runtime, `tests/tools/console_page.js`, `tests/console_web_bundle.js` and
+  `tests/vendored/console_signin.js` all ask it, where each had its own copy.
+* **THE SEVEN FORMER ADDRESSES ARE GONE** (rcbj): `/admin/acme`,
+  `/admin/spiffe/entries` and the rest are no console pages. Links between
+  tabs are rewritten by `certTabLinks()`; a former page's `?format=json` link
+  is drawn as its operation's address.
+* **A drill-down is drawn in place of the tabs**: `?entry=` (the row's
+  `drill`, so the trail knows it) and `?agent=`.
 
 ## The directory group grew to EIGHT pages (2026-09-05)
 

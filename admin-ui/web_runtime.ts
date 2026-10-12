@@ -1507,25 +1507,11 @@ class ConsoleRuntime {
     let json = answer.json;
     if (page.compose) {
       const self = this;
-      const members = Object.keys(page.compose).filter(function (member) {
-        const when = (page.composeWhen || {})[member];
-        return !when ||
-          (page.composeAlways || []).indexOf(member) >= 0 ||
-          when.some(function (name) {
-            return Object.prototype.hasOwnProperty.call(query, name);
-          });
-      });
-      const answers = await Promise.all(members.map(async function (member) {
-        const operation = page.compose[member];
-        const params = {};
-        ((page.composeWhen || {})[member] || []).forEach(function (name) {
-          if (Object.prototype.hasOwnProperty.call(query, name)) {
-            params[name] = query[name];
-          }
-        });
-        const search = new URLSearchParams(params).toString();
-        return { member: member, operation: operation,
-          answer: await self.apiJson('GET', operation +
+      const asked = WebPages.composeRequests(page, query);
+      const answers = await Promise.all(asked.map(async function (one) {
+        const search = new URLSearchParams(one.params).toString();
+        return { member: one.member, operation: one.operation,
+          answer: await self.apiJson('GET', one.operation +
             (search ? '?' + search : '')) };
       }));
       const failed = answers.filter(function (one) {

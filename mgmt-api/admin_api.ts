@@ -21494,7 +21494,7 @@ class AdminApi {
                      'key is in this reply. The authority ' +
                      'CERTIFICATE is published, as GET ' +
                      '/tls/server-certificate publishes that one.',
-        mirrors: 'GET /admin/spiffe',
+        mirrors: 'GET /admin/cert-issuance',
         responseDescription: 'The trust domain, its authorities, its ' +
                              'federated bundles and its listeners.',
         responseSchema: { type: 'object',
@@ -21684,7 +21684,7 @@ class AdminApi {
                      'SPIRE Server API\'s GetAuthorizedEntries — and the ' +
                      'Workload API hands every caller every identity, ' +
                      'because nothing in this service attests a workload.',
-        mirrors: 'GET /admin/spiffe/entries',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'entry', in: 'query', required: false,
             schema: { type: 'string' },
@@ -21909,7 +21909,7 @@ class AdminApi {
                      'authorizes nothing. `listeners` is where the endpoint ' +
                      'is bound in this realm, and `port` its ' +
                      '`spiffe.brokerPort`.',
-        mirrors: 'GET /admin/spiffe/brokers',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
             description: 'Substring of a broker\'s SPIFFE ID or reference ' +
@@ -22008,7 +22008,7 @@ class AdminApi {
                      '(spiffe.nodeAttestors) and an attestor verified, and ' +
                      'its selectors are the ones that attestor derived ' +
                      '(#40, 2026-09-21).',
-        mirrors: 'GET /admin/spiffe/agents',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'agent', in: 'query', required: false,
             schema: { type: 'string' },

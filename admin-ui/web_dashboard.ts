@@ -106,7 +106,7 @@ class DashboardPage {
       link('/admin/delegation', t.html('consoleDashboard.link.delegation')) +
       ' ' + t.html('consoleDashboard.not.delegateB')) +
       kit.bullet(t.html('consoleDashboard.not.attestA') + ' ' +
-      link('/admin/spiffe', 'SPIFFE') + ' ' +
+      link('/admin/cert-issuance#cert-spiffe-overview', 'SPIFFE') + ' ' +
       t.html('consoleDashboard.not.attestB')) +
       // `{id}` in the SCIM path is a literal brace, which no message may
       // hold, so the path stays in code between two messages.

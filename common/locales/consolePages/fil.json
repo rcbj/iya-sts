@@ -10,6 +10,7 @@
   "title.attribute-sources": "Mga pinagmumulan ng attribute",
   "title.authorization-servers": "Mga authorization server",
   "title.caches": "Mga cache",
+  "title.cert-issuance": "Pag-issue ng certificate",
   "title.audit": "Audit log",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "Mga CAEP session — isang session",

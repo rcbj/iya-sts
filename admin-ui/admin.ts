@@ -934,15 +934,15 @@ void roles;
 //     group's pages into the section that holds it. `hidden` keeps a direct
 //     destination in NAV for trails and settings ownership, but leaves it out
 //     of the sidebar and `consoleJson().pages`.
-//   * A GROUP MAY HOLD A GROUP, AND ONE DOES (2026-10-01, rcbj's ask):
-//     Cert issuance › SPIFFE, the four SPIFFE pages under a heading of their
-//     own inside the certificate group. It was "nesting stops here" until
-//     then, on the argument that a fourth level needs its own breadcrumb —
-//     and it does not, for the first rule's reason: a group is not a crumb,
-//     so the trail is the same at any depth. `groupPages()` is the one walk
-//     that flattens every depth; the sidebar, the guide and the realm
-//     administrator's filter each recurse. Keep it to that one case unless a
-//     heading passes the group test on its own.
+//   * A GROUP MAY HOLD A GROUP (2026-10-01, rcbj's ask), and none does
+//     since 2026-10-12: the one case, Cert issuance › SPIFFE, became the
+//     SPIFFE tab of `/admin/cert-issuance`, its four pages sub-tabs. It was
+//     "nesting stops here" until then, on the argument that a fourth level
+//     needs its own breadcrumb — and it does not, for the first rule's
+//     reason: a group is not a crumb, so the trail is the same at any depth.
+//     `groupPages()` is the one walk that flattens every depth; the sidebar,
+//     the guide and the realm administrator's filter each recurse. The walk
+//     stays for the next heading that passes the group test on its own.
 //
 // ONE PLACEMENT IN HERE IS A JUDGEMENT RATHER THAN AN OBVIOUS FACT, and it is
 // worth knowing which. `Credential claims` (`/admin/vc`) is the OID4VCI
@@ -1286,86 +1286,29 @@ const SECTIONS = [
                'page are built by one encoder.' },
       // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
       // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
-      // asks the certificate authority above for a certificate. It was the
-      // three enrollment protocols, with SPIFFE a group of its own beneath
-      // them; SPIFFE is IN it now, because an X509-SVID is a certificate this
-      // realm's SPIFFE Issuing CA issues (`common/pki.js`) and a reader who
-      // has just read PKI is looking for every way this service hands one
-      // out, not for three of the four. Each page is still drawn by its own
-      // family module (acme/, est/, scep/, spiffe/); the three enrollment
-      // pages have a Monitoring twin, grouped there under the same heading.
-      { title: 'Cert issuance',
-        what: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
-              'certificate authority. The three enrollment protocols issue ' +
-              'to the person or application that authenticated — or, for a ' +
-              'holder of Admin Write, to any entry in the realm — and keep ' +
-              'every certificate on the entry it names; SPIFFE issues an ' +
-              'X509-SVID to a WORKLOAD, against a registration entry rather ' +
-              'than a directory identity.',
-        items: [
-          // ===== ACME section row (acme/acme_admin.ts) =====
-          { path: '/admin/acme', label: 'ACME',
-            blurb: 'Automatic Certificate Management Environment (RFC 8555): ' +
-                   'the directory, accounts bound by External Account ' +
-                   'Binding, orders, pre-validated authorizations and ' +
-                   'revocation, issuing from this realm\'s ACME Issuing CA.' },
-          // ===== EST section row (est/est_admin.ts) =====
-          { path: '/admin/est', label: 'EST',
-            blurb: 'Enrollment over Secure Transport (RFC 7030): cacerts, ' +
-                   'simpleenroll, simplereenroll, serverkeygen and csrattrs, ' +
-                   'authenticated by a password, a client secret or a ' +
-                   'certificate this realm issued.' },
-          // ===== SCEP section row (scep/scep_admin.ts) =====
-          { path: '/admin/scep', label: 'SCEP',
-            blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
-                   'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
-                   'certificate, and single-use challenge passwords issued ' +
-                   'for one entry and one profile.' },
-          // ===== SPIFFE's four pages (spiffe/spiffe_server.ts) =====
-          // A GROUP INSIDE THE GROUP (2026-10-01, rcbj's ask): moving SPIFFE
-          // into Cert issuance on 2026-09-22 dropped its own heading, and
-          // four pages — `Registration entries`, `Agents`, `Brokers` among
-          // them — then sat beside ACME, EST and SCEP reading as more
-          // enrollment protocols. The heading names a family the pages under
-          // it are aspects of, the test any group passes.
-          { title: 'SPIFFE',
-            what: 'Workload identity: the trust domain, the entries that ' +
-                  'decide what a workload gets, the agents that ask for it ' +
-                  'and the brokers that ask on a workload\'s behalf.',
-            items: [
-            { path: '/admin/spiffe', label: 'SPIFFE',
-              blurb: 'The trust domain, the signing authority behind every ' +
-                     'X509-SVID and JWT-SVID, the four sockets the Workload ' +
-                     'API and the SPIRE Server API answer on, and how a ' +
-                     'caller at the Workload API is identified — the ' +
-                     '<code>transport:</code>, <code>endpoint:</code> and ' +
-                     '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                     'one is believed. A caller on the Unix socket is ' +
-                     'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
-                     'not; an agent is attested by its node attestor.' },
-            { path: '/admin/spiffe/entries', label: 'Registration entries',
-              blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
-                     'issued against that entry carries. The store is the ' +
-                     'embedded directory under ' +
-                     '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
-                     '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
-                     '<code>BatchUpdateEntry</code> are three doors onto one ' +
-                     'entry, and nothing caches it — a change takes effect ' +
-                     'on the next SVID.' },
-            { path: '/admin/spiffe/agents', label: 'Agents',
-              blurb: 'Every agent that has attested, with what it was given ' +
-                     'and when. These entries are a RECORD rather than ' +
-                     'configuration — this service wrote all of it when the ' +
-                     'agent attested — which is why nothing on an agent is ' +
-                     'editable and the ban is the only control.' },
-            { path: '/admin/spiffe/brokers', label: 'Brokers',
-              blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
-                     'and meshes that ask for a workload\'s SVIDs by ' +
-                     'referencing it — and which kinds of reference each may ' +
-                     'use. The list is <code>spiffe.brokers</code>, read on ' +
-                     'every call.' },
-            ] },
-        ] },
+      // asks the certificate authority above for a certificate — ACME, EST,
+      // SCEP and SPIFFE, because an X509-SVID is a certificate this realm's
+      // SPIFFE Issuing CA issues (`common/pki.js`) and a reader who has just
+      // read PKI is looking for every way this service hands one out.
+      //
+      // ONE PAGE OF TABS SINCE 2026-10-12 (rcbj's ask), as OAuth, SAML, VC,
+      // XACML, SSF and Kerberos became: it was a group of three pages and a
+      // nested SPIFFE group of four. Metadata is first and lists every
+      // endpoint of the four; ACME, EST and SCEP are a tab each; SPIFFE is
+      // one tab whose four former pages are sub-tabs. Each tab is still
+      // drawn by its own family's renderer from its own operation
+      // (`admin-ui/web_pages.ts` composes them), and the three enrollment
+      // protocols keep their Monitoring twins, grouped there under the same
+      // heading.
+      { path: '/admin/cert-issuance', label: 'Cert issuance',
+        blurb: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
+               'certificate authority. Metadata lists every endpoint; ACME ' +
+               '(RFC 8555), EST (RFC 7030) and SCEP (RFC 8894) have a tab ' +
+               'each, issuing to the person or application that ' +
+               'authenticated; the SPIFFE tab holds the trust domain, the ' +
+               'registration entries, the attested agents and the brokers ' +
+               'as sub-tabs, issuing an X509-SVID to a WORKLOAD against a ' +
+               'registration entry rather than a directory identity.' },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
                'regenerated on every start, and what this service makes of a ' +
@@ -2793,6 +2736,15 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
   return 'ufg-' + group.id;
 }));
 
+// PROTOCOLS → CERT ISSUANCE AS TABS (rcbj, 2026-10-12): Metadata and one
+// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page.
+// `admin-ui/web_pages.ts` draws them; the stylesheet needs the ids to mark
+// the tab being read.
+const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+  'cert-tab-scep', 'cert-tab-spiffe'];
+const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
+  'cert-spiffe-agents', 'cert-spiffe-brokers'];
+
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
   // (#361): `{ at, rows, error? }`, or null in single-cell mode.
@@ -3020,7 +2972,8 @@ class AdminConsole {
 
   // Every PAGE in one section, in sidebar order, with a group's pages spliced
   // in where the group sits — and a group inside a group spliced in the same
-  // way (Cert issuance › SPIFFE, 2026-10-01). See the note above SECTIONS.
+  // way (Cert issuance › SPIFFE was the case, 2026-10-01 to 2026-10-12).
+  // See the note above SECTIONS.
   /**
    * Lists every page in one section, in sidebar order, groups flattened.
    *
@@ -3321,7 +3274,7 @@ class AdminConsole {
     const open = this.groupPages(item.items).filter(function (page) {
       return page.path === active;
     }).length > 0;
-    // A row of a group may itself be a group (Cert issuance › SPIFFE), so
+    // A row of a group may itself be a group (none is since 2026-10-12), so
     // each row is drawn by this method again rather than by navLink().
     const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
       '<p class="navsub" title="' + this.esc(item.what) + '">' +
@@ -4533,9 +4486,14 @@ class AdminConsole {
        'vc-tab-claims', 'vc-tab-status', 'vc-tab-oid4vp',
        'vc-tab-verifier-request', 'xacml-tab-metadata',
        'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
-       'xacml-tab-peps', 'xacml-tab-decide']).map(function (id) {
+       'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
+       'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
+       'kerberos-tab-metadata', 'kerberos-tab-settings',
+       'kerberos-tab-claims', 'kerberos-tab-principals'],
+      CERT_TAB_IDS, CERT_SUB_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
-          USER_SUB_TAB_IDS.indexOf(id) >= 0;
+          USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
+          CERT_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
@@ -8829,9 +8787,9 @@ const SETTING_HOMES = [
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
-  { group: 'ACME', pages: ['/admin/acme'] },
-  { group: 'EST', pages: ['/admin/est'] },
-  { group: 'SCEP', pages: ['/admin/scep'] },
+  { group: 'ACME', pages: ['/admin/cert-issuance'] },
+  { group: 'EST', pages: ['/admin/cert-issuance'] },
+  { group: 'SCEP', pages: ['/admin/cert-issuance'] },
   { group: 'WebAuthn', pages: ['/admin/webauthn'] },
   // THE THIRD (2026-09-10), and it is a mechanism like the two above it rather
   // than a policy about them — which is why it gets a group and a page of its
@@ -8853,7 +8811,7 @@ const SETTING_HOMES = [
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },
   { group: 'Logout', pages: ['/admin/logout'] },
-  { group: 'SPIFFE', pages: ['/admin/spiffe'] }
+  { group: 'SPIFFE', pages: ['/admin/cert-issuance'] }
 ];
 
 // Kept, not just logged: /admin/config renders it. A line in a log that scrolls
@@ -10488,7 +10446,8 @@ const PROTOCOL_SETTINGS_PAGES = [
                 'posture'],
             ['/tls/trust', 'the certificate, to trust it'],
             ['/tls/forwarded', 'what a proxy said about the connection'],
-            ['/admin/spiffe', 'the one place a certificate authenticates']] }
+            ['/admin/cert-issuance#cert-spiffe-overview',
+             'the one place a certificate authenticates']] }
 ];
 
 

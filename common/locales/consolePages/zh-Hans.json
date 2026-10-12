@@ -10,6 +10,7 @@
   "title.attribute-sources": "属性来源",
   "title.authorization-servers": "授权服务器",
   "title.caches": "缓存",
+  "title.cert-issuance": "证书签发",
   "title.audit": "审计日志",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP 会话——单个会话",
