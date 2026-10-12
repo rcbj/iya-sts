@@ -4482,7 +4482,7 @@ class AdminApi {
           // The feed's client, which the gate verified and left on the
           // response; '' where the gate is off.
           const result = devicesAdmin.mdmFeed(parseBody(req),
-            String(res.locals.apiClientId || ''), 'mdm');
+            String(res.locals.apiClientId || ''));
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) ||
                                  'STS-DEVICE-0007');
