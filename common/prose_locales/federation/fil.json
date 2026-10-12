@@ -228,8 +228,8 @@
     "text": "ANG SIGNING CERTIFICATE NG PARTNER, base64 DER — parehong baybay na dala ng ds:X509Certificate at pareho sa ginagamit ng samlSigningCertificate sa isang application entry, kaya iisa ang baybay ng isang certificate sa buong serbisyong ito. Ito ang pinagve-verify-an ng bawat SAML at WS-Federation assertion, at ito ang nag-iisang attribute na nakatayo sa pagitan ng serbisyong ito at ng isang endpoint na mapag-a-assert-an ng kahit sino ng kahit ano."
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "ANG client_id NG SERBISYONG ITO SA PARTNER. Atin, na-issue nila — huwag ipagkamali sa oauthClientId sa isang application entry, na id ng isang mock client dito."
+    "en": "d1b0b114250b58b6",
+    "text": "ANG client_id NG SERBISYONG ITO SA PARTNER. Atin, na-issue nila — huwag ipagkamali sa oauthClientId sa isang application entry, na id ng isang client dito."
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

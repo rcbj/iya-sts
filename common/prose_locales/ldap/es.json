@@ -160,8 +160,8 @@
     "text": "Verificador OpenID4VP"
   },
   "applications.kinds.oid4vp-verifier.what": {
-    "en": "d233da27ee32a17e",
-    "text": "El client_id que presenta el Verifier simulado en una Authorization Request."
+    "en": "ecba6c8462d69614",
+    "text": "El client_id que presenta el Verifier de este servicio en una Authorization Request."
   },
   "applications.kinds.federation-identity-provider.label": {
     "en": "3f6b9e4e19beb32d",
@@ -476,8 +476,8 @@
     "text": "EL CLIENT_ID, y el atributo identificador de tres familias: una parte que confía OpenID Connect ES un cliente OAuth, y una billetera que recoge una credencial en el emisor OpenID4VCI se autentica como uno, así que las tres declaran su nombre aquí en lugar de en tres atributos que serían tres formas de escribir un mismo hecho. Normalmente igual a appIdentifier, que es lo que escribe un avistamiento de protocolo; un SEGUNDO valor es un client_id al que esta aplicación también responde — un id por entorno — y es la razón por la que esto se acumula en lugar de asignarse. Ausente en una entrada para la que no se ha declarado ninguna familia OAuth."
   },
   "applications.schema.attributes.oauthAudience.what": {
-    "en": "b498dbc0da8ba7a9",
-    "text": "LA AUDIENCIA A LA QUE RESPONDE ESTA APLICACIÓN — el `aud` que lleva un token de acceso dirigido a ella, y lo que un cliente pone en el `audience` (o `resource`) de RFC 8693 sección 2.1 cuando intercambia un token para llegar a esta aplicación. Es la forma OAuth de un hecho que otras tres familias de aquí ya registran con sus propios nombres: `wstrustAppliesTo` es lo mismo en un RequestSecurityToken y `samlEntityId` es lo mismo en la AudienceRestriction de una aserción, y un atributo que contuviera los tres sería una cadena que tendría que significar lo que pidiera el último protocolo.\n\nEs DECLARADO — nadie presenta una audiencia como su propio nombre, así que nada aquí lo escribe y no puede derivarse — y es un URI y no un client_id porque eso es una audiencia: el recurso, no el cliente que lo llama. Varios valores es el caso habitual (un nombre de host por entorno), por eso se acumula.\n\n**SE LEE, LO QUE LO CONVIERTE EN LA EXCEPCIÓN** entre los atributos de declaración que tiene al lado. El intercambio de tokens BUSCA aquí una `audience` — forAudience() — para que una delegación registrada para `https://esb1.example.com` nombre la aplicación `esb1` en /admin/delegation y en su dibujo, en lugar de dibujar un recuadro para una URL que nada más en el registro menciona. Es una BÚSQUEDA y no un permiso: una audiencia que nadie registró se intercambia exactamente como antes y se registra textualmente, porque un simulador que la rechazara eliminaría un caso de prueba en lugar de agregar uno."
+    "en": "85845f64442f584e",
+    "text": "LA AUDIENCIA A LA QUE RESPONDE ESTA APLICACIÓN — el `aud` que lleva un token de acceso dirigido a ella, y lo que un cliente pone en el `audience` (o `resource`) de RFC 8693 sección 2.1 cuando intercambia un token para llegar a esta aplicación. Es la forma OAuth de un hecho que otras tres familias de aquí ya registran con sus propios nombres: `wstrustAppliesTo` es lo mismo en un RequestSecurityToken y `samlEntityId` es lo mismo en la AudienceRestriction de una aserción, y un atributo que contuviera los tres sería una cadena que tendría que significar lo que pidiera el último protocolo.\n\nEs DECLARADO — nadie presenta una audiencia como su propio nombre, así que nada aquí lo escribe y no puede derivarse — y es un URI y no un client_id porque eso es una audiencia: el recurso, no el cliente que lo llama. Varios valores es el caso habitual (un nombre de host por entorno), por eso se acumula.\n\n**SE LEE, LO QUE LO CONVIERTE EN LA EXCEPCIÓN** entre los atributos de declaración que tiene al lado. El intercambio de tokens BUSCA aquí una `audience` — forAudience() — para que una delegación registrada para `https://esb1.example.com` nombre la aplicación `esb1` en /admin/delegation y en su dibujo, en lugar de dibujar un recuadro para una URL que nada más en el registro menciona. Es una BÚSQUEDA y no un permiso: una audiencia que nadie registró se intercambia exactamente como antes y se registra textualmente, porque un servicio que la rechazara eliminaría un caso de prueba en lugar de agregar uno."
   },
   "applications.schema.attributes.oauthClientSecret.what": {
     "en": "3acdc90938720b6b",
@@ -1144,8 +1144,8 @@
     "text": "EL WTREALM de una solicitud wsignin1.0 (sección 13.2.1) — el atributo identificador de WS-Federation. Se acumula, por la razón por la que lo hace todo identificador de aquí."
   },
   "applications.schema.attributes.wsfedReplyUrl.what": {
-    "en": "b68a4bfe89fb7da0",
-    "text": "ADONDE SE ENVÍA DE VUELTA UNA RESPUESTA DE INICIO DE SESIÓN para esta aplicación: el `wreply` de la sección 13.2.1, el URI de redirección de WS-Federation. Se escribía en samlAssertionConsumerService hasta el 2026-08-25, lo que ponía un wreply en el atributo que las páginas SAML leen para un assertion consumer service y para el respaldo de Single Logout — un atributo con las direcciones de retorno de dos protocolos, de modo que una aplicación WS-Federation parecía tener un ACS de SAML que nunca había nombrado. Dos hechos, dos atributos. Como el de SAML de al lado, SOLO SE COMPRUEBA EN MODO PRODUCTO: el modo desarrollo no rechaza ningún wreply, porque una simulación que rechazara eliminaría un caso de prueba en lugar de añadirlo; el modo producto solo envía a una dirección de esta lista y un avistamiento nunca añade una. Un wreply que registró el modo desarrollo se marca en appReturnAddressObserved y el modo producto lo rechaza hasta que se confirme; los valores registrados antes de que existiera esa marca no llevan ninguna y siguen necesitando revisión antes de pasar un dominio a producto."
+    "en": "1d6376f1797ef43c",
+    "text": "ADONDE SE ENVÍA DE VUELTA UNA RESPUESTA DE INICIO DE SESIÓN para esta aplicación: el `wreply` de la sección 13.2.1, el URI de redirección de WS-Federation. Se escribía en samlAssertionConsumerService hasta el 2026-08-25, lo que ponía un wreply en el atributo que las páginas SAML leen para un assertion consumer service y para el respaldo de Single Logout — un atributo con las direcciones de retorno de dos protocolos, de modo que una aplicación WS-Federation parecía tener un ACS de SAML que nunca había nombrado. Dos hechos, dos atributos. Como el de SAML de al lado, SOLO SE COMPRUEBA EN MODO PRODUCTO: el modo desarrollo no rechaza ningún wreply, porque un servicio que rechazara eliminaría un caso de prueba en lugar de añadirlo; el modo producto solo envía a una dirección de esta lista y un avistamiento nunca añade una. Un wreply que registró el modo desarrollo se marca en appReturnAddressObserved y el modo producto lo rechaza hasta que se confirme; los valores registrados antes de que existiera esa marca no llevan ninguna y siguen necesitando revisión antes de pasar un dominio a producto."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1208,8 +1208,8 @@
     "text": "El token de acceso de registro de RFC 7592, que es lo que protege las operaciones de lectura, actualización y eliminación sobre este cliente. Sellado como oauthClientSecret dondequiera que el proceso tenga una clave de cifrado de claves duradera (desde el 2026-10-01), y nunca escrito en el registro de auditoría."
   },
   "applications.schema.attributes.oid4vpClientId.what": {
-    "en": "d40d3c0b11b45687",
-    "text": "EL CLIENT_ID DEL VERIFICADOR en una Authorization Request que pide una presentación — el atributo identificador de OpenID4VP. El propio verificador simulado de este servicio toma el suyo de la configuración (oid4vp.clientId) y no de un llamante, así que ese registro aparece la primera vez que se verifica una presentación; un valor declarado aquí es un verificador EXTERNO que alguien está configurando."
+    "en": "7254425d22df2918",
+    "text": "EL CLIENT_ID DEL VERIFICADOR en una Authorization Request que pide una presentación — el atributo identificador de OpenID4VP. El propio verificador de este servicio toma el suyo de la configuración (oid4vp.clientId) y no de un llamante, así que ese registro aparece la primera vez que se verifica una presentación; un valor declarado aquí es un verificador EXTERNO que alguien está configurando."
   },
   "applications.schema.attributes.federationPartnerId.what": {
     "en": "6b7f63d65cdd8229",

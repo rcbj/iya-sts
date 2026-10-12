@@ -308,8 +308,8 @@
     "text": "partial: apat na block cipher at dalawang key transport, isang element ang winawrap sa bawat pagkakataon. Hindi ito ang vendored na implementation at sadyang exception iyon — byte-compatible na ang output ng dalawa, at ang mayroon ito na wala sa isa ay ang DIAGNOSIS."
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "Bawat mensaheng sadyang sinasabi nito nang malakas: HINDI authenticated ang dalawang CBC cipher at sira ang `rsa-1_5` dahil sa Bleichenbacher. Parehong inaalok ang mga ito dahil hinihingi ng mga totoong service provider, at ang mock na nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas."
+    "en": "88fff06d7d7b1664",
+    "text": "Bawat mensaheng sadyang sinasabi nito nang malakas: HINDI authenticated ang dalawang CBC cipher at sira ang `rsa-1_5` dahil sa Bleichenbacher. Parehong inaalok ang mga ito dahil hinihingi ng mga totoong service provider, at ang serbisyong nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas."
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "KRITIKAL ANG EXCLUSIVE AT ITO ANG DEFAULT SAANMAN DITO. Pinipirmahan nang hiwalay ang isang assertion at pagkatapos ay isinisingit sa loob ng isang RSTR, Response o `wresult` na nagdedeklara ng sarili nitong mga prefix, kaya hihilahin ng INCLUSIVE c14n ang mga deklarasyong iyon ng ninuno papasok sa digest sa oras ng verification — at mabibigo ang signature para sa bawat relying party habang perpektong nagve-verify dito, na siyang pinakamasamang uri ng bug na hahabulin."
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock, at ito ang row na dapat basahin bago humingi ng \"WS-Integrity\" o \"WS-Encryption\" — wala sa dalawa ang dokumentong umiiral. Ang WSS ay iisang specification na ang integrity na kalahati ay XML Signature sa SOAP Body at Timestamp sa loob ng isang `<wsse:Security>` header at ang confidentiality na kalahati ay XML Encryption na inilalapat sa parehong paraan. WALA SA DALAWA ANG GINAGAWA NG SERBISYONG ITO. Wala itong pinipirmahang SOAP envelope, walang ine-encrypt na SOAP body, walang ginagawang Timestamp at walang vine-verify na message-level signature sa isang request."
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal, at ito ang row na dapat basahin bago humingi ng \"WS-Integrity\" o \"WS-Encryption\" — wala sa dalawa ang dokumentong umiiral. Ang WSS ay iisang specification na ang integrity na kalahati ay XML Signature sa SOAP Body at Timestamp sa loob ng isang `<wsse:Security>` header at ang confidentiality na kalahati ay XML Encryption na inilalapat sa parehong paraan. WALA SA DALAWA ANG GINAGAWA NG SERBISYONG ITO. Wala itong pinipirmahang SOAP envelope, walang ine-encrypt na SOAP body, walang ginagawang Timestamp at walang vine-verify na message-level signature sa isang request."
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "Ang CA key ay sa hierarchy, pinipili sa /admin/pki (`pki.keyAlgorithm`, RSA 2048 bilang default; mas gusto ng SPIFFE Issuing CA ang EC P-256); RSA 2048 ang signing key, at ang TLS certificate ay anumang hingin ng `tls.certificateAlgorithms`. Ang `spiffe.x509KeyType` ang nagpapasya ng key sa bawat SVID. ANG SUBJECTALTNAME ANG TANGING LUGAR NG MGA PANGALAN sa TLS certificate — sinabi na ng RFC 6125 mula 2011 na binabalewala ang CN."
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock: ang mga default ng OpenSSL ng node, maliban kung saan pinakikitid ng dalawang setting ang mga ito sa LDAPS 636 at sa main port — `tls.minVersion` (TLS 1.2 bilang default) at `tls.ciphers` (ang listahan ng node kapag walang laman). Walang piniling curve ang serbisyong ito; ang iba pang kino-configure nito ay kung aling mga socket ang TLS at kung aling certificate ang sine-serve ng mga ito."
+    "en": "33822c9691deb784",
+    "text": "minimal: ang mga default ng OpenSSL ng node, maliban kung saan pinakikitid ng dalawang setting ang mga ito sa LDAPS 636 at sa main port — `tls.minVersion` (TLS 1.2 bilang default) at `tls.ciphers` (ang listahan ng node kapag walang laman). Walang piniling curve ang serbisyong ito; ang iba pang kino-configure nito ay kung aling mga socket ang TLS at kung aling certificate ang sine-serve ng mga ito."
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "Pagkakakilanlan ng SPIFFE SVID"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "Ang `kid` ay nagpapangalan ng KEY at samakatuwid ay DERIVED mula sa sariling public material ng key. Constant ito noon, kaya dalawang instance ng mock na ito ang naglathala ng iisang pangalan para sa dalawang magkaibang key — eksaktong tinutugma ng verifier ang kid, sinusubukan ang key na iyon, at nag-uulat ng masamang signature."
+    "en": "c49939c25a7e8ccc",
+    "text": "Ang `kid` ay nagpapangalan ng KEY at samakatuwid ay DERIVED mula sa sariling public material ng key. Constant ito noon, kaya dalawang instance ng serbisyong ito ang naglathala ng iisang pangalan para sa dalawang magkaibang key — eksaktong tinutugma ng verifier ang kid, sinusubukan ang key na iyon, at nag-uulat ng masamang signature."
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

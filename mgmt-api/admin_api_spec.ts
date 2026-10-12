@@ -1645,7 +1645,7 @@ const SCHEMAS = {
         'again.', {}),
       standards: { type: 'array', items: openObject(
         'One higher-level envelope, with an honest coverage note. Every ' +
-        '`coverage` starts `full`, `partial` or `mock` and says what is ' +
+        '`coverage` starts `full`, `partial` or `minimal` and says what is ' +
         'missing.', {
           key: { type: 'string' },
           name: { type: 'string' },
@@ -3413,7 +3413,7 @@ const SCHEMAS = {
                      'and logged, not refused: the directory is a vocabulary ' +
                      'rather than a constraint here, and an identity ' +
                      'provider that stopped issuing because somebody typed ' +
-                     '"yes" would be a mock that stopped answering.',
+                     '"yes" would be a service that stopped answering.',
         items: openObject('One overridable setting.', {
           setting: { type: 'string',
                      description: 'The appconfig key, as in GET /config.' },

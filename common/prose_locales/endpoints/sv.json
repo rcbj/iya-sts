@@ -1672,8 +1672,8 @@
     "text": "Callback-slutpunkt för OpenID Provider Commands"
   },
   "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Kommandoslutpunkt för låtsad förlitande part (inte en specifikationsslutpunkt)"
+    "en": "f433c19afa03eaac",
+    "text": "Kommandoslutpunkt för demonstrationens förlitande part (inte en specifikationsslutpunkt)"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

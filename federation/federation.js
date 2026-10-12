@@ -1031,7 +1031,7 @@ const SCHEMA = {
       from: 'this register',
       what: 'THIS SERVICE\'S client_id AT THE PARTNER. Ours, issued by them ' +
             '— not to be confused with an oauthClientId on an application ' +
-            'entry, which is a mock client\'s id here.' },
+            'entry, which is a client\'s id here.' },
     { name: 'fedClientSecret', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
       what: 'THIS SERVICE\'S SECRET AT THE PARTNER, in the clear, in a ' +

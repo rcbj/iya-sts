@@ -314,7 +314,7 @@ import serverProse = require('../common/server_prose');
 // in its `envelopes` — so a family naming an envelope that is not here is
 // reported by `driftReport()` rather than rendering as a dead link.
 //
-// `coverage` MUST START `full`, `partial` OR `mock`, which is the rule
+// `coverage` MUST START `full`, `partial` OR `minimal`, which is the rule
 // `sts_metadata.js` states for its own specification list and which is worth
 // more here than there: this is a page about cryptography, and a page about
 // cryptography that overstates what it implements is actively dangerous to
@@ -449,7 +449,8 @@ const STANDARDS = [
     what: 'Every message this deliberately says out loud: the two CBC ' +
           'ciphers are NOT authenticated and `rsa-1_5` is broken by ' +
           'Bleichenbacher. Both are offered because real service providers ' +
-          'require them and a mock that offered only the safe choice could ' +
+          'require them and a service that offered only the safe choice ' +
+          'could ' +
           'not be used to show what the unsafe one does.' },
   { key: 'c14n', name: 'Canonical XML',
     specs: ['Canonical XML 1.0', 'Exclusive XML Canonicalization 1.0'],
@@ -468,7 +469,7 @@ const STANDARDS = [
           'shape of bug to chase.' },
   { key: 'wss', name: 'WS-Security (SOAP Message Security)',
     specs: ['WS-Security 1.1 (OASIS)', 'WSS SAML Token Profile 1.1'],
-    coverage: 'mock, and this row is the one to read before asking for ' +
+    coverage: 'minimal, and this row is the one to read before asking for ' +
               '"WS-Integrity" or "WS-Encryption" — neither is a document ' +
               'that exists. WSS is one specification whose integrity half is ' +
               'XML Signature over the SOAP Body and Timestamp inside a ' +
@@ -538,7 +539,7 @@ const STANDARDS = [
     // 2026-09-12, when `tls.minVersion` and `tls.ciphers` arrived
     // (`ldap/CLAUDE.md`, *THE SOCKETS*); corrected 2026-09-17 (#70), with the
     // debugger listener added to the sockets that share the certificate.
-    coverage: 'mock: node\'s OpenSSL defaults, except where two settings ' +
+    coverage: 'minimal: node\'s OpenSSL defaults, except where two settings ' +
               'narrow them on LDAPS 636 and the main port — ' +
               '`tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` ' +
               '(node\'s list when empty). This service chooses no curve; ' +
@@ -3475,7 +3476,7 @@ class CryptoMetadata {
         { where: 'Key identifiers (`kid`)', hash: 'SHA-256, truncated',
           what: 'A `kid` names a KEY and is therefore DERIVED from the ' +
                 'key\'s own public material. It was a constant once, so two ' +
-                'instances of this mock published one name over two ' +
+                'instances of this service published one name over two ' +
                 'different keys — a verifier matches the kid exactly, tries ' +
                 'that key, and reports a bad signature.' },
         { where: 'Kerberos string-to-key',

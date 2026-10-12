@@ -308,8 +308,8 @@
     "text": "partial：四种分组密码和两种密钥传输，一次包装一个元素。它不是引入的那份实现，这是有意的例外——两者的输出已经按字节兼容，而这一份所具备、另一份所没有的是诊断能力。"
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "这里有意明确说出的每一条信息：两种 CBC 密码不提供认证，而 `rsa-1_5` 已被 Bleichenbacher 攻破。之所以都提供，是因为真实的服务提供方要求使用它们，而一个只提供安全选项的模拟服务无法用来展示不安全选项会造成什么。"
+    "en": "88fff06d7d7b1664",
+    "text": "这里有意明确说出的每一条信息：两种 CBC 密码不提供认证，而 `rsa-1_5` 已被 Bleichenbacher 攻破。之所以都提供，是因为真实的服务提供方要求使用它们，而一个只提供安全选项的服务无法用来展示不安全选项会造成什么。"
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "排他式规范化至关重要，并且在这里处处都是默认值。断言先被独立签名，然后嵌入到声明了自身前缀的 RSTR、Response 或 `wresult` 中，因此包含式 c14n 会在验证时把这些祖先声明拉入摘要——签名随后对每个依赖方都验证失败，而在这里却验证完美，这是最难追查的一类缺陷。"
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock，在要求“WS-Integrity”或“WS-Encryption”之前应先阅读这一行——这两份文档都不存在。WSS 是一份规范，其完整性部分是在 `<wsse:Security>` 头内对 SOAP Body 和 Timestamp 进行 XML Signature，其机密性部分是以同样方式应用的 XML Encryption。本服务两者都不做。它不签名任何 SOAP 信封，不加密任何 SOAP 正文，不生成 Timestamp，也不验证请求上的任何消息级签名。"
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal，在要求“WS-Integrity”或“WS-Encryption”之前应先阅读这一行——这两份文档都不存在。WSS 是一份规范，其完整性部分是在 `<wsse:Security>` 头内对 SOAP Body 和 Timestamp 进行 XML Signature，其机密性部分是以同样方式应用的 XML Encryption。本服务两者都不做。它不签名任何 SOAP 信封，不加密任何 SOAP 正文，不生成 Timestamp，也不验证请求上的任何消息级签名。"
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "CA 密钥属于层级结构，在 /admin/pki 上选择（`pki.keyAlgorithm`，默认 RSA 2048；SPIFFE 签发 CA 优先使用 EC P-256）；签名密钥是 RSA 2048，TLS 证书则使用 `tls.certificateAlgorithms` 所要求的任何算法。`spiffe.x509KeyType` 决定每个 SVID 中的密钥。subjectAltName 是 TLS 证书上唯一存放名称的地方——RFC 6125 自 2011 年起就规定忽略 CN。"
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock：使用 node 的 OpenSSL 默认值，但在 LDAPS 636 和主端口上有两个设置对其加以收紧——`tls.minVersion`（默认 TLS 1.2）和 `tls.ciphers`（为空时使用 node 的列表）。本服务不选择曲线；它另外配置的只是哪些套接字使用 TLS 以及它们提供哪个证书。"
+    "en": "33822c9691deb784",
+    "text": "minimal：使用 node 的 OpenSSL 默认值，但在 LDAPS 636 和主端口上有两个设置对其加以收紧——`tls.minVersion`（默认 TLS 1.2）和 `tls.ciphers`（为空时使用 node 的列表）。本服务不选择曲线；它另外配置的只是哪些套接字使用 TLS 以及它们提供哪个证书。"
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "SPIFFE SVID 标识"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "`kid` 命名的是一个密钥，因此由密钥自身的公开材料派生。它曾经是常量，于是此模拟服务的两个实例在两个不同的密钥上发布了同一个名称——验证方精确匹配 kid，尝试该密钥，然后报告签名无效。"
+    "en": "c49939c25a7e8ccc",
+    "text": "`kid` 命名的是一个密钥，因此由密钥自身的公开材料派生。它曾经是常量，于是本服务的两个实例在两个不同的密钥上发布了同一个名称——验证方精确匹配 kid，尝试该密钥，然后报告签名无效。"
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

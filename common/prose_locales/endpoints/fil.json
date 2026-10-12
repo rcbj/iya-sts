@@ -1672,8 +1672,8 @@
     "text": "Callback endpoint ng OpenID Provider Commands"
   },
   "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Command endpoint ng mock relying party (hindi spec endpoint)"
+    "en": "f433c19afa03eaac",
+    "text": "Command endpoint ng demonstration relying party (hindi spec endpoint)"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

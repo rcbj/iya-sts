@@ -100,8 +100,8 @@
     "text": "Isang row bawat backend sa database na ito. Ang backend na pag-aari ng ibang role ay lumalabas bilang row na nakatago ang state at query nito, na siyang ipinapakita sa role na hindi pang-monitoring."
   },
   "postgres.probes.locks.what": {
-    "en": "9d8cff275d6437f5",
-    "text": "Mga lock na hawak at hinihintay, ayon sa mode. Ang naghihintay na lock sa isang mock ay halos palaging ang serbisyong ito na nakikipag-agawan sa sarili nito sa buong request-worker pool."
+    "en": "b7988c9a1fc05949",
+    "text": "Mga lock na hawak at hinihintay, ayon sa mode. Ang naghihintay na lock dito ay halos palaging ang serbisyong ito na nakikipag-agawan sa sarili nito sa buong request-worker pool."
   },
   "postgres.probes.bgwriter.what": {
     "en": "169cdf45721570c1",

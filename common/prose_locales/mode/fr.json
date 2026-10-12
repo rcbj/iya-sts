@@ -720,12 +720,12 @@
     "text": "Uniquement une adresse enregistrée sur l’entrée propre de l’application — et une observation n’en ajoute jamais. Une adresse encore marquée comme observée N’EST PAS enregistrée : le mode développement l’y a placée, et elle est refusée tant qu’un opérateur ne l’a pas confirmée sur la page de l’application ou avec POST /admin-api/applications/confirm-address (STS-REG-0049). Les adresses consignées avant que les observations ne soient marquées ne portent aucune marque et doivent encore être examinées avant le basculement d’un domaine. Les rappels propres à la console et au portail ne sont pas appris de l’en-tête Host d’une requête (définissez global.publicBaseUrl), et un RP ID WebAuthn qui ne correspond pas à l’hôte fait échouer la cérémonie au lieu de se rabattre sur celui-ci."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Les points de terminaison de démonstration, simulés et de contrôle de test existent"
+    "en": "47d4efed79e39044",
+    "text": "Les points de terminaison de démonstration et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "f576a305a27eb0c9",
-    "text": "Servis et listés : la partie de confiance simulée des commandes (/oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, et /xacml/protected."
+    "en": "b507467a00f40b04",
+    "text": "Servis et listés : la partie de confiance de démonstration des commandes (/oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, et /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

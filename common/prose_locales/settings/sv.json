@@ -1496,16 +1496,16 @@
     "text": "Läge"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "Vad den här tjänsten är. `development` är den mock som varje version före 2026-09-06 var: inget lösenord kontrolleras i något protokoll, en okänd användare, applikation, tjänsteprincipal eller auktoriseringsserver skapas första gången den namnges, en OAuth-klient behöver ingen hemlighet, och — med adminApi.authRequired av — är /admin-api öppet så att ett test kan styra det och så att den som inte har någon roll kan ta sig in igen. `product` kör SAMMA protokollimplementationer med tillåtandet borttaget: en uppvisad autentiseringsuppgift verifieras mot den hashade `userPassword` på personens katalogpost, varje refererat objekt måste ha skapats i förväg, varje OAuth 2.0- och OpenID Connect-applikation som deklarerat en konfidentiell metod måste autentisera med den (en publik klient hålls i stället till RFC 9700), varje inställning som bara gäller utveckling ignoreras, och /admin-api med adminApi.authRequired av kräver samma inloggning och roller som konsolen (med den på, standard i båda lägena, krävs en åtkomsttoken). Det kan sättas per förtroendesfär, så en process kan betjäna båda samtidigt. GET /admin/mode listar varje krav och säger vilket svar vart och ett får i varje läge.\n\nDET KAN ÄNDRAS UNDER KÖRNING, och ordningen spelar roll när det görs: med adminApi.authRequired av är /admin-api öppet ända fram till det ögonblick detta sätts till `product`, så skapa autentiseringsuppgifterna FÖRST och byt läge sedan. En sfär som byts utan att någon har en autentiseringsuppgift har ingen väg in — initieringen körs vid start och inte vid en ändring, avsiktligt, eftersom en tjänst som skapade en administratör varje gång en inställning ändrades vore en tjänst med en administratör som ingen bett om."
+    "en": "72d5f41058477223",
+    "text": "Vad den här tjänsten är. `development` är det som varje version före 2026-09-06 var: inget lösenord kontrolleras i något protokoll, en okänd användare, applikation, tjänsteprincipal eller auktoriseringsserver skapas första gången den namnges, en OAuth-klient behöver ingen hemlighet, och — med adminApi.authRequired av — är /admin-api öppet så att ett test kan styra det och så att den som inte har någon roll kan ta sig in igen. `product` kör SAMMA protokollimplementationer med tillåtandet borttaget: en uppvisad autentiseringsuppgift verifieras mot den hashade `userPassword` på personens katalogpost, varje refererat objekt måste ha skapats i förväg, varje OAuth 2.0- och OpenID Connect-applikation som deklarerat en konfidentiell metod måste autentisera med den (en publik klient hålls i stället till RFC 9700), varje inställning som bara gäller utveckling ignoreras, och /admin-api med adminApi.authRequired av kräver samma inloggning och roller som konsolen (med den på, standard i båda lägena, krävs en åtkomsttoken). Det kan sättas per förtroendesfär, så en process kan betjäna båda samtidigt. GET /admin/mode listar varje krav och säger vilket svar vart och ett får i varje läge.\n\nDET KAN ÄNDRAS UNDER KÖRNING, och ordningen spelar roll när det görs: med adminApi.authRequired av är /admin-api öppet ända fram till det ögonblick detta sätts till `product`, så skapa autentiseringsuppgifterna FÖRST och byt läge sedan. En sfär som byts utan att någon har en autentiseringsuppgift har ingen väg in — initieringen körs vid start och inte vid en ändring, avsiktligt, eftersom en tjänst som skapade en administratör varje gång en inställning ändrades vore en tjänst med en administratör som ingen bett om."
   },
   "global.logLevel|label": {
     "en": "886e60232b66c841",
     "text": "Loggnivå"
   },
   "global.logLevel|description": {
-    "en": "062f644ae06c5e38",
-    "text": "debug är den användbara nivån för en mock vars uppgift är att visa vad den gjorde: varje anrop till en slutpunkt, och varje token och intyg både före och efter att det signerades. En ändring här träder i kraft vid nästa rad som skrivs, UTOM i de åtta vendorade krb5_*-codecmodulerna: de är byte-identiska kopior av moderprojektets common/krb5/*-filer och kan inte få en rad för att registrera sin logger, så de behåller nivån som processen startade med. Det gäller ASN.1- och kryptospårning snarare än tjänstens redogörelse för vad den gjorde."
+    "en": "6172a46d84f39b6c",
+    "text": "debug är den användbara nivån för en tjänst vars uppgift är att visa vad den gjorde: varje anrop till en slutpunkt, och varje token och intyg både före och efter att det signerades. En ändring här träder i kraft vid nästa rad som skrivs, UTOM i de åtta vendorade krb5_*-codecmodulerna: de är byte-identiska kopior av moderprojektets common/krb5/*-filer och kan inte få en rad för att registrera sin logger, så de behåller nivån som processen startade med. Det gäller ASN.1- och kryptospårning snarare än tjänstens redogörelse för vad den gjorde."
   },
   "workers.startTimeoutMs|label": {
     "en": "d851097c61c3d64c",
@@ -4012,8 +4012,8 @@
     "text": "Prefix för federerade användarnamn"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "Sätts framför varje användarnamn som en främmande identitetsleverantör levererar, så att en federerad `alice` och den lokala `alice` är två poster. TOMT som standard, vilket betyder att de är EN post — och det är ett verkligt beslut snarare än ett standardvärde som ingen tänkt på. Tomt är rätt för en mock som riktas mot en partner för att se vad som kommer tillbaka, eftersom ett namn med prefix gör varje efterföljande token och intyg obekant. Ange något som `fed-` i samma stund som frågan är om federerade identiteter delar namnrymd med lokala, vilket är den fråga den här inställningen finns för. Det tillämpas EFTER att användarnamnet valts, så en ändring kan inte ändra VILKET inkommande värde som användes."
+    "en": "cd17a5b59a5cf957",
+    "text": "Sätts framför varje användarnamn som en främmande identitetsleverantör levererar, så att en federerad `alice` och den lokala `alice` är två poster. TOMT som standard, vilket betyder att de är EN post — och det är ett verkligt beslut snarare än ett standardvärde som ingen tänkt på. Tomt är rätt för en tjänst som riktas mot en partner för att se vad som kommer tillbaka, eftersom ett namn med prefix gör varje efterföljande token och intyg obekant. Ange något som `fed-` i samma stund som frågan är om federerade identiteter delar namnrymd med lokala, vilket är den fråga den här inställningen finns för. Det tillämpas EFTER att användarnamnet valts, så en ändring kan inte ändra VILKET inkommande värde som användes."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4044,8 +4044,8 @@
     "text": "Tillåt http:// till en partner (endast utveckling)"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "AVSTÄNGT som standard, vilket är det enda stället där den här tjänsten är striktare än en mock normalt skulle vara: det som färdas i dessa begäranden är en klienthemlighet och en auktoriseringskod, hos någon annans tjänst. PÅSLAGET godtas en http://-slutpunkt i UTVECKLINGSLÄGE, vilket federering mot en annan mock på localhost kräver, och varje sådan begäran loggas. I produktläge avvisas vanlig http oavsett vad detta anger (STS-FED-0112)."
+    "en": "e815dfe7877e359e",
+    "text": "AVSTÄNGT som standard, vilket är det enda stället där den här tjänsten är striktare än utvecklingsläget normalt är: det som färdas i dessa begäranden är en klienthemlighet och en auktoriseringskod, hos någon annans tjänst. PÅSLAGET godtas en http://-slutpunkt i UTVECKLINGSLÄGE, vilket federering mot en annan instans på localhost kräver, och varje sådan begäran loggas. I produktläge avvisas vanlig http oavsett vad detta anger (STS-FED-0112)."
   },
   "federation.outboundSkipTlsVerification|label": {
     "en": "85253ab85556bf34",
@@ -4172,8 +4172,8 @@
     "text": "OrganizationName i metadata"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "<md:OrganizationName> i /saml2/metadata och /saml11/metadata. TOMT UTELÄMNAR HELA <md:Organization>-elementet, i båda lägena, eftersom metadataschemat kräver ett namn, ett visningsnamn och en URL tillsammans och en organisation utan namn inte är någon. En produktionsdriftsättning anger sitt eget eller tömmer det; standardvärdet är produktnamnet, `sts` (det var `mock-sts` fram till 2026-09-12)."
+    "en": "86bfb411b4b415d9",
+    "text": "<md:OrganizationName> i /saml2/metadata och /saml11/metadata. TOMT UTELÄMNAR HELA <md:Organization>-elementet, i båda lägena, eftersom metadataschemat kräver ett namn, ett visningsnamn och en URL tillsammans och en organisation utan namn inte är någon. En produktionsdriftsättning anger sitt eget eller tömmer det; standardvärdet är produktnamnet, `sts`."
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -4236,16 +4236,16 @@
     "text": "Kryptera intyget"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "Slå in <saml:Assertion> i ett <saml:EncryptedAssertion> inuti Response. AVSTÄNGT som standard, eftersom det kräver ett MOTTAGARCERTIFIKAT och en tjänsteleverantör som inte har gett den här tjänsten ett inte kan läsa det som kommer tillbaka. Där inget certifikat kan hittas skickas intyget i KLARTEXT och orsaken loggas och visas på /admin/saml2 — en vägran att utfärda vore en mock som slutade svara, och att tyst skicka klartext medan en sida sade \"krypterat\" vore värre än båda. Certifikatet tas från samlEncryptionCertificate på dess post (som inläsning av dess metadata skriver), sedan dess registrerade samlSigningCertificate, sedan — endast i utvecklingsläge — det OBSERVERADE certifikatet från en signerad AuthnRequest, så att en tjänsteleverantör som signerar sina begäranden inte behöver någon konfiguration där; produktläget krypterar till ett observerat certifikat först när en operatör har bekräftat det. Intyget SIGNERAS FÖRST och krypteras sedan, vilket är den ordning varje tjänsteleverantör förväntar sig: signaturen finns inuti chiffertexten och är det som överlever dekrypteringen."
+    "en": "50d480ab245c0676",
+    "text": "Slå in <saml:Assertion> i ett <saml:EncryptedAssertion> inuti Response. AVSTÄNGT som standard, eftersom det kräver ett MOTTAGARCERTIFIKAT och en tjänsteleverantör som inte har gett den här tjänsten ett inte kan läsa det som kommer tillbaka. Där inget certifikat kan hittas skickas intyget i KLARTEXT och orsaken loggas och visas på /admin/saml2 — en vägran att utfärda vore en tjänst som slutade svara, och att tyst skicka klartext medan en sida sade \"krypterat\" vore värre än båda. Certifikatet tas från samlEncryptionCertificate på dess post (som inläsning av dess metadata skriver), sedan dess registrerade samlSigningCertificate, sedan — endast i utvecklingsläge — det OBSERVERADE certifikatet från en signerad AuthnRequest, så att en tjänsteleverantör som signerar sina begäranden inte behöver någon konfiguration där; produktläget krypterar till ett observerat certifikat först när en operatör har bekräftat det. Intyget SIGNERAS FÖRST och krypteras sedan, vilket är den ordning varje tjänsteleverantör förväntar sig: signaturen finns inuti chiffertexten och är det som överlever dekrypteringen."
   },
   "saml2.encryptionAlgorithm|label": {
     "en": "5cb576de8c785eed",
     "text": "Krypteringsalgoritm"
   },
   "saml2.encryptionAlgorithm|description": {
-    "en": "3d74e433ce34b0c5",
-    "text": "Det blockchiffer som varje krypterat element krypteras med. De två GCM-varianterna är AUTENTISERADE: en ändrad chiffertext misslyckas med sin tagg och avvisas. De två CBC-varianterna är det INTE, och det är inte en brist i den här tjänsten — det är den egenskap CBC har, verkliga tjänsteleverantörer kräver det, och en mock som bara erbjöd det säkra valet kunde inte användas för att visa vad det osäkra gör. Det den här tjänsten gör åt det vid LÄSNING är att tolka resultatet och avvisa allt som inte är välformad XML, vilket fångar den vanliga korruptionen och inte är integritet."
+    "en": "4427c176840cdf46",
+    "text": "Det blockchiffer som varje krypterat element krypteras med. De två GCM-varianterna är AUTENTISERADE: en ändrad chiffertext misslyckas med sin tagg och avvisas. De två CBC-varianterna är det INTE, och det är inte en brist i den här tjänsten — det är den egenskap CBC har, verkliga tjänsteleverantörer kräver det, och en tjänst som bara erbjöd det säkra valet kunde inte användas för att visa vad det osäkra gör. Det den här tjänsten gör åt det vid LÄSNING är att tolka resultatet och avvisa allt som inte är välformad XML, vilket fångar den vanliga korruptionen och inte är integritet."
   },
   "saml2.keyTransportAlgorithm|label": {
     "en": "5a90e136cc72666e",
@@ -4924,8 +4924,8 @@
     "text": "Algoritm som autentiseringsuppgifter signeras med"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential och /did/generates did:web-autentiseringsuppgift använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och mock-verifieraren kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med."
+    "en": "73a0a13f9f08d4aa",
+    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential och /did/generates did:web-autentiseringsuppgift använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5020,8 +5020,8 @@
     "text": "Verifierarens klient-ID"
   },
   "oid4vp.clientId|description": {
-    "en": "6052a4d1b56e8787",
-    "text": "Det client_id som den simulerade Verifiern presenterar i sin Authorization Request, och den `aud` som Key Binding JWT måste ange."
+    "en": "fad43765b51b8297",
+    "text": "Det client_id som den här tjänstens Verifier presenterar i sin Authorization Request, och den `aud` som Key Binding JWT måste ange."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
@@ -5036,8 +5036,8 @@
     "text": "Certifikathuvud för Request Object"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "Om den simulerade Verifierns signerade REQUEST OBJECT (RFC 9101, en begäran genom referens) anger certifikatkedjan för nyckeln som signerade det. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` är kedjan inbäddad, lövcertifikatet först och tjänstens Root sist, base64 DER, flera kilobyte; `both` är båda och `none` ingetdera. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängd är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
+    "en": "9bbac75884284a52",
+    "text": "Om Verifierns signerade REQUEST OBJECT (RFC 9101, en begäran genom referens) anger certifikatkedjan för nyckeln som signerade det. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, omkring hundra byte; `x5c` är kedjan inbäddad, lövcertifikatet först och tjänstens Root sist, base64 DER, flera kilobyte; `both` är båda och `none` ingetdera. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängd är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan ställas in per sfär."
   },
   "oid4vp.kbMaxAgeS|label": {
     "en": "202136566ac3cacb",
@@ -5324,8 +5324,8 @@
     "text": "Begärda anspråk"
   },
   "oid4vp.claims|description": {
-    "en": "054137dd98eeec73",
-    "text": "Den simulerade Verifierns STARTbegäran, och — det här är det som är värt att veta — målet som dess Reset återgår till. Det är inte den levande listan: /admin/vc-verifier-config äger den, och kopierar detta vid start. Att ändra det här ändrar alltså vad nästa Reset ger, och begäran på nätet först när den Reset trycks (eller POST /admin-api/verifier-request/reset anropas). Det är ett återställningsmål snarare än ett levande värde med avsikt: en driftsättning som konfigurerade detta ska få SIN lista tillbaka från Reset och inte katalogens standardvärden. Ett anspråk som den här utfärdaren inte skapar är en legitim sak att be om och är hur vägen \"inte uppfyllt\" nås."
+    "en": "4591b11de4d5e5c7",
+    "text": "Verifierns STARTbegäran, och — det här är det som är värt att veta — målet som dess Reset återgår till. Det är inte den levande listan: /admin/vc-verifier-config äger den, och kopierar detta vid start. Att ändra det här ändrar alltså vad nästa Reset ger, och begäran på nätet först när den Reset trycks (eller POST /admin-api/verifier-request/reset anropas). Det är ett återställningsmål snarare än ett levande värde med avsikt: en driftsättning som konfigurerade detta ska få SIN lista tillbaka från Reset och inte katalogens standardvärden. Ett anspråk som den här utfärdaren inte skapar är en legitim sak att be om och är hur vägen \"inte uppfyllt\" nås."
   },
   "oid4vp.presentationRequestTtlS|label": {
     "en": "1686a3d4983e6c6b",
@@ -5372,8 +5372,8 @@
     "text": "Andra betrodda intygsutfärdare (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "b23af7aea67fb69a",
-    "text": "PEM-certifikat, sammanfogade, vars nycklar den simulerade Verifiern accepterar en signatur på ett SD-JWT VC- eller jwt_vc_json-intyg från UTÖVER den här sfärens egen utfärdare. Tomt — standardvärdet — litar bara på den här utfärdaren, vilket är vad den alltid gjorde. Ett certifikat används som en NYCKEL: ingen kedja byggs, men dess återkallelse kontrolleras när det verifierar ett intyg (pki.revocationCheck, sedan 2026-09-12)."
+    "en": "60a2c73b8c2c6aec",
+    "text": "PEM-certifikat, sammanfogade, vars nycklar den här tjänstens Verifier accepterar en signatur på ett SD-JWT VC- eller jwt_vc_json-intyg från UTÖVER den här sfärens egen utfärdare. Tomt — standardvärdet — litar bara på den här utfärdaren, vilket är vad den alltid gjorde. Ett certifikat används som en NYCKEL: ingen kedja byggs, men dess återkallelse kontrolleras när det verifierar ett intyg (pki.revocationCheck, sedan 2026-09-12)."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5740,8 +5740,8 @@
     "text": "Lösenord för automatiskt skapade tjänster"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "Ett lösenord för varje tjänst som skapas vid behov, och det publiceras av samma skäl som användarlösenordet: det är det som låter en läsare dekryptera en tjänstebiljett som den här simuleringen utfärdat och läsa PAC:en i den. De KONFIGURERADE tjänstekontona behåller sina egna separata lösenord."
+    "en": "0715018c29ee708a",
+    "text": "Ett lösenord för varje tjänst som skapas vid behov, och det publiceras av samma skäl som användarlösenordet: det är det som låter en läsare dekryptera en tjänstebiljett som den här tjänsten utfärdat och läsa PAC:en i den. De KONFIGURERADE tjänstekontona behåller sina egna separata lösenord."
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -5912,8 +5912,8 @@
     "text": "Skicka s2kparams"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "Om PA-ETYPE-INFO2 bär s2kparams. Windows Server utelämnar det och den här simuleringen skickade det, vilket är den enda skillnad som det inspelade utbytet med en riktig domänkontrollant hittade; omit är därför standardvärdet och send behålls så att en klient som läser det kan provas."
+    "en": "8377aa5576df5515",
+    "text": "Om PA-ETYPE-INFO2 bär s2kparams. Windows Server utelämnar det och den här tjänsten skickade det, vilket är den enda skillnad som det inspelade utbytet med en riktig domänkontrollant hittade; omit är därför standardvärdet och send behålls så att en klient som läser det kan provas."
   },
   "ldap.port|label": {
     "en": "94902c0432b688e5",
@@ -6568,8 +6568,8 @@
     "text": "Tillåtna värdar för push-slutpunkter"
   },
   "ssf.pushAllowedHosts|description": {
-    "en": "24d1d11741ad76ed",
-    "text": "Värdnamn som den här tjänsten pushar till. TOMT BETYDER VILKEN SOM HELST, vilket är standardvärdet och den enda avsiktliga lösheten i den utgående vägen — det är det som gör detta användbart som simulering. En driftsättning som kan nås av vem som helst den inte litar på ställer in listan, och varje annan värd avvisas MED NAMN i strömmens egen logg. Värdar snarare än URL:er med avsikt: en mottagare flyttar legitimt sin slutpunktssökväg men flyttar inte legitimt till en annan värd."
+    "en": "fc66434cacb67fdc",
+    "text": "Värdnamn som den här tjänsten pushar till. TOMT BETYDER VILKEN SOM HELST, vilket är standardvärdet och den enda avsiktliga lösheten i den utgående vägen — det är det som gör detta användbart för testning. En driftsättning som kan nås av vem som helst den inte litar på ställer in listan, och varje annan värd avvisas MED NAMN i strömmens egen logg. Värdar snarare än URL:er med avsikt: en mottagare flyttar legitimt sin slutpunktssökväg men flyttar inte legitimt till en annan värd."
   },
   "ssf.pushAllowHttp|label": {
     "en": "9954d6ecb250aab1",
@@ -6700,8 +6700,8 @@
     "text": "Strömmar per mottagare"
   },
   "ssf.maxStreams|description": {
-    "en": "175775f7e47974e8",
-    "text": "Hur många strömmar en MOTTAGARE — en autentiserad ägare — får ha i en förtroendesfär. Det var per sfär fram till 2026-09-22 (#144), vilket lät en mottagare förbruka varje annan mottagares utrymme. En skapelse därutöver avvisas MED HÄNVISNING TILL DEN HÄR INSTÄLLNINGEN, vilket är poängen med att ha en gräns i en simulering över huvud taget: varje tak här är ett nåbart negativt fall som en mottagare annars inte kan prova. Den här tjänstens egna två mottagarströmmar räknas inte."
+    "en": "06c569e74cb378cd",
+    "text": "Hur många strömmar en MOTTAGARE — en autentiserad ägare — får ha i en förtroendesfär. Det var per sfär fram till 2026-09-22 (#144), vilket lät en mottagare förbruka varje annan mottagares utrymme. En skapelse därutöver avvisas MED HÄNVISNING TILL DEN HÄR INSTÄLLNINGEN, vilket är poängen med att ha en gräns här över huvud taget: varje tak här är ett nåbart negativt fall som en mottagare annars inte kan prova. Den här tjänstens egna två mottagarströmmar räknas inte."
   },
   "ssf.inactivityTimeoutS|label": {
     "en": "b6bd6443319327f2",
@@ -7636,8 +7636,8 @@
     "text": "Förtroendedomän"
   },
   "spiffe.trustDomain|description": {
-    "en": "695de04a8f35c484",
-    "text": "Den förtroendedomän som den här tjänsten är utfärdande auktoritet för: auktoritetsdelen av varje SPIFFE-ID den skapar, alltså spiffe://example.org/… som standard. GEMENER, och bara bokstäver, siffror, punkter, bindestreck och understreck — en förtroendedomän med versaler är inte ett giltigt SPIFFE-ID och är inte heller en annan stavning av den med gemener. En sfär som skapas här får SIN DOMÄN som förtroendedomän — iyasec.io — på samma sätt som den får ett eget entityID, eftersom två sfärer som delar en förtroendedomän är två utfärdande auktoriteter som gör anspråk på ett namn, och varje SVID som någon av dem skapar då blir tvetydigt. Sätt den på en sfär för att uttryckligen namnge sfärens förtroendedomän; en sfär som avsiktligt delar en annans är något som är värt att kunna bygga i en mock."
+    "en": "a87c95b882ee7e67",
+    "text": "Den förtroendedomän som den här tjänsten är utfärdande auktoritet för: auktoritetsdelen av varje SPIFFE-ID den skapar, alltså spiffe://example.org/… som standard. GEMENER, och bara bokstäver, siffror, punkter, bindestreck och understreck — en förtroendedomän med versaler är inte ett giltigt SPIFFE-ID och är inte heller en annan stavning av den med gemener. En sfär som skapas här får SIN DOMÄN som förtroendedomän — iyasec.io — på samma sätt som den får ett eget entityID, eftersom två sfärer som delar en förtroendedomän är två utfärdande auktoriteter som gör anspråk på ett namn, och varje SVID som någon av dem skapar då blir tvetydigt. Sätt den på en sfär för att uttryckligen namnge sfärens förtroendedomän; en sfär som avsiktligt delar en annans är något som är värt att kunna bygga för testning."
   },
   "spiffe.trustDomain|restartReason": {
     "en": "ebdc38f401978d5b",
@@ -8428,8 +8428,8 @@
     "text": "Hitta på en registreringspost vid första anblick"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "DET HÄR ÄR INSTÄLLNINGEN SOM GÖR DETTA TILL EN MOCK. Påslaget får en arbetslast som ber Workload API om ett SVID och inte matchar någon registreringspost en post skapad åt sig och utfärdas ett SVID ändå — ingen attestering, inga selektorer, inget kontrollerat — vilket är samma tillåtande hållning som varje annan familj här har. Avstängt nekas en oregistrerad arbetslast med PERMISSION_DENIED, vilket är vad Workload API säger och vad en verklig SPIRE-agent gör, och är det ENDA sättet att öva en klients ”jag har ingen identitet”-väg. Båda svaren är värda att ha; inget av dem är det säkra."
+    "en": "ff8fc38721bf6650",
+    "text": "DET HÄR ÄR INSTÄLLNINGEN SOM GÖR SPIFFE TILLÅTANDE. Påslaget får en arbetslast som ber Workload API om ett SVID och inte matchar någon registreringspost en post skapad åt sig och utfärdas ett SVID ändå — ingen attestering, inga selektorer, inget kontrollerat — vilket är samma tillåtande hållning som varje annan familj här har. Avstängt nekas en oregistrerad arbetslast med PERMISSION_DENIED, vilket är vad Workload API säger och vad en verklig SPIRE-agent gör, och är det ENDA sättet att öva en klients ”jag har ingen identitet”-väg. Båda svaren är värda att ha; inget av dem är det säkra."
   },
   "spiffe.requireSecurityHeader|label": {
     "en": "25778a0e30ceae29",

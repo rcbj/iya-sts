@@ -405,7 +405,8 @@ function serviceDomainsFor() {
 // (`ctx.AUTO_SERVICE_PASSWORD`), and it is PUBLISHED by GET /krb5/principals
 // for the same reason USER_PASSWORD is: a debugger whose accounts are unusable
 // without reading the source is worse than one that says what they are. It is
-// what lets a reader decrypt a service ticket this mock issued — the ticket's
+// what lets a reader decrypt a service ticket this service issued — the
+// ticket's
 // own EncTicketPart, the PAC inside it, the four signatures — which is
 // otherwise the one thing a client can never see. The CONFIGURED service
 // accounts keep their own separate passwords, so nothing about this weakens an

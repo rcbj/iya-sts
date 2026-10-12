@@ -3057,8 +3057,9 @@ const REQUIREMENTS = [
   // `demo-endpoints`' below; what is left here is a test control on a real
   // endpoint.
   { id: 'demo-endpoints',
-    what: 'The demonstration, mock and test-control endpoints exist',
-    development: 'Served and listed: the commands mock relying party ' +
+    what: 'The demonstration and test-control endpoints exist',
+    development: 'Served and listed: the commands demonstration relying ' +
+                 'party ' +
                  '(/oauth2/commands/mock-rp), the demonstration issuer and ' +
                  'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
                  '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +

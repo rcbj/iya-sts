@@ -1672,8 +1672,8 @@
     "text": "OpenID Provider Commands 回调端点"
   },
   "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "模拟依赖方命令端点（非规范端点）"
+    "en": "f433c19afa03eaac",
+    "text": "演示依赖方命令端点（非规范端点）"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

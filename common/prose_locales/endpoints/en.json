@@ -417,7 +417,7 @@
   "endpoints.route./admin-api/commands.name": "The OpenID Provider Commands console page over JSON",
   "endpoints.route./admin-api/commands/:action.name": "Send a command, or retry one",
   "endpoints.route./oauth2/commands/callback.name": "OpenID Provider Commands callback endpoint",
-  "endpoints.route./oauth2/commands/mock-rp.name": "Mock relying party command endpoint (not a spec endpoint)",
+  "endpoints.route./oauth2/commands/mock-rp.name": "Demonstration relying party command endpoint (not a spec endpoint)",
   "endpoints.route./admin-api/claim-providers.name": "The Claims Providers console page over JSON",
   "endpoints.route./admin-api/claim-providers/:action.name": "Change the Claims Provider register",
   "endpoints.route./oauth2/device_authorization.name": "Device Authorization Endpoint",

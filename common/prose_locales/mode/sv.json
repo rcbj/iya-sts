@@ -720,12 +720,12 @@
     "text": "Endast en adress registrerad på applikationens egen post — och en observation lägger aldrig till någon. En adress som fortfarande är markerad som observerad är INTE registrerad: utvecklingsläget satte den där och den vägras tills en operatör bekräftar den på applikationens sida eller med POST /admin-api/applications/confirm-address (STS-REG-0049). Adresser som registrerades innan observationer markerades saknar markering och behöver ändå granskas innan en sfär växlas. Konsolens och portalens egna callbacks lärs inte från en begärans Host-huvud (sätt global.publicBaseUrl), och ett WebAuthn RP ID som inte passar värden vägrar ceremonin i stället för att falla tillbaka på den."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
+    "en": "47d4efed79e39044",
+    "text": "Demonstrations- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "f576a305a27eb0c9",
-    "text": "Serveras och listas: den simulerade förlitande parten för kommandon (/oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, och /xacml/protected."
+    "en": "b507467a00f40b04",
+    "text": "Serveras och listas: demonstrationens förlitande part för kommandon (/oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, och /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

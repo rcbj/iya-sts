@@ -9947,7 +9947,7 @@ class AdminApi {
                          'ORDINARY settings on the realm: pass `overrides` ' +
                          'to choose your own, or unset them afterwards to go ' +
                          'back to sharing the process\'s name, which is a ' +
-                         'case worth being able to build on a mock.\n\nThe ' +
+                         'case worth being able to build for testing.\n\nThe ' +
                          'OAuth issuer is deliberately NOT seeded: it ' +
                          'defaults to naming the base URL a request arrived ' +
                          'on, and that already carries the realm prefix.',

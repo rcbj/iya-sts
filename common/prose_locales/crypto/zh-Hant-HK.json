@@ -84,8 +84,8 @@
     "text": "CA 金鑰屬於階層，於 /admin/pki 選擇（`pki.keyAlgorithm`，預設為 RSA 2048；SPIFFE Issuing CA 偏好 EC P-256）；簽章金鑰為 RSA 2048，而 TLS 證書則依 `tls.certificateAlgorithms` 的要求而定。`spiffe.x509KeyType` 決定每個 SVID 中的金鑰。在 TLS 證書上，SUBJECTALTNAME 是名稱出現的唯一位置——RFC 6125 自 2011 年起就規定 CN 會被忽略。"
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock：node 的 OpenSSL 預設值，唯在 LDAPS 636 與主要連接埠上有兩項設定將其縮限——`tls.minVersion`（預設為 TLS 1.2）與 `tls.ciphers`（空白時使用 node 的清單）。本服務不選擇曲線；它另外設定的是哪些通訊端使用 TLS，以及它們提供哪張證書。"
+    "en": "33822c9691deb784",
+    "text": "minimal：node 的 OpenSSL 預設值，唯在 LDAPS 636 與主要連接埠上有兩項設定將其縮限——`tls.minVersion`（預設為 TLS 1.2）與 `tls.ciphers`（空白時使用 node 的清單）。本服務不選擇曲線；它另外設定的是哪些通訊端使用 TLS，以及它們提供哪張證書。"
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -408,8 +408,8 @@
     "text": "WebAuthn 客戶端數據雜湊"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "`kid` 指名的是一把「金鑰」，因此由金鑰自身的公開數據「衍生」而來。它曾經是常數，因此這個模擬服務的兩個實例會以同一個名稱發布兩把不同的金鑰——驗證者會精確比對 kid、嘗試那把金鑰，然後回報簽章錯誤。"
+    "en": "c49939c25a7e8ccc",
+    "text": "`kid` 指名的是一把「金鑰」，因此由金鑰自身的公開數據「衍生」而來。它曾經是常數，因此這個服務的兩個實例會以同一個名稱發布兩把不同的金鑰——驗證者會精確比對 kid、嘗試那把金鑰，然後回報簽章錯誤。"
   },
   "crypto.hashing.weak.1.why": {
     "en": "04261c070ac406f5",

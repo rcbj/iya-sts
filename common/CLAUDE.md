@@ -11966,7 +11966,7 @@ require this one to fill their templates.
   - **The cost:** an operator-written value anywhere that exactly equals an
     endpoint name such as "Token endpoint" is translated too.
 * **A coverage note's first word stays English** (test B, and the
-  translators' validator). That word is `full`, `partial` or `mock`, and
+  translators' validator). That word is `full`, `partial` or `minimal`, and
   `tests/vendored/sts_metadata.js` reads it from the answer, as any consumer
   may.
 * **Twenty-eight namespaces in all**, every base catalog current.

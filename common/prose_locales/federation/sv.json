@@ -228,8 +228,8 @@
     "text": "PARTNERNS SIGNERINGSCERTIFIKAT, base64 DER — samma stavning som ett ds:X509Certificate bär och samma som samlSigningCertificate använder på en applikationspost, så ett certifikat har en stavning i hela den här tjänsten. Det är det som varje SAML- och WS-Federation-intygande verifieras mot, och det är det enda attribut som står mellan den här tjänsten och en slutpunkt där vem som helst kunde intyga vad som helst."
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "DEN HÄR TJÄNSTENS client_id HOS PARTNERN. Vårt, utfärdat av dem — inte att förväxla med ett oauthClientId på en applikationspost, som är en mockklients id här."
+    "en": "d1b0b114250b58b6",
+    "text": "DEN HÄR TJÄNSTENS client_id HOS PARTNERN. Vårt, utfärdat av dem — inte att förväxla med ett oauthClientId på en applikationspost, som är en klients id här."
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

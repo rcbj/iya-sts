@@ -1672,8 +1672,8 @@
     "text": "Point de terminaison de rappel des OpenID Provider Commands"
   },
   "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Point de terminaison de commande de la partie de confiance fictive (pas un point de terminaison de la spécification)"
+    "en": "f433c19afa03eaac",
+    "text": "Point de terminaison de commande de la partie de confiance de démonstration (pas un point de terminaison de la spécification)"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

@@ -410,9 +410,9 @@ function specificationsAreHonest(doc) {
     ids.add(s.id);
     // The coverage note is the honest part. "full" is allowed, but a bare word
     // is not: what is missing has to be said, or the list overstates.
-    assert.ok(/^(full|partial|mock)\b/.test(s.coverage),
+    assert.ok(/^(full|partial|minimal)\b/.test(s.coverage),
       s.id + ' should say how far it goes, starting "full", "partial" or ' +
-          '"mock": "' +
+          '"minimal": "' +
       s.coverage.slice(0, 60) + '"');
     assert.ok(s.coverage.length > 30,
       s.id + "'s coverage note should say what is and is not implemented.");

@@ -1479,7 +1479,7 @@ Also after `admin-ui/admin` for the shell and the gate.
 can hold**: the per-family prose in `FAMILIES` (what each identity service signs,
 and why) and `STANDARDS` (which document an envelope comes from, and how much of
 it is really implemented). Both follow `sts_metadata.ts`'s rule — every
-`coverage` starts `full`, `partial` or `mock` and says what is missing — and it
+`coverage` starts `full`, `partial` or `minimal` and says what is missing — and it
 is worth more here than there, because a page about cryptography that overstates
 what it implements is actively dangerous to somebody using it to learn.
 
@@ -1576,7 +1576,7 @@ A card in `sts_metadata.ts`'s `PROTOCOLS`, an entry in its `ENDPOINTS`, **and a
 row in `crypto_metadata.ts`'s `FAMILIES`**. The third is enforced:
 `tests/vendored/admin_api.js` — this repository's own — fails on the drift
 report being non-empty in either direction, on a coverage note that does not
-start `full`/`partial`/`mock`, and on any of five algorithm lists differing from
+start `full`/`partial`/`minimal`, and on any of five algorithm lists differing from
 what this service advertises in its own discovery documents. That last check is
 the one that makes "every table is derived" mean something: reading the report
 on its own says nothing, because a hand-written list is well-formed too. All

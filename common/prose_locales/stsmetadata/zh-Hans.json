@@ -88,8 +88,8 @@
     "text": "full：裸的“WWW-Authenticate: Negotiate”质询、Authorization 中的令牌，以及在 200 响应的 WWW-Authenticate 中返回的相互身份验证令牌。与真实服务器的一个差异会被明示而非隐藏：未完成的协商是按客户端地址而非连接保存的，因为 Express 不提供稳定的连接标识——这也正是真实的 SPNEGO 在连接池代理后面会失效的原因。"
   },
   "stsmetadata.specs.ms-kkdcp.coverage": {
-    "en": "0817c7f0f6f620c3",
-    "text": "mock：POST /KdcProxy 接受 KDC-PROXY-MESSAGE，并将其转发给本进程中的 KDC。之所以存在，是因为浏览器无法打开到端口 88 的原始套接字。"
+    "en": "13a7283742f4e9c5",
+    "text": "minimal：POST /KdcProxy 接受 KDC-PROXY-MESSAGE，并将其转发给本进程中的 KDC。之所以存在，是因为浏览器无法打开到端口 88 的原始套接字。"
   },
   "stsmetadata.specs.xacml30.coverage": {
     "en": "6803d7137bac3178",
@@ -124,8 +124,8 @@
     "text": "full：覆盖传输方一半：全部十四种事件类型——需要更改账户凭证、账户已清除、已禁用和已启用、标识符已更改和已回收、凭证泄露、四个选择退出事件、恢复已激活、恢复信息已更改，以及已弃用的 sessions-revoked——每种都带有第 2 节赋予它的成员。其中十一种根本没有成员，只有 credential-compromise 有一个必需成员，因此对这套词汇的大部分而言，主体就是整个消息，这就是 risc.subjectFormat 成为关键设置的原因。第 2.7 节赋予 credential-compromise 的三个声明只出现在该事件上，不出现在其他任何事件上——RISC 给出三个，而 CAEP 给其全部八种事件四个，并且没有 initiating_entity——credential_type 通过引用 CAEP 的 credential-change 来定义，因此这两个列表在此处是同一个列表，而不是两个相似的列表。两个标识符事件携带持有旧值的 email 或 phone_number 主体，这与全部三套词汇中的其他所有事件相反；其他格式的主体会在发送的同时给出警告而不是被拒绝，因为它完全可以传递，只是不正确。全部十四种都会自动触发（#146、#164），risc.autoEmit 可关闭它们：来自目录的——人员被删除、被禁用（带管理员给出的原因，未给出时则无）或被启用、标识符变动，以及标识符被回收——在另一账户于 risc.recycleWindowDays 内释放后被赋予某个账户；来自管理员的——需要更改凭证、针对重置链接的 recovery-activated、针对标记为由泄露导致的重置的 credential-compromise，以及恢复信息已更改（例如某人确认新的恢复代码时）；来自设备登记册的（#164）——设备被标记为已泄露时，针对此人设备所持有的每个凭证的 credential-compromise，以及设备被泄露或移除时已弃用的 sessions-revoked（仅当 risc.autoEmitTypes 指明它时，默认不指明）——两者都带有指明账户和设备的复合主体，这使得“该账户的每个会话”对被结束的内容而言成立；以及来自账户持有人在 /portal/signals 上的第 2.8 节选择退出变动，opt-out-effective 由调度器作业在 risc.optOutDelayHours 之后跟进。第 2.8 节的选择退出状态机得到执行：处于最终状态的账户，其事件会被抑制（risc.honourOptOut），四个选择退出事件本身除外——没有这个例外，opt-out-effective 将永远无法传递，opt-in 也永远无法让账户恢复。第 3.1 节的 Google 兼容性说明可通过 risc.googleSubjectType 复现，仅限开发模式（#181）。未覆盖：没有任何检测器能自行发现已泄露的凭证（#62）；收到的事件不会被处理（#153、#117）。管理员签发重置链接时，以及某人在 /portal/forgot-password 上请求重置链接时（#63），都会发送 recovery-activated。"
   },
   "stsmetadata.specs.rfc8936.coverage": {
-    "en": "4061de5a6411b93e",
-    "text": "partial：轮询端点应答 {sets, moreAvailable}，按配置的上限认可 maxEvents，并同时接受 ack（接收方已存储的内容）和 setErrs（接收方拒绝的内容）——后者也会清空队列，因为无法处理某事件的接收方下次也不会处理它，重新传递只会造成轮询循环。未覆盖：长轮询。returnImmediately 始终按“是”处理，这是规范所允许的，也避免了模拟实现为了什么都演示不了而保持套接字打开。"
+    "en": "f855e4a4ccfd630c",
+    "text": "partial：轮询端点应答 {sets, moreAvailable}，按配置的上限认可 maxEvents，并同时接受 ack（接收方已存储的内容）和 setErrs（接收方拒绝的内容）——后者也会清空队列，因为无法处理某事件的接收方下次也不会处理它，重新传递只会造成轮询循环。未覆盖：长轮询。returnImmediately 始终按“是”处理，这是规范所允许的，也避免了本服务为了什么都演示不了而保持套接字打开。"
   },
   "stsmetadata.specs.rfc9635.coverage": {
     "en": "bf3e5dd4be1ff6aa",
@@ -156,8 +156,8 @@
     "text": "partial：带 Data Integrity 委托证明的根能力和委托能力——默认 eddsa-jcs-2022，也可选 mldsa44-jcs-2024 或 slhdsa128-jcs-2024（后量子），或为兼容起见使用 Ed25519Signature2020，按领域设置（gnap.zcapCryptosuite）——针对本服务发布的控制器文档进行验证，使用离线文档加载器。未实现通过 HTTP 调用能力；能力改为作为 GNAP 访问令牌出示。"
   },
   "stsmetadata.specs.rfc7642.coverage": {
-    "en": "a22f2ff575b89981",
-    "text": "mock：这是需求和用例文档，不定义任何线上格式，因此其中没有可实现的内容。之所以列出它，是因为它说明了 SCIM 的用途，也因为本服务所服务的用例——身份提供方将账户推送到服务提供方的目录中——正是其第 3.1 节。"
+    "en": "ce975843eb170311",
+    "text": "minimal：这是需求和用例文档，不定义任何线上格式，因此其中没有可实现的内容。之所以列出它，是因为它说明了 SCIM 的用途，也因为本服务所服务的用例——身份提供方将账户推送到服务提供方的目录中——正是其第 3.1 节。"
   },
   "stsmetadata.specs.rfc7643.coverage": {
     "en": "068133806712eaad",
@@ -196,8 +196,8 @@
     "text": "partial：bind（简单）、unbind、add、delete、modify、modifyDN、compare 和 search，在两个监听器上提供，使用相同的处理程序和相同的存储——明文 TCP 389 和 636 上的 LDAPS（从第一个字节起即为 TLS）——根 DSE 以及结果代码 0（success）、2（protocolError）、4（sizeLimitExceeded）、11（adminLimitExceeded）、16（noSuchAttribute）、32（noSuchObject）、49（invalidCredentials）、66（notAllowedOnNonLeaf）和 68（entryAlreadyExists）在两者上都可以触发。没有 SASL，没有 StartTLS，没有控制项（因此没有分页结果和排序），没有扩展操作，也没有引荐。StartTLS 在那里被刻意提了两次：它本身就是一个扩展操作（第 4.14 节），因此“没有扩展操作”和“没有 StartTLS”是同一个事实而不是两个，而这里通往 TLS 的途径是另一个端口。每次 bind 都会成功——任何 DN、任何密码，包括匿名——唯一的例外是字面密码“invalid”，它以 LDAP_INVALID_CREDENTIALS 被拒绝，以便负面测试有可以失败的东西。这就是开发模式：在产品模式下，具名的简单 bind 会针对条目的 userPassword 进行验证，目录中没有预置人员，ldap.plainListener 可以让 389 不绑定。第 4.5.1 节和第 4.10 节将访问控制留给服务器，而在产品模式下读取确实会按身份授权（#106）：管理员读取其管辖范围，个人读取自己的条目、他人的 ldap.directoryReadableAttributes（默认无）、自己所属的组以及容器；不允许其查看的条目会像不存在的条目一样应答 noSuchObject，过滤器无法匹配其不能读取的内容，对其进行 compare 会得到 insufficientAccessRights（50），并且只有个人可以 bind。它使用 ldapjs 3.0.7 库，作为子模块固定版本且未加修改；此处编写的是处理程序。"
   },
   "stsmetadata.specs.rfc4512.coverage": {
-    "en": "50bb76d0b286f82c",
-    "text": "mock：树、根 DSE 和 namingContexts 是真实的；架构则完全不存在。不强制任何 objectClass，不按语法或匹配规则检查任何属性，也没有子架构子条目——因此条目可以携带客户端愿意发送的任何属性，而真实的目录会拒绝。仍有三条结构规则得到执行，因为缺少它们会让客户端学到错误的东西：add 需要其父条目存在，delete 需要叶条目，没有值的属性不存在。"
+    "en": "f856c6b18542f41b",
+    "text": "minimal：树、根 DSE 和 namingContexts 是真实的；架构则完全不存在。不强制任何 objectClass，不按语法或匹配规则检查任何属性，也没有子架构子条目——因此条目可以携带客户端愿意发送的任何属性，而真实的目录会拒绝。仍有三条结构规则得到执行，因为缺少它们会让客户端学到错误的东西：add 需要其父条目存在，delete 需要叶条目，没有值的属性不存在。"
   },
   "stsmetadata.specs.rfc4513.coverage": {
     "en": "e45e6b179ab6ffec",
@@ -212,8 +212,8 @@
     "text": "full：覆盖 @ldapjs/filter 所实现的内容：存在、相等、子字符串、大于等于、小于等于、近似，以及 and/or/not 组合。匹配对属性描述和值都不区分大小写，因为没有可从中选择匹配规则的架构。扩展匹配不会被求值；这种尝试会被记录到日志，而不是悄无声息地当作不匹配，因为从客户端看来，不受支持的过滤器和空目录看起来完全相同。"
   },
   "stsmetadata.specs.rfc4519.coverage": {
-    "en": "b77a3ea96cf19ef8",
-    "text": "mock：本文档是本目录所用名称的来源——cn、sn、uid、mail、givenName、member、uniqueMember，以及构建预置树所用的 groupOfNames 和 organizationalUnit 类。其中没有任何内容得到执行，这与 RFC 4512 所记录的缺失相同：member 在 groupOfNames 上是 MUST，但这里接受空组；条目可以携带这些属性中的任何一个，而无需定义它们的 objectClass；也不检查任何语法或匹配规则。memberOf 不来自本文档或任何其他文档——它是 Microsoft 和 OpenLDAP 的，在具备它的目录中由服务器维护，而这里没有任何组件维护它，因此客户端可以把它写到条目上并与组的成员关系不一致。/admin/groups 会报告这种不一致而不是隐藏它。其 applicationProcess 类是 ou=applications 下应用条目所携带的唯一已注册类：它带来 cn 和 description，而任何地方都没有针对 client_id、一组重定向 URI 或服务主体名称的标准，因此该架构的其余部分是此处发明的，并在 /admin/ldap/applications 上公布，而不是默认隐含。"
+    "en": "de15f5a667667bdb",
+    "text": "minimal：本文档是本目录所用名称的来源——cn、sn、uid、mail、givenName、member、uniqueMember，以及构建预置树所用的 groupOfNames 和 organizationalUnit 类。其中没有任何内容得到执行，这与 RFC 4512 所记录的缺失相同：member 在 groupOfNames 上是 MUST，但这里接受空组；条目可以携带这些属性中的任何一个，而无需定义它们的 objectClass；也不检查任何语法或匹配规则。memberOf 不来自本文档或任何其他文档——它是 Microsoft 和 OpenLDAP 的，在具备它的目录中由服务器维护，而这里没有任何组件维护它，因此客户端可以把它写到条目上并与组的成员关系不一致。/admin/groups 会报告这种不一致而不是隐藏它。其 applicationProcess 类是 ou=applications 下应用条目所携带的唯一已注册类：它带来 cn 和 description，而任何地方都没有针对 client_id、一组重定向 URI 或服务主体名称的标准，因此该架构的其余部分是此处发明的，并在 /admin/ldap/applications 上公布，而不是默认隐含。"
   },
   "stsmetadata.specs.rfc8446.coverage": {
     "en": "07ba142c1f4dccd1",
@@ -236,8 +236,8 @@
     "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。"
   },
   "stsmetadata.specs.wss-username.coverage": {
-    "en": "c5aef113bcfa15ab",
-    "text": "mock：在开发模式下，两个成员都存在时即接受 UsernameToken，不检查任何密码，只有字面值“invalid”会被拒绝，以便负面测试可以强制失败。在产品模式下会验证密码——人员的密码对照其经过哈希的 userPassword，应用的密码对照其客户端密钥。"
+    "en": "397e6a07a7980365",
+    "text": "minimal：在开发模式下，两个成员都存在时即接受 UsernameToken，不检查任何密码，只有字面值“invalid”会被拒绝，以便负面测试可以强制失败。在产品模式下会验证密码——人员的密码对照其经过哈希的 userPassword，应用的密码对照其客户端密钥。"
   },
   "stsmetadata.specs.saml2.coverage": {
     "en": "4130e450d1b1bdcd",
@@ -344,8 +344,8 @@
     "text": "full：每个授权服务器上的 POST /oauth2/par，对客户端进行身份验证的方式与令牌端点完全相同（因此在 RFC 9700、OAuth 2.1 和产品模式下执行，在开发模式下只做观察），接受颁发者、令牌端点和 PAR 端点作为客户端断言的受众；推送中的 request_uri 会被拒绝；推送的请求按授权端点自己的检查进行校验；`request` 对象按 RFC 9101 的要求验证并绑定到已通过身份验证的客户端，在要求签名对象的地方普通推送会被拒绝；返回 201，带一个绑定到客户端和授权服务器的 256 位 urn:ietf:params:oauth:request_uri: 引用，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 和 429；第 2.4 节针对已通过身份验证的客户端的未注册 redirect_uri 受一个设置控制（关闭）；request_uri 可在登录和同意的各个环节中使用，并在签发授权响应时被消耗，过期和重放的会以 invalid_request_uri 拒绝；全局、按客户端（注册时、控制台上和 /admin-api 上的 require_pushed_authorization_requests）以及按授权服务器的强制策略；两个元数据成员；使用 request_uri 时会再次询问客户端策略；以及推送时的 DPoP 证明会绑定授权码（RFC 9449 第 10.1 节）。在 /admin/oauth2/monitor 上计数并列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "56808a8c0f6588d3",
-    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送；资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 会被记录下来，由作为该应用的资源服务器执行。模拟之处：本服务的登录只产生三种上下文类别；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
+    "en": "77eec06ed075ef4d",
+    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送；资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 会被记录下来，由作为该应用的资源服务器执行。限制：本服务的登录只产生三种上下文类别；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -356,8 +356,8 @@
     "text": "full：覆盖其被使用的方式：cnf.jwk 将签发的凭证绑定到已证明持有的持有者密钥。"
   },
   "stsmetadata.specs.rfc9449.coverage": {
-    "en": "6f8983e239a2958e",
-    "text": "full：就模拟实现而言完整：第 4.3 节全部十二项证明检查，访问令牌和刷新令牌上的 cnf.jkt，token_type DPoP，dpop_jkt 授权请求参数（第 10 节），jti 重放检测，以及两种形式的服务器提供 nonce 握手——令牌端点的 400 use_dpop_nonce，受保护端点的带 WWW-Authenticate 的 401。nonce 默认关闭，直到 oauth2.dpopNonceRequired（按领域，通过 /admin-api/config/set）将其开启。未实现：mTLS 绑定令牌（RFC 8705），即另一种发送方约束方式；发送到 /oauth2/par 的证明会将授权码绑定到其密钥（第 10.1 节）。注意，此处无法信任外部访问令牌的 cnf，因为本颁发者不验证另一个授权服务器签名的令牌——该检查只对本服务签发的令牌才是真实的。"
+    "en": "f21c128a6ed927cb",
+    "text": "full：full：第 4.3 节全部十二项证明检查，访问令牌和刷新令牌上的 cnf.jkt，token_type DPoP，dpop_jkt 授权请求参数（第 10 节），jti 重放检测，以及两种形式的服务器提供 nonce 握手——令牌端点的 400 use_dpop_nonce，受保护端点的带 WWW-Authenticate 的 401。nonce 默认关闭，直到 oauth2.dpopNonceRequired（按领域，通过 /admin-api/config/set）将其开启。未实现：mTLS 绑定令牌（RFC 8705），即另一种发送方约束方式；发送到 /oauth2/par 的证明会将授权码绑定到其密钥（第 10.1 节）。注意，此处无法信任外部访问令牌的 cnf，因为本颁发者不验证另一个授权服务器签名的令牌——该检查只对本服务签发的令牌才是真实的。"
   },
   "stsmetadata.specs.rfc7033.coverage": {
     "en": "87458015f3e55b0e",
@@ -428,8 +428,8 @@
     "text": "full——自 2026-09-11 起两个部分都覆盖，并且它是独立于 RFC 7523 的实现，而不是在其上加一个格式标志。两者是同一框架的两个配置文件，不共享任何代码：JWT 是三段 base64url 和一个声明集，而这是一个带封装 XML 签名、<Conditions> 元素和 Recipient 属性的 XML 文档，后者在 JWT 中根本没有对应物。第 2.1 节是 SAML 2.0 授权许可（grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer），第 2.2 节是通过同一文档进行的客户端身份验证（client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer），其在此处的 token_endpoint_auth_method 为 `saml2_bearer`——这是本服务自己的名称，因为该 RFC 没有注册任何名称，IANA 注册表中也没有对应的值；它在 token_endpoint_auth_methods_supported 中公布，以便客户端通过发现得知而不是从这里读到，线上传输的内容没有任何是虚构的。第 3 节全部十一项都会检查：<Issuer> 按简单字符串比较（第 1 项，不做大小写折叠，不容忍末尾斜杠）；<AudienceRestriction>，未指明本服务器时会被拒绝，且没有关闭开关（第 2 项）；<Subject>，用于客户端身份验证时必须是 client_id（第 3 项）；来自任一 NotOnOrAfter 的过期时间，任一个都能满足要求（第 4 项）；至少一个 bearer <SubjectConfirmation>，其 Recipient 针对令牌端点检查，其 Address 读取但不执行（第 5 项）；两个 NotOnOrAfter 时刻都带可配置的偏差，过期的 <SubjectConfirmation> 被丢弃而不是视为致命错误，以及基于 Issuer 和 ID 的已使用断言历史，由两个部分共用并持久化（第 6 项）；<AuthnStatement>，携带并报告但从不要求（第 7 项）；每个 <AttributeStatement> 属性都会带到所签发的令牌上（第 8 项）；签名是必需的，未签名的断言会被按名称拒绝（第 9 项）；<EncryptedAssertion> 和 <EncryptedID> 用本领域自己的密钥解密（第 10 项）；以及完整的 <Conditions>，未识别的 <Condition> 类型会按 SAML core 第 2.5.1 节使断言无效，而不是被忽略（第 11 项）。不宽松之处，而且有两项而不是一项：Issuer 必须在应用条目上声明（oauthSamlAssertionIssuer），理由与 RFC 7523 的颁发者必须声明相同——并且断言只针对按 RFC 7522 属性为该方注册的证书进行验证。**<ds:KeyInfo> 中仅仅能链接到本领域根证书的证书不会被接受**，这是本服务在此处比 RFC 7523 更严格的唯一一点：证书链证明的是领域签发了某个密钥，但没有说明是哪个应用持有它，因此接受它会让某个应用自己的 RFC 7523 叶证书能够签署 SAML 断言。两种配置文件为每个应用保存各自独立的密钥对，存放在两组没有任何验证方会交叉使用的属性中。"
   },
   "stsmetadata.specs.rfc9700.coverage": {
-    "en": "fd15ca6a56b1def0",
-    "text": "partial，“并且默认关闭”——它是一种“模式”（oauth2.rfc9700），而不是本服务的行为方式，因为客户端需要在两种应答下都得到测试，而本模拟的每个现有调用方都使用未注册的 redirect_uri、不用 PKCE、使用 implicit 授权或 password 授权。开启后它覆盖整个第 2 节。2.1：重定向 URI 的精确字符串匹配，带 RFC 8252 的环回端口例外；授权端点和 end_session_endpoint 上都没有开放重定向器；环回以外不允许 http 重定向 URI；主端口以 HTTPS 绑定，以免授权响应通过未加密的连接发送。2.1.1：每个未注册为机密客户端的客户端都必须使用 PKCE，仅限 S256，第 4.8.2 节的降级拒绝，任何 id_token 都需 nonce，以及令牌端点上 RFC 6749 第 4.1.3 节的客户端和 redirect_uri 检查。2.1.2：没有从授权端点签发访问令牌的响应类型。2.2.2：刷新令牌轮换，检测到重放时吊销整条链，以及此授权类型此前从未检查过的客户端绑定。2.3：刷新可以收窄范围但绝不能扩大；访问令牌本来就已受众限定到一个资源服务器。2.4：拒绝 password 授权。2.5：在此注册为机密客户端的客户端必须进行身份验证，可使用六种令牌端点方法中的任意一种——client_secret_basic 和 _post、client_secret_jwt、针对已注册 JWKS 的 private_key_jwt，以及 RFC 8705 第 2 节的 tls_client_auth 和 self_signed_tls_client_auth——全部都会验证，这是本服务在任何地方检查的唯一凭据。2.6：授权端点不提供 CORS。两份发现文档都不再公布该模式会拒绝的任何内容。有三项是检测而不是执行，因为它们是客户端应自行遵守的：跨事务重复使用 code_challenge 或 nonce（真实服务器通常看不到，而会记忆的模拟实现能看到）、未绑定的访问令牌（第 2.2 节是 SHOULD，因此没有任何模式要求绑定的令牌；领域可以通过 oauth2.accessTokenRequireDpop 或 oauth2.accessTokenRequireMtls 来要求），以及在 2.5 建议使用非对称方式时使用对称的客户端身份验证——这种偏好会被检测，但全部六种方法现在都会被真正验证，包括三种非对称方法。第 2.2 节和第 2.3 节在授权服务器能覆盖的范围内都已覆盖：两种发送方约束机制都已实现（DPoP，以及在主端口为 TLS 时的 RFC 8705 证书绑定），资源服务器会校验证明并防止其重放，RFC 8707 资源指示符使受众可以被限定到一个或少量资源服务器，为其他受众签发的令牌会在受保护端点被拒绝。第 4.5 节同样已覆盖：授权码只能使用一次，且重放宽限已关闭，第二次出示会吊销它换取的访问令牌、刷新令牌和 ID 令牌，授权码绑定到兑换它的客户端。有两项要求被明确说明为无法执行而不是被省略——客户端必须校验 ID 令牌的 nonce，并且在校验成功之前不得使用令牌，本服务器对这两点都无法观察；oauth2.breakIdTokenNonce 会故意破坏 nonce，以便客户端开发者确认自己的代码是否进行了检查（仅限开发模式；产品领域会忽略它）。推送授权请求（RFC 9126）和资源指示符（RFC 8707）是独立的功能，在每种模式下都可用，而不是本模式所执行的约束。GET /oauth2/rfc9700 列出每项要求，并注明其属于上述哪一类。"
+    "en": "1a4ab26cf52a6140",
+    "text": "partial，“并且默认关闭”——它是一种“模式”（oauth2.rfc9700），而不是本服务的行为方式，因为客户端需要在两种应答下都得到测试，而本服务的每个现有调用方都使用未注册的 redirect_uri、不用 PKCE、使用 implicit 授权或 password 授权。开启后它覆盖整个第 2 节。2.1：重定向 URI 的精确字符串匹配，带 RFC 8252 的环回端口例外；授权端点和 end_session_endpoint 上都没有开放重定向器；环回以外不允许 http 重定向 URI；主端口以 HTTPS 绑定，以免授权响应通过未加密的连接发送。2.1.1：每个未注册为机密客户端的客户端都必须使用 PKCE，仅限 S256，第 4.8.2 节的降级拒绝，任何 id_token 都需 nonce，以及令牌端点上 RFC 6749 第 4.1.3 节的客户端和 redirect_uri 检查。2.1.2：没有从授权端点签发访问令牌的响应类型。2.2.2：刷新令牌轮换，检测到重放时吊销整条链，以及此授权类型此前从未检查过的客户端绑定。2.3：刷新可以收窄范围但绝不能扩大；访问令牌本来就已受众限定到一个资源服务器。2.4：拒绝 password 授权。2.5：在此注册为机密客户端的客户端必须进行身份验证，可使用六种令牌端点方法中的任意一种——client_secret_basic 和 _post、client_secret_jwt、针对已注册 JWKS 的 private_key_jwt，以及 RFC 8705 第 2 节的 tls_client_auth 和 self_signed_tls_client_auth——全部都会验证，这是本服务在任何地方检查的唯一凭据。2.6：授权端点不提供 CORS。两份发现文档都不再公布该模式会拒绝的任何内容。有三项是检测而不是执行，因为它们是客户端应自行遵守的：跨事务重复使用 code_challenge 或 nonce（真实服务器通常看不到，而会记忆的服务能看到）、未绑定的访问令牌（第 2.2 节是 SHOULD，因此没有任何模式要求绑定的令牌；领域可以通过 oauth2.accessTokenRequireDpop 或 oauth2.accessTokenRequireMtls 来要求），以及在 2.5 建议使用非对称方式时使用对称的客户端身份验证——这种偏好会被检测，但全部六种方法现在都会被真正验证，包括三种非对称方法。第 2.2 节和第 2.3 节在授权服务器能覆盖的范围内都已覆盖：两种发送方约束机制都已实现（DPoP，以及在主端口为 TLS 时的 RFC 8705 证书绑定），资源服务器会校验证明并防止其重放，RFC 8707 资源指示符使受众可以被限定到一个或少量资源服务器，为其他受众签发的令牌会在受保护端点被拒绝。第 4.5 节同样已覆盖：授权码只能使用一次，且重放宽限已关闭，第二次出示会吊销它换取的访问令牌、刷新令牌和 ID 令牌，授权码绑定到兑换它的客户端。有两项要求被明确说明为无法执行而不是被省略——客户端必须校验 ID 令牌的 nonce，并且在校验成功之前不得使用令牌，本服务器对这两点都无法观察；oauth2.breakIdTokenNonce 会故意破坏 nonce，以便客户端开发者确认自己的代码是否进行了检查（仅限开发模式；产品领域会忽略它）。推送授权请求（RFC 9126）和资源指示符（RFC 8707）是独立的功能，在每种模式下都可用，而不是本模式所执行的约束。GET /oauth2/rfc9700 列出每项要求，并注明其属于上述哪一类。"
   },
   "stsmetadata.specs.oauth-attestation.coverage": {
     "en": "e7e2cb581eae4f3f",
@@ -472,8 +472,8 @@
     "text": "full（#147），在每种模式下，双向。作为 OP：按领域的声明提供方登记册（控制台和 /admin-api），个人在 /portal/claim-sources 上通过带 PKCE 的授权码流程关联提供方，其令牌密封保存在本人自己的条目上，并由调度器作业刷新；声明请求所指明而条目无法回答的声明，按提供方以聚合声明（提供方的已签名 UserInfo JWT，先针对其密钥验证并核对是否为所关联的主体）或分布式声明（端点和访问令牌）发送；claim_types_supported 列出全部三种。作为联合 RP：来自上游 OP 的 _claim_sources 会被解析，并且只认可来自本领域注册的提供方、针对其密钥验证通过的来源。缺失：聚合的 verified_claims（Identity Assurance 第 6 节），以及声明提供方角色（本服务的已签名 UserInfo 可供其他聚合方使用，这是草案中的 CP 一侧）。"
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
-    "en": "09c64395f4956173",
-    "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。在开发模式下，模拟依赖方会应答每个命令。缺失：作为其他 OP 的依赖方。"
+    "en": "32b1aab50678ec8c",
+    "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。在开发模式下，演示依赖方会应答每个命令。缺失：作为其他 OP 的依赖方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",
@@ -500,8 +500,8 @@
     "text": "partial：每个标签都由 Intl 进行规范化并检查是否格式良好（RFC 5646），读者的列表按 RFC 4647 第 3.4 节的查找方式与目录进行匹配，并显式补全文字（可能的子标签），因此 zh-HK 永远不会回落到简体中文。未实现第 3.3.2 节的扩展过滤，扩展或私用子标签也不会决定所选目录。按设计，拒绝信息和错误文本在每种区域设置下都是英文。"
   },
   "stsmetadata.specs.rfc6238.coverage": {
-    "en": "fa7fc57aaa4c83cf",
-    "text": "full：验证方一侧，仅作为第二因素：基于 RFC 4226 的第 4 节时间步长，全部三种摘要，可设置的步长和位数，对称的偏差窗口（第 5.2 节建议最多一个步长，这也是默认值），以及第 5.2 节关于一个代码只能接受一次的要求——被接受的步长存储在注册记录上，等于或低于它的任何代码都会被按名称拒绝。**两种模式下都会真正检查代码**，这是除 SPNEGO 之外本模拟唯一验证最终用户凭据的地方：接受任意六位数字的验证方不是宽松的 RFC 6238，而是坏掉的 RFC 6238。注册使用 Key Uri Format（otpauth://，这是 Google 的约定而非任何 RFC），以二维码和可抄写的 base32 秘密两种形式呈现。未覆盖：它永远不能作为主要凭据——本服务持有与应用相同的共享秘密，这足以证明持有该应用，但不足以作为账户的依托；也没有重新同步协议，因为对于漂移的时钟，窗口就是它所能提供的全部。"
+    "en": "c1c0873ee396c9b0",
+    "text": "full：验证方一侧，仅作为第二因素：基于 RFC 4226 的第 4 节时间步长，全部三种摘要，可设置的步长和位数，对称的偏差窗口（第 5.2 节建议最多一个步长，这也是默认值），以及第 5.2 节关于一个代码只能接受一次的要求——被接受的步长存储在注册记录上，等于或低于它的任何代码都会被按名称拒绝。**两种模式下都会真正检查代码**，这是除 SPNEGO 之外本服务唯一验证最终用户凭据的地方：接受任意六位数字的验证方不是宽松的 RFC 6238，而是坏掉的 RFC 6238。注册使用 Key Uri Format（otpauth://，这是 Google 的约定而非任何 RFC），以二维码和可抄写的 base32 秘密两种形式呈现。未覆盖：它永远不能作为主要凭据——本服务持有与应用相同的共享秘密，这足以证明持有该应用，但不足以作为账户的依托；也没有重新同步协议，因为对于漂移的时钟，窗口就是它所能提供的全部。"
   },
   "stsmetadata.specs.oidc-ida-claims.coverage": {
     "en": "9addba4b4937a82f",
@@ -652,8 +652,8 @@
     "text": "full：目录中的 meta.profiles（九个 /admin/pki 叶证书配置文件中允许的那些，附有说明）、newOrder 和订单的 profile 成员，以及针对本服务器不签发的配置文件返回 invalidProfile。"
   },
   "stsmetadata.specs.acme-device-attest.coverage": {
-    "en": "2b1f4bf4a6f2a1e0",
-    "text": "mock：只有 permanent-identifier 标识符类型，它在此处指代账户自己的目录条目，并成为其 urn:sts: subjectAltName。未实现 device-attest-01 质询和 WebAuthn 证明声明。"
+    "en": "aed9de6fa5126292",
+    "text": "minimal：只有 permanent-identifier 标识符类型，它在此处指代账户自己的目录条目，并成为其 urn:sts: subjectAltName。未实现 device-attest-01 质询和 WebAuthn 证明声明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
     "en": "727a26e021b5f20f",
@@ -2056,8 +2056,8 @@
     "text": "改变今后每个可验证凭证包含的内容，并且写入 LDAP 目录"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "3264a8d2e2af1287",
-    "text": "NON-SPEC。/oid4vp/verifier 上的模拟验证方向钱包索要什么、采用哪种凭证格式，以及它们构建的 dcql_query——来自构建真实查询的那个函数，因此它就是下一个授权请求，而不是对它的描述。每个目录行还说明颁发者当前是否签发该声明。对应 GET /admin/vc-verifier-config。"
+    "en": "2b65c93c64dbe5de",
+    "text": "NON-SPEC。/oid4vp/verifier 上的演示验证方向钱包索要什么、采用哪种凭证格式，以及它们构建的 dcql_query——来自构建真实查询的那个函数，因此它就是下一个授权请求，而不是对它的描述。每个目录行还说明颁发者当前是否签发该声明。对应 GET /admin/vc-verifier-config。"
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2372,8 +2372,8 @@
     "text": "询问要在应用的哪个联合身份提供方处登录；需要 ?authn= id，因此不带参数访问时应答 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "ee45f81a1c65f8ae",
-    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由 /spnego/protected 使用的同一个接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使模拟保持为模拟的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
+    "en": "827e8510ccf17768",
+    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由 /spnego/protected 使用的同一个接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -2692,8 +2692,8 @@
     "text": "会话在本进程中所有授权服务器之间是同一个会话，因为只有一个浏览器和一个 Cookie。"
   },
   "stsmetadata.endpoints./:as/oauth2/jwks.what": {
-    "en": "2236048b324fccf1",
-    "text": "同一个签名密钥。本进程中的每个授权服务器都用它签名，这是模拟的特性而不是模型的特性——它们是共用一个密钥的不同颁发者，真实部署不会这样做。"
+    "en": "b216f148b0edadbc",
+    "text": "同一个签名密钥。本进程中的每个授权服务器都用它签名，这是本实现的特性而不是模型的特性——它们是共用一个密钥的不同颁发者，真实部署不会这样做。"
   },
   "stsmetadata.endpoints./oauth2/rfc9700.what": {
     "en": "a537cf9396222984",
@@ -2712,8 +2712,8 @@
     "text": "NON-SPEC，理由与旁边的 RFC 9700 报告相同：OAuth 2.1 没有定义表明服务器遵循它的发现成员。该模式增加的每项要求，按章节引用 draft-ietf-oauth-v2-1-16，说明它是被强制执行、在每种模式下都成立，还是继承自 RFC 9700 模式（此模式会开启该模式），以及它刻意豁免的授权类型。它会说明该草案仍是草案。只读：该模式就是 oauth2.oauth21 设置。"
   },
   "stsmetadata.endpoints./oauth2/userinfo.what": {
-    "en": "412b23220d1f4af2",
-    "text": "发送方约束和受众在此处检查，在三个凭证端点也会检查，经由四者共用的同一个函数：DPoP 绑定的令牌会验证其证明并检查重放，证书绑定的令牌会对连接的证书计算指纹并比较，为不同受众（RFC 8707 `resource`）颁发的令牌会被拒绝。OIDC Core section 5.3，支持 GET 和 POST。关于访问令牌所颁发给的人的声明，受其作用域约束（section 5.4）——这是此模拟中作用域会改变答复的唯一地方。这是此处唯一一个会拒绝非其颁发令牌的受保护端点：它验证签名、typ（因此刷新令牌或 id_token 会被拒绝）、吊销状态和 openid 作用域，每项都有自己的错误。Bearer 或 DPoP 绑定，经由凭证端点所用的同一检查。对注册了 userinfo_signed_response_alg=RS256 的客户端返回 application/jwt 而不是 JSON。自 2026-08-26 起有四层，后者优先：在 /admin/userinfo-claims 配置的 userinfo 自定义声明集（每次调用时构建，因此能到达已持有令牌的客户端）、section 5.4 的作用域驱动声明、客户端在 OIDC Core section 5.5 的声明请求中指定的声明——读取自此人在 ou=users 下的条目——以及 sub，任何东西都不能取代它。此外的 NON-SPEC 部分：它还接受请求本身携带的声明请求（?claims={json} 或重复的 ?claim=），这是 section 5.3.1 没有定义的，它与访问令牌所携带的内容取并集，绝不能用来从中去掉某个声明；格式错误的会以 invalid_request 拒绝而不是被忽略。"
+    "en": "73400edc8d0eed48",
+    "text": "发送方约束和受众在此处检查，在三个凭证端点也会检查，经由四者共用的同一个函数：DPoP 绑定的令牌会验证其证明并检查重放，证书绑定的令牌会对连接的证书计算指纹并比较，为不同受众（RFC 8707 `resource`）颁发的令牌会被拒绝。OIDC Core section 5.3，支持 GET 和 POST。关于访问令牌所颁发给的人的声明，受其作用域约束（section 5.4）——这是本服务中作用域会改变答复的唯一地方。这是此处唯一一个会拒绝非其颁发令牌的受保护端点：它验证签名、typ（因此刷新令牌或 id_token 会被拒绝）、吊销状态和 openid 作用域，每项都有自己的错误。Bearer 或 DPoP 绑定，经由凭证端点所用的同一检查。对注册了 userinfo_signed_response_alg=RS256 的客户端返回 application/jwt 而不是 JSON。自 2026-08-26 起有四层，后者优先：在 /admin/userinfo-claims 配置的 userinfo 自定义声明集（每次调用时构建，因此能到达已持有令牌的客户端）、section 5.4 的作用域驱动声明、客户端在 OIDC Core section 5.5 的声明请求中指定的声明——读取自此人在 ou=users 下的条目——以及 sub，任何东西都不能取代它。此外的 NON-SPEC 部分：它还接受请求本身携带的声明请求（?claims={json} 或重复的 ?claim=），这是 section 5.3.1 没有定义的，它与访问令牌所携带的内容取并集，绝不能用来从中去掉某个声明；格式错误的会以 invalid_request 拒绝而不是被忽略。"
   },
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
@@ -3292,8 +3292,8 @@
     "text": "/admin/scep 上的控件，作为一个操作资源：create-challenge（质询在答复中只出现一次）、delete-challenge、reissue-ra、revoke-certificate、add-host-name 和 remove-host-name。"
   },
   "stsmetadata.protocols.OAuth2 / OIDC.what": {
-    "en": "7a8b3fb17948f1a3",
-    "text": "一个模拟的授权服务器和 OpenID 提供方：全部五种授权、PKCE、DPoP、自省、吊销、动态注册、UserInfo 和 RP 发起的注销，并可按需提供任意数量的命名授权服务器。RFC 9700 模式开启该 BCP 的各项拒绝，OAuth 2.1 模式（draft-ietf-oauth-v2-1-16）开启这些拒绝并增加其自身的拒绝。"
+    "en": "bc27f9ea821954f9",
+    "text": "一个授权服务器和 OpenID 提供方：全部五种授权、PKCE、DPoP、自省、吊销、动态注册、UserInfo 和 RP 发起的注销，并可按需提供任意数量的命名授权服务器。RFC 9700 模式开启该 BCP 的各项拒绝，OAuth 2.1 模式（draft-ietf-oauth-v2-1-16）开启这些拒绝并增加其自身的拒绝。"
   },
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
@@ -3312,8 +3312,8 @@
     "text": "一个策略决策点；一个策略存储库，它就是嵌入式目录中的 ou=policies；一个从主体自身条目读取属性的策略信息点；以及一个嵌入式策略执行点。这是此处唯一一个回答关于别人边界问题的协议族：本服务上的其他每个协议都是对某人进行认证或预配，而这个协议接收的是一个已在别处认证过的主体，被问的是此人是否可以这样做。它以 OASIS 一致性测试套件为准，而不是以此处编写的测试为准。"
   },
   "stsmetadata.protocols.Federation.what": {
-    "en": "3e6764a842067c9c",
-    "text": "联合关系的两端，涵盖五种协议：SAML 2.0、SAML 1.1、WS-Federation 1.2、OpenID Connect 和 OAuth 2.0。作为服务提供方，它接收外部身份提供方颁发的内容，针对所配置的密钥进行验证，将属性映射到目录条目上并启动会话——此处其他每个协议都读取的同一个会话，这使得联合身份能够满足 OAuth 2.0 授权请求或 SAML AuthnRequest，而两者都无需知道联合的存在。作为身份提供方，它将合作方标记为联合合作方而不是测试客户端，并决定向其发布哪些属性。\n\n**它是此处唯一默认拒绝、必须先配置才会做任何事的功能**，而这并不是需要修复的遗漏：“接受任何断言”不会是对联合的宽松模拟，而是对本进程中每个协议的认证绕过。关系在创建时处于禁用状态，可在 /admin/federation 或通过 POST /admin-api/federation/create 创建。\n\n**合作方的注销会结束它所启动的会话（#167）**：SAML 2.0 LogoutRequest、OpenID Connect 反向通道或前端通道注销，以及 WS-Federation 清理（经此人确认）都会像登录一样被验证，并且只结束其所指明的会话；此处的注销会向合作方提供其自身的注销；合作方的 SessionNotOnOrAfter 限定会话的期限。SAML 1.1 和 OAuth 2.0 没有定义注销。\n\n**合作方可以加密（#168）**：每个 SAML 2.0、WS-Federation 和 OpenID Connect 关系都在本领域的中间 CA 之下持有自己的加密密钥，在其元数据中或 /federation/jwks/{id} 处公布，并带宽限期轮换；产品模式要求合作方使用它。"
+    "en": "2cbc9f735c713f9b",
+    "text": "联合关系的两端，涵盖五种协议：SAML 2.0、SAML 1.1、WS-Federation 1.2、OpenID Connect 和 OAuth 2.0。作为服务提供方，它接收外部身份提供方颁发的内容，针对所配置的密钥进行验证，将属性映射到目录条目上并启动会话——此处其他每个协议都读取的同一个会话，这使得联合身份能够满足 OAuth 2.0 授权请求或 SAML AuthnRequest，而两者都无需知道联合的存在。作为身份提供方，它将合作方标记为联合合作方而不是测试客户端，并决定向其发布哪些属性。\n\n**它是此处唯一默认拒绝、必须先配置才会做任何事的功能**，而这并不是需要修复的遗漏：“接受任何断言”不会是一种宽松的联合，而是对本进程中每个协议的认证绕过。关系在创建时处于禁用状态，可在 /admin/federation 或通过 POST /admin-api/federation/create 创建。\n\n**合作方的注销会结束它所启动的会话（#167）**：SAML 2.0 LogoutRequest、OpenID Connect 反向通道或前端通道注销，以及 WS-Federation 清理（经此人确认）都会像登录一样被验证，并且只结束其所指明的会话；此处的注销会向合作方提供其自身的注销；合作方的 SessionNotOnOrAfter 限定会话的期限。SAML 1.1 和 OAuth 2.0 没有定义注销。\n\n**合作方可以加密（#168）**：每个 SAML 2.0、WS-Federation 和 OpenID Connect 关系都在本领域的中间 CA 之下持有自己的加密密钥，在其元数据中或 /federation/jwks/{id} 处公布，并带宽限期轮换；产品模式要求合作方使用它。"
   },
   "stsmetadata.protocols.OpenID Federation.what": {
     "en": "0de5051ba59ab384",
@@ -3352,8 +3352,8 @@
     "text": "在 /sts 上基于 SOAP 的 RST / RSTR，支持全部四个版本（1.0 至 1.4），颁发任一种 SAML 方言，断言已签名，并可选加密给请求方的证书。"
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "0cdfedeffd978714",
-    "text": "一个模拟 KDC：AS-REQ / TGS-REQ、预认证、四种加密类型、票据中的 Microsoft PAC、跨领域引荐和约束委派。此页面上的行是它的 HTTP 视图及其 MS-KKDCP 代理，该代理之所以存在，是因为浏览器无法打开套接字。"
+    "en": "73e20c397fc290ee",
+    "text": "一个 KDC：AS-REQ / TGS-REQ、预认证、四种加密类型、票据中的 Microsoft PAC、跨领域引荐和约束委派。此页面上的行是它的 HTTP 视图及其 MS-KKDCP 代理，该代理之所以存在，是因为浏览器无法打开套接字。"
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
@@ -3424,8 +3424,8 @@
     "text": "此处每个协议都会将人送往的登录界面上的第二因素：针对真实安全密钥的注册和断言仪式，证明和身份验证器数据都会被检查，而不仅仅是解析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "8194d201b7586702",
-    "text": "此处每个协议都会将人送往的登录界面上的另一种第二因素，也是此模拟中除 Kerberos 票据外唯一真正检查的凭据：代码根据共享密钥和时钟计算并比较，在两种模式下都是如此，并强制执行 RFC 6238 section 5.2 的只接受一次规则。注册方式是本服务器绘制的二维码，在 /portal/mfa 上或使用激活链接时进行；运营人员在 /admin/users 上此人自己的行中清除它，/admin/totp 是配置该机制的地方。"
+    "en": "20b73dffc821e4a2",
+    "text": "此处每个协议都会将人送往的登录界面上的另一种第二因素，也是本服务中除 Kerberos 票据外唯一真正检查的凭据：代码根据共享密钥和时钟计算并比较，在两种模式下都是如此，并强制执行 RFC 6238 section 5.2 的只接受一次规则。注册方式是本服务器绘制的二维码，在 /portal/mfa 上或使用激活链接时进行；运营人员在 /admin/users 上此人自己的行中清除它，/admin/totp 是配置该机制的地方。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

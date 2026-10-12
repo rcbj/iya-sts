@@ -720,12 +720,12 @@
     "text": "Solo una dirección registrada en la propia entrada de la aplicación — y una observación nunca añade ninguna. Una dirección todavía marcada como observada NO está registrada: la puso ahí el modo de desarrollo y se rechaza hasta que un operador la confirma en la página de la aplicación o con POST /admin-api/applications/confirm-address (STS-REG-0049). Las direcciones registradas antes de que se marcaran las observaciones no llevan marca y aún deben revisarse antes de cambiar un dominio de modo. Los callbacks propios de la consola y del portal no se aprenden del encabezado Host de una solicitud (defina global.publicBaseUrl), y un RP ID de WebAuthn que no corresponde al host rechaza la ceremonia en lugar de recurrir a él."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
+    "en": "47d4efed79e39044",
+    "text": "Existen los endpoints de demostración y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "f576a305a27eb0c9",
-    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
+    "en": "b507467a00f40b04",
+    "text": "Se sirven y se listan: la parte que confía de demostración de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",
