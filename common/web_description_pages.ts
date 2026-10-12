@@ -126,8 +126,7 @@ class DescriptionWebPages {
   }
 
   /**
-   * Draws a page's body from its view. A view whose kind is not the
-   * path's page draws nothing: the shell and the path came together.
+   * Draws a page's body from its view, by the path's row.
    *
    * @param path - the page's path
    * @param view - its view
