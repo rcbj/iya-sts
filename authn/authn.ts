@@ -13682,6 +13682,9 @@ export = {
   // would have named it.
   signInShell: slot.forward('signInShell'),
   locationOf: slot.forward('locationOf'),
+  // The consent screen is a page of the sign-in surface too (#576): it
+  // serves this bundle at its own address, `/oauth2/consent.js`.
+  signInBundle: slot.forward('signInBundle'),
   PASSWORD_FACTOR_PATH: PASSWORD_FACTOR_PATH,
   // The wallet as a factor (#38's follow-ups): read a second-factor step,
   // finish one with a presentation, and ask for a second factor after one.

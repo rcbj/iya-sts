@@ -7943,6 +7943,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'from the browser that started the sign-in and from this ' +
           'service\'s own origin (STS-VC-0074); since #574 also only as ' +
           'JSON with the X-CSRF-Token of the browser\'s session.' },
+  { path: '/authn-api/consent/:id', group: 'OAuth 2.0 / OIDC',
+    name: 'What the consent screen asks, and the answer', specs: ['rfc9396'],
+    effect: 'POST records Allow or Deny and names the authorization request ' +
+            'to go back to',
+    what: 'NON-SPEC (#576). GET answers the consent screen\'s view — the ' +
+          'application, each scope and authorization detail, the limits a ' +
+          'person may lower, what was already agreed — and the CSRF token; ' +
+          'POST takes Allow or Deny as JSON, with an Origin of this service ' +
+          'and the X-CSRF-Token of the browser\'s session, and only from ' +
+          'the person it was asked of. The id is a bearer capability and is ' +
+          'never logged.' },
   { path: '/authn-api/password-change/:id', group: 'Authentication',
     name: 'A forced password change', specs: [],
     what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
@@ -8148,12 +8159,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'a GET that recorded consent would be consent anything that ' +
           'prefetches a link could give; and the session is checked against ' +
           'the person the question was asked of, which is the one failure ' +
-          'here that would write something untrue into the directory. NO ' +
-          'SCRIPT — two buttons in a form, so the service-wide script-src ' +
-          '\'none\' is untouched. oauth2.consentRequired turns it off, and ' +
+          'here that would write something untrue into the directory. A ' +
+          'PAGE OF THE SIGN-IN SURFACE since #576: this GET answers the ' +
+          'shell once those checks pass, and /oauth2/consent.js draws the ' +
+          'page from /authn-api/consent/{id} and sends Allow or Deny there ' +
+          'as JSON; script is required. oauth2.consentRequired turns it ' +
+          'off, and ' +
           'it is ON by default; /admin/consent is the register, and ' +
           'oauthGlobalConsent on an application entry skips the prompt for ' +
           'everybody without writing anything about anybody.' },
+  { path: '/oauth2/consent.js', group: 'OAuth 2.0 / OIDC',
+    name: 'The consent screen\'s script', specs: [],
+    what: 'NON-SPEC (#576). The sign-in surface\'s bundle — the same file ' +
+          'as /authn/signin.js — at the consent screen\'s own address, so ' +
+          'the page\'s listener serves its script. Public: nothing in it is ' +
+          'secret.' },
   { path: '/oauth2/autopost.js', group: 'OAuth 2.0 / OIDC',
     name: 'The form-post response script',
     specs: ['oauth-form-post', 'rfc9700'],
