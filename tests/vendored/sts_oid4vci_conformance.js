@@ -39,6 +39,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const conformanceBrowser = require("./conformance_browser.js");
 const portal = require("./portal_signin.js");
 
 var appconfig;
@@ -280,76 +281,31 @@ async function prepare(plan) {
     client2: clients[1],
     credential: rootPem ? { trust_anchor_pem: rootPem,
                             status_list_trust_anchor_pem: rootPem }
-                        : undefined,
-    override: plan.haip ? overridesFor(realm.base, person) : undefined,
-    browser: [{
-      match: realm.base + "/oauth2/authorize*",
-      tasks: [
-        { task: "Sign in", optional: true,
-          match: realm.base + "/authn/login*",
-          commands: [["wait", "id", "kc-login", 10],
-                     ["text", "id", "username", person, "optional"],
-                     ["text", "id", "password", PASSWORD, "optional"],
-                     ["click", "id", "kc-login"]] },
-        { task: "Consent", optional: true,
-          match: realm.base + "/oauth2/consent*",
-          commands: [["click", "id", "consent-allow"]] },
-        { task: "Error page", optional: true,
-          match: realm.base + "/oauth2/authorize*",
-          commands: [["wait", "xpath", "//body", 10, ".*",
-                      "update-image-placeholder-optional"]] },
-        { task: "Verify complete", optional: true,
-          match: oidf.SUITE + "test/*/callback*",
-          commands: [["wait", "id", "submission_complete", 10]] }
-      ]
-    }]
+                        : undefined
   };
   log.debug("Leaving prepare().");
   return { realm: realm, person: person, configuration: configuration };
 }
 
-// HAIP's plan runs FAPI 2.0 Security Profile modules beside the issuer's,
-// and two of them need a path of their own — the FAPI job's two overrides:
-// Cancel on the sign-in page, and a first visit that only loads it.
-function overridesFor(base, person) {
-  log.debug("Entering overridesFor().");
+// THE PERSON (#571): the plan carries no `browser` commands, because the
+// suite's HtmlUnit browser cannot run this service's scripted sign-in
+// screen; every address a module wants a person to visit is visited in
+// headless Chrome by `conformance_browser.js`. HAIP's plan runs FAPI 2.0
+// Security Profile modules beside the issuer's, and two of them want
+// something else of the person — the FAPI job's two: Cancel on the sign-in
+// screen, and a first visit that only loads it.
+function personFor(base, person) {
+  log.debug("Entering personFor().");
   const prefix = "fapi2-security-profile-final-";
-  const out = {};
-  out[prefix + "user-rejects-authentication"] = { browser: [{
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Cancel", match: base + "/authn/login*",
-        commands: [["wait", "id", "kc-cancel", 10],
-                   ["click", "id", "kc-cancel"]] },
-      { task: "Verify complete", match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }] };
-  out[prefix + "par-ensure-reused-request-uri-prior-to-auth-completion-" +
-      "succeeds"] = { browser: [{
-    match: base + "/oauth2/authorize*",
-    "match-limit": 1,
-    tasks: [
-      { task: "Load the sign-in page", match: base + "/authn/login*",
-        commands: [["wait", "id", "username", 10]] }
-    ]
-  }, {
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: [["wait", "id", "kc-login", 10],
-                   ["text", "id", "username", person, "optional"],
-                   ["text", "id", "password", PASSWORD, "optional"],
-                   ["click", "id", "kc-login"]] },
-      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }] };
-  log.debug("Leaving overridesFor().");
-  return out;
+  const actions = {};
+  actions[prefix + "user-rejects-authentication"] = "cancel";
+  actions[prefix + "par-ensure-reused-request-uri-prior-to-auth-" +
+          "completion-succeeds"] = "load-only";
+  log.debug("Leaving personFor().");
+  return conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: base,
+    username: person, password: PASSWORD, actions: actions
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -455,9 +411,16 @@ async function test() {
     let ran = null;
     try {
       const prepared = await prepare(plan);
+      const operator = operatorFor(plan, prepared);
+      const someone = personFor(prepared.realm.base, prepared.person);
       ran = await oidf.runPlan(plan.name, plan.variant,
                                prepared.configuration, plan.key,
-                               operatorFor(plan, prepared));
+                               async function (id, info) {
+                                 log.debug("Entering the plan's people.");
+                                 await operator(id, info);
+                                 await someone.visit(id, info);
+                                 log.debug("Leaving the plan's people.");
+                               });
     } catch (e) {
       log.error("Caught in test(): " + plan.key + ": " +
                 ((e && e.message) || e));
@@ -473,6 +436,7 @@ async function test() {
       unexpected.push(line);
     });
   }
+  await conformanceBrowser.quit();
   if (unexpected.length) {
     log.error("Unexplained:\n  " + unexpected.join("\n  "));
   }
@@ -488,8 +452,8 @@ async function test() {
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID4VCI " +
     "issuer plans (#187), against this service.")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-                                           "needs no browser)"))
+  .addOption(new Option("-u, --url <url>", "base url (unused: the " +
+                                           "service's is the realm's)"))
   .parse(process.argv);
 
 test().catch(function (e) {
