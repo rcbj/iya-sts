@@ -550,7 +550,27 @@ class OutboundDelivery {
     const realm = realms.get(realmId);
     later(function () {
       realms.run(realm, function () {
-        return self.attempt(realmId, id).catch(function (e) {
+        return self.attempt(realmId, id).then(function (result) {
+          // A TIMER CAN FIRE A MOMENT BEFORE THE ROW IS DUE: setTimeout runs
+          // on node's monotonic clock and `now()` is the wall clock, which
+          // may read a millisecond short of `nextAttemptAt`. `attempt()` then
+          // answers `not-due` and does nothing — and until this re-armed the
+          // timer, the retry waited for the kind's sweep job instead, up to
+          // its interval later (an OpenID Provider Commands retry seen to
+          // land half a minute late). Armed again for the row's due time, at
+          // least a millisecond on, so it never spins.
+          if (result !== 'not-due') {
+            return;
+          }
+          const row = self.liveRow(realmId, id);
+          if (row && row.state === 'pending') {
+            log.debug("OutboundDelivery.scheduleRetry(): " + id + " fired " +
+                      "before it was due; armed again.");
+            self.scheduleRetry(realmId, id,
+                               Math.max(Number(row.nextAttemptAt),
+                                        now() + 1));
+          }
+        }).catch(function (e) {
           log.debug("Caught in OutboundDelivery.scheduleRetry(): " +
                     ((e && e.message) || e));
         });
