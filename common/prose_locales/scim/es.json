@@ -284,8 +284,8 @@
     "text": "La sesión de inicio de sesión del navegador que este servicio ya tiene — la que establece /authn/login y comparte WS-Federation — ofrecida aquí porque la sección 2 la nombra: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Es lo que hace que una llamada SCIM desde una página de este servicio funcione sin una segunda credencial. No hay desafío para ella: un servidor no puede pedir una cookie en WWW-Authenticate, así que se usa cuando está y nunca se exige."
   },
   "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "TLS mutuo, el primer esquema que nombra la sección 2 de RFC 7644. Disponible solo cuando esta solicitud llegó por TLS con un certificado que se VERIFICÓ contra un ancla que alguien envió con POST a /tls/trust — así que en el puerto principal solo cuando está enlazado como HTTPS (global.https, que oauth2.rfc9700 activa). La identidad es el sujeto en forma RFC 4514, que es la misma cadena bajo la que /admin/users y el directorio ya archivan un certificado. Aquí no se vuelve a registrar: tls_server.js registra un certificado una vez por CONEXIÓN a propósito, y contarlo por solicitud desharía eso desde el otro extremo."
+    "en": "2d55447d0d4792ee",
+    "text": "TLS mutuo, el primer esquema que nombra la sección 2 de RFC 7644. Disponible solo cuando esta solicitud llegó por TLS con un certificado que se VERIFICÓ contra un ancla del almacén de confianza de clientes (/admin/tls/trust) — así que en el puerto principal solo cuando está enlazado como HTTPS (global.https, que oauth2.rfc9700 activa). La identidad es el sujeto en forma RFC 4514, que es la misma cadena bajo la que /admin/users y el directorio ya archivan un certificado. Aquí no se vuelve a registrar: tls_server.js registra un certificado una vez por CONEXIÓN a propósito, y contarlo por solicitud desharía eso desde el otro extremo."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",

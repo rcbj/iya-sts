@@ -724,11 +724,11 @@
     "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "fedcc0409581e879",
-    "text": "Serveras och listas: de simulerade förlitande parterna och tjänsteleverantören (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, step-up-ersättningsresursen, GNAP-demonstrationsresursservern, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust och /tls/trust/clear, samt /ssf/receive och /ssf/received."
+    "en": "b62287524a386d08",
+    "text": "Serveras och listas: de simulerade förlitande parterna och tjänsteleverantören (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, step-up-ersättningsresursen, GNAP-demonstrationsresursservern samt /ssf/receive och /ssf/received."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
+    "en": "b82d8439b897527e",
     "text": "Ingen av dem serveras eller listas. Var och en svarar exakt som en sökväg där ingenting är registrerat — Express egen 404, \"Cannot GET\" — och ingen metadatasida, konsolsida, dokumentation eller loggrad namnger någon av dem. En utvecklingsrealm i en produktprocess behåller dem, utom truststore-dörren och den skyddade tjänstens uttag, som tillhör processen. De administrativa dörrarna finns kvar: /admin-api startar en verifiering, läser principalerna och ändrar truststore, och användarportalen gör ett erbjudande om en legitimation."
   },
   "mode.requirements.test-controls.what": {

@@ -724,12 +724,12 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "fedcc0409581e879",
-    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear, at /ssf/receive at /ssf/received."
+    "en": "b62287524a386d08",
+    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, at /ssf/receive at /ssf/received."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process, maliban sa pinto ng truststore at sa socket ng protektadong service, na pag-aari ng process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
+    "en": "b82d8439b897527e",
+    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process, maliban sa socket ng protektadong service, na pag-aari ng process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

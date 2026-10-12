@@ -284,8 +284,8 @@
     "text": "本服务已有的浏览器登录会话——由 /authn/login 建立、与 WS-Federation 共享的那个——之所以在这里提供，是因为 section 2 提到了它：\"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\"。正是它使本服务页面上的 SCIM 调用无需第二个凭据即可工作。它没有质询：服务器无法在 WWW-Authenticate 中请求 cookie，因此有就使用，从不强求。"
   },
   "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "双向 TLS，RFC 7644 section 2 提到的第一种方案。只有当本请求通过 TLS 到达，且所带证书能对照某人 POST 到 /tls/trust 的信任锚验证通过时才可用——因此在主端口上，只有当它以 HTTPS 绑定时才可用（global.https，由 oauth2.rfc9700 开启）。身份是 RFC 4514 形式的主体，与 /admin/users 和目录用来归档证书的字符串相同。这里不会再次记录它：tls_server.js 有意按连接记录一次证书，按请求计数会从另一端抵消这一设计。"
+    "en": "2d55447d0d4792ee",
+    "text": "双向 TLS，RFC 7644 section 2 提到的第一种方案。只有当本请求通过 TLS 到达，且所带证书能对照客户端信任库（/admin/tls/trust）中的信任锚验证通过时才可用——因此在主端口上，只有当它以 HTTPS 绑定时才可用（global.https，由 oauth2.rfc9700 开启）。身份是 RFC 4514 形式的主体，与 /admin/users 和目录用来归档证书的字符串相同。这里不会再次记录它：tls_server.js 有意按连接记录一次证书，按请求计数会从另一端抵消这一设计。"
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",

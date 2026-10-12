@@ -220,8 +220,8 @@
     "text": "full：其中没有任何部分是本服务的代码——主端口（当 global.https 开启时）和目录在 636 上的 LDAPS 监听器使用的是 node 自己基于 OpenSSL 的 TLS 栈。协议下限和密码套件列表由 tls.minVersion（TLSv1.2，node 的默认值）和 tls.ciphers（node 的默认列表）决定。此处编写的是策略和报告：主端口向每个连接请求客户端证书但不强制要求，GET /tls/sign-in 返回服务器所看到的内容（本系列自己的两个监听器——一个请求、一个强制要求——已于 2026-09-16 删除）。在阅读该报告之前，关于客户端身份验证有两点值得了解。在 TLS 1.3 下，客户端最后才发送其 Certificate 和 Finished，因此从客户端的角度看，在服务器对证书作出任何表示之前握手就已完成——在 secureConnect 时报告成功的客户端，会对一个一毫秒后就拒绝了它的服务器报告一次成功的双向 TLS 连接。此外，node 拒绝未经验证的客户端证书的方式是关闭套接字且不发送任何警报，这就是为什么只有“请求但不强制”的端口才能告诉你原因。"
   },
   "stsmetadata.specs.rfc5280.coverage": {
-    "en": "5243305b4fd8c9b6",
-    "text": "partial：路径校验由 OpenSSL 而非本服务完成：客户端证书针对运行时 POST 到 /tls/trust 的信任锚进行验证（开发模式；产品模式拒绝这种方式，改为在启动时读取 tls.trustAnchorsFile），在 tls.trustIssuedClientCertificates 开启期间还会与服务根证书一起验证；服务器证书由该根证书签发，其 subjectAltName 携带访问本栈所用的每个名称。本服务发布吊销信息，并且自 2026-09-12 起也会查询吊销信息。第 5 节已实现：/admin/pki 中的每个颁发机构都签署 CRL，在 /pki/crl/{scope}/{ca} 提供，并发布到目录的 ou=crl 下，本服务签发的每个证书都会通过 http 和 ldap 指明其自己的 CRL。在验证方，本服务签发的出示证书会针对其自己的登记册检查，其他任何人的证书则针对其所指明的 OCSP 响应程序和 CRL 检查（common/revocation_status.js，策略为 pki.revocationCheck）。第 6.3 节的未确定状态包括位于本服务被配置为不拨号的地址上的列表（在 pki.revocationLdap=ldaps 下的明文 ldap:，没有目录的相对名称），在硬失败模式下被拒绝；不指明任何列表和响应程序的外部 CA 签发的证书在产品模式下被拒绝（pki.revocationRequireDistributionPoint=auto）；并且认可 RFC 9608 noRevAvail——第 4 节跳过检查，第 3 节中的矛盾情形视为无效。名称约束、策略和路径长度仅在 OpenSSL 执行的范围内得到执行——也就是说执行得当——而不由此处编写的任何内容执行。"
+    "en": "c1a15b711c82c40c",
+    "text": "partial：路径校验由 OpenSSL 而非本服务完成：客户端证书针对运行时通过 /admin-api/tls/trust 添加的信任锚进行验证（两种模式均可），并在启动时读取 tls.trustAnchorsFile，在 tls.trustIssuedClientCertificates 开启期间还会与服务根证书一起验证；服务器证书由该根证书签发，其 subjectAltName 携带访问本栈所用的每个名称。本服务发布吊销信息，并且自 2026-09-12 起也会查询吊销信息。第 5 节已实现：/admin/pki 中的每个颁发机构都签署 CRL，在 /pki/crl/{scope}/{ca} 提供，并发布到目录的 ou=crl 下，本服务签发的每个证书都会通过 http 和 ldap 指明其自己的 CRL。在验证方，本服务签发的出示证书会针对其自己的登记册检查，其他任何人的证书则针对其所指明的 OCSP 响应程序和 CRL 检查（common/revocation_status.js，策略为 pki.revocationCheck）。第 6.3 节的未确定状态包括位于本服务被配置为不拨号的地址上的列表（在 pki.revocationLdap=ldaps 下的明文 ldap:，没有目录的相对名称），在硬失败模式下被拒绝；不指明任何列表和响应程序的外部 CA 签发的证书在产品模式下被拒绝（pki.revocationRequireDistributionPoint=auto）；并且认可 RFC 9608 noRevAvail——第 4 节跳过检查，第 3 节中的矛盾情形视为无效。名称约束、策略和路径长度仅在 OpenSSL 执行的范围内得到执行——也就是说执行得当——而不由此处编写的任何内容执行。"
   },
   "stsmetadata.specs.rfc6960.coverage": {
     "en": "edce74c655cea522",
@@ -356,8 +356,8 @@
     "text": "full：覆盖其被使用的方式：cnf.jwk 将签发的凭证绑定到已证明持有的持有者密钥。"
   },
   "stsmetadata.specs.rfc9449.coverage": {
-    "en": "159486391c5beada",
-    "text": "full：就模拟实现而言完整：第 4.3 节全部十二项证明检查，访问令牌和刷新令牌上的 cnf.jkt，token_type DPoP，dpop_jkt 授权请求参数（第 10 节），jti 重放检测，以及两种形式的服务器提供 nonce 握手——令牌端点的 400 use_dpop_nonce，受保护端点的带 WWW-Authenticate 的 401。nonce 默认关闭，直到 oauth2.dpopNonceRequired（按领域；在开发模式下由 /dpop/nonce-mode 写入）将其开启。未实现：mTLS 绑定令牌（RFC 8705），即另一种发送方约束方式；发送到 /oauth2/par 的证明会将授权码绑定到其密钥（第 10.1 节）。注意，此处无法信任外部访问令牌的 cnf，因为本颁发者不验证另一个授权服务器签名的令牌——该检查只对本服务签发的令牌才是真实的。"
+    "en": "6f8983e239a2958e",
+    "text": "full：就模拟实现而言完整：第 4.3 节全部十二项证明检查，访问令牌和刷新令牌上的 cnf.jkt，token_type DPoP，dpop_jkt 授权请求参数（第 10 节），jti 重放检测，以及两种形式的服务器提供 nonce 握手——令牌端点的 400 use_dpop_nonce，受保护端点的带 WWW-Authenticate 的 401。nonce 默认关闭，直到 oauth2.dpopNonceRequired（按领域，通过 /admin-api/config/set）将其开启。未实现：mTLS 绑定令牌（RFC 8705），即另一种发送方约束方式；发送到 /oauth2/par 的证明会将授权码绑定到其密钥（第 10.1 节）。注意，此处无法信任外部访问令牌的 cnf，因为本颁发者不验证另一个授权服务器签名的令牌——该检查只对本服务签发的令牌才是真实的。"
   },
   "stsmetadata.specs.rfc7033.coverage": {
     "en": "87458015f3e55b0e",
@@ -1080,36 +1080,16 @@
     "text": "第 3.11 节为请求所认证的主体提供的别名。GET、PUT、PATCH 和 DELETE 将凭据解析为目录条目，并委托给 /Users/{id} 使用的同一组 User 处理程序，因此不存在需要保持同步的第二条读写路径。它过去对每种方法都应答 501，因为这里没有任何身份验证，而其中两个 501 仍然是正确的，因此予以保留：匿名调用方没有可作别名的主体（别名不可用，这与资源不存在并不相同），而 POST 将创建一个按定义已经存在的主体。指向没有条目者的凭据——client_credentials 令牌、客户端证书——则改为得到 404。"
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
-    "en": "e6903dbe469abb7c",
-    "text": "RFC 7486 第 7 节。表单编码的 POST，携带 pub=<PEM public key> 和（本服务自己的参数）username=<who it is for>，以 201 和 Hobareg: regok 头部应答。刻意不经身份验证，理由与 POST /tls/trust 相同：这是调用方获得凭据的方式，因此要求凭据才能访问它，将使任何尚未拥有其他凭据的人都无法使用该方案。任何人都可以为任何名称注册任何密钥——随后签名会被真正验证，这才是使该方案值得实现的那一半。该密钥以 hobaPublicKey 的形式落在此人自己位于 ou=users 下的条目上，因此 ldapsearch 和 /admin/users 都会显示它。GET 描述该端点，因为对浏览器返回 404 的 well-known 路径与无人实现的路径无法区分。"
-  },
-  "stsmetadata.endpoints./tls.what": {
-    "en": "c2dad05c1712e862",
-    "text": "本服务出示的证书、它据以验证的客户端信任库，以及本部署如何处理客户端证书。主端口向每个连接请求客户端证书，但不要求任何证书，因此是否出示由客户端自己决定。此系列自己的两个监听器——请求证书的 8443 和要求证书的 9443——已于 2026-09-16 连同它们提供的连接报告一起删除。证书的价值在使用它的地方决定：GET /tls/sign-in 用于会话，令牌端点用于 RFC 8705，/xacml 和 /scim/v2 用于各自的用途。添加 ?format=json。"
-  },
-  "stsmetadata.endpoints./tls/pages.js.what": {
-    "en": "013c43e6b2bb4303",
-    "text": "NON-SPEC (#583)。两个 TLS 诊断页面的运行时和渲染器，打包为由 build-typescript.sh 构建的单个文件（tls/tls-pages-spa.js），并以预压缩形式提供：它根据每个外壳携带的状态绘制 /tls 和 /tls/forwarded — 即各自 ?format=json 所返回、基于请求该页面的那次请求构建的对象 — 并把 /tls 页面的两个操作以 JSON 发送到 POST /tls/trust 和 POST /tls/trust/clear。"
+    "en": "ea46481cdbde5a44",
+    "text": "RFC 7486 第 7 节。表单编码的 POST，携带 pub=<PEM public key> 和（本服务自己的参数）username=<who it is for>，以 201 和 Hobareg: regok 头部应答。刻意不经身份验证：这是调用方获得凭据的方式，因此要求凭据才能访问它，将使任何尚未拥有其他凭据的人都无法使用该方案。任何人都可以为任何名称注册任何密钥——随后签名会被真正验证，这才是使该方案值得实现的那一半。该密钥以 hobaPublicKey 的形式落在此人自己位于 ou=users 下的条目上，因此 ldapsearch 和 /admin/users 都会显示它。GET 描述该端点，因为对浏览器返回 404 的 well-known 路径与无人实现的路径无法区分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",
     "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书，以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
   },
-  "stsmetadata.endpoints./tls/forwarded.what": {
-    "en": "d02cbc2b5ed9d75e",
-    "text": "非规范。请求到达时的样子以及对其采信的内容：每个转发头部、代理可能注入的每个客户端证书头部、global.trustProxy 是否让本服务采信其中任何内容，以及最终得到的有效基础 URL——两份发现文档中的每个颁发者和每个端点都由它构建，因此如果它错了，客户端读到的一切都会随之出错。RFC 9700 第 2.6 节在这里有两半：代理必须（MUST）在设置自己的头部之前剥离入站的安全敏感头部，这一点本服务无法替它完成；而应用除非确实有代理存在，否则不得采信这些头部，这正是该设置的作用。在两种模式下都从不从头部读取客户端证书——头部中的证书是任何人都能伪造的——请求携带的这类头部会被列出，以便忽略它们这件事是可见的，而不是悄无声息的。添加 ?format=json。"
-  },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
     "text": "调用方验证本服务所需的一切，以 PEM 格式提供：本进程中每个 TLS 套接字出示的证书——主端口和目录在 636 上的 LDAPS 监听器，后者提供的是同一张证书和密钥，而不是第二对——随后是它与本服务自己的根 CA 之间的证书链，以及该根证书。这是关于调用方需要做什么的决定，而不是保存的密钥对：一个覆盖主端口和 636 的信任锚只需一次获取，而两个信任锚则会让 ldapsearch 针对为 HTTPS 端口构建的信任库失败，报错 “unable to get local issuer certificate”——这个错误什么都没指明，看起来就像目录坏了。自 2026-09-11 起，证书链和根证书都在此文档中，因为那天起证书不再是自签名的：OpenSSL 会把信任库中的自签名叶证书当作信任锚，却拒绝经过认证的叶证书，因此只固定叶证书的调用方会因一个从未获得过的根证书而得到同样的错误。叶证书在最前面，供只需要它的调用方使用。无论哪种模式，它都在每次启动时重新生成（除非由 tls.certificateFile 提供），就像开发模式的签名密钥一样，因此它是任何人都无法预先内置的信任锚，任何缓存副本都不会保持有效——因此使用 Cache-Control: no-store。它不发布任何私钥。请将其获取到你自己的信任库中，而不要关闭验证。"
-  },
-  "stsmetadata.endpoints./tls/trust.what": {
-    "en": "18257f1e5114fc0f",
-    "text": "POST 一张或多张 PEM 证书——原始形式，或作为表单或 JSON 主体的 `certificates` 字段——链接到它们的客户端证书从下一次握手起即可通过验证（tls.Server.setSecureContext；现有连接保留建立时的信任库）。启动时它不持有任何运行时信任锚（服务根证书在其旁边受信任，受 tls.trustIssuedClientCertificates 控制）：测试所验证的 CA 通常是在连接前几分钟在浏览器中生成的，不存在于其他任何地方，因此没有文件能保存它。它位于主端口上，主端口请求但不要求客户端证书，因此在任何东西被信任之前就可以访问它。仅限 POST。这是开发模式的测试控件：它不需要凭据，因此产品模式会拒绝它，并指明设有关卡的入口——/admin/tls/trust 和 POST /admin-api/tls/trust/add。"
-  },
-  "stsmetadata.endpoints./tls/trust/clear.what": {
-    "en": "4a32d332c1dc7bd6",
-    "text": "删除所有信任锚——来自 tls.trustAnchorsFile 的信任锚直到下次启动前被删除——因此只有链接到服务根证书的证书（在 tls.trustIssuedClientCertificates 打开时与信任库并列受信任）仍能通过验证。仅限 POST。这是产品模式会拒绝的开发测试控件；设有关卡的入口一次删除一个信任锚，并且没有清空功能。"
   },
   "stsmetadata.endpoints./.what": {
     "en": "4c29594ca1759528",
@@ -1960,8 +1940,12 @@
     "text": "以 JSON 形式提供的 GET /admin/tls/trust：每个客户端证书信任锚，及其主题、颁发者、序列号、有效期、指纹、PEM 和来源（`file` 或 `runtime`），通过 ?page= 和 ?per= 分页。整个进程只有一个信任库，因此在任何领域前缀下应答都相同。其中没有私钥——信任库只保存证书。运行时信任锚持久保存在目录中；`file` 信任锚则不然。"
   },
   "stsmetadata.endpoints./admin-api/tls/trust/:action.what": {
-    "en": "7c6af554c52a3f33",
-    "text": "add | remove——/admin/tls/trust 上的两个控件，经由同一个操作函数，操作取自 URL。add 接受 `certificates`（一个或多个 PEM 块，只要 OpenSSL 无法读取其中一个就整体拒绝）；remove 接受一个 `fingerprint`。刻意不提供批量清除。需要 admin:write，在两种模式下均可用，是 POST /tls/trust 的受关卡保护的孪生操作，而后者在产品模式下会被拒绝。写入 ou=trustAnchors，因此更改在重启后仍然保留。"
+    "en": "cfa6d74a25e8ebe3",
+    "text": "add | remove——/admin/tls/trust 上的两个控件，经由同一个操作函数，操作取自 URL。add 接受 `certificates`（一个或多个 PEM 块，只要 OpenSSL 无法读取其中一个就整体拒绝）；remove 接受一个 `fingerprint`。刻意不提供批量清除。需要 admin:write，在两种模式下均可用，是唯一的运行时入口（开放的 POST /tls/trust 已不存在）。写入 ou=trustAnchors，因此更改在重启后仍然保留。"
+  },
+  "stsmetadata.endpoints./admin-api/tls-connection.what": {
+    "en": "f7b9e050b43d3812",
+    "text": "非规范（#597）。以 JSON 形式提供 GET /admin/tls-connection：发出请求的那个请求，以及本服务所见和所信的内容——其 TLS 版本和密码套件，该连接出示的客户端证书（它是否通过信任库验证、身份关卡如何处理它、它的吊销裁定），以及每个转发标头，连同 global.trustProxy 和 global.trustedProxies 让本服务对其采信的内容，其中包括有效的基础 URL。绝不会从标头中读取客户端证书。需要 Admin Read，两种模式均可；它不会更改任何内容。它取代了开发页面 /tls 和 /tls/forwarded。"
   },
   "stsmetadata.endpoints./admin-api/kerberos/claims.what": {
     "en": "3d9dd72c23d5bd3d",
@@ -2714,18 +2698,6 @@
   "stsmetadata.endpoints./oauth2/token.what": {
     "en": "f6e6df9ad2f28350",
     "text": "authorization_code、refresh_token、client_credentials、password、token-exchange、RFC 8628 的 device_code（#150），以及强制执行 tx_code 的 OID4VCI pre-authorized_code。RFC 8693 交换可以在交换得到的访问令牌旁边返回一个刷新令牌——本服务的普通刷新令牌，可在 refresh 授权中兑换，与其他刷新令牌一样被绑定和轮换（section 2.2.1 的离线情形）。oauth2.tokenExchangeRefreshToken 以三个取值决定：`when-requested`（默认——按字面理解 section 2.1，因此客户端以 `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` 请求，只有请求了才会得到）、`never`（请求成功但不附带刷新令牌，这是实现该参数之前此端点的行为）以及 `always`（每次交换都会得到一个，无论是否请求）。客户端应用条目上的 oauthTokenExchangeRefreshToken 仅为该客户端覆盖此设置，issued_token_type 始终描述 access_token 成员。请求上的 DPoP 证明会将颁发的访问令牌和刷新令牌绑定到其密钥（cnf.jkt），并使 token_type 为 DPoP；没有证明时，响应是普通的 Bearer 令牌。通过携带客户端证书的连接发出的令牌请求，也会将访问令牌和刷新令牌绑定到该证书（RFC 8705 cnf[\"x5t#S256\"]），这需要主端口使用 TLS。RFC 8707 `resource` 收窄受众，且只能收窄授权请求所要求的范围。在 RFC 9700 模式下，条目表明自己是机密客户端的客户端必须在此处认证，可使用六种方法中的任何一种——两种密钥方法、两种断言方法（RFC 7523，针对已注册的 JWKS 或密钥验证，拒绝 jti 重放）以及 RFC 8705 section 2 的两种证书方法。在 RFC 9700 模式下，authorization_code 授权还会拒绝：为颁发时不带质询的授权码提供的 code_verifier（section 4.8.2 降级）、由非其颁发对象的客户端兑换的授权码，以及不带 redirect_uri 的令牌请求。该模式还会彻底拒绝 PASSWORD 授权（section 2.4），轮换刷新令牌，并在已停用的刷新令牌再次出示时吊销整条链（section 2.2.2），拒绝来自另一个客户端的刷新、范围超过所授予范围的刷新，或针对授权未获准的资源服务器的刷新——刷新令牌携带其授权所具有的 RFC 8707 资源，因此续期不能扩大自身的受众——使空闲的刷新链过期（oauth2.refreshIdleSeconds，从最后一次兑换而非颁发起算），并要求条目表明自己是机密客户端的客户端以六种方法中的任何一种认证（section 2.5）。它还会关闭上述重放宽限：第二次出示的授权码会被拒绝，而不是以其已换得的令牌应答，并且那些令牌会被吊销（section 4.5，吊销依据 RFC 6749 section 10.5）。"
-  },
-  "stsmetadata.endpoints./devices/test/compliance.what": {
-    "en": "c01c491d1cedbb03",
-    "text": "NON-SPEC（#164 决定 9），用于测试：MDM 推送的请求体——一份按 id、指纹或证书指明设备的报告，或 reports: [...]——无需 device:compliance 作用域，记录来源为 test-control，因此被测客户端可以触发其要响应的 CAEP device-compliance-change。产品模式以 403 拒绝它（mode.opensTestControls()，STS-DEVICE-0035）：在那里，入口是位于其作用域之下的 /admin-api/device-compliance 推送。"
-  },
-  "stsmetadata.endpoints./devices/test/compliance.effect": {
-    "en": "3487237cfab72d79",
-    "text": "设置设备的合规状态，无需任何凭据"
-  },
-  "stsmetadata.endpoints./dpop/nonce-mode.what": {
-    "en": "150ba808fb3c821e",
-    "text": "NON-SPEC，用于测试和手动尝试握手：在运行时开启和关闭 RFC 9449 section 8/9 的服务器提供 nonce 要求，因此无需重启服务即可演练 401/重试交换。GET 报告当前状态；POST {\"required\": true|false} 设置它——针对访问它所在的信任领域，通过写入 oauth2.dpopNonceRequired 实现（直到 2026-09-12 之前，它是整个进程的一个开关）。产品模式以 403 拒绝该 POST，因为它是测试控件：在那里，该设置通过 /admin/oauth2 或 POST /admin-api/config/set 更改。"
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
     "en": "a03a6663434a737e",

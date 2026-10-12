@@ -67,14 +67,6 @@
     "en": "9458f47a8a347911",
     "text": "伺服器證書（PEM）"
   },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "信任客戶端證書簽發者"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "清空客戶端信任存放區"
-  },
   "endpoints.route./home.js.name": {
     "en": "130dd402d6eade90",
     "text": "首頁的腳本"

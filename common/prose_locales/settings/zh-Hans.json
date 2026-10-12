@@ -92,8 +92,8 @@
     "text": "信任转发标头"
   },
   "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "相信 X-Forwarded-Proto 和 X-Forwarded-Host——终止 TLS 的反向代理会设置它们，以说明客户端实际使用的是什么。当本服务前面有其他组件时请开启，否则元数据会向通过 https 访问的客户端发布 http:// URL，并且每个 DPoP 证明都会因指向真实端点而被拒绝。前面没有任何组件时请保持关闭：没有代理时，这些只是任何客户端都能设置的普通标头，相信它们就等于让调用方决定本服务认为自己的颁发者和端点是什么。GET /tls/forwarded 显示请求实际携带了什么，以及其中哪些被采信。请注意，在任何模式下，本服务都绝不会从标头（X-Client-Cert 及类似标头）中读取客户端证书——转发而来的证书是任何人都能伪造的证书。"
+    "en": "4369282d9208f4aa",
+    "text": "相信 X-Forwarded-Proto 和 X-Forwarded-Host——终止 TLS 的反向代理会设置它们，以说明客户端实际使用的是什么。当本服务前面有其他组件时请开启，否则元数据会向通过 https 访问的客户端发布 http:// URL，并且每个 DPoP 证明都会因指向真实端点而被拒绝。前面没有任何组件时请保持关闭：没有代理时，这些只是任何客户端都能设置的普通标头，相信它们就等于让调用方决定本服务认为自己的颁发者和端点是什么。监控 → TLS 连接显示请求实际携带了什么，以及其中哪些被采信。请注意，在任何模式下，本服务都绝不会从标头（X-Client-Cert 及类似标头）中读取客户端证书——转发而来的证书是任何人都能伪造的证书。"
   },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
@@ -312,8 +312,8 @@
     "text": "双向 TLS 密钥证明的信任方式"
   },
   "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "以双向 TLS 证明的 GNAP 密钥（RFC 9635 第 7.3.2 节）如何被信任。`pki`（第 11.4 节）要求 TLS 客户端证书链接到客户端信任库——此领域的 TLS 客户端证书颁发机构，或安装在 /tls/trust 的信任锚——并绑定到客户端的应用条目：由此领域签发给它，或携带该条目注册的那一个 RFC 8705 主体参数（oauthTlsClientAuthSubjectDn 或某个 oauthTlsClientAuthSan* 属性）。这样，由证书颁发机构重新签发的证书无需重新注册即被接受。`pinned` 接受密钥所指的证书（包括自签名证书），不需要证书链。两种方式都会拒绝已吊销的证书（pki.revocationCheck）。**`auto` 在产品模式下为 pki，在开发模式下为 pinned。** 警告：`pinned` 放弃了证书链验证和在证书颁发机构处的轮换——被盗的自签名密钥在固定它的条目被编辑之前一直有效。应用可以为自己设置更严格的方式（gnapMtlsTrust=pki），但绝不能更弱。"
+    "en": "7f26fe14380ed8fe",
+    "text": "以双向 TLS 证明的 GNAP 密钥（RFC 9635 第 7.3.2 节）如何被信任。`pki`（第 11.4 节）要求 TLS 客户端证书链接到客户端信任库——此领域的 TLS 客户端证书颁发机构，或通过 /admin-api/tls/trust 安装的信任锚——并绑定到客户端的应用条目：由此领域签发给它，或携带该条目注册的那一个 RFC 8705 主体参数（oauthTlsClientAuthSubjectDn 或某个 oauthTlsClientAuthSan* 属性）。这样，由证书颁发机构重新签发的证书无需重新注册即被接受。`pinned` 接受密钥所指的证书（包括自签名证书），不需要证书链。两种方式都会拒绝已吊销的证书（pki.revocationCheck）。**`auto` 在产品模式下为 pki，在开发模式下为 pinned。** 警告：`pinned` 放弃了证书链验证和在证书颁发机构处的轮换——被盗的自签名密钥在固定它的条目被编辑之前一直有效。应用可以为自己设置更严格的方式（gnapMtlsTrust=pki），但绝不能更弱。"
   },
   "gnap.subIdFormats|label": {
     "en": "43051e9545cde37a",
@@ -1568,8 +1568,8 @@
     "text": "在请求工作线程中处理"
   },
   "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "以逗号分隔的列表，列出交给请求工作线程处理、而不在拥有套接字的进程中处理的内容。每个条目是三种东西之一，并以其形式表明是哪一种：\n\n- **路径前缀**，以斜杠开头——\"/scim/v2,/admin-api\"。在去掉领域段之后匹配，因此指定 /scim/v2 即覆盖所有领域。\n- **操作类型**，不以斜杠开头——\"ldap\" 表示所有目录操作，\"ldap.search\" 表示其中之一。这些是不使用 HTTP 的套接字背后的工作：前端进程保留套接字和分帧（接受连接、解码 BER 并写回应答），工作线程完成实际工作。类别有 \"ldap\"（389 和 636 上的目录）、\"spiffe\"（Workload API 和 SPIRE Server API 的一元方法，以及 Broker API 中引用经证明后的 FetchJWTSVID）和 \"krb5\"（KDC 的 TCP 和 UDP 88 上的每条消息）。\n- **\"*\"**，表示两类中的一切——这是“在池中运行服务”的表达方式，也是下次增加协议族时唯一不会过时的写法。\n\n\"*\" 是默认值（#364）：在具备协调能力的存储下，每个请求都交给请求工作线程。使用 memory 或 ldif 存储且 workers.requestCount 保持默认时没有工作线程，不分派任何内容。留空表示在任何地方都不分派。无论此项如何设置，/tls 都从不分派，因为它的全部内容就是服务器在请求所到达的连接上看到的东西。\n\n**除非本进程处于协调状态，否则不分派任何内容**：在没有变更日志的存储下此处有条目，会让服务在启动时停止并指明此设置，而不是让每个工作线程各自持有目录、会话和设置的私有副本。在没有工作线程提供服务时，此处指定的路径会以 503 拒绝，而不是在此处理，因为同一路径由两个进程中恰好可用的那一个来应答，正是这个池要避免的故障；而操作则改由调用方完成，因为让它失败会为了一项性能措施而拖垮一个协议监听器。"
+    "en": "4b32567593c41988",
+    "text": "以逗号分隔的列表，列出交给请求工作线程处理、而不在拥有套接字的进程中处理的内容。每个条目是三种东西之一，并以其形式表明是哪一种：\n\n- **路径前缀**，以斜杠开头——\"/scim/v2,/admin-api\"。在去掉领域段之后匹配，因此指定 /scim/v2 即覆盖所有领域。\n- **操作类型**，不以斜杠开头——\"ldap\" 表示所有目录操作，\"ldap.search\" 表示其中之一。这些是不使用 HTTP 的套接字背后的工作：前端进程保留套接字和分帧（接受连接、解码 BER 并写回应答），工作线程完成实际工作。类别有 \"ldap\"（389 和 636 上的目录）、\"spiffe\"（Workload API 和 SPIRE Server API 的一元方法，以及 Broker API 中引用经证明后的 FetchJWTSVID）和 \"krb5\"（KDC 的 TCP 和 UDP 88 上的每条消息）。\n- **\"*\"**，表示两类中的一切——这是“在池中运行服务”的表达方式，也是下次增加协议族时唯一不会过时的写法。\n\n\"*\" 是默认值（#364）：在具备协调能力的存储下，每个请求都交给请求工作线程。使用 memory 或 ldif 存储且 workers.requestCount 保持默认时没有工作线程，不分派任何内容。留空表示在任何地方都不分派。无论此项如何设置，/tls 和 /admin-api/tls-connection 都从不分派，因为它们的全部内容就是服务器在请求所到达的连接上看到的东西。\n\n**除非本进程处于协调状态，否则不分派任何内容**：在没有变更日志的存储下此处有条目，会让服务在启动时停止并指明此设置，而不是让每个工作线程各自持有目录、会话和设置的私有副本。在没有工作线程提供服务时，此处指定的路径会以 503 拒绝，而不是在此处理，因为同一路径由两个进程中恰好可用的那一个来应答，正是这个池要避免的故障；而操作则改由调用方完成，因为让它失败会为了一项性能措施而拖垮一个协议监听器。"
   },
   "workers.dispatch|restartReason": {
     "en": "aff662049479560d",
@@ -1980,8 +1980,8 @@
     "text": "要求 DPoP 服务器 nonce"
   },
   "oauth2.dpopNonceRequired|description": {
-    "en": "407ed41bf850f8d6",
-    "text": "要求每个 DPoP 证明都携带本服务器提供的 nonce（RFC 9449 第 8 和 9 节），这会使会话的第一个请求变成一次 401 或 400 加一次重试。它让证明更新鲜，但从不使其成为必需：不带 DPoP 标头的请求仍是 Bearer 请求（下面的“要求 DPoP”各行才使其成为必需）。自 2026-09-12 起按信任领域设置——此前它是整个进程的一个开关，因此一个领域开启它就会为其他每个领域开启。在开发模式下，POST /dpop/nonce-mode 会为其被访问的领域写入此设置；在产品模式下该端点会拒绝，此行——通过 /admin/oauth2 或 POST /admin-api/config/set，两者都需要凭据——是更改它的唯一途径。"
+    "en": "4742a4c9d71043fa",
+    "text": "要求每个 DPoP 证明都携带本服务器提供的 nonce（RFC 9449 第 8 和 9 节），这会使会话的第一个请求变成一次 401 或 400 加一次重试。它让证明更新鲜，但从不使其成为必需：不带 DPoP 标头的请求仍是 Bearer 请求（下面的“要求 DPoP”各行才使其成为必需）。自 2026-09-12 起按信任领域设置——此前它是整个进程的一个开关，因此一个领域开启它就会为其他每个领域开启。此行——在 OAuth 2.0 页面的 DPoP 设置中，或通过 POST /admin-api/config/set，两者都需要凭据——是在任一模式下更改它的唯一途径。"
   },
   "oauth2.dpopIatSkewS|label": {
     "en": "a0b12e9cd8d594ec",
@@ -4508,8 +4508,8 @@
     "text": "信任在用户门户上签发的 TLS 客户端证书"
   },
   "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "打开时，会将本服务自己的根 CA 加入主端口的客户端信任库，使用户在 /portal/signing-key 上为自己签发的 TLS 客户端证书能够通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自具有 clientAuth 的 TLS 客户端签发 CA 时，经由该根证书的证书链才构成身份：本服务签发的其他所有密钥对都链接到同一个根证书，但不会被接受为身份（参见 common/tls_client_certificates.js）。关闭时，信任库交由 /tls/trust 和 tls.trustAnchorsFile 管理，与以前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
+    "en": "953c8172d6c3e3e6",
+    "text": "打开时，会将本服务自己的根 CA 加入主端口的客户端信任库，使用户在 /portal/signing-key 上为自己签发的 TLS 客户端证书能够通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自具有 clientAuth 的 TLS 客户端签发 CA 时，经由该根证书的证书链才构成身份：本服务签发的其他所有密钥对都链接到同一个根证书，但不会被接受为身份（参见 common/tls_client_certificates.js）。关闭时，信任库交由 /admin/tls/trust 和 tls.trustAnchorsFile 管理，与以前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
   },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -4764,8 +4764,8 @@
     "text": "客户端证书信任锚文件"
   },
   "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "一个 PEM 文件，包含用于验证主端口上客户端证书的 CA 证书，在启动时加载。这是产品模式下填充信任库的方式：POST /tls/trust 和 /tls/trust/clear 在开发模式下对任何人都会响应，而在产品模式下会被拒绝，因为任何人都能添加的信任锚，就意味着任何人都能让客户端证书通过验证。留空表示信任库在启动时为空，这也是它一贯的状态。"
+    "en": "ed7685645c8ebaaa",
+    "text": "一个 PEM 文件，包含用于验证主端口上客户端证书的 CA 证书，在启动时加载。这是在任何监听之前填充信任库的方式；运行时，/admin/tls/trust 和 POST /admin-api/tls/trust/add 在凭据保护下完成这一操作，两种模式均可——没有开放的入口，因为任何人都能添加的信任锚，就意味着任何人都能让客户端证书通过验证。留空表示信任库在启动时为空，这也是它一贯的状态。"
   },
   "tls.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -6224,8 +6224,8 @@
     "text": "提供 TLS 客户端证书方式"
   },
   "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（参见 /tls），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方；在这里，它认证的人随后可以写入目录。"
+    "en": "be5e7d5ccffce8c1",
+    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（/admin/tls/trust），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方；在这里，它认证的人随后可以写入目录。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -10260,8 +10260,8 @@
     "text": "主端口：客户端证书信任锚文件"
   },
   "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "仅针对主端口监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。用于验证主端口上客户端证书的 CA 证书 PEM 文件，在启动时加载。这是在产品模式下填充信任存储的方式：POST /tls/trust 和 /tls/trust/clear 在开发模式下对任何人作答，在产品模式下则被拒绝，因为任何人都能添加的锚，就意味着任何人都能让自己制作的客户端证书通过验证。为空表示信任存储初始为空，这是它一贯的行为。"
+    "en": "be47c3bb57175ce2",
+    "text": "仅针对主端口监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。一个 PEM 文件，包含用于验证主端口上客户端证书的 CA 证书，在启动时加载。这是在任何监听之前填充信任库的方式；运行时，/admin/tls/trust 和 POST /admin-api/tls/trust/add 在凭据保护下完成这一操作，两种模式均可——没有开放的入口，因为任何人都能添加的信任锚，就意味着任何人都能让客户端证书通过验证。留空表示信任库在启动时为空，这也是它一贯的状态。"
   },
   "listenerMain.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10272,8 +10272,8 @@
     "text": "LDAPS：客户端证书信任锚文件"
   },
   "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "仅针对 LDAPS 监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。用于验证主端口上客户端证书的 CA 证书 PEM 文件，在启动时加载。这是在产品模式下填充信任存储的方式：POST /tls/trust 和 /tls/trust/clear 在开发模式下对任何人作答，在产品模式下则被拒绝，因为任何人都能添加的锚，就意味着任何人都能让自己制作的客户端证书通过验证。为空表示信任存储初始为空，这是它一贯的行为。"
+    "en": "c15d167a0e065170",
+    "text": "仅针对LDAPS监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。一个 PEM 文件，包含用于验证主端口上客户端证书的 CA 证书，在启动时加载。这是在任何监听之前填充信任库的方式；运行时，/admin/tls/trust 和 POST /admin-api/tls/trust/add 在凭据保护下完成这一操作，两种模式均可——没有开放的入口，因为任何人都能添加的信任锚，就意味着任何人都能让客户端证书通过验证。留空表示信任库在启动时为空，这也是它一贯的状态。"
   },
   "listenerLdaps.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10284,8 +10284,8 @@
     "text": "协议调试器：客户端证书信任锚文件"
   },
   "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "仅针对协议调试器监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。用于验证主端口上客户端证书的 CA 证书 PEM 文件，在启动时加载。这是在产品模式下填充信任存储的方式：POST /tls/trust 和 /tls/trust/clear 在开发模式下对任何人作答，在产品模式下则被拒绝，因为任何人都能添加的锚，就意味着任何人都能让自己制作的客户端证书通过验证。为空表示信任存储初始为空，这是它一贯的行为。"
+    "en": "111555560d2f6041",
+    "text": "仅针对协议调试器监听器：tls.trustAnchorsFile。为空（默认值）时遵循 tls.trustAnchorsFile；其他任何值只对此监听器作出决定。一个 PEM 文件，包含用于验证主端口上客户端证书的 CA 证书，在启动时加载。这是在任何监听之前填充信任库的方式；运行时，/admin/tls/trust 和 POST /admin-api/tls/trust/add 在凭据保护下完成这一操作，两种模式均可——没有开放的入口，因为任何人都能添加的信任锚，就意味着任何人都能让客户端证书通过验证。留空表示信任库在启动时为空，这也是它一贯的状态。"
   },
   "listenerDebugger.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10296,8 +10296,8 @@
     "text": "主端口：信任在用户门户上签发的 TLS 客户端证书"
   },
   "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "仅针对主端口监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
+    "en": "d36e02de3705d807",
+    "text": "仅针对主端口监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /admin/tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10308,8 +10308,8 @@
     "text": "LDAPS：信任在用户门户上签发的 TLS 客户端证书"
   },
   "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "仅针对 LDAPS 监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
+    "en": "8771bad384fa372a",
+    "text": "仅针对 LDAPS 监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /admin/tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
   },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10320,8 +10320,8 @@
     "text": "协议调试器：信任在用户门户上签发的 TLS 客户端证书"
   },
   "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "仅针对协议调试器监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
+    "en": "7d2a9613dbaa95cc",
+    "text": "仅针对协议调试器监听器：tls.trustIssuedClientCertificates。inherit（默认值）时遵循 tls.trustIssuedClientCertificates；其他任何值只对此监听器作出决定。打开时，会将本服务自己的根 CA 添加到主端口的客户端信任存储中，这样某人在 /portal/signing-key 上为自己签发的 TLS 客户端证书即可通过验证并让其登录——登录到签署该证书的 TLS 客户端签发 CA 所在的领域。只有当叶证书来自带有 clientAuth 的 TLS 客户端签发 CA 时，经由该根的证书链才构成身份：本服务签发的其他每个密钥对都链接到同一个根，并会被拒绝作为身份（请参阅 common/tls_client_certificates.js）。关闭时，信任存储交由 /admin/tls/trust 和 tls.trustAnchorsFile 决定，与之前一样；门户仍会签发证书，并说明监听器不会接受它所签发的证书。"
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",

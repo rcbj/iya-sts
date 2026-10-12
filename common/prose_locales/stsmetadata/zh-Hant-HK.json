@@ -127,10 +127,6 @@
     "en": "07ba142c1f4dccd1",
     "text": "full，而其中沒有任何部分是本服務的程式碼——主連接埠（global.https 開啟時）與目錄在 636 上的 LDAPS 接聽程式，都是 node 自己建立在 OpenSSL 之上的 TLS 堆疊。協定下限與加密套件清單為 tls.minVersion（TLSv1.2，node 的預設值）與 tls.ciphers（node 的預設清單）。此處撰寫的是「原則」與「報告」：主連接埠會向每個連線索取客戶端證書但不強制要求，GET /tls/sign-in 則傳回伺服器所看到的內容（此系列專屬的兩個接聽程式——一個索取、一個強制要求——已於 2026-09-16 刪除）。閱讀該報告之前，有兩件關於客戶端驗證的事值得知道。在 TLS 1.3 下，客戶端「最後」才送出其 Certificate 與 Finished，因此從它的角度看，交握在伺服器對證書表示任何意見之前就已完成——在 secureConnect 時回報成功的客戶端，會向一個在一毫秒後就拒絕它的伺服器回報一次愉快的相互 TLS 連線。而 node 拒絕未經驗證的客戶端證書的方式是「不發送警示就關閉 socket」，這就是為什麼只有索取而不強制要求的連接埠，才能告訴你原因。"
   },
-  "stsmetadata.specs.rfc5280.coverage": {
-    "en": "5243305b4fd8c9b6",
-    "text": "partial，而路徑驗證是 OpenSSL 的而非本服務的：客戶端證書依執行階段 POST 至 /tls/trust 的信任錨點驗證（開發模式；產品模式會拒絕這種做法，改在啟動時讀取 tls.trustAnchorsFile），在 tls.trustIssuedClientCertificates 開啟期間還包括服務 Root；伺服器證書在該 Root 下簽發，其 subjectAltName 攜帶此堆疊可被到達的每個名稱。「本服務會發布撤銷資訊，且自 2026-09-12 起也會查詢它」。第 5 節已實作：/admin/pki 中的每個授權單位都會簽署 CRL，提供於 /pki/crl/{scope}/{ca} 並發布到目錄的 ou=crl 下，而本服務簽發的每張證書都會透過 http 與 ldap 指名其自己的 CRL。在「驗證」端，本服務簽發的出示證書會依其自己的登錄檢查，其他任何人的則依其指名的 OCSP 回應程式與 CRL 檢查（common/revocation_status.js，原則 pki.revocationCheck）。第 6.3 節的無法判定狀態包括位於本服務被設定為不連線之地址的清單（pki.revocationLdap=ldaps 下的純 ldap:、沒有目錄的相對名稱），在 hard-fail 下會被拒絕；未指名任何清單與回應程式的外部 CA 簽發證書在產品模式下會被拒絕（pki.revocationRequireDistributionPoint=auto）；並遵循 RFC 9608 noRevAvail——第 4 節略過檢查，第 3 節的矛盾情形為無效。名稱限制、原則與路徑長度只在 OpenSSL 強制執行的範圍內被強制執行——也就是說執行得很正確——而不是由此處撰寫的任何東西執行。"
-  },
   "stsmetadata.specs.rfc6960.coverage": {
     "en": "edce74c655cea522",
     "text": "partial。「回應程式」這一半：每個核證機關一個回應程式，位於 /pki/ocsp/{scope}/{ca}，支援附錄 A.1 的兩種傳輸方式（DER POST 與 base64 GET）、good/revoked/unknown、第 4.2.1 節的撤銷原因與時間，以及在有送出時回傳的第 4.4.1 節 nonce。它以 CA「本身」簽署，而不是使用委派的回應程式證書——依第 4.2.2.2 節這是合法的，也是客戶端最容易驗證的方式——因此任何地方都沒有 id-kp-OCSPSigning EKU，也沒有 id-pkix-ocsp-nocheck。回應程式 ID「依金鑰雜湊」（第 4.2.2.3 節），每個時間欄位都是整秒，針對非此授權單位簽發之證書的請求會以未簽署的 `unauthorized` 回應（第 2.3 節），而不是一個無人能驗證的已簽署 `unknown`，長度為 0 或超過 32 個八位元組的 nonce 為 `malformedRequest`（RFC 8954 第 2.1 節）。每張證書都透過「純 HTTP」在 `pki.httpPort` 上指名回應程式。「自 2026-09-12 起也是客戶端」：來自其他授權單位的出示證書，會依其 Authority Information Access 所指名的回應程式檢查（common/revocation_status.js）。「未完成」：請求簽章既不要求也不驗證，沒有 CRL 參照延伸，沒有封存截止，沒有服務定位器。"
@@ -599,29 +595,13 @@
     "en": "8899a7fad6b6b50c",
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、客戶端憑證——則改為得到 404。"
   },
-  "stsmetadata.endpoints./tls.what": {
-    "en": "c2dad05c1712e862",
-    "text": "本服務出示的證書、它據以驗證的客戶端信任存放區，以及此部署如何處理客戶端證書。主連接埠會向每個連線索取客戶端證書但不強制要求，因此是否出示由客戶端自行決定。此系列自有的兩個接聽程式——會索取的 8443 與強制要求的 9443——已於 2026-09-16 連同它們提供的連線報告一併刪除。證書的價值取決於它被「使用」的地方：GET /tls/sign-in 用於工作階段、權杖端點用於 RFC 8705，/xacml 與 /scim/v2 則各有其用途。加上 ?format=json。"
-  },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",
     "text": "經驗證的客戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 客戶端身分的憑證，以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。"
   },
-  "stsmetadata.endpoints./tls/forwarded.what": {
-    "en": "d02cbc2b5ed9d75e",
-    "text": "非規格端點。顯示請求「抵達時」的樣子以及其中哪些被採信：每個轉送標頭、代理可能注入的每個客戶端證書標頭、global.trustProxy 是否讓本服務採信其中任何一項，以及最終得出的有效基礎 URL——兩份探索文件中的每個簽發者與每個端點都是以它建立的，因此若它錯了，客戶端讀到的一切也都跟著錯。RFC 9700 第 2.6 節在此有兩半：代理必須（MUST）在設定自己的標頭之前去除傳入的安全敏感標頭，本服務無法代勞；而應用程式除非真的有代理存在，否則不得「採信」它們，這正是該設定的作用。無論哪種模式，都「絕不」從標頭讀取客戶端證書——標頭中的證書是任何人都能偽造的——而請求所攜帶的這類標頭會被列出，讓忽略它們這件事可見而非悄然無聲。加上 ?format=json。"
-  },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
     "text": "呼叫端「驗證」本服務所需的一切，以 PEM 提供：此程序中每個 TLS 通訊端出示的證書——主連接埠以及目錄位於 636 的 LDAPS 接聽程式，後者提供同一張證書與金鑰，而非第二組——接著是它與本服務自己的 Root CA 之間的鏈，以及該 Root。這是關於「呼叫端」必須做什麼的決定，而不是為了省一組金鑰：涵蓋主連接埠與 636 的單一信任錨點只需擷取「一次」，若有兩個，則針對 HTTPS 連接埠建立的信任存放區會讓 ldapsearch 以「unable to get local issuer certificate」失敗——這個錯誤沒有指出任何東西，看起來就像目錄壞了。自 2026-09-11 起，鏈與 Root 都包含在此文件中，因為那天起證書不再是自我簽署的：OpenSSL 會把信任存放區中的自我簽署葉證書當作信任錨點，卻拒絕經認證的葉證書，因此只釘選葉證書的呼叫端，會針對一個從未拿到的 Root 得到同樣的錯誤。「葉證書在最前面」，供只想要它的呼叫端使用。無論哪種模式，它都會「在每次啟動時重新產生」（除非由 tls.certificateFile 提供），就像開發用的簽署金鑰一樣，因此沒有人能將它內建為信任錨點，任何快取複本也都不會保持有效——因此為 Cache-Control: no-store。它不發布任何私密金鑰。請將它擷取到你自己的信任存放區，而不是關閉驗證。"
-  },
-  "stsmetadata.endpoints./tls/trust.what": {
-    "en": "18257f1e5114fc0f",
-    "text": "POST 一張或多張 PEM 憑證——原始格式，或作為表單或 JSON 本文的 `certificates` 欄位——鏈結至它們的客戶端憑證自下一次交握起即可通過驗證（tls.Server.setSecureContext；既有連線保留建立時的信任存放區）。啟動時它不持有任何執行階段信任錨點（服務 Root 在 tls.trustIssuedClientCertificates 之後與其並列受信任）：測試所驗證的 CA 通常是在連線前幾分鐘於瀏覽器中產生，不存在於其他任何地方，因此沒有檔案能保存它。它位於主連接埠，該連接埠會索取客戶端憑證但不強制要求，因此在任何東西受信任之前就能存取。僅限 POST。這是開發用的測試控制項：它不需要認證資訊，因此產品模式會拒絕它，並指出設有閘門的入口——/admin/tls/trust 與 POST /admin-api/tls/trust/add。"
-  },
-  "stsmetadata.endpoints./tls/trust/clear.what": {
-    "en": "4a32d332c1dc7bd6",
-    "text": "移除所有信任錨點——tls.trustAnchorsFile 中的信任錨點則移除至下次啟動為止——因此只有鏈結至服務 Root 的證書（在 tls.trustIssuedClientCertificates 開啟時與信任存放區並列受信任）仍能通過驗證。僅限 POST。這是產品模式會拒絕的開發用測試控制項；設有閘門的入口一次移除一個信任錨點，沒有清除功能。"
   },
   "stsmetadata.endpoints./.what": {
     "en": "4c29594ca1759528",
@@ -979,10 +959,6 @@
     "en": "9a4194c66c51573f",
     "text": "以 JSON 提供的 GET /admin/tls/trust：每個客戶端證書信任錨點，附上其主體、簽發者、序號、有效期間、指紋、PEM 與來源（`file` 或 `runtime`），以 ?page= 與 ?per= 分頁。整個「程序」只有一個信任存放區，因此在每個領域前置路徑下的回答都相同。其中沒有私密金鑰——信任存放區只保存證書。執行階段錨點會持久保存在目錄中；`file` 錨點則不會。"
   },
-  "stsmetadata.endpoints./admin-api/tls/trust/:action.what": {
-    "en": "7c6af554c52a3f33",
-    "text": "add | remove——/admin/tls/trust 上的兩個控制項，透過同一個動作函數執行，動作取自 URL。add 接受 `certificates`（一個或多個 PEM 區塊，若 OpenSSL 無法讀取其中一個則整批拒絕）；remove 接受一個 `fingerprint`。刻意「沒有」批次清除。需要 admin:write，在兩種模式下都可用，是 POST /tls/trust 的受管控對應版本，而後者在產品模式下會被拒絕。寫入 ou=trustAnchors，因此變更在重新啟動後仍然保留。"
-  },
   "stsmetadata.endpoints./admin-api/kerberos/claims/:action.what": {
     "en": "7a9e980dc93487b7",
     "text": "add | add-attribute-claim | remove | clear | replace——/admin/kerberos/claims 上的控制項，透過宣告集唯一的動作函數執行，以 claims.change 稽核，並以 CAEP token-claims-change 通知持有有效票證者。每一列都接受 string、int64、uint64 或 boolean 的 `type`。"
@@ -1230,10 +1206,6 @@
   "stsmetadata.endpoints./oauth2/token.what": {
     "en": "f6e6df9ad2f28350",
     "text": "authorization_code、refresh_token、client_credentials、password、token-exchange、RFC 8628 的 device_code（#150），以及強制 tx_code 的 OID4VCI pre-authorized_code。RFC 8693 交換可以在交換後的存取權杖旁一併傳回「重新整理權杖」——本服務的一般重新整理權杖，可在 refresh 授權類型兌換，並與其他權杖一樣繫結與輪替（section 2.2.1 的離線情況）。oauth2.tokenExchangeRefreshToken 以三個值決定：`when-requested`（預設——依字面解讀 section 2.1，因此客戶端以 `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` 要求，只有要求了才會取得）、`never`（要求會成功但不附重新整理權杖，這是實作該參數之前此端點的行為）以及 `always`（每次交換都會取得，無論是否要求）。「客戶端」應用程式項目上的 oauthTokenExchangeRefreshToken 僅針對該客戶端覆寫此設定，而 issued_token_type 始終描述 access_token 成員。請求上的 DPoP 證明會將簽發的存取與重新整理權杖繫結至其金鑰（cnf.jkt），並使 token_type 為 DPoP；沒有證明時回應為一般的 Bearer 權杖。透過帶有「客戶端憑證」之連線發出的 Token Request 也會將存取與重新整理權杖繫結至該憑證（RFC 8705 cnf[\"x5t#S256\"]），這需要主連接埠使用 TLS。RFC 8707 `resource` 會縮限對象，且只能縮限授權請求所要求的範圍。在 RFC 9700 模式下，項目標示為「機密」的客戶端必須在這裡驗證，可使用六種方法中的任何一種——兩種密鑰方法、兩種判斷提示方法（RFC 7523，依已註冊的 JWKS 或密鑰驗證，並拒絕 jti 重放），以及 RFC 8705 section 2 的兩種憑證方法。在 RFC 9700 模式下，authorization_code 授權類型另外會拒絕：對未附挑戰而簽發之授權碼所提供的 code_verifier（section 4.8.2 的降級）、由非其簽發對象之客戶端兌換的授權碼，以及未帶 redirect_uri 的 Token Request。該模式也會完全拒絕「密碼」授權類型（section 2.4），「輪替」重新整理權杖並在已淘汰者再次出示時撤銷整條鏈（section 2.2.2），拒絕來自其他客戶端、範圍大於所授予範圍，或針對授權未涵蓋之「資源伺服器」的重新整理——重新整理權杖承載其授權所具有的 RFC 8707 資源，因此續期無法擴大自身的對象——讓閒置的重新整理「鏈」過期（oauth2.refreshIdleSeconds，自上次兌換而非簽發起計算），並要求項目標示為機密的客戶端以六種方法中的任何一種驗證（section 2.5）。它也會關閉上述的「重放放寬」：第二次出示的授權碼會被拒絕，而不是以它已換得的權杖回應，且那些權杖會被撤銷（section 4.5，撤銷部分見 RFC 6749 section 10.5）。"
-  },
-  "stsmetadata.endpoints./devices/test/compliance.what": {
-    "en": "c01c491d1cedbb03",
-    "text": "非規範（#164 決策 9），供測試使用：MDM 饋送的主體——依 id、指紋或證書指名裝置的報告，或 reports: [...]——「不需要」device:compliance 範圍，以來源 test-control 記錄，讓受測客戶端能觸發其所回應的 CAEP device-compliance-change。「產品模式會以 403 拒絕」（mode.opensTestControls()，STS-DEVICE-0035）：在那裡，入口是位於其範圍之下的 /admin-api/device-compliance 饋送。"
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
     "en": "a03a6663434a737e",

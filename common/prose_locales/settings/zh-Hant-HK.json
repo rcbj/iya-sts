@@ -27,10 +27,6 @@
     "en": "03dbf48deeee548e",
     "text": "以 HTTPS 提供主連接埠，使用與 LDAPS 636 接聽程式及內嵌偵錯工具「相同」的證書與金鑰——每次啟動產生一組，讓呼叫端只需信任本服務一次，而不是三次。開啟時，此連接埠會向每個連線索取客戶端證書，但不強制要求。當 oauth2.rfc9700 或 oauth2.oauth21 開啟時預設為開啟；若要以純 http 執行 RFC 9700 模式（供無法信任每次啟動證書的客戶端使用），或要提供 HTTPS 但不套用該模式的拒絕規則，請明確設定此值。請從 /tls/server-certificate 取得證書——第一次需關閉驗證，因為開啟此項後已沒有可供取得證書的純文字連接埠。"
   },
-  "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "相信 X-Forwarded-Proto 與 X-Forwarded-Host——這是終止 TLS 的反向代理用來說明「客戶端」所用協定的標頭。當本服務前方有其他元件時請「開啟」，否則元數據會向透過 https 抵達的客戶端公告 http:// URL，而且每個 DPoP 證明都會因指名真正的端點而被拒絕。前方沒有任何元件時請保持「關閉」：沒有代理時，那些只是任何客戶端都能設定的一般標頭，相信它們等於讓呼叫端決定本服務認為自己的簽發者與端點是什麼。GET /tls/forwarded 會顯示請求實際攜帶的內容以及被採信的內容。「注意」：無論哪種模式，本服務都絕不從標頭（X-Client-Cert 及其同類）讀取客戶端證書——轉送的證書是任何人都能偽造的證書。"
-  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "受信任的代理地址"
@@ -98,10 +94,6 @@
   "gnap.keyProofs|description": {
     "en": "2c03ac3bf79211a6",
     "text": "第 9 節的 key_proofs_supported。mtls 需要主連接埠為 HTTPS（global.https），客戶端證書才可能抵達。"
-  },
-  "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "如何信任以相互 TLS 證明的 GNAP 金鑰（RFC 9635 第 7.3.2 節）。`pki`（第 11.4 節）要求 TLS 客戶端證書鏈結至客戶端信任存放區——此領域的 TLS 客戶端授權單位，或安裝於 /tls/trust 的信任錨點——並繫結至客戶端的應用程式項目：由此領域簽發給它，或帶有該項目所註冊的那一個 RFC 8705 主體參數（oauthTlsClientAuthSubjectDn 或某個 oauthTlsClientAuthSan* 屬性）。如此一來，授權單位重新簽發的證書無須重新註冊即被接受。`pinned` 接受金鑰所指名的證書，包括自我簽署的證書，不需鏈結。兩者都會拒絕已撤銷的證書（pki.revocationCheck）。**`auto` 在產品模式下為 pki，在開發模式下為 pinned。**警告：`pinned` 放棄了鏈結驗證以及在核證機關進行的輪替——被竊的自我簽署金鑰會一直有效，直到釘選它的項目被編輯為止。應用程式可為自己設定更嚴格的值（gnapMtlsTrust=pki），但絕不能更寬鬆。"
   },
   "gnap.subIdFormats|description": {
     "en": "c85f7383af08825a",
@@ -446,10 +438,6 @@
   "workers.heapLimitMb|description": {
     "en": "1795280495bcc846",
     "text": "前端線程（--max-old-space-size）以及每個請求背景工作線程（其 resourceLimits）的 V8 堆積上限。-1 會將其「關閉」：不套用任何上限，前端程序不會帶上限重新啟動，也不會以上限啟動任何背景工作，記憶體報告則照常進行。預設值 0 會從容器「推導」它：（記憶體上限 − 15 % 保留空間，至少 256 MiB）÷（1 + workers.requestCount + workers.surfaceCount）——每個線程都有自己的 V8 堆積——再減去每個隔離環境另外分得的 48 MiB 新生代，且絕不低於 192 MiB。上限依序從 cgroup v2、cgroup v1、ECS 工作元數據端點讀取。看不到任何上限時則不設定。堆積達到上限的背景工作線程會被 V8 結束並回報為 STS-WORKER-0046，程序繼續執行；前端自己的堆積達到上限則會結束程序，並留下一行說明。營運者在命令列或 NODE_OPTIONS 中設定的旗標會被保留，並用於每個程序。在開啟儲存區之前讀取。"
-  },
-  "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "以逗號分隔的清單，列出要送往請求背景工作、而不在擁有通訊端之程序中處理的項目。每個項目是以下三種之一，並由其形式表明是哪一種：\n\n- **路徑前置詞**，以斜線開頭——「/scim/v2,/admin-api」。在移除領域區段後比對，因此指名 /scim/v2 即涵蓋每個領域。\n- **操作類型**，不以斜線開頭——「ldap」表示每個目錄操作，「ldap.search」則表示其中之一。這些是不使用 HTTP 之通訊端背後的工作：前端程序保留通訊端與訊框處理（接受連線、解碼 BER 並寫出回覆），由背景工作執行實際工作。這些協定族為「ldap」（389 與 636 上的目錄）、「spiffe」（Workload 與 SPIRE Server API 的一元方法，以及參照經證明後的 Broker API 之 FetchJWTSVID）與「krb5」（KDC 在 TCP 與 UDP 88 上的每則訊息）。\n- **「*」**，表示兩種類型的「全部」——這是「在集區中執行服務」的表達方式，也是下次新增協定族時唯一不會過時的寫法。\n\n「*」是預設值（#364）：有協調儲存區時，每個請求都會送往請求背景工作。使用 memory 或 ldif 儲存區且 workers.requestCount 維持預設時，沒有背景工作，也不派送任何東西。空白表示任何地方都不派送。無論此處如何設定，/tls 都絕不派送，因為其全部內容就是伺服器對請求所抵達之連線的觀察。\n\n**除非此程序正在協調，否則不派送任何東西**：在沒有變更日誌的儲存區下於此列出項目，會使服務在啟動時停止並指名此設定，而不是讓每個背景工作各自持有目錄、工作階段與設定的私人副本。在沒有背景工作服務時，此處指名的「路徑」會以 503「拒絕」而不在此處理，因為同一路徑由兩個程序中剛好可用的那一個回應，正是此集區存在所要避免的失敗；「操作」則改由呼叫端執行，因為讓它失敗會為了一項性能措施而讓協定接聽程式停擺。"
   },
   "workers.fanout|description": {
     "en": "ace37db547eaaf05",
@@ -1555,10 +1543,6 @@
     "en": "d56dd529fa6d41ec",
     "text": "信任在用戶入口網站上簽發的 TLS 客戶端證書"
   },
-  "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "開啟時，會將此服務自己的 Root CA 加入主連接埠的客戶端信任儲存區，讓某人在 /portal/signing-key 上自行簽發的 TLS 客戶端證書能通過驗證並讓其登入——登入簽署該證書之 TLS 客戶端 Issuing CA 所屬的領域。經由該 Root 的證書鏈只有在葉證書來自具有 clientAuth 的 TLS 客戶端 Issuing CA 時才是「身分」：此服務簽發的其他每個金鑰組都鏈結到同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任儲存區交由 /tls/trust 與 tls.trustAnchorsFile 管理，與之前相同；入口網站仍會簽發，並說明接聽程式不會接受它所簽發的證書。"
-  },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "服務 Root 在建構接聽程式的 TLS 內容時放入其客戶端信任儲存區"
@@ -1722,10 +1706,6 @@
   "tls.trustAnchorsFile|label": {
     "en": "0e04d1a4479f4a9d",
     "text": "客戶端證書信任錨檔案"
-  },
-  "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "一個 PEM 檔案，內含主連接埠上的客戶端證書據以驗證的 CA 證書，在啟動時載入。這是在產品模式下填入信任儲存區的方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下回應任何人，在產品模式下則被拒絕，因為任何人都能新增的信任錨，等於任何人都能讓其通過驗證的客戶端證書。空白表示信任儲存區一開始是空的，這是它一直以來的做法。"
   },
   "tls.selfSignedKeyBits|label": {
     "en": "cb6067435f2cd411",
@@ -2130,10 +2110,6 @@
   "scim.authClientCert|label": {
     "en": "ad5fbafbb2ac1812",
     "text": "提供 TLS 客戶端證書"
-  },
-  "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "相互 TLS，RFC 7644 section 2 指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依客戶端信任存放區「驗證」的要求（請參閱 /tls），因此只在 global.https 開啟時適用。這是此服務中客戶端憑證第一次成為「認證」而非觀察結果的地方；在這裡，它驗證的人隨後便可寫入目錄。"
   },
   "scimClient.attempts|description": {
     "en": "bff819622e501ca0",
@@ -3323,33 +3299,17 @@
     "en": "54056b17105e1e9e",
     "text": "主連接埠：客戶端證書信任錨點檔案"
   },
-  "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "僅適用於主連接埠監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上客戶端證書的 CA 證書 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的客戶端證書。空白表示信任存放區一開始為空，這一向如此。"
-  },
   "listenerLdaps.trustAnchorsFile|label": {
     "en": "55ce7695b661aa4a",
     "text": "LDAPS：客戶端證書信任錨點檔案"
-  },
-  "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "僅適用於LDAPS監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上客戶端證書的 CA 證書 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的客戶端證書。空白表示信任存放區一開始為空，這一向如此。"
   },
   "listenerDebugger.trustAnchorsFile|label": {
     "en": "a556ee6cf0e4e098",
     "text": "協定偵錯工具：客戶端證書信任錨點檔案"
   },
-  "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "僅適用於協定偵錯工具監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上客戶端證書的 CA 證書 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的客戶端證書。空白表示信任存放區一開始為空，這一向如此。"
-  },
   "listenerMain.trustIssuedClientCertificates|label": {
     "en": "816cc6a8abb6aeb6",
     "text": "主連接埠：信任在用戶入口網站簽發的 TLS 客戶端證書"
-  },
-  "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "僅適用於主連接埠監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的客戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 客戶端證書通過驗證並讓其登入——登入至簽署該證書之 TLS 客戶端 Issuing CA 所屬的領域。只有當葉證書來自具有 clientAuth 的 TLS 客戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的證書。"
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -3359,10 +3319,6 @@
     "en": "1f8a43b97e38f292",
     "text": "LDAPS：信任在用戶入口網站簽發的 TLS 客戶端證書"
   },
-  "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "僅適用於LDAPS監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的客戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 客戶端證書通過驗證並讓其登入——登入至簽署該證書之 TLS 客戶端 Issuing CA 所屬的領域。只有當葉證書來自具有 clientAuth 的 TLS 客戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的證書。"
-  },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "服務 Root 會在監聽器的 TLS 內容建構時放入其客戶端信任存放區"
@@ -3370,10 +3326,6 @@
   "listenerDebugger.trustIssuedClientCertificates|label": {
     "en": "36a1f3bfb7de9b99",
     "text": "協定偵錯工具：信任在用戶入口網站簽發的 TLS 客戶端證書"
-  },
-  "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "僅適用於協定偵錯工具監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的客戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 客戶端證書通過驗證並讓其登入——登入至簽署該證書之 TLS 客戶端 Issuing CA 所屬的領域。只有當葉證書來自具有 clientAuth 的 TLS 客戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的證書。"
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
