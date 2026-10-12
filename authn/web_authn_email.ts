@@ -148,7 +148,10 @@ class WebAuthnEmail {
       '</p><form method="post" action="/authn/email-code">' +
       '<label for="code">' + t.html('emailFactor.code.label') + '</label>' +
       '<input type="text" class="code" id="code" name="code" ' +
-      'autocomplete="one-time-code" inputmode="numeric" pattern="[0-9 -]*" ' +
+      'autocomplete="one-time-code" inputmode="numeric" ' +
+      // ESCAPED: a pattern is compiled with the `v` flag, where an unescaped
+      // `-` in a class is not a valid regular expression.
+      'pattern="[0-9 \\-]*" ' +
       'maxlength="9" autofocus placeholder="000000">' +
       '<div class="row"><button type="submit" id="email-code-submit" ' +
       'name="action" value="verify">' + t.html('emailFactor.code.submit') +
