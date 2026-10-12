@@ -520,17 +520,20 @@ async function test() {
         "issued (5)", function () {
     refused(r, "invalid_continuation", "a superseded continuation token");
   });
+  // THE USER CODE PAGE IS A STATIC SURFACE (#578): the code goes to
+  // /gnap-api/code, and a code that is right names the approval page.
   b = browser();
-  r = await b.go("POST", "/realm/" + REALM + "/gnap/code",
-                 { code: "NOTACODE" });
+  r = await h.enterCode(b, "NOTACODE");
   check("an unknown user code is an error on the page, not a redirect (4.1.2)",
         function () {
-    assert.strictEqual(r.status, 400);
+    assert.strictEqual(r.status, 400, r.text);
     assert.ok(!r.location);
+    assert.ok(r.json && r.json.ok === false && r.json.errors.length,
+              r.text);
   });
   const typed = pending.interact.user_code.toLowerCase().slice(0, 4) + " - " +
     pending.interact.user_code.toLowerCase().slice(4);
-  r = await b.go("POST", "/realm/" + REALM + "/gnap/code", { code: typed });
+  r = await h.enterCode(b, typed);
   check("a user code typed in lower case with spaces and a dash is accepted " +
         "(4.1.2)", function () {
     assert.strictEqual(r.status, 303, r.text.slice(0, 300));
@@ -548,8 +551,9 @@ async function test() {
   r = await answer(b, approval, "allow");
   check("with no finish method the RO is told to return to the device",
         function () {
-    assert.strictEqual(r.status, 200);
-    assert.ok(/approved/i.test(r.text));
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(r.view && r.view.kind === "done" && r.view.approved === true &&
+              r.view.pushed === null, r.text);
   });
   r = await poller.send("POST", cont.uri, { token: cont.access_token.value });
   check("the next poll releases the token (5.2)", function () {
@@ -635,6 +639,7 @@ async function test() {
     check("after approval the browser is shown a page, not redirected (push)",
           function () {
       assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+      assert.ok(r.view && r.view.kind === "done" && !r.location, r.text);
     });
     check("the AS POSTed {hash, interact_ref} as JSON to the push URI with a " +
           "verifiable hash",

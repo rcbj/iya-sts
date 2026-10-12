@@ -281,17 +281,107 @@ function harness(options) {
         log.debug("Leaving go().");
         return { status: r.status, location: r.headers.get("location") || "",
                  text: await r.text() };
+      },
+      // A REQUEST TO `/gnap-api` (#578), as the interaction surface's page
+      // sends it: JSON, the cookies, and — for an act — this service's
+      // Origin and the view's CSRF token.
+      async json(method, url, body, csrf) {
+        log.debug("Entering json().");
+        const headers = { accept: "application/json" };
+        const cookie = Object.keys(b.jar)
+                             .map(function (k) { return k + "=" + b.jar[k]; })
+                             .join("; ");
+        if (cookie) {
+          headers.cookie = cookie;
+        }
+        if (method !== "GET") {
+          headers["content-type"] = "application/json";
+          headers.origin = new URL(self.absolute(url)).origin;
+          headers["x-csrf-token"] = csrf || "";
+        }
+        const r = await fetch(self.absolute(url),
+                              { method: method, redirect: "manual",
+                                headers: headers,
+                                body: method === "GET" ? undefined
+                                                       : JSON.stringify(body) });
+        (r.headers.getSetCookie ? r.headers.getSetCookie() : []).forEach(
+            function (one) {
+          const pair = String(one).split(";")[0];
+          const name = pair.split("=")[0];
+          b.jar[name] = pair.slice(name.length + 1);
+        });
+        const text = await r.text();
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in json(): " + ((e && e.message) || e));
+          // Not JSON: the caller reads the status and the text.
+          json = null;
+        }
+        log.debug("Leaving json().");
+        return { status: r.status, text: text, json: json };
       }
     };
     log.debug("Leaving browser().");
     return b;
   };
 
-  self.csrfOf = function (text) {
-    log.debug("Entering csrfOf().");
-    log.debug("Leaving csrfOf().");
-    return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-            [])[1] || "";
+  // ===========================================================================
+  // THE INTERACTION PAGES ARE A STATIC SURFACE (#578). `/gnap/approve/{id}`
+  // answers a shell whose page the browser draws from
+  // `GET /gnap-api/approve/{id}`, and the answer is `POST` there — JSON,
+  // this service's Origin, `X-CSRF-Token` the view's `csrf`. A page that
+  // only says something (a refusal, a decision made on the GET, a request
+  // sent to its owner) is the shell carrying its view in `data-sts-state`.
+  // The jobs read the VIEW where they read the page's markup, and an act's
+  // answer as the 303 it replaced: `location` — the client's finish URI with
+  // hash and interact_ref, or the page again — is `{ status: 303, location
+  // }`; a view drawn in place is `{ status, json }`.
+  // ===========================================================================
+  self.stateOf = function (text) {
+    log.debug("Entering stateOf().");
+    const m = /data-sts-state="([^"]*)"/.exec(String(text || ""));
+    if (!m) {
+      log.debug("Leaving stateOf(). None.");
+      return null;
+    }
+    const state = JSON.parse(m[1].replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&"));
+    log.debug("Leaving stateOf().");
+    return state && state.view ? state.view : null;
+  };
+
+  // The approval page's operation on `/gnap-api`, under the same realm.
+  self.apiOf = function (approve) {
+    log.debug("Entering apiOf().");
+    log.debug("Leaving apiOf().");
+    return String(approve).replace("/gnap/approve/", "/gnap-api/approve/");
+  };
+
+  // The user code page (#578): its shell (which mints the arrival cookie),
+  // its view (the CSRF token), and the code sent to `/gnap-api/code`. The
+  // answer read as the form's was: the approval page as a 303, or a refusal.
+  self.enterCode = async function (b, code) {
+    log.debug("Entering enterCode().");
+    await b.go("GET", realmBase + "/gnap/code");
+    const view = await b.json("GET", realmBase + "/gnap-api/code");
+    const r = await b.json("POST", realmBase + "/gnap-api/code",
+                           { code: code }, view.json && view.json.csrf);
+    log.debug("Leaving enterCode().");
+    return self.asPage(r);
+  };
+
+  // An act's answer, read as the 303 or the page it replaced.
+  self.asPage = function (r) {
+    log.debug("Entering asPage().");
+    const j = r.json || {};
+    log.debug("Leaving asPage().");
+    return j.location
+      ? { status: 303, location: String(j.location), text: r.text, json: j }
+      : { status: r.status, location: "", text: r.text, json: j,
+          view: j.view || null };
   };
 
   // From an interaction start URI, through sign-in, to the approval page.
@@ -322,41 +412,82 @@ function harness(options) {
                 signedIn.status + " " + JSON.stringify(signedIn.json));
       r = await b.go("GET", signedIn.location);
     }
+    // THE PAGE'S VIEW (#578): where the GET answered the shell with
+    // nothing in it, the page is drawn from `/gnap-api`; where it carried a
+    // view, that is the page.
+    const state = r.status === 200 || r.status === 400
+      ? self.stateOf(r.text) : null;
+    let view = state;
+    let csrf = "";
+    if (r.status === 200 && !state) {
+      const asked = await b.json("GET", self.apiOf(approve));
+      view = (asked.json && asked.json.view) || null;
+      csrf = (asked.json && asked.json.csrf) || "";
+      r.api = asked;
+    }
+    r.view = view;
     log.debug("Leaving reachApproval().");
-    return { approve: approve, page: r };
+    return { approve: approve, page: r, view: view, csrf: csrf };
   };
 
-  // Tick every right and answer. An approval REMEMBERED from an earlier grant
-  // (the consent register) skips the page and goes straight to the finish.
-  self.answer = async function (b, approval, action, untick) {
+  // Tick every right and answer — over `/gnap-api` since #578, as the page
+  // sends it. An approval REMEMBERED from an earlier grant (the consent
+  // register) skips the page and goes straight to the finish. `extra` is
+  // more of the act's body: a lowered limit (`lim_t<k>r<r>_<member>`).
+  self.answer = async function (b, approval, action, untick, extra) {
     log.debug("Entering answer().");
     const page = approval.page;
+    const view = approval.view;
     if (action === "allow" &&
         ((page.status === 303 && /hash=/.test(page.location)) ||
-                               (page.status === 200 &&
-                                /You approved the request/.test(page.text)))) {
+         (page.status === 200 && view && view.kind === "done" &&
+          view.approved))) {
       log.debug("Leaving answer().");
       return page;
     }
-    assert.ok(page.status === 200 && /Allow access\?/.test(page.text),
+    assert.ok(page.status === 200 && view && view.kind === "approve",
       "the approval page is drawn; got " + page.status + " " +
-      page.text.slice(0, 300));
+      JSON.stringify(view || page.text.slice(0, 300)));
     const rights = [];
-    const re = /name="right" value="([^"]+)"/g;
-    let m;
-    while ((m = re.exec(page.text))) {
-      if (!untick || untick.indexOf(m[1]) < 0) {
-        rights.push("right=" + encodeURIComponent(m[1]));
-      }
-    }
-    let form = "action=" + action + "&csrf_token=" +
-               encodeURIComponent(self.csrfOf(page.text)) +
-      (rights.length ? "&" + rights.join("&") : "");
-    if (/name="subject" value="yes"/.test(page.text)) {
-      form += "&subject=yes";
-    }
+    (view.tokens || []).forEach(function (token) {
+      (token.rights || []).forEach(function (one) {
+        if (!untick || untick.indexOf(one.field) < 0) {
+          rights.push(one.field);
+        }
+      });
+    });
+    const body = Object.assign({ action: action, right: rights },
+                               view.subject ? { subject: "yes" } : {},
+                               extra || {});
+    const r = await b.json("POST", self.apiOf(approval.approve), body,
+                           approval.csrf);
     log.debug("Leaving answer().");
-    return b.go("POST", approval.approve, form);
+    return self.asPage(r);
+  };
+
+  // A right's text on the approval page, as its renderer draws it: the
+  // type or reference, then its dimensions (`web_gnap_interact_views.ts`).
+  self.rightsText = function (view) {
+    log.debug("Entering rightsText().");
+    const out = [];
+    ((view && view.tokens) || []).forEach(function (token) {
+      (token.rights || []).forEach(function (one) {
+        const r = one.right || {};
+        out.push(r.reference !== undefined ? String(r.reference)
+          : String(r.type) + " " + (r.dimensions || []).map(function (d) {
+            return d.name + ": " + d.values.join(", ");
+          }).join("; ") + (r.identifier ? "; identifier: " + r.identifier
+                                        : ""));
+      });
+    });
+    ((view && view.narrowed) || []).forEach(function (one) {
+      out.push(String(one.type) + ": " + (one.changes || []).map(
+        function (c) {
+          return c.dimension + " " + (c.values || []).join(", ");
+        }).join("; "));
+    });
+    log.debug("Leaving rightsText().");
+    return out.join("\n");
   };
 
   self.finishParams = function (location, response) {

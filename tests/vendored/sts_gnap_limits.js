@@ -206,8 +206,10 @@ async function test() {
         function () {
     assert.strictEqual(approval.page.status, 400,
                        approval.page.text.slice(0, 400));
-    assert.ok(/cannot approve this request/.test(approval.page.text),
-              approval.page.text.slice(0, 600));
+    // The refusal is the shell carrying its view since #578.
+    assert.ok(approval.view && approval.view.kind === "problem" &&
+              /cannot approve this request/.test(approval.view.heading),
+              JSON.stringify(approval.view));
   });
   // The owner: a new grant (the stranger's browser holds the first one's
   // sign-in), approved and released.
@@ -244,15 +246,17 @@ async function test() {
     const p = rr.json;
     const browser = h.browser();
     const ap = await h.reachApproval(browser, p.interact.redirect, OWNER);
+    // The page's view carries the controls the server drew (#578), and the
+    // answer goes to /gnap-api with the lowered value beside the right.
+    const controls = ap.view && ap.view.kind === "approve"
+      ? String(ap.view.tokens[0].rights[0].limitsHtml || "") : "";
     assert.ok(ap.page.status === 200 &&
-              /name="lim_t0r0_amount" value="100"/.test(ap.page.text),
+              /name="lim_t0r0_amount" value="100"/.test(controls),
               "the page draws the amount as a control: " +
-              ap.page.text.slice(0, 800));
-    const form = "action=allow&right=t0r0&csrf_token=" +
-      encodeURIComponent(h.csrfOf(ap.page.text)) +
-      "&lim_t0r0_amount=" + encodeURIComponent(amount) +
-      "&lim_t0r0_count=5";
-    rr = await browser.go("POST", ap.approve, form);
+              JSON.stringify(ap.view).slice(0, 800));
+    rr = await h.answer(browser, ap, "allow", [],
+                        { lim_t0r0_amount: String(amount),
+                          lim_t0r0_count: "5" });
     log.debug("Leaving askAndLower().");
     return { pending: p, answer: rr, asked: asked };
   };

@@ -222,7 +222,10 @@ async function test() {
   check("2e. and the approval page is drawn for the person", function () {
     assert.strictEqual(trustedApproval.page.status, 200,
                        trustedApproval.page.text.slice(0, 300));
-    assert.ok(/Allow access\?/.test(trustedApproval.page.text));
+    // The page is drawn from its view since #578.
+    assert.ok(trustedApproval.view &&
+              trustedApproval.view.kind === "approve",
+              JSON.stringify(trustedApproval.view));
   });
 
   // =========================================================================
@@ -252,7 +255,8 @@ async function test() {
   check("3a. an always type's remembered approval does not skip the page",
         function () {
     assert.strictEqual(page.status, 200, page.status + " " + page.location);
-    assert.ok(/Allow access\?/.test(page.text), page.text.slice(0, 300));
+    assert.ok(page.view && page.view.kind === "approve",
+              JSON.stringify(page.view) + " " + page.text.slice(0, 300));
   });
   page = await again([{ type: DFLT, actions: ["read"] }]);
   check("3b. control: a default type's remembered approval skips it",

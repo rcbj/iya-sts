@@ -462,11 +462,12 @@ async function test() {
   const pending = r.json;
   const b = h.browser();
   const approval = await h.reachApproval(b, pending.interact.redirect, OWNER);
+  // The page is drawn from its view since #578: what was narrowed is in it.
   check("7b. the approval page says what the policy narrowed", function () {
-    assert.ok(/narrowed what the application asked for/.test(
-      approval.page.text), approval.page.text.slice(0, 600));
-    assert.ok(/actions refund/.test(approval.page.text),
-              approval.page.text.slice(0, 600));
+    assert.ok(approval.view && (approval.view.narrowed || []).length,
+              JSON.stringify(approval.view));
+    assert.ok(/actions refund/.test(h.rightsText(approval.view)),
+              h.rightsText(approval.view));
   });
   r = await h.answer(b, approval, "allow");
   const finished = h.finishParams(r.location, r);
