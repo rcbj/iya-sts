@@ -63,6 +63,24 @@ async function run(t) {
                                description: 'Created by ' + __filename });
   const other = realms.create({ id: 'loc2-' + tag, name: 'loc2-' + tag,
                                 description: 'Created by ' + __filename });
+  // THE TWO REALMS GO IN A finally, as config_realm_layer's withRealm()
+  // does: this file shares one process with every other in-process test,
+  // and a realm left behind is a realm the next file finds — realm_isolation
+  // counted three where it made one, and saw the realm layer active with
+  // none of its own defined.
+  try {
+    checks(t, made, other, app, tag);
+  } finally {
+    realms.remove(made.realm ? made.realm.id : 'loc-' + tag);
+    realms.remove(other.realm ? other.realm.id : 'loc2-' + tag);
+  }
+  log.debug('Leaving run().');
+}
+
+// Everything run() asks of the two realms it made, apart so that run() can
+// remove them whatever happens here.
+function checks(t, made, other, app, tag) {
+  log.debug('Entering checks().');
   t.check(made.ok !== false && other.ok !== false, 'two realms were made',
           JSON.stringify([made.errors, other.errors]));
 
@@ -217,7 +235,7 @@ async function run(t) {
           PageLocale.safeReturn('/x\ny') === '/' &&
           PageLocale.safeReturn('') === '/',
           'E. the chooser returns only to a local path');
-  log.debug('Leaving run().');
+  log.debug('Leaving checks().');
 }
 
 module.exports = {
