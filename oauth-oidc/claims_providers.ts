@@ -114,10 +114,6 @@ const AUTH_METHODS = Object.freeze(['client_secret_basic',
  * The portal path a provider sends a person back to after linking.
  */
 const CALLBACK_PATH = '/portal/claim-sources/callback';
-// WHERE THE BROWSER IS SENT FIRST (2026-10-12): this service's own address,
-// which binds the browser to the link and only then sends it on to the
-// provider — see `bindFlow()`.
-const START_PATH = '/portal/claim-sources/start';
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
@@ -192,14 +188,6 @@ class ClaimsProviders {
    * The portal path a provider sends a person back to after linking.
    */
   static readonly CALLBACK_PATH = CALLBACK_PATH;
-  /**
-   * This service's start address, where a link binds its browser.
-   */
-  static readonly START_PATH = START_PATH;
-  /**
-   * How long a link request lives, in milliseconds.
-   */
-  static readonly FLOW_TTL_MS = FLOW_TTL_MS;
   /**
    * How a provider's claims are handed on.
    */
@@ -713,9 +701,8 @@ class ClaimsProviders {
    * @param base - the request's base URL
    * @param sessionId - the sign-on session the person started it from: the
    *   callback is honoured only in a browser holding that session (#568)
-   * @returns `{ ok: true, location }` to send the browser to — this
-   *   service's start address, which binds the browser and sends it on to
-   *   the provider (`bindFlow()`) — or `{ ok: false, code, why }`
+   * @returns `{ ok: true, location }` to send the browser to, or `{ ok: false,
+   *   code, why }`
    */
   beginLink(username: string, id: string, base: string,
             sessionId?: string): Json {
@@ -740,6 +727,9 @@ class ClaimsProviders {
     // attacker's entry. The portal's API holds no cookie, so the flow names
     // the sign-on session instead and the callback asks the browser's
     // (`flowFor()`, `portal_claim_sources.ts`).
+    flows.set(state, { username: String(username), provider: id,
+                       verifier: verifier, redirectUri: redirectUri,
+                       session: String(sessionId || ''), at: now() });
     const target = new URL(provider.authorizationEndpoint);
     target.searchParams.set('response_type', 'code');
     target.searchParams.set('client_id', provider.clientId);
@@ -748,77 +738,8 @@ class ClaimsProviders {
     target.searchParams.set('state', state);
     target.searchParams.set('code_challenge', challenge);
     target.searchParams.set('code_challenge_method', 'S256');
-    // The provider's address waits on the flow: the browser is sent to this
-    // service's START address first, which binds it (`bindFlow()`).
-    flows.set(state, { username: String(username), provider: id,
-                       verifier: verifier, redirectUri: redirectUri,
-                       session: String(sessionId || ''),
-                       authorize: target.toString(), at: now() });
     log.debug("Leaving ClaimsProviders.beginLink().");
-    return { ok: true,
-             location: base + START_PATH + '?state=' +
-                       encodeURIComponent(state) };
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE BROWSER, BOUND BEFORE IT LEAVES (2026-10-12). The callback cannot ask
-  // the browser's SIGN-ON session to be the flow's: there is one `sts_session`
-  // cookie per origin (`authn.ts`), and a Claims Provider that is another
-  // realm of this same service signs the person in there and overwrites it,
-  // so the callback found the provider realm's session and refused every
-  // such link (`tests/vendored/sts_claims_aggregation.js`). So the check is
-  // made HERE, at this service's start address, while the browser still holds
-  // the session the link was started from; and what the callback asks is a
-  // single-use value this step sets as a cookie on the callback's own path —
-  // which a provider on the same origin never writes, and a browser that was
-  // not bound here never holds. Only its SHA-256 is kept on the flow.
-  // ---------------------------------------------------------------------------
-  /**
-   * Binds a browser to a link request: the sign-on session it holds must be
-   * the one the request was started from, and it may be bound once.
-   *
-   * @param state - the request's state
-   * @param sessionId - the sign-on session the browser holds
-   * @param username - that session's person
-   * @returns `{ ok: true, binding, location }` — the value to set on the
-   *   callback's path, and the provider's address — or `{ ok: false }`
-   */
-  bindFlow(state: string, sessionId: string, username: string): Json {
-    const { log, now } = this.deps;
-    log.debug("Entering ClaimsProviders.bindFlow().");
-    const flow = state ? flows.get(String(state)) : null;
-    if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS ||
-        flow.binding || !flow.authorize || !flow.session ||
-        String(flow.session) !== String(sessionId || '') ||
-        String(flow.username).toLowerCase() !==
-          String(username || '').toLowerCase()) {
-      log.debug("Leaving ClaimsProviders.bindFlow(). Not this browser's.");
-      return { ok: false };
-    }
-    const binding = stsCrypto.randomBytes(24).toString('base64url');
-    flows.set(String(state), Object.assign({}, flow, {
-      binding: stsCrypto.digest('sha256', binding, 'base64url') }));
-    log.debug("Leaving ClaimsProviders.bindFlow().");
-    return { ok: true, binding: binding, location: String(flow.authorize) };
-  }
-
-  /**
-   * Says whether a value is the binding a link request was bound with.
-   *
-   * @param state - the request's state
-   * @param binding - the value the callback's browser presented
-   * @returns true when it is
-   */
-  bindingMatches(state: string, binding: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering ClaimsProviders.bindingMatches().");
-    const flow = state ? flows.get(String(state)) : null;
-    const out = !!(flow && flow.binding && binding &&
-      stsCrypto.constantTimeEquals(
-        stsCrypto.digest('sha256', String(binding), 'base64url'),
-        String(flow.binding)));
-    log.debug("Leaving ClaimsProviders.bindingMatches(). " + out);
-    return out;
+    return { ok: true, location: target.toString() };
   }
 
   // WHOSE A LINK REQUEST IS, read without spending it (#568): the callback
@@ -1557,8 +1478,6 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   REFRESH_JOB: REFRESH_JOB,
   CALLBACK_PATH: CALLBACK_PATH,
-  START_PATH: START_PATH,
-  FLOW_TTL_MS: FLOW_TTL_MS,
   DELIVERY: DELIVERY,
   AUTH_METHODS: AUTH_METHODS,
   list: slot.forward('list'),
@@ -1573,8 +1492,6 @@ export = {
   beginLink: slot.forward('beginLink'),
   finishLink: slot.forward('finishLink'),
   flowFor: slot.forward('flowFor'),
-  bindFlow: slot.forward('bindFlow'),
-  bindingMatches: slot.forward('bindingMatches'),
   verifyFrom: slot.forward('verifyFrom'),
   sourcesFor: slot.forward('sourcesFor'),
   resolve: slot.forward('resolve'),

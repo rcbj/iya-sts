@@ -4692,18 +4692,6 @@ const ENDPOINTS: EndpointEntry[] = [
               'implement RFC 8936 poll at this end — this receiver is a push ' +
               'receiver — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
-  { path: '/portal/claim-sources/start', group: 'User portal',
-    name: 'Connected claim sources — binding the browser to a link',
-    specs: ['oidc-claims-aggregation'],
-    effect: 'binds this browser to a link request with a single-use cookie ' +
-            'on the callback\'s path, and redirects it to the provider',
-    what: 'NON-SPEC. Where Link sends the browser first: it must hold the ' +
-          'sign-on session the link was started from, and is then sent on ' +
-          'to the Claims Provider\'s authorization endpoint. The callback ' +
-          'finishes the link only in a browser bound here — the ' +
-          'account-linking CSRF check, made before the browser leaves, ' +
-          'because a provider that is another realm of this service ' +
-          'replaces the one sign-on cookie on the way.' },
   { path: '/portal/claim-sources/callback', group: 'User portal',
     name: 'Connected claim sources — the provider\'s answer',
     specs: ['oidc-claims-aggregation'],

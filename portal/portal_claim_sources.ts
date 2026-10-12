@@ -30,21 +30,11 @@
 // for the portal's own sign-in until #568, which bound the flow to the person
 // who started it: a state started by somebody else, or expired, was refused
 // (STS-OAUTH-0679). The static portal holds no cookie, so the flow records the
-// SIGN-ON session the person started it from. Without that the classic
-// account-linking CSRF would be open: somebody starts a link on their own
-// account, sends the provider's address to a victim, and the victim's
-// provider account lands on the attacker's entry.
-//
-// **THE CHECK IS MADE BEFORE THE BROWSER LEAVES (2026-10-12).** Link answers
-// this service's START address, `/portal/claim-sources/start`, not the
-// provider's. There the browser's sign-on session must be the flow's
-// (STS-PORTAL-0300), and a single-use value is set as a cookie on the
-// callback's own path; the callback asks for that value (STS-PORTAL-0303).
-// Asking the callback for the sign-on session instead failed every link to a
-// provider that is another realm of this same service: there is ONE
-// `sts_session` cookie per origin, and signing in at the provider realm
-// overwrites it before the person comes back (`claims_providers.ts`,
-// `bindFlow()`).
+// SIGN-ON session the person started it from and the callback asks the
+// browser's sign-on session to be that one (STS-PORTAL-0300). Without it
+// the classic account-linking CSRF would be open: somebody starts a link on
+// their own account, sends the provider's address to a victim, and the
+// victim's provider account lands on the attacker's entry.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
@@ -53,7 +43,6 @@ import validation = require('../common/validation');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import claimsProviders = require('../oauth-oidc/claims_providers');
-import config = require('../common/config');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -68,14 +57,6 @@ const vt = validation.types;
  */
 const PATH = '/portal/claim-sources';
 const CALLBACK = PATH + '/callback';
-const START = PATH + '/start';
-// The cookie the start step sets and the callback asks for: on the
-// callback's path only, so no other page and no provider realm sees it.
-const BINDING_COOKIE = 'sts_claim_link';
-
-const START_QUERY = vz.object({
-  state: vz.string().max(256)
-}).passthrough();
 
 interface PortalClaimSourcesDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -84,7 +65,6 @@ interface PortalClaimSourcesDeps {
   errorCodes: Json;
   audit: Json;
   baseUrlOf(req: Json): string;
-  config: { value(key: string): unknown };
   // The sign-on session the callback's browser holds, the access policy
   // and the person's translator, each asked for when a request arrives.
   authn: () => Json;
@@ -140,7 +120,7 @@ class PortalClaimSources {
     return {
       log: helpers.log, claimsProviders: claimsProviders,
       validation: validation, errorCodes: errorCodes, audit: audit,
-      baseUrlOf: helpers.baseUrlOf, config: config,
+      baseUrlOf: helpers.baseUrlOf,
       authn: function authn(): Json {
         helpers.log.debug("Entering authn().");
         helpers.log.debug("Leaving authn().");
@@ -276,18 +256,15 @@ class PortalClaimSources {
       return undefined;
     }
     // WHOSE LINK, AND FROM WHICH BROWSER (the file's header).
-    const state = String(asked.value.state || '');
-    const flow = claimsProviders.flowFor(state);
-    // The value the start step set on this browser (the file's header); the
-    // cookie is cleared whatever the outcome — it is single-use.
-    this.clearBinding(req, res);
-    const bound = !!flow && claimsProviders.bindingMatches(
-      state, this.cookieOf(req, BINDING_COOKIE));
-    if (!flow || !flow.session || !bound) {
-      errorCodes.mark(res, flow ? 'STS-PORTAL-0303' : 'STS-OAUTH-0679');
+    const flow = claimsProviders.flowFor(String(asked.value.state || ''));
+    const signOn = this.deps.authn().sessionOf(req);
+    if (!flow || !flow.session || !signOn || signOn.id !== flow.session ||
+        String((signOn.user || {}).username || '').toLowerCase() !==
+          String(flow.username).toLowerCase()) {
+      errorCodes.mark(res, flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679');
       audit.record({ category: 'authentication',
         action: 'oauth2.claim-source-link-refused',
-        errorCode: flow ? 'STS-PORTAL-0303' : 'STS-OAUTH-0679',
+        errorCode: flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679',
         actor: flow ? flow.username : '', outcome: 'failure',
         summary: 'a Claims Provider callback was refused: ' +
           (flow ? 'it arrived in a browser that is not the sign-on session ' +
@@ -306,7 +283,7 @@ class PortalClaimSources {
       resource: accessGate.RESOURCE.PORTAL,
       action: accessGate.ACTION.MANAGE_OWN,
       subject: { name: flow.username, authenticated: true,
-                 sessionId: flow.session },
+                 sessionId: signOn.id },
       owner: flow.username,
       context: { method: req.method, path: req.originalUrl || req.url } });
     if (!allowed.allowed) {
@@ -339,94 +316,6 @@ class PortalClaimSources {
     return undefined;
   }
 
-  // The callback's path on this realm's base, which the binding cookie is
-  // scoped to.
-  private bindingPath(req: Json): string {
-    const { log, baseUrlOf } = this.deps;
-    log.debug("Entering PortalClaimSources.bindingPath().");
-    const path = new URL(baseUrlOf(req)).pathname.replace(/\/$/, '') +
-                 CALLBACK;
-    log.debug("Leaving PortalClaimSources.bindingPath(). " + path);
-    return path;
-  }
-
-  // One cookie's value from the request, or ''.
-  private cookieOf(req: Json, name: string): string {
-    const { log } = this.deps;
-    log.debug("Entering PortalClaimSources.cookieOf(). " + name);
-    let out = '';
-    String((req.headers && req.headers.cookie) || '').split(';')
-      .forEach(function (part) {
-        const at = part.indexOf('=');
-        if (at > 0 && part.slice(0, at).trim() === name) {
-          out = part.slice(at + 1).trim();
-        }
-      });
-    log.debug("Leaving PortalClaimSources.cookieOf().");
-    return out;
-  }
-
-  // The cookie's attributes: HttpOnly, SameSite=Lax (a provider's redirect
-  // back is a top-level GET, which Lax sends), Secure under https.
-  private bindingCookie(req: Json, value: string, maxAge: number): string {
-    const { log, config } = this.deps;
-    log.debug("Entering PortalClaimSources.bindingCookie().");
-    log.debug("Leaving PortalClaimSources.bindingCookie().");
-    return BINDING_COOKIE + '=' + value + '; Path=' + this.bindingPath(req) +
-           '; Max-Age=' + maxAge + '; HttpOnly; SameSite=Lax' +
-           (config.value('global.https') ? '; Secure' : '');
-  }
-
-  private clearBinding(req: Json, res: Json): void {
-    const { log } = this.deps;
-    log.debug("Entering PortalClaimSources.clearBinding().");
-    res.append('Set-Cookie', this.bindingCookie(req, '', 0));
-    log.debug("Leaving PortalClaimSources.clearBinding().");
-  }
-
-  /**
-   * The start address: binds this browser to the link request — its
-   * sign-on session must be the one the link was started from — and sends
-   * it on to the provider.
-   *
-   * @param req - the request
-   * @param res - the response
-   * @returns nothing
-   */
-  start(req: Json, res: Json): void {
-    const { log, claimsProviders, validation, errorCodes, audit } = this.deps;
-    log.debug("Entering PortalClaimSources.start().");
-    const asked = validation.check(req, 'query', START_QUERY);
-    const state = asked.ok ? String(asked.value.state) : '';
-    const flow = state ? claimsProviders.flowFor(state) : null;
-    const signOn = this.deps.authn().sessionOf(req);
-    const bound = flow && signOn
-      ? claimsProviders.bindFlow(state, signOn.id,
-                                 String((signOn.user || {}).username || ''))
-      : { ok: false };
-    if (!bound.ok) {
-      errorCodes.mark(res, flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679');
-      audit.record({ category: 'authentication',
-        action: 'oauth2.claim-source-link-refused',
-        errorCode: flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679',
-        actor: flow ? flow.username : '', outcome: 'failure',
-        summary: 'a Claims Provider link was refused before it left: ' +
-          (flow ? 'the browser is not the sign-on session the link was ' +
-                  'started from, or was already bound'
-                : 'the link request is unknown or expired') + ' (#147).' });
-      log.debug("Leaving PortalClaimSources.start(). Not this browser's.");
-      this.back(req, res, 'problem', 'The provider could not be linked: ' +
-        'this link request is unknown, expired, or was started in another ' +
-        'browser — start it again from this page.');
-      return;
-    }
-    res.append('Set-Cookie', this.bindingCookie(req, bound.binding,
-      Math.floor(claimsProviders.FLOW_TTL_MS / 1000)));
-    res.status(303).set('Cache-Control', 'no-store')
-       .set('Location', bound.location).end();
-    log.debug("Leaving PortalClaimSources.start(). To the provider.");
-  }
-
   /**
    * Registers the provider's callback; `portal.ts` calls it before the
    * shell answers everything under `/portal`.
@@ -438,9 +327,6 @@ class PortalClaimSources {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering PortalClaimSources.registerRoutes().");
-    app.get(START, function (req: Json, res: Json) {
-      return self.start(req, res);
-    });
     app.get(CALLBACK, function (req: Json, res: Json) {
       return self.callback(req, res).catch(function (e: Json) {
         log.debug("Caught in the claim-source callback: " +
@@ -492,13 +378,11 @@ class PortalClaimSources {
         operationId: 'linkClaimSource', tag: 'Claim sources',
         access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/claim-sources',
         summary: 'Links or unlinks a Claims Provider',
-        description: '`link` answers `location`, this service\'s ' +
-          '/portal/claim-sources/start: send the browser there. It checks ' +
-          'the browser holds the sign-on session this token was issued ' +
-          'on, binds it, and sends it to the provider\'s authorization ' +
-          'endpoint (code flow with PKCE); the provider sends it back to ' +
-          '/portal/claim-sources/callback, which finishes the link only in ' +
-          'the browser that was bound. `unlink` removes the link.',
+        description: '`link` answers `location`, the provider\'s ' +
+          'authorization endpoint (code flow with PKCE): send the browser ' +
+          'there. It comes back to /portal/claim-sources/callback, which ' +
+          'finishes the link only in the browser holding the sign-on ' +
+          'session this token was issued on. `unlink` removes the link.',
         body: LINK_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
