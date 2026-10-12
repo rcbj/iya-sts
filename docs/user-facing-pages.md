@@ -177,6 +177,39 @@ translated too. A reason somebody typed is sent as written. See
 | The passkey prompt | The browser and the operating system. This service supplies only the names it shows: the realm's relying-party name and the person's display name. | The browser's own |
 | The Digital Credentials API wallet chooser | The browser | The browser's own |
 
+## The demonstration issuer and verifier (development only)
+
+A sample credential issuer ("Mock University") and a sample verifier ("The
+Bar Door"), for trying a wallet against this service. A realm in product
+mode does not serve them, and answers each path as one nothing is registered
+on (`Cannot GET …`, 404). Issue #582 inventoried them on 2026-10-12, before
+turning them into static pages:
+
+| Page | Path | What a person sees, and what it does | Drawn by, before #582 |
+|---|---|---|---|
+| The issuer's page | `/issuer` | The credential on offer and four links: to the wallet on this device by value or by reference, or a QR code for another device, now (H.2) or later (H.3) | `oid4vc/vc_offers.ts`, `GET /issuer` |
+| The offer | `/issuer/offer?mode=…&by=…&wallet=…&credential_configuration_ids=…` | **Makes** a Credential Offer. On this device the browser goes straight to the wallet with the `openid-credential-offer://` query; for another device the page shows the offer as a QR code, the Transaction Code and the offer URI, and a link that opens it in a wallet here | `vc_offers.ts`, `GET /issuer/offer` and `renderOfferQrPage()` (a server-drawn PNG) |
+| The verifier's page | `/oid4vp/verifier?format=…` | What the door asks for (the claims, the credential type, what an `ldp_vc` request leaves out) and links that start a presentation by value, by reference, by QR code, or in another format | `oid4vc/vc_verifier.ts`, `GET /oid4vp/verifier` |
+| The start | `/oid4vp/start?format=…&by=…&mode=…&client_id_prefix=…&response_type=…&response_mode=…&wallet=…` | **Makes** an Authorization Request. On this device the browser goes straight to the wallet with the `openid4vp://` query; for another device the page shows the request as a QR code and its URI, and a link that opens it in a wallet here | `vc_verifier.ts`, `GET /oid4vp/start` and `renderVpQrPage()` (a server-drawn PNG) |
+| The outcome | `/oid4vp/done?state=…` | Whether the presentation was accepted, the claims it disclosed and what was asked for — where the wallet sends the person once it has answered | `vc_verifier.ts`, `GET /oid4vp/done` |
+
+A refusal on any of them (a malformed query, a wallet this realm will not
+send to, a request that cannot be built) was a line of plain text with its
+status.
+
+**What is not a page here, and is unchanged by #582**, because it is the
+protocol's or a program's: the offer served by reference
+(`/oid4vci/credential-offer/{id}`), the request object
+(`/oid4vp/request/{id}`), the response endpoint (`/oid4vp/response`), the
+Verifier's certificate, the outcome as JSON (`/oid4vp/result/{state}`), the
+issuer metadata, the credential, nonce, deferred and notification endpoints,
+the token endpoint's pre-authorized grant and the status lists. The
+`openid-credential-offer://` and `openid4vp://` links a wallet is handed, and
+the `redirect_uri` the response endpoint names (`/oid4vp/done?state=…`), are
+the same bytes as before. A person's own offer into their own wallet is the
+portal's (`/portal/wallet`, #589), and an administrator starts and reads a
+verification at `/admin-api/verifications` (#587).
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for
