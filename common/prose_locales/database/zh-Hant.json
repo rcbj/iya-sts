@@ -31,10 +31,6 @@
     "en": "6e2726560995b06c",
     "text": "TLS，sslmode={{sslmode}}；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉），對於 compose 堆疊所產生的自我簽署憑證組而言，這是如實的設定。無論如何連線都是加密的。"
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "非 TLS——連線字串沒有要求它。compose 堆疊的資料庫會「拒絕」明文連線，因為其 pg_hba.conf 中的每一條主機規則都是 hostssl，因此此組態在那裡將無法連線。"
-  },
   "persistence.status.tlsUnknown": {
     "en": "7638b0543b0b19a9",
     "text": "未知——連線字串不是 URL，因此無法從中讀出 sslmode。"

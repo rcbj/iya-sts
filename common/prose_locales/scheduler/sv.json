@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "den här tjänsten startade"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "dess intervall"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "Schemaläggarens ledare ombads att avgå. Den gör det vid sitt nästa tick, och en annan nod tar över ledningen vid sitt nästa hjärtslag."

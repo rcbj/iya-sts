@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "nagsimula ang serbisyong ito"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "ang interval nito"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "Hiniling sa leader ng scheduler na bumaba. Gagawin niya ito sa susunod niyang tick, at isa pang node ang mangunguna sa susunod nitong heartbeat."

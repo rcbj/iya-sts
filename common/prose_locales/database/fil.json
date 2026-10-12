@@ -31,10 +31,6 @@
     "en": "6e2726560995b06c",
     "text": "TLS, sslmode={{sslmode}}; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized), na siyang tapat na setting para sa self-signed na pares na ginagawa ng compose stack. Naka-encrypt ang connection alinman ang mangyari."
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "HINDI TLS — hindi ito hinihingi ng connection string. TINATANGGIHAN ng database ng compose stack ang plaintext na connection, dahil hostssl ang bawat host rule sa pg_hba.conf nito, kaya hindi makakakonekta roon ang configuration na ito."
-  },
   "persistence.status.tlsUnknown": {
     "en": "7638b0543b0b19a9",
     "text": "hindi alam — hindi URL ang connection string, kaya hindi mabasa mula rito ang sslmode."

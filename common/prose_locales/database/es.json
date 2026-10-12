@@ -31,10 +31,6 @@
     "en": "6e2726560995b06c",
     "text": "TLS, sslmode={{sslmode}}; el certificado del servidor NO se verifica (persistence.databaseTlsRejectUnauthorized está desactivado), que es el ajuste honesto para el par autofirmado que genera el stack de compose. La conexión está cifrada en cualquier caso."
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "SIN TLS — la cadena de conexión no lo pide. La base de datos del stack de compose RECHAZA una conexión en texto plano, porque todas las reglas de host de su pg_hba.conf son hostssl, así que esta configuración no se conectará allí."
-  },
   "persistence.status.tlsUnknown": {
     "en": "7638b0543b0b19a9",
     "text": "desconocido — la cadena de conexión no es una URL, así que no se puede leer el sslmode de ella."

@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "此服務啟動"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "其間隔"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "已要求排程器的領導者卸任。它會在下一次運作時卸任，由另一個節點在其下一次心跳時接任領導者。"

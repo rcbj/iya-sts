@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "本服务启动"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "其间隔"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "已要求调度器的领导者让位。它会在下一次计时时让位，另一个节点会在其下一次心跳时接任领导者。"

@@ -31,10 +31,6 @@
     "en": "6e2726560995b06c",
     "text": "TLS, sslmode={{sslmode}}; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är avstängd), vilket är den ärliga inställningen för det självsignerade paret som compose-stacken genererar. Anslutningen är krypterad i båda fallen."
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "INTE TLS — anslutningssträngen begär det inte. Compose-stackens databas VÄGRAR en okrypterad anslutning, eftersom varje värdregel i dess pg_hba.conf är hostssl, så den här konfigurationen kommer inte att kunna ansluta dit."
-  },
   "persistence.status.tlsUnknown": {
     "en": "7638b0543b0b19a9",
     "text": "okänt — anslutningssträngen är inte en URL, så sslmode kan inte läsas ut ur den."

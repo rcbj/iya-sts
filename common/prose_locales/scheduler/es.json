@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "el inicio de este servicio"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "su intervalo"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "Se pidió al líder del planificador que se retirara. Lo hace en su siguiente tick, y otro nodo asume el liderazgo en su siguiente latido."

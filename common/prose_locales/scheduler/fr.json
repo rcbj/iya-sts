@@ -527,10 +527,6 @@
     "en": "0712f841eae1cd73",
     "text": "ce service a démarré"
   },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "son intervalle"
-  },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",
     "text": "Le leader du planificateur a été invité à se retirer. Il le fait à son prochain cycle, et un autre nœud prend la tête à son prochain battement de cœur."

@@ -31,10 +31,6 @@
     "en": "6e2726560995b06c",
     "text": "TLS，sslmode={{sslmode}}；服务器证书未经验证（persistence.databaseTlsRejectUnauthorized 已关闭），对于 compose 栈生成的自签名密钥对，这是如实的设置。无论哪种情况，连接都是加密的。"
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "未使用 TLS——连接字符串没有要求它。compose 栈的数据库拒绝明文连接，因为其 pg_hba.conf 中的每条主机规则都是 hostssl，所以此配置无法连接到那里。"
-  },
   "persistence.status.tlsUnknown": {
     "en": "7638b0543b0b19a9",
     "text": "未知——连接字符串不是 URL，因此无法从中读出 sslmode。"
