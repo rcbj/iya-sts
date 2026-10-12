@@ -11,5 +11,9 @@
   "emailFactorBlock.setAddressTip": "Enregistrer cette adresse comme son adresse courriel vérifiée. L’ancienne, s’il y en a une, est informée du changement lorsque ce domaine peut envoyer du courrier.",
   "personFieldsSection.mailHeading": "Adresse courriel",
   "personFieldsSection.setMailTip": "Enregistrer cette adresse comme son adresse courriel vérifiée ; l’ancienne adresse est informée du changement.",
-  "controls.issueLinkTitle": "Supprime son mot de passe actuel, la déconnecte partout et affiche un lien à usage unique à lui envoyer — ou le lui envoie par courriel."
+  "controls.issueLinkTitle": "Supprime son mot de passe actuel, la déconnecte partout et affiche un lien à usage unique à lui envoyer — ou le lui envoie par courriel.",
+  "emailFactorBlock.addressTip": "L’adresse à laquelle les courriels sont envoyés. Définie ici, elle est marquée vérifiée, car un administrateur l’a définie.",
+  "emailFactorBlock.setNote": "Une adresse définie ici est <strong>vérifiée</strong> — un administrateur est une source de confiance (#64) — et l’ancienne, s’il y en avait une{usable, select, yes {, est informée du changement.} other {. <strong>Ce domaine ne peut pas envoyer de courriels</strong> ; personne n’est donc informé.}}",
+  "personFieldsSection.mailTip": "L’adresse à laquelle les courriels sont envoyés. Définie ici, elle est marquée VÉRIFIÉE, car un administrateur l’a définie, et l’ancienne adresse est informée du changement.",
+  "personFieldsSection.mailAreaTip": "L’adresse à laquelle les courriels sont envoyés."
 }

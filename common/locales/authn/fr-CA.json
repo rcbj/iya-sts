@@ -6,5 +6,6 @@
   "backupCode.sub": "Au lieu {factor, select, passkey {de votre clé d’accès} code {du code envoyé par courriel} link {du lien envoyé par courriel} other {de votre application d’authentification}}, pour <code>{name}</code>",
   "backupCode.back": "Revenir en arrière et utiliser finalement {factor, select, passkey {votre clé d’accès} code {le code envoyé par courriel} link {le lien envoyé par courriel} other {votre application d’authentification}}",
   "secondFactor.emailCodeInstead": "M’envoyer plutôt un code par courriel",
-  "secondFactor.emailLinkInstead": "M’envoyer plutôt un lien de connexion par courriel"
+  "secondFactor.emailLinkInstead": "M’envoyer plutôt un lien de connexion par courriel",
+  "mfaSetup.scanHeading": "Balayez ceci avec votre application d’authentification"
 }
