@@ -13774,7 +13774,7 @@ const SETTINGS = [
                  'access with, and one group granting both would make ' +
                  'admitting a caller to the demonstration surface silently ' +
                  'admit it to those. Setting it to the empty string means ' +
-                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },

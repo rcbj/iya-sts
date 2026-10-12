@@ -72,8 +72,8 @@
     "text": "Un Policy Enforcement Point XACML distant : quiconque est membre du groupe nommé par `roles.remotePepGroup` (par défaut « remote-peps »). C’est ce qu’exigent `/xacml/pep/register`, `/xacml/pep/policies` et `/xacml/pep/heartbeat`, et la partie qui le détient est normalement un DN de certificat client plutôt qu’une personne — le certificat dit QUI, et ce groupe dit s’il en a le droit."
   },
   "roles.builtIn.XACML_USER.what": {
-    "en": "dc66c2445b1c79c0",
-    "text": "Un appelant de la surface XACML proprement dite : quiconque est membre du groupe nommé par `roles.xacmlUserGroup` (par défaut « xacml-users »). C’est ce qu’exigent `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` et `GET /xacml/protected`, et la partie qui le détient est normalement un DN de certificat client — le certificat dit QUI, et ce groupe dit s’il en a le droit. Ce n’est délibérément PAS REMOTE_PEPS : ce rôle donne accès aux trois points de terminaison /xacml/pep, qui délivrent les documents au moyen desquels ce service contrôle ses propres accès, et un groupe accordant les deux ferait qu’admettre un appelant sur la surface de démonstration l’admettrait silencieusement sur ceux-ci."
+    "en": "b69f968df0f81f2e",
+    "text": "Un appelant de la surface XACML proprement dite : quiconque est membre du groupe nommé par `roles.xacmlUserGroup` (par défaut « xacml-users »). C’est ce qu’exigent `GET /xacml`, `POST /xacml/pdp` et `GET /xacml/policies`, et la partie qui le détient est normalement un DN de certificat client — le certificat dit QUI, et ce groupe dit s’il en a le droit. Ce n’est délibérément PAS REMOTE_PEPS : ce rôle donne accès aux trois points de terminaison /xacml/pep, qui délivrent les documents au moyen desquels ce service contrôle ses propres accès, et un groupe accordant les deux ferait qu’admettre un appelant sur la surface de démonstration l’admettrait silencieusement sur ceux-ci."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

@@ -6347,14 +6347,6 @@
     "en": "eae9db3ed7f2d788",
     "text": "Cuántas entradas pueden existir bajo ou=policies. El mismo tipo de límite que tienen ou=federations y ou=applications, y por la misma razón: este directorio está en memoria en el modo de persistencia predeterminado, y un llamante que pueda crear entradas sin límite puede agotarlo. Alcanzar el límite rechaza la CREACIÓN y lo registra; nunca desaloja nada."
   },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "Qué hace el PEP integrado con un resultado distinto de Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "ESTA ES LA DECISIÓN DEL PEP Y NO DEL PDP, que es la razón misma de que sea un ajuste. XACML sección 7.2 permite que un PEP tenga sesgo de denegación (todo lo que no sea Permit es un rechazo) o sesgo de permiso (todo lo que no sea Deny se permite), y los despliegues reales difieren. El sesgo de denegación es el predeterminado porque es lo que debería ser un PEP que protege cualquier cosa; el sesgo de permiso existe para que un cliente pueda ver qué hace la otra opción con un Indeterminate, que es el caso en que ambas discrepan y el que nadie prueba. Solo en modo de desarrollo: su único lector, /xacml/protected, es un endpoint de demostración (#585)."
-  },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
     "text": "Devolver siempre los identificadores de las políticas aplicables"
@@ -7516,8 +7508,8 @@
     "text": "Grupo que concede el rol XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "El grupo del directorio cuyos miembros tienen el rol integrado XACML_USER, que es lo que exigen los cuatro endpoints XACML propiamente dichos — GET /xacml, POST /xacml/pdp, GET /xacml/policies y GET /xacml/protected. Un llamante que presenta un certificado de cliente que este servicio VERIFICÓ es alguien a quien puede nombrar; la pertenencia a este grupo es lo que lo convierte en alguien a quien deja entrar, y ambas cosas se mantienen separadas por la misma razón que en roles.remotePepGroup, arriba: un certificado demuestra una identidad y un grupo concede un permiso. ES UN SEGUNDO GRUPO Y NO EL MISMO: REMOTE_PEPS da acceso a los tres endpoints de /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un único grupo que concediera ambos haría que admitir a un llamante en la superficie de demostración lo admitiera discretamente en esos. Definirlo como cadena vacía significa que NADIE tiene el rol, lo que cierra esos cuatro endpoints a todo llamante; es la forma de retirar la superficie XACML sin desactivar xacml.enabled y perder con ello los PEP integrados de emisión y de acceso."
+    "en": "6256e6a60d3799e6",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado XACML_USER, que es lo que exigen los tres endpoints XACML propiamente dichos — GET /xacml, POST /xacml/pdp y GET /xacml/policies. Quien llama presentando un certificado de cliente que este servicio VERIFICÓ es alguien a quien puede nombrar; pertenecer a este grupo es lo que lo convierte en alguien a quien deja entrar, y ambas cosas se mantienen separadas por la misma razón que roles.remotePepGroup, más arriba: un certificado prueba una identidad y un grupo concede un permiso. ES UN SEGUNDO GRUPO Y NO EL MISMO: REMOTE_PEPS alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un solo grupo que concediera ambos haría que admitir a quien llama en la superficie de demostración lo admitiera sin avisar en aquellos. Dejarlo vacío significa que NADIE tiene el rol, lo que cierra esos tres endpoints a cualquiera que llame; es la forma de retirar la superficie XACML sin desactivar xacml.enabled y perder con ello los PEP integrados de emisión y de acceso."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

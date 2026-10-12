@@ -72,8 +72,8 @@
     "text": "Un Policy Enforcement Point remoto de XACML: quien sea miembro del grupo nombrado por `roles.remotePepGroup` (de forma predeterminada \"remote-peps\"). Es lo que exigen `/xacml/pep/register`, `/xacml/pep/policies` y `/xacml/pep/heartbeat`, y quien lo tiene normalmente es un DN de certificado de cliente más que una persona — el certificado dice QUIÉN, y este grupo dice si puede."
   },
   "roles.builtIn.XACML_USER.what": {
-    "en": "dc66c2445b1c79c0",
-    "text": "Un llamante de la superficie XACML propiamente dicha: quien sea miembro del grupo nombrado por `roles.xacmlUserGroup` (de forma predeterminada \"xacml-users\"). Es lo que exigen `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` y `GET /xacml/protected`, y quien lo tiene normalmente es un DN de certificado de cliente — el certificado dice QUIÉN, y este grupo dice si puede. Deliberadamente NO es REMOTE_PEPS: ese rol alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio acceso, y un grupo que concediera ambos haría que admitir a un llamante en la superficie de demostración lo admitiera silenciosamente en esos."
+    "en": "b69f968df0f81f2e",
+    "text": "Quien llama a la superficie XACML propiamente dicha: cualquier miembro del grupo nombrado por `roles.xacmlUserGroup` (por defecto \"xacml-users\"). Es lo que exigen `GET /xacml`, `POST /xacml/pdp` y `GET /xacml/policies`, y quien lo tiene es normalmente el DN de un certificado de cliente — el certificado dice QUIÉN, y este grupo dice si puede. Deliberadamente NO es REMOTE_PEPS: ese rol alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un grupo que concediera ambos haría que admitir a quien llama en la superficie de demostración lo admitiera sin avisar en aquellos."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",
