@@ -1776,7 +1776,9 @@ function childMain() {
       const bar = /<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/.exec(html);
       const ids = bar ? (bar[1].match(/href="#([^"]+)"/g) || [])
         .map(function (h) { return h.slice(7, -1); }) : [];
-      if (ids[0] !== slug + '-tab-metadata') {
+      // A page that drew no marked section this time is drawn as it was
+      // (`protocolTabs()`), with no tab bar to check.
+      if (ids.length && ids[0] !== slug + '-tab-metadata') {
         protocolProblems.push(path + ' does not open on Metadata: ' +
                               ids.join(' '));
       }
@@ -1787,7 +1789,8 @@ function childMain() {
                                 'list: ' + name);
         }
       });
-      if (pview.protocolEndpoints && pview.protocolEndpoints.length) {
+      if (ids.length && pview.protocolEndpoints &&
+          pview.protocolEndpoints.length) {
         const meta = new RegExp('<section class="tabpanel first" id="' +
           slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
         if (!meta || meta[1].indexOf('data-copy="' +
@@ -1877,7 +1880,8 @@ function childMain() {
     }).concat(report.developmentOnlySettings.filter(function (row) {
       return here.indexOf('id="setting-' + WebKit.esc(row.key) + '"') < 0;
     }));
-    note(missing.length === 0 && here.indexOf('<div class="tiles">') === 0 &&
+    // The page is tabs since 2026-10-12, its tiles on Metadata.
+    note(missing.length === 0 && here.indexOf('<div class="tiles">') >= 0 &&
          report.requirements.length > 10,
          'D2. and it carries every requirement and every development-only ' +
          'setting of the report', missing.length + ' missing of ' +

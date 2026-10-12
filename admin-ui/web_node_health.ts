@@ -99,7 +99,8 @@ class NodeHealthPage {
   // (#539); a local that was called `t` before — the throttling figures,
   // the totals — has a longer name now.
   static cpuHtml(cpu: Json, t: Json): string {
-    const head = '<h2 id="cpu">' + t.html('consoleNodeHealth.headCpu') +
+    const head = '<h2 id="cpu" data-tab="cpu">' +
+      t.html('consoleNodeHealth.headCpu') +
       '</h2>';
     if (!cpu.available) {
       return head + this.notAvailableHtml(t, cpu.unavailableText);
@@ -154,7 +155,7 @@ class NodeHealthPage {
   }
 
   static memoryHtml(m: Json, t: Json): string {
-    const head = '<h2 id="memory">' +
+    const head = '<h2 id="memory" data-tab="memory">' +
       t.html('consoleNodeHealth.headMemory') + '</h2>';
     if (!m.available) {
       return head + this.notAvailableHtml(t, m.unavailableText);
@@ -196,7 +197,7 @@ class NodeHealthPage {
   static processesHtml(p: Json, t: Json): string {
     const self = this;
     const totals = p.totals;
-    const html = '<h2 id="processes">' +
+    const html = '<h2 id="processes" data-tab="processes">' +
       t.html('consoleNodeHealth.headProcesses') + '</h2>' +
       this.rows([
         [t.text('consoleNodeHealth.processes'), kit.esc(totals.processes),
@@ -264,7 +265,8 @@ class NodeHealthPage {
   }
 
   static ecsHtml(e: Json, t: Json): string {
-    const head = '<h2 id="ecs">' + t.html('consoleNodeHealth.headEcs') +
+    const head = '<h2 id="ecs" data-tab="ecs">' +
+      t.html('consoleNodeHealth.headEcs') +
       '</h2>';
     if (!e.available) {
       return head + this.notAvailableHtml(t, e.unavailableText);
@@ -325,7 +327,7 @@ class NodeHealthPage {
       t.html('consoleNodeHealth.about') + '</p>',
       t.text('consoleNodeHealth.whatThisPageIs'));
     const m = json.machine;
-    const machine = '<h2 id="machine">' +
+    const machine = '<h2 id="machine" data-tab="machine">' +
       t.html('consoleNodeHealth.headMachine') + '</h2>' +
       '<p>' + kit.esc(m.text) + '</p>' +
       this.rows([
@@ -430,9 +432,13 @@ class NodeHealthPage {
                                                          e) + '.');
         }
         // Another node's sections carry its name in their anchors, so the
-        // page's own `id="cpu"` and the rest stay this node's.
+        // page's own `id="cpu"` and the rest stay this node's. On a cluster
+        // the page is one column per node, as it was: the sections are tabs
+        // (`WebPages.protocolTabs()`, 2026-10-12) only where one node is
+        // drawn, so their marks go here.
         return head + (n.self ? body
-          : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'));
+          : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'))
+          .replace(/ data-tab="[^"]*"/g, '');
       }).join('');
     return html;
   }

@@ -66,5 +66,8 @@
   "noStores": "Aucun des deux secrets n’est lu depuis un stockage, il n’y a donc rien à signaler.",
   "perStore": "Un bloc par stockage et non par secret : deux secrets conservés au même endroit partagent tout ce qui suit, et demander deux fois au même stockage s’il est scellé reviendrait pour cette page à inventer un désaccord qu’elle devrait ensuite afficher.",
   "holds": "Contient :",
-  "nothingPublished": "Ce fournisseur ne publie rien sur le stockage lui-même au-delà de ce qui figure déjà sur le secret ci-dessus &mdash; un gestionnaire de secrets cloud est un point de terminaison et une politique d’accès, et tout ce qu’il dira concerne le secret."
+  "nothingPublished": "Ce fournisseur ne publie rien sur le stockage lui-même au-delà de ce qui figure déjà sur le secret ci-dessus &mdash; un gestionnaire de secrets cloud est un point de terminaison et une politique d’accès, et tout ce qu’il dira concerne le secret.",
+  "tab.keys": "Clés de chiffrement",
+  "tab.database": "Mots de passe de la base de données",
+  "tab.mail": "Secrets de messagerie"
 }

@@ -66,5 +66,8 @@
   "noStores": "Neither secret is read from a store, so there is none to report on.",
   "perStore": "One block per store and not per secret: two secrets kept in one place share everything below, and asking the same store twice whether it is sealed would be this page inventing a disagreement it then has to draw.",
   "holds": "Holds:",
-  "nothingPublished": "This provider publishes nothing about the store itself beyond what is already on the secret above &mdash; a cloud secret manager is an endpoint and an access policy, and everything it will say is said about the secret."
+  "nothingPublished": "This provider publishes nothing about the store itself beyond what is already on the secret above &mdash; a cloud secret manager is an endpoint and an access policy, and everything it will say is said about the secret.",
+  "tab.keys": "Encryption keys",
+  "tab.database": "Database passwords",
+  "tab.mail": "Mail secrets"
 }

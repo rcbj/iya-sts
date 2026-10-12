@@ -117,6 +117,8 @@
   "dataset.activeVersion": " : version <code>{version}</code>, {rows} lignes, publiée le {at}",
   "dataset.rollBack": "Revenir à {version}",
   "lookup.heading": "Consulter une adresse",
+  "datasets.heading": "Jeux de données",
+  "import.heading": "Charger un jeu de données",
   "lookup.label": "Que disent les jeux de données à propos de",
   "lookup.button": "Consulter",
   "upload.heading": "Téléverser un fichier",

@@ -122,7 +122,10 @@ class MailPage {
           t.html('consoleMail.cannot.link') + '</a>' +
           t.html('consoleMail.cannot.after'));
     const test = canWrite
-      ? '<h2>' + t.html('consoleMail.test.heading') + '</h2>' + why +
+      // THE TWO FORMS, THE MESSAGES AND THE SETTINGS ARE TABS (2026-10-12);
+      // the channel's status is Metadata.
+      ? '<h2 data-tab="test">' + t.html('consoleMail.test.heading') +
+        '</h2>' + why +
         kit.note(t.html('consoleMail.test.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="test">' +
@@ -134,7 +137,8 @@ class MailPage {
         'type="submit"' + off + '>' + t.html('consoleMail.test.heading') +
         '</button></div>' +
         '</form>' +
-        '<h2>' + t.html('consoleMail.verify.heading') + '</h2>' +
+        '<h2 data-tab="verify">' + t.html('consoleMail.verify.heading') +
+        '</h2>' +
         kit.note(t.html('consoleMail.verify.note')) +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="verify">' +
@@ -148,7 +152,8 @@ class MailPage {
     // beside the ones this realm wrote its own wording in: the view's
     // `builtInLanguages`, a short list in the same cell. A view without the
     // member (an older server) draws the cell as it always did.
-    const templates = '<h2>' + t.html('consoleMail.templates.heading') +
+    const templates = '<h2 data-tab="messages">' +
+      t.html('consoleMail.templates.heading') +
       '</h2>' +
       kit.note(t.html('consoleMail.templates.note')) +
       '<table class="grid"><thead><tr><th>' +
@@ -178,7 +183,7 @@ class MailPage {
           builtIn + '</td></tr>';
       }).join('') + '</tbody></table>';
     return status + test + templates +
-      (json.confinedToRealm ? '' : '<h2>' +
+      (json.confinedToRealm ? '' : '<h2 data-tab="settings">' +
        t.html('consoleMail.settings') + '</h2>' +
        SettingsForms.forms(json.settings, PAGE, undefined, t));
   }

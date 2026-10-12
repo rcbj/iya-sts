@@ -366,8 +366,11 @@ class AcmePage {
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static countsTable(title, rows, t) {
-    return '<h2>' + esc(title) + '</h2><table><thead><tr><th>' +
+  static countsTable(title, rows, t, tab?) {
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h2><table><thead><tr><th>' +
       t.html('consoleAcme.thName') + '</th><th>' +
       t.html('consoleAcme.thCount') + '</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (r) {
@@ -478,13 +481,17 @@ class AcmePage {
       kit.tile(totals.certificatesHeld,
                t.text('consoleAcme.tileCertificates')) + '</div>' +
       self.countsTable(t.text('consoleAcme.byOperation'), json.operations,
-                       t) +
-      self.countsTable(t.text('consoleAcme.byProfile'), json.profiles, t) +
+                       t, 'operations') +
+      self.countsTable(t.text('consoleAcme.byProfile'), json.profiles, t,
+                       'profiles') +
       self.countsTable(t.text('consoleAcme.byErrorCode'), json.errorCodes,
-                       t) +
-      self.countsTable(t.text('consoleAcme.byStatus'), json.statuses, t) +
-      self.countsTable(t.text('consoleAcme.whoAsked'), json.principals, t) +
-      '<h2 id="list-page">' + t.html('consoleAcme.recent') + '</h2>' +
+                       t, 'codes') +
+      self.countsTable(t.text('consoleAcme.byStatus'), json.statuses, t,
+                       'statuses') +
+      self.countsTable(t.text('consoleAcme.whoAsked'), json.principals, t,
+                       'principals') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleAcme.recent') +
+      '</h2>' +
       pager.head +
       '<table><thead><tr><th>' + t.html('consoleAcme.thAt') + '</th><th>' +
       t.html('consoleAcme.thOperation') + '</th><th>' +
@@ -498,10 +505,12 @@ class AcmePage {
       '</th></tr></thead><tbody>' + recent +
       '</tbody></table>' +
       pager.foot +
+      '<div data-metadata>' +
       kit.note(t.html('consoleAcme.noReset') +
                  ' <a href="/admin/audit">' + t.html('consoleAcme.auditLog') +
-                 '</a>.') +
-      '<p class="links"><a href="/admin/acme/monitor?format=json">JSON</a> ' +
+                 '</a>.') + '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/acme/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/acme/monitor</code> · <a ' +
       'href="/admin/acme">ACME</a></p>';
     return inner;

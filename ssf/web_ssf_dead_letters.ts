@@ -356,7 +356,11 @@ class SsfDeadLettersPage {
       '</a>' + t.html('consoleSsfDeadLetters.reports.after',
         { when: kit.whenText(Date.parse(json.generatedAt)) })) +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.when.heading') + '</h2>' +
+      // A TAB PER SECTION (2026-10-12): the intro, the tiles and the note
+      // above are Metadata, and so are the closing links
+      // (`WebPages.protocolTabs()`).
+      '<h2 data-tab="when">' + t.html('consoleSsfDeadLetters.when.heading') +
+      '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.when.note', {
         bucket: SsfDeadLettersPage.deadLetterSpan(timeline.bucketS),
         window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS) })) +
@@ -365,7 +369,8 @@ class SsfDeadLettersPage {
       timelineTable +
       older +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.why.heading') + '</h2>' +
+      '<h2 data-tab="why">' + t.html('consoleSsfDeadLetters.why.heading') +
+      '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.why.note')) +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.cause') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.meaning') + '</th>' +
@@ -393,7 +398,8 @@ class SsfDeadLettersPage {
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
       '</th></tr>' + typeRows + '</table>' +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
+      '<h2 data-tab="streams">' +
+      t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
       kit.wideTable(t.text('consoleSsfDeadLetters.streams.tableLabel'),
                      '<table><tr><th>' +
@@ -407,8 +413,8 @@ class SsfDeadLettersPage {
       '</th></tr>' +
       streamRows + '</table>') +
 
-      '<h2 id="letters">' + t.html('consoleSsfDeadLetters.letters.heading') +
-      '</h2>' +
+      '<h2 id="letters" data-tab="letters">' +
+      t.html('consoleSsfDeadLetters.letters.heading') + '</h2>' +
       search +
       (narrowed.length
         ? '<p class="sub">' + t.html('consoleSsfDeadLetters.narrow.before') +
@@ -429,7 +435,8 @@ class SsfDeadLettersPage {
       nav.foot +
       kit.note(t.html('consoleSsfDeadLetters.letters.note')) +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
+      '<h2 data-tab="process">' +
+      t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
       kit.warn(t.html('consoleSsfDeadLetters.process.warn',
                       { pid: String(proc.pid), role: proc.role })) +
       '<div class="tiles">' +
@@ -463,7 +470,8 @@ class SsfDeadLettersPage {
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.probes') +
       '</th></tr>' + sweepRows + '</table>') +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
+      '<h2 data-tab="settings">' +
+      t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.settings.before') +
       '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.link.ssf') +
       '</a>' + t.html('consoleSsfDeadLetters.settings.after')) +
@@ -473,6 +481,7 @@ class SsfDeadLettersPage {
       '</th></tr>' + settingRows +
       '</table>' +
 
+      '<div data-metadata>' +
       kit.note('<a href="/admin/ssf/dead-letters?format=json">' +
       t.html('consoleSsfDeadLetters.foot.json') + '</a> &middot; ' +
       '<a href="/admin-api/ssf/dead-letters">' +
@@ -482,7 +491,7 @@ class SsfDeadLettersPage {
       'href="/admin/error-codes">' +
       t.html('consoleSsfDeadLetters.foot.codes') + '</a> &middot; <a ' +
       'href="/admin/audit">' + t.html('consoleSsfDeadLetters.foot.audit') +
-      '</a>');
+      '</a>') + '</div>';
 
     return inner;
   }

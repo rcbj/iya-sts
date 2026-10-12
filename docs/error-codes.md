@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4299** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4302** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 205
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 208
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2796,6 +2796,9 @@ Raised from: kerberos/.
 | `STS-KRB-0203` | A PAC presented to the KDC carries a client claims buffer that does not decode (a compression format other than XPRESS Huffman, or malformed NDR); the ticket being built carries none of those claims (#493). | none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18) |
 | `STS-KRB-0204` | A request worker failed a Kerberos message from TCP or UDP 88 before answering it (the worker went away, or the operation threw); it is not answered again in the front process, because the worker may already have written (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
 | `STS-KRB-0205` | A request worker answered a Kerberos message from TCP or UDP 88 with no reply bytes; the client is told the KDC is unavailable (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0206` | The message router a service deployed as cells installs on TCP and UDP 88 failed on a message; it is answered by this cell's KDC as it was before the router (#588, 2026-10-12). | none — #98, RFC 4120 7.2 |
+| `STS-KRB-0207` | A Kerberos message on TCP or UDP 88 whose client is homed in another cell could not be answered there (the cell unreachable, or no reply); the client is told the KDC is unavailable, fail-closed (#588, 2026-10-12). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6 |
+| `STS-KRB-0208` | Another cell relayed a Kerberos message here with no message in it; the inter-cell operation kdc-message failed (#588, 2026-10-12). | none — #98 |
 
 ## STS-LDAP
 

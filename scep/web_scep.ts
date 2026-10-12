@@ -455,12 +455,15 @@ class ScepPage {
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static table(title, counts, t) {
+  static table(title, counts, t, tab?) {
     const self = this;
     const keys = Object.keys(counts || {}).sort(function (a, b) {
       return counts[b] - counts[a];
     });
-    return '<h2>' + esc(title) + '</h2>' + (keys.length
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h2>' + (keys.length
       ? '<table><tbody>' + keys.map(function (k) {
         return '<tr><td>' + self.code(k) + '</td><td class="num">' + counts[k] +
                '</td></tr>';
@@ -504,12 +507,18 @@ class ScepPage {
                t.text('consoleScep.tileChallenges')) +
       kit.tile(json.issuedCertificates,
                t.text('consoleScep.tileCertificates')) + '</div>' +
-      self.table(t.text('consoleScep.byOperation'), json.operations, t) +
-      self.table(t.text('consoleScep.byFailInfo'), json.failInfo, t) +
-      self.table(t.text('consoleScep.byErrorCode'), json.errorCodes, t) +
-      self.table(t.text('consoleScep.byProfile'), json.profiles, t) +
-      self.table(t.text('consoleScep.byPrincipal'), json.principals, t) +
-      '<h2 id="list-page">' + t.html('consoleScep.recent') + '</h2>' +
+      self.table(t.text('consoleScep.byOperation'), json.operations, t,
+                 'operations') +
+      self.table(t.text('consoleScep.byFailInfo'), json.failInfo, t,
+                 'failinfo') +
+      self.table(t.text('consoleScep.byErrorCode'), json.errorCodes, t,
+                 'codes') +
+      self.table(t.text('consoleScep.byProfile'), json.profiles, t,
+                 'profiles') +
+      self.table(t.text('consoleScep.byPrincipal'), json.principals, t,
+                 'principals') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleScep.recent') +
+      '</h2>' +
       nav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleScep.thAt') + '</th><th>' +
       t.html('consoleScep.thOperation') + '</th><th>' +
@@ -521,10 +530,12 @@ class ScepPage {
       '<th>' + t.html('consoleScep.serial') + '</th></tr></thead><tbody>' +
       rows + '</tbody></table>' +
       nav.foot +
+      '<div data-metadata>' +
       kit.note(t.html('consoleScep.noReset') +
         ' <a href="/admin/audit">' + t.html('consoleScep.auditLog') +
-        '</a>.') +
-      '<p class="links"><a href="/admin/scep/monitor?format=json">JSON</a> ' +
+        '</a>.') + '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/scep/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/scep/monitor</code> · <a ' +
       'href="/admin/scep">SCEP</a></p>';
     return inner;

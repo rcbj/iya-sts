@@ -179,7 +179,8 @@ The navigation is a grouped list down the left. Its five sections:
   service itself.
   A page with more than one section is drawn as tabs, Metadata first (its
   tiles, notes and the container's schema), then the list, its forms and its
-  settings.
+  settings. Monitoring and Server configuration follow the same rule: the
+  lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,

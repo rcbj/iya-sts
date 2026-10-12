@@ -4944,6 +4944,21 @@ then Server, its settings, then Clients).
   tabs and gained a Metadata tab first. Users, Every entry and The directory
   service are one section each and were left alone. A marked `<h3>` starts a
   tab even inside an `<h2>` section (Roles).
+* **AND MONITORING AND SERVER CONFIGURATION (same day).** On a monitoring
+  page nearly everything is status, so there Metadata is the lead, the notes
+  and the tiles, and each data section (a table, a chart, a list with its
+  controls) is a tab; sections of one kind share a tab (the cert monitors'
+  count tables keep theirs, the secrets page groups secrets by kind, Risk
+  groups its datasets). Left alone, one section each: Used assertions,
+  Grants, Service accounts, Mail outbox, Geolocation (wrapped in one card, so
+  nothing is at the top level), the API explorer and the Account API.
+  Listeners draws its own tabs and gained `listeners-tab-metadata` first.
+  **A page that draws no marked section this time is drawn as it was** — the
+  mail page's one template, the database page with no postgres, a scheduler
+  run — rather than as one Metadata tab. `/admin/deliveries` is tabbed by
+  outbound kind id, so a new kind in `outbound_delivery.ts` owes its id in
+  `PROTOCOL_TABS`. In a cluster, Worker pools and Node health draw no tabs:
+  their sections are per node.
 
 ## The directory group grew to EIGHT pages (2026-09-05)
 

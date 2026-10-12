@@ -60,6 +60,9 @@ class LogoutPage {
       // list of everybody is /admin/users' job rather than a second copy here.
       inner = (json.hasReader ? '' : LogoutPage.logoutNoReaderNote()) +
         kit.note(t.html('consoleLogout.lookupLead')) +
+        // THE LOOKUP IS A TAB (2026-10-12), headed by the page's own name;
+        // the lead above it and what a logout reaches are Metadata.
+        '<h2 data-tab="lookup">' + t.html('console.nav.logout') + '</h2>' +
         '<form method="get" action="/admin/logout"><label>' +
         t.html('consoleLogout.identity') + ' <input ' +
         'name="user" value="" placeholder="alice"></label> <button ' +
@@ -232,7 +235,7 @@ class LogoutPage {
     const state = String(v.deliveryState || '');
     // The audit link carries an href, which a message may not, so the
     // paragraph around it is two messages with the anchor in the code.
-    const heading = '<h2 id="backchannel">' +
+    const heading = '<h2 id="backchannel" data-tab="backchannel">' +
       t.html('consoleLogout.hBackchannel') + '</h2>' +
       kit.note(t.html('consoleLogout.backchannelLead', {
         pending: counts.pending, sent: counts.sent, dead: counts.dead }) +

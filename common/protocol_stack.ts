@@ -845,6 +845,15 @@ class ProtocolStack {
     // Binding a privileged port can fail, and a require that throws takes the
     // whole service down; a route cannot.
     const krb5 = require('../kerberos/krb5_kdc');
+    // 14c's second half (#588): the KDC handed to `krb5_home`, which
+    // registers the inter-cell `kdc-message` operation and — in a service
+    // deployed as cells only — sets the router TCP and UDP 88 ask before
+    // they answer, so a message whose client is homed in another cell is
+    // answered there. Handed in rather than required from `krb5_home`, whose
+    // require of the JavaScript KDC would register its routes ahead of
+    // 14c's; and the KDC requires nothing new, so the parent project's COPY
+    // closure does not move.
+    require('../kerberos/krb5_home').install(krb5);
     // The Kerberos-protected service. Like the KDC it registers its HTTP view
     // at require time and starts its socket from listen(), for the same reason.
     const krb5Service = require('../kerberos/krb5_service');
