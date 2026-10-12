@@ -1,4 +1,9 @@
 {
   "authn.noMail": "<strong>此領域無法傳送郵件</strong>，因此下方的兩種電郵機制顯示為停用，且從不提供。請在以下位置設定傳輸方式：",
-  "authn.emailWarning": "將電郵用作驗證器。"
+  "authn.emailWarning": "將電郵用作驗證器。",
+  "authn.dash": "短橫線表示該機制不能擔任的角色：驗證器應用程式或復原碼絕不能作為第一因素，而證書、Kerberos 票證、錢包或聯合夥伴絕不會被要求作為第二因素。",
+  "password.rulesLink": "用戶入口網站",
+  "password.doors": "每個設定密碼的入口最終都進入 <code>common/credentials.ts</code> 中的同一個函數，正因如此，下方的清單是完整的，而不是憑記憶列出的。",
+  "password.history": "<strong>記住的密碼就是它原本儲存時的 scrypt 雜湊</strong>，在下一個密碼取代它時被移入該人自身項目上的 <code>pwdHistory</code>——不會產生新的雜湊，密碼本身也從不保留。檢查新密碼需要對每個記住的密碼進行一次 scrypt 比較，在此線程上每次約 70ms，因此 {history} 筆的歷史記錄在變更密碼時最多需要 {ms}ms。產生的密碼會跳過比較，因為隨機抽取的內容不會是以前的密碼。<code>pwdHistory</code> 和 <code>pwdChangedTime</code> 由本服務維護，在產品模式下，指定其中任一屬性的 LDAP modify 都會被拒絕。",
+  "password.generator1": "<strong>從主控台或 <code>/admin-api</code> 建立的新用戶預設獲得產生的密碼</strong>，僅顯示或傳回一次。它由 "
 }

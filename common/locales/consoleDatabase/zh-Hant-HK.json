@@ -1,0 +1,22 @@
+{
+  "serverBlurb": "這是哪個 PostgreSQL、本服務以什麼身分連線，以及數據庫已經有多大。",
+  "activityBlurb": "PostgreSQL 為此數據庫維護的每個計數器、連線到它的後端程序，以及它們持有的鎖定。",
+  "schemaBlurb": "每個數據表與每個索引的統計資訊、大小、欄位和條件約束 — 限定在 <code>current_schema()</code> 內，因此在連線字串中更換了結構描述的維運人員看到的是自己的資料表，而不是別人的。",
+  "mayNotRead": "本服務的數據庫角色無權讀取它。將 <code>pg_monitor</code> 授予該角色即可填入；本服務不會要求此權限。",
+  "noRow": "該檢視沒有傳回任何列，對於限定在此數據庫的探測，這表示伺服器尚未為它保留統計資訊。",
+  "wouldShow": "本頁面將顯示：PostgreSQL 記錄的關於自身的一切 — 認可與復原、快取命中率、每個後端程序與鎖定、檢查點程序與預寫記錄 — 以及本服務所擁有結構描述的每數據表、每索引統計資訊、大小、欄位與條件約束。",
+  "noDatabaseTitle": "沒有可報告的數據庫",
+  "tileDatabase": "數據庫",
+  "whatDoing": "本頁面顯示<strong>數據庫一直在做什麼</strong>。",
+  "whatShape": "<strong>本頁面的結構由它所指向的數據庫決定。</strong>背後的每個陳述式都是 <code>SELECT *</code>，顯示的欄位就是此伺服器傳回的欄位，依其順序排列。這並非偷懶：PostgreSQL 會在主要版本之間移動這些檢視 &mdash; <code>pg_stat_bgwriter</code> 在 16 中有十一欄，在 18 中只有四欄，因為檢查點計數器被移到了 17 之前不存在的檢視中 &mdash; 因此指定欄位名稱的頁面除一個版本外在所有伺服器上都會出錯，而且錯得像一個空白儲存格。",
+  "whatNoQuery": "<strong>這裡沒有查詢方塊，也絕不能有。</strong>本服務連線所用的角色可以對六個數據表執行 INSERT、UPDATE 和 DELETE，因此能向它傳遞陳述式的主控台就是能清空目錄的主控台。每個陳述式都是 <code>persistence/persistence_postgres.js</code> 中的常值，沒有一個是根據要求攜帶的內容建立的。它們全部是目錄讀取，受 PostgreSQL 自身的 <code>statement_timeout</code>（{ms} 毫秒）約束",
+  "poolFigures": "<strong>連線集區數字屬於此程序，而後端程序數屬於伺服器</strong>，它們回答的是不同的問題：PostgreSQL 能說出存在多少連線，而只有客戶端能說出本服務持有其中多少個、有多少呼叫端在排隊等待。連線集區是在本頁面借用連線之前取樣的，因此數字反映的是您提問時它在做什麼，而不是因為您提問它才在做什麼 &mdash; 在最大值為四的連線集區上，把我們自己的連線算進去就會憑空多出四分之一。",
+  "narrowedRole": "本服務以一般應用程式角色連線 &mdash; 對六個數據表有 SELECT、INSERT、UPDATE 和 DELETE 權限，對一個結構描述有 USAGE 權限，<strong>沒有 <code>pg_monitor</code></strong>。下方大部分內容任何人都可以讀取；有兩類不行，而且它們失敗的方式不同：",
+  "narrowedBackend": "<strong>屬於其他角色的後端程序不會失敗</strong> &mdash; 它會顯示為一列，狀態為空，查詢顯示為字面字串 <code>&lt;insufficient privilege&gt;</code>，這是一個值而不是錯誤。本頁面將其顯示為<em>已隱藏</em>。<code>pg_stat_replication</code> 也是如此：那裡的空數據表要麼表示沒有備援伺服器，要麼表示此角色無權看到它們，本服務中沒有任何東西能區分這兩種情況。",
+  "unusedWhy": "。在一個一直在處理流量的數據庫上，這是本頁面最值得採取行動的數字 &mdash; 沒有任何讀取的索引只是白白耗用寫入成本與磁碟。在剛啟動的數據庫上，它只表示尚未有任何查詢，下方的計數器會說明是哪種情況。",
+  "deadTuplesWhy": "失效列占全部列的比例，在整個結構描述內加總。這是膨脹訊號；autovacuum 會使其下降，每個數據表的 vacuum 時間在結構描述部分中。",
+  "scansWhy": "在六個小數據表上，循序掃描往往就是正確的計畫，這<em>不是</em>需要追查的故障 &mdash; 請搭配下方的列數來看。",
+  "missingHead": "<strong>本服務驅動程式宣告的 {n} 個物件不在數據庫中：</strong>",
+  "onlyCheck": "本服務中沒有其他地方做這項檢查。<code>tests/postgres_schema.js</code> 會逐字元比較驅動程式和 <code>postgres/schema.sql</code>，但兩者都從未與<em>執行中的伺服器</em>比較過 &mdash; 因此由該檔案的舊副本、手動或只移轉了一半建立的數據庫可以同時滿足兩者，卻缺少一個數據表。",
+  "reverseNot": "反方向的情況刻意<em>不</em>報告：此結構描述中驅動程式從未聽說過的數據表是維運人員自己的事，把它稱為錯誤的頁面就等於本服務在宣稱一個不屬於它的命名空間。"
+}

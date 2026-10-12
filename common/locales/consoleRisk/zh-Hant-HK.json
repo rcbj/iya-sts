@@ -1,0 +1,22 @@
+{
+  "metrics.noteBefore": "對評分系統的量測：它評估了什麼、各級別和訊號如何分布、耗時多久以及它做了什麼。前幾個部分是{where, select, database {在數據庫中計算的，涵蓋所有節點} other {在此程序的記憶體中計算的（沒有數據庫）}}，針對領域 <code>{realm}</code>{process, select, yes {；底部的<em>此程序</em>是自此程序啟動以來的數據} other {}}。每個人自己的評估位於",
+  "tile.bots": "自動化客戶端",
+  "th.dataset": "數據集",
+  "th.network": "網絡",
+  "pair.label": "數據集及其格式",
+  "pair.summary": "哪個檔案對應哪個數據集",
+  "pair.note": "每個數據集只從其旁邊列出的格式讀取，不接受其他格式；下面的下拉選單只提供這些組合。",
+  "tile.active": "個使用中數據集",
+  "about.datasets": "風險分數讀取的外部數據集，以及它統計的被拒絕密碼（#62）。<strong>任何人登入時都不會在這裡下載任何內容</strong>：數據集以檔案形式到達，經過檢查（在指定了 SHA-256 時校驗它，比目前使用中版本小得多的版本會被視為可能被截斷的下載而拒絕），然後才會變為使用中。超過其過時期限的數據集不計入任何內容，也從不拒絕任何人。",
+  "about.realmOnly": "這是 <code>{realm}</code> 領域的風險：它的評估、其人員的狀況、它的營運者允許和拒絕清單，以及它被拒絕的密碼。所有領域共用的數據集——地理位置、網絡、Tor 出口、信譽、安全金鑰元數據——及其提供者的條款和 <code>risk.</code> 設定屬於整個服務，由服務管理員管理。",
+  "lookup.heading": "查詢地址",
+  "datasets.heading": "數據集",
+  "import.heading": "載入數據集",
+  "lookup.label": "數據集對以下地址怎麼說：",
+  "paste.placeholder": "每行一個地址、CIDR 區塊或範圍",
+  "providers.heading": "數據屬於誰，條款如何",
+  "providers.note": "每個提供者的條款約束下載其數據的部署，其中一些還約束任何再散布者。",
+  "credits.heading": "數據致謝",
+  "assessments.inDatabase": "保存在數據庫中。",
+  "assessments.inProcess": "保存在此程序中：沒有帶金鑰可用於封存它們的數據庫。"
+}

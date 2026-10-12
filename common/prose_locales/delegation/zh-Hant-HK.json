@@ -1,0 +1,54 @@
+{
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "某個服務要求一張「給自己」的票證，並指名一位完全未參與的用戶——沒有密碼、沒有其票證、沒有任何其同意的事。這是以其他方式驗證某人身分的服務為其取得 Kerberos 身分的方式，而且它不是特權：票證是給你自己的。[MS-SFU] 稱之為協定轉換，它是 Kerberos 鏈中唯一的模擬：其後的 S4U2Proxy 跳轉都是委派（#491）。"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "接著前端以該用戶身分到達「另一個」服務。由「前端」帳戶上的 msDS-AllowedToDelegateTo 授權，只有網域管理員能設定它，且要求證據票證可轉送。即使其證據來自 S4U2Self 也屬於委派：票證在 PAC 的 S4U_DELEGATION_INFO 中攜帶整條鏈（[MS-SFU] 限制委派，#491）。"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "客戶端交出了它整張票證授權票證。持有它的人可以在其到期前以該客戶端身分到達「任何」地方，且不再需要參照此 KDC——因此沒有允許目標的清單，因為根本沒有限制。唯一的控制是在簽發時，而且是在受保護的「帳戶」上（NOT_DELEGATED），而不是在任何服務上。"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "受信任的一方簽署 SAML 2.0 斷言說明權杖是給誰的，此授權伺服器便簽發一個。沒有瀏覽器、沒有密碼、也沒有同意步驟：XML Signature 就是授權的全部，這就是為什麼在相信其中任何內容之前，Issuer 必須以 `oauthSamlAssertionIssuer` 宣告在應用程式項目上，且證書也必須註冊在那裡。它是 RFC 7523 的姊妹機制，但「不是」相同的機制——這兩個設定檔持有各自的金鑰組，任一方都不能代替另一方簽署。"
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "以用戶斷言進行、無互動的 GNAP 授權"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "受信任可略過互動的客戶端（gnapSkipInteraction）出示了關於某人的已驗證斷言，並獲簽發該人的權杖。該人未被詢問：斷言就是他們參與的全部，而權杖是他們的，其中沒有該客戶端的記錄。"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "代表他們行事的是誰：前端服務、要求者、執行交換的客戶端。這是出示自己憑證的一方，而在模擬的情況下，它是遠端永遠看不到的一方。"
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>一個應用程式。</strong>在 <code>ou=applications</code> 下有項目的對象——OAuth 客戶端、服務提供者、Kerberos 服務、WS-Trust 依賴方。"
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>斷開的線跳過了一個無人指名的當事方。</strong>轉送的票證授權票證沒有中介者，也不可能有——客戶端把它交給自己選擇的任何服務，而此 KDC 從不會被告知是哪一個。"
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>紅色是從未據以簽發任何東西的鏈。</strong>工具提示附有 KDC 自己說明原因的文字，與傳送給客戶端的句子相同。"
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>靛藍實線：「一般授權」，標籤就是確切的授權類型</strong>——<code>authorization_code</code>、<code>refresh_token</code>、<code>client_credentials</code>，規格章節在工具提示中。從「人」出發，表示指名他們的憑證交給了該應用程式；從「六角形」出發，表示沒有其他人持有它——<code>client_credentials</code> 權杖是關於客戶端自己的，而 X509-SVID 沒有對象，因此主體與持有者是同一個方框，只有一條線而不是兩條。它不使用琥珀色或綠色，因為模擬與委派是委派機制的屬性，而授權兩者都不主張。"
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>從「應用程式」出發的靛藍實線，是同一關係再往前一步：它持有的憑證「指向」誰。</strong>它就是上方的<em>到達</em>線，只是針對一般授權而非委派——簽發給 Web 前端、指向 API 閘道的存取權杖，就是本服務在說前者可以此人的名義到達後者，過程中沒有任何交換。標籤上的機制區分了兩者：授權，或 <code>Token exchange</code>。權杖實際攜帶的對象在工具提示中，因為方框是以註冊該對象的應用程式命名的。<strong>其下方的那一行指名該權杖上的「委派權限」</strong>——其 <code>scope</code> 宣告中、由遠端資源所「定義」的值，客戶端透過將完整權限識別碼（資源的基礎 URI 加上名稱）作為範圍送出來要求它們。<strong><code>default permissions</code> 表示權杖指名了該資源，但沒有要求其中任何權限</strong>：這是指名資源自身 <code>client_id</code> 的範圍所產生的結果，因為該值會成為對象並從範圍宣告中移除。它說明的是「簽發」了什麼，而不是「授予」了什麼——<a href=\"/admin/delegation/allowed\">已設定的登錄</a>是另一個問題，而在開發模式下 <code>oauth2.delegatedPermissionsEnforced</code> 預設為關閉，因此權杖可能攜帶其客戶端從未被授予的權限（產品模式會拒絕）。"
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>無法仲介的仲介者</strong>——此關係本身沒問題，但它「透過」來驗證身分的關係有問題，因此用戶看到的是登入畫面而不是夥伴。該畫面不檢查任何密碼，這就是它值得擁有自己顏色的原因：它是這裡唯一會產生可用登入的失敗。"
+  }
+}

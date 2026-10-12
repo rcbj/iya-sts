@@ -1,3 +1,11 @@
 {
-  "applicationsText": "每個託管應用程式所在的位置：回應它的接聽程式，以及建構其 URL（簽發者、中繼資料、重新導向和電郵中的連結）所用的接聽程式。"
+  "applicationsText": "每個託管應用程式所在的位置：回應它的接聽程式，以及建構其 URL（簽發者、元數據、重新導向和電郵中的連結）所用的接聽程式。",
+  "certificateFrom": "{source} 證書",
+  "defFiles": "沒有證書檔案時，由{whose, select, default {預設領域的} other {本領域的}}核證機關為 <code>hostnames</code> 簽發一張。",
+  "mapIssuer": "變更 <code>oauth-oidc</code> 的公布位置會改變每個權杖和客戶端所指的簽發者。將 <code>management-api</code> 從存取本頁所用的接聽程式上移除需要下方的確認；<code>STS_LISTENERS_ADMIN_ON_MAIN=true</code> 會在下次啟動時把主控台和 API 放回主要連接埠。",
+  "thClientCert": "客戶端證書",
+  "clientCertBefore": "「客戶端證書」可為 <strong>none</strong>（不送出 CertificateRequest）、<strong>optional</strong>（要求但不強制）或 <strong>required</strong>（未提供可鏈結到",
+  "clientCertLink": "客戶端信任存放區",
+  "clientCertAfter": "的證書的交握會被拒絕）。所出示的證書對某個協定有何作用——RFC 8705、GET /tls/sign-in、遠端 PEP——見",
+  "rowTruststore": "客戶端信任存放區"
 }

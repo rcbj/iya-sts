@@ -1,0 +1,178 @@
+{
+  "audit.categories.authentication.what": {
+    "en": "a75d8d51a0eb704d",
+    "text": "某個憑證被「接受」了，可能發生在此處十六個協定家族中的任何一個。它記錄在每個家族都已經會通過的單一匯集點，因此這是一個地方而不是十六個。SCIM 加入得較晚，SPIFFE 更晚。SCIM：其端點接受的方案中有三種——Basic、Digest 與 HOBA——每次請求都出示憑證，接受其中一個即是一次身分驗證。其他三種不會出現在此，因為每一種都是延續在別處記錄的身分驗證：存取權杖在簽發時即被接受，工作階段 Cookie 在其工作階段開始時被接受，而客戶端憑證是每個「連線」一次，而不是每個請求一次。SPIFFE 是第十六個，以三種方式到達此處：在 SPIRE Server API 透過相互 TLS 出示的 X509-SVID（每個連線一次，理由與客戶端憑證相同）、代理程式證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「獲簽發」SVID 不在其中。"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "某個應用程式——OAuth 客戶端、OIDC 依賴方、SAML 服務提供者、WS-Federation 應用程式、WS-Trust 依賴方、Kerberos 服務——首次被看見，或記錄了新的內容。這是上方身分驗證列的對應：那一列說明「誰」，這一列說明「他們登入的是什麼」。一個動作通常會同時寫入兩者。"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "其他每個 HTTP 端點：權杖端點、KDC 代理、憑證端點、元數據文件，全部都是。"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "授權決策：PDP 被問了什麼、它回答了什麼，以及——另外——內嵌 PEP 對該回答「做了」什麼。兩者刻意分成不同的列：回答 Indeterminate 的 PDP 與偏向拒絕而拒絕的 PEP，對用戶而言是一個事件，卻是兩個元件做出的兩個決策；當它們與某人的預期不符時，原因總是只看了其中一個。原則變更是針對 ou=policies 的 LDAP 列，而不是此處的列，因為儲存庫就是目錄。"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "訊息被排入隊列、傳送、擷取、成為無法投遞信件或被拒絕（速率上限、選擇退出、沒有地址），以及郵件通道自身的動作：重試、測試訊息、儲存範本。一列會指名收件者與類別，絕不包含內文。"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "某人登出了用戶入口網站"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "某人為自己簽發了 TLS 客戶端證書"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "某人撤銷了自己的一張 TLS 客戶端證書"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "訊息未排入隊列（速率上限、選擇退出、沒有地址、沒有傳輸）"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "管理員將無法投遞信件重新排入隊列"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "排程工作已執行、被手動排入隊列，或被接手"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "領域的簽署金鑰已「緊急」輪替：證書以 keyCompromise 撤銷，工作階段已結束"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "應用程式的客戶端秘密即將到期"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "應用程式的客戶端秘密已到期"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "數據加密金鑰已輪替"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "以被取代之數據加密金鑰密封的值已重新密封"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "沒有任何內容以其密封的被取代數據加密金鑰已銷毀"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "金鑰加密金鑰已在其金鑰管理服務中輪替，數據金鑰已重新包裝"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "建立了用戶"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "刪除了用戶"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "更新了用戶"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "重新命名了用戶"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "搜尋傳回了至少一位用戶"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "未傳回任何用戶的搜尋"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "以電郵傳送的第二因素被開啟或關閉"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "以電郵寄出了登入代碼或連結"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "以電郵寄出的登入代碼或連結被接受"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "以電郵寄出的登入代碼或連結被拒絕"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "客戶端證書信任錨點被新增或移除"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "客戶端在 /oauth2/revoke 撤銷了 OAuth 2.0 權杖，或因撤銷另一個客戶端的權杖而被拒絕"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "遠端 PEP 獲簽發 HTTPS 接聽程式證書"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "GNAP 核准頁面上的人不是請求所指名的用戶，授權已送往該用戶的入口網站（#432 phase 6）"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "串流的無法投遞隊列被手動清空"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "憑證授權單位為代管介面簽發了客戶端金鑰組"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "透過 ACME、EST 或 SCEP 簽發了證書"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "證書註冊被拒絕"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "撤銷了透過註冊取得的證書"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "證書表單因其 CSRF 權杖而被拒絕"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "接受了風險數據集提供者的條款"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "外送 SCIM 客戶端被新增、變更或移除"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "外送 SCIM 客戶端與其服務提供者完成了對帳"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "外送 SCIM 客戶端的無法投遞信件被重試或清除"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "執行或拒絕了 SAML 元數據 MDQ 查詢"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "重新整理了服務提供者的 SAML 元數據"
+  }
+}

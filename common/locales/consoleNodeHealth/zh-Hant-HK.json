@@ -1,0 +1,13 @@
+{
+  "cpuTimeWhy": "容器中所有處理程序自啟動以來（用戶 {user} 秒，系統 {system} 秒）",
+  "headProcesses": "Node.js 處理程序與工作線程",
+  "workerThreads": "工作線程",
+  "workerThreadsWhy": "請求 worker 和託管介面 worker，即前端處理程序的線程",
+  "residentWhy": "涉及 {n} 個處理程序；線程的常駐記憶體即其處理程序的",
+  "thProcess": "處理程序或線程",
+  "threadOfPid": "pid {pid} 的線程 {thread}",
+  "everyThreads": "所有線程合計",
+  "headEcs": "ECS 任務元數據",
+  "about": "容器的 CPU 和記憶體從其 cgroup（v2）讀取，每個處理程序和工作線程的數據從處理程序或線程本身讀取，均在繪製頁面時讀取；除上一次 CPU 樣本外不保存任何內容。本頁不會變更任何內容。",
+  "processesAndThreads": "{processes} 個處理程序和 {threads} 個工作線程"
+}
