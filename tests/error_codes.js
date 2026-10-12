@@ -211,6 +211,8 @@ const FAILURE_PATTERNS = [
           '(RFC 9635 section 3.6)' },
   { re: /\binteractionError\(\s*res\b/, before: 4, after: 2,
     what: 'a GNAP interaction page refusing a link, a code or an answer' },
+  { re: /\bapiRefusal\(\s*res\b/, before: 4, after: 2,
+    what: 'a refusal on the GNAP interaction API, /gnap-api (#578)' },
   // ----- ACME / EST / SCEP (2026-09-13) ------------------
   // ===== ACME patterns =====
   { re: /\bacmeProblem\(\s*ctx\b/, before: 4, after: 4,

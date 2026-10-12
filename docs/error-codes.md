@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4306** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4308** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 354
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
@@ -3895,14 +3895,17 @@ Raised from: gnap/.
 | `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0400` | A GNAP interaction start link (redirect or app) names no request still waiting for approval. | HTTP 400 page |
 | `STS-GNAP-0401` | A GNAP interaction start link had already been used. | HTTP 400 page |
-| `STS-GNAP-0402` | The GNAP user code page was opened while GNAP is turned off (gnap.enabled). | HTTP 400 page |
-| `STS-GNAP-0403` | A GNAP user code form post was malformed. | HTTP 400 page |
-| `STS-GNAP-0404` | Too many GNAP user codes were tried from one address. | HTTP 429 page |
-| `STS-GNAP-0405` | A GNAP user code is not recognised, or has expired. | HTTP 400 page |
-| `STS-GNAP-0406` | A GNAP approval page or answer names no request waiting for the person, or one whose interaction was never started. | HTTP 400 page |
-| `STS-GNAP-0407` | A GNAP approval answer failed its anti-forgery check. | HTTP 400 page |
-| `STS-GNAP-0408` | A GNAP approval answer was malformed. | HTTP 400 page |
-| `STS-GNAP-0409` | A GNAP approval could not be completed because of an unexpected error. | HTTP 400 page |
+| `STS-GNAP-0402` | The GNAP user code page, or the GNAP interaction API (/gnap-api), was reached while GNAP is turned off (gnap.enabled). | HTTP 400 page, or { ok: false, errors } on /gnap-api |
+| `STS-GNAP-0403` | A GNAP user code sent to POST /gnap-api/code was malformed. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0404` | Too many GNAP user codes were tried from one address. | HTTP 429, { ok: false, errors } |
+| `STS-GNAP-0405` | A GNAP user code is not recognised, or has expired. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0406` | A GNAP approval page or answer names no request waiting for the person, or one whose interaction was never started. | HTTP 400 page, or { ok: false, errors, view } on /gnap-api |
+| `STS-GNAP-0407` *(retired)* | A GNAP approval answer failed its anti-forgery check. Retired by #578: the approval is an act on /gnap-api, refused STS-GNAP-0410, 0411 or 0412. | — |
+| `STS-GNAP-0408` | A GNAP approval answer sent to /gnap-api was malformed, or carried a limit control this page does not draw. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0409` | A GNAP approval could not be completed because of an unexpected error. | HTTP 400 page, or { ok: false, errors, view } on /gnap-api |
+| `STS-GNAP-0410` | An act on the GNAP interaction API (/gnap-api, #578) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
+| `STS-GNAP-0411` | An act on the GNAP interaction API (/gnap-api, #578) carried no Origin, or an origin this service does not answer on. | HTTP 403, { ok: false, errors } |
+| `STS-GNAP-0412` | An act on the GNAP interaction API (/gnap-api, #578) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). | HTTP 403, { ok: false, errors } |
 | `STS-GNAP-0500` | A GNAP RS-facing request's "resource_server" member is absent, or has neither a key nor an instance identifier. | HTTP 400 GNAP invalid_resource_server |
 | `STS-GNAP-0501` | A GNAP introspection request has no "access_token", or its "proof" is not a method name. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0502` | A GNAP resource registration request is malformed (no access rights, token_formats_supported not strings, token_introspection_required not a boolean). | HTTP 400 GNAP invalid_request |

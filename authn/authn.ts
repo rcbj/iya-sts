@@ -671,7 +671,13 @@ const ARRIVAL_PATHS = [
   // matched by prefix. A wallet's same-device redirect brings a browser
   // back to the wait page, and the sign-in a person starts from a second
   // factor's page or from the portal starts here.
-  '/authn/wallet'
+  '/authn/wallet',
+  // AND GNAP'S TWO PAGES (#578), the user code page and the approval page,
+  // whose acts on `/gnap-api` are bound to this cookie as `/authn-api`'s
+  // are. A person types a user code on a device that may never have been
+  // here; the approval page is where a start link lands.
+  '/gnap/code',
+  '/gnap/approve'
 ];
 
 // ---------------------------------------------------------------------------

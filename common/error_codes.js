@@ -16758,32 +16758,49 @@ const CODES = [
     summary: 'A GNAP interaction start link had already been used.',
     spec: 'HTTP 400 page' },
   { code: 'STS-GNAP-0402',
-    summary: 'The GNAP user code page was opened while GNAP is turned off ' +
-      '(gnap.enabled).',
-    spec: 'HTTP 400 page' },
+    summary: 'The GNAP user code page, or the GNAP interaction API ' +
+      '(/gnap-api), was reached while GNAP is turned off (gnap.enabled).',
+    spec: 'HTTP 400 page, or { ok: false, errors } on /gnap-api' },
   { code: 'STS-GNAP-0403',
-    summary: 'A GNAP user code form post was malformed.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP user code sent to POST /gnap-api/code was malformed.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0404',
     summary: 'Too many GNAP user codes were tried from one address.',
-    spec: 'HTTP 429 page' },
+    spec: 'HTTP 429, { ok: false, errors }' },
   { code: 'STS-GNAP-0405',
     summary: 'A GNAP user code is not recognised, or has expired.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0406',
     summary: 'A GNAP approval page or answer names no request waiting for ' +
       'the person, or one whose interaction was never started.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page, or { ok: false, errors, view } on /gnap-api' },
   { code: 'STS-GNAP-0407',
-    summary: 'A GNAP approval answer failed its anti-forgery check.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP approval answer failed its anti-forgery check. ' +
+      'Retired by #578: the approval is an act on /gnap-api, refused ' +
+      'STS-GNAP-0410, 0411 or 0412.',
+    spec: '', retired: true },
   { code: 'STS-GNAP-0408',
-    summary: 'A GNAP approval answer was malformed.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP approval answer sent to /gnap-api was malformed, or ' +
+      'carried a limit control this page does not draw.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0409',
     summary: 'A GNAP approval could not be completed because of an ' +
       'unexpected error.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page, or { ok: false, errors, view } on /gnap-api' },
+  { code: 'STS-GNAP-0410',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) did not ' +
+      'carry a JSON body (Content-Type: application/json), which a ' +
+      'cross-site form cannot send.',
+    spec: 'HTTP 415, { ok: false, errors }' },
+  { code: 'STS-GNAP-0411',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) carried ' +
+      'no Origin, or an origin this service does not answer on.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-GNAP-0412',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) carried ' +
+      'no X-CSRF-Token, or one not bound to the browser\'s sts_session ' +
+      'cookie (or the browser holds no session).',
+    spec: 'HTTP 403, { ok: false, errors }' },
   { code: 'STS-GNAP-0500',
     summary: 'A GNAP RS-facing request\'s "resource_server" member is ' +
       'absent, or has neither a key nor an instance identifier.',

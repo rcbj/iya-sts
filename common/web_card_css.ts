@@ -81,6 +81,27 @@ class WebCardCss {
     'adius:3px;word-break:break-all}.wide a{color:#12107c}';
 
   /**
+   * GNAP's interaction pages (#578), which carried these in a `<style>` of
+   * their own (`gnap_interact.ts`'s `PAGE_CSS`) until they became a static
+   * surface: the wider card, the client's line and logo, the rights as a
+   * list of boxes, a right's limits under it, and the user code's field.
+   * Every rule is scoped to `.gnap`, the class the surface's card carries,
+   * so no other page of the card changes.
+   */
+  static readonly GNAP_CSS =
+    '.card.gnap{width:520px}.gnap p.app{font-size:.9em;margin:0 0 14px}.gna' +
+    'p ul.rights{list-style:none;padding:0;margin:0 0 8px}.gnap ul.rights l' +
+    'i{padding:8px 10px;margin:6px 0;border:1px solid #e3e3ea;border-radius' +
+    ':6px;background:#fafafd;font-size:.85em}.gnap ul.rights li label{displ' +
+    'ay:flex;gap:8px;align-items:flex-start}.gnap ul.rights li span{display' +
+    ':block;color:#666;font-size:.9em;margin-top:3px}.gnap img.logo{max-wid' +
+    'th:48px;max-height:48px;float:right;margin:0 0 6px 8px}.gnap input.cod' +
+    'e{font-size:1.4em;letter-spacing:.2em;text-transform:uppercase;width:1' +
+    '00%;text-align:left}.gnap div.limits{margin:6px 0 0 24px;font-size:.9e' +
+    'm}.gnap div.limits div{margin:3px 0}.gnap div.limits input{font-size:.' +
+    '95em}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -117,7 +138,10 @@ class WebCardCss {
     'block;font-size:.75em}' +
     WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
-    WebCardCss.WIDE_CSS;
+    WebCardCss.WIDE_CSS +
+    // GNAP's last (#578): scoped to its own card, and after the steps'
+    // code field, which its own replaces.
+    WebCardCss.GNAP_CSS;
 }
 
 export = WebCardCss;

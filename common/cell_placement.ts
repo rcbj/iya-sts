@@ -381,6 +381,21 @@ const ROWS: Row[] = [
          'holding it is asked of the others — by the cell the code ARRIVES ' +
          'at, so not a browser row: a pinned browser relayed to its pin ' +
          'could not be relayed on to the holder' },
+  // THE INTERACTION PAGES' SCRIPT AND API (#578): the script the same file
+  // in every cell; the API placed as the pages it is the door of are.
+  { prefix: '/gnap/interaction.js', strategy: 'local',
+    why: 'the GNAP interaction surface\'s script, the same file in every ' +
+         'cell (#578)' },
+  { prefix: '/gnap-api', strategy: 'local',
+    why: 'the interaction API\'s index, the same in every cell (#578)' },
+  { prefix: '/gnap-api/approve', strategy: 'artifact', browser: true,
+    segment: 3, why: 'the approval page\'s view and answer (#578): an ' +
+    'interaction is found where it was minted (D10); a browser pinned ' +
+    'elsewhere pulls the grant there (gnap_cells.ts)' },
+  { prefix: '/gnap-api/code', strategy: 'handler',
+    handler: 'gnap/gnap_cells.ts',
+    why: 'a user code typed on the code page (#578) carries no tag; the ' +
+         'cell holding it is asked of the others, as at /gnap/code' },
   { prefix: '/gnap/introspect', strategy: 'handler',
     handler: 'gnap/gnap_cells.ts',
     why: 'the token in the body is answered by the cell holding it' },
