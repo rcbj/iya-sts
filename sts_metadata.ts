@@ -9121,7 +9121,10 @@ const PROTOCOLS: Protocol[] = [
           'their password, and their security keys and whether each is a ' +
           'primary credential or a second factor. It is a SEPARATE ' +
           'APPLICATION from the admin console and shares nothing with it but ' +
-          'the session. /portal/activate is its unauthenticated half, where ' +
+          'the sign-on session at this service\'s authorization server: ' +
+          'each is a public OAuth client (sts-user-portal here) holding its ' +
+          'own DPoP-bound token in memory. /portal/activate is its ' +
+          'unauthenticated half, where ' +
           'somebody provisioned through /admin-api or SCIM spends a ' +
           'single-use, time-limited activation link to set up a credential — ' +
           'hashed at rest like a password, rate limited, spent when the ' +

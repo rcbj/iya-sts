@@ -1545,39 +1545,67 @@ class CryptoMetadata {
           ];
         }
       },
-      // THE USER PORTAL IS THE ONLY FAMILY HERE WHOSE CRYPTOGRAPHY IS ENTIRELY
-      // ABOUT SECRETS AT REST. Every other row on this page is about a
-      // credential being SIGNED, VERIFIED or ENCRYPTED in flight; this one
-      // signs nothing and issues nothing. What it does is decide whether a
-      // presented password is the stored one, and protect two values that must
-      // never be readable from a directory dump.
+      // THE USER PORTAL: SECRETS AT REST ON THE SERVER, AND ONE PUBLIC
+      // CLIENT'S PROOF OF POSSESSION IN THE BROWSER. It signs nothing it
+      // issues and issues nothing. On the server it decides whether a
+      // presented password or link is the stored one, and its door,
+      // `/account-api`, verifies the person's own token on every call.
+      //
+      // **REWRITTEN FOR #568 (2026-10-12; #543 round 2).** Until then this row
+      // described the server-drawn portal: a CSRF token, an HMAC-SHA256 under
+      // a per-process key, on every form. That key, the token and the
+      // relying-party session cookie it guarded went when the portal became a
+      // static application over `/account-api` — a public OAuth client,
+      // `sts-user-portal`, with PKCE S256 and a DPoP-bound token held in
+      // memory (`portal/CLAUDE.md`, `account-api/CLAUDE.md`). What a page on
+      // another site cannot forge now is a DPoP proof by a key no other page
+      // holds. The scrypt sentences also named N=2^15 as fixed; it is the
+      // default of `security.passwordHashLogN` since 2026-09-12.
       {
         name: 'User portal',
-        signs: 'Nothing. The portal issues no token, no assertion and no ' +
-               'certificate — it changes credentials rather than minting them.',
-        verifies: 'A PRESENTED PASSWORD, against the scrypt hash on the ' +
-                  'person\'s own entry, and an ACTIVATION TOKEN against the ' +
-                  'scrypt hash of the one that was issued. Both comparisons ' +
-                  'are constant-time through common/crypto.js — a ' +
-                  'byte-by-byte early return on either is a timing oracle. A ' +
-                  'WebAuthn assertion is verified too, but by ' +
-                  'authn/webauthn.js, which is where the ceremony lives.',
+        signs: 'Nothing it issues. The portal mints no token, no assertion ' +
+               'and no certificate — it changes credentials rather than ' +
+               'minting them. Its runtime, in the browser, signs one thing: ' +
+               'an RFC 9449 DPoP proof (ES256) on every `/account-api` call ' +
+               'and at the token endpoint, with a P-256 key WebCrypto ' +
+               'generated non-extractable for that page load.',
+        verifies: 'EVERY `/account-api` CALL, at its gate ' +
+                  '(account-api/account_api.ts): the access token is an RFC ' +
+                  '9068 `at+jwt` verified under THIS realm\'s signing key ' +
+                  '(any generation), its issuer and audience checked, and ' +
+                  'its DPoP binding matched by a proof the gate verifies — ' +
+                  'never accepted as Bearer. The person it names is the only ' +
+                  'account it acts on. Beside that, a PRESENTED PASSWORD (a ' +
+                  'change re-proves the current one) against the scrypt hash ' +
+                  'on the person\'s own entry, and an ACTIVATION or PASSWORD ' +
+                  'RESET link\'s token against the scrypt hash of the one ' +
+                  'issued, each compared in constant time through ' +
+                  'common/crypto.js. The runtime verifies a JARM ' +
+                  'authorization response against the realm\'s JWKS where ' +
+                  'the realm sends one. A WebAuthn assertion is verified by ' +
+                  'authn/webauthn.js; the runtime only runs the ceremony.',
         encrypts: 'Nothing.',
         decrypts: 'Nothing.',
-        keys: 'None of its own. The CSRF token is an HMAC-SHA256 under a key ' +
-              'generated per process and deliberately NOT persisted — a CSRF ' +
-              'token is only meaningful for the life of a session, a session ' +
-              'does not survive a restart, so a key that did would protect ' +
-              'nothing and be one more secret at rest.',
-        hashes: 'SCRYPT (RFC 7914, N=2^15, r=8, p=1) for both the password ' +
-                'and the activation token, each with 16 random bytes of ' +
-                'salt, stored as `$scrypt$N$r$p$salt$hash` so the cost can ' +
-                'be raised later without invalidating what is already ' +
-                'stored. **NOT a digest**: a password is low-entropy and a ' +
-                'fast hash over one is a wordlist away from being the ' +
-                'password. SHA-256 under an HMAC for the CSRF token, which ' +
-                'is a different job — authenticity of a form, not protection ' +
-                'of a secret at rest.',
+        keys: 'None on the server. The DPoP key pair lives in the browser: ' +
+              'P-256, generated by WebCrypto with its private half ' +
+              'non-extractable, held in memory and gone with the page, and ' +
+              'every token the portal is issued is bound to its thumbprint. ' +
+              'The tokens themselves are signed by the realm\'s ' +
+              'authorization server (the OAuth2 / OIDC row). There is no ' +
+              'CSRF key any more: the per-process HMAC key went with the ' +
+              'CSRF token and the session cookie it guarded (#568).',
+        hashes: 'SCRYPT (RFC 7914) for the password and for an activation or ' +
+                'reset link\'s token, each with 16 random bytes of salt, at ' +
+                'the cost security.passwordHashLogN, passwordHashR and ' +
+                'passwordHashP name (N=2^15, r=8, p=1 by default), stored as ' +
+                '`$scrypt$N$r$p$salt$hash` so the cost can be raised later ' +
+                'without invalidating what is already stored. **NOT a ' +
+                'digest**: a password is low-entropy and a fast hash over ' +
+                'one is a wordlist away from being the password. SHA-256 in ' +
+                'the browser for the PKCE S256 challenge and the DPoP ' +
+                'proof\'s `ath`, which are a different job — binding a ' +
+                'request to a sign-in and a proof to a token, not ' +
+                'protecting a secret at rest.',
         // AN ARRAY, like every other row. Nothing this family protects travels
         // anywhere — every value is at rest in the embedded directory — so the
         // list is empty, and saying that as an empty list rather than as a
@@ -1587,12 +1615,18 @@ class CryptoMetadata {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
-            { what: 'Password and activation token at rest',
-              how: 'scrypt, N=32768, r=8, p=1, 32-byte key, 16-byte random ' +
+            { what: 'Password and link token at rest',
+              how: 'scrypt, N=32768, r=8, p=1 by default ' +
+                   '(security.passwordHash*), 32-byte key, 16-byte random ' +
                    'salt' },
             { what: 'Comparing either', how: 'constant-time equality' },
-            { what: 'CSRF token',
-              how: 'HMAC-SHA256 over the session id under a per-process key' }
+            { what: 'Access token at /account-api',
+              how: 'RFC 9068 at+jwt, verified under this realm\'s signing ' +
+                   'key, DPoP-bound' },
+            { what: 'DPoP proof (browser)',
+              how: 'ES256 with a non-extractable WebCrypto P-256 key per ' +
+                   'page load' },
+            { what: 'PKCE', how: 'S256' }
           ];
         }
       },
