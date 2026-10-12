@@ -1774,14 +1774,21 @@ const SCHEMA = {
             'API verbatim; nothing here reads it.' },
     { name: 'spiffeAdmin', kind: 'single', from: 'the caller', editable: true,
       what: 'TRUE where the holder may call the SPIRE Server API\'s ' +
-            'administrative methods. RECORDED AND NOT ENFORCED, like every ' +
-            'other authorization fact in this service: no call here is ' +
-            'refused for want of it.' },
+            'administrative methods — entries, agents, bundles, federation ' +
+            'relationships, minting an SVID — over mutual TLS. ENFORCED in ' +
+            'both modes: the server API makes a caller `admin` when an ' +
+            'unexpired entry for its identity carries this flag or ' +
+            'spiffe.adminIds names it, and refuses those methods to a remote ' +
+            'caller that is neither (the private Unix socket\'s `local` ' +
+            'caller is the other way in). Read on every call, so a change ' +
+            'applies to the next one.' },
     { name: 'spiffeDownstream', kind: 'single', from: 'the caller',
       editable: true,
       what: 'TRUE where the holder is a downstream SPIRE server that may ask ' +
-            'for an intermediate CA (NewDownstreamX509CA). Recorded, not ' +
-            'enforced.' },
+            'for an intermediate CA (NewDownstreamX509CA) and publish a JWT ' +
+            'or WIT authority. ENFORCED in both modes: those methods are ' +
+            'refused to a caller no unexpired entry marks downstream, and ' +
+            'the flag grants nothing else.' },
     { name: 'spiffeStoreSvid', kind: 'single', from: 'the caller',
       editable: true,
       what: 'TRUE where the SVID is to be written to an SVID store plugin ' +
