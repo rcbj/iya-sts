@@ -714,6 +714,11 @@ shell registers on the client entry as the console's does
 unless registered). Every token is DPoP-bound (`sender_constraints.js`'s
 DPOP_BOUND_PUBLIC_CLIENTS) and the client is exempt from FAPI's
 confidential-client rule (`fapi.js`), the console's two arrangements.
+Under a FAPI profile it also sends an OpenID `nonce` derived from its PKCE
+verifier and refuses an ID Token without it, and under
+`oauth2.fapiRequireMtls` it is let through DPoP-bound rather than refused for
+having no client certificate (2026-10-12) — `oauth-oidc/CLAUDE.md`, 3cb,
+*under a FAPI profile they sign in at all*.
 
 What still holds from the relying-party years:
 

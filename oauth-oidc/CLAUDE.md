@@ -5251,8 +5251,9 @@ either, and the requirement rows say so. `tests/sender_constraints.js` and
 `tests/fapi2_units.js` hold both lists to "the console and the portal,
 nothing else".
 
-**AND UNDER A FAPI PROFILE THEY SIGN IN AT ALL (#568)**, which needed four
-more pieces, each found by running the FAPI jobs with the static portal:
+**AND UNDER A FAPI PROFILE THEY SIGN IN AT ALL (#568)**, which needed seven
+more pieces, each found by running the FAPI jobs with the static portal (the
+last three on 2026-10-12, `9ee610e7`):
 
 * **PAR (RFC 9126)** where the metadata requires it (FAPI 2.0): the runtimes
   push from the browser (`common/web_spa_client.ts`,
@@ -5274,6 +5275,29 @@ more pieces, each found by running the FAPI jobs with the static portal:
   Message Signing): requested, and verified in the browser
   (`openAuthorizationResponse()`: the signature against the realm's JWKS with
   WebCrypto, `iss`, `aud`, `exp`) before its code is believed.
+* **A `nonce` on every OpenID request.** FAPI 1.0 refuses an `openid`
+  request without one (STS-OAUTH-0575), and neither runtime sent one. Both
+  now send `nonce = base64url(SHA-256('nonce:' + PKCE verifier))`
+  (`SpaClient.nonceFor()` in `common/web_spa_client.ts`), so nothing extra
+  has to cross the redirect, and refuse an ID Token that does not carry it
+  (`nonceMatches()`) — the console's re-sign-in popup included. The two test
+  helpers (`tests/vendored/console_signin.js`, `portal_signin.js`) derive
+  the same value.
+* **No `query` response mode under FAPI 1.0 Advanced.** An Advanced realm
+  still advertised `query`, so a runtime reading discovery asked for plain
+  `code` without JARM and was refused (STS-OAUTH-0783).
+  `fapi.applyToMetadata()` drops `query` from `response_modes_supported`
+  whenever the profile is `1-advanced`, which leaves the JWT-secured modes.
+* **`oauth2.fapiRequireMtls` exempts them, DPoP-bound.** The setting makes
+  the sender constraint mTLS only (FAPI 1.0's wording), and a browser has no
+  client certificate to present, so the portal's sign-in was refused
+  (STS-OAUTH-0583). `fapi.senderConstraintRefusal(binding, clientId,
+  method)` lets `publicClientExempt()`'s two clients through when — and only
+  when — the token is DPoP-bound and they authenticated with `none`; an
+  unbound token is still refused and no other client is affected
+  (`tests/fapi_advanced_units.js`). The `sender-constrained` requirement row
+  (FAPI 1.0 Advanced 5.2.2 items 5-6) says so: under the setting these two
+  clients do not conform either.
 
 **THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
 `issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
