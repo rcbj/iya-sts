@@ -788,10 +788,18 @@ const FEDERATION_NOTE_FOLD = '<details class="note fold"><summary>' +
 
 // ---------------------------------------------------------------------------
 // WHAT `kerberosPrincipalsJson()` SAYS UNDER `notes` (#543 phase 2b): the
-// kerberos namespace, and this module's `prose()`. Two sentences are
-// templates: the realm's own Kerberos realm, and why a realm has no KDC —
-// which is `krb5_principals.js`'s sentence when it gives one, carried over
-// in English where it is not a message here.
+// kerberos namespace, and this module's `prose()`. Three sentences are
+// templates: the realm's own Kerberos realm, why a realm has no KDC, and why
+// a realm whose KDC is on cannot use it — the last two
+// `krb5_principals.js`'s sentence when it gives one, carried over in English
+// where it is not a message here.
+//
+// **ON IS NOT THE SAME AS SERVING** (#543 follow-up): the note branched on
+// `kerberos.enabled` alone, so a realm with krb5.enabled on whose context is
+// inactive (no usable enctype), or whose product krbtgt key is not stored
+// yet, was told its KDC served it, and the reason — which
+// `kerberosRealmOf()` fills only for an inactive realm — was never shown.
+// `realmInactive` is that case.
 // ---------------------------------------------------------------------------
 /**
  * The notes of `/admin-api/kerberos/principals` (#543), `{{name}}` a value.
@@ -815,6 +823,8 @@ const KERBEROS_NOTES = Object.freeze({
   realmNone: 'THIS TRUST REALM HAS NO KDC: {{reason}}. Set krb5.realm on ' +
     'the realm and turn krb5.enabled on to give it one; port 88 routes a ' +
     'request by the Kerberos realm name inside it.',
+  realmInactive: 'THIS TRUST REALM\'S KDC IS ON BUT CANNOT BE USED: ' +
+    '{{reason}}. Its Kerberos realm is {{kerberosRealm}}.',
   window: 'Keys are derived AFTER a password is set or verified and take a ' +
     'few tens of milliseconds to land; until they do, the KDC refuses the ' +
     'person rather than accepting an older key.',
@@ -5714,7 +5724,6 @@ class AdminViews {
    */
   federationMapKey() {
     const { log, federationDiagram } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.federationMapKey().");
     const shapes = [
       { kind: 'sts', label: 'This service',
@@ -6837,6 +6846,17 @@ class AdminViews {
         "person(s), " +
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
+    // Why an enabled realm's KDC cannot be used, '' when it can: an
+    // inactive context's own reason, else `krbtgtUnavailableReason()` (in
+    // product, no random krbtgt key stored yet). See `KERBEROS_NOTES`.
+    const unusable = !kerberos.enabled ? ''
+      : !kerberos.active
+        // An inactive context always carries its reason (no usable
+        // enctype, or a realm this process does not hold yet); the krbtgt
+        // reason is the same sentence for it, asked only if it were empty.
+        ? String(kerberos.reason ||
+                 krb5Principals.krbtgtUnavailableReason() || '')
+        : String(krb5Principals.krbtgtUnavailableReason() || '');
     return {
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
@@ -6890,12 +6910,18 @@ class AdminViews {
         keys: KERBEROS_NOTES.keys,
         mode: krb5PersonKeys.productKdc() ? KERBEROS_NOTES.modeProduct
                                           : KERBEROS_NOTES.modeDevelopment,
-        realm: kerberos.enabled
-          ? serverProse.fill(KERBEROS_NOTES.realmServed,
-                             { kerberosRealm: kerberos.kerberosRealm || '' })
-          : serverProse.fill(KERBEROS_NOTES.realmNone,
+        realm: !kerberos.enabled
+          ? serverProse.fill(KERBEROS_NOTES.realmNone,
                              { reason: kerberos.reason ||
-                                       KERBEROS_NO_KDC_REASON }),
+                                       KERBEROS_NO_KDC_REASON })
+          : unusable
+            ? serverProse.fill(KERBEROS_NOTES.realmInactive,
+                               { reason: unusable,
+                                 kerberosRealm:
+                                   kerberos.kerberosRealm || '' })
+            : serverProse.fill(KERBEROS_NOTES.realmServed,
+                               { kerberosRealm:
+                                   kerberos.kerberosRealm || '' }),
         window: KERBEROS_NOTES.window,
         previous: KERBEROS_NOTES.previous
       }

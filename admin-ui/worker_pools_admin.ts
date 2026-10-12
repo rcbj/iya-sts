@@ -131,11 +131,11 @@ const SENTENCES = Object.freeze({
   requestOff: 'Off: {{setting}} is 0, so every request is answered by the ' +
     'front process itself, on one thread.',
   givenUpSurface: 'Given up: {{failed}} worker thread(s) failed to start ' +
-    'and the pool stopped starting them (STS-WORKER-0023). The hosted ' +
-    'surfaces go to the request pool.',
+    'and the pool stopped starting them. The hosted surfaces go to the ' +
+    'request pool.',
   givenUpRequest: 'Given up: {{failed}} worker thread(s) failed to start ' +
-    'and the pool stopped starting them (STS-WORKER-0023). Every request ' +
-    'is answered by the front process.',
+    'and the pool stopped starting them. Every request is answered by ' +
+    'the front process.',
   notStarted: 'Not started: {{setting}} is {{configured}}, and this ' +
     'process started no worker thread — it was not started as the front ' +
     'process of a service, or the pool was idled at start.',
