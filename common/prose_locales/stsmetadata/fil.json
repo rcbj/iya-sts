@@ -2343,6 +2343,22 @@
     "en": "926917f15c6fd9a9",
     "text": "ANG PROTOCOL-INDEPENDENT NA SIGN-OUT, at ang tanging endpoint dito na tungkol sa lahat ng labing-anim na family nang sabay-sabay. Inililista ng GET ang lahat ng hawak pa ng serbisyong ito para sa isang identity — bawat browser sign-on session, bawat OIDC relying party, WS-Federation realm at SAML 2.0 service provider na pinag-sign in-an sa isa, bawat token na mare-revoke pa nito, bawat nakabinbing authorization at pre-authorized code, bawat directory connection na naka-bind bilang sila, at ang posisyon ng Kerberos ticket — na may checkbox sa bawat isa. Tinatapos ng POST ang mga na-tick, at ang POST na WALANG na-tick ay isang GLOBAL logout, na siyang default at ang punto. Ipinapadala rin nito ang tanging kayang ipadala ng browser: ang mga Front-Channel Logout iframe, ang mga wsignoutcleanup1.0 image, at ang mga SAML LogoutRequest bilang mga link. ANG HINDI NITO MAIPAPAALAM AY NAKALISTA KASAMA ANG DAHILAN — ang assertion, service ticket o SVID na naibigay na ay DINIDISOWN dito mula 2026-09-05 at hindi na mababawi roon sa labas, dahil walang kumokonsulta sa serbisyong ito kapag ipinakita ang isa, at ang pagtatago sa mga iyon ay magpapamukhang kumpleto ang global logout gayong hindi. Walang kailangang console role; kapag walang session ay ipinapadala nito ang browser sa /authn/login at pabalik. Pinagpapasyahan ng logout.anyUser kung puwedeng magpangalan ng iba ang ?username= sa DEVELOPMENT mode, kung saan wala itong ibinibigay na hindi maibibigay ng pag-sign in bilang sila; sa PRODUCT mode ang sign-out ay nagpapangalan lamang sa naka-sign in na caller, anuman ang sabihin ng setting na iyon. Idagdag ang ?format=json."
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC (#577). Static na page ang GET /logout ng isang browser mula noong #577, at ito ang script nito: iginuguhit nito ang page mula sa /authn-api/logout at doon ipinapadala ang pag-sign out. Pampubliko."
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC (#577). Ang mga patakarang dala nang inline ng page ng pag-sign out na iginuhit ng server, para sa static na page."
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC (#577). Kapag may iniwang gagawin ang isang pag-sign out sa browser, ipinapadala rito ng page ang resultang isinagot dito, at iginuguhit ito nito gaya ng dati sa /logout, kasama ang mga iframe ng Front-Channel Logout, ang mga larawan ng paglilinis at ang mga link ng LogoutRequest. Mula lamang sa sariling mga page ng serbisyong ito, na may resultang ginawa nito."
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "iginuguhit ang resulta ng isang pag-sign out; walang tinatapos"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "ANG AUTHENTICATION SERVICE. Isang static surface mula noong #571: sinasagot nito ang shell, at iginuguhit ng /authn/signin.js ang screen mula sa /authn-api/pending/{id} at doon ipinapadala ang na-type bilang JSON; pinangangalanan ng sagot ang susunod na step, at sinusundan ito ng browser gamit ang GET, gaya ng pagsunod nito sa 303 na isinagot sa form (RFC 9700 section 4.12). Bawat protocol dito na nangangailangang makilala ang isang tao ay ipinapadala sila sa iisang screen na ito na may return URL na dala ang buo nitong request, at ibinabalik sila na may naitatag na session cookie. Sa development mode, walang password na sinusuri at ang na-type na username ang nagiging identity sa bawat token, assertion at credential na susunod; sa product mode, vine-verify ang password, o ang key o code na pinapayagan ng authentication policy ng realm. Wala itong alam tungkol sa protocol na nagpadala ng sinuman dito: ang IPINAPAKITA ng screen tungkol sa request na naantala nito ay ibinibigay ng caller, at bumabalik ang pagtanggi bilang authn_error=access_denied para gawin ng CALLER na kung anuman ang sinasabi ng sarili nitong specification na hitsura ng pagtanggi. Sinusuri na ang return URL ay isang path sa serbisyong ito — ang authentication service na magre-redirect kahit saan pagkatapos mag-sign in ng isang tao ay isang phishing tool na may login screen sa harap."
@@ -2526,6 +2542,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "vine-verify ang sagot ng wallet at sina-sign in ang browser na nag-post"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC (#577). Sinasagot ng GET ang hawak pa ng taong pinangangalanan ng session ng browser, at ang CSRF token; ang POST, kasama ang token na iyon, ay nagsa-sign out sa lahat o sa mga minarkahan."
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "tinatapos ng POST ang mga session at binabawi ang hawak ng tao"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

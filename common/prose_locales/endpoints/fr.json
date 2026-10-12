@@ -1323,6 +1323,18 @@
     "en": "1228edbd8a552e3b",
     "text": "Se déconnecter de tout"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "Le script de la page de déconnexion"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "La feuille de style de la page de déconnexion"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "La page de déconnexion effectuée"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "Écran de connexion"
@@ -1442,6 +1454,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "Connexion par portefeuille : la réponse de la Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "Ce qu’une déconnexion terminerait, et la déconnexion"
   },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",

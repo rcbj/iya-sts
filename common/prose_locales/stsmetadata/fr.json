@@ -2343,6 +2343,22 @@
     "en": "926917f15c6fd9a9",
     "text": "LA DÉCONNEXION INDÉPENDANTE DU PROTOCOLE, et le seul point de terminaison ici qui concerne les seize familles à la fois. GET liste tout ce que ce service détient encore pour une identité — chaque session de connexion du navigateur, chaque partie de confiance OIDC, chaque domaine WS-Federation et chaque fournisseur de services SAML 2.0 auxquels l’utilisateur s’est connecté par l’une d’elles, chaque jeton qu’il peut encore révoquer, chaque autorisation et chaque code pré-autorisé en attente, chaque connexion d’annuaire liée sous cette identité, et l’état des tickets Kerberos — avec une case à cocher en regard de chacun. POST met fin à ce qui a été coché, et un POST qui ne coche RIEN est une déconnexion GLOBALE, ce qui est le comportement par défaut et l’objectif. Il envoie aussi ce que seul un navigateur peut envoyer : les iframes de Front-Channel Logout, les images wsignoutcleanup1.0, et les LogoutRequest SAML sous forme de liens. CE QU’IL NE PEUT PAS COMMUNIQUER EST LISTÉ AVEC LA RAISON — une assertion, un ticket de service ou un SVID déjà émis est DÉSAVOUÉ ici depuis le 2026-09-05 et hors d’atteinte ailleurs, car rien ne consulte ce service lorsqu’il est présenté, et les masquer donnerait l’impression qu’une déconnexion globale est complète alors qu’elle ne l’est pas. Aucun rôle de console n’est nécessaire ; sans session, il envoie le navigateur vers /authn/login puis le fait revenir. logout.anyUser décide si ?username= peut nommer quelqu’un d’autre en mode DÉVELOPPEMENT, où cela n’accorde rien que se connecter sous cette identité n’accorderait pas ; en mode PRODUIT, une déconnexion ne nomme que l’appelant connecté, quoi que dise ce paramètre. Ajoutez ?format=json."
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC (#577). Le GET /logout d’un navigateur est une page statique depuis #577, et voici son script : il dessine la page à partir de /authn-api/logout et y envoie la déconnexion. Public."
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC (#577). Les règles que la page de déconnexion dessinée par le serveur portait en ligne, pour la page statique."
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC (#577). Lorsqu’une déconnexion a laissé quelque chose à faire au navigateur, la page envoie ici le résultat qui lui a été répondu, et ceci le dessine comme /logout l’a toujours fait, avec les iframes de Front-Channel Logout, les images de nettoyage et les liens LogoutRequest. Uniquement depuis les propres pages de ce service, avec un résultat qu’il a produit."
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "dessine le résultat d’une déconnexion ; ne met fin à rien"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "LE SERVICE D’AUTHENTIFICATION. Une surface statique depuis #571 : ceci répond par la coquille, et /authn/signin.js affiche l’écran à partir de /authn-api/pending/{id} et y envoie ce qui a été saisi en JSON ; la réponse nomme l’étape suivante, et le navigateur la suit par un GET, comme il suivait la 303 par laquelle on répondait au formulaire (RFC 9700 section 4.12). Chaque protocole ici qui a besoin d’identifier une personne l’envoie vers ce seul écran avec une URL de retour portant sa propre requête en entier, et la récupère avec un cookie de session établi. En mode développement, aucun mot de passe n’est vérifié et le nom d’utilisateur saisi devient l’identité dans chaque jeton, assertion et attestation qui suit ; en mode produit, le mot de passe, ou la clé ou le code que permet la politique d’authentification du domaine, est vérifié. Il ne sait rien du protocole qui a envoyé quelqu’un ici : ce que l’écran MONTRE de la requête qu’il a interrompue est fourni par l’appelant, et un refus revient sous la forme authn_error=access_denied, que l’APPELANT transforme en ce que sa propre spécification prévoit pour un refus. L’URL de retour est vérifiée comme étant un chemin de ce service — un service d’authentification qui redirige n’importe où après avoir connecté quelqu’un est un outil d’hameçonnage précédé d’un écran de connexion."
@@ -2526,6 +2542,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "vérifie la réponse du portefeuille et connecte le navigateur qui l’a envoyée"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC (#577). GET répond ce que détient encore la personne que nomme la session du navigateur, et le jeton CSRF ; POST, avec ce jeton, déconnecte de tout ou de ce qui a été coché."
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "POST met fin aux sessions et révoque ce que la personne détient"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

@@ -1323,6 +1323,18 @@
     "en": "1228edbd8a552e3b",
     "text": "Mag-sign out sa lahat"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "Ang script ng page ng pag-sign out"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "Ang stylesheet ng page ng pag-sign out"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "Ang page na naka-sign out na"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "Screen ng sign-in"
@@ -1442,6 +1454,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "Wallet sign-in: ang sagot ng Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "Ang tatapusin ng isang pag-sign out, at ang pag-sign out"
   },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",

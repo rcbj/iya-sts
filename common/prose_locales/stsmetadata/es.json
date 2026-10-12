@@ -2343,6 +2343,22 @@
     "en": "926917f15c6fd9a9",
     "text": "EL CIERRE DE SESIÓN INDEPENDIENTE DEL PROTOCOLO, y el único endpoint de aquí que trata de las dieciséis familias a la vez. GET lista todo lo que este servicio todavía mantiene para una identidad (cada sesión de inicio de sesión en el navegador, cada parte que confía OIDC, dominio de WS-Federation y proveedor de servicios SAML 2.0 en los que se inició sesión con una, cada token que todavía puede revocar, cada autorización y código preautorizado pendientes, cada conexión de directorio enlazada como esa identidad, y la situación de los tickets Kerberos) con una casilla junto a cada uno. POST termina lo que se marcó, y un POST que no marca NADA es un cierre de sesión GLOBAL, que es el valor predeterminado y la idea. También envía lo que solo puede enviar un navegador: los iframes de Front-Channel Logout, las imágenes wsignoutcleanup1.0 y las LogoutRequest de SAML como enlaces. LO QUE NO PUEDE COMUNICAR SE LISTA CON EL MOTIVO: una aserción, un ticket de servicio o un SVID ya emitidos quedan DESAUTORIZADOS aquí desde el 2026-09-05 y fuera de alcance allá fuera, porque nada consulta a este servicio cuando se presenta uno, y ocultarlos haría que un cierre de sesión global pareciera completo cuando no lo es. No se necesita ningún rol de la consola; sin sesión envía el navegador a /authn/login y de vuelta. logout.anyUser decide si ?username= puede nombrar a otra persona en modo de DESARROLLO, donde no concede nada que no concediera iniciar sesión como ella; en modo PRODUCTO un cierre de sesión solo nombra al llamante con sesión iniciada, diga lo que diga ese ajuste. Añada ?format=json."
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC (#577). El GET /logout de un navegador es una página estática desde #577, y este es su script: dibuja la página a partir de /authn-api/logout y envía allí el cierre de sesión. Público."
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC (#577). Las reglas que la página de cierre de sesión dibujada por el servidor llevaba en línea, para la estática."
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC (#577). Cuando un cierre de sesión dejó al navegador algo por hacer, la página envía aquí el resultado que recibió, y esto lo dibuja como /logout siempre lo hizo, con los iframes de Front-Channel Logout, las imágenes de limpieza y los enlaces de LogoutRequest. Solo desde las propias páginas de este servicio, con un resultado que él generó."
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "dibuja el resultado de un cierre de sesión; no termina nada"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "EL SERVICIO DE AUTENTICACIÓN. Una superficie estática desde #571: esto responde con el armazón, y /authn/signin.js dibuja la pantalla a partir de /authn-api/pending/{id} y envía allí lo que se escribió como JSON; la respuesta nombra el paso siguiente, y el navegador lo sigue con un GET, igual que seguía el 303 con el que se respondía al formulario (RFC 9700 sección 4.12). Todo protocolo de aquí que necesita identificar a una persona la envía a esta única pantalla con una URL de retorno que lleva su propia solicitud completa, y la recupera con una cookie de sesión establecida. En modo de desarrollo no se comprueba ninguna contraseña y el nombre de usuario escrito se convierte en la identidad de cada token, aserción y credencial que siguen; en modo producto se verifica la contraseña, o la clave o el código que permita la política de autenticación del dominio. No sabe nada del protocolo que envió a nadie aquí: lo que la pantalla MUESTRA sobre la solicitud que interrumpió lo proporciona el llamante, y un rechazo vuelve como authn_error=access_denied para que el LLAMANTE lo convierta en lo que su propia especificación diga que es un rechazo. Se comprueba que la URL de retorno sea una ruta de este servicio: un servicio de autenticación que redirige a cualquier sitio tras iniciar la sesión de alguien es una herramienta de phishing con una pantalla de inicio de sesión delante."
@@ -2526,6 +2542,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "verifica la respuesta de la billetera e inicia la sesión del navegador que la envía"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC (#577). GET responde lo que aún tiene la persona que nombra la sesión del navegador, y el token CSRF; POST, con ese token, cierra la sesión de todo o de lo que se marcó."
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "POST termina sesiones y revoca lo que tiene la persona"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

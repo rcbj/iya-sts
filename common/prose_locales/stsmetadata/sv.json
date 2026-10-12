@@ -2343,6 +2343,22 @@
     "en": "926917f15c6fd9a9",
     "text": "DEN PROTOKOLLOBEROENDE UTLOGGNINGEN, och den enda slutpunkten här som gäller alla sexton familjer på en gång. GET listar allt som den här tjänsten fortfarande håller för en identitet — varje inloggningssession i webbläsaren, varje OIDC-förlitande part, WS-Federation-realm och SAML 2.0-tjänsteleverantör som man loggat in till på en, varje token den fortfarande kan återkalla, varje utestående auktorisering och förauktoriserad kod, varje katalogförbindelse bunden som dem, och Kerberos-biljettläget — med en kryssruta vid varje. POST avslutar det som kryssades i, och en POST som kryssar i INGENTING är en GLOBAL utloggning, vilket är standard och poängen. Den skickar också det som bara en webbläsare kan skicka: Front-Channel Logout-iframes, wsignoutcleanup1.0-bilderna och SAML LogoutRequests som länkar. DET DEN INTE KAN KOMMUNICERA LISTAS MED ORSAKEN — ett intyg, en tjänstebiljett eller en SVID som redan utfärdats FRÅNSÄGS här sedan 2026-09-05 och går inte att återkalla därute, eftersom ingenting frågar den här tjänsten när en sådan visas upp, och att dölja dem skulle få en global utloggning att se fullständig ut när den inte är det. Ingen konsolroll behövs; utan session skickar den webbläsaren till /authn/login och tillbaka. logout.anyUser avgör om ?username= får namnge någon annan i UTVECKLINGSläge, där det inte ger något som en inloggning som dem inte skulle ge; i PRODUKTläge namnger en utloggning endast den inloggade anroparen, oavsett vad den inställningen säger. Lägg till ?format=json."
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC (#577). En webbläsares GET /logout är en statisk sida sedan #577, och detta är dess skript: det ritar sidan från /authn-api/logout och skickar utloggningen dit. Offentligt."
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC (#577). Reglerna som den serverritade utloggningssidan bar inline, för den statiska."
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC (#577). Där en utloggning lämnade webbläsaren något att göra skickar sidan hit det resultat den fick som svar, och detta ritar det som /logout alltid gjort, med Front-Channel Logout-iframes, städbilderna och LogoutRequest-länkarna. Endast från tjänstens egna sidor, med ett resultat den själv skapat."
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "ritar en utloggnings resultat; avslutar ingenting"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "AUTENTISERINGSTJÄNSTEN. En statisk yta sedan #571: detta svarar med skalet, och /authn/signin.js ritar skärmen från /authn-api/pending/{id} och skickar det som skrevs dit som JSON; svaret namnger nästa steg, och webbläsaren följer det med en GET, så som den följde den 303 som formuläret besvarades med (RFC 9700 avsnitt 4.12). Varje protokoll här som behöver en person identifierad skickar dem till den här enda skärmen med en retur-URL som bär dess egen begäran i sin helhet, och får tillbaka dem med en etablerad sessionscookie. I utvecklingsläge kontrolleras inget lösenord och det inskrivna användarnamnet blir identiteten i varje token, intyg och credential som följer; i produktläge verifieras lösenordet, eller den nyckel eller kod som sfärens autentiseringspolicy tillåter. Den vet ingenting om protokollet som skickade någon hit: det skärmen VISAR om begäran den avbröt tillhandahålls av anroparen, och en vägran kommer tillbaka som authn_error=access_denied för ANROPAREN att omvandla till vad dess egen specifikation säger att en vägran ser ut som. Retur-URL:en kontrolleras vara en sökväg på den här tjänsten — en autentiseringstjänst som omdirigerar vart som helst efter att ha loggat in någon är ett nätfiskeverktyg med en inloggningsskärm framför."
@@ -2526,6 +2542,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "verifierar plånbokens svar och loggar in webbläsaren som postade det"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC (#577). GET svarar med vad personen som webbläsarens session namnger fortfarande innehar, och CSRF-token; POST, med den token, loggar ut från allt eller från det som kryssats i."
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "POST avslutar sessioner och återkallar det personen innehar"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
