@@ -1087,6 +1087,18 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NON-SPEC, et délibérément SANS CONTRÔLE D’ACCÈS. Chaque domaine de confiance que ce processus exécute — un domaine de confiance étant une copie logique complète de ce service, atteinte sous un segment en tête du chemin et détenant sa propre configuration, sa clé de signature, ses sessions et ses jetons. Il porte l’identifiant, le nom, l’URL de base et le préfixe de chemin de chaque domaine, le SEGMENT de préfixe lui-même (qui est un paramètre ; un client ne peut donc pas le deviner), et les familles de protocoles qu’un domaine sépare réellement. Ce dernier point est celui auquel rien d’autre ne répond : la plupart des familles sont séparées par le chemin, mais l’annuaire est séparé par DN, Kerberos par le NOM de domaine dans la requête, SPIFFE par adresse de socket, et le certificat TLS n’est pas séparé du tout — de sorte que quelqu’un qui supposerait que le segment de chemin est partout la frontière se tromperait pour quatre d’entre elles. Un client dirigé vers un domaine ne peut construire aucune URL sans ceci, ce qui explique qu’il ne soit pas derrière le contrôle d’accès de la console — le même argument sur lequel repose chaque document de découverte ici."
   },
+  "stsmetadata.endpoints./web/card.css.what": {
+    "en": "cda1eca2f0c4392c",
+    "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
+  },
+  "stsmetadata.endpoints./web/locales/catalogs.json.what": {
+    "en": "213f3eea35021e22",
+    "text": "NON-SPEC (#570). Les catalogues qui existent (balise, endonyme, statut, la base qu’étend une surcouche) et les paramètres régionaux que propose le sélecteur de langue — common/locales/catalogs.json, pour que le runtime d’une surface statique négocie la langue de la page dans le navigateur, dans l’ordre de #539. Public, sur chaque écouteur, mis en cache définitivement sous le ?v= de ce build."
+  },
+  "stsmetadata.endpoints./web/locales/:ns/:file.what": {
+    "en": "40b72786be1ff557",
+    "text": "NON-SPEC (#570). Les messages qu’affiche une surface statique, tels que common/i18n.ts les a chargés : <namespace>/<catalog>.json, un objet plat associant une clé à un message du sous-ensemble ICU. Un espace de noms, un catalogue ou un nom de fichier inconnu donne un 404 (STS-I18N-0012) — rien n’est lu sur le disque d’après un nom demandé ; une paire connue sans fichier donne {}. Les erreurs ne figurent dans aucun catalogue : elles restent en anglais (#539)."
+  },
   "stsmetadata.endpoints./healthcheck.what": {
     "en": "6bf76c8cf4a7b585",
     "text": "Vivacité uniquement. Répond 200 avec un message JSON ; utilisé par le healthcheck de compose."

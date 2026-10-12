@@ -351,6 +351,18 @@
     "en": "3bc74315dcf2fb5e",
     "text": "信任領域目錄"
   },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "公開介面的卡片樣式表"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "語言目錄索引"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "某個目錄中某個命名空間的訊息"
+  },
   "endpoints.route./healthcheck.name": {
     "en": "14290e1d06812977",
     "text": "健康檢查"

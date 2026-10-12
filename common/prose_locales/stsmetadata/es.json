@@ -1087,6 +1087,18 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NO ESTÁNDAR, y deliberadamente SIN CONTROL DE ACCESO. Cada dominio de confianza que ejecuta este proceso; un dominio de confianza es una copia lógica completa de este servicio, accesible bajo un segmento al principio de la ruta y con su propia configuración, clave de firma, sesiones y tokens. Lleva el id, el nombre, la URL base y el prefijo de ruta de cada dominio, el propio SEGMENTO del prefijo (que es un ajuste, así que un cliente no puede adivinarlo) y qué familias de protocolos separa realmente un dominio. Lo último es la parte que nada más responde: la mayoría de las familias se separan por la ruta, pero el directorio se separa por DN, Kerberos por el NOMBRE del dominio en la solicitud, SPIFFE por la dirección del socket, y el certificado TLS no se separa en absoluto; así que quien supusiera que el segmento de ruta es el límite en todas partes se equivocaría en cuatro de ellas. Un cliente al que se dirige a un dominio no puede construir ni una sola URL sin esto, razón por la cual no está detrás del control de acceso de la consola: el mismo argumento en el que se basa cada documento de descubrimiento de aquí."
   },
+  "stsmetadata.endpoints./web/card.css.what": {
+    "en": "cda1eca2f0c4392c",
+    "text": "NON-SPEC (#570). Las reglas de la tarjeta de la pantalla de inicio de sesión y del selector de idioma, como una sola hoja de estilo que enlaza el shell de una superficie pública estática (common/web_card_css.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
+  },
+  "stsmetadata.endpoints./web/locales/catalogs.json.what": {
+    "en": "213f3eea35021e22",
+    "text": "NON-SPEC (#570). Qué catálogos existen (etiqueta, endónimo, estado, la base que extiende una superposición) y qué configuraciones regionales ofrece el selector de idioma — common/locales/catalogs.json, para que el runtime de una superficie estática negocie el idioma de la página en el navegador en el orden de #539. Público, en cada escucha, almacenado en caché para siempre bajo el ?v= de esta compilación."
+  },
+  "stsmetadata.endpoints./web/locales/:ns/:file.what": {
+    "en": "40b72786be1ff557",
+    "text": "NON-SPEC (#570). Los mensajes que dibuja una superficie estática, tal como common/i18n.ts los cargó: <namespace>/<catalog>.json, un objeto plano de clave a mensaje del subconjunto ICU. Un espacio de nombres, catálogo o nombre de archivo desconocido es un 404 (STS-I18N-0012) — nada se lee del disco a partir de un nombre solicitado; un par conocido sin archivo es {}. Los errores no están en ningún catálogo: se quedan en inglés (#539)."
+  },
   "stsmetadata.endpoints./healthcheck.what": {
     "en": "6bf76c8cf4a7b585",
     "text": "Solo comprobación de actividad. Responde 200 con un mensaje JSON; lo usa la comprobación de estado de compose."

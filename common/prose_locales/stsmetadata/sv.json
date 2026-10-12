@@ -1087,6 +1087,18 @@
     "en": "bfc05d15d7d40bc2",
     "text": "ICKE-SPEC, och avsiktligt OGRINDAD. Varje förtroendesfär som den här processen kör — en förtroendesfär är en hel logisk kopia av den här tjänsten, nådd under ett segment längst fram i sökvägen och med sin egen konfiguration, signeringsnyckel, sessioner och tokens. Den bär varje sfärs id, namn, bas-URL och sökvägsprefix, själva prefixSEGMENTET (som är en inställning, så en klient kan inte gissa det), och vilka protokollfamiljer en sfär faktiskt separerar. Det sista är den del som inget annat besvarar: de flesta familjer separeras av sökvägen, men katalogen separeras av DN, Kerberos av sfärens NAMN i begäran, SPIFFE av socketadress, och TLS-certifikatet separeras inte alls — så den som antog att sökvägssegmentet var gränsen överallt skulle ha fel om fyra av dem. En klient som riktas mot en sfär kan inte konstruera en enda URL utan detta, vilket är varför det inte ligger bakom konsolens grind — samma argument som varje upptäcktsdokument här vilar på."
   },
+  "stsmetadata.endpoints./web/card.css.what": {
+    "en": "cda1eca2f0c4392c",
+    "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
+  },
+  "stsmetadata.endpoints./web/locales/catalogs.json.what": {
+    "en": "213f3eea35021e22",
+    "text": "NON-SPEC (#570). Vilka kataloger som finns (tagg, endonym, status, basen som ett överlägg utökar) och vilka språkvarianter språkväljaren erbjuder — common/locales/catalogs.json, så att en statisk ytas körmiljö kan förhandla sidans språk i webbläsaren i #539:s ordning. Offentlig, på varje lyssnare, cachad för gott under denna builds ?v=."
+  },
+  "stsmetadata.endpoints./web/locales/:ns/:file.what": {
+    "en": "40b72786be1ff557",
+    "text": "NON-SPEC (#570). Meddelandena som en statisk yta ritar, så som common/i18n.ts läste in dem: <namespace>/<catalog>.json, ett platt objekt från nyckel till meddelande i ICU-delmängden. Ett okänt namnutrymme, katalog eller filnamn ger 404 (STS-I18N-0012) — ingenting läses från disk utifrån ett begärt namn; ett känt par utan fil ger {}. Fel finns inte i någon katalog: de förblir på engelska (#539)."
+  },
   "stsmetadata.endpoints./healthcheck.what": {
     "en": "6bf76c8cf4a7b585",
     "text": "Endast liveness. Svarar 200 med ett JSON-meddelande; används av compose-hälsokontrollen."

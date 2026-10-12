@@ -351,6 +351,18 @@
     "en": "3bc74315dcf2fb5e",
     "text": "El directorio de dominios de confianza"
   },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "La hoja de estilo de tarjeta de las superficies públicas"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "El índice de catálogos de idioma"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "Los mensajes de un espacio de nombres en un catálogo"
+  },
   "endpoints.route./healthcheck.name": {
     "en": "14290e1d06812977",
     "text": "Comprobación de estado"
