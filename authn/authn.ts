@@ -7573,6 +7573,29 @@ class Authn {
     return !!(res && res.locals && res.locals.authnApi);
   }
 
+  // THE ADDRESS AN ANSWER NAMES IS THE ONE A REDIRECT WOULD HAVE SENT:
+  // `common/app.js` wraps `res.location()` to put the realm's prefix on a
+  // root-relative target and to move one to the listener that answers it
+  // (#472), and a 303 went through that. A JSON answer does not, so its
+  // `location` is made by the same wrapper — set, read back and taken off —
+  // rather than by a second copy of either rule.
+  /**
+   * The address `res.location()` would have sent a browser to.
+   *
+   * @param res - the response
+   * @param target - the address as a redirect would be given it
+   * @returns the address, in the realm and on its listener
+   */
+  locationOf(res, target: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.locationOf().");
+    res.location(String(target));
+    const out = String(res.get('Location') || target);
+    res.removeHeader('Location');
+    log.debug("Leaving Authn.locationOf().");
+    return out;
+  }
+
   /**
    * Sends one of `/authn-api`'s answers.
    *
@@ -7654,7 +7677,7 @@ class Authn {
                      encodeURIComponent(id);
     if (this.answersJson(res)) {
       this.answerJson(res, 200, { ok: true, next: next, step: step, id: id,
-                                  location: location });
+                                  location: this.locationOf(res, location) });
       log.debug("Leaving Authn.stepAnswer(). JSON.");
       return;
     }
@@ -7710,7 +7733,7 @@ class Authn {
       log.debug("Entering leave().");
       if (self.answersJson(res)) {
         self.answerJson(res, 200, { ok: true, next: 'redirect',
-                                    location: target });
+                                    location: self.locationOf(res, target) });
         log.debug("Leaving leave(). JSON.");
         return;
       }
