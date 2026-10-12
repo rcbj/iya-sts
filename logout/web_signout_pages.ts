@@ -10,8 +10,9 @@
 //
 // `/logout` is a static surface (#569, `common/CLAUDE.md` 3cl): one page,
 // drawn from `GET /authn-api/logout` — everything the person still holds,
-// family by family, with the global sign-out at the top and a checkbox
-// against each row that can be ended — and, where the act left the browser
+// the global sign-out and every live session in one list on the first tab,
+// a checkbox against each row that can be ended, and each family's details
+// on the second — and, where the act left the browser
 // nothing to fan out, the result of `POST /authn-api/logout`, drawn in place
 // from the act's answer. A result that fans out is the server-drawn
 // signed-out document (`logout.ts`, `resultPage()`), and is not drawn here.
@@ -65,16 +66,17 @@ function whenText(ms: unknown): string {
  */
 class SignoutPages {
   /**
-   * One family's table. The checkbox column is left out for a row that
-   * cannot be ended, rather than drawn disabled: a disabled control invites
-   * somebody to work out why, and the sentence in the row already says. A
-   * family that could not be read is a failure, and stays English.
+   * One family's details, for the Details tab: its label, the protocol and
+   * specification, what a sign-out does to it, and each row's detail and,
+   * where it cannot be ended, why. Read-only: the controls are on the
+   * Sign out tab, in the one list. A family that could not be read is a
+   * failure, and stays English.
    *
    * @param family - the family, as the view lists it
    * @param t - the translator
    * @returns the HTML
    */
-  static familyTable(family: Json, t: Json): string {
+  static familyDetails(family: Json, t: Json): string {
     const head = '<h2>' + esc(family.label) + '</h2>' +
       '<div class="spec">' + esc(family.protocol) + ' — ' +
       esc(family.spec) + '</div>' + kit.note(esc(family.what));
@@ -90,25 +92,16 @@ class SignoutPages {
         '</p>';
     }
     const body = rows.map(function (r: Json) {
-      const box = r.terminable
-        ? '<input type="checkbox" name="select" value="' + esc(r.id) + '">'
-        : '<span class="cannot" title="' + esc(r.why) + '">—</span>';
-      return '<tr><td>' + box + '</td>' +
-        '<td><code>' + esc(r.label) + '</code><br><span class="sub">' +
-        esc(r.detail) + '</span>' +
+      return '<tr><td><code>' + esc(r.label) + '</code><br><span ' +
+        'class="sub">' + esc(r.detail) + '</span>' +
         (r.terminable ? '' :
          '<br><span class="cannot">' + esc(r.why) + '</span>') +
-        '</td><td>' + esc(r.kind) + '</td><td class="sub">' +
-        esc(whenText(r.startedAt)) + '</td><td class="sub">' +
-        esc(whenText(r.expiresAt)) + '</td></tr>';
+        '</td><td>' + esc(r.kind) + '</td></tr>';
     }).join('');
     return head +
-      '<table><thead><tr><th>' + t.html('logout.family.colEnd') +
-      '</th><th>' + t.html('logout.family.colWhat') + '</th><th>' +
-      t.html('logout.family.colKind') + '</th><th>' +
-      t.html('logout.family.colSince') + '</th><th>' +
-      t.html('logout.family.colUntil') + '</th></tr></thead><tbody>' + body +
-      '</tbody></table>' +
+      '<table><thead><tr><th>' + t.html('logout.family.colWhat') +
+      '</th><th>' + t.html('logout.family.colKind') + '</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>' +
       (family.notListed
         ? kit.note(t.html('logout.family.notListed',
           { count: family.notListed, held: family.held }))
@@ -116,10 +109,48 @@ class SignoutPages {
   }
 
   /**
-   * The inventory: the global sign-out first — it is what nearly everybody
-   * arriving here came to press, and the default — then the ticked-items
-   * button opening the form that wraps the tables whose checkboxes it posts,
-   * then every family, then who may be named here.
+   * Every live session in one list, whatever its protocol: a checkbox for
+   * each that can be ended (a dash, with the reason as its tooltip, for one
+   * that cannot), what it is, the protocol family it belongs to, and when it
+   * started and ends.
+   *
+   * @param families - the view's families
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static sessionList(families: Json[], t: Json): string {
+    const rows: string[] = [];
+    families.forEach(function (family: Json) {
+      (family.rows || []).forEach(function (r: Json) {
+        const box = r.terminable
+          ? '<input type="checkbox" name="select" value="' + esc(r.id) +
+            '">'
+          : '<span class="cannot" title="' + esc(r.why) + '">—</span>';
+        rows.push('<tr><td>' + box + '</td><td><code>' + esc(r.label) +
+          '</code></td><td>' + esc(family.label) + '</td><td class="sub">' +
+          esc(whenText(r.startedAt)) + '</td><td class="sub">' +
+          esc(whenText(r.expiresAt)) + '</td></tr>');
+      });
+    });
+    if (!rows.length) {
+      return '<p class="sub">' + t.html('logout.family.nothingLive') +
+        '</p>';
+    }
+    return '<table class="sessions"><thead><tr><th>' +
+      t.html('logout.family.colEnd') + '</th><th>' +
+      t.html('logout.family.colWhat') + '</th><th>' +
+      t.html('logout.list.colProtocol') + '</th><th>' +
+      t.html('logout.family.colSince') + '</th><th>' +
+      t.html('logout.family.colUntil') + '</th></tr></thead><tbody>' +
+      rows.join('') + '</tbody></table>';
+  }
+
+  /**
+   * The inventory, in two tabs: Sign out — the global sign-out first, what
+   * nearly everybody arriving here came to press and the default, then every
+   * live session in one list with its checkbox, and the ticked-items button
+   * — and Details: the count, every family's explanation and rows, and who
+   * may be named here.
    *
    * @param view - `GET /authn-api/logout`'s view
    * @param ctx - the render context
@@ -137,26 +168,36 @@ class SignoutPages {
       ? t.html('logout.inventory.anyUserOpen')
       : (view.naming === 'off' ? t.html('logout.inventory.anyUserOff')
                                : t.html('logout.inventory.productMode'));
-    return '<h1>' + t.html('logout.heading') + '</h1>' +
-      '<p class="sub">' + t.html('logout.inventory.holding',
-                                 { username: view.username }) + '</p>' +
-      '<form method="post" action="/logout">' + who +
+    // TWO TABS (rcbj, 2026-10-12): what a person came to do — the global
+    // sign-out, and every live session in ONE list with a protocol column —
+    // then everything that explains it, family by family.
+    const signOut = '<form method="post" action="/logout">' + who +
       '<input type="hidden" name="scope" value="global"><div ' +
       'class="actions"><button type="submit" class="global">' +
       t.html('logout.inventory.globalButton') + '</button><span ' +
       'class="sub">' + t.html('logout.inventory.globalNote') +
       '</span></div></form>' +
       '<form method="post" action="/logout">' + who +
+      SignoutPages.sessionList(families, t) +
       '<div class="actions"><button type="submit" name="scope" ' +
       'value="selected">' + t.html('logout.inventory.selectedButton') +
       '</button><span class="sub">' +
-      t.html('logout.inventory.selectedNote') + '</span></div>' +
-      kit.warn(t.html('logout.inventory.liveCount',
-                      { total: view.total, families: held })) +
+      t.html('logout.inventory.listNote') + '</span></div></form>';
+    const details = kit.warn(t.html('logout.inventory.liveCount',
+                                    { total: view.total, families: held })) +
       families.map(function (family: Json) {
-        return SignoutPages.familyTable(family, t);
-      }).join('') + '</form>' +
+        return SignoutPages.familyDetails(family, t);
+      }).join('') +
       kit.note(naming + ' ' + t.html('logout.inventory.operatorView'));
+    return '<h1>' + t.html('logout.heading') + '</h1>' +
+      '<p class="sub">' + t.html('logout.inventory.holding',
+                                 { username: view.username }) + '</p>' +
+      kit.tabbedPanels('logout-tabs', [
+        { id: 'logout-signout', label: t.text('logout.tab.signOut'),
+          html: signOut },
+        { id: 'logout-details', label: t.text('logout.tab.details'),
+          html: details }
+      ]);
   }
 
   /**
