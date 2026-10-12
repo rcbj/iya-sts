@@ -522,11 +522,11 @@ async function test() {
     assert.ok(/not enrolled/.test(removedPage.text), "the page says why");
   });
 
-  // STARTED THROUGH `/admin-api` (#587): the demonstration's /oid4vp/start
-  // becomes development-only (#585) and this realm is in the process's
-  // mode, product in the single-node and cluster stacks. The operation
-  // builds the request with the page's own function and answers the wallet
-  // URL the page would have redirected to.
+  // STARTED THROUGH `/admin-api` (#587; the only door since #594), in the
+  // process's mode, product in the single-node and cluster stacks. The
+  // start names no page of its own, so the browser's form_post is answered
+  // in place — 200 and plain text, sent nowhere (#594; it was a 303 to the
+  // demonstration's /oid4vp/done until then).
   log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
   const start = await hop(null, "POST", api + "/verifications/start",
     { json: { response_type: "id_token", response_mode: "form_post" } });
@@ -546,8 +546,8 @@ async function test() {
     assert.strictEqual(q.get("response_type"), "id_token");
     assert.ok(/^redirect_uri:/.test(q.get("client_id")));
     assert.strictEqual(q.get("response_mode"), "form_post");
-    assert.strictEqual(posted.status, 303, posted.text.slice(0, 300));
-    assert.ok(/\/oid4vp\/done\?state=/.test(posted.location));
+    assert.strictEqual(posted.status, 200, posted.text.slice(0, 300));
+    assert.ok(!posted.location, "sent nowhere: " + posted.location);
     assert.strictEqual(verdict.json.verdict.ok, true,
                        JSON.stringify(verdict.json.verdict).slice(0, 600));
   });
