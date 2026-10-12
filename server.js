@@ -352,9 +352,7 @@ function announce() {
            '/oauth2/revoke, /oauth2/register, /oauth2/logout');
   log.info('WS-Federation passive requestor at /wsfed (wsignin1.0 / ' +
            'wsignout1.0); metadata at ' +
-           '/FederationMetadata/2007-06/FederationMetadata.xml' +
-           (servesDemos ? '; a mock relying party that verifies the ' +
-                          'sign-in response is at /wsfed/rp.' : '.'));
+           '/FederationMetadata/2007-06/FederationMetadata.xml.');
   log.info('Every endpoint call, and every token or assertion before and ' +
            'after it was signed, is written to this log at debug level.');
   if (servesDemos) {

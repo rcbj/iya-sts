@@ -122,30 +122,6 @@ class WebCardCss {
     '95em}';
 
   /**
-   * The mock relying parties' pages (#581), which carried these in the
-   * `<style>` of their families' server-drawn pages until they became a
-   * static surface: the wide card, the checks' verdicts, the tables, the
-   * document as it arrived, and SAML 1.1's two starts as buttons. Every rule
-   * is scoped to `.mockrp`, the class the surface's card carries, so no
-   * other page of the card changes.
-   */
-  static readonly MOCK_RP_CSS =
-    '.card.mockrp{width:auto;max-width:52rem;margin:2rem auto}.mockrp h1{col' +
-    'or:#12107c}.mockrp table{border-collapse:collapse;width:100%;margin:.5r' +
-    'em 0 1rem;font-size:.85em}.mockrp th,.mockrp td{border:1px solid #ddd;' +
-    'padding:.35rem .55rem;text-align:left;vertical-align:top}.mockrp th{ba' +
-    'ckground:#f0f0f5}.mockrp .pass{color:#0b6b4f;font-weight:600;white-spa' +
-    'ce:nowrap}.mockrp .fail{color:#b00020;font-weight:600}.mockrp pre{back' +
-    'ground:#f4f4f8;border:1px solid #e2e2ea;border-radius:5px;padding:.6re' +
-    'm;font-size:.75rem;overflow-x:auto;white-space:pre-wrap;word-break:bre' +
-    'ak-all}.mockrp code{background:#f4f4f8;padding:.1rem .25rem;border-rad' +
-    'ius:3px;overflow-wrap:anywhere}.mockrp a{color:#12107c}.mockrp ul{margin' +
-    ':.3em 0;padding-left:1.2em}.mockrp li{margin:.2em 0}.mockrp a.button{d' +
-    'isplay:inline-block;padding:9px 14px;border-radius:5px;border:1px soli' +
-    'd #12107c;background:#12107c;color:#fff;text-decoration:none;font-size' +
-    ':.95em}.mockrp a.button.secondary{background:#fff;color:#12107c}';
-
-  /**
    * The OpenID4VC demonstration's pages (#582), the issuer and the bar
    * door, which carried these in a `<style>` of their own (`vc_offers.ts`,
    * `vc_verifier.ts`) until they became a static surface: the wider card,
@@ -242,8 +218,6 @@ class WebCardCss {
     // GNAP's (#578): scoped to its own card, and after the steps'
     // code field, which its own replaces.
     WebCardCss.GNAP_CSS +
-    // The mock relying parties' (#581), scoped to their own card.
-    WebCardCss.MOCK_RP_CSS +
     // The OpenID4VC demonstration's (#582), scoped to its own card.
     WebCardCss.VC_DEMO_CSS +
     // The description pages' last (#584), scoped to their own card.
