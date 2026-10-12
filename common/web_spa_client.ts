@@ -149,6 +149,43 @@ class SpaClient extends WebPage {
     return SpaClient.b64u(new Uint8Array(digest));
   }
 
+  // THE OPENID CONNECT `nonce` (Core section 3.1.2.1), which FAPI 1.0
+  // requires on every request asking for `openid` and the console and portal
+  // always do. It is DERIVED from the sign-in's PKCE verifier rather than
+  // kept beside it: the verifier already crosses the redirect (and a
+  // popup's sign-in) in what each runtime saves, so the nonce needs no
+  // storage of its own and cannot be lost apart from it. The verifier is
+  // never sent; this hash of it, under its own label so it is not the code
+  // challenge, is. The ID Token the token endpoint answers this page with is
+  // then held to it (`nonceMatches()`).
+  /**
+   * The `nonce` of a sign-in whose PKCE verifier this is.
+   *
+   * @param verifier - the sign-in's PKCE verifier
+   * @returns the nonce, base64url
+   */
+  async nonceFor(verifier: string): Promise<string> {
+    return this.sha256('nonce:' + verifier);
+  }
+
+  // READ, NOT VERIFIED, for `subjectOf()`'s reason: the ID Token came to
+  // this page straight from the token endpoint over TLS, which is what
+  // OpenID Connect Core section 3.1.3.7 accepts in place of the signature
+  // for the code flow, and the nonce is compared with what this page itself
+  // asked for.
+  /**
+   * Whether an ID Token carries the nonce of the sign-in that verifier
+   * began.
+   *
+   * @param idToken - the compact JWT the token endpoint answered
+   * @param verifier - the sign-in's PKCE verifier
+   * @returns whether the nonce is there and is that sign-in's
+   */
+  async nonceMatches(idToken: Json, verifier: string): Promise<boolean> {
+    const carried = SpaClient.claimOf(idToken, 'nonce');
+    return carried !== '' && carried === await this.nonceFor(verifier);
+  }
+
   // THE KEY IS MADE NON-EXTRACTABLE, which is the condition rcbj attached
   // to a public console: the private key can sign and cannot be exported, so
   // a script that reads this page can use the key while the page lives and
@@ -499,16 +536,27 @@ class SpaClient extends WebPage {
    * @returns the subject, or ''
    */
   static subjectOf(idToken: Json): string {
+    return SpaClient.claimOf(idToken, 'sub');
+  }
+
+  /**
+   * A string claim of an ID Token, read without verifying it.
+   *
+   * @param idToken - the compact JWT, or nothing
+   * @param name - the claim
+   * @returns its value, or ''
+   */
+  static claimOf(idToken: Json, name: string): string {
     const parts = String(idToken || '').split('.');
     if (parts.length !== 3) {
       return '';
     }
     try {
       const text = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-      return String(JSON.parse(text).sub || '');
+      return String(JSON.parse(text)[name] || '');
     } catch (e) {
-      // Not a JWT this page can read: no subject, which a sign-in again
-      // then treats as a different person.
+      // Not a JWT this page can read: no claim, which a sign-in again
+      // then treats as a different person, and a nonce check as a refusal.
       return '';
     }
   }
