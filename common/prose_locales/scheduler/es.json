@@ -197,7 +197,7 @@
   },
   "sched.jobs.oauth2.command-sweep.describe": {
     "en": "fb4789a8030f5374",
-    "text": "Envía cada entrega de Command Token que haya vencido — un reintento cuyo tiempo de espera haya transcurrido, una concesión que haya caducado, una fila restaurada tras un reinicio — pasa a mensajes fallidos cualquiera que siga pendiente más allá de oauth2.commandRetentionS, y descarta los tokens de callback caducados y las ejecuciones de tenant terminadas."
+    "text": "Envía cada entrega de Command Token que haya vencido — un reintento cuyo tiempo de espera haya transcurrido, una concesión que haya caducado, una fila restaurada tras un reinicio — pasa a mensajes fallidos cualquiera que siga pendiente más allá de oauth2.commandRetentionS, y descarta los tokens de callback caducados y las ejecuciones de inquilino terminadas."
   },
   "sched.jobs.oauth2.device-code-sweep.title": {
     "en": "d3bada4835d70dba",

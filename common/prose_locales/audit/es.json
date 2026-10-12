@@ -1153,7 +1153,7 @@
   },
   "audit.actions.oauth2.command.tenant.label": {
     "en": "9615a82791bf97fd",
-    "text": "Se ejecutó un comando de tenant de OpenID Provider"
+    "text": "Se ejecutó un comando de inquilino de OpenID Provider"
   },
   "audit.actions.oauth2.grant-revoked.label": {
     "en": "822d13c8d94685a0",
