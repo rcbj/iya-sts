@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full：就 RFC 8935 第 2.1 節的接收而言：媒體類型、授權標頭、空本文的 202，以及第 2.4 節的 {err, description} 拒絕形狀。它在這一端不實作 RFC 8936 輪詢——此接收者是推送接收者——而且這裡沒有任何重試，這是傳輸器那一側同一個刻意省略。"
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "非規格端點。Link 首先將瀏覽器送往此處：瀏覽器必須持有發起該連結時的登入工作階段，接著被送往 Claims Provider 的授權端點。回呼只會在繫結於此的瀏覽器中完成連結——這是帳戶連結的 CSRF 檢查，在瀏覽器離開之前進行，因為若提供者是本服務的另一個領域，途中會取代那唯一的登入 Cookie。"
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "以回呼路徑上的單次使用 Cookie 將此瀏覽器繫結至連結請求，並將其重新導向至提供者"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "Claims Provider 將該人送回的重新導向 URI（#147）。"

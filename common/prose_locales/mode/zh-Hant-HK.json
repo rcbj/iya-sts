@@ -204,8 +204,8 @@
     "text": "未知的金鑰會被拒絕（STS-GNAP-0082），屬於無人註冊之項目的金鑰或實例識別碼也會被拒絕（appRegisteredBy 未設定——首次出現時建立的項目不等於註冊）：在再次觀察該項目或簽發任何東西之前，回應 401 invalid_client 或 invalid_resource_server（STS-GNAP-0902）。"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "POST /tls/trust 與 /tls/trust/clear、POST /dpop/nonce-mode、POST /devices/test/compliance（裝置的合規性，無需 device:compliance 範圍，#164）、/krb5/principals 上的密碼、以 ?username= 登出其他人、開放的動態客戶端註冊、SAML 1.1 屬性授權單位以及 HOBA 金鑰註冊，全都回應任何人；被拒絕的 SCIM Digest 挑戰會印出共用密碼，而主控台的 restore-kerberos 會清除 Kerberos 登出時間點。"
+    "en": "fd65d2d3c735e23e",
+    "text": "以 ?username= 登出其他人、開放的動態客戶端註冊、SAML 1.1 屬性授權單位以及 HOBA 金鑰註冊，全都回應任何人；被拒絕的 SCIM Digest 挑戰會印出共用密碼，而主控台的 restore-kerberos 會清除 Kerberos 登出時間點。"
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",

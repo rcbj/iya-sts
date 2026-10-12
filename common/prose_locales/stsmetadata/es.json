@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full para la recepción de la sección 2.1 de RFC 8935: el tipo de medio, el encabezado de autorización, el 202 con cuerpo vacío y la forma de rechazo {err, description} de la sección 2.4. No implementa el sondeo de RFC 8936 en este extremo (este receptor es un receptor push), y nada aquí reintenta, que es la parte del transmisor de la misma omisión deliberada."
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "NO ESTÁNDAR. Adonde Vincular envía primero al navegador: debe tener la sesión de inicio de sesión desde la que se inició la vinculación, y luego se le envía al endpoint de autorización del proveedor de claims. El callback solo completa la vinculación en un navegador asociado aquí — la comprobación CSRF de la vinculación de cuentas, hecha antes de que el navegador salga, porque un proveedor que es otro dominio de este servicio reemplaza por el camino la única cookie de inicio de sesión."
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "asocia este navegador a una solicitud de vinculación con una cookie de un solo uso en la ruta del callback, y lo redirige al proveedor"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "El URI de redirección al que un proveedor de notificaciones devuelve a la persona (#147)."

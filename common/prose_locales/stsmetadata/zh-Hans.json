@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full：针对 RFC 8935 第 2.1 节的接收：媒体类型、授权头部、带空主体的 202，以及第 2.4 节的 {err, description} 拒绝格式。这一端不实现 RFC 8936 轮询——此接收方是推送接收方——这里也没有任何重试，这是发送方一侧同样刻意的省略。"
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "非规范。Link 首先将浏览器发送到这里：浏览器必须持有发起该链接时的单点登录会话，然后被发送到 Claims Provider 的授权端点。回调只会在绑定于此的浏览器中完成链接——这是账户关联的 CSRF 检查，在浏览器离开之前进行，因为如果提供方是本服务的另一个领域，途中会替换那唯一的单点登录 Cookie。"
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "以回调路径上的一次性 Cookie 将此浏览器绑定到链接请求，并将其重定向到提供方"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "Claims Provider 将此人送回的重定向 URI（#147）。"

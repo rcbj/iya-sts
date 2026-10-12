@@ -2172,8 +2172,8 @@
     "text": "一個 PEM CA 證書檔案，在公開根證書與客戶端自身的 scimClientCaCertificates 之外，受每個 SCIM 客戶端的服務提供者與權杖端點信任。"
   },
   "xacml.pepBias|description": {
-    "en": "cdf7ffde654d4319",
-    "text": "這是 PEP 的決定而非 PDP 的決定，這正是它成為設定的全部理由。XACML section 7.2 允許 PEP 採拒絕偏向（任何非 Permit 皆為拒絕）或允許偏向（任何非 Deny 皆允許），而實際部署各有不同。預設為拒絕偏向，因為保護任何東西的 PEP 都應如此；允許偏向的存在，是為了讓客戶端看到另一種選擇如何處理 Indeterminate，這正是兩者意見分歧、也是沒有人測試的情況。"
+    "en": "ad0594c9ac4f34c1",
+    "text": "這是 PEP 的決定而非 PDP 的決定，這正是它成為設定的全部理由。XACML section 7.2 允許 PEP 採拒絕偏向（任何非 Permit 皆為拒絕）或允許偏向（任何非 Deny 皆允許），而實際部署各有不同。預設為拒絕偏向，因為保護任何東西的 PEP 都應如此；允許偏向的存在，是為了讓客戶端看到另一種選擇如何處理 Indeterminate，這正是兩者意見分歧、也是沒有人測試的情況。僅限開發模式：它唯一的讀取者 /xacml/protected 是示範端點（#585）。"
   },
   "xacml.pepRequireCertificate|label": {
     "en": "247fadcd14dfeb45",

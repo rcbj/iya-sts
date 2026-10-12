@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full pour la réception selon la section 2.1 de la RFC 8935 : le type de média, l’en-tête d’autorisation, la 202 avec un corps vide, et la forme de refus {err, description} de la section 2.4. Il n’implémente pas l’interrogation de la RFC 8936 à cette extrémité — ce récepteur est un récepteur push — et rien ici ne retente, ce qui est le côté transmetteur de la même omission délibérée."
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "NON-SPEC. L’endroit où Lier envoie d’abord le navigateur : celui-ci doit détenir la session d’authentification unique à partir de laquelle la liaison a été lancée, puis il est envoyé au point de terminaison d’autorisation du Claims Provider. Le callback n’achève la liaison que dans un navigateur rattaché ici — le contrôle CSRF de liaison de compte, effectué avant que le navigateur ne parte, car un fournisseur qui est un autre domaine de ce service remplace en chemin l’unique cookie de la session d’authentification unique."
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "rattache ce navigateur à une demande de liaison au moyen d’un cookie à usage unique sur le chemin du callback, et le redirige vers le fournisseur"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "L’URI de redirection vers laquelle un Claims Provider renvoie la personne (#147)."

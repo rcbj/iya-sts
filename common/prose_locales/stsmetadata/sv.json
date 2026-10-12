@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full för mottagning enligt RFC 8935 avsnitt 2.1: mediatypen, auktoriseringshuvudet, 202 med tom kropp och nekandeformen {err, description} i avsnitt 2.4. Den implementerar inte RFC 8936-pollning i den här änden — den här mottagaren är en push-mottagare — och ingenting här gör omförsök, vilket är sändarens sida av samma avsiktliga utelämnande."
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "NON-SPEC. Dit Länka skickar webbläsaren först: den måste hålla den inloggningssession som länkningen startades från, och skickas sedan vidare till Claims Providerns auktoriseringsslutpunkt. Återanropet slutför länkningen bara i en webbläsare som bundits här — CSRF-kontrollen för kontolänkning, gjord innan webbläsaren lämnar, eftersom en leverantör som är en annan sfär i den här tjänsten ersätter den enda inloggningscookien på vägen."
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "binder den här webbläsaren till en länkningsbegäran med en engångscookie på återanropets sökväg, och omdirigerar den till leverantören"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "Den omdirigerings-URI som en Claims Provider skickar tillbaka personen till (#147)."

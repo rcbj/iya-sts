@@ -1195,14 +1195,6 @@
     "en": "ec6133bbe750c0f0",
     "text": "full para sa RFC 8935 section 2.1 receipt: ang media type, ang authorization header, ang 202 na walang lamang body, at ang {err, description} na hugis ng pagtanggi ng section 2.4. Hindi nito in-implement ang RFC 8936 poll sa dulong ito — push receiver ang receiver na ito — at walang nagre-retry dito, na siyang panig ng transmitter sa parehong sadyang pagkukulang."
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "NON-SPEC. Kung saan unang ipinapadala ng Link ang browser: dapat hawak nito ang sign-on session na pinagsimulan ng link, at saka ito ipinapasa sa authorization endpoint ng Claims Provider. Tinatapos lang ng callback ang link sa browser na naka-bind dito — ang CSRF check ng account linking, ginagawa bago umalis ang browser, dahil pinapalitan sa daan ng provider na isa pang realm ng serbisyong ito ang iisang sign-on cookie."
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "bina-bind ang browser na ito sa isang link request gamit ang single-use cookie sa path ng callback, at nire-redirect ito sa provider"
-  },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",
     "text": "Ang redirect URI kung saan ibinabalik ng Claims Provider ang tao (#147)."

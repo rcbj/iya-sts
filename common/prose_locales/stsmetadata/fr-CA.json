@@ -27,14 +27,6 @@
     "en": "c454f0b9582501c4",
     "text": "RFC 7643 section 5. Le filtrage, le tri, PATCH et bulk sont pris en charge ; ETag et changePassword ne le sont PAS, et sont annoncés comme non pris en charge plutôt qu’à moitié implémentés — une version fondée sur un horodatage à la seconde serait un contrôle de concurrence auquel un client se fierait et qui serait faux, et aucun mot de passe n’est vérifié ici, il n’y en a donc aucun à changer. LE DOCUMENT EST LE SERVEUR : le même objet dans lequel les points de terminaison lisent leurs limites le construit ; il ne peut donc pas annoncer une taille de page ou une limite bulk qui ne soit pas celle appliquée — et la même table qui construit chaque challenge WWW-Authenticate construit authenticationSchemes, de sorte qu’un schéma désactivé disparaît des deux à la fois. TROIS des sept schémas publiés n’ont pas de `type` canonique dans la section 5 de la RFC 7643 (un certificat client, un témoin et HOBA, tous trois nommés par la section 2 de la RFC 7644) et portent un type propre honnête plutôt que d’être omis. LISIBLE SANS JUSTIFICATIF, sauf si scim.authDiscovery en dispose autrement : c’est là qu’un client apprend quels schémas existent."
   },
-  "stsmetadata.endpoints./portal/claim-sources/start.what": {
-    "en": "30fac14befc35212",
-    "text": "NON-SPEC. L’endroit où Lier envoie d’abord le navigateur : celui-ci doit détenir la session d’authentification unique à partir de laquelle la liaison a été lancée, puis il est envoyé au point de terminaison d’autorisation du Claims Provider. Le callback n’achève la liaison que dans un navigateur rattaché ici — le contrôle CSRF de liaison de compte, effectué avant que le navigateur ne parte, car un fournisseur qui est un autre domaine de ce service remplace en chemin l’unique témoin de la session d’authentification unique."
-  },
-  "stsmetadata.endpoints./portal/claim-sources/start.effect": {
-    "en": "d33f79a96da3ecea",
-    "text": "rattache ce navigateur à une demande de liaison au moyen d’un témoin à usage unique sur le chemin du callback, et le redirige vers le fournisseur"
-  },
   "stsmetadata.endpoints./admin-api/mail.what": {
     "en": "f6790e5d4eb08e30",
     "text": "NON-SPEC (#63). Ce qu’affiche GET /admin/mail, sous forme de données : le transport par lequel ce domaine envoie et s’il a pu être construit, l’adresse From, l’endroit vers lequel pointe un lien envoyé par courriel, les décomptes de la boîte d’envoi, chaque message avec ses espaces réservés et les langues de ce domaine, et les paramètres de courriel — jamais un secret. ?template= renvoie la formulation d’un message. Reflète GET /admin/mail."
