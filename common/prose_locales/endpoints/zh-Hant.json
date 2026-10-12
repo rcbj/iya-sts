@@ -1275,6 +1275,10 @@
     "en": "c025c7c05450031b",
     "text": "此處的聯盟是什麼"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "聯合頁面的指令碼"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "開始聯盟登入"

@@ -1275,6 +1275,10 @@
     "en": "c025c7c05450031b",
     "text": "Qué es la federación aquí"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "El script de las páginas de federación"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "Iniciar un inicio de sesión federado"

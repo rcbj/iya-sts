@@ -1275,6 +1275,10 @@
     "en": "c025c7c05450031b",
     "text": "Kung ano ang federation dito"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "Ang script ng mga federation page"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "Magsimula ng federated sign-in"

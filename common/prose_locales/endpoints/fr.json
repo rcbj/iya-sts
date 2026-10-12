@@ -1275,6 +1275,10 @@
     "en": "c025c7c05450031b",
     "text": "Ce qu’est la fédération ici"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "Le script des pages de fédération"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "Démarrer une connexion fédérée"
