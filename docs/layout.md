@@ -20,7 +20,7 @@ oauth-oidc/          the authorization server, RFC 9700 mode, DPoP, mTLS,
 authn/               the sign-in screen and the WebAuthn relying party
 saml/                the two assertion builders
 ws-trust/            WS-Trust 1.0-1.4
-ws-federation/       WS-Federation 1.2 and the mock relying party
+ws-federation/       WS-Federation 1.2
 kerberos/            the KDC, the acceptor, SPNEGO, and the codec
 ldap/                the embedded directory
 persistence/         the only place this service writes anything down:

@@ -5,7 +5,7 @@ nav_order: 1
 
 # iya-sts
 
-> **Development mode only (#585):** `/wsfed/rp`, `/saml2/sp`, `/saml11/rp`, `/oid4vp/verifier`, `/spnego`, `/vc-api/*`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/spnego`, `/vc-api/*`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
@@ -171,9 +171,9 @@ the diagram and a walk through each layer.
 | OAuth 2.1 (draft-16) as an optional MODE, which turns the one above on | `GET /oauth2/oauth21` | [oauth-security](oauth-security.md) |
 | Post-quantum and hybrid JWE key establishment — ML-KEM, and HPKE over ML-KEM or X-Wing (drafts) | every encrypted token and response; a realm's own keys by opt-in | [post-quantum-encryption](post-quantum-encryption.md) |
 | WS-Trust 1.0 – 1.4 | `/sts` | [ws-trust](ws-trust.md) |
-| WS-Federation 1.2, passive requestor, with a mock relying party | `/wsfed`, `/wsfed/rp` | [ws-federation](ws-federation.md) |
-| SAML 2.0 Web Browser SSO — a full identity provider, all four bindings | `/saml2`, `/saml2/metadata/{sp}`, `/saml2/sp` | [saml2-sso](saml2-sso.md) |
-| SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}`, `/saml11/rp` | [saml11](saml11.md) |
+| WS-Federation 1.2, passive requestor | `/wsfed` | [ws-federation](ws-federation.md) |
+| SAML 2.0 Web Browser SSO — a full identity provider, all four bindings | `/saml2`, `/saml2/metadata/{sp}` | [saml2-sso](saml2-sso.md) |
+| SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}` | [saml11](saml11.md) |
 | SAML 2.0 and SAML 1.1 assertions | inside all four above | [saml2-sso](saml2-sso.md) |
 | **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` | [federation](federation.md) |
 | **OpenID Federation 1.1** — every realm a federation entity (Trust Anchor, Intermediate or Leaf) with its own Federation Entity Keys; Subordinate Statements with metadata policy and constraints, Trust Chain resolution, Trust Marks, and the section 8 endpoints | `/.well-known/openid-federation`, `/oidfed/*`, `/admin/oidfed` | [oidfed](oidfed.md) |

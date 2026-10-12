@@ -4,8 +4,6 @@ title: SAML 2.0 Web Browser SSO
 
 # SAML 2.0 Web Browser SSO
 
-> **Development mode only (#585):** `/saml2/sp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a **SAML 2.0 identity provider**: the Web Browser SSO profile and
 Single Logout of
 [saml-profiles-2.0-os](https://docs.oasis-open.org/security/saml/v2.0/saml-profiles-2.0-os.pdf),
@@ -49,7 +47,6 @@ WS-Trust and WS-Federation as well.
 | `POST /saml2/ars[/{sp}]` | the Artifact Resolution Service, SOAP 1.1 over HTTP (bindings section 3.2.3) — a back channel the browser never touches |
 | `GET\|POST /saml2/slo[/{sp}]` | Single Logout (profiles section 4.4), in both directions |
 | `GET /saml2/metadata[/{sp}]` | the signed identity provider metadata (an `IDPSSODescriptor` and an `AttributeAuthorityDescriptor`), one document per service provider |
-| `GET\|POST /saml2/sp` | a **mock service provider** (not part of any specification), the default assertion consumer service |
 | `GET /saml2` | a page describing all of the above, including every AuthnRequest parameter and what is done with it |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -241,13 +238,13 @@ for no more.
 **Where the Response goes depends on the realm's mode.** In development the
 `AssertionConsumerServiceURL` the request names is used as it stands,
 registered or not, and a request naming none goes to the registered
-`samlAssertionConsumerService` or to the mock service provider. In product mode
-it must be one of the `samlAssertionConsumerService` values on that service
-provider's own application entry, compared exactly; a request naming another is
-refused on a page (not sent a failure Response — the address is the thing in
-question), and there is no fallback to `/saml2/sp`. Once the service provider's
-metadata has been consumed, the request is answered only at one of its
-AssertionConsumerService endpoints, in every mode. The same rule governs SAML
+`samlAssertionConsumerService`, and is refused when there is none. In product
+mode it must be one of the `samlAssertionConsumerService` values on that
+service provider's own application entry, compared exactly; a request naming
+another is refused on a page (not sent a failure Response — the address is the
+thing in question). Once the service provider's metadata has been consumed,
+the request is answered only at one of its AssertionConsumerService endpoints,
+in every mode. The same rule governs SAML
 1.1's `shire` and WS-Federation's `wreply` (`wsfedReplyUrl`).
 
 A Response on the Redirect binding longer than `saml2.redirectWarnLength` is
@@ -341,8 +338,9 @@ what the signature protected.
 
 **The certificate a request carries in `ds:KeyInfo` is never trusted.** It is
 recorded on the entry as *observed*; an operator **confirms** it (it becomes a
-registered certificate) or **discards** it on `/admin/saml2`. The mock service
-provider at `/saml2/sp` signs its requests with this service's own key.
+registered certificate) or **discards** it on `/admin/saml2`. No certificate is
+trusted implicitly: the one exception there was, this service's own key for its
+own mock service provider, went with that mock (#592).
 
 ### Consuming service provider metadata
 
@@ -470,19 +468,6 @@ ECDH-ES derivation other than ConcatKDF, is refused by name before any key
 is used (`STS-KEYS-0072`, `STS-KEYS-0090`). A federation relationship still
 accepts only what it published (`docs/federation.md`).
 
-### The mock service provider
-
-`/saml2/sp` is the default assertion consumer service and a test harness. It
-sends a signed AuthnRequest, receives the Response on any binding, and verifies
-it **check by check** — signature, issuer, audience, recipient, `InResponseTo`,
-the validity window — and checks that its own `RelayState` came back unaltered
-(remembered for `saml2.mockSpContextTtlMin`). It is not part of any
-specification.
-
-Its page is drawn in your browser (#581) and needs script: the start page
-from `GET /saml2/sp/api/start`, and the verdict from the page the response was
-posted to. What it sends and how it receives a response are unchanged.
-
 ### The assertion settings every application inherits
 
 The **Assertions** tab under **Protocols → SAML** holds the defaults for what
@@ -563,7 +548,7 @@ being answered.
 | | Development | Product |
 |---|---|---|
 | Unsigned request, or signed with no registered certificate | accepted (`saml2.requireSignedAuthnRequests=auto`) | refused |
-| `AssertionConsumerServiceURL` with no consumed metadata | used as it stands; with none, the registered address or `/saml2/sp` | must be a registered `samlAssertionConsumerService`, exact match, no mock fallback; an address development merely observed is refused until confirmed |
+| `AssertionConsumerServiceURL` with no consumed metadata | used as it stands; with none, the registered address, and with none registered the request is refused | must be a registered `samlAssertionConsumerService`, exact match; an address development merely observed is refused until confirmed |
 | An unknown entityID's request, or a metadata request for one | accepted, and its application entry created | answered without creating an entry; its AuthnRequest is refused — no registered return address and no signature (an MDQ lookup can register it) |
 | An AuthnRequest or LogoutRequest from a service provider nobody **registered** — unknown, or recorded only because a development request named it | answered | a 403 page before the signature is checked, and nothing recorded; a LogoutRequest ends nothing (#496). Only an MDQ lookup for an entityID with no entry is still started, under the trust-anchor rule. The per-SP paths, the attribute authority and an MDQ lookup count only a registered entry |
 | Encryption wanted and no certificate | sent **in clear**, with a WARN | refused with a `Responder` status and no assertion |
@@ -610,7 +595,6 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.unsolicitedSso` | `STS_SAML2_UNSOLICITED_SSO` | `true` | yes | Answer `/saml2/unsolicited`: identity-provider-initiated sign-in. |
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a LogoutResponse goes when the service provider registered no SingleLogoutService. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the person signs in — and how old its `IssueInstant` may be. |
-| `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock service provider remembers a RelayState it minted. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Redirect-binding Response longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The size cap on a fetched or uploaded service provider metadata document. |
 | `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Refetch stale service provider metadata in the background; expiry is enforced either way. |
