@@ -2117,9 +2117,8 @@ class CryptoMetadata {
                'the issuer is an ATTRIBUTE — so "after the issuer" is not a ' +
                'position that exists and the signature goes LAST. A Response ' +
                'signs FIRST, ahead of the assertion it carries.',
-        verifies: 'Its own artifacts, for the mock relying party.',
-        withoutDemos: { verifies: 'Nothing: SAML 1.1 has no request ' +
-                  'message to verify a signature on.' },
+        verifies: 'Nothing: SAML 1.1 has no request message to verify a ' +
+                  'signature on.',
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
@@ -2144,13 +2143,7 @@ class CryptoMetadata {
         signs: 'The SAML assertion inside the `wresult`, in whichever ' +
                'version the relying party asked for, through the shared ' +
                'signer.',
-        verifies: 'The mock relying party at `/wsfed/rp` verifies that ' +
-                  'assertion check by check, and is told WHICH element to ' +
-                  'verify rather than taking the first `<ds:Signature>` in ' +
-                  'the document — the defect four separate verifiers here ' +
-                  'used to have.',
-        withoutDemos: { verifies: 'Nothing: a sign-in request carries no ' +
-                  'signature.' },
+        verifies: 'Nothing: a sign-in request carries no signature.',
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',

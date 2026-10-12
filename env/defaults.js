@@ -687,7 +687,6 @@ var config = {
     unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
-    mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -721,8 +720,7 @@ var config = {
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60, // Assertion lifetime (minutes)
-    mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
+    assertionLifetimeMin: 60 // Assertion lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------

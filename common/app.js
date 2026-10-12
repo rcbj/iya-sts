@@ -1321,7 +1321,7 @@ app.get('/healthcheck', function (req, res) {
 // nothing is registered on — Express's own `Cannot GET /path` 404. So the
 // mark is a middleware placed FIRST in the route's handler list,
 //
-//     app.get('/saml2/sp', app.demoOnly, handler)
+//     app.get('/spnego', app.demoOnly, handler)
 //
 // that calls `next('route')` where the mode says no: the rest of THAT route
 // is skipped and the router goes on as though it had never matched, which is

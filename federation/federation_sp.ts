@@ -3312,9 +3312,9 @@ class FederationSp {
   // A SAML RESPONSE, 2.0 or 1.1, verified check by check.
   //
   // Every check is made and the FIRST failure refuses. That is deliberately not
-  // the shape `/wsfed/rp` and `/saml2/sp` use — those are mock relying parties
-  // whose whole job is to report every check to a person reading the page, so
-  // they collect verdicts and show them all. THIS endpoint issues a session, so
+  // the shape the mock relying parties used (deleted, #592) — their whole job
+  // was to report every check to a person reading the page, so they collected
+  // verdicts and showed them all. THIS endpoint issues a session, so
   // it stops at the first thing that is wrong: continuing past a failed
   // signature in order to report the audience as well would mean parsing an
   // unverified document to build a nicer error page.

@@ -326,9 +326,9 @@ class ProtocolEndpoints {
       '/admin/saml2': [
         '/saml2', '/saml2/metadata', '/saml2/metadata/:sp', '/saml2/sso',
         '/saml2/sso/:sp', '/saml2/ars', '/saml2/ars/:sp', '/saml2/slo',
-        '/saml2/slo/:sp', '/saml2/sp', '/saml11', '/saml11/metadata',
+        '/saml2/slo/:sp', '/saml11', '/saml11/metadata',
         '/saml11/metadata/:rp', '/saml11/sso', '/saml11/sso/:rp',
-        '/saml11/responder', '/saml11/responder/:rp', '/saml11/rp', '/sts',
+        '/saml11/responder', '/saml11/responder/:rp', '/sts',
         '/wsfed'
       ].map(route),
       '/admin/vc': [
@@ -441,7 +441,7 @@ class ProtocolEndpoints {
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/metadata/:rp', '/wsfed/rp'].map(route),
+                       '/wsfed/metadata/:rp'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),

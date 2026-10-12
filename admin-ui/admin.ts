@@ -10400,7 +10400,6 @@ const PROTOCOL_SETTINGS_PAGES = [
            'only if that one attempt still does not produce it. And this ' +
            'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
-            ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +
                 'metadata'],
             ['/admin/saml-attributes', 'what goes into the assertion']] },

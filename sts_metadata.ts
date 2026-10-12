@@ -1437,9 +1437,8 @@ const SPECS: Spec[] = [
               'SessionNotOnOrAfter bounds the session. The ' +
               'AssertionConsumerServiceURL is accepted as sent in ' +
               'development mode and must be registered on the service ' +
-              'provider\'s entry in PRODUCT mode (2026-09-12), with no ' +
-              'fallback to the mock service provider — and, once its ' +
-              'metadata has been consumed, must be one of the endpoints it ' +
+              'provider\'s entry in PRODUCT mode (2026-09-12) — and, ' +
+              'once its metadata has been consumed, must be one of the endpoints it ' +
               'registered in EVERY mode, with AssertionConsumerServiceIndex ' +
               'and the default endpoint honoured. A LogoutRequest from a ' +
               'service provider is authenticated by its signature (4.4.3.1) ' +
@@ -1556,8 +1555,7 @@ const SPECS: Spec[] = [
               'profile (a passive request carries no recipient certificate), ' +
               'and any authorization or policy enforcement. wreply is used ' +
               'as sent in development mode and must be a registered ' +
-              'wsfedReplyUrl in PRODUCT mode (2026-09-12), with no fallback ' +
-              'to the mock relying party.' },
+              'wsfedReplyUrl in PRODUCT mode (2026-09-12).' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
@@ -6936,7 +6934,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'Referer header); wsignout1.0 ends the session and sends a cleanup ' +
           'request to every relying party it signed into; wsignoutcleanup1.0 ' +
           'ends it without fanning out. Reads wtrealm (required, and the ' +
-          'audience), wreply (optional — defaults to /wsfed/rp), wctx ' +
+          'audience), wreply (optional — defaults to the registered ' +
+          'wsfedReplyUrl), wctx ' +
           '(echoed byte for byte), wct, wfresh (MINUTES), wauth (a hardware ' +
           'or multi-factor demand the session does not meet is a step-up ' +
           'through the sign-in, refused only if that fails), whr and a ' +
@@ -6980,35 +6979,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
           '(STS-WSFED-0019). no-store.' },
-  { path: '/wsfed/rp', group: 'WS-Federation', name: 'Mock relying party ' +
-                                                     '(not a spec endpoint)',
-    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig'],
-    effect: 'mints a wctx and offers a complete sign-in request for each ' +
-            'shape the endpoint can issue',
-    what: 'NON-SPEC — a relying party is not part of an identity provider. ' +
-          'It is here because it is the default wreply, and because it ' +
-          'VERIFIES the sign-in response check by check: the assertion ' +
-          'signature against /sts/cert, the issuer, the audience against its ' +
-          'own realm, the validity window, and the wctx round trip (an ' +
-          'identity provider that re-encoded it produces the same symptom as ' +
-          'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
-          'direction that message is really defined for.',
-    demo: true },
-  { path: '/wsfed/rp/mock-rp.js', group: 'WS-Federation',
-    name: 'The mock relying party\'s script', specs: [],
-    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
-          'relying parties\' pages in one file, built by ' +
-          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
-          'precompressed under each family\'s own path: it draws the start ' +
-          'page from /wsfed/rp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
-    demo: true },
-  { path: '/wsfed/rp/api/start', group: 'WS-Federation',
-    name: 'The mock relying party\'s start view', specs: [],
-    what: 'NON-SPEC (#581). Mints a wctx and answers, as facts, the sign-in ' +
-          'requests the mock relying party offers — the start page\'s ' +
-          'view. Language-free; no-store.',
-    demo: true },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -7178,36 +7148,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'one resource, never \'unsafe-inline\', and the page carries a ' +
           'REAL SUBMIT BUTTON — with scripting off the button is the whole ' +
           'mechanism.' },
-  { path: '/saml2/sp', group: 'SAML 2.0', name: 'Mock service provider (not ' +
-                                                'a spec endpoint)',
-    specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
-    effect: 'mints a RelayState and offers a complete AuthnRequest asking ' +
-            'for the response on HTTP POST, HTTP Redirect and HTTP Artifact',
-    what: 'NON-SPEC — a service provider is not part of an identity ' +
-          'provider. It is here because it is the default ' +
-          'AssertionConsumerServiceURL, and because it VERIFIES the response ' +
-          'check by check: both signatures, the issuer, the audience, the ' +
-          'validity window, the bearer SubjectConfirmationData that section ' +
-          '4.1.4.2 requires, and the RelayState round trip. It also resolves ' +
-          'an artifact, in process rather than by this service making a SOAP ' +
-          'call to itself.',
-    demo: true },
-  { path: '/saml2/sp/mock-rp.js', group: 'SAML 2.0',
-    name: 'The mock service provider\'s script', specs: [],
-    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
-          'relying parties\' pages in one file, built by ' +
-          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
-          'precompressed under each family\'s own path: it draws the start ' +
-          'page from /saml2/sp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
-    demo: true },
-  { path: '/saml2/sp/api/start', group: 'SAML 2.0',
-    name: 'The mock service provider\'s start view', specs: [],
-    what: 'NON-SPEC (#581). Mints a RelayState for each of the four ' +
-          'AuthnRequests the mock service provider offers, signs three with ' +
-          'this service\'s key, and answers them as facts — the start ' +
-          'page\'s view. Language-free; no-store.',
-    demo: true },
 
   // --- SAML 1.1 ---
   { path: '/saml11', group: 'SAML 1.1', name: 'What the profile is',
@@ -7315,37 +7255,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'relaxed to \'self\' naming this one resource, never ' +
           '\'unsafe-inline\', and the page carries a REAL SUBMIT BUTTON — ' +
           'with scripting off the button is the whole mechanism.' },
-  { path: '/saml11/rp', group: 'SAML 1.1', name: 'Mock relying party (not a ' +
-                                                 'spec endpoint)',
-    specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
-    effect: 'starts a complete flow on either browser profile and verifies ' +
-            'what comes back',
-    what: 'NON-SPEC — a relying party is not part of an identity provider. ' +
-          'It is here because it is the default assertion consumer, and ' +
-          'because it VERIFIES check by check: both signatures through the ' +
-          'id attributes SAML 1.1 actually uses, the status QName, the ' +
-          'Recipient, the ABSENCE of InResponseTo on a profile with no ' +
-          'request, the confirmation method matching the profile, and the ' +
-          'DoNotCacheCondition that Browser/POST carries and the artifact ' +
-          'profile does not. It resolves an artifact IN PROCESS rather than ' +
-          'by this service making a SOAP call to itself, and reloading the ' +
-          'result page demonstrates the one-shot rule rather than erroring.',
-    demo: true },
-  { path: '/saml11/rp/mock-rp.js', group: 'SAML 1.1',
-    name: 'The mock relying party\'s script', specs: [],
-    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
-          'relying parties\' pages in one file, built by ' +
-          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
-          'precompressed under each family\'s own path: it draws the start ' +
-          'page from /saml11/rp/api/start and the verdict the receiving ' +
-          'answer\'s shell carries.',
-    demo: true },
-  { path: '/saml11/rp/api/start', group: 'SAML 1.1',
-    name: 'The mock relying party\'s start view', specs: [],
-    what: 'NON-SPEC (#581). Answers, as facts, the two browser profiles\' ' +
-          'starts at the inter-site transfer service that the mock relying ' +
-          'party offers — the start page\'s view. Language-free; no-store.',
-    demo: true },
 
   // --- Federation ---
   //
@@ -9676,11 +9585,7 @@ const PROTOCOLS: Protocol[] = [
              'this profile existed.' },
   { name: 'WS-Federation', groups: ['WS-Federation'],
     specs: ['ws-federation', 'saml11', 'saml2'],
-    what: 'The 1.2 Web (Passive) Requestor Profile: /wsfed dispatching on ' +
-          'wa, the sign-in screen, signed federation metadata at the AD FS ' +
-          'path, wsignout1.0, and a mock relying party that shows what was ' +
-          'sent to it.',
-    whatWithoutDemos: 'The 1.2 Web (Passive) Requestor Profile: /wsfed ' +
+    what: 'The 1.2 Web (Passive) Requestor Profile: /wsfed ' +
           'dispatching on wa, the sign-in screen, signed federation ' +
           'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],

@@ -3061,9 +3061,8 @@ const REQUIREMENTS = [
   // endpoint.
   { id: 'demo-endpoints',
     what: 'The demonstration, mock and test-control endpoints exist',
-    development: 'Served and listed: the mock relying parties and service ' +
-                 'provider (/wsfed/rp, /saml2/sp, /saml11/rp, ' +
-                 '/oauth2/commands/mock-rp), the demonstration issuer and ' +
+    development: 'Served and listed: the commands mock relying party ' +
+                 '(/oauth2/commands/mock-rp), the demonstration issuer and ' +
                  'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
                  '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
                  'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
