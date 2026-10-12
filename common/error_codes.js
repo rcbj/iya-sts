@@ -7789,8 +7789,8 @@ const CODES = [
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
   // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
-  // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
-  // stand-in resource answer. Block reserved at 0500..0529.
+  // decides; the authorization endpoint and `dpop.presentedAccessToken()`
+  // answer. Block reserved at 0500..0529.
   { code: 'STS-OAUTH-0500',
     summary: 'An authorization request\'s acr_values were not met by the ' +
       'authentication performed after the person was sent to sign in again ' +
@@ -7820,18 +7820,18 @@ const CODES = [
       'challenge with max_age)' },
   { code: 'STS-OAUTH-0505',
     summary: 'The step-up stand-in resource was asked for an application ' +
-      'this realm has no entry for.',
-    spec: 'invalid_request (HTTP 404)' },
+      'this realm has no entry for. Retired 2026-10-12 (#593): the stand-in ' +
+      'resource was deleted; the test peer plays that resource server',
+    spec: 'invalid_request (HTTP 404)', retired: true },
   { code: 'STS-OAUTH-0506',
-    summary: 'An access token presented at the step-up stand-in resource ' +
-      'does not name that application in its aud (RFC 9068 section 4 step ' +
-      '4).',
+    summary: 'An access token presented to a resource answering for a ' +
+      'registered application does not name that application in its aud ' +
+      '(RFC 9068 section 4 step 4).',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0507',
     summary: 'An access token presented where only a token this realm can ' +
-      'verify is accepted — the step-up stand-in resource, or an ' +
-      'OpenID4VCI endpoint in product mode — did not verify against this ' +
-      'realm\'s signing key.',
+      'verify is accepted — an OpenID4VCI endpoint in product mode, or the ' +
+      'VC-API — did not verify against this realm\'s signing key.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0508',
     summary: 'A configured step-up requirement (oauth2.stepUpAcrValues, or ' +

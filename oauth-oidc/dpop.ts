@@ -249,7 +249,7 @@ const seenJtis = realms.map({
 //
 // **WHY THE CLAIM IS NOT IN `verifyProof()`.** An atomic "once" in a shared
 // store is a round trip, and `verifyProof()` is synchronous with synchronous
-// callers: `presentedAccessToken()` answers UserInfo, the step-up stand-in
+// callers: `presentedAccessToken()` answers UserInfo, Grant Management
 // and three more families (the credential endpoints, SCIM, Shared Signals),
 // each of which reads its return value on the next line. Making it async
 // would be a change to every one of those files, and a caller that forgot the
@@ -1310,7 +1310,13 @@ class Dpop {
   // anyway. The requirement is `oauth2.stepUpAcrValues` /
   // `oauth2.stepUpMaxAgeS` unless the caller names one.
   //
-  // `options`, which only RFC 9470's stand-in resource passes:
+  // `options`. `audience` and `stepUp` are for a resource server answering
+  // for a REGISTERED application: RFC 9470's stand-in resource passed them
+  // until #593 (2026-10-12) deleted it — the test peer plays that resource
+  // server now — and no route of this service passes them since; they stay
+  // because they are the library half of such a resource server, and
+  // `tests/rfc9470_step_up.js` serves one on them. `requireVerified` is the
+  // OpenID4VCI endpoints' in product mode, and the VC-API's:
   //   audience        `{ names(audiences), label }` — RFC 9068 section 4 step
   //                   4 asked of a registered application instead of this
   //                   service (`jwt_access_token.resourceServerRefusal()`)
@@ -1325,8 +1331,9 @@ class Dpop {
    * @param req - the request
    * @param res - the response, which a refusal is sent on
    * @param where - the endpoint, named in the log and refusals
-   * @param options - `audience`, `requireVerified` and `stepUp`, which only RFC
-   *   9470's stand-in resource passes
+   * @param options - `audience`, `requireVerified` and `stepUp`, for a
+   *   resource server answering for a registered application, and
+   *   `formBody`, which UserInfo passes
    * @returns `{ accessToken, claims, scheme, jkt, verified, dpop }`, or null
    *   once a refusal has been sent
    */

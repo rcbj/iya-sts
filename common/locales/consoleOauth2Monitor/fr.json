@@ -57,7 +57,7 @@
   "stepUpNoteEnd": ".",
   "ownRequires": "Le propre serveur de ressources de ce service (UserInfo, les points de terminaison OpenID4VCI, SCIM, Shared Signals) exige ",
   "ownLink": "oauth2.stepUpAcrValues et oauth2.stepUpMaxAgeS",
-  "ownApi": ". L’exigence d’une API enregistrée se trouve sur son entrée d’application (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), appliquée par <code>{path}</code>.",
+  "ownApi": ". L’exigence d’une API enregistrée se trouve sur son entrée d’application (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), et l’API elle-même l’applique.",
   "stepUpNoClients": "Aucune demande d’autorisation dans ce domaine n’a porté acr_values ou max_age, et aucun serveur de ressources ici n’a défié de jeton, depuis le démarrage du processus.",
   "lead": "<strong>Ce que le serveur d’autorisation a fait</strong> dans ce domaine depuis {since}, une section par mécanisme. Les compteurs sont fusionnés entre tous les processus qui répondent pour ce domaine.",
   "noReset": "Il n’y a pas de remise à zéro : une console capable de remettre à zéro sa propre surveillance ferait de chaque nombre affiché un nombre que quelqu’un aurait pu remettre à zéro. Le relevé durable de chaque retrait est le ",

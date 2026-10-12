@@ -277,8 +277,6 @@ const ROWS: Row[] = [
     why: 'answered by the cell that minted the access token' },
   { prefix: '/oauth2/grants', strategy: 'bearer',
     why: 'the grant is held by the cell that minted the access token' },
-  { prefix: '/oauth2/step-up/resource', strategy: 'bearer',
-    why: 'the stand-in resource checks a token its minting cell holds' },
   // --- SAML, WS-Federation, WS-Trust ---
   { prefix: '/saml2', strategy: 'affinity', browser: true,
     why: 'a browser profile, served where the browser is pinned' },

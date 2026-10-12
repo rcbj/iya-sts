@@ -1783,10 +1783,10 @@ const SPECS: Spec[] = [
               'insufficient_user_authentication challenge with acr_values ' +
               'and max_age, sent by this service\'s own resource server ' +
               '(UserInfo, the OpenID4VCI endpoints, SCIM, SSF) against ' +
-              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS and by ' +
-              '/oauth2/step-up/resource/{application} against a resource ' +
-              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge. ' +
-              'Mock: this service\'s sign-in produces three context classes; ' +
+              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; a resource ' +
+              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
+              'recorded for the resource server that is the application to ' +
+              'enforce. Mock: this service\'s sign-in produces three context classes; ' +
               'any other acr value is met only by a federated sign-in ' +
               'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
@@ -8566,23 +8566,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'validated as an authorization request would be and refused as ' +
           'JSON; a `request` object may carry the parameters; a DPoP proof ' +
           'binds the code. Every other method is 405.' },
-  { path: '/oauth2/step-up/resource/:application', group: 'OAuth 2.0 / OIDC',
-    name: 'Step-up stand-in resource',
-    specs: ['rfc9470', 'rfc9068', 'rfc6750', 'rfc9449'],
-    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
-            'bare, and 404 for an application the realm has no entry for',
-    what: 'NON-SPEC: a protected resource answering FOR a registered ' +
-          'application, on GET and POST, so a client can be driven through ' +
-          'RFC 9470 without deploying the API. The access token must ' +
-          'verify, be an at+jwt from an authorization server this service ' +
-          'publishes, and name the application in its aud; then the ' +
-          'application\'s oauthStepUpAcrValues and oauthStepUpMaxAge are ' +
-          'asked of its acr and auth_time, and a token that does not meet ' +
-          'them is answered 401 insufficient_user_authentication with ' +
-          'acr_values and max_age in the challenge. A token that does gets ' +
-          '200 and the requirement and the authentication it met. Holds ' +
-          'no data.',
-    demo: true },
   // The authorization server's monitoring page and its two management API
   // operations (2026-09-13), `/admin/acme/monitor`'s arrangement: the page,
   // the same view over JSON, and the one control as an action.
