@@ -2453,7 +2453,7 @@ class WsFederation {
       // THE VERDICT IS DRAWN IN THE BROWSER (#581), from the shell's state:
       // the facts the page printed, and the words the `mockRp` catalog's.
       MockRpSurface.sendShell(req, res, 200, 'wsfed', {
-        kind: 'result', family: 'wsfed', realm: realm, ok: verdict.ok,
+        kind: 'result', family: 'wsfed', realm: realm, ok: !!verdict.ok,
         assertionVersion: verdict.assertionVersion || '',
         subject: verdict.subject || '',
         checks: verdict.checks.map((c) => {

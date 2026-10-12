@@ -84,7 +84,11 @@ function childMain() {
       return new Promise(function (resolve) {
         const req = http.request({ host: '127.0.0.1', port: port,
           method: method, path: p,
-          headers: Object.assign(body ? {
+          // THE NAME OUTSIDE A REQUEST: the response below is issued with
+          // no request in hand, where this realm's issuer is its default
+          // base, so every request names that host too and the relying
+          // party's issuer check compares like with like.
+          headers: Object.assign({ host: 'localhost:8081' }, body ? {
             'content-type': 'application/x-www-form-urlencoded',
             'content-length': Buffer.byteLength(body) } : {},
           headers || {}) }, function (res) {
@@ -261,8 +265,10 @@ function childMain() {
          }) && good.body.indexOf('/wsfed/rp/mock-rp.js') > 0,
          '3. POST /wsfed/rp verifies a response this service issued: 200, ' +
          'no code, every check passed, the verdict in the shell',
-         good.status + ' ' + good.code + ' ' +
-         JSON.stringify(goodView).slice(0, 500));
+         good.status + ' ' + good.code + ' failing: ' +
+         JSON.stringify((goodView.checks || []).filter(function (c) {
+           return !c.ok;
+         })));
     const replayed = await ask('POST', '/wsfed/rp',
       form({ wa: 'wsignin1.0', wresult: wresult, wctx: 'rp-never-minted' }));
     const replayedView = stateOf(replayed) || {};
@@ -342,7 +348,7 @@ function childMain() {
          drawnStart.indexOf(ws.wctx) > 0 &&
          /Sign-in response received/.test(drawnGood) &&
          /Every check passed/.test(drawnGood) &&
-         (drawnSp.match(/href="\/[^"]*saml2\/sso\?SAMLRequest=/g) || [])
+         (drawnSp.match(/href="[^"]*\/saml2\/sso\?SAMLRequest=/g) || [])
            .length === 4 &&
          /ALREADY BEEN RESOLVED/.test(drawnSpent) &&
          !/mockRp\./.test(drawnStart + drawnGood + drawnSp + drawnSpent),

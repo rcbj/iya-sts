@@ -6030,7 +6030,7 @@ class Saml2Sso {
     }
     MockRpSurface.sendShell(req, res, 200, 'saml2', {
       kind: 'result', family: 'saml2', entityId: spEntityId,
-      arrived: arrived, ok: verdict.ok, subject: verdict.subject || '',
+      arrived: arrived, ok: !!verdict.ok, subject: verdict.subject || '',
       checks: verdict.checks.map(function (c) {
         return { name: c.name, ok: !!c.ok, detail: String(c.detail) };
       }),

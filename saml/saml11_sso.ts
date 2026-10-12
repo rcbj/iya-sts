@@ -3401,7 +3401,7 @@ class Saml11Sso {
     log.debug("Entering Saml11Sso.mockRpResult(). " + profile);
     log.debug("Leaving Saml11Sso.mockRpResult().");
     return Object.assign({
-      kind: 'result', family: 'saml11', profile: profile, ok: result.ok,
+      kind: 'result', family: 'saml11', profile: profile, ok: !!result.ok,
       passed: result.checks.filter((c) => { return c.ok; }).length,
       total: result.checks.length, subject: result.subject || '',
       target: target,
