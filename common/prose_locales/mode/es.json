@@ -40,12 +40,12 @@
     "text": "Se rechaza un Security Event Token recibido cuya firma no se verifica"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "POST /ssf/receive y los receptores propios de la consola y del portal lo aceptan, lo registran y dicen por qué no se verificó — la postura del depurador —, salvo que ssf.receiveRequireSignature esté activado. Nada actúa en consecuencia."
+    "en": "298534c9f2c4f318",
+    "text": "POST /ssf/receive y los receptores propios de la consola y del portal lo aceptan, lo registran y dicen por qué no se verificó — la postura del depurador —, salvo que ssf.receiveRequireSignature esté activado. Nada actúa en consecuencia. Las Shared Signals de un socio de federación, enviadas a /federation/signals/{id} u obtenidas por sondeo, se tratan igual: un SET sin verificar se registra en la bandeja de entrada de la relación como no verificado y no se actúa en modo alguno en consecuencia, salvo que ssf.receiveRequireSignature esté activado."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "Los receptores de la consola y del portal responden 400 invalid_key, diga lo que diga ssf.receiveRequireSignature (#117), y lo conservan en su bandeja de entrada marcado como rechazado. /ssf/receive es un endpoint de desarrollo y no está (#585)."
+    "en": "7823c19f4b2f69fb",
+    "text": "Los receptores de la consola y del portal responden 400 invalid_key, diga lo que diga ssf.receiveRequireSignature (#117), y lo conservan en su bandeja de entrada marcado como rechazado. /ssf/receive es un endpoint de desarrollo y no está (#585). También se rechaza con invalid_key un SET sin verificar de un socio de federación — HTTP 400 a un envío a /federation/signals/{id}, y en setErrs en la siguiente solicitud de sondeo si se obtiene por sondeo —; se conserva en la bandeja de entrada de la relación marcado como rechazado, y nunca se actúa en consecuencia."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
