@@ -27,9 +27,11 @@
 // the realm exists, configures a peer tenant for it and REGISTERS the peer
 // there as an ordinary GNAP resource server — its key, its address, and the
 // type declared with the demonstration type's limits — so a right of that
-// type naming no location is audienced to the peer. Without the option
-// nothing changes: `h.RS` is the demonstration resource server, as the jobs
-// not yet moved (sts_gnap_rs, sts_gnap_signals, sts_gnap_mtls) still use.
+// type naming no location is audienced to the peer. `h.RS_TLS` is the same
+// resource on the peer's TLS listener — the one a mutual-TLS proof is made
+// on — and `h.peerCaPem`, once `usePeer()` has run, the anchor to verify
+// that listener with. Without the option `h.RS` is the demonstration
+// resource server, which is development only since #585; no job uses it.
 //
 // It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its
 // requires are `assert`, node's crypto, `gnap_client.js` and `test_peer.js`.
@@ -66,6 +68,8 @@ function harness(options) {
                  GRANT: GRANT, FINISH: FINISH, DEMO: DEMO, RS: realmBase +
                      "/gnap/rs/resource",
                  SPEND: realmBase + "/gnap/rs/spend",
+                 RS_TLS: null,
+                 peerCaPem: null,
                  peer: null,
                  checks: 0 };
   // The peer's names are fixed NOW, before any request, because the jobs
@@ -79,6 +83,7 @@ function harness(options) {
     self.DEMO = PEER_TYPE;
     self.RS = at + "/gnap/resource";
     self.SPEND = at + "/gnap/spend";
+    self.RS_TLS = self.RS.replace(/^http:/, "https:");
   }
   const accessType = self.DEMO;
 
@@ -498,6 +503,7 @@ function harness(options) {
       "and there is none: " + testPeer.skipReason("the GNAP resource " +
       "server"));
     self.peer = await registerPeer(peerTenant, realmBase, realmApi);
+    self.peerCaPem = self.peer.caPem;
     log.debug("Leaving usePeer().");
     return self.peer;
   };

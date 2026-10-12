@@ -419,8 +419,10 @@ const JOBS = [
   // `samlPeer` are.
   { file: 'sts_gnap_core.js',            browser: false, local: true,
     testPeer: true },
-  { file: 'sts_gnap_rs.js',              browser: false, local: true },
-  { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  { file: 'sts_gnap_rs.js',              browser: false, local: true,
+    testPeer: true },
+  { file: 'sts_gnap_signals.js',         browser: false, local: true,
+    testPeer: true },
   // #432: the access-token status list from OAuth's side — an RFC 9068
   // token's status claim, the list fetched, verified and read by the job's
   // own code, and the bit set by RFC 7009 revocation. `local: true` on the

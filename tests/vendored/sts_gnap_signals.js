@@ -31,7 +31,11 @@
 // global sign-out of the resource owner, their account disabled, and the
 // client's application entry deleted each end the grant — CAEP
 // session-revoked naming it, with `admin` as the initiating entity — and its
-// token stops working at the demonstration resource server.
+// token stops working at the resource server — the TEST PEER's since #586
+// (the demonstration one is development only, #585), registered in the
+// realm as an ordinary GNAP resource server (`gnap_flow.js`, `peer: true`).
+// A run with no peer — an AWS target — reports this job SKIPPED (`testPeer`
+// in MANIFEST.js).
 //
 // Every SET read here is verified against the realm's /oauth2/jwks with node's
 // crypto before its contents are believed.
@@ -73,7 +77,9 @@ const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnapsig").replace(/[^a-z0-9-]/g, "").slice(0, 30),
   password: PASSWORD,
-  log: log
+  log: log,
+  // The resource server a token stops working at is the test peer's (#586).
+  peer: true
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-sig-owner");
@@ -207,6 +213,8 @@ async function test() {
   log.info("=== 0. the realm and two web applications ===");
   await h.createRealm("GNAP signals");
   await h.setting("gnap.continueWaitS", 0);
+  // The resource server sections 5 and 8-10 present tokens at (#586).
+  await h.usePeer();
   await h.ensurePerson(OWNER);
   await h.ensurePerson(STRANGER);
   // Their subjects, which a SET's `user.sub` carries (2026-09-14).
@@ -554,8 +562,9 @@ async function test() {
     return JSON.parse(Buffer.from(value.split(".")[1], "base64url")
                             .toString("utf8")).jti;
   };
-  // A token FOR the resource server, and one for the demonstration RS, both
-  // about OWNER, both revoked at their manage URIs.
+  // A token FOR the resource server, and one for another resource server
+  // (the test peer's, whose type the default access names), both about
+  // OWNER, both revoked at their manage URIs.
   const forRs = await h.redirectGrant(web, OWNER,
                                       { access_token: {
                                         access: [rsReference] } });

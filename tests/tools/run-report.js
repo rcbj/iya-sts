@@ -1683,6 +1683,81 @@ async function runScheduled(jobs, runOne, opts) {
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// A TEST PEER FOR A SERVICE THIS RUNNER STARTED (#586).
+//
+// The test peer (tests/peer/) is the far party of the protocols the
+// product-mode jobs drive: a container of the stack under ./run-tests.sh,
+// which names it in STS_TEST_PEER_URL. A run whose SERVICE is a child of this
+// runner — ./run-coverage.sh, a bare run-report.js — has no such container,
+// so the peer is started here the same way: a child of this runner, on a
+// free loopback port, its CA certificate written to a directory of this run
+// that the service (another child, on the same filesystem) reads through
+// `ssf.pushCaFile`, its log beside the service's. A run handed a service
+// (`--service-url`) starts none: whoever started that service decides
+// whether there is a peer, and an AWS target has none on purpose.
+//
+// Answers `{ child, url }`, or null — said, and the jobs that need a peer are
+// then skipped with their reason — when it would not start.
+// ---------------------------------------------------------------------------
+async function startTestPeer(runDir, logsDir) {
+  log.debug('Entering startTestPeer().');
+  const net = require('net');
+  const port = await new Promise(function (resolve, reject) {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', function () {
+      const chosen = probe.address().port;
+      probe.close(function () {
+        resolve(chosen);
+      });
+    });
+  });
+  const caDir = path.join(runDir, 'test-peer');
+  const out = fs.openSync(path.join(logsDir, '00-test-peer.log'), 'a');
+  const child = spawn(process.execPath,
+                      [path.join(TESTS_DIR, 'peer', 'peer.js')], {
+    env: Object.assign({}, process.env, {
+      TEST_PEER_PORT: String(port),
+      TEST_PEER_PUBLIC_HOST: 'localhost',
+      TEST_PEER_NAMES: 'localhost,127.0.0.1',
+      TEST_PEER_CA_DIR: caDir
+    }),
+    stdio: ['ignore', out, out]
+  });
+  const url = 'http://localhost:' + port;
+  const deadline = Date.now() + 30000;
+  let why = 'it never answered /health';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      why = 'it exited with ' + child.exitCode + ' (see 00-test-peer.log)';
+      break;
+    }
+    try {
+      const r = await fetch(url + '/health');
+      if (r.status === 200) {
+        process.env.STS_TEST_PEER_URL = url;
+        process.env.TEST_PEER_CA_FILE = path.join(caDir, 'ca.crt');
+        log.info('a test peer for the protocol jobs at ' + url + ' (#586), ' +
+                 'its CA certificate at ' + process.env.TEST_PEER_CA_FILE);
+        log.debug('Leaving startTestPeer().');
+        return { child: child, url: url };
+      }
+    } catch (e) {
+      log.debug('Caught in startTestPeer(): ' + ((e && e.message) || e));
+      // Not listening yet: asked again below.
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 250);
+    });
+  }
+  child.kill('SIGKILL');
+  log.warn('the test peer would not start: ' + why + '. The jobs that need ' +
+           'it are skipped, each with the reason.');
+  log.debug('Leaving startTestPeer(). Not started.');
+  return null;
+}
+
 async function main() {
   log.debug('Entering main().');
   const opts = parseArgs(process.argv.slice(2));
@@ -1840,6 +1915,18 @@ async function main() {
                 e.message);
       protocolWhy = e.message;
       instance = null;
+    }
+  }
+
+  // ---- the test peer, when this runner owns the service (#586) ----------
+  let testPeer = null;
+  if (instance && !instance.external && !process.env.STS_TEST_PEER_URL) {
+    try {
+      testPeer = await startTestPeer(runDir, logsDir);
+    } catch (e) {
+      log.warn('could not start a test peer: ' + e.message + '. The jobs ' +
+               'that need it are skipped, each with the reason.');
+      testPeer = null;
     }
   }
 
@@ -2044,9 +2131,12 @@ async function main() {
       // server, since the service's own demonstration one is development
       // only (#585) — and ./run-tests.sh starts it in every local mode,
       // handing the job STS_TEST_PEER_URL. An AWS target has none.
-      const why = 'no STS_TEST_PEER_URL: this run brought up no test peer ' +
-                  '(tests/peer/). ./run-tests.sh does in every local mode; ' +
-                  'an AWS target has none, so in this run the resource ' +
+      const why = 'no STS_TEST_PEER_URL: this run has no test peer ' +
+                  '(tests/peer/). ./run-tests.sh brings one up in every ' +
+                  'local mode, and this runner starts one beside a service ' +
+                  'it starts itself (./run-coverage.sh); a service handed ' +
+                  'in with --service-url — an AWS target — has none, so in ' +
+                  'this run the resource ' +
                   'server this job presents its tokens at is unchecked, and ' +
                   'what stands is the job\'s run in the local modes and ' +
                   'tests/test_peer.js.';
@@ -2365,6 +2455,11 @@ async function main() {
   // since nothing instrumented is inside it.
   if (instance && !instance.external) {
     await service.stop(instance, log);
+  }
+  // The peer this runner started for that service (#586), after it: nothing
+  // of the peer is measured, and the service may push to it until it stops.
+  if (testPeer) {
+    testPeer.child.kill('SIGTERM');
   }
 
   // ---- coverage ---------------------------------------------------------

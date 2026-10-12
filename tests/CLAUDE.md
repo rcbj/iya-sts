@@ -2409,7 +2409,7 @@ readback** (rcbj, #586).
 | SAML 1.1 relying party (Browser/POST, Browser/Artifact resolved at the responder) | `/saml11/rp` | `peer_saml.js` | `sts_saml11.js` |
 | WS-Federation 1.2 passive relying party | `/wsfed/rp` | `peer_saml.js` | `sts_saml11.js` |
 | RFC 9470 resource server (RFC 9068 tokens) | `/oauth2/step-up/resource/{a}` | `peer_stepup.js` | `sts_step_up.js` |
-| GNAP resource server (RFC 9767 introspection, every key proof, limits) | `/gnap/rs/resource`, `/gnap/rs/spend` | `peer_gnap.js` | `sts_gnap_core.js`, `sts_gnap_limits.js` (`gnap_flow.js`, `peer: true`) |
+| GNAP resource server (RFC 9767 introspection, every key proof, limits) | `/gnap/rs/resource`, `/gnap/rs/spend` | `peer_gnap.js` | `sts_gnap_core.js`, `sts_gnap_limits.js`, `sts_gnap_rs.js`, `sts_gnap_signals.js` (`gnap_flow.js`, `peer: true`) |
 | SSF receiver (RFC 8935 push) | `/ssf/receive` | `peer_ssf.js` | `sts_ssf_conformance.js` section 7b |
 
 * **IT IS TRUSTED FOR NOTHING IT WAS NOT REGISTERED FOR.** A job creates
@@ -2444,23 +2444,34 @@ readback** (rcbj, #586).
   (`push-stack-images.sh`) and saves its log as `00-test-peer.log` beside the
   service's. The runner waits for it `service_started`, not healthy — a peer
   that will not start fails the jobs that need it, not the suite.
+* **A SERVICE THE RUNNER STARTS GETS A PEER THE RUNNER STARTS.**
+  `./run-coverage.sh` (and a bare `run-report.js`) runs the service as a
+  child of `tests/tools/run-report.js`, with no compose peer (`--no-deps`),
+  so `startTestPeer()` there starts `tests/peer/peer.js` as a second child on
+  a free loopback port, writes its CA certificate under the run's directory
+  (the service reads the same filesystem), sets `STS_TEST_PEER_URL` and
+  `TEST_PEER_CA_FILE` for the jobs, and puts `00-test-peer.log` beside the
+  service's. The peer-dependent jobs RUN under coverage.
 * **THE AWS TARGETS HAVE NO PEER, ON PURPOSE** (no AWS resources for it;
-  rcbj, #586): they set no `STS_TEST_PEER_URL`, and neither does
-  `./run-coverage.sh` (`--no-deps` starts none). The jobs that cannot run
-  without it — `sts_step_up`, `sts_gnap_core`, `sts_gnap_limits` — carry
-  `testPeer: true` in MANIFEST.js and are reported SKIPPED with the reason,
-  as `conformance` and `samlPeer` are; `sts_saml11` and
-  `sts_ssf_conformance` skip only the sections that need it, saying so.
+  rcbj, #586): a service handed in with `--service-url` gets no runner
+  peer, and they set no `STS_TEST_PEER_URL`. The jobs that cannot run
+  without it — `sts_step_up`, `sts_gnap_core`, `sts_gnap_limits`,
+  `sts_gnap_rs`, `sts_gnap_signals` — carry `testPeer: true` in MANIFEST.js
+  and are reported SKIPPED with the reason, as `conformance` and `samlPeer`
+  are; `sts_saml11` and `sts_ssf_conformance` skip only the sections that
+  need it, saying so.
 * **WHAT STILL USES A DEMO, AND WHY.** `sts_xml_schema_validation.js`
   validates the mock service provider's AuthnRequests in its DEVELOPMENT
   realm only (they are the service's documents, and only development emits
   them); `sts_ssf_conformance.js` section 7a asserts `/ssf/receive`'s own
-  checks in development only. `sts_gnap_rs.js`, `sts_gnap_signals.js` and
-  `sts_gnap_mtls.js` still present tokens at the demonstration resource
-  server (`h.RS` without `peer: true`): #585's survey did not list them, and
-  their mutual-TLS and per-format assertions are the next move (the peer's
-  resource server already verifies every proof, mutual TLS on its TLS
-  listener included).
+  checks in development only; `sts_saml11.js` asks the development mock
+  `/saml2/sp` only when there is no peer and the realm is development. No
+  job reaches `/gnap/rs/*`: `sts_gnap_rs.js` and `sts_gnap_signals.js`
+  present tokens at the peer too (`peer: true`; `sts_gnap_rs` section 6's
+  mutual-TLS calls go to the peer's TLS listener, `h.RS_TLS`, verified
+  against `h.peerCaPem`), and `sts_gnap_mtls.js`, which presents nothing at
+  a resource server, asks for a type it declares itself rather than the
+  demonstration type, so it needs no peer.
 
 `tests/test_peer.js` holds the peer to what each role must refuse, in
 process against a fake realm. By hand: build `tests/peer` with a tag of your
