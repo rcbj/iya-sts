@@ -20,11 +20,16 @@
 //      CURRENT translation keeps every `code span` of its English verbatim —
 //      a setting key, a path or a value translated is a sentence that now
 //      names something that does not exist.
-//   C. Coverage is REPORTED, not enforced. A setting's description changes
-//      with nearly every feature here, and a suite that failed until it was
-//      retranslated into six languages would fail on every such change; the
-//      reader is never shown the stale text (D proves it), and the report
-//      says what a translator is owed.
+//   C. Every catalog is CURRENT (rcbj, 2026-10-12): a base catalog holds a
+//      translation of every English message, made from the English the
+//      source says NOW; an overlay holds only current translations; and no
+//      catalog holds a key the English no longer has. A new setting, or a
+//      changed sentence, fails here until it is translated — in the suite and
+//      in the coverage run, which runs this file too. The reader would get
+//      the English meanwhile (D), but rcbj asked for the pages in these
+//      languages, not partly in them. `node tests/tools/prose-catalogs.js
+//      --untranslated=<ns> --tag=<tag>` lists what is owed, and `--merge`
+//      takes it back.
 //   D. Behaviour: no `Accept-Language`, or one only English answers, means
 //      no translation; a described setting is translated member by member;
 //      a member that is not the row's English (a stored value) is left; a
@@ -121,10 +126,18 @@ async function run(t) {
       const info = catalogs.filter(function (x) {
         return x.tag === tag;
       })[0];
-      t.ok('C. ' + ns + '/' + tag + (info.base ? ' (an overlay on ' +
-           info.base + ')' : '') + ': ' + c.current + ' of ' + c.total +
-           ' current', c.stale.length + ' stale, ' + c.missing.length +
-           ' missing, ' + c.orphans.length + ' orphaned');
+      const owed = (info.base ? [] : c.missing).concat(c.stale);
+      t.check(owed.length === 0 && c.orphans.length === 0,
+              'C. ' + ns + '/' + tag + (info.base ? ' (an overlay on ' +
+              info.base + ')' : '') + ' is current: ' + c.current + ' of ' +
+              c.total + ' translated from the English the source says now',
+              (info.base ? '' : c.missing.length + ' missing (' +
+                c.missing.slice(0, 3).join(', ') + '), ') +
+              c.stale.length + ' stale (' + c.stale.slice(0, 3).join(', ') +
+              '), ' + c.orphans.length + ' orphaned (' +
+              c.orphans.slice(0, 3).join(', ') + '). List what is owed with ' +
+              '`node tests/tools/prose-catalogs.js --untranslated=' + ns +
+              ' --tag=' + tag + '` and merge it back with `--merge`');
     });
   });
 
@@ -196,7 +209,8 @@ async function run(t) {
 
 module.exports = {
   name: 'server_prose_catalogs',
-  describe: 'the prose catalogs follow the source, every current ' +
+  describe: 'the prose catalogs follow the source, every base catalog ' +
+            'translates all of it from the current English, every ' +
             'translation keeps its code spans, and a view is translated ' +
             'only where it carries the source\'s own English (#543)',
   run: run

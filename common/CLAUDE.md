@@ -11772,16 +11772,26 @@ Why it is shaped this way:
 * **Keys** are `<setting>|label`, `|description`, `|restartReason` and
   `|csvValueNotes|<value>`. The separator is `|` because a setting key has
   dots.
-* **Coverage is reported, not enforced** (`tests/server_prose_catalogs.js`
-  C). This differs from #539's rule D on purpose. A setting description
-  changes with nearly every feature, so a suite that failed until each change
-  was translated six times would fail on every one. The reader never sees a
-  stale translation, so nothing wrong is ever served.
-  - What IS enforced: `en.json` is current, and every entry has a hash and a
-    text.
+* **Every catalog must be current (rcbj, 2026-10-12)**, and
+  `tests/server_prose_catalogs.js` C enforces it in the suite and in the
+  coverage run. A new setting or a changed sentence fails there until it is
+  translated.
+  - A base catalog must translate every English message from the English the
+    source says now.
+  - An overlay may hold only current translations.
+  - No catalog may keep a key the English has lost.
+  - The reader would get the English meanwhile, but rcbj asked for the pages
+    in these languages, not partly in them.
+  - What IS enforced besides: `en.json` is current, and every entry has a
+    hash and a text.
   - A current translation keeps every `code span` of its English verbatim,
     because a translated setting key or path names something that does not
     exist.
+* **Paying what is owed.**
+  - `--untranslated` lists it, and `--merge` takes the translations back.
+  - Both, and `--report`, read the catalog files and run on the host, because
+    `en.json` is held to the source.
+  - Only `--print` and `--write` read the source, and so need the tests image.
 * **No regional overlays yet.** `fr-CA`, `es-ES` and `zh-Hant-HK` read their
   base catalogs' prose.
 * `STS-I18N-0011`: a prose catalog could not be read.
