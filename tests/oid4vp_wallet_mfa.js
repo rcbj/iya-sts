@@ -48,6 +48,9 @@ function childMain() {
   const ROOT = process.env.WSI_ROOT;
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
+  // The sign-in screen over `/authn-api` since #571: an act, then the page
+  // its answer names, as the screen's page goes there.
+  const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
   walletKit.boot().then(async function (w) {
     const note = w.note;
@@ -197,10 +200,10 @@ function childMain() {
     // ==================================================================
     const pwId = w.pendingSignIn({ begin: { forceMfa: true } });
     const pwWho = w.browser();
-    const posted = await w.request('POST', '/authn/login', {
-      browser: pwWho,
-      form: { authn_id: pwId, username: 'mfa-alice',
-              password: 'Correct-Horse-1', action: 'login' } });
+    const posted = await authnScreen.follow({ port: w.port,
+      jar: pwWho.cookies, at: '/authn/login?authn=' + pwId,
+      fields: { action: 'login', username: 'mfa-alice',
+                password: 'Correct-Horse-1' } });
     const link = /id="wallet-second-factor" href="([^"]+)"/.exec(posted.text);
     note(posted.status === 200 && !!link &&
          /mfa=/.test(w.unescapeHtml(link ? link[1] : '')),
@@ -226,10 +229,10 @@ function childMain() {
     const carol = await w.issue('mfa-carol', carolKey);
     const otherId = w.pendingSignIn({ begin: { forceMfa: true } });
     const otherWho = w.browser();
-    const otherPosted = await w.request('POST', '/authn/login', {
-      browser: otherWho,
-      form: { authn_id: otherId, username: 'mfa-alice',
-              password: 'Correct-Horse-1', action: 'login' } });
+    const otherPosted = await authnScreen.follow({ port: w.port,
+      jar: otherWho.cookies, at: '/authn/login?authn=' + otherId,
+      fields: { action: 'login', username: 'mfa-alice',
+                password: 'Correct-Horse-1' } });
     const otherLink = /id="wallet-second-factor" href="([^"]+)"/
       .exec(otherPosted.text);
     const otherStep = new URL(w.unescapeHtml(otherLink[1]), 'http://x')
@@ -402,9 +405,11 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/wsi/after',
         protocol: 'wsi-probe', application: 'wsi-wallet' });
     });
-    const screen = await w.request('GET', shut);
-    note(/^\/authn\/login\?authn=/.test(shut) &&
-         /oid4vp\.signIn is off/.test(screen.text),
+    // A static page since #571: what it says is its view's `error`.
+    const screen = await authnScreen.open({ port: w.port, jar: {},
+                                            at: shut });
+    note(/^\/authn\/login\?authn=/.test(shut) && screen.view &&
+         /oid4vp\.signIn is off/.test(String(screen.view.error)),
          '5b. and with oid4vp.signIn off it falls back to the screen and ' +
          'says why, rather than sending somebody to a door that is shut',
          shut + ' ' + screen.status);

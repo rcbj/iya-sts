@@ -595,7 +595,11 @@ async function boot() {
       const found = who.cookies.sts_session && m.authn.cookieSession(
         { headers: { cookie: 'sts_session=' + who.cookies.sts_session } },
         m.authn.SESSION_COOKIE);
-      return (found && found.session) || null;
+      // AN ARRIVAL SESSION IS NOBODY'S (`authn.ts`, `startArrivalSession()`):
+      // the sign-in screen's shell mints one for a browser without a cookie
+      // since #571, and it holds no principal, so it is no sign-in.
+      return (found && found.session && found.session.chosen !== false)
+        ? found.session : null;
     });
   }
 
