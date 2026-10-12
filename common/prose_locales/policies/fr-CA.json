@@ -1,0 +1,122 @@
+{
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "Code à six chiffres envoyé par courriel — comme premier facteur"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "Code à six chiffres envoyé par courriel — comme second facteur"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "Lien de connexion envoyé par courriel — comme premier facteur"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "Lien de connexion envoyé par courriel — comme second facteur"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "Durée de validité d’un code ou d’un lien envoyé par courriel"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "Échecs consécutifs avant la désactivation du facteur courriel d’une personne"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une personne qui se connecte sur un navigateur qu’elle a choisi de mémoriser ne se voit pas redemander son second facteur dans la période ci-dessous suivant la dernière fois qu’elle l’a fourni sur ce navigateur. JAMAIS sur la console d’administration, le portail utilisateur ou le débogueur de protocoles ; jamais pour un administrateur ; jamais tant que le risque de la connexion est moyen ou plus élevé ; et la connexion ne compte alors que pour UN facteur auprès de chaque partie de confiance — amr [\"pwd\"] et acr \"1\", comme un simple mot de passe — de sorte qu’une application qui demande « mfa » se le voit refuser. Le navigateur est reconnu par un témoin au porteur : quiconque copie le témoin se dispense lui aussi du second facteur, jusqu’à ce que la copie soit détectée."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une personne qui se connecte sur un navigateur qu’elle a choisi de mémoriser ne se voit pas redemander son second facteur dans la période ci-dessous suivant la dernière fois qu’elle l’a fourni sur ce navigateur. JAMAIS sur la console d’administration, le portail utilisateur ou le débogueur de protocoles ; jamais pour un administrateur ; jamais tant que le risque de la connexion est moyen ou plus élevé ; et la connexion ne compte alors que pour UN facteur auprès de chaque partie de confiance — amr [\"pwd\"] et acr \"1\", comme un simple mot de passe — de sorte qu’une application qui demande « mfa » se le voit refuser. Le navigateur est reconnu par un témoin au porteur : quiconque copie le témoin se dispense lui aussi du second facteur, jusqu’à ce que la copie soit détectée."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "Le second facteur par courriel que cette personne a choisi : `code` ou `link`. Absent : aucun. Défini sur /portal/mfa, effacé sur /admin/mfa et après un trop grand nombre d’échecs consécutifs."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "Codes ou liens envoyés par courriel ayant échoué consécutivement, remis à zéro par une réussite. Tenu à jour par ce service."
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "Code à six chiffres envoyé par courriel"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "Lien de connexion envoyé par courriel"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courriel peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "un code ou un lien envoyé par courriel est valable {{n}} secondes"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "un code ou un lien envoyé par courriel est valable {{n}} secondes — INACTIF : ce domaine ne peut pas envoyer de courriels"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "la langue de repli d’une page, la langue dans laquelle un courriel est rédigé lorsqu’une personne n’en nomme aucune, et la preferredLanguage attribuée à une nouvelle personne"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courriel adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courriel adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "le courriel adressé à une personne dont l’entrée ne nomme aucune langue est rédigé en {{tag}}"
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "Ce domaine ne peut pas envoyer de courriels ; les deux mécanismes par courriel ne peuvent donc pas être activés et ne sont jamais proposés. Configurez un transport dans Configuration du serveur > Courriel."
+  }
+}
