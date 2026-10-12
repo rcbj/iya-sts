@@ -76,6 +76,7 @@ To check which build a running container is, see
 | `openbao-seed` | this repository's | One-shot, idempotent. Initialises the store, writes the secrets, creates the Transit key `sts-kek`, issues the service its client certificate, and hands each node a single-use start-up token. |
 | `sts` | this repository's (`iyasec/iya-sts`) | The service. It waits until the database is healthy and the seeder has finished. |
 | `xacml-pep` | `iyasec/iya-sts-xacml-pep`, built from `xacml-pep/Dockerfile` | The [remote XACML PEP](remote-pep.md). It is only started with `--profile xacml`. |
+| `companion` | `iya-sts-companion`, built from `companion/` | **Development only.** The click-through demonstrations, played by a separate party in front of the service: a Mock University issuer and a bar-door verifier for OpenID4VC (see [The companion](#the-companion-development-only)). It is only started with `--profile companion`. |
 
 The `sts` container starts as root for three steps:
 
@@ -100,6 +101,7 @@ so the service starts without the pinned management API secret.
 | 8081 | 8081 | The main port: every HTTP protocol, the console, the portal | `STS_HOST_PORT` |
 | 8082 | 8082 | Plain-HTTP revocation listener: the CRL, OCSP and issuer certificate every issued certificate points at | `STS_PKI_HOST_PORT` |
 | 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
+| 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 
 To move the main port, change only the host side. The service builds its
 published URLs from the `Host` header of each request. `STS_PKI_HOST_PORT` is
@@ -194,14 +196,56 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
-| `STS_IMAGE`, `XACML_PEP_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
+| `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `BUILD_NUMBER`, `GIT_COMMIT`, `DEBUGGER_IMAGE` | empty | Build arguments: see [Which build am I running?](getting-started.md#which-build-am-i-running) and the embedded debugger |
 | `*_CONTAINER_NAME` | `sts`, `sts-postgres`, `sts-openbao`, … | Container names, which are machine-wide; change them to run a second stack beside this one |
 
 `OID4VCI_WALLET_URL` is not in the file. Add it under `sts` → `environment`
-when the wallet is not at `http://localhost:3000`. Otherwise the Credential
-Offer and presentation pages send the browser to the wrong place, and the
-symptom looks like an unrelated timeout.
+when the wallet is not at `http://localhost:3000`. Otherwise the portal's
+Credential Offer and a verification's wallet link send the browser to the
+wrong place, and the symptom looks like an unrelated timeout.
+
+## The companion (development only)
+
+The service ships no demonstration pages. The OpenID4VC issuer and verifier a
+person clicks through — and that the embedded debugger's credential pages
+point at — are a second container, started only when asked:
+
+```bash
+ADMIN_API_CLIENT_SECRET=$(openssl rand -base64 24) \
+  docker compose --profile companion up -d
+```
+
+Then open `http://localhost:9700`. It uses the service as any issuer's or
+verifier's web site would:
+
+* **The issuer's page** reads `/.well-known/openid-credential-issuer` and
+  makes a Credential Offer with the authorization code grant (no
+  `issuer_state`), so the wallet signs the person in at the service. A
+  **pre-authorized** offer is the person's own, so the page links to the
+  service's `/portal/wallet`.
+* **The bar door** starts a verification at `POST
+  /admin-api/verifications/start`, naming its own `/verifier/done` as the
+  page the wallet is sent to afterwards, and reads the verdict at `GET
+  /admin-api/verifications?state=`.
+
+It calls `/admin-api` as an application of its own, `iya-sts-companion`,
+holding Admin Read and Admin Write. Give it either
+`COMPANION_CLIENT_ID`/`COMPANION_CLIENT_SECRET` for an application you
+registered (it must declare `admin:read admin:write`, be a member of
+`ADMIN_READ` and `ADMIN_WRITE`, and list the companion's `/verifier/done` as a
+redirect URI), or let it register itself: it reads the management API client's
+secret from `ADMIN_API_CLIENT_SECRET` once, creates the application, and uses
+only its own credentials afterwards.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `COMPANION_PUBLIC_URL` | `http://localhost:9700` | Where a browser reaches the companion; its completion page is under it |
+| `COMPANION_STS_URL` | `https://sts:8081` | Where the companion dials the service |
+| `COMPANION_STS_PUBLIC_URL` | `https://localhost:8081` | Where a browser and a wallet reach the service, a realm's prefix included (`…/realm/acme`). Sent as the `Host`, so the addresses the service builds are reachable |
+| `COMPANION_STS_CA_FILE` | empty | The service Root to verify its certificate against |
+| `COMPANION_STS_TLS_INSECURE` | `true` | With no CA file, do not verify the service's certificate. Development only |
+| `COMPANION_WALLET_URL` | empty | A wallet's issuance page for the offer's link, besides the `openid-credential-offer://` link and QR code |
 
 [Configuration](configuration.md) lists every setting and its environment
 variable.
@@ -243,3 +287,4 @@ variable.
 * [Encryption at rest](encryption-at-rest.md): OpenBao, the Transit key, rotation
 * [Management API](management-api.md): the first token on this stack
 * [Remote PEP](remote-pep.md): the `xacml` profile
+* [OpenID4VCI](oid4vci.md) and [OpenID4VP](oid4vp.md): what the companion demonstrates

@@ -154,9 +154,8 @@ from `listen()`* is the rule this is an instance of.
    credential, and recording those would evict real people from a store with a
    fixed maximum to hold identifiers nothing will present again.
    `/oid4vp/response` records the holder BELOW the refusal, so a presentation
-   that failed a check records nothing. And `/did/generate` records what it
-   MINTED, but only for `?method=jwk`: the `web` branch returns this service's
-   own DID, and an entry for it would file the issuer among the people.
+   that failed a check records nothing. (`/did/generate` recorded the did:jwk
+   it minted, never this service's own did:web, until it was deleted on #594.)
 
    But this module requires `admin_stats.js` (it needs
    `identityOf`'s normalisation, so `alice`, `alice@REALM` and a token's
