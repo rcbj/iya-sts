@@ -1739,14 +1739,20 @@ class ProviderCommands {
                    learnedAt: new Date(known.learnedAt).toISOString() }
                    : null };
       }),
-      accounts: accountRows.slice(0, Number(o.limit) || 500),
+      // WHOLE, unless a caller asks for a `limit` (#313's sweep). These were
+      // cut at 500 accounts, 500 deliveries and 100 runs, silently: a row
+      // past the cut could not be reached from anywhere. `/admin-api/
+      // commands` pages them instead (`provider_commands_api.ts`).
+      accounts: Number(o.limit) > 0
+        ? accountRows.slice(0, Number(o.limit)) : accountRows,
       deliveries: this.outbox.rows({ state: o.state, q: o.q })
-        .slice(0, Number(o.limit) || 500)
+        .slice(0, Number(o.limit) > 0 ? Number(o.limit) : undefined)
         .map(function (row: Json) {
           return self.outbox.view(row);
         }),
       counts: this.outbox.counts(),
-      runs: runRows.slice(0, 100),
+      runs: Number(o.limit) > 0 ? runRows.slice(0, Number(o.limit))
+                                : runRows,
       accountCommands: ACCOUNT_COMMANDS.slice(0),
       tenantCommands: TENANT_COMMANDS.slice(0)
     };

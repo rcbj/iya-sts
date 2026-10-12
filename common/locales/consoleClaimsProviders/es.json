@@ -45,5 +45,8 @@
   "colTheirSub": "Su sub allí",
   "colLinked": "Vinculado",
   "colToken": "Token",
-  "providersHeading": "Proveedores de claims"
+  "providersHeading": "Proveedores de claims",
+  "noLinkMatch": "Ningún vínculo coincide con <code>{wanted}</code>.",
+  "linkSearchLabel": "Restringir los vínculos",
+  "linkSearchPlaceholder": "una persona, un proveedor o su sujeto allí"
 }

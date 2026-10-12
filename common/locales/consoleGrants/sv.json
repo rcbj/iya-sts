@@ -13,5 +13,8 @@
   "colGeneration": "Generation",
   "colCreated": "Skapad / uppdaterad",
   "colExpires": "Upphör",
-  "colTokens": "Innehavda token"
+  "colTokens": "Innehavda token",
+  "noMatch": "Ingen beviljning matchar <code>{wanted}</code>.",
+  "searchLabel": "Begränsa beviljningarna",
+  "searchPlaceholder": "ett grant_id, en klient eller ett subjekt"
 }

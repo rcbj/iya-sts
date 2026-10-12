@@ -516,6 +516,14 @@ function checkNothingRequiresItEarly(t) {
                    // only — who moved a person's home — required LAZILY in
                    // the request; the page is 18k-ii, after the console.
                    'admin-ui/cells_admin.ts',
+                   // The /admin-api operations of Grants, Claims Providers,
+                   // Provider Commands and Outbound deliveries (#313's
+                   // sweep, 2026-10-12), for `adminViews`' paging only —
+                   // required LAZILY in the request; the management API
+                   // requires them at 19, after the console.
+                   'oauth-oidc/grant_management_api.ts',
+                   'oauth-oidc/claims_providers_api.ts',
+                   'oauth-oidc/provider_commands_api.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

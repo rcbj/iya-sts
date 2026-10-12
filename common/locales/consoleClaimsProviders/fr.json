@@ -45,5 +45,8 @@
   "colTheirSub": "Leur sub là-bas",
   "colLinked": "Lié",
   "colToken": "Jeton",
-  "providersHeading": "Fournisseurs de claims"
+  "providersHeading": "Fournisseurs de claims",
+  "noLinkMatch": "Aucun lien ne correspond à <code>{wanted}</code>.",
+  "linkSearchLabel": "Restreindre les liens",
+  "linkSearchPlaceholder": "une personne, un fournisseur ou son sujet chez celui-ci"
 }

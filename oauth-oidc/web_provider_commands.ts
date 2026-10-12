@@ -53,8 +53,24 @@ class ProviderCommandsPage {
    * @returns the body as HTML
    */
   static render(view: Json, ctx?: Json): string {
-    const t = (ctx || kit.context()).t;
-    return ProviderCommandsPage.commandsBody(view, t);
+    const c = ctx || kit.context();
+    return ProviderCommandsPage.commandsBody(view, c.t, c.query || {});
+  }
+
+  // One list's paging control, or none when the answer carries no paging
+  // for it (#313's sweep).
+  /**
+   * Builds one list's paging control, head and foot.
+   *
+   * @param path - the page the links point at
+   * @param query - the page's own query, carried on every link
+   * @param pg - the list's paging from the answer, or nothing
+   * @param t - the page's translator (#539)
+   * @returns the head and foot copies, empty when the list fits
+   */
+  static navOf(path: string, query: Json, pg: Json, t: Json): Json {
+    return pg ? kit.pageNavPair(path, kit.pageParamsOf(query || {}), pg, t)
+              : { head: '', foot: '' };
   }
 
   // One small form: hidden fields and a button.
@@ -122,10 +138,19 @@ class ProviderCommandsPage {
    *
    * @param json - `provider_commands.report()`'s answer
    * @param t - the page's translator (#539)
+   * @param query - the page's own query, which the paging carries
    * @returns the HTML
    */
-  static commandsBody(json: Json, t: Json): string {
+  static commandsBody(json: Json, t: Json, query?: Json): string {
     const form = ProviderCommandsPage.form;
+    // EACH OF THE FOUR LISTS IS ONE PAGE (#313's sweep), on `clientsPage`,
+    // `accountsPage`, `runsPage` and `deliveriesPage`: they grow with
+    // relying parties, people, tenant runs and traffic.
+    const paging = json.paging || {};
+    const nav: Json = {};
+    ['clients', 'accounts', 'runs', 'deliveries'].forEach(function (name) {
+      nav[name] = ProviderCommandsPage.navOf(PAGE, query, paging[name], t);
+    });
     const clients = json.clients.length ? json.clients.map(function (c: Json) {
       return '<tr id="command-client-' + esc(c.clientId) + '"><td><code>' +
         esc(c.clientId) + '</code><br>' + esc(c.name) + '</td><td><code>' +
@@ -149,8 +174,13 @@ class ProviderCommandsPage {
         '</td></tr>';
     }).join('') : '<tr><td colspan="4" class="sub">' +
       t.html('consoleProviderCommands.noClients') + '</td></tr>';
-    const clientOptions = json.clients.map(function (c: Json) {
-      return '<option>' + esc(c.clientId) + '</option>';
+    // EVERY client, not the page's: a menu built from one page of the list
+    // could only send to what is on it.
+    const clientOptions = (json.clientIds ||
+                           json.clients.map(function (c: Json): string {
+                             return c.clientId;
+                           })).map(function (id: string) {
+      return '<option>' + esc(id) + '</option>';
     }).join('');
     const accountOptions = json.accountCommands.reduce(function (acc: string,
                                                                 one: string) {
@@ -234,34 +264,39 @@ class ProviderCommandsPage {
       // Metadata.
       '<h3 data-tab="clients">' +
       t.html('consoleProviderCommands.clientsHeading') + '</h3>' +
+      nav.clients.head +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       '<th>command_endpoint</th>' +
       th('consoleProviderCommands.colSupports') +
       '<th></th></tr></thead><tbody>' +
-      clients + '</tbody></table>' + send +
+      clients + '</tbody></table>' + nav.clients.foot + send +
       '<h3 data-tab="accounts">' +
       t.html('consoleProviderCommands.accountsHeading') + '</h3>' +
+      nav.accounts.head +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colPerson') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colLastCommand') +
       th('consoleProviderCommands.colWhen') + '</tr></thead><tbody>' +
-      accounts + '</tbody></table><h3 data-tab="tenants">' +
-      t.html('consoleProviderCommands.runsHeading') + '</h3><table><thead>' +
+      accounts + '</tbody></table>' + nav.accounts.foot +
+      '<h3 data-tab="tenants">' +
+      t.html('consoleProviderCommands.runsHeading') + '</h3>' +
+      nav.runs.head + '<table><thead>' +
       '<tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colProgress') +
       th('consoleProviderCommands.colStarted') +
-      '</tr></thead><tbody>' + runs + '</tbody></table>' +
+      '</tr></thead><tbody>' + runs + '</tbody></table>' + nav.runs.foot +
       '<h3 data-tab="deliveries">' +
-      t.html('consoleProviderCommands.deliveriesHeading') +
-      '</h3><table><thead><tr>' + th('consoleProviderCommands.colClient') +
+      t.html('consoleProviderCommands.deliveriesHeading') + '</h3>' +
+      nav.deliveries.head +
+      '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colQueued') +
       '<th></th></tr></thead><tbody>' +
-      deliveries + '</tbody></table>' +
+      deliveries + '</tbody></table>' + nav.deliveries.foot +
       '<p class="links" data-metadata><a href="' + PAGE +
       '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/commands</code> · <a href="' + DELIVERIES +
@@ -290,7 +325,11 @@ class ProviderCommandsPage {
       }).join('') + '</select></label> <button type="submit">' +
       t.html('consoleProviderCommands.show') + '</button>' +
       '</form>';
+    // EACH KIND'S TABLE IS ONE PAGE (#313's sweep), moving on its own
+    // parameter (`backchannelLogoutPage`, …), named on its paging.
     const kinds = json.kinds.map(function (k: Json) {
+      const nav = ProviderCommandsPage.navOf(DELIVERIES, ctx.query,
+                                             k.paging, t);
       const rows = k.rows.length ? k.rows.map(function (row: Json) {
         return ProviderCommandsPage.deliveryRow(DELIVERIES, k.id, row, t);
       }).join('') : '<tr><td colspan="5" class="sub">' +
@@ -306,13 +345,13 @@ class ProviderCommandsPage {
                { pending: k.counts.pending, sent: k.counts.sent,
                  dead: k.counts.dead }) +
         ' · <a href="' + esc(k.page) + '">' + esc(k.page) +
-        '</a></p><table><thead><tr><th>' +
+        '</a></p>' + nav.head + '<table><thead><tr><th>' +
         t.html('consoleProviderCommands.colClient') + '</th><th>' +
         t.html('consoleProviderCommands.colWhat') + '</th><th>' +
         t.html('consoleProviderCommands.colState') + '</th><th>' +
         t.html('consoleProviderCommands.colQueued') +
         '</th><th></th></tr></thead><tbody>' + rows +
-        '</tbody></table>';
+        '</tbody></table>' + nav.foot;
     }).join('');
     return kit.note(t.html('consoleProviderCommands.deliveriesNote')) +
       filter + kinds + '<p class="links" data-metadata><a href="' +
