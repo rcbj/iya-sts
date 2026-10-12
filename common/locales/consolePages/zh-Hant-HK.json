@@ -1,0 +1,8 @@
+{
+  "title.cert-issuance": "證書簽發",
+  "title.sts-metadata": "服務元數據",
+  "title.database": "數據庫",
+  "title.tls-trust": "客戶端證書信任存放區",
+  "title.users": "用戶",
+  "title.users-new": "新增用戶"
+}

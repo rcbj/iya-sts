@@ -1,0 +1,6 @@
+{
+  "nobodyDevelopment": "開發模式下每個用戶的金鑰都來自 krb5.userPassword，因此這裡沒有人持有已儲存的金鑰。",
+  "rotateKrbtgtTitle": "在下一個 kvno 產生新的隨機 krbtgt 金鑰；目前金鑰會保留給已在其下密封的 TGT。已加入排程器隊列。",
+  "noButton": "<strong>再次下載 keytab。</strong>已儲存的金鑰永遠不會被讀出：服務主體的 keytab 由產生它的建立或輪替操作交付，遺失後透過輪替來替換。個人的 keytab（#59）由已知的密碼衍生：在「目錄 &rarr; 用戶」下其頁面上的<strong>重設密碼並下載 keytab</strong>，或其本人在 <code>/portal/kerberos</code> 上的密碼。<strong>設定個人的金鑰。</strong>金鑰只來自此人的密碼，別無其他來源；清除是唯一的控制操作，下一次經驗證的登入會重新衍生它們。",
+  "linkDb": "主體數據庫"
+}

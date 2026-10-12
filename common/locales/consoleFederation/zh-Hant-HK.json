@@ -1,3 +1,13 @@
 {
-  "signalsOnly": "此合作夥伴不讓任何人登入：它只傳送 CAEP 和 RISC 事件。預設只記錄這些事件，除裝置合規狀態會被設定外不做其他處理。其人員是下方與其連結的人（<code>&lt;iss&gt; &lt;sub&gt;</code>，或 <code>opaque &lt;id&gt;</code>），或在開啟 <code>fedSignalEmailMatch</code> 時依電郵比對的人。"
+  "signalsOnly": "此合作夥伴不讓任何人登入：它只傳送 CAEP 和 RISC 事件。預設只記錄這些事件，除裝置合規狀態會被設定外不做其他處理。其人員是下方與其連結的人（<code>&lt;iss&gt; &lt;sub&gt;</code>，或 <code>opaque &lt;id&gt;</code>），或在開啟 <code>fedSignalEmailMatch</code> 時依電郵比對的人。",
+  "pictureNote": "以圖表形式繪製此登錄冊，由伺服器排版。它補充了關係表格無處安放的三項資訊：每個合作夥伴設定了多少個應用程式使用、每個<em>應用程式與關係</em>組合有多少人登入過，以及身分提供者一側被設定為如何驗證用戶——包括一個關係轉介到另一個關係的情況，這正是本服務成為身分橋樑的原因，而在任何單獨一列中都看不出來。",
+  "oneDirection": "<strong>一個關係就是一個方向。</strong>本服務既從其接收斷言、又向其發出斷言的合作夥伴，是兩個關係、兩個 id，因為設定一個關係的所有內容都因方向而異——端點是對方的或我們的，證書是對方的或我們的，屬性對應作用於傳入，或發布清單作用於傳出。",
+  "caveatRefusal": "<strong>這是此處唯一需要先設定才會起作用的功能，也是本主控台中唯一設定「拒絕」的頁面。</strong>在其他地方，本服務接受給它的任何東西——任何用戶名稱、任何 client_id、任何 entityID、任何 LDAP 繫結。但在斷言取用者服務上它不能這樣做：到達那裡的是一個聲稱代表某人的未經驗證的 HTTP 請求，而它將產生的工作階段正是 <code>/oauth2/authorize</code>、<code>/wsfed</code>、<code>/saml2</code> 和本主控台都會讀取的那一個。寬鬆的版本不會是一個寬鬆的模擬，而是對本處理程序中每個協定的驗證繞過。",
+  "by": "用戶",
+  "ourMetadata": "我們的 {protocol} 元數據",
+  "encryptionCertificate": "加密證書（<code>{keyType}</code>）",
+  "algorithmsUnder": "<code>{content}</code>，金鑰管理為 <code>{management}</code>，已在元數據中發布",
+  "whatItDoesNote": "此處每個協定端點本來就會向任何請求者簽發，因此此關係不會改變合作夥伴是否得到回應。它增加的是兩點：合作夥伴被標記為聯合合作夥伴而不是測試客戶端，並由下方的 <code>fedRelease</code> 決定向其發布哪些屬性。",
+  "mapRowsB": "所顯示的列相同，另加兩欄關於兩個登錄冊而非單一項目的事實：有多少應用程式設定為使用某合作夥伴，以及身分提供者一側如何驗證用戶。這兩者都無法存放在關係自身的項目上。",
+  "drawingNoPan": "。它不能平移或縮放：它在伺服器上產生並以標記形式送達，這讓本主控台保持無腳本。SVG 文件本身可以縮放。"
 }
