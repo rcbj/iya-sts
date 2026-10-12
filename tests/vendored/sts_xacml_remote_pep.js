@@ -2147,6 +2147,98 @@ async function aDeployedPolicyConverges() {
 }
 
 // ===========================================================================
+// 4b. AN OBLIGATION THE CONTAINER CANNOT DISCHARGE (#596).
+//
+// Section 7.2's part implementations skip: an obligation is the half of a
+// decision that says "yes, AND you must also do this", so a PEP that cannot
+// discharge one turns a Permit into a REFUSAL. This was asserted at the
+// service's embedded demonstration PEP, `/xacml/protected`, in
+// `sts_xacml_endpoints.js` section 5 until #596 deleted that PEP; it is
+// asserted HERE now, at the PEP that replaced it, which is the stronger
+// claim: the obligation is written at the PAP, PULLED, and refused in
+// another process.
+//
+// The pair is what makes it assertable: the editor's `add-policy-obligation`
+// mints `urn:sts:xacml:obligation:1`, which no PEP knows, and
+// `edit-obligation` renames it to the one both PEPs discharge. Same policy,
+// same request, same Permit — and the enforcement flips, which shows the
+// refusal was about the OBLIGATION and not about the decision.
+// ===========================================================================
+const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
+
+async function anUndischargeableObligationRefuses() {
+  log.debug("Entering anUndischargeableObligationRefuses().");
+  log.info("=== An obligation the container cannot discharge ===");
+  const ask = { subject: ADMIN_PERSON, employeeType: "admin", action: "GET" };
+
+  await act("add-policy-obligation", { policy: POLICY_B, path: "",
+                                       on: "Permit" },
+            "added an obligation to the root policy");
+  const refused = await until(
+    "the PEP to refuse a Permit carrying an obligation it cannot discharge",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 403 && r.body.decision === "Permit",
+               r: r, note: "the PEP answered " + r.status + " (" +
+                           r.body.decision + ")" };
+    });
+  check("an undischargeable obligation turns the Permit into a refusal — " +
+        "in the container, on policy it pulled", function () {
+    const body = refused.r.body;
+    assert.strictEqual(body.allowed, false);
+    assert.ok(String(body.why).indexOf("obligation") > 0,
+      "the refusal should name the obligation as the cause; it says: " +
+      body.why);
+    assert.deepStrictEqual(body.obligations,
+      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
+      "the obligation should be reported UNDISCHARGED rather than omitted; " +
+      "it reports " + JSON.stringify(body.obligations));
+  });
+
+  const tree = await get(api("/xacml/editor?policy=" + POLICY_B));
+  const obligation = ((tree.body && tree.body.tree) || [])
+    .filter(function (row) {
+      return row.kind === "obligation";
+    })[0];
+  assert.ok(obligation, "no obligation row in the editor tree: " +
+    String(tree.text).slice(0, 300));
+  await act("edit-obligation", { policy: POLICY_B, path: obligation.path,
+                                 id: DISCHARGEABLE, on: "Permit" },
+            "renamed the obligation to the one a PEP knows");
+  const discharged = await until(
+    "the PEP to discharge the obligation it knows",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200, r: r,
+               note: "the PEP answered " + r.status };
+    });
+  check("the one obligation the PEP knows IS discharged, and access returns",
+        function () {
+    assert.deepStrictEqual(discharged.r.body.obligations,
+      [{ id: DISCHARGEABLE, discharged: true }],
+      "and it should say so rather than silently allowing; it reports " +
+      JSON.stringify(discharged.r.body.obligations));
+  });
+
+  await act("remove", { policy: POLICY_B, path: obligation.path },
+            "removed the obligation again");
+  const clean = await until("the PEP to hold the policy without it",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200 && r.body.obligations.length === 0,
+               r: r, note: "the PEP reports " +
+                           JSON.stringify(r.body.obligations) };
+    });
+  check("removing the obligation leaves an ordinary Permit", function () {
+    assert.strictEqual(clean.r.body.decision, "Permit");
+  });
+
+  log.info("[obligations] OK — one Permit enforced three ways in another " +
+           "process, and only the obligation changed.");
+  log.debug("Leaving anUndischargeableObligationRefuses().");
+}
+
+// ===========================================================================
 // 5. A DISABLED POLICY STOPS BEING ENFORCED — WHICH IS A DIFFERENT CLAIM FROM
 //    "IT IS LEFT OUT OF THE PULL".
 //
@@ -2971,6 +3063,7 @@ async function test() {
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
       const polledMs = await aDeployedPolicyConverges();
+      await anUndischargeableObligationRefuses();
       await aDisabledPolicyStopsBeingEnforced();
       await theNudgeIsDelivered(polledMs);
       await thePdpSeesWhatItNeverSaw();
@@ -2987,8 +3080,8 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section
   // that stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure mode a suite cannot report about itself.
-  assert.ok(checks >= 26,
-    "only " + checks + " checks ran. This file makes more than twenty-six " +
+  assert.ok(checks >= 29,
+    "only " + checks + " checks ran. This file makes more than twenty-nine " +
     "against a healthy service, so a count this low means a SECTION STOPPED " +
     "BEING CALLED rather than that the surface got simpler.");
   log.info(checks + " checks passed.");
