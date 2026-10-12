@@ -301,8 +301,9 @@ function refusedForNoStatus(r) {
 function accepted(r) {
   log.debug("Entering accepted().");
   assert.strictEqual(r.status, 200, r.text.slice(0, 400));
-  assert.ok(/\/oid4vp\/done\?/.test((r.json || {}).redirect_uri || ""),
-            r.text.slice(0, 300));
+  // A start that named no completion page is answered with none (#594;
+  // the demonstration's /oid4vp/done was named until then).
+  assert.deepStrictEqual(r.json, {}, r.text.slice(0, 300));
   log.debug("Leaving accepted().");
 }
 

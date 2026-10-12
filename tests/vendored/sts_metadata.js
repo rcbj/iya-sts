@@ -565,7 +565,9 @@ async function theDemonstrationsFollowTheMode(doc, consoleClient) {
   const product = !!(modeAnswer.json || {}).isProduct;
   const listed = doc.endpoints.filter(function (e) { return e.demo; });
   if (!product) {
-    assert.ok(listed.length > 20,
+    // #591 moves them out phase by phase (#592 to #597 took more than
+    // twenty), so the floor is that some are still listed and marked.
+    assert.ok(listed.length > 0,
       "a development realm should list its demonstration endpoints, marked " +
       "demo; only " + listed.length + " were.");
     log.info("[demos] OK — development: " + listed.length +
