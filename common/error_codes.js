@@ -12194,6 +12194,12 @@ const CODES = [
       'in it; the inter-cell operation kdc-message failed (#588, ' +
       '2026-10-12).',
     spec: 'none — #98' },
+  { code: 'STS-KRB-0209',
+    summary: 'kerberos/spnego_pages.ts is present and did not load, so ' +
+      'GET /spnego or /spnego/protected drew its page on the server, as a ' +
+      'copy without that module does (#583). The negotiation itself is ' +
+      'unaffected.',
+    spec: 'logged; the page is drawn server-side' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -14065,6 +14071,21 @@ const CODES = [
       'parse. The key made at this start replaces it.',
     spec: 'logged; a new certificate is issued over the new key, and the ' +
       'restart is announced (tls-certificate-changed, restarted)' },
+  { code: 'STS-TLS-0049',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear (one carrying ' +
+      'an Origin) was not JSON: the /tls page sends its two acts as JSON ' +
+      '(#583). A request with no Origin is a script\'s and is not asked.',
+    spec: 'HTTP 415, { error }' },
+  { code: 'STS-TLS-0050',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried an ' +
+      'Origin this service does not answer on: it was not sent by the /tls ' +
+      'page (#583).',
+    spec: 'HTTP 403, { error }' },
+  { code: 'STS-TLS-0051',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried no ' +
+      'X-CSRF-Token, or not the token of the /tls page\'s own cookie ' +
+      '(sts_tls_page), which the page\'s shell carries (#583).',
+    spec: 'HTTP 403, { error }' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

@@ -110,8 +110,9 @@
 //     without verifying the certificate (`curl -k`). That is the ordinary
 //     bootstrap for a certificate regenerated on every start — it is the same
 //     act as trusting the PEM this endpoint hands back, done a step earlier —
-//     and `mainPortPhrase()` below is what keeps every page in this module from
-//     claiming a plain port that is not there.
+//     and the `/tls` page says which port it is on from that setting (the
+//     view's `https`, #583), so it never claims a plain port that is not
+//     there.
 //
 // ---------------------------------------------------------------------------
 // AND IT AUTHENTICATES PEOPLE THE WAY THE REST OF THIS SERVICE DOES, WHICH IS
@@ -166,7 +167,7 @@ const clusterBarrier = require('../cluster/cluster_barrier');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
 // cycle. Both `/tls` pages take exactly one parameter and it is a closed set.
 const validation = require('../common/validation');
-const { log, xmlEscape, parseBody, baseUrlOf } = helpers;
+const { log, parseBody, baseUrlOf } = helpers;
 // The single funnel every authentication in this service passes through at the
 // moment a credential is ACCEPTED. A verified client certificate is one, and
 // going through here rather than writing to the console and the directory
@@ -246,6 +247,12 @@ const listenerMap = require('../common/listener_map');
 // the channel and the routing index are lazy.
 const cells = require('../common/cells');
 const cellPlacement = require('../common/cell_placement');
+// THE DIAGNOSTIC PAGES' SHELL AND THE BINDING OF THEIR ACTS (#583): `/tls`
+// and `/tls/forwarded` answer a static surface's shell carrying their view,
+// and a browser's `POST /tls/trust` is bound to the `/tls` page. A
+// TypeScript module that registers nothing; the routes below are this
+// file's.
+const TlsPages = require('./tls_pages');
 
 // ---------------------------------------------------------------------------
 // THE PROTOCOL FLOOR AND THE CIPHER LIST, FOR EVERY TLS SOCKET THIS PROCESS
@@ -1019,20 +1026,6 @@ function makeServerCertificate() {
     fingerprint256: fingerprintOf(pem),
     notAfter: keys.notAfter.toISOString()
   };
-}
-
-// What to CALL the port these views answer on. It is the plain HTTP port
-// unless `global.https` has made it TLS as well, and seven sentences in this
-// module used to say "the plain HTTP port" outright — each of them correct
-// until the day somebody turned that setting on, and then quietly wrong in
-// the one place a reader goes when a handshake is failing. Read per call
-// rather than captured: the setting is restart-only, but a captured const
-// here would be a second thing to remember if that ever changed.
-function mainPortPhrase() {
-  log.debug("Entering mainPortPhrase().");
-  log.debug("Leaving mainPortPhrase().");
-  return config.value('global.https')
-    ? 'the main HTTPS port' : 'the plain HTTP port';
 }
 
 // The extra sentence a bootstrap instruction needs when there is no plain port
@@ -4428,47 +4421,6 @@ function describeCertificate(cert, depth) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Rendering.
-// ---------------------------------------------------------------------------
-
-function pageShell(title, inner) {
-  log.debug("Entering pageShell().");
-  log.debug("Leaving pageShell().");
-  return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>' + xmlEscape(title) +
-    '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-    'Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem;color:#222;' +
-    'line-height:1.45}.card{background:#fff;border:1px solid ' +
-    '#d5d5dd;border-radius:10px;padding:24px 28px;max-width:60rem;margin:0 ' +
-    'auto;box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 ' +
-    '0 4px;color:#12107c}h2{font-size:1em;margin:1.4em 0 ' +
-    '.4em}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-    '18px}p.verdict{background:#f0f0f8;border-left:4px solid ' +
-    '#12107c;padding:.6rem .8rem;margin:.6rem ' +
-    '0}table{border-collapse:collapse;width:100%;margin:.5rem 0 ' +
-    '1rem;font-size:.85em}th,td{border:1px solid #ddd;padding:.35rem .55rem;' +
-    'text-align:left;vertical-align:top}th{background:#f0f0f5}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-    'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-    'border-radius:3px;word-break:break-all}a{color:#12107c}' +
-    'textarea{width:100%;font-family:ui-monospace,monospace;font-size:.8em}' +
-    'ul{margin:.3em 0;padding-left:1.2em}li{margin:.2em ' +
-    '0}</style></head><body><div ' +
-    'class="card">' + inner + '</div></body></html>\n';
-}
-
-function rowsFrom(pairs) {
-  log.debug("Entering rowsFrom().");
-  log.debug("Leaving rowsFrom().");
-  return pairs.map(function (pair) {
-    return '<tr><td>' + xmlEscape(pair[0]) + '</td><td><code>' +
-      xmlEscape(pair[1] === null || pair[1] === undefined
-        ? '(none)' : String(pair[1])) + '</code></td></tr>';
-  }).join('');
-}
-
 // The revocation verdict for whatever this socket presented, or null when it
 // presented nothing. NEVER REJECTS: a check that threw is reported as unknown
 // by `revocation_status.js` itself, and the caller must answer either way.
@@ -5445,97 +5397,28 @@ app.get('/tls', app.demoOnly, function (req, res) {
     log.debug('Leaving GET /tls. JSON.');
     return res.status(200).set('Cache-Control', 'no-store').json(info);
   }
-  const listenerRows = info.listeners.map(function (listener) {
-    return '<tr><td><code>' + xmlEscape(listener.url) + '</code></td><td>' +
-      (listener.requiresClientCertificate ? 'required' : 'optional') +
-      '</td><td>' + (listener.listening ? 'up' : 'DOWN') + '</td><td>' +
-      xmlEscape(listener.what) + '</td></tr>';
-  }).join('');
-  const anchorRows = anchors.length
-    ? anchors.map(function (anchor) {
-        return '<tr><td><code>' + xmlEscape(anchor.subject) +
-          '</code></td><td><code>' + xmlEscape(anchor.fingerprint256) +
-          '</code></td></tr>';
-      }).join('')
-    : '<tr><td colspan="2">Empty. No client certificate can verify here ' +
-      'yet, and nothing can connect to the listener that requires one.</td>' +
-      '</tr>';
-  const inner = '<h1>A TLS endpoint lives here</h1><p class="sub">Two HTTPS ' +
-    'listeners whose only content is what the server saw: the request as it ' +
-    'arrived, what TLS negotiated underneath it, and the client certificate ' +
-    'exactly as it was presented. This page is on ' +
-    xmlEscape(mainPortPhrase()) +
-    (config.value('global.https')
-      ? ', so there is no plain listener in this process: fetch the server ' +
-        'certificate below without verifying it the first time, then trust it.'
-      : ', which is the one that is reachable before anything is trusted.') +
-    '</p>' +
-    '<table><tr><th>URL</th><th>Client certificate</th><th>Listener</th>' +
-    '<th>What it is for</th></tr>' + listenerRows + '</table>' +
-    (info.listenError
-      ? '<p class="verdict">A listener did not bind: ' +
-        xmlEscape(info.listenError) + '. This page is HTTP and answers ' +
-        'either way; the listener does not.</p>'
-      : '') +
-    '<h2>The server certificate</h2>' +
-    '<p>Self-signed, and <strong>regenerated on every start</strong> — so it ' +
-    'is an anchor nobody can have baked in. Fetch it and put it in your own ' +
-    'truststore rather than switching verification off, which is the habit ' +
-    'this whole workflow exists to break.</p>' +
-    '<table>' + rowsFrom([
-      ['Subject', info.serverCertificate.subject],
-      ['Names', info.serverCertificate.names.join(', ')],
-      ['SHA-256', info.serverCertificate.fingerprint256],
-      ['Not after', info.serverCertificate.notAfter],
-      ['PEM', 'GET /tls/server-certificate']
-    ]) + '</table><h2>What client certificates are verified ' +
-    'against</h2><p>Empty at startup, and it has to be: the certificate ' +
-    'authority whose clients this verifies is generated in a ' +
-    '<em>browser</em>, minutes before the connection, and exists nowhere ' +
-    'else. Paste its certificate here — the root, or the whole chain above ' +
-    'the ' +
-    'leaf.</p><table><tr><th>Anchor</th><th>SHA-256</th></tr>' + anchorRows +
-    '</table>' +
-    // The two open doors only where the PROCESS serves them (#585): a
-    // development realm inside a product process draws this page and must
-    // not draw buttons posting to routes that are not there.
-    (app.processDemoOnly.serves()
-      ? '<form method="post" action="/tls/trust"><textarea ' +
-        'name="certificates" rows="6" placeholder="-----BEGIN ' +
-        'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
-        'these</button></p></form><form method="post" ' +
-        'action="/tls/trust/clear"><button type="submit">Empty the ' +
-        'truststore</button></form>'
-      : '') +
-    '<p class="sub">The two buttons are test controls, and a product ' +
-    'process does not have them. The gated doors answer in every mode: <a ' +
-    'href="/admin/tls/trust">the truststore page in the admin console</a>, ' +
-    'which also says where each anchor came from, and <code>POST ' +
-    '/admin-api/tls/trust/add</code> / ' +
-    '<code>remove</code>.</p><h2>Revocation</h2><p>' +
-    xmlEscape(revocationStatus.describePolicy().sentence) + '</p><h2>What a ' +
-    'verified certificate is worth here</h2><p>A verified client ' +
-    'certificate means one thing: a chain was built from what the client ' +
-    'sent to an anchor somebody supplied. No token is issued for presenting ' +
-    'one, and this port requires nobody to present one at all. What it is ' +
-    'good for is <a href="/tls/sign-in">GET /tls/sign-in</a>, which starts ' +
-    'a sign-on session for its holder, and the doors that read a certificate ' +
-    'for themselves: RFC 8705 client authentication at the token endpoint, ' +
-    '<code>/xacml</code> and <code>/scim/v2</code>.</p><p>It is also ' +
-    '<em>recorded</em>, which is a different ' +
-    'claim. When the handshake completes with a certificate that verified, ' +
-    'the subject DN is filed as an authentication on <a ' +
-    'href="/admin/users">/admin/users</a> and the embedded LDAP directory ' +
-    'seeds an entry for it — a certificate subject is already a DN, so it is ' +
-    'the one identity here that does not have to be turned into one, and the ' +
-    'subject, issuer, serial and validity go on the entry beside it. <a ' +
-    'href="/admin/ldap/service">The directory service</a> says where. Both ' +
-    'are a record of what happened; neither is a credential.</p><p ' +
-    'class="sub"><a href="/tls?format=json">This page as JSON</a> &middot; ' +
-    '<a href="/admin/sts-metadata">everything this service speaks</a></p>';
-  res.status(200).type('html').set('Cache-Control', 'no-store')
-     .send(pageShell('TLS endpoint', inner));
+  // THE PAGE IS A STATIC SURFACE'S SHELL (#583), carrying the very object
+  // `?format=json` answers above, built on THIS request, and whether the
+  // port it arrived on is HTTPS (the page's first paragraph says which, as
+  // `mainPortPhrase()` did). Its two buttons are drawn only where the
+  // process serves the acts (`info.truststore.addUrl`, #585), and only
+  // then does the shell carry their token.
+  TlsPages.send(req, res, { kind: 'tls',
+                            https: !!config.value('global.https'),
+                            info: info },
+                { acts: !!info.truststore.addUrl });
   log.debug('Leaving GET /tls.');
+});
+
+// THE DIAGNOSTIC PAGES' SCRIPT (#583): the runtime and renderers that draw
+// `/tls` and `/tls/forwarded` from the state their shells carry. A path of
+// the `tls` hosted application, so a shell on that application's own
+// listener (#472) loads it from there; and a demonstration's, like the two
+// pages, so a product realm answers it as a path nothing is registered on.
+app.get(TlsPages.SCRIPT_PATH, app.demoOnly, function (req, res) {
+  log.debug('Entering GET /tls/pages.js.');
+  TlsPages.script(req, res);
+  log.debug('Leaving GET /tls/pages.js.');
 });
 
 // ---------------------------------------------------------------------------
@@ -5870,41 +5753,34 @@ const truststore = {
 };
 
 // The body may be raw PEM (what a script sends), or the `certificates` member
-// of a form or JSON body (what the /tls page sends). They are told apart by
+// of a form or JSON body (a script's, and since #583 the /tls page's, which
+// sends JSON). They are told apart by
 // looking for the PEM header rather than by the content type, because a raw PEM
 // posted as text/plain would otherwise be run through URLSearchParams and come
 // out as a set of nonsense keys — a silent mangling rather than a refusal.
 app.post('/tls/trust', app.processDemoOnly, function (req, res) {
   log.debug('Entering POST /tls/trust.');
+  // A BROWSER'S ACT IS BOUND to the `/tls` page (#583): JSON, an origin of
+  // this service, and the page's token. A script's — no `Origin` — is not
+  // asked, and is answered as it always was.
+  if (!TlsPages.bound(req, res)) {
+    log.debug('Leaving POST /tls/trust. Not bound.');
+    return;
+  }
   const raw = typeof req.body === 'string' ? req.body : '';
   const looksLikePem = /-----BEGIN CERTIFICATE-----/.test(raw) &&
       !/^certificates=/.test(raw.trim());
   const text = looksLikePem ? raw
     : String((parseBody(req) || {}).certificates || '');
   const result = addAnchors(text);
-  const wantsHtml = /html/i.test(String(req.headers.accept || '')) &&
-      !/json/i.test(String(req.headers['content-type'] || ''));
+  // JSON ONLY SINCE #583. A browser's form was answered a page here until
+  // then; the `/tls` page now sends JSON and draws what this answers
+  // (`web_tls_views.ts`'s `trusted` and `notAdded`).
   if (result.error && !result.added) {
     log.debug('Leaving POST /tls/trust. Refused: ' + result.error);
     errorCodes.mark(res, result.errorCode || 'STS-TLS-0012');
-    if (wantsHtml) {
-      return res.status(400).type('html').send(pageShell('Truststore',
-        '<h1>Nothing was added</h1><p>' + xmlEscape(result.error) + '</p>' +
-        '<p class="sub"><a href="/tls">back to the TLS endpoint</a></p>'));
-    }
-    errorCodes.mark(res, result.errorCode || 'STS-TLS-0012');
     return res.status(400)
               .json({ error: result.error, anchors: anchors.length });
-  }
-  if (wantsHtml) {
-    log.debug('Leaving POST /tls/trust. HTML, added=' + result.added);
-    return res.status(200).type('html').send(pageShell('Truststore',
-      '<h1>' + result.added + ' anchor(s) added</h1>' +
-      '<p>This service now verifies client certificates against ' +
-      anchors.length + ' anchor(s). Existing connections keep the truststore ' +
-      'they were made under; the next handshake is judged against this ' +
-      'one.</p><p class="sub"><a href="/tls">back to the TLS ' +
-      'endpoint</a></p>'));
   }
   res.status(200).json({
     added: result.added,
@@ -5920,17 +5796,13 @@ app.post('/tls/trust', app.processDemoOnly, function (req, res) {
 
 app.post('/tls/trust/clear', app.processDemoOnly, function (req, res) {
   log.debug('Entering POST /tls/trust/clear.');
-  const result = clearAnchors();
-  if (/html/i.test(String(req.headers.accept || ''))) {
-    log.debug('Leaving POST /tls/trust/clear. HTML.');
-    return res.status(200).type('html').send(pageShell('Truststore',
-      '<h1>The truststore is empty</h1>' +
-      '<p>' + result.removed + ' anchor(s) removed. No client certificate ' +
-      'verifies here now: one presented to the main port still arrives, and ' +
-      'everything that reads one refuses it — which is the state this ' +
-      'service starts in.</p>' +
-      '<p class="sub"><a href="/tls">back to the TLS endpoint</a></p>'));
+  // Bound as `POST /tls/trust` is (#583).
+  if (!TlsPages.bound(req, res)) {
+    log.debug('Leaving POST /tls/trust/clear. Not bound.');
+    return;
   }
+  const result = clearAnchors();
+  // JSON only since #583, for `POST /tls/trust`'s reason.
   res.status(200).json({ removed: result.removed, anchors: 0 });
   log.debug('Leaving POST /tls/trust/clear.');
 });
@@ -6068,49 +5940,10 @@ app.get('/tls/forwarded', app.demoOnly, function (req, res) {
     log.debug('Leaving GET /tls/forwarded. JSON.');
     return res.status(200).json(payload);
   }
-  const rowsOf = function (rows) {
-    log.debug("Entering rowsOf().");
-    log.debug("Leaving rowsOf().");
-    return rows.map(function (row) {
-      return '<tr><td><code>' + xmlEscape(row.header) + '</code></td>' +
-        '<td>' + (row.present
-          ? '<code>' + xmlEscape(row.value) + '</code>'
-          : '<span class="none">not sent</span>') + '</td>' +
-        '<td>' + xmlEscape(row.what) + '</td></tr>';
-    }).join('');
-  };
-  const inner = '<h1>What a proxy told this service</h1><p class="sub">The ' +
-    'request as it arrived, and what was believed of it. Every issuer and ' +
-    'every endpoint in both discovery documents is built from the effective ' +
-    'base URL below, so if that is wrong, everything a client reads is wrong ' +
-    'with it.</p><table><tr><th>Thing</th><th>Value</th></tr><tr><td>' +
-    'global.trustProxy</td><td>' + (trusted
-      ? '<strong>on</strong> — the forwarding headers are believed'
-      : '<strong>off</strong> — the forwarding headers are ignored') +
-    '</td></tr><tr><td>The ' +
-    'socket saw</td><td><code>' + xmlEscape(req.protocol) + '://' +
-    xmlEscape(req.get('host') || '') + '</code>' +
-    (req.secure ? ' (encrypted)' : ' (not encrypted)') + '</td></tr>' +
-    '<tr><td>Effective base URL</td><td><code>' + xmlEscape(baseUrlOf(req)) +
-    '</code></td></tr>' +
-    '</table>' +
-    '<p class="' + (trusted ? 'sub' : 'verdict') + '">' +
-    xmlEscape(payload.what_it_means) +
-    '</p><h2>Forwarding headers</h2><table><tr><th>Header</th><th>This ' +
-    'request</th><th>What it does here</th></tr>' +
-    rowsOf(forwarding) + '</table>' +
-    '<h2>Client certificate headers</h2>' +
-    '<p class="verdict">' + xmlEscape(payload.clientCertificateHeaders.note) +
-    '</p><table><tr><th>Header</th><th>This ' +
-    'request</th><th>What it is</th></tr>' +
-    rowsOf(sensitive) + '</table>' +
-    '<h2>What the proxy has to do</h2>' +
-    '<p>' + xmlEscape(payload.proxyMustSanitize) + '</p><p class="sub"><a ' +
-    'href="/tls/forwarded?format=json">This page as JSON</a> &middot; <a ' +
-    'href="/tls">what the TLS endpoint is</a> &middot; <a ' +
-    'href="/.well-known/oauth-authorization-server">the document built from ' +
-    'that base URL</a></p>';
-  res.status(200).type('html').send(pageShell('Forwarded headers', inner));
+  // THE PAGE IS A STATIC SURFACE'S SHELL (#583), carrying the object
+  // `?format=json` answers above — built on THIS request, whose headers are
+  // what the page is about, so it is carried rather than fetched.
+  TlsPages.send(req, res, Object.assign({ kind: 'forwarded' }, payload));
   log.debug('Leaving GET /tls/forwarded. trustProxy=' + trusted);
 });
 
