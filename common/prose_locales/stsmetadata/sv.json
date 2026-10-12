@@ -2555,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET svarar vems lösenord som måste bytas; POST lagrar det nya och fortsätter inloggningen."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Det påtvingade lösenordsbytets Börja om: inget ändras, och den väntande inloggning det bär läggs tillbaka för inloggningsskärmen."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). Vyn för sidan i ett steg för andra faktor eller e-postfaktor (?page=), som fakta och inga ord, och den CSRF-token som dess handlingar bär; vägras där sidan aldrig skulle kunna ritas för steget. Id:t är en bärarbefogenhet och loggas aldrig."
@@ -2606,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Fortsätt-knappen på sidan som länken leder till, endast i webbläsaren som bad om den."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Varje stegsidas Börja om: steget avslutas med allt det höll, ingen session startas, och den väntande inloggning det bär läggs tillbaka för inloggningsskärmen, så att den ursprungliga begäran ändå slutförs."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",

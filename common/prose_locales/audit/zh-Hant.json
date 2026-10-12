@@ -191,6 +191,10 @@
     "en": "9f66bf08890386c9",
     "text": "某人在登入時設定了必要的第二因素"
   },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "有人離開了登入步驟並重新開始登入"
+  },
   "audit.actions.portal.mfa.started.label": {
     "en": "d51f6daad15168fd",
     "text": "某人看到了新的驗證器應用程式秘密"

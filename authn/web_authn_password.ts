@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import WebAuthnLogin = require('./web_authn_login');
+import WebAuthnMfa = require('./web_authn_mfa');
 
 type Json = any;
 
@@ -53,7 +54,7 @@ class WebAuthnPassword {
       'autocomplete="new-password">' +
       '<button type="submit" id="password-change-submit">' +
       t.html('authn.passwordChange.submit') + '</button></form>' +
-      '<div class="meta">' + t.html('authn.passwordChange.meta') + '</div>';
+      WebAuthnMfa.startOver(t) + '<div class="meta">' + t.html('authn.passwordChange.meta') + '</div>';
   }
 
   /**

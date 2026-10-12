@@ -122,6 +122,13 @@ cluster (`security.rateLimit*`).
   draws `/authn/password-change` in place of a session, and after the change
   the sign-in continues, second factor included. Every other door that takes a
   password refuses the account until then (product mode).
+* **Start over.** Every page after the sign-in screen — a second factor, the
+  set-up step, an emailed code or link, the forced password change — has a
+  **Start over** button. It returns to the sign-in screen for the same
+  request, so the application that sent the person still gets its answer
+  once they sign in again. Nothing from the step is kept: a mailed code or
+  link stops working, an authenticator app half set up is discarded, and the
+  first factor has to be given again.
 * **Reset link.** **Send a reset link** on a person's `/admin/users` page (or
   `POST /admin-api/users/issue-password-reset`) removes the current password,
   signs the person out everywhere, and issues a single-use link to

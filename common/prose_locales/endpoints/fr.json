@@ -1471,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "Un changement de mot de passe imposé"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Recommencer une connexion depuis le changement de mot de passe"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Ce qu'affiche la page d'une étape de connexion"
@@ -1522,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Consommer un lien de connexion envoyé par e-mail"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Recommencer une connexion depuis une étape"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
