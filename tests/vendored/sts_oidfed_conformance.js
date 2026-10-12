@@ -193,7 +193,9 @@ async function prepare(plan) {
     match: realm.base + "/oauth2/authorize*",
     tasks: [
       { task: "Sign in", optional: true, match: realm.base + "/authn/login*",
-        commands: [["text", "id", "username", person, "optional"],
+        // Drawn by its script since #571: the form is waited for.
+        commands: [["wait", "id", "kc-login", 10],
+                   ["text", "id", "username", person, "optional"],
                    ["text", "id", "password", PASSWORD, "optional"],
                    ["click", "id", "kc-login"]] },
       { task: "Consent", optional: true,

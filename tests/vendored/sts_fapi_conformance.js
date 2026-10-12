@@ -272,7 +272,10 @@ const MODULE_PREFIXES = ["fapi2-security-profile-final-",
 function signInCommands(person) {
   log.debug("Entering signInCommands().");
   log.debug("Leaving signInCommands().");
-  return [["text", "id", "username", person],
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): the suite's browser waits for the form before typing.
+  return [["wait", "id", "kc-login", 10],
+          ["text", "id", "username", person],
           ["text", "id", "password", PASSWORD],
           ["click", "id", "kc-login"]];
 }
@@ -311,7 +314,8 @@ function overridesFor(plan, base, alias, person) {
       match: base + "/oauth2/authorize*",
       tasks: [
         { task: "Cancel", match: base + "/authn/login*",
-          commands: [["click", "id", "kc-cancel"]] },
+          commands: [["wait", "id", "kc-cancel", 10],
+                     ["click", "id", "kc-cancel"]] },
         { task: "Verify complete",
           match: SUITE + "test/a/" + alias + "/callback*",
           commands: [["wait", "id", "submission_complete", 10]] }
