@@ -232,6 +232,14 @@ bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
 # server module beside it is called `signout`.
 bundle_surface "the sign-out" logout/web_signout_pages.ts StsSignout \
   logout/signout.bundle.js logout/web_signout.ts logout/signout-spa.js
+# THE MOCK RELYING PARTIES (#581): `common/mock-rp.bundle.js` (`StsMockRp`,
+# `web_mock_rp_pages.ts`) and `common/mock-rp-spa.js` (`web_mock_rp.ts`),
+# served at `/wsfed/rp/mock-rp.js`, `/saml2/sp/mock-rp.js` and
+# `/saml11/rp/mock-rp.js` — one file under each family's own path, never
+# `mock_rp_surface.js`, which is `mock_rp_surface.ts`.
+bundle_surface "the mock relying parties" common/web_mock_rp_pages.ts \
+  StsMockRp common/mock-rp.bundle.js common/web_mock_rp.ts \
+  common/mock-rp-spa.js
 
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
