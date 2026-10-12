@@ -2344,16 +2344,16 @@
     "text": "「與協定無關的登出」，也是此處唯一同時涉及全部十六個系列的端點。GET 列出本服務仍為某個身分保留的一切——每個瀏覽器單一登入工作階段、在其上登入的每個 OIDC 信賴方、WS-Federation 領域與 SAML 2.0 服務提供者、它仍可撤銷的每個權杖、每個未完成的授權與預先授權碼、以其身分繫結的每個目錄連線，以及 Kerberos 票證狀態——每一項旁邊都有核取方塊。POST 結束已勾選的項目，而什麼都「沒有」勾選的 POST 就是「全域」登出，這是預設值，也是重點所在。它也會送出只有瀏覽器才能送出的內容：Front-Channel Logout iframe、wsignoutcleanup1.0 圖片，以及作為連結的 SAML LogoutRequest。「它無法傳達的內容會連同原因列出」——已簽發的判斷提示、服務票證或 SVID 自 2026-09-05 起在這裡被「否認」，但在外部已無法收回，因為出示時沒有任何東西會詢問本服務，而隱藏這些會讓全域登出看起來完整，實則不然。不需要任何主控台角色；沒有工作階段時，它會將瀏覽器送往 /authn/login 再返回。logout.anyUser 決定在「開發」模式下 ?username= 是否可以指名他人，在該模式下這並不授予任何以其身分登入所不能取得的權限；在「產品」模式下，無論該設定為何，登出只能指名已登入的呼叫者。加上 ?format=json。"
   },
   "stsmetadata.endpoints./authn/login.what": {
-    "en": "c447fafdd3f6e9d9",
-    "text": "「驗證服務」。承載使用者名稱與密碼的 POST 以 303 回應，絕不使用 307（RFC 9700 section 4.12）：307 會保留方法與主體，因此瀏覽器會將這些認證資訊重複送給重新導向所指向的任何地方——而登入後那是一個由呼叫的協定所組成的 URL。此處每個需要識別某人的協定，都會將其送往這唯一的畫面，並附上完整承載其自身請求的返回 URL，再於建立工作階段 Cookie 後取回——GET 繪製畫面，POST 接收輸入的內容。不檢查任何密碼；輸入的使用者名稱會成為後續每個權杖、判斷提示與認證中的身分。它對將人送來的協定一無所知：畫面上「顯示」的關於其所中斷之請求的內容由呼叫端提供，而拒絕會以 authn_error=access_denied 傳回，由「呼叫端」依其自身規格轉換為拒絕應有的樣子。返回 URL 會經過檢查，確認是本服務上的路徑——一個在讓人登入後會重新導向至任何地方的驗證服務，就是前面擺著登入畫面的網路釣魚工具。"
+    "en": "e9ee3b7a9c0f9b18",
+    "text": "驗證服務。自 #571 起為靜態介面：此處回應外殼頁面，由 /authn/signin.js 依據 /authn-api/pending/{id} 繪製畫面，並將輸入的內容以 JSON 傳送到那裡；回應會指名下一個步驟，瀏覽器以 GET 跟隨它，就如同它以往跟隨表單所得到的 303 回應一樣（RFC 9700 section 4.12）。此處每個需要識別某人的協定，都會將其送往這唯一的畫面，並附上完整承載其自身請求的返回 URL，再於建立工作階段 Cookie 後取回。不檢查任何密碼；輸入的使用者名稱會成為後續每個權杖、判斷提示與認證中的身分。它對將人送來的協定一無所知：畫面上顯示的關於其所中斷之請求的內容由呼叫端提供，而拒絕會以 authn_error=access_denied 傳回，由呼叫端依其自身規格轉換為拒絕應有的樣子。返回 URL 會經過檢查，確認是本服務上的路徑——一個在讓人登入後會重新導向至任何地方的驗證服務，就是前面擺著登入畫面的網路釣魚工具。"
   },
   "stsmetadata.endpoints./authn/login.effect": {
     "en": "b378a16d7104eaca",
     "text": "為另一個端點送來的請求顯示登入畫面；需要 ?authn= id，因此直接開啟會回應 400"
   },
   "stsmetadata.endpoints./authn/select-idp.what": {
-    "en": "c9ad54489526f240",
-    "text": "「主領域探索，縮限至單一應用程式」。ou=applications 下的項目可以在 appFederationRelationship 中指名「多個」聯盟關係——SAML 2.0 合作夥伴與 OpenID Connect 合作夥伴是常見的一對——當其中不只一個可用時，會繪製此頁面而非登入畫面。每個合作夥伴一個按鈕，沒有密碼欄位，也完全沒有表單：按鈕是連結，因為這裡的表單控制項會張貼至登入處理常式，而它會依輸入的名稱讓人登入——這正是將驗證聯盟化的應用程式已表明不想要的。恰好指名一個關係時仍會直接重新導向至該關係，此頁面永遠不會出現，這正是 appFederationAutoRedirect 一直以來的作用；該設定的意思是「不經登入畫面」，而絕不是「不經任何頁面」，因為沒有任何布林值能說明某人的雇主是哪個身分識別提供者。指名本服務無法使用之關係的值——已停用、只設定一半、身分識別提供者端，或不在此領域中——會在這裡「列印」出來而非略去：三個中有一個停用的清單會繪製兩個按鈕，而兩個按鈕正是一份正確的兩項清單所繪製的。此清單在繪製此頁面時重新讀取，而不是取自產生它的重新導向；若剩下的合作夥伴少於兩個，則改為繪製登入畫面。"
+    "en": "fc63738fcb8fa10c",
+    "text": "主領域探索，縮限至單一應用程式。ou=applications 下的項目可以在 appFederationRelationship 中指名多個聯盟關係——SAML 2.0 合作夥伴與 OpenID Connect 合作夥伴是常見的一對——當其中不只一個可用時，會繪製此頁面而非登入畫面。每個合作夥伴一個按鈕，沒有密碼欄位，也完全沒有表單：按鈕是連結，因為這裡的表單控制項會張貼至登入處理常式，而它會依輸入的名稱讓人登入——這正是將驗證聯盟化的應用程式已表明不想要的。恰好指名一個關係時仍會直接重新導向至該關係，此頁面永遠不會出現，這正是 appFederationAutoRedirect 一直以來的作用；該設定的意思是「不經登入畫面」，而絕不是「不經任何頁面」，因為沒有任何布林值能說明某人的雇主是哪個身分識別提供者。指名本服務無法使用之關係的值——已停用、只設定一半、身分識別提供者端，或不在此領域中——會在這裡列印出來而非略去：三個中有一個停用的清單會繪製兩個按鈕，而兩個按鈕正是一份正確的兩項清單所繪製的。此清單在繪製此頁面時重新讀取，而不是取自產生它的重新導向；若剩下的合作夥伴少於兩個，則改為繪製登入畫面。自 #571 起為靜態頁面，依據 /authn-api/pending/{id}/partners 繪製。"
   },
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
@@ -2448,8 +2448,8 @@
     "text": "設定選擇器 Cookie，寫入已登入者的 preferredLanguage，並以 303 返回頁面"
   },
   "stsmetadata.endpoints./authn/password-change.what": {
-    "en": "689017c222f839e6",
-    "text": "「強制變更密碼」（2026-09-13）。對於項目帶有 pwdReset TRUE 的人——這是 draft-behera 屬性，設定於本服務在預設領域中建立的啟動管理員上——成功的密碼步驟會來到這裡而不是登入，此端點會要求輸入新密碼兩次。新密碼經由 credentials.setPassword() 處理，因此在產品模式下會套用密碼原則及其歷程；成功時會清除 pwdReset，寫入一筆 authn.password.changed 稽核列，登入則完全如密碼步驟原本那樣繼續，包括第二要素。需要由該步驟產生的 ?change= id，因此直接開啟會回應 400。在產品模式下，每個其他驗證密碼的入口都會拒絕此類帳戶（STS-AUTHN-0142），直到在這裡完成變更"
+    "en": "23a22fe7e56b9cc7",
+    "text": "強制變更密碼（2026-09-13）。對於項目帶有 pwdReset TRUE 的人——這是 draft-behera 屬性，設定於本服務在預設領域中建立的啟動管理員上——成功的密碼步驟會來到這裡而不是登入，此端點會要求輸入新密碼兩次。新密碼經由 credentials.setPassword() 處理，因此在產品模式下會套用密碼原則及其歷程；成功時會清除 pwdReset，寫入一筆 authn.password.changed 稽核列，登入則完全如密碼步驟原本那樣繼續，包括第二要素。需要由該步驟產生的 ?change= id，因此直接開啟會回應 400。在產品模式下，每個其他驗證密碼的入口都會拒絕此類帳戶（STS-AUTHN-0142），直到在這裡完成變更。自 #571 起為靜態頁面，依據 /authn-api/password-change/{id} 繪製，該端點也接收新密碼。"
   },
   "stsmetadata.endpoints./authn/password-change.effect": {
     "en": "57397014da369a33",
@@ -2471,9 +2471,57 @@
     "en": "be3fd55c22c005b5",
     "text": "代碼驗證通過後建立單一登入工作階段"
   },
+  "stsmetadata.endpoints./authn/signin.js.what": {
+    "en": "67232bcc1fd0a54a",
+    "text": "NON-SPEC（#571）。登入介面的執行階段與轉譯器合為一個檔案，由 build-typescript.sh 建置（authn/authn-spa.js）並以預先壓縮的形式提供：它依據 /authn-api 繪製 /authn/login、/authn/select-idp 與 /authn/password-change，並將它們的動作傳送到那裡。公開：其中沒有任何機密。"
+  },
+  "stsmetadata.endpoints./authn-api.what": {
+    "en": "fbfe4ed0573429d0",
+    "text": "NON-SPEC（#571）。登入 API 的各項操作，每項都附有它作為其入口的頁面或控制項（mirrors）。公開，且與語言無關。"
+  },
+  "stsmetadata.endpoints./authn-api/openapi.json.what": {
+    "en": "fc5ff96a29d2920c",
+    "text": "NON-SPEC（#571）。依據操作表及其主體結構描述產生。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id.what": {
+    "en": "6e1b11acf74c82d5",
+    "text": "NON-SPEC（#571）。待處理登入的畫面檢視，只有事實而沒有文字，以及其動作所攜帶的 CSRF 權杖。此 id 是一種持有者能力，絕不會記錄到日誌中。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
+    "en": "278e1af859a5f658",
+    "text": "NON-SPEC（#571）。選擇器的檢視，依據應用程式的項目重新解析。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
+    "en": "f09b8dc5712df29f",
+    "text": "NON-SPEC（#571）。登入按鈕：JSON、本服務的 Origin，以及瀏覽器工作階段的 X-CSRF-Token。與原本的表單一樣受速率限制、進行風險評分並由簽發原則決定；回應會指名下一個步驟。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": {
+    "en": "85aa0429d3e5d77f",
+    "text": "NON-SPEC（#571）。取消：呼叫端會收到 access_denied。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
+    "en": "092b3cc9235cb1b0",
+    "text": "NON-SPEC（#571）。在 authn.unauthenticatedSessions 開啟時。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
+    "en": "f654c3c6f076950a",
+    "text": "NON-SPEC（#571）。在驗證原則接受此方式時。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": {
+    "en": "e5938cba85629757",
+    "text": "NON-SPEC（#571）。供不帶使用者名稱之通行金鑰使用的一次性挑戰。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
+    "en": "e992662e8638f8c3",
+    "text": "NON-SPEC（#571）。儀式的結果，在要求使用者驗證的條件下進行驗證。"
+  },
+  "stsmetadata.endpoints./authn-api/password-change/:id.what": {
+    "en": "3543dc9d779cc445",
+    "text": "NON-SPEC（#571）。GET 回應誰的密碼必須變更；POST 儲存新密碼並繼續登入。"
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
-    "en": "f386b79461f3dffb",
-    "text": "非規範（#62 P6）。僅在領域中 risk.fingerprinting 開啟時提供——否則回傳 404——此時登入畫面就是第九個帶有指令碼的頁面：FingerprintJS（MIT，v5；它在瀏覽器中執行且不傳送任何東西，其使用回報已關閉）將一個 visitorId 放入隱藏欄位，服務只保留其加鍵摘要，並以此人從未使用過的裝置進行評分。表單沒有它也能運作。預設關閉：這是個人資料，開啟它是營運者的決定，應在風險評分頁面所述的隱私影響評估之後進行。"
+    "en": "ac75feb49bdcac8d",
+    "text": "NON-SPEC（#62 P6）。僅在領域中 risk.fingerprinting 開啟時提供——否則回傳 404——此時登入畫面會在其自身指令碼旁載入它：FingerprintJS（MIT，v5；它在瀏覽器中執行且不傳送任何東西，其使用回報已關閉）計算出一個由登入傳送的 visitorId，服務只保留其加鍵摘要，並以此人從未使用過的裝置進行評分。登入沒有它也能運作。預設關閉：這是個人資料，開啟它是營運者的決定，應在風險評分頁面所述的隱私影響評估之後進行。"
   },
   "stsmetadata.endpoints./authn/webauthn.js.what": {
     "en": "1ac86ac809b57d92",

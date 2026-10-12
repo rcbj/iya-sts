@@ -2344,16 +2344,16 @@
     "text": "DEN PROTOKOLLOBEROENDE UTLOGGNINGEN, och den enda slutpunkten här som gäller alla sexton familjer på en gång. GET listar allt som den här tjänsten fortfarande håller för en identitet — varje inloggningssession i webbläsaren, varje OIDC-förlitande part, WS-Federation-realm och SAML 2.0-tjänsteleverantör som man loggat in till på en, varje token den fortfarande kan återkalla, varje utestående auktorisering och förauktoriserad kod, varje katalogförbindelse bunden som dem, och Kerberos-biljettläget — med en kryssruta vid varje. POST avslutar det som kryssades i, och en POST som kryssar i INGENTING är en GLOBAL utloggning, vilket är standard och poängen. Den skickar också det som bara en webbläsare kan skicka: Front-Channel Logout-iframes, wsignoutcleanup1.0-bilderna och SAML LogoutRequests som länkar. DET DEN INTE KAN KOMMUNICERA LISTAS MED ORSAKEN — ett intyg, en tjänstebiljett eller en SVID som redan utfärdats FRÅNSÄGS här sedan 2026-09-05 och går inte att återkalla därute, eftersom ingenting frågar den här tjänsten när en sådan visas upp, och att dölja dem skulle få en global utloggning att se fullständig ut när den inte är det. Ingen konsolroll behövs; utan session skickar den webbläsaren till /authn/login och tillbaka. logout.anyUser avgör om ?username= får namnge någon annan i UTVECKLINGSläge, där det inte ger något som en inloggning som dem inte skulle ge; i PRODUKTläge namnger en utloggning endast den inloggade anroparen, oavsett vad den inställningen säger. Lägg till ?format=json."
   },
   "stsmetadata.endpoints./authn/login.what": {
-    "en": "c447fafdd3f6e9d9",
-    "text": "AUTENTISERINGSTJÄNSTEN. Den POST som bär ett användarnamn och ett lösenord besvaras med en 303 och aldrig en 307 (RFC 9700 avsnitt 4.12): en 307 bevarar metoden och kroppen, så webbläsaren skulle upprepa de autentiseringsuppgifterna till vad omdirigeringen än pekar på — vilket efter en inloggning är en URL som det anropande protokollet satte ihop. Varje protokoll här som behöver en person identifierad skickar dem till den här enda skärmen med en retur-URL som bär dess egen begäran i sin helhet, och får tillbaka dem med en etablerad sessionscookie — GET ritar skärmen, POST tar det som skrevs. Inget lösenord kontrolleras; det inskrivna användarnamnet blir identiteten i varje token, intyg och credential som följer. Den vet ingenting om protokollet som skickade någon hit: det skärmen VISAR om begäran den avbröt tillhandahålls av anroparen, och en vägran kommer tillbaka som authn_error=access_denied för ANROPAREN att omvandla till vad dess egen specifikation säger att en vägran ser ut som. Retur-URL:en kontrolleras vara en sökväg på den här tjänsten — en autentiseringstjänst som omdirigerar vart som helst efter att ha loggat in någon är ett nätfiskeverktyg med en inloggningsskärm framför."
+    "en": "e9ee3b7a9c0f9b18",
+    "text": "AUTENTISERINGSTJÄNSTEN. En statisk yta sedan #571: detta svarar med skalet, och /authn/signin.js ritar skärmen från /authn-api/pending/{id} och skickar det som skrevs dit som JSON; svaret namnger nästa steg, och webbläsaren följer det med en GET, så som den följde den 303 som formuläret besvarades med (RFC 9700 avsnitt 4.12). Varje protokoll här som behöver en person identifierad skickar dem till den här enda skärmen med en retur-URL som bär dess egen begäran i sin helhet, och får tillbaka dem med en etablerad sessionscookie. Inget lösenord kontrolleras; det inskrivna användarnamnet blir identiteten i varje token, intyg och credential som följer. Den vet ingenting om protokollet som skickade någon hit: det skärmen VISAR om begäran den avbröt tillhandahålls av anroparen, och en vägran kommer tillbaka som authn_error=access_denied för ANROPAREN att omvandla till vad dess egen specifikation säger att en vägran ser ut som. Retur-URL:en kontrolleras vara en sökväg på den här tjänsten — en autentiseringstjänst som omdirigerar vart som helst efter att ha loggat in någon är ett nätfiskeverktyg med en inloggningsskärm framför."
   },
   "stsmetadata.endpoints./authn/login.effect": {
     "en": "b378a16d7104eaca",
     "text": "visar inloggningsskärmen för en begäran som en annan slutpunkt skickade hit; kräver ett ?authn=-id, så att följa den utan det ger 400"
   },
   "stsmetadata.endpoints./authn/select-idp.what": {
-    "en": "c9ad54489526f240",
-    "text": "HOME REALM DISCOVERY, AVGRÄNSAD TILL EN APPLIKATION. En post under ou=applications kan namnge FLERA federationsrelationer i appFederationRelationship — en SAML 2.0-partner och en OpenID Connect-partner är det vanliga paret — och när fler än en av dem är användbara ritas den här sidan i stället för inloggningsskärmen. En knapp per partner, inget lösenordsfält och inget formulär alls: knapparna är länkar, eftersom en formulärkontroll här skulle posta till inloggningshanteraren, som loggar in någon på ett inskrivet namn — just det som en applikation som federerar sin autentisering har sagt att den inte vill. Att namnge exakt en relation omdirigerar fortfarande direkt till den och den här sidan syns aldrig, vilket är vad appFederationAutoRedirect alltid har gjort; den inställningen betyder \"utan inloggningsskärmen\" och aldrig \"utan en sida\", eftersom det inte finns något booleskt värde som kan säga vilken identitetsleverantör någons arbetsgivare är. Ett värde som namnger en relation som den här tjänsten inte kan använda — inaktiverad, halvt konfigurerad, på identitetsleverantörssidan eller frånvarande i den här sfären — SKRIVS UT här i stället för att utelämnas: en lista med tre där en är inaktiverad ritar två knappar, och två knappar är exakt vad en korrekt lista med två ritar. Listan läses om när den här sidan ritas i stället för att tas från den omdirigering som skapade den, och om färre än två partner återstår ritas inloggningsskärmen i stället."
+    "en": "fc63738fcb8fa10c",
+    "text": "HOME REALM DISCOVERY, AVGRÄNSAD TILL EN APPLIKATION. En post under ou=applications kan namnge FLERA federationsrelationer i appFederationRelationship — en SAML 2.0-partner och en OpenID Connect-partner är det vanliga paret — och när fler än en av dem är användbara ritas den här sidan i stället för inloggningsskärmen. En knapp per partner, inget lösenordsfält och inget formulär alls: knapparna är länkar, eftersom en formulärkontroll här skulle posta till inloggningshanteraren, som loggar in någon på ett inskrivet namn — just det som en applikation som federerar sin autentisering har sagt att den inte vill. Att namnge exakt en relation omdirigerar fortfarande direkt till den och den här sidan syns aldrig, vilket är vad appFederationAutoRedirect alltid har gjort; den inställningen betyder \"utan inloggningsskärmen\" och aldrig \"utan en sida\", eftersom det inte finns något booleskt värde som kan säga vilken identitetsleverantör någons arbetsgivare är. Ett värde som namnger en relation som den här tjänsten inte kan använda — inaktiverad, halvt konfigurerad, på identitetsleverantörssidan eller frånvarande i den här sfären — SKRIVS UT här i stället för att utelämnas: en lista med tre där en är inaktiverad ritar två knappar, och två knappar är exakt vad en korrekt lista med två ritar. Listan läses om när den här sidan ritas i stället för att tas från den omdirigering som skapade den, och om färre än två partner återstår ritas inloggningsskärmen i stället. En statisk sida sedan #571, ritad från /authn-api/pending/{id}/partners."
   },
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
@@ -2448,8 +2448,8 @@
     "text": "sätter väljarcookien, skriver en inloggad persons preferredLanguage och återvänder till sidan med en 303"
   },
   "stsmetadata.endpoints./authn/password-change.what": {
-    "en": "689017c222f839e6",
-    "text": "DET TVINGADE LÖSENORDSBYTET (2026-09-13). Ett lösenordssteg som lyckades för någon vars post har pwdReset TRUE — draft-behera-attributet, satt på den bootstrap-administratör som tjänsten skapar i standardsfären — landar här i stället för att loggas in, och den här slutpunkten ber om ett nytt lösenord två gånger. Det nya lösenordet går genom credentials.setPassword(), så lösenordspolicyn och dess historik gäller i produktläge; vid framgång rensas pwdReset, en granskningsrad authn.password.changed skrivs och inloggningen fortsätter precis som lösenordssteget skulle ha gjort, andra faktor inräknad. Kräver ett ?change=-id som skapats av det steget, så att följa den utan det ger 400. Varje annan dörr som verifierar ett lösenord vägrar ett sådant konto i produktläge (STS-AUTHN-0142) tills bytet har gjorts här"
+    "en": "23a22fe7e56b9cc7",
+    "text": "DET TVINGADE LÖSENORDSBYTET (2026-09-13). Ett lösenordssteg som lyckades för någon vars post har pwdReset TRUE — draft-behera-attributet, satt på den bootstrap-administratör som tjänsten skapar i standardsfären — landar här i stället för att loggas in, och den här slutpunkten ber om ett nytt lösenord två gånger. Det nya lösenordet går genom credentials.setPassword(), så lösenordspolicyn och dess historik gäller i produktläge; vid framgång rensas pwdReset, en granskningsrad authn.password.changed skrivs och inloggningen fortsätter precis som lösenordssteget skulle ha gjort, andra faktor inräknad. Kräver ett ?change=-id som skapats av det steget, så att följa den utan det ger 400. Varje annan dörr som verifierar ett lösenord vägrar ett sådant konto i produktläge (STS-AUTHN-0142) tills bytet har gjorts här. En statisk sida sedan #571, ritad från /authn-api/password-change/{id}, som också tar emot det nya lösenordet."
   },
   "stsmetadata.endpoints./authn/password-change.effect": {
     "en": "57397014da369a33",
@@ -2471,9 +2471,57 @@
     "en": "be3fd55c22c005b5",
     "text": "etablerar inloggningssessionen när en kod har verifierats"
   },
+  "stsmetadata.endpoints./authn/signin.js.what": {
+    "en": "67232bcc1fd0a54a",
+    "text": "NON-SPEC (#571). Inloggningsytans körtidsmiljö och renderare i en enda fil, byggd av build-typescript.sh (authn/authn-spa.js) och serverad förkomprimerad: den ritar /authn/login, /authn/select-idp och /authn/password-change från /authn-api och skickar deras handlingar dit. Offentlig: ingenting i den är hemligt."
+  },
+  "stsmetadata.endpoints./authn-api.what": {
+    "en": "fbfe4ed0573429d0",
+    "text": "NON-SPEC (#571). Inloggnings-API:ts operationer, var och en med den sida eller kontroll som den är dörren för (mirrors). Offentligt och språkoberoende."
+  },
+  "stsmetadata.endpoints./authn-api/openapi.json.what": {
+    "en": "fc5ff96a29d2920c",
+    "text": "NON-SPEC (#571). Genererad från operationstabellen och dess kroppsscheman."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id.what": {
+    "en": "6e1b11acf74c82d5",
+    "text": "NON-SPEC (#571). Skärmens vy för en väntande inloggning, som fakta och inga ord, och den CSRF-token som dess handlingar bär. Id:t är en innehavarbehörighet och loggas aldrig."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
+    "en": "278e1af859a5f658",
+    "text": "NON-SPEC (#571). Väljarens vy, upplöst på nytt från applikationens post."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
+    "en": "f09b8dc5712df29f",
+    "text": "NON-SPEC (#571). Knappen Logga in: JSON, en Origin från den här tjänsten och webbläsarsessionens X-CSRF-Token. Hastighetsbegränsad, riskbedömd och avgjord av utfärdandepolicyn som formuläret var; svaret namnger nästa steg."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": {
+    "en": "85aa0429d3e5d77f",
+    "text": "NON-SPEC (#571). Avbryt: anroparen får access_denied."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
+    "en": "092b3cc9235cb1b0",
+    "text": "NON-SPEC (#571). Där authn.unauthenticatedSessions är på."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
+    "en": "f654c3c6f076950a",
+    "text": "NON-SPEC (#571). Där autentiseringspolicyn godtar en sådan."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": {
+    "en": "e5938cba85629757",
+    "text": "NON-SPEC (#571). En engångsutmaning för en passkey utan användarnamn."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
+    "en": "e992662e8638f8c3",
+    "text": "NON-SPEC (#571). Ceremonins resultat, verifierat med användarverifiering krävd."
+  },
+  "stsmetadata.endpoints./authn-api/password-change/:id.what": {
+    "en": "3543dc9d779cc445",
+    "text": "NON-SPEC (#571). GET svarar vems lösenord som måste bytas; POST lagrar det nya och fortsätter inloggningen."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
-    "en": "f386b79461f3dffb",
-    "text": "NON-SPEC (#62 P6). Serveras endast medan risk.fingerprinting är på i sfären — 404 annars — och då är inloggningsskärmen den nionde skriptade sidan: FingerprintJS (MIT, v5; det körs i webbläsaren och skickar ingenting, dess användningsping avstängd) lägger ett visitorId i ett dolt fält, och tjänsten behåller endast en nyckelad sammanfattning av det, poängsatt som en enhet som den här personen aldrig har använt. Formuläret fungerar utan det. Av som standard: det är personuppgifter, och att slå på det är operatörens beslut, efter den konsekvensbedömning avseende integritet som riskbedömningssidan beskriver."
+    "en": "ac75feb49bdcac8d",
+    "text": "NON-SPEC (#62 P6). Serveras endast medan risk.fingerprinting är på i sfären — 404 annars — och då laddar inloggningsskärmen det bredvid sitt eget skript: FingerprintJS (MIT, v5; det körs i webbläsaren och skickar ingenting, dess användningsping avstängd) beräknar ett visitorId som inloggningen skickar, och tjänsten behåller endast en nyckelad sammanfattning av det, poängsatt som en enhet som den här personen aldrig har använt. Inloggningen fungerar utan det. Av som standard: det är personuppgifter, och att slå på det är operatörens beslut, efter den konsekvensbedömning avseende integritet som riskbedömningssidan beskriver."
   },
   "stsmetadata.endpoints./authn/webauthn.js.what": {
     "en": "1ac86ac809b57d92",

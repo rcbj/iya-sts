@@ -2344,16 +2344,16 @@
     "text": "LA DÉCONNEXION INDÉPENDANTE DU PROTOCOLE, et le seul point de terminaison ici qui concerne les seize familles à la fois. GET liste tout ce que ce service détient encore pour une identité — chaque session de connexion du navigateur, chaque partie de confiance OIDC, chaque domaine WS-Federation et chaque fournisseur de services SAML 2.0 auxquels l’utilisateur s’est connecté par l’une d’elles, chaque jeton qu’il peut encore révoquer, chaque autorisation et chaque code pré-autorisé en attente, chaque connexion d’annuaire liée sous cette identité, et l’état des tickets Kerberos — avec une case à cocher en regard de chacun. POST met fin à ce qui a été coché, et un POST qui ne coche RIEN est une déconnexion GLOBALE, ce qui est le comportement par défaut et l’objectif. Il envoie aussi ce que seul un navigateur peut envoyer : les iframes de Front-Channel Logout, les images wsignoutcleanup1.0, et les LogoutRequest SAML sous forme de liens. CE QU’IL NE PEUT PAS COMMUNIQUER EST LISTÉ AVEC LA RAISON — une assertion, un ticket de service ou un SVID déjà émis est DÉSAVOUÉ ici depuis le 2026-09-05 et hors d’atteinte ailleurs, car rien ne consulte ce service lorsqu’il est présenté, et les masquer donnerait l’impression qu’une déconnexion globale est complète alors qu’elle ne l’est pas. Aucun rôle de console n’est nécessaire ; sans session, il envoie le navigateur vers /authn/login puis le fait revenir. logout.anyUser décide si ?username= peut nommer quelqu’un d’autre en mode DÉVELOPPEMENT, où cela n’accorde rien que se connecter sous cette identité n’accorderait pas ; en mode PRODUIT, une déconnexion ne nomme que l’appelant connecté, quoi que dise ce paramètre. Ajoutez ?format=json."
   },
   "stsmetadata.endpoints./authn/login.what": {
-    "en": "c447fafdd3f6e9d9",
-    "text": "LE SERVICE D’AUTHENTIFICATION. Le POST qui porte un nom d’utilisateur et un mot de passe reçoit une 303 et jamais une 307 (RFC 9700 section 4.12) : une 307 conserve la méthode et le corps, si bien que le navigateur répéterait ces identifiants à la cible de la redirection — qui, après une connexion, est une URL composée par le protocole appelant. Chaque protocole ici qui a besoin d’identifier une personne l’envoie vers ce seul écran avec une URL de retour portant sa propre requête en entier, et la récupère avec un cookie de session établi — GET affiche l’écran, POST prend ce qui a été saisi. Aucun mot de passe n’est vérifié ; le nom d’utilisateur saisi devient l’identité dans chaque jeton, assertion et attestation qui suit. Il ne sait rien du protocole qui a envoyé quelqu’un ici : ce que l’écran MONTRE de la requête qu’il a interrompue est fourni par l’appelant, et un refus revient sous la forme authn_error=access_denied, que l’APPELANT transforme en ce que sa propre spécification prévoit pour un refus. L’URL de retour est vérifiée comme étant un chemin de ce service — un service d’authentification qui redirige n’importe où après avoir connecté quelqu’un est un outil d’hameçonnage précédé d’un écran de connexion."
+    "en": "e9ee3b7a9c0f9b18",
+    "text": "LE SERVICE D’AUTHENTIFICATION. Une surface statique depuis #571 : ceci répond par la coquille, et /authn/signin.js affiche l’écran à partir de /authn-api/pending/{id} et y envoie ce qui a été saisi en JSON ; la réponse nomme l’étape suivante, et le navigateur la suit par un GET, comme il suivait la 303 par laquelle on répondait au formulaire (RFC 9700 section 4.12). Chaque protocole ici qui a besoin d’identifier une personne l’envoie vers ce seul écran avec une URL de retour portant sa propre requête en entier, et la récupère avec un cookie de session établi. Aucun mot de passe n’est vérifié ; le nom d’utilisateur saisi devient l’identité dans chaque jeton, assertion et attestation qui suit. Il ne sait rien du protocole qui a envoyé quelqu’un ici : ce que l’écran MONTRE de la requête qu’il a interrompue est fourni par l’appelant, et un refus revient sous la forme authn_error=access_denied, que l’APPELANT transforme en ce que sa propre spécification prévoit pour un refus. L’URL de retour est vérifiée comme étant un chemin de ce service — un service d’authentification qui redirige n’importe où après avoir connecté quelqu’un est un outil d’hameçonnage précédé d’un écran de connexion."
   },
   "stsmetadata.endpoints./authn/login.effect": {
     "en": "b378a16d7104eaca",
     "text": "affiche l’écran de connexion pour une requête qu’un autre point de terminaison a envoyée ici ; requiert un identifiant ?authn=, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres"
   },
   "stsmetadata.endpoints./authn/select-idp.what": {
-    "en": "c9ad54489526f240",
-    "text": "DÉCOUVERTE DU DOMAINE D’ORIGINE, RESTREINTE À UNE APPLICATION. Une entrée sous ou=applications peut nommer PLUSIEURS relations de fédération dans appFederationRelationship — un partenaire SAML 2.0 et un partenaire OpenID Connect forment la paire habituelle — et lorsque plusieurs d’entre elles sont utilisables, cette page est affichée à la place de l’écran de connexion. Un bouton par partenaire, aucun champ de mot de passe et aucun formulaire : les boutons sont des liens, car un contrôle de formulaire ici enverrait au gestionnaire de connexion, qui connecte quelqu’un sur un nom saisi — la seule chose qu’une application qui fédère son authentification a déclaré ne pas vouloir. Nommer exactement une relation redirige toujours directement vers elle et cette page n’est jamais vue, ce qu’a toujours fait appFederationAutoRedirect ; ce paramètre signifie « sans l’écran de connexion » et jamais « sans page », car aucune valeur d’un booléen ne peut dire quel est le fournisseur d’identité de l’employeur de quelqu’un. Une valeur nommant une relation que ce service ne peut pas utiliser — désactivée, à moitié configurée, côté fournisseur d’identité, ou absente de ce domaine — est AFFICHÉE ici plutôt qu’écartée : une liste de trois dont une désactivée affiche deux boutons, et deux boutons, c’est exactement ce qu’affiche une liste correcte de deux. La liste est relue lorsque cette page est affichée plutôt que tirée de la redirection qui l’a produite, et s’il reste moins de deux partenaires, c’est l’écran de connexion qui est affiché."
+    "en": "fc63738fcb8fa10c",
+    "text": "DÉCOUVERTE DU DOMAINE D’ORIGINE, RESTREINTE À UNE APPLICATION. Une entrée sous ou=applications peut nommer PLUSIEURS relations de fédération dans appFederationRelationship — un partenaire SAML 2.0 et un partenaire OpenID Connect forment la paire habituelle — et lorsque plusieurs d’entre elles sont utilisables, cette page est affichée à la place de l’écran de connexion. Un bouton par partenaire, aucun champ de mot de passe et aucun formulaire : les boutons sont des liens, car un contrôle de formulaire ici enverrait au gestionnaire de connexion, qui connecte quelqu’un sur un nom saisi — la seule chose qu’une application qui fédère son authentification a déclaré ne pas vouloir. Nommer exactement une relation redirige toujours directement vers elle et cette page n’est jamais vue, ce qu’a toujours fait appFederationAutoRedirect ; ce paramètre signifie « sans l’écran de connexion » et jamais « sans page », car aucune valeur d’un booléen ne peut dire quel est le fournisseur d’identité de l’employeur de quelqu’un. Une valeur nommant une relation que ce service ne peut pas utiliser — désactivée, à moitié configurée, côté fournisseur d’identité, ou absente de ce domaine — est AFFICHÉE ici plutôt qu’écartée : une liste de trois dont une désactivée affiche deux boutons, et deux boutons, c’est exactement ce qu’affiche une liste correcte de deux. La liste est relue lorsque cette page est affichée plutôt que tirée de la redirection qui l’a produite, et s’il reste moins de deux partenaires, c’est l’écran de connexion qui est affiché. Une page statique depuis #571, affichée à partir de /authn-api/pending/{id}/partners."
   },
   "stsmetadata.endpoints./authn/select-idp.effect": {
     "en": "6cf5af064bdc580d",
@@ -2448,8 +2448,8 @@
     "text": "définit le cookie du sélecteur, écrit le preferredLanguage d’une personne connectée et revient à la page par une 303"
   },
   "stsmetadata.endpoints./authn/password-change.what": {
-    "en": "689017c222f839e6",
-    "text": "LE CHANGEMENT DE MOT DE PASSE OBLIGATOIRE (2026-09-13). Une étape de mot de passe réussie pour quelqu’un dont l’entrée porte pwdReset TRUE — l’attribut de draft-behera, défini sur l’administrateur d’amorçage que le service crée dans le domaine par défaut — aboutit ici au lieu de connecter la personne, et ce point de terminaison demande deux fois un nouveau mot de passe. Le nouveau mot de passe passe par credentials.setPassword(), si bien que la politique de mots de passe et son historique s’appliquent en mode produit ; en cas de succès, pwdReset est effacé, une ligne d’audit authn.password.changed est écrite et la connexion se poursuit exactement comme l’aurait fait l’étape du mot de passe, second facteur compris. Requiert un identifiant ?change= émis par cette étape, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres. Toute autre porte qui vérifie un mot de passe refuse un tel compte en mode produit (STS-AUTHN-0142) tant que le changement n’a pas été fait ici"
+    "en": "23a22fe7e56b9cc7",
+    "text": "LE CHANGEMENT DE MOT DE PASSE OBLIGATOIRE (2026-09-13). Une étape de mot de passe réussie pour quelqu’un dont l’entrée porte pwdReset TRUE — l’attribut de draft-behera, défini sur l’administrateur d’amorçage que le service crée dans le domaine par défaut — aboutit ici au lieu de connecter la personne, et ce point de terminaison demande deux fois un nouveau mot de passe. Le nouveau mot de passe passe par credentials.setPassword(), si bien que la politique de mots de passe et son historique s’appliquent en mode produit ; en cas de succès, pwdReset est effacé, une ligne d’audit authn.password.changed est écrite et la connexion se poursuit exactement comme l’aurait fait l’étape du mot de passe, second facteur compris. Requiert un identifiant ?change= émis par cette étape, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres. Toute autre porte qui vérifie un mot de passe refuse un tel compte en mode produit (STS-AUTHN-0142) tant que le changement n’a pas été fait ici. Une page statique depuis #571, affichée à partir de /authn-api/password-change/{id}, qui reçoit aussi le nouveau mot de passe."
   },
   "stsmetadata.endpoints./authn/password-change.effect": {
     "en": "57397014da369a33",
@@ -2471,9 +2471,57 @@
     "en": "be3fd55c22c005b5",
     "text": "établit la session de connexion une fois un code vérifié"
   },
+  "stsmetadata.endpoints./authn/signin.js.what": {
+    "en": "67232bcc1fd0a54a",
+    "text": "NON-SPEC (#571). Le moteur d’exécution et les moteurs de rendu de la surface de connexion en un seul fichier, construit par build-typescript.sh (authn/authn-spa.js) et servi précompressé : il affiche /authn/login, /authn/select-idp et /authn/password-change à partir de /authn-api et y envoie leurs actions. Public : rien de ce qu’il contient n’est secret."
+  },
+  "stsmetadata.endpoints./authn-api.what": {
+    "en": "fbfe4ed0573429d0",
+    "text": "NON-SPEC (#571). Les opérations de l’API de connexion, chacune avec la page ou la commande dont elle est la porte (mirrors). Publique et indépendante de la langue."
+  },
+  "stsmetadata.endpoints./authn-api/openapi.json.what": {
+    "en": "fc5ff96a29d2920c",
+    "text": "NON-SPEC (#571). Généré à partir de la table des opérations et de leurs schémas de corps."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id.what": {
+    "en": "6e1b11acf74c82d5",
+    "text": "NON-SPEC (#571). La vue de l’écran pour une connexion en attente, sous forme de faits et sans aucun texte, et le jeton CSRF que portent ses actions. L’identifiant est une capacité au porteur et n’est jamais journalisé."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/partners.what": {
+    "en": "278e1af859a5f658",
+    "text": "NON-SPEC (#571). La vue du sélecteur, résolue de nouveau à partir de l’entrée de l’application."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/password.what": {
+    "en": "f09b8dc5712df29f",
+    "text": "NON-SPEC (#571). Le bouton Se connecter : JSON, un Origin de ce service et le X-CSRF-Token de la session du navigateur. Limité en débit, évalué pour le risque et décidé par la politique d’émission comme l’était le formulaire ; la réponse nomme l’étape suivante."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": {
+    "en": "85aa0429d3e5d77f",
+    "text": "NON-SPEC (#571). Annuler : l’appelant reçoit access_denied."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
+    "en": "092b3cc9235cb1b0",
+    "text": "NON-SPEC (#571). Lorsque authn.unauthenticatedSessions est activé."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
+    "en": "f654c3c6f076950a",
+    "text": "NON-SPEC (#571). Lorsque la politique d’authentification en accepte un."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": {
+    "en": "e5938cba85629757",
+    "text": "NON-SPEC (#571). Un défi à usage unique pour une clé d’accès sans nom d’utilisateur."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
+    "en": "e992662e8638f8c3",
+    "text": "NON-SPEC (#571). Le résultat de la cérémonie, vérifié avec la vérification de l’utilisateur exigée."
+  },
+  "stsmetadata.endpoints./authn-api/password-change/:id.what": {
+    "en": "3543dc9d779cc445",
+    "text": "NON-SPEC (#571). GET répond quel est le compte dont le mot de passe doit changer ; POST enregistre le nouveau et poursuit la connexion."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
-    "en": "f386b79461f3dffb",
-    "text": "NON-SPEC (#62 P6). Servi uniquement lorsque risk.fingerprinting est activé dans le domaine — 404 sinon — et l’écran de connexion est alors la neuvième page à script : FingerprintJS (MIT, v5 ; il s’exécute dans le navigateur et n’envoie rien, son ping d’utilisation étant désactivé) place un visitorId dans un champ masqué, et le service n’en conserve qu’un condensé à clé, évalué comme un appareil que cette personne n’a jamais utilisé. Le formulaire fonctionne sans lui. Désactivé par défaut : il s’agit de données personnelles, et l’activer relève de la décision de l’opérateur, après l’analyse d’impact relative à la protection des données que décrit la page d’évaluation des risques."
+    "en": "ac75feb49bdcac8d",
+    "text": "NON-SPEC (#62 P6). Servi uniquement lorsque risk.fingerprinting est activé dans le domaine — 404 sinon — et l’écran de connexion le charge alors à côté de son propre script : FingerprintJS (MIT, v5 ; il s’exécute dans le navigateur et n’envoie rien, son ping d’utilisation étant désactivé) calcule un visitorId que la connexion envoie, et le service n’en conserve qu’un condensé à clé, évalué comme un appareil que cette personne n’a jamais utilisé. La connexion fonctionne sans lui. Désactivé par défaut : il s’agit de données personnelles, et l’activer relève de la décision de l’opérateur, après l’analyse d’impact relative à la protection des données que décrit la page d’évaluation des risques."
   },
   "stsmetadata.endpoints./authn/webauthn.js.what": {
     "en": "1ac86ac809b57d92",
