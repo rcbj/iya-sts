@@ -395,7 +395,10 @@ class PortalCiba {
     // an existing session presented and honoured for a client it was not
     // made for. A DENIAL honours nothing and reports nothing.
     if (approve && signOn.id) {
-      authn.notePresented(signOn, 'OpenID Connect CIBA', req);
+      // The SIGN-ON session, by the name every profile's call uses
+      // (`tests/caep_presented_every_protocol.js` reads it).
+      const session = signOn;
+      authn.notePresented(session, 'OpenID Connect CIBA', req);
     }
     log.debug("Leaving PortalCiba.answer(). Answered.");
     return ctx.json(res, 200, { ok: true,
