@@ -8465,7 +8465,8 @@ class Authn {
    */
   pendingFor(id) {
     const { log } = this.deps;
-    log.debug("Entering Authn.pendingFor(). id=" + (id || '(none)'));
+    // The id is a bearer capability over the sign-in (#571): not logged.
+    log.debug("Entering Authn.pendingFor(). " + (id ? 'An id.' : 'No id.'));
     const record = pending.get(String(id || ''));
     if (!record) {
       log.debug("Leaving Authn.pendingFor(). No such authentication is " +

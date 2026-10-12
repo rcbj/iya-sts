@@ -78,7 +78,9 @@ const APPLICATIONS = [
   { id: 'authn', label: 'Authentication service', session: true,
     what: 'The sign-in service and its second factors, the wallet, ' +
           'SPNEGO and certificate sign-ins, and the sign-out.',
-    prefixes: ['/authn', '/logout', '/.well-known/hoba'],
+    // `/authn-api` is the sign-in screen's API (#571): one application with
+    // the shells it draws, so the screen never has to be told where it is.
+    prefixes: ['/authn', '/authn-api', '/logout', '/.well-known/hoba'],
     exact: ['/tls/sign-in'] },
   // `/account-api` IS THE PORTAL'S (#568): the portal is a static
   // application that draws every page from it, so the two are one

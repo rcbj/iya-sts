@@ -345,6 +345,13 @@ class ProtocolStack {
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
     this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
+    // THE SIGN-IN SCREEN'S API (#571): `/authn-api`, at authn's place. The
+    // screen is a static surface whose shells `authn` registers above; the
+    // views and acts are that module's, reached through its exports, and
+    // this one registers only `/authn-api/*`, which collides with nothing.
+    require('../authn/authn_api');
+    this.build('authn/authn_api', require('../authn/authn_api'), 'AuthnApi');
+    this.register(app, require('../authn/authn_api'), 'authn/authn_api');
     // THE EMAILED CODE AND LINK (#64): its six routes under `/authn/*`, the
     // paths `authn` declares and draws the buttons for. Right after `authn`,
     // whose pending steps it reads through that module's exports, and — like
