@@ -250,6 +250,16 @@ class ProtocolStack {
     this.build('home/home', require('../home/home'), 'Home');
     this.register(app, require('../home/home'), 'home/home');
 
+    // THE PUBLIC SURFACES' SHARED FILES (#570): the card and the locale
+    // catalogs under `/web`, answered on every listener. No constraint: it
+    // requires only libraries (`i18n`, `version`, `shell_document`) and its
+    // paths collide with nothing; beside the front door, the first surface
+    // that will draw with them (#579).
+    require('./public_assets');
+    this.build('common/public_assets', require('./public_assets'),
+               'PublicAssets');
+    this.register(app, require('./public_assets'), 'common/public_assets');
+
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
     // use it, because this order is the route order on the /admin/sts-metadata

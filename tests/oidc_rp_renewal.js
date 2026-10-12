@@ -414,7 +414,7 @@ function checkRegistration(t) {
   // THE CONSOLE RENEWS NOTHING ON THE SERVER since the cutover (#446), and
   // the PORTAL since it became a static application too (#568): each holds
   // its own tokens in the browser and refreshes them there
-  // (`admin-ui/web_spa_client.ts`). A renewal still registered on /portal
+  // (`common/web_spa_client.ts`). A renewal still registered on /portal
   // would renew a relying-party session nothing makes any more. The library
   // the checks above hold is the embedded debugger's still.
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',

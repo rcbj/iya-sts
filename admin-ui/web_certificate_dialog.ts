@@ -25,7 +25,7 @@
 
 import kit = require('./web_kit');
 import PqcBadgeView = require('./web_pqc_badge');
-import webMessages = require('./web_messages');
+import webMessages = require('../common/web_messages');
 
 type Json = any;
 

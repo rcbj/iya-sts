@@ -24,7 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
-import webMessages = require('./web_messages');
+import webMessages = require('../common/web_messages');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 

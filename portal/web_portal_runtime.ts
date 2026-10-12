@@ -9,7 +9,7 @@
 // THE USER PORTAL'S RUNTIME (#568).
 //
 // The portal in the browser, on the admin console's pattern (#446) and with
-// its OAuth half shared (`admin-ui/web_spa_client.ts`): it signs in as the
+// its OAuth half shared (`common/web_spa_client.ts`): it signs in as the
 // public client `sts-user-portal`, holds its tokens in memory bound to a
 // non-extractable DPoP key, draws every page from its `/account-api` answer
 // with the renderers `web_portal_pages.ts` lists, and sends every form to the
@@ -48,8 +48,8 @@
 // Everything it touches in the browser arrives through the constructor.
 // ---------------------------------------------------------------------------
 
-import SpaClient = require('../admin-ui/web_spa_client');
-import WebMessages = require('../admin-ui/web_messages');
+import SpaClient = require('../common/web_spa_client');
+import WebMessages = require('../common/web_messages');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
@@ -116,8 +116,7 @@ class PortalRuntime extends SpaClient {
    * @returns the prefix, '' in the default realm
    */
   static prefixOf(pathname: string): string {
-    const m = /^(.*?)\/portal(?:\/.*)?$/.exec(String(pathname || ''));
-    return m ? m[1] : '';
+    return PortalRuntime.prefixAt(pathname, '/portal');
   }
 
   /**
@@ -339,25 +338,7 @@ class PortalRuntime extends SpaClient {
     return { status: res.status, json: json, res: res };
   }
 
-  /**
-   * Calls an operation that takes no token.
-   *
-   * @param method - GET or POST
-   * @param path - the path under the realm
-   * @param body - for a POST, an object
-   * @returns `{ status, json, res }`
-   */
-  async publicJson(method: string, path: string, body?: Json): Promise<Json> {
-    const res = await this.env.fetch(this.url(path), {
-      method: method,
-      headers: Object.assign({ 'Accept': 'application/json' },
-        body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      body: body !== undefined ? JSON.stringify(body) : undefined });
-    const json = await res.json().catch(function () {
-      return null;
-    });
-    return { status: res.status, json: json, res: res };
-  }
+  // An operation that takes no token is `publicJson()`, `WebPage`'s (#570).
 
   /**
    * The operation table, once: which operation each form goes to.
@@ -400,23 +381,8 @@ class PortalRuntime extends SpaClient {
     }
   }
 
-  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM: the renderers draw
-  // root-relative addresses, and the server-rendered portal had every one
-  // prefixed on the way out (`common/app.js`); here the runtime does it.
-  /**
-   * Prefixes every root-relative `href`, `action`, `formaction` and `src`.
-   *
-   * @param html - the page
-   * @param prefix - the realm's path prefix
-   * @returns the page with its links in the realm
-   */
-  static realmLinks(html: string, prefix: string): string {
-    if (!prefix) {
-      return html;
-    }
-    return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + prefix + '/');
-  }
+  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM:
+  // `PortalRuntime.realmLinks()` is `WebPage`'s (#570), inherited.
 
   /**
    * Puts a page in the document and wires what it carries.
@@ -450,23 +416,8 @@ class PortalRuntime extends SpaClient {
       '</a></p></div>', (this.me || this.nobody || {}).version));
   }
 
-  // A TAB OR A SECTION IS A FRAGMENT, and `:target` is set only by a
-  // navigation, so after a page is drawn the fragment is navigated to again
-  // (the console's `targetFragment()`).
-  /**
-   * Makes the address's fragment the target of the page just drawn.
-   *
-   * @returns nothing
-   */
-  targetFragment(): void {
-    const loc = this.env.location;
-    const hash = String(loc.hash || '');
-    if (!hash || !this.env.history || !loc.replace) {
-      return;
-    }
-    this.env.history.replaceState(null, '', loc.pathname + loc.search);
-    loc.replace(loc.pathname + loc.search + hash);
-  }
+  // A TAB OR A SECTION IS A FRAGMENT: `targetFragment()` is `WebPage`'s
+  // (#570), inherited.
 
   /**
    * Draws the page in hand from its view.
@@ -594,35 +545,7 @@ class PortalRuntime extends SpaClient {
 
   // --- forms and links -----------------------------------------------------
 
-  /**
-   * A form's fields as an object: a repeated name is an array, and the CSRF
-   * field a form drawn by the server carried is left out (the token is the
-   * credential here).
-   *
-   * @param form - the form element
-   * @param submitter - the button pressed, if any
-   * @returns the fields
-   */
-  fieldsOf(form: Json, submitter: Json): Json {
-    const data = this.env.formDataOf ? this.env.formDataOf(form)
-                                     : new FormData(form);
-    if (submitter && submitter.name) {
-      data.delete(submitter.name);
-      data.append(submitter.name, submitter.value);
-    }
-    const out: Json = {};
-    data.forEach(function (value: Json, name: string) {
-      if (name === 'csrf_token' || typeof value !== 'string') {
-        return;
-      }
-      if (Object.prototype.hasOwnProperty.call(out, name)) {
-        out[name] = [].concat(out[name], value);
-      } else {
-        out[name] = value;
-      }
-    });
-    return out;
-  }
+  // A form's fields as an object is `formFields()`, `WebPage`'s (#570).
 
   /**
    * Sends a POST form to the operation that mirrors it, and draws what it
@@ -638,7 +561,7 @@ class PortalRuntime extends SpaClient {
                    form.getAttribute('action') || this.here();
     const target = new URL(posted, this.env.location.href);
     const path = this.portalPath(target.pathname);
-    const fields = this.fieldsOf(form, submitter);
+    const fields = this.formFields(form, submitter);
     target.searchParams.forEach(function (value: string, name: string) {
       fields[name] = value;
     });
@@ -735,29 +658,7 @@ class PortalRuntime extends SpaClient {
     await this.route();
   }
 
-  /**
-   * Saves a file an answer carried as base64.
-   *
-   * @param name - its file name
-   * @param mime - its media type
-   * @param base64 - its bytes
-   * @returns nothing
-   */
-  saveBase64(name: string, mime: string, base64: string): void {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const href = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    const a = this.env.document.createElement('a');
-    a.href = href;
-    a.download = name.replace(/[\/\\]/g, '_');
-    this.env.document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(href);
-  }
+  // `saveBase64()` is `WebPage`'s (#570), inherited.
 
   /**
    * Follows a link in place when it is a portal page of this origin.
@@ -817,7 +718,7 @@ class PortalRuntime extends SpaClient {
     }
     const method = String(form.getAttribute('method') || 'get').toLowerCase();
     if (method !== 'post') {
-      const fields = this.fieldsOf(form, null);
+      const fields = this.formFields(form, null);
       this.go(path + kit.queryOf(fields) + target.hash);
       return;
     }

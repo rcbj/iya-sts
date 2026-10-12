@@ -15573,6 +15573,12 @@ const CODES = [
       'setting\'s description — could not be read or parsed; that prose ' +
       'falls back along its chain to English (#543).',
     spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0012',
+    summary: 'GET /web/locales/<namespace>/<catalog>.json named a namespace ' +
+      'or a catalog this service does not have, or a file name that is not ' +
+      '<catalog>.json; nothing is read from disk by a requested name ' +
+      '(#570).',
+    spec: 'HTTP 404' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

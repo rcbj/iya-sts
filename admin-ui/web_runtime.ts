@@ -54,12 +54,12 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
-import SpaClient = require('./web_spa_client');
+import SpaClient = require('../common/web_spa_client');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
-import WebMessages = require('./web_messages');
+import WebMessages = require('../common/web_messages');
 
 type Json = any;
 
@@ -150,8 +150,7 @@ class ConsoleRuntime extends SpaClient {
    * @returns the prefix, '' in the default realm
    */
   static prefixOf(pathname: string): string {
-    const m = /^(.*?)\/admin(?:\/.*)?$/.exec(String(pathname || ''));
-    return m ? m[1] : '';
+    return ConsoleRuntime.prefixAt(pathname, '/admin');
   }
 
   /**
@@ -1182,26 +1181,10 @@ class ConsoleRuntime extends SpaClient {
     }
   }
 
-  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM. The renderers draw
-  // root-relative addresses (`/admin/users`, a form's `action`, a button's
-  // `formaction`), and the server-rendered console prefixed every one with
-  // the realm's on the way out (`common/app.js` `withRealmLinks()`); the
-  // static console draws them itself, so it does the same: `="/` and not
-  // `="//`, which is another host.
-  /**
-   * Prefixes every root-relative `href`, `action`, `formaction` and `src`.
-   *
-   * @param html - the page
-   * @param prefix - the realm's path prefix, or '' for the default realm
-   * @returns the page with its links in the realm
-   */
-  static realmLinks(html: string, prefix: string): string {
-    if (!prefix) {
-      return html;
-    }
-    return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + prefix + '/');
-  }
+  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM: the static console
+  // draws root-relative addresses and prefixes them itself, as the
+  // server-rendered console's `withRealmLinks()` did —
+  // `ConsoleRuntime.realmLinks()` is `WebPage`'s (#570), inherited.
 
   /**
    * Draws a page that says something went wrong, with no frame.
@@ -1314,20 +1297,7 @@ class ConsoleRuntime extends SpaClient {
   // rather than adding one — so `:target` matches the element now in the
   // page. The `popstate` that follows changes neither path nor query, and is
   // left alone (`start()`).
-  /**
-   * Makes the address's fragment the `:target` of the page just drawn.
-   *
-   * @returns nothing
-   */
-  targetFragment(): void {
-    const loc = this.env.location;
-    const hash = String(loc.hash || '');
-    if (!hash || !this.env.history || !loc.replace) {
-      return;
-    }
-    this.env.history.replaceState(null, '', loc.pathname + loc.search);
-    loc.replace(loc.pathname + loc.search + hash);
-  }
+  // `targetFragment()` is `WebPage`'s (#570), inherited.
 
   /**
    * Draws the page in hand again, with what a just-finished act left.
@@ -1961,6 +1931,8 @@ class ConsoleRuntime extends SpaClient {
     }
   }
 
+  // `saveBase64()` is `WebPage`'s (#570), inherited.
+
   /**
    * Saves a response the server said is a file.
    *
@@ -1968,30 +1940,6 @@ class ConsoleRuntime extends SpaClient {
    * @param disposition - its Content-Disposition
    * @returns nothing
    */
-  /**
-   * Saves a file an answer carried as base64.
-   *
-   * @param name - its file name
-   * @param mime - its media type
-   * @param base64 - its bytes
-   * @returns nothing
-   */
-  saveBase64(name: string, mime: string, base64: string): void {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const href = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    const a = this.env.document.createElement('a');
-    a.href = href;
-    a.download = name.replace(/[\/\\]/g, '_');
-    this.env.document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(href);
-  }
-
   async save(res: Json, disposition: string): Promise<void> {
     const name = (/filename="?([^";]+)"?/i.exec(disposition) || [])[1] ||
       'download';
