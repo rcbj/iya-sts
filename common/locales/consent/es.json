@@ -1,5 +1,5 @@
 {
-  "title": "¿Permitir el acceso? — servidor de autorización simulado",
+  "title": "¿Permitir el acceso? — servidor de autorización",
   "heading": "¿Permitir el acceso?",
   "signedInAs": "Sesión iniciada como <code>{username}</code> en <code>{base}</code>",
   "asking": "<strong>{client}</strong> solicita acceso en su nombre.",
