@@ -3460,6 +3460,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller this service admits. An unadmitted one gets a 403 that ' +
           'names the group and the setting, which is the part of this page ' +
           'they need.' },
+  { path: '/xacml/description.js', group: 'XACML',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /xacml from the view its shell carries. ' +
+          'It REQUIRES XACML_USER, as the page does.' },
   { path: '/xacml/pdp', group: 'XACML', name: 'A decision',
     specs: ['xacml30', 'xacmljson'],
     what: 'POST a JSON Profile request, get a JSON Profile response. TWO ' +
@@ -4063,6 +4071,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'AND NOT THE VOCABULARY — it defines two events of its own, both ' +
           'about the pipe, and CAEP and RISC are the vocabularies spoken ' +
           'over it. Add ?format=json.' },
+  { path: '/ssf/description.js', group: 'Shared Signals',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /ssf from the view its shell carries.' },
   { path: '/ssf/stream', group: 'Shared Signals', name: 'The stream ' +
                                                         'management API',
     specs: ['ssf', 'rfc9493'],
@@ -4184,6 +4199,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'offers no Digest and lets only a signed-in owner register a key); ' +
           'and active:false DISABLES THE ACCOUNT — the password-policy lock ' +
           'every door refuses. Add ?format=json.' },
+  { path: '/scim/description.js', group: 'SCIM',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /scim from the view its shell carries.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
     specs: ['rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616', 'rfc7486'],
@@ -4621,6 +4643,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'SPIRE Server API, whose TCP port is MUTUAL TLS with an X509-SVID, ' +
           'unconditionally — because what comes out of these surfaces is a ' +
           'credential another service will believe. Add ?format=json.' },
+  { path: '/spiffe/description.js', group: 'SPIFFE',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /spiffe from the view its shell carries.' },
   { path: '/spiffe/bundle', group: 'SPIFFE', name: 'The trust bundle',
     specs: ['spiffe-bundle'],
     what: 'THE FEDERATION SURFACE, and the whole of it: one GET returning a ' +
@@ -6957,7 +6986,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'the per-service-provider metadata works. GET /sts and GET /wsfed ' +
           'answer the same way for the same reason — an endpoint that 400s ' +
           'at somebody who wanted to know what it was is a bad first ' +
-          'impression.' },
+          'impression. Drawn in the browser since #584; ?format=json, or an ' +
+          'Accept preferring JSON, answers its view as data.' },
+  { path: '/saml2/description.js', group: 'SAML 2.0',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /saml2 from the view its shell carries.' },
   { path: '/saml2/metadata', group: 'SAML 2.0', name: 'Identity provider ' +
                                                       'metadata',
     specs: ['saml2-metadata', 'xmldsig'],
@@ -7128,7 +7165,16 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'A description page: the endpoints, the two browser profiles, and ' +
           'the list of what SAML 1.1 spells differently from 2.0 — which is ' +
           'most of what makes this a separate implementation rather than a ' +
-          'flag. GET /saml2, GET /sts and GET /wsfed answer the same way.' },
+          'flag. GET /saml2, GET /sts and GET /wsfed answer the same way. ' +
+          'Drawn in the browser since #584; ?format=json, or an Accept ' +
+          'preferring JSON, answers its view as data.' },
+  { path: '/saml11/description.js', group: 'SAML 1.1',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /saml11 from the view its shell carries.' },
   { path: '/saml11/metadata', group: 'SAML 1.1', name: 'Identity provider ' +
                                                        'metadata',
     specs: ['saml11', 'saml2-metadata', 'xmldsig'],
