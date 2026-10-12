@@ -20295,8 +20295,8 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-LOGOUT-0009',
     summary: 'The signed-out document (POST /logout/signed-out, #577) was ' +
-      'posted with no Origin, or with an origin this service does not ' +
-      'answer on.',
+      'posted with an origin this service does not answer on, or with ' +
+      'none (or null) and no Sec-Fetch-Site: same-origin.',
     spec: 'HTTP 403 page' },
   { code: 'STS-LOGOUT-0010',
     summary: 'A form was posted to /logout, which is no longer an act ' +

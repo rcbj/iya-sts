@@ -229,8 +229,11 @@ touched** (#569's rule), and nothing they answer changed.
   sessions. `sealResult()` deflates it and MACs it under the `logout-result`
   cluster secret (`cluster/cluster_secrets.ts`) with the realm and a
   five-minute expiry; `openResult()` refuses anything else
-  (`STS-LOGOUT-0008`), and the document refuses a post with no Origin or
-  another's (`STS-LOGOUT-0009`). Not encrypted: it is what the document
+  (`STS-LOGOUT-0008`), and the document refuses a post from another
+  origin (`STS-LOGOUT-0009`) — taking `Origin: null` only with
+  `Sec-Fetch-Site: same-origin`, because every page here is sent
+  `Referrer-Policy: no-referrer`, under which the runtime's own navigation
+  carries a null Origin (found over CDP). Not encrypted: it is what the document
   shows the person. Drawn again within its life it only fans out again to
   sessions that have already ended. The document mints no arrival cookie
   (`NOT_ARRIVAL_PATHS`).

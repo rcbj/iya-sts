@@ -4014,11 +4014,24 @@ class Logout {
                   ((e && e.message) || e));
         own = [];
       }
-      if (!origin || own.indexOf(origin) < 0) {
+      // A NAVIGATION'S ORIGIN IS `null` HERE, and that is this service's
+      // own doing: every page is sent `Referrer-Policy: no-referrer`
+      // (`app.js`), under which a browser sends `Origin: null` on a form
+      // POST that navigates. So `null` — or none — is taken where the
+      // browser itself says the post came from this origin
+      // (`Sec-Fetch-Site: same-origin`, Fetch Metadata), and refused
+      // otherwise; any other origin is refused whatever it says. The MAC
+      // is what keeps a result from being made up; this keeps a page
+      // elsewhere from posting one it was handed.
+      const site = String((req.headers &&
+                           req.headers['sec-fetch-site']) || '');
+      const sameSite = (!origin || origin === 'null') &&
+        site === 'same-origin';
+      if (!sameSite && (!origin || own.indexOf(origin) < 0)) {
         this.refusedDocument(res, 403, 'STS-LOGOUT-0009',
           'This page is posted by the sign-out page of this service: the ' +
-          'request carried ' + (origin ? 'another origin' : 'no Origin') +
-          '.');
+          'request carried ' + (origin && origin !== 'null'
+            ? 'another origin' : 'no origin of this service') + '.');
         log.debug("Leaving the signed-out document. Not this origin.");
         return;
       }

@@ -4740,7 +4740,7 @@ Raised from: logout/.
 | `STS-LOGOUT-0006` | Ending one live item during a sign-out failed with an exception; it is reported as not ended. | — |
 | `STS-LOGOUT-0007` | A sign-out ended nothing: nothing live was found for the identity, or nothing that was selected could be ended. | — |
 | `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
-| `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with no Origin, or with an origin this service does not answer on. | HTTP 403 page |
+| `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
 | `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
 
 ## STS-REG

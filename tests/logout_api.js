@@ -282,6 +282,9 @@ function childMain() {
       if (opts.origin !== null) {
         headers.origin = opts.origin || origin;
       }
+      if (opts.site) {
+        headers['sec-fetch-site'] = opts.site;
+      }
       return screen.call({ port: port, jar: opts.jar || {}, method: 'POST',
         path: '/logout/signed-out', headers: headers,
         body: new URLSearchParams(result === undefined ? {}
@@ -316,6 +319,18 @@ function childMain() {
     r = await postDoc(fanned.form.fields.result,
                       { origin: 'https://evil.example' });
     note(r.status === 403, '6g. from another origin, refused (403)',
+         r.status);
+    // A browser's own form post: every page here is sent
+    // `Referrer-Policy: no-referrer`, so the navigation carries
+    // `Origin: null`, and Fetch Metadata says where it came from.
+    r = await postDoc(fanned.form.fields.result,
+                      { origin: 'null', site: 'same-origin' });
+    note(r.status === 200 && r.text.indexOf(shared.html) > 0,
+         '6g2. a navigation\'s null Origin, the browser saying it is ' +
+         'same-origin, is drawn', r.status);
+    r = await postDoc(fanned.form.fields.result,
+                      { origin: 'null', site: 'cross-site' });
+    note(r.status === 403, '6g3. and refused (403) where it says cross-site',
          r.status);
     const sealed = String(fanned.form.fields.result);
     const forged = sealed.slice(0, sealed.lastIndexOf('.') + 1) +
