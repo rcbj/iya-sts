@@ -107,6 +107,12 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
   `beginFirstFactor()` for a first factor) and drawn by its page's GET; a
   message that could not be sent is said there once (`emailNotice`).
 
+* **`/authn/spnego`'s person-facing bodies are the same surface's (#575)**:
+  the first 401, the 403 when off and the signed-in 200 answer the shell
+  with the page's state in `data-sts-state`, drawn by an EMBEDDED page row
+  that fetches no view; the RFC 4559 exchange, its statuses and its headers
+  (the CSP aside) are unchanged. `kerberos/CLAUDE.md` argues it.
+
 ### `/authn-api`
 
 | Operation | What |

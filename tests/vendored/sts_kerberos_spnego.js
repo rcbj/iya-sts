@@ -238,6 +238,30 @@ function text(body) {
     .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
+// THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its
+// 403 when off and its signed-in 200 are the sign-in surface's shell, and
+// what the page is drawn from is `data-sts-state` on its `<html>` — the
+// browser draws it with script; a client that runs none reads it here.
+function spnegoState(body) {
+  log.debug("Entering spnegoState().");
+  const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(body || ""));
+  if (!m) {
+    log.debug("Leaving spnegoState(). None.");
+    return null;
+  }
+  const raw = m[1].replace(/&quot;/g, "\"").replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  let state = null;
+  try {
+    state = JSON.parse(raw);
+  } catch (e) {
+    log.debug("Caught in spnegoState(): " + ((e && e.message) || e));
+    state = null;
+  }
+  log.debug("Leaving spnegoState().");
+  return state && state.view ? state.view : null;
+}
+
 // Assert a KRB-ERROR with one of `codes`, from an exchange result or from
 // what the acceptor's reject token carried.
 function refusedWith(error, codes, what) {
@@ -548,9 +572,11 @@ async function spnegoSignIn(tgt, ticket) {
                              "answered " + first.status + ": " +
                              text(first.body));
           assert.ok(first.cookie, "no sts_session cookie was set");
-          assert.ok(first.body.indexOf("<strong>" + USER + "</strong>") !==
-                    -1, "the page must name " + USER + ": " +
-                    text(first.body));
+          const view = spnegoState(first.body);
+          assert.ok(view && view.kind === "signed-in" &&
+                    view.username === USER,
+                    "the page must name " + USER + ": " +
+                    JSON.stringify(view));
         });
   const reply = await wire.readNegotiate(first.wwwAuthenticate, ticket, built);
   check("the 200 carries a bare NegTokenResp, accept-completed, selecting " +
@@ -693,8 +719,11 @@ async function spnegoSwitchedOff(ticket) {
   check("with krb5.spnegoAuthentication off, a valid ticket is 403 naming " +
         "the setting, and mints no session", function () {
           assert.strictEqual(r.status, 403, text(r.body));
-          assert.ok(/krb5\.spnegoAuthentication/.test(r.body),
-                    "the refusal must name the setting: " + text(r.body));
+          const view = spnegoState(r.body);
+          assert.ok(view && view.kind === "off" &&
+                    view.setting === "krb5.spnegoAuthentication",
+                    "the refusal must name the setting: " +
+                    JSON.stringify(view));
           assert.ok(!r.cookie, "a session cookie was set anyway");
         });
   log.debug("Leaving spnegoSwitchedOff().");

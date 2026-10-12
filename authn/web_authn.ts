@@ -37,6 +37,11 @@
 //     library is not a `web_` module and cannot be bundled into one — and
 //     its visitorId sent with the act.
 //
+//   * THE SPNEGO SIGN-IN'S BODIES (#575): `/authn/spnego`'s first 401, its
+//     403 when off and its signed-in 200 are the shell with the page's
+//     state in `data-sts-state`, drawn from it and never fetched — the
+//     RFC 4559 exchange is the browser's navigation, untouched.
+//
 // `authn-spa.js` and never `authn.js` on disk: `authn/authn.js` is the server
 // module `authn.ts` compiles to, and the bundle would overwrite it.
 //
@@ -79,7 +84,8 @@ class AuthnSurface extends WebSurface {
    */
   constructor(env: Json) {
     super(env, { base: '/authn', api: '/authn-api',
-                 pages: AuthnPages.PAGES, namespaces: ['authn'],
+                 pages: AuthnPages.PAGES,
+                 namespaces: AuthnSurface.namespacesAt(env),
                  frame: AuthnPages.frame, brand: '' });
     this.actError = '';
     this.autofill = true;
@@ -124,6 +130,120 @@ class AuthnSurface extends WebSurface {
     if (view.passkey && this.autofill) {
       this.armAutofill();
     }
+  }
+
+  // --- the SPNEGO sign-in's bodies (#575) -----------------------------------
+  //
+  // `/authn/spnego` is an RFC 4559 exchange this runtime never drives: the
+  // browser's own Negotiate (or a person reading a 401) is the navigation,
+  // and the response it got is the shell, carrying the state its page is
+  // drawn from in `data-sts-state` — there is nothing to fetch and no
+  // operation to fetch it from, since the verdict and the session it drew
+  // exist only on that one response. So an EMBEDDED page is drawn from the
+  // shell, a link on it is the browser's (to the password screen, a full
+  // navigation that mints its arrival cookie as `/authn/login` always does),
+  // and a chosen language draws it again from the same state.
+
+  /**
+   * The catalog namespaces the page at the location draws: the SPNEGO
+   * sign-in's `spnego` beside `authn` there, `authn` everywhere else.
+   *
+   * @param env - the browser's objects
+   * @returns the namespaces
+   */
+  static namespacesAt(env: Json): string[] {
+    const path = String((env && env.location && env.location.pathname) || '');
+    return /\/authn\/spnego$/.test(path) ? ['authn', 'spnego'] : ['authn'];
+  }
+
+  /**
+   * The state the shell carried, or null where it carried none or it does
+   * not read.
+   *
+   * @param env - the browser's objects
+   * @returns `{ view, uiLocales?, preferredLanguage? }`, or null
+   */
+  static embeddedState(env: Json): Json {
+    const text = WebPage.attribute(env, 'data-sts-state');
+    if (!text) {
+      return null;
+    }
+    try {
+      const state = JSON.parse(text);
+      return state && typeof state === 'object' && state.view ? state : null;
+    } catch (e) {
+      // Not JSON: the page says it could not be drawn.
+      return null;
+    }
+  }
+
+  /**
+   * Whether the page in hand is an embedded one.
+   *
+   * @returns true on the SPNEGO sign-in's bodies
+   */
+  embeddedHere(): boolean {
+    const path = this.surfacePath(this.env.location.pathname) || '';
+    const page: Json = this.find(path);
+    return !!(page && page.embedded);
+  }
+
+  /**
+   * Draws the page the location names; an embedded page from the shell's
+   * state, any other from its operation.
+   *
+   * @returns nothing
+   */
+  async route(): Promise<void> {
+    if (!this.embeddedHere()) {
+      await super.route();
+      return;
+    }
+    const path = this.surfacePath(this.env.location.pathname) || '';
+    const page: Json = this.find(path);
+    const query = WebPage.queryOf(this.env.location.search);
+    const state = AuthnSurface.embeddedState(this.env);
+    const ui = query.ui_locales ||
+      String((state && state.uiLocales) || '');
+    this.t = await this.i18n.load({
+      uiLocales: ui, own: state ? state.preferredLanguage : undefined });
+    if (!state) {
+      this.view = null;
+      this.drawProblem('This page could not be drawn',
+        'The service sent no state for it.');
+      return;
+    }
+    this.lastAnswer = state;
+    this.view = { page: page, query: query, json: state.view };
+    this.drawView();
+  }
+
+  /**
+   * Draws the page in hand again — an embedded page from its state, in the
+   * language just chosen.
+   *
+   * @returns nothing
+   */
+  redraw(): void {
+    if (this.embeddedHere()) {
+      this.route();
+      return;
+    }
+    super.redraw();
+  }
+
+  /**
+   * Follows a link in place, except on an embedded page, whose links are
+   * the browser's.
+   *
+   * @param event - the click
+   * @returns nothing
+   */
+  onClick(event: Json): void {
+    if (this.embeddedHere()) {
+      return;
+    }
+    super.onClick(event);
   }
 
   // --- the act ---------------------------------------------------------------
