@@ -12050,3 +12050,44 @@ attributes a translated surface's shell carries — `data-sts-version`,
 5. **The docs**: its row in the root `CLAUDE.md`'s static-surface table, and
    the server-drawn rows it replaces taken out.
 
+
+## 3cm. THE MOCK RELYING PARTIES AS ONE STATIC SURFACE (#581, 2026-10-12)
+
+The three mock relying parties are development-only demonstrations (#585:
+each route carries `common/app.js`'s `demoOnly` mark, so a product realm
+answers as an unrouted path). rcbj decided on #581 to CONVERT them, not
+delete them. What converts is only what a PERSON reads; what each does as a
+protocol participant — the requests it sends this service, and what it
+accepts at its assertion consumer — is untouched (#569's rule, and rcbj's
+comment on #581: "how they receive and process the binding … is
+unchanged").
+
+### The inventory (taken before converting)
+
+Every mock relying party in the tree, and every route each answers. "Page"
+is what a person reads; "participant" is a protocol peer's door.
+
+| Family | Route | Called by | Kind | After #581 |
+|---|---|---|---|---|
+| WS-Federation (`ws-federation/wsfed.ts`) | `GET /wsfed/rp` | a person | page: its realm, a fresh `wctx`, the six sign-in requests (SAML 1.1, SAML 2.0, the 200512 RSTR Collection, `wfresh=0`, the two `wauth` demands), the sign-out, the metadata | the shell; the view is `GET /wsfed/rp/api/start`'s, which mints the `wctx` |
+| | `GET /wsfed/rp?wa=wsignoutcleanup1.0` | `/wsfed`'s and `/logout`'s sign-out documents, as a one-pixel image (front-channel cleanup) | participant | **unchanged, server-drawn**: an image fetch, not a page anybody reads |
+| | `POST /wsfed/rp` (`wa`, `wresult`, `wctx`) | the browser, auto-posted by `/wsfed`'s sign-in response (section 13.2.3) | participant, and the page that shows its verdict | the RECEIVING is unchanged — the same fields read, the same verification, `200` whatever the verdict, `STS-WSFED-0016` on a failed check; the answer is the shell with the verdict in `data-sts-state`, drawn in the browser |
+| SAML 2.0 (`saml/saml2_sso.ts`) | `GET /saml2/sp` | a person | page: its entityID, four AuthnRequests on the Redirect binding (three signed with this service's key, asking for the response on POST, Redirect and Artifact; one unsigned), Single Logout, its metadata | the shell; the view is `GET /saml2/sp/api/start`'s, which mints the four `RelayState`s and signs the requests |
+| | `GET /saml2/sp?SAMLResponse=…` | the browser, on the HTTP Redirect binding | participant + verdict | as `POST /wsfed/rp`: verified as before, `200`, `STS-SAML-0022` on a failed check, the verdict in the shell's state |
+| | `GET /saml2/sp?SAMLart=…` | the browser, on the HTTP Artifact binding; resolved IN PROCESS, once | participant + verdict | the same; an artifact that does not resolve is still `200` with `STS-SAML-0021` |
+| | `POST /saml2/sp` | the browser, on the HTTP POST and POST-SimpleSign bindings | participant + verdict | as above |
+| SAML 1.1 (`saml/saml11_sso.ts`) | `GET /saml11/rp` | a person | page: its providerId and the two profiles' starts at the inter-site transfer service | the shell; the view is `GET /saml11/rp/api/start`'s |
+| | `POST /saml11/rp` (`SAMLResponse`, `TARGET`) | the browser, Browser/POST (section 4.2) | participant + verdict | `200`, `STS-SAML-0043` on a failed check, the verdict in the shell's state |
+| | `GET /saml11/rp?SAMLart=…&TARGET=…` | the browser, Browser/Artifact (section 4.1); resolved in process, once | participant + verdict | the same; a spent artifact is still `400` with `STS-SAML-0042` |
+| OpenID Provider Commands (`oauth-oidc/command_mock_rp.ts`) | `POST /oauth2/commands/mock-rp` | this realm's provider, as a client's `command_endpoint` | participant | **unchanged**: JSON and event streams, no page |
+| | `GET /oauth2/commands/mock-rp?client_id=` | a test | a JSON readback | **unchanged**: no page |
+
+**Nothing else in the tree is a relying party run by this service.** The
+other demonstrations are not relying parties, or have no page: the GNAP
+demonstration resource server, the RFC 9470 step-up stand-in and the Shared
+Signals receiver (`/ssf/receive`, `/ssf/received`) answer JSON; the
+OpenID4VP demonstration verifier is #582's; `/federation/*` is a real
+feature's relying-party side (its ACS and front-channel logout target are
+protocol documents, #569's rule). The CIBA notification, back-channel logout
+and Provider Commands receivers the suite needs outside a development realm
+are the test peer's (`tests/peer/`, #586), not this service's.
