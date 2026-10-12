@@ -1443,6 +1443,10 @@
     "en": "6f6ac9c72bde33a8",
     "text": "Inicio de sesión con billetera: la respuesta de la Digital Credentials API"
   },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "Lo que pregunta la pantalla de consentimiento, y la respuesta"
+  },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",
     "text": "Un cambio de contraseña obligatorio"
@@ -1530,6 +1534,10 @@
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Pantalla de consentimiento"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "El script de la pantalla de consentimiento"
   },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",

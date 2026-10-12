@@ -2527,6 +2527,14 @@
     "en": "f04802283b57225d",
     "text": "验证钱包的应答，并让发送该应答的浏览器登录"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576)。GET 返回同意界面的视图——应用、每个作用域和授权详情、用户可以降低的限额、已经同意的内容——以及 CSRF 令牌；POST 以 JSON 接收“允许”或“拒绝”，需带有本服务的 Origin 和浏览器会话的 X-CSRF-Token，且只接受被提问者本人的答复。该 id 是持有者凭据，从不写入日志。"
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "POST 记录“允许”或“拒绝”，并指明要返回的授权请求"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 应答谁的密码必须更改；POST 存储新密码并继续登录。"
@@ -2620,12 +2628,16 @@
     "text": "NON-SPEC，用于测试和手动尝试握手：在运行时开启和关闭 RFC 9449 section 8/9 的服务器提供 nonce 要求，因此无需重启服务即可演练 401/重试交换。GET 报告当前状态；POST {\"required\": true|false} 设置它——针对访问它所在的信任领域，通过写入 oauth2.dpopNonceRequired 实现（直到 2026-09-12 之前，它是整个进程的一个开关）。产品模式以 403 拒绝该 POST，因为它是测试控件：在那里，该设置通过 /admin/oauth2 或 POST /admin-api/config/set 更改。"
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "为规范行为提供的非规范界面。OAuth 2.0 和 OpenID Connect 都假定授权服务器会获得资源所有者的同意，但都没有说明那是什么样子；这里就是它在此处的样子。当请求指定了已登录者尚未就该 client_id 同意过的作用域时，授权端点会将其送到这里，在其作答之前不会颁发任何东西。“允许”会在其 ou=users 下自己的条目上为每个作用域写入一个 oauthConsent 值——<when> <scope> <client_id>，每个（人、应用、作用域）一个值——因此第二次登录是静默的，ldapsearch 可以读出某人同意了什么。“拒绝”会经由授权端点将 access_denied 返回给客户端，由授权端点决定它如何传递：form_post 响应是表单而不是重定向，而此界面不应知道这一点。委托权限按其完整标识符记录，绝不按单纯的权限名称记录，因为两个资源可能都公开 `read`。记录保存在服务器端，URL 中唯一的东西是一个无法猜测的 id，因此不存在任何人能改写的返回地址；答复是 POST，因为记录同意的 GET 就等于任何预取链接的东西都能给出同意；并且会将会话与被提问的人进行核对，这是此处唯一一种会把不真实的内容写入目录的失败。无脚本——表单中的两个按钮，因此全服务范围的 script-src 'none' 不受影响。oauth2.consentRequired 可将其关闭，它默认开启；/admin/consent 是登记册，应用条目上的 oauthGlobalConsent 会为所有人跳过提示，且不会写入关于任何人的任何内容。"
+    "en": "a03a6663434a737e",
+    "text": "为规范行为提供的非规范界面。OAuth 2.0 和 OpenID Connect 都假定授权服务器会获得资源所有者的同意，但都没有说明那是什么样子；这里就是它在此处的样子。当请求指定了已登录者尚未就该 client_id 同意过的作用域时，授权端点会将其送到这里，在其作答之前不会颁发任何东西。“允许”会在其 ou=users 下自己的条目上为每个作用域写入一个 oauthConsent 值——<when> <scope> <client_id>，每个（人、应用、作用域）一个值——因此第二次登录是静默的，ldapsearch 可以读出某人同意了什么。“拒绝”会经由授权端点将 access_denied 返回给客户端，由授权端点决定它如何传递：form_post 响应是表单而不是重定向，而此界面不应知道这一点。委托权限按其完整标识符记录，绝不按单纯的权限名称记录，因为两个资源可能都公开 `read`。记录保存在服务器端，URL 中唯一的东西是一个无法猜测的 id，因此不存在任何人能改写的返回地址；答复是 POST，因为记录同意的 GET 就等于任何预取链接的东西都能给出同意；并且会将会话与被提问的人进行核对，这是此处唯一一种会把不真实的内容写入目录的失败。自 #576 起是登录界面的一个页面：这些检查通过后，此 GET 返回外壳页面，由 /oauth2/consent.js 根据 /authn-api/consent/{id} 绘制页面，并将“允许”或“拒绝”以 JSON 发送到那里；必须启用脚本。oauth2.consentRequired 可将其关闭，它默认开启；/admin/consent 是登记册，应用条目上的 oauthGlobalConsent 会为所有人跳过提示，且不会写入关于任何人的任何内容。"
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "需要待处理的同意 id——不带参数访问时应答 400"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576)。登录界面的打包脚本——与 /authn/signin.js 是同一个文件——位于同意界面自己的地址，使页面所在的监听器能提供其脚本。公开：其中没有任何机密。"
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

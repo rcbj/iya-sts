@@ -1443,6 +1443,10 @@
     "en": "6f6ac9c72bde33a8",
     "text": "Connexion par portefeuille : la réponse de la Digital Credentials API"
   },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "Ce que demande l’écran de consentement, et la réponse"
+  },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",
     "text": "Un changement de mot de passe imposé"
@@ -1530,6 +1534,10 @@
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Écran de consentement"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "Le script de l’écran de consentement"
   },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",

@@ -2527,6 +2527,14 @@
     "en": "f04802283b57225d",
     "text": "verifierar plånbokens svar och loggar in webbläsaren som postade det"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576). GET svarar med samtyckesskärmens vy — applikationen, varje scope och auktoriseringsdetalj, de gränser en person får sänka, det som redan har godkänts — och CSRF-token; POST tar emot Tillåt eller Neka som JSON, med en Origin från den här tjänsten och webbläsarsessionens X-CSRF-Token, och endast från den person frågan ställdes till. Id:t är en bärarbefogenhet och loggas aldrig."
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "POST registrerar Tillåt eller Neka och anger den auktoriseringsbegäran att gå tillbaka till"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET svarar vems lösenord som måste bytas; POST lagrar det nya och fortsätter inloggningen."
@@ -2620,12 +2628,16 @@
     "text": "NON-SPEC, för tester och för att prova handskakningen för hand: slår på och av kravet på serverlevererad nonce i RFC 9449 avsnitt 8/9 under körning, så att 401/försök-igen-utbytet kan provas utan att starta om tjänsten. GET rapporterar aktuellt tillstånd; POST {\"required\": true|false} sätter det — för den FÖRTROENDESFÄR den nås i, genom att skriva oauth2.dpopNonceRequired (det var en enda växel för hela processen fram till 2026-09-12). PRODUKTLÄGET VÄGRAR POST med 403, eftersom det är en testkontroll: där ändras inställningen via /admin/oauth2 eller POST /admin-api/config/set."
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "NON-SPEC-SKÄRM FÖR ETT SPECIFICERAT BETEENDE. OAuth 2.0 och OpenID Connect förutsätter båda att en auktoriseringsserver inhämtar resursägarens samtycke och ingen av dem säger hur det ser ut; så här ser det ut här. Auktoriseringsslutpunkten skickar en inloggad person hit när begäran namnger ett scope som de inte redan har godkänt för det client_id, och ingenting utfärdas förrän de svarar. Tillåt skriver ett oauthConsent-värde per scope på deras egen post under ou=users — <when> <scope> <client_id>, ett värde per (person, applikation, scope) — så att den andra inloggningen sker tyst och en ldapsearch kan läsa vad någon har godkänt. Neka skickar access_denied tillbaka till klienten via auktoriseringsslutpunkten, som är den som avgör hur det färdas: ett form_post-svar är ett formulär och inte en omdirigering, och den här skärmen får inte veta det. En delegerad behörighet registreras med sin HELA identifierare, aldrig med det bara behörighetsnamnet, eftersom två resurser båda kan exponera `read`. POSTEN LIGGER PÅ SERVERSIDAN och det enda i URL:en är ett id som inte går att gissa, så det finns ingen returadress som någon kan skriva om; svaret är en POST, eftersom en GET som registrerade samtycke vore samtycke som allt som förhämtar en länk kunde ge; och sessionen kontrolleras mot den person som frågan ställdes till, vilket är det enda fel här som skulle skriva något osant i katalogen. INGET SKRIPT — två knappar i ett formulär, så den tjänstövergripande script-src 'none' lämnas orörd. oauth2.consentRequired stänger av den, och den är PÅ som standard; /admin/consent är registret, och oauthGlobalConsent på en applikationspost hoppar över frågan för alla utan att skriva något om någon."
+    "en": "a03a6663434a737e",
+    "text": "NON-SPEC-SKÄRM FÖR ETT SPECIFICERAT BETEENDE. OAuth 2.0 och OpenID Connect förutsätter båda att en auktoriseringsserver inhämtar resursägarens samtycke och ingen av dem säger hur det ser ut; så här ser det ut här. Auktoriseringsslutpunkten skickar en inloggad person hit när begäran namnger ett scope som de inte redan har godkänt för det client_id, och ingenting utfärdas förrän de svarar. Tillåt skriver ett oauthConsent-värde per scope på deras egen post under ou=users — <when> <scope> <client_id>, ett värde per (person, applikation, scope) — så att den andra inloggningen sker tyst och en ldapsearch kan läsa vad någon har godkänt. Neka skickar access_denied tillbaka till klienten via auktoriseringsslutpunkten, som är den som avgör hur det färdas: ett form_post-svar är ett formulär och inte en omdirigering, och den här skärmen får inte veta det. En delegerad behörighet registreras med sin HELA identifierare, aldrig med det bara behörighetsnamnet, eftersom två resurser båda kan exponera `read`. POSTEN LIGGER PÅ SERVERSIDAN och det enda i URL:en är ett id som inte går att gissa, så det finns ingen returadress som någon kan skriva om; svaret är en POST, eftersom en GET som registrerade samtycke vore samtycke som allt som förhämtar en länk kunde ge; och sessionen kontrolleras mot den person som frågan ställdes till, vilket är det enda fel här som skulle skriva något osant i katalogen. EN SIDA PÅ INLOGGNINGSYTAN sedan #576: denna GET svarar med skalet när de kontrollerna har passerats, och /oauth2/consent.js ritar sidan från /authn-api/consent/{id} och skickar Tillåt eller Neka dit som JSON; skript krävs. oauth2.consentRequired stänger av den, och den är PÅ som standard; /admin/consent är registret, och oauthGlobalConsent på en applikationspost hoppar över frågan för alla utan att skriva något om någon."
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "kräver ett väntande samtyckes-id — svarar 400 när den följs utan det"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576). Inloggningsytans paket — samma fil som /authn/signin.js — på samtyckesskärmens egen adress, så att sidans lyssnare serverar dess skript. Offentligt: inget i det är hemligt."
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

@@ -1443,6 +1443,10 @@
     "en": "6f6ac9c72bde33a8",
     "text": "Wallet sign-in: ang sagot ng Digital Credentials API"
   },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "Ang itinatanong ng consent screen, at ang sagot"
+  },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",
     "text": "Isang sapilitang pagpapalit ng password"
@@ -1530,6 +1534,10 @@
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Screen ng consent"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "Ang script ng consent screen"
   },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",

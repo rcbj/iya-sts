@@ -2527,6 +2527,14 @@
     "en": "f04802283b57225d",
     "text": "驗證錢包的回應，並讓送出該回應的瀏覽器登入"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576)。GET 回應同意畫面的檢視——應用程式、每個範圍與授權詳細資料、使用者可以降低的限額、已經同意的內容——以及 CSRF 權杖；POST 以 JSON 接收「允許」或「拒絕」，須帶有本服務的 Origin 與瀏覽器工作階段的 X-CSRF-Token，且只接受被詢問者本人的回答。此 id 是持有人憑證，從不寫入記錄檔。"
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "POST 記錄「允許」或「拒絕」，並指明要返回的授權請求"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 回應誰的密碼必須變更；POST 儲存新密碼並繼續登入。"
@@ -2620,12 +2628,16 @@
     "text": "非規範，供測試及手動嘗試交握使用：在執行階段開啟或關閉 RFC 9449 section 8/9 的伺服器提供 nonce 要求，讓 401/重試交換無需重新啟動服務即可測試。GET 回報目前狀態；POST {\"required\": true|false} 設定它——針對所到達的「信任領域」，透過寫入 oauth2.dpopNonceRequired（在 2026-09-12 之前它是整個程序的單一開關）。「產品模式會以 403 拒絕 POST」，因為這是測試控制項：在那裡此設定透過 /admin/oauth2 或 POST /admin-api/config/set 變更。"
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "「為規範行為而設的非規範畫面」。OAuth 2.0 與 OpenID Connect 都假設授權伺服器會取得資源擁有者的同意，但都沒有說明那看起來是什麼樣子；這就是它在這裡的樣子。當請求指名了已登入者尚未對該 client_id 同意過的範圍時，授權端點會將其送來這裡，在其回答之前不會簽發任何東西。「允許」會在其位於 ou=users 下的自身項目上，為每個範圍寫入一個 oauthConsent 值——<when> <scope> <client_id>，每個（人、應用程式、範圍）一個值——因此第二次登入會靜默完成，而 ldapsearch 可以讀取某人同意了什麼。「拒絕」會透過授權端點將 access_denied 傳回用戶端，由授權端點決定其傳遞方式：form_post 回應是表單而非重新導向，而此畫面不得知道這一點。委派權限以其「完整」識別碼記錄，絕不以單純的權限名稱記錄，因為兩個資源可能都公開 `read`。「記錄存於伺服器端」，URL 中唯一的東西是一個無法猜測的 id，因此沒有任何人能改寫的返回位址；回答是 POST，因為記錄同意的 GET 會成為任何預先擷取連結的東西都能給出的同意；工作階段也會與被詢問的那個人核對，這是此處唯一會將不實內容寫入目錄的失敗情況。「沒有指令碼」——表單中的兩個按鈕，因此全服務的 script-src 'none' 不受影響。oauth2.consentRequired 可將其關閉，預設為「開啟」；/admin/consent 是其登錄，而應用程式項目上的 oauthGlobalConsent 會為所有人略過提示，且不寫入任何關於任何人的內容。"
+    "en": "a03a6663434a737e",
+    "text": "「為規範行為而設的非規範畫面」。OAuth 2.0 與 OpenID Connect 都假設授權伺服器會取得資源擁有者的同意，但都沒有說明那看起來是什麼樣子；這就是它在這裡的樣子。當請求指名了已登入者尚未對該 client_id 同意過的範圍時，授權端點會將其送來這裡，在其回答之前不會簽發任何東西。「允許」會在其位於 ou=users 下的自身項目上，為每個範圍寫入一個 oauthConsent 值——<when> <scope> <client_id>，每個（人、應用程式、範圍）一個值——因此第二次登入會靜默完成，而 ldapsearch 可以讀取某人同意了什麼。「拒絕」會透過授權端點將 access_denied 傳回用戶端，由授權端點決定其傳遞方式：form_post 回應是表單而非重新導向，而此畫面不得知道這一點。委派權限以其「完整」識別碼記錄，絕不以單純的權限名稱記錄，因為兩個資源可能都公開 `read`。「記錄存於伺服器端」，URL 中唯一的東西是一個無法猜測的 id，因此沒有任何人能改寫的返回位址；回答是 POST，因為記錄同意的 GET 會成為任何預先擷取連結的東西都能給出的同意；工作階段也會與被詢問的那個人核對，這是此處唯一會將不實內容寫入目錄的失敗情況。自 #576 起是登入介面的一個頁面：這些檢查通過後，此 GET 回應外殼頁面，由 /oauth2/consent.js 根據 /authn-api/consent/{id} 繪製頁面，並將「允許」或「拒絕」以 JSON 送往該處；必須啟用指令碼。oauth2.consentRequired 可將其關閉，預設為「開啟」；/admin/consent 是其登錄，而應用程式項目上的 oauthGlobalConsent 會為所有人略過提示，且不寫入任何關於任何人的內容。"
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "需要待處理的同意 id——直接開啟時回應 400"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576)。登入介面的打包指令碼——與 /authn/signin.js 是同一個檔案——位於同意畫面自己的位址，讓頁面所在的監聽器能提供其指令碼。公開：其中沒有任何機密。"
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

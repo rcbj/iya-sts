@@ -153,7 +153,7 @@ function childMain() {
     note(r.status === 400 && /Nobody is signed in/.test(r.text),
          '1e. a browser with no session is refused', r.text);
     r = await screen.call({ port: port, jar: bob, method: 'GET', path: at });
-    note(r.status === 400 && /asked of "ca-alice"/.test(r.text),
+    note(r.status === 400 && /asked of .{0,2}ca-alice/.test(r.text),
          '1f. another person\'s session is refused', r.text);
     r = await screen.call({ port: port, jar: {}, method: 'GET',
                             path: '/oauth2/consent.js' });
@@ -223,7 +223,7 @@ function childMain() {
          opened.json.uiLocales);
     const bobs = await screen.openConsent({ port: port, jar: bob, at: at });
     note(bobs.status === 400 && !bobs.view &&
-         /asked of "ca-alice"/.test(bobs.text) && codeFree(bobs.text),
+         /asked of .{0,2}ca-alice/.test(bobs.text) && codeFree(bobs.text),
          '3e. the view is refused to another person\'s session', bobs.text);
 
     // --- 4. the binding ------------------------------------------------------
@@ -256,9 +256,12 @@ function childMain() {
     r = await tryAct({ body: { action: 'maybe' } });
     note(r.status === 400, '4i. an answer that is neither allow nor deny ' +
          'is refused', r.text);
+    // Bound to Bob's own session (his token), so it reaches the check that
+    // matters: whose session this is.
     r = await screen.act({ port: port, jar: bob, opened: bobs,
+                           csrf: websecurity.tokenFor(session(bob)),
                            path: answerPath, body: { action: 'allow' } });
-    note(r.status === 400 && /signed in as "ca-bob"/.test(r.text) &&
+    note(r.status === 400 && /signed in as .{0,2}ca-bob/.test(r.text) &&
          codeFree(r.text),
          '4j. another person\'s answer is refused, and nothing recorded',
          r.text);
