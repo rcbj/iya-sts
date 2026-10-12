@@ -70,8 +70,7 @@ function childMain() {
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
-    '/oauth2/step-up/resource/:application', '/gnap/rs/resource',
-    '/gnap/rs/spend', '/vc-api/issuers',
+    '/vc-api/issuers',
     '/vc-api/issuers/:issuer/credentials/issue', '/vc-api/credentials/verify',
     '/vc-api/presentations/verify',
     '/vc-api/holders/:holder/presentations/prove',
@@ -85,7 +84,6 @@ function childMain() {
     '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
     '/vc-demo-api/done',
     '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
-    '/ssf/receive', '/ssf/received',
     // The two diagnostic surfaces' scripts (#583), demonstrations like the
     // pages they draw.
     '/tls/pages.js', '/spnego/pages.js'];
