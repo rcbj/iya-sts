@@ -2059,11 +2059,11 @@
     "en": "0bf63d6deba59711",
     "text": "ändrar dcql_query för varje FRAMTIDA OID4VP Authorization Request"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.what": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.what": {
     "en": "c9f5ea170ff74a38",
     "text": "NON-SPEC (#587). Administratörens /oid4vp/start, via samma funktion: kroppen namnger det som den sidans fråga namnger (format, by, client_id_prefix, response_type, response_mode, mode, wallet), och svaret är JSON — state, den plånboks-URL som en start på samma enhet omdirigerar till, den openid4vp://- (eller siopv2://-) URI som en QR-kod för annan enhet bär, och request_uri genom referens — snarare än en omdirigering. Besvaras i alla lägen. Speglar formuläret Starta en verifiering på /admin/vc."
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.effect": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "bygger en OID4VP Authorization Request och registrerar dess transaktion"
   },

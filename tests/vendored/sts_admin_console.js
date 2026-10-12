@@ -2715,24 +2715,32 @@ async function actionsByConsolePath() {
   assert.strictEqual(index.status, 200,
     "GET /admin-api should answer its index; it answered " + index.status);
   const out = {};
+  const tables = {};
   for (const operation of index.body.operations || []) {
     // EVERY console control the operation names, not just the first. One
     // resource legitimately mirrors several — /admin-api/xacml/{action} is
     // three — and all of them dispatch on the same action switch, so they all
     // get the same table.
+    //
+    // AND ONE CONSOLE PATH MAY BE MIRRORED BY SEVERAL RESOURCES, whose tables
+    // are UNITED. The combined pages (`/admin/saml2`'s SAML 2.0, SAML 1.1,
+    // assertion and custom-attribute tabs, `/admin/vc`, `/admin/xacml`) post
+    // every tab's forms to the page's one path, and each tab's actions are
+    // its own resource's. Keeping the first resource's table for the path
+    // reported every other tab's buttons as naming an action nobody knows.
     const paths = consolePostPathsIn(operation.mirrors);
     if (!paths.length) {
       continue;
     }
-    let table = null;
+    if (!Object.prototype.hasOwnProperty.call(tables, operation.path)) {
+      tables[operation.path] = await actionsKnownAt(operation.path);
+    }
+    const table = tables[operation.path];
     for (const consolePath of paths) {
-      if (Object.prototype.hasOwnProperty.call(out, consolePath)) {
-        continue;
-      }
-      if (table === null) {
-        table = await actionsKnownAt(operation.path);
-      }
-      out[consolePath] = table;
+      const held = out[consolePath] || [];
+      out[consolePath] = held.concat(table.filter(function (one) {
+        return held.indexOf(one) < 0;
+      }));
     }
   }
   log.debug("Leaving actionsByConsolePath(). " +

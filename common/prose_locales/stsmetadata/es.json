@@ -2059,11 +2059,11 @@
     "en": "0bf63d6deba59711",
     "text": "cambia el dcql_query de cada Authorization Request de OID4VP FUTURA"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.what": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.what": {
     "en": "c9f5ea170ff74a38",
     "text": "NON-SPEC (#587). El /oid4vp/start del administrador, mediante la misma función: el cuerpo nombra lo que nombra la consulta de esa página (format, by, client_id_prefix, response_type, response_mode, mode, wallet), y la respuesta es JSON (el state, la URL de la billetera a la que redirige un inicio en el mismo dispositivo, el URI openid4vp:// (o siopv2://) que lleva un código QR entre dispositivos, y el request_uri por referencia) en lugar de una redirección. Se responde en todos los modos. Refleja el formulario Iniciar una verificación de /admin/vc."
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.effect": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "construye una Authorization Request de OID4VP y registra su transacción"
   },

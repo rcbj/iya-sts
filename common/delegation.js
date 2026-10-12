@@ -1952,14 +1952,11 @@ function applicationList(rows) {
 // ---------------------------------------------------------------------------
 // THE DELEGATION NAMESPACE (#543 phase 2b): the vocabulary above — each
 // mode's, mechanism's and role's `label` and `what`; a mechanism's `spec` is
-// a citation and stays as written — and the two pictures' keys, which
-// `admin-core/admin_views.ts` declares beside the code that draws them.
-//
-// The keys are reached LAZILY, and only from `prose()`: that module is the
-// console's views, required at 18 in the order, and this one is a library
-// half the service requires. `prose()` runs where the whole stack is loaded —
-// the extraction tool loads it first, and a running service translating an
-// answer has — so the require is a cache hit there and loads nothing new.
+// a citation and stays as written. The two pictures' keys are the same
+// namespace's, but `admin-core/admin_views.ts` declares them beside the code
+// that draws them and offers them itself (`MAP_KEY_PROSE_ROUTES`,
+// `mapKeyProse()`): this library may not require that layer, which only the
+// console and the management API do (`tests/admin_actions_layer.js`).
 // ---------------------------------------------------------------------------
 /**
  * The routes whose answers carry the delegation namespace's prose: the
@@ -1976,22 +1973,20 @@ const PROSE_ROUTES = [
 ];
 
 /**
- * Extracts the delegation namespace (#543): the modes', mechanisms' and
- * roles' `label` and `what`, and the delegation and federation pictures'
- * keys.
+ * Extracts this module's part of the delegation namespace (#543): the
+ * modes', mechanisms' and roles' `label` and `what`.
  *
  * @returns key → English
  */
 function prose() {
   log.debug("Entering prose().");
-  // LAZILY, both: see the header above.
+  // LAZILY: `server_prose` fills templates for modules this one is loaded
+  // before.
   const harvest = require('./server_prose').harvest;
-  const views = require('../admin-core/admin_views');
   const out = Object.assign({},
     harvest('delegation.modes', MODES, ['label', 'what']),
     harvest('delegation.types', TYPES, ['label', 'what']),
-    harvest('delegation.roles', ROLES, ['label', 'what']),
-    views.mapKeyProse());
+    harvest('delegation.roles', ROLES, ['label', 'what']));
   log.debug("Leaving prose(). " + Object.keys(out).length);
   return out;
 }

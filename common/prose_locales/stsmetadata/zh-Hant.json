@@ -2059,11 +2059,11 @@
     "en": "0bf63d6deba59711",
     "text": "變更每一個「未來」OID4VP Authorization Request 的 dcql_query"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.what": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.what": {
     "en": "c9f5ea170ff74a38",
     "text": "非規範（#587）。管理員的 /oid4vp/start，透過同一個函式：主體指名該頁面查詢所指名的內容（format、by、client_id_prefix、response_type、response_mode、mode、wallet），而回答是 JSON——state、同裝置啟動時重新導向的錢包 URL、跨裝置 QR code 所承載的 openid4vp://（或 siopv2://）URI，以及以參照方式提供的 request_uri——而不是重新導向。在每種模式下都會回應。對應 /admin/vc 上的「開始驗證」表單。"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.effect": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "建構一個 OID4VP Authorization Request 並記錄其交易"
   },

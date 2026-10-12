@@ -6795,7 +6795,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'absent claims member as the whole credential. A request already ' +
           'in flight keeps the claims it was built with. Mirrors POST ' +
           '/admin/vc-verifier-config.' },
-  { path: '/admin-api/verifications/start', group: 'Management API',
+  { path: '/admin-api/verifications/:action', group: 'Management API',
     name: 'Start a verification',
     specs: ['oid4vp', 'siopv2', 'rfc9101'],
     effect: 'builds an OID4VP Authorization Request and records its ' +

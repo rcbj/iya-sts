@@ -2059,11 +2059,11 @@
     "en": "0bf63d6deba59711",
     "text": "改变今后每个 OID4VP 授权请求的 dcql_query"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.what": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.what": {
     "en": "c9f5ea170ff74a38",
     "text": "NON-SPEC（#587）。管理员的 /oid4vp/start，经由同一个函数：请求体指定该页面查询所指定的内容（format、by、client_id_prefix、response_type、response_mode、mode、wallet），答复是 JSON——state、同设备启动时重定向到的钱包 URL、跨设备二维码所携带的 openid4vp://（或 siopv2://）URI，以及按引用提供的 request_uri——而不是重定向。在每种模式下都会应答。对应 /admin/vc 上的“开始验证”表单。"
   },
-  "stsmetadata.endpoints./admin-api/verifications/start.effect": {
+  "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "构建一个 OID4VP 授权请求并记录其事务"
   },
