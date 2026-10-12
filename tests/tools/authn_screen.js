@@ -272,11 +272,61 @@ async function changePassword(o) {
   return answer;
 }
 
+/**
+ * Arms the screen's usernameless passkey ceremony, as its page does when
+ * the button is pressed or the autofill starts (#474, `…/passkey/options`).
+ *
+ * @param {object} o - `port`, `jar`, `userAgent`, `opened`
+ * @returns {Promise<object>} the answer, `challenge`, `rpId` and `options`
+ *   beside it where the ceremony was armed
+ */
+async function passkeyOptions(o) {
+  log.debug("Entering passkeyOptions().");
+  const answer = await act({ port: o.port, jar: o.jar,
+    userAgent: o.userAgent, opened: o.opened,
+    path: '/authn-api/pending/' + encodeURIComponent(o.opened.id) +
+          '/passkey/options', body: {} });
+  const j = answer.json || {};
+  answer.challenge = String(j.challenge || '');
+  answer.rpId = String(j.rpId || '');
+  answer.options = j.options || null;
+  log.debug("Leaving passkeyOptions(). " + answer.apiStatus);
+  return answer;
+}
+
+/**
+ * Submits the screen and, where the act names a page of its own — a second
+ * factor's, the set-up step's, the forced password change's — opens that
+ * page with a GET, as the screen's runtime sends the browser there. The
+ * page is what the form's POST used to answer with; a `redirect` stays
+ * `submit()`'s 303-shaped answer, and a refusal its JSON one.
+ *
+ * @param {object} o - as `submit()`
+ * @returns {Promise<object>} the page `{ status, headers, text, json,
+ *   answer }`, or `submit()`'s answer
+ */
+async function follow(o) {
+  log.debug("Entering follow().");
+  const answer = await submit(o);
+  if (answer.next !== 'mfa' && answer.next !== 'password-change') {
+    log.debug("Leaving follow(). " + answer.next);
+    return answer;
+  }
+  const page = await call({ port: o.port, jar: o.jar,
+                            userAgent: o.userAgent, method: 'GET',
+                            path: answer.location });
+  page.answer = answer;
+  log.debug("Leaving follow(). The step's page.");
+  return page;
+}
+
 module.exports = {
   call: call,
   open: open,
   act: act,
   submit: submit,
+  follow: follow,
+  passkeyOptions: passkeyOptions,
   changePassword: changePassword,
   bodyFor: bodyFor
 };
