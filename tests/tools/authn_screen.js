@@ -35,7 +35,8 @@ const log = require('bunyan').createLogger({ name: 'authn_screen',
  * One request to the in-process service, keeping the jar.
  *
  * @param {object} o - `port`, `jar`, `userAgent`, `method`, `path`,
- *   `headers`, `body`
+ *   `headers`, `body`; `ca`, for a service on TLS — every function here
+ *   passes it through
  * @returns {Promise<object>} `{ status, headers, text, json }`
  */
 function call(o) {
@@ -53,7 +54,11 @@ function call(o) {
     if (o.method !== 'GET') {
       headers['content-length'] = Buffer.byteLength(body);
     }
-    const req = http.request({ host: '127.0.0.1', port: o.port,
+    // A service on TLS (`ca`, the PEM its certificate chains to) is asked
+    // over https, verified against that anchor.
+    const transport = o.ca ? require('https') : http;
+    const req = transport.request({ host: '127.0.0.1', port: o.port,
+      ca: o.ca || undefined,
       path: String(o.path).replace(/^https?:\/\/[^/]+/, ''),
       method: o.method, headers: headers }, function (res) {
       let text = '';
@@ -119,14 +124,14 @@ async function open(o) {
   log.debug("Entering open().");
   const where = parse(o.at);
   const shellPath = o.at.replace(/^https?:\/\/[^/]+/, '');
-  const shell = await call({ port: o.port, jar: o.jar,
+  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: shellPath });
   const viewPath = where.prefix + (where.page === 'password-change'
     ? '/authn-api/password-change/' + encodeURIComponent(where.id)
     : '/authn-api/pending/' + encodeURIComponent(where.id) +
       (where.page === 'select-idp' ? '/partners' : ''));
-  const view = await call({ port: o.port, jar: o.jar,
+  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
                             userAgent: o.userAgent, method: 'GET',
                             path: viewPath,
                             headers: { accept: 'application/json' } });
@@ -156,13 +161,14 @@ async function act(o) {
   const headers = { accept: 'application/json',
     'content-type': o.contentType || 'application/json' };
   if (o.origin !== null) {
-    headers.origin = o.origin || 'http://127.0.0.1:' + o.port;
+    headers.origin = o.origin ||
+      (o.ca ? 'https' : 'http') + '://127.0.0.1:' + o.port;
   }
   const csrf = o.csrf === undefined ? o.opened.csrf : o.csrf;
   if (csrf) {
     headers['x-csrf-token'] = csrf;
   }
-  const r = await call({ port: o.port, jar: o.jar, userAgent: o.userAgent,
+  const r = await call({ port: o.port, ca: o.ca, jar: o.jar, userAgent: o.userAgent,
     method: 'POST', path: o.opened.prefix + o.path, headers: headers,
     body: typeof o.body === 'string' ? o.body : JSON.stringify(o.body || {})
   });
@@ -241,7 +247,7 @@ async function submit(o) {
              text: JSON.stringify(opened.json), headers: {}, view: null,
              opened: opened };
   }
-  const answer = await act({ port: o.port, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
     userAgent: o.userAgent, opened: opened,
     path: '/authn-api/pending/' + encodeURIComponent(opened.id) + '/' +
           OPERATIONS[action],
@@ -262,7 +268,7 @@ async function submit(o) {
 async function changePassword(o) {
   log.debug("Entering changePassword().");
   const opened = await open(o);
-  const answer = await act({ port: o.port, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
     userAgent: o.userAgent, opened: opened,
     path: '/authn-api/password-change/' + encodeURIComponent(opened.id),
     body: { new_password: o.fields.new_password,
@@ -282,7 +288,7 @@ async function changePassword(o) {
  */
 async function passkeyOptions(o) {
   log.debug("Entering passkeyOptions().");
-  const answer = await act({ port: o.port, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
     userAgent: o.userAgent, opened: o.opened,
     path: '/authn-api/pending/' + encodeURIComponent(o.opened.id) +
           '/passkey/options', body: {} });
@@ -312,7 +318,7 @@ async function follow(o) {
     log.debug("Leaving follow(). " + answer.next);
     return answer;
   }
-  const page = await call({ port: o.port, jar: o.jar,
+  const page = await call({ port: o.port, ca: o.ca, jar: o.jar,
                             userAgent: o.userAgent, method: 'GET',
                             path: answer.location });
   page.answer = answer;
