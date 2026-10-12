@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4287** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4291** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 290
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 291
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 117
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 120
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -1451,6 +1451,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0328` | An operation of the sign-in API (/authn-api, #571) threw; the browser is told the sign-in could not continue. | HTTP 500, { ok: false, errors } |
 | `STS-AUTHN-0329` | The passkey step's ceremony was asked to be armed (POST /authn-api/mfa/{id}/webauthn/options, #572) while the person had still to choose one of several passkeys (the passkey policy offers them one by one, #534). | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0330` | An act on a second-factor or emailed-factor step of the sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the operation does not take, or a page that is not one. | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0331` | A Start over at a sign-in step (/authn-api/mfa/{id}/start-over or /authn-api/password-change/{id}/start-over) named a step that has already ended: spent, expired or never minted. Nothing is put back. | HTTP 400, { ok: false, errors } |
 
 ## STS-OAUTH
 
@@ -3398,8 +3399,8 @@ Raised from: oid4vc/.
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
 | `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
-| `STS-VC-0100` *(retired)* | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). Retired by #585: a product realm's request is passed on past the route to Express's own 404, which records no code. | — |
-| `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
+| `STS-VC-0100` *(retired)* | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). Retired by #585: a product realm's request is passed on past the route to Express's own 404, which records no code. Since #598 the VC API is a product surface, off by default (STS-VC-0120). | — |
+| `STS-VC-0101` | A W3C VC API endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
 | `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |
 | `STS-VC-0103` | The VC-API issuer refused a credential JSON-LD safe mode rejects — a context this service does not hold (it fetches none), an undefined term, a redefined protected term, a relative IRI — or one its cryptosuite could not sign (#194-#196). | HTTP 400 {errors} |
 | `STS-VC-0104` | A VC-API issue request named an issuer (a securing mechanism and key) this service does not offer (#194). | HTTP 404 {errors} |
@@ -3418,7 +3419,10 @@ Raised from: oid4vc/.
 | `STS-VC-0117` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no Origin, or an origin this service does not answer on. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
 | `STS-VC-0118` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
 | `STS-VC-0119` *(retired)* | An operation of the OpenID4VC demonstration's API (/vc-demo-api, #582) failed with an unexpected error. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
-| `STS-VC-0120` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
+| `STS-VC-0120` | A W3C VC API endpoint (/vc-api/*) was called in a realm that does not serve it: vcApi.enabled is off, which is the default (#598). | HTTP 501 {errors} |
+| `STS-VC-0121` | A W3C VC API client, or an address, made more calls than vcApi.maxPerWindow allows in one security.rateLimitWindowS window (#598). | HTTP 429 {errors} with Retry-After |
+| `STS-VC-0122` | A W3C VC API request carried an option the endpoint does not understand, or an option value of the wrong shape — refused as VCALM requires (#598). | HTTP 400 {errors} |
+| `STS-VC-0123` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
 
 ## STS-SSF
 

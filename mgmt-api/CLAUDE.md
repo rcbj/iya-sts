@@ -2313,7 +2313,7 @@ companion start one here.
   start: `vcVerifier.completionUriFor(asked, res.locals.apiClientId)` holds it,
   where only registered addresses are accepted, to the CALLING CLIENT's
   registered redirect URIs (matched whole), and to an absolute http(s) URL
-  with no fragment anywhere; 400 `STS-VC-0120` otherwise, never replaced. It
+  with no fragment anywhere; 400 `STS-VC-0123` otherwise, never replaced. It
   rides on the transaction (`record.completionUri`), the answer says it back
   as `redirectUri`, and a start that names none is answered by the Response
   Endpoint with no `redirect_uri` — `{}`, the section's MAY.

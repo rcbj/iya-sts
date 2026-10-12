@@ -5487,6 +5487,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "Des certificats PEM, concaténés, des fournisseurs de portefeuille et des composants de stockage de clés dont cet émetteur croit les attestations de clé : une attestation doit se vérifier avec l’une de ces clés, ou être signée par un certificat (son x5c) émis par l’une d’elles. Vide ne fait confiance à aucun, et une attestation de clé est alors refusée."
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "Servir la W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "Servir la W3C CCG Verifiable Credentials API (VCALM) à /vc-api : un émetteur qui sécurise l'attestation qu'on lui remet (Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019, ecdsa-jcs-2019 et ecdsa-sd-2023, ou une enveloppe VC-JOSE-COSE), un détenteur qui prouve une présentation et dérive une divulgation sélective, un vérificateur d'attestations et de présentations, un service de statut sur les Bitstring Status Lists de ce domaine, et la résolution DID de did:key, did:jwk et du did:web propre à ce domaine. Chaque appel exige un jeton d'accès émis par ce domaine portant vc-api:issue ou vc-api:verify — des portées protégées, émises seulement à un client sur lequel un administrateur les a déclarées — dans tous les modes. Elle signe avec ses propres clés, chacune nommée par son did:key, jamais avec les clés qui signent les jetons de ce domaine. DÉSACTIVÉE PAR DÉFAUT, car elle signe des documents rédigés par son appelant : désactivée, chaque chemin /vc-api répond 501 — la fonctionnalité est désactivée, l'URL n'est pas fausse."
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "Appels VC API qu'un client peut faire par fenêtre de limitation de débit"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "Combien d'appels /vc-api un client — et une adresse — peut faire dans une fenêtre security.rateLimitWindowS, comptés par domaine ; au-delà, un appel est refusé 429 avec Retry-After. SON PROPRE NOMBRE, pour la raison de xacml.pipMaxPerWindow : security.rateLimitPerIdentity vaut cinq, parce qu'il protège une connexion, et un émetteur ou un vérificateur qu'un coordinateur appelle une fois par attestation en serait coupé. Ce qu'il borne, c'est le coût : un appel canonise du JSON-LD et signe ou vérifie, et un client admis pourrait sinon dépenser le CPU de ce service en boucle."
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "Activer Kerberos"

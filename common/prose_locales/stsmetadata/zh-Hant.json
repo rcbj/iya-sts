@@ -580,28 +580,28 @@
     "text": "partial：vct、cnf 持有者繫結，以及 /.well-known/jwt-vc-issuer 金鑰解析文件。以 DID 指名簽發者是一種「延伸」——這份文件未定義任何以 DID 為基礎的簽發者簽章機制。"
   },
   "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial：VCDM 1.1（jwt_vc_json）的 VC-JWT 編碼，以及帶有內嵌證明的 VCDM 2.0 認證（ldp_vc）；以及在 VC-API 測試端點（#194）上，對他人撰寫的認證或呈現檢查資料模型的每個 MUST、基於內建 context 的 JSON-LD 安全模式，以及封裝的認證與呈現——依 W3C VC Data Model 2.0 測試套件檢驗。"
+    "en": "9ea60338e6f757a1",
+    "text": "partial: VCDM 1.1 憑證的 VC-JWT 編碼（jwt_vc_json）以及帶內嵌證明的 VCDM 2.0 憑證（ldp_vc）；並且在 W3C VC API（#194）上，對他人撰寫的憑證或出示檢查資料模型的每一條 MUST，在隨附的上下文上使用 JSON-LD 安全模式，以及信封式憑證與出示——以 W3C VC Data Model 2.0 測試套件為準。"
   },
   "stsmetadata.specs.di-jcs.coverage": {
-    "en": "f0d7755e83750914",
-    "text": "partial：驗證（以及為測試而簽署）持有者在 VerifiablePresentation 上的證明——P-256 與 P-384、Ed25519，以及 Quantum-Resistant Cryptosuites 草案中的 ML-DSA-44 與 SLH-DSA-SHA2-128s——搭配 did:jwk 與 did:key 驗證方法；以及以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 簽署與驗證 GNAP zcap 權杖的委派證明，依 Multikey 控制者文件驗證。在 VC-API 測試端點上，兩個 EC 與 EdDSA JCS 套件也會保護與驗證認證，支援證明集與證明鏈（#195、#196）。RDFC 套件見 di-rdfc。"
+    "en": "e298f8533eb3ccb0",
+    "text": "partial: 驗證（以及為測試而簽署）VerifiablePresentation 上持有者的證明——P-256 與 P-384、Ed25519，以及 Quantum-Resistant Cryptosuites 草案中的 ML-DSA-44 與 SLH-DSA-SHA2-128s——使用 did:jwk 與 did:key 驗證方法；以及以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 針對 Multikey 控制者文件簽署與驗證 GNAP zcap 權杖的委派證明。在 W3C VC API 上，EC 與 EdDSA 兩個 JCS 套件也為憑證加固並驗證憑證，支援證明集與證明鏈（#195、#196）。RDFC 套件見 di-rdfc。"
   },
   "stsmetadata.specs.di-rdfc.coverage": {
-    "en": "8578075bfdb2edb4",
-    "text": "full——就 VC-API 測試端點上的簽發與驗證而言（#195、#196）：Ed25519、P-256 與 P-384，在安全模式下以 null 基底對內建 context 執行 RDFC-1.0，支援證明集與證明鏈，VC 1.1 與 2.0——依 W3C EdDSA 與 ECDSA 測試套件檢驗。本服務未隨附的 context 會被拒絕，絕不擷取。"
+    "en": "024efe640e5df490",
+    "text": "full：在 W3C VC API 上簽發與驗證（#195、#196）：Ed25519、P-256 與 P-384，在隨附的上下文上以安全模式與空基底執行 RDFC-1.0，證明集與證明鏈，VC 1.1 與 2.0——以 W3C EdDSA 與 ECDSA 測試套件為準。本服務未隨附的上下文會被拒絕，絕不擷取。"
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full：針對 P-256（第 3.5.8 節規定衍生證明使用的曲線）：含強制指標的基礎證明、由任意選擇性指標產生的衍生證明，以及它們的驗證（#196）——由規格本身的基礎證明所衍生的證明與其測試向量逐位元組相同，而由 Digital Bazaar 函式庫衍生的證明可在此驗證，反之亦然。"
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
-    "en": "c4c0c53d034aeb43",
-    "text": "partial：vc+jwt、vc+sd-jwt 與 vc+cose 及其 vp 形式，在 VC-API 測試端點（#198）加以保護與驗證，SD-JWT 揭露依 RFC 9901 第 7.1 節處理；金鑰透過 did:key 或 did:jwk 的 kid，或呼叫端指名的公開金鑰取得，不擷取任何內容。OID4VCI 簽發者不簽發這些形式（jwt_vc_json 為 VCDM 1.1），而 SD-JWT 出示上的 Key Binding JWT 只會被回報，不會被檢查。"
+    "en": "de44817c598a2283",
+    "text": "partial: vc+jwt、vc+sd-jwt 與 vc+cose 及其 vp 形式，在 W3C VC API 上加固與驗證（#198），SD-JWT 揭露依 RFC 9901 第 7.1 節處理；金鑰透過 did:key 或 did:jwk 的 kid 或呼叫者指定的公開金鑰取得，不擷取任何內容。OID4VCI 簽發者不簽發這些形式（jwt_vc_json 為 VCDM 1.1），SD-JWT 出示上的 Key Binding JWT 只回報、不檢查。"
   },
   "stsmetadata.specs.vc-api.coverage": {
-    "en": "e2e4945d5e72ed8d",
-    "text": "partial，且為測試控制項：W3C 測試套件所驅動的簽發、驗證、證明、衍生與狀態操作，使用本服務自己的密碼套件、金鑰與狀態清單，僅限開發領域，並需要攜帶 vc-api:issue 或 vc-api:verify 的存取權杖。不支援 zcap 授權、工作流程與憑證儲存。"
+    "en": "d8ffeba3e97815b9",
+    "text": "partial: 簽發者（issue）、持有者（prove、derive）、驗證者（憑證與出示）與狀態服務，基於本服務自己的密碼套件、狀態清單與 VC API 專用金鑰；在領域開啟之前處於關閉狀態（vcApi.enabled），在所有模式下都需要帶有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 存取權杖，依用戶端限速，不理解的選項會被拒絕。尚未建置：zcap 授權、工作流程與交換、挑戰、憑證與出示的儲存（/credentials/{id} 的 GET 與 DELETE）、VCALM 的 operation:path 範圍，以及依領域設定的簽發者執行個體（執行個體是固定的，每種加固機制與曲線各一個）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -624,8 +624,8 @@
     "text": "full：涵蓋 Data Integrity 所需的部分。JSON-LD 內容（context）為內建複本，從不擷取：依賴網路擷取的正規化既無法重現也不安全。"
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "3441c40b69d1cf9a",
-    "text": "partial：本服務發布一份含兩個驗證方法的 did:web 文件，並在 VC-API 測試端點（#199）以兩種 JSON 表示法解析與解參照（第 7 節）did:key、did:jwk 以及自己的 did:web，並以 W3C DID 測試套件檢驗。不擷取其他任何 did:web；不支援 DID 參數（service、versionId、…）。"
+    "en": "a4e9c39575ac8ed8",
+    "text": "partial: 本服務發布一份帶兩個驗證方法的 did:web 文件，並在 W3C VC API（#199）上以兩種 JSON 表示法解析與解參照（第 7 節）did:key、did:jwk 及其自身的 did:web，以 W3C DID 測試套件為準。不擷取任何其他 did:web；不支援任何 DID 參數（service、versionId 等）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -2563,6 +2563,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 回應誰的密碼必須變更；POST 儲存新密碼並繼續登入。"
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12)。強制變更密碼的「重新開始」：不做任何變更，並將其承載的待處理登入放回登入畫面。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC（#572、#573）。第二要素或電子郵件要素步驟頁面（?page=）的檢視，只有事實而沒有文字，以及其動作所攜帶的 CSRF 權杖；在頁面永遠無法為該步驟繪製時拒絕。該 id 是一種持有者能力，絕不會記錄到日誌。"
@@ -2614,6 +2618,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC（#573）。連結所抵達頁面上的「繼續」按鈕，僅在要求該連結的瀏覽器中有效。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12)。每個步驟頁面的「重新開始」：結束該步驟及其持有的一切，不啟動工作階段，並將其承載的待處理登入放回登入畫面，因此原始請求仍會完成。"
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
@@ -2843,10 +2851,6 @@
     "en": "4f3a588acce9f5fc",
     "text": "此領域用於撤銷或暫停的 BitstringStatusListCredential，以 application/vc+jwt 呈現：一個含 131,072 個項目的 GZIP 位元字串，索引 0 在前，以認證金鑰簽署——或者，當 Accept 要求 JSON-LD 或 JSON 而非優先要求 JWT 時，為同一份認證，附上由領域 Ed25519 金鑰產生的 eddsa-rdfc-2022 證明，以其 did:key 簽發（#197）。"
   },
-  "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose/publish.what": {
-    "en": "d39a31a0597ad418",
-    "text": "W3C 測試套件的「立即發布清單」。此處的清單在每次讀取時計算，因此只回傳 204；這是測試控制項，位於 vc-api:issue 之後。"
-  },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
     "text": "依 transaction_id 領取簽發者先前以 202 回應的認證。"
@@ -2864,40 +2868,76 @@
     "text": "用以驗證 ldp_vc 證明的 BLS12-381 金鑰，以 Multikey 呈現。`/bbs/keys/<kid>` 是一般 ldp_vc 認證的 verificationMethod 所解參照的位址，適用於領域 BBS 金鑰的每個有效世代（目前的、下一個，以及仍在寬限期內的已淘汰者——此金鑰隨領域的簽署金鑰輪替，#49）；`/bbs/keys/1` 是目前的那一把。其他任何值回傳 404。"
   },
   "stsmetadata.endpoints./vc-api/issuers.what": {
-    "en": "e93fbff56e0821df",
-    "text": "非規範的清單，供測試套件工作使用：此轉接器提供的每個簽發者——一種保護機制及其簽署所用的領域金鑰——附上其 did:key 與端點。僅限開發領域；vc-api:issue。"
+    "en": "1aa20d049d9eba6a",
+    "text": "非規範清單，即實作清單中的簽發者執行個體清單：本服務提供的每個簽發者——一種加固機制及其簽署所用的 VC API 金鑰——及其 did:key 與端點。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/issuers.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "在檢查資料模型的每個 MUST 與 JSON-LD 安全模式後，保護交給它的認證：內嵌的 Data Integrity 證明（eddsa-rdfc-2022、eddsa-jcs-2022、基於 P-256 與 P-384 的 ecdsa-rdfc-2019 與 ecdsa-jcs-2019、ecdsa-sd-2023），或 VC-JOSE-COSE 封套（jose-p256、sd-jwt-p256、cose-p256）。認證的簽發者必須是該金鑰的 did:key；options.credentialStatus 會在領域的 Bitstring Status List 中配置一個索引。僅限開發領域；vc-api:issue。201 { verifiableCredential }。"
+    "en": "76ef67331a4befb1",
+    "text": "在檢查資料模型的每一條 MUST 與 JSON-LD 安全模式之後，為交給它的憑證加固：內嵌的 Data Integrity 證明（基於 P-256 與 P-384 的 eddsa-rdfc-2022、eddsa-jcs-2022、ecdsa-rdfc-2019 與 ecdsa-jcs-2019，以及 ecdsa-sd-2023）或 VC-JOSE-COSE 信封（jose-p256、sd-jwt-p256、cose-p256）。憑證的簽發者必須是該金鑰的 did:key；options.credentialStatus 在本領域的 Bitstring Status Lists 中配置索引。以 VC API 自己的金鑰簽署，絕不使用簽署本領域權杖的金鑰；不理解的選項會被拒絕。vc-api:issue。201 { verifiableCredential }。"
+  },
+  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",
     "text": "資料模型、JSON-LD 安全模式、證明集與證明鏈的每個證明（驗證方法 did:key 與 did:jwk，不擷取任何東西）或封套，以及——在要求或指名時——認證在此領域清單中的狀態。200 或 400 { verified, checks, warnings, errors }。vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/credentials/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
+  },
   "stsmetadata.endpoints./vc-api/presentations/verify.what": {
     "en": "5c148622059888d3",
     "text": "出示本身的證明（authentication、所要求的 challenge 與 domain）或封套（其 nonce 與 aud），以及其中的每個認證，檢查方式與 /vc-api/credentials/verify 相同。vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/presentations/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
+  },
   "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.what": {
-    "en": "a10e25570a166392",
-    "text": "以領域金鑰的 did:key 身分保護出示：附上給定 challenge 與 domain 的 Data Integrity 證明，或 VC-JOSE-COSE 封套。vc-api:issue。"
+    "en": "021b219f3012be78",
+    "text": "以 VC API 金鑰的 did:key 身分為出示加固：帶給定挑戰與網域的 Data Integrity 證明，或 VC-JOSE-COSE 信封。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/derive.what": {
     "en": "f059d39e5c330e56",
     "text": "從基礎證明衍生的 ecdsa-sd-2023 證明，揭露強制陳述與 options.selectivePointers。vc-api:issue。"
   },
+  "stsmetadata.endpoints./vc-api/credentials/derive.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
+  },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "b48e6b20d9d6497f",
-    "text": "撤銷、暫停或解除暫停此轉接器以狀態簽發的認證——即 /admin/vc-status 所執行的動作，也是否認認證的三種動作之一。撤銷是最終的。vc-api:issue。"
+    "en": "860c7bcc627e7889",
+    "text": "撤銷、暫停或解除暫停本 VC API 帶狀態簽發的憑證——即 /admin/vc-status 執行的動作，是否認憑證的三種動作之一。撤銷是最終的。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/credentials/status.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./vc-api/resolve.what": {
     "en": "83c42724ff6ab588",
     "text": "DID Core section 7.1 的 resolve 或 resolveRepresentation（?function=），適用於 did:key、did:jwk 與此領域自己的 did:web，回應解析結果；其他任何 did:web 回傳 notFound，而不會擷取。vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/resolve.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
+  },
   "stsmetadata.endpoints./vc-api/dereference.what": {
     "en": "d3e75554e1f05975",
     "text": "DID Core section 7.2：文件，或片段所指名的驗證方法。vc-api:verify。"
+  },
+  "stsmetadata.endpoints./vc-api/dereference.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本領域開啟 vcApi.enabled 之前回應 501"
   },
   "stsmetadata.endpoints./.well-known/did.json.what": {
     "en": "614fbb0376075e4a",

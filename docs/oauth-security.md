@@ -265,7 +265,7 @@ two messages: a resource request and a resource response. This service
 implements both halves at every resource server that takes an OAuth access
 token. Those are UserInfo, the RFC 9470 step-up resource, the OpenID4VCI
 endpoints, `/scim/v2`, the Shared Signals endpoints, Grant Management and the
-VC-API test endpoints. The draft says nothing about how it is turned on, so
+W3C VC API. The draft says nothing about how it is turned on, so
 it is a setting of its own and not a value of `oauth2.fapi`.
 
 **A signed request** carries an HTTP message signature with

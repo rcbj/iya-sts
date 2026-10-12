@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "Ett lösenordssteg har redan lyckats. Om det lyckas registrerar sessionen amr [\"pwd\",\"hwk\"] och acr \"mfa\", och katalogposten för {name} markeras som autentiserad med mer än en faktor.",
   "webauthn.backup": "Jag har inte min nyckel — använd en återställningskod",
   "totp.title": "Engångskod — autentiseringstjänst",
+  "startOver.button": "Börja om",
+  "startOver.note": "Tillbaka till inloggningsskärmen för samma begäran. Inget från det här steget sparas.",
   "totp.heading": "Din engångskod",
   "totp.sub": "Andra faktor för <code>{name}</code>",
   "totp.label": "Den {digits}-siffriga koden från din autentiseringsapp",

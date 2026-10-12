@@ -5487,6 +5487,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "Mga PEM certificate, pinagdugtong, ng mga Wallet Provider at key storage component na ang mga key attestation ay pinaniniwalaan ng issuer na ito: dapat mag-verify ang attestation laban sa isa sa mga key na ito, o pinirmahan ng certificate (ang x5c nito) na na-issue ng isa sa mga ito. Walang pinagkakatiwalaan kapag walang laman, at tinatanggihan ang key attestation."
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "Ihain ang W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "Ihain ang W3C CCG Verifiable Credentials API (VCALM) sa /vc-api: isang issuer na nagse-secure ng kredensyal na ibinibigay dito (Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019, ecdsa-jcs-2019 at ecdsa-sd-2023, o isang VC-JOSE-COSE envelope), isang holder na nagpapatunay ng presentasyon at kumukuha ng piling pagsisiwalat, isang verifier ng mga kredensyal at presentasyon, isang serbisyo ng status sa ibabaw ng Bitstring Status Lists ng realm na ito, at DID resolution ng did:key, did:jwk at ng sariling did:web ng realm na ito. Bawat tawag ay nangangailangan ng access token na inilabas ng realm na ito na may dalang vc-api:issue o vc-api:verify — mga protektadong scope, inilalabas lamang sa client na pinagdeklarahan ng isang administrator — sa bawat mode. Pumipirma ito gamit ang sarili nitong mga key, bawat isa ay pinangalanan ng did:key nito, hindi kailanman gamit ang mga key na pumipirma sa mga token ng realm na ito. NAKA-OFF BILANG DEFAULT, dahil pumipirma ito ng mga dokumentong isinulat ng tumatawag dito: kapag naka-off, bawat /vc-api path ay sumasagot ng 501 — naka-off ang feature, hindi mali ang URL."
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "Mga tawag sa VC API na maaaring gawin ng isang client bawat rate-limit window"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "Ilang tawag sa /vc-api ang maaaring gawin ng isang client — at ng isang address — sa isang security.rateLimitWindowS window, binibilang bawat realm; lampas doon, ang tawag ay tinatanggihan ng 429 na may Retry-After. SARILI NITONG BILANG, sa dahilan ng xacml.pipMaxPerWindow: ang security.rateLimitPerIdentity ay lima, dahil nagbabantay ito ng pag-sign in, at ang isang issuer o verifier na tinatawag ng isang coordinator nang isang beses bawat kredensyal ay mapuputol nito. Ang nililimitahan nito ay gastos: ang isang tawag ay nagka-canonicalize ng JSON-LD at pumipirma o nagve-verify, at kung hindi ay maaaring gugulin ng isang tinanggap na client ang CPU ng serbisyong ito sa isang loop."
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "I-enable ang Kerberos"

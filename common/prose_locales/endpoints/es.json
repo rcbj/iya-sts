@@ -1479,6 +1479,10 @@
     "en": "f2d18b738357010b",
     "text": "Un cambio de contraseña obligatorio"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Reiniciar un inicio de sesión desde el cambio de contraseña"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Lo que muestra la página de un paso de inicio de sesión"
@@ -1530,6 +1534,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Gastar un enlace de inicio de sesión enviado por correo"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Reiniciar un inicio de sesión desde un paso"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1739,10 +1747,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Credencial Bitstring Status List"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "Publicar una lista de estado (VC-API, control de prueba)"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Endpoint de credenciales diferidas"
@@ -1760,40 +1764,40 @@
     "text": "Clave pública BBS"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "Los emisores de VC-API (control de prueba)"
+    "en": "73b838a87b15b09a",
+    "text": "Los emisores de la VC API"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "Emitir una credencial (VC-API, control de prueba)"
+    "en": "36e4ff37d0083d67",
+    "text": "Emitir una credencial (VC API)"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "Verificar una credencial (VC-API, control de prueba)"
+    "en": "7f67271e211b78e1",
+    "text": "Verificar una credencial (VC API)"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "Verificar una presentación (VC-API, control de prueba)"
+    "en": "f0ace30e55e137f1",
+    "text": "Verificar una presentación (VC API)"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "Probar una presentación (VC-API, control de prueba)"
+    "en": "96508bdaea6f7f69",
+    "text": "Probar una presentación (VC API)"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "Derivar una divulgación selectiva (VC-API, control de prueba)"
+    "en": "4af3df1e4c1f2f99",
+    "text": "Derivar una divulgación selectiva (VC API)"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "Cambiar el estado de una credencial (VC-API, control de prueba)"
+    "en": "d231bdc923e68f8a",
+    "text": "Cambiar el estado de una credencial (VC API)"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "Resolver un DID (control de prueba)"
+    "en": "39c91a22e95b0c2e",
+    "text": "Resolver un DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "Desreferenciar una URL DID (control de prueba)"
+    "en": "a7044c968ef56722",
+    "text": "Desreferenciar una URL de DID"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

@@ -23,7 +23,7 @@ DID Core with DIF domain linkage.
 | `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
 | `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
 | `vc_did_resolver.ts` | DID Core section 7: resolve, resolveRepresentation and dereference for `did:key`, `did:jwk` and this realm's `did:web` (#199). A library. |
-| `vc_api.ts` | The W3C VC-API test endpoints (`/vc-api/*`) over everything above — a TEST CONTROL (#194-#199). *The W3C VC-API adapter* below. |
+| `vc_api.ts` | The W3C VC API (VCALM, `/vc-api/*`) over everything above (#194-#199) — a product surface since #598, OFF by default (`vcApi.enabled`). *The W3C VC API* below. |
 | `contexts/` | The JSON-LD contexts `vc_jsonld.ts` answers from, fetched once from their URLs; `vc_jsonld.ts`'s header is their provenance. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -986,7 +986,7 @@ needed to tell them apart.
 
 ---
 
-## THE W3C VC-API ADAPTER AND THE W3C SUITES (#194-#199, 2026-09-26)
+## THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
 
 The Verifiable Credentials and DID Working Groups' own test suites — VC Data
 Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,
@@ -1001,17 +1001,55 @@ did:key), a credential's status is an index `vc_status.ts` allocates, and a
 status change is `vc_status.setStatus()` — the act `/admin/vc-status`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
-**A TEST CONTROL** (`mode.servesDemoEndpoints()`, #585): every route carries
-`common/app.js`'s `demoOnly` mark, so a product realm answers as for a path
-nothing is registered on (Express's own 404; until #585 a 404 of this
-module's own, `STS-VC-0100`, retired). An endpoint that signs whatever it is handed
-with a realm's key is what a conformance suite needs and no deployment
-should expose. **AND AUTHENTICATED ANYWAY**, the way
-`vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
-client-credentials token this realm issued, verified and not revoked,
-carrying `vc-api:issue` or `vc-api:verify` — two new PROTECTED scopes
-(`common/scope_policy.ts`), issued only to a client an administrator
-declared them on, re-checked on every call (`STS-VC-0101`).
+**A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
+DEFAULT.** It was a test control — development-only under #585's
+`demoOnly` mark, because an endpoint that signs whatever it is handed with a
+realm's key is what a conformance suite needs. Making it a surface a
+deployment may expose changed six things, each argued in `vc_api.ts`'s
+header:
+
+* **`vcApi.enabled`, per realm, off.** Off, every route answers **501**
+  (`STS-VC-0120`) with the VC API's error shape before a token is read —
+  `scim.enabled`'s, `ssf.enabled`'s and `xacml.enabled`'s answer, not
+  Express's 404: the feature is off, the URL is not wrong, and
+  `/admin/sts-metadata`'s list stays true in every realm (each row's
+  `effect` says so). The setting is drawn on `/admin/vc`'s OpenID4VCI tab
+  (the `W3C VC API` group, `SETTING_HOMES`).
+* **KEYS OF ITS OWN** — the realm key set's `vcApiKeys` member
+  (`common/helpers.js` makeVcApiKeys(), `vc_data_integrity.ts`
+  `vcApiKeyFor()`): Ed25519, P-256 and P-384, made with the set, sealed in
+  product, shared across processes like the browser device keys, carried
+  over a rotation unchanged (a did:key IS its key), and never published or a
+  candidate of `ownCandidatesFor()`. It signed with the realm's token keys
+  (`extraKeys`) until then, and a `jose-p256` issue was a compact JWS over a
+  document the caller wrote: any `iss`/`sub`/`aud` it liked, signed by a key
+  `verifyOwnJws()` tries for any kid it does not know (RFC 8725 section
+  3.12). `realmKeyFor()` still signs the status lists' JSON-LD form.
+* **AUTHENTICATED IN EVERY MODE**, as before: an OAuth 2.0 access token this
+  realm issued, verified, not revoked, carrying `vc-api:issue` or
+  `vc-api:verify` — PROTECTED scopes (`common/scope_policy.ts`), issued only
+  to a client an administrator declared them on, re-checked on every call
+  (`STS-VC-0101`). The file reads no mode predicate at all.
+* **RATE LIMITED** after the token, per client and per address, per realm
+  (`vcApi.maxPerWindow`, `STS-VC-0121`) — `xacml.pipMaxPerWindow`'s
+  arrangement, because signing and canonicalizing cost CPU.
+* **AN OPTION IT DOES NOT UNDERSTAND IS REFUSED** (`STS-VC-0122`), as
+  VCALM says it MUST be, each known option's shape checked. That closed a
+  hole the test control had: `securedByEnvelope`, the verifier's own
+  "an envelope already verified this", was read from the CALLER's options,
+  and a verify carrying it was `verified: true` with no proof checked. It is
+  an argument now. A private member under `verificationMethod` is refused
+  rather than ignored. The DID queries go through `validation.check()`.
+* **THE STATUS-LIST PUBLISH LEFT** for `POST /admin-api/vc-status/publish`
+  (Admin Write) and a *Publish now* button on the Credential status tab
+  (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
+  a list here is computed on every read, and an act that only says so is an
+  operator's.
+
+`vc_api.issued` (credential id → status index) moved to the GLOBAL tier
+(`persistence/tiers.js`) beside `vc_status.entries`, so a status change
+reaches its index from any cell; `/vc-api` stays `local` in
+`common/cell_placement.ts`, since nothing it reads is a person's.
 
 **NOTHING IS FETCHED, WHICH IS WHY THE RDFC SUITES COULD BE ADDED AT ALL.**
 `vc_data_integrity.ts`'s header argued JCS for the holder proof because an
@@ -1060,8 +1098,11 @@ resolveRepresentation for a contentType and a parseable stream (#199, one).
 
 ### Not built
 
-zcap authorization (OAuth only); a Key Binding JWT on an SD-JWT presentation
-is reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
+zcap authorization (OAuth only); VCALM's workflows and exchanges,
+challenges, credential and presentation storage, its `operation:path`
+scopes, and issuer instances configured per realm (they are fixed, one per
+mechanism and curve); a Key Binding JWT on an SD-JWT presentation is
+reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
 parameters (`service`, `versionId`, …) and any did:web but the realm's own;
 Bitstring Status Lists of the `message` purpose (`statusSize` > 1); the
 bbs-2023 suite at the adapter (no ticket asks for its suite).
@@ -1100,7 +1141,7 @@ its closing page `/oid4vp/done`, their script `/issuer/demo.js` and API
   the person to a 404. The start now names it (`redirect_uri`, checked by
   `completionUriFor()`: the calling client's registered redirect URIs where
   only registered addresses are accepted, any absolute http(s) URL without a
-  fragment elsewhere, `STS-VC-0120` otherwise), it rides on the transaction
+  fragment elsewhere, `STS-VC-0123` otherwise), it rides on the transaction
   as `completionUri`, and `afterResponseUri()` answers it. A start that
   named none is answered `{}` — no `redirect_uri` — and a SIOPv2
   `form_post` answer with no page is told in plain text that it arrived. A
@@ -1140,12 +1181,10 @@ routes exists, and `tests/companion.js` the companion.
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-What is left of them here: the VC-API test endpoints with the status-list
-publish hook (#591's P7 makes `/vc-api` a product surface). **Not**
+Nothing of this family is a demonstration any more: the OpenID4VC
+demonstration left for the development companion on #594 (above), and the W3C
+VC API, the last one here, became a product surface on #598. **Not ever**
 `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`,
 which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`)
-uses and #569's rule keeps unchanged. Each carries `common/app.js`'s
-`demoOnly` mark, so a product realm answers it as a path nothing is
-registered on (Express's own 404) and no page, document or log line names it;
-a development realm in a product process keeps it. `common/CLAUDE.md`
-(`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+uses and #569's rule keeps unchanged. `common/CLAUDE.md` (`mode.js`) argues
+the `demoOnly` rule and `tests/demo_endpoints.js` holds it.

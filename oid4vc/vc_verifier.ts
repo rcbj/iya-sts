@@ -2125,7 +2125,7 @@ class VcVerifier {
   // registered redirect URIs (`applications.clientConfigOf()`, the register
   // the authorization endpoint holds its own redirect URIs to), matched
   // whole; anywhere else any absolute http(s) URL with no fragment. Refused
-  // `STS-VC-0120` either way, never replaced. A start that names none is
+  // `STS-VC-0123` either way, never replaced. A start that names none is
   // answered by the Response Endpoint with no `redirect_uri`, which the
   // section allows and which is what another device's wallet wants.
   // ---------------------------------------------------------------------------

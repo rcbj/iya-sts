@@ -75,13 +75,9 @@ function childMain() {
     // `/did/generate` left with #594.
     '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals',
-    '/vc-api/issuers',
-    '/vc-api/issuers/:issuer/credentials/issue', '/vc-api/credentials/verify',
-    '/vc-api/presentations/verify',
-    '/vc-api/holders/:holder/presentations/prove',
-    '/vc-api/credentials/derive', '/vc-api/credentials/status',
-    '/vc-api/resolve', '/vc-api/dereference',
-    '/oid4vci/status-lists/bitstring/:purpose/publish',
+    // The W3C VC API left this list with #598: a product surface, off by
+    // default behind vcApi.enabled; its status-list publish hook is
+    // `POST /admin-api/vc-status/publish` now.
     // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
     // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
     // (Monitoring → TLS connection) left with #597.
@@ -301,9 +297,10 @@ function childMain() {
         }
       });
       note(idle.length === 0 && cardIdle.length === 0 &&
-           hidden.indexOf('vc-api') >= 0,
+           hidden.indexOf('vc-api') < 0,
            'D2. a specification only a demonstration cited leaves the page ' +
-           'and the cards (the VC-API among them), and no other is idle',
+           'and the cards, and no other is idle — and the VC API, a ' +
+           'product surface since #598, is not among them',
            JSON.stringify({ hidden: hidden, idle: idle, cards: cardIdle }));
       const shown = [];
       table.pages().forEach(function (page) {
@@ -329,7 +326,7 @@ function childMain() {
       const offered = [];
       catalogue.forEach(function (one) {
         one.prefixes.forEach(function (prefix) {
-          if (['/vc-api', '/issuer', '/did', '/spnego', '/vc-demo-api']
+          if (['/issuer', '/did', '/spnego', '/vc-demo-api']
               .indexOf(prefix) >= 0) {
             offered.push(prefix);
           }

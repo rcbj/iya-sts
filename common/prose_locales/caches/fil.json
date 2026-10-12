@@ -1216,8 +1216,8 @@
     "text": "Mga VC-API credential na may status"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "Bawat credential na in-issue ng VC-API test adapter na may status entry, at ang status-list index na kinuha nito, para mahanap ito ng isang pagbabago ng status."
+    "en": "6276c639d08ac2a7",
+    "text": "Bawat kredensyal na inilabas ng W3C VC API na may entry ng status, at ang index ng status list na kinuha nito, upang mahanap ito ng isang pagbabago ng status."
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",

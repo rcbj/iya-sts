@@ -580,28 +580,28 @@
     "text": "partial: vct, cnf holder binding, at ang /.well-known/jwt-vc-issuer key resolution document. Ang pagpapangalan sa issuer ayon sa DID ay isang EXTENSION — walang DID-based na issuer signature mechanism na itinatakda ang dokumentong ito."
   },
   "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial: ang VC-JWT encoding ng mga VCDM 1.1 (jwt_vc_json) at VCDM 2.0 credential na may embedded proof (ldp_vc); at, sa mga VC-API test endpoint (#194), bawat MUST ng data model na sinusuri sa credential o presentation na isinulat ng iba, JSON-LD safe mode sa ibabaw ng mga vendored context, at mga enveloped credential at presentation — sinusuri laban sa W3C VC Data Model 2.0 test suite."
+    "en": "9ea60338e6f757a1",
+    "text": "partial: ang VC-JWT encoding ng mga kredensyal na VCDM 1.1 (jwt_vc_json) at mga kredensyal na VCDM 2.0 na may naka-embed na proof (ldp_vc); at, sa W3C VC API (#194), bawat MUST ng data model na sinusuri sa isang kredensyal o presentasyong isinulat ng iba, JSON-LD safe mode sa ibabaw ng mga kasamang context, at mga naka-envelope na kredensyal at presentasyon — sinusukat sa W3C VC Data Model 2.0 test suite."
   },
   "stsmetadata.specs.di-jcs.coverage": {
-    "en": "f0d7755e83750914",
-    "text": "partial: verification (at signing, para sa mga test) ng proof ng isang holder sa isang VerifiablePresentation — P-256 at P-384, Ed25519, at ML-DSA-44 at SLH-DSA-SHA2-128s mula sa Quantum-Resistant Cryptosuites draft — na may mga verification method na did:jwk at did:key; at signing at verification ng delegation proof ng isang GNAP zcap token sa Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s laban sa isang Multikey controller document. Sa mga VC-API test endpoint, sine-secure at vine-verify din ng dalawang EC at EdDSA JCS suite ang mga credential, kasama ang mga proof set at proof chain (#195, #196). Ang mga RDFC suite ay di-rdfc."
+    "en": "e298f8533eb3ccb0",
+    "text": "partial: pag-verify (at pagpirma, para sa mga test) ng proof ng isang holder sa isang VerifiablePresentation — P-256 at P-384, Ed25519, at ML-DSA-44 at SLH-DSA-SHA2-128s mula sa draft na Quantum-Resistant Cryptosuites — gamit ang mga verification method na did:jwk at did:key; at pagpirma at pag-verify ng delegation proof ng isang GNAP zcap token sa Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s laban sa isang Multikey controller document. Sa W3C VC API ang dalawang JCS suite ng EC at EdDSA ay nagse-secure at nagve-verify din ng mga kredensyal, na may mga proof set at proof chain (#195, #196). Ang mga RDFC suite ay di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
-    "en": "8578075bfdb2edb4",
-    "text": "full para sa pag-issue at pag-verify sa mga VC-API test endpoint (#195, #196): Ed25519, P-256 at P-384, RDFC-1.0 sa ibabaw ng mga vendored context sa safe mode na may null base, mga proof set at chain, VC 1.1 at 2.0 — sinusuri laban sa mga W3C EdDSA at ECDSA test suite. Tinatanggihan, hindi kailanman kinukuha, ang context na hindi kasama sa serbisyong ito."
+    "en": "024efe640e5df490",
+    "text": "full para sa paglalabas at pag-verify sa W3C VC API (#195, #196): Ed25519, P-256 at P-384, RDFC-1.0 sa ibabaw ng mga kasamang context sa safe mode na may null base, mga proof set at chain, VC 1.1 at 2.0 — sinusukat sa W3C EdDSA at ECDSA test suites. Ang context na hindi kasama sa serbisyong ito ay tinatanggihan, hindi kailanman kinukuha."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full para sa P-256, ang curve na itinatakda ng section 3.5.8 para sa derived proof: mga base proof na may mandatory pointer, mga derived proof mula sa anumang selective pointer, at ang pag-verify ng mga ito (#196) — ang derived proof mula sa sariling base proof ng specification ay byte-for-byte na kapareho ng test vector nito, at ang proof na hinango ng library ng Digital Bazaar ay nave-verify dito at gayundin ang kabaligtaran."
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
-    "en": "c4c0c53d034aeb43",
-    "text": "partial: vc+jwt, vc+sd-jwt at vc+cose at ang mga vp form ng mga ito, sine-secure at vine-verify sa mga VC-API test endpoint (#198), at pinoproseso ang mga SD-JWT disclosure ayon sa sinasabi ng RFC 9901 section 7.1; ang mga key ay mula sa isang did:key o did:jwk kid o sa public key na pinangalanan ng caller, at walang fine-fetch. Hindi nag-iissue ng mga form na ito ang OID4VCI issuer (ang jwt_vc_json ay VCDM 1.1), at ang Key Binding JWT sa isang SD-JWT presentation ay iniuulat, hindi sinusuri."
+    "en": "de44817c598a2283",
+    "text": "partial: vc+jwt, vc+sd-jwt at vc+cose at ang kanilang mga anyong vp, sine-secure at vine-verify sa W3C VC API (#198), ang mga SD-JWT disclosure ay pinoproseso ayon sa sinasabi ng RFC 9901 seksiyon 7.1; mga key sa pamamagitan ng did:key o did:jwk kid o isang public key na pinangalanan ng tumatawag, walang kinukuha. Hindi inilalabas ng OID4VCI issuer ang mga anyong ito (ang jwt_vc_json ay VCDM 1.1), at ang Key Binding JWT sa isang SD-JWT na presentasyon ay iniuulat, hindi sinusuri."
   },
   "stsmetadata.specs.vc-api.coverage": {
-    "en": "e2e4945d5e72ed8d",
-    "text": "partial, at isang TEST CONTROL: ang mga operasyong issue, verify, prove, derive at status na pinapatakbo ng mga W3C test suite, gamit ang sariling mga cryptosuite, key at status list ng serbisyong ito, sa isang development realm lang, sa likod ng access token na may dalang vc-api:issue o vc-api:verify. Walang zcap authorization, walang workflow, walang imbakan ng credential."
+    "en": "d8ffeba3e97815b9",
+    "text": "partial: ang mga serbisyo ng issuer (issue), holder (prove, derive), verifier (mga kredensyal at presentasyon) at status, sa ibabaw ng sariling mga cryptosuite, status list at sariling mga key ng VC API ng serbisyong ito, NAKA-OFF hangga't hindi ito ino-on ng isang realm (vcApi.enabled), sa likod ng isang OAuth 2.0 access token na may dalang vc-api:issue o vc-api:verify sa bawat mode, may rate limit bawat client, at tinatanggihan ang opsyong hindi nito nauunawaan. Hindi pa nagagawa: zcap authorization, mga workflow at exchange, mga challenge, pag-iimbak ng mga kredensyal at presentasyon (GET at DELETE ng /credentials/{id}), ang mga operation:path scope ng VCALM, at mga issuer instance na kino-configure bawat realm (nakapirmi ang mga instance, isa bawat securing mechanism at curve)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -624,8 +624,8 @@
     "text": "full para sa kailangan ng Data Integrity. Ang mga JSON-LD context ay VENDORED, hindi kailanman fine-fetch: ang canonicalization na umaasa sa network fetch ay hindi magiging reproducible at hindi rin ligtas."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "3441c40b69d1cf9a",
-    "text": "partial: NAGLALATHALA ang serbisyong ito ng did:web document na may dalawang verification method, at nire-resolve at dine-dereference (section 7) ang did:key, did:jwk at ang sarili nitong did:web sa parehong JSON representation sa mga VC-API test endpoint (#199), na sinusukat sa W3C DID test suite. Walang ibang did:web na fine-fetch; walang sinusuportahang DID parameter (service, versionId, …)."
+    "en": "a4e9c39575ac8ed8",
+    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, at nagre-resolve at nagde-dereference (seksiyon 7) ng did:key, did:jwk at ng sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), sinusukat sa W3C DID test suite. Walang ibang did:web na kinukuha; walang DID parameter (service, versionId, …) na sinusuportahan."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -2563,6 +2563,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). Sinasagot ng GET kung kaninong password ang kailangang palitan; iniimbak ng POST ang bago at ipinagpapatuloy ang sign-in."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Ang Magsimula muli ng sapilitang pagpapalit ng password: walang binabago, at ibinabalik sa screen ng pag-sign in ang nakabinbing pag-sign in na dala nito."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). Ang view ng page ng isang second-factor o emailed-factor step (?page=), bilang mga fact at walang salita, at ang CSRF token na dala ng mga aksiyon nito; tinatanggihan kung hindi kailanman maiguguhit ang page para sa step. Ang id ay bearer capability at hindi kailanman nilo-log."
@@ -2614,6 +2618,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Ang Continue button ng page na binubuksan ng link, sa browser lamang na humingi nito."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Ang Magsimula muli ng bawat pahina ng hakbang: tinatapos ang hakbang kasama ang lahat ng hawak nito, walang sesyong sinisimulan, at ibinabalik sa screen ng pag-sign in ang nakabinbing pag-sign in na dala nito, kaya natatapos pa rin ang orihinal na kahilingan."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
@@ -2843,10 +2851,6 @@
     "en": "4f3a588acce9f5fc",
     "text": "Ang BitstringStatusListCredential ng realm na ito para sa revocation o suspension, bilang application/vc+jwt: isang GZIP bitstring ng 131,072 entry, index 0 muna, signed gamit ang credential key — o, kapag humihingi ang Accept ng JSON-LD o JSON at hindi muna ng JWT, ang parehong credential na may eddsa-rdfc-2022 proof ng Ed25519 key ng realm, ibinigay bilang did:key nito (#197)."
   },
-  "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose/publish.what": {
-    "en": "d39a31a0597ad418",
-    "text": "Ang \"publish the list now\" ng mga W3C suite. Kinukuwenta ang listahan dito sa bawat pagbasa, kaya 204 at wala nang iba; isang test control, sa likod ng vc-api:issue."
-  },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
     "text": "Kinukuha ang credential na sinagot ng issuer ng 202, laban sa transaction_id nito."
@@ -2864,40 +2868,76 @@
     "text": "Ang BLS12-381 key na ginagamit sa pag-verify ng ldp_vc proof, bilang Multikey. Ang `/bbs/keys/<kid>` ang pinagde-dereference-an ng verificationMethod ng simpleng ldp_vc credential, para sa bawat live na generation ng BBS key ng realm (kasalukuyan, susunod, at mga retirado sa loob ng kanilang grace — umiikot ang key kasama ng mga signing key ng realm, #49); ang `/bbs/keys/1` ang kasalukuyan. 404 para sa iba pa."
   },
   "stsmetadata.endpoints./vc-api/issuers.what": {
-    "en": "e93fbff56e0821df",
-    "text": "NON-SPEC na listahan, para sa mga suite job: bawat issuer na inaalok ng adapter na ito — isang securing mechanism at ang realm key na pinipirmahan nito — kasama ang did:key at endpoint nito. Development realm lamang; vc-api:issue."
+    "en": "1aa20d049d9eba6a",
+    "text": "Listahang HINDI BAHAGI NG SPEC, ang listahan ng mga issuer instance ng isang implementation manifest: bawat issuer na iniaalok ng serbisyong ito — isang securing mechanism at ang VC API key na ipinapirma nito — kasama ang did:key at endpoint nito. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/issuers.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "Sine-secure ang credential na iniabot dito pagkatapos suriin ang bawat MUST ng data model at ng JSON-LD safe mode: isang embedded na Data Integrity proof (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 at ecdsa-jcs-2019 sa P-256 at P-384, ecdsa-sd-2023) o isang VC-JOSE-COSE envelope (jose-p256, sd-jwt-p256, cose-p256). Ang issuer ng credential ay dapat ang did:key ng key; naglalaan ang options.credentialStatus ng index sa mga Bitstring Status List ng realm. Development realm lamang; vc-api:issue. 201 { verifiableCredential }."
+    "en": "76ef67331a4befb1",
+    "text": "Sine-secure ang kredensyal na ibinibigay dito matapos suriin ang bawat MUST ng data model at JSON-LD safe mode: isang naka-embed na Data Integrity proof (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 at ecdsa-jcs-2019 sa P-256 at P-384, ecdsa-sd-2023) o isang VC-JOSE-COSE envelope (jose-p256, sd-jwt-p256, cose-p256). Ang issuer ng kredensyal ay dapat ang did:key ng key; ang options.credentialStatus ay naglalaan ng index sa Bitstring Status Lists ng realm. Pinipirmahan gamit ang sariling mga key ng VC API, hindi kailanman ang mga key na pumipirma sa mga token ng realm na ito; tinatanggihan ang opsyong hindi nito nauunawaan. vc-api:issue. 201 { verifiableCredential }."
+  },
+  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",
     "text": "Ang data model, JSON-LD safe mode, bawat proof ng isang proof set at chain (mga verification method na did:key at did:jwk, walang kinukuha) o ang envelope, at — kapag hiningi, o pinangalanan — ang status ng credential sa mga listahan ng realm na ito. 200 o 400 { verified, checks, warnings, errors }. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/credentials/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
+  },
   "stsmetadata.endpoints./vc-api/presentations/verify.what": {
     "en": "5c148622059888d3",
     "text": "Ang sariling proof ng presentation (authentication, ang hininging challenge at domain) o envelope (ang nonce at aud nito), at bawat credential dito tulad ng pagsuri ng /vc-api/credentials/verify sa isa. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/presentations/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
+  },
   "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.what": {
-    "en": "a10e25570a166392",
-    "text": "Sine-secure ang presentation bilang did:key ng realm key: isang Data Integrity proof na may ibinigay na challenge at domain, o isang VC-JOSE-COSE envelope. vc-api:issue."
+    "en": "021b219f3012be78",
+    "text": "Sine-secure ang isang presentasyon bilang did:key ng VC API key: isang Data Integrity proof na may ibinigay na challenge at domain, o isang VC-JOSE-COSE envelope. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/credentials/derive.what": {
     "en": "f059d39e5c330e56",
     "text": "Isang ecdsa-sd-2023 derived proof mula sa base proof, ibinubunyag ang mga mandatory statement at options.selectivePointers. vc-api:issue."
   },
+  "stsmetadata.endpoints./vc-api/credentials/derive.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
+  },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "b48e6b20d9d6497f",
-    "text": "Nire-revoke, sina-suspend o inaalis ang suspension ng credential na ibinigay ng adapter na ito na may status — ang aktong ginagawa ng /admin/vc-status, isa sa tatlong nagdi-disown ng credential. Pinal ang revocation. vc-api:issue."
+    "en": "860c7bcc627e7889",
+    "text": "Binabawi, sinususpinde o inaalis ang suspensiyon ng isang kredensyal na inilabas ng VC API na ito na may status — ang aksiyong ginagawa ng /admin/vc-status, isa sa tatlong nagtatakwil sa isang kredensyal. Pinal ang pagbawi. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/credentials/status.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./vc-api/resolve.what": {
     "en": "83c42724ff6ab588",
     "text": "Ang resolve o resolveRepresentation ng DID Core section 7.1 (?function=) para sa did:key, did:jwk at sa sariling did:web ng realm na ito, sumasagot ng resolution result; ang anumang ibang did:web ay notFound sa halip na kunin. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/resolve.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
+  },
   "stsmetadata.endpoints./vc-api/dereference.what": {
     "en": "d3e75554e1f05975",
     "text": "DID Core section 7.2: ang dokumento, o ang verification method na pinangangalanan ng fragment. vc-api:verify."
+  },
+  "stsmetadata.endpoints./vc-api/dereference.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "sumasagot ng 501 hangga't hindi naka-on ang vcApi.enabled sa realm"
   },
   "stsmetadata.endpoints./.well-known/did.json.what": {
     "en": "614fbb0376075e4a",

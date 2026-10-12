@@ -39,7 +39,7 @@ one, the paths it answers and where it is.
 | `oauth-oidc` | The authorization server and OpenID provider, their discovery documents, the access-token status list |
 | `saml2`, `saml11`, `ws-trust`, `ws-federation` | The SAML, WS-Trust and WS-Federation identity providers |
 | `federation`, `oidfed` | Federation relationships, and OpenID Federation |
-| `oid4vc` | OpenID4VCI, OpenID4VP, DIDs and the VC-API test endpoints |
+| `oid4vc` | OpenID4VCI, OpenID4VP, DIDs and the W3C VC API |
 | `scim`, `ssf`, `gnap`, `xacml` | SCIM, Shared Signals, GNAP, XACML |
 | `acme`, `est`, `scep`, `pki` | Certificate enrollment, and the certificate authority's public documents |
 | `kerberos`, `spiffe`, `tls`, `devices` | MS-KKDCP and SPNEGO pages, the SPIFFE bundle, the TLS views, the device test control |

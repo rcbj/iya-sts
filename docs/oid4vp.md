@@ -60,7 +60,7 @@ the wallet to once it has answered (OpenID4VP 1.0 section 8.2). Where only
 registered addresses are accepted (product mode), it must be one of the
 calling client's registered redirect URIs, matched whole; otherwise any
 absolute `http` or `https` URL without a fragment. Anything else is refused
-400 (`STS-VC-0120`). When a start names none, `POST /oid4vp/response` answers
+400 (`STS-VC-0123`). When a start names none, `POST /oid4vp/response` answers
 `{}`, with no `redirect_uri`, and a SIOPv2 `form_post` response gets a 200
 `text/plain` message saying it was received instead of a 303. Until #594 the
 service always named its own `/oid4vp/done?state=…` page.
@@ -435,7 +435,7 @@ wallet is configured with.
 | | Development | Product |
 |---|---|---|
 | The `wallet` a verification start names | Any URL | Only `oid4vp.walletUrl` or one in `oid4vp.allowedWalletUrls`; anything else is an open redirect and refused |
-| The `redirect_uri` a verification start names | Any absolute `http` or `https` URL without a fragment | Only one of the calling client's registered redirect URIs, matched whole (`STS-VC-0120`) |
+| The `redirect_uri` a verification start names | Any absolute `http` or `https` URL without a fragment | Only one of the calling client's registered redirect URIs, matched whole (`STS-VC-0123`) |
 | The `x509_san_dns` name, when neither `oid4vp.x509DnsName` nor `global.publicBaseUrl` names one | The host the request arrived at, one certificate per host, sixteen at most per realm | Refused |
 | The password offered as a second factor after a wallet | Not checked, like every password in development | Verified |
 | Which credentials can sign in | Only those in the register, so only ones issued on a token this realm verified | The same; and since a pre-authorized offer in product is made only on `/portal/wallet`, for the person signed in, the token belongs to someone who already signed in |

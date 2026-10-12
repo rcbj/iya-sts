@@ -97,7 +97,7 @@ product verification sent the person to a 404. Since #594 `POST
 held where only registered addresses are accepted to the CALLING CLIENT's
 registered redirect URIs (`applications.clientConfigOf()`, the register the
 authorization endpoint holds return addresses to), matched whole, and refused
-`STS-VC-0120` otherwise; a start that names none is answered with no
+`STS-VC-0123` otherwise; a start that names none is answered with no
 `redirect_uri` at all, which is what a cross-device wallet wants. The wire
 format is unchanged otherwise: the 200 JSON body, with or without the
 member. The alternative — the companion's page as a setting of the service —

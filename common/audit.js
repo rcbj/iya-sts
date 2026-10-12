@@ -385,6 +385,8 @@ const ACTIONS = [
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
+  { action: 'authn.sign-in.started-over', category: 'authentication',
+    label: 'Somebody left a sign-in step and started the sign-in over' },
 
   // ---------------------------------------------------------------------
   // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one

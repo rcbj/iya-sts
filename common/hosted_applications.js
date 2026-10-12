@@ -138,10 +138,10 @@ const APPLICATIONS = [
     prefixes: ['/oidfed', '/.well-known/openid-federation'], exact: [] },
   // THE DEMONSTRATION ISSUER AND VERIFIER (`/issuer`, `/vc-demo-api`) AND
   // `/did/generate` LEFT ON #594, for the development companion and the
-  // test tooling; `/vc-api` is the one demonstration prefix left here.
+  // test tooling; `/vc-api` became a product surface on #598, so no
+  // demonstration prefix is left here.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
-    demoPrefixes: ['/vc-api'],
     prefixes: ['/oid4vci', '/oid4vp', '/applications',
                '/bbs', '/vc-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',

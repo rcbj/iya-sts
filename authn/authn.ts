@@ -8268,6 +8268,134 @@ class Authn {
     log.debug("Leaving Authn.dropMfaStep().");
   }
 
+  // ===========================================================================
+  // START OVER (rcbj, 2026-10-12): "each MFA screen during login should have
+  // a back button to start the login over in a graceful manner".
+  //
+  // A step after the sign-in screen — a second factor, the set-up step, an
+  // emailed factor, the forced password change — CARRIES the pending sign-in
+  // it was minted from (`step.authn`), which was taken out of `pending` when
+  // the step began. Starting over is the reverse, and nothing else:
+  //
+  //   * the step is ENDED: deleted from its store, and with it whatever it
+  //     held — an emailed code's hash, a link's token, an enrolment's secret
+  //     in progress, the first factor's `amr` and risk assessment. No session
+  //     is started and no factor is counted: the first factor is spent with
+  //     the step, and the person proves it again.
+  //   * the ORIGINAL pending sign-in is put back under its SAME id with a
+  //     fresh expiry and nothing of the attempt on it (no sentence, no armed
+  //     passkey challenge, no "remember this browser" ticked), so the
+  //     relying party's request — its returnTo, its demands, its client —
+  //     completes after the person signs in again.
+  //   * the answer is the sign-in screen for that record, the address every
+  //     refusal at a step's end already sends the browser to
+  //     (`screenRefused()`).
+  //
+  // A STEP WITH NO RECORD TO RETURN TO cannot come about — every step is
+  // minted with its `authn` — but if one did, there would be no request to
+  // continue and `/authn/login` is not a destination without one: the step
+  // is still ended and the browser sent to the realm's front door, which
+  // offers a way in, rather than to a sign-in screen that can only refuse.
+  //
+  // It is not a protocol endpoint and changes none: what reaches a relying
+  // party is exactly what a sign-in that had not been interrupted sends.
+  // ===========================================================================
+  /**
+   * Puts a step's pending sign-in back and answers the sign-in screen for
+   * it (the step itself is already taken out of its store by the caller).
+   *
+   * @param res - the response
+   * @param step - the step, ended
+   * @param kind - what the step was, for the audit row
+   * @returns nothing
+   */
+  private restartFrom(res: any, step: any, kind: string): void {
+    const { log, audit } = this.deps;
+    log.debug("Entering Authn.restartFrom(). " + kind);
+    const record = step && step.authn;
+    const username = String((step && step.username) || '');
+    const back = !!(record && record.id);
+    if (back) {
+      record.screenError = '';
+      delete record.passkeyChallenge;
+      record.rememberBrowser = false;
+      record.expires = Date.now() + this.pendingTtlMs();
+      pending.set(record.id, record);
+    }
+    audit.audit({
+      action: 'authn.sign-in.started-over', outcome: 'success',
+      actor: username || 'anonymous', target: username, channel: 'http',
+      protocol: (record && record.protocol) || 'Authentication',
+      summary: (username || 'somebody') + ' left the ' + kind +
+               ' step and started the sign-in over' +
+               (back ? '' : '; it had no request to return to'),
+      detail: { step: kind, returned: back }
+    });
+    const target = back
+      ? realms.currentPrefix() + LOGIN_PATH + '?authn=' +
+        encodeURIComponent(String(record.id))
+      : realms.currentPrefix() + '/';
+    this.answerJson(res, 200, { ok: true, next: 'redirect',
+                                location: this.locationOf(res, target) });
+    log.debug("Leaving Authn.restartFrom(). " +
+              (back ? 'Back to the screen.' : 'To the front door.'));
+  }
+
+  /**
+   * `POST /authn-api/mfa/{id}/start-over`: ends a second-factor, set-up or
+   * emailed-factor step and puts its pending sign-in back.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param mfaId - the step id
+   * @returns nothing
+   */
+  mfaStartOver(req: any, res: any, mfaId: string): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.mfaStartOver().");
+    void req;
+    const step = this.mfaStepFor(mfaId);
+    if (!step) {
+      errorCodes.mark(res, 'STS-AUTHN-0331');
+      this.answerJson(res, 400, { ok: false, next: 'refused', errors: [
+        'This sign-in step has already ended. Start the request again ' +
+        'from the application that sent you here.'] });
+      log.debug("Leaving Authn.mfaStartOver(). No step.");
+      return;
+    }
+    pendingMfa.delete(String(mfaId));
+    this.restartFrom(res, step, String(step.factor || 'second-factor'));
+    log.debug("Leaving Authn.mfaStartOver().");
+  }
+
+  /**
+   * `POST /authn-api/password-change/{id}/start-over`: ends the forced
+   * password change, changing nothing, and puts its pending sign-in back.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param changeId - the step id
+   * @returns nothing
+   */
+  passwordChangeStartOver(req: any, res: any, changeId: string): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.passwordChangeStartOver().");
+    void req;
+    const step = pendingPasswordChange.get(String(changeId || ''));
+    if (!step || step.expires < Date.now()) {
+      pendingPasswordChange.delete(String(changeId || ''));
+      errorCodes.mark(res, 'STS-AUTHN-0331');
+      this.answerJson(res, 400, { ok: false, next: 'refused', errors: [
+        'This sign-in step has already ended. Start the request again ' +
+        'from the application that sent you here.'] });
+      log.debug("Leaving Authn.passwordChangeStartOver(). No step.");
+      return;
+    }
+    pendingPasswordChange.delete(String(changeId));
+    this.restartFrom(res, step, 'password-change');
+    log.debug("Leaving Authn.passwordChangeStartOver().");
+  }
+
   // The pending sign-in record a first factor is minted from, spent: the
   // step carries it from here on, as a password step's does.
   /**
@@ -13753,6 +13881,8 @@ export = {
   mfaWebauthnOptions: slot.forward('mfaWebauthnOptions'),
   mfaWebauthnAct: slot.forward('mfaWebauthnAct'),
   mfaSetupAct: slot.forward('mfaSetupAct'),
+  mfaStartOver: slot.forward('mfaStartOver'),
+  passwordChangeStartOver: slot.forward('passwordChangeStartOver'),
   finishEmailSecondFactor: slot.forward('finishEmailSecondFactor'),
   finishEmailFirstFactor: slot.forward('finishEmailFirstFactor')
 };

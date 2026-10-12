@@ -29,6 +29,11 @@
 //   9. A SESSION REFUSED AT THE END OF A STEP is drawn on the sign-in
 //      screen: the answer names it, and its view carries the sentence.
 //  10. THE STEP'S ID IS NEVER IN AN AUDIT ROW.
+//  11. START OVER (rcbj, 2026-10-12): every step's Start over ends the
+//      step, puts the pending sign-in back under its id, and answers the
+//      sign-in screen for it; a second start over and the old step are
+//      refused; signing in again completes the ORIGINAL request. And the
+//      forced password change's own Start over, changing nothing.
 // ===========================================================================
 
 const fs = require('fs');
@@ -115,6 +120,8 @@ function childMain() {
          /^\/authn\/totp\?mfa=/.test(s.answer.location),
          '1a. a person holding an app is answered the code page\'s address',
          s.answer.text);
+    // Every view a step's page is drawn from, for 11k.
+    const drawn = [{ path: '/authn/totp', view: s.opened.view }];
     const shell = s.opened.shell;
     const csp = String(shell.headers['content-security-policy'] || '');
     note(shell.status === 200 &&
@@ -169,7 +176,8 @@ function childMain() {
           'POST /authn-api/mfa/{id}/skip',
           'POST /authn-api/mfa/{id}/email/send',
           'POST /authn-api/mfa/{id}/email/code',
-          'POST /authn-api/mfa/{id}/email-link/open']
+          'POST /authn-api/mfa/{id}/email-link/open',
+          'POST /authn-api/mfa/{id}/start-over']
            .every(function (one) {
              return ops.indexOf(one) >= 0;
            }), '2a. the index names every step operation', ops.join(', '));
@@ -281,6 +289,7 @@ function childMain() {
          rc.view.backup.remaining === set.codes.length,
          '6b. its page says what it stands in for and how many are left',
          rc.text);
+    drawn.push({ path: '/authn/backup-code', view: rc.view });
     r = await screen.stepAct({ port: port, jar: s.jar, opened: rc,
       op: 'backup-code', body: { code: 'AAAAA-AAAAA' } });
     note(r.apiStatus === 400 && r.next === 'refused',
@@ -302,6 +311,7 @@ function childMain() {
          s.opened.view.setup.optional === false,
          '7a. a required second factor answers the set-up step\'s choice',
          s.opened.text);
+    drawn.push({ path: '/authn/mfa-setup', view: s.opened.view });
     r = await act(s, 'skip', {});
     note(r.apiStatus === 400 && /cannot be ignored/.test(r.errors.join(' ')),
          '7b. Ignore is refused on a required step', r.text);
@@ -319,6 +329,7 @@ function childMain() {
          !/<svg|data:image/.test(enrolling.text),
          '7d. its view carries the otpauth: URI the browser draws, and no ' +
          'picture', enrolling.text.slice(0, 300));
+    drawn.push({ path: '/authn/mfa-setup', view: enrolling.view });
     const uriSecret = new URL(String(k.uri)).searchParams.get('secret');
     const good = totp.codeAt(uriSecret);
     r = await act(s, 'setup/confirm',
@@ -336,6 +347,7 @@ function childMain() {
          s.opened.view.webauthn.mode === 'create',
          '8a. ticking the passkey box answers its enrolment page',
          s.opened.text);
+    drawn.push({ path: '/authn/webauthn', view: s.opened.view });
     r = await act(s, 'webauthn/options', {});
     const c = r.json || {};
     note(r.apiStatus === 200 && c.mode === 'create' && c.challenge &&
@@ -369,6 +381,118 @@ function childMain() {
          /Authentication failed/.test(String(back.view.error)),
          '9b. and the screen\'s view says why', JSON.stringify(back.view &&
                                                     back.view.error));
+
+    // --- 11. start over ---------------------------------------------------
+    const soSecret = withApp('am-sam');
+    const soAt = begin();
+    const soId = new URL(soAt, 'http://here.invalid').searchParams
+      .get('authn');
+    const soJar = {};
+    const soAnswer = await screen.submit({ port: port, jar: soJar, at: soAt,
+      fields: { action: 'login', username: 'am-sam', password: 'x' } });
+    const soOpened = await screen.openStep({ port: port, jar: soJar,
+                                             at: soAnswer.location });
+    s = { jar: soJar, answer: soAnswer, opened: soOpened };
+    note(soAnswer.next === 'mfa' && !authn.pendingFor(soId),
+         '11a. while the step is open, the pending sign-in is the step\'s',
+         soAnswer.text);
+    r = await act(s, 'start-over', {});
+    note(r.next === 'redirect' &&
+         r.location === '/authn/login?authn=' + encodeURIComponent(soId) &&
+         !/sts_session=/.test(String(r.headers['set-cookie'] || '')) &&
+         codeFree(r.text),
+         '11b. Start over answers the sign-in screen for the SAME request, ' +
+         'and starts no session', r.text);
+    note(!authn.mfaStepFor(soOpened.id) && !!authn.pendingFor(soId),
+         '11c. the step is gone and the pending sign-in is back under its id');
+    const soScreen = await screen.open({ port: port, jar: soJar,
+                                         at: r.location });
+    note(soScreen.status === 200 && soScreen.view &&
+         !soScreen.view.error,
+         '11d. the sign-in screen draws for it, with no sentence on it',
+         soScreen.status + ' ' + JSON.stringify(soScreen.view &&
+                                                soScreen.view.error));
+    r = await act(s, 'start-over', {});
+    note(r.apiStatus === 400 && r.next === 'refused' && codeFree(r.text),
+         '11e. a second Start over from the ended step is refused', r.text);
+    r = await act(s, 'totp', { code: totp.codeAt(soSecret,
+                                                 Date.now() + 30000) });
+    note(r.apiStatus === 400, '11f. and the old step takes no code',
+         r.text);
+    const again = await screen.submit({ port: port, jar: soJar,
+      at: '/authn/login?authn=' + encodeURIComponent(soId), opened: soScreen,
+      fields: { action: 'login', username: 'am-sam', password: 'x' } });
+    const againStep = await screen.openStep({ port: port, jar: soJar,
+                                              at: again.location });
+    r = await screen.stepAct({ port: port, jar: soJar, opened: againStep,
+      op: 'totp', body: { code: totp.codeAt(soSecret, Date.now() + 30000) } });
+    note(again.next === 'mfa' && r.next === 'redirect' &&
+         r.location === '/am/after?x=1' &&
+         /sts_session=/.test(String(r.headers['set-cookie'] || '')),
+         '11g. signing in again completes the ORIGINAL request',
+         again.text + ' ' + r.text);
+    note(audit.list().some(function (row) {
+      return row.action === 'authn.sign-in.started-over' &&
+             row.actor === 'am-sam';
+    }), '11h. the audit log records the start over');
+    // The set-up step and the emailed factor's pages are steps of the same
+    // store; the passkey page's control is the same act.
+    ldap.createUser('am-sid', { invent: false });
+    credentials.setMfaRequired('am-sid', true);
+    s = await toStep('am-sid');
+    r = await act(s, 'start-over', {});
+    note(s.answer.step === 'enrol' && r.next === 'redirect' &&
+         /^\/authn\/login\?authn=/.test(r.location) &&
+         !authn.mfaStepFor(s.opened.id),
+         '11i. the set-up step starts over too', r.text);
+    // The forced password change: nothing changed, the request kept.
+    ldap.createUser('am-pat', { invent: false });
+    credentials.setPasswordResetRequired('am-pat', true);
+    const pcAt = begin();
+    const pcId = new URL(pcAt, 'http://here.invalid').searchParams
+      .get('authn');
+    const pcJar = {};
+    r = await screen.submit({ port: port, jar: pcJar, at: pcAt,
+      fields: { action: 'login', username: 'am-pat', password: 'x' } });
+    const pcOpened = await screen.open({ port: port, jar: pcJar,
+                                         at: r.location });
+    r = await screen.act({ port: port, jar: pcJar, opened: pcOpened,
+      path: '/authn-api/password-change/' +
+            encodeURIComponent(pcOpened.id) + '/start-over', body: {} });
+    note(r.next === 'redirect' &&
+         r.location === '/authn/login?authn=' + encodeURIComponent(pcId) &&
+         !!authn.pendingFor(pcId) &&
+         credentials.passwordResetRequired('am-pat') === true,
+         '11j. the forced password change starts over, changing nothing',
+         r.text);
+    // Every page draws the control, a real button the runtime sends as the
+    // start-over act (`web_authn.ts` reads `action`).
+    drawn.push({ path: '/authn/password-change', view: pcOpened.view });
+    const AuthnPages = require(ROOT_DIR + '/authn/web_authn_pages');
+    const messages = require(ROOT_DIR + '/common/web_messages');
+    const flat = {};
+    ['authn', 'emailFactor'].forEach(function (ns) {
+      const own = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'common',
+        'locales', ns, 'en.json'), 'utf8'));
+      Object.keys(own).forEach(function (key) {
+        flat[ns + '.' + key] = own[key];
+      });
+    });
+    const tr = messages.WebTranslator.fromData({ catalogs: { en: flat },
+      negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                    direction: 'ltr', matched: true } });
+    const missing = drawn.filter(function (one) {
+      const html = AuthnPages.render(one.path, one.view,
+        { t: tr, error: '', notice: '', query: {} });
+      return !/<button type="submit" class="secondary" id="start-over" name="action" value="start-over">Start over<\/button>/
+        .test(html) || /<form[^>]*>(?:(?!<\/form>)[\s\S])*<form/.test(html);
+    }).map(function (one) {
+      return one.path + ' ' + ((one.view && one.view.setup &&
+                                one.view.setup.state) || '');
+    });
+    note(drawn.length === 6 && missing.length === 0,
+         '11k. every step page draws Start over, as a form of its own',
+         missing.join(', '));
 
     // --- 10. the id in the audit log -------------------------------------
     const rows = audit.list().filter(function (row) {

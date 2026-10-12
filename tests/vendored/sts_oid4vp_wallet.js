@@ -1241,7 +1241,7 @@ async function barDoor(sd, sdKey, product) {
   const refusedStart = product ? await begin(COMPLETION) : null;
   if (product) {
     check("in product, a start naming a page the calling client has not " +
-          "registered is refused (STS-VC-0120)", function () {
+          "registered is refused (STS-VC-0123)", function () {
             assert.strictEqual(refusedStart.started.status, 400,
                                refusedStart.started.text.slice(0, 200));
           });

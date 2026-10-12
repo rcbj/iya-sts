@@ -363,10 +363,6 @@
     "en": "5c5839cc3ec15759",
     "text": "full（#137，2026-09-24），依據編輯者草案 01：領域擁有或曾擁有下屬期間的 federation_subordinate_events_endpoint；下屬之 federation_registration_events 的已簽署 entity-events-statement+jwt——registration、metadata_update、metadata_policy_update、jwks_update、suspension 與 revocation（registration 單獨記錄），加上本服務自己的 reinstatement、constraints_update、trust_mark_issuance 與 trust_mark_revocation，以及在管理員有提供時的 event_description 與 information_uri。歷程會永久保留，且比下屬存續更久；本服務的領域會在其建立、金鑰輪替與刪除時被註冊、更換金鑰與撤銷。下屬可以被暫停與恢復。「尚缺」：客戶端驗證（POST 形式）。"
   },
-  "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial：VCDM 1.1（jwt_vc_json）的 VC-JWT 編碼，以及帶有內嵌證明的 VCDM 2.0 認證（ldp_vc）；以及在 VC-API 測試端點（#194）上，對他人撰寫的認證或呈現檢查數據模型的每個 MUST、基於內建 context 的 JSON-LD 安全模式，以及封裝的認證與呈現——依 W3C VC Data Model 2.0 測試套件檢驗。"
-  },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full：針對 P-256（第 3.5.8 節規定衍生證明使用的曲線）：含強制指標的基礎證明、由任意選擇性指標產生的衍生證明，以及它們的驗證（#196）——由規格本身的基礎證明所衍生的證明與其測試向量逐位元組相同，而由 Digital Bazaar 程式庫衍生的證明可在此驗證，反之亦然。"
@@ -1254,10 +1250,6 @@
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
     "text": "用以驗證 ldp_vc 證明的 BLS12-381 金鑰，以 Multikey 呈現。`/bbs/keys/<kid>` 是一般 ldp_vc 認證的 verificationMethod 所解參照的地址，適用於領域 BBS 金鑰的每個有效世代（目前的、下一個，以及仍在寬限期內的已淘汰者——此金鑰隨領域的簽署金鑰輪替，#49）；`/bbs/keys/1` 是目前的那一把。其他任何值回傳 404。"
-  },
-  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "在檢查數據模型的每個 MUST 與 JSON-LD 安全模式後，保護交給它的認證：內嵌的 Data Integrity 證明（eddsa-rdfc-2022、eddsa-jcs-2022、基於 P-256 與 P-384 的 ecdsa-rdfc-2019 與 ecdsa-jcs-2019、ecdsa-sd-2023），或 VC-JOSE-COSE 封套（jose-p256、sd-jwt-p256、cose-p256）。認證的簽發者必須是該金鑰的 did:key；options.credentialStatus 會在領域的 Bitstring Status List 中配置一個索引。僅限開發領域；vc-api:issue。201 { verifiableCredential }。"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",

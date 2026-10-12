@@ -6147,6 +6147,12 @@ const CODES = [
       'sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the ' +
       'operation does not take, or a page that is not one.',
     spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0331',
+    summary: 'A Start over at a sign-in step (/authn-api/mfa/{id}/start-over ' +
+      'or /authn-api/password-change/{id}/start-over) named a step that ' +
+      'has already ended: spent, expired or never minted. Nothing is put ' +
+      'back.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -14561,10 +14567,12 @@ const CODES = [
       'List publish hook) was called in a realm whose test controls are ' +
       'closed — a product realm — and answered as though it did not exist ' +
       '(#194). Retired by #585: a product realm\'s request is passed on ' +
-      'past the route to Express\'s own 404, which records no code.',
+      'past the route to Express\'s own 404, which records no code. Since ' +
+      '#598 the VC API is a product surface, off by default ' +
+      '(STS-VC-0120).',
     spec: '', retired: true },
   { code: 'STS-VC-0101',
-    summary: 'A VC-API test endpoint was presented an access token it ' +
+    summary: 'A W3C VC API endpoint was presented an access token it ' +
       'refused: not issued by this realm, not an access token, revoked, ' +
       'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
       'to a client that no longer declares that scope (#194).',
@@ -14684,6 +14692,21 @@ const CODES = [
       'the development companion.',
     spec: '', retired: true },
   { code: 'STS-VC-0120',
+    summary: 'A W3C VC API endpoint (/vc-api/*) was called in a realm that ' +
+      'does not serve it: vcApi.enabled is off, which is the default ' +
+      '(#598).',
+    spec: 'HTTP 501 {errors}' },
+  { code: 'STS-VC-0121',
+    summary: 'A W3C VC API client, or an address, made more calls than ' +
+      'vcApi.maxPerWindow allows in one security.rateLimitWindowS window ' +
+      '(#598).',
+    spec: 'HTTP 429 {errors} with Retry-After' },
+  { code: 'STS-VC-0122',
+    summary: 'A W3C VC API request carried an option the endpoint does not ' +
+      'understand, or an option value of the wrong shape — refused as VCALM ' +
+      'requires (#598).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0123',
     summary: 'A verification start named a redirect_uri (#594) that is not ' +
       'an absolute http(s) URL without a fragment, or — where only ' +
       'registered addresses are accepted — not one of the calling ' +

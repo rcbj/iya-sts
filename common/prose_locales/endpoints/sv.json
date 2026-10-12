@@ -1479,6 +1479,10 @@
     "en": "f2d18b738357010b",
     "text": "Ett påtvingat lösenordsbyte"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Börja om en inloggning från lösenordsbytet"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Vad ett inloggningstegs sida visar"
@@ -1530,6 +1534,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Förbruka en mejlad inloggningslänk"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Börja om en inloggning från ett steg"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1739,10 +1747,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List-intyg"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "Publicera en statuslista (VC-API, testkontroll)"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Slutpunkt för uppskjutna intyg"
@@ -1760,40 +1764,40 @@
     "text": "Publik BBS-nyckel"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "VC-API-utfärdarna (testkontroll)"
+    "en": "73b838a87b15b09a",
+    "text": "VC API:ets utfärdare"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "Utfärda ett intyg (VC-API, testkontroll)"
+    "en": "36e4ff37d0083d67",
+    "text": "Utfärda ett intyg (VC API)"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "Verifiera ett intyg (VC-API, testkontroll)"
+    "en": "7f67271e211b78e1",
+    "text": "Verifiera ett intyg (VC API)"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "Verifiera en presentation (VC-API, testkontroll)"
+    "en": "f0ace30e55e137f1",
+    "text": "Verifiera en presentation (VC API)"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "Bevisa en presentation (VC-API, testkontroll)"
+    "en": "96508bdaea6f7f69",
+    "text": "Bevisa en presentation (VC API)"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "Härled ett selektivt röjande (VC-API, testkontroll)"
+    "en": "4af3df1e4c1f2f99",
+    "text": "Härled ett selektivt röjande (VC API)"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "Ändra ett intygs status (VC-API, testkontroll)"
+    "en": "d231bdc923e68f8a",
+    "text": "Ändra ett intygs status (VC API)"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "Slå upp en DID (testkontroll)"
+    "en": "39c91a22e95b0c2e",
+    "text": "Slå upp ett DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "Avreferera en DID-URL (testkontroll)"
+    "en": "a7044c968ef56722",
+    "text": "Följ en DID-URL"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

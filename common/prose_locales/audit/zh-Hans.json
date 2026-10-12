@@ -191,6 +191,10 @@
     "en": "9f66bf08890386c9",
     "text": "有人在登录时设置了必需的第二因素"
   },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "有人离开了登录步骤并重新开始登录"
+  },
   "audit.actions.portal.mfa.started.label": {
     "en": "d51f6daad15168fd",
     "text": "向某人显示了新的身份验证器应用密钥"

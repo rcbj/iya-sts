@@ -143,7 +143,9 @@ const ROWS: Row[] = [
   { prefix: '/spiffe', strategy: 'local',
     why: 'a workload attests to the cell it runs beside' },
   { prefix: '/vc-api', strategy: 'local',
-    why: 'a development-only test control over global configuration' },
+    why: 'the W3C VC API signs and verifies documents it is handed with ' +
+         'the realm\'s global-tier keys and status lists; no person\'s ' +
+         'data is read' },
   { prefix: '/krb5', strategy: 'local',
     why: 'the Kerberos views read global configuration' },
   { prefix: '/KdcProxy', strategy: 'handler',

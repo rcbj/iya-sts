@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "Nagtagumpay na ang hakbang ng password. Kapag nagtagumpay, itatala ng session ang amr [\"pwd\",\"hwk\"] at acr \"mfa\", at mamarkahan ang entry ni {name} sa directory bilang nagpatunay gamit ang higit sa isang factor.",
   "webauthn.backup": "Wala sa akin ang passkey ko — gumamit ng recovery code",
   "totp.title": "One-time code — serbisyo ng pagpapatunay",
+  "startOver.button": "Magsimula muli",
+  "startOver.note": "Bumalik sa screen ng pag-sign in para sa parehong kahilingan. Walang itinatago mula sa hakbang na ito.",
   "totp.heading": "Ang iyong one-time code",
   "totp.sub": "Pangalawang factor para sa <code>{name}</code>",
   "totp.label": "Ang {digits}-digit na code mula sa iyong authenticator app",

@@ -1216,8 +1216,8 @@
     "text": "具有狀態的 VC-API 憑證"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "VC-API 測試轉接器以狀態項目簽發的每個憑證，以及其所佔用的狀態清單索引，使狀態變更可以找到它。"
+    "en": "6276c639d08ac2a7",
+    "text": "W3C VC API 帶狀態項目簽發的每個憑證，以及它所佔用的狀態清單索引，讓狀態變更能找到它。"
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",
