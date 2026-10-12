@@ -109,7 +109,12 @@ const EXEMPT = {
   // the Kerberos, WS-Trust and token endpoints their own pages list.
   '/admin/delegation-settings': 'configures registers other families\' ' +
                                 'endpoints read, and has no endpoint of ' +
-                                'its own to list'
+                                'its own to list',
+  // A hidden row (admin-ui/admin.ts): a tab of /admin/oauth2, kept in NAV
+  // only so SETTING_HOMES can name it; /admin/oauth2's row lists the
+  // endpoints, and a tab has no page of its own to draw a list on.
+  '/admin/token-lifetimes': 'a tab of /admin/oauth2, whose row lists ' +
+                            'the endpoints'
 };
 
 // ---------------------------------------------------------------------------

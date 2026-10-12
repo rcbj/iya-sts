@@ -315,7 +315,25 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   // sign-in screen: the page's first business is the sign-out.
   'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
   '1rem}form.language-chooser button{padding:.15rem .5rem}' +
-  'form.language-chooser label{margin-right:.3rem}';
+  'form.language-chooser label{margin-right:.3rem}' +
+  // THE TWO TABS (2026-10-12): `WebKit.tabbedPanels()`, the console's, with
+  // its rules in this page's palette — the fragment decides, through
+  // `:target` and `:has()`, with no script; a browser without `:has()`
+  // shows both panels, which is the page as it was.
+  '.tabbar{display:flex;gap:4px;margin:1.2rem 0 .8rem;border-bottom:1px ' +
+  'solid #ddd}.tabbar a{padding:.35rem .8rem;border:1px solid #ddd;' +
+  'border-bottom:0;border-radius:4px 4px 0 0;background:#f6f6f6;' +
+  'color:#111;text-decoration:none;font-size:.92rem}' +
+  '.tabpanel{scroll-margin-top:1rem}' +
+  '@supports selector(:has(*)){.tabs>.tabpanel{display:none}' +
+  '.tabs>.tabpanel:target,.tabs>.tabpanel:has(:target){display:block}' +
+  '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabpanel.first' +
+  '{display:block}' +
+  '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar a.first,' +
+  '.tabs:has(#logout-signout:target)>.tabbar a[href="#logout-signout"],' +
+  '.tabs:has(#logout-details:target)>.tabbar a[href="#logout-details"]' +
+  '{background:#fff;font-weight:700;border-color:#555}}' +
+  'table.sessions td:first-child{width:3rem}';
 
 // A FAMILIES row, a live-session row, an inventory: open records, as the
 // JavaScript built them.

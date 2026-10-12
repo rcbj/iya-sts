@@ -1004,6 +1004,13 @@ const SECTIONS = [
         blurb: 'One page for the authorization server settings, named ' +
                'authorization servers, token lifetimes, custom claims and ' +
                'UserInfo claims, each on its own tab.' },
+      // A TAB OF THE PAGE ABOVE, KEPT AS A HIDDEN ROW: SETTING_HOMES draws
+      // the `OAuth 2.0 / OIDC per-client` group by this path (the tab's
+      // renderer asks for it), and checkSettingHomes() refuses a path NAV
+      // does not know (STS-ADMIN-0015 at every start since the OAuth pages
+      // became tabs, d1b41a38). Hidden, so no sidebar link and no guide row.
+      { path: '/admin/token-lifetimes', label: 'Token lifetimes',
+        hidden: true },
       { path: '/admin/saml2', label: 'SAML',
         blurb: 'Metadata, shared and profile settings, assertion settings, ' +
                'both identity providers and custom SAML attributes, each on ' +

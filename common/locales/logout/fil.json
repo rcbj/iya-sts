@@ -7,7 +7,6 @@
   "inventory.globalButton": "Global logout — tapusin ang lahat sa ibaba",
   "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili.",
   "inventory.selectedButton": "Tapusin ang mga naka-tsek",
-  "inventory.selectedNote": "I-tsek ang mga ito sa mga table sa ibaba. Kung walang naka-tsek, walang matatapos.",
   "inventory.liveCount": "<strong>{total} aktibong item</strong> sa {families, plural, one {# family} other {# na family}}. May ilan na hindi kayang tapusin ninuman — nakalista ang mga ito kasama ang dahilan, dahil ang sign-out na nagtatago sa mga ito ay magmumukhang kumpleto kahit hindi.",
   "inventory.anyUserOpen": "Walang tinitingnang password ang serbisyong ito kahit saan, kaya ang <code>?username=</code> ay puwedeng tumukoy sa kahit sino at walang ibinibigay na hindi pa totoo — isang request lang ang kailangan para mag-sign in bilang sila. Pinapatay iyon ng <code>logout.anyUser</code>.",
   "inventory.anyUserOff": "Naka-off ang <code>logout.anyUser</code>, kaya ang endpoint na ito ay kumikilos lang sa session na hawak mo.",
@@ -31,5 +30,10 @@
   "result.remain": "May natitira pang {total} item.",
   "result.lookAgain": "Tingnan muli",
   "result.lookAgainEnd": ".",
-  "result.nothingLeft": "Wala na. Walang hawak ang serbisyong ito na aktibong session o credential para kay {key} na nakikita pa nito."
+  "result.nothingLeft": "Wala na. Walang hawak ang serbisyong ito na aktibong session o credential para kay {key} na nakikita pa nito.",
+  "tab.signOut": "Mag-sign out",
+  "tab.details": "Mga detalye",
+  "list.colProtocol": "Protocol",
+  "inventory.listNote": "I-tsek ang mga ito sa listahan sa itaas. Walang matatapos kung walang naka-tsek.",
+  "inventory.detailsNote": "I-tsek ang mga token at kredensyal sa mga talahanayan sa itaas. Walang matatapos kung walang naka-tsek."
 }
