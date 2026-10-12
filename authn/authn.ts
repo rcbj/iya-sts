@@ -14472,6 +14472,9 @@ export = {
   //                          4.12's 303-not-307 to be got wrong.
   // ---------------------------------------------------------------------
   SPNEGO_PATH: SPNEGO_PATH,
+  // The sign-in surface's bundle (#571), which the SPNEGO door's shell loads
+  // too (#575).
+  SIGNIN_SCRIPT_PATH: SIGNIN_SCRIPT_PATH,
   // The wallet door's two paths (#38), for `oid4vc/vc_signin.ts`, which uses
   // `pendingFor` and `completeAuthentication` for the Kerberos door's reasons.
   WALLET_PATH: WALLET_PATH,
