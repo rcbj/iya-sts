@@ -243,13 +243,17 @@ async function run(t) {
     log.debug("Leaving redirect().");
     return res;
   };
-  const authnRequest = function (issuer, id) {
+  // `acs`, where given, is a stand-in address nothing answers at: a service
+  // provider with no metadata and no registered address must name one, or
+  // the request is refused (#592 deleted the mock it once fell back to).
+  const authnRequest = function (issuer, id, acs) {
     log.debug("Entering authnRequest().");
     log.debug("Leaving authnRequest().");
     return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
       'IssueInstant="' + new Date().toISOString() + '" ' +
-      'Destination="https://idp.test/saml2/sso">' +
+      'Destination="https://idp.test/saml2/sso"' +
+      (acs ? ' AssertionConsumerServiceURL="' + acs + '"' : '') + '>' +
       '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>';
   };
   const logoutRequest = function (issuer, id) {
@@ -644,7 +648,8 @@ async function run(t) {
     served['/mdq/entities/' + lazyName] = { status: 200,
       body: entity(lazyName, { acs: 'https://lazy.test/acs' }) };
     const lazyRes = redirect(sso, '/saml2/sso',
-                             authnRequest(lazyName, '_z1'));
+                             authnRequest(lazyName, '_z1',
+                                          'https://lazy.md.test/acs'));
     t.check(lazyRes.statusCode === 303 && !codeOf(lazyRes),
             'a request from an SP with no metadata is ANSWERED NOW ' +
             '(development: on to the sign-in screen)',
