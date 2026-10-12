@@ -74,8 +74,9 @@ entry it names**: a request naming anybody else in its subjectAltName is refused
 
 ### For the realm: Protocols → Cert issuance → SCEP
 
-The SCEP tab of the console (`/admin/cert-issuance#cert-tab-scep`) holds the realm's server: the
-endpoints (main port and plain-HTTP), the SCEP Issuing CA and the RA
+The SCEP tab of the console (`/admin/cert-issuance#cert-tab-scep`) holds the realm's server (its
+endpoints, and the capabilities and message types they answer, are on the
+Metadata tab, under SCEP): the SCEP Issuing CA and the RA
 certificate, the profiles, the **challenge passwords** (make one for a person
 or an application, delete one), the **registered host names**, and the
 `scep.*` settings (see [Configuration](#configuration)). Viewing it needs

@@ -107,7 +107,7 @@ The same registration serves EST and SCEP.
 ### For the realm: Protocols → Cert issuance → ACME
 
 The ACME tab of the console (`/admin/cert-issuance#cert-tab-acme`) holds everything about the
-realm's server: the directory URL, the endpoints, the ACME Issuing CA, the
+realm's server (its endpoints are on the Metadata tab, under ACME): the ACME Issuing CA, the
 profiles, the **External Account Binding keys** (create one for a person or an
 application, delete one), the accounts, the certificates issued (each with a
 **Revoke**), the **registered host names**, and the `acme.*` settings (see

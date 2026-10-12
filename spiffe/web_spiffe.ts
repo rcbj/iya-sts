@@ -722,22 +722,6 @@ class SpiffePage {
       '</span>' +
       '</div></form>' +
 
-      '<h2>' + t.html('consoleSpiffe.grpcListeners') + '</h2>' +
-      kit.note(t.html('consoleSpiffe.grpcListenersNote')) +
-      '<table><tr><th>' + t.html('consoleSpiffe.surface') + '</th><th>' +
-      t.html('consoleSpiffe.realm') + '</th><th>' +
-      t.html('consoleSpiffe.address') + '</th><th>' +
-      t.html('consoleSpiffe.state') +
-      '</th>' +
-      '<th>' + t.html('consoleSpiffe.callerPresents') + '</th></tr>' +
-      SpiffePage.spiffeListenerRows(t, json.listeners.workloadApi,
-        'Workload API') +
-      SpiffePage.spiffeListenerRows(t, json.listeners.serverApi,
-        'SPIRE Server API') +
-      SpiffePage.spiffeListenerRows(t, json.listeners.brokerApi || [],
-                              'SPIFFE Broker API') +
-      '</table>' +
-
       SpiffePage.spiffeWorkloadAttestation(t, json.workloadAttestation) +
 
       '<h2>' + t.html('consoleSpiffe.whoMayCall') + '</h2>' +
@@ -843,6 +827,35 @@ class SpiffePage {
                           '/admin/cert-issuance#cert-spiffe-overview',
                           undefined, t);
     return inner;
+  }
+
+  // THE gRPC LISTENERS (2026-10-12): SPIFFE's endpoints that are sockets,
+  // under SPIFFE on Protocols → Cert issuance's Metadata tab, which lists
+  // the endpoints; the Trust domain sub-tab lists none.
+  /**
+   * Draws the realm's SPIFFE gRPC listeners and what a caller presents on
+   * each.
+   *
+   * @param t - the page's translator (#539)
+   * @param json - the trust domain's view
+   * @returns the markup
+   */
+  static listenersSection(t, json) {
+    return '<h3>' + t.html('consoleSpiffe.grpcListeners') + '</h3>' +
+      kit.note(t.html('consoleSpiffe.grpcListenersNote')) +
+      '<table><tr><th>' + t.html('consoleSpiffe.surface') + '</th><th>' +
+      t.html('consoleSpiffe.realm') + '</th><th>' +
+      t.html('consoleSpiffe.address') + '</th><th>' +
+      t.html('consoleSpiffe.state') +
+      '</th>' +
+      '<th>' + t.html('consoleSpiffe.callerPresents') + '</th></tr>' +
+      SpiffePage.spiffeListenerRows(t, json.listeners.workloadApi,
+        'Workload API') +
+      SpiffePage.spiffeListenerRows(t, json.listeners.serverApi,
+        'SPIRE Server API') +
+      SpiffePage.spiffeListenerRows(t, json.listeners.brokerApi || [],
+                              'SPIFFE Broker API') +
+      '</table>';
   }
 
   // A listener row, and the fourth column is WHAT A CALLER HAS TO PRESENT ON

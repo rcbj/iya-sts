@@ -126,6 +126,25 @@ class EstPage {
   // ---------------------------------------------------------------------------
   // The body of /admin/est, from the view.
   // ---------------------------------------------------------------------------
+  // THE LABEL FORM (2026-10-12): what Protocols → Cert issuance's Metadata
+  // tab says under EST, beside the endpoints, since the EST tab lists none.
+  /**
+   * Draws the note on EST's label form of every endpoint, if the realm has
+   * one.
+   *
+   * @param json - `est_console.ts`'s `estView()`
+   * @param t - the page's translator (#539)
+   * @returns the markup, or ''
+   */
+  static labelFormNote(json, t) {
+    return json.labelForm
+      ? '<p class="sub">' + t.html('consoleEst.labelForm',
+                                   { base: json.labelForm.base }) + ' ' +
+        esc(json.labelForm.note) +
+        '</p>'
+      : '';
+  }
+
   /**
    * Draws the body of `/admin/est` from the view.
    *
@@ -136,23 +155,8 @@ class EstPage {
   static estPageBody(ctx, json) {
     const self = this;
     const t = ctx.t;
-    // What an endpoint does, the label form's note, a profile's needs, a
-    // refusal's reason and a credential's description are the view's,
-    // drawn as they come (#539).
-    const endpointRows = json.endpoints.map(function (one) {
-      return '<tr><td><code>' + esc(one.method) + '</code></td><td><code>' +
-             esc(one.url) + '</code>' + (one.labelFormUrl
-               ? '<div class="sub">' +
-                 t.html('consoleEst.orUrl', { url: one.labelFormUrl }) +
-                 '</div>' : '') + '</td><td>' + esc(one.what) +
-             '</td><td>RFC 7030 ' + esc(one.section) + '</td></tr>';
-    }).join('');
-    const labelFormNote = json.labelForm
-      ? '<p class="sub">' + t.html('consoleEst.labelForm',
-                                   { base: json.labelForm.base }) + ' ' +
-        esc(json.labelForm.note) +
-        '</p>'
-      : '';
+    // A profile's needs, a refusal's reason and a credential's description
+    // are the view's, drawn as they come (#539).
     const authority = json.hierarchy.authority;
     const caBlock = json.hierarchy.built && authority
       ? '<table class="kv"><tr><th>' + t.html('consoleEst.subject') +
@@ -276,12 +280,6 @@ class EstPage {
         t.html('consoleEst.development') + ' ' + esc(json.mode.development) +
         ' ' + t.html('consoleEst.product') + ' ' +
         esc(json.mode.product)) +
-      '<h2>' + t.html('consoleEst.hEndpoints') + '</h2><table><thead><tr>' +
-      '<th>' + t.html('consoleEst.thMethod') + '</th><th>URL</th><th>' +
-      t.html('consoleEst.thWhat') + '</th><th>' +
-      t.html('consoleEst.thSection') + '</th></tr></thead><tbody>' +
-      endpointRows +
-      '</tbody></table>' + labelFormNote +
       '<h2>' + t.html('consoleEst.hIssuingCa') + '</h2>' + caBlock +
       '<h2>' + t.html('consoleEst.hProfiles') + '</h2><p class="sub">' +
       t.html('consoleEst.profilesNote', { profile: json.defaultProfile }) +

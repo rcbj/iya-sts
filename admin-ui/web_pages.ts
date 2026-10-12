@@ -170,16 +170,18 @@ interface WebPage {
 // one list; `entry` and `agent`, the two drill-downs, are one tab's each.
 const CERT_PANELS: Json = {
   acme: { path: '/admin/acme', operation: '/admin-api/acme',
-          tab: 'cert-tab-acme', prefix: 'acme',
+          tab: 'cert-tab-acme', prefix: 'acme', routes: '/enroll/acme',
           names: ['certificatesPage', 'credentialsPage', 'accountsPage',
                   'hostNamesPage'] },
   est: { path: '/admin/est', operation: '/admin-api/est',
-         tab: 'cert-tab-est', prefix: 'est', names: ['certificatesPage'] },
+         tab: 'cert-tab-est', prefix: 'est', routes: '/.well-known/est',
+         names: ['certificatesPage'] },
   scep: { path: '/admin/scep', operation: '/admin-api/scep',
-          tab: 'cert-tab-scep', prefix: 'scep',
+          tab: 'cert-tab-scep', prefix: 'scep', routes: '/enroll/scep',
           names: ['certificatesPage', 'credentialsPage'] },
   spiffe: { path: '/admin/spiffe', operation: '/admin-api/spiffe',
-            tab: 'cert-spiffe-overview', prefix: 'spiffe', names: [] },
+            tab: 'cert-spiffe-overview', prefix: 'spiffe', routes: '/spiffe',
+            names: [] },
   spiffeEntries: { path: '/admin/spiffe/entries',
                    operation: '/admin-api/spiffe/entries',
                    tab: 'cert-spiffe-entries', prefix: 'entries',
@@ -1050,6 +1052,7 @@ class WebPages {
     }
     // Every tab's endpoints, once each, on Metadata alone: the seven
     // operations mirror this one page, so each answers the whole list.
+    // They are drawn by protocol (`certMetadata()`).
     const endpoints: Json[] = [];
     const seen: Json = {};
     [view].concat(Object.keys(CERT_COMPOSITION.compose).map(
@@ -1085,8 +1088,7 @@ class WebPages {
     return WebKit.tabbedPanels('cert-pages', [
       { id: 'cert-tab-metadata',
         label: t.text('consoleProtocolSettings.metadataHeading'),
-        html: WebPages.withEndpoints('', { protocolEndpoints: endpoints },
-                                     t) },
+        html: WebPages.certMetadata(view, endpoints, t) },
       { id: CERT_PANELS.acme.tab, label: t.text('console.nav.acme'),
         html: draw('acme', AcmePage.render(view.acme, ctxOf('acme'))) },
       { id: CERT_PANELS.est.tab, label: t.text('console.nav.est'),
@@ -1096,6 +1098,57 @@ class WebPages {
       { id: 'cert-tab-spiffe', label: t.text('console.nav.spiffe'),
         html: spiffe }
     ]);
+  }
+
+  // METADATA, ONE SECTION PER PROTOCOL (rcbj, 2026-10-12): forty-odd rows
+  // in one table did not say which protocol a row was, so each family's
+  // HTTP endpoints are a table of their own under its name — chosen by
+  // the route's prefix (`CERT_PANELS`' `routes`) — with what its tab used to
+  // say about them: EST's label form, what SCEP answers, and SPIFFE's gRPC
+  // listeners, which are the sockets the endpoint list would otherwise name
+  // with less. The four tabs list no endpoint.
+  /**
+   * Draws Cert issuance's Metadata tab: each protocol's endpoints under its
+   * name.
+   *
+   * @param view - the page's composed view
+   * @param endpoints - every row of the page's endpoint list, once each
+   * @param t - the page's translator
+   * @returns the tab as HTML
+   */
+  static certMetadata(view: Json, endpoints: Json[], t: Json): string {
+    const families = ['acme', 'est', 'scep', 'spiffe'];
+    const familyOf = function (row: Json): string | null {
+      const route = String(row.route || '');
+      return families.filter(function (key) {
+        const prefix = CERT_PANELS[key].routes;
+        return route === prefix || route.indexOf(prefix + '/') === 0;
+      })[0] || null;
+    };
+    const extras: Json = {
+      acme: '',
+      est: EstPage.labelFormNote(view.est, t),
+      scep: ScepPage.sectionCapabilities(view.scep, t),
+      spiffe: SpiffePage.listenersSection(t, view)
+    };
+    const sections = families.map(function (key) {
+      const rows = endpoints.filter(function (row) {
+        return familyOf(row) === key;
+      });
+      // The heading is the tab's own label; the key is built in a variable
+      // for `titleOf()`'s reason.
+      const label = 'console.nav.' + key;
+      return '<h2 id="cert-metadata-' + key + '">' +
+        WebKit.esc(t.text(label)) + '</h2>' +
+        WebPages.endpointTable(rows, t) + extras[key];
+    });
+    // A row no family's prefix claims is still listed, under the section
+    // every Protocols page has.
+    const other = endpoints.filter(function (row) {
+      return row.route && !familyOf(row);
+    });
+    return sections.join('') + (other.length
+      ? WebPages.withEndpoints('', { protocolEndpoints: other }, t) : '');
   }
 
   /**
@@ -1777,6 +1830,25 @@ class WebPages {
       return html;
     }
     t = t || WebKit.context().t;
+    const section = '<h2>' + t.html('consolePages.endpoints') + '</h2>' +
+                    WebPages.endpointTable(rows, t);
+    const text = String(html || '');
+    const at = text.indexOf('<h2');
+    return at < 0 ? text + section
+                  : text.slice(0, at) + section + text.slice(at);
+  }
+
+  /**
+   * Draws endpoint rows as the table every Protocols page's Endpoints
+   * section is: each URL with its Copy button, its methods or transport, and
+   * whether it is registered and listening.
+   *
+   * @param rows - `protocolEndpoints` rows
+   * @param t - optional; the translator, the default when left out
+   * @returns the table as HTML
+   */
+  static endpointTable(rows: Json[], t?: Json): string {
+    t = t || WebKit.context().t;
     const esc = WebKit.esc;
     const body = rows.length ? rows.map(function (row: Json): string {
       const methods = Array.isArray(row.methods) ? row.methods : [];
@@ -1795,12 +1867,7 @@ class WebPages {
           : '') + '</td></tr>';
     }).join('') : '<tr><td class="sub">' +
                   t.html('consolePages.endpoints.none') + '</td></tr>';
-    const section = '<h2>' + t.html('consolePages.endpoints') +
-                    '</h2><table class="kv">' + body + '</table>';
-    const text = String(html || '');
-    const at = text.indexOf('<h2');
-    return at < 0 ? text + section
-                  : text.slice(0, at) + section + text.slice(at);
+    return '<table class="kv">' + body + '</table>';
   }
 }
 

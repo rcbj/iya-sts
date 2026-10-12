@@ -2,7 +2,6 @@
   "none": "none",
   "kindPerson": "person",
   "kindApplication": "application",
-  "hEndpoints": "Endpoints",
   "capsAnswers": "GetCACaps answers",
   "messagesAnswered": "Messages answered",
   "subject": "Subject",

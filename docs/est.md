@@ -88,8 +88,9 @@ else in the realm; `/admin/cert-issuance#cert-tab-est` gives the reason for each
 
 ### For the realm: Protocols → Cert issuance → EST
 
-The EST tab of the console (`/admin/cert-issuance#cert-tab-est`) holds the realm's server: the
-endpoints and every profile's labelled URLs, the EST Issuing CA, the
+The EST tab of the console (`/admin/cert-issuance#cert-tab-est`) holds the realm's server (its
+endpoints and the label form are on the Metadata tab, under EST): every
+profile's labelled URLs, the EST Issuing CA, the
 profiles, the credentials EST accepts, **Issue a certificate with a
 server-generated key**, the **certificate host names**, the enrolled
 certificates (each with a **Revoke**), and the `est.*` settings (see

@@ -116,21 +116,20 @@ class ScepPage {
            t.html('consoleScep.kindApplication') + '</option></select>';
   }
 
+  // WHAT THE ENDPOINT ANSWERS (2026-10-12): the capabilities and message
+  // types, under SCEP on Protocols → Cert issuance's Metadata tab, which
+  // lists the endpoints themselves; the SCEP tab lists none.
   /**
-   * Draws the endpoints section.
+   * Draws what the SCEP endpoint answers: its capabilities and the message
+   * types it takes.
    *
    * @param json - the view
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static sectionEndpoints(json, t) {
+  static sectionCapabilities(json, t) {
     const self = this;
-    const rows = Object.keys(json.endpoints).map(function (name) {
-      return '<tr><th>' + esc(name) + '</th><td>' +
-             self.code(json.endpoints[name]) + '</td></tr>';
-    }).join('');
-    return '<h2>' + t.html('consoleScep.hEndpoints') +
-      '</h2><table class="kv">' + rows +
+    return '<table class="kv">' +
       '<tr><th>' + t.html('consoleScep.capsAnswers') + '</th><td>' +
       json.capabilities.map(this.code.bind(this)).join(' ') + '</td></tr>' +
       '<tr><th>' + t.html('consoleScep.messagesAnswered') + '</th><td>' +
@@ -413,7 +412,7 @@ class ScepPage {
     const inner =
       kit.note(t.html('consoleScep.intro') + ' ' +
         (json.enabled ? '' : t.html('consoleScep.turnedOff'))) +
-      this.sectionEndpoints(json, t) + this.sectionAuthority(json, t) +
+      this.sectionAuthority(json, t) +
       this.sectionProfiles(json, t) +
       this.sectionChallenges(ctx, json) + this.sectionHostNames(json, t) +
       this.sectionCertificates(ctx, json) + this.sectionExceptions(json, t) +

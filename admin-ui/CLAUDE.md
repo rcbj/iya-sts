@@ -4856,7 +4856,10 @@ same list they did.
 rcbj's ask, after OAuth, SAML, VC, XACML, SSF and Kerberos: the same tab
 pattern for Protocols → Cert issuance, with SPIFFE's pages as sub-tabs of one
 tab. **`/admin/cert-issuance`** is a direct Protocols page: Metadata (every
-endpoint of the four families, once each), ACME, EST, SCEP, and SPIFFE, whose
+endpoint of the four families, once each, under a heading per protocol
+(`certMetadata()`) with what each tab used to say about them — EST's label
+form, what SCEP answers, SPIFFE's gRPC listeners; the four tabs list no
+endpoint), ACME, EST, SCEP, and SPIFFE, whose
 sub-tabs are Trust domain, Registration entries, Agents and Brokers. The
 Monitoring group is unchanged: three monitors under the same heading.
 `admin-ui/web_pages.ts` draws it (`certIssuance()`); five things are worth

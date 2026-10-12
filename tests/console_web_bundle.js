@@ -1685,6 +1685,43 @@ function childMain() {
          }),
          'D-Cert-metadata. all four families\' endpoints are on Metadata, ' +
          'and only there', 'endpoints=' + certEndpoints.length);
+    // ONE SECTION PER PROTOCOL (2026-10-12): each family's routes under
+    // its own heading, and none of the four tabs listing its endpoints.
+    const certMeta = certTabs['cert-tab-metadata']
+      ? certTabs['cert-tab-metadata'][1] : '';
+    const metaSection = function (key) {
+      const at = certMeta.indexOf('<h2 id="cert-metadata-' + key + '">');
+      const next = certMeta.indexOf('<h2', at + 4);
+      return at < 0 ? '' : certMeta.slice(at, next < 0 ? undefined : next);
+    };
+    const certFamilies = { acme: '/enroll/acme', est: '/.well-known/est',
+                           scep: '/enroll/scep', spiffe: '/spiffe' };
+    const misfiled = certEndpoints.filter(function (row) {
+      const key = Object.keys(certFamilies).filter(function (one) {
+        const prefix = certFamilies[one];
+        return row.route === prefix || String(row.route || '')
+          .indexOf(prefix + '/') === 0;
+      })[0];
+      return row.route && (!key || metaSection(key).indexOf(
+        'data-copy="' + WebKit.esc(row.url) + '"') < 0);
+    });
+    note(Object.keys(certFamilies).every(function (key) {
+           return metaSection(key) !== '';
+         }) && misfiled.length === 0 &&
+         // An endpoint drawn is a URL in a <code>; a setting's description
+         // naming a path is not one.
+         ['/enroll/acme/new-nonce</code>',
+          '/.well-known/est/simpleenroll</code>',
+          '/enroll/scep/pkiclient.exe</code>'].every(function (path) {
+           return ['cert-tab-acme', 'cert-tab-est', 'cert-tab-scep']
+             .every(function (id) {
+               return certTabs[id] && certTabs[id][1].indexOf(path) < 0;
+             });
+         }) && spiffeTab.indexOf('>The gRPC listeners</h') < 0 &&
+         metaSection('spiffe').indexOf('>The gRPC listeners</h3>') >= 0,
+         'D-Cert-sections. Metadata draws each protocol\'s endpoints under ' +
+         'its own heading, and the ACME, EST, SCEP and SPIFFE tabs list none',
+         misfiled.map(function (row) { return row.route; }).join(', '));
     // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
     // and the three SPIFFE lists search `q`, so on one page each carries
     // its prefix — in its links, its pager's anchor and its filter form.
