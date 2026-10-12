@@ -44,5 +44,6 @@
   "colPerson": "使用者",
   "colTheirSub": "其在那裡的 sub",
   "colLinked": "連結時間",
-  "colToken": "權杖"
+  "colToken": "權杖",
+  "providersHeading": "聲明提供者"
 }

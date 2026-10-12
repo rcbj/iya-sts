@@ -505,7 +505,10 @@ class SettingsForms {
     const persistence = '<a href="/admin/persistence">' +
       t.html('consoleSettings.persistence') + '</a>';
 
-    const inner = '<h2>' + t.html('consoleSettings.forms.heading') + '</h2>' +
+    // `data-tab` (2026-10-12): on a Protocols page drawn as tabs, the
+    // settings are a tab of their own (`WebPages.protocolTabs()`).
+    const inner = '<h2 data-tab="settings">' +
+      t.html('consoleSettings.forms.heading') + '</h2>' +
 
       kit.note(t.html('consoleSettings.forms.lead1') +
       '<a href="/admin/config">' + t.html('consoleSettings.configuration') +

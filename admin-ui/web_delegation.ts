@@ -1845,7 +1845,8 @@ class DelegationPage {
     const permNav = kit.pageNavPair(here, navParams, permPage.paging);
     const grantNav = kit.pageNavPair(here, navParams, grantPage.paging);
 
-    return '<h2 id="allowed">' + t.html('consoleDelegation.hAllowed') +
+    return '<h2 id="allowed" data-tab="register">' +
+      t.html('consoleDelegation.hAllowed') +
       '</h2>' +
 
       kit.note(t.html('consoleDelegation.allowedEvidence')) +
