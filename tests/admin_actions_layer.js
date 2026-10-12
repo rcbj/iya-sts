@@ -523,7 +523,6 @@ function checkNothingRequiresItEarly(t) {
                    'oauth-oidc/grant_management_api.ts',
                    'oauth-oidc/claims_providers_api.ts',
                    'oauth-oidc/provider_commands_api.ts',
-=======
                    // The secret destinations' operation (#313, 2026-10-12),
                    // for `adminViews`' paging only — the register's one
                    // list — required LAZILY in the request; the module is
