@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "数据加密密钥本身（#391）：每个领域针对下面每个数据类别各一个，每个都在密钥加密密钥下包装和解包"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "信封加密：每个值都在数据加密密钥下加密，只有数据加密密钥在密钥加密密钥下加密。在这里，一次包装计为一次加密，一次解包计为一次解密；一个进程对每个密钥只解包一次并保留它，因此无论封存了多少内容，这些数字都保持很小。"
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "本服务自己的签名密钥，每个信任领域一行——并且自 2026-09-12 起，同一行中还包括该领域的 OpenID4VCI 凭据请求加密密钥"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "比进程存活更久的私钥。在产品模式中，这些密钥只生成一次，并在每次启动时读回，这正是昨天签发的令牌今天仍能验证的原因——也正是这一行不能以明文存放的原因。驻留在此进程中的是密文：`keys.plaintextRetention` 决定解密后的密钥在使用后保留多久。"
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "证书颁发机构：服务根 CA、每个中间 CA 以及每个签发 CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "CA 私钥，它们根本不会离开此进程。它们有意放在同一行族中并使用同一密钥：`pki.js` 自己的存储将成为“本服务把私钥放在哪里”这一问题的第二个答案，而第二个答案正是没人记得轮换的那个。"
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "`/admin/pki` 签发给应用的断言签名密钥对——`oauthAssertionPrivateKey` 和 `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "直到 2026-09-10，这都是本服务中最后一份以明文存储的私钥材料。它在静态时封存，并为经由 `applications.js` 访问的读取方打开——因此 `/admin/applications` 仍会将操作员要取的 PEM 交给他们，而 TCP 389 上的 `ldapsearch`、LDIF 文件、数据库行以及它们的备份中保存的都是 `$aesgcm$…`。"
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "应用的 OAuth 客户端密钥——`oauthClientSecret`，每个密钥一条封存记录（密钥本身、其 id、到期时间和描述）"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "持有者可以以该客户端身份进行身份验证，它也是 `client_secret_jwt` 和 HS256 ID 令牌的 HMAC 密钥。自 2026-10-01 起在持久的密钥加密密钥下静态封存，为经由 `applications.js` 访问的读取方打开，并在产品模式中对 LDAP 读取方隐藏。在此之前写入的值保持明文，直到下一次写入该密钥。"
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "应用的 RFC 7592 注册访问令牌——`appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "持有者可以读取、更改或删除客户端的注册，而读取会返回客户端密钥。自 2026-10-01 起在持久的密钥加密密钥下静态封存，为 RFC 7592 端点以及经由 `applications.js` 访问的读取方打开。"
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "联合关系的客户端密钥——`fedClientSecret`，本服务在伙伴令牌端点使用的自身凭据"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "它要发送给别人的服务，因此必须可以恢复——采用封存而非哈希。自 2026-10-01 起在持久的密钥加密密钥下静态封存；没有任何页面或 API 响应会返回它。"
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "每个目录条目的全部属性——人员、组、应用、设备、联合关系"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "rcbj 对 #391（第 6 阶段）的决定：目录表的副本不应是一份人员名单。DN 保持可读，属性名称也是；查找时比较的值以带密钥的摘要形式保存在数据块旁边。单独封存的值（TOTP 密钥、Kerberos 密钥）会在其中再封存一次。文件（ldif）存储中的条目只受文件系统保护。"
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "铸造的行所归档的名称——通常就是凭据本身：会话 id、SAML 工件、令牌 id"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "会话 id 就是 cookie，工件通过出示即可兑换，因此明文名称在转储中就是可用的凭据。自 #222 起，行通过名称的带密钥摘要来查找，名称本身被封存，只在恢复时或由变更的读取方打开。"
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "已用断言历史中的颁发者、断言 id、客户端和主体——谁出示了关于谁的哪份 RFC 7523 或 RFC 7522 文档"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "它们在每个节点共享的表中指明人员及其关系。自 #222 起封存；行仍通过其摘要键查找，控制台的文本搜索在内存中对最新的行进行。文件（ldif）存储中的这些值只受文件系统保护：它在密钥存储启动之前就要把它们读回。"
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "服务运行期间更改的机密设置——目前是 `scim.digestPassword`，即所有 SCIM 用户名共用的 HTTP Digest 密码"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "标记为机密的设置就是凭据，而保存的设置在其他情况下是普通 JSON。自 #222 起在写入之处封存（`persistence/sealed_settings.js`）；运行中的配置、控制台和 API 看到的与以前相同。"
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "某人的身份核验——`stsIdaVerification`（OpenID Connect for Identity Assurance），其证据中带有证件号码"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "不是凭据，但属于任何备份都不应以可读形式携带的个人数据。自 2026-10-01 起在持久的密钥加密密钥（若有归属单元，则为归属单元的密钥）下静态封存，并对所有 LDAP 读取隐藏。"
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "GNAP 客户端实例用于密钥引用的共享密钥——`gnapSymmetricKey`（RFC 9635 第 7.1.1 节）"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "持有者可以以该客户端实例的身份签署 GNAP 请求：HMAC 密钥同时是凭据的两半。在密钥持久化时于进程的密钥加密密钥下静态封存，为经由 `applications.js` 访问的读取方打开，并在产品模式中对 LDAP 读取方隐藏。"
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "GNAP 资源服务器的 macaroon 根密钥——`gnapMacaroonKey`（RFC 9767 第 2.2 节）"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "macaroon 用其根密钥验证，同一密钥也能铸造 macaroon：持有者可以签发该资源服务器会接受的令牌。该密钥按资源服务器从领域机密派生，写入条目（经封存）只是为了让资源服务器的操作员有地方领取它。"
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "机密推送目标的写入凭据——`secretDestCredential`（#221）：本服务将服务账户轮换后的密码写入机密管理器时所用的密钥、令牌或服务账户"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "持有者可以写入其他系统读取的密码。在密钥持久化时静态封存，并且——与应用的签名密钥不同——还对所有读取方隐藏：它只为使用它的推送而打开，`/admin-api` 从不绘制、显示或返回它。"
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "出站 SCIM 客户端的凭据（#552）——`scimClientPassword`、`scimClientOAuthClientSecret` 和 `scimClientTlsPrivateKey`：本服务向远程 SCIM 服务提供方或其令牌端点进行身份验证时所用的凭据"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "持有者可以在远程身份提供方处创建、更改和删除账户。在密钥持久化时静态封存，并像机密目标的凭据一样对所有读取方隐藏：只为使用它的请求而打开。"
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "`/admin/pki` 签发给人员的断言签名密钥对——`stsAssertionPrivateKey`（2026-09-11），以及用于 RFC 7522 的 `stsSamlAssertionPrivateKey`（2026-09-13）"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "与上面应用的机制相同，有意没有另起新机制，只有一点不同，这是关于两类持有者的事实：应用的私钥会为经由 `applications.js` 访问的读取方打开，而没有任何东西会通过一个能打开人员私钥的模块来绘制人员条目——因此这个私钥只在创建它的操作中交付一次，之后在任何地方都是密文。另一种选择是一个每次访问都打印人员私钥的控制台页面。"
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "联合关系的加密私钥（#168）——用于解密伙伴加密的断言或 ID 令牌，`fedEncryptionKey` 中每个密钥一行"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "持有者可以读取该伙伴加密给本服务的每个断言——此人的标识符和属性，正是加密要挡在浏览器之外的东西。在密钥持久化的任何地方都静态封存，并对每次 LDAP 搜索、每个页面和每个 `/admin-api` 响应隐藏（包括密文），这些地方只携带证书和公钥。"
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "存储的 Kerberos 长期密钥——目录人员从其自身密码派生的密钥（`stsKrb5Keys`），以及服务主体的随机密钥（`krb5ServiceKeys`）（2026-09-12）"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "等同于密码：Kerberos 长期密钥就是密码转换而成的东西，持有者无需知道密码即可以该主体身份获取票据。因此在密钥加密密钥比进程存活更久的任何地方都会封存它，名称和密码哈希的戳记会与它一起封存，使值无法被移到另一个条目或在密码更改后继续保留，并且它对每个页面、每次 LDAP 搜索和每个 `/admin-api` 响应隐藏（包括密文）。服务主体的密钥只离开本服务一次，即创建或轮换时交付的 keytab。"
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "每个注册了身份验证器应用的人的 RFC 6238 共享密钥——`stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "这是此目录中唯一可以被读回的凭据。验证代码意味着要计算它，因此不能像 `userPassword` 那样进行哈希——而 `/admin/ldap/directory` 按设计会打印每个条目的每个属性，因此如果不封存，目录转储就会打印出一个可用的第二因素。"
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "注册第二因素时签发的一组一次性恢复码"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "采用加密而非哈希，原因是产品决策而不是密码学：某人可以在 `/portal/mfa` 读回剩余的恢复码。**这一点已于 2026-09-11 改变，保留此行是为了在此之前写入的恢复码组**——新的一组使用 scrypt 进行哈希，完全不封存，因为哈希不是机密。计数位于封存的数据块之外，因此每个报告“10 个中有 7 个未使用”的页面都无需打开它即可做到——包括此进程无法解密的恢复码组。"
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "此进程铸造的一切——会话、令牌、授权码、工件、Kerberos 主体、重放缓存、计数器和审计日志"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "最新的，也是体量最大的。它仅限产品模式加 postgres，因为只有在这种配置下其中任何内容才会持久化：开发模式在每次启动时重新生成签名密钥，因此恢复的令牌无法针对任何东西通过验证，而 `ldif` 存储每次刷新都写入整个文件，在两种模式下都不保存这些内容。"
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "密码——`userPassword`，以及与之并列的激活令牌"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "采用哈希而非加密，这更强而不是更弱。使用 N 为 2^15 的 scrypt，本服务中没有任何东西可以将其读回——这就是规则：本服务验证的机密进行哈希，必须出示的机密进行加密。上面的两种机制属于第二类，并已如此说明。"
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "没有持久密钥加密密钥时的客户端密钥、RFC 7592 注册访问令牌和联合客户端密钥"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "仅在进程没有持久密钥加密密钥的情况下以明文存放——开发模式，或开发容器上的产品模式领域——因为在临时密钥下封存会留下一个重启后无法打开的凭据。有持久密钥时，三者都会被封存：参见上面各自的行。"
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "每个领域的十一个后量子密钥、TLS 服务器证书以及 SPIFFE 颁发机构"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "在两种模式下都完全不持久化，因此没有任何静态内容需要封存。三者都在 `common/mode.js` 的 `NOT_YET` 中列出，而不是留待被发现，因为“未存储”和“未保护”从外部看起来一样，但并不是同一回事。"
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "本服务对哪些内容进行静态加密、使用哪个密钥、采用哪种算法，以及在此进程中已发生了多少次。"
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "密钥加密密钥在启动时、监听器绑定之前，从上面的提供方读取。本服务从不生成它，也从不把它写下来，无法读取它的服务不会启动——它不会生成一个替代密钥并继续运行，因为那会让它签发过的每个令牌都无法通过验证，而且是悄无声息地发生在别人的依赖方那里。"
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "本服务处于开发模式，因此它持有的任何东西都不会比进程存活更久，密钥加密密钥是临时的：每次运行生成，从不写下，仅用于让请求工作线程池在一次运行内共享铸造的行。在它之下封存目录属性比明文更糟——条目在 `ldif` 和 `postgres` 存储中会在重启后保留，而密钥不会，因此该值回来时将成为永久的乱码。这就是为什么每个写入位置的判断条件是 `keystore.persists()` 而不是 `keystore.sealed()`。"
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "使用 AES-256-GCM，有意不用 CBC：GCM 是经过认证的，因此被人篡改的密文会解密失败，而不是产生一个略有不同的密钥。解密出错误字节的签名密钥会产生无法验证的签名，而故障会在依赖方表现为“签名无效”——离原因远得不能再远。密钥加密密钥从不加密任何值（#391）：每个值都在数据加密密钥下加密——256 个随机位，每个领域每个数据类别一个——而密钥加密密钥包装的是数据加密密钥。一个进程对每个数据密钥只解包一次并保留它，因此对于保存在密钥管理服务中的密钥，请求是按数据密钥而不是按值发出的，轮换密钥加密密钥只需重新包装少数几个密钥，而不必重新加密整个存储。"
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "本服务只有一个密钥加密密钥，而不是每个信任领域一个；每个领域每个数据类别各有一个数据加密密钥（#391）。没有任何数据加密密钥在领域之间共享，因此一个领域的值从不会在另一个领域的值所用的密钥下封存。但每个数据加密密钥都在同一个密钥加密密钥下包装，因此领域在静态时并不是独立的边界：能读取该密钥的人就能解包每个领域的数据密钥，轮换它会同时重新包装所有领域的数据密钥。"
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "上表之外的一切在存储中都是明文——目录条目、组、应用、领域和设置，在开发模式中几乎是全部。本服务只封存凭据和私钥，有意不封存其他内容：列级加密会把明文留在预写日志中、排序溢出时的临时文件中、pg_dump 中、副本上以及查询日志中，因此覆盖整个存储的那一层应位于数据库之下，而不是数据库之内。那一层由操作员负责——PGDATA 下的 LUKS 或加密的 ZFS 数据集、使用客户托管密钥的云磁盘，或具备 TDE 的某个 PostgreSQL 分支，因为社区版没有 TDE。docs/encryption-at-rest.md 是本仓库对这些选项的说明。"
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "而且密钥不得存放在它所保护的磁盘上。与存储位于同一未加密卷上的密钥文件会把两半都交给拿走该卷的人；这对开发栈来说没有问题，这也是 `file` 提供方是默认值的原因，但这不是部署方案。keys.kekProvider 可改为选择一个机密存储。"
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "在两种操作都经过的唯一汇聚点计数——`crypto.js` 的 `encryptWithDek()` 和 `decryptWithDek()`，数据加密密钥自身的包装和解包计在 `data-keys` 下——而不是在调用位置计数，因为由调用位置汇总的总数在有人添加另一个调用位置时就会出错，而且是悄无声息地出错。下面的细分按每个调用位置传入的标签划分；未传入标签的调用方仍会被计数，归在 `(unlabelled)` 下。这些数字是进程范围的，而不是按领域的——密钥加密密钥属于进程，因此按领域划分计数只是在统计请求恰好所在的领域——而且它们保存在内存中，因此重启就会得到空的计数。"
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "失败几乎总是因为密钥加密密钥不对——机密被轮换，或存储在部署之间被搬移——它单独作为一个数字，而不是并入解密次数，因为九百次解密和有四百次失败的九百次解密是截然不同的报告。接下来发生什么取决于正在读取的内容：无法打开的签名密钥在启动时是致命的，会话行会被丢弃，而无法打开的第二因素会使此人无法登录，直到操作员清除该注册——绝不会悄然缺失，因为那会移除一项安全控制。"
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "封存的值和打开的值都不会出现在本页或本文档的任何地方。封存的值是私钥、共享密钥或某人的恢复码，打印其中任何一半都会交出封存所要保护的东西。/admin/ldap/directory 是可以看到 `$aesgcm$…` 信封的地方，其标题说明那是目录所看到的存储。"
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "封存保护的是写下来的内容，因此存储中保存了什么，决定了上表中有多少内容可被任何人触及。`memory` 存储不写入任何内容，因此其中的任何东西都不会在此进程结束后留存以供读取。"
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "每个领域和数据类别的一个数据加密密钥封存该类别的每个值；密钥加密密钥只包装数据密钥。已轮换的数据密钥即被取代：它仍能打开它封存过的内容，不再有新内容在它之下封存，重新加密作业会重新封存它封存过的内容，然后销毁它。派生密钥在没有任何东西比进程存活更久的情况下，按每次运行从密钥加密密钥生成，从不存储或轮换。"
+  }
+}

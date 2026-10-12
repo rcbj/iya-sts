@@ -1,0 +1,130 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "Förtroendeankaret. Självsignerat, det mest långlivade av de tre, och det enda certifikatet i hierarkin som en förlitande part måste få utanför bandet — allt under det färdas i kedjan."
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "Signerat av roten. Det finns för att rotens nyckel ska kunna användas en gång och sedan lämnas i fred: en kompromettering här repareras genom att den här nivån utfärdas på nytt, och en kompromettering av roten repareras inte alls. pathLen är 1, så det får signera ytterligare en CA och inte djupare."
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "Signerat av mellanliggande CA, och den enda nivå som signerar något som den här tjänsten delar ut. pathLen är 0 — den signerar LÖV och ingen ytterligare CA, vilket är det som gör \"ett applikationscertifikat kan inte användas för att prägla ett annat\" till en egenskap hos kodningen snarare än hos den här tjänstens hyfs."
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "Nycklarna som den här sfären signerar JWT:er med — RSA-nyckeln bakom RS256, de fyra ECDSA-kurvorna, båda Edwards-kurvorna och de elva postkvantnycklarna när de skapas. Det som en klient verifierar mot /oauth2/jwks."
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "Det som signerar ett XML-dokument: SAML 2.0- och 1.1-intyg och svar, WS-Federation, WS-Trust och metadata per tjänsteleverantör. Det är en SEPARAT utfärdare från den ovan, även om en RSA-nyckel gör båda jobben i dag — en förlitande part som litar på den här tjänsten för SAML har därmed inte sagt något om dess OAuth-token, och två Issuing CA:er är hur det går att uttrycka."
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "De signeringsnyckelpar som utfärdas till APPLIKATIONER för RFC 7521 och RFC 7523 — ett klientintyg, eller ett JWT bearer-auktoriseringsgrant. Detta är den Issuing CA som den här modulen hade innan hierarkin fick de andra, under ett namn som säger vilken av de fem det är."
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "Certifikatet som visas på LDAPS 636, på huvudporten när global.https är på, och på den inbäddade felsökarens lyssnare — 8443- och 9443-lyssnarna som det här användningsfallet fortfarande är uppkallat efter togs bort 2026-09-16. PROCESS-omfattande eftersom de socketarna är det: ett certifikat svarar för varje sfär, så om en sfärs mellanliggande CA signerade det skulle en sfär gå i god för varje annan sfärs ytterdörr."
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "Certifikaten som noderna i en tjänst som driftsatts som celler visar upp för varandra på kanalen mellan celler (cells.port), som server och som klient, var och en med sin cell i ett urn:sts:cell:-subjectAltName. Kortlivade, präglas om av varje nod och registreras aldrig. En motpart accepteras endast med ett löv från den här utfärdaren. Oanvänd i enkelcellsläge."
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "X.509-utfärdaren som signerar varje X509-SVID som präglas i den här sfären. SFÄRS-omfattande sedan 2026-09-11 — innan dess låg den under processens mellanliggande CA, självsignerad och helt utanför det här trädet. Förtroende-ANKARET påverkas inte av flytten, och det är hela poängen: paketet publicerar tjänstens rot, som alla sfärer delar, så ett SVID signerat av vilken sfärs utfärdare som helst verifieras mot ett enda ankare medan dess kedja fortfarande säger vilken sfär som utfärdade det."
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "Certifikaten som en fjärransluten XACML Policy Enforcement Point visar på sin HTTPS-lyssnare. SFÄRS-omfattande eftersom en fjärr-PEP registrerar sig mot en sfär och upprätthåller den sfärens policy, så utfärdaren som går i god för dess ytterdörr är den sfärens. Utfärdas till en REGISTRERAD PEP från /admin/xacml/peps eller POST /admin-api/xacml/issue-pep-certificate; den privata nyckeln lämnas över en gång och den här tjänsten behåller ingen kopia."
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "Certifikaten som en anpassad HTTPS-lyssnare visar upp (#472: listeners.custom för tjänstens, listeners.realm för en sfärs egna) när dess definition inte namnger några certifikatfiler, för dess värdnamn. SFÄRS-omfattande eftersom en lyssnare hör till en sfär — standardsfären, för tjänstens. Ett per lyssnare och nod; den privata nyckeln lämnar aldrig noden som betjänar den."
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "Certifikatet som den här sfärens KDC signerar sina PKINIT-svar med (RFC 4556): id-pkinit-KPKdc i dess utökade nyckelanvändning och sfärens biljettutdelningstjänst, krbtgt/REALM@REALM, i ett id-pkinit-san. Ett per process, skapat när PKINIT används första gången; den privata nyckeln lämnar aldrig processen som skapade den."
+  },
+  "pki.useCases.acme.what": {
+    "en": "85c88fe668bcb64d",
+    "text": "Certifikat utfärdade över ACME (RFC 8555) på /enroll/acme, till en person- eller applikationspost som en External Account Binding-nyckel utfärdades för. Varje löv namnger den posten i ett urn:sts:person:- eller urn:sts:application:-subjectAltName."
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "Certifikat utfärdade över EST (RFC 7030) på /.well-known/est, till den post som ett lösenord, en klienthemlighet eller ett sfärutfärdat klientcertifikat autentiserade, eller — för en administratör — till den post som begäran namnger. Den enda registreringsvägen där den här tjänsten får generera nyckelparet (/serverkeygen)."
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "Certifikat utfärdade över SCEP (RFC 8894) på /enroll/scep, till den post som ett engångslösenord för utmaning utfärdades för. RA-certifikatet som SCEP krypterar begäranden till är också ett löv från den här CA:n, med en RSA-nyckel eftersom SCEP:s nyckeltransport är RSA."
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "903e048677f8ab58",
+    "text": "TLS-klientcertifikaten som personer utfärdar till sig själva i användarportalen: clientAuth, personens urn:sts:person:-namn och en privat nyckel som lämnas över en gång som PKCS#12. Ett certifikat från den här utfärdaren loggar in sin innehavare på GET /tls/sign-in på huvudporten, i den här sfären; ett certifikat från någon annan av den här tjänstens utfärdare gör det inte, även om alla kedjar till samma rot."
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "En registrerad OAuth-klient eller förlitande part. Dess nyckelpar skrivs på dess egen post i ou=applications."
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "Någon i ou=users. Deras nyckelpar signerar ett RFC 7523 avsnitt 2.1-intyg OM DEM SJÄLVA och om ingen annan — se common/person_assertions.js, där vägran motiveras."
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "En JWS-signeringsnyckel. Dess publika halva skrivs på applikationen som en JWKS (oauthAssertionJwks) som bär certifikatkedjan i x5c, vilket är hur RFC 7523 registrerar en nyckel."
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "En XML Signature-nyckel. Dess certifikat skrivs på applikationen som en PEM (oauthSamlAssertionCertificate), eftersom SAML saknar JWKS och det som en part registrerar för den profilen ÄR ett certifikat."
+  },
+  "pki.report.encoder": {
+    "en": "e62315ba46619e60",
+    "text": "common/vendored/x509.js — moderprojektets egen PKI-kod, byte för byte identisk, ovanpå pkijs och asn1js. En kodare för den här tjänsten och för det projektets PKI / X.509-sida."
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "CA:ernas privata nycklar finns i persistenslagret, förseglade under samma nyckelkrypteringsnyckel som signeringsnycklarna, och överlever en omstart."
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "CA:ernas privata nycklar hålls endast i minnet. Den här tjänsten är i utvecklingsläge, där nyckelmaterial genereras per start — en hierarki som byggs nu är borta när den här processen avslutas."
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "Inget skäl angivet. RFC 5280 avsnitt 5.3.1 säger att tillägget för skälkod SHOULD utelämnas för det här värdet, så en post som återkallats på det här sättet bär inget skäl alls — vilket är vad \"unspecified\" betyder på tråden."
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "Den privata nyckeln är känd eller misstänks vara i någon annans händer. Det enda skälet som säger att certifikatet aldrig var säkert snarare än att det bara inte längre önskas."
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "CA:ns egen nyckel är komprometterad. Används på en mellanliggande CA eller en Issuing CA, och allt under den bör också behandlas som komprometterat."
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "Subjektets namn eller tillhörighet har ändrats, så certifikatet säger inte längre något sant."
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "En ersättare har utfärdats. **Det är detta som den här tjänsten använder när ett certifikat roteras eller utfärdas på nytt**, vilket är den vanligaste posten på någon av de här listorna."
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "Subjektet har slutat göra det som certifikatet var till för."
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "Tillfälligt spärrat. **Det enda skälet som kan ÅNGRAS** — allt annat är permanent, och en validerare har rätt att cacha en permanent återkallelse så länge som CRL:en säger att den är färsk."
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "Subjektet har inte längre rätt till det som certifikatet intygar."
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "En attributauktoritets nyckel är komprometterad. Finns här för fullständighetens skull: den här tjänsten utfärdar inga attributcertifikat."
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "Las propias claves de cifrado de datos (#391): una por dominio por cada clase de datos de abajo, cada una envuelta y desenvuelta con la clave de cifrado de claves"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "Cifrado de sobre: cada valor se cifra con una clave de cifrado de datos, y solo las claves de cifrado de datos se cifran con la clave de cifrado de claves. Aquí un envolvimiento cuenta como un cifrado y un desenvolvimiento como un descifrado; un proceso desenvuelve cada clave una vez y la conserva, así que estas cifras se mantienen pequeñas sea lo que sea que esté sellado."
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "Las propias claves de firma de este servicio, una fila por dominio de confianza — y, en la misma fila desde el 2026-09-12, la clave de cifrado de solicitudes de credenciales OpenID4VCI de ese dominio"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "Una clave privada que sobrevive al proceso. En modo producto se generan UNA VEZ y se vuelven a leer en cada arranque, que es lo que permite que un token emitido ayer se verifique hoy — y es exactamente por qué la fila no puede estar en claro. Lo que reside en este proceso es el TEXTO CIFRADO: `keys.plaintextRetention` decide cuánto tiempo se conserva una clave descifrada después de usarse."
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "La autoridad de certificación: la Root del servicio, cada Intermediate y cada CA emisora"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "Claves privadas de CA, que nunca salen de este proceso en absoluto. Están en la MISMA familia de filas y bajo la misma clave deliberadamente: un almacén propio de `pki.js` habría sido una segunda respuesta a *dónde guarda este servicio una clave privada*, y la segunda respuesta es la que nadie recuerda rotar."
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "Los pares de claves de firma de aserciones que `/admin/pki` emite a las aplicaciones — `oauthAssertionPrivateKey` y `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "Este fue el ÚLTIMO material de clave privada de este servicio guardado en claro, hasta el 2026-09-10. Está sellado EN REPOSO y se abre para un lector que llegó a través de `applications.js` — así `/admin/applications` sigue entregando a un operador el PEM que vino a buscar, mientras que un `ldapsearch` por TCP 389, un archivo LDIF, una fila de base de datos y una copia de seguridad de cualquiera de ellos contienen `$aesgcm$…`."
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "Los secretos de cliente OAuth de una aplicación — `oauthClientSecret`, un registro sellado por secreto (el secreto, su id, su vencimiento y su descripción)"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "Quien tenga uno se autentica como ese cliente, y además es la clave HMAC de `client_secret_jwt` y de los ID Tokens HS256. Sellado en reposo desde el 2026-10-01 con una clave de cifrado de claves duradera, se abre para un lector que llegó a través de `applications.js` y se oculta a los lectores LDAP en modo producto. Un valor escrito antes de esa fecha permanece en claro hasta la próxima vez que se escriba el secreto."
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "El token de acceso de registro RFC 7592 de una aplicación — `appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "Quien lo tenga lee, modifica o elimina el registro del cliente, y la lectura devuelve el secreto de cliente. Sellado en reposo desde el 2026-10-01 con una clave de cifrado de claves duradera, se abre para los endpoints RFC 7592 y para un lector que llegó a través de `applications.js`."
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "El secreto de cliente de una relación de federación — `fedClientSecret`, la propia credencial de este servicio en el endpoint de token del socio"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "Se ENVÍA al servicio de otro, así que debe poder recuperarse — sellado, no con hash. Sellado en reposo desde el 2026-10-01 con una clave de cifrado de claves duradera; ninguna página ni respuesta de la API lo devuelve."
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "Los atributos de cada entrada del directorio, completos — personas, grupos, aplicaciones, dispositivos, relaciones de federación"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "Decisión de rcbj en #391 (fase 6): una copia de la tabla del directorio no es una lista de personas. El DN sigue siendo legible, y también los NOMBRES de los atributos; los valores que compara una búsqueda se guardan como resúmenes con clave junto al blob. Un valor sellado por sí mismo (un secreto TOTP, claves Kerberos) se vuelve a sellar dentro de él. Un almacén de archivos (ldif) guarda las entradas tal como las protege el sistema de archivos."
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "El NOMBRE bajo el que se archiva una fila acuñada — a menudo la propia credencial: un id de sesión, un artefacto SAML, un id de token"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Un id de sesión es la cookie y un artefacto se canjea al presentarlo, así que un nombre en claro era una credencial utilizable en un volcado. Desde #222 la fila se encuentra por el resumen con clave del nombre y el nombre está sellado; solo lo abren una restauración o el lector de un cambio."
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "El emisor, el id de aserción, el cliente y el sujeto del historial de aserciones usadas — quién presentó qué documento RFC 7523 o RFC 7522 sobre quién"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "Nombran personas y relaciones en una tabla que comparten todos los nodos. Sellados desde #222; la fila se sigue encontrando por su clave de resumen, y la búsqueda de texto de la consola se hace en memoria sobre las filas más recientes. Un almacén de archivos (ldif) los guarda tal como los protege el sistema de archivos: los vuelve a leer antes de que haya arrancado el almacén de claves."
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "Una configuración secreta modificada mientras el servicio está en ejecución — hoy `scim.digestPassword`, la contraseña HTTP Digest que comparten todos los nombres de usuario SCIM"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "Una configuración marcada como secreta es una credencial, y la configuración guardada es por lo demás JSON plano. Sellada donde se escribe desde #222 (`persistence/sealed_settings.js`); la configuración en ejecución, la consola y la API la ven como antes."
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "Las verificaciones de identidad de una persona — `stsIdaVerification` (OpenID Connect for Identity Assurance), cuya evidencia lleva números de documento"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "No es una credencial, pero son datos personales que ninguna copia de seguridad debería llevar legibles. Sellado en reposo desde el 2026-10-01 con una clave de cifrado de claves duradera — la de la celda de origen cuando la hay — y oculto en toda lectura LDAP."
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "El secreto compartido de una instancia de cliente GNAP para una referencia de clave — `gnapSymmetricKey` (RFC 9635 sección 7.1.1)"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "Quien lo tenga puede firmar solicitudes GNAP COMO esa instancia de cliente: una clave HMAC es ambas mitades de la credencial. Sellado en reposo con la clave de cifrado de claves del proceso cuando las claves persisten, se abre para un lector que llegó a través de `applications.js` y se oculta a los lectores LDAP en modo producto."
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "La clave raíz de macaroon de un servidor de recursos GNAP — `gnapMacaroonKey` (RFC 9767 sección 2.2)"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "Un macaroon se verifica con su clave RAÍZ, y la misma clave puede acuñar uno: quien la tenga puede emitir tokens que ese servidor de recursos aceptará. La clave se deriva por servidor de recursos a partir del secreto del dominio, y se escribe en la entrada — sellada — solo para que el operador del servidor de recursos tenga de dónde recogerla."
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "La credencial de escritura de un destino de envío de secretos — `secretDestCredential` (#221): la clave, el token o la cuenta de servicio con que este servicio escribe la contraseña rotada de una cuenta de servicio en un gestor de secretos"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "Quien la tenga puede escribir las contraseñas que leen otros sistemas. Sellada en reposo cuando las claves persisten y — a diferencia de la clave de firma de una aplicación — también OCULTA a todo lector: solo se abre para el envío que la usa, y `/admin-api` nunca la dibuja, la revela ni la devuelve."
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "Las credenciales de un cliente SCIM saliente (#552) — `scimClientPassword`, `scimClientOAuthClientSecret` y `scimClientTlsPrivateKey`: con lo que este servicio se autentica ante un proveedor de servicios SCIM remoto, o ante su endpoint de token"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "Quien las tenga puede crear, modificar y eliminar cuentas en el proveedor de identidad remoto. Selladas en reposo cuando las claves persisten y OCULTAS a todo lector, como la credencial de un destino de secretos: solo se abren para la solicitud que las usa."
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "Los pares de claves de firma de aserciones que `/admin/pki` emite a una PERSONA — `stsAssertionPrivateKey` (2026-09-11) y, para RFC 7522, `stsSamlAssertionPrivateKey` (2026-09-13)"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "El mismo mecanismo que el de la aplicación de arriba y deliberadamente no uno nuevo, con una diferencia que es un hecho sobre los dos titulares: la clave privada de una aplicación se ABRE para un lector que llegó a través de `applications.js`, y nada dibuja la entrada de una persona a través de un módulo que abriría la suya — así que esta se entrega UNA VEZ, por el acto que la crea, y es texto cifrado en todas partes después. La alternativa era una página de la consola que imprimiera la clave privada de una persona en cada visita."
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "La clave privada de cifrado de una relación de federación (#168) — con la que se descifra la aserción o el ID Token cifrados de un socio, una fila por clave en `fedEncryptionKey`"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "Quien la tenga lee todas las aserciones que ese socio cifró para este servicio — el identificador y los atributos de la persona, justo lo que el cifrado mantiene fuera del navegador. Sellada en reposo dondequiera que las claves persistan, y oculta — texto cifrado incluido — en toda búsqueda LDAP, página y respuesta de `/admin-api`, que llevan solo el certificado y la clave pública."
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "Claves Kerberos de largo plazo guardadas — las de una persona del directorio, derivadas de su propia contraseña (`stsKrb5Keys`), y las aleatorias de un principal de servicio (`krb5ServiceKeys`) (2026-09-12)"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "EQUIVALENTE A UNA CONTRASEÑA: una clave Kerberos de largo plazo es aquello en lo que se convierte la contraseña, y quien la tenga puede obtener tickets como ese principal sin conocer la contraseña. Por eso se sella dondequiera que la clave de cifrado de claves sobreviva al proceso, el nombre y una marca del hash de la contraseña se sellan CON ella para que un valor no pueda moverse a otra entrada ni conservarse tras un cambio de contraseña, y se OCULTA — texto cifrado incluido — en toda página, toda búsqueda LDAP y toda respuesta de `/admin-api`. La clave de un principal de servicio sale de este servicio una sola vez, como el keytab que entrega su creación o rotación."
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "El secreto compartido RFC 6238 de todos los que han registrado una aplicación de autenticación — `stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "LA ÚNICA CREDENCIAL DE ESTE DIRECTORIO QUE PUEDE VOLVER A LEERSE. Verificar un código significa CALCULARLO, así que esto no puede tener hash como lo tiene `userPassword` — y `/admin/ldap/directory` imprime por diseño cada atributo de cada entrada, así que sin el sello un volcado del directorio imprimiría un segundo factor funcional."
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "El conjunto de códigos de recuperación de un solo uso emitido al registrar un segundo factor"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "Cifrado EN LUGAR DE CON HASH, y el motivo es una decisión de producto y no criptográfica: una persona puede volver a leer sus códigos restantes en `/portal/mfa`. **Eso se revirtió el 2026-09-11 y esta fila se conserva para los conjuntos escritos antes** — un conjunto nuevo se guarda con hash scrypt y no se sella en absoluto, porque un hash no es un secreto. Los RECUENTOS están fuera del blob sellado, así que cada página que informa *7 de 10 sin usar* puede hacerlo sin abrirlo — incluso para un conjunto que este proceso no puede descifrar."
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "Todo lo que este proceso ACUÑA — sesiones, tokens, códigos de autorización, artefactos, principales Kerberos, las cachés de repetición, los contadores y el registro de auditoría"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "Lo más reciente y lo más voluminoso. Es solo para producto con postgres porque esa es la única configuración en la que algo de esto persiste: el modo de desarrollo regenera la clave de firma en cada arranque, así que un token restaurado no se verificaría contra nada, y el almacén `ldif` escribe archivos completos en cada volcado y no guarda nada de esto en ningún modo."
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "Contraseñas — `userPassword`, y los tokens de activación junto a ellas"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "CON HASH, no cifradas, y eso es más fuerte y no más débil. scrypt con N en 2^15, y nada en este servicio puede volver a leer una — que es la regla: un secreto que este servicio VERIFICA se guarda con hash, y un secreto que debe PRESENTAR se cifra. Los dos mecanismos de arriba son del segundo tipo y lo dicen."
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "Secretos de cliente, tokens de acceso de registro RFC 7592 y secretos de cliente de federación, SIN una clave de cifrado de claves duradera"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "En claro solo donde el proceso no tiene una clave de cifrado de claves duradera — el modo de desarrollo, o un dominio en modo producto en un contenedor de desarrollo — porque sellar con una clave efímera dejaría una credencial que no se abre con nada tras un reinicio. Con una clave duradera los tres se sellan: vea sus filas arriba."
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "Las once claves poscuánticas por dominio, el certificado de servidor TLS y las autoridades SPIFFE"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "NO SE PERSISTEN EN ABSOLUTO, en ningún modo, así que no hay nada en reposo que sellar. Las tres están nombradas en el `NOT_YET` de `common/mode.js` en lugar de dejarse por descubrir, porque *no guardado* y *no protegido* se leen igual desde fuera y no son lo mismo."
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "Qué cifra este servicio EN REPOSO, con qué clave, con qué algoritmo y cuánto de ello ha ocurrido en este proceso."
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "La clave de cifrado de claves se lee del proveedor de arriba al arrancar, antes de que se enlace la escucha. Este servicio nunca la genera ni la escribe, y un servicio que no puede leerla NO arranca — no genera una de reemplazo y sigue adelante, porque eso haría que todos los tokens que ha emitido dejaran de verificarse, en silencio, en la parte que confía de otra persona."
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "Este servicio está en modo de desarrollo, así que nada de lo que tiene sobrevive al proceso y la clave de cifrado de claves es EFÍMERA: se genera en cada ejecución, nunca se escribe y se usa solo para que el grupo de workers de solicitudes pueda compartir filas acuñadas dentro de una ejecución. Sellar un atributo del directorio con ella sería PEOR que dejarlo en claro — la entrada sobrevive a un reinicio en los almacenes `ldif` y `postgres` y la clave no, así que el valor volvería como basura permanente. Por eso la prueba en cada punto de escritura es `keystore.persists()` y no `keystore.sealed()`."
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM y deliberadamente no CBC: GCM es AUTENTICADO, así que un texto cifrado que alguien alteró falla al descifrarse en lugar de producir una clave sutilmente distinta. Una clave de firma que se descifrara en bytes incorrectos produciría firmas que nada puede verificar, y el fallo aparecería en una parte que confía como \"la firma no es válida\" — lo más lejos posible de la causa. La clave de cifrado de claves NUNCA CIFRA UN VALOR (#391): cada valor se cifra con una clave de cifrado de datos — 256 bits aleatorios, una por dominio por clase de datos — y las claves de cifrado de datos son lo que envuelve la clave de cifrado de claves. Un proceso desenvuelve cada una una vez y la conserva, así que a una clave guardada en un servicio de administración de claves se le consulta por clave de datos, nunca por valor, y rotar la clave de cifrado de claves vuelve a envolver un puñado de claves en lugar de volver a cifrar el almacén."
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "HAY UNA CLAVE DE CIFRADO DE CLAVES PARA ESTE SERVICIO, NO UNA POR DOMINIO DE CONFIANZA, Y UNA CLAVE DE CIFRADO DE DATOS POR DOMINIO POR CLASE DE DATOS (#391). Ninguna clave de cifrado de datos se comparte entre dominios, así que un valor de un dominio nunca se sella con una clave con la que se sellan los valores de otro dominio. Pero todas las claves de cifrado de datos se envuelven con la única clave de cifrado de claves, así que un dominio NO es un límite independiente en reposo: quien pueda leer esa clave puede desenvolver las claves de datos de todos los dominios, y rotarla vuelve a envolver las de todos los dominios a la vez."
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "TODO LO QUE NO ESTÁ EN LA TABLA DE ARRIBA ES TEXTO PLANO EN EL ALMACÉN — las entradas del directorio, los grupos, las aplicaciones, los dominios y la configuración, y en modo de desarrollo casi todo. Este servicio sella credenciales y claves privadas y nada más, deliberadamente: el cifrado a nivel de columna deja el texto plano en el registro de escritura anticipada, en archivos temporales cuando un ordenamiento se desborda, en un pg_dump, en las réplicas y en los registros de consultas, así que la capa que cubre todo un almacén va DEBAJO de la base de datos y no dentro de ella. Esa capa es del operador — LUKS o un dataset ZFS cifrado bajo PGDATA, un disco en la nube con una clave administrada por el cliente, o una de las bifurcaciones de PostgreSQL que tiene TDE, ya que la compilación comunitaria no tiene ninguna. docs/encryption-at-rest.md es la descripción de las opciones de este repositorio."
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "Y LA CLAVE NO DEBE VIVIR EN EL DISCO QUE PROTEGE. Un archivo de clave en el mismo volumen sin cifrar que el almacén entrega ambas mitades a quien se lleve el volumen; eso está bien para una pila de desarrollo y es por qué el proveedor `file` es el predeterminado, y no es un despliegue. keys.kekProvider selecciona en su lugar un almacén de secretos."
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Se cuenta en el ÚNICO embudo por el que pasan ambas operaciones — `encryptWithDek()` y `decryptWithDek()` de `crypto.js`, con los propios envolvimientos y desenvolvimientos de las claves de cifrado de datos bajo `data-keys` — y no en los puntos de llamada, porque un total armado a partir de los puntos de llamada es incorrecto la primera vez que alguien agrega otro, y lo es EN SILENCIO. El desglose de abajo es por una ETIQUETA que pasa cada punto de llamada; un llamante que no pasa ninguna se cuenta igual, bajo `(unlabelled)`. ESTAS CIFRAS SON DE TODO EL PROCESO Y NO POR DOMINIO — una clave de cifrado de claves pertenece al proceso, así que dividir el recuento por dominio sería contar el dominio en el que casualmente estaba una solicitud — y están en memoria, así que un reinicio es la forma de obtener uno vacío."
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "UN FALLO ES CASI SIEMPRE LA CLAVE DE CIFRADO DE CLAVES EQUIVOCADA — un secreto rotado, o un almacén llevado de un despliegue a otro — y es una cifra propia en lugar de incluirse en los descifrados, porque novecientos descifrados y novecientos descifrados con cuatrocientos fallos son informes muy distintos. Lo que ocurre después depende de lo que se estaba leyendo: una clave de firma que no se abre es FATAL al arrancar, una fila de sesión se descarta, y un segundo factor que no se abre deja a esa persona sin poder iniciar sesión hasta que un operador borre el registro — nunca ausente en silencio, lo que eliminaría un control de seguridad."
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "Ni un valor sellado ni uno abierto aparecen en ninguna parte de esta página ni de este documento. Un valor sellado es una clave privada, un secreto compartido o los códigos de recuperación de alguien, e imprimir cualquiera de sus dos mitades entregaría exactamente lo que el sellado existe para proteger. /admin/ldap/directory es donde puede verse un sobre `$aesgcm$…`, bajo un encabezado que dice que es el almacén tal como lo ve el directorio."
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "El sellado protege lo que se ESCRIBE, así que lo que contiene el almacén decide qué parte de la tabla de arriba es alcanzable por alguien. Un almacén `memory` no escribe nada, así que nada en él sobrevive a este proceso para ser leído."
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "Una clave de cifrado de datos por dominio y clase de datos sella cada valor de esa clase; la clave de cifrado de claves solo envuelve las claves de datos. Una clave de datos ROTADA queda reemplazada: sigue abriendo lo que selló, no se sella nada nuevo con ella, y la tarea de recifrado vuelve a sellar lo que ella selló y luego la destruye. Una clave DERIVADA se obtiene de la clave de cifrado de claves en cada ejecución donde nada sobrevive al proceso, y nunca se guarda ni se rota."
+  }
+}

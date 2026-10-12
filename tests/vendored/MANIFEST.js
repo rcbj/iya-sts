@@ -411,9 +411,18 @@ const JOBS = [
   // Shared Signals receiver (signals) — and each asserts through its own door.
   // All three drive `gnap_client.js`, a client written from the RFCs with no
   // code from `gnap/`, and each runs in a throwaway realm it leaves behind.
-  { file: 'sts_gnap_core.js',            browser: false, local: true },
-  { file: 'sts_gnap_rs.js',              browser: false, local: true },
-  { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  //
+  // `testPeer: true` (#586): since the demonstration resource server became
+  // development only (#585), the resource server these jobs present tokens
+  // at is the TEST PEER's (tests/peer/), and a run with no peer — an AWS
+  // target — reports the job SKIPPED with that reason, as `conformance` and
+  // `samlPeer` are.
+  { file: 'sts_gnap_core.js',            browser: false, local: true,
+    testPeer: true },
+  { file: 'sts_gnap_rs.js',              browser: false, local: true,
+    testPeer: true },
+  { file: 'sts_gnap_signals.js',         browser: false, local: true,
+    testPeer: true },
   // #432: the access-token status list from OAuth's side — an RFC 9068
   // token's status claim, the list fetched, verified and read by the job's
   // own code, and the bit set by RFC 7009 revocation. `local: true` on the
@@ -436,9 +445,12 @@ const JOBS = [
   // #432 phase 5: an identifier's owner from a registered resource set
   // (a non-owner refused on the approval page, a group member approving),
   // a limit lowered on the page and read off the token by the job, and the
-  // demonstration resource server spending to the limit, refunding a failed
-  // operation and refusing past it. A throwaway realm left behind.
-  { file: 'sts_gnap_limits.js',          browser: false, local: true },
+  // test peer's resource server spending to the limit, refunding a failed
+  // operation and refusing past it (#586: it was the demonstration resource
+  // server's, which is development only since #585). A throwaway realm left
+  // behind. `testPeer: true`, as sts_gnap_core.js is.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true,
+    testPeer: true },
   // #432 phase 6: per-type interaction (never, always, a consent action)
   // against a client trusted to skip, a remembered approval not standing in
   // for always, the step-up an mfa type demands and its refusal, and
@@ -993,9 +1005,13 @@ const JOBS = [
   // written through `/admin-api` and counted on the monitor, and every
   // assertion is at `/oauth2/*` — a one-factor session sent to sign in again
   // for acr_values=mfa, stepped up with a TOTP code enrolled at
-  // `/portal/mfa`, and the challenge the stand-in resource and UserInfo send.
-  // After the monitor job, in a throwaway realm it leaves standing.
-  { file: 'sts_step_up.js',              browser: false, local: true },
+  // `/portal/mfa`, and the challenge a resource server and UserInfo send.
+  // After the monitor job, in a throwaway realm it leaves standing. The
+  // resource server is the TEST PEER's since #586 (the service's stand-in is
+  // development only, #585), so `testPeer: true`: SKIPPED, with the reason,
+  // in a run with no peer.
+  { file: 'sts_step_up.js',              browser: false, local: true,
+    testPeer: true },
   // FAPI 2.0 HTTP Signatures at the resource servers (#178): a signed
   // request verified at /scim/v2 in a throwaway realm, its signed answer
   // verified by the job's own RFC 9421 code with the realm's published key,
@@ -1682,7 +1698,12 @@ const LOCAL_HELPERS = [
   // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
   // every token, assertion or ticket, decoded. Required by the three chain
   // kits above and by the GNAP one. Nothing from the service.
-  'chain_capture.js'
+  'chain_capture.js',
+  // THE TEST PEER, FROM A JOB'S SIDE (#586): whether this run has one, a
+  // tenant configured for a realm, the registrations each role needs, and
+  // the readback of what reached the peer. The peer itself is tests/peer/,
+  // a container of the stack; nothing from the service.
+  'test_peer.js'
 ];
 
 // ---------------------------------------------------------------------------

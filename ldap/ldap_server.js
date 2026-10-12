@@ -396,6 +396,12 @@ const attributeSources = require('../attribute-sources/attribute_sources');
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
 // realms and error_codes, so the require closes no cycle and moves no route.
 const websecurity = require('../common/websecurity');
+// THE CONSOLE'S PROSE TEMPLATES (#543 phase 2b): `fill()` makes the computed
+// sentences of `description()` from SERVICE_SENTENCES below. Required at load
+// because it is safe to: `server_prose` requires only helpers, config,
+// error_codes, crypto, i18n and instance_slot, every one of them loaded long
+// before this module (#21), and none of them requires this file.
+const serverProse = require('../common/server_prose');
 // STORED KERBEROS KEYS (2026-09-12) — a directory person's, derived from their
 // password, and a service principal's random ones. A LIBRARY (rule 3) that
 // registers no route; the modules it requires are the principal database and
@@ -16219,6 +16225,164 @@ registerWorkerOperations();
 // anything, and `/admin/sts-metadata` is built by reading that list.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// THE DIRECTORY PAGES' OWN PROSE, AS TABLES (#543 phase 2b).
+//
+// `GET /admin-api/ldap/*` answers carry these sentences, and
+// `common/server_prose.ts` translates an answer's string wherever it is
+// EXACTLY one of them — so they are declared once, here, and the views read
+// them from here rather than writing them out inline. One copy: a sentence
+// edited in a view and not here could not be translated, and cannot exist.
+//
+// SERVICE_PROSE is what `description()` says that never varies (the bind
+// policy names REFUSED_PASSWORD, a constant, so it is static too);
+// SERVICE_SENTENCES are the sentences it COMPUTES, as templates filled with
+// `serverProse.fill()`; SOURCE_OF_TRUTH is the one sentence each container
+// page opens with. `prose()` at the foot of this file hands all three to the
+// extractor.
+// ---------------------------------------------------------------------------
+const SERVICE_PROSE = Object.freeze({
+  bindPolicy: 'every bind succeeds — any DN, any password, including an ' +
+    'anonymous one — except the literal password "' + REFUSED_PASSWORD +
+    '", which is answered LDAP_INVALID_CREDENTIALS (49) so that a negative ' +
+    'test has something to fail on',
+  schema: 'none. No objectClass is enforced and no attribute is checked ' +
+    'against a syntax, so an entry may carry whatever attributes a client ' +
+    'sends. A real directory would refuse most of that.',
+  authenticationFacts: 'where the protocol that accepted the credential ' +
+    'says HOW it was presented — which today is the sign-in screen and ' +
+    'nothing else, since amr is an OIDC vocabulary — the entry also ' +
+    'carries authnMethod (every RFC 8176 method this person has used here, ' +
+    'accumulated), mfaAuthenticated (TRUE or FALSE for the MOST RECENT ' +
+    'authentication, overwritten each time) and mfaLastAuthTime (when ' +
+    'multi-factor last happened, never cleared). These are this service\'s ' +
+    'own names and not schema. A WebAuthn ceremony after a password writes ' +
+    'TRUE; the same ceremony used passwordless writes authnMethod hwk with ' +
+    'no pwd beside it and mfaAuthenticated FALSE, because one factor is ' +
+    'one factor however phishing-resistant it is. Nothing here READS them: ' +
+    'no token carries them and no endpoint decides anything on them, ' +
+    'exactly as a group here grants nothing — bar the two groups that ' +
+    'decide who may use the admin console, which is the one exception ' +
+    'anywhere in this directory and is confined to that console.',
+  enforcedRules: Object.freeze([
+    'an add whose parent does not exist is LDAP_NO_SUCH_OBJECT (32)',
+    'a delete of an entry with children is LDAP_NOT_ALLOWED_ON_NONLEAF (66)',
+    'a modify delete of an attribute that is not present is ' +
+      'LDAP_NO_SUCH_ATTRIBUTE (16)',
+    'deleting the last value of an attribute deletes the attribute',
+    'an add under ou=users whose username is already here is ' +
+      'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ONE ' +
+      'ENTRY PER PERSON: the username is the entry\'s naming RDN value and ' +
+      'any uid it carries, so uid=rcbj and cn=rcbj are the same person and ' +
+      'only one of them can be here. It is the same refusal the console ' +
+      'and POST /admin-api/users/create give, and the same rule every ' +
+      'protocol here folds onto when it authenticates somebody'
+  ]),
+  specifications: Object.freeze([
+    'RFC 4510 (LDAP technical specification road map)',
+    'RFC 4511 (the protocol)',
+    'RFC 4512 (directory information models)',
+    'RFC 4514 (DN string representation)',
+    'RFC 4515 (search filter string representation)'
+  ]),
+  implementation: 'ldapjs 3.0.7, pinned as the node-ldapjs submodule and ' +
+    'used unmodified'
+});
+
+// The sentences `description()` makes, as templates. `{{contexts}}` is the
+// naming contexts joined with ' and ', `{{root}}` and the DN placeholders are
+// DNs and `{{port}}` the main port — data, carried into a translation as
+// they are. `{{provenance}}` is `tlsServer.certificateProvenance()`, which
+// is that module's sentence and not this namespace's.
+const SERVICE_SENTENCES = Object.freeze({
+  searchScopeRealms: 'a subtree search answers about the trust realm whose ' +
+    'base DN it started from. {{contexts}} are the contexts; an entry ' +
+    'belonging to another realm is filtered out of a search based above ' +
+    'it, and is reached by searching from that realm\'s own base. An ' +
+    'operation that names ONE DN — add, modify, delete, compare, or a ' +
+    'base-scope search — is answered wherever that DN is, because spelling ' +
+    'the DN out names the realm',
+  searchScopeOne: 'no trust realms are defined, so there is one context ' +
+    '({{root}}) and a subtree search from it answers about the whole store',
+  clientCertificates: 'never requested. This listener proves the SERVER ' +
+    'to the client and nothing more; a client certificate offered to it ' +
+    'is not asked for and would not be a login if it were. The main ' +
+    'port ({{port}}) is where client certificates are asked for and read.',
+  certificateSource: 'the same certificate and key the main port ' +
+    '({{port}}) serves. It is {{provenance}}: GET /tls/server-certificate ' +
+    'hands it out in PEM. One anchor for both sockets is why they share it.',
+  autoCreateRule: 'an entry uid=<name>,{{usersDn}} appears the first ' +
+    'time <name> authenticates to this service through ANY protocol. An ' +
+    'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
+    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
+    'the one identity that is already a DN: its entry keeps the subject\'s ' +
+    'own leaf RDN — cn=alice,{{usersDn}} for CN=alice,O=Example — or the ' +
+    'whole subject where that already lies under {{baseDn}}, and the ' +
+    'full subject, issuer, serial and validity are on the entry as x509* ' +
+    'attributes, which are this service\'s own names and not schema. A ' +
+    'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+    'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
+    'to the OID4VP Verifier, the one /did/generate mints. Its entry goes ' +
+    'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +
+    'did:jwk written out in full is a DN of several hundred characters, ' +
+    'most of it key material — with the identifier itself kept whole on ' +
+    'the entry as didSubject, and its method as didMethod. Search for the ' +
+    'person by didSubject, not by uid: on those entries the uid is a ' +
+    'digest and the didSubject is the identity.'
+});
+
+// The sentence each container page under `/admin/ldap/*` opens with, by the
+// page's name in `admin.setDirectoryPages()` below.
+const SOURCE_OF_TRUTH = Object.freeze({
+  spiffe: 'These entries ARE the SPIFFE registry. An ldapmodify ' +
+    'under ou=entries changes what the next SVID looks like — ' +
+    'spiffeX509SvidTtl changes its lifetime, spiffeDnsName changes its ' +
+    'subjectAltName, and spiffeId changes whose identity it is — because ' +
+    'nothing caches them. The two containers hold different KINDS of ' +
+    'thing: entries are CONFIGURATION and agents are a RECORD, which is ' +
+    'why nothing about an agent is editable from the console.',
+  applications: 'These entries ARE the registry. An ldapmodify here ' +
+    'changes what the protocol endpoints do — adding a value to ' +
+    'oauthRedirectUri adds a redirect URI that RFC 9700 mode will then ' +
+    'accept by exact match.',
+  federations: 'These entries ARE the register. An ldapmodify here is a ' +
+    'SECURITY change: fedSigningCertificate decides whose assertions this ' +
+    'service will believe, and fedEnabled turns a partner on. Nothing ' +
+    'caches them.',
+  devices: 'These entries ARE the device register: nothing caches ' +
+    'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
+    'compliance on the next read. stsDeviceSecretHash is withheld.',
+  roles: 'These entries ARE the membership half of the role ' +
+    'register. An ldapmodify adding a value to roleMemberUser grants that ' +
+    'role, and the next issuance decision is made against it. What ' +
+    'REQUIRES a role is appRequiredRole on an application entry under ' +
+    'ou=applications, which is a different container.',
+  policies: 'These entries ARE the policy repository. An ldapmodify ' +
+    'of xacmlPolicyDocument changes what the PDP decides on the very next ' +
+    'request and is NOT statically validated on the way in, unlike every ' +
+    'write through /admin/xacml — so a document that stops typechecking ' +
+    'answers Indeterminate rather than being refused.',
+  peps: 'Almost every attribute here is a RECORD this service ' +
+    'wrote as a PEP registered, pulled or reported. The two that are not ' +
+    'are xacmlPepEnabled, which an administrator sets and a reconnecting ' +
+    'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
+    'addresses this service dials.'
+});
+
+// The `/admin-api` routes whose answers carry the prose above (#543): the
+// service description and the seven container pages that open with a
+// source-of-truth sentence. `/admin-api/ldap/directory` carries none.
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/service',
+  '/admin-api/ldap/spiffe',
+  '/admin-api/ldap/applications',
+  '/admin-api/ldap/federations',
+  '/admin-api/ldap/devices',
+  '/admin-api/ldap/roles',
+  '/admin-api/ldap/policies',
+  '/admin-api/ldap/peps'
+]);
+
 // What this directory is, as data. Shared by the page and by ?format=json so
 // the two cannot disagree — which is the same reason /admin/sts-metadata reads
 // the router rather than a written-down list.
@@ -16253,24 +16417,14 @@ function description(req) {
     // store, exactly as it always was.
     namingContexts: namingContexts(),
     searchScope: realms.active()
-      ? 'a subtree search answers about the trust realm whose base DN it ' +
-        'started from. ' + namingContexts().join(' and ') + ' are the ' +
-        'contexts; an entry belonging to another realm is filtered out of a ' +
-        'search based above it, and is reached by searching from that ' +
-        'realm\'s own base. An operation that names ONE DN — add, modify, ' +
-        'delete, compare, or a base-scope search — is answered wherever that ' +
-        'DN is, because spelling the DN out names the realm'
-      : 'no trust realms are defined, so there is one context (' + ROOT_DN +
-        ') and a subtree search from it answers about the whole store',
+      ? serverProse.fill(SERVICE_SENTENCES.searchScopeRealms,
+                         { contexts: namingContexts().join(' and ') })
+      : serverProse.fill(SERVICE_SENTENCES.searchScopeOne,
+                         { root: ROOT_DN }),
     ldapVersion: 3,
-    bindPolicy: 'every bind succeeds — any DN, any password, including an ' +
-      'anonymous one — except the literal password "' + REFUSED_PASSWORD +
-      '", which is answered LDAP_INVALID_CREDENTIALS (49) so that a negative ' +
-      'test has something to fail on',
+    bindPolicy: SERVICE_PROSE.bindPolicy,
     refusedPassword: REFUSED_PASSWORD,
-    schema: 'none. No objectClass is enforced and no attribute is checked ' +
-      'against a syntax, so an entry may carry whatever attributes a client ' +
-      'sends. A real directory would refuse most of that.',
+    schema: SERVICE_PROSE.schema,
     referentialIntegrity: false,
     // ---------------------------------------------------------------------
     // WHETHER THIS DIRECTORY SURVIVES A RESTART, AND IT DID NOT UNTIL
@@ -16309,73 +16463,26 @@ function description(req) {
       // submodule. LDAPS is also the one of the pair no RFC defines — RFC 4513
       // standardised StartTLS and left ldaps:// as the de-facto scheme.
       startTls: false,
-      clientCertificates: 'never requested. This listener proves the SERVER ' +
-        'to the client and nothing more; a client certificate offered to it ' +
-        'is not asked for and would not be a login if it were. The main ' +
-        'port (' + tlsPorts.main + ') is where client certificates are asked ' +
-        'for and read.',
+      clientCertificates: serverProse.fill(
+        SERVICE_SENTENCES.clientCertificates, { port: tlsPorts.main }),
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
         fingerprint256: serverCertificate ? serverCertificate.fingerprint256 :
                         '',
         notAfter: serverCertificate ? serverCertificate.notAfter : '',
-        source: 'the same certificate and key the main port (' +
-          tlsPorts.main + ') serves. It is ' +
-          tlsServer.certificateProvenance() + ': GET ' +
-          '/tls/server-certificate hands it out in PEM. One anchor for both ' +
-          'sockets is why they share it.'
+        source: serverProse.fill(SERVICE_SENTENCES.certificateSource, {
+          port: tlsPorts.main,
+          provenance: tlsServer.certificateProvenance() })
       }
     },
     autoCreateUsers: autocreateUsers(),
-    autoCreateRule: 'an entry uid=<name>,' + usersDn() + ' appears the first ' +
-      'time <name> authenticates to this service through ANY protocol. An ' +
-      'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
-      'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
-      'the one identity that is already a DN: its entry keeps the subject\'s ' +
-      'own leaf RDN — ' +
-      'cn=alice,' + usersDn() + ' for CN=alice,O=Example — or the ' +
-      'whole subject where that already lies under ' + baseDn() + ', and the ' +
-      'full subject, issuer, serial and validity are on the entry as x509* ' +
-      'attributes, which are this service\'s own names and not schema. A ' +
-      'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
-      'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
-      'to the OID4VP Verifier, the one /did/generate mints. Its entry goes ' +
-      'at uid=did-<12 hex of the SHA-256 of the DID>,' + usersDn() + ' — a ' +
-      'did:jwk written out in full is a DN of several hundred characters, ' +
-      'most of it key material — with the identifier itself kept whole on ' +
-      'the entry as didSubject, and its method as didMethod. Search for the ' +
-      'person by didSubject, not by uid: on those entries the uid is a ' +
-      'digest and the didSubject is the identity.',
-    authenticationFacts: 'where the protocol that accepted the credential ' +
-      'says HOW it was presented — which today is the sign-in screen and ' +
-      'nothing else, since amr is an OIDC vocabulary — the entry also ' +
-      'carries authnMethod (every RFC 8176 method this person has used here, ' +
-      'accumulated), mfaAuthenticated (TRUE or FALSE for the MOST RECENT ' +
-      'authentication, overwritten each time) and mfaLastAuthTime (when ' +
-      'multi-factor last happened, never cleared). These are this service\'s ' +
-      'own names and not schema. A WebAuthn ceremony after a password writes ' +
-      'TRUE; the same ceremony used passwordless writes authnMethod hwk with ' +
-      'no pwd beside it and mfaAuthenticated FALSE, because one factor is ' +
-      'one factor however phishing-resistant it is. Nothing here READS them: ' +
-      'no token carries them and no endpoint decides anything on them, ' +
-      'exactly as a group here grants nothing — bar the two groups that ' +
-      'decide who may use the admin console, which is the one exception ' +
-      'anywhere in this directory and is confined to that console.',
-    enforcedRules: [
-      'an add whose parent does not exist is LDAP_NO_SUCH_OBJECT (32)',
-      'a delete of an entry with children is LDAP_NOT_ALLOWED_ON_NONLEAF (66)',
-      'a modify delete of an attribute that is not present is ' +
-        'LDAP_NO_SUCH_ATTRIBUTE (16)',
-      'deleting the last value of an attribute deletes the attribute',
-      'an add under ou=users whose username is already here is ' +
-        'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ONE ' +
-        'ENTRY PER PERSON: the username is the entry\'s naming RDN value and ' +
-        'any uid it carries, so uid=rcbj and cn=rcbj are the same person and ' +
-        'only one of them can be here. It is the same refusal the console ' +
-        'and POST /admin-api/users/create give, and the same rule every ' +
-        'protocol here folds onto when it authenticates somebody'
-    ],
+    autoCreateRule: serverProse.fill(SERVICE_SENTENCES.autoCreateRule,
+                                     { usersDn: usersDn(),
+                                       baseDn: baseDn() }),
+    authenticationFacts: SERVICE_PROSE.authenticationFacts,
+    // Copies, so that no answer holds the frozen table itself.
+    enforcedRules: SERVICE_PROSE.enforcedRules.slice(0),
     limits: {
       maxEntries: maxEntries(),
       maxSearchResults: maxSearchResults(),
@@ -16386,13 +16493,8 @@ function description(req) {
     },
     operations: ['bind', 'unbind', 'add', 'delete', 'modify', 'modifyDN',
                  'compare', 'search'],
-    specifications: ['RFC 4510 (LDAP technical specification road map)',
-                     'RFC 4511 (the protocol)',
-                     'RFC 4512 (directory information models)',
-                     'RFC 4514 (DN string representation)',
-                     'RFC 4515 (search filter string representation)'],
-    implementation: 'ldapjs 3.0.7, pinned as the node-ldapjs submodule and ' +
-      'used unmodified'
+    specifications: SERVICE_PROSE.specifications.slice(0),
+    implementation: SERVICE_PROSE.implementation
   };
   log.debug('Leaving description().');
   return out;
@@ -20727,13 +20829,7 @@ function ldapSpiffeView(req) {
     agents: agents.length,
     maxEntries: spiffeRegistry.maxEntries(),
     maxAgents: spiffeRegistry.maxAgents(),
-    sourceOfTruth: 'These entries ARE the SPIFFE registry. An ldapmodify ' +
-      'under ou=entries changes what the next SVID looks like — ' +
-      'spiffeX509SvidTtl changes its lifetime, spiffeDnsName changes its ' +
-      'subjectAltName, and spiffeId changes whose identity it is — because ' +
-      'nothing caches them. The two containers hold different KINDS of ' +
-      'thing: entries are CONFIGURATION and agents are a RECORD, which is ' +
-      'why nothing about an agent is editable from the console.',
+    sourceOfTruth: SOURCE_OF_TRUTH.spiffe,
     editable: spiffeRegistry.EDITABLE,
     schema: spiffeRegistry.SCHEMA,
     filter: { entryq: carried.entryq || null, agentq: carried.agentq || null },
@@ -20819,10 +20915,7 @@ function ldapApplicationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the registry. An ldapmodify here ' +
-      'changes what the protocol endpoints do — adding a value to ' +
-      'oauthRedirectUri adds a redirect URI that RFC 9700 mode will then ' +
-      'accept by exact match.',
+    sourceOfTruth: SOURCE_OF_TRUTH.applications,
     kinds: applications.KINDS,
     schema: applications.SCHEMA,
     applications: paged.shown.map(withoutSecrets),
@@ -20879,10 +20972,7 @@ function ldapFederationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the register. An ldapmodify here is a ' +
-      'SECURITY change: fedSigningCertificate decides whose assertions this ' +
-      'service will believe, and fedEnabled turns a partner on. Nothing ' +
-      'caches them.',
+    sourceOfTruth: SOURCE_OF_TRUTH.federations,
     roles: federation.ROLES,
     protocols: federation.PROTOCOLS,
     schema: federation.SCHEMA,
@@ -20986,9 +21076,7 @@ function ldapDevicesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the device register: nothing caches ' +
-      'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
-      'compliance on the next read. stsDeviceSecretHash is withheld.',
+    sourceOfTruth: SOURCE_OF_TRUTH.devices,
     schema: devices.SCHEMA,
     entries: shown,
     // The paging control's own object (#446).
@@ -21070,11 +21158,7 @@ function ldapRolesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the membership half of the role ' +
-      'register. An ldapmodify adding a value to roleMemberUser grants that ' +
-      'role, and the next issuance decision is made against it. What ' +
-      'REQUIRES a role is appRequiredRole on an application entry under ' +
-      'ou=applications, which is a different container.',
+    sourceOfTruth: SOURCE_OF_TRUTH.roles,
     builtIn: roles.BUILT_IN_NAMES,
     schema: roles.SCHEMA,
     roles: paged.shown,
@@ -21161,11 +21245,7 @@ function ldapPoliciesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the policy repository. An ldapmodify ' +
-      'of xacmlPolicyDocument changes what the PDP decides on the very next ' +
-      'request and is NOT statically validated on the way in, unlike every ' +
-      'write through /admin/xacml — so a document that stops typechecking ' +
-      'answers Indeterminate rather than being refused.',
+    sourceOfTruth: SOURCE_OF_TRUTH.policies,
     schema: xacmlStore.SCHEMA,
     policies: paged.shown.map(withoutSecrets),
     // The paging control's own object, and how many are enabled (#446).
@@ -21249,11 +21329,7 @@ function ldapPepsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'Almost every attribute here is a RECORD this service ' +
-      'wrote as a PEP registered, pulled or reported. The two that are not ' +
-      'are xacmlPepEnabled, which an administrator sets and a reconnecting ' +
-      'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
-      'addresses this service dials.',
+    sourceOfTruth: SOURCE_OF_TRUTH.peps,
     schema: xacmlPepRegistry.SCHEMA,
     peps: paged.shown.map(withoutSecrets),
     // The paging control's own object, and how many are enabled (#446).
@@ -21822,7 +21898,45 @@ function adoptEntry(dn, attributes, origin) {
   return entries.get(key) || null;
 }
 
+/**
+ * Extracts this module's console prose (#543 phase 2b): the service
+ * description's static sentences and its templates, and each container
+ * page's source-of-truth sentence — what the answers of `PROSE_ROUTES`
+ * carry from this file. The schemas those pages carry are their owning
+ * modules' (`applications.js`, `devices.ts`, ...), which extract their own.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  /** @type {Record<string, string>} */
+  const out = {};
+  ['bindPolicy', 'schema', 'authenticationFacts', 'implementation']
+    .forEach(function (name) {
+      out['ldap.service.' + name] = SERVICE_PROSE[name];
+    });
+  // Arrays of strings, which `harvest()` does not walk: keyed by index.
+  SERVICE_PROSE.enforcedRules.forEach(function (rule, i) {
+    out['ldap.service.enforcedRules.' + i] = rule;
+  });
+  SERVICE_PROSE.specifications.forEach(function (one, i) {
+    out['ldap.service.specifications.' + i] = one;
+  });
+  Object.keys(SERVICE_SENTENCES).forEach(function (name) {
+    out['ldap.service.sentences.' + name] = SERVICE_SENTENCES[name];
+  });
+  Object.keys(SOURCE_OF_TRUTH).forEach(function (name) {
+    out['ldap.' + name + '.sourceOfTruth'] = SOURCE_OF_TRUTH[name];
+  });
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 module.exports = {
+  // THE CONSOLE'S PROSE (#543 phase 2b): the routes whose answers carry
+  // this module's sentences, and the sentences by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   listen: listen,
   close: close,
   // Re-homing a person (#98): the entry put here with its entryUUID kept,

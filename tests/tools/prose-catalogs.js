@@ -10,6 +10,7 @@
 // KEEPS THE PROSE CATALOGS IN STEP WITH THE SOURCE (#543, 2026-10-12).
 //
 //   node tests/tools/prose-catalogs.js --print=<ns>
+//   node tests/tools/prose-catalogs.js --print-all
 //   node tests/tools/prose-catalogs.js --write
 //   node tests/tools/prose-catalogs.js --untranslated=<ns> --tag=<tag>
 //   node tests/tools/prose-catalogs.js --merge=<ns> --tag=<tag> --from=<file>
@@ -20,6 +21,8 @@
 // `common/prose_locales/<ns>/en.json` is what this writes from it:
 //
 //   --print         the namespace's en.json on standard output
+//   --print-all     every namespace's, as one object, namespace → English
+//                   (what tests/server_prose_catalogs.js A compares)
 //   --write         every namespace's en.json, in place
 //   --untranslated  key → English for every message the catalog lacks or
 //                   translated from an older English: what a translator is
@@ -211,6 +214,37 @@ function merge(ns, tag, from) {
 }
 
 /**
+ * Loads the service the way a request worker does — the whole protocol
+ * stack, binding nothing — and answers `common/server_prose`. A namespace's
+ * English may be in a registry its modules fill as they load (the
+ * scheduler's jobs, the caches), so extraction reads it from the loaded
+ * service rather than from one module at a time.
+ *
+ * @returns `common/server_prose`
+ */
+function loadedProse() {
+  log.debug("Entering loadedProse().");
+  require('../../common/protocol_stack');
+  log.debug("Leaving loadedProse().");
+  return require('../../common/server_prose');
+}
+
+/**
+ * Writes the answer and ends the process once it is flushed: the loaded
+ * service would otherwise keep it alive.
+ *
+ * @param text - the answer
+ * @returns nothing
+ */
+function answerAndExit(text) {
+  log.debug("Entering answerAndExit().");
+  answer(text, function () {
+    log.debug("Leaving answerAndExit().");
+    process.exit(process.exitCode || 0);
+  });
+}
+
+/**
  * Runs the tool.
  *
  * @returns nothing
@@ -219,16 +253,23 @@ function main() {
   log.debug("Entering main().");
   const args = argsOf();
   if (args.print) {
-    answer(serialise(require('../../common/server_prose')
-      .extract(args.print)));
+    answerAndExit(serialise(loadedProse().extract(args.print)));
+  } else if (args['print-all']) {
+    const prose = loadedProse();
+    const all = {};
+    prose.namespaces().forEach(function (ns) {
+      all[ns] = prose.extract(ns);
+    });
+    answerAndExit(JSON.stringify(all));
   } else if (args.write) {
-    const prose = require('../../common/server_prose');
+    const prose = loadedProse();
     prose.namespaces().forEach(function (ns) {
       fs.mkdirSync(path.join(DIRECTORY, ns), { recursive: true });
       fs.writeFileSync(path.join(DIRECTORY, ns, 'en.json'),
                        serialise(prose.extract(ns)));
       log.info('wrote common/prose_locales/' + ns + '/en.json');
     });
+    process.exit(0);
   } else if (args.untranslated) {
     const state = owed(args.untranslated, args.tag);
     const out = {};

@@ -1440,6 +1440,40 @@ function rolesInClaims(claims) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE ROLES NAMESPACE'S PROSE (#543 phase 2b): what the built-in roles, the
+// native roles and the `ou=roles` schema say about themselves, translated
+// wherever an answer to one of these routes carries the sentence EXACTLY.
+//
+// A NATIVE ROLE'S `what` REACHES AN ANSWER AS A STORED DESCRIPTION:
+// `seedNativeRoles()` writes it onto the entry, and `/admin-api/roles` reads
+// the entry back. So the seeded English is translated, and a description an
+// operator has since rewritten is not — it is no longer the row's English,
+// and a configured role's own words are the operator's. The schema is
+// `/admin-api/ldap/roles`' (`ldap_server.js`'s `ldapRolesView()`).
+// ---------------------------------------------------------------------------
+/** The routes whose answers carry this module's prose. */
+const PROSE_ROUTES = ['/admin-api/roles', '/admin-api/ldap/roles'];
+
+/**
+ * Extracts this module's part of the roles namespace (#543): the schema's,
+ * the built-in roles' and the native roles' `what`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is a leaf that `applications.js` and `admin_stats.js`
+  // require early, and `server_prose` is needed only to extract.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('roles.schema', SCHEMA, ['what']),
+    harvest('roles.builtIn', BUILT_IN, ['what']),
+    harvest('roles.native', NATIVE_ROLES, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The role register: who holds a role, the built-in computed roles, the two
  * console roles, and the roles claim.
@@ -1477,5 +1511,8 @@ module.exports = {
   remove: remove,
   rolesOf: rolesOf,
   claimFor: claimFor,
-  rolesInClaims: rolesInClaims
+  rolesInClaims: rolesInClaims,
+  // #543: the roles namespace's routes and English.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

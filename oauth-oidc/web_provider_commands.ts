@@ -160,7 +160,8 @@ class ProviderCommandsPage {
     const tenantOptions = json.tenantCommands.map(function (one: string) {
       return '<option>' + esc(one) + '</option>';
     }).join('');
-    const send = '<h3>' + t.html('consoleProviderCommands.sendHeading') +
+    const send = '<h3 data-tab="send">' +
+      t.html('consoleProviderCommands.sendHeading') +
       '</h3>' +
       '<form method="post" action="' + PAGE + '" id="command-send-account">' +
       '<input type="hidden" name="action" value="send-account">' +
@@ -229,18 +230,23 @@ class ProviderCommandsPage {
         (json.issuer ? esc(json.issuer)
                      : t.html('consoleProviderCommands.noIssuer')) +
         '</code>.') +
+      // The relying parties are the first tab (2026-10-12); the note is
+      // Metadata.
+      '<h3 data-tab="clients">' +
+      t.html('consoleProviderCommands.clientsHeading') + '</h3>' +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       '<th>command_endpoint</th>' +
       th('consoleProviderCommands.colSupports') +
       '<th></th></tr></thead><tbody>' +
       clients + '</tbody></table>' + send +
-      '<h3>' + t.html('consoleProviderCommands.accountsHeading') + '</h3>' +
+      '<h3 data-tab="accounts">' +
+      t.html('consoleProviderCommands.accountsHeading') + '</h3>' +
       '<table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colPerson') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colLastCommand') +
       th('consoleProviderCommands.colWhen') + '</tr></thead><tbody>' +
-      accounts + '</tbody></table><h3>' +
+      accounts + '</tbody></table><h3 data-tab="tenants">' +
       t.html('consoleProviderCommands.runsHeading') + '</h3><table><thead>' +
       '<tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
@@ -248,14 +254,16 @@ class ProviderCommandsPage {
       th('consoleProviderCommands.colProgress') +
       th('consoleProviderCommands.colStarted') +
       '</tr></thead><tbody>' + runs + '</tbody></table>' +
-      '<h3>' + t.html('consoleProviderCommands.deliveriesHeading') +
+      '<h3 data-tab="deliveries">' +
+      t.html('consoleProviderCommands.deliveriesHeading') +
       '</h3><table><thead><tr>' + th('consoleProviderCommands.colClient') +
       th('consoleProviderCommands.colCommand') +
       th('consoleProviderCommands.colState') +
       th('consoleProviderCommands.colQueued') +
       '<th></th></tr></thead><tbody>' +
       deliveries + '</tbody></table>' +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="' + PAGE +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/commands</code> · <a href="' + DELIVERIES +
       '">' + t.html('consoleProviderCommands.everyDelivery') + '</a></p>';
   }

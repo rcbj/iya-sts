@@ -252,15 +252,19 @@ function presentationOf(format, credential, holder, ro) {
 }
 
 // The bar door in `realm`: a request by reference for `format`, and its
-// request object.
+// request object — started at POST /admin-api/verifications/start (#587),
+// the administrator's twin of the demonstration's /oid4vp/start (which
+// becomes development-only, #585), whose `walletUrl` is the address the
+// page redirects to.
 async function begin(realm, format) {
   log.debug("Entering begin(). " + realm + " " + format);
-  const started = await call("GET", realmBase(realm) +
-    "/oid4vp/start?by=reference&format=" + encodeURIComponent(format));
-  assert.strictEqual(started.status, 302,
-                     "the bar door should hand the wallet a request: " +
-                     started.status + " " + started.text.slice(0, 300));
-  const requestUri = new URL(started.location).searchParams
+  const started = await call("POST", realmBase(realm) +
+    "/admin-api/verifications/start", { by: "reference", format: format });
+  assert.ok(started.status === 200 && started.json &&
+            started.json.walletUrl,
+            "the bar door should hand the wallet a request: " +
+            started.status + " " + started.text.slice(0, 300));
+  const requestUri = new URL(started.json.walletUrl).searchParams
     .get("request_uri");
   const got = await call("GET", requestUri);
   assert.strictEqual(got.status, 200, "the request object: " +

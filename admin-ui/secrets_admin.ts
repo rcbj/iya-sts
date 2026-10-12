@@ -102,6 +102,10 @@ import secrets = require('../common/secrets');
 import keystore = require('../common/keystore');
 import mode = require('../common/mode');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `harvest()` collects
+// `SECRET_NOTES` for the secrets namespace. Safe at the top: this module is
+// built at 18d, long after what server_prose.ts requires.
+import serverProse = require('../common/server_prose');
 // The page's renderer (#446): a `web_` module, loadable in a browser.
 import SecretsPage = require('./web_secrets');
 
@@ -294,6 +298,29 @@ class SecretsAdmin {
   static readonly SECRET_NOTES = SECRET_NOTES;
 
   /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = ['/admin-api/secrets'];
+
+  /**
+   * Extracts the secrets namespace (#543 phase 2b): each secret's heading
+   * and its three paragraphs. They are drawn RAW, so their `<code>` and
+   * `&mdash;` are kept, and a translator is told to keep them. What each
+   * probe says is `common/secrets.js`'s, and is not here.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SecretsAdmin.prose().");
+    const out = serverProse.harvest('secrets', SECRET_NOTES,
+                                    ['heading', 'what', 'without',
+                                     'rotating']);
+    helpers.log.debug("Leaving SecretsAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
+  /**
    * Builds an instance over the modules it depends on.
    *
    * @param deps - the console, the secret reader, the keystore and the mode
@@ -447,6 +474,8 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   SecretsAdmin: SecretsAdmin,
+  PROSE_ROUTES: SecretsAdmin.PROSE_ROUTES,
+  prose: SecretsAdmin.prose,
   /**
    * Installs the instance the composition root built and runs its
    * wire step; a second install is refused.

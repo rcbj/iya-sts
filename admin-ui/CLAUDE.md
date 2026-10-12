@@ -4900,6 +4900,42 @@ knowing before changing it.
 * **A drill-down is drawn in place of the tabs**: `?entry=` (the row's
   `drill`, so the trail knows it) and `?agent=`.
 
+## EVERY PROTOCOLS PAGE IS TABS, METADATA FIRST (2026-10-12)
+
+rcbj's ask, after the combined pages: every page under Protocols not yet
+drawn as tabs is cut into tabs, and its endpoints and everything that
+explains the protocol or reports its state are on a **Metadata** tab, which
+is first. Delegation, Federation, OpenID Federation, Provider Commands,
+Claims Providers, GNAP, TOTP, Recovery codes, WebAuthn, Device registration,
+LDAP, WS-Trust, WS-Federation, PKI, TLS and the truststore are drawn this way
+by ONE splitter, `WebPages.protocolTabs()`; SCIM's own tabs were reordered
+(Metadata — its endpoints, traffic counts, mappings and operation table —
+then Server, its settings, then Clients).
+
+* **A RENDERER MARKS ITS TABS; NOTHING IS GUESSED.** A heading with
+  `data-tab="<name>"` starts that tab and its label is the heading's text (the
+  heading itself goes, an `id` on it kept as an empty span, since a form's
+  answer may return to it). An unmarked section — the lead notes, Endpoints,
+  "The two directions" — is Metadata. Classifying by content (a section with
+  a form is a tab) was refused: a list with no rows draws no button, so tabs
+  would come and go with the data.
+* **THE CUT IS AT THE TOP LEVEL ONLY** — a heading outside every form, table,
+  list and block — so no panel holds half an element. An `<h3>` starts a
+  section only where no `<h2>` section is open (PKI, Provider Commands and
+  Claims Providers head their sections with `<h3>`). Two sections naming one
+  tab are one tab (PKI's issue forms join Applications and People).
+* **`data-metadata`** on a block (a page's closing links) returns it to
+  Metadata from whatever tab it follows; **`data-outside-tabs`** (the
+  certificate details dialog) draws it after the tabs, over whichever is open.
+* **`PROTOCOL_TABS` in `web_pages.ts` names each page's tabs.** The
+  stylesheet's active-tab ids come from it (`PROTOCOL_TAB_IDS`, read by
+  `admin.ts`), and `tests/console_web_bundle.js` (D-Protocol-tabs) fails on a
+  page under Protocols that is not tabbed, a page that does not open on
+  Metadata, endpoints off Metadata, or a drawn tab the table does not list.
+  **A new Protocols page owes a row there**, or tabs of its own.
+* `SettingsForms`' heading carries `data-tab="settings"`, so every page's
+  settings are a Settings tab; on a page not drawn as tabs it is inert.
+
 ## The directory group grew to EIGHT pages (2026-09-05)
 
 `/admin/ldap/roles`, `/admin/ldap/policies` and `/admin/ldap/peps` joined the

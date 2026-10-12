@@ -1,0 +1,98 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Allt som PostgreSQL berättar för den här tjänsten om sig själv, och tillståndet för det schema som den här tjänsten äger i den."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode är \"{{mode}}\", så den här tjänsten har ingen databas att rapportera om. `memory` skriver ingenting alls och `ldif` skriver RFC 2849-filer — ingen av dem har en anslutning, en pool eller en katalog. Sätt persistence.mode till `postgres` (det kräver omstart: lagret öppnas innan lyssnaren binds)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode är \"postgres\" och den här processen har INGET ÖPPET LAGER. Det är ett fel snarare än en konfiguration: lagret öppnas från persistence.start() innan lyssnaren binds, och ett fel där är ödesdigert — så en körande tjänst i det här tillståndet har fått sitt lager stoppat under sig. Startloggen namnger vad som hände."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "den öppna drivrutinen rapporterar ingen metrikfunktion, vilket betyder ett bygge av persistence_postgres.js som är äldre än 2026-09-11."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "Vilken PostgreSQL det här är, vem den här tjänsten är ansluten SOM och hur länge servern har varit igång."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "Hur mycket disk den här databasen upptar."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Varje räknare som PostgreSQL håller för den här databasen: commits och rollbacks, lästa block mot block som hittats i cachen, tupler i alla riktningar, deadlocks, temporära filer, samt I/O- och sessionstider där servern samlar in dem."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Frågor som avbrutits av återställningskonflikter. Alla noll på en server som inte är en standby, vilket är det vanliga fallet här."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Hur många backend-processer den här databasen har, mot serverns gräns."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "En rad per backend-process i den här databasen. En backend-process som tillhör en annan roll visas som en rad med sitt tillstånd och sin fråga undanhållna, vilket är vad en roll utan övervakningsbehörighet får se."
+  },
+  "postgres.probes.locks.what": {
+    "en": "9d8cff275d6437f5",
+    "text": "Lås som hålls och väntas på, per läge. Ett väntande lås i en mock är nästan alltid den här tjänsten som konkurrerar med sig själv över poolen av begärandearbetare."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "Bakgrundsskrivaren. ELVA kolumner före PostgreSQL 17 och FYRA från 17, när kontrollpunktsräknarna flyttades ut ur den — vilket är varför detta frågar efter alla snarare än att namnge någon."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "Kontrollpunktsprocessen. En egen vy sedan PostgreSQL 17; före det är dessa räknare slutet av pg_stat_bgwriter ovan."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Generering av write-ahead-loggen. PostgreSQL 14 och senare."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "WAL-arkivering. Alla noll om inte archive_mode är på, vilket den inte är i någon stack som det här förrådet levererar."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Standby-servrar som strömmar från den här servern. TOM är det vanliga svaret, och det är också vad en roll utan pg_monitor får se när det FINNS standby-servrar — så en tom tabell här är två olika fakta, och sidan säger vilka den inte kan skilja åt."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Varje räknare som PostgreSQL håller per tabell: sekventiella skanningar och indexskanningar, tupler i alla riktningar, levande och döda rader, och när var och en senast dammsögs (vacuum) och analyserades."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "Block-I/O per tabell: hur mycket som kom från buffertcachen och hur mycket från disk, för heapen, dess index och dess TOAST."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "Hur mycket disk varje tabell upptar, uppdelat på heapen, dess index och dess TOAST, med planerarens radskattning."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Varje index, hur ofta det har skannats, hur stort det är och om det är en primärnyckel eller unikt."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Varje kolumn i varje tabell som den här tjänsten äger, med dess typ, om den får vara null och dess standardvärde."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Primärnycklar, unikhetsvillkor, främmande nycklar och kontroller."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Varje inställning som en operatör har ändrat från dess inbyggda standardvärde, och var den sattes — plus de få som spelar roll oavsett om någon har rört dem."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "Tillägg som är installerade i den här databasen."
+  }
+}

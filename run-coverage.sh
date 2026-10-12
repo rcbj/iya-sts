@@ -481,6 +481,14 @@ else
     # catcher: the sections that read a delivered message are SKIPPED and
     # say so, and the rest still run.
     -e MAILPIT_API_URL=
+    # AND THE TEST PEER'S, THE FIFTH (#586): the compose file defaults
+    # `STS_TEST_PEER_URL=http://test-peer:9600` for a hand run beside the
+    # container, and `--no-deps` starts none. Emptied, run-report.js starts
+    # a peer of its own beside the service it starts (startTestPeer()): a
+    # child of the runner on a loopback port, its CA certificate in this
+    # run's directory where the service reads it — so the jobs that need a
+    # peer RUN here rather than being skipped.
+    -e STS_TEST_PEER_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.

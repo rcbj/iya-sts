@@ -3712,7 +3712,16 @@ const SCHEMAS = {
       },
       dcqlQuery: openObject(
         'The query this builds, from the function that builds the real ' +
-        'one.', {})
+        'one.', {}),
+      recentVerifications: openObject(
+        'The verifications still open in this realm and what each ' +
+        'decided, newest first (#587) — `GET /verifications` without a ' +
+        '`state`, from the same function: `verifications`, `total`, ' +
+        '`limit`.', {}),
+      startChoices: openObject(
+        'What `POST /verifications/start` may name — `format`, `by`, ' +
+        '`mode`, `response_type`, `response_mode`, `client_id_prefix` — ' +
+        'each the list the Verifier checks a start against (#587).', {})
     }),
 
   // -----------------------------------------------------------------------

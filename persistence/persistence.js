@@ -3956,6 +3956,48 @@ function dematerializeEntry(realmId, key) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// WHY THERE IS NO DATABASE TO REPORT ON — `databaseMetrics()`'s three "no"
+// answers, as a table (#543 phase 2b), so that the database namespace can
+// carry them and `common/server_prose.ts` refill an answer to
+// `GET /admin-api/database` in a console reader's language. Each is what
+// `databaseMetrics()` wrote inline until #543, byte for byte. `notPostgres`
+// is a template: its `mode` is the configured value, carried over as data.
+// ---------------------------------------------------------------------------
+const DATABASE_WHY = Object.freeze({
+  notPostgres: 'persistence.mode is "{{mode}}", so this service has no ' +
+    'database to report on. `memory` writes nothing at all and `ldif` ' +
+    'writes RFC 2849 files — neither has a connection, a pool or a catalog. ' +
+    'Set persistence.mode to `postgres` (it is restart-only: the store is ' +
+    'opened before the listener binds).',
+  noStore: 'persistence.mode is "postgres" and this process has NO OPEN ' +
+    'STORE. That is a fault rather than a configuration: the store is ' +
+    'opened from persistence.start() before the listener binds, and a ' +
+    'failure there is fatal — so a running service in this state has had ' +
+    'its store stopped underneath it. The startup log names what happened.',
+  noMetrics: 'the open driver reports no metrics function, which means a ' +
+    'build of persistence_postgres.js older than 2026-09-11.'
+});
+
+// The routes whose answers carry the database namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/database'];
+
+/**
+ * Extracts this module's part of the database namespace (#543 phase 2b):
+ * why there is no database to report on.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, like the require in `databaseMetrics()`: this module is
+  // required at 4a, while config.js's neighbours may still be loading.
+  const out = require('../common/server_prose').harvest('persistence.why',
+    DATABASE_WHY, Object.keys(DATABASE_WHY));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 // THE STORE ITSELF, for a module that asks a question of a driver method no
 // wrapper here exposes — the routing index (`common/cell_routing.ts`) and
 // `/admin/cells` (#98). Null until `start()` has opened one.
@@ -3966,6 +4008,8 @@ function currentDriver() {
 }
 
 module.exports = {
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   originId: originId,
   currentDriver: currentDriver,
   materializeEntry: materializeEntry,
@@ -4240,31 +4284,22 @@ module.exports = {
       log.debug('Leaving databaseMetrics(). Not a database mode.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'persistence.mode is "' + configured + '", so this service has ' +
-             'no database to report on. `memory` writes nothing at all and ' +
-             '`ldif` writes RFC 2849 files — neither has a connection, a ' +
-             'pool or a catalog. Set persistence.mode to `postgres` (it is ' +
-             'restart-only: the store is opened before the listener binds).'
+        why: require('../common/server_prose').fill(DATABASE_WHY.notPostgres,
+                                                     { mode: configured })
       });
     }
     if (!driver || !enabled()) {
       log.debug('Leaving databaseMetrics(). No open driver.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'persistence.mode is "postgres" and this process has NO OPEN ' +
-             'STORE. That is a fault rather than a configuration: the store ' +
-             'is opened from persistence.start() before the listener binds, ' +
-             'and a failure there is fatal — so a running service in this ' +
-             'state has had its store stopped underneath it. The startup log ' +
-             'names what happened.'
+        why: DATABASE_WHY.noStore
       });
     }
     if (typeof driver.metrics !== 'function') {
       log.debug('Leaving databaseMetrics(). The driver has none.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'the open driver reports no metrics function, which means a ' +
-             'build of persistence_postgres.js older than 2026-09-11.'
+        why: DATABASE_WHY.noMetrics
       });
     }
     log.debug("Leaving databaseMetrics().");

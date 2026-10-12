@@ -1,0 +1,446 @@
+{
+  "fed.roles.service-provider.label": {
+    "en": "1fd2d940fd75671b",
+    "text": "Den här tjänsten är tjänsteleverantören"
+  },
+  "fed.roles.service-provider.short": {
+    "en": "6deb8eb0a31924f8",
+    "text": "Tjänsteleverantör"
+  },
+  "fed.roles.service-provider.what": {
+    "en": "9ca71fc74f7baaeb",
+    "text": "En EXTERN identitetsleverantör autentiserar personen och den här tjänsten konsumerar det den utfärdar. Det här är den riktning som skapar katalogposter för personer som den här tjänsten aldrig har sett, och den riktning som inte kan vara tillåtande: ett intygande avvisas om det inte verifieras mot nyckeln på den här relationen."
+  },
+  "fed.roles.identity-provider.label": {
+    "en": "f565ea32582c51fe",
+    "text": "Den här tjänsten är identitetsleverantören"
+  },
+  "fed.roles.identity-provider.short": {
+    "en": "d8a43dbfd9a920e9",
+    "text": "Identitetsleverantör"
+  },
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "Den här tjänsten autentiserar personen och en EXTERN tjänsteleverantör konsumerar det den utfärdar. Varje protokollslutpunkt här gör redan det för vilken anropare som helst — det som relationen tillför är att partnern markeras som en federationspartner snarare än en testklient, och en lista över vilka attribut som lämnas ut till den."
+  },
+  "fed.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "fed.protocols.saml2.what": {
+    "en": "355d6177d0a6e06b",
+    "text": "Profilen Web Browser SSO. Den här tjänsten skickar en <AuthnRequest> till partnern och konsumerar <Response> vid sin assertion consumer service, eller utfärdar en till partnern från /saml2."
+  },
+  "fed.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "fed.protocols.saml11.what": {
+    "en": "3c12221e7c47c8a0",
+    "text": "Profilen Browser/POST. DET FINNS INGET BEGÄRANDEMEDDELANDE — ett SAML 1.1-flöde initieras av identitetsleverantören, så det den här tjänsten skickar webbläsaren till är en URL för överföring mellan webbplatser som bär ett TARGET, och det som kommer tillbaka är en <Response> utan något InResponseTo att matcha. Se anmärkningen om replay vid fedNonce nedan."
+  },
+  "fed.protocols.wsfed.label": {
+    "en": "8dedbb37150543a1",
+    "text": "WS-Federation 1.2"
+  },
+  "fed.protocols.wsfed.what": {
+    "en": "7c638a5872ef9fcd",
+    "text": "Profilen passive requestor. Den här tjänsten skickar wa=wsignin1.0 med sin egen wtrealm och konsumerar wresult, som bär ett SAML 1.1- eller SAML 2.0-intygande inuti en RSTR."
+  },
+  "fed.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "fed.protocols.oidc.what": {
+    "en": "37c9ef2268d1e1b9",
+    "text": "Flödet med auktoriseringskod som standard, och response_type=id_token med response_mode=form_post där det inte ska finnas någon bakkanal alls. Attributen tas från ID Token, och från UserInfo där en sådan är konfigurerad."
+  },
+  "fed.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "fed.protocols.oauth2.what": {
+    "en": "b8c06dd7e4c8e69d",
+    "text": "Flödet med auktoriseringskod utan ID Token — attributen tas från åtkomsttoken där den är en JWT, och annars från en konfigurerad slutpunkt formad som userinfo. Det är ett separat protokoll här snarare än OIDC med en flagga, eftersom det som identifierar personen är en annan artefakt, och att få det fel är allt som går fel när folk använder OAuth 2.0 för autentisering."
+  },
+  "fed.protocols.ssf.label": {
+    "en": "3c589f06261f6ba6",
+    "text": "Endast Shared Signals"
+  },
+  "fed.protocols.ssf.what": {
+    "en": "01c3df2380a01fdd",
+    "text": "En sändare som inte loggar in någon här — en enhetshanterare, en slutpunktsagent, ett HR-system — och som skickar CAEP- och RISC-händelser om personer och enheter som den här sfären känner till. Vad dess händelser leder till avgörs av signalsvarspolicyn, och som standard registreras de och inget mer, utom en enhets efterlevnad."
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "Användarnamn och lösenord"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "018076ae0914736c",
+    "text": "Den här tjänstens egen inloggningsskärm, som inte kontrollerar något lösenord. Det vanliga fallet, och det som en osatt mekanism faller tillbaka på när inget annat har någon åsikt."
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "Användarnamn och lösenord, med MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "Samma skärm med rutan för andra faktor markerad och låst, så att WebAuthn-ceremonin körs efter lösenordssteget och sessionen registrerar amr [\"pwd\",\"hwk\"] och acr \"mfa\". Det är samma krav som en RequestedAuthnContext kan ställa; ett protokoll som ber om det och en relation som konfigurerar det ger en skärm, inte två."
+  },
+  "fed.mechanisms.webauthn.label": {
+    "en": "d1b42f0bce49d6e9",
+    "text": "WebAuthn, lösenordsfri"
+  },
+  "fed.mechanisms.webauthn.what": {
+    "en": "0c8a75ea99e01b48",
+    "text": "En säkerhetsnyckel ENSAM — inget lösenord presenteras, så sessionen registrerar amr [\"hwk\"] och EN faktor. Det är därför den inte kan tillfredsställa en anropare som krävde en andra faktor: se forceMfa i authn.js, som vinner över detta och säger det i loggen."
+  },
+  "fed.mechanisms.federation.label": {
+    "en": "abfd4fd4bfb3a76c",
+    "text": "En annan federationsrelation"
+  },
+  "fed.mechanisms.federation.what": {
+    "en": "86f6c0e269a249de",
+    "text": "MÄKLARFALLET. `fedAuthnRelationship` namnger en relation på TJÄNSTELEVERANTÖRSSIDAN i samma sfär och personen skickas dit, så den här tjänsten konsumerar någon annans intygande och utfärdar sedan sitt eget till den partner som frågade. De två protokollen behöver inte matcha och gör det oftast inte — det är allt som en identitetsbrygga är."
+  },
+  "fed.mechanisms.spnego.label": {
+    "en": "e12bc145a6d518f3",
+    "text": "Kerberos-biljett (SPNEGO)"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "fed207183fe87922",
+    "text": "INTEGRERAD AUTENTISERING. Personen skickas till /authn/spnego, som svarar 401 med WWW-Authenticate: Negotiate och loggar in dem på den tjänstebiljett som deras klient skickar tillbaka (RFC 4559 över RFC 4178 över RFC 4121). Ingenting skrivs in och ingen skärm ritas. Det är den enda mekanismen här som vilar på en autentiseringsuppgift som den här tjänsten verkligen verifierar — varje annan inloggning tar det namn den får — och det som sessionen sedan gör anspråk på läses från BILJETTENS egna flaggor: amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och INGENTING alls för en biljett som inte gör anspråk på någon av dem. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ensam 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden."
+  },
+  "fed.mechanisms.wallet.label": {
+    "en": "a6a3e498bac9d4f6",
+    "text": "Plånbok (OpenID4VP)"
+  },
+  "fed.mechanisms.wallet.what": {
+    "en": "d476b4b21a6959d0",
+    "text": "Personen skickas till /authn/wallet, som ber deras plånbok — via Digital Credentials API, eller på den här enheten via länk — om ett intyg som den här sfären utfärdat till dem, och loggar in dem som den katalogpost det utfärdades för när ett färskt innehavarbevis har verifierats. amr [\"pop\"] och acr \"1\" för en faktor; en anropare som krävde två ombeds om en andra faktor efteråt (eller har redan en, där intygets nyckelattestering säger det), så den här mekanismen förlorar inte mot forceMfa på det sätt som spnego gör."
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.label": {
+    "en": "3fb482b3b1d215c6",
+    "text": "Länka vid första inloggningen (standard)"
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.what": {
+    "en": "bf6249bea0d69f73",
+    "text": "Ett länkat subjekt loggar in. Ett olänkat som namnger en befintlig person loggar först in HÄR som den personen och länkas sedan."
+  },
+  "fed.subjectPolicies.pre-linked.label": {
+    "en": "f892df83895cdf56",
+    "text": "Endast förlänkade"
+  },
+  "fed.subjectPolicies.pre-linked.what": {
+    "en": "9335561304f4cdab",
+    "text": "Bara en länk som skapats i förväg — i konsolen, via /admin-api eller SCIM — loggar in någon."
+  },
+  "fed.subjectPolicies.jit-namespaced.label": {
+    "en": "02c2c9bfd4a4b3cf",
+    "text": "Just-in-time, med namnrymd"
+  },
+  "fed.subjectPolicies.jit-namespaced.what": {
+    "en": "b78784c7524b07bf",
+    "text": "Ett olänkat subjekt får en ny post med namnet <relationship>~<name>, länkad vid skapandet, aldrig en befintlig person."
+  },
+  "fed.subjectPolicies.any-existing.label": {
+    "en": "3c34ce5af080ff96",
+    "text": "Vilken befintlig person som helst, efter namn (endast utveckling)"
+  },
+  "fed.subjectPolicies.any-existing.what": {
+    "en": "0738db6ce4ae6df5",
+    "text": "Namnet som partnern skickar matchas mot en lokal person. Avvisas i produktläge."
+  },
+  "fed.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Den abstrakta klass som varje post har."
+  },
+  "fed.schema.objectClasses.applicationProcess.what": {
+    "en": "1c2b8d8382210aed",
+    "text": "Samma registrerade klass som ou=applications använder, och av samma skäl: det är den som överhuvudtaget passar en part i ett protokoll, och den tar med sig cn, description, seeAlso, ou och l."
+  },
+  "fed.schema.objectClasses.stsFederation.what": {
+    "en": "c0a952c96d821bd5",
+    "text": "PÅHITTAD. Inget registrerat LDAP-schema har en federationspartner, eftersom varje produkt som lagrar en (AD FS, Shibboleth, Keycloak, Ping) håller den i sin egen databas. Det här är den här tjänstens egna namn, på samma sätt som stsApplication redan är det."
+  },
+  "fed.schema.attributes.fedId.what": {
+    "en": "259929e99a94f66f",
+    "text": "NYCKELN: ett kort namn som en operatör valt, unikt över båda rollerna. Det är också RDN, till skillnad från en applikations, eftersom det här registret är KONFIGURERAT snarare än observerat — ingen behöver godta vad ett protokoll än presenterade, så id:t kan helt enkelt krävas vara RDN-säkert och kort."
+  },
+  "fed.schema.attributes.cn.what": {
+    "en": "a0eb71f29906fcfc",
+    "text": "RDN-värdet, lika med fedId. Till skillnad från en applikationspost finns det inget sammandragsfall här: ett id som inte skulle passa avvisas vid skapandet snarare än hashas."
+  },
+  "fed.schema.attributes.fedName.what": {
+    "en": "3680b45397f1fed4",
+    "text": "Vad partnern ska kallas på en sida. Id:t är namnet när inget anges, eftersom att hitta på ett vänligt namn vore att hitta på ett faktum."
+  },
+  "fed.schema.attributes.fedRole.what": {
+    "en": "05d0154783f31965",
+    "text": "VILKEN ÄNDE DEN HÄR TJÄNSTEN ÄR: service-provider (den konsumerar) eller identity-provider (den intygar). En relation är en riktning — se rubriken."
+  },
+  "fed.schema.attributes.fedProtocol.what": {
+    "en": "a1a61c375e951599",
+    "text": "En av saml2, saml11, wsfed, oidc, oauth2."
+  },
+  "fed.schema.attributes.fedPeer.what": {
+    "en": "267dac8cafddfb60",
+    "text": "PARTNERNS EGEN IDENTIFIERARE, vad den än kallas i dess protokoll: ett SAML-entityID, en OpenID Connect-utfärdare, en WS-Federation-wtrealm. På en relation på tjänsteleverantörssidan KONTROLLERAS den — ett intygande vars Issuer inte är den här strängen avvisas — vilket är varför den inte bara är dokumentation, och sedan 2026-09-12 är den OBLIGATORISK där: en relation utan den är inte fullständigt konfigurerad."
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "VAD DEN HÄR TJÄNSTEN KALLAS HOS DEN HÄR PARTNERN, när det inte är det namn som den här tjänsten härleder. Tomt — standard — härleder det från den bas-URL som webbläsaren nådde den här tjänsten på (<base>/federation/acs/<id>, som global.publicBaseUrl fäster). Sätt det till det entityID som partnern konfigurerades med: det blir Issuer för den utgående AuthnRequest, WS-Federation-wtrealm, SAML 1.1-providerId, den här relationens SP-metadata-entityID och den målgrupp som ett inkommande intygande måste namnge — vilket är en AVVISNING sedan 2026-09-12, så en partner som känner den här tjänsten under ett annat namn behöver detta satt. URL:en för assertion consumer förblir härledd, eftersom den är en adress som en webbläsare måste kunna nå."
+  },
+  "fed.schema.attributes.fedEnabled.what": {
+    "en": "b6615a9f3a870188",
+    "text": "TRUE/FALSE. En relation skapas INAKTIVERAD och ingenting med den gör något förrän den slås på: en halvkonfigurerad partner som i tysthet godtog intyganden vore just det fel som hela det här registret finns för att förhindra."
+  },
+  "fed.schema.attributes.description.what": {
+    "en": "a82b6893dc62502e",
+    "text": "En rad per sak som har hänt den här relationen."
+  },
+  "fed.schema.attributes.fedSsoUrl.what": {
+    "en": "46c3751779813588",
+    "text": "DIT WEBBLÄSAREN SKICKAS. Partnerns SAML Single Sign-On-tjänst, dess SAML 1.1-tjänst för överföring mellan webbplatser, dess passiva WS-Federation-slutpunkt eller dess OAuth 2.0-auktoriseringsslutpunkt. Obligatorisk i varje protokoll, eftersom en relation utan någonstans att skicka någon inte kan börja."
+  },
+  "fed.schema.attributes.fedTokenUrl.what": {
+    "en": "3bd95189243b5794",
+    "text": "Partnerns tokenslutpunkt, för flödet med auktoriseringskod. DETTA ÄR EN AV DE TVÅ URL:ER SOM DEN HÄR TJÄNSTEN FAKTISKT KOMMER ATT ANROPA — se federation_http.js, som är den enda utgående begäran i det här förrådet och argumenterar för varför en konfigurerad URL är något annat än en registrerad."
+  },
+  "fed.schema.attributes.fedUserinfoUrl.what": {
+    "en": "c20335797afc1b41",
+    "text": "Partnerns UserInfo-slutpunkt, eller vilken slutpunkt som helst som svarar med JSON om innehavaren av en åtkomsttoken. VALFRI för OIDC, där ID Token oftast bär tillräckligt, och den ENDA källan till attribut för en ren OAuth 2.0-partner vars åtkomsttoken är ogenomskinlig. Den andra URL:en som den här tjänsten kommer att anropa."
+  },
+  "fed.schema.attributes.fedJwksUri.what": {
+    "en": "8abc51b744775c8b",
+    "text": "Partnerns JWKS. HÄMTAS — vilket är raka motsatsen till vad oauthJwksUri på en applikationspost gör, och skillnaden är hela argumentet i federation_http.js: den ena är en URL som en oautentiserad anropare REGISTRERADE, den här är en URL som en administratör KONFIGURERADE. Lämna den tom och klistra in nycklarna i fedJwks i stället om den här tjänsten inte ska göra anropet."
+  },
+  "fed.schema.attributes.fedJwks.what": {
+    "en": "e5d612d3437f7654",
+    "text": "Partnerns publika nycklar som ett JWKS-dokument, ordagrant. Läses FÖRE fedJwksUri och uppdateras aldrig, så en relation med detta gör ingen utgående begäran efter nycklar alls."
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "ENDAST OPENID CONNECT. Entity Identifier för ett av den här sfärens Trust Anchors (/admin/oidfed). Satt löses den OP som fedPeer namnger upp genom sin Trust Chain till det ankaret, dess slutpunkter och nycklar är den openid_provider-metadata som kedjan går i god för, och den här tjänsten registrerar sig hos den AUTOMATISKT under sin egen Entity Identifier och signerar sina begäranden och sin autentisering vid tokenslutpunkten med sin ES256-nyckel — så fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, fedClientId och fedClientSecret läses inte. Tom konfigureras relationen för hand som alltid."
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "PARTNERNS SIGNERINGSCERTIFIKAT, base64 DER — samma stavning som ett ds:X509Certificate bär och samma som samlSigningCertificate använder på en applikationspost, så ett certifikat har en stavning i hela den här tjänsten. Det är det som varje SAML- och WS-Federation-intygande verifieras mot, och det är det enda attribut som står mellan den här tjänsten och en slutpunkt där vem som helst kunde intyga vad som helst."
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "35f9f1eab89afb31",
+    "text": "DEN HÄR TJÄNSTENS client_id HOS PARTNERN. Vårt, utfärdat av dem — inte att förväxla med ett oauthClientId på en applikationspost, som är en mockklients id här."
+  },
+  "fed.schema.attributes.fedClientSecret.what": {
+    "en": "627419de92206a62",
+    "text": "DEN HÄR TJÄNSTENS HEMLIGHET HOS PARTNERN, i klartext, i en katalog där varje bind lyckas. Det är en VERKLIG autentiseringsuppgift hos en VERKLIG extern tjänst, vilket är ett starkare påstående än något annat i den här katalogen — se rubriken. Skrivs aldrig till granskningsloggen och skrivs aldrig ut på en sida."
+  },
+  "fed.schema.attributes.fedScope.what": {
+    "en": "7f9479e6e589a23f",
+    "text": "Det omfång som begärs av partnern. `openid profile email` är standard för en OIDC-relation och det finns ingen standard för en OAuth 2.0-relation, eftersom det en OAuth 2.0-auktoriseringsserver ger dig är helt lokalt för den."
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "b2682d37a527ee98",
+    "text": "code (standard) eller id_token. `id_token` med form_post är den form som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning som inte har någon utgående trafik alls."
+  },
+  "fed.schema.attributes.fedBinding.what": {
+    "en": "a10d4406a67b3b1f",
+    "text": "Vilken bindning den utgående SAML AuthnRequest skickas på: HTTP-Redirect (standard, och det som varje identitetsleverantör stöder) eller HTTP-POST. Den säger ingenting om svaret, som anländer på den bindning partnern skickar det på och godtas på dem alla."
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "Signera den utgående AuthnRequest med DEN HÄR tjänstens nyckel. AV som standard: de flesta identitetsleverantörer kräver det inte, och en partner som gör det avvisar begäran på ett sätt som namnger problemet. När det är på är certifikatet som ska konfigureras hos partnern det som finns i den här tjänstens egen SAML-metadata."
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "61e8ef6f6cf4a99d",
+    "text": "VILKET INKOMMANDE VÄRDE SOM BLIR DET LOKALA ANVÄNDARNAMNET — ett anspråksnamn för OIDC/OAuth 2.0, ett SAML Attribute Name för de andra. Tomt betyder subjektet självt: NameID, eller `sub`. Detta är det enda mappningsbeslut som inte kan bli fel i tysthet, eftersom det avgör vilken katalogpost en person hamnar på."
+  },
+  "fed.schema.attributes.fedAttributeMap.what": {
+    "en": "4c966530efb4269f",
+    "text": "ETT VÄRDE PER MAPPNING, skrivet `<incoming name>=<LDAP attribute>`. Det som INTE listas här anländer ändå — federation_map.js har en standardtabell som täcker de vanliga OIDC-anspråken, SAML-namnen urn:oid: och WS-Federations anspråks-URI:er — så detta är för partnerns egna påhitt snarare än för de namn som alla använder."
+  },
+  "fed.schema.attributes.fedAutocreateUsers.what": {
+    "en": "c047dc4310a6d6a9",
+    "text": "DYNAMISK ETABLERING: skapa en katalogpost första gången den här partnern loggar in någon. PÅ som standard. AV betyder att personen REDAN måste ha en post här — etablerad i förväg, via SCIM eller för hand — och en inloggning för någon som inte har det avvisas, eftersom en session behöver en post att vara subjekt för. (Fram till 2026-09-14 gav AV en session och ingen post; ett stabilt subjekt gjorde det tillståndet omöjligt.)"
+  },
+  "fed.schema.attributes.fedUpdateUserAttributes.what": {
+    "en": "4d516236bce43ce4",
+    "text": "Uppdatera personens katalogattribut vid VARJE inloggning från det senaste intygandet eller den senaste token. PÅ som standard, vilket är vad den här tjänsten alltid gjorde. AV skriver partnerns attribut bara när den här inloggningen SKAPADE posten, så en förhandsetablerad person — eller en som någon har redigerat sedan dess — behåller det som katalogen säger. Vilken relation och utfärdare en person kom genom registreras i båda fallen."
+  },
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "2b9955272be86815",
+    "text": "HUR PARTNERNS SUBJEKT BLIR EN LOKAL PERSON. Subjektet är partnerns egen stabila identifierare — iss + sub, ett beständigt NameID och partnerns entitets-id — och en person bär det som en federationLink. link-at-first-sign-in (standard; tomt betyder det): ett länkat subjekt loggar in; ett olänkat som namnger en befintlig person måste först logga in HÄR som den personen — lösenord, och en andra faktor där en sådan finns eller krävs — och först då registreras länken och partnerns attribut skrivs; ett som inte namnger någon får en ny post i den här relationens namnrymd där etablering är påslagen. pre-linked: bara en länk loggar in någon. jit-namespaced: ett olänkat subjekt får alltid en NY post, <relationship>~<name>, aldrig en befintlig person. any-existing: namnet som partnern skickade matchas direkt mot en lokal person, som den här tjänsten gjorde före #109 — ENDAST UTVECKLING, avvisas i produktläge, och det låter den här partnern logga in vilket konto som helst som den kan namnge."
+  },
+  "fed.schema.attributes.fedSubjectGroup.what": {
+    "en": "a93a51b8d9b56949",
+    "text": "EN REGEL OVANPÅ POLICYN: personen måste vara medlem i en av dessa grupper, var och en ett cn eller ett DN. En post som den här inloggningen skulle SKAPA är inte med i någon grupp, så med detta satt skapas ingen. Tomt: ingen gruppregel."
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "EN REGEL OVANPÅ POLICYN: den e-postdomän som partnern SKICKADE (den mappade e-posten, eller det mappade användarnamnet där det är en adress) måste vara en av dessa, och det måste även den lokala postens e-post vara där den har en. Jämförs skiftlägesokänsligt och exakt: example.com släpper inte in sub.example.com. Tomt: ingen domänregel."
+  },
+  "fed.schema.attributes.fedHomeRealmDomain.what": {
+    "en": "e6d68b5bbe3dac9e",
+    "text": "UPPTÄCKT AV HEMSFÄR (#148): en auktoriseringsbegäran vars OpenID Connect Enterprise Extensions-`domain_hint` är en av dessa går direkt till den här partnerns inloggning, om inte applikationen namnger en egen partner. Jämförs skiftlägesokänsligt och exakt. Endast en dirigeringsledtråd — vem som SLÄPPS IN avgörs av fedSubjectDomain."
+  },
+  "fed.schema.attributes.fedSubjectPattern.what": {
+    "en": "d9fa507e5053ce09",
+    "text": "EN REGEL OVANPÅ POLICYN: ett reguljärt uttryck som den lokala postens DN måste matcha I SIN HELHET (det förankras åt dig), till exempel uid=[^,]+,ou=users,.* — för en post som den här inloggningen skulle skapa, det DN den skulle skapas på. Högst 256 tecken, ingen bakåtreferens och ingen kvantifierare tillämpad på en grupp som själv är kvantifierad, och det testas mot högst 1024 tecken, så ett mönster kan inte fås att backa i minuter. Tomt: inget mönster."
+  },
+  "fed.schema.attributes.fedMayAssertAdministrators.what": {
+    "en": "74c845779242205c",
+    "text": "LÅT DEN HÄR PARTNERN LOGGA IN EN KONSOLADMINISTRATÖR. AV som standard, och av betyder att en person i förteckningen för Admin Read eller Admin Write — eller som har REMOTE_PEPS — avvisas oavsett vad som annars gäller, en giltig länk inräknad (STS-FED-0093). Att slå på det gör den här partnerns signeringsnyckel till en nyckel till konsolen för varje administratör som är länkad till den."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "LÅT DEN HÄR PARTNERNS SHARED SIGNALS NAMNGE EN PERSON VIA E-POST. AV som standard: en Security Event Token från en sändare med den här partnerns utfärdare namnger en person via `iss_sub`, genom personens federationLink. På matchar ett `email`-subjekt även den enda person som har den e-postadressen — en adress är inte en identifierare (OpenID Connect Core avsnitt 5.7), så bara för en partner vars adresser den här sfären litar på."
+  },
+  "fed.schema.attributes.fedSignalsEnabled.what": {
+    "en": "93b7dae2ca58a41e",
+    "text": "TA EMOT DEN HÄR PARTNERNS SHARED SIGNALS. AV som standard på en inloggningsrelation, och hela poängen med en `ssf`-relation, där det skrivs PÅ vid skapandet. Av godtas ingen push för den här relationen och pollningsjobbet hoppar över den; fedEnabled måste också vara på."
+  },
+  "fed.schema.attributes.fedSignalsIssuer.what": {
+    "en": "6ba19adcf4dbf152",
+    "text": "PARTNERNS SSF-UTFÄRDARE, när den inte är fedPeer. Tomt — standard — använder fedPeer, vilket är rätt för en OpenID Connect-partner vars sändare delar dess utfärdare. En SAML 2.0- eller WS-Federation-partners entityID är oftast INTE dess SSF-utfärdar-URL, så sätt den där. Konfigurationsdokumentet hämtas från /.well-known/ssf-configuration under den (SSF 1.0 avsnitt 7) och måste namnge den, och varje SET:s iss måste vara den."
+  },
+  "fed.schema.attributes.fedSignalsDelivery.what": {
+    "en": "2a805e4031228032",
+    "text": "HUR PARTNERNS HÄNDELSER ANLÄNDER: poll (RFC 8936, jobbet ssf.foreign-poll, standard) eller push (RFC 8935, till /federation/signals/{id} med ett authorization-huvud som bara den här sfären och partnern känner till). Läses när strömmen skapas; ta bort och skapa den igen för att ändra det."
+  },
+  "fed.schema.attributes.fedSignalsEvents.what": {
+    "en": "d593cfe04f6b50a6",
+    "text": "DE HÄNDELSETYP-URI:ER SOM STRÖMMEN BER OM (events_requested). Inga ber om allt som partnern stöder."
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "VAR DEN HÄR SFÄREN HÄMTAR EN ÅTKOMSTTOKEN FÖR PARTNERNS STRÖMHANTERING, via klientautentiseringsuppgifter. Tomt använder fedTokenUrl — samma auktoriseringsserver som inloggningsrelationen redan anropar."
+  },
+  "fed.schema.attributes.fedSignalsClientId.what": {
+    "en": "93661f7f666dca94",
+    "text": "DEN HÄR TJÄNSTENS client_id FÖR PARTNERNS STRÖMHANTERING. Tomt använder fedClientId."
+  },
+  "fed.schema.attributes.fedSignalsClientSecret.what": {
+    "en": "5c7f0300ca7c4869",
+    "text": "HEMLIGHETEN FÖR fedSignalsClientId, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar är beständiga och visas aldrig. Tomt använder fedClientSecret, förseglad på samma sätt."
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "a496c6a310b8c156",
+    "text": "Det omfång som begärs med klientautentiseringsuppgifter. Tomt begär `ssf:read ssf:write`."
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "EN BEARER-TOKEN SOM PARTNERN UTFÄRDAT, i stället för klientautentiseringsuppgifter. Förseglad som fedSignalsClientSecret, och används när den är satt."
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "PARTNERNS SAML 2.0 SingleLogoutService — dit den här tjänsten skickar en signerad <LogoutRequest> när en person loggar ut HÄR (/logout), och dit <LogoutResponse> på partnerns egen LogoutRequest går. Från partnerns metadata. Tomt: partnern får aldrig veta om en utloggning här, och en LogoutRequest från den respekteras fortfarande men besvaras med ingenting, eftersom det inte finns någonstans att skicka svaret. Endast SAML 2.0: SAML 1.1 definierar ingen utloggning alls."
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "Vilken bindning en LogoutRequest eller LogoutResponse som den här tjänsten skickar till partnern går på: HTTP-Redirect (standard; signaturen är över frågesträngen) eller HTTP-POST (en inbäddad signatur, på ett riktigt formulär med en riktig knapp — inget skript). Ett meddelande FRÅN partnern godtas på båda."
+  },
+  "fed.schema.attributes.fedEndSessionUrl.what": {
+    "en": "1936bb8b51d16899",
+    "text": "PARTNERNS OpenID Connect end_session_endpoint (RP-Initiated Logout 1.0), från dess discovery-dokument. När en person loggar ut HÄR erbjuder utloggningssidan att skicka dem dit med partnerns egen ID Token som id_token_hint, den här relationens client_id och den här relationens slutpunkt för single logout som post_logout_redirect_uri — som partnern måste ha registrerat. ID Token behålls på sessionen bara medan detta är satt. Tomt: partnern får inte veta."
+  },
+  "fed.schema.attributes.fedAcceptSignout.what": {
+    "en": "a80798b41222ab19",
+    "text": "RESPEKTERA PARTNERNS UTLOGGNING: en SAML LogoutRequest, en OpenID Connect Back-Channel- eller Front-Channel-utloggning, en WS-Federation-rensning. PÅ som standard — partnern är auktoriteten för personens inloggning, och när den avslutar en session eller inaktiverar ett konto där är detta den enda signal som når hit. Av avvisas var och en av dem (STS-FED-0123) och sessionen här lever hela sin livslängd."
+  },
+  "fed.schema.attributes.fedRequireSignedLogout.what": {
+    "en": "7b5c415a7a173deb",
+    "text": "KRÄV ATT PARTNERNS SAML LogoutRequest OCH LogoutResponse ÄR SIGNERADE, som saml-profiles-2.0-os avsnitt 4.4.4.1 säger att de MUST vara. PÅ som standard och ALLTID på i produktläge, där det avvisas att stänga av det (STS-FED-0132). Av — endast utveckling — godtar ett OSIGNERAT utloggningsmeddelande, vilket låter vem som helst som kan namnge en persons partnersession avsluta den: en partner under test som ännu inte kan signera är det enda skälet att göra det. En signatur som FINNS verifieras i båda fallen."
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "DEN TYP AV NYCKEL SOM EN PARTNER KRYPTERAR TILL: rsa-3072 (standard för SAML 2.0 och WS-Federation) eller ec-p256 (standard för OpenID Connect) — eller, endast för OpenID Connect, en postkvantnyckel (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) eller ml-kem-768 (ML-KEM-768), en AKP-nyckel som publiceras i relationens JWKS utan certifikat, från Internet-Drafts som få partner har implementerat än. Att ändra den utfärdar genast en ny nyckel av den typen och behåller den gamla i federation.encryptionKeyGraceS, som en rotation gör."
+  },
+  "fed.schema.attributes.fedKeyManagementAlgorithm.what": {
+    "en": "d806c41bb2e8697a",
+    "text": "HUR PARTNERN OMSLUTER ELLER KOMMER ÖVERENS OM INNEHÅLLSNYCKELN, och den enda som godtas. XML (SAML 2.0, WS-Federation): rsa-oaep — XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256 — för en RSA-nyckel, ecdh-es (ConcatKDF, kw-aes256) för en EC-nyckel. JOSE (en OpenID Connect ID Token): RSA-OAEP-256 eller RSA-OAEP för en RSA-nyckel, ECDH-ES, ECDH-ES+A128KW eller ECDH-ES+A256KW för en EC-nyckel. VARNING: RSA-OAEP är OAEP över SHA-1, erbjuden för en partner som inte har något nyare; RSA-OAEP-256 är den som ska användas. rsa-1_5 och RSA1_5 avvisas i varje läge (Bleichenbacher). Tomt betyder standardvärdet för nyckeltypen."
+  },
+  "fed.schema.attributes.fedContentEncryptionAlgorithm.what": {
+    "en": "30df7b680dcf4979",
+    "text": "CHIFFRET ÖVER INTYGANDET ELLER ID TOKEN, och det enda som godtas: aes256-gcm (standard) eller aes128-gcm för XML, A256GCM (standard) eller A128GCM för JOSE. AES-CBC — XML Encryptions aes*-cbc och JOSE:s A*CBC-HS* — avvisas i varje läge: XML-formen är Jagers och Somorovskys utfyllnadsorakel (2011), och en partner som kan GCM i den ena kan det i den andra."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "GODTA ETT INTYGANDE I KLARTEXT I PRODUKTLÄGE. AV som standard, och av betyder att ett SAML 2.0- eller WS-Federation-intygande, eller en OpenID Connect id_token via form_post, som INTE är krypterat till den här relationens nyckel avvisas (STS-FED-0140). VARNING: att slå på det låter partnern skicka personens NameID, e-post, grupper och varje annat attribut I KLARTEXT genom deras webbläsare — dess historik, dess tillägg och varje TLS-avslutande proxy på vägen. Slå på det bara för en partner som inte kan kryptera, och be den hellre att göra det. Utvecklingsläget godtar klartext oavsett vad detta säger."
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "NYCKELTABELLEN: en JSON-rad per nyckel som den här relationen dekrypterar med — dess kid, dess nyckeltyp, `current` eller `previous`, dess certifikat och kedja under den här sfärens Intermediate, och den privata nyckeln, FÖRSEGLAD under nyckelkrypteringsnyckeln överallt där nycklar är beständiga. En `previous`-rad behålls till dess retiresAt och tas sedan bort av schemaläggarjobbet federation.encryption-key-retire. Skrivs bara av skapande, rotation och det jobbet; UNDANHÅLLEN från varje LDAP-sökning i produktläge och från varje sida och svar från /admin-api, som publicerar den publika halvan. Nyckeltypen är en kolumn så att en hybrid postkvantnyckel kan vara en rad bredvid den klassiska när en sådan registreras."
+  },
+  "fed.schema.attributes.fedAllowUnsolicited.what": {
+    "en": "5b2a044dd3f46597",
+    "text": "Godta ett svar som den här tjänsten inte bad om — SAML 2.0:s oombedda Response, och SAML 1.1:s ENDA driftläge. AV som standard för SAML 2.0 och tvingat PÅ för SAML 1.1, eftersom den profilen inte har någon begäran att svara på. Att slå på det för SAML 2.0 tar bort kontrollen av InResponseTo, vilket är värt att känna till snarare än värt att dölja."
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "PEKAREN, och allt som den här sidan lagrar om partnern: identifieraren för dess post i ou=applications. Dess entityID, dess assertion consumer service, dess omdirigerings-URI:er och dess certifikat finns DÄR, där varje protokollmodul redan läser dem. Att kopiera någon av dem hit vore det tvålagersfel som det här förrådet är ordnat för att undvika."
+  },
+  "fed.schema.attributes.fedAuthnMechanism.what": {
+    "en": "10e91a734e1d74b3",
+    "text": "HUR DEN HÄR TJÄNSTEN AUTENTISERAR PERSONEN när den här partnern ber den om det: password, password-mfa, webauthn, spnego — en Kerberos-biljett som webbläsaren redan har, utan någon skärm alls — wallet — ett intyg som den här sfären utfärdat, presenterat från personens plånbok — eller federation, som skickar dem vidare till en annan relation och är det som gör den här tjänsten till en identitetsBRYGGA mellan två protokoll. TOMT BETYDER ATT DEN HÄR RELATIONEN INTE SÄGER NÅGOT, vilket inte är detsamma som password: det faller igenom till appFederationRelationship på applikationsposten och sedan till inloggningsskärmen, vilket är precis vad varje relation gjorde innan det här attributet fanns."
+  },
+  "fed.schema.attributes.fedAuthnRelationship.what": {
+    "en": "e67f3ec502c8b6b8",
+    "text": "VILKEN RELATION PERSONEN SKICKAS TILL, när mekanismen är `federation`. Den namnger en relation på TJÄNSTELEVERANTÖRSSIDAN i DEN HÄR sfären — registret är per sfär, så ett id från en annan namnger ingenting här — och den kontrolleras när den ANVÄNDS snarare än när den skrivs, eftersom den relation den namnger kan inaktiveras eller tas bort efteråt av någon som aldrig tittade på den här posten. Ignoreras av varje annan mekanism, och krävs av den här: readinessOf() namnger den."
+  },
+  "fed.schema.attributes.fedRelease.what": {
+    "en": "c9c33e739003f762",
+    "text": "VILKA ATTRIBUT SOM LÄMNAS UT TILL DEN HÄR PARTNERN, efter anspråks- eller attributnamn. Det FILTRERAR det som /admin/claims, /admin/saml-attributes och groups-anspråket annars skulle lägga i en artefakt för den här målgruppen, och det kan inte röra något annat — inte sub, inte iss, inte exp, inte ett NameID. INGA VÄRDEN HÄR BETYDER INGEN POLICY, inte att ingenting lämnas ut; se rubriken, där skillnaden argumenteras."
+  },
+  "fed.schema.attributes.fedFirstSeen.what": {
+    "en": "4eb7da413f19633b",
+    "text": "GeneralizedTime: när den här relationen först ANVÄNDES, vilket inte är när den skapades."
+  },
+  "fed.schema.attributes.fedLastSeen.what": {
+    "en": "49fa18e0b49322c5",
+    "text": "GeneralizedTime, den senaste användningen."
+  },
+  "fed.schema.attributes.fedAuthentications.what": {
+    "en": "2ee55bdb488ba64f",
+    "text": "Hur många autentiseringsuppgifter som har passerat den här relationen. TILLDELAS vid varje ändring — en räknare som samlade på sig värden vore nonsens — och det är ett levande tal i en katalogpost, vilket en riktig katalog inte skulle hålla."
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "Hur många distinkta identiteter som har passerat den. Räknas mot fedLastUser, så den räknar ett BYTE av användare snarare än en mängd: rätt för det vanliga fallet och en underskattning för någon som växlar mellan två partner. Anges här eftersom det är ett tal på en sida."
+  },
+  "fed.schema.attributes.fedLastUser.what": {
+    "en": "28541b4bc6a62e68",
+    "text": "Den senaste identiteten. På posten snarare än i minnet eftersom posten är lagret."
+  },
+  "fed.schema.attributes.fedApplicationUse.what": {
+    "en": "3c112c1cef2a6f6d",
+    "text": "SAMMA TVÅ RÄKNINGAR, UPPDELADE PÅ DEN APPLIKATION SOM INLOGGNINGEN GÄLLDE — ett värde per applikation, packat som `application|authentications|users|lastUser|lastSeen`. Det finns eftersom fedAuthentications svarar på \"hur mycket har passerat den här relationen\" och kartan på /admin/federation/map måste svara på \"hur mycket har passerat den FÖR VAR OCH EN av de applikationer som är konfigurerade att använda den\", vilket är en annan fråga i samma ögonblick som en andra applikation namnger samma partner.\n\nDET GÄLLER ENDAST TJÄNSTELEVERANTÖRSSIDAN, och det är inte ett förbiseende. En relation på identitetsleverantörssidan namnger exakt EN applikation (fedApplication), så dess räkning per applikation ÄR fedAuthentications, och ett andra attribut som håller samma tal under ett annat namn är den kopia som till slut går isär.\n\nETT VÄRDE SKRIVS BARA FÖR ETT PAR SOM DEN HÄR TJÄNSTEN ÄR KONFIGURERAD FÖR, kontrollerat mot den levande konfigurationen i skrivögonblicket snarare än betrott från begäran — se applicationConfiguredFor(). Utan den kontrollen skulle det här attributet vara en obegränsad lista med strängar som vem som helst som kan nå /federation/login/{id} valde, på den enda post i den här katalogen vars innehåll avgör om ett intygande avvisas.\n\n`|` I NÅGOT AV FRITEXTFÄLTEN ERSÄTTS MED `~` PÅ VÄGEN IN, vilket är den avvägning som det här formatet gör och den anges snarare än upptäcks: detta är en packad räknare som ritas på en bild, inte en identifierare som något kopplas ihop på. Den applikation som en rad ARKIVERAS under jämförs i samma packade stavning överallt, så ett par går fram och tillbaka till sig självt vad det än heter."
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "VARFÖR DET SENASTE FÖRSÖKET MISSLYCKADES, med den här tjänstens egna ord. Det är det mest användbara attributet här och det är därför avvisningar registreras snarare än bara loggas: en federation som inte fungerar misslyckas hos någon annans tjänst, och \"signaturen verifierades inte mot det konfigurerade certifikatet\" är den mening som avslutar diskussionen om vems ände som är trasig."
+  },
+  "fed.schema.attributes.fedLastErrorAt.what": {
+    "en": "5ff3120f0d87d356",
+    "text": "GeneralizedTime för raden ovan. Separat, så att ett gammalt fel bredvid en ny framgång läses som historik snarare än som det aktuella tillståndet."
+  },
+  "fed.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "den här tjänsten"
+  },
+  "fed.schema.from.thisRegister": {
+    "en": "eb9ec04b4f5dbb7c",
+    "text": "det här registret"
+  },
+  "fedgraph.sentences.thisService": {
+    "en": "2ee8e73fd08187ad",
+    "text": "Den här tjänsten"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "467b4c978776f257",
+    "text": "Inloggningsskärmen, som inte kontrollerar något lösenord"
+  },
+  "fedgraph.sentences.unknownMechanism": {
+    "en": "f76c6d8079660f9f",
+    "text": "{{mechanism}} — inte en mekanism som den här tjänsten har"
+  }
+}

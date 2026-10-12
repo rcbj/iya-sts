@@ -171,6 +171,31 @@ class SpiffeRegistry {
     deps.log.debug("Leaving SpiffeRegistry.constructor().");
   }
 
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * what each object class and attribute of the schema holds, and the short
+   * phrases its `where` and `from` columns say in words — once each, rather
+   * than once per row that carries them. A `where` that cites an RFC is a
+   * citation and is not translated.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeRegistry.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> =
+      harvest('spiffe.registry.schema', SCHEMA, ['what']);
+    out['spiffe.registry.schema.where.thisService'] = 'this service';
+    out['spiffe.registry.schema.from.thisRegistry'] = 'this registry';
+    out['spiffe.registry.schema.from.theCaller'] = 'the caller';
+    out['spiffe.registry.schema.from.theAgent'] = 'the agent';
+    helpers.log.debug("Leaving SpiffeRegistry.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
   // What the composition root passes, from the real modules.
   /**
    * Returns the dependencies the composition root passes.
@@ -1891,6 +1916,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: SCHEMA,
   EDITABLE: EDITABLE,
+  // The `spiffe` namespace's route and English (#543): the schema is on the
+  // directory's own view of `ou=spiffe`.
+  PROSE_ROUTES: ['/admin-api/ldap/spiffe'],
+  prose: (): Record<string, string> => SpiffeRegistry.prose(),
   setDirectory: slot.forward('setDirectory'),
   parseSelector: slot.forward('parseSelector'),
   selectorText: slot.forward('selectorText'),

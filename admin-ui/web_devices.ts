@@ -687,7 +687,8 @@ class DevicesPage {
           ? (json.decisions.compliantDeviceAttested ? 'attested' : 'yes')
           : 'no',
         acr: json.decisions.acr, claim: json.decisions.claim })) +
-      '<h2>' + t.html('consoleDevices.registrationHtml.settings') + '</h2>' +
+      '<h2 data-tab="settings">' +
+      t.html('consoleDevices.registrationHtml.settings') + '</h2>' +
       SettingsForms.forms(json.settings, REGISTRATION, undefined, t);
   }
 

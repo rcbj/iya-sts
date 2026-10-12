@@ -21,7 +21,12 @@
 //   f. Directory → Policies (#543 phase 2): with `fr`, the password policy's
 //      rule sentences — templates refilled with the profile's numbers — and
 //      its field help are French, and every value of the profile is the same
-//      as in English.
+//      as in English;
+//   g. the module prose of phase 2b (#543): on every console page that
+//      carries it — mode, realms, audit, listeners, the LDAP pages,
+//      federation, SPIFFE, SCIM, PKI, encryption, secrets, database, roles,
+//      the roster, delegation, devices, Kerberos — `fr` changes some strings
+//      and the answer's SHAPE (its members and array lengths) not at all.
 // ---------------------------------------------------------------------------
 "use strict";
 
@@ -100,6 +105,42 @@ function settingsOf(raw) {
   });
   log.debug("Leaving settingsOf(). " + Object.keys(out).length);
   return out;
+}
+
+// An answer's shape: the set of its members' paths with every array index
+// folded to `[]`, values and lengths left out — two reads may differ in how
+// many audit events or rows they hold, never in which members a row has.
+function shapeOf(value, path, out) {
+  log.debug("Entering shapeOf().");
+  const into = out || new Set();
+  if (Array.isArray(value)) {
+    value.forEach(function (one) {
+      shapeOf(one, (path || "$") + "[]", into);
+    });
+  } else if (value && typeof value === "object") {
+    Object.keys(value).forEach(function (key) {
+      shapeOf(value[key], (path || "$") + "." + key, into);
+    });
+  } else {
+    into.add(path || "$");
+  }
+  log.debug("Leaving shapeOf().");
+  return out ? into : Array.from(into).sort();
+}
+
+// Every string of an answer, in order.
+function stringsOf(value, out) {
+  log.debug("Entering stringsOf().");
+  const into = out || [];
+  if (typeof value === "string") {
+    into.push(value);
+  } else if (value && typeof value === "object") {
+    Object.keys(value).sort().forEach(function (key) {
+      stringsOf(value[key], into);
+    });
+  }
+  log.debug("Leaving stringsOf().");
+  return into;
 }
 
 async function test() {
@@ -192,7 +233,40 @@ async function test() {
     }));
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  log.info("=== g. the module prose is translated, the shape is not ===");
+  const PAGES = ["/mode", "/realms", "/audit", "/listeners", "/ldap/service",
+                 "/ldap/applications", "/federation", "/spiffe", "/scim",
+                 "/pki", "/encryption", "/secrets", "/database", "/roles",
+                 "/rbac", "/delegation", "/device-registration",
+                 "/kerberos/principals"];
+  for (const page of PAGES) {
+    const en = await fetch(api + page, { headers: { Accept:
+      "application/json", "Accept-Language": "en" } });
+    const fr = await fetch(api + page, { headers: { Accept:
+      "application/json", "Accept-Language": "fr" } });
+    const enBody = await en.text();
+    const frBody = await fr.text();
+    if (en.status !== 200 || fr.status !== 200) {
+      // A page this stack does not draw (no database, no directory) is
+      // not this job's to judge.
+      log.info("  [skip] " + page + " answered " + en.status + "/" +
+               fr.status);
+      continue;
+    }
+    const a = JSON.parse(enBody);
+    const b = JSON.parse(frBody);
+    check(page + ": the same shape, and some prose in French", function () {
+      assert.deepStrictEqual(shapeOf(b), shapeOf(a), page);
+      const sa = stringsOf(a);
+      const sb = stringsOf(b);
+      const changed = sa.filter(function (one, i) {
+        return one !== sb[i];
+      }).length;
+      assert.ok(changed > 0, page + ": no string changed");
+    });
+  }
+
+  assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
                                            "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

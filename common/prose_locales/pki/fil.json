@@ -1,0 +1,130 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "Ang trust anchor. Self-signed, ang pinakamatagal mabuhay sa tatlo, at ang tanging certificate sa hierarchy na kailangang ibigay sa relying party out of band — ang lahat sa ilalim nito ay naglalakbay sa chain."
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "Pinirmahan ng Root. Umiiral ito para magamit nang isang beses ang key ng Root at saka iwan: naaayos ang compromise dito sa pamamagitan ng muling pag-issue ng tier na ito, at ang compromise ng Root ay hindi naaayos kailanman. 1 ang pathLen, kaya puwede itong pumirma ng isa pang CA at hindi na lalalim pa."
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "Pinirmahan ng Intermediate, at ang tanging tier na pumipirma ng anumang ibinibigay ng serbisyong ito. 0 ang pathLen — pumipirma ito ng mga LEAF at walang ibang CA, kaya ang \"hindi magagamit ang application certificate para gumawa ng isa pa\" ay katangian ng encoding sa halip na ng magandang asal ng serbisyong ito."
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "Ang mga key na ginagamit ng realm na ito para pumirma ng mga JWT — ang RSA key sa likod ng RS256, ang apat na ECDSA curve, ang parehong Edwards curve, at ang labing-isang post-quantum key kapag ginawa ang mga ito. Ang vine-verify ng client laban sa /oauth2/jwks."
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "Ang pumipirma ng XML document: mga SAML 2.0 at 1.1 assertion at response, WS-Federation, WS-Trust, at ang per-service-provider metadata. HIWALAY itong authority sa nasa itaas kahit iisang RSA key ang gumagawa ng parehong trabaho ngayon — ang relying party na nagtitiwala sa serbisyong ito para sa SAML ay walang sinasabi tungkol sa mga OAuth token nito, at ang dalawang Issuing CA ang paraan para masabi iyon."
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "Ang mga signing key pair na in-issue sa mga APPLICATION para sa RFC 7521 at RFC 7523 — isang client assertion, o isang JWT bearer authorization grant. Ito ang Issuing CA na mayroon ang module na ito bago lumaki ang hierarchy at nagkaroon ng iba, sa ilalim ng pangalang nagsasabi kung alin ito sa lima."
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "Ang certificate na sine-serve sa LDAPS 636, sa main port kapag naka-on ang global.https, at sa listener ng embedded debugger — binura noong 2026-09-16 ang mga listener na 8443 at 9443 na pinagpangalanan pa rin ng use case na ito. PROCESS-scoped dahil ganoon ang mga socket na iyon: iisang certificate ang sumasagot sa bawat realm, kaya kung pipirmahan ito ng Intermediate ng isang realm, gagarantiyahan ng isang realm ang front door ng bawat ibang realm."
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "Ang mga certificate na ipinapakita sa isa't isa ng mga node ng serbisyong naka-deploy bilang mga cell sa inter-cell channel (cells.port), bilang server at bilang client, bawat isa ay nagpapangalan ng cell nito sa isang urn:sts:cell: subjectAltName. Panandalian, ginagawa ulit ng bawat node, at hindi kailanman itinatala. Tinatanggap lang ang peer na may leaf mula sa authority na ito. Hindi ginagamit sa single-cell mode."
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "Ang X.509 authority na pumipirma sa bawat X509-SVID na ginawa sa realm na ito. REALM-scoped mula 2026-09-11 — bago noon, nasa ilalim ito ng process Intermediate, self-signed at ganap na labas sa tree na ito. Hindi apektado ng paglipat ang trust ANCHOR at iyon ang punto: inilalathala ng bundle ang service Root, na shared ng bawat realm, kaya ang SVID na pinirmahan ng authority ng anumang realm ay nave-verify laban sa iisang anchor habang sinasabi pa rin ng chain nito kung aling realm ang nag-issue nito."
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "Ang mga certificate na sine-serve ng remote XACML Policy Enforcement Point sa HTTPS listener nito. REALM-scoped dahil nagre-register ang remote PEP laban sa iisang realm at ipinapatupad ang policy ng realm na iyon, kaya ang authority na gumagarantiya sa front door nito ay ang sa realm na iyon. In-iissue sa NAKA-REGISTER na PEP mula sa /admin/xacml/peps o POST /admin-api/xacml/issue-pep-certificate; ibinibigay nang isang beses ang private key at walang kopyang itinatago ang serbisyong ito."
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "Ang mga certificate na ipinapakita ng custom HTTPS listener (#472: listeners.custom para sa sa serbisyo, listeners.realm para sa sariling listener ng realm) kapag walang pinangangalanang certificate file ang definition nito, para sa mga hostname nito. REALM-scoped dahil pag-aari ng iisang realm ang listener — ang default realm, para sa sa serbisyo. Isa bawat listener bawat node; hindi kailanman umaalis ang private key sa node na nagse-serve nito."
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "Ang certificate na ginagamit ng KDC ng realm na ito para pirmahan ang mga PKINIT reply nito (RFC 4556): id-pkinit-KPKdc sa extended key usage nito at ang ticket-granting service ng realm, krbtgt/REALM@REALM, sa isang id-pkinit-san. Isa bawat process, ginagawa kapag unang ginamit ang PKINIT; hindi kailanman umaalis ang private key sa process na gumawa nito."
+  },
+  "pki.useCases.acme.what": {
+    "en": "85c88fe668bcb64d",
+    "text": "Mga certificate na in-issue sa ACME (RFC 8555) sa /enroll/acme, sa person o application entry na pinag-issue-han ng External Account Binding key. Pinangangalanan ng bawat leaf ang entry na iyon sa isang urn:sts:person: o urn:sts:application: subjectAltName."
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "Mga certificate na in-issue sa EST (RFC 7030) sa /.well-known/est, sa entry na na-authenticate ng password, client secret o client certificate na in-issue ng realm, o — para sa administrator — sa entry na pinangangalanan ng request. Ang tanging enrollment path kung saan puwedeng gumawa ang serbisyong ito ng key pair (/serverkeygen)."
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "Mga certificate na in-issue sa SCEP (RFC 8894) sa /enroll/scep, sa entry na pinag-issue-han ng single-use challenge password. Leaf din ng CA na ito ang RA certificate na pinag-e-encrypt-an ng SCEP ng mga request, na may RSA key dahil RSA ang key transport ng SCEP."
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "903e048677f8ab58",
+    "text": "Ang mga TLS client certificate na ini-issue ng mga tao para sa sarili nila sa user portal: clientAuth, ang urn:sts:person: name ng tao, at private key na ibinibigay nang isang beses bilang PKCS#12. Ang certificate mula sa authority na ito ay nagsa-sign in sa may hawak nito sa GET /tls/sign-in sa main port, sa realm na ito; hindi ito ginagawa ng certificate mula sa anumang ibang authority ng serbisyong ito, kahit lahat sila ay nagche-chain sa iisang Root."
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "Isang naka-register na OAuth client o relying party. Isinusulat ang key pair nito sa sarili nitong entry sa ou=applications."
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "Isang tao sa ou=users. Pumipirma ang key pair nila ng RFC 7523 section 2.1 assertion TUNGKOL SA KANILANG SARILI at hindi tungkol sa iba — tingnan ang common/person_assertions.js, kung saan ipinapaliwanag ang pagtanggi."
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "Isang JWS signing key. Isinusulat ang public half nito sa application bilang JWKS (oauthAssertionJwks) na may dalang certificate chain sa x5c, na siyang paraan ng RFC 7523 sa pag-register ng key."
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "Isang XML Signature key. Isinusulat ang certificate nito sa application bilang PEM (oauthSamlAssertionCertificate), dahil walang JWKS ang SAML at ang nire-register ng isang party para sa profile na iyon ay ISANG certificate."
+  },
+  "pki.report.encoder": {
+    "en": "e62315ba46619e60",
+    "text": "common/vendored/x509.js — ang sariling PKI code ng parent project, byte-identical, sa ibabaw ng pkijs at asn1js. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng project na iyon."
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "Nasa persistence store ang mga CA private key, naka-seal sa ilalim ng parehong key-encryption key ng mga signing key, at nananatili pagkatapos ng restart."
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "Sa memory lang hawak ang mga CA private key. Nasa development mode ang serbisyong ito, kung saan ginagawa ang key material sa bawat pag-start — mawawala ang hierarchy na binuo ngayon kapag nag-exit ang process na ito."
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "Walang ibinigay na dahilan. Sinasabi ng RFC 5280 section 5.3.1 na DAPAT alisin ang reason code extension para sa value na ito, kaya walang anumang dahilan ang entry na na-revoke sa ganitong paraan — iyon ang ibig sabihin ng \"unspecified\" sa wire."
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "Alam o pinaghihinalaang nasa kamay ng iba ang private key. Ang tanging dahilan na nagsasabing hindi kailanman ligtas ang certificate sa halip na hindi na lang ito kailangan."
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "Na-compromise ang sariling key ng CA. Ginagamit sa Intermediate o Issuing CA, at dapat ituring ding compromised ang lahat sa ilalim nito."
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "Nagbago ang pangalan o affiliation ng subject, kaya hindi na totoo ang sinasabi ng certificate."
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "May in-issue na kapalit. **Ito ang ginagamit ng serbisyong ito kapag nire-rotate o muling in-iissue ang isang certificate**, na siyang pinakakaraniwang entry sa alinman sa mga list na ito."
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "Tumigil na ang subject sa anumang ginagawa nito na pinag-ukulan ng certificate."
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "Pansamantalang sinuspinde. **Ang tanging dahilan na puwedeng BAWIIN** — permanente ang lahat ng iba pa, at may karapatan ang validator na i-cache ang permanenteng revocation hangga't sinasabi ng CRL na sariwa ito."
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "Wala nang karapatan ang subject sa ina-assert ng certificate."
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "Na-compromise ang key ng isang attribute authority. Narito para sa pagkakumpleto: walang ini-issue na attribute certificate ang serbisyong ito."
+  }
+}

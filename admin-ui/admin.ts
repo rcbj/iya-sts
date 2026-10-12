@@ -798,6 +798,9 @@ import WebShell = require('./web_shell');
 import RealmsPage = require('./web_realms');
 import ClaimsPage = require('./web_claims');
 import DashboardPage = require('./web_dashboard');
+// The Protocols pages drawn as tabs (2026-10-12): the stylesheet marks the
+// tab being read, and only `web_pages.ts` knows every tab id.
+import WebPagesTable = require('./web_pages');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -4513,8 +4516,10 @@ class AdminConsole {
        'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
-       'kerberos-tab-claims', 'kerberos-tab-principals'],
-      CERT_TAB_IDS, CERT_SUB_TAB_IDS).map(function (id) {
+       'kerberos-tab-claims', 'kerberos-tab-principals',
+       'scim-tab-metadata', 'server', 'clients'],
+      CERT_TAB_IDS, CERT_SUB_TAB_IDS,
+      WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
           USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
           CERT_SUB_TAB_IDS.indexOf(id) >= 0;

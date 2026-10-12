@@ -200,15 +200,20 @@ function userFor(plan, prepared) {
     // and it timed out five minutes later (vp-hash request-uri-method-post,
     // 2026-09-30). runModule() calls this on every poll while the module
     // waits, so clearing the mark is the retry.
+    // STARTED THROUGH `/admin-api` (#587): the demonstration's
+    // /oid4vp/start becomes development-only (#585), and the operation
+    // builds the request with the page's own function, answering as
+    // `walletUrl` the address the page redirects to.
     try {
-      const r = await oidf.send(prepared.realm.base + "/oid4vp/start?" +
-        new URLSearchParams(Object.assign(
+      const r = await oidf.ok(prepared.realm.base +
+        "/admin-api/verifications/start", Object.assign(
           { mode: "same-device", format: "dc+sd-jwt",
             response_mode: plan.responseMode },
-          plan.prefix ? { client_id_prefix: plan.prefix } : {})).toString());
-      const to = r.headers.get("location") || "";
-      assert.ok(to.indexOf(oidf.SUITE) === 0, "the start page sent nobody " +
-                "to the suite: " + r.status + " " + r.raw.slice(0, 300));
+          plan.prefix ? { client_id_prefix: plan.prefix } : {}),
+        "started a verification");
+      const to = String(r.walletUrl || "");
+      assert.ok(to.indexOf(oidf.SUITE) === 0, "the start sent nobody to " +
+                "the suite: " + JSON.stringify(r).slice(0, 300));
       const got = await oidf.suite("GET", to.slice(oidf.SUITE.length));
       log.info("  sent the End-User to the wallet: " + got.status);
     } catch (e) {

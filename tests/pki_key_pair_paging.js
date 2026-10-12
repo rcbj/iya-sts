@@ -183,9 +183,10 @@ async function runBody(t) {
   const body = await drawPage(query);
   t.check(body.indexOf('<table') >= 0, 'the page is drawn',
           body.slice(0, 200));
-  const appsMarkup = between(body, 'pki-applications',
-                             'Issue a signing key pair to a person');
-  const peopleMarkup = between(body, 'pki-people', 'Revoking a certificate');
+  // Each list is a tab of the page since 2026-10-12, so it ends where its
+  // tab does.
+  const appsMarkup = between(body, 'pki-applications', '</section>');
+  const peopleMarkup = between(body, 'pki-people', '</section>');
 
   const expectedApps = json.issued.slice((appPage - 1) * perPage,
                                          appPage * perPage)
@@ -268,9 +269,8 @@ async function runBody(t) {
   const searchedBody = await drawPage({ issuedq: APPS[3],
                                        personsq: PEOPLE[0] });
   const searchedApps = between(searchedBody, 'pki-applications',
-                               'Issue a signing key pair to a person');
-  const searchedPeople = between(searchedBody, 'pki-people',
-                                 'Revoking a certificate');
+                               '</section>');
+  const searchedPeople = between(searchedBody, 'pki-people', '</section>');
   t.equal(namesIn(searchedApps, APPS).join(','), APPS[3],
           'the Applications table draws only the match');
   t.equal(namesIn(searchedPeople, PEOPLE).join(','), PEOPLE[0],
@@ -278,7 +278,7 @@ async function runBody(t) {
   t.check(/name="back" value="[^"]*issuedq=/.test(searchedApps),
           'a Take-off button carries the search back with it');
   const missing = await drawPage({ personsq: 'nobody-' + RUN });
-  t.check(between(missing, 'pki-people', 'Revoking a certificate')
+  t.check(between(missing, 'pki-people', '</section>')
     .indexOf('Nobody matches the search.') >= 0,
           'a search that matches nobody says so');
   log.debug("Leaving runBody().");

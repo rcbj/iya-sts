@@ -506,7 +506,10 @@ class CertificateDialogView {
         self.fieldsHtml(view.certificate, t);
     }
     return STYLE +
-      '<div class="certdlg-backdrop" id="certificate-details">' +
+      // Drawn after a tabbed page's tabs (`WebPages.protocolTabs()`), so it
+      // is over the page whichever tab is open.
+      '<div class="certdlg-backdrop" id="certificate-details" ' +
+      'data-outside-tabs>' +
       '<div class="certdlg" role="dialog" aria-modal="true" ' +
       'aria-labelledby="certdlg-title">' +
       '<div class="certdlg-head"><h2 id="certdlg-title">' + esc(title) +
