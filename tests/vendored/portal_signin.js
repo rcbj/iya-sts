@@ -53,6 +53,13 @@ const signin = require("./console_signin.js");
 const log = require("bunyan").createLogger({ name: "portal_signin",
   level: process.env.STS_LOG_LEVEL || "info" });
 
+// A DESKTOP BROWSER'S USER-AGENT on every request, as the portal's own
+// requests carry one: product mode's risk scoring (#62) refuses a first
+// sign-in from an agent that reads as a bot, and the jobs that walked the
+// portal with a browser of their own sent this string before #568.
+const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
 function b64u(buffer) {
   log.debug("Entering b64u().");
   log.debug("Leaving b64u().");
@@ -157,7 +164,8 @@ async function mirroring(base, method, path) {
 async function nobody(base, method, path, body) {
   log.debug("Entering nobody().");
   const url = /^https?:/.test(path) ? path : base + path;
-  const init = { method: method, headers: { accept: "application/json" } };
+  const init = { method: method, headers: { accept: "application/json",
+                                            "User-Agent": AGENT } };
   if (body !== undefined) {
     init.headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -205,7 +213,8 @@ async function signInToThePortal(base, user, log2, options) {
 
   async function fetchKeeping(url, init) {
     const sent = Object.assign({ redirect: "manual" }, init || {});
-    sent.headers = Object.assign({ cookie: cookies.header() },
+    sent.headers = Object.assign({ cookie: cookies.header(),
+                                   "User-Agent": AGENT },
                                  sent.headers || {});
     const r = await fetch(url, sent);
     cookies.keep(r);
@@ -295,6 +304,7 @@ async function signInToThePortal(base, user, log2, options) {
       const r = await fetch(tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded",
+                   "User-Agent": AGENT,
                    dpop: key.proof("POST", tokenUrl, "") },
         body: new URLSearchParams(form).toString() });
       key.keepNonce(r);
@@ -340,7 +350,7 @@ async function signInToThePortal(base, user, log2, options) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const headers = { authorization: "DPoP " + token,
                         dpop: key.proof(method, url, token),
-                        accept: "application/json" };
+                        accept: "application/json", "User-Agent": AGENT };
       const init = { method: method, headers: headers };
       if (body !== undefined) {
         headers["content-type"] = "application/json";
