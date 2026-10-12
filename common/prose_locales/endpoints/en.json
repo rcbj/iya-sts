@@ -112,6 +112,7 @@
   "endpoints.route./portal/portal.js.name": "The portal's script",
   "endpoints.route./portal/portal.css.name": "The portal's stylesheet",
   "endpoints.route./portal/signals/receive.name": "The portal's Shared Signals receive endpoint",
+  "endpoints.route./portal/claim-sources/start.name": "Connected claim sources — binding the browser to a link",
   "endpoints.route./portal/claim-sources/callback.name": "Connected claim sources — the provider's answer",
   "endpoints.route./admin-api.name": "Management API index",
   "endpoints.route./admin-api/logout.name": "Live sessions, and ending them",

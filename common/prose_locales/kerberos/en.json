@@ -4,6 +4,7 @@
   "kerberos.notes.modeDevelopment": "This KDC is a DEVELOPMENT one: every user is keyed from krb5.userPassword and people are never given stored keys. Service principals created here are used in both modes.",
   "kerberos.notes.realmServed": "A KDC PER TRUST REALM: these are the people and applications of the trust realm this page is read in, as principals of its own Kerberos realm {{kerberosRealm}}.",
   "kerberos.notes.realmNone": "THIS TRUST REALM HAS NO KDC: {{reason}}. Set krb5.realm on the realm and turn krb5.enabled on to give it one; port 88 routes a request by the Kerberos realm name inside it.",
+  "kerberos.notes.realmInactive": "THIS TRUST REALM'S KDC IS ON BUT CANNOT BE USED: {{reason}}. Its Kerberos realm is {{kerberosRealm}}.",
   "kerberos.notes.window": "Keys are derived AFTER a password is set or verified and take a few tens of milliseconds to land; until they do, the KDC refuses the person rather than accepting an older key.",
   "kerberos.notes.previous": "A password change or a rotation keeps the version it replaced — at most krb5.retainedKeyVersions of them, each for krb5.retainedKeyTtlS — so a ticket issued under it is still accepted until it could have expired. A previous version only ever OPENS such a ticket: nothing is issued under it and an old password never signs in. \"Drop previous versions\" ends the window at once, after a compromise.",
   "kerberos.notes.param.noKdcReason": "krb5.enabled is off for it"
