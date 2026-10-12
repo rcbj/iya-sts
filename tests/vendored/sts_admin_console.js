@@ -2648,7 +2648,11 @@ function consolePostPathsIn(mirrors) {
   let found = pattern.exec(String(mirrors || ""));
   while (found) {
     const path = found[1].replace(/[.,;]+$/, "")
-                         .replace(/\/:.*$/, "").split("?")[0];
+                         .replace(/\/:.*$/, "").split("?")[0]
+                         // A tab's mirror names its fragment
+                         // (`/admin/xacml#xacml-tab-editor`); a form's target
+                         // is a path, so the fragment is not part of the route.
+                         .split("#")[0];
     if (path && paths.indexOf(path) < 0) {
       paths.push(path);
     }
