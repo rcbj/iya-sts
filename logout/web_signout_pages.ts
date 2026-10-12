@@ -281,7 +281,11 @@ class SignoutPages {
           '">' + t.html('logout.result.lookAgain') + '</a>' +
           t.html('logout.result.lookAgainEnd') + '</p>'
         : '<div class="ok">' + t.html('logout.result.nothingLeft',
-                                      { key: view.key }) + '</div>');
+                                      { key: view.key }) + '</div>') +
+      // The way on (rcbj, 2026-10-12): the person's own account. A
+      // root-relative link, which the runtime puts under the realm.
+      '<p><a class="btn" href="/portal">' +
+      t.html('logout.result.toPortal') + '</a></p>';
   }
 
   /**

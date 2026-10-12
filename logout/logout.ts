@@ -297,7 +297,10 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
   '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
   'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
-  'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
+  'color:#fff;font-weight:600}a.btn{display:inline-block;padding:' +
+  '.45rem .9rem;border-radius:4px;border:1px solid #999;background:' +
+  '#f6f6f6;color:#111;text-decoration:none}' +
+  '.actions{margin:1.2rem 0;display:flex;' +
   'gap:.8rem;flex-wrap:wrap;align-items:center}' +
   // The console's fold, restyled for this page's palette: a `<details>`
   // whose summary is the prose's opening sentence (`WebKit.note()`), so
@@ -3176,7 +3179,11 @@ class Logout {
           '">' + t.html('logout.result.lookAgain') + '</a>' +
           t.html('logout.result.lookAgainEnd') + '</p>'
         : '<div class="ok">' + t.html('logout.result.nothingLeft',
-                                      { key: result.key }) + '</div>');
+                                      { key: result.key }) + '</div>') +
+      // The way on, as the in-browser result draws it (rcbj, 2026-10-12):
+      // root-relative, so app.js puts it under the realm on the way out.
+      '<p><a class="btn" href="/portal">' +
+      t.html('logout.result.toPortal') + '</a></p>';
     log.debug("Leaving Logout.resultPage().");
     // Drawn by the POST; the GET that draws the sign-out again is /logout.
     return this.page(t, realms.currentPrefix() + LOGOUT_PATH,

@@ -31,6 +31,7 @@
   "result.lookAgain": "Titta igen",
   "result.lookAgainEnd": ".",
   "result.nothingLeft": "Inget. Den här tjänsten håller ingen aktiv session eller autentiseringsuppgift för {key} som den fortfarande kan se.",
+  "result.toPortal": "Gå till ditt konto i användarportalen",
   "tab.signOut": "Logga ut",
   "tab.details": "Detaljer",
   "list.colProtocol": "Protokoll",
