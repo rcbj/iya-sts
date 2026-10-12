@@ -2541,7 +2541,10 @@ class Scheduler {
     log.debug("Entering Scheduler.nextRunOf().");
     view.nextRunAt = null;
     view.nextRunInMs = null;
+    // The pair is set together and cleared together: a reason without the
+    // time it explains would be a stale sentence on a job that is not late.
     view.overdueSince = null;
+    view.overdueWhy = null;
     if (off) {
       view.nextRunState = 'off';
       log.debug("Leaving Scheduler.nextRunOf(). Off.");
