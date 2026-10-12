@@ -27,6 +27,8 @@
 //      carrying who, the session, the flags, amr, acr and the checks.
 //   5. SIGNED IN for a waiting request: the 303 to `returnTo`, no shell.
 //   6. The state draws: `kerberos/web_authn_spnego.ts` over each view.
+//   7. The sign-in runtime draws the challenge from the shell it came in,
+//      in the browser's language, fetching catalogs and no view.
 //
 // Every response's status and headers (CSP and per-request values set
 // aside) are reported as a snapshot, which is what was compared against the
@@ -187,7 +189,7 @@ function childMain() {
          '2. a token that is not SPNEGO is the negotiation\'s own 401, drawn ' +
          'by the server as it was', JSON.stringify(snaps.refused));
 
-    // --- 3. off ------------------------------------------------------------------
+    // --- 3. off --------------------------------------------------------------
     config.setOverride('krb5.spnegoAuthentication', 'false');
     at = begin();
     r = await get('/authn/spnego?authn=' + encodeURIComponent(idOf(at)));
@@ -207,7 +209,7 @@ function childMain() {
          JSON.stringify(state));
     config.setOverride('krb5.spnegoAuthentication', 'true');
 
-    // --- 4. signed in, nothing interrupted -------------------------------------
+    // --- 4. signed in, nothing interrupted -----------------------------------
     // THE ACCEPTOR'S VERDICT, STOOD IN FOR: what is under test is what the
     // door does with an accepted ticket, not the ticket (the protocol jobs
     // `sts_kerberos_spnego.js` and `sts_kerberos_heimdal.js` spend real ones).
@@ -247,7 +249,7 @@ function childMain() {
          'ticket claimed', JSON.stringify(state));
     const signedIn = state;
 
-    // --- 5. signed in for a waiting request --------------------------------------
+    // --- 5. signed in for a waiting request ----------------------------------
     at = begin();
     r = await get('/authn/spnego?authn=' + encodeURIComponent(idOf(at)),
                   { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) ' +
@@ -261,7 +263,7 @@ function childMain() {
          JSON.stringify(snaps.returned));
     exchange.negotiate = realNegotiate;
 
-    // --- 6. the state draws ------------------------------------------------------
+    // --- 6. the state draws --------------------------------------------------
     const draw = require(ROOT_DIR + '/kerberos/web_authn_spnego');
     const t = englishSpnego();
     const html = draw.render(signedIn.view, { t: t });
@@ -279,7 +281,72 @@ function childMain() {
          '6b. the off state names the setting and the way back, and no ' +
          'demonstration a realm is not served', off.slice(0, 300));
 
-    note(true, '7. the snapshot of statuses and headers',
+    // --- 7. the runtime draws the embedded page, fetching no view ------------
+    at = begin();
+    r = await get('/authn/spnego?authn=' + encodeURIComponent(idOf(at)));
+    const attrs = {};
+    const tag = /<html([^>]*)>/.exec(r.text)[1];
+    tag.replace(/ ([a-z-]+)="([^"]*)"/g, function (all, n, v) {
+      attrs[n] = v.replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      return all;
+    });
+    const asked = [];
+    const loc = new URL('https://sts.example/authn/spnego?authn=' +
+                        encodeURIComponent(idOf(at)));
+    const env = {
+      location: { pathname: loc.pathname, search: loc.search, hash: '',
+                  href: loc.href, origin: 'https://sts.example',
+                  assign: function () {
+                    return undefined;
+                  } },
+      history: { pushState: function () {
+        return undefined;
+      }, replaceState: function () {
+        return undefined;
+      } },
+      document: {
+        title: '', body: { innerHTML: '' },
+        documentElement: {
+          getAttribute: function (n) {
+            return n in attrs ? attrs[n] : null;
+          },
+          setAttribute: function (n, v) {
+            attrs[n] = v;
+          }
+        },
+        addEventListener: function () {
+          return undefined;
+        }
+      },
+      navigator: { languages: ['fr', 'en'] },
+      fetch: function (url, init) {
+        const u = new URL(url);
+        asked.push(u.pathname);
+        return fetch('http://127.0.0.1:' + port + u.pathname + u.search,
+                     init);
+      }
+    };
+    const AuthnSurface = require(ROOT_DIR + '/authn/web_authn');
+    const surface = new AuthnSurface(env);
+    await surface.route();
+    const drawn = env.document.body.innerHTML;
+    note(/^<div class="card wide">/.test(drawn) &&
+         drawn.indexOf('href="/authn/login?authn=' +
+                       encodeURIComponent(idOf(at)) + '"') > 0 &&
+         /lang="fr"|<option value="fr[^"]*"[^>]* selected/.test(drawn) &&
+         drawn.indexOf('Kerberos') > 0 &&
+         !asked.some(function (p) {
+           return /^\/authn-api/.test(p);
+         }) &&
+         asked.some(function (p) {
+           return /^\/web\/locales\/spnego\//.test(p);
+         }),
+         '7. the runtime draws the challenge from the shell\'s state, in ' +
+         'the browser\'s language, asking /authn-api for nothing',
+         JSON.stringify(asked) + ' ' + drawn.slice(0, 600));
+
+    note(true, '8. the snapshot of statuses and headers',
          JSON.stringify(snaps));
     config.clearOverride('krb5.spnegoAuthentication');
     server.close();

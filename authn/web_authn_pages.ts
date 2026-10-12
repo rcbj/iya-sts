@@ -11,11 +11,11 @@
 // Rows in `common/web_surface.ts`'s shape — the screen, the federation
 // chooser and the forced password change, each with the `/authn-api`
 // operation its view is the answer of; and the SPNEGO sign-in's bodies
-// (#575), whose view the shell carries instead. Each operation names its resource in
-// the PATH (the pending sign-in's id, the step's id), which the browser
-// reads off the location's query (`?authn=`, `?change=`) — the addresses
-// `beginAuthentication()` and the screen's acts have always sent a browser
-// to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
+// (#575), whose view the shell carries instead. Each operation names its
+// resource in the PATH (the pending sign-in's id, the step's id), which the
+// browser reads off the location's query (`?authn=`, `?change=`) — the
+// addresses `beginAuthentication()` and the screen's acts have always sent a
+// browser to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
 // global `StsAuthn`, which `tests/web_surfaces.js` loads to draw a page from
 // a view after the wire and compare it, byte for byte, with this process's
 // drawing.
