@@ -30,6 +30,8 @@
 // job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -166,10 +168,39 @@ function asciiDescription(body) {
 
 // One browser, manual redirects and a cookie jar of its own, for
 // `sts_consent.js`'s reason: which redirect comes back IS the assertion.
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -212,14 +243,16 @@ async function authorizeSignedIn(prefix, query) {
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it answered " + r.status + " " + r.location + " " +
     r.text.slice(0, 300));
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", prefix + "/authn/login",
-                 form({ authn_id: authnId, username: PERSON,
-                        password: PASSWORD, action: "login" }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in form should redirect, got " + r.status);
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, in the
+  // realm the request was made in.
+  const answer = await authnSignin.submit(base + prefix, r.location,
+    { action: "login", username: PERSON, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  keepCookies(b, answer);
+  assert.ok(answer.next === "redirect",
+    "the sign-in should answer where to go, got " + answer.status + " " +
+    answer.next + " " + JSON.stringify(answer.errors));
+  r = { status: 303, location: answer.location };
   r = await b.go("GET", r.location);
   log.debug("Leaving authorizeSignedIn(). " + r.status + " " + r.location);
   return r;
