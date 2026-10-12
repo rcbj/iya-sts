@@ -1666,6 +1666,12 @@ const CODES = [
       'would or might connect in the clear. Every connection is TLS (#273). ' +
       'Fatal at persistence.start().',
     spec: '' },
+  { code: 'STS-STORE-0079',
+    summary: 'persistence.databaseTlsCaFile names a file that could not be ' +
+      'read, or that holds no PEM certificate, so the database connection ' +
+      'has no trust anchor anybody chose. Fatal at persistence.start(); ' +
+      'the out-of-process tools that dial the database refuse the same way.',
+    spec: 'none — fatal at start' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -8800,10 +8800,22 @@
     "text": "Verificar el certificado de la base de datos"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "f43d1062e91c3dbe",
-    "text": "Si el certificado del servidor PostgreSQL debe verificarse contra un ancla de confianza que tenga este proceso. DESACTIVADO por defecto, y eso es una afirmación sobre la PILA y no un valor predeterminado debilitado: el certificado se genera dentro del contenedor de postgres en su primer arranque y no lo firma nadie, así que no hay nada contra lo que un cliente pueda verificarlo, y activar esto rechazaría cada conexión con un mensaje sobre un certificado autofirmado. LA CONEXIÓN SIGUE CIFRADA en cualquier caso — este servicio nunca se conecta a su base de datos sin cifrar (#273), el propio pg_hba.conf de la base de datos también exige TLS, y esto solo decide si el servidor se AUTENTICA. Actívelo cuando apunte esto a una base de datos real cuyo certificado encadene a algo que nombre NODE_EXTRA_CA_CERTS; entonces comprueba la cadena y el nombre de host. Solo decide para una cadena de conexión cuyo sslmode no está establecido o es require o prefer: sslmode=verify-full verifica la cadena y el nombre de host, y sslmode=verify-ca solo la cadena (tal como los lee libpq), diga esto lo que diga."
+    "en": "349255b3b313fd58",
+    "text": "Si el certificado del servidor PostgreSQL debe verificarse contra un ancla de confianza que tenga este proceso, cadena y nombre de host. ACTIVADO por defecto, en todos los modos. Los anclajes de confianza son persistence.databaseTlsCaFile cuando está definido, y en otro caso el almacén de confianza predeterminado de este proceso (con NODE_EXTRA_CA_CERTS). ADVERTENCIA: desactivarlo deja el servidor de base de datos SIN AUTENTICAR — la conexión sigue cifrada (este servicio nunca se conecta a su base de datos sin cifrar, #273), pero cualquier cosa que pueda responder en la dirección de la base de datos puede suplantarla y leer y escribir cada fila que guarda este servicio, incluidas las claves selladas y el directorio. Desactívelo solo para una base de datos desechable que entregaría a cualquiera. Solo decide para una cadena de conexión cuyo sslmode no está establecido o es require o prefer: sslmode=verify-full verifica la cadena y el nombre de host, y sslmode=verify-ca solo la cadena (tal como los lee libpq), diga esto lo que diga."
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "el pool de conexiones se abre antes de que se vincule la escucha"
+  },
+  "persistence.databaseTlsCaFile|label": {
+    "en": "cecd97b1da67d416",
+    "text": "Archivo de certificados de CA de la base de datos"
+  },
+  "persistence.databaseTlsCaFile|description": {
+    "en": "a1782a05a9d84547",
+    "text": "Un archivo PEM de certificados de CA en los que se confía ÚNICAMENTE para las conexiones a la base de datos, en lugar del almacén de confianza predeterminado de este proceso para ellas; nada más a lo que se conecta este servicio confía en ellos. Puede nombrar en su lugar un directorio, y entonces se lee cada archivo .crt y .pem que contenga. Vacío usa el almacén de confianza predeterminado (con NODE_EXTRA_CA_CERTS). Un archivo nombrado que no se puede leer, o que no contiene ningún certificado, detiene el servicio al arrancar. La pila de compose lo define como el certificado que genera su contenedor de postgres, compartido en solo lectura y sin la clave."
+  },
+  "persistence.databaseTlsCaFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "el pool de conexiones se abre antes de que se vincule la escucha"
   },

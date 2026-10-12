@@ -8800,10 +8800,22 @@
     "text": "验证数据库证书"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "f43d1062e91c3dbe",
-    "text": "PostgreSQL 服务器的证书是否必须依据本进程持有的信任锚通过验证。默认“关闭”，这是对“栈”的陈述，而非削弱的默认值：该证书是 postgres 容器首次启动时在容器内生成的，没有任何人签署，因此客户端没有可据以验证它的依据，打开此项会以自签名证书的消息拒绝每个连接。无论如何，“连接仍是加密的”——本服务从不以明文拨号连接其数据库（#273），数据库自己的 pg_hba.conf 也要求 TLS，此项只决定服务器是否经过“身份验证”。当您将其指向一个证书链接到 NODE_EXTRA_CA_CERTS 所指内容的真实数据库时，请打开它；此时它会检查证书链和主机名。它只对 sslmode 未设置、为 require 或为 prefer 的连接字符串起决定作用：sslmode=verify-full 会验证证书链和主机名，sslmode=verify-ca 只验证证书链（按照 libpq 的理解），无论此项如何设置。"
+    "en": "349255b3b313fd58",
+    "text": "PostgreSQL 服务器的证书是否必须依据本进程持有的信任锚通过验证，包括证书链和主机名。默认“开启”，在每种模式下均如此。设置了 persistence.databaseTlsCaFile 时，信任锚为该文件中的证书，否则为本进程的默认信任库（以及 NODE_EXTRA_CA_CERTS）。“警告”：关闭此项会使数据库服务器“未经身份验证”——连接仍是加密的（本服务从不以明文拨号连接其数据库，#273），但任何能在数据库地址上应答的一方都可以冒充它，并读写本服务保存的每一行数据，包括已封存的密钥和目录。只有对于您愿意交给任何人的一次性数据库，才可关闭此项。它只对 sslmode 未设置、为 require 或为 prefer 的连接字符串起决定作用：sslmode=verify-full 会验证证书链和主机名，sslmode=verify-ca 只验证证书链（按照 libpq 的理解），无论此项如何设置。"
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "连接池在监听器绑定之前打开"
+  },
+  "persistence.databaseTlsCaFile|label": {
+    "en": "cecd97b1da67d416",
+    "text": "数据库 CA 证书文件"
+  },
+  "persistence.databaseTlsCaFile|description": {
+    "en": "a1782a05a9d84547",
+    "text": "一个包含 CA 证书的 PEM 文件，这些证书“仅”对与数据库的连接受信任，并在这些连接上取代此进程的默认信任库；本服务拨号连接的其他任何对象都不信任它们。也可以改为指定一个目录，此时会读取其中的每个 .crt 和 .pem 文件。留空则使用默认信任库（以及 NODE_EXTRA_CA_CERTS）。已指定但无法读取或不含任何证书的文件，会使服务在启动时停止。compose 栈将其设为其 postgres 容器生成的证书，以只读方式共享，不含私钥。"
+  },
+  "persistence.databaseTlsCaFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "连接池在监听器绑定之前打开"
   },

@@ -40,12 +40,12 @@
     "text": "签名无法通过验证的已接收 Security Event Token 会被拒绝"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "POST /ssf/receive 以及控制台和门户自己的接收方会接受它、记录它，并说明它为何未通过验证——这是调试器的姿态——除非 ssf.receiveRequireSignature 已开启。不会据此采取任何行动。"
+    "en": "298534c9f2c4f318",
+    "text": "POST /ssf/receive 以及控制台和门户自己的接收方会接受它、记录它，并说明它为何未通过验证——这是调试器的姿态——除非 ssf.receiveRequireSignature 已开启。不会据此采取任何行动。联合伙伴的 Shared Signals——无论是推送到 /federation/signals/{id} 还是通过轮询获取——也同样对待：未经验证的 SET 会以“未经验证”的状态记录在该关系的收件箱中，不会据此采取任何行动，除非 ssf.receiveRequireSignature 已开启。"
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "无论 ssf.receiveRequireSignature 如何设置，控制台和门户的接收方都应答 400 invalid_key（#117），并把它保存在收件箱中、标记为已拒绝。/ssf/receive 是开发端点，在此不存在（#585）。"
+    "en": "7823c19f4b2f69fb",
+    "text": "无论 ssf.receiveRequireSignature 如何设置，控制台和门户的接收方都应答 400 invalid_key（#117），并把它保存在收件箱中、标记为已拒绝。/ssf/receive 是开发端点，在此不存在（#585）。联合伙伴未经验证的 SET 同样以 invalid_key 被拒绝——对推送到 /federation/signals/{id} 的请求应答 HTTP 400；对通过轮询获取的 SET，则在下一次轮询请求的 setErrs 中报告——它会保存在该关系的收件箱中、标记为已拒绝，且绝不会据此采取任何行动。"
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",

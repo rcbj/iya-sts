@@ -28,24 +28,24 @@
     "text": "TLS, sslmode={{sslmode}}; servercertifikatet verifieras mot den här processens förtroendeankare."
   },
   "persistence.status.tlsUnverified": {
-    "en": "6e2726560995b06c",
-    "text": "TLS, sslmode={{sslmode}}; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är avstängd), vilket är den ärliga inställningen för det självsignerade paret som compose-stacken genererar. Anslutningen är krypterad i båda fallen."
+    "en": "72f7138134696ef9",
+    "text": "VARNING — TLS, sslmode={{sslmode}}, men servercertifikatet VERIFIERAS INTE (persistence.databaseTlsRejectUnauthorized är av), så databasservern är OAUTENTISERAD: vad som helst som kan svara på dess adress kan utge sig för att vara den och läsa och skriva varje rad som den här tjänsten lagrar. Anslutningen är krypterad, och det är allt. Slå på inställningen igen, med persistence.databaseTlsCaFile angiven till serverns CA där node inte redan litar på den."
   },
   "persistence.status.tlsDefaultVerified": {
     "en": "494e7b1b9be20828",
     "text": "TLS — anslutningssträngen anger inget sslmode, och den här tjänsten ringer upp varje databas över TLS; servercertifikatet verifieras mot den här processens förtroendeankare."
   },
   "persistence.status.tlsDefaultUnverified": {
-    "en": "72c099a645436b71",
-    "text": "TLS — anslutningssträngen anger inget sslmode, och den här tjänsten ringer upp varje databas över TLS; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är av). Anslutningen är krypterad i båda fallen."
+    "en": "67a6b00f57bdfed8",
+    "text": "VARNING — TLS (anslutningssträngen anger inget sslmode, och den här tjänsten ringer upp varje databas över TLS), men servercertifikatet VERIFIERAS INTE (persistence.databaseTlsRejectUnauthorized är av), så databasservern är OAUTENTISERAD: vad som helst som kan svara på dess adress kan utge sig för att vara den och läsa och skriva varje rad som den här tjänsten lagrar. Anslutningen är krypterad, och det är allt. Slå på inställningen igen, med persistence.databaseTlsCaFile angiven till serverns CA där node inte redan litar på den."
   },
   "persistence.status.tlsPreferVerified": {
     "en": "cc68c8b462e11562",
     "text": "TLS, sslmode=prefer — uppringd endast över TLS: libpq skulle falla tillbaka till en anslutning i klartext för prefer, och det gör den här tjänsten aldrig; servercertifikatet verifieras mot den här processens förtroendeankare."
   },
   "persistence.status.tlsPreferUnverified": {
-    "en": "8c3bb76819b4a57f",
-    "text": "TLS, sslmode=prefer — uppringd endast över TLS: libpq skulle falla tillbaka till en anslutning i klartext för prefer, och det gör den här tjänsten aldrig; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är av). Anslutningen är krypterad i båda fallen."
+    "en": "2a65ebb396c30cb4",
+    "text": "VARNING — TLS, sslmode=prefer, uppringd endast över TLS (libpq skulle falla tillbaka till en anslutning i klartext för prefer, och det gör den här tjänsten aldrig), men servercertifikatet VERIFIERAS INTE (persistence.databaseTlsRejectUnauthorized är av), så databasservern är OAUTENTISERAD: vad som helst som kan svara på dess adress kan utge sig för att vara den och läsa och skriva varje rad som den här tjänsten lagrar. Anslutningen är krypterad, och det är allt. Slå på inställningen igen, med persistence.databaseTlsCaFile angiven till serverns CA där node inte redan litar på den."
   },
   "persistence.status.tlsVerifyFull": {
     "en": "a451d583279b78a9",
@@ -54,6 +54,14 @@
   "persistence.status.tlsVerifyCa": {
     "en": "e202517083093044",
     "text": "TLS, sslmode=verify-ca; servercertifikatet verifieras mot den här processens förtroendeankare, som sslmode begär, oavsett vad persistence.databaseTlsRejectUnauthorized säger — men dess värdnamn kontrolleras INTE: verify-ca, som libpq läser det, litar på vilket certifikat som helst som en betrodd utfärdare har utfärdat. Använd verify-full för att även kontrollera namnet."
+  },
+  "persistence.status.trustCaFile": {
+    "en": "2e641ceb50a4206c",
+    "text": "Förtroendeankarna för den här anslutningen är certifikaten i {{file}} (persistence.databaseTlsCaFile), i stället för den här processens standardförtroendelager."
+  },
+  "persistence.status.caFileUnusable": {
+    "en": "ce51e3182e53d854",
+    "text": "INTE UPPRINGD — persistence.databaseTlsCaFile anger {{file}}, som inte kan läsas eller inte innehåller något certifikat, så den här tjänsten startar inte med den."
   },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",

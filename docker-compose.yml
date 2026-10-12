@@ -12,8 +12,10 @@ services:
       - POSTGRES_DB=sts
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
       - sts-db:/var/lib/postgresql
+      - sts-db-ca:/run/sts-db-ca
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       - ./postgres/require-tls.sh:/docker-entrypoint-initdb.d/00-require-tls.sh:ro
       - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
@@ -146,6 +148,7 @@ services:
     volumes:
       - sts-bao-client:/run/secrets/openbao:ro
       - sts-bao-startup:/run/secrets/openbao-startup
+      - sts-db-ca:/run/secrets/database-ca:ro
       - sts-data:/usr/src/sts/data
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
       - ./env:/usr/src/sts/env:ro
@@ -168,7 +171,8 @@ services:
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
       - ADMIN_API_AUTH_REQUIRED
       - ADMIN_API_AUDIENCE
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=verify-full}
+      - STS_DATABASE_TLS_CA_FILE=${STS_DATABASE_TLS_CA_FILE:-/run/secrets/database-ca/postgres.crt}
       - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault-transit}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-sts-kek}
@@ -238,5 +242,6 @@ volumes:
   sts-bao-client:
   sts-bao-startup:
   sts-db:
+  sts-db-ca:
   sts-data:
   sts-risk-uploads:

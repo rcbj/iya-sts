@@ -40,12 +40,12 @@
     "text": "Tinatanggihan ang natanggap na Security Event Token na ang signature ay hindi nagve-verify"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "Tinatanggap ito ng POST /ssf/receive at ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito."
+    "en": "298534c9f2c4f318",
+    "text": "Tinatanggap ito ng POST /ssf/receive at ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito. Ganoon din ang pagtrato sa Shared Signals ng isang federation partner, ipinush man sa /federation/signals/{id} o pino-poll: itinatala ang hindi na-verify na SET sa inbox ng relationship bilang hindi na-verify at hindi kinikilusan sa anumang paraan, maliban kung naka-on ang ssf.receiveRequireSignature."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "Sumasagot ng 400 invalid_key ang mga receiver ng console at portal, anuman ang sabihin ng ssf.receiveRequireSignature (#117), at iniingatan ito sa kanilang inbox na may markang tinanggihan. Ang /ssf/receive ay isang development endpoint at wala ito (#585)."
+    "en": "7823c19f4b2f69fb",
+    "text": "Sumasagot ng 400 invalid_key ang mga receiver ng console at portal, anuman ang sabihin ng ssf.receiveRequireSignature (#117), at iniingatan ito sa kanilang inbox na may markang tinanggihan. Ang /ssf/receive ay isang development endpoint at wala ito (#585). Tinatanggihan din nang invalid_key ang hindi na-verify na SET ng isang federation partner — HTTP 400 sa isang push sa /federation/signals/{id}, at sa setErrs ng susunod na poll request para sa isang pino-poll — iniingatan sa inbox ng relationship na may markang tinanggihan, at hindi kailanman kinikilusan."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",

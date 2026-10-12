@@ -735,7 +735,14 @@ class ProtocolSettingsPage {
         : (info.database
             ? (info.database.encrypted
                 ? '<strong>TLS</strong> &mdash; ' +
-                  kit.esc(String(info.database.tls))
+                  // An unauthenticated server is said in the page's red
+                  // (2026-10-12): encrypted and not authenticated is an
+                  // operator's choice since verification became the
+                  // default, and the sentence says what it costs.
+                  (info.database.verifyCertificate
+                    ? kit.esc(String(info.database.tls))
+                    : '<strong class="bad">' +
+                      kit.esc(String(info.database.tls)) + '</strong>')
                 : '<strong class="bad">' +
                   t.html('consoleProtocolSettings.perNotTls') +
                   '</strong> &mdash; ' +

@@ -221,8 +221,10 @@ services:
       POSTGRES_DB: sts
       STS_DB_APP_USER: sts_app
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+      POSTGRES_TLS_PUBLIC_DIR: /run/sts-db-ca
     volumes:
       - db-data:/var/lib/postgresql
+      - db-ca:/run/sts-db-ca
       - db-initdb:/docker-entrypoint-initdb.d:ro
       - db-share:/usr/local/share/sts:ro
     command:
@@ -314,7 +316,8 @@ services:
     environment:
       STS_MODE: product
       STS_PERSISTENCE_MODE: postgres
-      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
+      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=verify-full
+      STS_DATABASE_TLS_CA_FILE: /run/secrets/database-ca/postgres.crt
       STS_DATABASE_PASSWORD_PROVIDER: vault
       STS_DATABASE_PASSWORD_REF: secret/data/sts
       STS_DATABASE_PASSWORD_FIELD: databasePassword
@@ -329,6 +332,7 @@ services:
     volumes:
       - bao-client:/run/secrets/openbao:ro
       - bao-startup:/run/secrets/openbao-startup
+      - db-ca:/run/secrets/database-ca:ro
       - sts-data:/usr/src/sts/data
     tmpfs:
       - /run/sts-startup:mode=0700,uid=10001,gid=10001
@@ -350,6 +354,7 @@ services:
 
 volumes:
   db-data:
+  db-ca:
   db-initdb:
   db-share:
   bao-file:
