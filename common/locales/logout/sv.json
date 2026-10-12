@@ -7,7 +7,6 @@
   "inventory.globalButton": "Global utloggning — avsluta allt nedan",
   "inventory.globalNote": "Standardvalet. En POST till <code>/logout</code> utan något markerat gör exakt detta.",
   "inventory.selectedButton": "Avsluta de markerade",
-  "inventory.selectedNote": "Markera dem i tabellerna nedan. Markerar du inget avslutas inget.",
   "inventory.liveCount": "<strong>{total} aktiva objekt</strong> i {families, plural, one {# familj} other {# familjer}}. Vissa av dem kan ingen avsluta — de listas med skälet, eftersom en utloggning som dolde dem skulle se fullständig ut utan att vara det.",
   "inventory.anyUserOpen": "Den här tjänsten kontrollerar inget lösenord någonstans, så <code>?username=</code> kan ange vem som helst och ger inget som inte redan gällde — att logga in som dem kräver en enda begäran. <code>logout.anyUser</code> stänger av det.",
   "inventory.anyUserOff": "<code>logout.anyUser</code> är avstängt, så den här slutpunkten agerar bara på den session du håller.",
@@ -31,5 +30,9 @@
   "result.remain": "{total} objekt återstår.",
   "result.lookAgain": "Titta igen",
   "result.lookAgainEnd": ".",
-  "result.nothingLeft": "Inget. Den här tjänsten håller ingen aktiv session eller autentiseringsuppgift för {key} som den fortfarande kan se."
+  "result.nothingLeft": "Inget. Den här tjänsten håller ingen aktiv session eller autentiseringsuppgift för {key} som den fortfarande kan se.",
+  "tab.signOut": "Logga ut",
+  "tab.details": "Detaljer",
+  "list.colProtocol": "Protokoll",
+  "inventory.listNote": "Markera dem i listan ovan. Inget markerat avslutar ingenting."
 }

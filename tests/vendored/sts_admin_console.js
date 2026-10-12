@@ -3955,8 +3955,14 @@ async function everyWriteRoundTrips(driver) {
     // AND THE VALUE COMES BACK. This is the half a notice cannot give.
     if (one.expect.text) {
       const redrawn = await open(driver, realm(one.path));
+      // THE WHOLE PAGE, NOT THE VISIBLE TAB: since the console's pages became
+      // tabs (#428, Metadata first), the list a write lands in is often a
+      // panel the page does not open on, and `innerText` leaves a hidden
+      // panel out. `textContent` reads every panel the page drew.
+      const drawn = redrawn.text + "\n" + String(await driver.executeScript(
+        "return document.body ? document.body.textContent : '';"));
       check(one.path + " draws the value it was given", function () {
-        assert.ok(redrawn.text.indexOf(one.expect.text) >= 0,
+        assert.ok(drawn.indexOf(one.expect.text) >= 0,
           "AFTER THE WRITE, " + one.path + " MUST DRAW " +
           JSON.stringify(one.expect.text) + ". The console answered with a " +
           "notice and the page does not show it — which is exactly what a " +

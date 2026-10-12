@@ -7,7 +7,6 @@
   "inventory.globalButton": "Global logout — end everything below",
   "inventory.globalNote": "The default. A POST to <code>/logout</code> with nothing selected does exactly this.",
   "inventory.selectedButton": "End the ticked items",
-  "inventory.selectedNote": "Tick them in the tables below. Nothing ticked ends nothing.",
   "inventory.liveCount": "<strong>{total} live item(s)</strong> in {families, plural, one {# family} other {# families}}. Some of them cannot be ended by anybody — they are listed with the reason, because a sign-out that hid them would look complete when it is not.",
   "inventory.anyUserOpen": "This service checks no password anywhere, so <code>?username=</code> names anybody and grants nothing that was not already true — signing in as them takes one request. <code>logout.anyUser</code> turns that off.",
   "inventory.anyUserOff": "<code>logout.anyUser</code> is off, so this endpoint acts only on the session you are holding.",
@@ -31,5 +30,9 @@
   "result.remain": "{total} item(s) remain.",
   "result.lookAgain": "Look again",
   "result.lookAgainEnd": ".",
-  "result.nothingLeft": "Nothing. This service is holding no live session or credential for {key} that it can still see."
+  "result.nothingLeft": "Nothing. This service is holding no live session or credential for {key} that it can still see.",
+  "tab.signOut": "Sign out",
+  "tab.details": "Details",
+  "list.colProtocol": "Protocol",
+  "inventory.listNote": "Tick them in the list above. Nothing ticked ends nothing."
 }
