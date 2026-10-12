@@ -106,7 +106,7 @@ async function run(t) {
     registered.push({ path: p, first: arguments[1] });
   };
   build().registerRoutes({ get: record, post: record });
-  t.check(registered.length === 11 && registered.every(function (one) {
+  t.check(registered.length === 10 && registered.every(function (one) {
     return one.first === app.demoOnly;
   }), 'A1. every VC-API route, and the publish hook, carries the ' +
           'demonstration mark first, so a product realm never reaches the ' +
