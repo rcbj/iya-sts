@@ -42,8 +42,8 @@
 // The door `via` is `verify()`'s own sentence ("an LDAP simple bind"), kept as
 // it is, because that is what an operator reading the page wants to see.
 // Kerberos is the one password door not here: a pre-authentication failure
-// is decided inside the parent project's locked KDC codec, which does not
-// call `verify()` (`kerberos/CLAUDE.md`).
+// is decided inside `kerberos/krb5_kdc.js`, which does not call `verify()`
+// (`kerberos/CLAUDE.md`).
 //
 // A LIBRARY (rule 3): no route. `credentials.ts` requires it lazily.
 // ===========================================================================

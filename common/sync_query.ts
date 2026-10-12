@@ -13,8 +13,8 @@
 // devices as a bounded window, and asks postgres for what the window does not
 // hold — WITHOUT the directory API becoming asynchronous. That API is
 // synchronous at about a thousand call sites (#349's design comment counted
-// them), some in the parent project's locked Kerberos files, and a postgres
-// read is not. So a miss crosses a thread boundary and WAITS:
+// them), some in the Kerberos files the parent's tests image copies, and a
+// postgres read is not. So a miss crosses a thread boundary and WAITS:
 //
 //   * a `worker_thread` (`sync_query_thread.ts`) owns a connection of its
 //     own, and runs the named query from `persistence/directory_queries.js`;

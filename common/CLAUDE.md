@@ -520,8 +520,8 @@ And the handles below section 13's floor were raised to 128 bits (the
 OID4VCI `credential_offer_uri` id, the mock SP's `RelayState` and the mock
 RP's `wctx`), the LDAP cluster instruction's nonce to 16 bytes, and
 `admin_stats.js`'s `ARTIFACT_TAG` takes four random bytes where it took the
-start time. `krb5_service.js`'s sequence number (7 random bits) is in a locked
-file and RFC 4121 does not require it to be random.
+start time. `krb5_service.js`'s sequence number (7 random bits) was left as it
+is: RFC 4121 does not require it to be random.
 
 **AND THE TESTS.** GitHub's code scanning (CodeQL `js/insecure-randomness`)
 had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
@@ -1130,9 +1130,10 @@ exports `registerRoutes(app)`, and `load()` requires it and then calls
 `register(app, module, name)` on the next line — at the point where requiring it
 used to register the routes, so the route order did not move (Express's layer
 list, 603 layers with their handlers, is identical before and after). The
-JavaScript route modules — the parent project's locked `krb5_kdc`,
-`krb5_service` and `spnego`, `tls/tls_server` and `ldap/ldap_server` — still
-register at their require, which `load()` makes at its
+JavaScript route modules — `krb5_kdc`, `krb5_service` and `spnego`
+(this repository's own, kept JavaScript because the parent's tests image
+copies them; `kerberos/CLAUDE.md`), `tls/tls_server` and `ldap/ldap_server` —
+still register at their require, which `load()` makes at its
 old place. So the file now holds two interleaved orders: the REQUIRE order,
 which decides load-time effects (slot fills, stores, cycles, and where a
 JavaScript module's routes land), and the order of `register()` calls, which
@@ -2587,7 +2588,7 @@ answers `{ realm, since, why }` marked `STS-CORE-0121`, and:
 
 | Where | What refuses |
 |---|---|
-| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the locked KDC records its own policy code, and the gate's log line carries 0121) |
+| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the KDC records its own policy code, and the gate's log line carries 0121) |
 | `authn.startSession()` | FIRST, for every door — the sign-in screen asks the gate early and then passes `gated: true` |
 | `cert_enrollment.issue()`, OpenID4VCI's credential and deferred endpoints, `SpiffeCa`'s three mints | ask `retiringRefusal()` themselves, not being gate sites: 503, `credential_request_denied`, a thrown mint |
 
@@ -10538,8 +10539,9 @@ Five decisions:
     and on no other path.
   - `realms.keyed(factory, onLookup)` grew its optional second argument for
     the one cache whose lookup is a property read (`helpers.js`'s STS proxy).
-  - **A lookup in a locked file is not counted** (`counted: false`). That is
-    the Kerberos authenticator store in `krb5_service.js`. The page says "not
+  - **A lookup the owner does not count is shown as not counted**
+    (`counted: false`). That is the Kerberos authenticator store in
+    `krb5_service.js`, which has no count yet. The page says "not
     counted" rather than showing a ratio of nothing.
 - **VALID IS THE OWNER'S CALL.**
   - A row with a deadline is valid until it passes.
@@ -10876,8 +10878,8 @@ is the operator's page; each file's header argues its part.
   nothing is REFUSED for a service account (`secondFactorRefusal()`'s refuse
   by default). The password grant declares `door: 'ropc'`, which is no app
   password's door. The KDC asks the same question through
-  `krb5_person_keys.personDisabled()`, because the KDC is locked and that is
-  the question it asks. A browser session from ANY first factor is refused in
+  `krb5_person_keys.personDisabled()`, which is the question `krb5_kdc.js`
+  asks. A browser session from ANY first factor is refused in
   `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
   is not.
 * **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
