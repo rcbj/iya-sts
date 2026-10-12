@@ -9982,15 +9982,22 @@ class StsMetadata {
   }
 
 
+  // REGISTERS NOTHING SINCE THE #446 CUTOVER (2026-10-05), and kept so the
+  // composition root's `register()` call — last of all — still has something
+  // to call. `/admin/sts-metadata` is the static console's document, answered
+  // by the console's shell for every `/admin/*` path, and its data is
+  // `GET /admin-api/sts-metadata`, which `mgmt-api/admin_api.ts` registers
+  // over `pageJson()`. The page still reads the router WHEN IT IS ASKED,
+  // which is why this module stays last in `common/protocol_stack.ts`.
   /**
-   * Registers `GET /admin/sts-metadata`, last of all the routes, drawn in the
-   * console's shell.
+   * Registers nothing: the page is the static console's document and its
+   * data `GET /admin-api/sts-metadata` (`pageJson()`); kept for the
+   * composition root's last `register()` call.
    *
    * @param app - the express app
    */
   registerRoutes(app: { get: Function }): void {
-    const { log, baseUrlOf, admin } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering StsMetadata.registerRoutes().");
     log.debug("Leaving StsMetadata.registerRoutes().");
   }
@@ -10011,9 +10018,9 @@ const slot = new InstanceSlot<StsMetadata>(
   helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
-// module no longer registers anything. `common/protocol_stack.ts` calls the
-// exported `registerRoutes(app)` last, at the point in the route order where
-// requiring this module used to register the page.
+// module registers nothing. `common/protocol_stack.ts` calls the exported
+// `registerRoutes(app)` last, where requiring this module used to register
+// the page — and since #446 that call registers nothing either.
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -10029,7 +10036,8 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   /**
-   * Registers `GET /admin/sts-metadata` on the installed instance.
+   * Registers nothing (see `StsMetadata.registerRoutes()`); forwarded to
+   * the installed instance for the composition root.
    */
   registerRoutes: slot.forward('registerRoutes'),
   /**
