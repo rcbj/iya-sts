@@ -40,12 +40,12 @@
     "text": "Un Security Event Token reçu dont la signature ne se vérifie pas est refusé"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "f339daad4628b362",
-    "text": "POST /ssf/receive et les récepteurs propres à la console et au portail l’acceptent, l’enregistrent et indiquent pourquoi il ne s’est pas vérifié — la posture du débogueur — sauf si ssf.receiveRequireSignature est activé. Rien n’agit en conséquence."
+    "en": "298534c9f2c4f318",
+    "text": "POST /ssf/receive et les récepteurs propres à la console et au portail l’acceptent, l’enregistrent et indiquent pourquoi il ne s’est pas vérifié — la posture du débogueur — sauf si ssf.receiveRequireSignature est activé. Rien n’agit en conséquence. Les Shared Signals d’un partenaire de fédération, poussés vers /federation/signals/{id} ou récupérés par interrogation, sont traités de la même façon : un SET non vérifié est enregistré dans la boîte de réception de la relation comme non vérifié et n’entraîne aucune action, sauf si ssf.receiveRequireSignature est activé."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "4f092f14fe13b4a7",
-    "text": "Les récepteurs de la console et du portail répondent 400 invalid_key, quoi qu’indique ssf.receiveRequireSignature (#117), et le conservent dans leur boîte de réception marqué comme refusé. /ssf/receive est un point de terminaison de développement et n’existe pas ici (#585)."
+    "en": "7823c19f4b2f69fb",
+    "text": "Les récepteurs de la console et du portail répondent 400 invalid_key, quoi qu’indique ssf.receiveRequireSignature (#117), et le conservent dans leur boîte de réception marqué comme refusé. /ssf/receive est un point de terminaison de développement et n’existe pas ici (#585). Le SET non vérifié d’un partenaire de fédération est lui aussi refusé avec invalid_key — HTTP 400 pour un envoi poussé vers /federation/signals/{id}, et dans setErrs de la requête d’interrogation suivante pour un SET récupéré par interrogation — conservé dans la boîte de réception de la relation marqué comme refusé, et jamais suivi d’aucune action."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",

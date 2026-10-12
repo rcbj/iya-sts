@@ -8800,10 +8800,22 @@
     "text": "Vérifier le certificat de la base de données"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "f43d1062e91c3dbe",
-    "text": "Indique si le certificat du serveur PostgreSQL doit être vérifié par rapport à une ancre de confiance que détient ce processus. DÉSACTIVÉ par défaut, et c’est une affirmation sur la PILE plutôt qu’une valeur par défaut affaiblie : le certificat est généré dans le conteneur postgres à son premier démarrage et n’est signé par personne ; il n’y a donc rien par rapport à quoi un client pourrait le vérifier, et activer ce paramètre refuserait chaque connexion avec un message évoquant un certificat autosigné. LA CONNEXION RESTE CHIFFRÉE dans tous les cas — ce service ne contacte jamais sa base de données en clair (#273), le pg_hba.conf propre à la base exige aussi TLS, et ce paramètre décide seulement si le serveur est AUTHENTIFIÉ. Activez-le lorsque vous dirigez ce service vers une véritable base de données dont le certificat remonte à une autorité que nomme NODE_EXTRA_CA_CERTS ; il contrôle alors la chaîne et le nom d’hôte. Il ne décide que pour une chaîne de connexion dont le sslmode est absent, require ou prefer : sslmode=verify-full vérifie la chaîne et le nom d’hôte, et sslmode=verify-ca la chaîne seule (tels que libpq les lit), quoi qu’indique ce paramètre."
+    "en": "349255b3b313fd58",
+    "text": "Indique si le certificat du serveur PostgreSQL doit être vérifié par rapport à une ancre de confiance que détient ce processus, chaîne et nom d’hôte. ACTIVÉ par défaut, dans tous les modes. Les ancres de confiance sont persistence.databaseTlsCaFile lorsqu’il est défini, et sinon le magasin de confiance par défaut de ce processus (avec NODE_EXTRA_CA_CERTS). AVERTISSEMENT : le désactiver laisse le serveur de base de données NON AUTHENTIFIÉ — la connexion reste chiffrée (ce service ne contacte jamais sa base de données en clair, #273), mais quiconque peut répondre à l’adresse de la base de données peut l’usurper et lire et écrire chaque ligne que conserve ce service, y compris les clés scellées et l’annuaire. Ne le désactivez que pour une base de données jetable que vous confieriez à n’importe qui. Il ne décide que pour une chaîne de connexion dont le sslmode est absent, require ou prefer : sslmode=verify-full vérifie la chaîne et le nom d’hôte, et sslmode=verify-ca la chaîne seule (tels que libpq les lit), quoi qu’indique ce paramètre."
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "le pool de connexions est ouvert avant que l’écouteur ne se lie"
+  },
+  "persistence.databaseTlsCaFile|label": {
+    "en": "cecd97b1da67d416",
+    "text": "Fichier de certificats d’AC de la base de données"
+  },
+  "persistence.databaseTlsCaFile|description": {
+    "en": "a1782a05a9d84547",
+    "text": "Un fichier PEM de certificats d’AC approuvés pour les connexions à la base de données UNIQUEMENT, à la place du magasin de confiance par défaut de ce processus pour celles-ci ; rien d’autre de ce que contacte ce service ne leur fait confiance. Il peut désigner un répertoire à la place, et chaque fichier .crt et .pem qu’il contient est alors lu. Vide, le magasin de confiance par défaut est utilisé (avec NODE_EXTRA_CA_CERTS). Un fichier désigné qui ne peut pas être lu, ou qui ne contient aucun certificat, arrête le service au démarrage. La pile compose le définit sur le certificat que génère son conteneur postgres, partagé en lecture seule sans la clé."
+  },
+  "persistence.databaseTlsCaFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "le pool de connexions est ouvert avant que l’écouteur ne se lie"
   },
