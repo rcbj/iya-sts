@@ -34,7 +34,7 @@
   "th.signedIn": "Inicio de sesión",
   "th.lastAuthenticated": "Última autenticación",
   "th.expires": "Caduca",
-  "th.wsfedRps": "Partes de confianza WS-Fed con sesión",
+  "th.wsfedRps": "Partes que confían de WS-Fed con sesión",
   "signOn.none": "Nadie ha iniciado sesión.",
   "signOn.expiredNote": "Una sesión caducada permanece en el mapa hasta que algo la lee — <code>sessionOf()</code> la elimina cuando la encuentra vencida —, así que se lista como guardada pero no activa en lugar de omitirse en silencio.",
   "derived.heading": "Sesiones derivadas de artefactos ({n} sujeto(s) distinto(s))",
