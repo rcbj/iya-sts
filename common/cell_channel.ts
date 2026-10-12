@@ -118,6 +118,13 @@ interface Leaf {
   chainPem: string[];
   notAfterMs: number;
   mintedAt: number;
+  // What the leaf was issued under: the `cell` Issuing CA (base64 DER) and
+  // the service Root (PEM) as they stood when it was minted. A Root
+  // replaced since (`POST /admin-api/pki/build-root`) rebuilds both, and a
+  // leaf from the old branch is refused by every peer that has the new one
+  // (STS-CELL-0032) — so a change to either makes the leaf stale.
+  caDerB64: string;
+  rootPem: string;
 }
 
 /**
@@ -221,12 +228,15 @@ class CellChannel {
                       'certificate could not be issued: ' +
                       ((issued && issued.errors) || []).join(' '));
     }
+    const caDer = this.cellCaDer();
     const leaf: Leaf = {
       keyPem: keyPem,
       certPem: issued.certificatePem,
       chainPem: issued.issuerChainPem,
       notAfterMs: new Date(issued.notAfter).getTime(),
-      mintedAt: now
+      mintedAt: now,
+      caDerB64: caDer ? caDer.toString('base64') : '',
+      rootPem: this.rootPem()
     };
     log.info('cells: this process holds an inter-cell certificate for cell ' +
              '"' + id + '" as ' + host + ', until ' + issued.notAfter + '.');
@@ -244,7 +254,8 @@ class CellChannel {
     log.debug("Entering CellChannel.ensureLeaf().");
     const now = Date.now();
     if (this.leaf && now < this.leaf.mintedAt +
-        (this.leaf.notAfterMs - this.leaf.mintedAt) / 2) {
+        (this.leaf.notAfterMs - this.leaf.mintedAt) / 2 &&
+        this.underCurrentAuthority(this.leaf)) {
       log.debug("Leaving CellChannel.ensureLeaf(). Held.");
       return this.leaf;
     }
@@ -265,6 +276,21 @@ class CellChannel {
     }
     log.debug("Leaving CellChannel.ensureLeaf(). Minting.");
     return this.minting;
+  }
+
+  // Whether a leaf was issued under the `cell` Issuing CA and the service
+  // Root this process holds NOW. Both are read from the PKI's row, which a
+  // Root replaced on any node rewrites, so a cell whose leaf is from the
+  // replaced branch mints a new one at its next dial or refused peer
+  // (2026-10-12: a full run's build-root left the two cells refusing each
+  // other for the rest of the run).
+  private underCurrentAuthority(leaf: Leaf): boolean {
+    log.debug("Entering CellChannel.underCurrentAuthority().");
+    const caDer = this.cellCaDer();
+    const current = (caDer ? caDer.toString('base64') : '') ===
+                    leaf.caDerB64 && this.rootPem() === leaf.rootPem;
+    log.debug("Leaving CellChannel.underCurrentAuthority(). " + current);
+    return current;
   }
 
   // The service Root, the one anchor either side verifies the other against.
@@ -334,6 +360,15 @@ class CellChannel {
       this.lastFailure = why;
       log.warn(errorCodes.tag('STS-CELL-0032') + 'cells: an inter-cell ' +
                'peer was refused: ' + why);
+      // A refusal is how a listener learns its own leaf and anchor may be
+      // from a replaced branch: the peer that dialled holds the new one. Not
+      // awaited — this answer stands; the peer's retry meets the new context.
+      if (this.leaf && !this.underCurrentAuthority(this.leaf)) {
+        this.ensureLeaf().catch(function (err: any) {
+          log.debug("Caught in CellChannel.peerCellOf(): " +
+                    ((err && err.message) || err));
+        });
+      }
       return '';
     };
     if (!socket || !socket.authorized) {
