@@ -49,8 +49,9 @@
 // `authn.js` to this file would do exactly that, and would close a cycle
 // besides, since this file requires `authn.js` for `startSession()`. #50's R1
 // did not change that: this file registers nothing when required any more,
-// but it requires `./spnego.js`, a locked JavaScript file of the parent
-// project that still registers its routes when it is required.
+// but it requires `./spnego.js`, a JavaScript file (this repository's own,
+// copied by the parent's tests image) that still registers its routes when
+// it is required.
 //
 // **AND IT NEEDED NO INVERTED HOOK EITHER**, which is worth saying because rule
 // 3e's inventory already holds many slots and one more is the obvious move. It

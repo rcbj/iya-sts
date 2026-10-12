@@ -815,19 +815,20 @@ class ProtocolStack {
     // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
     // required so it runs first — it relays a request whose client is homed
     // in another cell and calls next() for everything else, after which the
-    // KDC's own handler answers exactly as it did. The KDC is one of the
-    // parent project's locked files and cannot be given the check itself.
+    // KDC's own handler answers exactly as it did. It is not inside
+    // krb5_kdc.js so that the KDC's require closure, which the parent's
+    // tests image copies, does not grow.
     // It requires only the vendored codec (a leaf set) at load and the
     // principal database lazily, so nothing moves and no cycle closes.
     // -------------------------------------------------------------------------
     require('../kerberos/krb5_home');
     this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
-    // — it is one of the parent project's locked JavaScript files, which still
-    // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
-    // 88, which are started by krb5.listen() below. Binding a privileged port
-    // can fail, and a require that throws takes the whole service down; a route
-    // cannot.
+    // — it is one of the JavaScript files the parent's tests image copies,
+    // which still register at require (rule 1) — but NOT the raw TCP/UDP
+    // listeners on port 88, which are started by krb5.listen() below.
+    // Binding a privileged port can fail, and a require that throws takes the
+    // whole service down; a route cannot.
     const krb5 = require('../kerberos/krb5_kdc');
     // The Kerberos-protected service. Like the KDC it registers its HTTP view
     // at require time and starts its socket from listen(), for the same reason.

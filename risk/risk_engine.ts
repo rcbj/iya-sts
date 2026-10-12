@@ -343,7 +343,7 @@ const RANK: Record<string, number> = { UNSCORED: 0, LOW: 1, MEDIUM: 2,
 // ---------------------------------------------------------------------------
 // A PERSON'S STANDING, PER PROCESS (#62 P3). What an issuance with NO
 // SESSION to read its risk from stands on — a Kerberos service ticket (the
-// KDC is the parent project's locked code and asks the gate synchronously),
+// KDC asks the gate synchronously),
 // a WS-Trust token — so that a person made HIGH at the browser is not issued
 // a ticket at the next door. Filled by every assessment made in this
 // process and by `loadStanding()` where a door can wait for the store;

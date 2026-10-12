@@ -52,6 +52,7 @@
   "hEnrolled": "已註冊的憑證",
   "hNotDo": "此處的 SCEP 不做什麼",
   "hMode": "模式",
+  "hSettings": "設定",
   "realmMode": "<strong>此領域處於 {mode} 模式。</strong>",
   "development": "開發：",
   "product": "產品：",

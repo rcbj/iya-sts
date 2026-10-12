@@ -52,6 +52,7 @@
   "hEnrolled": "Certificados inscritos",
   "hNotDo": "Lo que SCEP no hace aquí",
   "hMode": "Modo",
+  "hSettings": "Ajustes",
   "realmMode": "<strong>Este dominio está en modo {mode}.</strong>",
   "development": "Desarrollo:",
   "product": "Producto:",

@@ -19,12 +19,13 @@
 // it; the reply is piped back untouched. This is §5's "Kerberos AS-REQ …
 // forwarded the same way" — the request travels, the person's data does not.
 //
-// **`krb5_kdc.js` IS LOCKED** (the parent project's copy set, `CLAUDE.md`,
-// *The parent project loads these modules in-process*), so this is a route of
-// its own, registered on `POST /KdcProxy` JUST BEFORE the KDC's
-// (`common/protocol_stack.ts`), that decodes just enough to find the client
-// and either relays the request or calls `next()` — after which the KDC's own
-// handler runs exactly as it always did. It REQUIRES the vendored codec
+// **`krb5_kdc.js` IS IN THE PARENT'S COPY SET** (this repository's own, but
+// the parent's tests image copies it and its requires; `kerberos/CLAUDE.md`),
+// so rather than grow its closure this is a route of its own, registered on
+// `POST /KdcProxy` JUST BEFORE the KDC's (`common/protocol_stack.ts`), that
+// decodes just enough to find the client and either relays the request or
+// calls `next()` — after which the KDC's own handler runs exactly as it
+// always did. It REQUIRES the vendored codec
 // (`krb5_messages`, `krb5_asn1`, `krb5_primitives`, `krb5_crypto`) and the
 // principal database; it edits none of them, and none of them requires it, so
 // the parent project's COPY closure does not move.
@@ -303,7 +304,7 @@ const home = new Krb5Home();
 /**
  * Where a Kerberos request relayed over MS-KKDCP is answered in a service
  * deployed as cells (#98): its client's home cell. One route, registered
- * ahead of the KDC's; the KDC itself is locked and unchanged.
+ * ahead of the KDC's, so the KDC and its require closure are unchanged.
  * @namespace
  */
 export = {

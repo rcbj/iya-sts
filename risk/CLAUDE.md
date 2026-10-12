@@ -303,7 +303,8 @@ header has the six rules; what they cost to get right:
 `risk_failures.ts` LAZILY and records the refusal without anybody waiting. The
 sign-in screen and its password factor, the password grant, an LDAP bind,
 WS-Trust, SCIM and SSF Basic and EST all arrive there; **Kerberos does not**,
-because pre-authentication is decided in the parent project's locked KDC codec.
+because pre-authentication is decided in `krb5_kdc.js`, which does not call
+`credentials.verify()`.
 Left out on purpose: `no-store` and `store-error` (the service failed) and
 `password-reset-required` (the password was right).
 

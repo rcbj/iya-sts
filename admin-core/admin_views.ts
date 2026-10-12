@@ -1794,15 +1794,15 @@ class AdminViews {
     // package, with its version, until #65 put the draw in crypto.js's
     // section 13; there is no version of this service's own to print, so
     // the member is empty rather than gone, for a reader that expects it.
+    // The sentences are `admin-core/policy_kinds.ts`'s VIEW_PROSE (#543).
+    const prose = this.deps.policyKinds.VIEW_PROSE;
     return {
       module: 'common/crypto.js randomString()',
       version: '',
-      source: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
-              'character of the pool is likelier than another',
-      pools: ['lowercase letters', 'uppercase letters', 'digits', 'symbols'],
+      source: prose.generatorSource,
+      pools: prose.generatorPools.slice(),
       excluded: ['"', '`'],
-      drawsUntil: 'the password satisfies the profile, so every generated ' +
-                  'password is uniform over the passwords the profile accepts'
+      drawsUntil: prose.generatorDrawsUntil
     };
   }
 
@@ -1876,23 +1876,11 @@ class AdminViews {
       // THE DOORS, named so that "enforced" is a claim a reader can check
       // rather than one they have to take. Every one ends in
       // `credentials.preparePassword()`.
-      doors: [
-        { door: '/admin/users/new and /admin/users (Set password)',
-          via: 'credentials.setPassword()' },
-        { door:
-            'POST /admin-api/users/create and /admin-api/users/set-password',
-          via: 'credentials.setPassword()' },
-        { door: '/portal/password', via: 'credentials.setPassword()' },
-        { door: '/portal/activate (the first password a person sets)',
-          via: 'credentials.setPassword()' },
-        { door: 'an LDAP add or modify of userPassword on 389 or 636',
-          via: 'credentials.preparePassword()' }
-      ],
-      notDoors: 'SCIM carries no password (this service advertises ' +
-                'changePassword: false), and a password is never set by ' +
-                'signing in. Passwords stored BEFORE a rule changed are ' +
-                'not re-checked: nothing here holds a password in a form ' +
-                'that could be, and the rule applies from the next change.'
+      // `admin-core/policy_kinds.ts`'s VIEW_PROSE holds them (#543).
+      doors: this.deps.policyKinds.VIEW_PROSE.doors.map(function (one) {
+        return { door: one.door, via: one.via };
+      }),
+      notDoors: this.deps.policyKinds.VIEW_PROSE.notDoors
     };
   }
 
@@ -1904,9 +1892,7 @@ class AdminViews {
     const authn = authnPolicy;
     const mailUsable = authn.mailUsable();
     const mailWhy = mailUsable ? ''
-      : 'This realm cannot send mail, so the two email mechanisms cannot be ' +
-        'turned on and are never offered. Configure a transport on Server ' +
-        'configuration > Mail.';
+      : this.deps.policyKinds.VIEW_PROSE.mailWhy;
     member.fields.forEach(function (field) {
       field.disabled = !!(field.email && !mailUsable);
       field.disabledWhy = field.disabled ? mailWhy : '';
@@ -1977,15 +1963,8 @@ class AdminViews {
     // that kind depends on.
     const enforced = mode.verifiesCredentials();
     out.enforced = enforced;
-    out.enforcement = enforced
-      ? 'ENFORCED. This realm is in product mode, so every password set ' +
-        'here — at every door below — must meet the profile, and a new ' +
-        'password may not repeat a remembered one.'
-      : 'NOT ENFORCED. This realm is in development mode, where no password ' +
-        'is checked at any door, so a rule about one would be a rule about ' +
-        'a credential nothing reads. The history is still RECORDED, so a ' +
-        'realm switched to product mode starts with one. A GENERATED ' +
-        'password meets the profile in both modes.';
+    out.enforcement = enforced ? policyKinds.VIEW_PROSE.enforced
+                               : policyKinds.VIEW_PROSE.notEnforced;
     const listed = this.pagedRows(q, rows);
     out.profiles = listed.shown;
     out.paging = this.pagingJson(listed.paging);

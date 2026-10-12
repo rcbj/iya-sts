@@ -288,8 +288,8 @@ const MFA_SETUP_PATH = '/authn/mfa-setup';
 // drag the KDC's routes to the front of the router AND close a cycle, since
 // that module needs `startSession()`. The first half still holds after #50's
 // R1: `spnego_authn.ts` itself would register nothing when required, but it
-// requires `kerberos/spnego.js`, which is JavaScript, one of the parent
-// project's locked files, and still registers its routes when required.
+// requires `kerberos/spnego.js`, which is JavaScript (the parent's tests
+// image copies it) and still registers its routes when required.
 //
 // **AND IT DOES NOT NEED AN INVERTED HOOK EITHER**, which is worth saying
 // because rule 3e's list is six slots long and a seventh is the obvious move.

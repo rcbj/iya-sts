@@ -52,6 +52,7 @@
   "hEnrolled": "Mga na-enroll na certificate",
   "hNotDo": "Ang hindi ginagawa ng SCEP dito",
   "hMode": "Mode",
+  "hSettings": "Mga setting",
   "realmMode": "<strong>Nasa {mode} mode ang realm na ito.</strong>",
   "development": "Development:",
   "product": "Product:",

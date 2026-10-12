@@ -1070,7 +1070,8 @@ class AdminApi {
     // names no language reads exactly what it read before.
     if (status >= 200 && status < 300 && this.translatesAnswer(res.req)) {
       body = serverProse.translateView(body, serverProse.translatorFor(
-        res.req.headers['accept-language']));
+        res.req.headers['accept-language'],
+        (res.locals && res.locals.proseRoute) || ''));
     }
     // ADDED TO, never set: CORS may already have said `Vary: Origin`. A
     // response a test builds by hand has no `vary()`, and needs none.
@@ -22332,10 +22333,13 @@ class AdminApi {
     const out = routes.slice(0);
     TWINS.forEach(function (twin) {
       const entry = byId(twin.of);
+      // `proseRoute` (#543): the twin answers the management operation's
+      // prose, so a prose source names that operation alone.
       const copy = Object.assign({}, entry, {
         kind: 'console', path: BASE + twin.path,
         operationId: twin.operationId, summary: twin.summary,
-        description: twin.description });
+        description: twin.description,
+        proseRoute: entry.route || entry.path });
       // THE MANAGEMENT OPERATION LEAVES THE CONSOLE'S MEMBERS OUT, and a
       // drawing's `format=svg` with them: its parameter is the twin's.
       entry.consoleMembers = twin.members.slice(0);
@@ -22375,7 +22379,8 @@ class AdminApi {
       entry.consoleActions = helper.actions.slice(0);
       out.push(Object.assign({}, entry, {
         kind: 'console', route: BASE + '/console' + helper.route,
-        actions: moved, consoleActions: undefined }));
+        actions: moved, consoleActions: undefined,
+        proseRoute: entry.route || entry.path }));
     });
     out.push(
       { method: 'GET', path: BASE + '/console/operations', kind: 'console',
@@ -23920,6 +23925,11 @@ class AdminApi {
     // -------------------------------------------------------------------------
     ROUTES.forEach(function (entry) {
       const path = entry.route || entry.path;
+      // WHICH OPERATION'S PROSE THE ANSWER CARRIES (#543): the route, or for
+      // a console twin the route it mirrors. `sendJson()` hands it to
+      // `common/server_prose.ts`, whose sources name the operations their
+      // sentences are answered by.
+      const proseRoute = entry.proseRoute || path;
       // A query parameter outside its declared set is refused before the
       // handler runs, on a GET and a POST alike (#86).
       const queryRefused = function (req, res) {
@@ -23962,6 +23972,7 @@ class AdminApi {
                      mirrored[1] : null;
         if (!page) {
           app.get(path, function (req, res) {
+            res.locals.proseRoute = proseRoute;
             if (queryRefused(req, res) || consoleOnly(req, res)) {
               return undefined;
             }
@@ -23970,6 +23981,7 @@ class AdminApi {
           return;
         }
         app.get(path, function (req, res) {
+          res.locals.proseRoute = proseRoute;
           if (queryRefused(req, res) || consoleOnly(req, res)) {
             return undefined;
           }
@@ -23979,6 +23991,7 @@ class AdminApi {
         return;
       }
       app.post(path, function (req, res) {
+        res.locals.proseRoute = proseRoute;
         if (queryRefused(req, res)) {
           return undefined;
         }

@@ -134,6 +134,9 @@
 // tests/vendored/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+// A policy save's or reset's message is filled from `policy_kinds.ts`'s
+// templates, so the server can translate it (#543).
+import serverProse = require('../common/server_prose');
 import config = require('../common/config');
 // The store's own status, for what a settings write's reply says about
 // whether the override is kept across a restart (rcbj, 2026-10-07). A
@@ -6765,7 +6768,11 @@ class AdminActions {
     }
     const kind = found.kind;
     const module = kind.module;
-    const noun = kind.label.toLowerCase() + ' profile';
+    const noun = policyKinds.nounOf(kind);
+    // The messages are `policy_kinds.ts`'s templates (#543), so the server
+    // can refill them in the reader's language.
+    const fill = serverProse.fill;
+    const MESSAGES = policyKinds.MESSAGES;
     const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
@@ -6801,12 +6808,10 @@ class AdminActions {
       return { ok: true, kind: kind.id, profile: result.profile,
                rules: module.describe(result.profile),
                enforced: result.profile.enforced,
-               message: 'The ' + noun + ' "' + result.profile.name +
-                        '" is saved at ' + result.profile.dn + '. It applies ' +
-                        'to ' + kind.appliesTo +
-                        (result.profile.enforced ? '.'
-                          : ' — and it is not enforced here until this realm ' +
-                            'is in product mode.') };
+               message: fill(result.profile.enforced
+                 ? MESSAGES.saved : MESSAGES.savedNotEnforced,
+               { noun: noun, name: result.profile.name,
+                 dn: result.profile.dn, appliesTo: kind.appliesTo }) };
     }
 
     const result = module.reset(profileName);
@@ -6830,11 +6835,11 @@ class AdminActions {
              profile: result.profile,
              rules: module.describe(result.profile),
              message: result.removed
-               ? 'The stored profile is gone, and this realm follows ' +
-                 kind.fallsBackTo + ': ' +
-                 module.describe(result.profile).join(', ') + '.'
-               : 'Nothing was stored in this realm, so it already followed ' +
-                 kind.fallsBackTo + '.' };
+               ? fill(MESSAGES.removed, {
+                 fallsBackTo: kind.fallsBackTo,
+                 rules: module.describe(result.profile).join(', ') })
+               : fill(MESSAGES.nothingStored,
+                      { fallsBackTo: kind.fallsBackTo }) };
   }
 
   // ---------------------------------------------------------------------------
