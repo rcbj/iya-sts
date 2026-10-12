@@ -5,8 +5,7 @@
 //
 // File: admin_actions_layer.js
 //
-// ===========================================================================
-// THE LAYER THE CONSOLE AND THE MANAGEMENT API SHARE, AND THE FOUR WAYS IT
+// ====================================================================// THE LAYER THE CONSOLE AND THE MANAGEMENT API SHARE, AND THE FOUR WAYS IT
 // STOPS BEING ONE.
 //
 // Until 2026-09-12 every decision both admin surfaces make lived in
@@ -524,6 +523,12 @@ function checkNothingRequiresItEarly(t) {
                    'oauth-oidc/grant_management_api.ts',
                    'oauth-oidc/claims_providers_api.ts',
                    'oauth-oidc/provider_commands_api.ts',
+=======
+                   // The secret destinations' operation (#313, 2026-10-12),
+                   // for `adminViews`' paging only — the register's one
+                   // list — required LAZILY in the request; the module is
+                   // built with the other API modules, after the console.
+                   'mgmt-api/secret_destinations_api.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,

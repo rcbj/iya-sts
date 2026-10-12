@@ -132,14 +132,18 @@ const LIST_PARAMS = {
   // asked once, not a view, so carrying them through a Remove button would
   // re-ask it on every write and put a stale answer above the table. The same
   // reasoning NOT_A_VIEW applies to `notice` and `error`.
-  '/admin/roles': ['q', 'per', 'page'],
+  '/admin/roles': ['q', 'per', 'page', 'rolesPage',
+                   // The narrowed applications' page (#313).
+                   'requiringPage'],
   '/admin/policies': ['per', 'page'],
   '/admin/applications': ['q', 'kind', 'per', 'page'],
   '/admin/saml2': ['q', 'per', 'page'],
   '/admin/saml11': ['q', 'per', 'page'],
   '/admin/authorization-servers': ['per', 'page'],
   // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
-  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
+  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage',
+                   // The named authorization servers' page (#313).
+                   'serversPage'],
   '/admin/gnap/monitor': ['per', 'page'],
   // ===== certificate enrollment list params (2026-09-13) =====
   '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
@@ -219,7 +223,9 @@ const LIST_PARAMS = {
   // when /admin/sessions started linking to it: every row there links to the
   // credentials issued on that session, and there was no way to ask for them.
   '/admin/tokens': ['family', 'kind', 'state', 'session', 'per', 'page'],
-  '/admin/sessions': ['q', 'protocol', 'per', 'page'],
+  '/admin/sessions': ['q', 'protocol', 'per', 'page',
+                      // The unauthenticated section's page (#313).
+                      'anonymousPage'],
   // The Shared Signals inbox's own search and paging (2026-09-10). It has no
   // drill-down, so the only thing that spends these is the Clear button's
   // `back` — which is enough on its own: a reader who searched for a username,

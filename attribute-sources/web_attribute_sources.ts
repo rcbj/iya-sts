@@ -254,12 +254,17 @@ class AttributeSourcesPage {
     const t = ctx.t;
     const rows = json.sources.map((source: Json) => this.row(t, json, source))
       .join('');
+    // The register is paged on `sourcesPage` (#313).
+    const nav = json.sourcesPaging
+      ? kit.pageNavPair(PAGE, kit.pageParamsOf(ctx.query || {}),
+                        json.sourcesPaging, t)
+      : { head: '', foot: '' };
     return kit.note(t.html('consoleAttributeSources.intro')) +
       (json.hostPatterns ? '' :
         kit.warn(t.html('consoleAttributeSources.anyHost'))) +
       '<h3 id="sources" data-tab="sources">' +
       t.html('consoleAttributeSources.sources') +
-      '</h3><table><thead><tr><th>' +
+      '</h3>' + nav.head + '<table><thead><tr><th>' +
       t.html('consoleAttributeSources.colSource') + '</th>' +
       '<th>' + t.html('consoleAttributeSources.colDatabase') + '</th><th>' +
       t.html('consoleAttributeSources.colRow') + '</th><th>' +
@@ -270,7 +275,7 @@ class AttributeSourcesPage {
       (rows || '<tr><td colspan="7"><span class="state-none">' +
                t.html('consoleAttributeSources.noSource') +
                '</span></td></tr>') +
-      '</tbody></table>' +
+      '</tbody></table>' + nav.foot +
       '<h3 id="add" data-tab="add">' +
       t.html('consoleAttributeSources.addSource') +
       '</h3><form method="post" action="' + PAGE +

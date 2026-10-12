@@ -50,6 +50,10 @@ const kitEscaping = function (translator: Json): Json {
  * A static utility class; it holds no state and takes no dependencies.
  */
 class RolesPage {
+  // How many members of one kind a role's cell draws before it counts the
+  // rest (#313). The register's answer carries every one.
+  static readonly MEMBERS_SHOWN = 10;
+
   /**
    * Draws the page's body from its view.
    *
@@ -69,6 +73,10 @@ class RolesPage {
     const rolesNav = kit.pageNavPair('/admin/roles', navParams,
                                       json.paging, t);
     const rolePage = { shown: json.shownRoles };
+    // The narrowed applications' pager (#313), on `requiringPage`.
+    const requiringNav = json.requiringPaging
+      ? kit.pageNavPair('/admin/roles', navParams, json.requiringPaging, t)
+      : { head: '', foot: '' };
 
     const roleOptions = register.roles.map(function (one) {
       return '<option value="' + kit.esc(one.name) + '">' +
@@ -311,6 +319,7 @@ class RolesPage {
       '</h3>' +
       kit.note(t.html('consoleRoles.body.requiringNote',
                       { defaultRequired: register.defaultRequired })) +
+      requiringNav.head +
       '<table><thead><tr><th>' + t.html('consoleRoles.body.thApplication') +
       '</th><th>' + t.html('consoleRoles.body.thRequires') + '</th>' +
       '<th>' + t.html('consoleRoles.body.thHoldable') +
@@ -343,7 +352,7 @@ class RolesPage {
           t.html('consoleRoles.body.nothingNarrowed',
                  { defaultRequired: register.defaultRequired }) +
           '</span></td></tr>') +
-      '</tbody></table>' +
+      '</tbody></table>' + requiringNav.foot +
 
       '<h3 id="preview" data-tab="preview">' +
       t.html('consoleRoles.body.previewHeading') +
@@ -469,20 +478,42 @@ class RolesPage {
   static roleRow(one, listView, memberKinds, t?) {
     t = kitEscaping(t || kit.context().t);
     const members = memberKinds.map(function (kindRow) {
-      const list = one[kindRow.field];
-      if (!list.length) {
+      const all = one[kindRow.field];
+      if (!all.length) {
         return '<td><span class="state-none">' +
                t.html('consoleRoles.roleRow.none') + '</span></td>';
       }
+      // A ROLE HELD BY THOUSANDS DOES NOT DRAW THOUSANDS (#313). A cell
+      // shows the first MEMBERS_SHOWN and counts the rest; the register's
+      // answer still carries every member, and a member past the cut is
+      // removed by name with the form under the count.
+      const list = all.slice(0, RolesPage.MEMBERS_SHOWN);
+      const more = all.length - list.length;
+      const moreLine = more > 0
+        ? '<div class="sub">' + t.html('consoleRoles.roleRow.more',
+                                       { n: more }) + '</div>'
+        : '';
       // A CONSOLE ROLE'S PEOPLE AND GROUPS ARE THE ROSTER'S (#303): drawn,
       // with the door that changes them, and no Remove button here.
       if (one.console && kindRow.kind !== 'application') {
         return '<td>' + list.map(function (member) {
           return '<div><code>' + kit.esc(member) + '</code></div>';
-        }).join('') + '<span class="sub">' +
+        }).join('') + moreLine + '<span class="sub">' +
           t.html('consoleRoles.roleRow.setOn') + '<a href="/admin/rbac">' +
           t.html('consoleRoles.body.adminRoles') + '</a></span></td>';
       }
+      const removeOther = more > 0
+        ? '<form method="post" action="/admin/roles" class="inline">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" value="remove-member">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><input type="hidden" name="kind" value="' +
+          kit.esc(kindRow.kind) + '"><label>' +
+          t.html('consoleRoles.roleRow.removeOther') +
+          ' <input type="text" name="member" required></label> ' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleRoles.roleRow.remove') + '</button></form>'
+        : '';
       return '<td>' + list.map(function (member) {
         return '<div><code>' + kit.esc(member) + '</code> ' +
           '<form method="post" action="/admin/roles" class="inline">' +
@@ -494,7 +525,7 @@ class RolesPage {
           '"><input type="hidden" name="member" value="' + kit.esc(member) +
           '"><button type="submit" class="danger">' +
           t.html('consoleRoles.roleRow.remove') + '</button></form></div>';
-      }).join('') + '</td>';
+      }).join('') + moreLine + removeOther + '</td>';
     }).join('');
     // WHAT THE ROLE AUTHORIZES (#303), each removable unless the role is a
     // console role, whose permission is fixed.
@@ -571,10 +602,27 @@ class RolesPage {
    * @returns the lines as HTML, or nothing when no client confers it
    */
   static conferredBy(t, one, listView) {
-    const clients = one.conferredBy || [];
-    if (!clients.length) {
+    const all = one.conferredBy || [];
+    if (!all.length) {
       return '';
     }
+    // The first MEMBERS_SHOWN, the rest counted and removable by name
+    // (#313), roleRow()'s arrangement.
+    const clients = all.slice(0, RolesPage.MEMBERS_SHOWN);
+    const more = all.length - clients.length;
+    const rest = more > 0
+      ? '<div class="sub">' + t.html('consoleRoles.roleRow.more',
+                                     { n: more }) + '</div>' +
+        '<form method="post" action="/admin/roles" class="inline">' +
+        RolesPage.rolesBack(listView) +
+        '<input type="hidden" name="action" ' +
+        'value="remove-conferring-client">' +
+        '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+        '"><label>' + t.html('consoleRoles.roleRow.removeOther') +
+        ' <input type="text" name="client" required></label> ' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleRoles.roleRow.remove') + '</button></form>'
+      : '';
     return '<br><span class="sub">' +
       t.html('consoleRoles.conferredBy.lead') + '</span>' +
       clients.map(function (client) {
@@ -587,7 +635,7 @@ class RolesPage {
           '"><input type="hidden" name="client" value="' +
           kit.esc(client) + '"><button type="submit" class="danger">' +
           t.html('consoleRoles.roleRow.remove') + '</button></form></div>';
-      }).join('');
+      }).join('') + rest;
   }
 
   /**

@@ -1680,7 +1680,16 @@ const SCHEMAS = {
         'ticket by the KDC and cannot be moved, and an LDAP connection has ' +
         'no expiry at all.', {}),
       sessions: { type: 'array',
-                  items: { $ref: '#/components/schemas/SessionRow' } }
+                  items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedHeld: { type: 'integer',
+        description: 'Live sessions that authenticated nobody, all of ' +
+                     'them: never filtered and counted before paging.' },
+      unauthenticatedSessions: { type: 'array',
+        description: 'One page of those sessions, moved by ' +
+                     '`anonymousPage` (#313).',
+        items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedPaging: openObject(
+        'Where in the unauthenticated sessions that page is.', {})
     }, PAGING_PROPERTIES)),
 
   SessionRow: openObject(
@@ -3974,8 +3983,13 @@ const SCHEMAS = {
       endpoints: openObject('Every GNAP endpoint of this realm, absolute.', {}),
       capabilities: openObject('The default authorization server\'s RFC 9635 ' +
                                'section 9 document.', {}),
-      authorizationServers: { type: 'array', items: openObject('A named ' +
+      authorizationServers: { type: 'array',
+        description: 'One page of the named authorization servers, moved ' +
+                     'by `serversPage` (#313).',
+        items: openObject('A named ' +
           'authorization server and its GNAP capabilities.', {}) },
+      authorizationServersPaging: openObject(
+        'Where in the named authorization servers that page is.', {}),
       tokenFormats: { type: 'array', items: { type: 'string' } },
       verificationMaterial: openObject('The public material that verifies ' +
                                        'the self-contained formats (absent ' +

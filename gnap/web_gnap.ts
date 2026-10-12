@@ -117,6 +117,11 @@ class GnapPage {
                     '#list-grantsPage">' +
                     esc(state) + '</a>';
       }).join(' · ');
+    // The named authorization servers are paged on `serversPage` (#313).
+    const serversNav = json.authorizationServersPaging
+      ? kit.pageNavPair('/admin/gnap', ctx.query,
+                        json.authorizationServersPaging, t)
+      : { head: '', foot: '' };
     const grantNav = kit.pageNavPair('/admin/gnap', ctx.query,
                                        Object.assign({},
                                                      json.grants.paging,
@@ -207,7 +212,8 @@ class GnapPage {
       'href="/admin/authorization-servers">' +
       t.html('consoleGnap.authorizationServersLink') + '</a>' +
       t.html('consoleGnap.publishesWhatEnforces') +
-      '</p><table><thead><tr><th>' + t.html('consoleGnap.thServer') +
+      '</p>' + serversNav.head + '<table><thead><tr><th>' +
+      t.html('consoleGnap.thServer') +
       '</th><th>' + t.html('consoleGnap.thGrantEndpoint') + '</th><th>' +
       t.html('consoleGnap.thStartModes') + '</th><th>' +
       t.html('consoleGnap.thFinish') + '</th><th>' +
@@ -223,7 +229,8 @@ class GnapPage {
       list(caps.key_proofs_supported) + '</td><td>' +
       list(caps.token_formats_supported) + '</td><td>' +
       esc(caps.key_rotation_supported) + '</td></tr>' + capabilityRows +
-      '</tbody></table><h2>' + t.html('consoleGnap.tokenFormats') +
+      '</tbody></table>' + serversNav.foot + '<h2>' +
+      t.html('consoleGnap.tokenFormats') +
       '</h2><table class="kv"><tr><th>jwt-signed</th><td>' +
       t.html('consoleGnap.jwtSigned',
              { uri: material ? material.jwt.jwks_uri : '' }) +

@@ -104,6 +104,8 @@
   "roleRow.none": "ingen",
   "roleRow.setOn": "anges på ",
   "roleRow.remove": "Ta bort",
+  "roleRow.more": "och {n} till",
+  "roleRow.removeOther": "Ta bort en annan:",
   "roleRow.consoleRole": "konsolroll",
   "roleRow.nativeRole": "inbyggd roll",
   "roleRow.roleOf": "roll för <code>{application}</code>, bärs som <code>{local}</code>",

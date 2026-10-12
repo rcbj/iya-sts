@@ -104,6 +104,8 @@
   "roleRow.none": "无",
   "roleRow.setOn": "设置于",
   "roleRow.remove": "移除",
+  "roleRow.more": "还有 {n} 个",
+  "roleRow.removeOther": "移除其他：",
   "roleRow.consoleRole": "控制台角色",
   "roleRow.nativeRole": "原生角色",
   "roleRow.roleOf": "<code>{application}</code> 的角色，以 <code>{local}</code> 携带",
