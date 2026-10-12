@@ -42,6 +42,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -255,46 +257,69 @@ async function federatedSignIn(idpUser, opts) {
   log.debug("Entering federatedSignIn(). " + idpUser);
   const o = opts || {};
   const cookies = jar();
-  const trail = { linkScreens: 0, linkScreen: "", idpScreens: 0 };
+  const trail = { linkScreens: 0, linkScreen: null, linkScreenAt: "",
+                  idpScreens: 0 };
   let r = await hop(cookies, realmBase(SP) + "/federation/login/" + REL);
   for (let step = 0; step < 24; step += 1) {
     if (r.status >= 300 && r.status < 400 && r.location) {
-      r = await hop(cookies, new URL(r.location, r.url).toString());
+      const next = new URL(r.location, r.url).toString();
+      // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // its view is what it offers, and its acts are the API's.
+      if (/\/authn\/login\?authn=/.test(next)) {
+        const at = new URL(next);
+        const screenBase = at.origin +
+          at.pathname.replace(/\/authn\/login$/, "");
+        const opened = await authnSignin.screen(screenBase, next,
+          { cookie: cookies.header() });
+        cookies.take({ headers: { getSetCookie: function () {
+          return opened.setCookies;
+        } } });
+        const linking = at.pathname.indexOf("/realm/" + SP + "/") === 0;
+        if (linking) {
+          trail.linkScreens += 1;
+          trail.linkScreen = opened.view || {};
+          trail.linkScreenAt = next;
+          if (o.link === "stop" || trail.linkScreens > (o.attempts || 1)) {
+            r = { status: opened.status, headers: null, url: next,
+                  body: JSON.stringify(opened.json), location: "" };
+            break;
+          }
+        } else {
+          trail.idpScreens += 1;
+        }
+        const answer = await authnSignin.submit(screenBase, next,
+          linking
+            ? { action: o.link === "cancel" ? "cancel" : "login",
+                username: "not-the-person",
+                password: o.password || PASSWORD }
+            : { action: "login", username: idpUser, password: PASSWORD },
+          { screen: opened });
+        cookies.take({ headers: answer.headers });
+        r = { status: authnSignin.responseLike(answer).status,
+              headers: answer.headers, url: next,
+              body: answer.text || JSON.stringify(answer.json),
+              location: answer.location };
+        // A REFUSED LINK is the screen drawn again with the sentence, as
+        // the form was: counted, and the walk stops there.
+        if (linking && answer.next === "refused") {
+          trail.linkScreens += 1;
+          break;
+        }
+        continue;
+      }
+      r = await hop(cookies, next);
       continue;
     }
     if (r.status !== 200) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const onward = forms.find(function (f) {
       return f.method === "post" && ("id_token" in f.fields);
     });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
-    const at = new URL(r.url).pathname;
-    if (signIn && at.indexOf("/realm/" + SP + "/") === 0) {
-      trail.linkScreens += 1;
-      trail.linkScreen = r.body;
-      if (o.link === "stop" || trail.linkScreens > (o.attempts || 1)) {
-        break;
-      }
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: "not-the-person", password: o.password || PASSWORD,
-        action: o.link === "cancel" ? "cancel" : "login" }));
-      continue;
-    }
-    if (signIn) {
-      trail.idpScreens += 1;
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: idpUser, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       r = await postForm(cookies, to, Object.assign({}, consent.fields, {
@@ -448,11 +473,13 @@ async function linkAtFirstSignIn(world) {
               async function () {
     assert.strictEqual(got.trail.linkScreens, 1,
       "trail: " + JSON.stringify(got.trail) + " " + squash(got.r.body));
-    assert.ok(/readonly/.test(got.trail.linkScreen) &&
-              got.trail.linkScreen.indexOf("value=\"" + who + "\"") >= 0,
-              squash(got.trail.linkScreen));
-    assert.ok(!/id="webauthn_only"/.test(got.trail.linkScreen),
-              "a passwordless box is offered on the linking screen");
+    // The screen's view (#571): the name fixed (`locked`, drawn readonly),
+    // and neither a passkey on its own nor an anonymous session offered.
+    const linkView = got.trail.linkScreen || {};
+    assert.strictEqual(linkView.locked, who, JSON.stringify(linkView));
+    assert.ok(linkView.passkey === false && linkView.anonymous === false,
+              "a passwordless door is offered on the linking screen: " +
+              JSON.stringify(linkView));
   });
   await check("nothing is written onto the entry before the link",
               async function () {
@@ -481,14 +508,20 @@ async function linkAtFirstSignIn(world) {
   // THE LINKING SCREEN HANDED TO ANOTHER BROWSER: the step is bound to the
   // browser the partner's response arrived in (account-linking CSRF).
   got = await federatedSignIn(who, { link: "stop" });
-  const screen = formsIn(got.trail.linkScreen).find(function (f) {
-    return "authn_id" in f.fields;
-  });
+  // The linking screen's address, signed in from another browser's jar
+  // over `/authn-api` (#571): that browser holds its own arrival cookie,
+  // not the one the partner's response arrived with.
   const elsewhere = jar();
-  let other = await postForm(elsewhere,
-    new URL(screen.action, got.r.url).toString(),
-    Object.assign({}, screen.fields, { username: who, password: PASSWORD,
-                                       action: "login" }));
+  const linkAt = new URL(got.trail.linkScreenAt);
+  const fromElsewhere = await authnSignin.submit(linkAt.origin +
+    linkAt.pathname.replace(/\/authn\/login$/, ""),
+    got.trail.linkScreenAt,
+    { action: "login", username: who, password: PASSWORD });
+  elsewhere.take({ headers: fromElsewhere.headers });
+  let other = { status: authnSignin.responseLike(fromElsewhere).status,
+                body: fromElsewhere.text || "",
+                url: got.trail.linkScreenAt,
+                location: fromElsewhere.location };
   for (let i = 0; i < 5 && other.status >= 300 && other.status < 400;
        i += 1) {
     other = await hop(elsewhere, new URL(other.location, other.url)
