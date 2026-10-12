@@ -345,13 +345,18 @@ async function signInToThePortal(base, user, log2, options) {
     }
     location = at.headers.get("location") || "";
   }
+  // A REFUSAL is said in its own words, which the assertion below carries.
+  const refusedText = at.status >= 400
+    ? (await at.text().catch(function () {
+      return "";
+    })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400) : "";
   const back = new URL(fromLocation(location));
   const code = back.searchParams.get("code");
   assert.ok(/\/portal\/callback$/.test(back.pathname) && code &&
             back.searchParams.get("state") === state,
     "the authorization endpoint should answer the portal's callback with a " +
     "code and the state it was sent; it answered " + at.status + " to \"" +
-    location + "\"");
+    location + "\"" + (refusedText ? ": " + refusedText : ""));
 
   const tokenUrl = base + "/oauth2/token";
   async function tokenRequest(form) {

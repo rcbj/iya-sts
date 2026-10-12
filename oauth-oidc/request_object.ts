@@ -419,7 +419,7 @@ class RequestObject {
    * @param profile - what the selected authorization server publishes
    * @returns true when one is required
    */
-  signedRequired(client: Json, profile: Json): Json {
+  signedRequired(client: Json, profile: Json, clientId?: string): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
     // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
@@ -439,8 +439,9 @@ class RequestObject {
     // conform to the profile in that realm, and say so. An operator's own
     // `oauth2.requireSignedRequestObject`, or the entry's own flag, still
     // binds them.
+    // The client view carries no `client_id`, so a caller names it.
     const exempt = !!client && this.deps.fapi.publicClientExempt(
-      client.client_id, client.token_endpoint_auth_method);
+      clientId || client.client_id, client.token_endpoint_auth_method);
     const required = explicit || (byProfile && !exempt);
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
@@ -1219,7 +1220,7 @@ class RequestObject {
     const profile = options.profile || {};
     const clientId = String(options.clientId || '');
     const query = options.query || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile, clientId);
     const compact = String(options.jwt || '').trim();
 
     let jws = compact;
@@ -1621,7 +1622,8 @@ class RequestObject {
     const query = options.query || {};
     const client = options.client || {};
     const profile = options.profile || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile,
+                                         String(query.client_id || ''));
     const byValue = query.request !== undefined && query.request !== '';
     const byReference = query.request_uri !== undefined &&
                         query.request_uri !== '';

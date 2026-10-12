@@ -9656,7 +9656,8 @@ class OAuth2Server {
     // the hosted public clients' exemption (#568).
     if (!jwtSecured &&
         !requestObject.signedRequired(client,
-                                      self.authorizationProfileOf(req))) {
+                                      self.authorizationProfileOf(req),
+                                      String(outer.client_id || ''))) {
       log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);
@@ -10545,7 +10546,8 @@ class OAuth2Server {
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
-                                     self.authorizationProfileOf(req))) {
+                                     self.authorizationProfileOf(req),
+                                     clientId)) {
       log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). Pushed " +
                 "plain, and a " +
                 "signed request object is now required.");
@@ -17773,8 +17775,11 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     // FAPI 2.0 section 5.3.2.2 item 4 (#140): a push authenticates its client.
+    // The hosted public clients (#446, #568) push with nothing to
+    // authenticate with: the profile's exemption, read here too.
     const fapiPushed = fapi.parAuthenticationRefusal(
-      !!observation.authenticated);
+      !!observation.authenticated ||
+      fapi.publicClientExempt(clientId, declaredMethod));
     if (fapiPushed) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: an " +
                 "unauthenticated push.");
@@ -17944,7 +17949,7 @@ class OAuth2Server {
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
     } else {
-      if (requestObject.signedRequired(registered, profile)) {
+      if (requestObject.signedRequired(registered, profile, clientId)) {
         log.debug("Leaving OAuth2Server.parRequest(). A signed request " +
                   "object is required.");
         return refuse(400, 'invalid_request', 'This push carries plain ' +
