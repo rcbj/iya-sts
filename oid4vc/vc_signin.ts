@@ -9,20 +9,42 @@
 // OPENID4VP AS A WAY OF SIGNING IN (2026-09-17, #38) — a wallet's
 // presentation producing the SESSION every protocol family here reads.
 //
-//   GET  /authn/wallet?authn={id}          starts one: an OpenID4VP request
-//        /authn/wallet?mfa={step}          bound to the pending authentication
-//                                          (or to a second-factor step), and a
-//                                          303 to the page below
+// SINCE #574 (2026-10-12) THE PAGES ARE ROUTES OF THE SIGN-IN SURFACE (#571):
+//
+//   GET  /authn/wallet?authn={id}          the shell; the browser asks the
+//        /authn/wallet?mfa={step}          API below to START one, bound to
+//        [&siop=1][&enrol=1]               the pending authentication (or to
+//                                          a second-factor step)
 //   GET  /authn/wallet/wait?authn={id}&state={state}[&response_code={code}]
-//                           [&mfa={step}][&qr=1]
-//                                          the page the browser waits on: the
-//                                          Digital Credentials API button, the
-//                                          same-device link, and — once the
-//                                          wallet has answered — the sign-in
-//   POST /authn/wallet/dc-api              what that button's script posts:
-//                                          the wallet's answer through the
-//                                          Digital Credentials API
-//   GET  /authn/wallet.js                  that script
+//                           [&mfa={step}][&enrol=1][&qr=1]
+//                                          the shell the browser waits on;
+//                                          the runtime draws the Digital
+//                                          Credentials API button, the
+//                                          same-device link and — with
+//                                          `?qr=1` — the QR code, and asks
+//                                          the API whether the wallet answered
+//
+//   GET  /authn-api/wallet?…               what the start page needs: the
+//                                          door's kind, and the CSRF token
+//   POST /authn-api/wallet                 START: the transaction, the
+//                                          binding cookie, and the wait page
+//   GET  /authn-api/wallet/{state}         the wait page's view
+//   POST /authn-api/wallet/{state}/status  the poll, which FINISHES the
+//                                          sign-in once the wallet answered
+//   POST /authn-api/wallet/{state}/dc-api  the Digital Credentials API's
+//                                          answer, finished in that request
+//
+// `authn/authn_api.ts` is the door — the operation table, JSON, the Origin
+// and the X-CSRF-Token bound to the `sts_session` cookie — and hands each
+// operation here. Everything these answers say is JSON; refusals are
+// English and carry no error code (codes are recorded, never sent). The
+// pages that were drawn here (the wait page, the QR page, every refusal)
+// are drawn in the browser by `oid4vc/web_vc_signin.ts`, and the script that
+// was served at `/authn/wallet.js` is part of the sign-in surface's bundle.
+//
+// THE PENDING ID, THE STEP ID AND THE STATE ARE BEARER CAPABILITIES (#574):
+// none of them is written to a log line here, and `common/audit.js` redacts
+// them from the paths and queries a row or the call log records.
 //
 // The Verifier at `/oid4vp/verifier` checked presentations properly and then
 // said yes on a web page and stopped; that was a row of the root `CLAUDE.md`'s
@@ -98,29 +120,16 @@
 //      works on, and where it is on the page says so.
 //
 // ---------------------------------------------------------------------------
-// THE PAGE HAS A SCRIPT NOW, AND IT IS THE ROOT CLAUDE.md's EXCEPTION, ARGUED
-// AGAIN.
+// THE PAGE NEEDS A SCRIPT, AND SINCE #574 IT IS THE SIGN-IN SURFACE'S.
 //
-// The wait page had none, and argued that it needed none: a `<meta>` refresh
-// was the poll and the answer a page this server drew. The Digital
-// Credentials API is a BROWSER API CALL — `navigator.credentials.get()` —
-// and there is no markup, no form and no link that makes a browser ask a
-// wallet over CTAP hybrid; the answer arrives in the page and in nowhere
-// else. So the page CANNOT offer the one path that resists the relay without
-// a script, which is the test the root CLAUDE.md sets. The exception is the
-// same shape as every other: `script-src 'self'`, one static resource
-// (`/authn/wallet.js`), never `'unsafe-inline'`, set through
-// `app.contentSecurityPolicy()` so `frame-ancestors` cannot be lost — and a
-// REAL SUBMIT BUTTON, whose form posts to the answer endpoint. With the
-// script blocked the button still submits, the endpoint answers with a page
-// saying the Digital Credentials API did not run, and the same-device link —
-// a plain link, on this page and that one — is the way on.
-//
-// **THE `<meta>` REFRESH MOVED TO THE QR PAGE.** A reload while the browser's
-// credential dialog is open throws the dialog away, so the scripted page does
-// not refresh itself; it has a *Check now* link for a same-device wallet that
-// does not come back. The QR page — `?qr=1`, drawn only where the QR code is
-// on — has no script and polls exactly as the wait page used to.
+// The Digital Credentials API is a BROWSER API CALL —
+// `navigator.credentials.get()` — and no markup, form or link makes a
+// browser ask a wallet over CTAP hybrid; the answer arrives in the page and
+// in nowhere else. That was the argument for `/authn/wallet.js`, the one
+// script the server-drawn wait page carried. The wait page is a route of the
+// static sign-in surface now (#569: script is required), so the call is the
+// surface's runtime's, and the `<meta>` refresh the QR page polled with is
+// the runtime's poll of `POST …/status`.
 //
 // ---------------------------------------------------------------------------
 // A WALLET AND ANOTHER FACTOR (#38's follow-ups). A presentation is one
@@ -130,16 +139,14 @@
 // `authn.finishWithWallet()`), for the same person only.
 //
 // TRUST REALMS: `/realm/acme/authn/wallet` signs somebody in to `acme`, with
-// `acme`'s Verifier, against `acme`'s register. The one URL this file builds
-// that `app.js` does not rewrite — the `meta refresh` target — goes through
-// `realms.href()` itself.
+// `acme`'s Verifier, against `acme`'s register. An address an answer names
+// goes through `authn.locationOf()`, which a redirect would have used.
 //
 // A ROUTE MODULE ON THE COMPOSITION ROOT'S PATTERN (#50): it registers nothing
 // when required; `common/protocol_stack.ts` builds it and calls
 // `registerRoutes(app)` after `vc_verifier` and after `authn`.
 // ---------------------------------------------------------------------------
 
-import qrcode = require('qrcode');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -160,14 +167,10 @@ import clusterClaims = require('../cluster/cluster_claims');
 import identityAssurance = require('../common/identity_assurance');
 // SIOPv2 (#129): an enrolment, when the browser collects one.
 import siop = require('./siop');
-// THE LANGUAGE A PAGE IS DRAWN IN (#539): the translator, and the English one
-// every refusal page keeps.
-import i18n = require('../common/i18n');
-import PageLocale = require('../common/page_locale');
 
-const { log, xmlEscape } = helpers;
+const { log } = helpers;
 
-type Translator = ReturnType<typeof PageLocale.forPage>;
+type Json = any;
 
 // What the console and the audit log call a sign-in that came through here.
 const VIA = 'OpenID4VP (a wallet)';
@@ -179,8 +182,12 @@ const BINDING_COOKIE = 'sts_wallet_binding';
 // single-use values allow, for `vc_offers.ts`'s reason.
 const CLAIM_SKEW_MS = 60 * 1000;
 
-// The query parameters these pages take, and `wallet`, which the start page
-// passes to the Verifier's own rule (`vpWalletFor()`).
+// Where an enrolment is started from and returns to (#129).
+const ENROL_HOME = '/portal/self-issued';
+
+// The query parameters the two shells and the start view take, and
+// `wallet`, which the start passes to the Verifier's own rule
+// (`vpWalletFor()`).
 const QUERY = validation.z.looseObject({
   authn: validation.types.opt(validation.types.opaque),
   mfa: validation.types.opt(validation.types.opaque),
@@ -195,68 +202,12 @@ const QUERY = validation.z.looseObject({
   enrol: validation.types.opt(validation.types.oneOf(['1']))
 });
 
-const DC_API_FORM = validation.z.looseObject({
-  authn: validation.types.opt(validation.types.opaque),
-  mfa: validation.types.opt(validation.types.opaque),
-  state: validation.types.opt(validation.types.opaque),
-  response: validation.types.opt(validation.z.string().max(1024 * 1024))
-});
-
-// ---------------------------------------------------------------------------
-// THE SCRIPT (`/authn/wallet.js`). Static: everything it needs is on the page
-// as data attributes, so the resource never changes and names nothing about a
-// transaction. It finds the form, hides the button where the browser has no
-// Digital Credentials API (and says so), and otherwise turns the submit into
-// `navigator.credentials.get()`, puts the DigitalCredential it gets back into
-// the form's hidden field, and submits the form for real. A refusal from the
-// browser is shown and the button comes back.
-// ---------------------------------------------------------------------------
-const WALLET_SCRIPT = [
-  '(function () {',
-  '  var form = document.getElementById("wallet-dcapi-form");',
-  '  if (!form) { return; }',
-  '  var button = document.getElementById("wallet-dcapi");',
-  '  var field = document.getElementById("wallet-dcapi-response");',
-  '  var missing = document.getElementById("wallet-dcapi-missing");',
-  '  var problem = document.getElementById("wallet-dcapi-error");',
-  '  var supported = typeof window.DigitalCredential !== "undefined" &&',
-  '    !!navigator.credentials &&',
-  '    typeof navigator.credentials.get === "function";',
-  '  if (!supported) {',
-  '    missing.hidden = false;',
-  '    button.disabled = true;',
-  '    return;',
-  '  }',
-  '  form.addEventListener("submit", function (event) {',
-  '    event.preventDefault();',
-  '    var request = JSON.parse(form.getAttribute("data-request"));',
-  '    button.disabled = true;',
-  '    problem.hidden = true;',
-  '    navigator.credentials.get({ mediation: "required",',
-  '      digital: { requests: [request] } })',
-  '      .then(function (credential) {',
-  '        field.value = JSON.stringify({ protocol: credential.protocol,',
-  '          data: credential.data });',
-  '        form.submit();',
-  '      }, function (error) {',
-  '        button.disabled = false;',
-  '        problem.textContent = "The wallet did not answer: " +',
-  '          ((error && (error.name + " " + error.message)) || error);',
-  '        problem.hidden = false;',
-  '      });',
-  '  });',
-  '})();',
-  ''
-].join('\n');
-
 type RouteApp = typeof app;
 
 interface VcSigninDeps {
   log: typeof log;
-  xmlEscape: typeof xmlEscape;
   randomId: typeof helpers.randomId;
   baseUrlOf: typeof helpers.baseUrlOf;
-  parseBody: typeof helpers.parseBody;
   config: typeof config;
   realms: typeof realms;
   stsCrypto: typeof stsCrypto;
@@ -268,14 +219,26 @@ interface VcSigninDeps {
   clusterClaims: typeof clusterClaims;
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
-  contentSecurityPolicy: (overrides: any) => string;
-  qrSvg: (text: string) => Promise<string>;
+}
+
+/**
+ * What `/authn-api`'s door hands an operation: the transaction's `state` (a
+ * path parameter), the act's checked `body`, the request's `query`, and the
+ * `csrf` token a view answers.
+ */
+interface WalletArgs {
+  state?: string;
+  body?: Json;
+  query?: Json;
+  csrf?: string;
 }
 
 /**
  * OpenID4VP as a way of signing in (#38): `/authn/wallet`, where a wallet's
  * presentation — through the Digital Credentials API, the same-device link or,
  * when offered, a QR code — produces the session every protocol family reads.
+ * Its pages are routes of the sign-in surface since #574, and its acts are
+ * `/authn-api/wallet` operations.
  */
 class VcSignin {
   /**
@@ -286,11 +249,6 @@ class VcSignin {
    * The cookie that ties a sign-in to the browser that started it.
    */
   static readonly BINDING_COOKIE = BINDING_COOKIE;
-  /**
-   * The script served at `/authn/wallet.js`, which makes the Digital
-   * Credentials API call the wait page's button asks for.
-   */
-  static readonly WALLET_SCRIPT = WALLET_SCRIPT;
 
   /**
    * Builds the wallet sign-in from the modules it reads.
@@ -313,10 +271,8 @@ class VcSignin {
     helpers.log.debug("Leaving VcSignin.defaultDeps().");
     return {
       log: log,
-      xmlEscape: xmlEscape,
       randomId: helpers.randomId,
       baseUrlOf: helpers.baseUrlOf,
-      parseBody: helpers.parseBody,
       config: config,
       realms: realms,
       stsCrypto: stsCrypto,
@@ -327,16 +283,7 @@ class VcSignin {
       stsDid: vcDid.stsDid,
       clusterClaims: clusterClaims,
       identityAssurance: identityAssurance,
-      siop: siop,
-      contentSecurityPolicy: app.contentSecurityPolicy,
-      // The QR code as SVG, as `common/totp.ts` draws its own — see there for
-      // why SVG and why server-side.
-      qrSvg: function qrSvg(text: string): Promise<string> {
-        helpers.log.debug("Entering qrSvg().");
-        helpers.log.debug("Leaving qrSvg().");
-        return qrcode.toString(text, { type: 'svg',
-          errorCorrectionLevel: 'M', margin: 2, width: 240 });
-      }
+      siop: siop
     };
   }
 
@@ -434,6 +381,16 @@ class VcSignin {
     return stsCrypto.digest('sha256', String(value || ''), 'base64url');
   }
 
+  // A TRANSACTION AS A LOG LINE NAMES IT (#574): the first characters of its
+  // state's hash, enough to follow one sign-in through the log and nothing
+  // a reader could act with — the state itself is a bearer capability.
+  private tagOf(state: unknown): string {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.tagOf().");
+    log.debug("Leaving VcSignin.tagOf().");
+    return '#' + this.hashOf(state).slice(0, 10);
+  }
+
   // This service's origin — what `expected_origins` names and what the
   // answer's audience must carry. The realm prefix is a path, and an origin
   // has none.
@@ -465,6 +422,8 @@ class VcSignin {
   // carries is replaced. Path=/ because a realm's pages live under a prefix
   // and the cookie is one per browser, not one per realm: the transaction
   // keeps the hash, and a realm's transaction is in that realm's store.
+  // SameSite=Lax as before: the API's acts are same-origin fetches, which
+  // send it.
   private bindingCookie(res: any, value: string): void {
     const { log, config } = this.deps;
     log.debug("Entering VcSignin.bindingCookie().");
@@ -475,130 +434,86 @@ class VcSignin {
     log.debug("Leaving VcSignin.bindingCookie().");
   }
 
-  // Every page this door draws, in the sign-in screen's own look. `opts`
-  // carries the refresh target (the QR page) or `scripted` (the wait page,
-  // the one this door relaxes the policy for) — and, for a page drawn in the
-  // reader's language (#539), its translator and the path the language
-  // chooser returns to. A page drawn without one is a refusal, which stays
-  // English (`lang="en"`, no chooser), as every error here does.
-  private page(res: any, status: number, title: string, body: string,
-               opts?: { refreshUrl?: string; scripted?: boolean;
-                        t?: Translator; returnTo?: string }): void {
-    const { log, xmlEscape, authn, contentSecurityPolicy, realms } = this.deps;
-    const o = opts || {};
-    log.debug("Entering VcSignin.page(). status=" + status);
-    const t = o.t;
-    const html = '<!DOCTYPE html>\n<html' +
-      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') + '><head><meta ' +
-      'charset="utf-8">' +
-      (o.refreshUrl
-        ? '<meta http-equiv="refresh" content="' + this.pollSeconds() +
-          ';url=' + xmlEscape(o.refreshUrl) + '">'
-        : '') +
-      '<title>' + xmlEscape(title) + '</title><style>' + authn.CARD_CSS +
-      '.qr{display:block;margin:12px auto;border:1px solid #eee;' +
-      'border-radius:8px}.checks{font-size:.8em;margin:8px 0;' +
-      'padding-left:18px}.checks .bad{color:#b00020}' +
-      'form.dcapi button{width:100%}' +
-      '</style></head><body><div class="card">' +
-      // The chooser is a form of its own, above the page's; the wait page's
-      // script finds its own form by id, so the two never meet.
-      (t ? PageLocale.chooser(t, realms.currentPrefix(),
-                              PageLocale.herePath(o.returnTo || '/'))
-         : '') +
-      body +
-      '</div>' +
-      (o.scripted ? '<script src="' + authn.WALLET_SCRIPT_PATH +
-                    '"></script>' : '') +
-      '</body></html>\n';
-    if (o.scripted) {
-      // THE ONE RELAXATION, through the builder — see the header.
-      res.set('Content-Security-Policy',
-              contentSecurityPolicy({ 'script-src': "'self'" }));
-    }
-    res.status(status).type('text/html').set('Cache-Control', 'no-store')
-      .send(html);
-    log.debug("Leaving VcSignin.page().");
-  }
-
-  // The English translator (#539), for the refusal pages: every error stays
-  // English, and the fragments a refusal shares with a translated page (the
-  // way back, the same-device link) are drawn from the one catalog so their
-  // English is written once.
-  private english(): Translator {
-    const { log } = this.deps;
-    log.debug("Entering VcSignin.english().");
-    log.debug("Leaving VcSignin.english().");
-    return i18n.translator(['en'], 'en');
-  }
-
-  // The translator for a page drawn for a waiting sign-in (#539): the
-  // pending record's application and `ui_locales`, as the sign-in screen it
-  // came from was drawn in, and — for an enrolment — the person enrolling.
-  private translatorFor(ctx: any, tx: any): Translator {
-    const { log } = this.deps;
-    log.debug("Entering VcSignin.translatorFor().");
-    const record = (ctx && ctx.record) || {};
-    const enrol = tx && tx.signIn && tx.signIn.enrol;
-    const t = PageLocale.forPage({
-      application: String(record.application || ''),
-      uiLocales: String(record.uiLocales || ''),
-      username: enrol ? String(enrol.username || '') : undefined
-    });
-    log.debug("Leaving VcSignin.translatorFor(). " + t.locale);
-    return t;
-  }
-
-  // The way back to the screen the person came from, when there is one. In
-  // the page's language where it passes its translator; English otherwise.
-  private fallbackHtml(record: any, translator?: Translator): string {
+  // ---------------------------------------------------------------------------
+  // THE ANSWERS. Every one is JSON (`authn.answerJson()`), as every
+  // `/authn-api` answer is. A REFUSAL is `{ ok: false, next: 'refused',
+  // errors: [why] }` with the English sentence the page used to draw, and —
+  // where the page drew more than a sentence — a `view` of kind `refused` the
+  // surface draws under it: the heading, the presentation's checks, and the
+  // ways on (`retry`, `back`). The code is marked on the response by the
+  // caller and is never in the body.
+  // ---------------------------------------------------------------------------
+  // error-code: none — the definition of this helper; every call site marks its own code first
+  private refuse(res: any, status: number, why: string, view?: Json): void {
     const { log, authn } = this.deps;
-    log.debug("Entering VcSignin.fallbackHtml().");
-    const t = translator || this.english();
-    if (!record) {
-      log.debug("Leaving VcSignin.fallbackHtml(). Nothing to go back to.");
-      return '<p class="sub">' + t.html('wallet.fallback.nothing') + '</p>';
+    log.debug("Entering VcSignin.refuse(). " + status);
+    const body: Json = { ok: false, next: 'refused', errors: [String(why)] };
+    if (view) {
+      body.view = Object.assign({ wallet: 'refused' }, view);
     }
-    log.debug("Leaving VcSignin.fallbackHtml().");
-    return '<p><a id="wallet-fallback" href="' + authn.LOGIN_PATH +
-      '?authn=' + encodeURIComponent(record.id) + '">' +
-      t.html('wallet.fallback.another') + '</a> &mdash; ' +
-      t.html('wallet.fallback.stillWaiting') + '</p>';
+    authn.answerJson(res, status, body);
+    log.debug("Leaving VcSignin.refuse().");
   }
 
-  private asked(req: any, res: any, where: string, schema: any): any {
-    const { log, validation, errorCodes } = this.deps;
-    log.debug("Entering VcSignin.asked().");
-    const checked = where === 'body'
-      ? validation.checkParsed(this.deps.parseBody(req), 'body', schema)
-      : validation.check(req, 'query', schema);
-    if (!checked.ok) {
-      errorCodes.mark(res, 'STS-VC-0069');
-      this.page(res, 400, 'Not a sign-in request',
-        '<h1>400 &mdash; not a sign-in request</h1><div class="err">' +
-        this.deps.xmlEscape(checked.detail) + '</div>');
-      log.debug("Leaving VcSignin.asked(). Refused.");
-      return null;
+  // The way back to the screen the person came from, for a refusal's view:
+  // the sign-in screen of the pending record, the portal for an enrolment,
+  // or nothing where nothing is waiting.
+  private backOf(ctx: any): Json {
+    const { log, authn } = this.deps;
+    log.debug("Entering VcSignin.backOf().");
+    if (ctx && ctx.enrol) {
+      log.debug("Leaving VcSignin.backOf(). The portal.");
+      return { back: ENROL_HOME, backKind: 'portal' };
     }
-    log.debug("Leaving VcSignin.asked().");
-    return checked.value;
+    const record = ctx && ctx.record;
+    if (!record || !record.id) {
+      log.debug("Leaving VcSignin.backOf(). Nothing to go back to.");
+      return { back: '', backKind: 'none' };
+    }
+    log.debug("Leaving VcSignin.backOf().");
+    return { back: authn.LOGIN_PATH + '?authn=' +
+                   encodeURIComponent(record.id),
+             backKind: 'screen' };
   }
 
-  private closedPage(res: any, record: any): void {
+  // A refusal's view: its heading (English, as every refusal), the way back,
+  // and anything more the caller adds.
+  private refusedView(heading: string, ctx: any, more?: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.refusedView().");
+    log.debug("Leaving VcSignin.refusedView().");
+    return Object.assign({ heading: heading, retry: '', checks: [],
+                           verdict: '' }, this.backOf(ctx), more || {});
+  }
+
+  private closed(res: any, ctx: any): void {
     const { log, errorCodes } = this.deps;
-    log.debug("Entering VcSignin.closedPage().");
+    log.debug("Entering VcSignin.closed().");
     log.info('oid4vp-signin: refused because oid4vp.signIn is off.');
     errorCodes.mark(res, 'STS-VC-0052');
-    this.page(res, 403, 'Wallet sign-in is off',
-      '<h1>403 &mdash; signing in with a wallet is off</h1><div ' +
-      'class="err">This service can sign people in with a verifiable ' +
-      'presentation, and <code>oid4vp.signIn</code> is set to false.</div>' +
-      '<p>Turn it on at <a href="/admin/oid4vp">/admin/oid4vp</a>, or with ' +
-      '<code>POST /admin-api/config/set</code>. The Verifier still checks ' +
-      'the presentations a verification asks for (<code>POST ' +
-      '/admin-api/verifications/start</code>); it signs nobody in.</p>' +
-      this.fallbackHtml(record));
-    log.debug("Leaving VcSignin.closedPage().");
+    this.refuse(res, 403, 'This service can sign people in with a ' +
+      'verifiable presentation, and oid4vp.signIn is set to false. Turn it ' +
+      'on at /admin/oid4vp, or with POST /admin-api/config/set. The ' +
+      'Verifier still checks the presentations a verification asks for ' +
+      '(POST /admin-api/verifications/start); it signs nobody in.',
+      this.refusedView('Signing in with a wallet is off', ctx));
+    log.debug("Leaving VcSignin.closed().");
+  }
+
+  // A query or a body this door does not take.
+  private parsed(res: any, value: Json, where: string, schema: any): Json {
+    const { log, validation, errorCodes } = this.deps;
+    log.debug("Entering VcSignin.parsed(). " + where);
+    const checked = validation.checkParsed(value || {}, where, schema);
+    if (!checked.ok) {
+      errorCodes.mark(res, 'STS-VC-0069');
+      this.refuse(res, 400, 'Not a sign-in request: ' +
+                  String(checked.detail || ''));
+      log.debug("Leaving VcSignin.parsed(). Refused.");
+      return null;
+    }
+    log.debug("Leaving VcSignin.parsed().");
+    return checked.value;
   }
 
   // ---------------------------------------------------------------------------
@@ -628,7 +543,8 @@ class VcSignin {
     return { record: authn.pendingFor(query.authn), step: null, mfaId: '' };
   }
 
-  // The wait page's own address, for this transaction.
+  // The wait page's own address, for this transaction: a path of the
+  // sign-in surface, without the realm's prefix.
   private waitPathFor(ctx: any, state: string): string {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.waitPathFor().");
@@ -640,95 +556,178 @@ class VcSignin {
       (ctx.enrol ? '&enrol=1' : '');
   }
 
+  // The kind of sign-in a page is drawn for: an enrolment, a self-issued ID
+  // Token, or a presentation.
+  private kindOf(ctx: any, selfIssued: boolean): string {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.kindOf().");
+    log.debug("Leaving VcSignin.kindOf().");
+    return ctx.enrol ? 'enrol' : (selfIssued ? 'selfIssued' : 'wallet');
+  }
+
+  // What a view answers beside itself for the browser's language (#539):
+  // the pending record's `ui_locales`, as the sign-in screen it came from was
+  // drawn in, and — for an enrolment — the person enrolling's own language.
+  private languageOf(ctx: any, username: string): Json {
+    const { log, authn } = this.deps;
+    log.debug("Entering VcSignin.languageOf().");
+    const record = (ctx && ctx.record) || {};
+    const own = username ? authn.preferredLanguageOf(username) : null;
+    log.debug("Leaving VcSignin.languageOf().");
+    return Object.assign({ uiLocales: String(record.uiLocales || '') },
+                         own ? { preferredLanguage: own } : {});
+  }
+
   // ---------------------------------------------------------------------------
-  // GET /authn/wallet — start a sign-in.
+  // WHAT A START IS REFUSED FOR, asked by the start view and by the start
+  // itself, in this order: an enrolment with nobody signed in; the door
+  // closed; a self-issued ID as a second factor; nothing pending. Answers
+  // `{ ctx, selfIssued, enrolFor }`, or null once it has sent a refusal.
   // ---------------------------------------------------------------------------
-  /**
-   * Handles `GET /authn/wallet`: starts a sign-in bound to the pending
-   * authentication or second-factor step, and redirects to the wait page.
-   *
-   * @param req - the request
-   * @param res - the response
-   */
-  handleStart(req: any, res: any): void {
-    const { log, authn, verifier, errorCodes, xmlEscape, randomId,
-            stsDid } = this.deps;
-    log.debug("Entering VcSignin.handleStart().");
-    const query = this.asked(req, res, 'query', QUERY);
-    if (!query) {
-      log.debug("Leaving VcSignin.handleStart(). Malformed.");
-      return;
-    }
+  private startable(req: any, res: any, query: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcSignin.startable().");
     const selfIssued = query.siop === '1';
-    // AN ENROLMENT STARTS HERE WITH NO RECORD: it is given one, and it is for
-    // the person this browser is signed in as, or for nobody.
+    // AN ENROLMENT STARTS HERE WITH NO RECORD: it is given one at the start,
+    // and it is for the person this browser is signed in as, or for nobody.
     let enrolFor = '';
     if (query.enrol === '1') {
       enrolFor = this.personOf(req);
       if (!selfIssued || !enrolFor || query.mfa) {
         errorCodes.mark(res, 'STS-VC-0093');
-        this.page(res, 403, 'Sign in first',
-          '<h1>403 &mdash; sign in before enrolling a wallet</h1><div ' +
-          'class="err">A self-issued key is enrolled for the person who is ' +
-          'signed in, from their own portal, and this browser holds no ' +
-          'sign-on session.</div><p><a href="/portal/self-issued">Your ' +
-          'self-issued IDs</a></p>');
-        log.debug("Leaving VcSignin.handleStart(). No session to enrol for.");
-        return;
+        this.refuse(res, 403, 'A self-issued key is enrolled for the person ' +
+          'who is signed in, from their own portal, and this browser holds ' +
+          'no sign-on session.',
+          this.refusedView('Sign in before enrolling a wallet',
+                           { enrol: true }));
+        log.debug("Leaving VcSignin.startable(). No session to enrol for.");
+        return null;
       }
-      query.authn = 'enrol-' + randomId(18);
     }
-    const ctx = this.contextOf(query);
-    const record = ctx.record;
+    const ctx = enrolFor ? { record: null, step: null, mfaId: '',
+                             enrol: true }
+                         : this.contextOf(query);
     if (!this.enabled() || (selfIssued && !this.selfIssuedEnabled())) {
-      this.closedPage(res, record);
-      log.debug("Leaving VcSignin.handleStart(). The door is closed.");
-      return;
+      this.closed(res, ctx);
+      log.debug("Leaving VcSignin.startable(). The door is closed.");
+      return null;
     }
     if (selfIssued && ctx.mfaId) {
       errorCodes.mark(res, 'STS-VC-0093');
-      this.page(res, 400, 'Not a second factor',
-        '<h1>400 &mdash; a self-issued ID is not offered as a second ' +
-        'factor</h1>' + this.fallbackHtml(record));
-      log.debug("Leaving VcSignin.handleStart(). SIOPv2 as a second factor.");
-      return;
+      this.refuse(res, 400, 'A self-issued ID is not offered as a second ' +
+        'factor.', this.refusedView('Not a second factor', ctx));
+      log.debug("Leaving VcSignin.startable(). SIOPv2 as a second factor.");
+      return null;
     }
-    if (!record) {
+    if (!enrolFor && !ctx.record) {
       errorCodes.mark(res, 'STS-VC-0053');
-      this.page(res, 400, 'Nothing to sign in to',
-        '<h1>400 &mdash; nothing is waiting for this sign-in</h1><div ' +
-        'class="err">A wallet sign-in continues a request that is waiting ' +
-        'at the sign-in screen, and this link names none — it was never ' +
-        'started, it has expired, or it has been used.</div>' +
-        this.fallbackHtml(null));
-      log.debug("Leaving VcSignin.handleStart(). No pending record.");
+      this.refuse(res, 400, 'A wallet sign-in continues a request that is ' +
+        'waiting at the sign-in screen, and this link names none — it was ' +
+        'never started, it has expired, or it has been used.',
+        this.refusedView('Nothing is waiting for this sign-in', null));
+      log.debug("Leaving VcSignin.startable(). No pending record.");
+      return null;
+    }
+    log.debug("Leaving VcSignin.startable().");
+    return { ctx: ctx, selfIssued: selfIssued, enrolFor: enrolFor };
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /authn-api/wallet — what the start page needs: what it is starting,
+  // and the CSRF token the start carries. It creates NOTHING: a GET is
+  // followed by link checkers and prefetchers, and the transaction and the
+  // binding cookie are made by the POST.
+  // ---------------------------------------------------------------------------
+  /**
+   * `GET /authn-api/wallet`: the start page's view, after the refusals a
+   * start would meet.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param args - `query`, `csrf`
+   * @returns nothing
+   */
+  startView(req: any, res: any, args: WalletArgs): void {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.startView().");
+    const query = this.parsed(res, args.query, 'query', QUERY);
+    if (!query) {
+      log.debug("Leaving VcSignin.startView(). Malformed.");
       return;
     }
-    const wallet = verifier.vpWalletFor(req);
+    const can = this.startable(req, res, query);
+    if (!can) {
+      log.debug("Leaving VcSignin.startView(). Refused.");
+      return;
+    }
+    this.deps.authn.answerJson(res, 200, Object.assign({ ok: true,
+      view: { wallet: 'start', kind: this.kindOf(can.ctx, can.selfIssued),
+              secondFactor: !!can.ctx.mfaId },
+      csrf: String(args.csrf || '') },
+      this.languageOf(can.ctx, can.enrolFor)));
+    log.debug("Leaving VcSignin.startView().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /authn-api/wallet — start a sign-in: the transaction, bound to the
+  // pending record (or step, or enrolment) and to this browser by the
+  // binding cookie this answer sets; the answer names the wait page.
+  // ---------------------------------------------------------------------------
+  /**
+   * `POST /authn-api/wallet`: starts a sign-in bound to the pending
+   * authentication or second-factor step, and names the wait page.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param args - `body`: `authn`, `mfa`, `siop`, `enrol`, `wallet`
+   * @returns a promise settled when the answer is sent
+   */
+  async start(req: any, res: any, args: WalletArgs): Promise<void> {
+    const { log, authn, verifier, errorCodes, randomId, stsDid } = this.deps;
+    log.debug("Entering VcSignin.start().");
+    const query = Object.assign({}, args.body || {});
+    const can = this.startable(req, res, query);
+    if (!can) {
+      log.debug("Leaving VcSignin.start(). Refused.");
+      return;
+    }
+    const { selfIssued, enrolFor } = can;
+    let ctx = can.ctx;
+    if (enrolFor) {
+      ctx = this.contextOf({ enrol: '1', authn: 'enrol-' + randomId(18) });
+    }
+    const record = ctx.record;
+    const wallet = verifier.vpWalletFor(req, String(query.wallet || ''));
     if (wallet.error) {
       errorCodes.mark(res, 'STS-VC-0033');
-      this.page(res, 400, 'Wallet address refused',
-        '<h1>400 &mdash; that wallet address is not registered</h1>' +
-        '<div class="err">' + xmlEscape(wallet.error) + '</div>' +
-        this.fallbackHtml(record));
-      log.debug("Leaving VcSignin.handleStart(). The wallet was refused.");
+      this.refuse(res, 400, String(wallet.error),
+        this.refusedView('That wallet address is not registered', ctx));
+      log.debug("Leaving VcSignin.start(). The wallet was refused.");
       return;
     }
+    // An x509 Client Identifier (#230) signs under the Verifier's
+    // certificate, which is issued here, before the synchronous build
+    // below reads it; nothing for any other prefix.
+    await verifier.prepareSignedClientId(req);
     const binding = this.bindingOf(req) || randomId(32);
     let did = '';
     try {
       did = stsDid(req);
     } catch (e) {
-      log.debug("Caught in VcSignin.handleStart(): " + ((e && e.message) ||
-                                                        e));
+      log.debug("Caught in VcSignin.start(): " + ((e && e.message) || e));
       did = '';
     }
+    // WHERE THE WALLET SENDS THE PERSON BACK (`afterResponseUri()` adds the
+    // record, the state and the response_code): the wait page — with the
+    // step a second factor waits on, which it must name to be admitted.
+    const completeQuery = enrolFor ? '?enrol=1'
+      : (ctx.mfaId ? '?mfa=' + encodeURIComponent(ctx.mfaId) : '');
     const tx = verifier.buildVpRequest(req, {
       responseType: selfIssued ? 'id_token' : 'vp_token',
       signIn: {
         authnId: record.id,
         bindingHash: this.hashOf(binding),
-        completePath: authn.WALLET_WAIT_PATH + (enrolFor ? '?enrol=1' : ''),
+        completePath: authn.WALLET_WAIT_PATH + completeQuery,
         ttlMs: this.ttlMs(),
         crossDevice: this.qrOffered(),
         issuerDids: did ? [did] : [],
@@ -742,156 +741,23 @@ class VcSignin {
     }
     verifier.saveTransaction(tx);
     this.bindingCookie(res, binding);
-    log.info('oid4vp-signin: a wallet sign-in was started for the pending ' +
-             'authentication ' + record.id + ' (' + (record.protocol || '') +
-             (ctx.mfaId ? ', as a second factor' : '') + '), transaction ' +
-             tx.state + '.');
-    res.redirect(303, this.waitPathFor(ctx, tx.state));
-    log.debug("Leaving VcSignin.handleStart(). Sent to the wait page.");
-  }
-
-  // The checks a presentation went through, for a page that has to say why
-  // nobody was signed in.
-  private checksHtml(tx: any): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering VcSignin.checksHtml().");
-    const checks = (tx.verdict && tx.verdict.checks) || [];
-    if (!checks.length) {
-      log.debug("Leaving VcSignin.checksHtml(). None.");
-      return '';
-    }
-    log.debug("Leaving VcSignin.checksHtml().");
-    return '<ul class="checks" id="wallet-checks">' +
-      checks.map(function (c: any) {
-        return '<li class="' + (c.ok ? 'ok' : 'bad') + '">' +
-          (c.ok ? '&#10003; ' : '&#10007; ') + xmlEscape(c.name) + ' &mdash; ' +
-          xmlEscape(c.detail) + '</li>';
-      }).join('') + '</ul>';
-  }
-
-  // The same-device link, on the wait page and on the no-script answer.
-  // In the page's language where it passes its translator (#539).
-  private sameDeviceHtml(req: any, tx: any, translator?: Translator): string {
-    const { log, xmlEscape, verifier } = this.deps;
-    log.debug("Entering VcSignin.sameDeviceHtml().");
-    const t = translator || this.english();
-    const query = verifier.vpRequestQuery(req, tx);
-    const sameDevice = String(tx.signIn.walletUrl || '') + '?' + query;
-    log.debug("Leaving VcSignin.sameDeviceHtml().");
-    return '<p><a class="fedbtn" id="wallet-open" href="' +
-      xmlEscape(sameDevice) + '">' + t.html('wallet.sameDevice.open') +
-      '<span>' + t.html('wallet.sameDevice.note') + '</span></a></p>';
-  }
-
-  // The page while nothing has arrived: the Digital Credentials API button
-  // (scripted), the same-device link, and — where it is on — a link to the
-  // QR page. Drawn in the reader's language (#539); the script's one message
-  // is a refusal, which stays English in the script itself.
-  private waitingPage(req: any, res: any, ctx: any, tx: any): void {
-    const { log, xmlEscape, verifier, realms } = this.deps;
-    log.debug("Entering VcSignin.waitingPage().");
-    const t = this.translatorFor(ctx, tx);
-    const self = this.waitPathFor(ctx, tx.state);
-    const seconds = Math.max(0, Math.round((tx.expires - Date.now()) / 1000));
-    const dcRequest = verifier.dcApiRequestFor(tx);
-    const dcHtml = dcRequest
-      ? '<form method="post" class="dcapi" id="wallet-dcapi-form" action="' +
-        this.deps.authn.WALLET_DCAPI_PATH + '" data-request="' +
-        xmlEscape(JSON.stringify(dcRequest)) + '">' +
-        '<input type="hidden" name="authn" value="' +
-        xmlEscape(ctx.record.id) + '">' +
-        '<input type="hidden" name="state" value="' + xmlEscape(tx.state) +
-        '">' +
-        (ctx.mfaId ? '<input type="hidden" name="mfa" value="' +
-                     xmlEscape(ctx.mfaId) + '">' : '') +
-        '<input type="hidden" name="response" id="wallet-dcapi-response" ' +
-        'value="">' +
-        '<button type="submit" class="fedbtn" id="wallet-dcapi">' +
-        t.html('wallet.wait.dcButton') +
-        // The API's name is a product name, and stays as it is.
-        '<span>Digital Credentials API</span></button></form>' +
-        '<p class="sub" id="wallet-dcapi-missing" hidden>' +
-        (this.qrOffered() ? t.html('wallet.wait.dcMissingQr')
-                          : t.html('wallet.wait.dcMissing')) + '</p>' +
-        '<p class="err" id="wallet-dcapi-error" hidden></p>' +
-        '<noscript><p class="sub" id="wallet-noscript">' +
-        t.html('wallet.wait.noscript') + '</p></noscript>'
-      : '';
-    const qrLink = tx.signIn.crossDevice
-      ? '<p class="sub"><a id="wallet-qr-link" href="' + xmlEscape(self) +
-        '&amp;qr=1">' + t.html('wallet.wait.qrLink') + '</a> &mdash; ' +
-        t.html('wallet.wait.qrLinkNote') + '</p>'
-      : '';
-    const selfIssued = tx.responseType === 'id_token';
-    const heading = ctx.enrol ? t.text('wallet.heading.enrol')
-      : selfIssued ? t.text('wallet.heading.selfIssued')
-        : t.text('wallet.heading.wallet');
-    const sub = ctx.enrol ? t.html('wallet.sub.enrol')
-      : selfIssued ? t.html('wallet.sub.selfIssued')
-        : ctx.mfaId ? t.html('wallet.sub.walletSecondFactor')
-          : t.html('wallet.sub.wallet');
-    this.page(res, 200, heading,
-      '<h1>' + xmlEscape(heading) + '</h1>' +
-      '<p class="sub">' + sub + '</p>' +
-      dcHtml + this.sameDeviceHtml(req, tx, t) + qrLink +
-      '<p id="wallet-waiting">' +
-      t.html('wallet.wait.expires', { seconds: seconds }) + ' ' +
-      t.html('wallet.wait.notBack') + ' <a ' +
-      'id="wallet-check" href="' + xmlEscape(self) + '">' +
-      t.html('wallet.wait.checkNow') + '</a>' + t.html('wallet.end') +
-      '</p>' +
-      this.fallbackHtml(ctx.record, t) +
-      '<div class="meta"><div>' +
-      t.html('wallet.wait.signingInFor',
-             { protocol: ctx.record.protocol || '' }) + '</div><div>' +
-      t.html('wallet.wait.verifier', { verifier: tx.clientId }) +
-      '</div></div>',
-      { scripted: !!dcRequest, t: t,
-        // A GET draws it, so the chooser comes back to the same address.
-        returnTo: realms.currentPrefix() + self });
-    log.debug("Leaving VcSignin.waitingPage().");
-  }
-
-  // The QR page: no script, a server-drawn code, and a `<meta>` refresh as
-  // the poll. In the reader's language (#539), the security warning with it.
-  private async qrPage(req: any, res: any, ctx: any, tx: any): Promise<void> {
-    const { log, xmlEscape, verifier, realms, qrSvg } = this.deps;
-    log.debug("Entering VcSignin.qrPage().");
-    const t = this.translatorFor(ctx, tx);
-    const query = verifier.vpRequestQuery(req, tx);
-    // SIOPv2's static `siopv2:` for an ID Token alone (#129).
-    const svg = await qrSvg((tx.responseType === 'id_token' ? 'siopv2://?' :
-                             'openid4vp://?') + query);
-    const self = this.waitPathFor(ctx, tx.state) + '&qr=1';
-    const seconds = Math.max(0, Math.round((tx.expires - Date.now()) / 1000));
-    this.page(res, 200, t.text('wallet.heading.wallet'),
-      '<h1>' + t.html('wallet.qr.heading') + '</h1>' +
-      '<img class="qr" id="wallet-qr" alt="' +
-      xmlEscape(t.text('wallet.qr.alt')) + '" ' +
-      'src="data:image/svg+xml;base64,' +
-      Buffer.from(svg, 'utf8').toString('base64') + '">' +
-      // A warning the person must read before scanning, not a refusal: it is
-      // drawn in their language.
-      '<p class="err" id="wallet-qr-warning">' + t.html('wallet.qr.warning') +
-      '</p>' +
-      '<p id="wallet-waiting">' +
-      t.html('wallet.qr.waiting', { poll: this.pollSeconds(),
-                                    seconds: seconds }) + ' <a href="' +
-      xmlEscape(self) + '">' + t.html('wallet.qr.checkNow') + '</a>' +
-      t.html('wallet.end') + '</p>' +
-      this.fallbackHtml(ctx.record, t),
-      { refreshUrl: realms.href(self), t: t,
-        returnTo: realms.currentPrefix() + self });
-    log.debug("Leaving VcSignin.qrPage().");
+    log.info('oid4vp-signin: a wallet sign-in was started for a pending ' +
+             (enrolFor ? 'enrolment' : 'authentication (' +
+                         (record.protocol || '') + ')') +
+             (ctx.mfaId ? ', as a second factor' : '') + ', transaction ' +
+             this.tagOf(tx.state) + '.');
+    authn.answerJson(res, 200, { ok: true, next: 'wait', state: tx.state,
+                                 go: this.waitPathFor(ctx, tx.state) });
+    log.debug("Leaving VcSignin.start(). The wait page.");
   }
 
   // ---------------------------------------------------------------------------
   // THE CHECKS EVERY ANSWER TO A WAITING BROWSER MAKES FIRST, in order, for
-  // the wait page and the Digital Credentials API answer alike: the door is
-  // open; the transaction exists and was started for this record; this is
-  // the browser that started it; it is not already finished; the record is
-  // still pending. Answers `{ ctx, tx }`, or null once it has drawn a
-  // refusal.
+  // the wait view, the poll and the Digital Credentials API answer alike:
+  // the door is open; the transaction exists and was started for this
+  // record; this is the browser that started it; it is not already
+  // finished; the record is still pending. Answers `{ ctx, tx }`, or null
+  // once it has sent a refusal.
   // ---------------------------------------------------------------------------
   private admitted(req: any, res: any, query: any): any {
     const { log, authn, verifier, errorCodes, stsCrypto } = this.deps;
@@ -899,7 +765,7 @@ class VcSignin {
     const ctx = this.contextOf(query);
     const record = ctx.record;
     if (!this.enabled()) {
-      this.closedPage(res, record);
+      this.closed(res, ctx);
       log.debug("Leaving VcSignin.admitted(). The door is closed.");
       return null;
     }
@@ -909,13 +775,12 @@ class VcSignin {
         String(tx.signIn.mfaId || '') !== ctx.mfaId ||
         !!tx.signIn.enrol !== !!ctx.enrol) {
       errorCodes.mark(res, 'STS-VC-0056');
-      this.page(res, 400, 'No such sign-in',
-        '<h1>400 &mdash; no such wallet sign-in</h1><div class="err">This ' +
-        'sign-in was never started here, or it has expired. Each lives ' +
-        '<code>oid4vp.signInTtlS</code> seconds.</div>' +
-        '<p><a href="' + (record ? authn.WALLET_PATH + '?authn=' +
-          encodeURIComponent(record.id) : '/') + '">Start again</a></p>' +
-        this.fallbackHtml(record));
+      this.refuse(res, 400, 'This sign-in was never started here, or it ' +
+        'has expired. Each lives oid4vp.signInTtlS seconds.',
+        this.refusedView('No such wallet sign-in', ctx,
+          { retry: record && !ctx.enrol && !ctx.mfaId
+            ? authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id)
+            : '' }));
       log.debug("Leaving VcSignin.admitted(). Unknown or expired.");
       return null;
     }
@@ -923,15 +788,14 @@ class VcSignin {
     if (!binding || !stsCrypto.constantTimeEquals(this.hashOf(binding),
                                                   tx.signIn.bindingHash)) {
       log.warn(errorCodes.tag('STS-VC-0055') + 'oid4vp-signin: transaction ' +
-               tx.state + ' was asked about by a browser that did not start ' +
-               'it. Refused.');
+               this.tagOf(tx.state) + ' was asked about by a browser that ' +
+               'did not start it. Refused.');
       errorCodes.mark(res, 'STS-VC-0055');
-      this.page(res, 403, 'Not this browser',
-        '<h1>403 &mdash; this sign-in was started in another browser' +
-        '</h1><div class="err">A wallet sign-in finishes only in the ' +
-        'browser that started it. If that was you, go back to that ' +
-        'browser; otherwise somebody sent you a link to their own ' +
-        'sign-in.</div>');
+      this.refuse(res, 403, 'A wallet sign-in finishes only in the browser ' +
+        'that started it. If that was you, go back to that browser; ' +
+        'otherwise somebody sent you a link to their own sign-in.',
+        this.refusedView('This sign-in was started in another browser',
+                         null));
       log.debug("Leaving VcSignin.admitted(). Wrong browser.");
       return null;
     }
@@ -939,9 +803,8 @@ class VcSignin {
     // of a finished sign-in: `completeAuthentication()` spent it.
     if (tx.signIn.completed) {
       errorCodes.mark(res, 'STS-VC-0062');
-      this.page(res, 400, 'Already used',
-        '<h1>400 &mdash; this sign-in has already been used</h1>' +
-        this.fallbackHtml(record));
+      this.refuse(res, 400, 'This sign-in has already been used.',
+        this.refusedView('This sign-in has already been used', ctx));
       log.debug("Leaving VcSignin.admitted(). Already completed.");
       return null;
     }
@@ -951,10 +814,9 @@ class VcSignin {
       if (this.personOf(req).toLowerCase() !==
           String(tx.signIn.enrol.username).toLowerCase()) {
         errorCodes.mark(res, 'STS-VC-0093');
-        this.page(res, 403, 'Signed out',
-          '<h1>403 &mdash; you are no longer signed in as the person this ' +
-          'enrolment was for</h1><p><a href="/portal/self-issued">Start ' +
-          'again</a></p>');
+        this.refuse(res, 403, 'You are no longer signed in as the person ' +
+          'this enrolment was for.',
+          this.refusedView('Signed out', ctx, { retry: ENROL_HOME }));
         log.debug("Leaving VcSignin.admitted(). The enrolment's person " +
                   "left.");
         return null;
@@ -964,10 +826,9 @@ class VcSignin {
     }
     if (!record || (!ctx.mfaId && !authn.pendingFor(record.id))) {
       errorCodes.mark(res, 'STS-VC-0053');
-      this.page(res, 400, 'Nothing to sign in to',
-        '<h1>400 &mdash; the request you were signing in for has ' +
-        'expired</h1><div class="err">Start again from the application.' +
-        '</div>');
+      this.refuse(res, 400, 'The request you were signing in for has ' +
+        'expired. Start again from the application.',
+        this.refusedView('Nothing to sign in to', null));
       log.debug("Leaving VcSignin.admitted(). The pending record is gone.");
       return null;
     }
@@ -975,94 +836,177 @@ class VcSignin {
     return { ctx: ctx, tx: tx };
   }
 
-  // ---------------------------------------------------------------------------
-  // GET /authn/wallet/wait — wait, and finish.
-  // ---------------------------------------------------------------------------
-  /**
-   * Handles `GET /authn/wallet/wait`: the page the browser waits on, and the
-   * sign-in once the wallet has answered.
-   *
-   * @param req - the request
-   * @param res - the response
-   */
-  async handleWait(req: any, res: any): Promise<void> {
-    const { log, errorCodes, stsCrypto } = this.deps;
-    log.debug("Entering VcSignin.handleWait().");
-    const query = this.asked(req, res, 'query', QUERY);
-    if (!query) {
-      log.debug("Leaving VcSignin.handleWait(). Malformed.");
-      return;
-    }
-    const admitted = this.admitted(req, res, query);
-    if (!admitted) {
-      log.debug("Leaving VcSignin.handleWait(). Not admitted.");
-      return;
-    }
-    const { ctx, tx } = admitted;
-    if (query.response_code !== undefined &&
-        !(tx.signIn.responseCodeHash &&
-          stsCrypto.constantTimeEquals(this.hashOf(query.response_code),
-                                       tx.signIn.responseCodeHash))) {
-      errorCodes.mark(res, 'STS-VC-0065');
-      this.page(res, 403, 'Wrong response code',
-        '<h1>403 &mdash; that response code is not this sign-in\'s</h1>' +
-        '<div class="err">The link your wallet sent you back with does not ' +
-        'carry the code this service gave it.</div>' +
-        this.fallbackHtml(ctx.record));
-      log.debug("Leaving VcSignin.handleWait(). response_code mismatch.");
-      return;
-    }
-    const outcome = tx.signIn.outcome;
-    if (!tx.verdict || !outcome) {
-      if (query.qr === '1' && tx.signIn.crossDevice) {
-        await this.qrPage(req, res, ctx, tx);
-      } else {
-        this.waitingPage(req, res, ctx, tx);
-      }
-      log.debug("Leaving VcSignin.handleWait(). Still waiting.");
-      return;
-    }
-    await this.finish(req, res, ctx, tx);
-    log.debug("Leaving VcSignin.handleWait().");
+  // A state in a path, checked for shape: what the door hands in, which an
+  // empty or overlong segment never names.
+  private stateOf(res: any, args: WalletArgs): string | null {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.stateOf().");
+    const asked = this.parsed(res, { state: args.state }, 'params',
+      validation.z.object({ state: validation.types.opaque }));
+    log.debug("Leaving VcSignin.stateOf().");
+    return asked ? String(asked.state) : null;
   }
 
   // ---------------------------------------------------------------------------
-  // POST /authn/wallet/dc-api — the Digital Credentials API's answer, posted
-  // by the wait page's script (or, with no script, an empty form).
-  //
-  // Admitted exactly as the wait page is — the binding cookie, the
-  // transaction, the record — and then:
-  //
-  //   * **THE PAGE'S ORIGIN** (`Origin`) must be this service's, which is also
-  //     the origin the request named in `expected_origins`: a form another
-  //     site made could only post here without the cookie (SameSite=Lax), and
-  //     this says so even where the cookie arrives.
-  //   * **AN EMPTY ANSWER IS THE NO-SCRIPT PATH** and is answered with a page
-  //     saying the Digital Credentials API did not run, and the same-device
-  //     link.
-  //   * otherwise `vc_verifier.ts`'s `answerDcApi()` decrypts, verifies with
-  //     `origin:<origin>` as the audience, and writes the verdict; and the
-  //     sign-in is finished HERE, in this request — it is the browser's own.
+  // GET /authn-api/wallet/{state} — the wait page's view. The record, the
+  // step and the enrolment are the TRANSACTION's (the binding cookie says
+  // this is the browser that started it), so the view's address carries
+  // nothing but the state. It finishes nothing: the poll does.
   // ---------------------------------------------------------------------------
   /**
-   * Handles `POST /authn/wallet/dc-api`: the Digital Credentials API's answer,
-   * admitted as the wait page is, verified with `origin:<origin>` as the
-   * audience, and the sign-in finished in this request.
+   * `GET /authn-api/wallet/{state}`: what the wait page draws.
    *
    * @param req - the request
    * @param res - the response
+   * @param args - `state`, `csrf`
+   * @returns nothing
    */
-  async handleDcApi(req: any, res: any): Promise<void> {
-    const { log, errorCodes, xmlEscape, verifier } = this.deps;
-    log.debug("Entering VcSignin.handleDcApi().");
-    const body = this.asked(req, res, 'body', DC_API_FORM);
-    if (!body) {
-      log.debug("Leaving VcSignin.handleDcApi(). Malformed.");
+  waitView(req: any, res: any, args: WalletArgs): void {
+    const { log, verifier, authn } = this.deps;
+    log.debug("Entering VcSignin.waitView().");
+    const state = this.stateOf(res, args);
+    if (state === null) {
+      log.debug("Leaving VcSignin.waitView(). Malformed.");
       return;
     }
+    const known = verifier.transactionFor(state);
+    const signIn = (known && known.signIn) || {};
+    const admitted = this.admitted(req, res, {
+      state: state, authn: String(signIn.authnId || ''),
+      mfa: String(signIn.mfaId || ''), enrol: signIn.enrol ? '1' : '' });
+    if (!admitted) {
+      log.debug("Leaving VcSignin.waitView(). Not admitted.");
+      return;
+    }
+    const { ctx, tx } = admitted;
+    const selfIssued = tx.responseType === 'id_token';
+    const query = verifier.vpRequestQuery(req, tx);
+    const dcRequest = verifier.dcApiRequestFor(tx);
+    const record = ctx.record;
+    authn.answerJson(res, 200, Object.assign({ ok: true,
+      view: {
+        wallet: 'wait',
+        state: tx.state,
+        kind: this.kindOf(ctx, selfIssued),
+        secondFactor: !!ctx.mfaId,
+        authn: String(record.id),
+        mfa: ctx.mfaId,
+        enrol: !!ctx.enrol,
+        // The Digital Credentials API's request (openid4vp-v1-signed), or
+        // null where the transaction offers none.
+        dcRequest: dcRequest || null,
+        // The same-device link.
+        sameDevice: String(tx.signIn.walletUrl || '') + '?' + query,
+        // The plain QR code's text, only where it is offered; SIOPv2's
+        // static `siopv2:` for an ID Token alone (#129).
+        qr: tx.signIn.crossDevice
+          ? (selfIssued ? 'siopv2://?' : 'openid4vp://?') + query : '',
+        expiresIn: Math.max(0, Math.round((tx.expires - Date.now()) / 1000)),
+        pollSeconds: this.pollSeconds(),
+        protocol: String(record.protocol || ''),
+        verifier: String(tx.clientId || ''),
+        back: this.backOf(ctx).back,
+        backKind: this.backOf(ctx).backKind
+      },
+      csrf: String(args.csrf || '') },
+      this.languageOf(ctx, ctx.enrol ? String(tx.signIn.enrol.username) : '')));
+    log.debug("Leaving VcSignin.waitView().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /authn-api/wallet/{state}/status — the poll, and the collection: an
+  // answer the wallet has not given yet is `{ next: 'wait' }`; one it has is
+  // finished here, as the wait page's GET finished it until #574. A
+  // `response_code` the wallet sent the person back with must be the one it
+  // was given (OpenID4VP section 8.2).
+  // ---------------------------------------------------------------------------
+  /**
+   * `POST /authn-api/wallet/{state}/status`: whether the wallet has
+   * answered, and the sign-in finished once it has.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param args - `state`, `body`: `authn`, `mfa`, `enrol`, `response_code`
+   * @returns a promise settled when the answer is sent
+   */
+  async status(req: any, res: any, args: WalletArgs): Promise<void> {
+    const { log, errorCodes, stsCrypto, authn } = this.deps;
+    log.debug("Entering VcSignin.status().");
+    const state = this.stateOf(res, args);
+    if (state === null) {
+      log.debug("Leaving VcSignin.status(). Malformed.");
+      return;
+    }
+    const body = Object.assign({}, args.body || {}, { state: state });
     const admitted = this.admitted(req, res, body);
     if (!admitted) {
-      log.debug("Leaving VcSignin.handleDcApi(). Not admitted.");
+      log.debug("Leaving VcSignin.status(). Not admitted.");
+      return;
+    }
+    const { ctx, tx } = admitted;
+    if (body.response_code !== undefined &&
+        !(tx.signIn.responseCodeHash &&
+          stsCrypto.constantTimeEquals(this.hashOf(body.response_code),
+                                       tx.signIn.responseCodeHash))) {
+      errorCodes.mark(res, 'STS-VC-0065');
+      this.refuse(res, 403, 'The link your wallet sent you back with does ' +
+        'not carry the code this service gave it.',
+        this.refusedView('That response code is not this sign-in\'s', ctx));
+      log.debug("Leaving VcSignin.status(). response_code mismatch.");
+      return;
+    }
+    if (!tx.verdict || !tx.signIn.outcome) {
+      authn.answerJson(res, 200, { ok: true, next: 'wait',
+        expiresIn: Math.max(0, Math.round((tx.expires - Date.now()) /
+                                          1000)) });
+      log.debug("Leaving VcSignin.status(). Still waiting.");
+      return;
+    }
+    await this.finish(req, res, ctx, tx);
+    log.debug("Leaving VcSignin.status().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /authn-api/wallet/{state}/dc-api — the Digital Credentials API's
+  // answer, sent by the wait page's runtime.
+  //
+  // Admitted exactly as the poll is — the binding cookie, the transaction,
+  // the record — after the door's own binding (JSON, an Origin of this
+  // service, the CSRF token), and then:
+  //
+  //   * **THE PAGE'S ORIGIN** (`Origin`) must be this service's own — the
+  //     origin the request named in `expected_origins` and the audience the
+  //     answer is verified against — not merely one of the origins the door
+  //     accepts (`STS-VC-0074`).
+  //   * **AN EMPTY ANSWER** is refused: nothing came back from the browser's
+  //     API (`STS-VC-0081`).
+  //   * otherwise `vc_verifier.ts`'s `answerDcApi()` decrypts, checks the
+  //     protocol, verifies with `origin:<origin>` as the audience, and writes
+  //     the verdict once; and the sign-in is finished HERE, in this request
+  //     — it is the browser's own.
+  // ---------------------------------------------------------------------------
+  /**
+   * `POST /authn-api/wallet/{state}/dc-api`: the Digital Credentials API's
+   * answer, verified with `origin:<origin>` as the audience, and the sign-in
+   * finished in this request.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param args - `state`, `body`: `authn`, `mfa`, `enrol`, `response`
+   * @returns a promise settled when the answer is sent
+   */
+  async dcApi(req: any, res: any, args: WalletArgs): Promise<void> {
+    const { log, errorCodes, verifier } = this.deps;
+    log.debug("Entering VcSignin.dcApi().");
+    const state = this.stateOf(res, args);
+    if (state === null) {
+      log.debug("Leaving VcSignin.dcApi(). Malformed.");
+      return;
+    }
+    const body = Object.assign({}, args.body || {}, { state: state });
+    const admitted = this.admitted(req, res, body);
+    if (!admitted) {
+      log.debug("Leaving VcSignin.dcApi(). Not admitted.");
       return;
     }
     const { ctx, tx } = admitted;
@@ -1070,73 +1014,79 @@ class VcSignin {
     const posted = String(req.headers.origin || '');
     if (posted !== origin) {
       log.warn(errorCodes.tag('STS-VC-0074') + 'oid4vp-signin: a Digital ' +
-               'Credentials API answer for ' + tx.state + ' was posted from ' +
-               'origin "' + posted + '", not "' + origin + '". Refused.');
+               'Credentials API answer for ' + this.tagOf(tx.state) +
+               ' was posted from origin "' + posted + '", not "' + origin +
+               '". Refused.');
       errorCodes.mark(res, 'STS-VC-0074');
-      this.page(res, 403, 'Not this origin',
-        '<h1>403 &mdash; that answer did not come from this page</h1>' +
-        '<div class="err">A wallet\'s answer is accepted only from the page ' +
-        'on ' + xmlEscape(origin) + ' that asked for it.</div>' +
-        this.fallbackHtml(ctx.record));
-      log.debug("Leaving VcSignin.handleDcApi(). Wrong origin.");
+      this.refuse(res, 403, 'A wallet\'s answer is accepted only from the ' +
+        'page on ' + origin + ' that asked for it.',
+        this.refusedView('That answer did not come from this page', ctx));
+      log.debug("Leaving VcSignin.dcApi(). Wrong origin.");
       return;
     }
-    if (!body.response) {
+    const response = body.response;
+    if (!response || (typeof response === 'string' && !response.trim())) {
       errorCodes.mark(res, 'STS-VC-0081');
-      this.page(res, 400, 'Your browser did not ask a wallet',
-        '<h1>Your browser did not ask a wallet</h1><div class="err" ' +
-        'id="wallet-dcapi-noscript">The button uses the browser\'s Digital ' +
-        'Credentials API, which needs scripts, and nothing came back from ' +
-        'it. Use the link below instead.</div>' +
-        this.sameDeviceHtml(req, tx) +
-        '<p><a href="' + xmlEscape(this.waitPathFor(ctx, tx.state)) +
-        '">Back</a></p>' + this.fallbackHtml(ctx.record));
-      log.debug("Leaving VcSignin.handleDcApi(). Nothing was posted.");
+      this.refuse(res, 400, 'Nothing came back from the browser\'s Digital ' +
+        'Credentials API. Use the same-device link instead.');
+      log.debug("Leaving VcSignin.dcApi(). Nothing was posted.");
       return;
     }
-    const answered = await verifier.answerDcApi(tx, body.response, origin);
+    const answered = await verifier.answerDcApi(tx,
+      typeof response === 'string' ? response : JSON.stringify(response),
+      origin);
     if (!answered.ok) {
       errorCodes.mark(res, answered.errorCode);
-      this.page(res, answered.status, 'Not signed in',
-        '<h1>Nobody was signed in</h1><div class="err" ' +
-        'id="wallet-reason">' + xmlEscape(answered.why) + '</div>' +
-        this.fallbackHtml(ctx.record));
-      log.debug("Leaving VcSignin.handleDcApi(). " + answered.errorCode);
+      this.refuse(res, answered.status, String(answered.why),
+        this.refusedView('Nobody was signed in', ctx));
+      log.debug("Leaving VcSignin.dcApi(). " + answered.errorCode);
       return;
     }
     const fresh = verifier.transactionFor(tx.state);
     await this.finish(req, res, ctx, fresh || tx);
-    log.debug("Leaving VcSignin.handleDcApi().");
+    log.debug("Leaving VcSignin.dcApi().");
+  }
+
+  // The checks a presentation went through, for a refusal that has to say
+  // why nobody was signed in.
+  private checksOf(tx: any): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering VcSignin.checksOf().");
+    const checks = (tx.verdict && tx.verdict.checks) || [];
+    log.debug("Leaving VcSignin.checksOf(). " + checks.length);
+    return checks.map(function (c: any) {
+      return { ok: !!c.ok, name: String(c.name || ''),
+               detail: String(c.detail || '') };
+    });
   }
 
   // ---------------------------------------------------------------------------
-  // A DECIDED TRANSACTION, FINISHED: the refusal page, or the session — after
-  // a second factor where one is needed, or as the second factor itself.
+  // A DECIDED TRANSACTION, FINISHED: the refusal, or the session — after a
+  // second factor where one is needed, or as the second factor itself. The
+  // answers are the sign-in screen's (`authn.ts`, *What the sign-in screen's
+  // acts answer*): `redirect` back to what was interrupted, the session
+  // cookie set on that answer and no other; `mfa`, a second factor's page.
   // ---------------------------------------------------------------------------
   private async finish(req: any, res: any, ctx: any, tx: any): Promise<void> {
-    const { log, authn, verifier, errorCodes, xmlEscape,
-            clusterClaims, siop, realms } = this.deps;
+    const { log, authn, verifier, errorCodes, clusterClaims, siop } =
+      this.deps;
     log.debug("Entering VcSignin.finish().");
     const record = ctx.record;
     const outcome = tx.signIn.outcome;
     const selfIssued = tx.responseType === 'id_token';
-    const retry = ctx.enrol ? '/portal/self-issued'
+    const retry = ctx.enrol ? ENROL_HOME
       : ctx.mfaId
         ? authn.WALLET_PATH + '?mfa=' + encodeURIComponent(ctx.mfaId)
         : authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id) +
           (selfIssued ? '&siop=1' : '');
     if (!outcome.ok) {
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
-      this.page(res, 403, 'Not signed in',
-        '<h1>Nobody was signed in</h1>' +
-        '<p id="wallet-verdict">The ' +
-        (selfIssued ? 'self-issued ID Token ' : 'presentation ') +
-        (tx.verdict.ok ? '<strong>verified</strong>' :
-                         '<strong>did not verify</strong>') + '.</p>' +
-        '<div class="err" id="wallet-reason">' + xmlEscape(outcome.reason) +
-        '</div>' + this.checksHtml(tx) +
-        '<p><a href="' + retry + '">Try another credential</a></p>' +
-        this.fallbackHtml(record));
+      this.refuse(res, 403, String(outcome.reason || 'Nobody was signed in.'),
+        this.refusedView('Nobody was signed in', ctx, {
+          retry: retry,
+          verdict: (selfIssued ? 'selfIssued' : 'presentation') +
+                   (tx.verdict.ok ? '.verified' : '.notVerified'),
+          checks: this.checksOf(tx) }));
       log.debug("Leaving VcSignin.finish(). " + outcome.errorCode + ".");
       return;
     }
@@ -1153,15 +1103,17 @@ class VcSignin {
       const store = claimed.reason !== 'used';
       if (store) {
         log.error(errorCodes.tag('STS-VC-0063') + 'oid4vp-signin: the claim ' +
-                  'store could not be asked about transaction ' + tx.state +
-                  ' (' + (claimed.why || 'no reason given') + '); refused ' +
-                  'rather than finished unproven.');
+                  'store could not be asked about transaction ' +
+                  this.tagOf(tx.state) + ' (' +
+                  (claimed.why || 'no reason given') + '); refused rather ' +
+                  'than finished unproven.');
       }
       errorCodes.mark(res, store ? 'STS-VC-0063' : 'STS-VC-0062');
-      this.page(res, store ? 503 : 400, 'Not signed in',
-        '<h1>' + (store ? '503 &mdash; try again shortly' :
-                          '400 &mdash; this sign-in has already been used') +
-        '</h1>' + this.fallbackHtml(record));
+      this.refuse(res, store ? 503 : 400, store
+        ? 'This sign-in could not be finished just now; try again shortly.'
+        : 'This sign-in has already been used.',
+        this.refusedView(store ? 'Try again shortly'
+                               : 'This sign-in has already been used', ctx));
       log.debug("Leaving VcSignin.finish(). The claim was refused.");
       return;
     }
@@ -1177,36 +1129,34 @@ class VcSignin {
                                   'enrolled with a wallet', 'self (SIOPv2)');
       if (!enrolled.ok) {
         errorCodes.mark(res, 'STS-VC-0094');
-        this.page(res, 400, 'Not enrolled',
-          '<h1>That key was not enrolled</h1><div class="err" ' +
-          'id="wallet-reason">' + xmlEscape(enrolled.error) + '</div>' +
-          '<p><a href="/portal/self-issued">Back</a></p>');
+        this.refuse(res, 400, String(enrolled.error),
+          this.refusedView('That key was not enrolled', ctx));
         log.debug("Leaving VcSignin.finish(). Enrolment refused.");
         return;
       }
       log.info('oid4vp-signin: ' + username + ' enrolled the self-issued ' +
-               'subject ' + outcome.subject + ' (transaction ' + tx.state +
-               ').');
-      res.redirect(303, realms.href('/portal/self-issued?enrolled=1'));
+               'subject ' + outcome.subject + ' (transaction ' +
+               this.tagOf(tx.state) + ').');
+      authn.answerJson(res, 200, { ok: true, next: 'redirect',
+        location: authn.locationOf(res, ENROL_HOME + '?enrolled=1') });
       log.debug("Leaving VcSignin.finish(). Enrolled.");
       return;
     }
 
-    // THE WALLET AS THE SECOND FACTOR.
+    // THE WALLET AS THE SECOND FACTOR: `finishWithWallet()` answers the
+    // redirect (or the set-up step) itself.
     if (ctx.mfaId) {
       const finished = authn.finishWithWallet(req, res, ctx.mfaId, outcome);
       if (finished && finished.refused) {
         errorCodes.mark(res, finished.refused === 'policy' ? 'STS-VC-0064' :
                              'STS-VC-0084');
-        this.page(res, 403, 'Not signed in',
-          '<h1>Nobody was signed in</h1><div class="err" ' +
-          'id="wallet-reason">' + xmlEscape(finished.why) + '</div>' +
-          this.fallbackHtml(record));
+        this.refuse(res, 403, String(finished.why),
+          this.refusedView('Nobody was signed in', ctx));
         log.debug("Leaving VcSignin.finish(). Second factor refused.");
         return;
       }
       log.info('oid4vp-signin: ' + username + ' completed a second factor ' +
-               'with a wallet (transaction ' + tx.state + ').');
+               'with a wallet (transaction ' + this.tagOf(tx.state) + ').');
       log.debug("Leaving VcSignin.finish(). Signed in, two factors.");
       return;
     }
@@ -1221,30 +1171,29 @@ class VcSignin {
         // A key may answer as the second factor (#259).
         deviceAwaited: true });
 
-    // A SECOND FACTOR AFTER THE WALLET, where one is needed.
+    // A SECOND FACTOR AFTER THE WALLET, where one is needed: the answer
+    // names its page (`next: 'mfa'`).
     const second = authn.beginSecondFactorAfterWallet(req, res, record,
                                                       username, outcome,
                                                       assessed);
     if (second.refused && second.onRisk) {
       errorCodes.mark(res, second.errorCode || 'STS-RISK-0016');
-      this.page(res, 403, 'Not signed in',
-        '<h1>Nobody was signed in</h1><div class="err" id="wallet-reason">' +
-        'Authentication failed.</div>' + this.fallbackHtml(record));
+      this.refuse(res, 403, 'Authentication failed.',
+        this.refusedView('Nobody was signed in', ctx));
       log.debug("Leaving VcSignin.finish(). Refused on risk.");
       return;
     }
     if (second.refused) {
       errorCodes.mark(res, 'STS-VC-0064');
-      this.page(res, 403, 'Not permitted',
-        '<h1>403 &mdash; the issuance policy refused this sign-in</h1>' +
-        '<div class="err">' + xmlEscape(second.refused) + '</div>');
+      this.refuse(res, 403, String(second.refused),
+        this.refusedView('The issuance policy refused this sign-in', null));
       log.debug("Leaving VcSignin.finish(). Refused by policy.");
       return;
     }
     if (second.handled) {
       log.info('oid4vp-signin: ' + username + ' presented a wallet ' +
                'credential and is asked for a second factor (transaction ' +
-               tx.state + ').');
+               this.tagOf(tx.state) + ').');
       log.debug("Leaving VcSignin.finish(). Second factor asked.");
       return;
     }
@@ -1286,16 +1235,15 @@ class VcSignin {
       log.info('oid4vp-signin: the issuance policy refused a session for ' +
                username + ' after a verified presentation.');
       errorCodes.mark(res, 'STS-VC-0064');
-      this.page(res, 403, 'Not permitted',
-        '<h1>403 &mdash; the issuance policy refused this sign-in</h1>' +
-        '<div class="err">Your presentation verified. This service will not ' +
-        'start a session for this identity.</div><p>That is a policy ' +
-        'decision rather than anything wrong with the credential.</p>');
+      this.refuse(res, 403, 'Your presentation verified. This service will ' +
+        'not start a session for this identity. That is a policy decision ' +
+        'rather than anything wrong with the credential.',
+        this.refusedView('The issuance policy refused this sign-in', null));
       log.debug("Leaving VcSignin.finish(). Refused by policy.");
       return;
     }
     log.info('oid4vp-signin: ' + username + ' signed in with a wallet ' +
-             '(transaction ' + tx.state + ', session ' + session.id + ').');
+             '(transaction ' + this.tagOf(tx.state) + ').');
     // AN IDENTITY VERIFICATION (#127): the disclosed claims the entry agrees
     // with, checked cryptographically, as an electronic_record. Never throws;
     // `oauth2.idaAutomaticVerifications` switches it.
@@ -1305,86 +1253,51 @@ class VcSignin {
       this.deps.identityAssurance.recordAutomatic(username, 'wallet',
         { claims: outcome.disclosed || {}, format: outcome.format });
     }
+    // The session cookie is on this answer, which names where to go.
     authn.completeAuthentication(res, record);
     log.debug("Leaving VcSignin.finish(). Signed in.");
   }
 
-  // Every path writes a response; one that threw would leave a browser
-  // waiting on a request nothing answers.
-  private failed(res: any, e: any): void {
-    const { log, errorCodes, xmlEscape } = this.deps;
-    log.debug("Entering VcSignin.failed().");
-    // A refusal that carries its own code (the Verifier's, #230: an x509
-    // Client Identifier with no certificate or name) keeps it; anything
-    // else is the unhandled failure this was written for.
-    const code = e && typeof e.code === 'string' &&
-                 /^STS-[A-Z]+-\d{4}$/.test(e.code) ? e.code : 'STS-VC-0067';
-    log.error(errorCodes.tag(code) + 'oid4vp-signin: ' +
-              (code === 'STS-VC-0067' ? 'unhandled failure: ' : '') +
-              ((e && (e.stack || e.message)) || e));
-    if (!res.headersSent) {
-      errorCodes.mark(res, code);
-      this.page(res, 500, 'Failed', '<h1>500</h1><div class="err">' +
-                xmlEscape((e && e.message) || String(e)) + '</div>');
+  // ---------------------------------------------------------------------------
+  // THE TWO SHELLS (#574): `/authn/wallet` and `/authn/wallet/wait` answer the
+  // sign-in surface's document, drawn for the application the pending
+  // sign-in is for (its locale policy's default), and the browser draws the
+  // page from `/authn-api/wallet`. Nothing is checked here that the API does
+  // not check: a shell for an id that names nothing draws the API's refusal.
+  // ---------------------------------------------------------------------------
+  private shell(req: any, res: any): void {
+    const { log, authn, validation } = this.deps;
+    log.debug("Entering VcSignin.shell().");
+    const asked = validation.check(req, 'query', QUERY);
+    let application = '';
+    if (asked.ok) {
+      const ctx = this.contextOf(asked.value);
+      application = String((ctx.record && ctx.record.application) || '');
     }
-    log.debug("Leaving VcSignin.failed().");
+    authn.signInShell(req, res, application);
+    log.debug("Leaving VcSignin.shell().");
   }
 
-  // THE ROUTES, registered by the composition root after `vc_verifier`.
+  // THE ROUTES, registered by the composition root after `vc_verifier`: the
+  // two shells. The API's operations are `/authn-api`'s
+  // (`authn/authn_api.ts`), which hands each one here.
   /**
-   * Registers the wallet sign-in routes, after `vc_verifier`'s.
+   * Registers the wallet sign-in's two shells, after `vc_verifier`'s routes.
    *
    * Called by `common/protocol_stack.ts`.
    *
    * @param app - the shared express application
    */
   registerRoutes(app: RouteApp): void {
-    const { log, authn, contentSecurityPolicy } = this.deps;
+    const { log, authn } = this.deps;
     const self = this;
     log.debug("Entering VcSignin.registerRoutes().");
-    app.get(authn.WALLET_PATH, async function (req, res) {
-      log.debug('Entering GET ' + authn.WALLET_PATH + '.');
-      try {
-        // An x509 Client Identifier (#230) signs under the Verifier's
-        // certificate, which is issued here, before handleStart()'s
-        // synchronous build reads it; nothing for any other prefix.
-        await self.deps.verifier.prepareSignedClientId(req);
-        self.handleStart(req, res);
-      } catch (e) {
-        log.debug("Caught in VcSignin.registerRoutes(): " +
-                  ((e && e.message) || e));
-        self.failed(res, e);
-      }
-      log.debug('Leaving GET ' + authn.WALLET_PATH + '.');
-    });
-    app.get(authn.WALLET_WAIT_PATH, function (req, res) {
-      log.debug('Entering GET ' + authn.WALLET_WAIT_PATH + '.');
-      self.handleWait(req, res).catch(function (e) {
-        log.debug("Caught in VcSignin.registerRoutes(): " +
-                  ((e && e.message) || e));
-        self.failed(res, e);
+    [authn.WALLET_PATH, authn.WALLET_WAIT_PATH].forEach(function (path) {
+      app.get(path, function (req, res) {
+        log.debug('Entering GET ' + path + '.');
+        self.shell(req, res);
+        log.debug('Leaving GET ' + path + '.');
       });
-      log.debug('Leaving GET ' + authn.WALLET_WAIT_PATH + '.');
-    });
-    app.post(authn.WALLET_DCAPI_PATH, function (req, res) {
-      log.debug('Entering POST ' + authn.WALLET_DCAPI_PATH + '.');
-      self.handleDcApi(req, res).catch(function (e) {
-        log.debug("Caught in VcSignin.registerRoutes(): " +
-                  ((e && e.message) || e));
-        self.failed(res, e);
-      });
-      log.debug('Leaving POST ' + authn.WALLET_DCAPI_PATH + '.');
-    });
-    app.get(authn.WALLET_SCRIPT_PATH, function (req, res) {
-      log.debug('Entering GET ' + authn.WALLET_SCRIPT_PATH + '.');
-      // Through the builder, as the WebAuthn script is: "a script resource
-      // does not need it" is the reasoning that ends with a page that does
-      // not have it.
-      res.set('Content-Security-Policy',
-              contentSecurityPolicy({ 'style-src': null, 'img-src': null }));
-      res.type('application/javascript').set('Cache-Control', 'no-store')
-        .send(WALLET_SCRIPT);
-      log.debug('Leaving GET ' + authn.WALLET_SCRIPT_PATH + '.');
     });
     log.debug("Leaving VcSignin.registerRoutes().");
   }
@@ -1425,8 +1338,14 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   VIA: VcSignin.VIA,
   BINDING_COOKIE: VcSignin.BINDING_COOKIE,
-  WALLET_SCRIPT: VcSignin.WALLET_SCRIPT,
   enabled: slot.forward('enabled'),
+  // The `/authn-api/wallet` operations (#574), which `authn/authn_api.ts`
+  // hands here.
+  startView: slot.forward('startView'),
+  start: slot.forward('start'),
+  waitView: slot.forward('waitView'),
+  status: slot.forward('status'),
+  dcApi: slot.forward('dcApi'),
   qrOffered: slot.forward('qrOffered'),
   hashOf: slot.forward('hashOf'),
   originOf: slot.forward('originOf')
