@@ -56,6 +56,24 @@ at the end of a step, the answer is `refused` with `location` naming the
 sign-in screen, which shows why. An emailed factor's refusal that ends the
 sign-in also carries `end`, with the page's title.
 
+## The consent screen
+
+Since #576 the OAuth consent screen (`/oauth2/consent`) is a page of the
+same kind. The authorization endpoint still sends a signed-in person to
+`/oauth2/consent?consent=<id>` when a request asks for a scope they have
+not agreed to; that address answers the page (or a 400, as before, when
+nothing is waiting under the id or the browser is signed in as somebody
+else), and the page is drawn from, and answered to, these. The id is a
+bearer value like the pending sign-in's, and both operations answer only
+the browser whose session is the person who was asked.
+
+| Operation | What it answers or does |
+|---|---|
+| `GET /authn-api/consent/{id}` | What the screen asks: the application (its name and `client_id`), each scope and the permission it names, each [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396) authorization detail member by member, the limits a detail carries, what was already agreed, the request's own parameters — and `csrf` |
+| `POST /authn-api/consent/{id}` | `action`: `allow` or `deny`. With `allow`, a detail's limits may be lowered (never raised) under the names the page draws, `lim_t0r<n>_<member>`. Answers `next: redirect` with the authorization request to go back to, which then issues, or answers the application `access_denied` |
+
+A raised limit is `refused`, and the screen can be answered again.
+
 ## What every act needs
 
 Each `POST` is sent by a page of this service, and the API checks it:

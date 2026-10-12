@@ -489,10 +489,16 @@ does.
   missing consent from a missing session.
 * **The pending consent is server-side.** The only thing in the URL is an
   unguessable id, so there is no return address to rewrite. The answer is a
-  **POST** (a GET that recorded consent could be given by anything that
-  prefetches a link), the id is spent when it is answered, and the session
+  **POST** to `/authn-api/consent/{id}` (a GET that recorded consent could
+  be given by anything that prefetches a link), the id is spent when it is answered, and the session
   presenting the answer must be the person who was asked.
-* **The screen carries no script** — two buttons in a form.
+* **The screen is a static page since #576**: `/oauth2/consent` answers a
+  page that is drawn in the browser from `GET /authn-api/consent/{id}` and
+  sends Allow or Deny to `POST /authn-api/consent/{id}` as JSON, bound to
+  the browser's session by a CSRF token ([the sign-in API](authn-api.md)).
+  It needs JavaScript. The answer names the authorization request to go
+  back to, so what reaches the application — a redirect, `form_post`, JARM
+  — is decided by the authorization endpoint, exactly as before.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
 

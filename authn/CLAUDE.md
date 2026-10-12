@@ -270,6 +270,45 @@ the end, the redacted audit row); the round trip's step cases in
 and `ignoreOffer()` over HTTP; the conformance suite's person presses an
 offered set-up step's Ignore (`conformance_browser.js`).
 
+## THE CONSENT SCREEN IS A PAGE OF THIS SURFACE (#576, 2026-10-12)
+
+**`/oauth2/consent` is drawn by this surface's runtime**, the one page of it
+outside `/authn`: the address the authorization endpoint has always sent a
+person to, so the runtime owns that path beside its base
+(`AuthnSurface.surfacePath()`), draws it from `GET /authn-api/consent/{id}`
+(`web_consent_screen.ts`, beside its server module in `oauth-oidc/`, in the
+`consent` catalogs alone), and sends Allow or Deny — with the limits a
+person lowered, as the form's fields — to `POST /authn-api/consent/{id}`,
+whose answer is a `redirect` the runtime follows. The view and the act are
+`oauth-oidc/consent_screen.ts`'s (`consentView()`, `consentAct()`,
+`askedOf()`); `authn_api.ts` is the door — the id's shape, the binding, and
+the body (`action` closed once the `lim_t0r<n>_<member>` controls are taken
+off, each control by its name and shape) — and requires `consent_screen`
+when an operation arrives, never at load (it is built at 8b, after this
+API at 8-api).
+
+| Operation | `mirrors` | What |
+|---|---|---|
+| `GET /authn-api/consent/{id}` | `GET /oauth2/consent` | the view, `csrf`, the request's `uiLocales`, the person's `preferredLanguage` |
+| `POST /authn-api/consent/{id}` | `POST /oauth2/consent` | Allow or Deny; `next: redirect` to the authorization request |
+
+**ITS SCRIPT IS SERVED AT ITS OWN ADDRESS, `/oauth2/consent.js`** — the
+same built file as `/authn/signin.js` (`authn.signInBundle()`) — and
+**`/authn-api/consent` belongs to the OAuth 2.0 / OpenID Connect application**
+(`common/hosted_applications.js`, longest prefix first), so the page, its
+script and its API are on the listener the authorization endpoint redirected
+to, whichever listener `/authn` is mapped to (#472): this service sends no
+credentialed CORS answer, so a page cannot call an API on another origin
+with its cookie. The shell names the sign-in service's base
+(`data-sts-authn`) only for the language chooser. The consent shell does NOT
+load `/authn/signin.js`, and that is why the protocol jobs that recognise
+the sign-in screen by its script still tell the two apart.
+
+**THE ID IS A BEARER CAPABILITY**, as `?consent=` always was:
+`common/audit.js` redacts `/authn-api/consent/(redacted)` and the `consent`
+query value; and both operations answer only the browser whose session is
+the person asked — the shell's check, made again at each.
+
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
 **It is this module's session: an internal, protocol-independent record, and
