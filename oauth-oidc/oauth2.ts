@@ -13626,8 +13626,14 @@ class OAuth2Server {
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client,
       applications.clientConfigOf(client.client_id) || {});
+    // THE TWO HOSTED PUBLIC CLIENTS (#446, #568) authenticate with `none`
+    // where a confidential-only profile advertises no such method: the
+    // profile's exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT) read for the
+    // metadata the profile writes, or the exemption would exempt nothing.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(String(declaredMethod)) < 0) {
+        advertisedAuth.indexOf(String(declaredMethod)) < 0 &&
+        !self.deps.fapi.publicClientExempt(client.client_id,
+                                           declaredMethod)) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
                 " does not advertise " + declaredMethod + ".");
       errorCodes.mark(res, 'STS-OAUTH-0198');
@@ -17685,8 +17691,10 @@ class OAuth2Server {
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client, registered);
+    // The hosted public clients' exemption, as at the token endpoint.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(declaredMethod) < 0) {
+        advertisedAuth.indexOf(declaredMethod) < 0 &&
+        !self.deps.fapi.publicClientExempt(clientId, declaredMethod)) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
                 " does not " +
                 "advertise " + declaredMethod + ".");
