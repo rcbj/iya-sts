@@ -724,8 +724,8 @@
     "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b62287524a386d08",
-    "text": "Serveras och listas: de simulerade förlitande parterna och tjänsteleverantören (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, step-up-ersättningsresursen, GNAP-demonstrationsresursservern samt /ssf/receive och /ssf/received."
+    "en": "3125d137228d033e",
+    "text": "Serveras och listas: den simulerade förlitande parten för kommandon (/oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, step-up-ersättningsresursen, GNAP-demonstrationsresursservern, samt /ssf/receive och /ssf/received."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

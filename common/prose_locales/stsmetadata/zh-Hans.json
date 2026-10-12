@@ -248,8 +248,8 @@
     "text": "partial：HTTP Redirect（第 3.4 节），带 DEFLATE 编码以及第 3.4.4.1 节的分离式查询字符串签名；HTTP POST（3.5）；HTTP Artifact（3.6），带类型 0x0004 的工件以及第 3.6.4.1 节的一次性规则；以及用于工件解析后通道的 SOAP over HTTP（3.2.3），其调用方需经过身份验证（已签名的 ArtifactResolve，或以其已注册证书作为 TLS 客户端证书），并且必须是工件签发给的那个服务提供方；还有双向的 HTTP-POST-SimpleSign（OASIS SimpleSign 绑定），在元数据中公布。此处没有：PAOS（3.3），按名称拒绝，而不是悄悄地通过 POST 应答；以及 URI 绑定（3.7）。服务提供方的请求签名——基于所收到参数的 3.4.4.1 查询签名、基于表单值的 SimpleSign 签名，或 POST 上的封装签名——确实会针对其已注册的证书（从不针对其 KeyInfo）进行验证，在每种模式下，支持 common/crypto.js 所验证的每个算法系列（RSA、RSASSA-PSS、ECDSA、EdDSA、DSA、ML-DSA、SLH-DSA），支持任一种规范化方法；SHA-1 仅在 saml.allowSha1Signatures 下可用，产品模式下从不可用；在 saml2.requireSignedAuthnRequests（产品模式下开启）或其元数据要求签名的情况下，未签名的请求会被拒绝。"
   },
   "stsmetadata.specs.saml2-profiles.coverage": {
-    "en": "88da2e5ac2494e2e",
-    "text": "partial：Web 浏览器 SSO 配置文件（第 4.1 节），服务提供方发起和身份提供方发起（#189），覆盖全部四种绑定，带第 4.1.4.2 节所要求的 bearer SubjectConfirmationData，在产品模式下无论使用何种绑定每个断言都会签名（第 4.1.3.5 和 4.1.4.5 节要求通过 POST 时签名；关闭 saml2.signAssertion 属于开发模式，#181）；以及单点注销（4.4），双向，但不进行前通道扇出——身份提供方发起的注销会指明其他服务提供方并为每个服务提供方构建 LogoutRequest，而不是将它们发射到无法观察的框架中；并结束不带 cookie（后通道）的 LogoutRequest 通过其 SessionIndex 指明的会话（#192）；带主动发送 Response 的身份提供方发起的 SSO（4.1.5，/saml2/unsolicited，#189）；以及断言查询和请求配置文件的属性查询（6，/saml2/aa，#189），针对提问的服务提供方持有活动会话的主体。此处没有：ECP 配置文件（4.2）、名称标识符管理（4.5），以及该配置文件的 AuthnQuery 和 AuthzDecisionQuery。作为联合伙伴的服务提供方（#167），在 /federation/slo/{id} 上进行双向单点注销：伙伴的已签名 LogoutRequest 会结束其 NameID 和 SessionIndex 所指明的会话，并以已签名的 LogoutResponse 应答；此处的注销会向其发送已签名的 LogoutRequest，其 LogoutResponse 通过 InResponseTo 匹配；伙伴的 SessionNotOnOrAfter 限定会话的时限。AssertionConsumerServiceURL 在开发模式下按发送的值接受，在产品模式下（2026-09-12）必须在服务提供方的条目上注册，且不回退到模拟服务提供方——并且一旦其元数据已被使用，在每种模式下都必须是其注册的端点之一，同时认可 AssertionConsumerServiceIndex 和默认端点。来自服务提供方的 LogoutRequest 通过其签名（4.4.3.1）进行身份验证，策略与 AuthnRequest 相同。"
+    "en": "4271dad1ec658292",
+    "text": "partial：Web 浏览器 SSO 配置文件（第 4.1 节），服务提供方发起和身份提供方发起（#189），覆盖全部四种绑定，带第 4.1.4.2 节所要求的 bearer SubjectConfirmationData，在产品模式下无论使用何种绑定每个断言都会签名（第 4.1.3.5 和 4.1.4.5 节要求通过 POST 时签名；关闭 saml2.signAssertion 属于开发模式，#181）；以及单点注销（4.4），双向，但不进行前通道扇出——身份提供方发起的注销会指明其他服务提供方并为每个服务提供方构建 LogoutRequest，而不是将它们发射到无法观察的框架中；并结束不带 cookie（后通道）的 LogoutRequest 通过其 SessionIndex 指明的会话（#192）；带主动发送 Response 的身份提供方发起的 SSO（4.1.5，/saml2/unsolicited，#189）；以及断言查询和请求配置文件的属性查询（6，/saml2/aa，#189），针对提问的服务提供方持有活动会话的主体。此处没有：ECP 配置文件（4.2）、名称标识符管理（4.5），以及该配置文件的 AuthnQuery 和 AuthzDecisionQuery。作为联合伙伴的服务提供方（#167），在 /federation/slo/{id} 上进行双向单点注销：伙伴的已签名 LogoutRequest 会结束其 NameID 和 SessionIndex 所指明的会话，并以已签名的 LogoutResponse 应答；此处的注销会向其发送已签名的 LogoutRequest，其 LogoutResponse 通过 InResponseTo 匹配；伙伴的 SessionNotOnOrAfter 限定会话的时限。AssertionConsumerServiceURL 在开发模式下按发送的值接受，在产品模式下（2026-09-12）必须在服务提供方的条目上注册——并且一旦其元数据已被使用，在每种模式下都必须是其注册的端点之一，同时认可 AssertionConsumerServiceIndex 和默认端点。来自服务提供方的 LogoutRequest 通过其签名（4.4.3.1）进行身份验证，策略与 AuthnRequest 相同。"
   },
   "stsmetadata.specs.saml2-metadata.coverage": {
     "en": "44eed676882b5ecc",
@@ -268,8 +268,8 @@
     "text": "partial：两种浏览器配置文件——Browser/Artifact（第 4.1 节）和 Browser/POST（4.2）——各自带有其所在章节要求的确认方法，这两个值不同，不可互换。SAML 1.1 中没有请求消息，因此两者都是身份提供方发起的：流程在浏览器携带 TARGET 到达时开始，依赖方从不在协议中表明自己的身份，失败时给出的是一个页面而不是 Response，因为没有可应答的对象。Shibboleth 的非标准 AuthnRequest 配置文件（urn:mace:shibboleth:1.0:profiles:AuthnRequest）会被接受并公布，因为每个真实的 SAML 1.1 服务提供方发送的都是它。`shire` 在开发模式下按发送的值使用，在产品模式下（2026-09-12）必须在依赖方的条目上注册。Browser/POST Response 按第 4.1.2.4 节的要求与其断言一起签名；关闭任一签名是开发模式的测试用例，产品模式会忽略它（#181）。"
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "b8e3addc28819b6c",
-    "text": "partial：第 13 节的 Web（被动）请求方配置文件——带 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 和 wreq 的 wsignin1.0，以表单 POST 形式发送的登录响应，以及带前通道清理请求的 wsignout1.0/wsignoutcleanup1.0；作为联合依赖方（#167），伙伴的清理请求（按规范未签名）只有在此人于一个带真实按钮的页面上确认后才会结束会话，此处的注销会向伙伴发送 wsignout1.0。在 AD FS 路径上提供已签名的联合元数据（第 3.1 节）。未实现的内容，每项都明确指出而不是保持沉默：超出 /sts 已应答范围的主动（SOAP）请求方配置文件、wresultptr、属性服务（wattr1.0）和假名服务（wpseudo1.0）——两者都应答 501、wreqptr（被拒绝——从查询参数中解引用 URL 就是服务器端请求伪造）、本配置文件中的令牌加密（被动请求不携带接收方证书），以及任何授权或策略执行。wreply 在开发模式下按发送的值使用，在产品模式下（2026-09-12）必须是已注册的 wsfedReplyUrl，且不回退到模拟依赖方。"
+    "en": "2abb20f4fd0f6ab0",
+    "text": "partial：第 13 节的 Web（被动）请求方配置文件——带 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 和 wreq 的 wsignin1.0，以表单 POST 形式发送的登录响应，以及带前通道清理请求的 wsignout1.0/wsignoutcleanup1.0；作为联合依赖方（#167），伙伴的清理请求（按规范未签名）只有在此人于一个带真实按钮的页面上确认后才会结束会话，此处的注销会向伙伴发送 wsignout1.0。在 AD FS 路径上提供已签名的联合元数据（第 3.1 节）。未实现的内容，每项都明确指出而不是保持沉默：超出 /sts 已应答范围的主动（SOAP）请求方配置文件、wresultptr、属性服务（wattr1.0）和假名服务（wpseudo1.0）——两者都应答 501、wreqptr（被拒绝——从查询参数中解引用 URL 就是服务器端请求伪造）、本配置文件中的令牌加密（被动请求不携带接收方证书），以及任何授权或策略执行。wreply 在开发模式下按发送的值使用，在产品模式下（2026-09-12）必须是已注册的 wsfedReplyUrl。"
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2104,8 +2104,8 @@
     "text": "其密钥用于签名断言的 PEM 证书，供依赖方验证断言。"
   },
   "stsmetadata.endpoints./wsfed.what": {
-    "en": "77576b9ee16c01d5",
-    "text": "GET 或 POST，按 wa 分派：wsignin1.0 完成登录并将 RSTR POST 到 wreply（section 13.2.2——表单 POST，绝不是重定向，因此令牌不受长度限制，也绝不会出现在 URL 或 Referer 标头中）；wsignout1.0 结束会话，并向它曾登录到的每个依赖方发送清理请求；wsignoutcleanup1.0 结束会话但不向外扩散。读取 wtrealm（必需，也是受众）、wreply（可选——默认为 /wsfed/rp）、wctx（逐字节回显）、wct、wfresh（单位为分钟）、wauth（会话无法满足的硬件或多因素要求会经由登录进行升级认证，只有失败时才拒绝）、whr 以及按值提供的 wreq RST。令牌默认是 SAML 1.1 断言，因为 AD FS 颁发的就是这种；?tokenType=saml2 和 ?trust=1.3 是用于另一种令牌类型和 ws-sx RSTR Collection 包装的 NON-SPEC 开关。wattr1.0 和 wpseudo1.0 应答 501；wreqptr 会被拒绝。"
+    "en": "f41d3cfeabae9e59",
+    "text": "GET 或 POST，按 wa 分派：wsignin1.0 完成登录并将 RSTR POST 到 wreply（section 13.2.2——表单 POST，绝不是重定向，因此令牌不受长度限制，也绝不会出现在 URL 或 Referer 标头中）；wsignout1.0 结束会话，并向它曾登录到的每个依赖方发送清理请求；wsignoutcleanup1.0 结束会话但不向外扩散。读取 wtrealm（必需，也是受众）、wreply（可选——默认为已注册的 wsfedReplyUrl）、wctx（逐字节回显）、wct、wfresh（单位为分钟）、wauth（会话无法满足的硬件或多因素要求会经由登录进行升级认证，只有失败时才拒绝）、whr 以及按值提供的 wreq RST。令牌默认是 SAML 1.1 断言，因为 AD FS 颁发的就是这种；?tokenType=saml2 和 ?trust=1.3 是用于另一种令牌类型和 ws-sx RSTR Collection 包装的 NON-SPEC 开关。wattr1.0 和 wpseudo1.0 应答 501；wreqptr 会被拒绝。"
   },
   "stsmetadata.endpoints./wsfed.effect": {
     "en": "2f3e6657377dc4cb",
@@ -2122,22 +2122,6 @@
   "stsmetadata.endpoints./wsfed/metadata/:rp.what": {
     "en": "604e81aecab74125",
     "text": "按应用提供的同一文档（#494）：其 entityID 是本领域唯一的颁发者，即其 OAuth 颁发者，与各处一致（#523）。路径段是应用的标识符（其 wtrealm）或其 slug。指向任何已注册应用以外的路径段，在两种模式下都返回 404（STS-WSFED-0019）。no-store。"
-  },
-  "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 wreply，也因为它逐项验证登录响应：针对 /sts/cert 验证断言签名、颁发者、针对其自身领域验证受众、有效窗口，以及 wctx 往返（对其重新编码的身份提供方会产生与会话丢失相同的症状）。它还应答 wa=wsignoutcleanup1.0，该消息真正定义的正是这个方向。"
-  },
-  "stsmetadata.endpoints./wsfed/rp.effect": {
-    "en": "e2444ef9ff08a2dd",
-    "text": "签发一个 wctx，并为该端点能颁发的每种形式提供完整的登录请求"
-  },
-  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /wsfed/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
-  },
-  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
-    "en": "6722e133f11cee61",
-    "text": "非规范内容（#581）。生成一个 wctx，并以事实形式答复模拟依赖方提供的登录请求——即起始页面的视图。与语言无关；no-store。"
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2223,22 +2207,6 @@
     "en": "c76db63cae4e6994",
     "text": "本服务中第五个带脚本的页面，其理由在 saml2_sso.js 中重新论证，而不是类比得出：HTTP POST 绑定本身就是一个自动提交的表单，因此不存在没有脚本的版本。script-src 被放宽为指向这一个资源的 'self'，绝不是 'unsafe-inline'，并且页面带有一个真正的提交按钮——脚本关闭时，按钮就是全部机制。"
   },
-  "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC——服务提供方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 AssertionConsumerServiceURL，也因为它逐项验证响应：两个签名、颁发者、受众、有效窗口、section 4.1.4.2 所要求的 bearer SubjectConfirmationData，以及 RelayState 往返。它还会解析工件，在进程内完成，而不是由本服务向自己发起 SOAP 调用。"
-  },
-  "stsmetadata.endpoints./saml2/sp.effect": {
-    "en": "36f5856187bd32d6",
-    "text": "签发一个 RelayState，并提供完整的 AuthnRequest，分别要求以 HTTP POST、HTTP Redirect 和 HTTP Artifact 返回响应"
-  },
-  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml2/sp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
-  },
-  "stsmetadata.endpoints./saml2/sp/api/start.what": {
-    "en": "3b1ad0edc68af287",
-    "text": "非规范内容（#581）。为模拟服务提供方提供的四个 AuthnRequest 各生成一个 RelayState，用本服务的密钥签名其中三个，并以事实形式答复——即起始页面的视图。与语言无关；no-store。"
-  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "说明页面：各端点、两种浏览器配置文件，以及 SAML 1.1 与 2.0 拼写不同之处的列表——正是这些使它成为一个独立的实现而不是一个标志。GET /saml2、GET /sts 和 GET /wsfed 以同样的方式应答。自 #584 起在浏览器中绘制；?format=json，或偏好 JSON 的 Accept，以数据形式返回其视图。"
@@ -2282,22 +2250,6 @@
   "stsmetadata.endpoints./saml11/autopost.js.what": {
     "en": "e23713a2ecba90f0",
     "text": "本服务中第六个带脚本的页面，其理由在 saml11_sso.js 中重新论证，而不是类比得出——这一点在这里尤为重要，正因为第五个就是 /saml2/autopost.js，而“和隔壁一样”是最没用的说法。Browser/POST 配置文件在其自身较早的规范中本身就是一个自动提交的表单，是独立得出的。script-src 被放宽为指向这一个资源的 'self'，绝不是 'unsafe-inline'，并且页面带有一个真正的提交按钮——脚本关闭时，按钮就是全部机制。"
-  },
-  "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的断言消费方，也因为它逐项验证：通过 SAML 1.1 实际使用的 id 属性验证两个签名、状态 QName、Recipient、在没有请求的配置文件上 InResponseTo 的缺失、与配置文件相符的确认方法，以及 Browser/POST 携带而工件配置文件不携带的 DoNotCacheCondition。它在进程内解析工件，而不是由本服务向自己发起 SOAP 调用；重新加载结果页面会演示一次性规则，而不是报错。"
-  },
-  "stsmetadata.endpoints./saml11/rp.effect": {
-    "en": "e9c534c324579c92",
-    "text": "在任一浏览器配置文件上启动完整流程，并验证返回的内容"
-  },
-  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml11/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
-  },
-  "stsmetadata.endpoints./saml11/rp/api/start.what": {
-    "en": "fbb7dc323454a57d",
-    "text": "非规范内容（#581）。以事实形式答复模拟依赖方提供的、在站点间传输服务处启动两种浏览器配置文件的入口——即起始页面的视图。与语言无关；no-store。"
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -3416,10 +3368,6 @@
     "text": "也装在 WS-Federation wresult 和 WS-Trust RSTR 中传送，在此配置文件出现之前，此处的每个 SAML 1.1 断言都是这样传送的。"
   },
   "stsmetadata.protocols.WS-Federation.what": {
-    "en": "707fbb63d49a43b8",
-    "text": "1.2 Web（被动）请求方配置文件：按 wa 分派的 /wsfed、登录界面、AD FS 路径下的已签名联合元数据、wsignout1.0，以及一个显示发送给它的内容的模拟依赖方。"
-  },
-  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
     "en": "7ddf36d0c593e38b",
     "text": "1.2 Web（被动）请求方配置文件：按 wa 分派的 /wsfed、登录页面、位于 AD FS 路径的已签名联合元数据，以及 wsignout1.0。"
   },

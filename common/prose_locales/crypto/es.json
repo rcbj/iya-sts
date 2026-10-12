@@ -940,8 +940,8 @@
     "text": "Aserciones y Responses de Browser/POST, RSA-SHA256 sobre c14n exclusiva, mediante el mismo firmante. La UBICACIÓN difiere y el motivo es la gramática y no la criptografía: una aserción 1.1 no tiene ELEMENTO `<Issuer>` — en 1.1 el emisor es un ATRIBUTO — así que \"después del emisor\" no es una posición que exista y la firma va AL FINAL. Una Response firma PRIMERO, antes de la aserción que transporta."
   },
   "crypto.families.saml-1-1.verifies": {
-    "en": "8398fc2b7e6fdb17",
-    "text": "Sus propios artefactos, para la parte que confía simulada."
+    "en": "f11251a4b826b873",
+    "text": "Nada: SAML 1.1 no tiene mensaje de solicitud en el que verificar una firma."
   },
   "crypto.families.saml-1-1.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -950,10 +950,6 @@
   "crypto.families.saml-1-1.whatItDoesNot": {
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 no tiene ningún cifrado — `<EncryptedAssertion>` llegó con 2.0 — ni ningún mensaje de solicitud sobre el que verificar una firma. El URI de referencia nombra `AssertionID` o `ResponseID`, que es el único motivo por el que el firmante compartido resuelve un id BUSCANDO uno en lugar de que le digan su nombre."
-  },
-  "crypto.families.saml-1-1.verifiesWithoutDemos": {
-    "en": "f11251a4b826b873",
-    "text": "Nada: SAML 1.1 no tiene mensaje de solicitud en el que verificar una firma."
   },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -964,8 +960,8 @@
     "text": "La aserción SAML dentro del `wresult`, en la versión que haya pedido la parte que confía, mediante el firmante compartido."
   },
   "crypto.families.ws-federation.verifies": {
-    "en": "35faf906b09d64d8",
-    "text": "La parte que confía simulada en `/wsfed/rp` verifica esa aserción comprobación por comprobación, y se le dice QUÉ elemento verificar en lugar de tomar el primer `<ds:Signature>` del documento — el defecto que tenían cuatro verificadores distintos de aquí."
+    "en": "02c1a08782ac0629",
+    "text": "Nada: una solicitud de inicio de sesión no lleva firma."
   },
   "crypto.families.ws-federation.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -974,10 +970,6 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "No falsea ningún `wauth` — una exigencia que la sesión no puede cumplir es una elevación, y un AuthenticationMethod es lo que hizo la sesión — y no desreferencia ningún `wreqptr` — descargar una URL que alguien registró es una falsificación de solicitudes del lado del servidor con una cita adjunta."
-  },
-  "crypto.families.ws-federation.verifiesWithoutDemos": {
-    "en": "02c1a08782ac0629",
-    "text": "Nada: una solicitud de inicio de sesión no lleva firma."
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",

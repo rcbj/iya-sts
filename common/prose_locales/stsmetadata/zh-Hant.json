@@ -248,8 +248,8 @@
     "text": "partial：HTTP Redirect（第 3.4 節），使用 DEFLATE 編碼與 3.4.4.1 的分離式查詢字串簽章；HTTP POST（3.5）；HTTP Artifact（3.6），使用類型 0x0004 的 artifact 與 3.6.4.1 的一次性規則；以及用於 artifact 解析後端通道的 SOAP over HTTP（3.2.3），其呼叫端「需經驗證」（已簽署的 ArtifactResolve，或以其已註冊憑證作為 TLS 用戶端憑證），且必須是該 artifact 所簽發給的服務提供者；以及雙向的 HTTP-POST-SimpleSign（OASIS SimpleSign 繫結），發布於中繼資料中。此處「沒有」的：PAOS（3.3），會被指名拒絕，而不是悄悄改以 POST 回應；以及 URI 繫結（3.7）。服務提供者的請求簽章——對所收到之參數的 3.4.4.1 查詢簽章、對表單值的 SimpleSign 簽章，或 POST 上的封裝簽章——「會」依其「已註冊」的憑證驗證（絕不使用其 KeyInfo），在每種模式下，支援 common/crypto.js 所驗證的每個演算法系列（RSA、RSASSA-PSS、ECDSA、EdDSA、DSA、ML-DSA、SLH-DSA），兩種正規化方式皆可；SHA-1 只在 saml.allowSha1Signatures 下可用，產品模式下絕不可用；未簽署的請求在 saml2.requireSignedAuthnRequests（產品模式下開啟）或其中繼資料要求簽章時會被拒絕。"
   },
   "stsmetadata.specs.saml2-profiles.coverage": {
-    "en": "88da2e5ac2494e2e",
-    "text": "partial：Web Browser SSO 設定檔（第 4.1 節），由服務提供者發起與由身分識別提供者發起（#189），涵蓋全部四種繫結，附 4.1.4.2 所要求的 bearer SubjectConfirmationData，在產品模式下無論繫結為何每個斷言都「會簽署」（4.1.3.5 與 4.1.4.5 要求透過 POST 時簽署；saml2.signAssertion 關閉屬於開發模式，#181）；以及 Single Logout（4.4），雙向，「不使用」前端通道擴散——由身分識別提供者發起的登出會「指名」其他服務提供者並為每一個建立 LogoutRequest，而不是將它們發射到無法觀察的框架中，並結束無 cookie（後端通道）LogoutRequest 依其 SessionIndex 所指名的工作階段（#192）；附未經請求之 Response 的由身分識別提供者發起的 SSO（4.1.5，/saml2/unsolicited，#189）；以及 Assertion Query and Request 設定檔的屬性查詢（6，/saml2/aa，#189），針對提出查詢的服務提供者持有作用中工作階段的主體。此處「沒有」的：ECP 設定檔（4.2）、Name Identifier Management（4.5），以及該設定檔的 AuthnQuery 與 AuthzDecisionQuery。作為聯盟夥伴的「服務提供者」（#167），在 /federation/slo/{id} 提供雙向 Single Logout：夥伴已簽署的 LogoutRequest 會結束其 NameID 與 SessionIndex 所指名的工作階段，並以已簽署的 LogoutResponse 回應；此處的登出會向其送出已簽署的 LogoutRequest，其 LogoutResponse 依 InResponseTo 比對；夥伴的 SessionNotOnOrAfter 會限制工作階段。AssertionConsumerServiceURL 在開發模式下照原樣接受，在「產品」模式下必須註冊在服務提供者的項目上（2026-09-12），不會退回模擬服務提供者——且在取用其中繼資料後，在「每種」模式下都必須是它所註冊的端點之一，並遵循 AssertionConsumerServiceIndex 與預設端點。來自服務提供者的 LogoutRequest 依其簽章驗證（4.4.3.1），適用與 AuthnRequest 相同的原則。"
+    "en": "4271dad1ec658292",
+    "text": "partial：Web Browser SSO 設定檔（第 4.1 節），由服務提供者發起與由身分識別提供者發起（#189），涵蓋全部四種繫結，附 4.1.4.2 所要求的 bearer SubjectConfirmationData，在產品模式下無論繫結為何每個斷言都「會簽署」（4.1.3.5 與 4.1.4.5 要求透過 POST 時簽署；saml2.signAssertion 關閉屬於開發模式，#181）；以及 Single Logout（4.4），雙向，「不使用」前端通道擴散——由身分識別提供者發起的登出會「指名」其他服務提供者並為每一個建立 LogoutRequest，而不是將它們發射到無法觀察的框架中，並結束無 cookie（後端通道）LogoutRequest 依其 SessionIndex 所指名的工作階段（#192）；附未經請求之 Response 的由身分識別提供者發起的 SSO（4.1.5，/saml2/unsolicited，#189）；以及 Assertion Query and Request 設定檔的屬性查詢（6，/saml2/aa，#189），針對提出查詢的服務提供者持有作用中工作階段的主體。此處「沒有」的：ECP 設定檔（4.2）、Name Identifier Management（4.5），以及該設定檔的 AuthnQuery 與 AuthzDecisionQuery。作為聯盟夥伴的「服務提供者」（#167），在 /federation/slo/{id} 提供雙向 Single Logout：夥伴已簽署的 LogoutRequest 會結束其 NameID 與 SessionIndex 所指名的工作階段，並以已簽署的 LogoutResponse 回應；此處的登出會向其送出已簽署的 LogoutRequest，其 LogoutResponse 依 InResponseTo 比對；夥伴的 SessionNotOnOrAfter 會限制工作階段。AssertionConsumerServiceURL 在開發模式下照原樣接受，在「產品」模式下必須註冊在服務提供者的項目上（2026-09-12）——且在取用其中繼資料後，在「每種」模式下都必須是它所註冊的端點之一，並遵循 AssertionConsumerServiceIndex 與預設端點。來自服務提供者的 LogoutRequest 依其簽章驗證（4.4.3.1），適用與 AuthnRequest 相同的原則。"
   },
   "stsmetadata.specs.saml2-metadata.coverage": {
     "en": "44eed676882b5ecc",
@@ -268,8 +268,8 @@
     "text": "partial：「兩種」瀏覽器設定檔——Browser/Artifact（第 4.1 節）與 Browser/POST（4.2）——各自使用其章節所要求的確認方法，兩者是不同的值，不可互換。「SAML 1.1 中沒有請求訊息」，因此兩者都由身分識別提供者發起：流程在瀏覽器攜帶 TARGET 抵達時開始，依賴方從不在協定中表明自己的身分，而失敗時是一個「頁面」而不是 Response，因為沒有東西可以回應。Shibboleth 的非標準 AuthnRequest 設定檔（urn:mace:shibboleth:1.0:profiles:AuthnRequest）會被接受並公告，因為每個真實的 SAML 1.1 服務提供者送出的都是它。`shire` 在開發模式下照原樣使用，在「產品」模式下必須註冊在依賴方的項目上（2026-09-12）。Browser/POST Response 依第 4.1.2.4 節的要求簽署，連同其斷言；關閉任一簽章是開發用的測試案例，產品模式會忽略（#181）。"
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "b8e3addc28819b6c",
-    "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟中繼資料（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已能回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數中解參照 URL 是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者憑證），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12），不會退回模擬依賴方。"
+    "en": "2abb20f4fd0f6ab0",
+    "text": "partial：第 13 節的 Web（被動）請求者設定檔——帶有 wtrealm、wreply、wctx、wct、wfresh、wauth、whr 與 wreq 的 wsignin1.0、以表單 POST 傳送的登入回應，以及帶有前端通道清除請求的 wsignout1.0/wsignoutcleanup1.0；作為聯盟依賴方（#167）時，夥伴的清除請求（依規格未簽署）只有在該人於具備真正按鈕的頁面上確認後才會結束工作階段，而此處的登出會向夥伴送出 wsignout1.0。已簽署的聯盟中繼資料（第 3.1 節）位於 AD FS 路徑。「未」實作的部分，每一項都明確指名而非保持沉默：超出 /sts 已能回應範圍的主動（SOAP）請求者設定檔、wresultptr、都回應 501 的屬性服務（wattr1.0）與假名服務（wpseudo1.0）、wreqptr（拒絕——從查詢參數中解參照 URL 是伺服器端請求偽造）、此設定檔中的權杖加密（被動請求不攜帶接收者憑證），以及任何授權或原則強制執行。wreply 在開發模式下照原樣使用，在「產品」模式下必須是已註冊的 wsfedReplyUrl（2026-09-12）。"
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2104,8 +2104,8 @@
     "text": "其金鑰簽署判斷提示的 PEM 憑證，讓信賴方能夠驗證它們。"
   },
   "stsmetadata.endpoints./wsfed.what": {
-    "en": "77576b9ee16c01d5",
-    "text": "GET 或 POST，依 wa 分派：wsignin1.0 進行登入並將 RSTR POST 至 wreply（section 13.2.2——表單 POST，絕不重新導向，因此權杖不受長度限制，也絕不會出現在 URL 或 Referer 標頭中）；wsignout1.0 結束工作階段並向其登入過的每個信賴方傳送清除請求；wsignoutcleanup1.0 結束工作階段但不向外擴散。讀取 wtrealm（必要，即對象）、wreply（選擇性——預設為 /wsfed/rp）、wctx（逐位元組回傳）、wct、wfresh（單位為「分鐘」）、wauth（工作階段不符合的硬體或多重要素要求會透過登入進行升級驗證，只有在失敗時才拒絕）、whr，以及以值提供的 wreq RST。權杖預設為 SAML 1.1 判斷提示，因為 AD FS 簽發的就是這種；?tokenType=saml2 與 ?trust=1.3 是非規範的切換，分別用於另一種權杖型別與 ws-sx RSTR Collection 包裝。wattr1.0 與 wpseudo1.0 回應 501；wreqptr 會被拒絕。"
+    "en": "f41d3cfeabae9e59",
+    "text": "GET 或 POST，依 wa 分派：wsignin1.0 進行登入並將 RSTR POST 至 wreply（section 13.2.2——表單 POST，絕不重新導向，因此權杖不受長度限制，也絕不會出現在 URL 或 Referer 標頭中）；wsignout1.0 結束工作階段並向其登入過的每個信賴方傳送清除請求；wsignoutcleanup1.0 結束工作階段但不向外擴散。讀取 wtrealm（必要，即對象）、wreply（選擇性——預設為已註冊的 wsfedReplyUrl）、wctx（逐位元組回傳）、wct、wfresh（單位為「分鐘」）、wauth（工作階段不符合的硬體或多重要素要求會透過登入進行升級驗證，只有在失敗時才拒絕）、whr，以及以值提供的 wreq RST。權杖預設為 SAML 1.1 判斷提示，因為 AD FS 簽發的就是這種；?tokenType=saml2 與 ?trust=1.3 是非規範的切換，分別用於另一種權杖型別與 ws-sx RSTR Collection 包裝。wattr1.0 與 wpseudo1.0 回應 501；wreqptr 會被拒絕。"
   },
   "stsmetadata.endpoints./wsfed.effect": {
     "en": "2f3e6657377dc4cb",
@@ -2122,22 +2122,6 @@
   "stsmetadata.endpoints./wsfed/metadata/:rp.what": {
     "en": "604e81aecab74125",
     "text": "相同的文件，依應用程式提供（#494）：其 entityID 是領域唯一的簽發者，即其 OAuth 簽發者，與其他各處相同（#523）。路徑區段是應用程式的識別碼（其 wtrealm）或其 slug。未指名任何「已註冊」應用程式的區段在兩種模式下都回傳 404（STS-WSFED-0019）。no-store。"
-  },
-  "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "非規範——信賴方不是身分識別提供者的一部分。它之所以在這裡，是因為它是預設的 wreply，也因為它逐項「驗證」登入回應：依 /sts/cert 驗證判斷提示簽章、簽發者、依其自身領域驗證對象、有效期間，以及 wctx 的往返（重新編碼它的身分識別提供者會產生與工作階段遺失相同的症狀）。它也回應 wa=wsignoutcleanup1.0，這才是該訊息真正定義的方向。"
-  },
-  "stsmetadata.endpoints./wsfed/rp.effect": {
-    "en": "e2444ef9ff08a2dd",
-    "text": "產生一個 wctx，並針對端點能簽發的每種形式提供完整的登入請求"
-  },
-  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /wsfed/rp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
-  },
-  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
-    "en": "6722e133f11cee61",
-    "text": "非規格內容（#581）。產生一個 wctx，並以事實形式答覆模擬依賴方提供的登入請求——即起始頁面的檢視。與語言無關；no-store。"
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2223,22 +2207,6 @@
     "en": "c76db63cae4e6994",
     "text": "本服務中「第五個」帶有指令碼的頁面，其論證在 saml2_sso.js 中重新提出，而非類比：HTTP POST 繫結「就是」自動提交的表單，因此不存在沒有指令碼的版本。script-src 被放寬為指名此單一資源的 'self'，絕不使用 'unsafe-inline'，而且頁面帶有「真正的提交按鈕」——關閉指令碼時，按鈕就是整個機制。"
   },
-  "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "非規範——服務提供者不是身分識別提供者的一部分。它之所以在這裡，是因為它是預設的 AssertionConsumerServiceURL，也因為它逐項「驗證」回應：兩個簽章、簽發者、對象、有效期間、section 4.1.4.2 所要求的 bearer SubjectConfirmationData，以及 RelayState 的往返。它也會在程序內解析成品，而不是由本服務對自己發出 SOAP 呼叫。"
-  },
-  "stsmetadata.endpoints./saml2/sp.effect": {
-    "en": "36f5856187bd32d6",
-    "text": "產生一個 RelayState，並提供一個完整的 AuthnRequest，要求以 HTTP POST、HTTP Redirect 與 HTTP Artifact 傳回回應"
-  },
-  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /saml2/sp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
-  },
-  "stsmetadata.endpoints./saml2/sp/api/start.what": {
-    "en": "3b1ad0edc68af287",
-    "text": "非規格內容（#581）。為模擬服務提供者提供的四個 AuthnRequest 各產生一個 RelayState，以本服務的金鑰簽章其中三個，並以事實形式答覆——即起始頁面的檢視。與語言無關；no-store。"
-  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "說明頁面：端點、兩種瀏覽器設定檔，以及 SAML 1.1 與 2.0 拼寫不同之處的清單——這正是使它成為獨立實作而非一個旗標的主要原因。GET /saml2、GET /sts 與 GET /wsfed 以相同方式回應。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
@@ -2282,22 +2250,6 @@
   "stsmetadata.endpoints./saml11/autopost.js.what": {
     "en": "e23713a2ecba90f0",
     "text": "本服務中「第六個」帶有指令碼的頁面，其論證在 saml11_sso.js 中重新提出，而非類比——這一點在這裡格外重要，正因為第五個是 /saml2/autopost.js，而「與隔壁相同」是最沒有用處的說法。Browser/POST 設定檔在其較舊的規格中「就是」自動提交的表單，是獨立得出的結論。script-src 被放寬為指名此單一資源的 'self'，絕不使用 'unsafe-inline'，而且頁面帶有「真正的提交按鈕」——關閉指令碼時，按鈕就是整個機制。"
-  },
-  "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "非規範——信賴方不是身分識別提供者的一部分。它之所以在這裡，是因為它是預設的判斷提示取用者，也因為它逐項「驗證」：透過 SAML 1.1 實際使用的 id 屬性驗證兩個簽章、狀態 QName、Recipient、在沒有請求的設定檔上 InResponseTo 的「不存在」、與設定檔相符的確認方法，以及 Browser/POST 帶有而成品設定檔沒有的 DoNotCacheCondition。它在「程序內」解析成品，而不是由本服務對自己發出 SOAP 呼叫，而重新載入結果頁面會示範一次性規則，而不是出錯。"
-  },
-  "stsmetadata.endpoints./saml11/rp.effect": {
-    "en": "e9c534c324579c92",
-    "text": "以任一瀏覽器設定檔啟動完整流程，並驗證傳回的內容"
-  },
-  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /saml11/rp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
-  },
-  "stsmetadata.endpoints./saml11/rp/api/start.what": {
-    "en": "fbb7dc323454a57d",
-    "text": "非規格內容（#581）。以事實形式答覆模擬依賴方提供的、在站台間傳輸服務處啟動兩種瀏覽器設定檔的入口——即起始頁面的檢視。與語言無關；no-store。"
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -3416,10 +3368,6 @@
     "text": "也承載於 WS-Federation wresult 與 WS-Trust RSTR 中，在此設定檔出現之前，此處每個 SAML 1.1 判斷提示都是這樣傳遞的。"
   },
   "stsmetadata.protocols.WS-Federation.what": {
-    "en": "707fbb63d49a43b8",
-    "text": "1.2 Web (Passive) Requestor Profile：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署聯盟中繼資料、wsignout1.0，以及一個顯示送給它之內容的模擬信賴方。"
-  },
-  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
     "en": "7ddf36d0c593e38b",
     "text": "1.2 Web（被動）請求者設定檔：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署同盟中繼資料，以及 wsignout1.0。"
   },

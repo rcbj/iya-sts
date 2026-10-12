@@ -120,11 +120,6 @@ class SamlPage {
         : '') +
       '<p class="sub"><a href="/saml2">' +
       t.html('consoleSaml.common.linkProfile') + '</a> &middot; ' +
-      // The mock SP only where this realm is served it (#585).
-      (json.mockServiceProvider
-        ? '<a href="' + kit.esc(json.mockServiceProvider) + '">' +
-          t.html('consoleSaml.saml2.linkMockSp') + '</a> &middot; '
-        : '') +
       '<a href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkAttributes') + '</a> ' +
       '&middot; <a ' +
@@ -157,13 +152,7 @@ class SamlPage {
           '<th>' + t.html('consoleSaml.common.thLastSeen') +
           '</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml2.noneYet',
-          { filtered: needle ? 'yes' : 'no' }) +
-          (json.mockServiceProvider
-            ? ' ' + t.html('consoleSaml.common.startOne') + '<a href="' +
-              kit.esc(json.mockServiceProvider) + '">' +
-              t.html('consoleSaml.saml2.linkMockSp') + '</a>' +
-              t.html('consoleSaml.saml2.orRegister')
-            : ''))) +
+          { filtered: needle ? 'yes' : 'no' }))) +
       '<h2>' + t.html('consoleSaml.saml2.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml2.registerIntro') +
       '</p><form ' +
@@ -665,8 +654,6 @@ class SamlPage {
         : '') +
       '<p class="sub"><a href="/saml11">' +
       t.html('consoleSaml.common.linkProfile') + '</a> &middot; <a ' +
-      'href="/saml11/rp">' + t.html('consoleSaml.saml11.linkMockRp') +
-      '</a> &middot; <a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkAttributes') + '</a> ' +
       '&middot; <a ' +
@@ -699,10 +686,7 @@ class SamlPage {
           '</th></tr></thead><tbody>' + rows +
           '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml11.noneYet',
-          { filtered: needle ? 'yes' : 'no' }) + ' ' +
-          t.html('consoleSaml.common.startOne') + '<a ' +
-          'href="/saml11/rp">' + t.html('consoleSaml.saml11.linkMockRp') +
-          '</a>' + t.html('consoleSaml.saml11.orRegister'))) +
+          { filtered: needle ? 'yes' : 'no' }))) +
       '<h2>' + t.html('consoleSaml.saml11.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml11.registerIntro') +
       '</p><form method="post" action="/admin/saml11"><div ' +
@@ -859,13 +843,7 @@ class SamlPage {
       kit.esc(String(json.authentications || 0)) +
         '</td></tr></tbody></table><h2>' +
       t.html('consoleSaml.detail11.hNotHere') + '</h2><p ' +
-      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p>' +
-      // The mock relying party only where this realm is served it (#585).
-      (json.mockRelyingParty
-        ? '<p class="sub"><a href="' + kit.esc(json.mockRelyingParty) + '">' +
-          t.html('consoleSaml.detail11.mockRp') + '</a>' +
-          t.html('consoleSaml.detail11.mockRpAfter') + '</p>'
-        : '');
+      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p>';
 
     return inner;
   }

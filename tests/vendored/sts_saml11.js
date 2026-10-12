@@ -112,8 +112,8 @@
 //
 // **THE RELYING PARTIES ARE NOT THE SERVICE'S OWN MOCKS (#586).** Until #585
 // the addresses this job registered were `/saml11/rp`, `/wsfed/rp` and the
-// SSO check asked `/saml2/sp` — the service's own demo endpoints, which are
-// development only since that ticket. The relying party this job plays
+// SSO check asked `/saml2/sp` — the service's own demo endpoints, which were
+// development only from that ticket and deleted by #592. The relying party this job plays
 // itself now registers an address under `example.test` that nothing dials
 // (the job reads every answer at the identity provider, which is the point
 // of it), and the parties that must RECEIVE something are the TEST PEER's
@@ -676,20 +676,14 @@ async function theTestPeerRelyingParty(target) {
 // job: the peer's SP-initiated AuthnRequest (redirect binding, signed by its
 // registered key) followed with this job's cookie jar, answered with no
 // sign-in screen, and the Response posted back to the peer, which verifies
-// it and records who it names. Without a peer the development realm's own
-// mock is asked instead; product has none (#585).
+// it and records who it names. Without a peer it skips, saying so, in both
+// modes: the development realm's own mock service provider it fell back on
+// was deleted (#592).
 async function theSaml2SessionIsShared(who) {
   log.debug('Entering theSaml2SessionIsShared().');
   if (!peer2) {
-    if (PRODUCT) {
-      log.info(testPeer.skipReason('the SAML 2.0 service provider the ' +
-                                   'session is shared with'));
-    } else {
-      const mock = await request('GET', '/saml2/sp');
-      check('the SAML 2.0 profile is still reachable in the same session ' +
-            '(the development mock)', mock.status === 200,
-            'status ' + mock.status);
-    }
+    log.info(testPeer.skipReason('the SAML 2.0 service provider the ' +
+                                 'session is shared with'));
     log.debug('Leaving theSaml2SessionIsShared(). No peer.');
     return;
   }
@@ -953,8 +947,8 @@ async function main() {
   heading('Browser/POST, end to end');
   const target = BASE + '/done?x=1';
   // THIS JOB IS THE RELYING PARTY, and it reads every answer at the identity
-  // provider, so its assertion consumer is an address nothing dials — not
-  // the service's own `/saml11/rp`, which is development only (#585).
+  // provider, so its assertion consumer is an address nothing dials — the
+  // service's own `/saml11/rp` was deleted (#592).
   const acs = 'https://rp-' + runStamp() + '.saml11.example.test/SAML/POST';
 
   // THE RELYING PARTY, IN THE REGISTRY, BEFORE THE FIRST FLOW.
@@ -1513,7 +1507,7 @@ async function main() {
   // The session is authn.js's, shared with OAuth, WS-Federation and SAML 2.0:
   // the test peer's SAML 2.0 service provider starts a request, and the
   // same session answers it with no sign-in (#586; this asked `/saml2/sp`,
-  // which is development only since #585).
+  // which #592 deleted).
   await theSaml2SessionIsShared('heidi');
 
   // -------------------------------------------------------------------------
@@ -1701,8 +1695,8 @@ async function main() {
   // Registered first: a product-mode service answers a wreply only when it is
   // registered on the application the wtrealm names.
   // The reply address is the test peer's WS-Federation relying party where
-  // there is one (#586), and otherwise an address nothing dials — never the
-  // service's own `/wsfed/rp`, which is development only (#585).
+  // there is one (#586), and otherwise an address nothing dials — the
+  // service's own `/wsfed/rp` was deleted (#592).
   const wreply = peerWsfed ? peerWsfed.urls.wsfedReply
     : 'https://rp-' + runStamp() + '.wsfed.example.test/';
   await registry.provision(registry.baseOf(BASE), {

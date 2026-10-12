@@ -724,8 +724,8 @@
     "text": "示範、模擬與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b62287524a386d08",
-    "text": "提供並列出：模擬依賴方與服務提供者（/wsfed/rp、/saml2/sp、/saml11/rp、/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，/xacml/protected，升級驗證替身資源，GNAP 示範資源伺服器，以及 /ssf/receive 與 /ssf/received。"
+    "en": "3125d137228d033e",
+    "text": "提供並列出：命令模擬依賴方（/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，/xacml/protected，升級驗證替身資源，GNAP 示範資源伺服器，以及 /ssf/receive 與 /ssf/received。"
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

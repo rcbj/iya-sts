@@ -4311,14 +4311,6 @@
     "en": "5622b8dd257d1d0a",
     "text": "Cuánto tiempo se retiene un AuthnRequest mientras el navegador está en la pantalla de inicio de sesión, o entre una solicitud con binding POST y el GET en que se convierte. Pasado ese tiempo el regreso se rechaza con una página que nombra este valor. Era la constante REQUEST_TTL_MS en saml2_sso.js."
   },
-  "saml2.mockSpContextTtlMin|label": {
-    "en": "8453902ae50bb2e7",
-    "text": "Vigencia del RelayState del proveedor de servicios mock (minutos)"
-  },
-  "saml2.mockSpContextTtlMin|description": {
-    "en": "27f0344e980fd01a",
-    "text": "Cuánto tiempo recuerda /saml2/sp — el proveedor de servicios mock, AJENO A LA ESPECIFICACIÓN — un RelayState que generó para poder comprobar el viaje de ida y vuelta. Es el estado propio de esa página y no tiene nada que ver con el del proveedor de identidad."
-  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Aviso de longitud del binding Redirect (caracteres)"
@@ -4494,14 +4486,6 @@
   "wsfed.assertionLifetimeMin|description": {
     "en": "7d9a3360c0b23fa4",
     "text": "Cuánto tiempo es válida la aserción SAML 1.1 dentro de una respuesta de inicio de sesión de WS-Federation, y el wsu:Lifetime del RequestSecurityTokenResponse que la envuelve. Es independiente de saml11.assertionLifetimeMin por el motivo que da la propia descripción de ese ajuste: una aserción de perfil de navegador se consume en segundos y una vigencia corta allí es una prueba realista, mientras que el mismo valor haría caducar una sesión de WS-Federation mientras alguien lee la página en la que se le inició sesión. Una aplicación puede anularlo con wsfedAssertionLifetimeMin en su entrada."
-  },
-  "wsfed.mockRpContextTtlMin|label": {
-    "en": "d414d71003107b1c",
-    "text": "Vigencia del wctx de la parte que confía mock (minutos)"
-  },
-  "wsfed.mockRpContextTtlMin|description": {
-    "en": "6316f83a4de38024",
-    "text": "Cuánto tiempo recuerda /wsfed/rp — la parte que confía mock, AJENA A LA ESPECIFICACIÓN — un wctx que generó para poder comprobar el viaje de ida y vuelta. Su propio estado y el de nadie más. Era la constante RP_CONTEXT_TTL_MS en wsfed.js."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

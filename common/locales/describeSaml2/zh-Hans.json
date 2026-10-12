@@ -12,7 +12,6 @@
   "unsolicited": "身份提供方发起的登录：向 <code>providerId</code> 指定的服务提供方发送一个未经请求的 Response（<code>saml2.unsolicitedSso</code>）。",
   "aa": "属性权威：一个 SOAP <code>{element}</code>，即断言查询与请求配置文件。",
   "metadata": "签名的身份提供方元数据。<code>{scoped}</code> 是该服务提供方【专属】的文档——不同的 entityID 和不同的端点——并且会为请求的任何 {sp} 生成。",
-  "sp": "一个模拟服务提供方。NON-SPEC，默认的断言使用者服务，无需第二个服务即可逐项检查验证应答之处。",
   "perSp": "按服务提供方的元数据",
   "perSpLead": "每个服务提供方在自己的路径下获得自己的端点，使用本身份提供方唯一的 entityID，即该领域的 OAuth 签发者。请求 <code>{path}</code> 即会生成——entityID 可以是百分号编码的 URL 或普通名称：",
   "generic": "通用端点是 <code>{sso}</code>、<code>{slo}</code> 和 <code>{ars}</code>。它们的行为完全相同——路径中的范围决定由哪个身份提供方在应答中署名，而无论哪种情况，断言的接收方都由 AuthnRequest 自身的 Issuer 决定。"

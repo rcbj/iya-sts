@@ -1179,18 +1179,6 @@
     "en": "17543ed2ad8f5b73",
     "text": "Federationsmetadata för EN förlitande part"
   },
-  "endpoints.route./wsfed/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "Låtsad förlitande part (inte en specifikationsslutpunkt)"
-  },
-  "endpoints.route./wsfed/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "Den låtsade förlitande partens skript"
-  },
-  "endpoints.route./wsfed/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "Den låtsade förlitande partens startvy"
-  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Vad profilen är"
@@ -1251,18 +1239,6 @@
     "en": "3046cc7181c4dedb",
     "text": "Skript för automatisk postning i HTTP POST-bindningen"
   },
-  "endpoints.route./saml2/sp.name": {
-    "en": "a09df9ed92de4454",
-    "text": "Låtsad tjänsteleverantör (inte en specifikationsslutpunkt)"
-  },
-  "endpoints.route./saml2/sp/mock-rp.js.name": {
-    "en": "9f26130381002d3a",
-    "text": "Den låtsade tjänsteleverantörens skript"
-  },
-  "endpoints.route./saml2/sp/api/start.name": {
-    "en": "7e3ea418703ad450",
-    "text": "Den låtsade tjänsteleverantörens startvy"
-  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Vad profilen är"
@@ -1298,18 +1274,6 @@
   "endpoints.route./saml11/autopost.js.name": {
     "en": "1c2c5f913f3bd033",
     "text": "Skript för automatisk postning i Browser/POST-profilen"
-  },
-  "endpoints.route./saml11/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "Låtsad förlitande part (inte en specifikationsslutpunkt)"
-  },
-  "endpoints.route./saml11/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "Den låtsade förlitande partens skript"
-  },
-  "endpoints.route./saml11/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "Den låtsade förlitande partens startvy"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",

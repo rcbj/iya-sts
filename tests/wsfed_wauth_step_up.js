@@ -230,7 +230,11 @@ function childMain() {
     const PASSWORD = 'urn:oasis:names:tc:SAML:1.0:am:password';
     const signInUrl = function (extra) {
       return '/wsfed?' + new URLSearchParams(Object.assign({
-        wa: 'wsignin1.0', wtrealm: REALM, wctx: 'ctx-1' },
+        // A stand-in reply address nothing answers at: the response is read
+        // off the page. With none, and none registered, the sign-in is
+        // refused since #592 deleted the mock relying party it went to.
+        wa: 'wsignin1.0', wtrealm: REALM, wctx: 'ctx-1',
+        wreply: 'https://rp.wauth-step-up.example/wsfed' },
         extra || {})).toString();
     };
     const toSignIn = function (r) {

@@ -12,7 +12,6 @@
   "unsolicited": "Sign-in na sinimulan ng identity provider: isang unsolicited Response sa service provider na pinangangalanan ng <code>providerId</code> (<code>saml2.unsolicitedSso</code>).",
   "aa": "Ang attribute authority: isang SOAP <code>{element}</code>, ang Assertion Query and Request profile.",
   "metadata": "Ang naka-sign na metadata ng identity provider. Ang <code>{scoped}</code> ay isang dokumentong SARILI nito para sa service provider na iyon — ibang entityID at ibang mga endpoint — at nililikha ito para sa anumang {sp} na hingin.",
-  "sp": "Isang mock service provider. NON-SPEC, ang default na assertion consumer service, at kung saan mave-verify ang isang response nang tsek-por-tsek nang walang pangalawang serbisyo.",
   "perSp": "Metadata kada service provider",
   "perSpLead": "Bawat service provider ay may sariling mga endpoint sa ilalim ng sarili nitong path, na may iisang entityID ng identity provider na ito, ang OAuth issuer ng realm. Hingin ang <code>{path}</code> at lilikhain ito — ang entityID ay maaaring percent-encoded na URL o simpleng pangalan:",
   "generic": "Ang mga generic na endpoint ay <code>{sso}</code>, <code>{slo}</code> at <code>{ars}</code>. Magkapareho ang kilos nila — ang scope sa path ang nagpapasya kung aling identity provider ang magpapakilala sa sarili sa sagot, at ang sariling Issuer ng AuthnRequest ang nagpapasya kung para kanino ang assertion sa alinmang paraan."

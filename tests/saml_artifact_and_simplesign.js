@@ -570,7 +570,9 @@ async function run(t) {
     const authn = '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="_ss1" Version="2.0" IssueInstant="' +
       new Date().toISOString() + '" Destination="https://idp.test/saml2/' +
-      'sso"><saml:Issuer>' + ssp + '</saml:Issuer>' +
+      // A stand-in address (#592: no mock SP to fall back on).
+      'sso" AssertionConsumerServiceURL="https://sp.simplesign.test/acs">' +
+      '<saml:Issuer>' + ssp + '</saml:Issuer>' +
       '</samlp:AuthnRequest>';
     const simple = postSimple(ssoPost, '/saml2/sso',
                               simpleForm('SAMLRequest', authn, 'r/s+1', ec));
@@ -651,7 +653,10 @@ async function run(t) {
     t.check(consumed.ok, 'metadata whose only ACS is SimpleSign is consumed',
             JSON.stringify(consumed.errors || ''));
     const chosen = direct.registeredAcsFor(
-      direct.readAuthnRequest(authn.replace(ssp, acsSp)),
+      // Without the stand-in address: this provider's metadata registers
+      // its one endpoint, which is what is to be chosen.
+      direct.readAuthnRequest(authn.replace(ssp, acsSp).replace(
+        ' AssertionConsumerServiceURL="https://sp.simplesign.test/acs"', '')),
       fieldsOf(acsSp));
     t.check(chosen.ok && chosen.binding === B_SIMPLESIGN,
             'the SimpleSign endpoint is DELIVERABLE and chosen',

@@ -118,7 +118,9 @@ function childMain() {
         'ID="_fa' + Date.now() +
         require('crypto').randomBytes(8).toString('hex') + '" ' +
         'Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
-        'AssertionConsumerServiceURL="' + base + '/saml2/sp/acs"' +
+        // A stand-in address: the Response is read off the form and never
+        // POSTed, so nothing has to answer there (#592 deleted the mock SP).
+        'AssertionConsumerServiceURL="https://sp.force-authn.test/acs"' +
         (o.force ? ' ForceAuthn="true"' : '') +
         (o.passive ? ' IsPassive="true"' : '') + '>' +
         '<saml:Issuer>urn:force-authn:sp</saml:Issuer>' +

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4311** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4306** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -2185,7 +2185,7 @@ Raised from: saml/.
 | `STS-SAML-0002` | The SAMLRequest at the SAML 2.0 Single Sign-On service is not a readable <samlp:AuthnRequest>: malformed XML, or another message. | HTTP 400 page |
 | `STS-SAML-0003` | A SAML 2.0 AuthnRequest names no <saml:Issuer> and the path names no service provider, so there is no audience to issue for. | HTTP 400 page |
 | `STS-SAML-0004` *(retired)* | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
-| `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered. | HTTP 400 page |
+| `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered; in either mode, the request names none and none is registered (#592). | HTTP 400 page |
 | `STS-SAML-0006` | The SAML 2.0 assertion consumer service URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0007` | A SAML 2.0 AuthnRequest asked for a ProtocolBinding this identity provider does not implement (for example PAOS). | HTTP 400 page |
 | `STS-SAML-0008` | A SAML 2.0 AuthnRequest set IsPassive and there is no usable session, so the identity provider may not show the sign-in screen. | samlp:Response with status Responder / NoPassive |
@@ -2201,14 +2201,14 @@ Raised from: saml/.
 | `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Success and no message (HTTP 200) — saml-core-2.0-os 3.5.3's empty response (#160) |
 | `STS-SAML-0019` | The SAMLRequest at the SAML 2.0 Single Logout service is not a readable <samlp:LogoutRequest>. | HTTP 400 page |
 | `STS-SAML-0020` | A SAML 2.0 LogoutRequest carried an <saml:EncryptedID> this service could not decrypt, so the session was not ended. | HTTP 400 page |
-| `STS-SAML-0021` | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 200 error page |
-| `STS-SAML-0022` | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0021` *(retired)* | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the mock relying parties were deleted. | — |
+| `STS-SAML-0022` *(retired)* | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
 | `STS-SAML-0023` | A SAML 2.0 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
 | `STS-SAML-0026` | A SAML 1.1 flow named a profile other than post or artifact in the non-spec profile parameter. | HTTP 400 page |
 | `STS-SAML-0027` *(retired)* | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
-| `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered. | HTTP 400 page |
+| `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered; in either mode, the flow names no shire and none is registered (#592). | HTTP 400 page |
 | `STS-SAML-0029` | The SAML 1.1 assertion consumer URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0030` | A SAML 1.1 flow names no relying party: no providerId, no path segment and no TARGET origin to take one from. | HTTP 400 page |
 | `STS-SAML-0031` | The sign-in screen reported that a SAML 1.1 sign-in was cancelled or failed. | HTTP 400 page |
@@ -2222,8 +2222,8 @@ Raised from: saml/.
 | `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 page |
-| `STS-SAML-0043` | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0042` *(retired)* | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the mock relying parties were deleted. | — |
+| `STS-SAML-0043` *(retired)* | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
 | `STS-SAML-0044` | A service provider metadata refresh named an application that is not in the registry. | — |
 | `STS-SAML-0045` | Service provider metadata was not fetched because federation.outbound is off. | — |
 | `STS-SAML-0046` | Service provider metadata was not fetched because samlSpMetadataUrl is empty, not a URL, or not a scheme the outbound policy dials. | — |
@@ -2334,7 +2334,7 @@ Raised from: ws-trust/.
 
 ## STS-WSFED
 
-**WS-Federation.** The passive requestor profile and the mock relying party.
+**WS-Federation.** The passive requestor profile.
 
 Raised from: ws-federation/.
 
@@ -2342,7 +2342,7 @@ Raised from: ws-federation/.
 |---|---|---|
 | `STS-WSFED-0001` | A wsignin1.0 request carried wreqptr, which this service refuses to dereference (fetching a URL from a query parameter would be a server-side request forgery). | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0002` | A wsignin1.0 request named no wtrealm, so there is no relying party to issue a token for. | HTTP 400 error page (the profile defines no error response) |
-| `STS-WSFED-0003` | Product mode: the wreply is not one of the wsfedReplyUrl values registered on the wtrealm's application entry (or none is registered). | HTTP 400 error page (the profile defines no error response) |
+| `STS-WSFED-0003` | Product mode: the wreply is not one of the wsfedReplyUrl values registered on the wtrealm's application entry (or none is registered); either mode: the request names no wreply and none is registered (#592). | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0004` | The resolved wreply is not an absolute http(s) URL, so the sign-in response form would post back to this service. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0005` | The request (wreq TokenType or the non-spec tokenType parameter) asked for a token type other than SAML 1.1 or SAML 2.0. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0006` | wauth demanded an authentication method this identity provider cannot perform or report. | HTTP 400 error page (the profile defines no error response) |
@@ -2355,7 +2355,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
 | `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
-| `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-WSFED-0016` *(retired)* | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |

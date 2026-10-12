@@ -109,7 +109,12 @@ const EXEMPT = {
   // the Kerberos, WS-Trust and token endpoints their own pages list.
   '/admin/delegation-settings': 'configures registers other families\' ' +
                                 'endpoints read, and has no endpoint of ' +
-                                'its own to list'
+                                'its own to list',
+  // A hidden row (admin-ui/admin.ts): a tab of /admin/oauth2, kept in NAV
+  // only so SETTING_HOMES can name it; /admin/oauth2's row lists the
+  // endpoints, and a tab has no page of its own to draw a list on.
+  '/admin/token-lifetimes': 'a tab of /admin/oauth2, whose row lists ' +
+                            'the endpoints'
 };
 
 // ---------------------------------------------------------------------------
@@ -325,9 +330,9 @@ class ProtocolEndpoints {
       '/admin/saml2': [
         '/saml2', '/saml2/metadata', '/saml2/metadata/:sp', '/saml2/sso',
         '/saml2/sso/:sp', '/saml2/ars', '/saml2/ars/:sp', '/saml2/slo',
-        '/saml2/slo/:sp', '/saml2/sp', '/saml11', '/saml11/metadata',
+        '/saml2/slo/:sp', '/saml11', '/saml11/metadata',
         '/saml11/metadata/:rp', '/saml11/sso', '/saml11/sso/:rp',
-        '/saml11/responder', '/saml11/responder/:rp', '/saml11/rp', '/sts',
+        '/saml11/responder', '/saml11/responder/:rp', '/sts',
         '/wsfed'
       ].map(route),
       '/admin/vc': [
@@ -440,7 +445,7 @@ class ProtocolEndpoints {
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/metadata/:rp', '/wsfed/rp'].map(route),
+                       '/wsfed/metadata/:rp'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),

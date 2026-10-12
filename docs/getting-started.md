@@ -476,10 +476,9 @@ its default `development` mode. There is no setting that opens the console;
 `admin.authRequired` is gone; `global.mode` answers that question. `/admin-api` reads the same service for a program, and takes an OAuth
 2.0 access token of its own.
 
-A protocol you can drive end to end in a browser with nothing else installed is
-**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick a response binding, sign
-in with any username, and the mock service provider verifies the response it gets
-back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
+**SAML 2.0** needs a service provider of your own to drive end to end — there
+is no mock one in the service (#592); the test suite's is the test peer
+(`tests/peer/`). `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
 own for a service provider by that name, minted on the spot — in development mode
 only. In product mode that is a 404 until the service provider is registered.

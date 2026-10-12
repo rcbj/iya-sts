@@ -9,12 +9,10 @@
   "sso": "站台間傳輸服務——SAML 1.1 對 SAML 2.0 所稱單一登入服務的名稱",
   "responder": "SAML 回應程式，透過 SOAP。解析構件、依 AssertionID 傳回判斷提示，並回答 AttributeQuery 與 AuthenticationQuery——即 SAML 1.1 的屬性授權單位那一半",
   "metadata": "已簽署的中繼資料。這是描述 SAML 1.1 身分識別提供者的 SAML 2.0 中繼資料文件，也是每個信賴方實際取用的內容",
-  "rp": "模擬信賴方，用來演練兩種設定檔並查看各項檢查",
   "different": "與 SAML 2.0 的不同之處",
   "noRequest": "<strong>沒有要求訊息。</strong>沒有 AuthnRequest，因此信賴方從不表明身分，從不要求繫結、NameID 格式或驗證內容，也從不會收到錯誤——沒有任何東西需要回答。",
   "noSlo": "<strong>沒有單一登出。</strong>它隨 SAML 2.0 才出現。",
   "spellings": "<strong>處處拼寫不同。</strong>是 <code>AssertionID</code> 而非 <code>ID</code>，<code>Issuer</code> 是屬性而非元素，狀態碼是 QName 而非 URI，是 <code>AudienceRestrictionCondition</code> 而非 <code>AudienceRestriction</code>，且簽章在判斷提示中位於「最後」，在回應中位於「最前」。",
   "artifact": "<strong>42 位元組的構件</strong>，類型 0x0001，而 SAML 2.0 的構件為 44 位元組、類型 0x0004。",
-  "tryIt": "在模擬信賴方試用",
   "theMetadata": "中繼資料"
 }

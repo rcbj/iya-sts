@@ -4311,14 +4311,6 @@
     "en": "5622b8dd257d1d0a",
     "text": "Durée pendant laquelle une AuthnRequest est conservée pendant que le navigateur est sur l’écran de connexion, ou entre une requête en liaison POST et le GET en lequel elle est transformée. Au-delà, le retour est refusé avec une page nommant cette valeur. C’était la constante REQUEST_TTL_MS de saml2_sso.js."
   },
-  "saml2.mockSpContextTtlMin|label": {
-    "en": "8453902ae50bb2e7",
-    "text": "Durée de vie du RelayState du fournisseur de services fictif (minutes)"
-  },
-  "saml2.mockSpContextTtlMin|description": {
-    "en": "27f0344e980fd01a",
-    "text": "Durée pendant laquelle /saml2/sp — le fournisseur de services fictif HORS SPÉCIFICATION — se souvient d’un RelayState qu’il a créé afin de pouvoir vérifier l’aller-retour. C’est l’état propre à cette page et n’a rien à voir avec celui du fournisseur d’identité."
-  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Seuil d’avertissement de longueur de la liaison Redirect (caractères)"
@@ -4494,14 +4486,6 @@
   "wsfed.assertionLifetimeMin|description": {
     "en": "7d9a3360c0b23fa4",
     "text": "Durée de validité de l’assertion SAML 1.1 contenue dans une réponse de connexion WS-Federation, et le wsu:Lifetime de la RequestSecurityTokenResponse qui l’entoure. Elle est distincte de saml11.assertionLifetimeMin pour la raison qu’en donne la description de ce paramètre : une assertion de profil navigateur est consommée en quelques secondes et une durée de vie courte y est un test réaliste, alors que la même valeur ferait expirer une session WS-Federation pendant que quelqu’un lit la page sur laquelle elle l’a connecté. Une application peut la surcharger avec wsfedAssertionLifetimeMin sur son entrée."
-  },
-  "wsfed.mockRpContextTtlMin|label": {
-    "en": "d414d71003107b1c",
-    "text": "Durée de vie du wctx de la partie de confiance fictive (minutes)"
-  },
-  "wsfed.mockRpContextTtlMin|description": {
-    "en": "6316f83a4de38024",
-    "text": "Durée pendant laquelle /wsfed/rp — la partie de confiance fictive HORS SPÉCIFICATION — se souvient d’un wctx qu’elle a créé afin de pouvoir vérifier l’aller-retour. Son état propre et celui de personne d’autre. C’était la constante RP_CONTEXT_TTL_MS de wsfed.js."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

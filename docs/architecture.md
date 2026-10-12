@@ -5,8 +5,6 @@ nav_order: 2
 
 # Architecture
 
-> **Development mode only (#585):** `/wsfed/rp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 [![iya-sts architecture: the leader process and its listeners, the request dispatcher, three worker pools and the caches, the protocol subsystems and hosted surfaces, the shared layer of tokens and sessions, the shared services, and the embedded directory and key material above their stores](iya-sts-architecture.jpeg)](iya-sts-architecture.jpeg)
 
 *Select the diagram for full size.* It shows one node. The layers below go
@@ -378,11 +376,11 @@ cross-implementation test runs `webauthn.js` and the debugger's own independent
 decoder over the same real ceremonies and requires the same verdict from both.
 That last one is why `webauthn.js` must stay loadable on its own.
 
-**WS-Federation's tests are thin**, which is worth saying plainly because the
-mock relying party makes it *look* covered: `/wsfed/rp` verifies a sign-in
-response check by check and shows every verdict, but a person has to click it
-and read the page. `tests/wsfed_wauth_step_up.js` holds the `wauth` step-up and
-its refusals. What a real test would add is the other negatives: a `wctx` that
+**WS-Federation's tests are thin**, which is worth saying plainly.
+`sts_saml11.js` posts a sign-in response to the test peer's relying party,
+which verifies it (the mock relying party that once made the profile *look*
+covered was deleted, #592), and `tests/wsfed_wauth_step_up.js` holds the
+`wauth` step-up and its refusals. What a real test would add is the other negatives: a `wctx` that
 came back altered, `wfresh` read as seconds, and an assertion whose signature
 reference does not resolve because the SAML 1.1 id attribute was not named. A
 passive requestor that issues a good token and posts it to a working relying

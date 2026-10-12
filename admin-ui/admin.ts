@@ -1004,6 +1004,13 @@ const SECTIONS = [
         blurb: 'One page for the authorization server settings, named ' +
                'authorization servers, token lifetimes, custom claims and ' +
                'UserInfo claims, each on its own tab.' },
+      // A TAB OF THE PAGE ABOVE, KEPT AS A HIDDEN ROW: SETTING_HOMES draws
+      // the `OAuth 2.0 / OIDC per-client` group by this path (the tab's
+      // renderer asks for it), and checkSettingHomes() refuses a path NAV
+      // does not know (STS-ADMIN-0015 at every start since the OAuth pages
+      // became tabs, d1b41a38). Hidden, so no sidebar link and no guide row.
+      { path: '/admin/token-lifetimes', label: 'Token lifetimes',
+        hidden: true },
       { path: '/admin/saml2', label: 'SAML',
         blurb: 'Metadata, shared and profile settings, assertion settings, ' +
                'both identity providers and custom SAML attributes, each on ' +
@@ -8718,7 +8725,8 @@ const SETTING_HOMES = [
   // over there.
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
-  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
+  // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
+  // went with it (#592); its assertions' row is homed above.
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the
@@ -10421,7 +10429,6 @@ const PROTOCOL_SETTINGS_PAGES = [
            'only if that one attempt still does not produce it. And this ' +
            'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
-            ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +
                 'metadata'],
             ['/admin/saml-attributes', 'what goes into the assertion']] },

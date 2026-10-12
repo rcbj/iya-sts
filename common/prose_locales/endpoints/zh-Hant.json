@@ -1179,18 +1179,6 @@
     "en": "17543ed2ad8f5b73",
     "text": "「單一」依賴方的聯盟中繼資料"
   },
-  "endpoints.route./wsfed/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "模擬依賴方（非規格端點）"
-  },
-  "endpoints.route./wsfed/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "模擬依賴方的指令碼"
-  },
-  "endpoints.route./wsfed/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "模擬依賴方的起始檢視"
-  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1251,18 +1239,6 @@
     "en": "3046cc7181c4dedb",
     "text": "HTTP POST 繫結自動提交指令碼"
   },
-  "endpoints.route./saml2/sp.name": {
-    "en": "a09df9ed92de4454",
-    "text": "模擬服務提供者（非規格端點）"
-  },
-  "endpoints.route./saml2/sp/mock-rp.js.name": {
-    "en": "9f26130381002d3a",
-    "text": "模擬服務提供者的指令碼"
-  },
-  "endpoints.route./saml2/sp/api/start.name": {
-    "en": "7e3ea418703ad450",
-    "text": "模擬服務提供者的起始檢視"
-  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1298,18 +1274,6 @@
   "endpoints.route./saml11/autopost.js.name": {
     "en": "1c2c5f913f3bd033",
     "text": "Browser/POST 設定檔自動提交指令碼"
-  },
-  "endpoints.route./saml11/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "模擬依賴方（非規格端點）"
-  },
-  "endpoints.route./saml11/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "模擬依賴方的指令碼"
-  },
-  "endpoints.route./saml11/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "模擬依賴方的起始檢視"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",

@@ -724,8 +724,8 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b62287524a386d08",
-    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, at /ssf/receive at /ssf/received."
+    "en": "3125d137228d033e",
+    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, at /ssf/receive at /ssf/received."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",
