@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "串接的 PEM 憑證，屬於此簽發者採信其金鑰證明的 Wallet Provider 與金鑰儲存元件：證明必須能以其中一把金鑰驗證，或由其中之一所簽發的憑證（其 x5c）簽署。留空表示不信任任何一方，此時金鑰證明會被拒絕。"
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "提供 W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "在 /vc-api 提供 W3C CCG Verifiable Credentials API（VCALM）：一個為交給它的憑證加固的簽發者（Data Integrity eddsa-rdfc-2022、eddsa-jcs-2022、ecdsa-rdfc-2019、ecdsa-jcs-2019 與 ecdsa-sd-2023，或 VC-JOSE-COSE 信封），一個證明出示並衍生選擇性揭露的持有者，一個憑證與出示的驗證者，一個基於本領域 Bitstring Status Lists 的狀態服務，以及對 did:key、did:jwk 與本領域自身 did:web 的 DID 解析。每次呼叫都需要本領域簽發、帶有 vc-api:issue 或 vc-api:verify 的存取權杖——受保護的範圍，只簽發給管理員為其宣告過的用戶端——在所有模式下皆然。它以自己的金鑰簽署，每把金鑰以其 did:key 命名，絕不使用簽署本領域權杖的金鑰。預設關閉，因為它簽署的是呼叫者撰寫的文件：關閉時，每個 /vc-api 路徑都回應 501——功能已關閉，而非 URL 錯誤。"
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "每個速率限制時窗內一個用戶端可發出的 VC API 呼叫數"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "一個用戶端——以及一個位址——在一個 security.rateLimitWindowS 時窗內可以發出多少次 /vc-api 呼叫，依領域計數；超過後呼叫以 429 及 Retry-After 拒絕。它有自己的數值，理由與 xacml.pipMaxPerWindow 相同：security.rateLimitPerIdentity 是五，因為它守護的是登入，而協調者每個憑證呼叫一次的簽發者或驗證者會被它關閉。它所限制的是成本：一次呼叫會正規化 JSON-LD 並簽署或驗證，否則一個已獲准的用戶端可能在迴圈中耗盡本服務的 CPU。"
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "啟用 Kerberos"

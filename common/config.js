@@ -10568,7 +10568,7 @@ const SETTINGS = [
                  'each named by its did:key, never with the keys that sign ' +
                  'this realm\'s tokens. OFF BY DEFAULT, because it signs ' +
                  'documents its caller wrote: off, every /vc-api path ' +
-                 'answers as a path nothing is registered on.' },
+                 'answers 501 — the feature is off, the URL is not wrong.' },
 
   { key: 'vcApi.maxPerWindow', group: 'W3C VC API',
     label: 'VC API calls one client may make per rate-limit window',

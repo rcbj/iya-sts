@@ -1216,8 +1216,8 @@
     "text": "VC-API-intyg med en status"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "Varje intyg som VC-API-testadaptern utfärdade med en statuspost, och det statuslisteindex det tog, så att en statusändring kan hitta det."
+    "en": "6276c639d08ac2a7",
+    "text": "Varje intyg som W3C VC API utfärdade med en statuspost, och det statuslisteindex det fick, så att en statusändring kan hitta det."
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",

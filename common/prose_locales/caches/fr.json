@@ -1216,8 +1216,8 @@
     "text": "Justificatifs VC-API avec statut"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "Chaque justificatif que l’adaptateur de test VC-API a émis avec une entrée de statut, et l’index de liste de statut qu’il a pris, afin qu’un changement de statut puisse le retrouver."
+    "en": "6276c639d08ac2a7",
+    "text": "Chaque attestation émise par la W3C VC API avec une entrée de statut, et l'index de liste de statut qu'elle a pris, afin qu'un changement de statut puisse la retrouver."
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",

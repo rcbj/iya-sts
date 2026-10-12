@@ -580,28 +580,28 @@
     "text": "partial：vct、cnf 持有者绑定，以及 /.well-known/jwt-vc-issuer 密钥解析文档。以 DID 指明颁发者属于扩展——本文档未定义任何基于 DID 的颁发者签名机制。"
   },
   "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial：VCDM 1.1 的 VC-JWT 编码（jwt_vc_json）以及带嵌入式证明的 VCDM 2.0 凭证（ldp_vc）；以及在 VC-API 测试端点上（#194），对他人编写的凭证或展示检查数据模型的每项 MUST，基于内置上下文的 JSON-LD 安全模式，以及封装的凭证和展示——按 W3C VC Data Model 2.0 测试套件验证。"
+    "en": "9ea60338e6f757a1",
+    "text": "部分：VCDM 1.1 凭证的 VC-JWT 编码（jwt_vc_json）以及带嵌入证明的 VCDM 2.0 凭证（ldp_vc）；并且在 W3C VC API（#194）上，对他人编写的凭证或出示检查数据模型的每一条 MUST，在随附上下文上使用 JSON-LD 安全模式，以及信封式凭证和出示——以 W3C VC Data Model 2.0 测试套件为准。"
   },
   "stsmetadata.specs.di-jcs.coverage": {
-    "en": "f0d7755e83750914",
-    "text": "partial：验证（以及为测试而签名）持有者在 VerifiablePresentation 上的证明——P-256 和 P-384、Ed25519，以及抗量子密码套件草案中的 ML-DSA-44 和 SLH-DSA-SHA2-128s——使用 did:jwk 和 did:key 验证方法；以及针对 Multikey 控制器文档，以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 对 GNAP zcap 令牌的委托证明进行签名和验证。在 VC-API 测试端点上，两种 EC 和 EdDSA JCS 套件也用于保护和验证凭证，支持证明集和证明链（#195、#196）。RDFC 套件见 di-rdfc。"
+    "en": "e298f8533eb3ccb0",
+    "text": "部分：验证（以及为测试而签名）VerifiablePresentation 上持有者的证明——P-256 和 P-384、Ed25519，以及 Quantum-Resistant Cryptosuites 草案中的 ML-DSA-44 和 SLH-DSA-SHA2-128s——使用 did:jwk 和 did:key 验证方法；以及以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 针对 Multikey 控制者文档签名和验证 GNAP zcap 令牌的委托证明。在 W3C VC API 上，EC 和 EdDSA 两个 JCS 套件也为凭证加固并验证凭证，支持证明集和证明链（#195、#196）。RDFC 套件见 di-rdfc。"
   },
   "stsmetadata.specs.di-rdfc.coverage": {
-    "en": "8578075bfdb2edb4",
-    "text": "full：覆盖 VC-API 测试端点上的签发和验证（#195、#196）：Ed25519、P-256 和 P-384，在安全模式下基于内置上下文、以空 base 进行的 RDFC-1.0，证明集和证明链，VC 1.1 和 2.0——按 W3C EdDSA 和 ECDSA 测试套件验证。本服务未附带的上下文会被拒绝，绝不会去获取。"
+    "en": "024efe640e5df490",
+    "text": "在 W3C VC API 上签发和验证完整支持（#195、#196）：Ed25519、P-256 和 P-384，在随附上下文上以安全模式和空基址运行 RDFC-1.0，证明集和证明链，VC 1.1 和 2.0——以 W3C EdDSA 和 ECDSA 测试套件为准。本服务未随附的上下文会被拒绝，绝不抓取。"
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full（针对 P-256，即第 3.5.8 节为派生证明规定的曲线）：带强制指针的基础证明、由任意选择性指针得到的派生证明，以及它们的验证（#196）——由规范自身的基础证明派生出的证明与其测试向量逐字节相同，由 Digital Bazaar 的库派生的证明可在此处通过验证，反之亦然。"
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
-    "en": "c4c0c53d034aeb43",
-    "text": "partial：vc+jwt、vc+sd-jwt 和 vc+cose 及其 vp 形式，在 VC-API 测试端点（#198）上进行保护和验证，SD-JWT 披露按照 RFC 9901 第 7.1 节的规定处理；密钥通过 did:key 或 did:jwk 的 kid 或调用方指定的公钥获得，不获取任何内容。OID4VCI 颁发者不签发这些形式（jwt_vc_json 是 VCDM 1.1），SD-JWT 展示上的 Key Binding JWT 只会被报告，而不会被检查。"
+    "en": "de44817c598a2283",
+    "text": "部分：vc+jwt、vc+sd-jwt 和 vc+cose 及其 vp 形式，在 W3C VC API 上加固和验证（#198），SD-JWT 披露按 RFC 9901 第 7.1 节处理；密钥通过 did:key 或 did:jwk 的 kid 或调用方指定的公钥获得，不抓取任何内容。OID4VCI 签发者不签发这些形式（jwt_vc_json 为 VCDM 1.1），SD-JWT 出示上的 Key Binding JWT 只报告、不检查。"
   },
   "stsmetadata.specs.vc-api.coverage": {
-    "en": "e2e4945d5e72ed8d",
-    "text": "partial，且是一个测试控件：W3C 测试套件驱动的 issue、verify、prove、derive 和 status 操作，基于本服务自己的密码套件、密钥和状态列表，仅在开发领域中，并且需要携带 vc-api:issue 或 vc-api:verify 的访问令牌。没有 zcap 授权，没有工作流，没有凭证存储。"
+    "en": "d8ffeba3e97815b9",
+    "text": "部分：签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -624,8 +624,8 @@
     "text": "full：涵盖 Data Integrity 所需的部分。JSON-LD 上下文是内置副本，从不通过网络获取：依赖网络获取的规范化既不可重现，也不安全。"
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "3441c40b69d1cf9a",
-    "text": "partial：本服务发布一个带有两个验证方法的 did:web 文档，并在 VC-API 测试端点（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 以及它自己的 did:web，并以 W3C DID 测试套件为标准。不获取任何其他 did:web；不支持 DID 参数（service、versionId 等）。"
+    "en": "a4e9c39575ac8ed8",
+    "text": "部分：本服务发布一个带两个验证方法的 did:web 文档，并在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准。不抓取任何其他 did:web；不支持任何 DID 参数（service、versionId 等）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -2843,10 +2843,6 @@
     "en": "4f3a588acce9f5fc",
     "text": "本领域用于吊销或暂停的 BitstringStatusListCredential，以 application/vc+jwt 形式提供：一个包含 131,072 个条目的 GZIP 位串，索引 0 在前，使用凭证密钥签名——或者，当 Accept 首先要求 JSON-LD 或 JSON 而非 JWT 时，提供同一凭证，带有本领域 Ed25519 密钥的 eddsa-rdfc-2022 证明，以其 did:key 颁发（#197）。"
   },
-  "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose/publish.what": {
-    "en": "d39a31a0597ad418",
-    "text": "W3C 测试套件的“立即发布列表”。此处的列表在每次读取时计算，因此只返回 204；这是测试控件，需要 vc-api:issue。"
-  },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
     "text": "根据 transaction_id 领取颁发者曾以 202 应答的凭证。"
@@ -2900,40 +2896,76 @@
     "text": "用于验证 ldp_vc 证明的 BLS12-381 密钥，以 Multikey 形式提供。`/bbs/keys/<kid>` 是普通 ldp_vc 凭证的 verificationMethod 解引用到的地址，适用于本领域 BBS 密钥的每个有效代（当前的、下一个的，以及仍在宽限期内的已停用代——该密钥随本领域的签名密钥一起轮换，#49）；`/bbs/keys/1` 是当前的那个。其他任何情况返回 404。"
   },
   "stsmetadata.endpoints./vc-api/issuers.what": {
-    "en": "e93fbff56e0821df",
-    "text": "NON-SPEC 列表，供测试套件作业使用：此适配器提供的每个颁发者——一种保护机制以及它用于签名的领域密钥——及其 did:key 和端点。仅限开发领域；需要 vc-api:issue。"
+    "en": "1aa20d049d9eba6a",
+    "text": "非规范列表，即实现清单中的签发者实例列表：本服务提供的每个签发者——一种加固机制及其签名所用的 VC API 密钥——及其 did:key 和端点。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/issuers.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "在检查数据模型的每项 MUST 和 JSON-LD 安全模式之后，保护交给它的凭证：嵌入式 Data Integrity 证明（eddsa-rdfc-2022、eddsa-jcs-2022、基于 P-256 和 P-384 的 ecdsa-rdfc-2019 和 ecdsa-jcs-2019、ecdsa-sd-2023），或 VC-JOSE-COSE 信封（jose-p256、sd-jwt-p256、cose-p256）。凭证的颁发者必须是该密钥的 did:key；options.credentialStatus 会在本领域的 Bitstring Status List 中分配一个索引。仅限开发领域；需要 vc-api:issue。返回 201 { verifiableCredential }。"
+    "en": "76ef67331a4befb1",
+    "text": "在检查数据模型的每一条 MUST 和 JSON-LD 安全模式之后，为交给它的凭证加固：嵌入式 Data Integrity 证明（基于 P-256 和 P-384 的 eddsa-rdfc-2022、eddsa-jcs-2022、ecdsa-rdfc-2019 和 ecdsa-jcs-2019，以及 ecdsa-sd-2023）或 VC-JOSE-COSE 信封（jose-p256、sd-jwt-p256、cose-p256）。凭证的签发者必须是该密钥的 did:key；options.credentialStatus 在本领域的 Bitstring Status Lists 中分配索引。使用 VC API 自己的密钥签名，绝不使用签署本领域令牌的密钥；不理解的选项会被拒绝。vc-api:issue。201 { verifiableCredential }。"
+  },
+  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",
     "text": "数据模型、JSON-LD 安全模式、证明集和证明链中的每个证明（验证方法为 did:key 和 did:jwk，不获取任何东西）或信封，以及——在要求或指定时——凭证在本领域列表中的状态。返回 200 或 400 { verified, checks, warnings, errors }。需要 vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/credentials/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
+  },
   "stsmetadata.endpoints./vc-api/presentations/verify.what": {
     "en": "5c148622059888d3",
     "text": "出示自身的证明（authentication，所要求的 challenge 和 domain）或信封（其 nonce 和 aud），以及其中的每个凭证，按 /vc-api/credentials/verify 检查单个凭证的方式检查。需要 vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/presentations/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
+  },
   "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.what": {
-    "en": "a10e25570a166392",
-    "text": "以领域密钥的 did:key 身份保护出示：带有给定 challenge 和 domain 的 Data Integrity 证明，或 VC-JOSE-COSE 信封。需要 vc-api:issue。"
+    "en": "021b219f3012be78",
+    "text": "以 VC API 密钥的 did:key 身份为出示加固：带给定挑战和域的 Data Integrity 证明，或 VC-JOSE-COSE 信封。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/credentials/derive.what": {
     "en": "f059d39e5c330e56",
     "text": "从基础证明派生 ecdsa-sd-2023 证明，揭示强制语句和 options.selectivePointers。需要 vc-api:issue。"
   },
+  "stsmetadata.endpoints./vc-api/credentials/derive.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
+  },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "b48e6b20d9d6497f",
-    "text": "吊销、暂停或解除暂停此适配器带状态颁发的凭证——即 /admin/vc-status 执行的操作，是否认凭证的三种操作之一。吊销是最终的。需要 vc-api:issue。"
+    "en": "860c7bcc627e7889",
+    "text": "撤销、暂停或解除暂停本 VC API 带状态签发的凭证——即 /admin/vc-status 执行的操作，是否认凭证的三种操作之一。撤销是最终的。vc-api:issue。"
+  },
+  "stsmetadata.endpoints./vc-api/credentials/status.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./vc-api/resolve.what": {
     "en": "83c42724ff6ab588",
     "text": "DID Core section 7.1 的 resolve 或 resolveRepresentation（?function=），适用于 did:key、did:jwk 和本领域自己的 did:web，应答解析结果；其他任何 did:web 都返回 notFound，而不会去获取。需要 vc-api:verify。"
   },
+  "stsmetadata.endpoints./vc-api/resolve.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
+  },
   "stsmetadata.endpoints./vc-api/dereference.what": {
     "en": "d3e75554e1f05975",
     "text": "DID Core section 7.2：文档，或片段所指的验证方法。需要 vc-api:verify。"
+  },
+  "stsmetadata.endpoints./vc-api/dereference.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "在本领域开启 vcApi.enabled 之前回答 501"
   },
   "stsmetadata.endpoints./.well-known/did.json.what": {
     "en": "614fbb0376075e4a",
