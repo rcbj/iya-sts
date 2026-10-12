@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "Le contrôle de test",
   "registrationHtml.testOpen": "ouvert (développement)",
   "registrationHtml.testRefused": "refusé (produit)",
-  "registrationHtml.testHow": "<code>{path}</code>, sans identifiant, en développement uniquement (<code>mode.opensTestControls()</code>). Source <code>test-control</code>.",
+  "registrationHtml.testHow": "<code>{path}</code>, sans identifiant, en développement uniquement (<code>mode.servesDemoEndpoints()</code>). Source <code>test-control</code>.",
   "registrationHtml.doorCaep": "Un CAEP device-compliance-change reçu",
   "registrationHtml.caepBefore": "D’un partenaire de fédération dont ce domaine reçoit les Shared Signals — un gestionnaire d’appareils est une relation <code>ssf</code> sur ",
   "registrationHtml.federation": "Fédération",

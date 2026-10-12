@@ -746,12 +746,14 @@ class DevicesAdmin {
         identifiedBy: ['id', 'thumbprint (with keyKind)', 'certificate'],
         source: 'mdm'
       },
-      testControl: {
+      // Only where this realm is served it (#585): null in a product realm,
+      // which has no such door.
+      testControl: mode.servesDemoEndpoints() ? {
         path: 'POST ' + TEST_CONTROL,
-        open: mode.servesDemoEndpoints(),
+        open: true,
         predicate: 'servesDemoEndpoints',
         source: 'test-control'
-      },
+      } : null,
       // A federation partner's device-compliance-change, through
       // setCompliance() as the signal-response policy permits (#153, #373,
       // #374 — an MDM being an `ssf` relationship).

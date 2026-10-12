@@ -5323,7 +5323,8 @@ function description(req) {
     // carried as well as signing its holder in — and the two documents.
     paths: {
       signIn: '/tls/sign-in',
-      trust: '/tls/trust',
+      // Only where the process serves it (#585).
+      trust: app.processDemoOnly.serves() ? '/tls/trust' : null,
       serverCertificate: '/tls/server-certificate'
     },
     serverCertificate: {
@@ -5492,13 +5493,20 @@ app.get('/tls', app.demoOnly, function (req, res) {
     'else. Paste its certificate here — the root, or the whole chain above ' +
     'the ' +
     'leaf.</p><table><tr><th>Anchor</th><th>SHA-256</th></tr>' + anchorRows +
-    '</table><form method="post" action="/tls/trust"><textarea ' +
-    'name="certificates" rows="6" placeholder="-----BEGIN ' +
-    'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
-    'these</button></p></form><form method="post" ' +
-    'action="/tls/trust/clear"><button type="submit">Empty the ' +
-    'truststore</button></form><p class="sub">Both buttons are test controls ' +
-    'and product mode refuses them. The gated doors answer in every mode: <a ' +
+    '</table>' +
+    // The two open doors only where the PROCESS serves them (#585): a
+    // development realm inside a product process draws this page and must
+    // not draw buttons posting to routes that are not there.
+    (app.processDemoOnly.serves()
+      ? '<form method="post" action="/tls/trust"><textarea ' +
+        'name="certificates" rows="6" placeholder="-----BEGIN ' +
+        'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
+        'these</button></p></form><form method="post" ' +
+        'action="/tls/trust/clear"><button type="submit">Empty the ' +
+        'truststore</button></form>'
+      : '') +
+    '<p class="sub">The two buttons are test controls, and a product ' +
+    'process does not have them. The gated doors answer in every mode: <a ' +
     'href="/admin/tls/trust">the truststore page in the admin console</a>, ' +
     'which also says where each anchor came from, and <code>POST ' +
     '/admin-api/tls/trust/add</code> / ' +

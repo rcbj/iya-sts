@@ -359,8 +359,11 @@ class OAuth2MonitorPage {
       ' — ' +
       '<a href="/admin/oauth2">' + t.html('consoleOauth2Monitor.ownLink') +
       '</a>' +
-      t.html('consoleOauth2Monitor.ownApi',
-             { path: '/oauth2/step-up/resource/{application}' }) + '</p>' +
+      // The stand-in's sentence only where this realm is served it (#585).
+      (section.standInResource
+        ? t.html('consoleOauth2Monitor.ownApi',
+                 { path: section.standInResource })
+        : '.') + '</p>' +
       '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
       self.countersHtml(section, t) +
       '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +

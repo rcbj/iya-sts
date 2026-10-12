@@ -1823,8 +1823,11 @@ class Saml11Sso {
         'or — failing both — from the origin of the TARGET. This request ' +
         'carried none of the three, and an assertion with no audience ' +
         'restriction is one any relying party would be entitled to accept.',
-        '<p>There is a mock relying party here that sends a complete ' +
-        'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
+        // The mock RP only where this realm is served it (#585).
+        demoOnly.serves()
+          ? '<p>There is a mock relying party here that sends a complete ' +
+            'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>'
+          : '');
     }
     const rpId = who.id;
     const providerId = this.providerId();
@@ -2963,10 +2966,12 @@ class Saml11Sso {
       'differences from <a href="/saml2">the SAML 2.0 profile</a> come out ' +
       'of, ' +
       'including why an error here is this page rather than a ' +
-      'Response.</p><h2>Try it</h2><ul><li><a ' +
+      'Response.</p><h2>Try it</h2><ul>' +
+      // The mock RP only where this realm is served it (#585).
+      (demoOnly.serves() ? '<li><a ' +
       'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying ' +
       'party here that starts both browser profiles and then verifies what ' +
-      'comes back check by check.</li><li><a ' +
+      'comes back check by check.</li>' : '') + '<li><a ' +
       'href="' + xmlEscape(where.metadata) + '">' + xmlEscape(where.metadata) +
       '</a> — the signed identity provider metadata, which is what a relying ' +
       'party should be configured from.</li></ul><h2>What it reads</h2>' +
@@ -3059,10 +3064,12 @@ class Saml11Sso {
       'href="' + METADATA_PATH + '">' + METADATA_PATH + '</a></td><td>signed ' +
       'metadata. A SAML 2.0 metadata document describing a SAML 1.1 identity ' +
       'provider, which is what every relying party actually ' +
-      'consumes</td></tr><tr><td><a ' +
+      'consumes</td></tr>' +
+      (demoOnly.serves() ? '<tr><td><a ' +
       'href="' + RP_PATH + '">' + RP_PATH + '</a></td><td>a mock ' +
       'relying party, to exercise both profiles and see the ' +
-      'checks</td></tr></tbody></table><h2>What makes it different from SAML ' +
+      'checks</td></tr>' : '') +
+      '</tbody></table><h2>What makes it different from SAML ' +
       '2.0</h2><ul><li><strong>No request message.</strong> No AuthnRequest, ' +
       'so the relying party never identifies itself, never asks for a ' +
       'binding, ' +
@@ -3078,9 +3085,10 @@ class Saml11Sso {
       'assertion and FIRST in a response.</li><li><strong>A 42-byte ' +
       'artifact</strong>, type 0x0001, where SAML 2.0\'s is 44 bytes and ' +
       'type ' +
-      '0x0004.</li></ul><div class="row"><a ' +
+      '0x0004.</li></ul><div class="row">' +
+      (demoOnly.serves() ? '<a ' +
       'href="' + RP_PATH + '"><button>Try it at the mock ' +
-      'relying party</button></a> <a ' +
+      'relying party</button></a> ' : '') + '<a ' +
       'href="' + xmlEscape(where.metadata) + '"><button class="alt">The ' +
                                                 'metadata</button></a></div>';
   }

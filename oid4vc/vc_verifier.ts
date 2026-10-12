@@ -4671,8 +4671,8 @@ class VcVerifier {
                 (record.signIn
                   ? 'it was made to sign in, and ' +
                     record.signIn.outcome.reason
-                  : 'it was made to the Verifier at /oid4vp/verifier, which ' +
-                    'signs nobody in — a wallet signs in at /authn/wallet.')
+                  : 'it was made for a verification, which signs nobody ' +
+                    'in — a wallet signs in at /authn/wallet.')
         });
       }
       res.status(200).type('application/json').send(JSON.stringify({

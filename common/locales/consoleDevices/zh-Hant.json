@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "測試控制",
   "registrationHtml.testOpen": "開放（開發）",
   "registrationHtml.testRefused": "拒絕（產品）",
-  "registrationHtml.testHow": "<code>{path}</code>，不需認證，僅限開發（<code>mode.opensTestControls()</code>）。來源 <code>test-control</code>。",
+  "registrationHtml.testHow": "<code>{path}</code>，不需認證，僅限開發（<code>mode.servesDemoEndpoints()</code>）。來源 <code>test-control</code>。",
   "registrationHtml.doorCaep": "收到的 CAEP device-compliance-change",
   "registrationHtml.caepBefore": "來自本領域接收其 Shared Signals 的聯合夥伴——裝置管理器是一個 <code>ssf</code> 關係，位於",
   "registrationHtml.federation": "聯合",

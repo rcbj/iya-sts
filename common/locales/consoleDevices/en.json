@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "The test control",
   "registrationHtml.testOpen": "open (development)",
   "registrationHtml.testRefused": "refused (product)",
-  "registrationHtml.testHow": "<code>{path}</code>, no credential, development only (<code>mode.opensTestControls()</code>). Source <code>test-control</code>.",
+  "registrationHtml.testHow": "<code>{path}</code>, no credential, development only (<code>mode.servesDemoEndpoints()</code>). Source <code>test-control</code>.",
   "registrationHtml.doorCaep": "A received CAEP device-compliance-change",
   "registrationHtml.caepBefore": "From a federation partner whose Shared Signals this realm receives — a device manager is an <code>ssf</code> relationship on ",
   "registrationHtml.federation": "Federation",

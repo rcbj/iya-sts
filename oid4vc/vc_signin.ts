@@ -594,9 +594,10 @@ class VcSignin {
       'class="err">This service can sign people in with a verifiable ' +
       'presentation, and <code>oid4vp.signIn</code> is set to false.</div>' +
       '<p>Turn it on at <a href="/admin/oid4vp">/admin/oid4vp</a>, or with ' +
-      '<code>POST /admin-api/config/set</code>. The Verifier at <a ' +
-      'href="/oid4vp/verifier">/oid4vp/verifier</a> still checks ' +
-      'presentations; it signs nobody in.</p>' + this.fallbackHtml(record));
+      '<code>POST /admin-api/config/set</code>. The Verifier still checks ' +
+      'the presentations a verification asks for (<code>POST ' +
+      '/admin-api/verifications/start</code>); it signs nobody in.</p>' +
+      this.fallbackHtml(record));
     log.debug("Leaving VcSignin.closedPage().");
   }
 

@@ -2999,7 +2999,10 @@ class AdminViews {
         VERIFICATIONS_SHOWN),
       // What the Start a verification form may name, read off the Verifier
       // (#587) so the form's menus are the lists the start checks against.
-      startChoices: this.deps.vcVerifier.START_VOCABULARY
+      startChoices: this.deps.vcVerifier.START_VOCABULARY,
+      // The demonstration verifier page, where this realm is served it
+      // (#585); the tab links it, and each format's Present one, only then.
+      verifierPage: mode.servesDemoEndpoints() ? '/oid4vp/verifier' : null
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
@@ -6687,15 +6690,20 @@ class AdminViews {
   truststoreJson(req) {
     const { log, mode, realms, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
-    const openToAnybody = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () {
-      return mode.opensTestControls();
-    });
+    // THE TWO OPEN DOORS ARE A DEMONSTRATION OF THE PROCESS'S (#585):
+    // named only where the default realm and this one both serve them, as
+    // `common/app.js`'s `processDemoOnly` decides — null, not a door marked
+    // closed, where they are not there.
+    const openToAnybody = mode.servesDemoEndpoints() &&
+      realms.run(realms.get(realms.DEFAULT_ID), function () {
+        return mode.servesDemoEndpoints();
+      });
     const doors = {
       console: '/admin/tls/trust',
       api: '/admin-api/tls/trust',
-      testControls: { add: '/tls/trust', clear: '/tls/trust/clear',
-                      open: openToAnybody }
+      testControls: openToAnybody
+        ? { add: '/tls/trust', clear: '/tls/trust/clear', open: true }
+        : null
     };
     const notes = {
       persisted: 'A RUNTIME ANCHOR IS WRITTEN TO ou=trustAnchors in the ' +
@@ -6823,6 +6831,10 @@ class AdminViews {
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
     return {
+      // The KDC's own demonstration document, where this realm is served it
+      // (#585): the tab links it only then.
+      principalsDocument: mode.servesDemoEndpoints() ? '/krb5/principals'
+                                                      : null,
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
       trustRealm: realms.currentId(),
@@ -8381,7 +8393,10 @@ class AdminViews {
           mdqRefusedPaging: refused.paging,
           // The kind the applications page files these entries under, for
           // the page's link to them (#446).
-          kind: SAML2_SP_KIND
+          kind: SAML2_SP_KIND,
+          // The mock service provider, where this realm is served it
+          // (#585): the page links it only then.
+          mockServiceProvider: mode.servesDemoEndpoints() ? '/saml2/sp' : null
       };
       }())
     };
@@ -8725,7 +8740,9 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles
+          profiles: profiles,
+          // The mock relying party, where this realm is served it (#585).
+          mockRelyingParty: mode.servesDemoEndpoints() ? '/saml11/rp' : null
       });
       }())
     };

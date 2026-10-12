@@ -1435,6 +1435,40 @@ function demoMarkOf(route) {
   return null;
 }
 
+/**
+ * Whether a path names a demonstration route the ambient realm is NOT
+ * served (#585), for a page that links to it: a console link, a description
+ * page's list. Read off the router, so a link cannot outlive its route's mark.
+ *
+ * @param path - a path, as a link writes it (a query or fragment is ignored)
+ * @returns true where every route on the path is a demonstration this realm
+ *   is not served
+ */
+function demoPathHidden(path) {
+  log.debug("Entering demoPathHidden().");
+  const bare = String(path || '').split('#')[0].split('?')[0];
+  const router = app._router || app.router;
+  const stack = (router && router.stack) || [];
+  let marked = false;
+  let served = false;
+  stack.forEach(function (layer) {
+    if (!layer.route || String(layer.route.path) !== bare) {
+      return;
+    }
+    const mark = demoMarkOf(layer.route);
+    if (!mark) {
+      served = true;
+      return;
+    }
+    marked = true;
+    if (mark.serves()) {
+      served = true;
+    }
+  });
+  log.debug("Leaving demoPathHidden(). " + (marked && !served));
+  return marked && !served;
+}
+
 // The app, with its members hung off it. One `Object.assign` rather than an
 // assignment followed by four more (#50, 2026-09-16): the same object either
 // way, and the type checker accepts only this form.
@@ -1467,5 +1501,6 @@ module.exports = Object.assign(app, {
   // The demonstration marks (#585), and the reader of one off a route.
   demoOnly: demoOnly,
   processDemoOnly: processDemoOnly,
-  demoMarkOf: demoMarkOf
+  demoMarkOf: demoMarkOf,
+  demoPathHidden: demoPathHidden
 });

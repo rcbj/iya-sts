@@ -903,8 +903,11 @@ class WsFederation {
         '13.2.1). The realm becomes the assertion\'s audience restriction, ' +
         'and an assertion with no audience is one any relying party would be ' +
         'entitled to accept.',
-        '<p>There is a mock relying party here that sends a complete ' +
-        'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
+        // The mock RP only where this realm is served it (#585).
+        demoOnly.serves()
+          ? '<p>There is a mock relying party here that sends a complete ' +
+            'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>'
+          : '');
     }
 
     // A RELYING PARTY NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496).
@@ -1749,11 +1752,13 @@ class WsFederation {
       'POST, and signs a browser in to a relying party by POSTing it a token ' +
       '(section 13.2.2). It authenticates nobody: the username typed at the ' +
       'screen becomes the subject of the assertion.</p><h2>Try ' +
-      'it</h2><ul><li><a ' +
+      'it</h2><ul>' +
+      // The mock RP only where this realm is served it (#585).
+      (demoOnly.serves() ? '<li><a ' +
       'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying party ' +
       'here ' +
       'that sends a complete sign-in request and then verifies the response ' +
-      'check by check.</li><li><a ' +
+      'check by check.</li>' : '') + '<li><a ' +
       'href="/FederationMetadata/2007-06/FederationMetadata.xml">' +
       '/FederationMetadata/2007-06/FederationMetadata.xml</a> — the signed ' +
       'federation metadata, which is what a relying party should be ' +

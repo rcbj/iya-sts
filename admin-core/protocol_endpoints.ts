@@ -397,6 +397,16 @@ class ProtocolEndpoints {
       },
       'krb5-service': function (host) {
         log.debug("Entering the krb5-service socket builder.");
+        // A DEMONSTRATION (#585) the PROCESS binds only in development:
+        // `processDemoOnly`'s question, through the shared app if something
+        // loaded it (never loaded from here, for the header's reason).
+        const shared = self.loaded('../common/app');
+        if (shared && shared.processDemoOnly &&
+            !shared.processDemoOnly.serves()) {
+          log.debug("Leaving the krb5-service socket builder. Not bound in " +
+                    "a product process.");
+          return [];
+        }
         log.debug("Leaving the krb5-service socket builder.");
         return [{ name: 'The protected Kerberos service (AP-REQ)', methods: [],
                   url: 'tcp://' + host + ':' + config.value('krb5.servicePort'),
@@ -530,6 +540,10 @@ class ProtocolEndpoints {
     const metadata = this.loaded('../sts_metadata');
     const names = new Map();
     const methods = new Map();
+    // THE DEMONSTRATIONS THIS REALM IS NOT SERVED (#585), read off the
+    // router's mark through `registeredRoutes()`: a page lists none of them,
+    // as `/admin/sts-metadata` lists none.
+    const hidden = new Set();
     if (metadata) {
       metadata.ENDPOINTS.forEach(function (row) {
         names.set(row.path, row.name);
@@ -543,10 +557,14 @@ class ProtocolEndpoints {
       }
       metadata.registeredRoutes().forEach(function (row) {
         methods.set(row.path, row.methods);
+        if (row.demo && row.served === false) {
+          hidden.add(row.path);
+        }
       });
     }
     log.debug("Leaving ProtocolEndpoints.catalogue(). loaded=" + !!metadata);
-    return { loaded: !!metadata, names: names, methods: methods };
+    return { loaded: !!metadata, names: names, methods: methods,
+             hidden: hidden };
   }
 
   // The named authorization servers of this realm, default excluded.
@@ -650,6 +668,10 @@ class ProtocolEndpoints {
       if (entry.socket) {
         self.sockets[entry.socket](host)
           .forEach(function (row) { rows.push(row); });
+        return;
+      }
+      if (known.hidden.has(entry.route)) {
+        // A demonstration a product realm is not served (#585).
         return;
       }
       if (!entry.perServer) {
