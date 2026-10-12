@@ -513,13 +513,13 @@ async function test() {
     assert.strictEqual(started.status, 200, started.text.slice(0, 300));
     assert.ok(away.indexOf(cpBase + "/oauth2/authorize?") === 0, away);
     assert.ok(/code_challenge_method=S256/.test(away));
-    assert.ok(/sts_claim_link=[^;]+;.*Path=\/realm\/[^;]+\/portal\/claim-sources\/callback/i
-      .test(String(started.headers.get("set-cookie"))),
-      "Link's answer binds the browser: " + started.headers.get("set-cookie"));
     // The callback's own words: a failure names its cause.
     assert.ok(!said.problem, "the callback refused the link: " +
               said.problem + " (" + back.at + ")");
     assert.ok(said.notice, "the callback said nothing: " + back.at);
+    assert.ok(/sts_claim_link=[^;]+;.*Path=\/realm\/[^;]+\/portal\/claim-sources\/callback/i
+      .test(String(started.headers.get("set-cookie"))),
+      "Link's answer binds the browser: " + started.headers.get("set-cookie"));
     // Back at the portal's page: the shell, which the portal draws from
     // its operation — and the page, drawn, says the provider is linked.
     assert.strictEqual(back.status, 200, back.status + " " +
