@@ -269,8 +269,8 @@ const PASSWORD_CHANGE_PATH = '/authn/password-change';
  */
 const LANGUAGE_PATH = '/authn/language';
 // A SECOND FACTOR ENROLLED BECAUSE ONE IS REQUIRED (2026-09-13) — see the
-// block above `enrolmentOffered()` for why a sign-in may now enrol an authenticator
-// app where it never used to.
+// block above `enrolmentOffered()` for why a sign-in may now enrol an
+// authenticator app where it never used to.
 /**
  * The path where a sign-in enrols a second factor that is required and not yet
  * held.
@@ -12666,7 +12666,8 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). The posted credential was " +
                 "not JSON.");
       errorCodes.mark(res, 'STS-AUTHN-0021');
-      return this.stepRefused(res, 'The browser returned something this server ' + 'could not read.');
+      return this.stepRefused(res, 'The browser returned something this ' +
+                                   'server could not read.');
     }
     if (!credential.error && !credential.response) {
       // THE REAL BUTTON UNDER THE SCRIPT (#470): pressed with the script
@@ -12675,7 +12676,9 @@ class Authn {
       // be checked".
       log.debug("Leaving Authn.mfaWebauthnAct(). No ceremony ran.");
       errorCodes.mark(res, 'STS-AUTHN-0022');
-      return this.stepRefused(res, 'Your browser did not run the ceremony. This step needs ' + 'JavaScript — a passkey is used by the browser and no form can ' + 'do it. Allow scripts for this page and try again.');
+      return this.stepRefused(res, 'Your browser did not run the ceremony. ' +
+        'This step needs JavaScript — a passkey is used by the browser and ' +
+        'no form can do it. Allow scripts for this page and try again.');
     }
     if (credential.error) {
       // The browser refused the ceremony. Its error is deliberately ambiguous
@@ -12684,7 +12687,9 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). The browser refused: " +
                 credential.error);
       errorCodes.mark(res, 'STS-AUTHN-0022');
-      return this.stepRefused(res, credential.error + ': ' + (credential.message || '') + '  (WebAuthn reports one error for several situations, so this ' + 'does not say which.)');
+      return this.stepRefused(res, credential.error + ': ' +
+        (credential.message || '') + '  (WebAuthn reports one error for ' +
+        'several situations, so this does not say which.)');
     }
 
     // THE RP ID MUST FIT, IN PRODUCT MODE, BEFORE ANYTHING IS VERIFIED. See
@@ -12727,7 +12732,9 @@ class Authn {
           log.debug("Leaving Authn.mfaWebauthnAct(). Enrolment is switched " +
                     "off.");
           errorCodes.mark(res, 'STS-AUTHN-0044');
-          return this.stepRefused(res, 'Passkeys are switched off in this realm (webauthn.enabled), ' + 'so a new one cannot be registered here. A passkey already ' + 'registered goes on working.');
+          return this.stepRefused(res, 'Passkeys are switched off in this ' +
+            'realm (webauthn.enabled), so a new one cannot be registered ' +
+            'here. A passkey already registered goes on working.');
         }
         verdict = webauthnVerifier.verifyRegistration({
           attestationObject: credential.response.attestationObject,
@@ -12965,7 +12972,8 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). Verification threw: " +
                 e.message);
       errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-AUTHN-0027');
-      return this.stepRefused(res, 'The second factor could not be checked: ' + e.message);
+      return this.stepRefused(res, 'The second factor could not be ' +
+                                   'checked: ' + e.message);
     }
 
     if (toRegister) {
@@ -13099,7 +13107,8 @@ class Authn {
                 'security-key assertion for "' + step.username + '" threw: ' +
                 (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-AUTHN-0182');
-      self.stepRefused(res, 'The second factor could not be checked. Try again.');
+      self.stepRefused(res, 'The second factor could not be checked. Try ' +
+                            'again.');
     });
     log.debug("Leaving Authn.mfaWebauthnAct(). Spending the assertion.");
     return undefined;

@@ -13,7 +13,8 @@
 // the second-factor and emailed-factor steps — each with the `/authn-api`
 // operation its view is the answer of. Each operation names its resource in
 // the PATH (the pending sign-in's id, the step's id), which the browser
-// reads off the location's query (`?authn=`, `?change=`, `?mfa=`) — the addresses
+// reads off the location's query (`?authn=`, `?change=`, `?mfa=`) — the
+// addresses
 // `beginAuthentication()` and the screen's acts have always sent a browser
 // to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
 // global `StsAuthn`, which `tests/web_surfaces.js` loads to draw a page from

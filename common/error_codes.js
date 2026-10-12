@@ -4857,7 +4857,8 @@ const CODES = [
       '(declined, timed out, no authenticator), or sent no credential ' +
       'at all.',
     spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
-      '(#572, #573); the step\'s page draws it' + '; on the portal, its own refusal' },
+      '(#572, #573); the step\'s page draws it; on the portal, its own ' +
+      'refusal' },
   { code: 'STS-AUTHN-0023',
     summary: 'In product mode the configured webauthn.rpId does not fit the ' +
       'host the request arrived on, so the ceremony is refused.',
@@ -4883,7 +4884,8 @@ const CODES = [
       'checked (malformed CBOR, authenticator data or ' +
       'clientDataJSON).',
     spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
-      '(#572, #573); the step\'s page draws it' + '; on the portal, its own refusal' },
+      '(#572, #573); the step\'s page draws it; on the portal, its own ' +
+      'refusal' },
   { code: 'STS-AUTHN-0028',
     summary: 'WebAuthn verification failed: clientDataJSON\'s type is not ' +
       'the ceremony\'s (webauthn.create / webauthn.get).',
@@ -5209,7 +5211,8 @@ const CODES = [
     summary: 'A presented one-time code matched no time step in the allowed ' +
       'window: wrong, or expired.',
     spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
-      '(#572, #573); the step\'s page draws it' + '; action result at enrolment' },
+      '(#572, #573); the step\'s page draws it; action result at ' +
+      'enrolment' },
   { code: 'STS-AUTHN-0106',
     summary: 'A presented one-time code was already used (RFC 6238 section ' +
       '5.2): its time step is at or below the last one accepted.',
