@@ -1,6 +1,6 @@
 {
   "principalHeading": "Su principal de Kerberos",
-  "noKdc": "Esta parte del servicio no tiene reino de Kerberos, así que aquí no tiene principal de Kerberos y no hay keytab que generar.",
+  "noKdc": "Esta parte del servicio no tiene dominio Kerberos, así que aquí no tiene principal de Kerberos y no hay keytab que generar.",
   "notPrincipal": "Su cuenta no está en el directorio de este dominio, así que aquí no es un principal de Kerberos.",
   "principal": "Principal",
   "kvno": "Versión de clave (kvno)",

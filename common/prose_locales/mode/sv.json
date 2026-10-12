@@ -589,7 +589,7 @@
   },
   "mode.requirements.test-double.what": {
     "en": "f06cf29c4a61e31d",
-    "text": "Tjänstens metadatadokument säger att den här tjänsten är en testdubblett"
+    "text": "Tjänstens metadatadokument säger att den här tjänsten är en test double"
   },
   "mode.requirements.test-double.development": {
     "en": "241755f4aaf4cb6b",

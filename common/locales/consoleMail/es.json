@@ -11,7 +11,7 @@
   "status.builtOk": "no se ha registrado ningún fallo en este proceso",
   "status.from": "Remitente",
   "status.links": "Los enlaces apuntan a",
-  "status.linksUnpinned": "(la dirección configurada del listener: <code>global.publicBaseUrl</code> está vacío, lo que el modo producto rechaza)",
+  "status.linksUnpinned": "(la dirección configurada de la escucha: <code>global.publicBaseUrl</code> está vacío, lo que el modo producto rechaza)",
   "status.linksNowhere": "<strong>a ninguna parte</strong>: defina <code>global.publicBaseUrl</code>; hasta entonces se rechaza cualquier mensaje con un enlace (STS-MAIL-0015)",
   "status.reset": "Restablecimiento de autoservicio",
   "status.resetOffered": "se ofrece donde hay un transporte disponible",

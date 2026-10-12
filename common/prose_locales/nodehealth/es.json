@@ -113,7 +113,7 @@
   },
   "nodehealth.s.frontProcessWide": {
     "en": "89d33b8a5b54333d",
-    "text": "su tamaño residente y su tiempo de CPU son los de todo el proceso, incluidos los de cada hilo de trabajo; sus cifras de heap son las de su hilo principal"
+    "text": "su tamaño residente y su tiempo de CPU son los de todo el proceso, incluidos los de cada hilo worker; sus cifras de heap son las de su hilo principal"
   },
   "nodehealth.s.roleFront": {
     "en": "75deb58e8b2da9ac",
@@ -125,11 +125,11 @@
   },
   "nodehealth.s.roleSurface": {
     "en": "23537a06c2f897b3",
-    "text": "hilo de trabajo de superficies alojadas {{thread}}"
+    "text": "hilo worker de superficies alojadas {{thread}}"
   },
   "nodehealth.s.roleProtocol": {
     "en": "ebf155c21104d8aa",
-    "text": "hilo de trabajo de protocolos {{thread}}"
+    "text": "hilo worker de protocolos {{thread}}"
   },
   "nodehealth.s.childNoMemory": {
     "en": "fe0107a65425b792",
@@ -157,7 +157,7 @@
   },
   "nodehealth.s.totals": {
     "en": "2dff2a67ff7a9cbb",
-    "text": "Los workers de solicitudes y de superficies alojadas son HILOS del proceso frontal (#364), así que su tamaño residente y su tiempo de CPU son las propias cifras del proceso frontal y se cuentan una sola vez, en su fila. El total residente es la suma sobre los {{rss}} proceso(s) cuyo tamaño pudo leerse — el proceso frontal y el hijo api del depurador — así que las páginas que ambos comparten (entre ellas el propio código de node) se cuentan una vez por cada uno y puede superar el memory.current del contenedor. Las cifras de heap son las de los {{heap}} isolate(s) de V8 que informaron ellos mismos process.memoryUsage(): el hilo principal del proceso frontal, cada hilo de trabajo y el hijo; un proceso hijo que no respondió a tiempo se muestra con su tamaño residente de /proc y sin heap, y un hilo de trabajo que no lo hizo se lista como sin respuesta, ya que un hilo no tiene una entrada propia en /proc. La firma poscuántica y scrypt no tienen procesos propios desde #363: se ejecutan en el pool de hilos de libuv, y su memoria se cuenta en el proceso que los pidió."
+    "text": "Los workers de solicitudes y de superficies alojadas son HILOS del proceso frontal (#364), así que su tamaño residente y su tiempo de CPU son las propias cifras del proceso frontal y se cuentan una sola vez, en su fila. El total residente es la suma sobre los {{rss}} proceso(s) cuyo tamaño pudo leerse — el proceso frontal y el hijo api del depurador — así que las páginas que ambos comparten (entre ellas el propio código de node) se cuentan una vez por cada uno y puede superar el memory.current del contenedor. Las cifras de heap son las de los {{heap}} isolate(s) de V8 que informaron ellos mismos process.memoryUsage(): el hilo principal del proceso frontal, cada hilo worker y el hijo; un proceso hijo que no respondió a tiempo se muestra con su tamaño residente de /proc y sin heap, y un hilo worker que no lo hizo se lista como sin respuesta, ya que un hilo no tiene una entrada propia en /proc. La firma poscuántica y scrypt no tienen procesos propios desde #363: se ejecutan en el pool de hilos de libuv, y su memoria se cuenta en el proceso que los pidió."
   },
   "nodehealth.s.ecsNotSet": {
     "en": "25e73265a0ab3460",

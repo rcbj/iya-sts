@@ -23,7 +23,7 @@
   "signedOut.frontSub": "OpenID Connect RP-Initiated Logout 1.0, con Front-Channel Logout 1.0",
   "signedOut.frontEnded": "La sesión de {username} terminó. Es la sesión que comparten WS-Federation y SAML 2.0, así que también se cerró en ellos.",
   "signedOut.frontNone": "No había ninguna sesión que terminar. De todos modos, se borró la cookie.",
-  "signedOut.returnHeading": "Volver a la parte de confianza",
+  "signedOut.returnHeading": "Volver a la parte que confía",
   "signedOut.returnAuto": "Esta página vuelve allí por sí sola tras {seconds, plural, one {# segundo} other {# segundos}}, una vez que las notificaciones de arriba hayan tenido tiempo de cargarse; el enlace es para un navegador que no sigue una actualización automática.",
   "signedOut.returnLink": "Un enlace y no una redirección: las notificaciones de arriba se cargan con esta página, y una redirección 302 las abandonaría antes de enviarse."
 }

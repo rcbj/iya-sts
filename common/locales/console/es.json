@@ -180,7 +180,7 @@
   "nav.mode": "Modo",
   "nav.persistence": "Persistencia",
   "nav.cluster": "Clúster",
-  "nav.listeners": "Listeners",
+  "nav.listeners": "Escuchas",
   "nav.cells": "Celdas",
   "nav.mail": "Correo",
   "nav.rbac": "Roles de administración",

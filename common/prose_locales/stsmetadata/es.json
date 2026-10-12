@@ -473,7 +473,7 @@
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
     "en": "09c64395f4956173",
-    "text": "full (#151), como OpenID Provider, donde oauth2.providerCommands esté activado (desactivado de forma predeterminada): command_endpoint registrado (DCR, consola, API; https, sin fragmento); Command Tokens de tipo command+jwt y firmados como el ID Token del cliente, de dos minutos como máximo, con los claims de la sección 5 por comando (sub solo en los comandos de cuenta, metadata solo en metadata, authentication_provider solo en migrate, nunca nonce; tenant es el id del dominio; aud_sub enviado y aprendido); los diez comandos de cuenta y sus variantes _async en la cola saliente duradera compartida, leyendo las respuestas y errores de la sección 3; metadata registrando lo que admite cada parte que confía; los cinco comandos de tenant en streaming leídos como Server-Sent Events y reanudados con Last-Event-ID; el endpoint de callback para resultados asíncronos y las solicitudes de metadata y audit_tenant; un registro de estado de cuentas por parte que confía; suspend, reactivate, delete, maintain e invalidate automáticos ante cambios en el directorio y cierres de sesión globales, solo para una parte que confía que haya listado el comando. Una parte que confía simulada responde a cada comando en desarrollo. FALTA: actuar como parte que confía de otro OP."
+    "text": "full (#151), como OpenID Provider, donde oauth2.providerCommands esté activado (desactivado de forma predeterminada): command_endpoint registrado (DCR, consola, API; https, sin fragmento); Command Tokens de tipo command+jwt y firmados como el ID Token del cliente, de dos minutos como máximo, con los claims de la sección 5 por comando (sub solo en los comandos de cuenta, metadata solo en metadata, authentication_provider solo en migrate, nunca nonce; tenant es el id del dominio; aud_sub enviado y aprendido); los diez comandos de cuenta y sus variantes _async en la cola saliente duradera compartida, leyendo las respuestas y errores de la sección 3; metadata registrando lo que admite cada parte que confía; los cinco comandos de inquilino en streaming leídos como Server-Sent Events y reanudados con Last-Event-ID; el endpoint de callback para resultados asíncronos y las solicitudes de metadata y audit_tenant; un registro de estado de cuentas por parte que confía; suspend, reactivate, delete, maintain e invalidate automáticos ante cambios en el directorio y cierres de sesión globales, solo para una parte que confía que haya listado el comando. Una parte que confía simulada responde a cada comando en desarrollo. FALTA: actuar como parte que confía de otro OP."
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",
@@ -2657,7 +2657,7 @@
   },
   "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
     "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, solo en desarrollo (#151): el command_endpoint de una parte que confía que comprueba un Command Token como pide la sección 9 y responde a cada comando de cuenta y de tenant, incluidos los flujos; GET muestra lo que contiene. 404 en modo producto."
+    "text": "NON-SPEC, solo en desarrollo (#151): el command_endpoint de una parte que confía que comprueba un Command Token como pide la sección 9 y responde a cada comando de cuenta y de inquilino, incluidos los flujos; GET muestra lo que contiene. 404 en modo producto."
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

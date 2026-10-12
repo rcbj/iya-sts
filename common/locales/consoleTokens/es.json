@@ -23,7 +23,7 @@
   "legendPartySaml": "el <code>AudienceRestriction</code>, o <em>sin restricción</em> cuando a WS-Trust no se le dio ningún <code>AppliesTo</code>",
   "legendPartyTicket": "el servicio para el que es el ticket; pase el puntero para ver el dominio que lo emitió",
   "legendDetail": "Detalle",
-  "legendDetailJwt": "el <code>scope</code> del TOKEN DE ACCESO. El token de actualización que lo acompaña lleva deliberadamente otro —lo que se <em>autorizó</em>, en lugar de lo que puede hacer este token—, así que ambos difieren por diseño, y la página del conjunto muestra cada uno. Un alcance que se convirtió en la audiencia no está en ninguno de los dos",
+  "legendDetailJwt": "el <code>scope</code> del TOKEN DE ACCESO. El token de actualización que lo acompaña lleva deliberadamente otro —lo que se <em>autorizó</em>, en lugar de lo que puede hacer este token—, así que ambos difieren por diseño, y la página del conjunto muestra cada uno. Un ámbito que se convirtió en la audiencia no está en ninguno de los dos",
   "legendDetailSaml": "si se escribió la firma: una aserción que no se pudo firmar salió igualmente",
   "legendDetailTicket": "el enc-type con el que se selló",
   "legendPresented": "Se presenta como",
@@ -161,5 +161,5 @@
   "hCredential": "La credencial",
   "thJtiOrId": "jti o ID",
   "membersNote": "En el orden en que se emitieron. Cada identificador es un enlace a la procedencia de esa credencial: a quién se emitió, en nombre de quién, para llegar a qué, y cada generación anterior si la produjo un intercambio de tokens o una actualización. <strong>Ese linaje es una relación distinta de esta página</strong>: esto es lo que llegó <em>junto</em>, y aquello es de lo que <em>desciende</em> una credencial. Actualizar este conjunto produce un conjunto nuevo a su lado, no un cuarto miembro, y el linaje es lo que une a ambos.",
-  "detailDisagrees": "<strong>La columna Detalle discrepará consigo misma aquí, y es por diseño.</strong> El <code>scope</code> de un token de acceso es lo que ese token puede hacer; el token de actualización que lo acompaña lleva lo que se <em>autorizó</em>, que es más amplio siempre que un alcance se convirtió en la audiencia: consulte la página de tokens. Un conjunto que mostrara un solo alcance ocultaría el único lugar en que las dos mitades de una concesión difieren a propósito."
+  "detailDisagrees": "<strong>La columna Detalle discrepará consigo misma aquí, y es por diseño.</strong> El <code>scope</code> de un token de acceso es lo que ese token puede hacer; el token de actualización que lo acompaña lleva lo que se <em>autorizó</em>, que es más amplio siempre que un ámbito se convirtió en la audiencia: consulte la página de tokens. Un conjunto que mostrara un solo ámbito ocultaría el único lugar en que las dos mitades de una concesión difieren a propósito."
 }

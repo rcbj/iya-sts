@@ -16,7 +16,7 @@
   "facts.what": "Qué",
   "facts.value": "Valor",
   "facts.spn": "Nombre del principal de servicio",
-  "facts.realm": "Reino de Kerberos",
+  "facts.realm": "Dominio Kerberos",
   "facts.hosts": "También responde para los hosts",
   "signedIn.title": "Sesión iniciada",
   "signedIn.heading": "200 — ha iniciado sesión",

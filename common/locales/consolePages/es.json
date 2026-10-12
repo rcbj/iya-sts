@@ -65,7 +65,7 @@
   "title.ldap-devices": "Entradas de dispositivos",
   "title.ldap-roles": "Entradas de roles",
   "title.ldap-spiffe": "Entradas de SPIFFE",
-  "title.listeners": "Listeners",
+  "title.listeners": "Escuchas",
   "title.logout": "Cierre de sesión",
   "title.mail": "Correo",
   "title.mail-outbox": "Bandeja de salida de correo",

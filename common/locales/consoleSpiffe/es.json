@@ -120,7 +120,7 @@
   "rotateJwt": "la autoridad JWT",
   "rotateBoth": "ambas",
   "rotateNote": "Los SVID nuevos se firman con la nueva autoridad de inmediato; los existentes siguen verificándose hasta que caducan.",
-  "grpcListeners": "Los listeners gRPC",
+  "grpcListeners": "Las escuchas gRPC",
   "grpcListenersNote": "Ni <code>/admin/sts-metadata</code> ni esta página pueden ver un socket, así que esta tabla es el único lugar que informa de si cada uno llegó a vincularse. Los cuatro del dominio PREDETERMINADO se vinculan al arrancar el proceso y siguen vinculados con <code>spiffe.enabled</code> desactivado — responden <code>Unavailable</code>, porque un socket que desaparece parecería un servicio que se ha detenido. Los de CUALQUIER OTRO DOMINIO se vinculan cuando se activa <code>spiffe.enabled</code> para él, en la dirección que <code>spiffe.grpcHost</code> indica para ese dominio — la dirección del endpoint es lo único que tiene un cliente SPIFFE para nombrar a un inquilino, porque el nombre del método gRPC lo fija la especificación.",
   "surface": "Superficie",
   "realm": "Dominio",

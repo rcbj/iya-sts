@@ -2613,7 +2613,7 @@
   },
   "oauth2.providerCommands|description": {
     "en": "914b5d97a8b4276b",
-    "text": "Envía OpenID Provider Commands (borrador 02, #151): un Command Token firmado enviado por POST al command_endpoint registrado de cada parte que confía — comandos de cuenta sobre una persona, comandos de tenant sobre todas — y acepta sus callbacks en /oauth2/commands/callback. DESACTIVADO de forma predeterminada: indica a otros servicios qué hacer con las cuentas."
+    "text": "Envía OpenID Provider Commands (borrador 02, #151): un Command Token firmado enviado por POST al command_endpoint registrado de cada parte que confía — comandos de cuenta sobre una persona, comandos de inquilino sobre todas — y acepta sus callbacks en /oauth2/commands/callback. DESACTIVADO de forma predeterminada: indica a otros servicios qué hacer con las cuentas."
   },
   "oauth2.commandAutomatic|label": {
     "en": "4eff1bf4f3c0cfba",
@@ -2669,7 +2669,7 @@
   },
   "oauth2.commandRetentionS|description": {
     "en": "0adff1adf0ce5055",
-    "text": "Cuánto tiempo se conservan una entrega de comando y una ejecución de tenant terminada; una entrega que siga pendiente tras este tiempo se envía a mensajes fallidos."
+    "text": "Cuánto tiempo se conservan una entrega de comando y una ejecución de inquilino terminada; una entrega que siga pendiente tras este tiempo se envía a mensajes fallidos."
   },
   "oauth2.commandMaxRows|label": {
     "en": "31c02ee42b4f1856",
@@ -2701,7 +2701,7 @@
   },
   "oauth2.commandSweepS|description": {
     "en": "0c32fe0603586c55",
-    "text": "Con qué frecuencia el trabajo del planificador oauth2.command-sweep envía lo pendiente y descarta los tokens de callback caducados y las ejecuciones de tenant antiguas."
+    "text": "Con qué frecuencia el trabajo del planificador oauth2.command-sweep envía lo pendiente y descarta los tokens de callback caducados y las ejecuciones de inquilino antiguas."
   },
   "oauth2.commandCallbackTtlS|label": {
     "en": "09122da8edcd50e8",
@@ -2713,27 +2713,27 @@
   },
   "oauth2.commandStreamIdleMs|label": {
     "en": "c7e94db6a4ab91a4",
-    "text": "Tiempo de inactividad del flujo de comandos de tenant (ms)"
+    "text": "Tiempo de inactividad del flujo de comandos de inquilino (ms)"
   },
   "oauth2.commandStreamIdleMs|description": {
     "en": "1678c609d89e88d9",
-    "text": "Cuánto tiempo puede permanecer en silencio el flujo de eventos de un comando de tenant antes de tratarse como caído y reanudarse."
+    "text": "Cuánto tiempo puede permanecer en silencio el flujo de eventos de un comando de inquilino antes de tratarse como caído y reanudarse."
   },
   "oauth2.commandStreamResumes|label": {
     "en": "a2993c4aa33d1085",
-    "text": "Reanudaciones del flujo de comandos de tenant"
+    "text": "Reanudaciones del flujo de comandos de inquilino"
   },
   "oauth2.commandStreamResumes|description": {
     "en": "e64f393f9440c11e",
-    "text": "Cuántas veces se reanuda con Last-Event-ID el flujo de un comando de tenant que cayó antes de command-complete, antes de que la ejecución falle."
+    "text": "Cuántas veces se reanuda con Last-Event-ID el flujo de un comando de inquilino que cayó antes de command-complete, antes de que la ejecución falle."
   },
   "oauth2.commandStreamMaxEvents|label": {
     "en": "063fb3e6b1f4463b",
-    "text": "Límite de eventos del flujo de comandos de tenant"
+    "text": "Límite de eventos del flujo de comandos de inquilino"
   },
   "oauth2.commandStreamMaxEvents|description": {
     "en": "81fa7122ed81ad1e",
-    "text": "El máximo de eventos que puede llevar el flujo de un comando de tenant."
+    "text": "El máximo de eventos que puede llevar el flujo de un comando de inquilino."
   },
   "oauth2.commandMetadataMaxGroups|label": {
     "en": "35b2fbc09cebdb5e",
@@ -8113,11 +8113,11 @@
   },
   "spiffe.azureImdsTenants|label": {
     "en": "47d9ac91455ca63c",
-    "text": "Tenants azure_imds (JSON)"
+    "text": "Inquilinos azure_imds (JSON)"
   },
   "spiffe.azureImdsTenants|description": {
     "en": "0706ccd7135bd0c4",
-    "text": "El `tenants` de azure_imds de SPIRE, como un objeto JSON que asocia el dominio del tenant con {\"tenantId\" (se busca cuando falta), \"tokenAuth\": {\"tokenPath\", \"appId\"}, \"allowedVmTags\": [...], \"restrictToSubscriptions\": [...]}. Sin tokenAuth se usa la credencial predeterminada del SDK. Un secreto de aplicación nunca es un ajuste aquí. Vacío rechaza todo agente azure_imds."
+    "text": "El `tenants` de azure_imds de SPIRE, como un objeto JSON que asocia el dominio del inquilino con {\"tenantId\" (se busca cuando falta), \"tokenAuth\": {\"tokenPath\", \"appId\"}, \"allowedVmTags\": [...], \"restrictToSubscriptions\": [...]}. Sin tokenAuth se usa la credencial predeterminada del SDK. Un secreto de aplicación nunca es un ajuste aquí. Vacío rechaza todo agente azure_imds."
   },
   "spiffe.azureImdsAgentPathTemplate|label": {
     "en": "27651dc827523605",
@@ -8153,11 +8153,11 @@
   },
   "spiffe.azureImdsDiscoveryUrl|label": {
     "en": "75d284d63f89a9ef",
-    "text": "URL base de descubrimiento de tenants azure_imds"
+    "text": "URL base de descubrimiento de inquilinos azure_imds"
   },
   "spiffe.azureImdsDiscoveryUrl|description": {
     "en": "9a319cdf4c9b09d2",
-    "text": "Dónde se busca el ID del dominio de un tenant (<this>/<domain>/.well-known/openid-configuration) — la constante de SPIRE, configurable para una prueba."
+    "text": "Dónde se busca el ID del dominio de un inquilino (<this>/<domain>/.well-known/openid-configuration) — la constante de SPIRE, configurable para una prueba."
   },
   "spiffe.workloadAttestors|label": {
     "en": "36a8fe38e3485001",
@@ -8677,7 +8677,7 @@
   },
   "spiffe.grpcHost|restartReason": {
     "en": "e5ebe10f45153909",
-    "text": "las escuchas se vinculan cuando arranca el proceso. Las de un DOMINIO se vinculan cuando se activa su SPIFFE, y ESTA ES LA FILA QUE MANTIENE SEPARADOS A DOS DOMINIOS en una misma máquina: cada uno toma una dirección propia y conserva los puertos, porque la dirección del endpoint es lo único que tiene un cliente SPIFFE para nombrar a un tenant"
+    "text": "las escuchas se vinculan cuando arranca el proceso. Las de un DOMINIO se vinculan cuando se activa su SPIFFE, y ESTA ES LA FILA QUE MANTIENE SEPARADOS A DOS DOMINIOS en una misma máquina: cada uno toma una dirección propia y conserva los puertos, porque la dirección del endpoint es lo único que tiene un cliente SPIFFE para nombrar a un inquilino"
   },
   "persistence.mode|label": {
     "en": "ef8667a876796be0",
