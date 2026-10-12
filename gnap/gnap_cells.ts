@@ -44,7 +44,10 @@
 //     edge sends a pinned browser to its pinned cell and any other to the
 //     handle's cell. A browser pinned to a cell that does not hold the grant
 //     — the person signed in at home (D9) — PULLS the grant there (below).
-//   /gnap/code (sections 4.1.2 and 4.1.3): a user code is typed by a person
+//     `/gnap-api/approve/{id}`, the approval page's view and answer since
+//     #578, is placed the same way.
+//   /gnap-api/code (sections 4.1.2 and 4.1.3; `/gnap/code`'s form until
+//     #578, now the page's act): a user code is typed by a person
 //     from a list of 31 characters and carries no tag; a code this cell does
 //     not hold is asked of the other cells, and the request relayed to the
 //     one that holds it.
@@ -413,7 +416,8 @@ class GnapCells {
   }
 
   /**
-   * Places a user code entered at `/gnap/code`. Called after the attempt is
+   * Places a user code entered on `/gnap/code`, which the page sends to
+   * `POST /gnap-api/code` (#578). Called after the attempt is
    * counted: a code carries no tag, so the other cells are asked, and the
    * count here is what keeps a guesser from making every cell answer.
    *
