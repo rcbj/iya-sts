@@ -1266,9 +1266,12 @@ async function oidcRefusals(world, genuine) {
 
   // NOBODY CONFIGURED: an unknown id here, and this relationship's id in the
   // PARTNER's realm, whose register is empty.
+  // THE LOGIN ENDPOINT'S REFUSALS ARE THE FEDERATION PAGES' SHELL SINCE
+  // #580: the view in `data-sts-state` names the kind of page, and the
+  // browser draws the words.
   r = await hop(jar(), realmBase(SP) + "/federation/login/" + NOBODY);
   await assertRefused("a login at a relationship nobody configured", r, 404,
-                      /No such federation relationship/i, null, 0);
+                      /&quot;kind&quot;:&quot;noRelationship&quot;/, null, 0);
   begun = await beginAt(REL.front);
   r = await postForm(jar(), realmBase(SP) + "/federation/acs/" + NOBODY, {
     id_token: genuine.idToken,

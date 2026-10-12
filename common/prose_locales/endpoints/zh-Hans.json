@@ -1299,6 +1299,10 @@
     "en": "c025c7c05450031b",
     "text": "此处的联合是什么"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "联合页面的脚本"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "开始联合登录"

@@ -2287,6 +2287,10 @@
     "en": "890f59f522646882",
     "text": "說明頁面，列出雙向每一個已設定的關係，以及在每個合作夥伴處要設定的 URL。GET /saml2、GET /saml11 與 GET /wsfed 基於相同理由以相同方式回應。它也是本服務中唯一明白說出此處某項功能預設「拒絕」的頁面。"
   },
+  "stsmetadata.endpoints./federation/pages.js.what": {
+    "en": "53bb085209311437",
+    "text": "NON-SPEC (#580)。本服務自有聯合頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（federation/federation-pages-spa.js）並以預先壓縮的形式提供：它根據每個外殼攜帶的狀態繪製 /federation，以及 /federation/login/{id} 和 /federation/link/{handle} 在拒絕時或為某人登入卻無處可送時所說的內容。判斷提示取用者服務的回應不在其中。"
+  },
   "stsmetadata.endpoints./federation/login/:id.what": {
     "en": "5d0e34662cdedbd3",
     "text": "接受 ?returnTo=，即之後要前往的本服務路徑，/authn/login 上的合作夥伴按鈕便是以此完成已在進行中的流程。它會「拒絕」已停用（403）或已啟用但只設定了一半（409）的關係，而不是開始一個無法完成的流程——這是本服務中唯一因組態原因而拒絕的端點。在兩個 OAuth 形式的協定上一律傳送 PKCE，沒有任何設定可以停止。"

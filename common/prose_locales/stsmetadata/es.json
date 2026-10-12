@@ -2287,6 +2287,10 @@
     "en": "890f59f522646882",
     "text": "Una página de descripción que lista cada relación configurada en ambas direcciones y la URL que hay que configurar en cada socio. GET /saml2, GET /saml11 y GET /wsfed responden de la misma manera y por la misma razón. También es la única página de este servicio que dice en voz alta que una función de aquí RECHAZA por defecto."
   },
+  "stsmetadata.endpoints./federation/pages.js.what": {
+    "en": "53bb085209311437",
+    "text": "NON-SPEC (#580). El entorno de ejecución y los renderizadores de las páginas de federación propias de este servicio, en un solo archivo construido por build-typescript.sh (federation/federation-pages-spa.js) y servido precomprimido: dibuja /federation, y lo que dicen /federation/login/{id} y /federation/link/{handle} cuando rechazan o inician la sesión de alguien sin adónde enviarlo, a partir del estado que lleva cada armazón. Las respuestas del servicio consumidor de aserciones no están entre ellas."
+  },
   "stsmetadata.endpoints./federation/login/:id.what": {
     "en": "5d0e34662cdedbd3",
     "text": "Recibe ?returnTo=, una ruta de este servicio a la que llegar después, que es como un botón de socio en /authn/login completa el flujo que ya estuviera en curso. RECHAZA una relación que está desactivada (403) o activada y a medio configurar (409) en lugar de iniciar algo que no puede terminar: los únicos endpoints de este servicio que rechazan por un motivo de configuración. PKCE se envía siempre en los dos protocolos de tipo OAuth y no hay ningún ajuste para impedirlo."

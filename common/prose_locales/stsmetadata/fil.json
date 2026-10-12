@@ -2287,6 +2287,10 @@
     "en": "890f59f522646882",
     "text": "Isang description page na naglilista ng bawat naka-configure na relationship sa parehong direksyon at ng URL na iko-configure sa bawat partner. Ganito rin sumasagot ang GET /saml2, GET /saml11 at GET /wsfed at sa parehong dahilan. Ito rin ang nag-iisang page sa serbisyong ito na nagsasabi nang malakas na may feature dito na TUMATANGGI bilang default."
   },
+  "stsmetadata.endpoints./federation/pages.js.what": {
+    "en": "53bb085209311437",
+    "text": "NON-SPEC (#580). Ang runtime at mga renderer ng sariling federation page ng serbisyong ito, sa iisang file na binuo ng build-typescript.sh (federation/federation-pages-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /federation, at ang sinasabi ng /federation/login/{id} at /federation/link/{handle} kapag tumatanggi sila o nagsa-sign in ng isang tao nang walang mapupuntahan, mula sa state na dala ng bawat shell. Hindi kasama rito ang mga sagot ng assertion consumer service."
+  },
   "stsmetadata.endpoints./federation/login/:id.what": {
     "en": "5d0e34662cdedbd3",
     "text": "Tumatanggap ng ?returnTo=, isang path sa serbisyong ito na babagsakan pagkatapos, na siyang paraan para matugunan ng partner button sa /authn/login ang anumang flow na kasalukuyang nagaganap. TINATANGGIHAN nito ang relationship na naka-disable (403) o naka-enable pero kalahati lang ang configuration (409) sa halip na magsimula ng bagay na hindi matatapos — ang tanging mga endpoint sa serbisyong ito na tumatanggi dahil sa configuration. Laging ipinapadala ang PKCE sa dalawang protocol na hugis-OAuth at walang setting na makapipigil dito."

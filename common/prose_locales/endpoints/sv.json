@@ -1299,6 +1299,10 @@
     "en": "c025c7c05450031b",
     "text": "Vad federation är här"
   },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "Federationssidornas skript"
+  },
   "endpoints.route./federation/login/:id.name": {
     "en": "561e36f4539a01de",
     "text": "Starta en federerad inloggning"

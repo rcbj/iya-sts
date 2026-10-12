@@ -166,6 +166,20 @@ function childMain() {
         req.end(body);
       });
     }
+    // THE LINKING STEP'S PAGES ARE THE FEDERATION PAGES' SHELL SINCE #580:
+    // a refusal or the signed-in page at /federation/link/{handle} carries
+    // its view in `data-sts-state` and the browser draws it. The view, or
+    // null for a page the server drew (the assertion consumer service's).
+    function viewOf(r) {
+      const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(
+        (r && r.text) || ''));
+      if (!m) {
+        return null;
+      }
+      return JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')).view;
+    }
     function inSp(fn) {
       return realms.run(realms.get(SP), fn);
     }
@@ -467,8 +481,9 @@ function childMain() {
     alice = entryOf(ALICE);
     const aliceSub = partnerSubjectOf(ALICE);
     const aliceLink = REL + ' ' + ISSUER + ' ' + aliceSub;
-    note(got.r.status === 200 && /Signed in through/.test(got.r.text) &&
-         got.trail.linkScreens === 1,
+    note(got.r.status === 200 && viewOf(got.r) &&
+         viewOf(got.r).kind === 'signedIn' &&
+         viewOf(got.r).username === ALICE && got.trail.linkScreens === 1,
          '1d. the right password at the linking screen signs the person in',
          got.r.status + ' ' + got.r.text.replace(/\s+/g, ' ').slice(0, 200));
     note(JSON.stringify(attr(alice, 'federationLink')) ===
@@ -508,8 +523,9 @@ function childMain() {
          hop += 1) {
       other = await request('GET', other.headers.location);
     }
-    note(handedOver && other.status === 403 &&
-         /different browser/.test(other.text) &&
+    note(handedOver && other.status === 403 && viewOf(other) &&
+         viewOf(other).kind === 'refused' &&
+         /different browser/.test(viewOf(other).why) &&
          codesSince(mark).indexOf('STS-FED-0111') >= 0 &&
          attr(entryOf(VICTIM), 'federationLink').length === 0,
          '1i-0. the linking screen completed in ANOTHER browser is refused ' +
@@ -522,7 +538,8 @@ function childMain() {
     mark = auditCount();
     got = await signIn(CAROL, { link: 'cancel' });
     const carol = entryOf(CAROL);
-    note(got.r.status === 403 && /was not linked/.test(got.r.text) &&
+    note(got.r.status === 403 && viewOf(got.r) &&
+         viewOf(got.r).what === 'The account was not linked' &&
          codesSince(mark).indexOf('STS-FED-0099') >= 0 &&
          attr(carol, 'federationLink').length === 0 &&
          JSON.stringify(attr(carol, 'mail')) === '["local-carol@sp.example"]',

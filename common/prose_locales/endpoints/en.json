@@ -324,6 +324,7 @@
   "endpoints.route./saml11/rp/mock-rp.js.name": "The mock relying party's script",
   "endpoints.route./saml11/rp/api/start.name": "The mock relying party's start view",
   "endpoints.route./federation.name": "What federation is here",
+  "endpoints.route./federation/pages.js.name": "The federation pages' script",
   "endpoints.route./federation/login/:id.name": "Start a federated sign-in",
   "endpoints.route./federation/acs/:id.name": "Assertion consumer service / wreply / redirect_uri",
   "endpoints.route./federation/link/:handle.name": "Link a partner's subject at first sign-in",
