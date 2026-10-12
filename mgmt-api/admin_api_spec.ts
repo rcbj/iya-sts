@@ -1617,9 +1617,12 @@ const SCHEMAS = {
           envelopes: { type: 'array', items: { type: 'string' },
                        description: 'Keys into `standards` below.' },
           algorithms: { type: 'array', items: openObject(
-            'One labelled list, read live from the module that performs it.',
+            'One labelled row, read live from the module that performs it: ' +
+            'a list of identifiers, or — where `how` is present — a ' +
+            'sentence, and then `values` is empty.',
             { what: { type: 'string' },
-              values: { type: 'array', items: { type: 'string' } } }) }
+              values: { type: 'array', items: { type: 'string' } },
+              how: { type: 'string' } }) }
         }) },
       hashing: openObject('Every digest this service computes, and what for.',
                           {}),

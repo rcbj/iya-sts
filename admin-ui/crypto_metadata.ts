@@ -870,6 +870,50 @@ interface Family {
   algorithms: () => any[];
 }
 
+// One row of a family's algorithm table as the report carries it: a label
+// and either a list of identifiers (`values`, chips the translation never
+// touches) or a sentence (`how`, prose).
+interface AlgorithmRow {
+  what: string;
+  values: string[];
+  how?: string;
+}
+
+// A family's `algorithms()` answers its rows in TWO SHAPES, and this is the
+// one place that reads both. Most families answer a PAIR, `[label, [ids]]`;
+// PKI and the User portal answer `{ what, how }` (a sentence) or
+// `{ what, values }` (identifiers), because their rows are mostly sentences.
+// `cryptoJson()` once read every row as a pair, so each object row reached
+// the answer as `{}` — a label-less, value-less row the page drew as an
+// empty header beside a dash — and `prose()` skipped them, so nothing had
+// failed. Both now go through this. `computed` (a sentence made from another
+// module's table or a setting, not written in this file) is `prose()`'s
+// business and is not carried.
+/**
+ * Reads one algorithm-table row in either shape a family answers.
+ *
+ * @param row - a `[label, values]` pair or a `{ what, values | how }` object
+ * @returns the row as the report carries it, and whether its sentence is
+ *   this file's prose
+ */
+function algorithmRow(row: any): { row: AlgorithmRow, computed: boolean } {
+  helpers.log.debug("Entering algorithmRow().");
+  if (Array.isArray(row)) {
+    helpers.log.debug("Leaving algorithmRow(). A pair.");
+    return { row: { what: String(row[0]), values: (row[1] || []).slice(0) },
+             computed: false };
+  }
+  const out: AlgorithmRow = {
+    what: String((row && row.what) || ''),
+    values: Array.isArray(row && row.values) ? row.values.slice(0) : []
+  };
+  if (row && typeof row.how === 'string') {
+    out.how = row.how;
+  }
+  helpers.log.debug("Leaving algorithmRow(). An object.");
+  return { row: out, computed: !!(row && row.computed) };
+}
+
 // Everything a `CryptoMetadata` reads. Named for the modules, because what
 // this page reports IS those modules' tables.
 interface CryptoMetadataDeps {
@@ -1002,18 +1046,18 @@ class CryptoMetadata {
       helpers.log.debug("Leaving isProse().");
       return /\b[a-z]{4,}\b/.test(String(text || '').replace(/`[^`]*`/g, ''));
     };
-    // Only a PAIR reaches the report (`cryptoJson()` reads `pair[0]` and
-    // `pair[1]`), so only a pair's label is harvested.
+    // Every row, in either shape, read the way `cryptoJson()` reads it. A
+    // row's `how` is harvested unless it is `computed` — made from another
+    // module's table or a setting, so a value of this process rather than a
+    // sentence of this file.
     const tables = instance.families.map(function (row) {
-      return row.algorithms().filter(function (pair) {
-        return Array.isArray(pair);
-      });
+      return row.algorithms().map(algorithmRow);
     });
     const chips = new Set<string>();
     tables.forEach(function (table) {
-      table.forEach(function (pair) {
-        (pair[1] || []).forEach(function (one) {
-          chips.add(String(one));
+      table.forEach(function (one) {
+        one.row.values.forEach(function (value) {
+          chips.add(String(value));
         });
       });
     });
@@ -1023,8 +1067,11 @@ class CryptoMetadata {
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
         decrypts: row.decrypts, hashes: row.hashes,
         whatItDoesNot: row.whatItDoesNot || '',
-        algorithms: tables[i].map(function (pair) {
-          return { what: chips.has(String(pair[0])) ? '' : pair[0] };
+        algorithms: tables[i].map(function (one) {
+          return {
+            what: chips.has(one.row.what) ? '' : one.row.what,
+            how: one.computed ? '' : (one.row.how || '')
+          };
         })
       };
     });
@@ -1040,7 +1087,7 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'whatItDoesNot', 'what']),
+               'whatItDoesNot', 'what', 'how']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),
@@ -1369,14 +1416,26 @@ class CryptoMetadata {
                    'common/vendored/x509.js, the parent project\'s own PKI ' +
                    'code, byte-identical. One encoder for this service and ' +
                    'for that project\'s PKI / X.509 page.' },
+            // THE TWO LISTS ARE IDENTIFIERS, so they are `values` — chips the
+            // translation never touches — and the weak ones are a list of
+            // their own rather than an English suffix on a chip.
             { what: 'CA key algorithms offered',
-              how: report.keyAlgorithms.map(function (one) { return one.id; })
-                .join(', ') },
+              values: report.keyAlgorithms.map(function (one) {
+                return one.id;
+              }) },
             { what: 'Certificate signature algorithms offered',
-              how: report.signatureAlgorithms.map(function (one) {
-                return one.id + (one.weak ? ' (weak, on purpose)' : '');
-              }).join(', ') },
-            { what: 'The three tiers',
+              values: report.signatureAlgorithms.map(function (one) {
+                return one.id;
+              }) },
+            { what: 'Of those, offered on purpose and marked weak',
+              values: report.signatureAlgorithms.filter(function (one) {
+                return one.weak;
+              }).map(function (one) {
+                return one.id;
+              }) },
+            // `computed`: the sentence is made from `pki.js`'s tier table, not
+            // written here, so `prose()` does not harvest it.
+            { what: 'The three tiers', computed: true,
               how: report.tiers.map(function (one) {
                 return one.label + ' (pathLen ' +
                   (one.pathLen === null || one.pathLen === undefined
@@ -1409,7 +1468,7 @@ class CryptoMetadata {
             // that performs the check now, which is this page's rule, so it
             // names the policy in force rather than a policy somebody once
             // wrote down.
-            { what: 'Revocation checked',
+            { what: 'Revocation checked', computed: true,
               how:
                 loadRevocationStatus().describePolicy().sentence },
             { what: 'Revocation check — how a foreign CRL is trusted',
@@ -1462,7 +1521,8 @@ class CryptoMetadata {
                    'its issuers fetched from its own caIssuers address. A ' +
                    'bare key with no certificate has nothing to check and is ' +
                    'reported as such.' },
-            { what: 'Where the CA private keys live', how: report.residency }
+            { what: 'Where the CA private keys live', computed: true,
+              how: report.residency }
           ];
         }
       },
@@ -3809,8 +3869,8 @@ class CryptoMetadata {
           hashes: row.hashes,
           whatItDoesNot: row.whatItDoesNot,
           envelopes: row.envelopes.slice(0),
-          algorithms: row.algorithms().map(function (pair) {
-            return { what: pair[0], values: pair[1] };
+          algorithms: row.algorithms().map(function (one) {
+            return algorithmRow(one).row;
           })
         };
       }),
