@@ -146,6 +146,27 @@ const REASONS = [
           'completeness: this service issues no attribute certificates.' }
 ];
 
+// The routes whose answers carry the pki namespace's prose (#543): the
+// reasons' sentences, which `GET /admin-api/pki` carries as each reason's
+// `what` and each revoked entry's `reasonWhat`.
+const PROSE_ROUTES = ['/admin-api/pki'];
+
+/**
+ * Extracts this module's part of the pki namespace (#543 phase 2b): what
+ * each revocation reason means. The `**bold**` in two of them is kept: the
+ * renderer strips the asterisks, and the translator is told to keep them.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, for `pki.js`'s reason: this module is required beside it.
+  const harvest = require('./server_prose').harvest;
+  const out = harvest('revocation.reasons', REASONS, ['what']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The ids of `REASONS`, in order.
  */
@@ -838,6 +859,8 @@ function directoryBaseFor(scopeId) {
  */
 module.exports = {
   REASONS: REASONS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   REASON_IDS: REASON_IDS,
   reason: reason,
   authorities: authorities,

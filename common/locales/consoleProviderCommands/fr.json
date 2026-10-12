@@ -44,5 +44,6 @@
   "nothingIn": "Rien à l’état {state}.",
   "counts": "{pending} en attente, {sent} envoyée(s), <strong>{dead} morte(s)</strong>",
   "colWhat": "Quoi",
-  "deliveriesNote": "<strong>Chaque livraison sortante</strong> que ce service envoie par POST à une adresse enregistrée par un client, dans l’unique file durable : chacune est une ligne persistée, tentée une seule fois pour le cluster sous un bail réclamé, réessayée avec temporisation lorsqu’un délai dépassé, un échec de connexion, un 5xx, 408 ou 429 le justifie, et sinon une <strong>lettre morte</strong> — renvoyée seulement lorsqu’un opérateur appuie sur Réessayer, ce qui démarre une nouvelle génération."
+  "deliveriesNote": "<strong>Chaque livraison sortante</strong> que ce service envoie par POST à une adresse enregistrée par un client, dans l’unique file durable : chacune est une ligne persistée, tentée une seule fois pour le cluster sous un bail réclamé, réessayée avec temporisation lorsqu’un délai dépassé, un échec de connexion, un 5xx, 408 ou 429 le justifie, et sinon une <strong>lettre morte</strong> — renvoyée seulement lorsqu’un opérateur appuie sur Réessayer, ce qui démarre une nouvelle génération.",
+  "clientsHeading": "Parties de confiance"
 }

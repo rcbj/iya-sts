@@ -638,7 +638,9 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
 * **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
   asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
-  is awaited first by `/oid4vp/start`, by `/authn/wallet` and by the
+  is awaited first by `/oid4vp/start` (inside `startVerification()`, which
+  `POST /admin-api/verifications/start` shares, #587), by `/authn/wallet` and
+  by the
   verifier-certificate document. It issues the certificate, or answers the
   one in place when it is over the same key and more than a day from
   expiry. `x509Material()` then reads it synchronously and refuses
@@ -1036,3 +1038,37 @@ bbs-2023 suite at the adapter (no ticket asks for its suite).
 `tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
 the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
 (`tests/CLAUDE.md`, *The W3C VC and DID suites*).
+
+## THE BAR DOOR'S START AND RESULT, SHARED WITH `/admin-api` (#587, 2026-10-12)
+
+`/oid4vp/start` and `/oid4vp/result/:state` are a demonstration, and #585
+makes them development-only. An administrator — and every product-mode job —
+starts a verification at `POST /admin-api/verifications/start` and reads it at
+`GET /admin-api/verifications?state=` instead, so the two doors must build and
+read the SAME thing:
+
+* **`startVerification(req, asked, where)`** is everything the start page did
+  before it sent anything: the `OID4VC_QUERY` check (now `checkParsed()`, so a
+  body is held to the page's schema), `prepareSignedClientId()`,
+  `buildVpRequest()`, `vpRequestQuery()` and `vpWalletFor()` — which takes
+  the wallet a caller NAMED as an argument now, because a body has no
+  `req.query.wallet`. It returns `{ ok, record, query, wallet, walletUrl,
+  requestUri, mode }` or `{ ok: false, status, code, error }` and sends
+  nothing; the page redirects to `walletUrl` or draws the QR page around
+  `requestUri`, and the operation answers JSON.
+* **`verificationOutcome(state)`** is the result page's object, read straight
+  from the store as the page always read it (not `transactionFor()`, which
+  removes an expired transaction: "what did it decide" outlives "may it still
+  be answered").
+* **`recentVerifications(limit)`** lists the open bar-door transactions for
+  the console's Verifier request tab and the bare `GET`. A sign-in's
+  transaction is never listed — it names a person.
+* **`START_VOCABULARY`** exports the lists the start's schema is built from
+  (`RESPONSE_TYPES`, `RESPONSE_MODES`, `START_MODES`, `BY`, the signed
+  prefixes, the formats), so the operation's closed sets are these lists
+  (#86).
+
+`tests/admin_api_verifications.js` holds the two doors equal (every
+parameter but the fresh nonce and state; the result object byte for byte),
+and `sts_oid4vp_wallet.js` drives the demonstration once more in development
+so it is not left untested.

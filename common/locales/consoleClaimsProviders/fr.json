@@ -44,5 +44,6 @@
   "colPerson": "Personne",
   "colTheirSub": "Leur sub là-bas",
   "colLinked": "Lié",
-  "colToken": "Jeton"
+  "colToken": "Jeton",
+  "providersHeading": "Fournisseurs de claims"
 }

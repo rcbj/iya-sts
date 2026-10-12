@@ -1580,8 +1580,8 @@
     "text": "Vidareskickade sökvägar utan sessionsaffinitet"
   },
   "workers.fanout|description": {
-    "en": "4ad4fd7faeebad00",
-    "text": "En kommaseparerad lista över sökvägsprefix som går till den minst belastade begärandearbetaren i stället för att fästas vid den session eller det flöde de hör till. Dessa tre bär sin egen autentiseringsuppgift i varje begäran och namnger sitt eget mål, så ingenting om en begäran behöver kommas ihåg för att besvara nästa. ALLT ANNAT SOM SKICKAS VIDARE HAR AFFINITET — varje protokollfamilj, administratörskonsolen och användarportalen — eftersom ett webbläsarflöde sträcker sig över flera begäranden vars tillstånd finns i arbetaren som skapade det. LDAP finns inte här och kan inte göra det: dess protokoll är en rå socket som frontprocessen håller, och dess enda HTTP-vyer är konsolsidor under /admin/ldap, som är konsolen. Affinitet är en LOKALITETSÅTGÄRD och aldrig en korrekthetsåtgärd — det som gör en vidareskickad sökväg korrekt är att varje lager som dess hanterare rör kan nås från en arbetare."
+    "en": "ace37db547eaaf05",
+    "text": "En kommaseparerad lista över sökvägsprefix som går till den minst belastade begärandearbetaren i stället för att fästas vid den session eller det flöde de hör till. Dessa fyra bär sin egen autentiseringsuppgift i varje begäran och namnger sitt eget mål, så ingenting om en begäran behöver kommas ihåg för att besvara nästa. ALLT ANNAT SOM SKICKAS VIDARE HAR AFFINITET — varje protokollfamilj, administratörskonsolen och användarportalen — eftersom ett webbläsarflöde sträcker sig över flera begäranden vars tillstånd finns i arbetaren som skapade det. LDAP finns inte här och kan inte göra det: dess protokoll är en rå socket som frontprocessen håller, och dess enda HTTP-vyer är konsolsidor under /admin/ldap, som är konsolen. Affinitet är en LOKALITETSÅTGÄRD och aldrig en korrekthetsåtgärd — det som gör en vidareskickad sökväg korrekt är att varje lager som dess hanterare rör kan nås från en arbetare."
   },
   "workers.fanout|restartReason": {
     "en": "adf291fc1ed8c030",

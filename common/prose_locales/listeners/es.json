@@ -1,0 +1,342 @@
+{
+  "listeners.builtin.main.name": {
+    "en": "9dc3805bbb46619d",
+    "text": "Puerto principal"
+  },
+  "listeners.builtin.main.what": {
+    "en": "431d7c6fda5c0cfb",
+    "text": "Todos los protocolos HTTP, la consola y el portal."
+  },
+  "listeners.builtin.ldap.name": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "listeners.builtin.ldap.what": {
+    "en": "177408f6a3cbe157",
+    "text": "El directorio integrado, en claro."
+  },
+  "listeners.builtin.ldaps.name": {
+    "en": "9618bbe69ddd3eb5",
+    "text": "LDAPS"
+  },
+  "listeners.builtin.ldaps.what": {
+    "en": "f40218d728835152",
+    "text": "El directorio integrado sobre TLS."
+  },
+  "listeners.builtin.debugger.name": {
+    "en": "2bdecd403c36b3de",
+    "text": "Depurador de protocolos"
+  },
+  "listeners.builtin.debugger.what": {
+    "en": "5e758f21cab3cbd0",
+    "text": "El depurador de protocolos integrado, cuando hay uno integrado."
+  },
+  "listeners.builtin.kdc.name": {
+    "en": "50337c0a4e94b039",
+    "text": "KDC de Kerberos"
+  },
+  "listeners.builtin.kdc.what": {
+    "en": "3f7729c5149376d6",
+    "text": "TCP y UDP 88; mensajes Kerberos, no TLS."
+  },
+  "listeners.builtin.krb5-service.name": {
+    "en": "7e652746e02ec2bc",
+    "text": "Servicio de prueba de Kerberos"
+  },
+  "listeners.builtin.krb5-service.what": {
+    "en": "eae5de4d9754b836",
+    "text": "El servicio de prueba protegido con SPNEGO."
+  },
+  "listeners.builtin.revocation.name": {
+    "en": "384cb54062bffd4b",
+    "text": "Revocación (HTTP simple)"
+  },
+  "listeners.builtin.revocation.what": {
+    "en": "55a30857a7345fe6",
+    "text": "CRL y OCSP sobre HTTP simple, como pide RFC 5280 sección 8."
+  },
+  "listeners.builtin.spiffe-workload.name": {
+    "en": "8c6c635f7d593551",
+    "text": "SPIFFE Workload API (TCP)"
+  },
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "No es TLS: el transporte de la especificación es la red del llamante, que el modo producto solo sirve donde se declara autenticada."
+  },
+  "listeners.builtin.spiffe-server.name": {
+    "en": "5373db72c7e9bae7",
+    "text": "SPIRE Server API"
+  },
+  "listeners.builtin.spiffe-server.what": {
+    "en": "e4a22cf64fca967f",
+    "text": "TLS mutuo bajo el dominio de confianza SPIFFE de cada dominio."
+  },
+  "listeners.builtin.spiffe-server.clientAuth": {
+    "en": "6ff4a4e99a607b89",
+    "text": "se pide, no se exige: un agente que aún no tiene SVID debe llegar a AttestAgent (lo del protocolo)"
+  },
+  "listeners.builtin.spiffe-broker.name": {
+    "en": "4eeddd04a30a0491",
+    "text": "SPIFFE Broker API"
+  },
+  "listeners.builtin.spiffe-broker.what": {
+    "en": "560d5e79517fa839",
+    "text": "TLS mutuo para los intermediarios de spiffe.brokers."
+  },
+  "listeners.builtin.spiffe-broker.clientAuth": {
+    "en": "588e0284f9d55b20",
+    "text": "obligatorio: el X509-SVID de un intermediario (lo del protocolo)"
+  },
+  "listeners.builtin.cell.name": {
+    "en": "178e409afed3c530",
+    "text": "Canal entre celdas"
+  },
+  "listeners.builtin.cell.what": {
+    "en": "da35fbcaf99404a1",
+    "text": "TLS mutuo entre las celdas de un mismo servicio; siempre TLS 1.3."
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "obligatorio: el certificado de otra celda (lo del protocolo)"
+  },
+  "listeners.policy.nodeDefault": {
+    "en": "2a77fdd39a1fe033",
+    "text": "(predeterminado del nodo)"
+  },
+  "listeners.policy.opensslDefault": {
+    "en": "bcdb3bd6dae8bd33",
+    "text": "(predeterminado de OpenSSL)"
+  },
+  "listeners.policy.notBound": {
+    "en": "58c8d4b93b0f0599",
+    "text": "no enlazada en este nodo"
+  },
+  "listeners.policy.protocolTrust": {
+    "en": "4a4ba3c3bbf2a9fd",
+    "text": "(el propio paquete de confianza del protocolo)"
+  },
+  "listeners.policy.ownFile": {
+    "en": "d50b3852e4f7f274",
+    "text": "su propio archivo {{file}}"
+  },
+  "listeners.policy.ownFileAndRoot": {
+    "en": "002be94bf76acfc0",
+    "text": "su propio archivo {{file}} y la raíz del servicio"
+  },
+  "listeners.policy.anchors": {
+    "en": "6788dbdb070b901c",
+    "text": "las anclas del servicio"
+  },
+  "listeners.policy.anchorsAndRoot": {
+    "en": "e8f30dd045f13fd7",
+    "text": "las anclas del servicio y la raíz del servicio"
+  },
+  "listeners.applications.home.label": {
+    "en": "91b2dbada3ab1fa1",
+    "text": "Página de inicio"
+  },
+  "listeners.applications.home.what": {
+    "en": "45245b5eb4a5b2c5",
+    "text": "GET /, su imagen, la documentación, las páginas de términos y políticas y la lista de dominios."
+  },
+  "listeners.applications.authn.label": {
+    "en": "72f0c79fe76b583e",
+    "text": "Servicio de autenticación"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "El servicio de inicio de sesión y sus segundos factores, la billetera, los inicios de sesión con SPNEGO y con certificado, y el cierre de sesión."
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "Portal de usuario"
+  },
+  "listeners.applications.portal.what": {
+    "en": "ae78f5077c808641",
+    "text": "Las páginas que pertenecen a la persona que las está mirando, y la API de cuenta de la que se obtienen."
+  },
+  "listeners.applications.admin-console.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Consola de administración"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "La consola en /admin, su script y sus páginas."
+  },
+  "listeners.applications.management-api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "API de administración"
+  },
+  "listeners.applications.management-api.what": {
+    "en": "f87960a0be10dbb1",
+    "text": "/admin-api, todos los controles de la consola accesibles para una máquina."
+  },
+  "listeners.applications.oauth-oidc.label": {
+    "en": "ca2ce1b840c94ea6",
+    "text": "OAuth 2.0 / OpenID Connect"
+  },
+  "listeners.applications.oauth-oidc.what": {
+    "en": "2186eb305111cd6a",
+    "text": "El servidor de autorización y el proveedor OpenID, sus documentos de descubrimiento y la lista de estado de tokens de acceso."
+  },
+  "listeners.applications.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "listeners.applications.saml2.what": {
+    "en": "e31f5a124e3105ff",
+    "text": "El proveedor de identidad SAML 2.0."
+  },
+  "listeners.applications.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "listeners.applications.saml11.what": {
+    "en": "3f8a5e529e26ea47",
+    "text": "El proveedor de identidad SAML 1.1."
+  },
+  "listeners.applications.ws-trust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "listeners.applications.ws-trust.what": {
+    "en": "6a7c8cd71b884bfd",
+    "text": "El servicio de tokens de seguridad WS-Trust."
+  },
+  "listeners.applications.ws-federation.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "El perfil de solicitante pasivo y sus metadatos."
+  },
+  "listeners.applications.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federación"
+  },
+  "listeners.applications.federation.what": {
+    "en": "9dd9fae01faa7bb2",
+    "text": "Relaciones de federación con servicios de identidad externos."
+  },
+  "listeners.applications.oidfed.label": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "listeners.applications.oidfed.what": {
+    "en": "3ad47704e5adf5bf",
+    "text": "La Entity Configuration y los endpoints de federación."
+  },
+  "listeners.applications.oid4vc.label": {
+    "en": "3ed217bd349c451a",
+    "text": "Credenciales verificables"
+  },
+  "listeners.applications.oid4vc.what": {
+    "en": "a1d8ad40056dfc8f",
+    "text": "OpenID4VCI, OpenID4VP, los DID, las listas de estado y los endpoints de prueba de VC-API."
+  },
+  "listeners.applications.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "listeners.applications.scim.what": {
+    "en": "753bc4eccff231fc",
+    "text": "Aprovisionamiento en el directorio."
+  },
+  "listeners.applications.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "listeners.applications.ssf.what": {
+    "en": "7ae68852bd9347c9",
+    "text": "El transmisor y el receptor de Shared Signals."
+  },
+  "listeners.applications.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "listeners.applications.gnap.what": {
+    "en": "f787462ada9a2720",
+    "text": "El servidor de autorización GNAP y sus páginas de interacción."
+  },
+  "listeners.applications.xacml.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "listeners.applications.xacml.what": {
+    "en": "fbd4d4a27b747323",
+    "text": "El punto de decisión de políticas, sus políticas y las puertas de los PEP remotos."
+  },
+  "listeners.applications.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "Inscripción de certificados mediante ACME."
+  },
+  "listeners.applications.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "Inscripción de certificados mediante EST."
+  },
+  "listeners.applications.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "Inscripción de certificados mediante SCEP."
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "Autoridad de certificación"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "CRL, OCSP, los certificados y cadenas de CA, y los documentos de metadatos criptográficos."
+  },
+  "listeners.applications.kerberos.label": {
+    "en": "43c19a093b34b581",
+    "text": "Kerberos"
+  },
+  "listeners.applications.kerberos.what": {
+    "en": "ce095930c49505f7",
+    "text": "MS-KKDCP, la página de negociación SPNEGO y los principales."
+  },
+  "listeners.applications.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "listeners.applications.spiffe.what": {
+    "en": "76b7e20cfb090f52",
+    "text": "El endpoint del paquete SPIFFE."
+  },
+  "listeners.applications.tls.label": {
+    "en": "f0128c74e6e50ff1",
+    "text": "Diagnóstico TLS"
+  },
+  "listeners.applications.tls.what": {
+    "en": "63c2c90904d43ff2",
+    "text": "Las vistas TLS y la puerta del almacén de confianza de clientes."
+  },
+  "listeners.applications.devices.label": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "Registro de dispositivos"
+  },
+  "listeners.applications.devices.what": {
+    "en": "78a9dc85ad771ffa",
+    "text": "Los controles de prueba del registro de dispositivos."
+  },
+  "listeners.map.sentences.rpIdNotCommon": {
+    "en": "629aac67a80b3ff9",
+    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId ({{rpId}}) no es un dominio bajo el que estén todas: una passkey registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
+  },
+  "listeners.map.sentences.rpIdEmpty": {
+    "en": "d82c2e645f3ef21a",
+    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId está vacío, así que cada una es su propia parte de confianza: una passkey registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
+  }
+}

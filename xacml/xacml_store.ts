@@ -374,6 +374,31 @@ class XacmlStore {
    * carries, published on `/admin/ldap/*`.
    */
   static readonly SCHEMA = SCHEMA;
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/policies`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/policies']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): the object
+   * class's and each attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering XacmlStore.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('../common/server_prose') =
+      require('../common/server_prose');
+    const out = serverProse.harvest('xacmlPolicies.schema', SCHEMA, ['what']);
+    helpers.log.debug("Leaving XacmlStore.prose(). " + Object.keys(out).length);
+    return out;
+  }
   /**
    * The entry name of the seeded policy, `seeded-rbac`.
    */
@@ -952,6 +977,10 @@ export = {
   installInstance: (instance: XacmlStore): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: XacmlStore.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: XacmlStore.PROSE_ROUTES,
+  prose: XacmlStore.prose,
   SEED_NAME: XacmlStore.SEED_NAME,
   SEED_DOCUMENT: XacmlStore.SEED_DOCUMENT,
   seed: seedFacade,

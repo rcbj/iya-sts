@@ -11854,8 +11854,39 @@ The **policies** namespace is `admin-core/policy_kinds.ts`'s `prose()`:
 It is registered lazily in `defaultDeps()`, because the policy modules
 require this one to fill their templates.
 
+### The module namespaces (phase 2b)
+
+* **`PHRASE_MODULES` in `server_prose.ts`** maps a namespace to the modules
+  whose prose it is.
+  - Each module exports `PROSE_ROUTES` and `prose()`, its keys prefixed with
+    its own name.
+  - Each is required LAZILY, because many of them require `server_prose` to
+    fill their templates.
+* **Seventeen namespaces, 1,741 messages:** audit, database, delegation,
+  devices, encryption, federation, gnap, kerberos, ldap, listeners, mode,
+  pki, realms, roles, scim, secrets and spiffe.
+* **Two things are drawn as raw HTML** and held to their tags by test B: the
+  delegation map key (a filled template whose rows are `.param.` messages and
+  whose SVG swatches are carried over), and the secrets and encryption notes.
+* **Extraction loads the whole stack.** `tests/tools/prose-catalogs.js`
+  requires `common/protocol_stack`, as a request worker does, before it
+  extracts, because a namespace's English may sit in a module that registers
+  routes when it loads.
+  - `tests/server_prose_catalogs.js` A runs the tool as a CHILD
+    (`--print-all`) and compares, so the test runner never loads them.
+  - B and C read `en.json`, which A has just held to the source.
+* **`harvest()` keys a colliding element by its index too.** An audit
+  action's shared `category` would otherwise have dropped labels.
+* **Known residuals, English on these pages for now:**
+  - the SCIM field-mapping notes (`scim/scim_map.ts`);
+  - the persistence notes on the LDAP service page;
+  - the secret-source labels on the encryption page;
+  - the endpoint names every Protocols page carries, which are
+    `sts_metadata.ts`'s (phase 3).
+  2c ends with a page-by-page sweep for these.
+
 Phase 1 is the infrastructure and the settings namespace. Phase 2a is phrase
-sources and the policies. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
+sources and the policies, and 2b the module namespaces above. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
 Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
 audit, roles, delegation, devices, GNAP, listeners, the crypto report,
 scheduler jobs, caches, node health), then `sts_metadata.ts`.

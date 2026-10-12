@@ -1949,6 +1949,53 @@ function applicationList(rows) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE DELEGATION NAMESPACE (#543 phase 2b): the vocabulary above — each
+// mode's, mechanism's and role's `label` and `what`; a mechanism's `spec` is
+// a citation and stays as written — and the two pictures' keys, which
+// `admin-core/admin_views.ts` declares beside the code that draws them.
+//
+// The keys are reached LAZILY, and only from `prose()`: that module is the
+// console's views, required at 18 in the order, and this one is a library
+// half the service requires. `prose()` runs where the whole stack is loaded —
+// the extraction tool loads it first, and a running service translating an
+// answer has — so the require is a cache hit there and loads nothing new.
+// ---------------------------------------------------------------------------
+/**
+ * The routes whose answers carry the delegation namespace's prose: the
+ * acts, the two drill-downs (whose console twins carry the drawing and the
+ * key), and the three console drawings that have no management twin.
+ */
+const PROSE_ROUTES = [
+  '/admin-api/delegation',
+  '/admin-api/delegation/user',
+  '/admin-api/delegation/application',
+  '/admin-api/console/delegation/map',
+  '/admin-api/console/delegation/chain',
+  '/admin-api/console/federation/map'
+];
+
+/**
+ * Extracts the delegation namespace (#543): the modes', mechanisms' and
+ * roles' `label` and `what`, and the delegation and federation pictures'
+ * keys.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, both: see the header above.
+  const harvest = require('./server_prose').harvest;
+  const views = require('../admin-core/admin_views');
+  const out = Object.assign({},
+    harvest('delegation.modes', MODES, ['label', 'what']),
+    harvest('delegation.types', TYPES, ['label', 'what']),
+    harvest('delegation.roles', ROLES, ['label', 'what']),
+    views.mapKeyProse());
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Delegation: who acted on whose behalf, through what, to reach what.
  *
@@ -1992,5 +2039,8 @@ module.exports = {
   identityList: identityList,
   graph: graph,
   summary: summary,
-  maxRecords: maxRecords
+  maxRecords: maxRecords,
+  // #543: the delegation namespace's routes and English.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

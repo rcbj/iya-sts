@@ -1465,29 +1465,34 @@ function childMain() {
       ? WebPages.render('/admin/scim', scimView,
                         WebKit.context({}, true))
       : '';
+    // METADATA FIRST (2026-10-12): the endpoints and everything the page
+    // explains or reports; Server is its settings.
     const scimServerTab =
       /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
         .exec(scimHtml);
-    const scimEndpointsTab =
-      /<section class="tabpanel(?: first)?" id="endpoints">([\s\S]*?)<\/section>/
+    const scimMetadataTab =
+      /<section class="tabpanel first" id="scim-tab-metadata">([\s\S]*?)<\/section>/
         .exec(scimHtml);
     const scimEndpoints = scimView
       ? scimView.protocolEndpoints || [] : [];
-    note(!!scimServerTab && !!scimEndpointsTab &&
-         scimEndpointsTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
+    note(!!scimServerTab && !!scimMetadataTab &&
+         scimMetadataTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
          scimEndpoints.length > 0 &&
          scimEndpoints.every(function (row) {
-           return scimEndpointsTab[1].indexOf(
+           return scimMetadataTab[1].indexOf(
              'data-copy="' + WebKit.esc(row.url) + '"') >= 0 &&
              scimServerTab[1].indexOf(
                'data-copy="' + WebKit.esc(row.url) + '"') < 0;
          }),
-         'D-SCIM-endpoints. the SCIM endpoint inventory has its own tab',
-         'endpoints=' + scimEndpoints.length);
-    note(!!scimServerTab &&
-         scimServerTab[1].indexOf('What each operation does') >= 0 &&
-         scimServerTab[1].indexOf('/scim/v2/Users') >= 0,
-         'D-SCIM-server. operation descriptions stay on the Server tab');
+         'D-SCIM-endpoints. the SCIM endpoint inventory is on Metadata, the ' +
+         'first tab', 'endpoints=' + scimEndpoints.length);
+    note(!!scimMetadataTab && !!scimServerTab &&
+         scimMetadataTab[1].indexOf('What each operation does') >= 0 &&
+         scimMetadataTab[1].indexOf('/scim/v2/Users') >= 0 &&
+         scimServerTab[1].indexOf('What each operation does') < 0 &&
+         scimServerTab[1].indexOf('action="/admin/config"') >= 0,
+         'D-SCIM-server. operation descriptions are on Metadata and the ' +
+         'Server tab is its settings');
 
     const ssfPage = WebPages.pageFor('/admin/ssf');
     const ssfView = ssfPage ? await viewOf(ssfPage, {}) : null;
@@ -1753,6 +1758,74 @@ function childMain() {
     note(missingSubTabs.length === 0,
          'D-Cert-subtabs. the ACME, EST and SCEP tabs draw each section as a ' +
          'sub-tab', missingSubTabs.join(', '));
+
+    // EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (2026-10-12): each page
+    // `WebPages.PROTOCOL_TABS` names is drawn as tabs whose first is
+    // Metadata, and every tab it draws is one the table lists (the
+    // stylesheet's ids come from that table). A page this process cannot
+    // answer here (the truststore, with no TLS module loaded) is skipped.
+    const protocolProblems = [];
+    const protocolDrawn = [];
+    const protocolPaths = Object.keys(WebPages.PROTOCOL_TABS);
+    for (let i = 0; i < protocolPaths.length; i++) {
+      const path = protocolPaths[i];
+      const row = WebPages.pageFor(path);
+      if (!row) {
+        protocolProblems.push(path + ' is no console page');
+        continue;
+      }
+      const pview = await viewOf(row, {}).catch(function () {
+        return null;
+      });
+      if (!pview) {
+        continue;
+      }
+      const html = WebPages.render(path, pview, WebKit.context({}, true));
+      const slug = path.replace(/^\/admin\//, '').replace(/[^a-z0-9]+/gi,
+                                                            '-');
+      const bar = /<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/.exec(html);
+      const ids = bar ? (bar[1].match(/href="#([^"]+)"/g) || [])
+        .map(function (h) { return h.slice(7, -1); }) : [];
+      if (ids[0] !== slug + '-tab-metadata') {
+        protocolProblems.push(path + ' does not open on Metadata: ' +
+                              ids.join(' '));
+      }
+      ids.slice(1).forEach(function (id) {
+        const name = id.replace(slug + '-tab-', '');
+        if (WebPages.PROTOCOL_TABS[path].indexOf(name) < 0) {
+          protocolProblems.push(path + ' draws a tab its row does not ' +
+                                'list: ' + name);
+        }
+      });
+      if (pview.protocolEndpoints && pview.protocolEndpoints.length) {
+        const meta = new RegExp('<section class="tabpanel first" id="' +
+          slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
+        if (!meta || meta[1].indexOf('data-copy="' +
+            WebKit.esc(pview.protocolEndpoints[0].url) + '"') < 0) {
+          protocolProblems.push(path + '\'s endpoints are not on Metadata');
+        }
+      }
+      protocolDrawn.push(path);
+    }
+    // Every page under Protocols is tabbed: by this table, or by a page of
+    // its own drawn as tabs before it.
+    const tabbedOtherwise = ['/admin/oauth2', '/admin/saml2', '/admin/vc',
+      '/admin/xacml', '/admin/scim', '/admin/ssf', '/admin/kerberos',
+      '/admin/cert-issuance'];
+    // The Protocols pages are the endpoint table's pages and its
+    // exemptions (`tests/protocol_endpoints.js` holds that they are).
+    protocolEndpoints.pages().concat(Object.keys(protocolEndpoints.exempt()))
+      .forEach(function (path) {
+        if (tabbedOtherwise.indexOf(path) < 0 &&
+            !WebPages.PROTOCOL_TABS[path]) {
+          protocolProblems.push(path + ' is under Protocols and not tabbed');
+        }
+      });
+    note(protocolProblems.length === 0 && protocolDrawn.length >= 14,
+         'D-Protocol-tabs. every Protocols page in the table is drawn as ' +
+         'tabs, Metadata first, its endpoints there, and draws only tabs ' +
+         'the table lists', protocolProblems.join('; ') + ' (drew ' +
+         protocolDrawn.length + ')');
     // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
     // and the three SPIFFE lists search `q`, so on one page each carries
     // its prefix — in its links, its pager's anchor and its filter form.

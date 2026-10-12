@@ -1602,6 +1602,18 @@ const SCIM_OPERATIONS = [
           'rather than by express as an HTML page (#206).' }
 ];
 
+// What the monitor says of an operation SCIM_OPERATIONS does not list, so
+// that the prose catalog can carry it (#543 phase 2b).
+const SCIM_UNLISTED_OPERATION = 'Counted under a name admin_stats.js\'s ' +
+  'SCIM_OPERATIONS does not list. It is shown rather than dropped, because ' +
+  'a table that quietly discarded it would make the column stop adding up ' +
+  'with no way to find out why.';
+
+// The routes whose answers carry this module's prose (#543): the SCIM
+// operations' sentences, in the scim namespace. A route is listed only
+// where this module's sentences reach its answer.
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
+
 /**
  * The SCIM resource types the monitor counts.
  */
@@ -2063,11 +2075,8 @@ function scimMonitorSnapshot() {
   });
   Object.keys(detail).sort().forEach(function (name) {
     if (!known[name]) {
-      operations.push(scimOperationRow(name, name, '', 'Counted under a name ' +
-        'admin_stats.js\'s SCIM_OPERATIONS does not list. It is shown rather ' +
-        'than dropped, because a table that quietly discarded it would make ' +
-        'the column stop adding up with no way to find out why.',
-        detail[name]));
+      operations.push(scimOperationRow(name, name, '',
+                                       SCIM_UNLISTED_OPERATION, detail[name]));
     }
   });
 
@@ -6552,6 +6561,33 @@ function snapshot() {
 }
 
 /**
+ * Extracts this module's part of the scim namespace (#543 phase 2b): what
+ * each SCIM operation is, and what the monitor says of one it does not list.
+ * Its labels are not harvested: `Bulk` is also a resource type's NAME in the
+ * same answer, and a label translated there would rename the type.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is required early (`app.js` installs its JWT
+  // recorder at #2 of the require order), and a require here at load would
+  // be the one thing that could make server_prose.ts load before what it
+  // requires has finished.
+  const serverProse = require('./server_prose');
+  // Keyed by `operation`: harvest() would name a row by its `method`, and
+  // the methods repeat.
+  const byOperation = {};
+  SCIM_OPERATIONS.forEach(function (row) {
+    byOperation[row.operation] = { what: row.what };
+  });
+  const out = serverProse.harvest('stats.operations', byOperation, ['what']);
+  out['stats.unlistedOperation'] = SCIM_UNLISTED_OPERATION;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
+/**
  * What this service has done since it started, and the two things an operator
  * can change: which tokens are invalid, and what custom claims every new token
  * carries.
@@ -6604,6 +6640,8 @@ module.exports = {
   recordSvid: recordSvid,
   recordCredentialStatus: recordCredentialStatus,
   SCIM_OPERATIONS: SCIM_OPERATIONS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   SCIM_RESOURCE_TYPES: SCIM_RESOURCE_TYPES,
   recordScim: recordScim,
   scimSnapshot: scimSnapshot,

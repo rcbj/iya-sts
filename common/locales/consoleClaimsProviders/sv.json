@@ -44,5 +44,6 @@
   "colPerson": "Person",
   "colTheirSub": "Deras sub där",
   "colLinked": "Länkad",
-  "colToken": "Token"
+  "colToken": "Token",
+  "providersHeading": "Anspråksleverantörer"
 }

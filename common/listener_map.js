@@ -1141,6 +1141,50 @@ function mappingView() {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// THE LISTENERS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b), this file's
+// part: the WebAuthn warning `health()` makes, as two templates, which
+// `GET /admin-api/listeners` carries in `warnings`. The `problem` beside it
+// is the first refusal a write would meet, and a refusal stays English;
+// `mappingView()`'s label and sentence are `hosted_applications.js`'s, and
+// its `decidedBy` a code.
+// ---------------------------------------------------------------------------
+/**
+ * The WebAuthn warning, as templates: `hosts` the host names joined with
+ * ', ', `rpId` the setting's value.
+ */
+const SENTENCES = Object.freeze({
+  rpIdNotCommon: 'The applications that read the sign-on session are on ' +
+    'host names {{hosts}}, and webauthn.rpId ({{rpId}}) is not a domain all ' +
+    'of them are under: a passkey registered on one is not usable on ' +
+    'another. Set webauthn.rpId to the domain authn.cookieDomain names.',
+  rpIdEmpty: 'The applications that read the sign-on session are on ' +
+    'host names {{hosts}}, and webauthn.rpId is empty, so each is its own ' +
+    'relying party: a passkey registered on one is not usable on another. ' +
+    'Set webauthn.rpId to the domain authn.cookieDomain names.'
+});
+
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/listeners'];
+
+/**
+ * Extracts this file's part of the listeners namespace (#543 phase 2b): the
+ * WebAuthn warning's two templates.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const out = {};
+  Object.keys(SENTENCES).forEach(function (key) {
+    out['listeners.map.sentences.' + key] = SENTENCES[key];
+  });
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * What is wrong with the state as it stands, and what deserves a warning,
  * for the Listeners page: the first refusal a write would meet (a value from
@@ -1174,12 +1218,12 @@ function health() {
   if (names.length > 1 && (!rpId || names.some(function (h) {
     return h !== rpId && h.slice(-(rpId.length + 1)) !== '.' + rpId;
   }))) {
-    warnings.push('The applications that read the sign-on session are on ' +
-      'host names ' + names.join(', ') + ', and webauthn.rpId ' +
-      (rpId ? '(' + rpId + ') is not a domain all of them are under'
-            : 'is empty, so each is its own relying party') + ': a ' +
-      'passkey registered on one is not usable on another. Set ' +
-      'webauthn.rpId to the domain authn.cookieDomain names.');
+    // A TEMPLATE (#543), so the server can translate the warning: lazily,
+    // because `helpers.js` requires this file at load and `server_prose`
+    // requires `helpers.js`.
+    warnings.push(require('./server_prose').fill(
+      rpId ? SENTENCES.rpIdNotCommon : SENTENCES.rpIdEmpty,
+      { hosts: names.join(', '), rpId: rpId }));
   }
   log.debug("Leaving health().");
   return { problem: found, warnings: warnings };
@@ -1213,5 +1257,8 @@ module.exports = {
   health: health,
   processWriteRule: processWriteRule,
   realmOverridesProblem: realmOverridesProblem,
-  startupProblem: startupProblem
+  startupProblem: startupProblem,
+  SENTENCES: SENTENCES,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

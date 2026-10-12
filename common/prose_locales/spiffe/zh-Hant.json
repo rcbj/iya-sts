@@ -1,0 +1,334 @@
+{
+  "spiffe.auth.entities.local.label": {
+    "en": "8c31e6e7223097e2",
+    "text": "本機"
+  },
+  "spiffe.auth.entities.local.what": {
+    "en": "00c2f6304ebee045",
+    "text": "呼叫透過 Unix 網域通訊端抵達。真正的 SPIRE 伺服器會完全信任其私有通訊端——spire-server CLI 就是如此運作——而存取控制就是通訊端的檔案系統權限。開發模式假定此邊界；「產品」模式則逐連線驗證：通訊端設為 0600 並位於其他使用者無法觸及的目錄中，且呼叫端的核心 uid 是本服務自己的。`spiffe.trustLocalSocket` 可將其關閉，使通訊端與 TCP 連接埠一樣要求 SVID，這也是測試用戶端「我在通訊端上被拒絕」路徑的唯一方式。"
+  },
+  "spiffe.auth.entities.agent.label": {
+    "en": "11b39c93777e8f1f",
+    "text": "代理程式"
+  },
+  "spiffe.auth.entities.agent.what": {
+    "en": "f5f4dddd8dea737f",
+    "text": "呼叫端出示了 X509-SVID，其 SPIFFE ID 是代理程式 id（/spire/agent/...），且指名一個此伺服器已證明且未封鎖的代理程式。被封鎖的代理程式會在此處被拒絕，而不僅是在 AttestAgent，這使得 /admin/spiffe/agents 上的封鎖對已持有 SVID 的呼叫端也具有意義。"
+  },
+  "spiffe.auth.entities.admin.label": {
+    "en": "c1c224b03cd9bc7b",
+    "text": "管理員"
+  },
+  "spiffe.auth.entities.admin.what": {
+    "en": "2f07edbd784cf1ef",
+    "text": "呼叫端的 SPIFFE ID 列於 `spiffe.adminIds` 中，或該身分的註冊項目標記為 `admin`。兩者皆可，因為 SPIRE 兩者皆有：admin_ids 不需要項目，而項目上的旗標是營運者從主控台設定的。這就是讓遠端呼叫端能管理註冊項目的機制。"
+  },
+  "spiffe.auth.entities.downstream.label": {
+    "en": "8144a0c98691bdde",
+    "text": "下游"
+  },
+  "spiffe.auth.entities.downstream.what": {
+    "en": "b756368b7b316586",
+    "text": "呼叫端身分的註冊項目標記為 `downstream`——巢狀的 SPIRE 伺服器，可以要求中繼 CA 並發布授權單位，除此之外不能做任何事。"
+  },
+  "spiffe.auth.entities.anonymous.label": {
+    "en": "e7a8aa2df7e5d0b2",
+    "text": "匿名"
+  },
+  "spiffe.auth.entities.anonymous.what": {
+    "en": "ac3d07cf4191b708",
+    "text": "未出示認證資訊，或出示了但未通過驗證。仍有兩個方法對其開放，而且兩者都必須開放：AttestAgent，因為代理程式在該呼叫給予之前沒有 SVID；以及 GetBundle，因為信任套件組在設計上就是公開的。"
+  },
+  "spiffe.auth.state.what": {
+    "en": "5260d998e00a5eb3",
+    "text": "僅限 SPIRE Server API。其 TCP 連接埠為相互 TLS：呼叫端出示來自此信任網域的 X509-SVID，本服務依信任套件組及憑證自身的有效期間驗證它，從 URI subjectAltName（絕不從主體）取得 SPIFFE ID，將其分類為 local、agent、admin 或 downstream，並逐列依 SPIRE 自己的 policy_data.json 授權該方法。其 Unix 通訊端是 `local` 實體，不需要認證資訊，spire-server CLI 正是如此連到真正的伺服器。Workload API 刻意完全不受上述任何影響：其規格規定 MUST NOT 要求用戶端進行驗證。"
+  },
+  "spiffe.auth.state.bootstrapping": {
+    "en": "01a65964e3b680ed",
+    "text": "TCP 連接埠會索取用戶端憑證，但「不」強制要求，因為 AttestAgent 對沒有 SVID 的呼叫端開放——代理程式在該呼叫給予之前沒有 SVID。請從套件組端點擷取套件組，依其驗證此伺服器，然後進行證明。"
+  },
+  "spiffe.auth.state.identityNote": {
+    "en": "d1bfa43ab4963b3a",
+    "text": "被接受的認證資訊在此與其他任何認證資訊一樣是一個「身分」：它進入十六個協定家族共用的同一個匯集點，因此其持有者會出現在 /admin/users 上，並在 ou=users 下取得目錄項目——以摘要命名，識別碼以 `spiffeSubject` 記載其上，且同一身分經由其他途徑再次抵達時會「重複使用」該項目。有三種接受會這樣做：透過相互 TLS 的 X509-SVID（每個連線一次）、代理程式進行證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「簽發是第四種進入方式」，且不屬於那三種：此信任網域為其產生 X509-SVID 的每個身分都會得到相同的項目，並以與已驗證 TLS 用戶端憑證所寫入相同的六個 `x509*` 屬性承載該憑證——採「指派」而非附加，因為 SVID 每隔半個存留期就會重新產生，旁邊另有 `x509svidsIssued` 與兩個時間戳記。它不算作一次驗證，因為被簽發認證資訊並不等於出示認證資訊。"
+  },
+  "spiffe.auth.state.credentialStatusNote": {
+    "en": "855b97377adf3b8a",
+    "text": "項目也記錄該身分是否仍可在「此處」被簽發認證資訊——`spiffeCredentialStatus`，旁邊附有原因。「那不是憑證狀態，也沒有任何東西會讀回它」：SPIFFE 沒有撤銷機制，已簽發的 SVID 在到期之前都能依套件組驗證通過，不論目錄怎麼說。它記錄的是終止身分取得「新」認證資訊之能力的三件事——其最後一個註冊項目被刪除、其代理程式被封鎖、其代理程式被刪除——每一項都可逆轉，逆轉時也以相同方式記錄。項目永不移除。"
+  },
+  "spiffe.auth.tcpState.off": {
+    "en": "5f0ff49e8f1e1b08",
+    "text": "關閉（spiffe.workloadPort 為 0）"
+  },
+  "spiffe.auth.tcpState.development": {
+    "en": "12b927026c850320",
+    "text": "提供服務（開發模式，未經證明）"
+  },
+  "spiffe.auth.tcpState.notDeclared": {
+    "en": "1e5c1015bdfa2ef2",
+    "text": "不提供服務（產品模式，未宣告來源已驗證）"
+  },
+  "spiffe.auth.tcpState.wildcard": {
+    "en": "28a4697948b9a85e",
+    "text": "不提供服務（產品模式，萬用繫結位址）"
+  },
+  "spiffe.auth.tcpState.declared": {
+    "en": "35c428d100879111",
+    "text": "提供服務（產品模式，已宣告來源已驗證）"
+  },
+  "spiffe.ca.keyTypes.ec-p256.what": {
+    "en": "ff74fafa4f874a30",
+    "text": "SPIRE 預設簽發的類型，也是 X509-SVID 規格所建議的。基於同樣理由，此處也以此為預設。"
+  },
+  "spiffe.ca.keyTypes.ec-p384.what": {
+    "en": "873522e5b4e42268",
+    "text": "較大的曲線，供固定使用該曲線的用戶端使用。"
+  },
+  "spiffe.ca.keyTypes.ec-p521.what": {
+    "en": "151021aa1e756715",
+    "text": "更大的曲線。值得注意的是，大約每 256 個 P-521 簽章中就有一個比其他 255 個短一個位元組，這是真實存在的互通性邊界情況，也是 x509.js 為此設有一個函式的原因。"
+  },
+  "spiffe.ca.keyTypes.rsa-2048.what": {
+    "en": "12b3f28c3feec919",
+    "text": "X509-SVID 規格對 RSA 允許的下限。產生較慢——啟動時可察覺——且產生的 SVID 大得多。"
+  },
+  "spiffe.ca.keyTypes.rsa-4096.what": {
+    "en": "2bc20b52a500d180",
+    "text": "啟動時需要數秒產生，在納悶套件組端點為何尚未回應之前值得先知道這一點。"
+  },
+  "spiffe.ca.keyTypes.ed25519.what": {
+    "en": "c3a80a4d09d90afd",
+    "text": "規格允許用於 X.509。「不」適用於 JWT 授權單位：本服務的 JWS 實作 jsonwebtoken 不支援 EdDSA 簽署。"
+  },
+  "spiffe.registry.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "每個項目都帶有的抽象類別。"
+  },
+  "spiffe.registry.schema.objectClasses.applicationProcess.what": {
+    "en": "ede3b6433c8bf9fc",
+    "text": "唯一適用的「已註冊」類別：它帶來 cn 與 description，因此即使註冊項目的其他一切都無法如此，其「名稱」仍是標準屬性。ou=applications 也基於同樣理由使用此類別。"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeRegistrationEntry.what": {
+    "en": "e29ba68ce50f7bcf",
+    "text": "「自訂的」。沒有任何已註冊的 LDAP 結構描述具有 SPIFFE ID、父 ID 或選擇器——SPIRE 將其項目保存在 SQL 中，其他任何東西都不在任何地方保存它們——因此沒有可借用的東西。"
+  },
+  "spiffe.registry.schema.objectClasses.spiffeAgent.what": {
+    "en": "c88b779329476cec",
+    "text": "基於同樣理由「自訂的」，用於 ou=agents 下的項目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryId.what": {
+    "en": "a7adc45dd92c5cad",
+    "text": "「鍵」：項目 id，即 SPIRE Server API 所稱的 `id`，也是 BatchUpdateEntry 與 BatchDeleteEntry 所指名的。在此產生為 32 個十六進位字元，且永不重複使用。項目自身的 cn 是它的縮短形式，因此這才是應該搜尋的屬性——與隔壁容器的 appIdentifier 已有的安排相同。"
+  },
+  "spiffe.registry.schema.attributes.cn.what": {
+    "en": "fe58d352f611b9c3",
+    "text": "RDN 值：項目 id。"
+  },
+  "spiffe.registry.schema.attributes.spiffeId.what": {
+    "en": "ff53d9e13c8c570a",
+    "text": "「此項目授予的身分」——相符的工作負載所被簽發的 SPIFFE ID。若不是有效的 SPIFFE ID、屬於其他信任網域，或位於保留的 /spire 路徑之下，則會被拒絕。"
+  },
+  "spiffe.registry.schema.attributes.spiffeParentId.what": {
+    "en": "ddbb1b173769e22d",
+    "text": "「誰可以簽發它」：此項目所隸屬之代理程式（或此伺服器）的 SPIFFE ID。它決定 GetAuthorizedEntries 與 SyncAuthorizedEntries 會告知代理程式哪些項目：位於其自身 SPIFFE ID 之下、或位於其選擇器相符之節點別名之下的項目，而 BatchNewX509SVID 與 NewJWTSVID 會拒絕代理程式取得其他任何項目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeSelector.what": {
+    "en": "230a91f1fbed3a13",
+    "text": "每個選擇器一個值，寫成 `type:value`——`unix:uid:1000`、`k8s:ns:default`、`docker:label:app:web`。類型是「第一個」冒號之前的全部，值則是其餘的全部，包括冒號，這就是它們以一個字串而非一對值儲存的原因：在每個冒號處分割，就是 `docker:label:app:web` 變成沒有人寫過之選擇器的原因。"
+  },
+  "spiffe.registry.schema.attributes.spiffeX509SvidTtl.what": {
+    "en": "37276f0fda549069",
+    "text": "此項目所產生之 X509-SVID 的存留期（秒）。未設定或 0 表示 spiffe.svidTtl。"
+  },
+  "spiffe.registry.schema.attributes.spiffeJwtSvidTtl.what": {
+    "en": "e2aed23ffc20b746",
+    "text": "JWT-SVID 的同類設定。未設定或 0 表示 spiffe.jwtSvidTtl。"
+  },
+  "spiffe.registry.schema.attributes.spiffeDnsName.what": {
+    "en": "53a64b2a55a10246",
+    "text": "在 SPIFFE ID 之外加入 SVID 的 DNS subjectAltName。讓 SVID 可供會檢查主機名稱但無法讀取 SPIFFE ID 的 TLS 軟體使用。"
+  },
+  "spiffe.registry.schema.attributes.spiffeFederatesWith.what": {
+    "en": "bccf448fc73ca351",
+    "text": "其套件組會交給持有此身分之工作負載的信任網域名稱——X509SVIDResponse.federated_bundles。在此沒有套件組的名稱會被記錄，只是不會貢獻任何東西，因為在套件組抵達之前就設定好聯合關係是一般的事件順序。"
+  },
+  "spiffe.registry.schema.attributes.spiffeHint.what": {
+    "en": "8798c1b61a4ef8c9",
+    "text": "工作負載取得多個 SVID 時營運者的指引——`internal`、`external`。原封不動地傳遞給 Workload API；此處沒有任何東西會讀取它。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAdmin.what": {
+    "en": "8a9a63bc0fea2453",
+    "text": "為 TRUE 時，持有者可以呼叫 SPIRE Server API 的管理方法。「記錄但不強制」，與本服務中其他每項授權事實一樣：此處沒有任何呼叫會因缺少它而被拒絕。"
+  },
+  "spiffe.registry.schema.attributes.spiffeDownstream.what": {
+    "en": "093ab596c5763625",
+    "text": "為 TRUE 時，持有者是可以要求中繼 CA（NewDownstreamX509CA）的下游 SPIRE 伺服器。記錄但不強制。"
+  },
+  "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
+    "en": "ed0325e0f3750709",
+    "text": "為 TRUE 時，SVID 應寫入 SVID 存放區外掛程式，而不是交給工作負載。記錄但不據以行動——本服務沒有存放區外掛程式。"
+  },
+  "spiffe.registry.schema.attributes.spiffeEntryExpiresAt.what": {
+    "en": "0db77e4fbce00b1b",
+    "text": "「項目」本身停止適用的時間，以自 epoch 起的秒數表示。與 SVID 存留期不同：這會使註冊失效。已過期的項目會被保留並回報為已過期，而不是刪除，因為消失的項目與從未有人建立的項目無從區分。"
+  },
+  "spiffe.registry.schema.attributes.spiffeRevisionNumber.what": {
+    "en": "c6e398cd0674adf9",
+    "text": "每次變更時遞增。SPIRE Server API 會發布它，代理程式用它來區分「我持有的項目是最新的」與「我持有一個項目」。"
+  },
+  "spiffe.registry.schema.attributes.spiffeOrigin.what": {
+    "en": "00f49586f429c433",
+    "text": "此項目的來源：`seed`、`console`、`api`、`grpc`、`auto`（為未相符任何項目的工作負載虛構）或 `ldap`。用來區分虛構的項目與有人刻意建立的項目。"
+  },
+  "spiffe.registry.schema.attributes.spiffeSvidsIssued.what": {
+    "en": "5c7d76f70131d771",
+    "text": "依此項目已簽發多少個 SVID。每次變更時「指派」——累加值的計數器毫無意義——而且是目錄項目中的即時數字，真正的目錄不會保存這種東西。"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSvidAt.what": {
+    "en": "439b824bf18526c6",
+    "text": "GeneralizedTime，依其進行的最近一次簽發。"
+  },
+  "spiffe.registry.schema.attributes.spiffeCreatedAt.what": {
+    "en": "db6f43baf4cb0cf6",
+    "text": "GeneralizedTime。與項目自身的 createTimestamp 並列，因為 SPIRE Server API 以數字發布 `created_at`，而讀者應能看出兩者是同一時刻。"
+  },
+  "spiffe.registry.schema.attributes.description.what": {
+    "en": "acd2638ccd119c56",
+    "text": "一行說明此項目的來源。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentId.what": {
+    "en": "1eb0478ad1d93963",
+    "text": "代理程式項目的「鍵」：代理程式自身的 SPIFFE ID，一律位於保留的 /spire/agent 路徑之下。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestationType.what": {
+    "en": "a106e8d20ed4b9d0",
+    "text": "驗證代理程式的節點證明器——`join_token`，以及領域在 spiffe.nodeAttestors 中指名的其他類型。此處沒有證明器能驗證的類型會在 AttestAgent 被拒絕，絕不記錄。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSelector.what": {
+    "en": "f1f7a49b8ce0625d",
+    "text": "證明所產生的選擇器。基於同樣理由，由代理程式所傳送的內容虛構而來。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentBanned.what": {
+    "en": "ef97460f95df0202",
+    "text": "為 TRUE 時表示已呼叫 BanAgent。被封鎖的代理程式會在 AttestAgent 與 RenewAgent「被拒絕」——本服務中少數的拒絕之一——因為無法封鎖的代理程式會讓封鎖按鈕成為謊言。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentCanReattest.what": {
+    "en": "c422054beef1b8d8",
+    "text": "證明器是否可以在沒有營運者的情況下再次執行。回報給代理程式，由其決定如何處理。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentSvidHash.what": {
+    "en": "fe13de3e1f4b825f",
+    "text": "對代理程式目前 SVID 之 DER 計算的 SHA-256，這是 spire.api.types.Agent 所攜帶的，也是營運者區分具有同一身分之兩個代理程式的方式。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAgentExpiresAt.what": {
+    "en": "137d83a05ee5c7c1",
+    "text": "該 SVID 的到期時間，以自 epoch 起的秒數表示。"
+  },
+  "spiffe.registry.schema.attributes.spiffeFirstSeen.what": {
+    "en": "41c766626dfff95d",
+    "text": "GeneralizedTime，此代理程式首次證明的時間。"
+  },
+  "spiffe.registry.schema.attributes.spiffeLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime，最近一次的時間。"
+  },
+  "spiffe.registry.schema.attributes.spiffeAttestations.what": {
+    "en": "80dcd7993e4bf81c",
+    "text": "它已證明或續期的次數。採「指派」，而非累加。"
+  },
+  "spiffe.registry.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "本服務"
+  },
+  "spiffe.registry.schema.from.thisRegistry": {
+    "en": "8838be25576d9b6a",
+    "text": "此登錄"
+  },
+  "spiffe.registry.schema.from.theCaller": {
+    "en": "58d987420aa2d78f",
+    "text": "呼叫端"
+  },
+  "spiffe.registry.schema.from.theAgent": {
+    "en": "c770ef7d03b69656",
+    "text": "代理程式"
+  },
+  "spiffe.server.sentences.localTrusted": {
+    "en": "7ce165cd08ddff12",
+    "text": "不需認證資訊。此通訊端是 `local` 實體，受到完全信任，spire-server CLI 就是如此運作。"
+  },
+  "spiffe.server.sentences.localVerified": {
+    "en": "7dd4a1d222fb239f",
+    "text": "不需認證資訊，但須來自以本服務自身 uid 執行的程序：產品模式會逐連線驗證通訊端是私有的，並從核心讀取呼叫端的 uid，之後才將其視為 `local` 實體。"
+  },
+  "spiffe.server.sentences.nobodyLocal": {
+    "en": "26a2be079a082c09",
+    "text": "此處沒有人是 `local` 實體：產品模式會驗證通訊端的邊界，但無法驗證（{{reason}}）。請在 TCP 連接埠上出示管理員的 X509-SVID。"
+  },
+  "spiffe.server.sentences.uidUnreadable": {
+    "en": "f321bf28dac402e7",
+    "text": "無法讀取對端的 uid——{{problem}}"
+  },
+  "spiffe.server.sentences.svidRequired": {
+    "en": "b1022e273acb8a23",
+    "text": "即使在此處也需要 X509-SVID（spiffe.trustLocalSocket 已關閉）。"
+  },
+  "spiffe.server.sentences.workloadNone": {
+    "en": "be5434a7e7f33920",
+    "text": "無，而且必須無：Workload Endpoint 規格禁止要求認證資訊。"
+  },
+  "spiffe.server.sentences.mutualTls": {
+    "en": "df42b23d461840a9",
+    "text": "相互 TLS。請依信任套件組驗證此伺服器，出示你自己的 X509-SVID，並預期會逐方法進行授權。"
+  },
+  "spiffe.server.sentences.serverOpen": {
+    "en": "a63de7d174172dcf",
+    "text": "無——驗證已關閉，因此此連接埠是純 gRPC，每個方法都對所有人開放。"
+  },
+  "spiffe.server.sentences.workloadTcpDeclared": {
+    "en": "fb16294bef4f5113",
+    "text": "無，而且必須無：Workload Endpoint 規格禁止要求認證資訊。網路已「宣告」會驗證來源位址（spiffe.workloadTcpSourceAuthenticated），因此呼叫端會得到其 peer: 位址所選取的項目。"
+  },
+  "spiffe.server.sentences.workloadTcpUnattested": {
+    "en": "e731874c85a7fe7b",
+    "text": "無，而且必須無：Workload Endpoint 規格禁止要求認證資訊。此處沒有任何東西證明呼叫端（開發模式）：部署須以其他方式保護此連接埠，或不將其公開。"
+  },
+  "spiffe.server.sentences.nothingListening": {
+    "en": "147d726457ddd091",
+    "text": "此處沒有任何東西在接聽。"
+  },
+  "spiffe.server.sentences.brokerMutualTls": {
+    "en": "e22213bd5a6bd3b4",
+    "text": "相互 TLS。請依信任套件組將此伺服器驗證為 spiffe://<trust domain>/spire/server，出示 spiffe.brokers 中所列之仲介的 X509-SVID，並在每次呼叫時傳送 broker.spiffe.io: true。"
+  },
+  "spiffe.server.sentences.attestationUnavailable": {
+    "en": "b953ffffd6a26296",
+    "text": "此處無法使用工作負載證明：{{problem}}"
+  },
+  "spiffe.server.param.notPrivate": {
+    "en": "0355a60c0364fe04",
+    "text": "通訊端不是私有的"
+  },
+  "spiffe.workloadAttestors.unix.verifies": {
+    "en": "b33addc9d234b9f3",
+    "text": "核心為呼叫端程序回報的 uid、gid 與補充群組，以及其可執行檔的路徑與 SHA-256。"
+  },
+  "spiffe.workloadAttestors.docker.verifies": {
+    "en": "dbc4e6b46bf5f4a8",
+    "text": "呼叫端程序所在的 Docker 容器，依 Docker Engine 回報的標籤、環境與映像。"
+  },
+  "spiffe.workloadAttestors.k8s.verifies": {
+    "en": "cbb91a49fc6c5525",
+    "text": "呼叫端程序所在的 Kubernetes pod 與容器，依節點的 kubelet 所回報。"
+  },
+  "spiffe.workloadAttestors.systemd.verifies": {
+    "en": "4489245ba637b456",
+    "text": "保存呼叫端程序的 systemd 單元，依 systemd 透過 D-Bus 所回報：其 id 與其單元檔案。"
+  },
+  "spiffe.peer.notes.unreadable": {
+    "en": "6e59386d4e956f8f",
+    "text": "無法讀取對端的程序，因此只證明其 uid 與 gid"
+  },
+  "spiffe.peer.notes.otherNamespace": {
+    "en": "c35f6f344a47db55",
+    "text": "對端位於另一個 pid 命名空間（pid 0），因此只證明其 uid 與 gid——若要證明其餘部分，請共用 pid 命名空間"
+  }
+}
