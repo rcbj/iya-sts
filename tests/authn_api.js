@@ -337,7 +337,7 @@ function childMain() {
            return row.target;
          }).join(' '));
 
-    // --- 7. the old form posts ------------------------------------------------
+    // --- 7. the old form posts -----------------------------------------------
     at = begin();
     r = await screen.call({ port: port, jar: {}, method: 'POST',
       path: '/authn/login', headers: { 'content-type':

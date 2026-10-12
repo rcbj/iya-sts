@@ -168,7 +168,8 @@ async function act(o) {
   if (csrf) {
     headers['x-csrf-token'] = csrf;
   }
-  const r = await call({ port: o.port, ca: o.ca, jar: o.jar, userAgent: o.userAgent,
+  const r = await call({ port: o.port, ca: o.ca, jar: o.jar,
+    userAgent: o.userAgent,
     method: 'POST', path: o.opened.prefix + o.path, headers: headers,
     body: typeof o.body === 'string' ? o.body : JSON.stringify(o.body || {})
   });
