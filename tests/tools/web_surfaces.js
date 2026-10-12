@@ -1222,94 +1222,6 @@ function descriptionCases(root) {
 }
 
 /**
- * The TLS diagnostic pages' cases (#583): `/tls` with the truststore
- * holding anchors and empty, on the HTTPS and the plain port, with and
- * without its two acts and with a listener that did not bind, in English
- * and in French; `/tls/forwarded` believing a proxy and not, with headers
- * sent and not; what the two acts answered — anchors added, the store
- * emptied, an act refused; a view the page does not know. Every value a
- * request or a certificate chose carries markup, so the escaping is held.
- *
- * @param {string} root - the repository root
- * @returns {object[]} `[{ label, view, ctx, path }]`
- */
-function tlsCases(root) {
-  log.debug("Entering tlsCases().");
-  const ns = ['tlsPages'];
-  const en = { t: translatorFor(root, ns, ['en']), query: {}, prefix: '',
-               origin: 'https://sts.example', here: '/tls' };
-  const fr = Object.assign({}, en, { t: translatorFor(root, ns,
-                                                      ['fr', 'en']) });
-  const zh = Object.assign({}, en, { t: translatorFor(root, ns,
-                                                      ['zh-Hant', 'en']) });
-  const info = {
-    listeners: [{ url: 'https://sts.example:8081/', mode: 'optional',
-                  requiresClientCertificate: false, listening: true,
-                  what: 'The main port <asks> & requires none.' }],
-    listenError: null,
-    serverCertificate: { subject: 'CN=sts.example, O="Iya"',
-                         names: ['sts.example', '127.0.0.1'],
-                         fingerprint256: 'AB:CD', notAfter: '2027-01-01',
-                         selfSigned: true },
-    truststore: { anchors: 2, subjects: ['CN=Root <1>', 'CN=Two & co'],
-                  fingerprints: ['11:22', '33:44'],
-                  addUrl: '/tls/trust', clearUrl: '/tls/trust/clear',
-                  consoleUrl: '/admin/tls/trust' },
-    revocation: { sentence: 'Revocation is <checked> & "reported".' }
-  };
-  const bare = Object.assign({}, info, {
-    listeners: [Object.assign({}, info.listeners[0],
-                              { listening: false })],
-    listenError: 'EADDRINUSE <8443>',
-    truststore: { anchors: 0, subjects: [], fingerprints: [],
-                  addUrl: null, clearUrl: null,
-                  consoleUrl: '/admin/tls/trust' } });
-  const forwarded = { kind: 'forwarded', trustProxy: false,
-    socket: { scheme: 'https', host: 'sts.example:8081<x>',
-              encrypted: true },
-    effectiveBaseUrl: 'https://sts.example:8081',
-    what_it_means: 'global.trustProxy is OFF & "so" on.',
-    forwarding: [{ header: 'x-forwarded-proto', present: true,
-                   value: 'http<s>', what: 'The scheme the CLIENT used.' },
-                 { header: 'forwarded', present: false, value: null,
-                   what: 'RFC 7239.' }],
-    clientCertificateHeaders: { readByThisService: false,
-      seen: ['x-client-cert'], note: 'THIS SERVICE READS NONE <of these>.',
-      headers: [{ header: 'x-client-cert', present: true,
-                  value: '-----BEGIN <CERT>', what: 'A forwarded cert.' }] },
-    proxyMustSanitize: 'RFC 9700 section 2.6 & a proxy.' };
-  log.debug("Leaving tlsCases().");
-  return [
-    { label: '/tls with anchors and its acts, on HTTPS, in English',
-      path: '/tls', ctx: en, view: { kind: 'tls', https: true, info: info } },
-    { label: '/tls with anchors and its acts, on plain HTTP, in French',
-      path: '/tls', ctx: fr,
-      view: { kind: 'tls', https: false, info: info } },
-    { label: '/tls empty, no acts, a listener down, in Traditional Chinese',
-      path: '/tls', ctx: zh, view: { kind: 'tls', https: true, info: bare } },
-    { label: '/tls/forwarded believing nothing, headers sent',
-      path: '/tls/forwarded', ctx: en, view: forwarded },
-    { label: '/tls/forwarded believing a proxy, in French',
-      path: '/tls/forwarded', ctx: fr,
-      view: Object.assign({}, forwarded, { trustProxy: true,
-        socket: { scheme: 'http', host: 'x', encrypted: false } }) },
-    { label: 'anchors added', path: '/tls', ctx: fr,
-      view: { kind: 'trusted', added: 2, anchors: 3 } },
-    { label: 'one anchor added', path: '/tls', ctx: en,
-      view: { kind: 'trusted', added: 1, anchors: 1 } },
-    { label: 'the truststore emptied', path: '/tls', ctx: zh,
-      view: { kind: 'cleared', removed: 4 } },
-    { label: 'an act refused', path: '/tls', ctx: en,
-      view: { kind: 'notAdded', act: 'trust',
-              error: 'No <PEM> & "certificate" found.' } },
-    { label: 'the clear refused', path: '/tls', ctx: fr,
-      view: { kind: 'notAdded', act: 'clear', error: 'Not this origin.' } },
-    { label: 'a view the page does not know', path: '/tls/forwarded',
-      ctx: en, view: { kind: 'other<1>' } }
-  ];
-}
-
-/**
  * The SPNEGO demonstration pages' cases (#583): the advertisement with the
  * sign-in on and off, in English and in Swedish; the body of every kind of
  * answer `/spnego/protected` gives — the bare challenge, a wrong scheme, an
@@ -1467,10 +1379,6 @@ module.exports = [
     pages: 'common/web_description_pages.ts', global: 'StsDescriptions',
     bundle: 'common/description-pages.bundle.js',
     runtime: 'common/description-pages-spa.js', cases: descriptionCases },
-  { name: 'the TLS diagnostic pages',
-    pages: 'tls/web_tls_pages.ts', global: 'StsTlsPages',
-    bundle: 'tls/tls-pages.bundle.js', runtime: 'tls/tls-pages-spa.js',
-    cases: tlsCases },
   { name: 'the SPNEGO demonstration pages',
     pages: 'kerberos/web_spnego_pages.ts', global: 'StsSpnegoPages',
     bundle: 'kerberos/spnego-pages.bundle.js',

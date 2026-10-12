@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4317** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4311** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -1638,8 +1638,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0176` | A claims request sent directly to UserInfo is malformed. | invalid_request (HTTP 400, WWW-Authenticate challenge) |
 | `STS-OAUTH-0177` | The client's registered UserInfo signing or encryption could not be applied (unusable algorithm, or no usable recipient key). | server_error (HTTP 500) |
 | `STS-OAUTH-0178` *(retired)* | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. Retired by #585: a product realm has no /dpop/nonce-mode, and answers as for a path nothing is registered on. | — |
-| `STS-OAUTH-0179` | POST /dpop/nonce-mode carried something other than required=true or required=false. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0180` | The DPoP nonce setting could not be written. | server_error (HTTP 500) |
+| `STS-OAUTH-0179` *(retired)* | POST /dpop/nonce-mode carried something other than required=true or required=false. Retired by #597: the endpoint is gone, and oauth2.dpopNonceRequired is set like any other setting. | — |
+| `STS-OAUTH-0180` *(retired)* | The DPoP nonce setting could not be written through POST /dpop/nonce-mode. Retired by #597, with the endpoint. | — |
 | `STS-OAUTH-0181` | The directory threw while a person's profile claims were being read; the claims were omitted from what was issued. | — |
 | `STS-OAUTH-0182` | A token this service had just issued could not be re-read for its jti, so the delegation register records no identifier for it. | — |
 | `STS-OAUTH-0183` | The RFC 8414 signed_metadata document could not be signed; the metadata was published without it. | — |
@@ -3264,7 +3264,7 @@ Raised from: tls/.
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
 | `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
-| `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
+| `STS-TLS-0023` *(retired)* | A /tls or /tls/forwarded request carried a format parameter other than json or html. Retired by #597: both pages are gone, and Monitoring → TLS connection takes no parameter. | — |
 | `STS-TLS-0024` *(retired)* | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. Retired by #585: a product process has neither route, and answers as for a path nothing is registered on. | — |
 | `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
@@ -3290,9 +3290,9 @@ Raised from: tls/.
 | `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
 | `STS-TLS-0047` | A request asked a listener for a path of a hosted application that is not mapped to it (listeners.applications, #472): the console on a listener it was moved off, the management API on one that answers only the sign-in service. The answer names where the application is. | 404 |
 | `STS-TLS-0048` | The listener key stored for this node and algorithm unit (tls.listenerKeys) cannot be used: another algorithm, an RSA modulus other than tls.selfSignedKeyBits, or a key that will not parse. The key made at this start replaces it. | logged; a new certificate is issued over the new key, and the restart is announced (tls-certificate-changed, restarted) |
-| `STS-TLS-0049` | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. | HTTP 415, { error } |
-| `STS-TLS-0050` | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). | HTTP 403, { error } |
-| `STS-TLS-0051` | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). | HTTP 403, { error } |
+| `STS-TLS-0049` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. Retired by #597, with both routes. | — |
+| `STS-TLS-0050` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). Retired by #597, with both routes. | — |
+| `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
 
 ## STS-VC
 

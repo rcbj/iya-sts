@@ -18,7 +18,7 @@
 // `federation/web_federation_surface.ts` (#580) was the third runtime to do
 // this, each with its own copy; this is that runtime with the federation
 // taken out, for the two surfaces of #583 — the TLS diagnostic pages
-// (`tls/web_tls_surface.ts`) and the SPNEGO demonstration pages
+// (deleted by #597, now a console page) and the SPNEGO demonstration pages
 // (`kerberos/web_spnego_surface.ts`). A surface built on it:
 //
 //   * HAS NO API TO FETCH A PAGE FROM: every row of its table is the

@@ -4,26 +4,17 @@
 'use strict';
 // File: tests/diagnostic_pages.js
 // ===========================================================================
-// THE TLS AND SPNEGO DIAGNOSTIC PAGES ARE STATIC SURFACES' SHELLS; THE
-// TRUSTSTORE'S API AND THE RFC 4559 EXCHANGE ARE UNCHANGED (#583).
+// THE SPNEGO DIAGNOSTIC PAGES ARE STATIC SURFACES' SHELLS; THE RFC 4559
+// EXCHANGE IS UNCHANGED (#583). THE TLS HALF IS GONE (#597).
 //
 // The whole stack in a child process, over HTTP on 127.0.0.1:
 //
-//   1. `GET /tls`: 200, no-store, text/html; the shell — `/tls/pages.js`,
-//      the card, the `<noscript>`, no server-drawn table — under a policy
-//      that runs the script and keeps `frame-ancestors`, carrying the very
-//      object `?format=json` answers (built on the same request), whether
-//      the port is HTTPS, a CSRF token, and setting the page's cookie.
-//      `?format=json` is still that object.
-//   2. `GET /tls/forwarded` with forwarding and client-certificate headers:
-//      the shell carrying them as THIS request sent them; `?format=json`
-//      unchanged.
-//   3. THE ACTS. A script's `POST /tls/trust` (raw PEM, no Origin) and
-//      `POST /tls/trust/clear` are answered the JSON they always were; a
-//      browser's (an Origin) is refused unless it is JSON (415,
-//      STS-TLS-0049), from an origin of this service (403, STS-TLS-0050),
-//      with the page's token (403, STS-TLS-0051) — and with all three it
-//      is answered the same JSON. Neither answers a page any more.
+//   1. THE TLS PAGES ARE GONE: `/tls`, `/tls/forwarded`, `/tls/pages.js`,
+//      `POST /tls/trust` and `POST /tls/trust/clear` answer as unrouted
+//      paths in a development process (#597). What they showed is
+//      Monitoring → TLS connection, a console page over
+//      `/admin-api/tls-connection` (`tests/tls_connection_page.js`), and
+//      the truststore's doors are `/admin-api/tls/trust`'s.
 //   4. `GET /spnego`: the shell carrying the advertisement (no last
 //      exchange); `?format=json` still carries it.
 //   5. THE RFC 4559 EXCHANGE IS UNCHANGED: every answer of
@@ -35,11 +26,8 @@
 //      pre-#583 page, so each request is asked twice — with the shell
 //      module, and with it taken away — and the two snapshots must be
 //      equal while only the second body is server-drawn.
-//   6. The two scripts are served as JavaScript.
+//   6. The script is served as JavaScript.
 //   7. The renderers draw each kind of view, escaped.
-//   8. The TLS runtime draws `/tls` from its shell in the browser's
-//      language, asking for catalogs and nothing else; its "Trust these"
-//      sends JSON with the page's token, and draws what the act answered.
 // ===========================================================================
 
 const fs = require('fs');
@@ -139,7 +127,6 @@ function childMain() {
       server.listen(0, '127.0.0.1', r);
     });
     const port = server.address().port;
-    const ORIGIN = 'http://127.0.0.1:' + port;
     const jar = {};
     const call = function (method, p, headers, body) {
       return new Promise(function (resolve, reject) {
@@ -184,129 +171,20 @@ function childMain() {
       });
     };
 
-    // --- 1. /tls -------------------------------------------------------------
-    let r = await call('GET', '/tls', { cookie: '' });
-    let state = stateOf(r.text);
-    const json = await call('GET', '/tls?format=json');
-    note(r.status === 200 &&
-         /no-store/.test(String(r.headers['cache-control'])) &&
-         /^text\/html/.test(String(r.headers['content-type'])) &&
-         isShell(r, '/tls/pages.js') && policyOk(r),
-         '1a. /tls is 200, no-store, the shell under a policy that runs ' +
-         '/tls/pages.js and keeps frame-ancestors',
-         r.status + ' ' + String(r.headers['content-security-policy']) + ' ' +
-         r.text.slice(0, 300));
-    note(state && state.view && state.view.kind === 'tls' &&
-         typeof state.view.https === 'boolean' && json.json &&
-         JSON.stringify(state.view.info.serverCertificate) ===
-           JSON.stringify(json.json.serverCertificate) &&
-         JSON.stringify(state.view.info.truststore) ===
-           JSON.stringify(json.json.truststore) &&
-         JSON.stringify(state.view.info.listeners) ===
-           JSON.stringify(json.json.listeners) &&
-         typeof state.view.info.revocation.sentence === 'string' &&
-         json.json.kind === undefined,
-         '1b. its state is the object ?format=json answers, which is ' +
-         'unchanged', JSON.stringify(state && state.view.info.truststore));
-    note(state && /^[A-Za-z0-9_-]{20,}$/.test(String(state.csrf)) &&
-         (r.headers['set-cookie'] || []).some(function (c) {
-           return /^sts_tls_page=[A-Za-z0-9_-]{40,};.*HttpOnly.*SameSite=Strict/
-             .test(c);
-         }),
-         '1c. a development process\'s /tls carries a token, bound to the ' +
-         'page\'s own HttpOnly, SameSite=Strict cookie',
-         JSON.stringify(r.headers['set-cookie']));
-    const csrf = state ? state.csrf : '';
-
-    // --- 2. /tls/forwarded ---------------------------------------------------
-    r = await call('GET', '/tls/forwarded',
-                   { 'x-forwarded-proto': 'https<x>',
-                     'x-client-cert': 'forged' });
-    state = stateOf(r.text);
-    const fjson = await call('GET', '/tls/forwarded?format=json',
-                             { 'x-forwarded-proto': 'https<x>' });
-    note(r.status === 200 && isShell(r, '/tls/pages.js') && policyOk(r) &&
-         state && state.view.kind === 'forwarded' &&
-         state.view.forwarding[0].value === 'https<x>' &&
-         state.view.clientCertificateHeaders.seen.indexOf('x-client-cert') >=
-           0 && state.csrf === undefined &&
-         fjson.json && fjson.json.forwarding[0].value === 'https<x>' &&
-         fjson.json.kind === undefined,
-         '2. /tls/forwarded is the shell carrying the headers this request ' +
-         'sent, with no token; ?format=json is unchanged',
-         JSON.stringify(state && state.view.forwarding));
-
-    // --- 3. the acts ---------------------------------------------------------
-    const pem = (await call('GET', '/tls/server-certificate')).text
-      .split('-----END CERTIFICATE-----')[0] + '-----END CERTIFICATE-----\n';
-    r = await call('POST', '/tls/trust', { 'content-type': 'text/plain' },
-                   pem);
-    note(r.status === 200 && r.json && typeof r.json.added === 'number' &&
-         Array.isArray(r.json.subjects) && typeof r.json.note === 'string',
-         '3a. a script\'s raw PEM is answered the JSON it always was',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/x-www-form-urlencoded',
-                     accept: 'text/html', origin: ORIGIN },
-                   'certificates=' + encodeURIComponent(pem));
-    note(r.status === 415 && r.json && /JSON/.test(r.json.error) &&
-         !/<html/i.test(r.text),
-         '3b. a browser\'s form is refused, 415, and answers no page',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/json',
-                     origin: 'https://elsewhere.example',
-                     'x-csrf-token': csrf },
-                   JSON.stringify({ certificates: pem }));
-    note(r.status === 403 && r.json && /origin/.test(r.json.error),
-         '3c. a browser\'s act from another origin is refused, 403',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/json', origin: ORIGIN },
-                   JSON.stringify({ certificates: pem }));
-    note(r.status === 403 && r.json && /X-CSRF-Token/.test(r.json.error),
-         '3d. a browser\'s act without the page\'s token is refused, 403',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/json', origin: ORIGIN,
-                     'x-csrf-token': csrf, cookie: 'sts_tls_page=' +
-                     'A'.repeat(43) },
-                   JSON.stringify({ certificates: pem }));
-    note(r.status === 403,
-         '3e. the token of another browser\'s cookie is refused, 403',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/json', origin: ORIGIN,
-                     'x-csrf-token': csrf },
-                   JSON.stringify({ certificates: pem }));
-    note(r.status === 200 && r.json && typeof r.json.anchors === 'number' &&
-         r.json.anchors >= 1,
-         '3f. a bound act is answered the same JSON',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust',
-                   { 'content-type': 'application/json', origin: ORIGIN,
-                     'x-csrf-token': csrf },
-                   JSON.stringify({ certificates: 'not a certificate' }));
-    note(r.status === 400 && r.json && typeof r.json.error === 'string' &&
-         !/<html/i.test(r.text),
-         '3g. a refused act is its 400 JSON, and no page',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust/clear',
-                   { 'content-type': 'application/json', origin: ORIGIN },
-                   '{}');
-    note(r.status === 403, '3h. the clear is bound too',
-         r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust/clear',
-                   { 'content-type': 'application/json', origin: ORIGIN,
-                     'x-csrf-token': csrf, accept: 'text/html' }, '{}');
-    note(r.status === 200 && r.json && typeof r.json.removed === 'number' &&
-         r.json.anchors === 0,
-         '3i. a bound clear is answered the JSON it always was, Accept ' +
-         'text/html or not', r.status + ' ' + r.text.slice(0, 200));
-    r = await call('POST', '/tls/trust/clear', { cookie: '' }, '');
-    note(r.status === 200 && r.json && r.json.anchors === 0,
-         '3j. a script\'s clear (no Origin) is answered as it always was',
-         r.status + ' ' + r.text.slice(0, 200));
+    // --- 1. the TLS pages are gone (#597) -----------------------------------
+    let r = null;
+    let state = null;
+    for (const asked of [['GET', '/tls'], ['GET', '/tls/forwarded'],
+                         ['GET', '/tls/pages.js'], ['POST', '/tls/trust'],
+                         ['POST', '/tls/trust/clear']]) {
+      r = await call(asked[0], asked[1], { 'content-type': 'text/plain' },
+                     '');
+      note(r.status === 404 &&
+           new RegExp('Cannot ' + asked[0] + ' ' +
+                      asked[1].replace(/\//g, '\\/')).test(r.text),
+           '1. ' + asked.join(' ') + ' answers as an unrouted path in ' +
+           'development', r.status + ' ' + r.text.slice(0, 120));
+    }
 
     // --- 4. /spnego ----------------------------------------------------------
     r = await call('GET', '/spnego');
@@ -422,7 +300,7 @@ function childMain() {
     pagesModule.exports = realExports;
 
     // --- 6. the scripts ------------------------------------------------------
-    for (const p of ['/tls/pages.js', '/spnego/pages.js']) {
+    for (const p of ['/spnego/pages.js']) {
       r = await call('GET', p);
       note(r.status === 200 &&
            /javascript/.test(String(r.headers['content-type'])) &&
@@ -431,33 +309,8 @@ function childMain() {
     }
 
     // --- 7. the renderers ----------------------------------------------------
-    const tlsViews = require(ROOT_DIR + '/tls/web_tls_views');
     const spnegoViews = require(ROOT_DIR + '/kerberos/web_spnego_views');
-    const tlsT = translator(['tlsPages'], ['en']);
     const spT = translator(['spnegoPages'], ['en']);
-    r = await call('GET', '/tls');
-    const tlsState = stateOf(r.text);
-    const drawn = tlsViews.render(tlsState.view, { t: tlsT });
-    note(drawn.indexOf('<h1>A TLS endpoint lives here</h1>') === 0 &&
-         drawn.indexOf('action="/tls/trust"') > 0 &&
-         drawn.indexOf('action="/tls/trust/clear"') > 0 &&
-         drawn.indexOf('<script') < 0,
-         '7a. /tls draws from its state, with its two acts',
-         drawn.slice(0, 300));
-    const noActs = JSON.parse(JSON.stringify(tlsState.view));
-    noActs.info.truststore.addUrl = null;
-    noActs.info.truststore.clearUrl = null;
-    note(tlsViews.render(noActs, { t: tlsT }).indexOf('<form') < 0,
-         '7b. without the acts (a product process, #585) it draws no form');
-    const refused = tlsViews.render({ kind: 'notAdded', act: 'trust',
-                                      error: 'E <1> & "2"' }, { t: tlsT });
-    note(refused.indexOf('<h1>Nothing was added</h1>') === 0 &&
-         refused.indexOf('E &lt;1&gt; &amp; &quot;2&quot;') > 0,
-         '7c. a refused act: English, escaped', refused);
-    const added = tlsViews.render({ kind: 'trusted', added: 1, anchors: 2 },
-                                  { t: tlsT });
-    note(added.indexOf('<h1>1 anchor added</h1>') === 0 &&
-         /2 anchors/.test(added), '7d. anchors added, pluralised', added);
     const verdict = spnegoViews.render({ kind: 'verdict', ok: false,
       code: 'wrong-scheme', scheme: 'Basic<x>', spn: 's', reason: '',
       checks: null }, { t: spT });
@@ -470,98 +323,6 @@ function childMain() {
          reject.indexOf('id="spnego-reason">R &lt;1&gt;</div>') > 0,
          '7f. a code no page knows is the REJECTED page, with its reason',
          reject);
-
-    // --- 8. the TLS runtime --------------------------------------------------
-    r = await call('GET', '/tls');
-    const attrs = {};
-    const tag = /<html([^>]*)>/.exec(r.text)[1];
-    tag.replace(/ ([a-z-]+)="([^"]*)"/g, function (all, n, v) {
-      attrs[n] = v.replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-      return all;
-    });
-    const asked = [];
-    const sent = [];
-    const loc = new URL(ORIGIN + '/tls');
-    const env = {
-      location: { pathname: loc.pathname, search: loc.search, hash: '',
-                  href: loc.href, origin: ORIGIN,
-                  assign: function () {
-                    return undefined;
-                  } },
-      history: { pushState: function () {
-        return undefined;
-      }, replaceState: function () {
-        return undefined;
-      } },
-      document: {
-        title: '', body: { innerHTML: '' },
-        documentElement: {
-          getAttribute: function (n) {
-            return n in attrs ? attrs[n] : null;
-          },
-          setAttribute: function (n, v) {
-            attrs[n] = v;
-          }
-        },
-        addEventListener: function () {
-          return undefined;
-        }
-      },
-      navigator: { languages: ['fr', 'en'] },
-      fetch: function (url, init) {
-        const u = new URL(url);
-        asked.push(u.pathname);
-        const headers = Object.assign({}, (init && init.headers) || {});
-        if (init && init.method === 'POST') {
-          sent.push({ path: u.pathname, headers: headers,
-                      body: init.body });
-          headers.origin = ORIGIN;
-          headers.cookie = 'sts_tls_page=' + jar.sts_tls_page;
-        }
-        return fetch(ORIGIN + u.pathname + u.search,
-                     Object.assign({}, init || {}, { headers: headers }));
-      },
-      formDataOf: function (form) {
-        return form.fields;
-      }
-    };
-    const Surface = require(ROOT_DIR + '/tls/web_tls_surface');
-    const surface = new Surface(env);
-    await surface.route();
-    const page = env.document.body.innerHTML;
-    note(/^<div class="card wide diag tls">/.test(page) &&
-         page.indexOf('Un point de terminaison TLS se trouve ici') > 0 &&
-         env.document.title === 'Point de terminaison TLS' &&
-         asked.every(function (p) {
-           return /^\/web\/locales\//.test(p);
-         }) && asked.some(function (p) {
-           return /^\/web\/locales\/tlsPages\//.test(p);
-         }),
-         '8a. the runtime draws /tls from the shell\'s state, in the ' +
-         'browser\'s language, asking for catalogs and nothing else',
-         JSON.stringify(asked) + ' ' + env.document.title + ' ' +
-         page.slice(0, 300));
-    const form = { fields: { certificates: pem },
-                   getAttribute: function (n) {
-                     return n === 'action' ? '/tls/trust' : null;
-                   } };
-    const realFields = surface.formFields;
-    surface.formFields = function () {
-      return { certificates: pem };
-    };
-    await surface.submit(form, null);
-    surface.formFields = realFields;
-    const after = env.document.body.innerHTML;
-    note(sent.length === 1 && sent[0].path === '/tls/trust' &&
-         sent[0].headers['Content-Type'] === 'application/json' &&
-         sent[0].headers['X-CSRF-Token'] === tlsState.csrf &&
-         JSON.parse(sent[0].body).certificates === pem &&
-         /ancre ajoutée|ancres ajoutées/.test(after),
-         '8b. "Trust these" sends JSON with the page\'s token and draws ' +
-         'what the act answered', JSON.stringify(sent.map(function (s) {
-           return { path: s.path, headers: s.headers };
-         })) + ' ' + after.slice(0, 300));
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
@@ -623,8 +384,8 @@ async function run(t) {
 
 module.exports = {
   name: 'diagnostic_pages',
-  describe: 'the TLS and SPNEGO diagnostic pages are static surfaces\' ' +
-            'shells; the truststore\'s acts answer JSON and a browser\'s is ' +
-            'bound; the RFC 4559 exchange is unchanged (#583)',
+  describe: 'the SPNEGO diagnostic pages are static surfaces\' shells and ' +
+            'the RFC 4559 exchange is unchanged (#583); the TLS pages and ' +
+            'the truststore\'s open acts are gone (#597)',
   run: run
 };
