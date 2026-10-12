@@ -303,6 +303,14 @@ at a route that reads no certificate. `GET /tls` describes all of it — what th
 service presents, what it trusts, the protocol floor, the revocation policy —
 and takes `?format=json`.
 
+**`GET /tls` and `GET /tls/forwarded` run as a script in your browser (#583).**
+Each answers a short page that loads `/tls/pages.js`, which draws it in the
+browser's language from what the page carries — the very object
+`?format=json` answers, built on the request that asked for the page, so
+`/tls/forwarded` still shows the headers *your* request arrived with. A browser
+with scripts blocked sees only a notice saying so; `?format=json` needs no
+script. Both pages are development-only (#585), and so is the script.
+
 What happens to a certificate that is presented:
 
 * **The handshake always completes.** A certificate that verifies against the
@@ -394,6 +402,12 @@ bake it in. `POST /tls/trust` takes one or more PEM certificates (raw, or as the
 `certificates` field of a form or JSON body) and applies them to the listener;
 existing connections keep the truststore they were made under, and the next
 handshake is judged against the new one. `POST /tls/trust/clear` empties it.
+Both answer JSON, and only JSON since #583. **A request that carries an
+`Origin` — every browser's does — is held to the `/tls` page**: it must be JSON,
+from an origin this service answers on, with the `X-CSRF-Token` the page
+carries (the token of the page's own `sts_tls_page` cookie); otherwise it is
+refused (415 or 403). A script that sends no `Origin`, such as `curl`, is
+answered exactly as before.
 "Empty" is meant literally: node's bundled public root store is **not** used,
 since a public root has no business verifying a client certificate from a
 private CA, so the starting state is "nothing verifies". With HTTPS on, the
