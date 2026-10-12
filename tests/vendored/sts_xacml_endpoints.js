@@ -625,7 +625,10 @@ async function theSurfaceDescribesItself() {
     // SINCE #584 THE PAGE IS DRAWN IN THE BROWSER: the shell loads the
     // description pages' script from this family's own path and carries
     // the document in data-sts-state, so what it says is asserted there.
-    assert.ok(html.text.indexOf('<script src="/xacml/description.js"') > 0,
+    // A realm's page names its script under the realm's prefix: app.js
+    // rebases root-relative addresses onto it.
+    assert.ok(/<script src="(?:\/realm\/[^/"]+)?\/xacml\/description\.js"/
+      .test(html.text),
       "GET /xacml should be the description pages' shell; it is " +
       html.text.slice(0, 200));
     const m = /data-sts-state="([^"]*)"/.exec(html.text);
