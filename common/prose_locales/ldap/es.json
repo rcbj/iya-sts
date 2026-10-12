@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "todo bind tiene éxito — cualquier DN, cualquier contraseña, incluido uno anónimo — excepto la contraseña literal \"invalid\", que se responde con LDAP_INVALID_CREDENTIALS (49) para que una prueba negativa tenga algo con lo que fallar"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "solo una persona se enlaza, solo en LDAPS 636, y la contraseña se verifica contra el userPassword con hash de su entrada. Un bind anónimo (48), cualquier bind en el 389 (13), una contraseña vacía (53), un DN que no es una persona (49) y un DN o una dirección que ha superado su límite de binds fallidos (53) se rechazan antes de leer ninguna contraseña; una contraseña incorrecta, y la contraseña literal \"invalid\", son LDAP_INVALID_CREDENTIALS (49)"
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "ninguno. No se impone ningún objectClass y ningún atributo se comprueba contra una sintaxis, así que una entrada puede llevar los atributos que envíe un cliente. Un directorio real rechazaría la mayor parte de eso."
@@ -1212,8 +1216,8 @@
     "text": "CÓMO SE LLAMA A SÍ MISMO UN SOCIO DE FEDERACIÓN — el entityID de un proveedor de identidad externo, o su identificador de emisor cuando la relación habla OpenID Connect. LA RELACIÓN NO ESTÁ AQUÍ: los endpoints, el certificado y la asignación de atributos están bajo ou=federations y son contra lo que realmente verifica /federation/acs/{id} (véase federation/CLAUDE.md). Esta entrada es el socio como PARTE, y este atributo es el nombre por el que se le conoce — así que un valor aquí no federa con nadie, que es el único lugar de este servicio donde esa frase tiene peso."
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "EL DN CON EL QUE SE ENLAZA UN CLIENTE DE DIRECTORIO en 389 o LDAPS 636. TODO BIND AQUÍ TIENE ÉXITO — cualquier DN, cualquier contraseña, anónimo —, así que nada escribirá nunca esto y nada lo leerá nunca; es donde un operador anota qué credencial se espera que use una aplicación, junto al resto de lo que es esa aplicación."
+    "en": "f1e68cbe5820e3d4",
+    "text": "EL DN CON EL QUE SE ENLAZA UN CLIENTE DE DIRECTORIO en 389 o LDAPS 636. Nada escribirá nunca esto y nada lo leerá nunca: en modo de desarrollo TODO BIND TIENE ÉXITO — cualquier DN, cualquier contraseña, anónimo —, y en modo producto solo se enlaza una persona, así que una aplicación lee el directorio a través de SCIM. Es donde un operador anota qué credencial se espera que use una aplicación, junto al resto de lo que es esa aplicación."
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",

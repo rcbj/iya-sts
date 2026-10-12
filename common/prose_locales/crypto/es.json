@@ -552,12 +552,12 @@
     "text": "Dónde residen las claves privadas de las CA"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "Nada. El portal no emite ningún token, ninguna aserción ni ningún certificado — cambia credenciales en lugar de acuñarlas."
+    "en": "9febb36f585ca159",
+    "text": "Nada de lo que emite. El portal no acuña ningún token, ninguna aserción ni ningún certificado — cambia credenciales en lugar de acuñarlas. Su runtime, en el navegador, firma una sola cosa: una prueba DPoP de RFC 9449 (ES256) en cada llamada a `/account-api` y en el endpoint de token, con una clave P-256 que WebCrypto generó no extraíble para esa carga de página."
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "UNA CONTRASEÑA PRESENTADA, contra el hash scrypt de la propia entrada de la persona, y un TOKEN DE ACTIVACIÓN contra el hash scrypt del que se emitió. Ambas comparaciones son de tiempo constante a través de common/crypto.js — un retorno anticipado byte a byte en cualquiera de ellas es un oráculo de tiempo. También se verifica una aserción WebAuthn, pero lo hace authn/webauthn.js, que es donde vive la ceremonia."
+    "en": "8a095d27cbed0ab1",
+    "text": "CADA LLAMADA A `/account-api`, en su puerta (account-api/account_api.ts): el token de acceso es un `at+jwt` de RFC 9068 verificado bajo la clave de firma de ESTE dominio (cualquier generación), con su emisor y su audiencia comprobados, y su vinculación DPoP cotejada con una prueba que la puerta verifica — nunca se acepta como Bearer. La persona que nombra es la única cuenta sobre la que actúa. Además, una CONTRASEÑA PRESENTADA (un cambio vuelve a probar la actual) contra el hash scrypt de la propia entrada de la persona, y el token de un enlace de ACTIVACIÓN o de RESTABLECIMIENTO DE CONTRASEÑA contra el hash scrypt del que se emitió, cada uno comparado en tiempo constante a través de common/crypto.js. El runtime verifica una respuesta de autorización JARM contra el JWKS del dominio cuando el dominio envía una. Una aserción WebAuthn la verifica authn/webauthn.js; el runtime solo ejecuta la ceremonia."
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "Nada."
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) tanto para la contraseña como para el token de activación, cada uno con 16 bytes aleatorios de sal, almacenado como `$scrypt$N$r$p$salt$hash` para que el coste pueda elevarse más adelante sin invalidar lo que ya está almacenado. **NO es un digest**: una contraseña tiene poca entropía y un hash rápido sobre ella está a una lista de palabras de ser la contraseña. SHA-256 bajo un HMAC para el token CSRF, que es otro trabajo — la autenticidad de un formulario, no la protección de un secreto en reposo."
+    "en": "2955567f83fe0eee",
+    "text": "SCRYPT (RFC 7914) para la contraseña y para el token de un enlace de activación o de restablecimiento, cada uno con 16 bytes aleatorios de sal, con el coste que nombran security.passwordHashLogN, passwordHashR y passwordHashP (N=2^15, r=8, p=1 por defecto), almacenado como `$scrypt$N$r$p$salt$hash` para que el coste pueda elevarse más adelante sin invalidar lo que ya está almacenado. **NO es un digest**: una contraseña tiene poca entropía y un hash rápido sobre ella está a una lista de palabras de ser la contraseña. SHA-256 en el navegador para el desafío PKCE S256 y el `ath` de la prueba DPoP, que son otro trabajo — vincular una solicitud a un inicio de sesión y una prueba a un token, no proteger un secreto en reposo."
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "Ninguna propia. El token CSRF es un HMAC-SHA256 bajo una clave generada por proceso y deliberadamente NO persistida — un token CSRF solo tiene sentido durante la vida de una sesión, una sesión no sobrevive a un reinicio, así que una clave que sí sobreviviera no protegería nada y sería un secreto más en reposo."
+    "en": "7a356445be1d2a7b",
+    "text": "Ninguna en el servidor. El par de claves DPoP vive en el navegador: P-256, generado por WebCrypto con su mitad privada no extraíble, guardado en memoria y desaparecido con la página, y cada token que se emite al portal está vinculado a su huella. Los tokens en sí los firma el servidor de autorización del dominio (la fila OAuth2 / OIDC). Ya no hay clave CSRF: la clave HMAC por proceso desapareció con el token CSRF y la cookie de sesión que protegía (#568)."
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "Contraseña y token de activación en reposo"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "Contraseña y token de enlace en reposo"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt, N=32768, r=8, p=1, clave de 32 bytes, sal aleatoria de 16 bytes"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt, N=32768, r=8, p=1 por defecto (security.passwordHash*), clave de 32 bytes, sal aleatoria de 16 bytes"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "igualdad en tiempo constante"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "Token CSRF"
+    "en": "e9ec660a650f5513",
+    "text": "Token de acceso en /account-api"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "HMAC-SHA256 sobre el id de sesión bajo una clave por proceso"
+    "en": "87be1920112e9844",
+    "text": "at+jwt de RFC 9068, verificado bajo la clave de firma de este dominio, vinculado a DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "Prueba DPoP (navegador)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 con una clave P-256 de WebCrypto no extraíble por cada carga de página"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "Nada. No ACUÑA ninguna credencial — es la única familia aquí que solo las comprueba."
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "Una credencial en cualquiera de los seis esquemas que nombra la sección 2 de RFC 7644, y DOS DE LOS SEIS SE VERIFICAN REALMENTE: HTTP Digest calcula la respuesta sobre la contraseña configurada, y una firma HOBA se comprueba contra la clave pública que registró el cliente. Los otros cuatro son torniquetes — cualquier contraseña salvo una pasa Basic, y los de OAuth solo necesitan un token emitido por este servicio que lleve `scim:read` o `scim:write`."
+    "en": "90704e4d59344987",
+    "text": "Una credencial en cualquiera de los seis esquemas que nombra la sección 2 de RFC 7644. Los de OAuth necesitan un token emitido por este servicio que lleve `scim:read` o `scim:write`, y una firma HOBA se comprueba contra la clave pública que registró el cliente. En modo DESARROLLO, HTTP Digest calcula la respuesta sobre la única contraseña configurada y cualquier contraseña salvo una pasa Basic; en modo PRODUCTO, Basic verifica la contraseña contra el `userPassword` con hash de la persona y Digest no se ofrece."
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

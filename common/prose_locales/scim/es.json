@@ -268,16 +268,16 @@
     "text": "El token de prueba de posesión que nombra la sección 2 de RFC 7644, en la forma que este servicio ya emite: un token de acceso vinculado a una clave (cnf.jkt), presentado como \"Authorization: DPoP <token>\" con una prueba DPoP reciente sobre el método y la URL. Un token vinculado a certificado de RFC 8705 es la otra forma de prueba de posesión y se respeta en la misma ruta. Lo maneja la misma comprobación que la fila Bearer — son una credencial con dos formas de tenerla — y se lista por separado porque un cliente que lee este documento tiene derecho a saber que se entiende la forma vinculada."
   },
   "auth.schemes.basic": {
-    "en": "82a6bd8a34b144f8",
-    "text": "Cualquier nombre de usuario y cualquier contraseña, exactamente como aquí tiene éxito todo bind LDAP — con la única excepción de la contraseña \"invalid\", que se rechaza para que un 401 siga siendo alcanzable. La sección 2 de RFC 7644 DESACONSEJA este esquema, con esas palabras, porque se basa en un secreto simétrico relativamente estático; se implementa de todos modos porque es lo que un cliente de aprovisionamiento encuentra con más frecuencia y vale la pena poder ejecutar su manejo del 401. No se comprueba ninguna contraseña, así que lo que esto autentica es un NOMBRE, y ese nombre es lo que registra el log de auditoría."
+    "en": "7292c47a83a49365",
+    "text": "En modo producto la contraseña se verifica contra el userPassword con hash de la persona, y a una persona que tiene o debe tener un segundo factor se le rechaza su propia contraseña y usa una contraseña de aplicación. En modo de desarrollo pasan cualquier nombre de usuario y cualquier contraseña, exactamente como allí tiene éxito todo bind LDAP — con la única excepción de la contraseña \"invalid\", que se rechaza para que un 401 siga siendo alcanzable —, así que lo que esto autentica allí es un NOMBRE, y ese nombre es lo que registra el log de auditoría. La sección 2 de RFC 7644 DESACONSEJA este esquema, con esas palabras, porque se basa en un secreto simétrico relativamente estático; se implementa de todos modos porque es lo que un cliente de aprovisionamiento encuentra con más frecuencia y vale la pena poder ejecutar su gestión del 401."
   },
   "auth.schemes.digest": {
-    "en": "3bdbbdcf677299f6",
-    "text": "El único esquema aquí en el que la contraseña sí se comprueba, y no puede ser de otro modo: la respuesta es un hash sobre la contraseña, así que un servidor que aceptara cualquier cosa no estaría realizando el intercambio. Por eso hace lo que hace Kerberos por la misma razón — CUALQUIER nombre de usuario se autentica y todos comparten una contraseña (scim.digestPassword). Se ofrecen SHA-256 y SHA-512-256, en ese orden, con las variantes -sess, y MD5 al final solo donde scim.digestMd5 lo activa; qop es auth. Una contraseña incorrecta es un 401, un nonce caducado es un 401 con stale=true, y un contador de nonce reproducido es un 401 — tres casos negativos que de otro modo son difíciles de provocar."
+    "en": "ab6220dc6edc03b2",
+    "text": "En modo producto este esquema NO se ofrece, y se rechaza: una contraseña se almacena como un hash scrypt con sal, que no puede responder a un intercambio de RFC 7616. En modo de desarrollo es el único esquema en el que la contraseña sí se comprueba, y no puede ser de otro modo: la respuesta es un hash sobre la contraseña, así que un servidor que aceptara cualquier cosa no estaría realizando el intercambio. Por eso hace lo que hace Kerberos por la misma razón — CUALQUIER nombre de usuario se autentica y todos comparten una contraseña (scim.digestPassword). Se ofrecen SHA-256 y SHA-512-256, en ese orden, con las variantes -sess, y MD5 al final solo donde scim.digestMd5 lo activa; qop es auth. Una contraseña incorrecta es un 401, un nonce caducado es un 401 con stale=true, y un contador de nonce reproducido es un 401 — tres casos negativos que de otro modo son difíciles de provocar."
   },
   "auth.schemes.hoba": {
-    "en": "3a4aaa2bb134b547",
-    "text": "El esquema basado en firmas que nombra la sección 2 de RFC 7644, y el único de los seis sin ninguna contraseña. Un cliente registra una clave pública en /.well-known/hoba/register — cualquiera puede, este servicio registra a todos — y luego firma el challenge del servidor junto con el origen, el realm y su propio key id y nonce. LA FIRMA SE VERIFICA DE VERDAD, por la misma razón por la que la contraseña de Digest se comprueba de verdad: una comprobación de firma que deja pasar cualquier cosa no es el esquema. Solo RSA con SHA-256 (algoritmo 0)."
+    "en": "c1ed97fe4e57dbcb",
+    "text": "El esquema basado en firmas que nombra la sección 2 de RFC 7644, y el único de los seis sin ninguna contraseña. Un cliente registra una clave pública en /.well-known/hoba/register — en modo de desarrollo cualquiera puede, para cualquier nombre; en modo producto solo puede el propietario con sesión iniciada de una cuenta existente, y un registro nunca crea una cuenta — y luego firma el desafío del servidor junto con el origen, el dominio y su propio key id y nonce. LA FIRMA SE VERIFICA DE VERDAD, en ambos modos: una comprobación de firma que deja pasar cualquier cosa no es el esquema. Solo RSA con SHA-256 (algoritmo 0)."
   },
   "auth.schemes.cookie": {
     "en": "b558e5c68d9956f1",
@@ -296,8 +296,8 @@
     "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y un certificado de cliente no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba el manejo de ámbitos desactiva los otros cinco."
   },
   "auth.policy.rfc": {
-    "en": "aa742405b5e3b449",
-    "text": "La sección 2 de RFC 7644 exige que un proveedor PUEDA asignar un cliente autenticado a una política de control de acceso. Esta es esa política. Son dos líneas porque este servicio no autentica a nadie en el sentido que importa — es un torniquete, no una cerradura."
+    "en": "01badc7fa9089572",
+    "text": "La sección 2 de RFC 7644 exige que un proveedor PUEDA asignar un cliente autenticado a una política de control de acceso. Esta es esa política. Son dos líneas porque en modo de desarrollo este servicio no autentica a nadie en el sentido que importa — es un torniquete, no una cerradura —, y en modo producto, donde se verifica cada credencial, lo que puede hacer un llamante verificado siguen siendo estas dos líneas."
   },
   "auth.policy.tied": {
     "en": "695420f96b495164",
