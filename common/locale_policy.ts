@@ -70,6 +70,9 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import i18n = require('./i18n');
 import InstanceSlot = require('./instance_slot');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
 
 const { log } = helpers;
 
@@ -146,6 +149,26 @@ const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /**
  * The selector a named profile carries, stored beside its rows.
  */
+// ---------------------------------------------------------------------------
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
+// filled there with `ServerProse.fill()` and matched by
+// `common/server_prose.ts` to refill in a console reader's language. A
+// `param.` key is a phrase that only ever stands inside another sentence.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  drawnIn: 'a page whose reader names no language a catalog answers is ' +
+    'drawn in {{tag}}',
+  drawnInUncatalogued: 'a page whose reader names no language a catalog ' +
+    'answers is drawn in {{tag}} — which no catalog answers, so its words ' +
+    'are English and its dates and numbers are formatted for {{tag}}',
+  populated: 'a person created without a preferredLanguage is given {{tag}}',
+  notPopulated: 'a person created without a preferredLanguage is given none',
+  mail: 'mail to a person whose entry names no language is written in ' +
+    '{{tag}}',
+  appliesTo: 'applies to {{list}}',
+  'param.noApplication': 'no application'
+});
+
 const SELECTORS = [
   { key: 'selectApplications', attribute: 'stsLocaleSelectApplication',
     what: 'The applications (identifier or client_id) a named locale ' +
@@ -264,6 +287,10 @@ class LocalePolicy {
    * The directory schema of `ou=localePolicies`.
    */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -673,19 +700,20 @@ class LocalePolicy {
     log.debug("Entering LocalePolicy.describe().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     const tag = String(rules.defaultLocale);
+    const fill = serverProse.fill;
     const out = [
-      'a page whose reader names no language a catalog answers is drawn in ' +
-        tag + (i18n.answers(tag) ? ''
-          : ' — which no catalog answers, so its words are English and its ' +
-            'dates and numbers are formatted for ' + tag),
+      fill(i18n.answers(tag) ? SENTENCES.drawnIn
+                             : SENTENCES.drawnInUncatalogued, { tag: tag }),
       rules.populatePreferredLanguage === true
-        ? 'a person created without a preferredLanguage is given ' + tag
-        : 'a person created without a preferredLanguage is given none',
-      'mail to a person whose entry names no language is written in ' + tag
+        ? fill(SENTENCES.populated, { tag: tag })
+        : SENTENCES.notPopulated,
+      fill(SENTENCES.mail, { tag: tag })
     ];
     if (rules.name !== DEFAULT_PROFILE) {
-      out.unshift('applies to ' + (rules.selectApplications.length
-        ? rules.selectApplications.join(', ') : 'no application'));
+      out.unshift(fill(SENTENCES.appliesTo, {
+        list: rules.selectApplications.length
+          ? rules.selectApplications.join(', ')
+          : SENTENCES['param.noApplication'] }));
     }
     log.debug("Leaving LocalePolicy.describe().");
     return out;
@@ -945,6 +973,7 @@ export = {
   FIELD_BY_KEY: LocalePolicy.FIELD_BY_KEY,
   SELECTORS: LocalePolicy.SELECTORS,
   SCHEMA: LocalePolicy.SCHEMA,
+  SENTENCES: LocalePolicy.SENTENCES,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),

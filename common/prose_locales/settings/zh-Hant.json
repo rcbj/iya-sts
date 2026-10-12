@@ -3645,7 +3645,7 @@
   },
   "oauth2.parMaxRequests|description": {
     "en": "02dab22cd9cd4862",
-    "text": "一個信任領域同時最多保存的推送授權要求數。會先清除已過期的；**儲存區已滿時會拒絕下一個推送（503 temporarily_unavailable），而不是遺忘一個仍有效的推送**，因為在某人登入期間被遺忘的 request_uri，會讓一次登入在對方毫無過失的情況下失敗。"
+    "text": "一個信任領域同時最多保存的推送授權要求數。會先清除已過期的；儲存區已滿時會拒絕下一個推送（503 temporarily_unavailable），而不是遺忘一個仍有效的推送，因為在某人登入期間被遺忘的 request_uri，會讓一次登入在對方毫無過失的情況下失敗。"
   },
   "oauth2.parMaxBodyBytes|label": {
     "en": "39b8479989e4185d",

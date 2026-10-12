@@ -1,0 +1,1426 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "密碼原則"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "此領域中「下一個」設定的密碼，不影響任何已儲存的密碼"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "內建預設值"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "密碼原則設定檔"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "最小長度"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "個字元"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "本服務會設定的最短密碼，以字元計算（Unicode 字碼指標，因此一個表情符號算一個）。此屬性來自 draft-behera-ldap-password-policy。預設為十二；NIST SP 800-63B 要求至少 8 個，若密碼是唯一因素則為 15 個。"
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "不得重複使用的先前密碼數"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "個密碼"
+  },
+  "password.FIELDS.history.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "記住並拒絕某人多少個「先前」的密碼。只要此值大於 0，目前的密碼也一律被拒絕，因此 5 表示新密碼不得是最近六個中的任何一個。0 會關閉此規則。這是該草案的屬性，含義與草案相同。每個記住的密碼都以其原本儲存時的 scrypt 雜湊保存在該人自身項目的 pwdHistory 中，檢查新密碼時每記住一個密碼就需一次雜湊比對。"
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "最少符號數"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "個符號"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "密碼必須包含多少個既非字母、數字也非空白的字元。0 會關閉此規則。"
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "要求大寫字母"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "密碼是否必須包含至少一個大寫字母（任何文字系統皆可）。"
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "要求數字"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "密碼是否必須包含至少一個十進位數字。"
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "產生的密碼長度"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "個字元"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新使用者、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "draft-behera-ldap-password-policy 用於密碼原則項目的類別。`pwdAttribute` 指名原則所管轄的屬性，在此一律是 `userPassword`。"
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4daf3a60dd76691a",
+    "text": "本服務自己的類別，承載草案沒有屬性可表示的組成規則與產生長度。項目以「設定檔」命名（`cn=default`）。"
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "此原則管轄的屬性：`userPassword`。"
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "本服務會設定的最短密碼，以字元計算（Unicode 字碼指標，因此一個表情符號算一個）。此屬性來自 draft-behera-ldap-password-policy。預設為十二；NIST SP 800-63B 要求至少 8 個，若密碼是唯一因素則為 15 個。"
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "記住並拒絕某人多少個「先前」的密碼。只要此值大於 0，目前的密碼也一律被拒絕，因此 5 表示新密碼不得是最近六個中的任何一個。0 會關閉此規則。這是該草案的屬性，含義與草案相同。每個記住的密碼都以其原本儲存時的 scrypt 雜湊保存在該人自身項目的 pwdHistory 中，檢查新密碼時每記住一個密碼就需一次雜湊比對。"
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "密碼必須包含多少個既非字母、數字也非空白的字元。0 會關閉此規則。"
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "密碼是否必須包含至少一個大寫字母（任何文字系統皆可）。"
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "密碼是否必須包含至少一個十進位數字。"
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新使用者、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "a057113a3f0da3b5",
+    "text": "每個記住的先前密碼一個值，採用草案的形式 `time#syntaxOID#length#data`——data 是該密碼儲存時的 scrypt 雜湊，絕不是密碼本身。由本服務維護，並在 LDAP 新增或修改時拒絕，因為任何人都能編輯的歷史記錄，就是任何人都能清空的歷史記錄。"
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "密碼上次設定的時間，以 GeneralizedTime 表示。由本服務維護。"
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "至少 {{n}} 個字元"
+  },
+  "password.sentences.minSymbolsOne": {
+    "en": "bcd5d7597e2d9c28",
+    "text": "至少 {{n}} 個符號（不是字母、數字或空格的字元）"
+  },
+  "password.sentences.minSymbolsMany": {
+    "en": "59951161d553809a",
+    "text": "至少 {{n}} 個符號（不是字母、數字或空格的字元）"
+  },
+  "password.sentences.uppercase": {
+    "en": "4a27754133d00695",
+    "text": "一個大寫字母"
+  },
+  "password.sentences.digit": {
+    "en": "d24f1fa16d122006",
+    "text": "一個數字"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "不得是您目前的密碼，也不得是之前的 {{n}} 個密碼中的任何一個"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "驗證原則"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "哪些機制被接受作為第一因素和第二因素"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "此領域中「下一次」登入；已開始的工作階段保留其開始時所用的因素"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "預設領域的設定檔（若有），否則為內建預設值"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "驗證原則設定檔"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "要求第二因素"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`：持有第二因素的人（或其項目註明 stsMfaRequired）會被要求提供第二因素。`always`：此領域中的每個人都會被要求，未持有者會在下次登入時被引導去註冊一個。這取代了 authn.mfaRequired。沒有「從不」：已持有的因素一律會被要求。"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "管理員的第二因素"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "適用於持有主控台角色（Admin Read 或 Admin Write）但未持有第二因素的任何人。`offer`：每次登入時都會向他們顯示設定第二因素的步驟，並附「略過」按鈕。`always`：他們必須先設定一個才能登入——但預設領域的內建管理員（admin.bootstrapUsername）除外，只會向其提供，因此服務永遠不會落得無人能登入。`if-held`：與其他人相同，依上方欄位決定。比 `always` 弱：只憑密碼的管理員，就是任何持有該密碼者都能當的管理員。"
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "密碼——作為第一因素"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "密碼——作為第二因素"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "2f59d674bec89e1d",
+    "text": "安全金鑰或密碼金鑰（無密碼）——作為第一因素"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "62611e734d22b2fe",
+    "text": "安全金鑰（第二因素）——作為第二因素"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "驗證器應用程式（TOTP）——作為第二因素"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "復原碼——作為第二因素"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "取自該人所產生之一組代碼的單次使用代碼。在此關閉時，不能產生新的一組；已持有的一組仍可使用（此列取代了 backupCodes.enabled，並沿用其約定）。"
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "以電子郵件寄送的六位數代碼——作為第一因素"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "以電子郵件寄送的六位數代碼——作為第二因素"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "以電子郵件寄送的登入連結——作為第一因素"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "以電子郵件寄送的登入連結——作為第二因素"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "TLS 用戶端憑證——作為第一因素"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的用戶端憑證存取 GET /tls/sign-in。"
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos（SPNEGO）——作為第一因素"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "錢包出示——作為第一因素"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "以此領域簽發的認證，或以已註冊金鑰產生的 SIOPv2 自行簽發 ID Token 存取 /authn/wallet。作為「第二」因素時，是在密碼之後出示的錢包。"
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "錢包出示——作為第二因素"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "以此領域簽發的認證，或以已註冊金鑰產生的 SIOPv2 自行簽發 ID Token 存取 /authn/wallet。作為「第二」因素時，是在密碼之後出示的錢包。"
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "聯合夥伴——作為第一因素"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已設定之聯合夥伴所宣稱的登入。"
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "秒"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "以電子郵件寄送的代碼或連結有效期"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "從寄出那一刻起算。最多十分鐘，即 NIST SP 800-63B-4 第 3.1.3.2 節對頻外秘密的上限。"
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "次嘗試"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "登入步驟結束前允許的錯誤代碼次數"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一個登入步驟在結束並要求該人重新開始之前，接受多少次錯誤代碼。每人及每網路的速率限制也同樣適用。"
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "秒"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "再次寄送代碼或連結前的最短等待時間"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "新的代碼或連結會取代上一個，上一個隨即失效。一個登入步驟最多寄送三個。"
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "次失敗"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "關閉某人電子郵件因素前的連續失敗次數"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 第 3.2.2 節要求不超過 100。該人及其管理員會收到通知，該人可從入口網站重新開啟。"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "記住的瀏覽器可略過第二因素"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "預設關閉。開啟時，在自己選擇記住的瀏覽器上登入的人，若距上次在該瀏覽器上提供第二因素未超過下方期間，就不會再被要求提供。管理主控台、使用者入口網站或協定偵錯工具「絕不」適用；管理員絕不適用；登入風險為中等或更高時絕不適用；而且此時該登入對每個依賴方而言都只是「單一」因素——amr [\"pwd\"] 與 acr \"1\"，等同只憑密碼——因此要求 \"mfa\" 的應用程式會被拒絕。瀏覽器是以持有者 Cookie 辨識的：任何複製了該 Cookie 的人也能略過第二因素，直到複本被發現為止。"
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "記住的瀏覽器略過第二因素的期間"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "從該人上次在該瀏覽器上提供第二因素起算。期滿後會再次被要求，提供後期間重新起算。"
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "本服務用於驗證原則的類別：哪些機制被接受作為第一因素和第二因素，以及何時要求第二因素。項目以「設定檔」命名（`cn=default`）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`：持有第二因素的人（或其項目註明 stsMfaRequired）會被要求提供第二因素。`always`：此領域中的每個人都會被要求，未持有者會在下次登入時被引導去註冊一個。這取代了 authn.mfaRequired。沒有「從不」：已持有的因素一律會被要求。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "適用於持有主控台角色（Admin Read 或 Admin Write）但未持有第二因素的任何人。`offer`：每次登入時都會向他們顯示設定第二因素的步驟，並附「略過」按鈕。`always`：他們必須先設定一個才能登入——但預設領域的內建管理員（admin.bootstrapUsername）除外，只會向其提供，因此服務永遠不會落得無人能登入。`if-held`：與其他人相同，依上方欄位決定。比 `always` 弱：只憑密碼的管理員，就是任何持有該密碼者都能當的管理員。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "取自該人所產生之一組代碼的單次使用代碼。在此關閉時，不能產生新的一組；已持有的一組仍可使用（此列取代了 backupCodes.enabled，並沿用其約定）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的用戶端憑證存取 GET /tls/sign-in。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "以此領域簽發的認證，或以已註冊金鑰產生的 SIOPv2 自行簽發 ID Token 存取 /authn/wallet。作為「第二」因素時，是在密碼之後出示的錢包。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "以此領域簽發的認證，或以已註冊金鑰產生的 SIOPv2 自行簽發 ID Token 存取 /authn/wallet。作為「第二」因素時，是在密碼之後出示的錢包。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已設定之聯合夥伴所宣稱的登入。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "從寄出那一刻起算。最多十分鐘，即 NIST SP 800-63B-4 第 3.1.3.2 節對頻外秘密的上限。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一個登入步驟在結束並要求該人重新開始之前，接受多少次錯誤代碼。每人及每網路的速率限制也同樣適用。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "新的代碼或連結會取代上一個，上一個隨即失效。一個登入步驟最多寄送三個。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 第 3.2.2 節要求不超過 100。該人及其管理員會收到通知，該人可從入口網站重新開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "預設關閉。開啟時，在自己選擇記住的瀏覽器上登入的人，若距上次在該瀏覽器上提供第二因素未超過下方期間，就不會再被要求提供。管理主控台、使用者入口網站或協定偵錯工具「絕不」適用；管理員絕不適用；登入風險為中等或更高時絕不適用；而且此時該登入對每個依賴方而言都只是「單一」因素——amr [\"pwd\"] 與 acr \"1\"，等同只憑密碼——因此要求 \"mfa\" 的應用程式會被拒絕。瀏覽器是以持有者 Cookie 辨識的：任何複製了該 Cookie 的人也能略過第二因素，直到複本被發現為止。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "從該人上次在該瀏覽器上提供第二因素起算。期滿後會再次被要求，提供後期間重新起算。"
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "此人選擇使用哪種以電子郵件寄送的第二因素：`code` 或 `link`。不存在：無。在 /portal/mfa 上設定，在 /admin/mfa 上或連續失敗過多次後清除。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "以電子郵件寄送之代碼或連結的連續失敗次數，成功一次即重設。由本服務維護。"
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "密碼"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "84a03e8c438f4cfa",
+    "text": "安全金鑰或密碼金鑰（無密碼）"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以 primary 角色註冊的 WebAuthn 認證，不需密碼即可登入。"
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "f7b41914800bf87a",
+    "text": "安全金鑰（第二因素）"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色註冊的 WebAuthn 認證，在第一因素之後要求。"
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "驗證器應用程式（TOTP）"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "復原碼"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "取自該人所產生之一組代碼的單次使用代碼。在此關閉時，不能產生新的一組；已持有的一組仍可使用（此列取代了 backupCodes.enabled，並沿用其約定）。"
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "以電子郵件寄送的六位數代碼"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "以電子郵件寄送的登入連結"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "TLS 用戶端憑證"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的用戶端憑證存取 GET /tls/sign-in。"
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos（SPNEGO）"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "錢包出示"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "以此領域簽發的認證，或以已註冊金鑰產生的 SIOPv2 自行簽發 ID Token 存取 /authn/wallet。作為「第二」因素時，是在密碼之後出示的錢包。"
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "聯合夥伴"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已設定之聯合夥伴所宣稱的登入。"
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "第一因素：{{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "第二因素：{{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "無"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "每個人都必須提供第二因素"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "持有第二因素的人必須提供第二因素"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "管理員必須設定第二因素（內建管理員只會被提供）"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "未持有第二因素的管理員在每次登入時都會被提供設定"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "管理員與其他人一樣被要求"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "以電子郵件寄送的代碼或連結有效期為 {{n}} 秒"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "以電子郵件寄送的代碼或連結有效期為 {{n}} 秒——未啟用：此領域無法傳送郵件"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "服務帳戶原則"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "服務帳戶可以做什麼——第二因素、瀏覽器、密碼入口——以及其密碼如何輪換"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "7529888c07b7db03",
+    "text": "此領域中的每個服務帳戶，自其下次登入、繫結或被輪換時起"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "預設領域的設定檔（若有），否則為內建預設值"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "服務帳戶原則設定檔"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "服務帳戶免除第二因素"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "預設關閉。開啟時，驗證原則的第二因素要求不適用於此領域中的服務帳戶，在密碼入口拒絕只憑密碼的規則（#101）也不適用。該帳戶的 amr 仍只表示 pwd，因此要求更多的依賴方會被拒絕。較弱：只憑密碼的帳戶，就是任何持有該密碼者都能使用的帳戶。"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "服務帳戶可在瀏覽器登入"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "預設關閉。關閉時，登入畫面、使用者入口網站與管理主控台都會拒絕服務帳戶，無論其出示何種第一因素；而將某人轉為服務帳戶會結束其瀏覽器工作階段。服務帳戶是由程式使用的，而程式沒有理由出現在登入畫面上。"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "入口：LDAP 簡單繫結"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "在 389 或 636 上的繫結（RFC 4513）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "入口：WS-Trust UsernameToken"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "傳送到安全權杖服務的 WS-Security UsernameToken。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "入口：SCIM HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "/scim/v2 上的 HTTP Basic（RFC 7617）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "入口：Shared Signals HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "/ssf 端點上的 HTTP Basic（RFC 7617）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "入口：EST HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "/.well-known/est 上的 HTTP Basic（RFC 7030 第 3.2.3 節）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "入口：Kerberos AS 交換"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "預先驗證證明了密碼金鑰的 AS-REQ（RFC 4120），以及 MS-KKDCP。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "入口：OAuth 2.0 密碼授權"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "權杖端點上的 grant_type=password（RFC 6749 第 4.3 節），前提是此領域允許該授權類型。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "自動輪換服務帳戶密碼"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "預設關閉。開啟時，service-accounts.rotate 工作會在每個間隔為每個指定了推送目的地的服務帳戶產生新密碼：「先」推送到目的地，推送成功後才提交其雜湊，先前的密碼在下方的重疊期間內保留。推送失敗不會改變任何內容。此領域沒有推送目的地時無法開啟。"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "輪換間隔"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "服務帳戶的密碼保留多久後由工作取代，從上次輪換（或帳戶上次變更密碼）起算。"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "分鐘"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "先前密碼仍可使用的時間"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "輪換後，先前的密碼在這段時間內仍被接受，因此讀取新密碼較慢的使用方不會被拒絕——也不會被風險評分算作猜測（#226）。先前的 Kerberos 金鑰也保留同樣長的時間。0：舊密碼立即失效。"
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "個字元"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "輪換密碼的長度"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "由密碼原則的產生器產生，因此符合該原則，且絕不短於其最小長度。"
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "服務帳戶必須指定擁有者"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "預設開啟。擁有者——此領域中的一個人或群組——是為該帳戶負責的對象；開啟時，沒有擁有者的服務帳戶無法儲存。"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "次失敗"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "發出警報前的連續輪換失敗次數"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "失敗的輪換會在工作下次執行時重試。連續失敗達此次數後，該帳戶會在「監控 → 服務帳戶」上回報，並記錄為警報（STS-SVCACCT-0042）。"
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "0ff4e4aa3597259f",
+    "text": "本服務用於服務帳戶原則的類別：此領域中的服務帳戶可以做什麼，以及其密碼如何輪換。項目以「設定檔」命名（`cn=default`）。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "預設關閉。開啟時，驗證原則的第二因素要求不適用於此領域中的服務帳戶，在密碼入口拒絕只憑密碼的規則（#101）也不適用。該帳戶的 amr 仍只表示 pwd，因此要求更多的依賴方會被拒絕。較弱：只憑密碼的帳戶，就是任何持有該密碼者都能使用的帳戶。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "預設關閉。關閉時，登入畫面、使用者入口網站與管理主控台都會拒絕服務帳戶，無論其出示何種第一因素；而將某人轉為服務帳戶會結束其瀏覽器工作階段。服務帳戶是由程式使用的，而程式沒有理由出現在登入畫面上。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "在 389 或 636 上的繫結（RFC 4513）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "傳送到安全權杖服務的 WS-Security UsernameToken。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "/scim/v2 上的 HTTP Basic（RFC 7617）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "/ssf 端點上的 HTTP Basic（RFC 7617）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "/.well-known/est 上的 HTTP Basic（RFC 7030 第 3.2.3 節）。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "預先驗證證明了密碼金鑰的 AS-REQ（RFC 4120），以及 MS-KKDCP。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "權杖端點上的 grant_type=password（RFC 6749 第 4.3 節），前提是此領域允許該授權類型。關閉時，服務帳戶的正確密碼在此會像錯誤密碼一樣被拒絕。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "預設關閉。開啟時，service-accounts.rotate 工作會在每個間隔為每個指定了推送目的地的服務帳戶產生新密碼：「先」推送到目的地，推送成功後才提交其雜湊，先前的密碼在下方的重疊期間內保留。推送失敗不會改變任何內容。此領域沒有推送目的地時無法開啟。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "服務帳戶的密碼保留多久後由工作取代，從上次輪換（或帳戶上次變更密碼）起算。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "輪換後，先前的密碼在這段時間內仍被接受，因此讀取新密碼較慢的使用方不會被拒絕——也不會被風險評分算作猜測（#226）。先前的 Kerberos 金鑰也保留同樣長的時間。0：舊密碼立即失效。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "由密碼原則的產生器產生，因此符合該原則，且絕不短於其最小長度。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "預設開啟。擁有者——此領域中的一個人或群組——是為該帳戶負責的對象；開啟時，沒有擁有者的服務帳戶無法儲存。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "失敗的輪換會在工作下次執行時重試。連續失敗達此次數後，該帳戶會在「監控 → 服務帳戶」上回報，並記錄為警報（STS-SVCACCT-0042）。"
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "LDAP 簡單繫結"
+  },
+  "serviceAccount.DOORS.allowLdapBind.what": {
+    "en": "3a8c8bfe4923e585",
+    "text": "在 389 或 636 上的繫結（RFC 4513）。"
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "WS-Trust UsernameToken"
+  },
+  "serviceAccount.DOORS.allowWsTrust.what": {
+    "en": "4d920a20f96a19a1",
+    "text": "傳送到安全權杖服務的 WS-Security UsernameToken。"
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "SCIM HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowScim.what": {
+    "en": "506c021bbd796caa",
+    "text": "/scim/v2 上的 HTTP Basic（RFC 7617）。"
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "Shared Signals HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowSsf.what": {
+    "en": "41e56e2806f5f363",
+    "text": "/ssf 端點上的 HTTP Basic（RFC 7617）。"
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "EST HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowEst.what": {
+    "en": "a40e0a702c1600f6",
+    "text": "/.well-known/est 上的 HTTP Basic（RFC 7030 第 3.2.3 節）。"
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "Kerberos AS 交換"
+  },
+  "serviceAccount.DOORS.allowKerberos.what": {
+    "en": "22fac9e9e9e7d0a8",
+    "text": "預先驗證證明了密碼金鑰的 AS-REQ（RFC 4120），以及 MS-KKDCP。"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "OAuth 2.0 密碼授權"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.what": {
+    "en": "7fe8d96fec703361",
+    "text": "權杖端點上的 grant_type=password（RFC 6749 第 4.3 節），前提是此領域允許該授權類型。"
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "服務帳戶「免除」第二因素"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "服務帳戶與其他人一樣須符合第二因素規則"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "服務帳戶可在瀏覽器登入"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "服務帳戶在每個瀏覽器登入處都會被拒絕"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "密碼入口：{{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "無"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "密碼每 {{days}} 天輪換一次，先前的密碼在 {{minutes}} 分鐘內仍可使用"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "密碼不會自動輪換"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "每個服務帳戶都指定了擁有者"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "服務帳戶可以沒有擁有者"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "密碼金鑰原則"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "密碼金鑰的行為方式——登入是否可以不指名使用者名稱，以及要求安全金鑰儲存什麼"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "此領域中「下一次」登入與「下一個」註冊的密碼金鑰；已註冊的密碼金鑰保留其驗證器所儲存的內容"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "預設領域的設定檔（若有），否則為內建預設值"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "密碼金鑰原則設定檔"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "允許不需使用者名稱的密碼金鑰登入"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與使用者名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其使用者控制代碼所指名的帳戶，且要求並檢查使用者驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "無使用者名稱登入開啟時「Use a security key」所要求的內容"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在無使用者名稱登入「開啟」期間，透過 *Use a security key*（或未指名種類的註冊）進行註冊時送出的 `residentKey`。關閉期間，該按鈕一律要求 `required`，因此它會像 *Create a passkey*（一律要求 `required`）一樣建立可探索認證。`discouraged` 或 `preferred` 可節省安全金鑰為數不多的常駐槽位，代價是金鑰登入時需要使用者名稱。取代設定 webauthn.residentKey。"
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "同步的密碼金鑰（可備份）"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow`（預設）接受任何密碼金鑰。`disallow` 只接受「綁定裝置」的密碼金鑰：驗證器表示可備份或同步的密碼金鑰（BE 旗標，WebAuthn Level 3 第 6.1 節）在註冊時和登入時都會被拒絕，因此在領域禁止之前已註冊的同步密碼金鑰也會停止運作。認證的 BE 永遠不會改變。"
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "要求安全金鑰 PIN 的最小長度"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "預設關閉。開啟時，註冊會向驗證器詢問其最小 PIN 長度（CTAP 2.1 第 12.4 節，minPinLength 延伸），記錄在金鑰上，並在註冊時及每次登入時拒絕最小值低於下一列的金鑰。金鑰只會回答其被設定要告知的依賴方（以此 RP ID 進行 CTAP 2.1 setMinPINLength）；其他所有金鑰，以及所有平台或同步的密碼金鑰，都不會回報，除非再下一列開啟，否則會被拒絕。"
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "個字元"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "安全金鑰 PIN 最小長度"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "在上一列開啟時，安全金鑰可被設定接受的最短 PIN，以金鑰自身回報者為準。介於 4（CTAP 2.1 本身的下限）與 63 之間。"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "接受不回報 PIN 長度的金鑰"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "預設關閉，這是嚴格的解讀：在強制 PIN 長度時，不回報的金鑰會被拒絕。開啟時接受此類金鑰，只有回報的最小值才受規則約束——因此規則只約束被設定為向此依賴方回報的金鑰。"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "每次登入都依目前生效的證明規則檢查"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "「Create a passkey」送出的提示"
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "入口網站的 *Create a passkey* 依序送出的 WebAuthn 提示（Level 3 第 5.4.8 節），取自 security-key、client-device 與 hybrid，或 none。它們告訴瀏覽器優先以哪種方式建立密碼金鑰。提示不得與 webauthn.authenticatorAttachment 矛盾：client-device 意味著 platform，security-key 與 hybrid 意味著 cross-platform。"
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "「Use a security key」送出的提示"
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "*Use a security key* 依序送出的提示，或 none。該按鈕要求跨平台驗證器，因此 client-device 與其矛盾，會被拒絕。"
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "密碼金鑰登入送出的提示"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登入儀式——密碼金鑰步驟、無使用者名稱登入及其自動填入——依序送出的提示，或 none（預設：瀏覽器提供它所知道的每種方式）。"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "保存某人安全金鑰序號的目錄屬性"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "預設為空：不檢查任何序號。設定為某人項目上的屬性（例如可保存多個值的 `serialNumber`）時，安全金鑰只有在帶有「受信任」企業證明、且其憑證所指名的裝置序號是該人的值之一時才能註冊。需要將 webauthn.attestation 設定為 enterprise，並設定廠商或平台向此 RP ID 釋出企業證明；否則瀏覽器會送出一般證明，每次註冊都會被拒絕。"
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "密碼金鑰提示為該人顯示的名稱"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "預設為空：登入所知的名稱，否則為使用者名稱。否則為最多六個依序排列、以逗號分隔的目錄屬性；以空格分隔的一組屬性（givenName sn）會將其值連接起來。第一個其所有屬性皆有值者成為 user.displayName（WebAuthn Level 3 第 5.4.3 節），並移除控制字元與改變方向的字元，最多 64 個字元。使用者名稱一律是 user.name。"
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "密碼金鑰提示在服務名稱後附加的內容"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none`（預設）只顯示 webauthn.rpName。`realm`、`organisation` 或 `realm-and-organisation` 會附加領域名稱和／或 saml.organizationName，讓在多個領域都有帳戶的人能分辨各個提示。"
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "新密碼金鑰的名稱"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "預設為空：提供者的名稱，否則為「Passkey」或「Security key」。否則為此文字，填入 {provider} 與 {kind}，最多 60 個字元。與往常一樣，該人之後可以重新命名。"
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "將某人的密碼金鑰作為單一登入選項提供"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "預設開啟：一個「Use passkey」步驟，其請求列出該人的每一個密碼金鑰，瀏覽器提供目前可用的那一個。關閉時，擁有多個密碼金鑰的人會看到每個密碼金鑰一個選項（依其名稱），且請求只指名那一個。"
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與使用者名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其使用者控制代碼所指名的帳戶，且要求並檢查使用者驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在無使用者名稱登入「開啟」期間，透過 *Use a security key*（或未指名種類的註冊）進行註冊時送出的 `residentKey`。關閉期間，該按鈕一律要求 `required`，因此它會像 *Create a passkey*（一律要求 `required`）一樣建立可探索認證。`discouraged` 或 `preferred` 可節省安全金鑰為數不多的常駐槽位，代價是金鑰登入時需要使用者名稱。取代設定 webauthn.residentKey。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow`（預設）接受任何密碼金鑰。`disallow` 只接受「綁定裝置」的密碼金鑰：驗證器表示可備份或同步的密碼金鑰（BE 旗標，WebAuthn Level 3 第 6.1 節）在註冊時和登入時都會被拒絕，因此在領域禁止之前已註冊的同步密碼金鑰也會停止運作。認證的 BE 永遠不會改變。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "預設關閉。開啟時，註冊會向驗證器詢問其最小 PIN 長度（CTAP 2.1 第 12.4 節，minPinLength 延伸），記錄在金鑰上，並在註冊時及每次登入時拒絕最小值低於下一列的金鑰。金鑰只會回答其被設定要告知的依賴方（以此 RP ID 進行 CTAP 2.1 setMinPINLength）；其他所有金鑰，以及所有平台或同步的密碼金鑰，都不會回報，除非再下一列開啟，否則會被拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "在上一列開啟時，安全金鑰可被設定接受的最短 PIN，以金鑰自身回報者為準。介於 4（CTAP 2.1 本身的下限）與 63 之間。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "預設關閉，這是嚴格的解讀：在強制 PIN 長度時，不回報的金鑰會被拒絕。開啟時接受此類金鑰，只有回報的最小值才受規則約束——因此規則只約束被設定為向此依賴方回報的金鑰。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "預設關閉。證明規則（webauthn.attestation* 設定：原則、AAGUID 清單、認證等級與 FIPS）會在註冊密碼金鑰時檢查。開啟時，每次登入都會依當時記錄的內容與 FIDO Metadata Service 的現況再次檢查，因此在規則收緊之前註冊的金鑰，或其型號後來被回報遭入侵的金鑰，將不再能讓任何人登入。沒有受信任證明的金鑰，無法通過任何要求證明的規則。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "入口網站的 *Create a passkey* 依序送出的 WebAuthn 提示（Level 3 第 5.4.8 節），取自 security-key、client-device 與 hybrid，或 none。它們告訴瀏覽器優先以哪種方式建立密碼金鑰。提示不得與 webauthn.authenticatorAttachment 矛盾：client-device 意味著 platform，security-key 與 hybrid 意味著 cross-platform。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "*Use a security key* 依序送出的提示，或 none。該按鈕要求跨平台驗證器，因此 client-device 與其矛盾，會被拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登入儀式——密碼金鑰步驟、無使用者名稱登入及其自動填入——依序送出的提示，或 none（預設：瀏覽器提供它所知道的每種方式）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "預設為空：不檢查任何序號。設定為某人項目上的屬性（例如可保存多個值的 `serialNumber`）時，安全金鑰只有在帶有「受信任」企業證明、且其憑證所指名的裝置序號是該人的值之一時才能註冊。需要將 webauthn.attestation 設定為 enterprise，並設定廠商或平台向此 RP ID 釋出企業證明；否則瀏覽器會送出一般證明，每次註冊都會被拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "預設為空：登入所知的名稱，否則為使用者名稱。否則為最多六個依序排列、以逗號分隔的目錄屬性；以空格分隔的一組屬性（givenName sn）會將其值連接起來。第一個其所有屬性皆有值者成為 user.displayName（WebAuthn Level 3 第 5.4.3 節），並移除控制字元與改變方向的字元，最多 64 個字元。使用者名稱一律是 user.name。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none`（預設）只顯示 webauthn.rpName。`realm`、`organisation` 或 `realm-and-organisation` 會附加領域名稱和／或 saml.organizationName，讓在多個領域都有帳戶的人能分辨各個提示。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "預設為空：提供者的名稱，否則為「Passkey」或「Security key」。否則為此文字，填入 {provider} 與 {kind}，最多 60 個字元。與往常一樣，該人之後可以重新命名。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "預設開啟：一個「Use passkey」步驟，其請求列出該人的每一個密碼金鑰，瀏覽器提供目前可用的那一個。關閉時，擁有多個密碼金鑰的人會看到每個密碼金鑰一個選項（依其名稱），且請求只指名那一個。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
+    "en": "03ba679923c40b45",
+    "text": "具名密碼金鑰原則所適用的應用程式（識別碼或 client_id），在為其中之一登入時適用。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "具名密碼金鑰原則適用於其成員的群組（cn 或 DN）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "多個具名密碼金鑰原則相符時由哪一個生效：最低者，範圍 1 至 1000。"
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "passkey.SELECTORS.selectApplications.what": {
+    "en": "03ba679923c40b45",
+    "text": "具名密碼金鑰原則所適用的應用程式（識別碼或 client_id），在為其中之一登入時適用。"
+  },
+  "passkey.SELECTORS.selectGroups.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "具名密碼金鑰原則適用於其成員的群組（cn 或 DN）。"
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "多個具名密碼金鑰原則相符時由哪一個生效：最低者，範圍 1 至 1000。"
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "密碼金鑰可不需使用者名稱讓人登入（要求使用者驗證）"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "每次登入都先指名該人：沒有不需使用者名稱的密碼金鑰登入"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "「Create a passkey」要求可探索認證（residentKey required）"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "「Use a security key」要求 residentKey {{value}}，因此它也會建立可探索認證"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "「Use a security key」要求 residentKey {{value}}，因此透過它註冊的金鑰登入時可能需要使用者名稱"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "只接受綁定裝置的密碼金鑰：同步（可備份）的密碼金鑰在註冊時和登入時都會被拒絕"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "接受同步（可備份）的密碼金鑰"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "不要求安全金鑰的最小 PIN 長度"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "安全金鑰在註冊時和登入時必須回報至少 {{n}} 個字元的最小 PIN；不回報的金鑰會被接受"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "安全金鑰在註冊時和登入時必須回報至少 {{n}} 個字元的最小 PIN；不回報的金鑰會被拒絕"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "每次密碼金鑰登入都依目前生效的證明規則檢查"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "證明規則在註冊密碼金鑰時檢查"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "「Create a passkey」提示 {{passkey}}；「Use a security key」提示 {{securityKey}}；登入提示 {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "無"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "安全金鑰只有在帶有受信任企業證明、且其指名的序號位於該人的 {{attribute}} 中時才能註冊"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "不檢查安全金鑰序號"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "密碼金鑰提示顯示該人的 {{attribute}}"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "密碼金鑰提示顯示該人的 {{attribute}}，以及附加其 {{extras}} 的服務名稱"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "密碼金鑰提示顯示登入所知的該人名稱"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "密碼金鑰提示顯示登入所知的該人名稱，以及附加其 {{extras}} 的服務名稱"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "擁有多個密碼金鑰的人在登入時選擇其中一個"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "某人的密碼金鑰作為單一登入選項提供"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "語言原則"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "頁面回退使用的語言、某人未指名語言時郵件撰寫所用的語言，以及新人員獲得的 preferredLanguage"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "此領域中「下一個」繪製的頁面與「下一個」建立的人員；先前建立的人員保留其現有的 preferredLanguage，或沒有"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "預設領域的設定檔（若有），否則為內建預設值"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "語言原則設定檔"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "預設語言與地區"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "BCP 47 語言標籤（RFC 5646），例如 en、fr-CA 或 zh-TW。當請求、該人的 preferredLanguage、語言選擇器與瀏覽器都未指名任何目錄能提供的語言時，頁面以此語言繪製；即使沒有目錄提供，日期與數字仍依此格式化。寄給項目未指名語言之人的郵件以此語言撰寫。取代設定 mail.defaultLanguage。"
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "為新人員設定此語言"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式屬於某具名設定檔的應用程式，則套用該具名設定檔。現有項目絕不會被改寫。"
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "2c86d88e73ffc794",
+    "text": "本服務用於語言原則的類別：領域頁面回退使用、並賦予新人員的語言。以「設定檔」命名（`cn=default`，或依應用程式選擇的具名設定檔）。"
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "BCP 47 語言標籤（RFC 5646），例如 en、fr-CA 或 zh-TW。當請求、該人的 preferredLanguage、語言選擇器與瀏覽器都未指名任何目錄能提供的語言時，頁面以此語言繪製；即使沒有目錄提供，日期與數字仍依此格式化。寄給項目未指名語言之人的郵件以此語言撰寫。取代設定 mail.defaultLanguage。"
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "預設開啟。在此領域中建立、沒有 preferredLanguage（RFC 2798 第 2.7 節）的人員項目，會獲得上方的預設語言作為其值——無論是由主控台、管理 API、SCIM、聯合或自助註冊，還是大量載入所建立。若促成建立的應用程式屬於某具名設定檔的應用程式，則套用該具名設定檔。現有項目絕不會被改寫。"
+  },
+  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "具名語言原則所適用的應用程式（識別碼或 client_id）。一個應用程式最多屬於一個具名設定檔。"
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此設定檔的用途，供下一位接手的人參考。"
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "建立此人項目時語言原則賦予的 preferredLanguage。只要 preferredLanguage 仍等於它，它就是「原則」的選擇，頁面會將其排在瀏覽器語言之後；一旦有人設定了其他值，它就是該人自己的選擇。只由本服務寫入。"
+  },
+  "locale.SELECTORS.selectApplications.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "具名語言原則所適用的應用程式（識別碼或 client_id）。一個應用程式最多屬於一個具名設定檔。"
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "讀者未指名任何目錄能提供之語言的頁面，以 {{tag}} 繪製"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "讀者未指名任何目錄能提供之語言的頁面，以 {{tag}} 繪製——沒有目錄提供此語言，因此文字為英文，日期與數字則依 {{tag}} 格式化"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "建立時沒有 preferredLanguage 的人員會獲得 {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "建立時沒有 preferredLanguage 的人員不會獲得任何語言"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "寄給項目未指名語言之人的郵件以 {{tag}} 撰寫"
+  },
+  "locale.sentences.appliesTo": {
+    "en": "098d842668109368",
+    "text": "適用於 {{list}}"
+  },
+  "locale.sentences.param.noApplication": {
+    "en": "cb8bd4fa96dda063",
+    "text": "沒有應用程式"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "{{noun}}「{{name}}」已儲存在 {{dn}}。它適用於{{appliesTo}}。"
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "{{noun}}「{{name}}」已儲存在 {{dn}}。它適用於{{appliesTo}}——而在此領域進入產品模式之前，它不會在此執行。"
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "儲存的設定檔已移除，此領域改為依循{{fallsBackTo}}：{{rules}}。"
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "此領域未儲存任何內容，因此它已在依循{{fallsBackTo}}。"
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "已執行。此領域處於產品模式，因此在此設定的每個密碼——在下方的每個入口——都必須符合設定檔，且新密碼不得與記住的密碼重複。"
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "未執行。此領域處於開發模式，任何入口都不檢查密碼，因此關於密碼的規則，將是關於一個沒有任何東西會讀取之認證的規則。歷史記錄仍會「記錄」，因此切換為產品模式的領域一開始就有歷史記錄。「產生的」密碼在兩種模式下都符合設定檔。"
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "node 的 crypto.randomInt，採拒絕取樣，使集區中沒有任何字元比其他字元更可能出現"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "密碼符合設定檔為止，因此每個產生的密碼在設定檔接受的密碼中均勻分布"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "SCIM 不承載密碼（本服務宣告 changePassword: false），而且密碼絕不會因登入而被設定。規則變更「之前」儲存的密碼不會重新檢查：此處沒有任何東西以可重新檢查的形式保存密碼，規則從下次變更起適用。"
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "此領域無法傳送郵件，因此兩種電子郵件機制無法開啟，也從不提供。請在「伺服器設定 > 郵件」上設定傳輸方式。"
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new 與 /admin/users（設定密碼）"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create 與 /admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate（某人設定的第一個密碼）"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "在 389 或 636 上對 userPassword 進行的 LDAP 新增或修改"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "小寫字母"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "大寫字母"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "數字"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "符號"
+  }
+}

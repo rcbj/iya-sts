@@ -101,9 +101,26 @@ interface ProseSource {
    * Answers a translated copy of one object of a view, or null when the
    * object is not this namespace's.
    */
-  recognise(obj: Record<string, unknown>,
-            lookup: (key: string, english: string) => string):
+  recognise?(obj: Record<string, unknown>,
+             lookup: (key: string, english: string) => string):
     Record<string, unknown> | null;
+  /**
+   * A PHRASE source: answers the translation of one string of an answer to
+   * one of its routes, or null when the string is not its English.
+   */
+  translateString?(route: string, text: string,
+                   lookup: (key: string, english: string) => string):
+    string | null;
+}
+
+/**
+ * What a phrase source is built from: the routes whose answers carry its
+ * English, and the English itself — a message holding `{{name}}` is a
+ * TEMPLATE, filled with `ServerProse.fill()` where the sentence is made.
+ */
+interface PhraseSpec {
+  routes: string[];
+  extract(): Record<string, string>;
 }
 
 /**
@@ -112,6 +129,7 @@ interface ProseSource {
 interface ProseTranslator {
   locale: string;
   chain: string[];
+  route: string;
   lookup(ns: string, key: string, english: string): string;
 }
 
@@ -151,6 +169,214 @@ const SETTING_FIELDS = ['label', 'description', 'restartReason'];
  * setting key has dots in it, so a dot cannot be the separator.
  */
 const SEP = '|';
+
+/**
+ * A template's placeholders: `{{name}}`, a word of letters and digits.
+ */
+const PLACEHOLDER = /\{\{([A-Za-z0-9]+)\}\}/g;
+
+/**
+ * The separator a list of phrases is joined with, inside a filled template.
+ */
+const LIST_SEP = ', ';
+
+/**
+ * Builds a PHRASE source (#543 phase 2): the prose of a module's tables and
+ * the sentences it makes from templates, translated wherever an answer to
+ * one of its routes carries them EXACTLY.
+ *
+ * - A string equal to a message's English is replaced by its translation.
+ * - A string a template matches is refilled in the translated template,
+ *   each parameter translated in turn when it is itself a message of this
+ *   namespace, a filled template, or a list of those joined with ', ';
+ *   anything else (a number, a name, a DN) is carried over as it was.
+ * - A key holding `.param.` names a phrase used only as a parameter.
+ * - Only on the source's routes, so a value elsewhere that happens to read
+ *   like a sentence of it is never touched.
+ *
+ * @param given - the routes and the English, or a function answering them
+ * @returns the source
+ */
+function phraseSource(given: PhraseSpec | (() => PhraseSpec)): ProseSource {
+  log.debug("Entering phraseSource().");
+  // A source may be declared LAZILY, so that building this module's
+  // instance loads none of the modules whose prose it translates.
+  let loaded: PhraseSpec | null = typeof given === 'function' ? null : given;
+  const specOf = function (): PhraseSpec {
+    if (!loaded) {
+      loaded = (given as () => PhraseSpec)();
+    }
+    return loaded;
+  };
+  let index: { exact: Map<string, string>, params: Map<string, string>,
+               templates: { key: string, english: string, re: RegExp,
+                            names: string[] }[] } | null = null;
+  const build = function () {
+    if (index) {
+      return index;
+    }
+    const all = specOf().extract();
+    const exact = new Map<string, string>();
+    // A PARAMETER-ONLY phrase (a key holding `.param.`) — 'none' in 'first
+    // factors: none' — is translated inside a filled template and never as
+    // a whole string, where it could be a value a form sends back.
+    const params = new Map<string, string>();
+    const templates = [];
+    Object.keys(all).forEach(function (key) {
+      const english = all[key];
+      const names: string[] = [];
+      english.replace(PLACEHOLDER, function (m, name) {
+        names.push(name);
+        return m;
+      });
+      if (!names.length) {
+        const into = key.indexOf('.param.') >= 0 ? params : exact;
+        if (!into.has(english)) {
+          into.set(english, key);
+        }
+        return;
+      }
+      const source = english.split(PLACEHOLDER).map(function (part, i) {
+        // split() with a capture group interleaves the names at odd places.
+        return i % 2 ? '([\\s\\S]+?)'
+                     : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }).join('');
+      templates.push({ key: key, english: english,
+                       re: new RegExp('^' + source + '$'), names: names });
+    });
+    // The template with the most literal text first, so 'at least {{n}}
+    // symbols' is tried before anything shorter it would also match.
+    templates.sort(function (a, b) {
+      return b.english.replace(PLACEHOLDER, '').length -
+             a.english.replace(PLACEHOLDER, '').length;
+    });
+    index = { exact: exact, params: params, templates: templates };
+    return index;
+  };
+  // Called for every string of every translated answer, so no
+  // Entering/Leaving pair (the hot-path exception).
+  const translate = function (text: string, lookup, depth: number): string |
+      null {
+    const { exact, templates } = build();
+    const key = exact.get(text);
+    if (key) {
+      return lookup(key, text);
+    }
+    if (depth > 3 || !templates.length) {
+      return null;
+    }
+    for (const one of templates) {
+      const m = one.re.exec(text);
+      if (!m) {
+        continue;
+      }
+      const params: Record<string, string> = {};
+      one.names.forEach(function (name, i) {
+        params[name] = value(m[i + 1], lookup, depth + 1);
+      });
+      return ServerProse.fill(lookup(one.key, one.english), params);
+    }
+    return null;
+  };
+  // A parameter: a phrase, or a list of them, or data left as it was. The
+  // list is segmented so that a phrase holding a comma stays whole.
+  const value = function (text: string, lookup, depth: number): string {
+    const only = build().params.get(text);
+    if (only) {
+      return lookup(only, text);
+    }
+    const whole = translate(text, lookup, depth);
+    if (whole !== null) {
+      return whole;
+    }
+    const parts = text.split(LIST_SEP);
+    if (parts.length < 2) {
+      return text;
+    }
+    // best[i]: the translated pieces of parts[0..i), or null.
+    const best: (string[] | null)[] = [[]];
+    for (let i = 1; i <= parts.length; i++) {
+      best[i] = null;
+      for (let j = i - 1; j >= 0 && !best[i]; j--) {
+        if (!best[j]) {
+          continue;
+        }
+        const piece = translate(parts.slice(j, i).join(LIST_SEP), lookup,
+                                depth);
+        if (piece !== null) {
+          best[i] = best[j].concat([piece]);
+        }
+      }
+    }
+    return best[parts.length] ? best[parts.length].join(LIST_SEP) : text;
+  };
+  log.debug("Leaving phraseSource().");
+  return {
+    extract: function () {
+      return specOf().extract();
+    },
+    translateString: function (route, text, lookup) {
+      if (specOf().routes.indexOf(route) < 0) {
+        return null;
+      }
+      return translate(text, lookup, 0);
+    }
+  };
+}
+
+/**
+ * Collects the prose of a module's table — the string members named, at
+ * any depth — keyed by where it sits: `<prefix>.<id>.<member>`, an array
+ * element named by its own `key`, `name`, `id`, `attribute`, `method`,
+ * `kind` or `type` where it has one and by its index where it has none.
+ *
+ * @param prefix - the key's first part
+ * @param table - the table: an object or an array
+ * @param members - the member names that hold prose
+ * @returns key → English
+ */
+function harvest(prefix: string, table: unknown,
+                 members: string[]): Record<string, string> {
+  log.debug("Entering harvest(). " + prefix);
+  const out: Record<string, string> = {};
+  const IDS = ['key', 'name', 'id', 'attribute', 'method', 'kind', 'type',
+               'role', 'mode', 'category', 'action'];
+  const walk = function (value: unknown, path: string, depth: number) {
+    if (depth > 8 || !value || typeof value !== 'object') {
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(function (one, i) {
+        const id = one && typeof one === 'object'
+          ? IDS.map(function (name) {
+            return (one as Record<string, unknown>)[name];
+          }).filter(function (v) {
+            return typeof v === 'string' && v;
+          })[0]
+          : '';
+        walk(one, path + '.' + (id || String(i)), depth + 1);
+      });
+      return;
+    }
+    const obj = value as Record<string, unknown>;
+    Object.keys(obj).forEach(function (name) {
+      const v = obj[name];
+      // An IDENTIFIER is not prose — a `governs` of `userPassword`, a value
+      // with no letter, a bare path — and harvesting it would translate it
+      // wherever the route's answer carries it.
+      if (typeof v === 'string' && v.trim() && members.indexOf(name) >= 0 &&
+          /[A-Za-z]/.test(v) && !/^[a-z]+[A-Z][A-Za-z0-9]*$/.test(v) &&
+          !/^\/\S*$/.test(v)) {
+        out[path + '.' + name] = v;
+      } else if (v && typeof v === 'object') {
+        walk(v, path + '.' + name, depth + 1);
+      }
+    });
+  };
+  walk(table, prefix, 0);
+  log.debug("Leaving harvest(). " + Object.keys(out).length);
+  return out;
+}
 
 /**
  * Builds the settings source: `config.js`'s `SETTINGS` rows, keyed
@@ -250,6 +476,37 @@ class ServerProse {
    */
   static readonly SEP = SEP;
 
+  /**
+   * Fills a prose template (#543 phase 2): each `{{name}}` replaced by its
+   * parameter. Where a module makes a sentence, it makes it with this from a
+   * template it declares, so the sentence and the template the server
+   * matches it against cannot differ. A placeholder with no parameter is
+   * left as written.
+   *
+   * @param template - the template
+   * @param params - name → value
+   * @returns the sentence
+   */
+  static fill(template: string, params: Record<string, unknown>): string {
+    log.debug("Entering ServerProse.fill().");
+    const out = String(template).replace(PLACEHOLDER, function (m, name) {
+      return Object.prototype.hasOwnProperty.call(params, name)
+        ? String(params[name]) : m;
+    });
+    log.debug("Leaving ServerProse.fill().");
+    return out;
+  }
+
+  /**
+   * Builds a phrase source; see `phraseSource()`.
+   */
+  static phraseSource = phraseSource;
+
+  /**
+   * Collects a table's prose; see `harvest()`.
+   */
+  static harvest = harvest;
+
   // namespace → catalog tag → key → entry
   private catalogs: Record<string, Record<string, Record<string,
     ProseEntry>>> | null = null;
@@ -280,7 +537,20 @@ class ServerProse {
     log.debug("Leaving ServerProse.defaultDeps().");
     return { log: log, errorCodes: errorCodes,
              directory: path.join(__dirname, 'prose_locales'),
-             sources: { settings: settingsSource() } };
+             sources: {
+               settings: settingsSource(),
+               // Directory → Policies (#543 phase 2): every kind's tables,
+               // its `describe()` templates and the page's own sentences.
+               policies: phraseSource(function () {
+                 // LAZY: the policy modules require this one to fill their
+                 // templates, so a require at load would close a cycle.
+                 const kinds = require('../admin-core/policy_kinds');
+                 return { routes: kinds.PROSE_ROUTES,
+                          extract: function () {
+                            return kinds.prose();
+                          } };
+               })
+             } };
   }
 
   /**
@@ -458,9 +728,12 @@ class ServerProse {
    * English answers.
    *
    * @param acceptLanguage - the header's value, or undefined
+   * @param route - the route the answer is to (`res.locals.proseRoute`),
+   *   which a phrase source is scoped by
    * @returns the translator, or null
    */
-  translatorFor(acceptLanguage: unknown): ProseTranslator | null {
+  translatorFor(acceptLanguage: unknown,
+                route?: string): ProseTranslator | null {
     log.debug("Entering ServerProse.translatorFor().");
     if (typeof acceptLanguage !== 'string' || !acceptLanguage.trim()) {
       log.debug("Leaving ServerProse.translatorFor(). No language named.");
@@ -480,6 +753,7 @@ class ServerProse {
     return {
       locale: negotiated.locale,
       chain: chain,
+      route: String(route || ''),
       // Called for every translated member, so no Entering/Leaving pair
       // (the hot-path exception).
       lookup: function (ns, key, english) {
@@ -518,7 +792,22 @@ class ServerProse {
     const seen = new Set<unknown>();
     // Called for every value of the answer, so no Entering/Leaving pair
     // (the hot-path exception).
+    const phrases = names.filter(function (ns) {
+      return typeof sources[ns].translateString === 'function';
+    });
     const walk = function (value: unknown): unknown {
+      if (typeof value === 'string') {
+        for (const ns of phrases) {
+          const found = sources[ns].translateString(translator.route, value,
+            function (key, english) {
+              return translator.lookup(ns, key, english);
+            });
+          if (found !== null) {
+            return found;
+          }
+        }
+        return value;
+      }
       if (!value || typeof value !== 'object' || seen.has(value)) {
         return value;
       }
@@ -537,6 +826,9 @@ class ServerProse {
       seen.add(value);
       let obj = value as Record<string, unknown>;
       names.forEach(function (ns) {
+        if (typeof sources[ns].recognise !== 'function') {
+          return;
+        }
         const found = sources[ns].recognise(obj, function (key, english) {
           return translator.lookup(ns, key, english);
         });
@@ -585,6 +877,9 @@ export = {
   SOURCE: ServerProse.SOURCE,
   SEP: ServerProse.SEP,
   hashOf: ServerProse.hashOf,
+  fill: ServerProse.fill,
+  phraseSource: ServerProse.phraseSource,
+  harvest: ServerProse.harvest,
   namespaces: slot.forward('namespaces'),
   extract: slot.forward('extract'),
   entriesOf: slot.forward('entriesOf'),

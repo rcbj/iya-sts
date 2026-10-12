@@ -1,0 +1,1426 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "密码策略"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "此领域中设置的下一个密码，而不适用于任何已存储的密码"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "内置默认值"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "密码策略配置文件"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "最小长度"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "个字符"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "本服务将设置的最短密码，按字符计数（Unicode 码位，因此一个表情符号算一个字符）。该属性来自 draft-behera-ldap-password-policy。默认值为十二；NIST SP 800-63B 要求至少 8 个字符，在密码是唯一因素时要求 15 个。"
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "不得重复使用的旧密码数"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "个密码"
+  },
+  "password.FIELDS.history.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "记住并拒绝一个人的多少个旧密码。只要此值大于 0，当前密码也总会被拒绝，因此 5 表示新密码不得是最近六个密码中的任何一个。0 关闭此规则。这是该草案的属性，含义与草案相同。每个记住的密码都以其原本存储时的 scrypt 哈希形式保存在此人自己条目的 pwdHistory 中，检查新密码时每个记住的密码需要一次哈希比较。"
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "最少符号数"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "个符号"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "密码必须包含多少个既非字母、非数字也非空白的字符。0 关闭此规则。"
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "要求包含大写字母"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "密码是否必须包含至少一个大写字母（任何文字均可）。"
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "要求包含数字"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "密码是否必须包含至少一个十进制数字。"
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "生成密码的长度"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "个字符"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服务自行生成的密码有多长——用于从控制台或 /admin-api 创建的新用户、操作员的 Generate，以及产品模式的引导账户。它必须至少等于最小长度，并且至少为符号数的两倍加二。从 90 个字符的字母表中取二十个字符约为 130 位。"
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "draft-behera-ldap-password-policy 中用于密码策略条目的类。`pwdAttribute` 指明该策略管辖的属性，在这里始终为 `userPassword`。"
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4daf3a60dd76691a",
+    "text": "本服务自己的类，承载草案没有对应属性的组成规则和生成长度。该条目以配置文件命名（`cn=default`）。"
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "此策略管辖的属性：`userPassword`。"
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "本服务将设置的最短密码，按字符计数（Unicode 码位，因此一个表情符号算一个字符）。该属性来自 draft-behera-ldap-password-policy。默认值为十二；NIST SP 800-63B 要求至少 8 个字符，在密码是唯一因素时要求 15 个。"
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "记住并拒绝一个人的多少个旧密码。只要此值大于 0，当前密码也总会被拒绝，因此 5 表示新密码不得是最近六个密码中的任何一个。0 关闭此规则。这是该草案的属性，含义与草案相同。每个记住的密码都以其原本存储时的 scrypt 哈希形式保存在此人自己条目的 pwdHistory 中，检查新密码时每个记住的密码需要一次哈希比较。"
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "密码必须包含多少个既非字母、非数字也非空白的字符。0 关闭此规则。"
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "密码是否必须包含至少一个大写字母（任何文字均可）。"
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "密码是否必须包含至少一个十进制数字。"
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服务自行生成的密码有多长——用于从控制台或 /admin-api 创建的新用户、操作员的 Generate，以及产品模式的引导账户。它必须至少等于最小长度，并且至少为符号数的两倍加二。从 90 个字符的字母表中取二十个字符约为 130 位。"
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "a057113a3f0da3b5",
+    "text": "每个记住的旧密码一个值，采用草案的格式 `time#syntaxOID#length#data`——其中 data 是该密码存储时所用的 scrypt 哈希，绝不是密码本身。由本服务维护，在 LDAP 添加或修改时会被拒绝，因为任何人都能编辑的历史记录也是任何人都能清空的历史记录。"
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "密码上次设置的时间，采用 GeneralizedTime 格式。由本服务维护。"
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "至少 {{n}} 个字符"
+  },
+  "password.sentences.minSymbolsOne": {
+    "en": "bcd5d7597e2d9c28",
+    "text": "至少 {{n}} 个符号（既非字母、非数字也非空格的字符）"
+  },
+  "password.sentences.minSymbolsMany": {
+    "en": "59951161d553809a",
+    "text": "至少 {{n}} 个符号（既非字母、非数字也非空格的字符）"
+  },
+  "password.sentences.uppercase": {
+    "en": "4a27754133d00695",
+    "text": "一个大写字母"
+  },
+  "password.sentences.digit": {
+    "en": "d24f1fa16d122006",
+    "text": "一个数字"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "不得是您的当前密码或此前的 {{n}} 个密码中的任何一个"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "身份验证策略"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "哪些机制被接受为第一因素和第二因素"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "此领域中的下一次登录；已开始的会话保留其开始时使用的因素"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "默认领域的配置文件（若有），否则为内置默认值"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "身份验证策略配置文件"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "要求第二因素"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`：当一个人持有第二因素（或其条目注明 stsMfaRequired）时，要求其提供第二因素。`always`：此领域中的每个人都要提供，没有第二因素的人会在下次登录时被引导去注册一个。此项取代了 authn.mfaRequired。没有“从不”选项：已持有的因素总会被要求提供。"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "管理员的第二因素"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "适用于持有控制台角色（Admin Read 或 Admin Write）但没有第二因素的任何人。`offer`：每次登录时向其显示设置第二因素的步骤，并带有“忽略”按钮。`always`：他们必须先设置一个才能登录——默认领域的内置管理员（admin.bootstrapUsername）除外，该管理员只会被建议设置，这样服务永远不会出现无人能登录的情况。`if-held`：与其他所有人一样，按上一个字段处理。比 `always` 弱：仅凭密码登录的管理员，就是任何知道该密码的人都能冒充的管理员。"
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "密码——作为第一因素"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "密码——作为第二因素"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "2f59d674bec89e1d",
+    "text": "安全密钥或通行密钥（无密码）——作为第一因素"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以主要角色注册的 WebAuthn 凭据，无需密码即可登录。"
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "62611e734d22b2fe",
+    "text": "安全密钥（第二因素）——作为第二因素"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色注册的 WebAuthn 凭据，在第一因素之后要求提供。"
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "身份验证器应用（TOTP）——作为第二因素"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代码。绝不作为第一因素：本服务持有与应用相同的共享密钥。此处关闭时，任何人都不能注册新的；已持有的人仍会被要求提供，因为一个把每个已注册账户降级为仅凭密码的关闭开关，所做的事与它所声称的不同（此行取代了 totp.enabled，并保留其约定）。"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "恢复码——作为第二因素"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "来自此人所生成的一组代码中的一次性代码。此处关闭时，不能再生成新的一组；已持有的一组仍然有效（此行取代了 backupCodes.enabled，并保留其约定）。"
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "通过电子邮件发送的六位数代码——作为第一因素"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "发送到此人已验证地址的六位数代码。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "通过电子邮件发送的六位数代码——作为第二因素"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "发送到此人已验证地址的六位数代码。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "通过电子邮件发送的登录链接——作为第一因素"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "通过电子邮件发送的登录链接——作为第二因素"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "TLS 客户端证书——作为第一因素"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "使用经过验证的客户端证书访问 GET /tls/sign-in。"
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos（SPNEGO）——作为第一因素"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "钱包出示——作为第一因素"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "在 /authn/wallet 出示此领域签发的凭证，或来自已注册密钥的 SIOPv2 自签发 ID Token。作为第二因素时，是在密码之后出示的钱包。"
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "钱包出示——作为第二因素"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "在 /authn/wallet 出示此领域签发的凭证，或来自已注册密钥的 SIOPv2 自签发 ID Token。作为第二因素时，是在密码之后出示的钱包。"
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "联合伙伴——作为第一因素"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已配置的联合伙伴断言的登录。"
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "秒"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "电子邮件代码或链接的有效期"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "从发送时起计算。最长十分钟，即 NIST SP 800-63B-4 第 3.1.3.2 节对带外秘密规定的上限。"
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "次尝试"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "登录步骤结束前允许的错误代码次数"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一个登录步骤在结束并要求此人重新开始之前接受多少次错误代码。按人和按网络的速率限制同样适用。"
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "秒"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "再次发送代码或链接前的最短等待时间"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "新的代码或链接会取代上一个，上一个随即失效。一个登录步骤最多发送三个。"
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "次失败"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "关闭此人的电子邮件因素前允许的连续失败次数"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 第 3.2.2 节要求不超过 100。此人及其管理员会收到通知，此人可从门户重新开启。"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "记住的浏览器可跳过第二因素"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "默认关闭。开启时，一个人在其选择记住的浏览器上登录，若在下方的期限内曾在该浏览器上提供过第二因素，则不会再次被要求提供。在管理控制台、用户门户或协议调试器上绝不适用；对管理员绝不适用；在登录风险为中等或更高时绝不适用；而且此时该登录对每个依赖方而言都只是一个因素——amr [\"pwd\"] 和 acr \"1\"，与仅凭密码相同——因此要求“mfa”的应用会被拒绝。浏览器通过持有者 Cookie 识别：任何复制该 Cookie 的人也能跳过第二因素，直到副本被发现为止。"
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "记住的浏览器跳过第二因素的时长"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "从此人上次在该浏览器上提供第二因素时起计算。期满后会再次要求提供，提供后期限重新开始。"
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "本服务用于身份验证策略的类：哪些机制被接受为第一因素和第二因素，以及何时需要第二因素。该条目以配置文件命名（`cn=default`）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`：当一个人持有第二因素（或其条目注明 stsMfaRequired）时，要求其提供第二因素。`always`：此领域中的每个人都要提供，没有第二因素的人会在下次登录时被引导去注册一个。此项取代了 authn.mfaRequired。没有“从不”选项：已持有的因素总会被要求提供。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "适用于持有控制台角色（Admin Read 或 Admin Write）但没有第二因素的任何人。`offer`：每次登录时向其显示设置第二因素的步骤，并带有“忽略”按钮。`always`：他们必须先设置一个才能登录——默认领域的内置管理员（admin.bootstrapUsername）除外，该管理员只会被建议设置，这样服务永远不会出现无人能登录的情况。`if-held`：与其他所有人一样，按上一个字段处理。比 `always` 弱：仅凭密码登录的管理员，就是任何知道该密码的人都能冒充的管理员。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以主要角色注册的 WebAuthn 凭据，无需密码即可登录。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色注册的 WebAuthn 凭据，在第一因素之后要求提供。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代码。绝不作为第一因素：本服务持有与应用相同的共享密钥。此处关闭时，任何人都不能注册新的；已持有的人仍会被要求提供，因为一个把每个已注册账户降级为仅凭密码的关闭开关，所做的事与它所声称的不同（此行取代了 totp.enabled，并保留其约定）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "来自此人所生成的一组代码中的一次性代码。此处关闭时，不能再生成新的一组；已持有的一组仍然有效（此行取代了 backupCodes.enabled，并保留其约定）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "发送到此人已验证地址的六位数代码。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "发送到此人已验证地址的六位数代码。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "使用经过验证的客户端证书访问 GET /tls/sign-in。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "在 /authn/wallet 出示此领域签发的凭证，或来自已注册密钥的 SIOPv2 自签发 ID Token。作为第二因素时，是在密码之后出示的钱包。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "在 /authn/wallet 出示此领域签发的凭证，或来自已注册密钥的 SIOPv2 自签发 ID Token。作为第二因素时，是在密码之后出示的钱包。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已配置的联合伙伴断言的登录。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "从发送时起计算。最长十分钟，即 NIST SP 800-63B-4 第 3.1.3.2 节对带外秘密规定的上限。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一个登录步骤在结束并要求此人重新开始之前接受多少次错误代码。按人和按网络的速率限制同样适用。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "新的代码或链接会取代上一个，上一个随即失效。一个登录步骤最多发送三个。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 第 3.2.2 节要求不超过 100。此人及其管理员会收到通知，此人可从门户重新开启。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "默认关闭。开启时，一个人在其选择记住的浏览器上登录，若在下方的期限内曾在该浏览器上提供过第二因素，则不会再次被要求提供。在管理控制台、用户门户或协议调试器上绝不适用；对管理员绝不适用；在登录风险为中等或更高时绝不适用；而且此时该登录对每个依赖方而言都只是一个因素——amr [\"pwd\"] 和 acr \"1\"，与仅凭密码相同——因此要求“mfa”的应用会被拒绝。浏览器通过持有者 Cookie 识别：任何复制该 Cookie 的人也能跳过第二因素，直到副本被发现为止。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "从此人上次在该浏览器上提供第二因素时起计算。期满后会再次要求提供，提供后期限重新开始。"
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "此人选择启用的电子邮件第二因素：`code` 或 `link`。不存在：无。在 /portal/mfa 上设置，在 /admin/mfa 上以及连续失败次数过多后清除。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "连续失败的电子邮件代码或链接次数，成功一次即重置。由本服务维护。"
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "密码"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "84a03e8c438f4cfa",
+    "text": "安全密钥或通行密钥（无密码）"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "fa5464ced243d64c",
+    "text": "以主要角色注册的 WebAuthn 凭据，无需密码即可登录。"
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "f7b41914800bf87a",
+    "text": "安全密钥（第二因素）"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "以 mfa 角色注册的 WebAuthn 凭据，在第一因素之后要求提供。"
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "身份验证器应用（TOTP）"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "RFC 6238 一次性代码。绝不作为第一因素：本服务持有与应用相同的共享密钥。此处关闭时，任何人都不能注册新的；已持有的人仍会被要求提供，因为一个把每个已注册账户降级为仅凭密码的关闭开关，所做的事与它所声称的不同（此行取代了 totp.enabled，并保留其约定）。"
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "恢复码"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "来自此人所生成的一组代码中的一次性代码。此处关闭时，不能再生成新的一组；已持有的一组仍然有效（此行取代了 backupCodes.enabled，并保留其约定）。"
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "通过电子邮件发送的六位数代码"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "发送到此人已验证地址的六位数代码。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "通过电子邮件发送的登录链接"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "TLS 客户端证书"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "458b5463993c8ba4",
+    "text": "使用经过验证的客户端证书访问 GET /tls/sign-in。"
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos（SPNEGO）"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "钱包出示"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "在 /authn/wallet 出示此领域签发的凭证，或来自已注册密钥的 SIOPv2 自签发 ID Token。作为第二因素时，是在密码之后出示的钱包。"
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "联合伙伴"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "由已配置的联合伙伴断言的登录。"
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "第一因素：{{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "第二因素：{{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "无"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "要求每个人提供第二因素"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "要求持有第二因素的人提供第二因素"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "管理员必须设置一个（内置管理员只会被建议设置）"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "没有第二因素的管理员在每次登录时都会被建议设置一个"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "管理员与其他人一样被要求"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "电子邮件代码或链接的有效期为 {{n}} 秒"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "电子邮件代码或链接的有效期为 {{n}} 秒——未启用：此领域无法发送邮件"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "服务账户策略"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "服务账户可以做什么——第二因素、浏览器、密码入口——以及其密码如何轮换"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "7529888c07b7db03",
+    "text": "此领域中的每个服务账户，自其下次登录、绑定或轮换时起"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "默认领域的配置文件（若有），否则为内置默认值"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "服务账户策略配置文件"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "服务账户免于第二因素"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "默认关闭。开启时，身份验证策略的第二因素要求不适用于此领域中的服务账户，在密码入口拒绝仅凭密码登录的规则（#101）也不适用。该账户的 amr 仍然只写 pwd，因此要求更多因素的依赖方会被拒绝。较弱：仅凭密码的账户，就是任何知道该密码的人都能冒充的账户。"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "服务账户可在浏览器中登录"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "默认关闭。关闭时，登录界面、用户门户和管理控制台会拒绝服务账户，无论其出示何种第一因素；将一个人转为服务账户会结束其浏览器会话。服务账户由程序使用，而程序没有理由出现在登录界面上。"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "入口：LDAP 简单绑定"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "在 389 或 636 上的绑定（RFC 4513）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "入口：WS-Trust UsernameToken"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "发送到安全令牌服务的 WS-Security UsernameToken。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "入口：SCIM HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "在 /scim/v2 使用 HTTP Basic（RFC 7617）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "入口：Shared Signals HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "在 /ssf 端点使用 HTTP Basic（RFC 7617）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "入口：EST HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "在 /.well-known/est 使用 HTTP Basic（RFC 7030 第 3.2.3 节）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "入口：Kerberos AS 交换"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "预身份验证证明了密码密钥的 AS-REQ（RFC 4120），以及 MS-KKDCP。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "入口：OAuth 2.0 密码授权"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "在令牌端点使用 grant_type=password（RFC 6749 第 4.3 节），前提是此领域允许该授权类型。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "自动轮换服务账户密码"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "默认关闭。开启时，service-accounts.rotate 作业会在每个周期为每个指定了推送目标的服务账户生成新密码：先推送到目标，推送成功后才提交其哈希，旧密码在下方的重叠期内保留。推送失败则不做任何更改。此领域没有推送目标时无法开启。"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "轮换周期"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "服务账户的密码在被作业替换前保留多久，从上次轮换（或该账户上次更改密码）时起计算。"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "分钟"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "旧密码仍然有效的时长"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "轮换后，旧密码在这段时间内仍被接受，因此读取新密码较慢的使用方不会被拒绝——也不会被风险评分计为猜测（#226）。旧的 Kerberos 密钥也保留同样长的时间。0：旧密码立即失效。"
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "个字符"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "轮换密码的长度"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "由密码策略的生成器生成，因此符合该策略，且绝不短于其最小长度。"
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "服务账户必须指定所有者"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "默认开启。所有者——此领域中的一个人或一个组——是为该账户负责的一方；开启此项时，没有所有者的服务账户无法保存。"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "次失败"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "告警前允许的连续轮换失败次数"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "失败的轮换会在作业下次运行时重试。连续失败达到此次数后，该账户会在“监控 → 服务账户”上报告，并记录为告警（STS-SVCACCT-0042）。"
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "0ff4e4aa3597259f",
+    "text": "本服务用于服务账户策略的类：此领域中的服务账户可以做什么，以及其密码如何轮换。该条目以配置文件命名（`cn=default`）。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "默认关闭。开启时，身份验证策略的第二因素要求不适用于此领域中的服务账户，在密码入口拒绝仅凭密码登录的规则（#101）也不适用。该账户的 amr 仍然只写 pwd，因此要求更多因素的依赖方会被拒绝。较弱：仅凭密码的账户，就是任何知道该密码的人都能冒充的账户。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "默认关闭。关闭时，登录界面、用户门户和管理控制台会拒绝服务账户，无论其出示何种第一因素；将一个人转为服务账户会结束其浏览器会话。服务账户由程序使用，而程序没有理由出现在登录界面上。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "在 389 或 636 上的绑定（RFC 4513）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "发送到安全令牌服务的 WS-Security UsernameToken。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "在 /scim/v2 使用 HTTP Basic（RFC 7617）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "在 /ssf 端点使用 HTTP Basic（RFC 7617）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "在 /.well-known/est 使用 HTTP Basic（RFC 7030 第 3.2.3 节）。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "预身份验证证明了密码密钥的 AS-REQ（RFC 4120），以及 MS-KKDCP。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "在令牌端点使用 grant_type=password（RFC 6749 第 4.3 节），前提是此领域允许该授权类型。关闭时，服务账户的正确密码在此处会像错误密码一样被拒绝。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "默认关闭。开启时，service-accounts.rotate 作业会在每个周期为每个指定了推送目标的服务账户生成新密码：先推送到目标，推送成功后才提交其哈希，旧密码在下方的重叠期内保留。推送失败则不做任何更改。此领域没有推送目标时无法开启。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "服务账户的密码在被作业替换前保留多久，从上次轮换（或该账户上次更改密码）时起计算。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "轮换后，旧密码在这段时间内仍被接受，因此读取新密码较慢的使用方不会被拒绝——也不会被风险评分计为猜测（#226）。旧的 Kerberos 密钥也保留同样长的时间。0：旧密码立即失效。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "由密码策略的生成器生成，因此符合该策略，且绝不短于其最小长度。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "默认开启。所有者——此领域中的一个人或一个组——是为该账户负责的一方；开启此项时，没有所有者的服务账户无法保存。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "失败的轮换会在作业下次运行时重试。连续失败达到此次数后，该账户会在“监控 → 服务账户”上报告，并记录为告警（STS-SVCACCT-0042）。"
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "LDAP 简单绑定"
+  },
+  "serviceAccount.DOORS.allowLdapBind.what": {
+    "en": "3a8c8bfe4923e585",
+    "text": "在 389 或 636 上的绑定（RFC 4513）。"
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "WS-Trust UsernameToken"
+  },
+  "serviceAccount.DOORS.allowWsTrust.what": {
+    "en": "4d920a20f96a19a1",
+    "text": "发送到安全令牌服务的 WS-Security UsernameToken。"
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "SCIM HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowScim.what": {
+    "en": "506c021bbd796caa",
+    "text": "在 /scim/v2 使用 HTTP Basic（RFC 7617）。"
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "Shared Signals HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowSsf.what": {
+    "en": "41e56e2806f5f363",
+    "text": "在 /ssf 端点使用 HTTP Basic（RFC 7617）。"
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "EST HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowEst.what": {
+    "en": "a40e0a702c1600f6",
+    "text": "在 /.well-known/est 使用 HTTP Basic（RFC 7030 第 3.2.3 节）。"
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "Kerberos AS 交换"
+  },
+  "serviceAccount.DOORS.allowKerberos.what": {
+    "en": "22fac9e9e9e7d0a8",
+    "text": "预身份验证证明了密码密钥的 AS-REQ（RFC 4120），以及 MS-KKDCP。"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "OAuth 2.0 密码授权"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.what": {
+    "en": "7fe8d96fec703361",
+    "text": "在令牌端点使用 grant_type=password（RFC 6749 第 4.3 节），前提是此领域允许该授权类型。"
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "服务账户免于第二因素"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "服务账户与其他所有人一样遵守第二因素规则"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "服务账户可在浏览器中登录"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "服务账户在所有浏览器登录中都会被拒绝"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "密码入口：{{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "无"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "密码每 {{days}} 天轮换一次，旧密码可继续使用 {{minutes}} 分钟"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "密码不会自动轮换"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "每个服务账户都指定了所有者"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "服务账户可以没有所有者"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "通行密钥策略"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "通行密钥的行为方式——登录时是否可以不指明用户名，以及要求安全密钥存储什么"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "此领域中的下一次登录和下一个注册的通行密钥；已注册的通行密钥保留其身份验证器已存储的内容"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "默认领域的配置文件（若有），否则为内置默认值"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "通行密钥策略配置文件"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "允许不输入用户名的通行密钥登录"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "默认开启。开启时，登录界面提供 *使用通行密钥登录* 以及用户名字段的自动填充，它们会向浏览器请求此领域的任何可发现凭据（WebAuthn Level 3 第 5.4 节，`allowCredentials` 为空），并登录其用户句柄所指明的账户，要求并检查用户验证。关闭时，两者都不提供，登录总是先指明此人。取代设置 webauthn.usernameless。"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "无用户名登录开启时“使用安全密钥”所请求的内容"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在无用户名登录开启期间，通过 *使用安全密钥*（或未指明类型的注册）进行注册时发送的 `residentKey`。关闭期间，该按钮总是请求 `required`，因此它会像 *创建通行密钥*（总是请求 `required`）一样生成可发现凭据。`discouraged` 或 `preferred` 可节省安全密钥为数不多的常驻存储槽，代价是该密钥登录时需要用户名。取代设置 webauthn.residentKey。"
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "同步通行密钥（可备份）"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow`（默认值）接受任何通行密钥。`disallow` 只接受绑定设备的通行密钥：若通行密钥的身份验证器表明它可以被备份或同步（BE 标志，WebAuthn Level 3 第 6.1 节），则在注册时和用它登录时都会被拒绝，因此在领域禁止之前注册的同步通行密钥也会停止工作。凭据的 BE 永远不会改变。"
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "要求安全密钥 PIN 的最小长度"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "默认关闭。开启时，注册会向身份验证器询问其最小 PIN 长度（CTAP 2.1 第 12.4 节，minPinLength 扩展），将其记录在密钥上，并在注册时和每次登录时拒绝最小值低于下一行设置的密钥。密钥只会向其被配置为告知的依赖方作答（使用此 RP ID 的 CTAP 2.1 setMinPINLength）；其他所有密钥，以及所有平台通行密钥或同步通行密钥，都不会报告，除非再下一行开启，否则会被拒绝。"
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "个字符"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "安全密钥 PIN 的最小长度"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "在上一行开启时，安全密钥可被设置为接受的最短 PIN，以密钥自身报告的为准。介于 4（CTAP 2.1 自身的下限）与 63 之间。"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "接受不报告 PIN 长度的密钥"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "默认关闭，这是严格的解读：在强制 PIN 长度期间，不报告 PIN 长度的密钥会被拒绝。开启时，这类密钥会被接受，只有报告了的最小值才受规则约束——因此该规则此时只约束被配置为向此依赖方报告的密钥。"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "每次登录都按当前生效的证明规则检查"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "“创建通行密钥”发送的提示"
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "门户的 *创建通行密钥* 按顺序发送的 WebAuthn 提示（Level 3 第 5.4.8 节），取自 security-key、client-device 和 hybrid，或不发送。它们告诉浏览器优先采用哪种方式创建通行密钥。提示不得与 webauthn.authenticatorAttachment 相矛盾：client-device 意味着 platform，security-key 和 hybrid 意味着 cross-platform。"
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "“使用安全密钥”发送的提示"
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "*使用安全密钥* 按顺序发送的提示，或不发送。该按钮请求跨平台身份验证器，因此 client-device 与之矛盾，会被拒绝。"
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "通行密钥登录发送的提示"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登录仪式——通行密钥步骤、无用户名登录及其自动填充——按顺序发送的提示，或不发送（默认值：浏览器提供它所知道的所有方式）。"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "保存个人安全密钥序列号的目录属性"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "默认为空：不检查任何序列号。设为个人条目的某个属性（例如 `serialNumber`，它可以保存多个值）时，安全密钥只有在附带可信的企业证明、且其证书所指明的设备序列号是此人的值之一时才能注册。需要将 webauthn.attestation 设为 enterprise，并将供应商或平台配置为向此 RP ID 提供企业证明；否则浏览器会发送普通证明，所有注册都会被拒绝。"
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "通行密钥提示中显示的个人名称"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "默认为空：使用登录所知道的名称，否则使用用户名。否则为最多六个按顺序排列、以逗号分隔的目录属性；以空格分隔的一组属性（givenName sn）会连接它们的值。第一个所有属性都有值的项成为 user.displayName（WebAuthn Level 3 第 5.4.3 节），去除控制字符和改变方向的字符，最多 64 个字符。用户名始终为 user.name。"
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "通行密钥提示在服务名称后附加的内容"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none`（默认值）只显示 webauthn.rpName。`realm`、`organisation` 或 `realm-and-organisation` 会附加领域名称和/或 saml.organizationName，以便在多个领域拥有账户的人能够区分这些提示。"
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "新通行密钥的名称"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "默认为空：使用提供方的名称，否则为“Passkey”或“Security key”。否则使用此文本，填入 {provider} 和 {kind}，最多 60 个字符。此人之后仍可照常重命名。"
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "将个人的通行密钥作为一个登录选项提供"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "默认开启：一个“使用通行密钥”步骤，其请求列出此人的所有通行密钥，浏览器提供当前可用的那一个。关闭时，拥有多个通行密钥的人会看到按名称列出的每个通行密钥的选项，请求只指明所选的那一个。"
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "默认开启。开启时，登录界面提供 *使用通行密钥登录* 以及用户名字段的自动填充，它们会向浏览器请求此领域的任何可发现凭据（WebAuthn Level 3 第 5.4 节，`allowCredentials` 为空），并登录其用户句柄所指明的账户，要求并检查用户验证。关闭时，两者都不提供，登录总是先指明此人。取代设置 webauthn.usernameless。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在无用户名登录开启期间，通过 *使用安全密钥*（或未指明类型的注册）进行注册时发送的 `residentKey`。关闭期间，该按钮总是请求 `required`，因此它会像 *创建通行密钥*（总是请求 `required`）一样生成可发现凭据。`discouraged` 或 `preferred` 可节省安全密钥为数不多的常驻存储槽，代价是该密钥登录时需要用户名。取代设置 webauthn.residentKey。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow`（默认值）接受任何通行密钥。`disallow` 只接受绑定设备的通行密钥：若通行密钥的身份验证器表明它可以被备份或同步（BE 标志，WebAuthn Level 3 第 6.1 节），则在注册时和用它登录时都会被拒绝，因此在领域禁止之前注册的同步通行密钥也会停止工作。凭据的 BE 永远不会改变。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "默认关闭。开启时，注册会向身份验证器询问其最小 PIN 长度（CTAP 2.1 第 12.4 节，minPinLength 扩展），将其记录在密钥上，并在注册时和每次登录时拒绝最小值低于下一行设置的密钥。密钥只会向其被配置为告知的依赖方作答（使用此 RP ID 的 CTAP 2.1 setMinPINLength）；其他所有密钥，以及所有平台通行密钥或同步通行密钥，都不会报告，除非再下一行开启，否则会被拒绝。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "在上一行开启时，安全密钥可被设置为接受的最短 PIN，以密钥自身报告的为准。介于 4（CTAP 2.1 自身的下限）与 63 之间。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "默认关闭，这是严格的解读：在强制 PIN 长度期间，不报告 PIN 长度的密钥会被拒绝。开启时，这类密钥会被接受，只有报告了的最小值才受规则约束——因此该规则此时只约束被配置为向此依赖方报告的密钥。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "默认关闭。证明规则（webauthn.attestation* 设置：策略、AAGUID 列表、认证级别和 FIPS）在注册通行密钥时检查。开启时，每次登录都会依据当时记录的内容和 FIDO Metadata Service 的当前状态再次检查，因此在规则收紧之前注册的密钥，或其型号后来被报告为已泄露的密钥，将无法再让任何人登录。没有可信证明的密钥无法通过任何要求证明的规则。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "门户的 *创建通行密钥* 按顺序发送的 WebAuthn 提示（Level 3 第 5.4.8 节），取自 security-key、client-device 和 hybrid，或不发送。它们告诉浏览器优先采用哪种方式创建通行密钥。提示不得与 webauthn.authenticatorAttachment 相矛盾：client-device 意味着 platform，security-key 和 hybrid 意味着 cross-platform。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "*使用安全密钥* 按顺序发送的提示，或不发送。该按钮请求跨平台身份验证器，因此 client-device 与之矛盾，会被拒绝。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登录仪式——通行密钥步骤、无用户名登录及其自动填充——按顺序发送的提示，或不发送（默认值：浏览器提供它所知道的所有方式）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "默认为空：不检查任何序列号。设为个人条目的某个属性（例如 `serialNumber`，它可以保存多个值）时，安全密钥只有在附带可信的企业证明、且其证书所指明的设备序列号是此人的值之一时才能注册。需要将 webauthn.attestation 设为 enterprise，并将供应商或平台配置为向此 RP ID 提供企业证明；否则浏览器会发送普通证明，所有注册都会被拒绝。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "默认为空：使用登录所知道的名称，否则使用用户名。否则为最多六个按顺序排列、以逗号分隔的目录属性；以空格分隔的一组属性（givenName sn）会连接它们的值。第一个所有属性都有值的项成为 user.displayName（WebAuthn Level 3 第 5.4.3 节），去除控制字符和改变方向的字符，最多 64 个字符。用户名始终为 user.name。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none`（默认值）只显示 webauthn.rpName。`realm`、`organisation` 或 `realm-and-organisation` 会附加领域名称和/或 saml.organizationName，以便在多个领域拥有账户的人能够区分这些提示。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "默认为空：使用提供方的名称，否则为“Passkey”或“Security key”。否则使用此文本，填入 {provider} 和 {kind}，最多 60 个字符。此人之后仍可照常重命名。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "默认开启：一个“使用通行密钥”步骤，其请求列出此人的所有通行密钥，浏览器提供当前可用的那一个。关闭时，拥有多个通行密钥的人会看到按名称列出的每个通行密钥的选项，请求只指明所选的那一个。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
+    "en": "03ba679923c40b45",
+    "text": "命名通行密钥策略在为其登录时所适用的应用（标识符或 client_id）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "命名通行密钥策略所适用的成员所属的组（cn 或 DN）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "多个命名通行密钥策略匹配时哪一个生效：最低者，取值 1 到 1000。"
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "passkey.SELECTORS.selectApplications.what": {
+    "en": "03ba679923c40b45",
+    "text": "命名通行密钥策略在为其登录时所适用的应用（标识符或 client_id）。"
+  },
+  "passkey.SELECTORS.selectGroups.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "命名通行密钥策略所适用的成员所属的组（cn 或 DN）。"
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "多个命名通行密钥策略匹配时哪一个生效：最低者，取值 1 到 1000。"
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "通行密钥可在不输入用户名的情况下让人登录（要求用户验证）"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "每次登录都先指明此人：不允许不输入用户名的通行密钥登录"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "“创建通行密钥”请求可发现凭据（residentKey required）"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "“使用安全密钥”请求 residentKey {{value}}，因此它也会生成可发现凭据"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "“使用安全密钥”请求 residentKey {{value}}，因此通过它注册的密钥登录时可能需要用户名"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "仅限绑定设备的通行密钥：同步（可备份）通行密钥在注册和登录时都会被拒绝"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "接受同步（可备份）通行密钥"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "不要求安全密钥具有最小 PIN 长度"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "安全密钥在注册和登录时必须报告至少 {{n}} 个字符的最小 PIN；不报告的密钥会被接受"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "安全密钥在注册和登录时必须报告至少 {{n}} 个字符的最小 PIN；不报告的密钥会被拒绝"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "每次通行密钥登录都按当前生效的证明规则检查"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "证明规则在注册通行密钥时检查"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "“创建通行密钥”提示 {{passkey}}；“使用安全密钥”提示 {{securityKey}}；登录提示 {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "无"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "安全密钥只有在附带指明此人 {{attribute}} 中某个序列号的可信企业证明时才能注册"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "不检查安全密钥序列号"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "通行密钥提示显示此人的 {{attribute}}"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "通行密钥提示显示此人的 {{attribute}}，以及附带其 {{extras}} 的服务名称"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "通行密钥提示显示登录所知道的此人名称"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "通行密钥提示显示登录所知道的此人名称，以及附带其 {{extras}} 的服务名称"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "拥有多个通行密钥的人在登录时选择其中一个"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "个人的通行密钥作为一个登录选项提供"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "语言策略"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "页面回退使用的语言、在个人未指明语言时邮件所用的语言，以及赋予新人员的 preferredLanguage"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "此领域中下一个显示的页面和下一个创建的人员；此前创建的人员保留其已有的 preferredLanguage，或保持没有"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "默认领域的配置文件（若有），否则为内置默认值"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "语言策略配置文件"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "默认语言和地区"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "BCP 47 语言标记（RFC 5646），例如 en、fr-CA 或 zh-TW。当请求、此人的 preferredLanguage、语言选择器和浏览器都未指明任何有目录对应的语言时，页面以该语言显示；即使没有目录对应，日期和数字也按该语言格式化。发给条目未指明语言的人员的邮件以该语言撰写。取代设置 mail.defaultLanguage。"
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "为新人员设置此语言"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用属于某个命名配置文件的应用之一，则适用该命名配置文件。现有条目永远不会被改写。"
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "2c86d88e73ffc794",
+    "text": "本服务用于语言策略的类：领域页面回退使用的、并赋予新人员的语言。以配置文件命名（`cn=default`，或按应用选择的命名配置文件）。"
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "BCP 47 语言标记（RFC 5646），例如 en、fr-CA 或 zh-TW。当请求、此人的 preferredLanguage、语言选择器和浏览器都未指明任何有目录对应的语言时，页面以该语言显示；即使没有目录对应，日期和数字也按该语言格式化。发给条目未指明语言的人员的邮件以该语言撰写。取代设置 mail.defaultLanguage。"
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "默认开启。在此领域中创建的、没有 preferredLanguage（RFC 2798 第 2.7 节）的人员条目，会被赋予上面的默认语言——无论是通过控制台、管理 API、SCIM、联合注册或自助注册，还是批量加载创建。若促成创建的应用属于某个命名配置文件的应用之一，则适用该命名配置文件。现有条目永远不会被改写。"
+  },
+  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "命名语言策略所适用的应用（标识符或 client_id）。一个应用最多属于一个命名配置文件。"
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "此配置文件的用途，留给下一个人看。"
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "创建此人条目时语言策略赋予其的 preferredLanguage。只要 preferredLanguage 仍等于该值，它就是策略的选择，页面会将其排在浏览器语言之后；一旦有人设置了其他值，它就是此人自己的选择。仅由本服务写入。"
+  },
+  "locale.SELECTORS.selectApplications.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "命名语言策略所适用的应用（标识符或 client_id）。一个应用最多属于一个命名配置文件。"
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "读者未指明任何有目录对应的语言时，页面以 {{tag}} 显示"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "读者未指明任何有目录对应的语言时，页面以 {{tag}} 显示——但没有目录对应该语言，因此文字为英文，日期和数字按 {{tag}} 格式化"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "创建时没有 preferredLanguage 的人员会被赋予 {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "创建时没有 preferredLanguage 的人员不会被赋予任何语言"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "发给条目未指明语言的人员的邮件以 {{tag}} 撰写"
+  },
+  "locale.sentences.appliesTo": {
+    "en": "098d842668109368",
+    "text": "适用于 {{list}}"
+  },
+  "locale.sentences.param.noApplication": {
+    "en": "cb8bd4fa96dda063",
+    "text": "无应用"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "{{noun}}“{{name}}”已保存在 {{dn}}。它适用于{{appliesTo}}。"
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "{{noun}}“{{name}}”已保存在 {{dn}}。它适用于{{appliesTo}}——但在此领域进入产品模式之前，它在此处不会被执行。"
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "已存储的配置文件已删除，此领域现在沿用{{fallsBackTo}}：{{rules}}。"
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "此领域中未存储任何内容，因此它本来就沿用{{fallsBackTo}}。"
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "已执行。此领域处于产品模式，因此在此设置的每个密码——在下方的每个入口——都必须符合该配置文件，且新密码不得重复任何记住的密码。"
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "未执行。此领域处于开发模式，任何入口都不检查密码，因此关于密码的规则将是关于一个无人读取的凭据的规则。历史记录仍会被记录，因此切换到产品模式的领域会带着历史记录开始。生成的密码在两种模式下都符合该配置文件。"
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "node 的 crypto.randomInt，采用拒绝采样，使字符池中任何字符的出现概率都不高于其他字符"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "密码满足该配置文件为止，因此每个生成的密码在该配置文件接受的所有密码中均匀分布"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "SCIM 不携带密码（本服务公布 changePassword: false），登录也永远不会设置密码。在规则变更之前存储的密码不会被重新检查：这里没有任何地方以可重新检查的形式保存密码，规则从下一次更改起适用。"
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "此领域无法发送邮件，因此两种电子邮件机制无法开启，也从不提供。请在“服务器配置 > 邮件”中配置传输方式。"
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new 和 /admin/users（Set password）"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create 和 /admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate（一个人设置的第一个密码）"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "在 389 或 636 上对 userPassword 进行的 LDAP 添加或修改"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "小写字母"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "大写字母"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "数字"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "符号"
+  }
+}
