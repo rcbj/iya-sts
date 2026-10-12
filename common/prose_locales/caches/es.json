@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "un mensaje suprimido por ser duplicado de otro ya en cola para el mismo acto dentro de mail.dedupWindowS"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "Sesiones de las partes que confían simuladas"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "Las sesiones propias que abren las tres partes que confían simuladas, solo de desarrollo (/wsfed/rp, /saml2/sp, /saml11/rp), cuando una respuesta supera sus comprobaciones, y los rechazos que guardan una vez para que sus páginas los lean (#590)."
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "Aplicado: 1000 sesiones por realm; primero se borran las caducadas y después se descarta la más antigua, lo que cierra la sesión de ese probador en la simulación."
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "Hasta que pasa la duración de sesión de la familia, su cierre de sesión o un mensaje de cierre de sesión que recibe."
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "una página de aplicación encontró la sesión que nombra su cookie"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Entradas de estado de tokens de acceso"

@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "在 mail.dedupWindowS 內因與同一動作已排入佇列的郵件重複而被抑制的郵件"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "模擬信賴方工作階段"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "三個僅用於開發的模擬信賴方（/wsfed/rp、/saml2/sp、/saml11/rp）在回應通過其檢查時為自己開啟的工作階段，以及它們保存一次、供其頁面讀取的拒絕（#590）。"
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "強制執行：每個領域 1000 個工作階段；先清除已過期的，再捨棄最早的一個，這會使該測試者從模擬方登出。"
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "直到該協定系列的工作階段有效期屆滿、它登出，或它收到登出訊息為止。"
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "某個應用程式頁面找到了其 cookie 所指的工作階段"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "存取權杖狀態項目"

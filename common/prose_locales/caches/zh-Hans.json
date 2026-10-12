@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "一封因与 mail.dedupWindowS 内同一操作已入队的邮件重复而被抑制的邮件"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "模拟依赖方会话"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "三个仅用于开发的模拟依赖方（/wsfed/rp、/saml2/sp、/saml11/rp）在响应通过其检查时为自己打开的会话，以及它们保存一次、供其页面读取的拒绝（#590）。"
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "强制执行：每个领域 1000 个会话；先清除已过期的，再丢弃最早的一个，这会使该测试者从模拟方退出登录。"
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "直到该协议族的会话有效期届满、它退出登录，或它收到注销消息为止。"
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "某个应用页面找到了其 cookie 所指的会话"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "访问令牌状态条目"

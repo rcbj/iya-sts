@@ -4319,6 +4319,14 @@
     "en": "27f0344e980fd01a",
     "text": "Hur länge /saml2/sp — den ICKE-SPECIFICERADE mock-tjänsteleverantören — kommer ihåg en RelayState den skapat så att den kan kontrollera rundturen. Det är den sidans eget tillstånd och har inget med identitetsleverantörens att göra."
   },
+  "saml2.mockSpSessionTtlMin|label": {
+    "en": "cdb52a68a477b251",
+    "text": "Den låtsade tjänsteleverantörens sessionslivslängd (minuter)"
+  },
+  "saml2.mockSpSessionTtlMin|description": {
+    "en": "23abb42073c75346",
+    "text": "Hur länge en egen session som /saml2/sp — den låtsade tjänsteleverantören, UTANFÖR SPECIFIKATIONEN — öppnar varar, när en Response godkänns i dess kontroller: dess cookies livslängd och dess rads. Dess egen utloggning och en LogoutRequest från identitetsleverantören avslutar den tidigare. Har inget med identitetsleverantörens session att göra."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Längdvarning för Redirect-bindning (tecken)"
@@ -4455,6 +4463,14 @@
     "en": "53f2bb7a501337d8",
     "text": "Hur många utfärdade intyg SAML-svararen sparar, per förtroendesfär, så att en förlitande part kan begära ett igen via AssertionIDReference. Äldst ut först. Var konstanten ASSERTION_CACHE_MAX i saml11_sso.js."
   },
+  "saml11.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Den låtsade förlitande partens sessionslivslängd (minuter)"
+  },
+  "saml11.mockRpSessionTtlMin|description": {
+    "en": "432fbb865c3cbe2c",
+    "text": "Hur länge en egen session som /saml11/rp — den låtsade förlitande parten, UTANFÖR SPECIFIKATIONEN — öppnar varar, när ett svar godkänns i dess kontroller (#590): dess cookies livslängd och dess rads. Dess egen utloggning avslutar den tidigare; SAML 1.1 definierar ingen utloggning."
+  },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
     "text": "Tokenlivslängd (minuter)"
@@ -4502,6 +4518,14 @@
   "wsfed.mockRpContextTtlMin|description": {
     "en": "6316f83a4de38024",
     "text": "Hur länge /wsfed/rp — den ICKE-SPECIFICERADE mock-förlitande parten — kommer ihåg en wctx den skapat så att den kan kontrollera rundturen. Dess eget tillstånd och ingen annans. Var konstanten RP_CONTEXT_TTL_MS i wsfed.js."
+  },
+  "wsfed.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Den låtsade förlitande partens sessionslivslängd (minuter)"
+  },
+  "wsfed.mockRpSessionTtlMin|description": {
+    "en": "05a882821445b610",
+    "text": "Hur länge en egen session som /wsfed/rp — den låtsade förlitande parten, UTANFÖR SPECIFIKATIONEN — öppnar varar, när ett inloggningssvar godkänns i dess kontroller (#590): dess cookies livslängd och dess rads. Dess egen utloggning och en wsignoutcleanup1.0 avslutar den tidigare."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

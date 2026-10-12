@@ -1207,6 +1207,14 @@
     "en": "e4478ae2c9c051a7",
     "text": "模擬依賴方的起始檢視"
   },
+  "endpoints.route./wsfed/rp/api/session.name": {
+    "en": "80223f88a8df284c",
+    "text": "模擬信賴方的工作階段"
+  },
+  "endpoints.route./wsfed/rp/sign-out.name": {
+    "en": "b45316b4425bc45d",
+    "text": "模擬信賴方自己的登出"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1279,6 +1287,14 @@
     "en": "7e3ea418703ad450",
     "text": "模擬服務提供者的起始檢視"
   },
+  "endpoints.route./saml2/sp/api/session.name": {
+    "en": "2a1622366b7f69c2",
+    "text": "模擬服務提供者的工作階段"
+  },
+  "endpoints.route./saml2/sp/sign-out.name": {
+    "en": "cd8a9938664e364a",
+    "text": "模擬服務提供者自己的登出"
+  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "此設定檔是什麼"
@@ -1326,6 +1342,14 @@
   "endpoints.route./saml11/rp/api/start.name": {
     "en": "e4478ae2c9c051a7",
     "text": "模擬依賴方的起始檢視"
+  },
+  "endpoints.route./saml11/rp/api/session.name": {
+    "en": "80223f88a8df284c",
+    "text": "模擬信賴方的工作階段"
+  },
+  "endpoints.route./saml11/rp/sign-out.name": {
+    "en": "b45316b4425bc45d",
+    "text": "模擬信賴方自己的登出"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",

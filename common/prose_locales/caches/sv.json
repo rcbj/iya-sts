@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "ett meddelande som undertrycktes som dubblett av ett som redan köats för samma handling inom mail.dedupWindowS"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "De låtsade förlitande parternas sessioner"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "De egna sessioner som de tre låtsade förlitande parterna, endast för utveckling (/wsfed/rp, /saml2/sp, /saml11/rp), öppnar när ett svar godkänns i deras kontroller, och de avslag de håller en gång för att deras sidor ska läsa dem (#590)."
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "Tillämpas: 1000 sessioner per realm; utgångna rensas först och sedan släpps den äldsta, vilket loggar ut den testaren från låtsasparten."
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "Tills familjens sessionslivslängd har passerat, dess utloggning, eller ett utloggningsmeddelande den tar emot."
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "en applikationssida hittade den session dess cookie namnger"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Statusposter för åtkomsttoken"

@@ -4319,6 +4319,14 @@
     "en": "27f0344e980fd01a",
     "text": "/saml2/sp——「非規格」的模擬服務提供者——記住它所產生之 RelayState 多久，以便檢查往返。這是該頁面自己的狀態，與身分識別提供者的狀態無關。"
   },
+  "saml2.mockSpSessionTtlMin|label": {
+    "en": "cdb52a68a477b251",
+    "text": "模擬服務提供者工作階段有效期（分鐘）"
+  },
+  "saml2.mockSpSessionTtlMin|description": {
+    "en": "23abb42073c75346",
+    "text": "/saml2/sp（非規範的模擬服務提供者）在 Response 通過其檢查後為自己開啟的工作階段持續多久：即其 cookie 和其記錄列的有效期。它自己的登出以及身分識別提供者發來的 LogoutRequest 會更早結束工作階段。與身分識別提供者的工作階段無關。"
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 繫結長度警告（字元）"
@@ -4455,6 +4463,14 @@
     "en": "53f2bb7a501337d8",
     "text": "SAML 回應程式依信任領域保留多少個已簽發的斷言，讓依賴方可以透過 AssertionIDReference 再次要求。最舊的先移除。原為 saml11_sso.js 中的常數 ASSERTION_CACHE_MAX。"
   },
+  "saml11.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "模擬信賴方工作階段有效期（分鐘）"
+  },
+  "saml11.mockRpSessionTtlMin|description": {
+    "en": "432fbb865c3cbe2c",
+    "text": "/saml11/rp（非規範的模擬信賴方）在回應通過其檢查後為自己開啟的工作階段持續多久（#590）：即其 cookie 和其記錄列的有效期。它自己的登出會更早結束工作階段；SAML 1.1 沒有定義登出。"
+  },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
     "text": "權杖有效期（分鐘）"
@@ -4502,6 +4518,14 @@
   "wsfed.mockRpContextTtlMin|description": {
     "en": "6316f83a4de38024",
     "text": "/wsfed/rp——「非規格」的模擬依賴方——記住它所產生之 wctx 多久，以便檢查往返。這是它自己的狀態，與其他任何人無關。原為 wsfed.js 中的常數 RP_CONTEXT_TTL_MS。"
+  },
+  "wsfed.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "模擬信賴方工作階段有效期（分鐘）"
+  },
+  "wsfed.mockRpSessionTtlMin|description": {
+    "en": "05a882821445b610",
+    "text": "/wsfed/rp（非規範的模擬信賴方）在登入回應通過其檢查後為自己開啟的工作階段持續多久（#590）：即其 cookie 和其記錄列的有效期。它自己的登出以及 wsignoutcleanup1.0 會更早結束工作階段。"
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

@@ -4319,6 +4319,14 @@
     "en": "27f0344e980fd01a",
     "text": "Durée pendant laquelle /saml2/sp — le fournisseur de services fictif HORS SPÉCIFICATION — se souvient d’un RelayState qu’il a créé afin de pouvoir vérifier l’aller-retour. C’est l’état propre à cette page et n’a rien à voir avec celui du fournisseur d’identité."
   },
+  "saml2.mockSpSessionTtlMin|label": {
+    "en": "cdb52a68a477b251",
+    "text": "Durée de session du fournisseur de services fictif (minutes)"
+  },
+  "saml2.mockSpSessionTtlMin|description": {
+    "en": "23abb42073c75346",
+    "text": "Durée d’une session propre qu’ouvre /saml2/sp — le fournisseur de services fictif, HORS SPÉCIFICATION — une fois qu’une Response passe ses vérifications : la durée de son cookie et celle de sa ligne. Sa propre déconnexion et une LogoutRequest du fournisseur d’identité y mettent fin plus tôt. Sans rapport avec la session du fournisseur d’identité."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Seuil d’avertissement de longueur de la liaison Redirect (caractères)"
@@ -4455,6 +4463,14 @@
     "en": "53f2bb7a501337d8",
     "text": "Nombre d’assertions émises que le répondeur SAML conserve, par domaine de confiance, afin qu’une partie de confiance puisse en redemander une par AssertionIDReference. La plus ancienne part en premier. C’était la constante ASSERTION_CACHE_MAX de saml11_sso.js."
   },
+  "saml11.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Durée de session de la partie de confiance fictive (minutes)"
+  },
+  "saml11.mockRpSessionTtlMin|description": {
+    "en": "432fbb865c3cbe2c",
+    "text": "Durée d’une session propre qu’ouvre /saml11/rp — la partie de confiance fictive, HORS SPÉCIFICATION — une fois qu’une réponse passe ses vérifications (#590) : la durée de son cookie et celle de sa ligne. Sa propre déconnexion y met fin plus tôt ; SAML 1.1 ne définit aucune déconnexion."
+  },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
     "text": "Durée de vie des jetons (minutes)"
@@ -4502,6 +4518,14 @@
   "wsfed.mockRpContextTtlMin|description": {
     "en": "6316f83a4de38024",
     "text": "Durée pendant laquelle /wsfed/rp — la partie de confiance fictive HORS SPÉCIFICATION — se souvient d’un wctx qu’elle a créé afin de pouvoir vérifier l’aller-retour. Son état propre et celui de personne d’autre. C’était la constante RP_CONTEXT_TTL_MS de wsfed.js."
+  },
+  "wsfed.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Durée de session de la partie de confiance fictive (minutes)"
+  },
+  "wsfed.mockRpSessionTtlMin|description": {
+    "en": "05a882821445b610",
+    "text": "Durée d’une session propre qu’ouvre /wsfed/rp — la partie de confiance fictive, HORS SPÉCIFICATION — une fois qu’une réponse de connexion passe ses vérifications (#590) : la durée de son cookie et celle de sa ligne. Sa propre déconnexion et un wsignoutcleanup1.0 y mettent fin plus tôt."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

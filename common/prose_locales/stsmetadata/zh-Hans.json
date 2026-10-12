@@ -2140,20 +2140,28 @@
     "text": "按应用提供的同一文档（#494）：其 entityID 是本领域唯一的颁发者，即其 OAuth 颁发者，与各处一致（#523）。路径段是应用的标识符（其 wtrealm）或其 slug。指向任何已注册应用以外的路径段，在两种模式下都返回 404（STS-WSFED-0019）。no-store。"
   },
   "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 wreply，也因为它逐项验证登录响应：针对 /sts/cert 验证断言签名、颁发者、针对其自身领域验证受众、有效窗口，以及 wctx 往返（对其重新编码的身份提供方会产生与会话丢失相同的症状）。它还应答 wa=wsignoutcleanup1.0，该消息真正定义的正是这个方向。"
+    "en": "a9cfb34f3e4d8f17",
+    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 wreply，也因为它逐项验证登录响应：针对 /sts/cert 验证断言签名、颁发者、针对其自身领域验证受众、有效窗口，以及 wctx 往返（对其重新编码的身份提供方会产生与会话丢失相同的症状）。它还应答 wa=wsignoutcleanup1.0，该消息真正定义的正是这个方向。自 #590 起，它是一个拥有自己会话的依赖方：通过检查的响应以 303 答复到本页面，本页面从 /wsfed/rp/api/session 读取结论；拒绝保留其 200 和错误代码；清理会结束该会话。"
   },
   "stsmetadata.endpoints./wsfed/rp.effect": {
     "en": "e2444ef9ff08a2dd",
     "text": "签发一个 wctx，并为该端点能颁发的每种形式提供完整的登录请求"
   },
   "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /wsfed/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+    "en": "f47554c15d56e38b",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /wsfed/rp/api/start 绘制起始页面，并自 #590 起根据 /wsfed/rp/api/session 绘制结论——即模拟依赖方自己的会话所保存的内容。"
   },
   "stsmetadata.endpoints./wsfed/rp/api/start.what": {
     "en": "6722e133f11cee61",
     "text": "非规范内容（#581）。生成一个 wctx，并以事实形式答复模拟依赖方提供的登录请求——即起始页面的视图。与语言无关；no-store。"
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/session.what": {
+    "en": "730d7d8c1da59772",
+    "text": "非规范内容（#590）。模拟依赖方的应用向它自己的后端询问谁已登录：凭借打开其会话时使用的 cookie（HttpOnly、SameSite=Lax，仅限 /wsfed/rp），它答复该会话的结论，或一次性答复一个拒绝，或什么都不答复。JSON；no-store。"
+  },
+  "stsmetadata.endpoints./wsfed/rp/sign-out.what": {
+    "en": "a541c304c1583d5a",
+    "text": "非规范内容（#590）。结束模拟依赖方的会话，并以 303 答复到本身份提供方的 wsignout1.0，以该依赖方作为 wreply——这就是依赖方的退出登录。"
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2240,20 +2248,28 @@
     "text": "本服务中第五个带脚本的页面，其理由在 saml2_sso.js 中重新论证，而不是类比得出：HTTP POST 绑定本身就是一个自动提交的表单，因此不存在没有脚本的版本。script-src 被放宽为指向这一个资源的 'self'，绝不是 'unsafe-inline'，并且页面带有一个真正的提交按钮——脚本关闭时，按钮就是全部机制。"
   },
   "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC——服务提供方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 AssertionConsumerServiceURL，也因为它逐项验证响应：两个签名、颁发者、受众、有效窗口、section 4.1.4.2 所要求的 bearer SubjectConfirmationData，以及 RelayState 往返。它还会解析工件，在进程内完成，而不是由本服务向自己发起 SOAP 调用。"
+    "en": "c5215049b93c44a0",
+    "text": "NON-SPEC——服务提供方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的 AssertionConsumerServiceURL，也因为它逐项验证响应：两个签名、颁发者、受众、有效窗口、section 4.1.4.2 所要求的 bearer SubjectConfirmationData，以及 RelayState 往返。它还会解析工件，在进程内完成，而不是由本服务向自己发起 SOAP 调用。自 #590 起，它是一个拥有自己会话的服务提供方：通过检查的 Response 以 303 答复到本页面，本页面从 /saml2/sp/api/session 读取结论；拒绝保留其 200 和错误代码；它也是自己的单点注销端点，结束 LogoutRequest 所指明的会话，并检查对它自己退出登录的 LogoutResponse。"
   },
   "stsmetadata.endpoints./saml2/sp.effect": {
     "en": "36f5856187bd32d6",
     "text": "签发一个 RelayState，并提供完整的 AuthnRequest，分别要求以 HTTP POST、HTTP Redirect 和 HTTP Artifact 返回响应"
   },
   "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml2/sp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+    "en": "b939e8af3daa0cfc",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml2/sp/api/start 绘制起始页面，并自 #590 起根据 /saml2/sp/api/session 绘制结论——即模拟服务提供方自己的会话所保存的内容。"
   },
   "stsmetadata.endpoints./saml2/sp/api/start.what": {
     "en": "3b1ad0edc68af287",
     "text": "非规范内容（#581）。为模拟服务提供方提供的四个 AuthnRequest 各生成一个 RelayState，用本服务的密钥签名其中三个，并以事实形式答复——即起始页面的视图。与语言无关；no-store。"
+  },
+  "stsmetadata.endpoints./saml2/sp/api/session.what": {
+    "en": "4852a475857c17c4",
+    "text": "非规范内容（#590）。模拟服务提供方的应用向它自己的后端询问谁已登录：凭借打开其会话时使用的 cookie（HttpOnly、SameSite=Lax，仅限 /saml2/sp），它答复该会话的结论，或一次性答复一个拒绝，或什么都不答复。JSON；no-store。"
+  },
+  "stsmetadata.endpoints./saml2/sp/sign-out.what": {
+    "en": "40fc186ad1fae253",
+    "text": "非规范内容（#590）。结束模拟服务提供方的会话；如果有人已登录，则以 303 答复，在 Redirect 绑定上携带一个已签名的 LogoutRequest 发往本身份提供方的单点注销服务——由 SP 发起的单点注销。"
   },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
@@ -2300,20 +2316,28 @@
     "text": "本服务中第六个带脚本的页面，其理由在 saml11_sso.js 中重新论证，而不是类比得出——这一点在这里尤为重要，正因为第五个就是 /saml2/autopost.js，而“和隔壁一样”是最没用的说法。Browser/POST 配置文件在其自身较早的规范中本身就是一个自动提交的表单，是独立得出的。script-src 被放宽为指向这一个资源的 'self'，绝不是 'unsafe-inline'，并且页面带有一个真正的提交按钮——脚本关闭时，按钮就是全部机制。"
   },
   "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的断言消费方，也因为它逐项验证：通过 SAML 1.1 实际使用的 id 属性验证两个签名、状态 QName、Recipient、在没有请求的配置文件上 InResponseTo 的缺失、与配置文件相符的确认方法，以及 Browser/POST 携带而工件配置文件不携带的 DoNotCacheCondition。它在进程内解析工件，而不是由本服务向自己发起 SOAP 调用；重新加载结果页面会演示一次性规则，而不是报错。"
+    "en": "f78993b430f2e855",
+    "text": "NON-SPEC——依赖方不是身份提供方的组成部分。它之所以在这里，是因为它是默认的断言消费方，也因为它逐项验证：通过 SAML 1.1 实际使用的 id 属性验证两个签名、状态 QName、Recipient、在没有请求的配置文件上 InResponseTo 的缺失、与配置文件相符的确认方法，以及 Browser/POST 携带而工件配置文件不携带的 DoNotCacheCondition。它在进程内解析工件，而不是由本服务向自己发起 SOAP 调用；再次加载该工件会演示一次性规则，而不是报错。自 #590 起，它是一个拥有自己会话的依赖方：通过检查的响应以 303 答复到 TARGET（它自己的页面），该页面从 /saml11/rp/api/session 读取结论；拒绝保留其状态和错误代码。"
   },
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "在任一浏览器配置文件上启动完整流程，并验证返回的内容"
   },
   "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml11/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+    "en": "9ac4a9d98f94dabd",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml11/rp/api/start 绘制起始页面，并自 #590 起根据 /saml11/rp/api/session 绘制结论——即模拟依赖方自己的会话所保存的内容。"
   },
   "stsmetadata.endpoints./saml11/rp/api/start.what": {
     "en": "fbb7dc323454a57d",
     "text": "非规范内容（#581）。以事实形式答复模拟依赖方提供的、在站点间传输服务处启动两种浏览器配置文件的入口——即起始页面的视图。与语言无关；no-store。"
+  },
+  "stsmetadata.endpoints./saml11/rp/api/session.what": {
+    "en": "85d4260459a91e92",
+    "text": "非规范内容（#590）。模拟依赖方的应用向它自己的后端询问谁已登录：凭借打开其会话时使用的 cookie（HttpOnly、SameSite=Lax，仅限 /saml11/rp），它答复该会话的结论，或一次性答复一个拒绝，或什么都不答复。JSON；no-store。"
+  },
+  "stsmetadata.endpoints./saml11/rp/sign-out.what": {
+    "en": "053e3916f0d69aa1",
+    "text": "非规范内容（#590）。结束模拟依赖方的会话，并以 303 答复到它的页面。SAML 1.1 没有定义注销，因此不会通知身份提供方。"
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

@@ -2140,20 +2140,28 @@
     "text": "ANG PAREHONG DOKUMENTO, BAWAT APPLICATION (#494): ang entityID nito ay ang nag-iisang issuer ng realm, ang OAuth issuer nito, gaya ng saanman (#523). Ang segment ay ang identifier ng application (ang wtrealm nito) o ang slug nito. Ang segment na hindi nagpapangalan ng REHISTRADONG application ay 404 sa parehong mode (STS-WSFED-0019). no-store."
   },
   "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na wreply, at dahil VINE-VERIFY nito ang sign-in response nang check por check: ang assertion signature laban sa /sts/cert, ang issuer, ang audience laban sa sarili nitong realm, ang validity window, at ang wctx round trip (ang identity provider na muling nag-encode nito ay nagdudulot ng parehong sintomas ng nawalang session). Sinasagot din ang wa=wsignoutcleanup1.0, na siyang direksyong talagang pinagtukuyan ng mensaheng iyon."
+    "en": "a9cfb34f3e4d8f17",
+    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na wreply, at dahil VINE-VERIFY nito ang sign-in response nang check por check: ang assertion signature laban sa /sts/cert, ang issuer, ang audience laban sa sarili nitong realm, ang validity window, at ang wctx round trip (ang identity provider na muling nag-encode nito ay nagdudulot ng parehong sintomas ng nawalang session). Sinasagot din ang wa=wsignoutcleanup1.0, na siyang direksyong talagang pinagtukuyan ng mensaheng iyon. Mula #590, isa itong relying party na may sariling session: ang tugong pumasa ay sinasagot ng 303 papunta sa pahinang ito, na bumabasa ng hatol mula sa /wsfed/rp/api/session; pinananatili ng pagtanggi ang 200 nito at ang error code nito; tinatapos ng cleanup ang session na iyon."
   },
   "stsmetadata.endpoints./wsfed/rp.effect": {
     "en": "e2444ef9ff08a2dd",
     "text": "nagmi-mint ng wctx at nag-aalok ng kumpletong sign-in request para sa bawat hugis na kayang ibigay ng endpoint"
   },
   "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /wsfed/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+    "en": "f47554c15d56e38b",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /wsfed/rp/api/start at, mula #590, ang hatol mula sa /wsfed/rp/api/session — ang hawak ng sariling session ng mock relying party."
   },
   "stsmetadata.endpoints./wsfed/rp/api/start.what": {
     "en": "6722e133f11cee61",
     "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng wctx at sumasagot, bilang mga katotohanan, ng mga hiling na mag-sign in na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/session.what": {
+    "en": "730d7d8c1da59772",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Ang application ng mock relying party na nagtatanong sa sarili nitong back end kung sino ang naka-sign in: gamit ang cookie kung saan binuksan ang session nito (HttpOnly, SameSite=Lax, saklaw ng /wsfed/rp), sinasagot nito ang hatol ng session na iyon, o isang pagtanggi nang isang beses, o wala. JSON; no-store."
+  },
+  "stsmetadata.endpoints./wsfed/rp/sign-out.what": {
+    "en": "a541c304c1583d5a",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Tinatapos ang session ng mock relying party at sumasagot ng 303 papunta sa wsignout1.0 ng identity provider na ito, na ang relying party ang wreply — ang sign-out ng isang relying party."
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2240,20 +2248,28 @@
     "text": "Ang IKALIMANG scripted page sa serbisyong ito, at muling ginagawa ang argumento sa saml2_sso.js sa halip na sa pamamagitan ng analohiya: ang HTTP POST binding AY isang self-submitting form, kaya walang bersyon nito na walang script. Niluluwagan ang script-src sa 'self' na nagpapangalan sa iisang resource na ito, hindi kailanman 'unsafe-inline', at may dalang TUNAY NA SUBMIT BUTTON ang page — kapag naka-off ang scripting, ang button ang buong mekanismo."
   },
   "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang service provider. Narito ito dahil ito ang default na AssertionConsumerServiceURL, at dahil VINE-VERIFY nito ang response nang check por check: ang dalawang signature, ang issuer, ang audience, ang validity window, ang bearer SubjectConfirmationData na hinihingi ng section 4.1.4.2, at ang RelayState round trip. Nire-resolve din nito ang artifact, sa loob ng process sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito."
+    "en": "c5215049b93c44a0",
+    "text": "NON-SPEC — hindi bahagi ng identity provider ang service provider. Narito ito dahil ito ang default na AssertionConsumerServiceURL, at dahil VINE-VERIFY nito ang response nang check por check: ang dalawang signature, ang issuer, ang audience, ang validity window, ang bearer SubjectConfirmationData na hinihingi ng section 4.1.4.2, at ang RelayState round trip. Nire-resolve din nito ang artifact, sa loob ng process sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito. Mula #590, isa itong service provider na may sariling session: ang Response na pumasa ay sinasagot ng 303 papunta sa pahinang ito, na bumabasa ng hatol mula sa /saml2/sp/api/session; pinananatili ng pagtanggi ang 200 nito at ang error code nito; at ito ang sarili nitong Single Logout endpoint, na tumatapos sa session na pinangangalanan ng isang LogoutRequest at sumusuri sa LogoutResponse sa sarili nitong sign-out."
   },
   "stsmetadata.endpoints./saml2/sp.effect": {
     "en": "36f5856187bd32d6",
     "text": "nagmi-mint ng RelayState at nag-aalok ng kumpletong AuthnRequest na humihingi ng response sa HTTP POST, HTTP Redirect at HTTP Artifact"
   },
   "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml2/sp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+    "en": "b939e8af3daa0cfc",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml2/sp/api/start at, mula #590, ang hatol mula sa /saml2/sp/api/session — ang hawak ng sariling session ng mock service provider."
   },
   "stsmetadata.endpoints./saml2/sp/api/start.what": {
     "en": "3b1ad0edc68af287",
     "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng RelayState para sa bawat isa sa apat na AuthnRequest na iniaalok ng mock service provider, nilalagdaan ang tatlo gamit ang key ng serbisyong ito, at sinasagot ang mga ito bilang mga katotohanan — ang view ng panimulang pahina. Walang wika; no-store."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/session.what": {
+    "en": "4852a475857c17c4",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Ang application ng mock service provider na nagtatanong sa sarili nitong back end kung sino ang naka-sign in: gamit ang cookie kung saan binuksan ang session nito (HttpOnly, SameSite=Lax, saklaw ng /saml2/sp), sinasagot nito ang hatol ng session na iyon, o isang pagtanggi nang isang beses, o wala. JSON; no-store."
+  },
+  "stsmetadata.endpoints./saml2/sp/sign-out.what": {
+    "en": "40fc186ad1fae253",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Tinatapos ang session ng mock service provider at, kung may naka-sign in, sumasagot ng 303 na may dalang nilagdaang LogoutRequest papunta sa Single Logout service ng identity provider na ito sa Redirect binding — Single Logout na sinimulan ng SP."
   },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
@@ -2300,20 +2316,28 @@
     "text": "Ang IKAANIM na scripted page sa serbisyong ito, at muling ginagawa ang argumento sa saml11_sso.js sa halip na sa pamamagitan ng analohiya — na mahalaga rito mismo dahil ang ikalima ay /saml2/autopost.js at ang \"kapareho ng katabi\" ang pinakawalang-silbing masasabi. Ang Browser/POST profile AY isang self-submitting form sa sarili nitong mas lumang specification, na narating nang hiwalay. Niluluwagan ang script-src sa 'self' na nagpapangalan sa iisang resource na ito, hindi kailanman 'unsafe-inline', at may dalang TUNAY NA SUBMIT BUTTON ang page — kapag naka-off ang scripting, ang button ang buong mekanismo."
   },
   "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na assertion consumer, at dahil VINE-VERIFY nito nang check por check: ang dalawang signature sa pamamagitan ng mga id attribute na talagang ginagamit ng SAML 1.1, ang status QName, ang Recipient, ang KAWALAN ng InResponseTo sa profile na walang request, ang confirmation method na tumutugma sa profile, at ang DoNotCacheCondition na dala ng Browser/POST at hindi ng artifact profile. Nire-resolve nito ang artifact SA LOOB NG PROCESS sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito, at ang pag-reload ng result page ay nagpapakita ng one-shot rule sa halip na mag-error."
+    "en": "f78993b430f2e855",
+    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na assertion consumer, at dahil VINE-VERIFY nito nang check por check: ang dalawang signature sa pamamagitan ng mga id attribute na talagang ginagamit ng SAML 1.1, ang status QName, ang Recipient, ang KAWALAN ng InResponseTo sa profile na walang request, ang confirmation method na tumutugma sa profile, at ang DoNotCacheCondition na dala ng Browser/POST at hindi ng artifact profile. Nire-resolve nito ang artifact SA LOOB NG PROCESS sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito, at ang muling pag-load ng artifact ay nagpapakita ng one-shot rule sa halip na mag-error. Mula #590, isa itong relying party na may sariling session: ang tugong pumasa ay sinasagot ng 303 papunta sa TARGET (ang sarili nitong pahina), na bumabasa ng hatol mula sa /saml11/rp/api/session; pinananatili ng pagtanggi ang status nito at ang error code nito."
   },
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "nagsisimula ng kumpletong flow sa alinmang browser profile at vine-verify ang bumabalik"
   },
   "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml11/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+    "en": "9ac4a9d98f94dabd",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml11/rp/api/start at, mula #590, ang hatol mula sa /saml11/rp/api/session — ang hawak ng sariling session ng mock relying party."
   },
   "stsmetadata.endpoints./saml11/rp/api/start.what": {
     "en": "fbb7dc323454a57d",
     "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Sumasagot, bilang mga katotohanan, ng mga simula ng dalawang browser profile sa inter-site transfer service na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/session.what": {
+    "en": "85d4260459a91e92",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Ang application ng mock relying party na nagtatanong sa sarili nitong back end kung sino ang naka-sign in: gamit ang cookie kung saan binuksan ang session nito (HttpOnly, SameSite=Lax, saklaw ng /saml11/rp), sinasagot nito ang hatol ng session na iyon, o isang pagtanggi nang isang beses, o wala. JSON; no-store."
+  },
+  "stsmetadata.endpoints./saml11/rp/sign-out.what": {
+    "en": "053e3916f0d69aa1",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#590). Tinatapos ang session ng mock relying party at sumasagot ng 303 papunta sa pahina nito. Walang logout na itinatakda ang SAML 1.1, kaya hindi sinasabihan ang identity provider."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

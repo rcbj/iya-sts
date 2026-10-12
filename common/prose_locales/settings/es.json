@@ -4319,6 +4319,14 @@
     "en": "27f0344e980fd01a",
     "text": "Cuánto tiempo recuerda /saml2/sp — el proveedor de servicios mock, AJENO A LA ESPECIFICACIÓN — un RelayState que generó para poder comprobar el viaje de ida y vuelta. Es el estado propio de esa página y no tiene nada que ver con el del proveedor de identidad."
   },
+  "saml2.mockSpSessionTtlMin|label": {
+    "en": "cdb52a68a477b251",
+    "text": "Duración de la sesión del proveedor de servicios simulado (minutos)"
+  },
+  "saml2.mockSpSessionTtlMin|description": {
+    "en": "23abb42073c75346",
+    "text": "Cuánto dura una sesión propia que abre /saml2/sp —el proveedor de servicios simulado, NO ESPECIFICADO— cuando una Response supera sus comprobaciones: la duración de su cookie y la de su fila. Su propio cierre de sesión y una LogoutRequest del proveedor de identidad la terminan antes. No tiene nada que ver con la sesión del proveedor de identidad."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Aviso de longitud del binding Redirect (caracteres)"
@@ -4455,6 +4463,14 @@
     "en": "53f2bb7a501337d8",
     "text": "Cuántas aserciones emitidas conserva el respondedor SAML, por dominio de confianza, para que una parte que confía pueda volver a pedir una mediante AssertionIDReference. Primero sale la más antigua. Era la constante ASSERTION_CACHE_MAX en saml11_sso.js."
   },
+  "saml11.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Duración de la sesión de la parte que confía simulada (minutos)"
+  },
+  "saml11.mockRpSessionTtlMin|description": {
+    "en": "432fbb865c3cbe2c",
+    "text": "Cuánto dura una sesión propia que abre /saml11/rp —la parte que confía simulada, NO ESPECIFICADA— cuando una respuesta supera sus comprobaciones (#590): la duración de su cookie y la de su fila. Su propio cierre de sesión la termina antes; SAML 1.1 no define ningún cierre de sesión."
+  },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
     "text": "Vigencia del token (minutos)"
@@ -4502,6 +4518,14 @@
   "wsfed.mockRpContextTtlMin|description": {
     "en": "6316f83a4de38024",
     "text": "Cuánto tiempo recuerda /wsfed/rp — la parte que confía mock, AJENA A LA ESPECIFICACIÓN — un wctx que generó para poder comprobar el viaje de ida y vuelta. Su propio estado y el de nadie más. Era la constante RP_CONTEXT_TTL_MS en wsfed.js."
+  },
+  "wsfed.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "Duración de la sesión de la parte que confía simulada (minutos)"
+  },
+  "wsfed.mockRpSessionTtlMin|description": {
+    "en": "05a882821445b610",
+    "text": "Cuánto dura una sesión propia que abre /wsfed/rp —la parte que confía simulada, NO ESPECIFICADA— cuando una respuesta de inicio de sesión supera sus comprobaciones (#590): la duración de su cookie y la de su fila. Su propio cierre de sesión y un wsignoutcleanup1.0 la terminan antes."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4317** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4319** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 290
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 111
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
@@ -2201,8 +2201,8 @@ Raised from: saml/.
 | `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Success and no message (HTTP 200) — saml-core-2.0-os 3.5.3's empty response (#160) |
 | `STS-SAML-0019` | The SAMLRequest at the SAML 2.0 Single Logout service is not a readable <samlp:LogoutRequest>. | HTTP 400 page |
 | `STS-SAML-0020` | A SAML 2.0 LogoutRequest carried an <saml:EncryptedID> this service could not decrypt, so the session was not ended. | HTTP 400 page |
-| `STS-SAML-0021` | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 200 error page |
-| `STS-SAML-0022` | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0021` | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 200 shell; the page reads the refusal from the mock service provider's session, once (#590) |
+| `STS-SAML-0022` | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. | HTTP 200 shell; the page reads the failed checks from the mock service provider's session, once (#590) |
 | `STS-SAML-0023` | A SAML 2.0 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
@@ -2222,8 +2222,8 @@ Raised from: saml/.
 | `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 page |
-| `STS-SAML-0043` | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 shell; the page reads the refusal from the mock relying party's session, once (#590) |
+| `STS-SAML-0043` | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. | HTTP 200 shell; the page reads the failed checks from the mock relying party's session, once (#590) |
 | `STS-SAML-0044` | A service provider metadata refresh named an application that is not in the registry. | — |
 | `STS-SAML-0045` | Service provider metadata was not fetched because federation.outbound is off. | — |
 | `STS-SAML-0046` | Service provider metadata was not fetched because samlSpMetadataUrl is empty, not a URL, or not a scheme the outbound policy dials. | — |
@@ -2290,6 +2290,8 @@ Raised from: saml/.
 | `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
 | `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
+| `STS-SAML-0110` | The LogoutResponse the identity provider sent back to the mock SAML 2.0 service provider's own sign-out failed at least one of its checks (issuer, Destination, InResponseTo, status, signature). The service provider's session had already ended (#590). | HTTP 303 to /saml2/sp, which reads the failed checks from the mock service provider's session, once |
+| `STS-SAML-0111` | A LogoutRequest delivered to the mock SAML 2.0 service provider failed at least one of its checks (issuer, Destination, signature, a NameID and SessionIndex), so it ended no session (#590). | HTTP 303 to the identity provider's Single Logout service with a LogoutResponse whose status is Requester (saml-profiles-2.0-os section 4.4.4.2) |
 
 ## STS-WSTRUST
 
@@ -2355,7 +2357,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
 | `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
-| `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 shell; the page reads the failed checks from the mock relying party's session, once (#590) |
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |

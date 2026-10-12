@@ -111,9 +111,9 @@
   "wsfed.session.signOutNote": "Avslutar den här förlitande partens session och skickar dig sedan till identitetsleverantörens wsignout1.0, som avslutar sessionen där och skickar en städbegäran till varje förlitande part den loggade in dig hos.",
   "saml2.session.signOutNote": "Avslutar den här tjänsteleverantörens session och skickar sedan en signerad LogoutRequest till identitetsleverantörens Single Logout-tjänst (SP-initierad Single Logout); dess LogoutResponse kommer tillbaka hit.",
   "saml11.session.signOutNote": "Avslutar den här förlitande partens session. SAML 1.1 definierar ingen utloggning, så identitetsleverantörens session berörs inte.",
-  "saml2.title.signedOut": "Utloggad — simulerad tjänsteleverantör",
+  "saml2.title.signedOut": "Utloggad — låtsad tjänsteleverantör",
   "saml2.signedOut.heading": "Utloggad",
-  "saml2.signedOut.sub": "Simulerad tjänsteleverantör på <code>{entityId}</code> — identitetsleverantörens LogoutResponse på den LogoutRequest som den här tjänsteleverantören skickade.",
+  "saml2.signedOut.sub": "Låtsad tjänsteleverantör på <code>{entityId}</code> — identitetsleverantörens LogoutResponse på den LogoutRequest som den här tjänsteleverantören skickade.",
   "saml2.signedOut.ok": "Alla kontroller godkändes: identitetsleverantören bekräftade utloggningen.",
   "saml2.signedOut.notOk": "Alla kontroller godkändes inte. Den här tjänsteleverantörens egen session avslutades när du loggade ut, vad identitetsleverantören än svarade.",
   "saml2.signedOut.document": "LogoutResponse, som den kom fram"

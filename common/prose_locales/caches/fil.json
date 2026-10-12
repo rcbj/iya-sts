@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "isang mensaheng pinigil bilang duplicate ng isang naka-queue na para sa parehong aksyon sa loob ng mail.dedupWindowS"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "Mga session ng mock relying party"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "Ang sariling mga session na binubuksan ng tatlong mock relying party na pang-development lamang (/wsfed/rp, /saml2/sp, /saml11/rp) kapag pumasa ang isang tugon sa mga pagsusuri nila, at ang mga pagtangging itinatabi nila nang isang beses para mabasa ng kanilang mga pahina (#590)."
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "Ipinapatupad: 1000 session bawat realm; inaalis muna ang mga expired at pagkatapos ay itinatapon ang pinakaluma, na nagsa-sign out sa tester na iyon sa mock."
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "Hanggang lumipas ang tagal ng session ng pamilya, ang sign-out nito, o isang logout message na natatanggap nito."
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "nakita ng isang application page ang session na pinangangalanan ng cookie nito"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Mga status entry ng access token"

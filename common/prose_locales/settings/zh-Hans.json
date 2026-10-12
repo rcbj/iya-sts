@@ -4319,6 +4319,14 @@
     "en": "27f0344e980fd01a",
     "text": "/saml2/sp——非规范的模拟服务提供方——记住其生成的 RelayState 以便检查往返过程的时长。这是该页面自己的状态，与身份提供方的状态无关。"
   },
+  "saml2.mockSpSessionTtlMin|label": {
+    "en": "cdb52a68a477b251",
+    "text": "模拟服务提供方会话有效期（分钟）"
+  },
+  "saml2.mockSpSessionTtlMin|description": {
+    "en": "23abb42073c75346",
+    "text": "/saml2/sp（非规范的模拟服务提供方）在 Response 通过其检查后为自己打开的会话持续多久：即其 cookie 和其记录行的有效期。它自己的退出登录以及身份提供方发来的 LogoutRequest 会更早结束会话。与身份提供方的会话无关。"
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 绑定长度警告（字符）"
@@ -4455,6 +4463,14 @@
     "en": "53f2bb7a501337d8",
     "text": "SAML 响应方按信任领域保留多少个已签发的断言，以便依赖方可以通过 AssertionIDReference 再次请求。最旧的最先移除。原为 saml11_sso.js 中的常量 ASSERTION_CACHE_MAX。"
   },
+  "saml11.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "模拟依赖方会话有效期（分钟）"
+  },
+  "saml11.mockRpSessionTtlMin|description": {
+    "en": "432fbb865c3cbe2c",
+    "text": "/saml11/rp（非规范的模拟依赖方）在响应通过其检查后为自己打开的会话持续多久（#590）：即其 cookie 和其记录行的有效期。它自己的退出登录会更早结束会话；SAML 1.1 没有定义注销。"
+  },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
     "text": "令牌有效期（分钟）"
@@ -4502,6 +4518,14 @@
   "wsfed.mockRpContextTtlMin|description": {
     "en": "6316f83a4de38024",
     "text": "/wsfed/rp——非规范的模拟依赖方——记住其生成的 wctx 以便检查往返过程的时长。这只是它自己的状态，与其他任何人无关。原为 wsfed.js 中的常量 RP_CONTEXT_TTL_MS。"
+  },
+  "wsfed.mockRpSessionTtlMin|label": {
+    "en": "3589412a9ba94191",
+    "text": "模拟依赖方会话有效期（分钟）"
+  },
+  "wsfed.mockRpSessionTtlMin|description": {
+    "en": "05a882821445b610",
+    "text": "/wsfed/rp（非规范的模拟依赖方）在登录响应通过其检查后为自己打开的会话持续多久（#590）：即其 cookie 和其记录行的有效期。它自己的退出登录以及 wsignoutcleanup1.0 会更早结束会话。"
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

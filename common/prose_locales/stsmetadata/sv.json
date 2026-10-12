@@ -2140,20 +2140,28 @@
     "text": "SAMMA DOKUMENT, PER APPLIKATION (#494): dess entityID är sfärens enda utfärdare, dess OAuth-utfärdare, som överallt (#523). Segmentet är applikationens identifierare (dess wtrealm) eller dess slug. Ett segment som inte namnger någon REGISTRERAD applikation ger 404 i båda lägena (STS-WSFED-0019). no-store."
   },
   "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-wreply, och eftersom den VERIFIERAR inloggningssvaret kontroll för kontroll: intygssignaturen mot /sts/cert, utfärdaren, målgruppen mot sin egen realm, giltighetsfönstret och wctx-rundturen (en identitetsleverantör som kodade om den ger samma symptom som en förlorad session). Svarar också på wa=wsignoutcleanup1.0, vilket är den riktning det meddelandet egentligen är definierat för."
+    "en": "a9cfb34f3e4d8f17",
+    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-wreply, och eftersom den VERIFIERAR inloggningssvaret kontroll för kontroll: intygssignaturen mot /sts/cert, utfärdaren, målgruppen mot sin egen realm, giltighetsfönstret och wctx-rundturen (en identitetsleverantör som kodade om den ger samma symptom som en förlorad session). Svarar också på wa=wsignoutcleanup1.0, vilket är den riktning det meddelandet egentligen är definierat för. Sedan #590 är den en förlitande part med en egen session: ett svar som godkänns besvaras med en 303 till den här sidan, som läser utslaget från /wsfed/rp/api/session; ett avslag behåller sin 200 och sin felkod; städningen avslutar den sessionen."
   },
   "stsmetadata.endpoints./wsfed/rp.effect": {
     "en": "e2444ef9ff08a2dd",
     "text": "skapar en wctx och erbjuder en fullständig inloggningsbegäran för varje form som slutpunkten kan utfärda"
   },
   "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /wsfed/rp/api/start och utfallet som det mottagande svarets skal bär."
+    "en": "f47554c15d56e38b",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /wsfed/rp/api/start och, sedan #590, utfallet från /wsfed/rp/api/session — det som den låtsade förlitande partens egen session håller."
   },
   "stsmetadata.endpoints./wsfed/rp/api/start.what": {
     "en": "6722e133f11cee61",
     "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en wctx och svarar, som fakta, med de inloggningsbegäranden den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/session.what": {
+    "en": "730d7d8c1da59772",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Applikationen hos den låtsade förlitande parten som frågar sin egen backend vem som är inloggad: med den cookie sessionen öppnades med (HttpOnly, SameSite=Lax, begränsad till /wsfed/rp) svarar den sessionens utslag, eller ett avslag en gång, eller ingenting. JSON; no-store."
+  },
+  "stsmetadata.endpoints./wsfed/rp/sign-out.what": {
+    "en": "a541c304c1583d5a",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Avslutar den låtsade förlitande partens session och svarar med en 303 till den här identitetsleverantörens wsignout1.0, med den förlitande parten som wreply — en förlitande parts utloggning."
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2240,20 +2248,28 @@
     "text": "Den FEMTE skriptade sidan i den här tjänsten, och argumentet förs på nytt i saml2_sso.js snarare än genom analogi: HTTP POST-bindningen ÄR ett formulär som skickar sig självt, så det finns ingen version av den utan skript. script-src lättas till 'self' och namnger just den här resursen, aldrig 'unsafe-inline', och sidan har en RIKTIG SKICKA-KNAPP — med skript avstängda är knappen hela mekanismen."
   },
   "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC — en tjänsteleverantör är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-AssertionConsumerServiceURL, och eftersom den VERIFIERAR svaret kontroll för kontroll: båda signaturerna, utfärdaren, målgruppen, giltighetsfönstret, den bearer-SubjectConfirmationData som avsnitt 4.1.4.2 kräver, och RelayState-rundturen. Den löser också upp en artefakt, inom processen snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv."
+    "en": "c5215049b93c44a0",
+    "text": "NON-SPEC — en tjänsteleverantör är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-AssertionConsumerServiceURL, och eftersom den VERIFIERAR svaret kontroll för kontroll: båda signaturerna, utfärdaren, målgruppen, giltighetsfönstret, den bearer-SubjectConfirmationData som avsnitt 4.1.4.2 kräver, och RelayState-rundturen. Den löser också upp en artefakt, inom processen snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv. Sedan #590 är den en tjänsteleverantör med en egen session: en Response som godkänns besvaras med en 303 till den här sidan, som läser utslaget från /saml2/sp/api/session; ett avslag behåller sin 200 och sin felkod; och den är sin egen Single Logout-slutpunkt, som avslutar den session en LogoutRequest namnger och kontrollerar LogoutResponse på sin egen utloggning."
   },
   "stsmetadata.endpoints./saml2/sp.effect": {
     "en": "36f5856187bd32d6",
     "text": "skapar en RelayState och erbjuder en fullständig AuthnRequest som ber om svaret på HTTP POST, HTTP Redirect och HTTP Artifact"
   },
   "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml2/sp/api/start och utfallet som det mottagande svarets skal bär."
+    "en": "b939e8af3daa0cfc",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml2/sp/api/start och, sedan #590, utfallet från /saml2/sp/api/session — det som den låtsade tjänsteleverantörens egen session håller."
   },
   "stsmetadata.endpoints./saml2/sp/api/start.what": {
     "en": "3b1ad0edc68af287",
     "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en RelayState för var och en av de fyra AuthnRequest-begäranden den låtsade tjänsteleverantören erbjuder, signerar tre med tjänstens nyckel och svarar med dem som fakta — startsidans vy. Språkoberoende; no-store."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/session.what": {
+    "en": "4852a475857c17c4",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Applikationen hos den låtsade tjänsteleverantören som frågar sin egen backend vem som är inloggad: med den cookie sessionen öppnades med (HttpOnly, SameSite=Lax, begränsad till /saml2/sp) svarar den sessionens utslag, eller ett avslag en gång, eller ingenting. JSON; no-store."
+  },
+  "stsmetadata.endpoints./saml2/sp/sign-out.what": {
+    "en": "40fc186ad1fae253",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Avslutar den låtsade tjänsteleverantörens session och svarar, om någon var inloggad, med en 303 som bär en signerad LogoutRequest till den här identitetsleverantörens Single Logout-tjänst på Redirect-bindningen — SP-initierad Single Logout."
   },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
@@ -2300,20 +2316,28 @@
     "text": "Den SJÄTTE skriptade sidan i den här tjänsten, och argumentet förs på nytt i saml11_sso.js snarare än genom analogi — vilket spelar roll här just eftersom den femte var /saml2/autopost.js och \"samma som grannen\" är det minst användbara som kunde sägas. Browser/POST-profilen ÄR ett formulär som skickar sig självt i sin egen äldre specifikation, framkommet oberoende. script-src lättas till 'self' och namnger just den här resursen, aldrig 'unsafe-inline', och sidan har en RIKTIG SKICKA-KNAPP — med skript avstängda är knappen hela mekanismen."
   },
   "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standardmottagaren av intyg, och eftersom den VERIFIERAR kontroll för kontroll: båda signaturerna via de id-attribut som SAML 1.1 faktiskt använder, statusens QName, Recipient, FRÅNVARON av InResponseTo i en profil utan begäran, att bekräftelsemetoden matchar profilen, och den DoNotCacheCondition som Browser/POST bär och artefaktprofilen inte gör. Den löser upp en artefakt INOM PROCESSEN snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv, och att ladda om resultatsidan demonstrerar engångsregeln snarare än att ge fel."
+    "en": "f78993b430f2e855",
+    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standardmottagaren av intyg, och eftersom den VERIFIERAR kontroll för kontroll: båda signaturerna via de id-attribut som SAML 1.1 faktiskt använder, statusens QName, Recipient, FRÅNVARON av InResponseTo i en profil utan begäran, att bekräftelsemetoden matchar profilen, och den DoNotCacheCondition som Browser/POST bär och artefaktprofilen inte gör. Den löser upp en artefakt INOM PROCESSEN snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv, och att ladda artefakten igen demonstrerar engångsregeln snarare än att ge fel. Sedan #590 är den en förlitande part med en egen session: ett svar som godkänns besvaras med en 303 till TARGET (dess egen sida), som läser utslaget från /saml11/rp/api/session; ett avslag behåller sin status och sin felkod."
   },
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "startar ett fullständigt flöde på någon av webbläsarprofilerna och verifierar det som kommer tillbaka"
   },
   "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml11/rp/api/start och utfallet som det mottagande svarets skal bär."
+    "en": "9ac4a9d98f94dabd",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml11/rp/api/start och, sedan #590, utfallet från /saml11/rp/api/session — det som den låtsade förlitande partens egen session håller."
   },
   "stsmetadata.endpoints./saml11/rp/api/start.what": {
     "en": "fbb7dc323454a57d",
     "text": "UTANFÖR SPECIFIKATIONEN (#581). Svarar, som fakta, med de två webbläsarprofilernas starter vid överföringstjänsten mellan webbplatser som den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/session.what": {
+    "en": "85d4260459a91e92",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Applikationen hos den låtsade förlitande parten som frågar sin egen backend vem som är inloggad: med den cookie sessionen öppnades med (HttpOnly, SameSite=Lax, begränsad till /saml11/rp) svarar den sessionens utslag, eller ett avslag en gång, eller ingenting. JSON; no-store."
+  },
+  "stsmetadata.endpoints./saml11/rp/sign-out.what": {
+    "en": "053e3916f0d69aa1",
+    "text": "UTANFÖR SPECIFIKATIONEN (#590). Avslutar den låtsade förlitande partens session och svarar med en 303 till dess sida. SAML 1.1 definierar ingen utloggning, så identitetsleverantören underrättas inte."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

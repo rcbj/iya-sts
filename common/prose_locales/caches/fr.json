@@ -535,6 +535,26 @@
     "en": "cdfb417042891812",
     "text": "un message supprimé comme doublon d’un message déjà mis en file pour le même acte dans mail.dedupWindowS"
   },
+  "caches.store.mockRp.sessions.title": {
+    "en": "bdb91aff679551f6",
+    "text": "Sessions des parties de confiance fictives"
+  },
+  "caches.store.mockRp.sessions.description": {
+    "en": "b041b6ff9b24dfda",
+    "text": "Les sessions propres qu’ouvrent les trois parties de confiance fictives réservées au développement (/wsfed/rp, /saml2/sp, /saml11/rp) quand une réponse passe leurs vérifications, et les refus qu’elles gardent une fois pour que leurs pages les lisent (#590)."
+  },
+  "caches.store.mockRp.sessions.bound": {
+    "en": "8b8c1fe81d5b8c07",
+    "text": "Appliqué : 1000 sessions par domaine ; les expirées sont effacées d’abord, puis la plus ancienne est abandonnée, ce qui déconnecte ce testeur de la simulation."
+  },
+  "caches.store.mockRp.sessions.lifetime": {
+    "en": "dfcb591141e66371",
+    "text": "Jusqu’à l’expiration de la durée de session de la famille, sa déconnexion, ou un message de déconnexion qu’elle reçoit."
+  },
+  "caches.store.mockRp.sessions.hitMeaning": {
+    "en": "68ad97df048564ce",
+    "text": "une page d’application a trouvé la session que nomme son cookie"
+  },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
     "text": "Entrées de statut des jetons d’accès"

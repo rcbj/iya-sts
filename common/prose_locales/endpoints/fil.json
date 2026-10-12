@@ -1207,6 +1207,14 @@
     "en": "e4478ae2c9c051a7",
     "text": "Ang panimulang view ng mock relying party"
   },
+  "endpoints.route./wsfed/rp/api/session.name": {
+    "en": "80223f88a8df284c",
+    "text": "Ang session ng mock relying party"
+  },
+  "endpoints.route./wsfed/rp/sign-out.name": {
+    "en": "b45316b4425bc45d",
+    "text": "Ang sariling sign-out ng mock relying party"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
@@ -1279,6 +1287,14 @@
     "en": "7e3ea418703ad450",
     "text": "Ang panimulang view ng mock service provider"
   },
+  "endpoints.route./saml2/sp/api/session.name": {
+    "en": "2a1622366b7f69c2",
+    "text": "Ang session ng mock service provider"
+  },
+  "endpoints.route./saml2/sp/sign-out.name": {
+    "en": "cd8a9938664e364a",
+    "text": "Ang sariling sign-out ng mock service provider"
+  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
@@ -1326,6 +1342,14 @@
   "endpoints.route./saml11/rp/api/start.name": {
     "en": "e4478ae2c9c051a7",
     "text": "Ang panimulang view ng mock relying party"
+  },
+  "endpoints.route./saml11/rp/api/session.name": {
+    "en": "80223f88a8df284c",
+    "text": "Ang session ng mock relying party"
+  },
+  "endpoints.route./saml11/rp/sign-out.name": {
+    "en": "b45316b4425bc45d",
+    "text": "Ang sariling sign-out ng mock relying party"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",
