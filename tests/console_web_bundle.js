@@ -1804,7 +1804,10 @@ function childMain() {
     // its own drawn as tabs before it.
     const tabbedOtherwise = ['/admin/oauth2', '/admin/saml2', '/admin/vc',
       '/admin/xacml', '/admin/scim', '/admin/ssf', '/admin/kerberos',
-      '/admin/cert-issuance'];
+      '/admin/cert-issuance',
+      // A hidden NAV row (7f9db637): its address answers, and what it draws
+      // is a tab of /admin/oauth2 — the page a reader is sent to.
+      '/admin/token-lifetimes'];
     // The Protocols pages are the endpoint table's pages and its
     // exemptions (`tests/protocol_endpoints.js` holds that they are).
     protocolEndpoints.pages().concat(Object.keys(protocolEndpoints.exempt()))
