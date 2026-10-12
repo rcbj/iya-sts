@@ -36,7 +36,7 @@
   "authn.mechanism": "Mecanismo",
   "authn.first": "Primer factor",
   "authn.second": "Segundo factor",
-  "authn.dash": "Un guion es un papel que el mecanismo no puede tener: una aplicación de autenticación o un código de recuperación nunca es primer factor, y un certificado, un ticket de Kerberos, una cartera o un socio de federación nunca se pide como segundo.",
+  "authn.dash": "Un guion es un papel que el mecanismo no puede tener: una aplicación de autenticación o un código de recuperación nunca es primer factor, y un certificado, un ticket de Kerberos, una billetera o un socio de federación nunca se pide como segundo.",
   "generic.governs": "Rige: ",
   "generic.storedUnder": ". Se guarda bajo <code>{container}</code>.",
   "named.applications": "Aplicaciones",
