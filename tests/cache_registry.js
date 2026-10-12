@@ -69,6 +69,8 @@ const OWNERS = {
   '../common/used_assertions': ['oauth2.used-assertions'],
   '../ssf/ssf_streams': ['ssf.dead-letter-counts'],
   '../saml/saml11_sso': ['saml11.assertions'],
+  // The mock relying parties' own sessions (#590).
+  '../common/mock_rp_surface': ['mockRp.sessions'],
   '../oauth-oidc/dpop': ['dpop.proof-ids', 'dpop.nonces'],
   '../gnap/gnap_store': ['gnap.signatures'],
   '../acme/acme_store': ['acme.nonces'],
