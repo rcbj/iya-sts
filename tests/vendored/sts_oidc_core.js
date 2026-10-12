@@ -47,6 +47,8 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -178,10 +180,39 @@ async function signOut(b, url) {
               new URLSearchParams(fields).toString());
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -282,14 +313,17 @@ function atClient(r, redirect) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was.
+  const answer = await authnSignin.submit(base + R, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  assert.ok(answer.view, "the sign-in screen: " + answer.status + " " +
+            JSON.stringify(answer.errors));
+  keepCookies(b, answer);
+  const posted = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   log.debug("Leaving signIn().");
   return posted;
 }
