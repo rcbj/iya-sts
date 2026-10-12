@@ -678,6 +678,12 @@ const ARRIVAL_PATHS = [
   // here; the approval page is where a start link lands.
   '/gnap/code',
   '/gnap/approve',
+  // AND THE OPENID4VC DEMONSTRATION'S TWO START PAGES (#582), whose acts on
+  // `/vc-demo-api` — making the offer, starting the presentation — are
+  // bound to this cookie as `/authn-api`'s are. A person arrives at either
+  // from a link, often on a device that has never been here.
+  '/issuer/offer',
+  '/oid4vp/start',
   // AND THE SIGN-OUT (#577): `/logout` answers a shell whose act is bound
   // to this cookie as the screen's are. A browser holding a session already
   // has one; this mints one only where `?username=` names somebody (a
