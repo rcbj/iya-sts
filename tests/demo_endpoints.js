@@ -68,10 +68,11 @@ function childMain() {
   const PROCESS_MARKED = [];
   const REALM_MARKED = [
     // The SAML and WS-Federation mock relying parties were deleted (#592),
-    // and the commands mock relying party moved to the test peer (#596).
+    // and the commands mock relying party moved to the test peer and
+    // /xacml/protected to the remote PEP (#596).
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
-    '/krb5/service', '/krb5/principals', '/xacml/protected',
+    '/krb5/service', '/krb5/principals',
     '/vc-api/issuers',
     '/vc-api/issuers/:issuer/credentials/issue', '/vc-api/credentials/verify',
     '/vc-api/presentations/verify',
