@@ -4,7 +4,7 @@ title: Kerberos
 
 # Kerberos, KKDCP and SPNEGO
 
-> **Development mode only (#585):** `/spnego`, `/spnego/protected`, `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/spnego`, `/spnego/protected`, `/krb5/service`, `/krb5/principals` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts runs a **Kerberos v5 KDC**
 ([RFC 4120](https://www.rfc-editor.org/rfc/rfc4120)) on raw TCP and UDP port
@@ -836,7 +836,7 @@ key sealed which ticket would pass for the wrong reason.
 etypes, kvno, the pre-auth/revoked/expired/ok-as-delegate flags, which entries
 were created at runtime, and a sentence on what each account is *for*. It
 publishes no keys and no *service* passwords; the one user password it does
-publish, in `accountPolicy`, is a policy of this mock rather than a secret —
+publish, in `accountPolicy`, is a policy of development mode rather than a secret —
 every account holds it, and a debugger whose accounts cannot be used without
 reading the source is worse than one that says so on the page.
 
@@ -943,7 +943,7 @@ checks it applies:
 4. the Authenticator under the ticket's session key;
 5. the Authenticator's `cname` matching the ticket's;
 6. the clock;
-7. **the replay cache** — the check a mock is most tempted to skip, and the
+7. **the replay cache** — the check a test service is most tempted to skip, and the
    only thing between a captured AP-REQ and a free impersonation;
 8. the 0x8003 checksum.
 

@@ -51,8 +51,8 @@ A browser arrives at `/saml11/sso` with:
 **Shibboleth's request profile** (`shire`, `target`, `providerId`, `time`,
 identified as `urn:mace:shibboleth:1.0:profiles:AuthnRequest`) is supported and
 advertised in the metadata, although it is not a standard — it is what every
-real SAML 1.1 service provider sends, and a mock that could not be told where to
-send the assertion would be a mock nobody could point at anything.
+real SAML 1.1 service provider sends, and a service that could not be told where to
+send the assertion would be one nobody could point at anything.
 
 **The relying party cannot name itself in the protocol**, so the audience comes
 from `providerId`, from the `{rp}` path segment of a scoped endpoint, or —

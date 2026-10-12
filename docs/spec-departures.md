@@ -4,7 +4,7 @@ title: Departures from the specifications
 
 # Departures from the specifications
 
-> **Development mode only (#585):** `/issuer/offer`, `/xacml/protected` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/xacml/protected` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 This page lists every place where iya-sts's **default** behaviour departs from
 what a specification requires (MUST, SHALL, REQUIRED) or recommends (SHOULD,

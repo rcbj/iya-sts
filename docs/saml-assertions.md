@@ -160,7 +160,7 @@ expiry "unreasonably far in the future", taken.
 
 ## The two things that are not permissive
 
-This mock checks almost nothing. Two things here are real, and both default to
+In development mode this service checks almost nothing. Two things here are real, and both default to
 on.
 
 ### The `<Issuer>` must be declared

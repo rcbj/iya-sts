@@ -4,7 +4,7 @@ title: Admin console
 
 # Admin console
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/result/…` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/result/…` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 `GET /admin` is an operator's view of the running service. The pages under it
 exist for something the protocol endpoints cannot do: the interesting behaviour
@@ -921,7 +921,7 @@ and the section that defines it (`authorization_code` beside RFC 6749 §4.1,
 `refresh_token` beside §6, `client_credentials`, the password grant, implicit
 and hybrid responses, OpenID4VCI's pre-authorized code, RFC 8693 token
 exchange). The same person search accepts any spelling — `alice`,
-`alice@STS.MOCK` and `urn:sts:user:alice` find one person.
+`alice@EXAMPLE.COM` and `urn:sts:user:alice` find one person.
 
 * A **dotted** line into the hexagon is them signing in, one per protocol
   family with the method on it.
@@ -1371,7 +1371,7 @@ request leaves are tabs on this one Protocols page:
 * **Credential claims** selects claims on issued credentials.
 * **Credential status** manages this realm's issued credential statuses.
 * **OpenID4VP** holds verifier and wallet sign-in settings.
-* **Verifier request** configures what the mock verifier asks wallets to
+* **Verifier request** configures what the demonstration verifier asks wallets to
   present.
 
 ### Credential claims tab — `/admin/vc#vc-tab-claims`

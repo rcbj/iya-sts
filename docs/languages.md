@@ -187,7 +187,7 @@ only when the request names a language in `Accept-Language`:
 
 Values are never translated, only the server's own sentences. Error messages
 stay English. A coverage note keeps its first word (`full`, `partial` or
-`mock`) in English, because software reads it. A few sentences remain
+`minimal`) in English, because software reads it. A few sentences remain
 English: scheduler jobs a node registers only after it starts, a cache whose
 lifetime text is computed in a module that has no template for it, and
 text written by another node running an older build.

@@ -4,7 +4,7 @@ title: User-facing pages
 
 # User-facing pages
 
-> **Development mode only (#585):** `/oid4vp/verifier` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 These are all the things this service shows a person in a browser, an inbox or
 an authenticator prompt. Everything else it serves is for programs: token,
@@ -179,7 +179,7 @@ translated too. A reason somebody typed is sent as written. See
 
 ## The demonstration issuer and verifier (development only)
 
-A sample credential issuer ("Mock University") and a sample verifier ("The
+A sample credential issuer ("Example University") and a sample verifier ("The
 Bar Door"), for trying a wallet against this service. A realm in product
 mode does not serve them, and answers each path as one nothing is registered
 on (`Cannot GET …`, 404). Issue #582 inventoried them on 2026-10-12, before
@@ -265,7 +265,7 @@ translation:
 - **The embedded protocol debugger**, on its own listener (`debugger.port`). It
   is a separate application from the parent project.
 - **Demonstration pages** that exist only in development mode: the sample
-  credential issuer ("Mock University") at `/issuer` and the sample
+  credential issuer ("Example University") at `/issuer` and the sample
   verifier ("The Bar Door") at `/oid4vp/verifier`, translated since #582 —
   see *The demonstration issuer and verifier* above.
 - **Operator and diagnostic views**: the XACML,

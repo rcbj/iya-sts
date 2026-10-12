@@ -4,7 +4,7 @@ title: OpenID4VCI
 
 # OpenID for Verifiable Credential Issuance
 
-> **Development mode only (#585):** `/issuer`, `/issuer/offer`, `/oid4vci/last_request`, `/oid4vci/notification/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer`, `/issuer/offer`, `/oid4vci/last_request`, `/oid4vci/notification/…`, `/did/generate` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts is a **Credential Issuer** for
 [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html),
@@ -97,7 +97,7 @@ means the whole configured set.
   configuration's scope or for `authorization_details` of type
   `openid_credential`. This is the flow described on
   [OAuth 2.0 and OpenID Connect](oauth-oidc.md).
-* **Credential Offers** (section 4, Appendix H). `GET /issuer` is a mock
+* **Credential Offers** (section 4, Appendix H). `GET /issuer` is a demonstration
   issuer web page. `GET /issuer/offer` builds an offer and sends the browser to
   the wallet (`oid4vci.walletUrl` plus `oid4vci.walletIssuancePath`):
   * `mode=same-device` (the default, H.1): an `authorization_code` grant
@@ -353,7 +353,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | *(empty)* | yes | PEM certificates of the Wallet Providers whose key attestations are believed; empty trusts none. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` (and HTTP `max-age`) of this realm's status lists. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The metadata's `display.name`. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The metadata's `display.name`. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential says it is valid. |
 | `oid4vci.generatedDidCredentialLifetimeS` | `OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S` | `3600` | yes | How long the SD-JWT VC `/did/generate` signs is valid. |
 | `oid4vci.sdJwtIssuerDid` | `OID4VCI_SD_JWT_ISSUER_DID` | `false` | restart | Name the plain `dc+sd-jwt` configuration's issuer by `did:web`. |

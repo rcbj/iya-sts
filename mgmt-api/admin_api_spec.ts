@@ -5284,7 +5284,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a party here and a row ' +
                      'on /admin-api/users name the same person — `alice`, ' +
                      'her `urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'this ' +
                      'layer is an application ' +
                      'rather than a person, or where nothing named it.'
@@ -5733,7 +5733,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a row here and a row on ' +
                      '/admin-api/users name the same person — `alice`, her ' +
                      '`urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'

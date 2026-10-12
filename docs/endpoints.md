@@ -5,7 +5,7 @@ nav_order: 4
 
 # Endpoints
 
-> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/krb5/service`, `/krb5/principals` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is no list of endpoints in this documentation, and that is deliberate.**
 There are 264 of them, they change, and a list written here would be wrong within

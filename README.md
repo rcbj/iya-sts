@@ -15,7 +15,7 @@ It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 
-* **`development`** (the default) is that mock: any username signs in, anything
+* **`development`** (the default) is the permissive test mode: any username signs in, anything
   named is created, signing keys are regenerated on every start and test
   controls are open. Use it to exercise clients. **Never use it to protect
   anything.**

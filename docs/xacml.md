@@ -4,7 +4,7 @@ title: XACML
 
 # XACML 3.0 and ALFA
 
-> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/xacml/protected` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts contains a **XACML 3.0 Policy Decision Point**
 ([OASIS XACML 3.0 core](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html)).

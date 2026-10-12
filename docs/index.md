@@ -5,7 +5,7 @@ nav_order: 1
 
 # iya-sts
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/spnego`, `/vc-api/*` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/spnego`, `/vc-api/*` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
@@ -138,7 +138,7 @@ whoever signs in to it. Its Overview draws **every standard inetOrgPerson
 attribute** the signed-in person's directory entry could hold — all fifty,
 grouped by the three object classes a person here is filed under, with the LDAP
 attribute name and the RFC printed under each value, because the reason to read
-it on a mock is usually to find out what something is called before writing it
+it on a test service is usually to find out what something is called before writing it
 over LDAP.
 
 The page worth going to next is <https://localhost:8081/admin/sts-metadata> —
@@ -213,7 +213,7 @@ survives in each.
 point. `GET /oauth2/rfc9700` publishes every BCP requirement with `yes`,
 `detected`, `always`, `deployment` or `no` and the reason. `GET /spiffe` names
 the six of forty-two SPIRE methods that are unimplemented and why each one is.
-`GET /admin/ldap/service` says the directory is schemaless. A mock that quietly pretended
+`GET /admin/ldap/service` says the directory is schemaless. A service that quietly pretended
 would teach you something false about every real server you will ever meet.
 
 **The admin console at `/admin` asks for a sign-in and a role** — unconditionally,
@@ -244,7 +244,7 @@ CONSUMES somebody else's assertions: `/federation/acs/{id}` receives an
 unauthenticated HTTP request claiming to be a person, and the session it would
 produce is the same one every other protocol here reads — so "accept anything"
 would be an authentication bypass for the whole process rather than a permissive
-mock. A relationship must be configured, is created disabled, and refuses an
+test setting. A relationship must be configured, is created disabled, and refuses an
 assertion that does not verify against the certificate configured on it. **And
 the gate is on the subject too**: a partner signs in only the person its subject
 is linked to, and an unlinked one naming an existing person must first sign in
