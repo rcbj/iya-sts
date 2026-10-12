@@ -1,0 +1,1026 @@
+{
+  "mode.requirements.cell-key.what": {
+    "en": "4f8bb53495422cda",
+    "text": "以單元方式部署之服務的每個單元，以自己的金鑰密封其所儲存的內容"
+  },
+  "mode.requirements.cell-key.development": {
+    "en": "4d08283419abad5c",
+    "text": "沒有 keys.cellKekProvider 的單元，會以服務的金鑰加密金鑰密封其資料列，因此其資料列在任何單元都能開啟——對於在同一台機器上測試的單元而言是可接受的。"
+  },
+  "mode.requirements.cell-key.product": {
+    "en": "369ac4727226b20a",
+    "text": "沒有單元金鑰的單元不會啟動（STS-CELL-0003）。歸屬於某個單元的人員及其所產生的內容，會以只存在於其區域、無法在其他任何單元開啟的金鑰密封（#98）。單一單元模式不受影響。"
+  },
+  "mode.requirements.credentials.what": {
+    "en": "d15cf61729a21c92",
+    "text": "驗證所出示的密碼"
+  },
+  "mode.requirements.credentials.development": {
+    "en": "e739d8f39e9b046f",
+    "text": "任何協定都不檢查密碼。登入畫面接受任何內容，LDAP 繫結接受任何 DN 搭配任何密碼，WS-Security UsernameToken 只讀取其名稱而不讀取其秘密，SCIM Basic 接受任何組合，而 WS-Trust 會對未出示任何東西或出示未簽署 SAML 斷言的呼叫者簽發。"
+  },
+  "mode.requirements.credentials.product": {
+    "en": "b0da5c4d2cc617e2",
+    "text": "在上述每一個入口，都以該人目錄項目上雜湊過的 `userPassword` 驗證。沒有設定 `userPassword` 的人完全無法登入。OAuth 2.0 密碼授權在產品模式下不存在，產品模式隱含 RFC 9700 模式（第 2.4 節）。WS-Trust 要求認證，且只在斷言由此領域簽署且位於其 Conditions 範圍內時才接受。"
+  },
+  "mode.requirements.credential-issuer-tokens.what": {
+    "en": "44c70d0922c9471b",
+    "text": "OpenID4VCI 端點只接受此領域能驗證的存取權杖"
+  },
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "憑證、延遲憑證與通知端點接受任何存取權杖，並在未驗證的情況下讀取其宣告——OpenID4VCI 允許授權伺服器是別人——因此錢包可以帶著來自任何地方的權杖指向此簽發者。"
+  },
+  "mode.requirements.credential-issuer-tokens.product": {
+    "en": "557e937f9ef07afe",
+    "text": "無法以此領域簽章金鑰驗證、或已被此領域撤銷的權杖，會在簽發任何東西之前以 invalid_token（HTTP 401）拒絕。"
+  },
+  "mode.requirements.unverified-signals.what": {
+    "en": "8bba1b51797ebea8",
+    "text": "簽章無法驗證的已接收 Security Event Token 會被拒絕"
+  },
+  "mode.requirements.unverified-signals.development": {
+    "en": "f339daad4628b362",
+    "text": "POST /ssf/receive 以及主控台與入口網站自己的接收者會接受它、記錄它並說明它為何未通過驗證——即偵錯工具的立場——除非 ssf.receiveRequireSignature 開啟。不會據此採取任何行動。"
+  },
+  "mode.requirements.unverified-signals.product": {
+    "en": "550da4b67dda6fd9",
+    "text": "無論 ssf.receiveRequireSignature 如何設定，每個接收者都回應 400 invalid_key（#117）：不驗證任何人的 /ssf/receive 不記錄任何東西；位於其串流自身秘密之後的主控台與入口網站接收者，會將它保留在收件匣中並標記為已拒絕。"
+  },
+  "mode.requirements.signal-reactions.what": {
+    "en": "25aa56c5f929fe05",
+    "text": "本服務自己的主控台與入口網站對所接收之 CAEP 或 RISC 事件的處置會被執行"
+  },
+  "mode.requirements.signal-reactions.development": {
+    "en": "7be9247afb6c5c44",
+    "text": "已驗證的事件會連同訊號回應原則所允許的處置記錄在該介面的訊號收件匣中，且不會終止任何東西，除非 ssf.actOnSignalsInDevelopment 開啟。"
+  },
+  "mode.requirements.signal-reactions.product": {
+    "en": "4d69a170d09c1d35",
+    "text": "訊號回應原則所允許的已驗證事件——預設為 session-revoked、credential-change、RISC 帳戶或認證事件、變為 HIGH 的 risk-level-change——會終止接收介面自身中該事件所指名之人的工作階段。未驗證的事件在兩種模式下都絕不會被據以行動。"
+  },
+  "mode.requirements.risk-decisions.what": {
+    "en": "c187e2cdafec165a",
+    "text": "強制執行簽發原則對驗證「風險」的決定"
+  },
+  "mode.requirements.risk-decisions.development": {
+    "en": "f19592d34351da44",
+    "text": "每次登入都會被評估，並以其風險事實詢問簽發原則，其決定會記錄在評估上——但風險 Deny 會被擱置，僅由角色決定，除非 risk.enforceInDevelopment 開啟。"
+  },
+  "mode.requirements.risk-decisions.product": {
+    "en": "27940e1a18ad7fb0",
+    "text": "風險 Deny 會被保留：原則因風險而拒絕的驗證（預設為 HIGH）會被拒絕，而原則要求提升驗證的驗證（MEDIUM），在入口能夠要求時會被要求提供第二因素或安全金鑰，不能要求時則被拒絕。當某人的風險改變時，會採取風險回應原則所允許的反應——在 HIGH 時終止一切、RISC credential-compromise；開發模式則宣告此變更，並將其餘部分記錄為已觀察。"
+  },
+  "mode.requirements.token-exchange-tokens.what": {
+    "en": "ae3a72a9b5d7b234",
+    "text": "RFC 8693 權杖交換只接受此領域能驗證的 subject_token 與 actor_token"
+  },
+  "mode.requirements.token-exchange-tokens.development": {
+    "en": "7eb1db0e063f53dc",
+    "text": "此領域無法驗證的 subject_token 會被讀取其名稱後照樣交換，而 actor_token 會被讀取但從不驗證，因此用戶端可以用任何簽發者的權杖驅動此授權。"
+  },
+  "mode.requirements.token-exchange-tokens.product": {
+    "en": "b66324c8935f8390",
+    "text": "兩者都必須能以此領域的簽章金鑰驗證、未過期且未被撤銷，否則交換會以 invalid_request 拒絕（HTTP 400，RFC 8693 第 2.2.2 節）。"
+  },
+  "mode.requirements.delegation-policy.what": {
+    "en": "415893f644c81a40",
+    "text": "在 WS-Trust OnBehalfOf / ActAs 與 RFC 8693 權杖交換中決定誰可以代表誰行事"
+  },
+  "mode.requirements.delegation-policy.development": {
+    "en": "89d3215a1960b7f3",
+    "text": "每次委派都會簽發。仍會詢問原則，其答案會以 \"would have been refused: ...\" 記錄在 /admin/delegation 的該行為上，且交換可以要求比其 subject_token 更寬的範圍。"
+  },
+  "mode.requirements.delegation-policy.product": {
+    "en": "fe19fc117becfe0b",
+    "text": "由簽發原則決定（#186），依據委派屬性（應用程式項目上的 appAllowedToDelegateTo、appAllowedToActOnBehalfOf、appDelegationSubjectGroup、appDelegationSemantics、appNotDelegated；人員的 stsNotDelegated、stsDelegationSemantics、delegation.protectedGroups 以及主控台名冊）。拒絕為 invalid_request 或 invalid_target（RFC 8693 第 2.2.2 節），或 wst:RequestFailed SOAP Fault（WS-Trust 1.4 第 11 節）。人員只有在持有 delegation.actorRole 時才能行事，且交換不得擴大其 subject_token 的範圍（invalid_scope）。"
+  },
+  "mode.requirements.declared-scopes.what": {
+    "en": "24912ad15f5cdcc7",
+    "text": "用戶端只獲簽發它所宣告的範圍"
+  },
+  "mode.requirements.declared-scopes.development": {
+    "en": "1c76373a91206e5a",
+    "text": "用戶端要求的任何範圍都會簽發，不論其 `oauthAllowedScope` 列出什麼。在「兩種」模式下，admin:read、admin:write、SCIM 與 Shared Signals 範圍以及偵錯工具權限，都只簽發給 `oauthAllowedScope` 有列出它們的用戶端。"
+  },
+  "mode.requirements.declared-scopes.product": {
+    "en": "33fcb48e8c17655e",
+    "text": "不在用戶端 `oauthAllowedScope` 中的範圍，會在授權、推送授權與權杖端點以 invalid_scope 拒絕（STS-OAUTH-0578），並從重新整理或交換中移除。未列出任何範圍的用戶端會取得文件所述的預設值：openid、profile、email、address、phone、offline_access 以及此領域的 OpenID4VCI 範圍。指名應用程式或委派權限的範圍，維持其自身的規則。"
+  },
+  "mode.requirements.declared-protocols.what": {
+    "en": "89e8ef1624565f1b",
+    "text": "應用程式不會透過未宣告的協定獲簽發任何東西"
+  },
+  "mode.requirements.declared-protocols.development": {
+    "en": "b8f60692e2fa6b31",
+    "text": "appAllowedProtocol 是一項描述：無論哪個協定提出要求，權杖、斷言或票證都會簽發。"
+  },
+  "mode.requirements.declared-protocols.product": {
+    "en": "01bf0ea288cde1c4",
+    "text": "簽發原則的 protocol-not-declared 規則，會拒絕透過應用程式未宣告之協定系列進行的簽發（STS-XACML-0084）：例如對只宣告 OAuth 2.0 的應用程式簽發 ID Token，或對宣告 OpenID Connect 的應用程式簽發 SAML 斷言。未宣告任何協定的應用程式不會被拒絕。"
+  },
+  "mode.requirements.uncatalogued-access.what": {
+    "en": "cae99ea77ebca46f",
+    "text": "GNAP 存取權限只會授予存取類型目錄所宣告的類型"
+  },
+  "mode.requirements.uncatalogued-access.development": {
+    "en": "de56636f7e123b4d",
+    "text": "沒有任何資源應用程式宣告之類型（oauthAuthorizationDetailsType）的權限，會依用戶端的要求授予。"
+  },
+  "mode.requirements.uncatalogued-access.product": {
+    "en": "89edeaa0cee05b30",
+    "text": "簽發原則的 gnap-type-not-catalogued 規則會在授權端點拒絕它（request_denied，STS-GNAP-0810）。RFC 9396 authorization_details 在兩種模式下都會拒絕未宣告的類型，如第 5 節所要求。"
+  },
+  "mode.requirements.delegated-permissions.what": {
+    "en": "81f1a910d89c9265",
+    "text": "委派權限只簽發給已獲授予的用戶端"
+  },
+  "mode.requirements.delegated-permissions.development": {
+    "en": "2748c5103ef68673",
+    "text": "未獲授予的權限會被接受並記錄為未授予，除非 oauth2.delegatedPermissionsEnforced 開啟。"
+  },
+  "mode.requirements.delegated-permissions.product": {
+    "en": "e3783b780299b3c1",
+    "text": "無論 oauth2.delegatedPermissionsEnforced 如何設定，都以 invalid_scope 拒絕（STS-OAUTH-0155）：授予內容是用戶端項目上的 `oauthDelegatedPermission`。"
+  },
+  "mode.requirements.federated-name-match.what": {
+    "en": "aa45efa130eb1fdf",
+    "text": "聯合夥伴只能登入其主體所連結的人"
+  },
+  "mode.requirements.federated-name-match.development": {
+    "en": "935cd045cd8649e7",
+    "text": "關係可以將 fedSubjectPolicy 設為 any-existing，將夥伴斷言的名稱直接比對到本地人員——任何人，除非 fedMayAssertAdministrators 關閉（預設），否則也包括管理員。其他每種原則的行為都與產品模式相同。"
+  },
+  "mode.requirements.federated-name-match.product": {
+    "en": "21b1d1c16447c0c6",
+    "text": "any-existing 會在關係上（STS-FED-0095）與登入時（STS-FED-0094）被拒絕。夥伴會登入其（簽發者、主體）所連結的項目；指名既有人員的未連結主體，必須先在此以該人身分登入（link-at-first-sign-in，預設），否則會被拒絕（pre-linked）。開發模式與產品模式都保留這些規則以及對主控台管理員的拒絕。"
+  },
+  "mode.requirements.federated-logout-signature.what": {
+    "en": "ab3acff66ae80262",
+    "text": "聯合夥伴的 SAML 登出由該夥伴簽署"
+  },
+  "mode.requirements.federated-logout-signature.development": {
+    "en": "0e22c30af1770452",
+    "text": "fedRequireSignedLogout 被設為關閉的關係，會接受來自其夥伴的「未簽署」LogoutRequest 或 LogoutResponse。存在的簽章會與產品模式完全一樣以 fedSigningCertificate 驗證，且除非有人將其關閉，否則每個關係的此設定都是開啟的。"
+  },
+  "mode.requirements.federated-logout-signature.product": {
+    "en": "103de5212c6c07d6",
+    "text": "來自夥伴的每個 SAML 登出訊息都必須經過簽署，並能以關係的憑證驗證（saml-profiles-2.0-os 第 4.4.4.1 節）：無論 fedRequireSignedLogout 如何設定，未簽署的訊息都會被拒絕（STS-FED-0115），而關閉此設定也會被拒絕（STS-FED-0132）。"
+  },
+  "mode.requirements.federated-assertion-encryption.what": {
+    "en": "0fdc50d76534c95c",
+    "text": "聯合夥伴的斷言或前端通道 ID Token 會加密給關係自己的金鑰"
+  },
+  "mode.requirements.federated-assertion-encryption.development": {
+    "en": "980ef0a024b77d35",
+    "text": "SAML 2.0 或 WS-Federation 斷言，或以 form_post 傳送的 OpenID Connect id_token，會以明文被接受。「有」加密的則會被解密，並受與產品模式相同的演算法清單約束。"
+  },
+  "mode.requirements.federated-assertion-encryption.product": {
+    "en": "8e50a67f08bab738",
+    "text": "明文斷言或前端通道 ID Token 會被拒絕（STS-FED-0140），除非關係設定了 fedAllowUnencrypted，而該設定的文件附有警告。AES-CBC、rsa-1_5 與 RSA1_5 在兩種模式下都會被拒絕（STS-FED-0139）。"
+  },
+  "mode.requirements.passkey-first-use.what": {
+    "en": "48692c051ad2acee",
+    "text": "登入畫面不會為尚未證明自己身分的人註冊安全金鑰"
+  },
+  "mode.requirements.passkey-first-use.development": {
+    "en": "2f86635eaf4572fb",
+    "text": "指名一個沒有主要金鑰之人的無密碼登入，會當場為其註冊一把金鑰，不讀取任何密碼——第一個宣稱某個名稱的人就會得到它。"
+  },
+  "mode.requirements.passkey-first-use.product": {
+    "en": "e773ade2b33e515a",
+    "text": "會被拒絕。主要金鑰只能在有工作階段的情況下於 /portal/keys 新增、透過啟用連結新增，或由營運者新增。"
+  },
+  "mode.requirements.webauthn-attestation.what": {
+    "en": "8c22563b2f23268b",
+    "text": "安全金鑰的證明聲明會在金鑰註冊前驗證"
+  },
+  "mode.requirements.webauthn-attestation.development": {
+    "en": "6e29fa143ed40161",
+    "text": "webauthn.attestationPolicy 為 by-mode，在此即為 off：記錄聲明的格式，但不檢查其中任何內容。verify-if-present 與 require-trusted 可供設定。"
+  },
+  "mode.requirements.webauthn-attestation.product": {
+    "en": "1114fdf1aee58a97",
+    "text": "by-mode 即為 verify-if-present：每份聲明都依其 WebAuthn Level 3 第 8 節的程序驗證（全部八種格式），其憑證鏈依領域的信任錨點與 FIDO Metadata Service 的根憑證檢查，查詢其撤銷狀態，並拒絕 MDS 回報為已遭入侵的型號。none 與 self 證明會被接受並記錄為不受信任。off 在寫入時會被拒絕，讀取時則視為 by-mode。"
+  },
+  "mode.requirements.second-factor-doors.what": {
+    "en": "c4647caa0a5e5f86",
+    "text": "持有或必須持有第二因素的人，在僅限密碼的入口只出示密碼會被拒絕"
+  },
+  "mode.requirements.second-factor-doors.development": {
+    "en": "f1ede458c1549c0c",
+    "text": "LDAP 簡單繫結、WS-Security UsernameToken、SCIM 與 SSF HTTP Basic 以及 EST Basic，會像接受每個密碼一樣接受該密碼；登入畫面仍會要求第二因素。"
+  },
+  "mode.requirements.second-factor-doors.product": {
+    "en": "2a529b7dda255daa",
+    "text": "在這五個入口，只要該人持有驗證器應用程式或 mfa 角色的安全金鑰，或被要求提供第二因素（stsMfaRequired、驗證原則），其本人的密碼就會被拒絕——回應方式與密碼錯誤完全相同，並同樣計入速率限制（STS-AUTHN-0213 僅出現在稽核列與記錄中）。改為接受他們在 /portal/app-passwords 建立、限定於該入口的「應用程式密碼」。authn.passwordAloneDoors 指名仍然接受密碼的入口，這會讓每位此類人員在那裡降為單一因素。"
+  },
+  "mode.requirements.kerberos-second-factor.what": {
+    "en": "6bb019d0381a77a4",
+    "text": "持有或必須持有第二因素的人，僅憑密碼無法取得 Kerberos 票證"
+  },
+  "mode.requirements.kerberos-second-factor.development": {
+    "en": "48c67bd985cdac31",
+    "text": "KDC 會對僅以密碼預先驗證（PA-ENC-TIMESTAMP，或 FAST 的 PA-ENCRYPTED-CHALLENGE）的 AS-REQ 簽發 TGT，就像它接受每個密碼一樣。"
+  },
+  "mode.requirements.kerberos-second-factor.product": {
+    "en": "cddc7c3db475d360",
+    "text": "只要該人持有驗證器應用程式或 mfa 角色的安全金鑰，或被要求提供第二因素，該 AS-REQ 就會在密碼通過驗證後以 KDC_ERR_POLICY（12）拒絕，STS-KRB-0135（密碼錯誤時仍為 KDC_ERR_PREAUTH_FAILED）。擁有驗證器應用程式的人，可透過 RFC 6113 FAST armor 搭配 RFC 6560 OTP 預先驗證取得票證——密碼與代碼在同一次交換中——且票證攜帶 RFC 8129 指示符 `otp`。應用程式密碼絕不會成為 Kerberos 金鑰。"
+  },
+  "mode.requirements.resource-metadata-import.what": {
+    "en": "fb298f641de33009",
+    "text": "RFC 9728 受保護資源中繼資料的匯入，遵循文件用戶端所遵循的規則"
+  },
+  "mode.requirements.resource-metadata-import.development": {
+    "en": "f89c0a8aa3cffb2b",
+    "text": "從 URL 擷取的文件，當其 `resource` 與其來源的 well-known URL 不符（第 3.3 節）或不是 https 時，會附帶警告匯入，且該 URL 可以解析為回送位址或私人位址。"
+  },
+  "mode.requirements.resource-metadata-import.product": {
+    "en": "3364c42939a2cbce",
+    "text": "兩者都會被拒絕，而解析為回送、私人、鏈路本地或保留位址的 URL 不會被連線——名稱只解析一次，連線固定在已檢查的位址上。格式錯誤的文件在兩種模式下都會被拒絕。"
+  },
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "郵件會被寄出而非保留；郵寄的連結指名固定的公開位址"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "mail.transport `default` 是「擷取」傳輸方式：除非設定了實際的傳輸方式，否則每封郵件都會連同內文保留，並顯示在「監控 → 郵件」上而不寄出。郵寄的連結以 global.publicBaseUrl 為基礎建立，該值為空白時則以接聽程式設定的主機與連接埠建立——絕不以請求為基礎。"
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` 即為 `off`，而 `capture` 在寫入時與啟動時都會被拒絕（STS-MAIL-0003），因為被擷取的密碼重設連結就是主控台上的一項認證。無法建立的已設定傳輸方式會使服務無法啟動（STS-MAIL-0002）。只有在設定了 global.publicBaseUrl 時才會郵寄連結（STS-MAIL-0015）。"
+  },
+  "mode.requirements.secret-destinations.what": {
+    "en": "745eb3890b07294e",
+    "text": "服務帳戶輪替後的密碼會推送到秘密管理服務，絕不寫入此容器的磁碟"
+  },
+  "mode.requirements.secret-destinations.development": {
+    "en": "0633c12f9bf4ca80",
+    "text": "秘密推送目的地可以是「檔案」：推送會將密碼寫入目的地目錄下一個既有的檔案，測試套件就是以此方式在沒有秘密管理服務的情況下測試輪替。"
+  },
+  "mode.requirements.secret-destinations.product": {
+    "en": "5ab672b908ba6b88",
+    "text": "指名 `file` 的目的地會被回報為無法使用，推送至它會被拒絕（STS-SECDEST-0006）。仍可使用 AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault 以及 Vault 或 OpenBao KV 第 2 版引擎，每一種都透過已驗證的 TLS，並使用目的地自己的寫入認證（#221）。"
+  },
+  "mode.requirements.outbound-tls.what": {
+    "en": "b211ebe14931a1d7",
+    "text": "對外請求會驗證回應者的憑證，且不會透過純 http 送出"
+  },
+  "mode.requirements.outbound-tls.development": {
+    "en": "d23b51307ba13e8a",
+    "text": "GNAP 推送完成、SSF 推送遞送、聯合的後端通道以及 XACML PEP 通知，會依循其 …SkipTlsVerification 設定（關閉驗證，每次請求都發出警告）與其 …AllowHttp 設定（對任何主機使用純 http）。SPIRE 的 spiffe.k8sSkipKubeletVerification 也同樣依循。"
+  },
+  "mode.requirements.outbound-tls.product": {
+    "en": "247dae79affdfe65",
+    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送位址使用（RFC 9635 第 2.5.2.1 節）。"
+  },
+  "mode.requirements.deliberate-defects.what": {
+    "en": "055db67685f19f36",
+    "text": "刻意的缺陷不會讓回應出錯"
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "oauth2.breakIdTokenNonce 會在每個應攜帶 nonce 的 ID Token 中放入錯誤的 nonce，ssf.breakSetSignature 會更改每個 SET 簽章中的一個字元，ssf.legacySubClaim 會在 `sub_id` 旁加入 RFC 8417 不建議使用的 `sub` 宣告，risc.googleSubjectType 會寫入 RISC 1.0 第 3.1 節表示新服務「MUST NOT」使用的 `subject_type` 成員，而 krb5.clockOffset 會移動 KDC 的時鐘——每一項都在設定期間生效，以便測試用戶端如何處理錯誤的回應。"
+  },
+  "mode.requirements.deliberate-defects.product": {
+    "en": "472a5c81b1274879",
+    "text": "這五項在讀取時都會被「忽略」——切換為產品模式但仍儲存著其中一項的領域，會依機器的時鐘正確回應——每個程序記錄一次（STS-CORE-0106），並在透過 /admin、/admin-api 與領域設定寫入時被拒絕（STS-CORE-0103）。"
+  },
+  "mode.requirements.broken-algorithms.what": {
+    "en": "51bdc0bbaafe7762",
+    "text": "不使用任何已破解的演算法：簽章中的 SHA-1，或 RSA PKCS#1 v1.5 金鑰傳輸"
+  },
+  "mode.requirements.broken-algorithms.development": {
+    "en": "448d4e1f57c8cc23",
+    "text": "saml.signatureAlgorithm rsa-sha1 會以 SHA-1 簽署每個 XML 簽章，saml2.keyTransportAlgorithm rsa-1_5（或應用程式的 saml2KeyTransportAlgorithm）會以 RSAES-PKCS1-v1_5 包裝加密斷言的金鑰，開啟 saml.allowSha1Signatures 會在本服務驗證的簽章中接受 SHA-1，pki.signatureAlgorithm sha1-rsa 或 sha1-ecdsa（或指名其中之一的建置表單）會讓憑證授權單位以 SHA-1 簽署，以 rsa-1_5 加密給本服務的 XML 元素會被解開，而開啟 scim.digestMd5 會在 SCIM 的 HTTP Digest 中提供並接受 MD5。除非設定，否則每一項都是關閉的。"
+  },
+  "mode.requirements.broken-algorithms.product": {
+    "en": "8e22d816464c845c",
+    "text": "每個弱值在讀取時都會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103，應用程式上為 STS-REG-0193）：XML 以預設的 rsa-sha256 簽署，金鑰以 rsa-oaep-mgf1p 包裝，SHA-1 簽章會被拒絕，指名 SHA-1 的 CA 建置或金鑰對會被拒絕（STS-PKI-0191），而從在開發模式下建置之分支繼承的 SHA-1 會被替換為該金鑰的預設值，rsa-1_5 EncryptedKey 則會在解開之前被拒絕（STS-KEYS-0070）——XML Encryption 1.1 第 6.1.2 節。scim.digestMd5 無關緊要，因為產品模式完全不提供 Digest（STS-SCIM-0056）。每項設定中較強的值仍可使用。JOSE RSA1_5 在兩種模式下都會被拒絕。"
+  },
+  "mode.requirements.jose-key-sizes.what": {
+    "en": "73495c403f54e4f5",
+    "text": "JWS 只以 RFC 7518 所要求大小的金鑰驗證"
+  },
+  "mode.requirements.jose-key-sizes.development": {
+    "en": "ef2804b46316aeed",
+    "text": "小於 2048 位元的 RSA 金鑰（RFC 7518 第 3.3 節，COSE 為 RFC 8230 第 5 節），以及短於其雜湊輸出的 HMAC 金鑰（RFC 7518 第 3.2 節）——即 client_secret_jwt 下過短的 client_secret——仍可通過驗證，因此可以測試持有此類金鑰的用戶端。「比規格寬鬆」：兩者都是 MUST。"
+  },
+  "mode.requirements.jose-key-sizes.product": {
+    "en": "d1fb3763f55efbde",
+    "text": "兩者都會在簽章檢查時被拒絕，包括共用驗證程式、verifyJws() 中，以及（RSA）WebAuthn 金鑰。產生的 client_secret 預設為 48 個隨機位元組（oauth2.registeredSecretBytes），長度足以用於 HS512。在「兩種」模式下，空的 HMAC 金鑰、小於 3 或為偶數的 RSA 指數（這是偽造，而非弱金鑰）、帶有 ROCA 指紋的 RSA 模數（CVE-2017-15361）、use 不是 \"sig\" 或 key_ops 缺少 \"verify\" 的 JWK，以及不是標準 base64url 的區段，都會被拒絕。"
+  },
+  "mode.requirements.xml-ecdsa-curves.what": {
+    "en": "858a80a68d7c0582",
+    "text": "XML ECDSA 簽章只在至少 256 位元的曲線上驗證"
+  },
+  "mode.requirements.xml-ecdsa-curves.development": {
+    "en": "6d585203e0d0c40f",
+    "text": "node 能讀取的任何曲線上的金鑰都能通過驗證——包括 secp160、secp192、secp224——因此可以測試使用此類曲線的夥伴。對其中最小者而言「比 NIST SP 800-57 的 112 位元下限寬鬆」。"
+  },
+  "mode.requirements.xml-ecdsa-curves.product": {
+    "en": "cdb3f7be9fda1083",
+    "text": "只有 P-256、P-384、P-521、secp256k1 以及 brainpoolP256r1 或更大的曲線能通過驗證；其他任何曲線都會被拒絕（STS-KEYS-0077），使用此類曲線的憑證不會被註冊。"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.what": {
+    "en": "d0088e020fb9a13e",
+    "text": "沒有任何 Kerberos 金鑰、票證或交換使用 RFC 8429 已棄用的 enctype（rc4-hmac）"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.development": {
+    "en": "05d8e71722ffc76a",
+    "text": "krb5.enctypes 預設為 18,17,20,19,23：每個帳戶在其 AES 金鑰旁都有一把 rc4-hmac 金鑰，rc4only 測試帳戶只有這一把，而只提供 23 的用戶端也能取得票證——因此可以測試 RC4 用戶端。"
+  },
+  "mode.requirements.kerberos-deprecated-enctypes.product": {
+    "en": "f781591fe2d565a1",
+    "text": "讀取清單時「不含」23（記錄一次，STS-CORE-0106），指名它的寫入會被拒絕（STS-CORE-0103）。不會為 krbtgt、服務或人員推導、儲存或放入 keytab 任何 RC4 金鑰；絕不使用該 enctype 的金鑰或票證；只提供該 enctype 的 AS-REQ 或 TGS-REQ 會以 KDC_ERR_ETYPE_NOSUPP 拒絕（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 工作階段金鑰或子金鑰會被拒絕（STS-KRB-0157、0158、0159）。剩下的是 AES（17、18、19、20）。"
+  },
+  "mode.requirements.signed-assertions.what": {
+    "en": "61c90b75f7b0a5e3",
+    "text": "每個 SAML 斷言都經過簽署，每個 SAML 1.1 Response 也是"
+  },
+  "mode.requirements.signed-assertions.development": {
+    "en": "38123244c09ef3c2",
+    "text": "關閉 saml2.signAssertion、saml11.signAssertion 與 saml11.signResponse——全服務或在某個應用程式上——會送出未簽署的斷言或未簽署的 SAML 1.1 Response，這就是找出會接受它的依賴方的方法。"
+  },
+  "mode.requirements.signed-assertions.product": {
+    "en": "aa7a88c57793c53d",
+    "text": "這三項在讀取時都會被「忽略」（STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103；應用程式上為 STS-REG-0193）。無論使用何種繫結，SAML 2.0 斷言都會簽署（saml-profiles-2.0-os 4.1.3.5 與 4.1.4.5 要求在 POST 上簽署），SAML 1.1 Response 也會連同其斷言一起簽署（oasis-sstc-saml-bindings-1.1 4.1.2.4 要求在 Browser/POST 中簽署）。關閉 saml2.signResponse 仍被允許：斷言已簽署時，設定檔不再有其他要求。"
+  },
+  "mode.requirements.workload-security-header.what": {
+    "en": "776290c79cdd3f4a",
+    "text": "沒有 workload.spiffe.io 標頭的 Workload API 呼叫會被拒絕"
+  },
+  "mode.requirements.workload-security-header.development": {
+    "en": "27e04db12d62c69b",
+    "text": "spiffe.requireSecurityHeader 預設為開啟，與產品模式相同；關閉時會處理沒有標頭的呼叫。"
+  },
+  "mode.requirements.workload-security-header.product": {
+    "en": "3251248ccb01d6b6",
+    "text": "一律拒絕（SPIFFE Workload Endpoint 規格第 3 節，一項 SSRF 強化措施）：off 在讀取時會被「忽略」（STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103）。"
+  },
+  "mode.requirements.credential-status-reference.what": {
+    "en": "d2f22919aea82d16",
+    "text": "出示的憑證必須攜帶狀態參照"
+  },
+  "mode.requirements.credential-status-reference.development": {
+    "en": "a291b8402b9977d5",
+    "text": "oid4vp.requireStatusReference 預設為 all，與產品模式相同：出示給 OpenID4VP 驗證者的每個憑證都必須指名一個解析為 VALID 的狀態，除非其受信任的簽發者列於 oid4vp.statusOptionalIssuers 中。own-only 會豁免外部憑證，而 off——僅限開發模式——會接受此領域自己沒有參照的憑證，以及其出示中隱藏了 credentialStatus 的 ldp_vc。"
+  },
+  "mode.requirements.credential-status-reference.product": {
+    "en": "091040d9ab1a08e5",
+    "text": "off 在讀取時會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103）：此領域沒有狀態參照的憑證，或未揭露其 credentialStatus 的 ldp_vc，一律被拒絕。own-only 與按簽發者的豁免是允許的。"
+  },
+  "mode.requirements.realm-chooser.what": {
+    "en": "c37334adfeccc2cb",
+    "text": "登入前的領域選擇器列出每個領域"
+  },
+  "mode.requirements.realm-chooser.development": {
+    "en": "7ace23d168380455",
+    "text": "在已定義信任領域的服務上，於 /admin 或 /portal 沒有工作階段的瀏覽器，會看到一份可供登入的所有領域清單。"
+  },
+  "mode.requirements.realm-chooser.product": {
+    "en": "b3e379e5d61df6c0",
+    "text": "同一頁面會以文字方塊要求輸入領域 ID，因此部署的領域不會公開給任何能連到它的人。"
+  },
+  "mode.requirements.weaker-responses.what": {
+    "en": "57d0e17e4a068c39",
+    "text": "回應可以比所要求的更弱"
+  },
+  "mode.requirements.weaker-responses.development": {
+    "en": "552b8f1ae7baed48",
+    "text": "應加密但無法加密的斷言或權杖，會附帶警告以明文送出。"
+  },
+  "mode.requirements.weaker-responses.product": {
+    "en": "231c8252c053a97b",
+    "text": "拒絕。"
+  },
+  "mode.requirements.objects.what": {
+    "en": "9acaa32a6ee23f77",
+    "text": "所參照的物件必須已經存在"
+  },
+  "mode.requirements.objects.development": {
+    "en": "b998406cf3b99cec",
+    "text": "使用者、應用程式、服務主體或授權伺服器會在第一次被指名時建立，這讓用戶端能以任何識別碼指向本服務，並得到一次可運作的交換。"
+  },
+  "mode.requirements.objects.product": {
+    "en": "a33d2b29f75e06ee",
+    "text": "未知的名稱會被「拒絕」。所有項目都必須事先透過主控台、/admin-api、SCIM 或 LDAP 新增操作建立。"
+  },
+  "mode.requirements.key-material.what": {
+    "en": "07ec07df478bb563",
+    "text": "簽署金鑰在重新啟動後仍保留"
+  },
+  "mode.requirements.key-material.development": {
+    "en": "c2e1929930228d7a",
+    "text": "每次啟動都會產生新的簽署金鑰並保存在記憶體中。權杖在重新啟動後即失效——這正是本服務可隨用隨棄的原因；而 `kid` 由金鑰材料推導而來，因此兩個執行個體絕不會以同一個名稱發布兩把金鑰。"
+  },
+  "mode.requirements.key-material.product": {
+    "en": "f4d83aab08e747e0",
+    "text": "只產生「一次」，之後從持續性儲存區讀回——因此產品模式需要持續性儲存區——並以 AES-256-GCM 加密，所用的金鑰本服務從不產生也從不儲存，而是從掛載的檔案、AWS Secrets Manager、GCP Secret Manager、Azure Key Vault 或 HashiCorp Vault 讀取。"
+  },
+  "mode.requirements.client-secret.what": {
+    "en": "f43a81528281dea5",
+    "text": "OAuth 2.0 / OIDC 應用程式以其註冊時的身分進行驗證"
+  },
+  "mode.requirements.client-secret.development": {
+    "en": "ce6389143b3d36c0",
+    "text": "對任何人都沒有要求：無論用戶端的註冊宣告了什麼，它都可以只傳送 client_id。"
+  },
+  "mode.requirements.client-secret.product": {
+    "en": "9d1bf687c36cb03c",
+    "text": "「機密」用戶端——其註冊宣告了 \"none\" 以外任何 token_endpoint_auth_method 的用戶端，包括完全未宣告的註冊（RFC 7591 第 2 節將其預設為 client_secret_basic）——必須出示該認證資訊，且必須通過驗證。「公開」用戶端（明確宣告 token_endpoint_auth_method=none）是「允許」的，且不出示任何東西，這是正確的；它改為須遵守下一列的要求。在 2026-09-17 之前，此處寫的是「沒有公開用戶端」。"
+  },
+  "mode.requirements.oauth-security-bcp.what": {
+    "en": "87c3aae84dd60fee",
+    "text": "強制執行 OAuth 2.0 Security BCP（RFC 9700）"
+  },
+  "mode.requirements.oauth-security-bcp.development": {
+    "en": "03a913ace3bef932",
+    "text": "僅在依程序或依領域設定了 oauth2.rfc9700 或 oauth2.oauth21 時。關閉時，本服務會回應 BCP 會拒絕的請求——這讓用戶端能針對兩種回應都進行測試。"
+  },
+  "mode.requirements.oauth-security-bcp.product": {
+    "en": "a92e513a7178c6bf",
+    "text": "「一律」強制，無論那些設定為何，領域也無法關閉。公開用戶端必須使用 S256 的 PKCE、重新導向 URI 精確比對、沒有開放式重新導向、迴路位址以外不得使用 http 重新導向 URI、無法重送的挑戰值或 nonce、任何 id_token 都須有 nonce、沒有從授權端點簽發存取權杖的回應類型，以及會輪替並偵測重複使用的重新整理權杖。這就是公開用戶端用來「取代」認證資訊所須遵守的要求，也是公開用戶端之所以能被允許的原因（2026-09-17）。"
+  },
+  "mode.requirements.public-client-grants.what": {
+    "en": "2b836cf35c373f3d",
+    "text": "公開用戶端可使用哪些授權類型"
+  },
+  "mode.requirements.public-client-grants.development": {
+    "en": "9a103bc53ec958ff",
+    "text": "本服務提供的所有授權類型，任何人皆可使用。"
+  },
+  "mode.requirements.public-client-grants.product": {
+    "en": "82bf0ab77ef49e17",
+    "text": "授權碼與重新整理授權類型；不包括用戶端認證授權類型（RFC 6749 第 4.4 節將其定義給機密用戶端；OAuth 2.1 第 4.2 節明確如此規定），也不包括資源擁有者密碼授權類型（RFC 9700 第 2.4 節：MUST NOT 使用）。機密用戶端不受影響。"
+  },
+  "mode.requirements.introspection.what": {
+    "en": "9f11bb5247c41fb8",
+    "text": "/oauth2/introspect 的呼叫端須進行驗證"
+  },
+  "mode.requirements.introspection.development": {
+    "en": "8a4fb8f785e4d1f4",
+    "text": "RFC 7662 JSON 內省會回應任何持有權杖字串的人，無需用戶端認證資訊。RFC 9701 JWT 回應（Accept: application/token-introspection+jwt）在兩種模式下都是例外：其 aud 指名提出請求的資源伺服器，因此該呼叫端必須以已登錄認證資訊的用戶端身分進行驗證，否則以 400 invalid_client 拒絕。"
+  },
+  "mode.requirements.introspection.product": {
+    "en": "b53ed135725fbe0c",
+    "text": "每個內省請求都必須以能通過驗證的認證資訊作為用戶端進行驗證——client_secret_basic 或 post、用戶端斷言，或 RFC 8705 憑證——否則以 401 invalid_client 拒絕（JWT 請求則為 400，RFC 9701 第 5 節）。"
+  },
+  "mode.requirements.revocation.what": {
+    "en": "5677b3fbce656c33",
+    "text": "/oauth2/revoke 的呼叫端須進行驗證，且只能撤銷自己的權杖"
+  },
+  "mode.requirements.revocation.development": {
+    "en": "99c5947846bf5a05",
+    "text": "不帶用戶端認證資訊的 RFC 7009 撤銷，可為任何持有權杖字串的人撤銷此領域簽發的任何存取權杖或重新整理權杖。「確實」出示認證資訊的呼叫端，須遵守與產品模式相同的要求：無法通過驗證的認證資訊以 401 invalid_client 拒絕，簽發給其他用戶端的權杖以 invalid_grant 拒絕。"
+  },
+  "mode.requirements.revocation.product": {
+    "en": "753907c223c4fde4",
+    "text": "每個撤銷請求都必須來自用戶端：機密用戶端出示能通過驗證的認證資訊（權杖端點的方法），公開用戶端指名其已註冊的 client_id，其他一切以 401 invalid_client 拒絕（RFC 7009 第 2.1 節）。簽發給其他用戶端的權杖以 400 invalid_grant 拒絕，且不撤銷任何東西。"
+  },
+  "mode.requirements.oid4vp-x509-host.what": {
+    "en": "b6950c831f947bf4",
+    "text": "OpenID4VP 驗證者的 x509_san_dns 名稱由設定提供，絕不取自請求"
+  },
+  "mode.requirements.oid4vp-x509-host.development": {
+    "en": "c5a807820eba98b7",
+    "text": "當 oid4vp.x509DnsName 為空且 global.publicBaseUrl 未固定時，驗證者會為請求所抵達的主機核發憑證（每個名稱一張憑證，每個領域最多十六張），並將其作為 x509_san_dns 用戶端識別碼。"
+  },
+  "mode.requirements.oid4vp-x509-host.product": {
+    "en": "1bc891545748f93d",
+    "text": "名稱為 oid4vp.x509DnsName，或 global.publicBaseUrl 的主機；兩者皆無時，x509_san_dns 請求會被拒絕（STS-VC-0110）——Response URI 由同一主機組成，因此 Host 標頭將決定一個已簽署、受信任的請求把呈現傳送到何處。x509_hash 不需要名稱，不受影響。"
+  },
+  "mode.requirements.request-objects.what": {
+    "en": "6376797d2aae208e",
+    "text": "以 JWT 保護的授權請求須經簽署，且 request_uri 須為 HTTPS"
+  },
+  "mode.requirements.request-objects.development": {
+    "en": "00801b6681025497",
+    "text": "以 `none` 簽署的請求物件（OpenID Connect Core 6.1）會被接受，除非要求已簽署的請求物件——由 oauth2.requireSignedRequestObject、用戶端的項目或授權伺服器的設定檔要求。已註冊的 request_uri 可以是純 http，且可回應任何媒體類型；兩者皆會記錄。"
+  },
+  "mode.requirements.request-objects.product": {
+    "en": "b2ec3d6648490690",
+    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕。在兩種模式下，只有在用戶端註冊了 request_uri 時才會擷取它。"
+  },
+  "mode.requirements.management-api.what": {
+    "en": "7e9bb52b567f5c3c",
+    "text": "/admin-api 需要存取權杖與角色"
+  },
+  "mode.requirements.management-api.development": {
+    "en": "a91239e28663677c",
+    "text": "當 adminApi.authRequired 開啟（預設）時，需要帶有 admin:read 或 admin:write 的 OAuth 2.0 存取權杖。關閉時：開放。這是測試所驅動的方式，也是沒有任何人持有角色時重新進入的途徑——這也意味著任何能連到此連接埠的人都能透過它授予自己兩個角色。"
+  },
+  "mode.requirements.management-api.product": {
+    "en": "2b5a59d171c39596",
+    "text": "一律需要相同的存取權杖。adminApi.authRequired=false 在寫入時被拒絕，在已儲存之處則被忽略：此 API 的關卡是主控台唯一的關卡，因此任何東西都不得將其打開。重新進入的途徑是 adminApi.clientSecret，須在啟動前固定。"
+  },
+  "mode.requirements.console.what": {
+    "en": "44bcae0f35012ef6",
+    "text": "/admin 需要登入與角色"
+  },
+  "mode.requirements.console.development": {
+    "en": "6c836b756fab2991",
+    "text": "需要——而且一向如此；能將其關閉的設定已經移除。其背後的登入不檢查密碼，因此關卡所證明的只是有人輸入了一個持有角色的名稱。"
+  },
+  "mode.requirements.console.product": {
+    "en": "d8fc7997d383c0b0",
+    "text": "需要，且其背後的登入會驗證認證資訊。"
+  },
+  "mode.requirements.console-bootstrap-window.what": {
+    "en": "9aae56ff92524098",
+    "text": "在啟動管理員到來之前，主控台不對所有人開放"
+  },
+  "mode.requirements.console-bootstrap-window.development": {
+    "en": "3e57442382188f6c",
+    "text": "在領域的啟動管理員首次登入 /admin 之前——或在未植入啟動管理員時，名冊為空的期間——只要 admin.openWhenEmpty 開啟，每個已登入的人都在該領域持有兩個主控台角色。該帳戶的任何一次登入都會關閉此窗口。"
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "無論 admin.openWhenEmpty 如何設定，沒有人會因為此窗口而持有角色：只有名冊說了算。在啟動管理員認領主控台之前，其角色只在透過其所屬領域以「密碼」登入時才會生效（amr pwd，在此驗證，而非聯合合作夥伴、憑證、錢包或 Kerberos 票證），且只有該次登入能認領主控台（STS-ADMIN-0796）；偵錯工具與工作階段的憑證註冊權限須等待認領完成。沒有啟動管理員且名冊為空的領域會保持關閉，並在啟動時記錄（STS-ADMIN-0798）；POST /admin-api/rbac/grant 是進入的途徑。"
+  },
+  "mode.requirements.certificate-enrollment.what": {
+    "en": "e1e5d0112481b526",
+    "text": "ACME 與 EST 需要 TLS；註冊認證資訊會經過驗證"
+  },
+  "mode.requirements.certificate-enrollment.development": {
+    "en": "cbe243baf730a04d",
+    "text": "ACME（/enroll/acme）與 EST（/.well-known/est）也會透過純 HTTP 回應，並記錄此情形。EST 密碼不檢查（見認證資訊那一列），也不要求應用程式的用戶端密碼。ACME External Account Binding MAC 與 SCEP 挑戰密碼「會」驗證，而憑證可以為誰簽發的規則與產品模式完全相同地強制執行：你自己，或在你持有 Admin Write 時，領域中的任何人。"
+  },
+  "mode.requirements.certificate-enrollment.product": {
+    "en": "f27791f1f0f45794",
+    "text": "未透過 TLS 抵達的請求會被拒絕（STS-ENROLL-0060）。EST 會驗證目錄密碼並要求用戶端密碼。其餘與開發模式相同。"
+  },
+  "mode.requirements.scim.what": {
+    "en": "9a890adef7950278",
+    "text": "/scim/v2 需要認證資訊"
+  },
+  "mode.requirements.scim.development": {
+    "en": "7f09cdc729d11a04",
+    "text": "需要使用 RFC 7644 第 2 節六種配置之一——而且一向如此——但除了格式之外都不驗證。"
+  },
+  "mode.requirements.scim.product": {
+    "en": "6a52ccdf24efb34f",
+    "text": "需要且會驗證。不提供 HTTP Digest，因為 RFC 7616 需要密碼或其雜湊，而 scrypt 雜湊兩者都無法檢查；HOBA 金鑰只能由現有帳戶的已登入擁有者註冊，且註冊 HOBA 金鑰絕不會建立帳戶。"
+  },
+  "mode.requirements.shared-signals.what": {
+    "en": "b32bd06900029893",
+    "text": "/ssf 需要認證資訊"
+  },
+  "mode.requirements.shared-signals.development": {
+    "en": "5056af1ab55c8c24",
+    "text": "需要使用端點所接受的配置之一——而且一向如此——但除了格式之外都不驗證。"
+  },
+  "mode.requirements.shared-signals.product": {
+    "en": "815c7d1e43aaf41d",
+    "text": "需要且會驗證：Basic 認證資訊會與該人的 userPassword 比對，而 ssf.authBasic 可移除此配置。"
+  },
+  "mode.requirements.demo-data.what": {
+    "en": "bc4f8fb3268c8841",
+    "text": "新服務包含示範資料"
+  },
+  "mode.requirements.demo-data.development": {
+    "en": "25a09144798ca6c5",
+    "text": "目錄會植入三個人、兩個群組、一個繫結帳戶，以及位於兩個 XACML 角色群組中的 remote-pep-1 與 xacml-user-1 身分；KDC 會植入測試用帳戶、委派規則以及一個密碼寫在原始碼中的受信任領域；SPIFFE 登錄會植入範例項目；且每個人都會被賦予產生的認證資訊屬性。"
+  },
+  "mode.requirements.demo-data.product": {
+    "en": "2d0556abc166bc57",
+    "text": "以上皆無。目錄、主體資料庫與登錄只保存經設定或佈建的內容，別無其他——兩個 XACML 角色群組存在但為空，而 KDC 拒絕以本儲存庫中公開的密碼建立 krbtgt 或其服務帳戶。"
+  },
+  "mode.requirements.claim-values.what": {
+    "en": "3e4acbf9a020d8f8",
+    "text": "宣告值可以是虛構的"
+  },
+  "mode.requirements.claim-values.development": {
+    "en": "656bcc392c40db7a",
+    "text": "權杖會指名一個虛擬人物——姓氏 `Mock`、位於 sts.example 的地址且 email_verified 為 true——認證資訊會以產生的值填入缺少的屬性，安全性事件會指名 @example.com 主體，而沒有身分驗證紀錄的人會得到一筆信任框架為 `urn:sts:demo` 的驗證（OpenID Connect for Identity Assurance 1.0，#127）。"
+  },
+  "mode.requirements.claim-values.product": {
+    "en": "3a1905ca05d2e355",
+    "text": "值來自該人的目錄項目，否則省略；`verified_claims` 只依據記錄在項目上的驗證釋出，且 email_verified 只有在地址已驗證時才為 true：該人透過郵寄連結證明的地址（#63），或受信任來源寫入的地址——管理員（主控台、/admin-api，或持有 Admin Write 的 LDAP 寫入）、SCIM，或未表示 email_verified 為 false 的聯合合作夥伴（#64）。"
+  },
+  "mode.requirements.saml-request-signatures.what": {
+    "en": "85e7bc435ce1b0c0",
+    "text": "SAML 2.0 服務提供者的請求須經簽署"
+  },
+  "mode.requirements.saml-request-signatures.development": {
+    "en": "6958e9df9b9440fb",
+    "text": "未簽署的 AuthnRequest 或 LogoutRequest 會被接受（saml2.requireSignedAuthnRequests=auto），除非服務提供者已取用的中繼資料表明 AuthnRequestsSigned。「確實」存在的簽章會依服務提供者已註冊的憑證驗證，驗證失敗則拒絕；若無已註冊的憑證，則記錄為未驗證。請求在其 KeyInfo 中攜帶的憑證會記錄為「觀察到的」——絕不作為信任錨點——而當項目沒有其他憑證時，仍可能以它加密斷言。"
+  },
+  "mode.requirements.saml-request-signatures.product": {
+    "en": "c05ec261d945ccda",
+    "text": "未簽署的 AuthnRequest 或 LogoutRequest 會被拒絕（STS-SAML-0063）。簽章的驗證方式與開發模式完全相同，而沒有已註冊憑證可供驗證的簽章會被視為未簽署而拒絕。在營運者於 SAML 2.0 頁面或以 POST /admin-api/saml2/confirm-signing-certificate 確認之前，不會以「觀察到的」憑證進行加密。"
+  },
+  "mode.requirements.saml-metadata-query.what": {
+    "en": "0ac0996817bde223",
+    "text": "Metadata Query 查詢只註冊營運者或信任錨點擔保的服務提供者"
+  },
+  "mode.requirements.saml-metadata-query.development": {
+    "en": "161781e2465d3676",
+    "text": "來自未知 entityID 的請求會啟動 MDQ 查詢（saml2.mdqBaseUrl），描述該實體的回應會建立應用程式項目，且僅在設有 saml2.metadataTrustAnchors 時才受其約束。「從 MDQ 匯入」動作無論有無錨點都會這麼做。"
+  },
+  "mode.requirements.saml-metadata-query.product": {
+    "en": "e7990881d9e5016a",
+    "text": "當領域沒有 saml2.metadataTrustAnchors 時，不會為未知 entityID 執行由請求啟動的查詢（STS-SAML-0080）；有錨點時，只有在回應的簽章能依其中之一驗證通過時才會建立項目（STS-SAML-0081）。營運者在沒有錨點時執行「從 MDQ 匯入」會被拒絕（STS-SAML-0084），除非 saml2.mdqImportWithoutAnchors 開啟。被拒絕的 entityID 列在 SAML 2.0 頁面與 GET /admin-api/saml2（mdqRefused）中。"
+  },
+  "mode.requirements.saml-unregistered-providers.what": {
+    "en": "68a665e10d606a70",
+    "text": "個別提供者的 SAML 中繼資料與端點只為已註冊的提供者回應"
+  },
+  "mode.requirements.saml-unregistered-providers.development": {
+    "en": "98a80675acb99981",
+    "text": "GET /saml2/metadata/{sp} 與 /saml11/metadata/{rp} 會為任何名稱產生已簽署的文件，而 {sp} 或 {rp} 下的 SSO、SLO、artifact 與 responder 端點也會為其回應。"
+  },
+  "mode.requirements.saml-unregistered-providers.product": {
+    "en": "5a56aaa1243f844e",
+    "text": "對於不是已註冊 SAML 2.0 服務提供者（STS-SAML-0082）或 SAML 1.1 信賴方（STS-SAML-0083）的名稱，上述每個路徑都回應 404。不限定提供者的文件不變。"
+  },
+  "mode.requirements.unregistered-applications.what": {
+    "en": "f59ad1efb04f3196",
+    "text": "權杖只為已註冊的應用程式簽發（#496）"
+  },
+  "mode.requirements.unregistered-applications.development": {
+    "en": "d4a6c5bb3e64bdeb",
+    "text": "WS-Trust RST 會為任何 AppliesTo 回應，沒有 AppliesTo 時也會回應（權杖沒有對象限制）；WS-Federation wsignin1.0 會為任何 wtrealm 回應。每一個都以共用的 entityID 簽發，且應用程式會依首次觀察登錄到登錄簿中。"
+  },
+  "mode.requirements.unregistered-applications.product": {
+    "en": "ad9954edbb251dbb",
+    "text": "AppliesTo 無法解析為任何已註冊應用程式的 RST（appRegisteredBy 未設定——觀察不等於註冊）以 wst:InvalidScope 拒絕（STS-WSTRUST-0030），沒有 AppliesTo 的則以 wst:InvalidRequest 拒絕（STS-WSTRUST-0031），適用於每種權杖類型以及 OnBehalfOf / ActAs，且在驗證請求者或記錄任何東西之前進行。wtrealm 未指名任何已註冊信賴方的 wsignin1.0 會在登入畫面之前以 404 頁面拒絕（STS-WSFED-0021）。"
+  },
+  "mode.requirements.unregistered-oauth-clients.what": {
+    "en": "264387e4eb558328",
+    "text": "OAuth 2.0 用戶端只有在已註冊時才受服務（#496）"
+  },
+  "mode.requirements.unregistered-oauth-clients.development": {
+    "en": "5a23e83731e4dd69",
+    "text": "授權端點除了重新導向 URI 之外，不對 client_id 做任何詢問；權杖端點則在拒絕之前先登錄它見到的用戶端。由觀察登錄的 RFC 8693 對象可作為目標，而斷言的對象若指名它，則視為信賴方。"
+  },
+  "mode.requirements.unregistered-oauth-clients.product": {
+    "en": "6b65fe6221534e38",
+    "text": "指名無人註冊之 client_id 的授權請求或 PAR（appRegisteredBy 未設定——觀察不等於註冊）在本伺服器上回應 400，絕不重新導向（STS-OAUTH-0947；未指名時：STS-OAUTH-0948）；指名此類用戶端的權杖請求在被計數或記錄之前回應 401 invalid_client（STS-OAUTH-0949）。指名未註冊應用程式的 RFC 8693 對象或資源屬於原則的 unregistered-target（invalid_target，STS-OAUTH-0793），而在 any-declared-relying-party 之下，交換之斷言的對象必須是已註冊的應用程式。"
+  },
+  "mode.requirements.unregistered-saml-providers.what": {
+    "en": "15c793bc36671f22",
+    "text": "SAML 服務提供者或信賴方只有在已註冊時才會得到回應（#496）"
+  },
+  "mode.requirements.unregistered-saml-providers.development": {
+    "en": "a0d68da6bdce5cb8",
+    "text": "AuthnRequest、LogoutRequest 與 SAML 1.1 瀏覽器流程會為任何 Issuer 回應；簽章檢查會記錄它，而由觀察登錄的項目在個別 SP 路徑上視為服務提供者。"
+  },
+  "mode.requirements.unregistered-saml-providers.product": {
+    "en": "121d2314a39e79b5",
+    "text": "Issuer 不是已註冊 SAML 2.0 服務提供者的 AuthnRequest（appRegisteredBy 未設定——觀察不等於註冊）會在檢查簽章之前回應 403 頁面（STS-SAML-0103；只有針對未知 entityID 的 Metadata Query 查詢仍會依信任錨點規則排入佇列）；來自此類提供者的 LogoutRequest 不會結束任何東西（STS-SAML-0104）；針對未註冊信賴方的 SAML 1.1 流程回應 403 頁面（STS-SAML-0105）。個別 SP 路徑、屬性授權單位與 SAML 1.1 responder 只計入已註冊的項目，而 MDQ 查詢將未註冊的項目視為未知。"
+  },
+  "mode.requirements.unregistered-gnap-clients.what": {
+    "en": "60ada07c629c3794",
+    "text": "GNAP 用戶端或資源伺服器只有在已註冊時才受服務（#496）"
+  },
+  "mode.requirements.unregistered-gnap-clients.development": {
+    "en": "431c5d7a551b30c7",
+    "text": "未知但已證明的金鑰在首次出現時會被建立為應用程式項目，從此之後接受該項目的金鑰與執行個體識別碼。"
+  },
+  "mode.requirements.unregistered-gnap-clients.product": {
+    "en": "43ea90ee5ea17888",
+    "text": "未知的金鑰會被拒絕（STS-GNAP-0082），屬於無人註冊之項目的金鑰或執行個體識別碼也會被拒絕（appRegisteredBy 未設定——首次出現時建立的項目不等於註冊）：在再次觀察該項目或簽發任何東西之前，回應 401 invalid_client 或 invalid_resource_server（STS-GNAP-0902）。"
+  },
+  "mode.requirements.unregistered-resource-targets.what": {
+    "en": "c9e70b1944bd9dca",
+    "text": "RFC 8707 資源與 GNAP 權限的位置須指名已註冊的目標（#505）"
+  },
+  "mode.requirements.unregistered-resource-targets.development": {
+    "en": "09b7259e14c7de50",
+    "text": "任何絕對 URI 都會在授權、PAR 與權杖端點被接受為資源，並成為權杖的 aud；未指名任何資源伺服器的 GNAP 位置會被排除在權杖的對象之外，而該權限仍會授予。"
+  },
+  "mode.requirements.unregistered-resource-targets.product": {
+    "en": "b69c19d5b722a369",
+    "text": "資源（權杖交換之外；權杖交換的目標屬於原則的 unregistered-target）以及 GNAP 存取權限的每個位置，都必須指名已註冊的目標：本服務自己的資源伺服器之一（UserInfo、SCIM、Shared Signals 與 OpenID4VCI 所接受的預設資源指標；/admin-api；GNAP 示範資源伺服器），或事先註冊的應用程式（appRegisteredBy 已設定——觀察不等於註冊），依其 oauthAudience、權限基底 URI、client_id 或識別碼指名——內嵌偵錯工具的 api 即為其一，植入時即為已註冊。位於已註冊資源伺服器之 gnapResourceServerUri 或其下的 GNAP 位置也算指名了它。否則為 invalid_target：從授權端點重新導向，在 PAR 回應 400（STS-OAUTH-0950），在權杖端點於花費任何東西之前回應 400（STS-OAUTH-0951）；對於 GNAP，請求以 invalid_request 拒絕（STS-GNAP-0903），而不是捨棄該權限。"
+  },
+  "mode.requirements.return-addresses.what": {
+    "en": "49ff721244e24e9d",
+    "text": "回應送往請求所指定之處"
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "SAML AuthnRequest、SAML 1.1 shire、WS-Federation wreply 或錢包連結所指名的任何絕對 URL 都會被使用，無論是否已註冊——而觀察寫入應用程式項目的地址（或主控台、入口網站從 Host 標頭學得的回呼）會在 appReturnAddressObserved 上「標記」為觀察到的。"
+  },
+  "mode.requirements.return-addresses.product": {
+    "en": "c9aeb6e9c45812da",
+    "text": "只使用註冊在應用程式自身項目上的地址——而觀察絕不會新增地址。仍標記為觀察到的地址「不算」已註冊：那是開發模式放上去的，在營運者於應用程式頁面或以 POST /admin-api/applications/confirm-address 確認之前會被拒絕（STS-REG-0049）。在開始標記觀察之前記錄的地址沒有標記，在切換領域之前仍需檢閱。主控台與入口網站自己的回呼不會從請求的 Host 標頭學得（請設定 global.publicBaseUrl），而不符合主機的 WebAuthn RP ID 會拒絕該儀式，而不是退回使用主機。"
+  },
+  "mode.requirements.test-controls.what": {
+    "en": "0a76dd48b1006dbe",
+    "text": "測試控制項為開放"
+  },
+  "mode.requirements.test-controls.development": {
+    "en": "a8f1387d5a4a2093",
+    "text": "POST /tls/trust 與 /tls/trust/clear、POST /dpop/nonce-mode、POST /devices/test/compliance（裝置的合規性，無需 device:compliance 範圍，#164）、/krb5/principals 上的密碼、以 ?username= 登出其他人、開放的動態用戶端註冊、SAML 1.1 屬性授權單位以及 HOBA 金鑰註冊，全都回應任何人；被拒絕的 SCIM Digest 挑戰會印出共用密碼，而主控台的 restore-kerberos 會清除 Kerberos 登出時間點。"
+  },
+  "mode.requirements.test-controls.product": {
+    "en": "eac9684b6453a72e",
+    "text": "每一項都會被拒絕，或要求其對應管理操作原本就要求的認證資訊。無論 logout.anyUser 如何設定，指名已登入呼叫端以外之人的登出都會被拒絕。restore-kerberos 在主控台與 /admin-api 上同樣被拒絕，因此 Kerberos 登出會一直有效，直到在它之前簽發的票證最晚可能有效的時間。動態用戶端註冊會被拒絕，除非 oauth2.openRegistration 開啟——或註冊攜帶此領域信任的軟體聲明（由此領域簽發，或有應用程式宣告其簽發者）且 oauth2.softwareStatementOpensRegistration 開啟，這等於營運者藉由決定信任誰的聲明來決定誰可以註冊。"
+  },
+  "mode.requirements.directory-writes.what": {
+    "en": "3ad0ca0be1789212",
+    "text": "透過 LDAP 對目錄的寫入須經授權"
+  },
+  "mode.requirements.directory-writes.development": {
+    "en": "086b01f4240590eb",
+    "text": "任何連線都可以新增、修改、重新命名或刪除任何領域中的任何項目，包括匿名連線——這讓測試無需任何準備即可直接驅動原始通訊端。"
+  },
+  "mode.requirements.directory-writes.product": {
+    "en": "18434dc600cc297c",
+    "text": "匿名連線不能寫入任何東西。以持有 Admin Write 者身分繫結的連線——在預設領域的目錄中，而不僅僅因為尚無任何角色有成員——可以寫入任何東西。其他任何人只能修改自己「本身」的項目，且只能修改 ldap.selfWritableAttributes 所列的屬性；其中的 userPassword 仍須符合密碼原則。拒絕時使用 LDAP 結果碼 50，insufficientAccessRights。此處不涵蓋「讀取」：請參閱 directory-reads 與 directory-read-authorization。"
+  },
+  "mode.requirements.directory-reads.what": {
+    "en": "5e95694a2b5ed0cc",
+    "text": "透過 LDAP 讀取目錄需要繫結，且絕不傳回認證資訊"
+  },
+  "mode.requirements.directory-reads.development": {
+    "en": "9f319ab9234595bb",
+    "text": "任何連線，無論匿名或從未繫結，都可以搜尋與比對每個項目，讀取除 Kerberos 金鑰以外的每個屬性，並可像其他屬性一樣寫入 createTimestamp、modifyTimestamp 與 entryDN。"
+  },
+  "mode.requirements.directory-reads.product": {
+    "en": "c5c88b050f8273ed",
+    "text": "在未以某人身分繫結的連線上進行搜尋或比對，會以結果碼 50，insufficientAccessRights 拒絕——根 DSE 除外，用戶端會讀取它以得知要在何處繫結。認證資訊屬性（userPassword、pwdHistory、用戶端密碼、註冊存取權杖、私密金鑰、TOTP 密鑰、復原碼、啟用權杖與 Kerberos 金鑰）絕不會由搜尋傳回，對搜尋「篩選條件」不可見，因此無法被當作預言機使用，也無法拿來比對；管理員也不例外。任何人都無法寫入 createTimestamp、modifyTimestamp 與 entryDN，會以結果碼 19，constraintViolation 拒絕。"
+  },
+  "mode.requirements.directory-read-authorization.what": {
+    "en": "1cdf8bb4054623dc",
+    "text": "透過 LDAP 讀取目錄時，依繫結的身分進行授權"
+  },
+  "mode.requirements.directory-read-authorization.development": {
+    "en": "18724e51d13abb83",
+    "text": "任何連線都能看到每個項目以及除 Kerberos 金鑰以外的每個屬性，而且任何 DN 都能繫結——包括應用程式的——這讓測試無需任何準備即可直接驅動原始通訊端。"
+  },
+  "mode.requirements.directory-read-authorization.product": {
+    "en": "4e4200c1388999dd",
+    "text": "持有 Admin Read 或 Admin Write 的人——在預設領域的名冊上（可觸及每個領域），或在某領域自己的名冊上（可觸及該領域）——可讀取範圍內的每個項目。其他任何人可完整讀取自己「本身」的項目；對於其他人，只能讀取 ldap.directoryReadableAttributes 所列的屬性（預設為無，因此其他人根本不存在）；群組只有在自己是其成員時才可讀取，且只能讀取其 cn、description 與 objectClass（開啟 ldap.groupMembersReadable 時也包括其成員）；容器則只能依名稱讀取。應用程式、聯合、原則、角色、信任錨點與 SPIFFE 註冊對他們不可見。讀取者無權看到的項目，會與不存在的項目完全相同地回應 noSuchObject（32）；他們無權讀取的屬性既不出現在結果中，對搜尋篩選條件也不可見；對其進行比對會以 50 拒絕。未指名一個人的繫結 DN——應用程式的、聯合的——會在讀取其密碼之前以 49 拒絕。根 DSE 與 CRL 項目的基底讀取保持開放，而認證資訊對所有人都保持隱藏。"
+  },
+  "mode.requirements.directory-binds.what": {
+    "en": "3f010c21151814fb",
+    "text": "LDAP 繫結須具機密性、經過驗證且受速率限制"
+  },
+  "mode.requirements.directory-binds.development": {
+    "en": "750bac629938a394",
+    "text": "除了密碼為 \"invalid\" 的繫結之外，每個繫結都會成功，在 389 與 636 上皆然，包括匿名與未經驗證的繫結，且失敗次數不受限制。"
+  },
+  "mode.requirements.directory-binds.product": {
+    "en": "5b510b001e85e8d0",
+    "text": "匿名繫結以結果碼 48，inappropriateAuthentication 拒絕；密碼為空的 DN 以 53，unwillingToPerform 拒絕（RFC 4513 第 5.1.1 與 5.1.2 節）。在純文字接聽程式上攜帶密碼的繫結，會在讀取密碼之前以 13，confidentialityRequired 拒絕——請使用 LDAPS，或關閉 ldap.plainListener。「失敗的」繫結會在 security.rateLimitWindowS 內依繫結 DN 與依位址，分別對照 security.rateLimitPerIdentity 與 security.rateLimitPerAddress 計數，超過任一限制的呼叫端會在檢查密碼之前以 53 拒絕；成功的繫結會清除其自身 DN 的計數器，但絕不清除其位址的計數器，且成功的繫結絕不計入。"
+  },
+  "mode.requirements.spire.what": {
+    "en": "8391a467ac94040a",
+    "text": "SPIRE Server API 需要 X509-SVID"
+  },
+  "mode.requirements.spire.development": {
+    "en": "99df3afbc3a75e95",
+    "text": "需要透過相互 TLS 出示，並依 SPIRE 自己的逐方法對照表授權；任何人都可以要求本機通訊端產生讓自己進入的 SVID。"
+  },
+  "mode.requirements.spire.product": {
+    "en": "6a6aa70f3583b8bb",
+    "text": "相同，但登錄不再為任何提出要求的人產生項目。"
+  },
+  "mode.requirements.spire-local-socket.what": {
+    "en": "cda7c1405aa2843d",
+    "text": "SPIRE Server API Unix 通訊端上的呼叫端，只有在通訊端的邊界成立時，才是受信任的 `local` 實體"
+  },
+  "mode.requirements.spire-local-socket.development": {
+    "en": "3203d7aa8d181aea",
+    "text": "只要 spiffe.trustLocalSocket 開啟（預設），通訊端上的每個呼叫端都是 `local`：假定通訊端的檔案系統權限就是邊界，正如真正的 spire-server 所假定的。"
+  },
+  "mode.requirements.spire-local-socket.product": {
+    "en": "c6acb9b502748c92",
+    "text": "邊界會逐連線「驗證」：通訊端必須已設為 0600，且位於沒有群組或其他使用者權限位元的目錄中（STS-SPIFFE-0117），而透過原生模組以 SO_PEERCRED 讀取的對端核心 uid 必須是本服務自己的（STS-SPIFFE-0118；無法讀取時為 STS-SPIFFE-0119）。任一項不符的呼叫端都不是 `local`，需要在 TCP 連接埠上出示管理員的 X509-SVID。"
+  },
+  "mode.requirements.spiffe-node-attestation.what": {
+    "en": "67505ccecccef296",
+    "text": "SPIFFE 節點證明（AttestAgent）"
+  },
+  "mode.requirements.spiffe-node-attestation.development": {
+    "en": "bfa8ef829776ad45",
+    "text": "每種類型都由其證明器「驗證」，否則拒絕——join_token、x509pop、sshpop、tpm_devid、k8s_psat、http_challenge、aws_iid、gcp_iit、azure_imds——依領域在 spiffe.nodeAttestors 中所列。"
+  },
+  "mode.requirements.spiffe-node-attestation.product": {
+    "en": "ae822c00223caa10",
+    "text": "相同；節點證明的任何方面都不因模式而異。"
+  },
+  "mode.requirements.spiffe-workload-attestation.what": {
+    "en": "1544cf58376f56fe",
+    "text": "SPIFFE 工作負載證明（Workload API Unix 通訊端）"
+  },
+  "mode.requirements.spiffe-workload-attestation.development": {
+    "en": "4668876fe1c832e2",
+    "text": "在已建置原生模組的地方，連線時會讀取呼叫端的核心認證資訊與程序（spiffe.workloadAttestors：unix、docker、k8s）；沒有原生模組時，通訊端僅依傳輸選擇器提供服務，並如此表明。當 spiffe.acceptAssertedSelectors 開啟時，會相信自我宣稱的選擇器；spiffe.attestWorkloads 關閉時，會以每個項目回應每個呼叫端。"
+  },
+  "mode.requirements.spiffe-workload-attestation.product": {
+    "en": "5d5eaf65e73e2248",
+    "text": "沒有原生模組時，「不」提供 Workload API 通訊端。自我宣稱的選擇器絕不會被相信，且無論 spiffe.attestWorkloads 如何設定，呼叫端只會得到其選擇器相符的項目；這兩個設定在讀取處被忽略（記錄一次，STS-CORE-0106），在寫入時被拒絕（STS-CORE-0103）。"
+  },
+  "mode.requirements.spiffe-workload-tcp.what": {
+    "en": "235ce79c4d00ce33",
+    "text": "透過 TCP 的 SPIFFE Workload API（spiffe.workloadPort）"
+  },
+  "mode.requirements.spiffe-workload-tcp.development": {
+    "en": "61ffdd49f4ac0582",
+    "text": "在 spiffe.grpcHost 上提供服務，包括萬用位址。TCP 呼叫端不經證明——沒有可詢問的對端程序——而是依其傳輸、所連到的端點及其來源位址識別。"
+  },
+  "mode.requirements.spiffe-workload-tcp.product": {
+    "en": "8f0bd456684ee03c",
+    "text": "「不提供服務」（STS-SPIFFE-0120），除非 spiffe.workloadTcpSourceAuthenticated 宣告網路會驗證來源位址（Workload Endpoint 第 3 節），且即便如此也僅在具名位址上提供：萬用的 spiffe.grpcHost 會被拒絕（STS-SPIFFE-0121）。在連接埠已繫結時切換為產品模式的領域，會以相同的代碼拒絕其上的每個呼叫。"
+  },
+  "mode.requirements.spiffe-entry-selectors.what": {
+    "en": "56b2a805f8092775",
+    "text": "SPIFFE 註冊項目須選取能識別工作負載的事物"
+  },
+  "mode.requirements.spiffe-entry-selectors.development": {
+    "en": "6c7626e3f66110d1",
+    "text": "任何選擇器皆可，包括沒有選擇器：僅有 transport:tcp 的項目會簽發給每個 TCP 呼叫端，而虛構的項目正是如此。"
+  },
+  "mode.requirements.spiffe-entry-selectors.product": {
+    "en": "4aa137b3e071f46c",
+    "text": "沒有選擇器、或只有 transport: 與 endpoint: 選擇器的項目，會在主控台、/admin-api 與 SPIRE Server API 上被拒絕（STS-SPIFFE-0122；在後者為逐項目的 INVALID_ARGUMENT），而已在登錄中的此類項目不回應任何呼叫端（STS-SPIFFE-0123）。peer: 選擇器須與來源位址完全相符——不接受前綴，與 SPIRE 相同。"
+  },
+  "mode.requirements.revocation-check.what": {
+    "en": "c47e754d9209d8a8",
+    "text": "會檢查出示的憑證是否已撤銷"
+  },
+  "mode.requirements.revocation-check.development": {
+    "en": "3a55260648f17cd6",
+    "text": "軟性失敗（pki.revocationCheck=auto）。本服務簽發的憑證會在其自己的登錄簿中查詢整條鏈，已撤銷的會被拒絕；其他授權單位簽發的憑證會透過 OCSP 回應程式及其指名的 CRL 檢查，無法擷取或驗證的狀態會被接受並回報。"
+  },
+  "mode.requirements.revocation-check.product": {
+    "en": "27fcb65a331cb504",
+    "text": "硬性失敗（pki.revocationCheck=auto）。相同的查詢，但狀態無法擷取、驗證或確認為最新的外部憑證——或其簽發者的回應程式不認得的憑證——也會被「拒絕」：能阻擋擷取的攻擊者無法把「已撤銷」變成「已接受」。唯一的清單或回應程式位於本服務被設定為不撥接之位址的憑證也是如此（pki.revocationLdap=ldaps 時的純 ldap:、該設定關閉時的任何 ldap、未設定 pki.revocationLdapDirectory 時的相對名稱；STS-PKI-0188）：簽發者已發布清單，是本服務自己的原則阻止了讀取它。"
+  },
+  "mode.requirements.revocation-unrevocable.what": {
+    "en": "06bc21b848bd7218",
+    "text": "簽發者未指名 CRL 也未指名 OCSP 回應程式的外部憑證"
+  },
+  "mode.requirements.revocation-unrevocable.development": {
+    "en": "1995d7e07f8cc2a1",
+    "text": "「接受」（pki.revocationRequireDistributionPoint=auto），且判定結果表明無法檢查：沒有可供攻擊者阻擋的擷取，而沒有清單的測試 CA 通常是用戶端作者最先建立的東西。"
+  },
+  "mode.requirements.revocation-unrevocable.product": {
+    "en": "68f6ce868376fbc6",
+    "text": "在硬性失敗下「拒絕」（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190）：由 CA 簽發——而非自我簽署——且未指名發布點也未指名回應程式的憑證永遠無法撤銷，因此其下被竊的金鑰在到期之前都有效。帶有 RFC 9608 noRevAvail 的憑證會被接受，因為其簽發者已宣告不存在撤銷資訊（第 4 節略過此檢查）。將此設定設為 off 會接受其餘的憑證，並發出警告。"
+  },
+  "mode.requirements.gnap-mtls-trust.what": {
+    "en": "9797405bffe8917b",
+    "text": "以相互 TLS 證明的 GNAP 金鑰，是受信任授權單位簽發給用戶端的憑證"
+  },
+  "mode.requirements.gnap-mtls-trust.development": {
+    "en": "a5a38e4582010d81",
+    "text": "固定（gnap.mtlsTrust=auto）：TLS 用戶端憑證必須是金鑰所指名的那一張——依指紋，或相同的公開金鑰——且接受自我簽署的憑證（RFC 9635 第 7.3.2 節）。不建立憑證鏈。本服務或其他授權單位「撤銷」的憑證照樣會被拒絕（pki.revocationCheck）。"
+  },
+  "mode.requirements.gnap-mtls-trust.product": {
+    "en": "3635435377d7498b",
+    "text": "PKI（gnap.mtlsTrust=auto，RFC 9635 第 11.4 節）：憑證必須能建立到用戶端信任存放區的鏈、通過撤銷檢查，並「繫結」到用戶端的應用程式項目——由此領域的 TLS 用戶端授權單位簽發給它，或帶有項目所註冊的那一個 RFC 8705 主體參數（oauthTlsClientAuth*）。授權單位簽發的新憑證無需重新註冊即被接受，其指紋會記錄在項目上。gnap.mtlsTrust=pinned 可為某領域關閉此功能；項目可以在領域不要求時要求 pki，但反之則不行。"
+  },
+  "mode.requirements.protocol-debugger.what": {
+    "en": "b74abbe6b21c5dbc",
+    "text": "內嵌身分協定偵錯工具，以及其 api 可以撥接的對象"
+  },
+  "mode.requirements.protocol-debugger.development": {
+    "en": "a784d5509a322d03",
+    "text": "開啟（debugger.enabled=auto）：其自己的接聽程式（debugger.port）提供偵錯工具 UI，並將 /api 轉送至子程序。api 會撥接已登入管理員要求的任何對象，包括私人網路。"
+  },
+  "mode.requirements.protocol-debugger.product": {
+    "en": "28c0296a7d41ddec",
+    "text": "關閉，除非 debugger.enabled=on。開啟時，api 子程序會收到一份「允許清單」——本服務自己的位址與 debugger.allowedDestinations——並拒絕其他所有目的地，包括原始通訊端。"
+  },
+  "mode.requirements.client-secret-expiry.what": {
+    "en": "995744aa9058b211",
+    "text": "已過期的用戶端密碼"
+  },
+  "mode.requirements.client-secret-expiry.development": {
+    "en": "9f39d413e509fdba",
+    "text": "在檢查密碼之處「接受」，並寫入一筆稽核紀錄表明它已過期。"
+  },
+  "mode.requirements.client-secret-expiry.product": {
+    "en": "870f4fcd8826cc66",
+    "text": "一旦 oauthClientSecret 上該密碼紀錄的到期時間已過，便在權杖端點「拒絕」（invalid_client，STS-OAUTH-0558），作為 client_secret_jwt 金鑰時亦然。應用程式可以持有多個密碼，各有其到期時間；輪替會將有效的密碼改為在 oauth2.clientSecretOverlapS 之後到期。"
+  },
+  "mode.requirements.signing-key-rotation.what": {
+    "en": "0643fa994213871f",
+    "text": "簽署金鑰會輪替，並有重疊期"
+  },
+  "mode.requirements.signing-key-rotation.development": {
+    "en": "ed30176d075c7eef",
+    "text": "「不輪替」：金鑰在每次啟動時重新產生。每個單元仍帶有其世代，因此手動建立的下一把或已淘汰金鑰會被發布，並與產品模式一樣能通過驗證。"
+  },
+  "mode.requirements.signing-key-rotation.product": {
+    "en": "9cd85e5afa22e865",
+    "text": "每個單元（領域、使用案例、演算法）都持有一把「下一把」金鑰，在它簽署任何東西之前就發布在 JWKS、SAML 與 WS-Federation 中繼資料及 /crypto/metadata 中，並由 signing.rotate 工作每隔 signing.rotationIntervalDays 升級；被取代的金鑰會繼續用於驗證，持續 signing.retiredKeyGraceDays 或最長的權杖存留期，以較長者為準。"
+  },
+  "mode.requirements.krbtgt-key.what": {
+    "en": "d62d09cce263a9ae",
+    "text": "每個信任領域的 krbtgt 金鑰：來源與輪替"
+  },
+  "mode.requirements.krbtgt-key.development": {
+    "en": "df9896e4af770351",
+    "text": "由 krb5.krbtgtPassword（公開的預設值）「推導」而來，因此讀者可以解密每個 TGT，且「不」依排程輪替。在 /admin/kerberos/principals 上手動輪替在此也有效：只要目錄保存著，它就會以隨機儲存的金鑰取代推導出的金鑰。"
+  },
+  "mode.requirements.krbtgt-key.product": {
+    "en": "943c5e80b61d7656",
+    "text": "「隨機」——對 krb5.enctypes 中的每種 enctype 使用 RFC 3961 random-to-key——每個領域產生一次，密封在目錄項目 krbtgt/<REALM>@<REALM> 上且從不顯示；krb5.krbtgtPassword 會被忽略。krb5.krbtgt-rotate 工作每隔 krb5.krbtgtRotationIntervalDays 將其取代，保留被取代的版本，持續到以其簽發之 TGT 最長的存活時間（含續期），且在該窗口仍開啟時絕不輪替。「輪替並使失效」是 Active Directory 的雙重重設合為一個動作：不保留任何東西，領域中的每個 TGT 都會以 KRB_AP_ERR_BADKEYVER 拒絕。"
+  },
+  "mode.requirements.unattested-device-keys.what": {
+    "en": "6fe7c4a02a6ed641",
+    "text": "未附可驗證證明而出示的裝置金鑰會被拒絕"
+  },
+  "mode.requirements.unattested-device-keys.development": {
+    "en": "bf711f627a32037a",
+    "text": "在 /portal/devices 上證明的金鑰（JWK 證明、連結的 WebAuthn 認證）或透過 EST 或 SCEP 為裝置核發憑證的金鑰，會在沒有證明、或證明未鏈結到 devices.*TrustAnchors 的情況下註冊，並記錄為自我宣稱。"
+  },
+  "mode.requirements.unattested-device-keys.product": {
+    "en": "f81bd7d492b66baa",
+    "text": "此類金鑰會被拒絕（STS-DEVICE-0024）：只有通過驗證並鏈結到錨點的 Android Key Attestation、Apple App Attest 聲明、TPM 金鑰證明或 WebAuthn 證明才能註冊金鑰。管理員依值輸入金鑰屬於管理員的動作，在兩種模式下都會被接受，記錄為 proof admin、自我宣稱。"
+  },
+  "mode.requirements.android-attestation-revocation.what": {
+    "en": "72012b06e78ecc69",
+    "text": "在領域如此要求時，無法檢查撤銷狀態的 Android 證明不受信任"
+  },
+  "mode.requirements.android-attestation-revocation.development": {
+    "en": "31364892d7d7a96d",
+    "text": "在沒有最新 Android 證明狀態清單的情況下（從未下載、下載失敗或已過時），無論 devices.androidRevocationRequired 如何設定，Android 憑證鏈都會記錄為已證明，其撤銷狀態為「未檢查」。清單撤銷或暫停的憑證鏈在兩種模式下都是自我宣稱。"
+  },
+  "mode.requirements.android-attestation-revocation.product": {
+    "en": "f55874a104fe39a1",
+    "text": "預設相同。devices.androidRevocationRequired 開啟時，未檢查的憑證鏈會記錄為自我宣稱：此時裝置金鑰會被拒絕（STS-DEVICE-0024），WebAuthn android-key 聲明則不受信任。"
+  },
+  "mode.requirements.fresh-key-attestation.what": {
+    "en": "703b4411bf1f7787",
+    "text": "裝置憑證請求中的 TPM 金鑰證明必須是新的"
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "TPM2_Certify 聲明的 extraData 若不是在 EST /nonce 簽發給同一用戶端與 cookie 的有效 nonce（未擷取、已過期、已用過、屬於其他用戶端，或請求透過沒有 nonce 操作的 SCEP），仍保留其等級，並記錄為新鮮度「未證明」及其原因。相符的 nonce 會被用掉。"
+  },
+  "mode.requirements.fresh-key-attestation.product": {
+    "en": "335681287a816601",
+    "text": "此類聲明會被拒絕（STS-DEVICE-0050）：在針對同一金鑰的新請求中重送擷取到的證明，並不代表金鑰是現在在 TPM 中產生並保存的。因此帶有 TPM 證明的裝置憑證只透過 EST 在 /nonce 之後簽發（draft-ietf-lamps-attestation-freshness 第 5.1 節）。"
+  },
+  "mode.notYet.certificate-revocation.what": {
+    "en": "90de04e6940f9577",
+    "text": "對於出示的憑證（見上方的要求），以及「已註冊」憑證在用於驗證某物時，會「查詢」撤銷狀態——登錄簿、OCSP 回應程式（包括委派回應程式自身的狀態），以及外部憑證所指名的 CRL，透過 http、https 與 ldaps，合併差異 CRL，間接 CRL 依簽發者讀取，在此處未保存其簽署者時從清單的 caIssuers 位址擷取。剩下的是限制而非待辦工作：未附憑證註冊的「裸」金鑰（不帶 x5c 的 JWK）不指名簽發者也不指名清單，因此只有將其從項目上移除才能使其無法驗證；純 ldap: 只有在 pki.revocationLdap 允許時才會撥接；相對於其 CRL 簽發者命名的發布點，只有在設定了 pki.revocationLdapDirectory 且每個 RDN 皆為單值時才會使用；而 LDAPS 636 不索取用戶端憑證，因此那裡不查詢任何東西。"
+  },
+  "mode.notYet.post-quantum-keys.what": {
+    "en": "c03a9a7d18f82d4c",
+    "text": "TLS 伺服器憑證與 SPIFFE JWT 授權單位在兩種模式下都「不」持續保存：它們屬於各自的模組，每次啟動都會重新產生（除非 tls.certificateFile 提供憑證）。領域的十一把後量子金鑰已於 2026-09-12 從此列移除——在產品模式下，它們會隨領域的金鑰集寫入並一同還原——SPIFFE X.509 授權單位則於 2026-09-11 移除：它是此領域位於服務根憑證之下的 SPIFFE 簽發 CA，因此在產品模式下與憑證授權單位的其餘部分完全相同地持續保存。"
+  },
+  "mode.notYet.key-never-in-memory.what": {
+    "en": "59055bc9d218975f",
+    "text": "私密金鑰在簽署時會「在此程序中解密」。自 2026-09-06 起，簽署之間常駐的是密文，而 `keys.plaintextRetention` 決定明文存留多久——但金鑰加密金鑰也常駐，因此這只是降低了「快照」（核心傾印、被換出的分頁、短暫附加的偵錯工具）的價值，對於能在自己選擇的時刻讀取此記憶體並等待下一次簽署的對象則毫無防禦作用。此程序真正無法讀取的金鑰是 HSM，或代你簽署的 KMS，那是不同的設計，而非一個設定。JavaScript 字串也無法抹除：解密緩衝區會被歸零，由其產生的一切則是被釋放而非被清除。"
+  },
+  "mode.notYet.kerberos-keys.what": {
+    "en": "0529f94b9d0cd311",
+    "text": "產品模式不建立測試用主體、不建立受信任領域、也不依需求建立任何東西，並拒絕公開的服務密碼。目錄中的人以其自身密碼在設定或驗證時推導出的金鑰向產品 KDC 驗證，金鑰密封在其項目上（`stsKrb5Keys`）；服務主體取得隨機金鑰，以及在 /admin/kerberos/principals 上只顯示一次的 keytab。個人的 keytab（#59）由手上的密碼推導——在 /portal/kerberos 上本人的密碼，或管理員以「重設密碼並下載 keytab」設定的密碼——絕不從儲存區讀出。密碼變更或輪替會保留被取代的版本——最多 krb5.retainedKeyVersions 個，各保留 krb5.retainedKeyTtlS——因此以其簽發的票證在可能到期之前仍被接受，而預先驗證與簽發只使用目前的金鑰；「捨棄先前版本」會結束此窗口。自 2026-09-23 起，krbtgt 金鑰為隨機、儲存並輪替（見上方的 krbtgt-key 要求）。自 2026-09-15 起，每個 krb5.enabled 開啟的信任領域都在共用連接埠上擁有自己的 KDC、Kerberos 領域與金鑰。"
+  },
+  "mode.why.skipsOutboundTlsVerification": {
+    "en": "ed44b27a848b9e29",
+    "text": "在該處，驗證回應外送請求之對象的憑證並非可選。請改在對應的 CA 檔案設定中指名私有 CA。"
+  },
+  "mode.why.spoilsOnPurpose": {
+    "en": "f2438188e89315dd",
+    "text": "在該處，刻意的缺陷不得使回應出錯。請在開發領域中針對它測試用戶端。"
+  },
+  "mode.why.believesAssertedSelectors": {
+    "en": "0c7a45212f5facd9",
+    "text": "工作負載對自身宣稱的選擇器是未經任何檢查的聲稱，產品模式絕不相信。"
+  },
+  "mode.why.servesUnattestedEntries": {
+    "en": "2585acdb95860080",
+    "text": "在該處，Workload API 只以呼叫端經證明之選擇器相符的註冊項目回應，絕不以每個項目回應。"
+  },
+  "mode.why.acceptsCredentialsWithoutStatus": {
+    "en": "30f821c6bf407329",
+    "text": "此領域簽發但未顯示狀態參照的認證可能是已撤銷的，因此驗證者在該處要求必須有狀態參照。允許 own-only，而 oid4vp.statusOptionalIssuers 可豁免不發布狀態的受信任簽發者。"
+  },
+  "mode.why.usesBrokenAlgorithms": {
+    "en": "6a758f6a4b95efd8",
+    "text": "SHA-1 簽章、RSA PKCS#1 v1.5 金鑰傳輸、HTTP Digest 中的 MD5，以及 RFC 8429 棄用的 Kerberos enctype（rc4-hmac）都已被破解，產品模式絕不使用其中任何一個。允許較強的值。"
+  },
+  "mode.why.issuesUnsignedAssertions": {
+    "en": "ee4b4a8ecd3ef9b3",
+    "text": "在該處，每個 SAML 斷言以及每個 SAML 1.1 Response 都會簽署（saml-profiles-2.0-os 4.1.4.5，oasis-sstc-saml-bindings-1.1 4.1.2.4）。請在開發領域中針對未簽署的斷言測試信賴方。"
+  },
+  "mode.why.acceptsUnverifiedAttestation": {
+    "en": "3f571035da5396d2",
+    "text": "在該處，每個抵達的 WebAuthn 證明聲明都會被驗證，偽造的會被拒絕而非記錄。允許 verify-if-present 與 require-trusted。"
+  },
+  "mode.why.servesWithoutSecurityHeader": {
+    "en": "fb66d1b60cae1193",
+    "text": "SPIFFE Workload Endpoint 規格（第 3 節）規定，未帶 workload.spiffe.io 標頭的呼叫 MUST 被拒絕。"
+  },
+  "mode.why.derivesKrbtgtFromPassword": {
+    "en": "25b530ec6472a47f",
+    "text": "在該處，krbtgt 金鑰為隨機，每個領域產生一次並密封保存在目錄中，因此不會為它讀取任何密碼。"
+  },
+  "mode.why.opensManagementApi": {
+    "en": "307e3194ee040685",
+    "text": "在該處，管理 API 一律需要存取權杖，因為它的關卡是管理主控台唯一的關卡；請在啟動前固定 adminApi.clientSecret，以便能產生權杖。"
+  },
+  "mode.why.default": {
+    "en": "108a941d7ea44a81",
+    "text": "此設定僅適用於開發模式。"
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "Själva datakrypteringsnycklarna (#391): en per sfär per dataklass nedan, var och en omsluten och avomsluten under nyckelkrypteringsnyckeln"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "Kuvertkryptering: varje värde krypteras under en datakrypteringsnyckel, och bara datakrypteringsnycklarna krypteras under nyckelkrypteringsnyckeln. En omslutning räknas här som en kryptering och en avomslutning som en dekryptering; en process avomsluter varje nyckel en gång och behåller den, så dessa siffror förblir små oavsett vad som förseglas."
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "Den här tjänstens egna signeringsnycklar, en rad per förtroendesfär — och, i samma rad sedan 2026-09-12, den sfärens OpenID4VCI-nyckel för kryptering av intygsbegäranden"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "En privat nyckel som överlever processen. I produktläge genereras dessa EN GÅNG och läses tillbaka vid varje start, vilket är det som låter en token som utfärdades i går verifieras i dag — och är precis varför raden inte kan ligga i klartext. Det som finns i den här processen är CHIFFERTEXTEN: `keys.plaintextRetention` avgör hur länge en dekrypterad nyckel behålls efter att den har använts."
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "Certifikatutfärdaren: tjänstens Root, varje Intermediate och varje Issuing CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "Privata CA-nycklar, som aldrig lämnar den här processen alls. De ligger avsiktligt i SAMMA radfamilj och under samma nyckel: ett eget lager för `pki.js` hade varit ett andra svar på *var förvarar den här tjänsten en privat nyckel*, och det andra svaret är det som ingen kommer ihåg att rotera."
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "De nyckelpar för signering av intyganden som `/admin/pki` utfärdar till applikationer — `oauthAssertionPrivateKey` och `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "Detta var det SISTA privata nyckelmaterialet i den här tjänsten som lagrades i klartext, fram till 2026-09-10. Det är förseglat I VILA och öppnas för en läsare som kom genom `applications.js` — så `/admin/applications` ger fortfarande en operatör den PEM de kom för att hämta, medan en `ldapsearch` på TCP 389, en LDIF-fil, en databasrad och en säkerhetskopia av någon av dem innehåller `$aesgcm$…`."
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "En applikations OAuth-klienthemligheter — `oauthClientSecret`, en förseglad post per hemlighet (hemligheten, dess id, utgång och beskrivning)"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "Den som har en autentiserar sig som den klienten, och det är också HMAC-nyckeln för `client_secret_jwt` och för HS256 ID Tokens. Förseglad i vila sedan 2026-10-01 under en beständig nyckelkrypteringsnyckel, öppnad för en läsare som kom genom `applications.js`, och undanhållen från LDAP-läsare i produktläge. Ett värde som skrevs före dess förblir i klartext tills hemligheten skrivs nästa gång."
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "En applikations registreringsåtkomsttoken enligt RFC 7592 — `appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "Den som har den läser, ändrar eller tar bort klientens registrering, och läsningen lämnar tillbaka klienthemligheten. Förseglad i vila sedan 2026-10-01 under en beständig nyckelkrypteringsnyckel, öppnad för RFC 7592-slutpunkterna och för en läsare som kom genom `applications.js`."
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "En federationsrelations klienthemlighet — `fedClientSecret`, den här tjänstens egen autentiseringsuppgift vid partnerns tokenslutpunkt"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "Den SKICKAS till någon annans tjänst, så den måste gå att återställa — förseglad, inte hashad. Förseglad i vila sedan 2026-10-01 under en beständig nyckelkrypteringsnyckel; ingen sida och inget API-svar returnerar den."
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "Varje katalogposts attribut, i sin helhet — personer, grupper, applikationer, enheter, federationsrelationer"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "rcbj:s beslut i #391 (fas 6): en kopia av katalogtabellen är inte en lista över personer. DN:et förblir läsbart, och det gör även attributens NAMN; de värden som en uppslagning jämför hålls som nyckelade sammandrag bredvid bloben. Ett värde som förseglats för sig (en TOTP-hemlighet, Kerberos-nycklar) förseglas igen inuti den. Ett fillager (ldif) håller poster så som filsystemet skyddar dem."
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "Det NAMN som en präglad rad arkiveras under — ofta själva autentiseringsuppgiften: ett sessions-id, en SAML-artefakt, ett token-id"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Ett sessions-id är cookien och en artefakt löses in genom att presenteras, så ett namn i klartext var en användbar autentiseringsuppgift i en dump. Sedan #222 hittas raden via namnets nyckelade sammandrag och namnet är förseglat, och öppnas bara av en återställning eller av en ändrings läsare."
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "Historiken över använda intyganden: utfärdare, intygande-id, klient och subjekt — vem som presenterade vilket RFC 7523- eller RFC 7522-dokument om vem"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "De namnger personer och relationer i en tabell som varje nod delar. Förseglade sedan #222; raden hittas fortfarande via sin sammandragsnyckel, och konsolens textsökning görs i minnet över de nyaste raderna. Ett fillager (ldif) håller dem så som filsystemet skyddar dem: det läser tillbaka dem innan nyckellagret har startat."
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "En hemlig inställning som ändrats medan tjänsten körs — i dag `scim.digestPassword`, det HTTP Digest-lösenord som varje SCIM-användarnamn delar"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "En inställning som är markerad som hemlig är en autentiseringsuppgift, och de sparade inställningarna är annars vanlig JSON. Förseglad där den skrivs ner sedan #222 (`persistence/sealed_settings.js`); den körande konfigurationen, konsolen och API:t ser den som förut."
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "En persons identitetsverifieringar — `stsIdaVerification` (OpenID Connect for Identity Assurance), vars bevis innehåller dokumentnummer"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "Inte en autentiseringsuppgift, men personuppgifter som ingen säkerhetskopia bör bära läsbara. Förseglade i vila sedan 2026-10-01 under en beständig nyckelkrypteringsnyckel — hemcellens där det finns en — och undanhållna från varje LDAP-läsning."
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "En GNAP-klientinstans delade hemlighet för en nyckelreferens — `gnapSymmetricKey` (RFC 9635 avsnitt 7.1.1)"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "Den som har den kan signera GNAP-begäranden SOM den klientinstansen: en HMAC-nyckel är båda halvorna av autentiseringsuppgiften. Förseglad i vila under processens nyckelkrypteringsnyckel när nycklar är beständiga, öppnad för en läsare som kom genom `applications.js`, och undanhållen från LDAP-läsare i produktläge."
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "En GNAP-resursservers rotnyckel för macaroons — `gnapMacaroonKey` (RFC 9767 avsnitt 2.2)"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "En macaroon verifieras med sin ROTnyckel, och samma nyckel kan prägla en: den som har den kan utfärda tokens som den resursservern godtar. Nyckeln härleds per resursserver från sfärens hemlighet, och skrivs på posten — förseglad — enbart för att resursserverns operatör ska ha någonstans att hämta den."
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "En hemlighetsdestinations skrivautentiseringsuppgift — `secretDestCredential` (#221): den nyckel, token eller det tjänstekonto som den här tjänsten använder för att skriva ett tjänstekontos roterade lösenord till en hemlighetshanterare"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "Den som har den kan skriva de lösenord som andra system läser. Förseglad i vila när nycklar är beständiga, och — till skillnad från en applikations signeringsnyckel — även UNDANHÅLLEN från varje läsare: den öppnas bara för den push som använder den, och ritas, visas eller returneras aldrig av `/admin-api`."
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "En utgående SCIM-klients autentiseringsuppgifter (#552) — `scimClientPassword`, `scimClientOAuthClientSecret` och `scimClientTlsPrivateKey`: det som den här tjänsten autentiserar sig med mot en fjärransluten SCIM-tjänsteleverantör, eller dess tokenslutpunkt"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "Den som har dem kan skapa, ändra och ta bort konton hos den fjärranslutna identitetsleverantören. Förseglade i vila när nycklar är beständiga och UNDANHÅLLNA från varje läsare, liksom en hemlighetsdestinations autentiseringsuppgift: öppnade bara för den begäran som använder dem."
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "De nyckelpar för signering av intyganden som `/admin/pki` utfärdar till en PERSON — `stsAssertionPrivateKey` (2026-09-11) och, för RFC 7522, `stsSamlAssertionPrivateKey` (2026-09-13)"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "Samma mekanism som applikationens ovan och avsiktligt inte en ny, med en skillnad som är ett faktum om de två innehavarna: en applikations privata nyckel ÖPPNAS för en läsare som kom genom `applications.js`, och ingenting ritar en persons post genom en modul som skulle öppna deras — så den här lämnas över EN GÅNG, av den handling som skapar den, och är chiffertext överallt därefter. Alternativet var en konsolsida som skrev ut en persons privata nyckel vid varje besök."
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "En federationsrelations privata krypteringsnyckel (#168) — det som en partners krypterade intygande eller ID Token dekrypteras med, en rad per nyckel i `fedEncryptionKey`"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "Den som har den läser varje intygande som den partnern krypterat till den här tjänsten — personens identifierare och attribut, just det som krypteringen håller borta från webbläsaren. Förseglad i vila överallt där nycklar är beständiga, och undanhållen — chiffertext inräknad — från varje LDAP-sökning, sida och svar från `/admin-api`, som bara bär certifikatet och den publika nyckeln."
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "Lagrade långsiktiga Kerberos-nycklar — en katalogpersons, härledda från deras eget lösenord (`stsKrb5Keys`), och en tjänsteprincipals slumpmässiga (`krb5ServiceKeys`) (2026-09-12)"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "LÖSENORDSEKVIVALENTA: en långsiktig Kerberos-nyckel är vad lösenordet omvandlas till, och den som har den kan få biljetter som den principalen utan att känna till lösenordet. Därför förseglas den överallt där nyckelkrypteringsnyckeln överlever processen, namnet och en stämpel av lösenordshashen förseglas TILLSAMMANS med den så att ett värde inte kan flyttas till en annan post eller behållas efter ett lösenordsbyte, och den är UNDANHÅLLEN — chiffertext inräknad — från varje sida, varje LDAP-sökning och varje svar från `/admin-api`. En tjänsteprincipals nyckel lämnar den här tjänsten en gång, som den keytab som dess skapande eller rotation lämnar över."
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "Den delade hemligheten enligt RFC 6238 för alla som har registrerat en autentiseringsapp — `stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "DEN ENDA AUTENTISERINGSUPPGIFTEN I DEN HÄR KATALOGEN SOM KAN LÄSAS TILLBAKA. Att verifiera en kod innebär att BERÄKNA den, så den kan inte hashas på det sätt som `userPassword` är — och `/admin/ldap/directory` skriver avsiktligt ut varje attribut i varje post, så utan förseglingen skulle en katalogdump skriva ut en fungerande andra faktor."
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "Uppsättningen engångsåterställningskoder som utfärdas när en andra faktor registreras"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "Krypterade SNARARE ÄN HASHADE, och skälet är ett produktbeslut snarare än ett kryptografiskt: en person får läsa tillbaka sina återstående koder på `/portal/mfa`. **Det ändrades 2026-09-11 och den här raden behålls för de uppsättningar som skrevs före dess** — en ny uppsättning HASHAS med scrypt och förseglas inte alls, eftersom en hash inte är en hemlighet. ANTALEN ligger utanför den förseglade bloben, så varje sida som rapporterar *7 av 10 oanvända* kan göra det utan att öppna den — även för en uppsättning som den här processen inte kan dekryptera."
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "Allt som den här processen PRÄGLAR — sessioner, tokens, auktoriseringskoder, artefakter, Kerberos-principaler, replay-cacharna, räknarna och granskningsloggen"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "Det nyaste och det största till volymen. Det gäller bara produktläge med postgres eftersom det är den enda konfiguration där något av det alls är beständigt: utvecklingsläget genererar om signeringsnyckeln vid varje start, så en återställd token skulle inte verifieras mot någonting, och `ldif`-lagret skriver hela filer per tömning och håller inget av det i något av lägena."
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "Lösenord — `userPassword`, och aktiveringstokens bredvid dem"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "HASHADE, inte krypterade, och det är starkare snarare än svagare. scrypt med N på 2^15, och ingenting i den här tjänsten kan läsa tillbaka ett — vilket är regeln: en hemlighet som den här tjänsten VERIFIERAR hashas, och en hemlighet som den måste PRESENTERA krypteras. De två mekanismerna ovan är av det andra slaget och säger det."
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "Klienthemligheter, registreringsåtkomsttokens enligt RFC 7592 och federationsklienthemligheter, UTAN en beständig nyckelkrypteringsnyckel"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "I klartext bara där processen inte har någon beständig nyckelkrypteringsnyckel — utvecklingsläge, eller en sfär i produktläge på en utvecklingscontainer — eftersom försegling under en tillfällig nyckel skulle lämna en autentiseringsuppgift som inte går att öppna efter en omstart. Med en beständig nyckel förseglas alla tre: se deras rader ovan."
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "De elva postkvantnycklarna per sfär, TLS-servercertifikatet och SPIFFE-utfärdarmyndigheterna"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "INTE BESTÄNDIGA ALLS, i något av lägena, så det finns ingenting i vila att försegla. Alla tre namnges i `common/mode.js`:s `NOT_YET` snarare än att lämnas att upptäckas, eftersom *inte lagrad* och *inte skyddad* ser likadana ut utifrån och inte är samma sak."
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "Vad den här tjänsten krypterar I VILA, med vilken nyckel, under vilken algoritm och hur mycket av det som har skett i den här processen."
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "Nyckelkrypteringsnyckeln läses från leverantören ovan vid start, innan lyssnaren binds. Den här tjänsten genererar den aldrig och skriver aldrig ner den, och en tjänst som inte kan läsa den startar INTE — den genererar inte en ersättning och fortsätter, eftersom det skulle få varje token den någonsin utfärdat att sluta verifieras, i tysthet, hos någon annans förlitande part."
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "Den här tjänsten är i utvecklingsläge, så ingenting den håller överlever processen och nyckelkrypteringsnyckeln är TILLFÄLLIG: genererad per körning, aldrig nedskriven och använd bara för att poolen av begärandearbetare ska kunna dela präglade rader inom en körning. Att försegla ett katalogattribut under den vore VÄRRE än klartext — posten överlever en omstart i `ldif`- och `postgres`-lagren men nyckeln gör det inte, så värdet skulle komma tillbaka som permanent skräp. Det är därför testet på varje skrivställe är `keystore.persists()` snarare än `keystore.sealed()`."
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM och avsiktligt inte CBC: GCM är AUTENTISERAT, så en chiffertext som någon har ändrat misslyckas att dekrypteras i stället för att ge en subtilt annorlunda nyckel. En signeringsnyckel som dekrypterades till fel byte skulle ge signaturer som ingenting kan verifiera, och felet skulle dyka upp hos en förlitande part som \"signaturen är ogiltig\" — så långt från orsaken som det är möjligt att komma. Nyckelkrypteringsnyckeln KRYPTERAR ALDRIG ETT VÄRDE (#391): varje värde krypteras under en datakrypteringsnyckel — 256 slumpmässiga bitar, en per sfär per dataklass — och datakrypteringsnycklarna är det som nyckelkrypteringsnyckeln omsluter. En process avomsluter var och en en gång och behåller den, så en nyckel som hålls i en nyckelhanteringstjänst tillfrågas per datanyckel, aldrig per värde, och att rotera nyckelkrypteringsnyckeln omsluter en handfull nycklar på nytt snarare än att kryptera om lagret."
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "DET FINNS EN NYCKELKRYPTERINGSNYCKEL FÖR DEN HÄR TJÄNSTEN, INTE EN PER FÖRTROENDESFÄR, OCH EN DATAKRYPTERINGSNYCKEL PER SFÄR PER DATAKLASS (#391). Ingen datakrypteringsnyckel delas mellan sfärer, så ett värde i en sfär förseglas aldrig under en nyckel som en annan sfärs värden förseglas under. Men varje datakrypteringsnyckel omsluts under den enda nyckelkrypteringsnyckeln, så en sfär är INTE en oberoende gräns i vila: den som kan läsa den nyckeln kan avomsluta varje sfärs datanycklar, och att rotera den omsluter varje sfärs på en gång."
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "ALLT SOM INTE FINNS I TABELLEN OVAN ÄR KLARTEXT I LAGRET — katalogposterna, grupperna, applikationerna, sfärerna och inställningarna, och i utvecklingsläge nästan allt. Den här tjänsten förseglar autentiseringsuppgifter och privata nycklar och ingenting annat, avsiktligt: kryptering på kolumnnivå lämnar klartexten i write-ahead-loggen, i temporära filer när en sortering spiller över, i en pg_dump, på repliker och i frågeloggar, så det lager som täcker ett helt lager hör hemma UNDER databasen snarare än inuti den. Det lagret är operatörens — LUKS eller en krypterad ZFS-datamängd under PGDATA, en molndisk med en kundhanterad nyckel, eller någon av de PostgreSQL-förgreningar som har TDE, eftersom community-bygget inte har någon. docs/encryption-at-rest.md är det här förrådets genomgång av alternativen."
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "OCH NYCKELN FÅR INTE LIGGA PÅ DEN DISK DEN SKYDDAR. En nyckelfil på samma okrypterade volym som lagret ger båda halvorna till den som tar volymen; det duger för en utvecklingsstack och är varför `file`-leverantören är standard, och det är inte en driftsättning. keys.kekProvider väljer ett hemlighetslager i stället."
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Räknas i den ENDA tratt som båda operationerna passerar — `crypto.js`:s `encryptWithDek()` och `decryptWithDek()`, med datakrypteringsnycklarnas egna omslutningar och avomslutningar under `data-keys` — snarare än på anropsställena, eftersom en summa som sätts ihop från anropsställen blir fel första gången någon lägger till ett till, och blir fel I TYSTHET. Uppdelningen nedan är efter en ETIKETT som varje anropsställe skickar; en anropare som inte skickar någon räknas ändå, under `(unlabelled)`. DESSA GÄLLER HELA PROCESSEN OCH INTE PER SFÄR — en nyckelkrypteringsnyckel tillhör processen, så att dela upp räkningen per sfär vore att räkna den sfär som en begäran råkade befinna sig i — och de finns i minnet, så en omstart är hur man får en tom."
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "ETT FEL ÄR NÄSTAN ALLTID FEL NYCKELKRYPTERINGSNYCKEL — en roterad hemlighet, eller ett lager som flyttats mellan driftsättningar — och det är en egen siffra snarare än att vikas in i dekrypteringarna, eftersom niohundra dekrypteringar och niohundra dekrypteringar med fyrahundra fel är mycket olika rapporter. Vad som händer sedan beror på vad som lästes: en signeringsnyckel som inte går att öppna är ÖDESDIGER vid start, en sessionsrad tas bort, och en andra faktor som inte går att öppna gör att den personen inte kan logga in förrän en operatör rensar registreringen — aldrig tyst frånvarande, vilket skulle ta bort en säkerhetskontroll."
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "Varken ett förseglat värde eller ett öppnat förekommer någonstans på den här sidan eller i det här dokumentet. Ett förseglat värde är en privat nyckel, en delad hemlighet eller någons återställningskoder, och att skriva ut någon av halvorna skulle lämna över precis det som förseglingen finns för att skydda. /admin/ldap/directory är där ett `$aesgcm$…`-kuvert kan ses, under en rubrik som säger att det är lagret så som katalogen ser det."
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "Försegling skyddar det som SKRIVS NER, så det som lagret innehåller avgör hur mycket av tabellen ovan som alls kan nås av någon. Ett `memory`-lager skriver ingenting, så ingenting i det överlever den här processen för att kunna läsas."
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "En datakrypteringsnyckel per sfär och dataklass förseglar varje värde i den klassen; nyckelkrypteringsnyckeln omsluter bara datanycklarna. En ROTERAD datanyckel är ersatt: den öppnar fortfarande det den förseglade, ingenting nytt förseglas under den, och omkrypteringsjobbet förseglar om det den förseglade och förstör den sedan. En HÄRLEDD nyckel skapas från nyckelkrypteringsnyckeln per körning där ingenting överlever processen, och lagras eller roteras aldrig."
+  }
+}

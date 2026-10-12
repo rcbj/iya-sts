@@ -210,6 +210,24 @@ class SpiffeCa {
     deps.log.debug("Leaving SpiffeCa.constructor().");
   }
 
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * what each key type is, as `state()`'s `keyTypes` answers it. A key
+   * type's `label` is an algorithm's name and is not translated.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeCa.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> =
+      harvest('spiffe.ca.keyTypes', KEY_TYPES, ['what']);
+    helpers.log.debug("Leaving SpiffeCa.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
   // `x509Unpacked`, described to `/admin/caches` (#74, rule 3ap). Registered
   // by the instance, because an entry is current only while the realm's
   // stored array is the one it was unpacked from, and only an instance can
@@ -3769,6 +3787,10 @@ export = {
   installInstance: (instance: SpiffeCa): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   KEY_TYPES: KEY_TYPES,
+  // The `spiffe` namespace's route and English (#543): `keyTypes` is on
+  // `GET /admin-api/spiffe`'s answer.
+  PROSE_ROUTES: ['/admin-api/spiffe'],
+  prose: (): Record<string, string> => SpiffeCa.prose(),
   // A GETTER, so that `admin-core/admin_views.ts` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
   // ambient realm rather than the default it replaced.

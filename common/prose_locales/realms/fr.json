@@ -1,0 +1,194 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "Son propre émetteur, sa propre clé de signature, ses codes d’autorisation, jetons d’accès et d’actualisation, familles d’actualisation, états de rejeu et de nonce DPoP, état de rejeu des assertions client et serveurs d’autorisation nommés. Les ENREGISTREMENTS DE CLIENTS sont propres à chaque domaine depuis le 2026-08-25, parce que l’annuaire l’est : un client enregistré dans un domaine réside dans le ou=applications de ce domaine et est inconnu de tous les autres. Cette ligne affirmait le contraire jusque-là. LE MODE RFC 9700 EST LUI AUSSI PROPRE À CHAQUE DOMAINE — `oauth2.rfc9700`, et `oauth2.oauth21` qui l’implique, ne se modifient qu’au redémarrage pour le processus mais peuvent être définis sur un domaine, car un domaine ne lie aucun socket — si bien qu’un même processus peut répondre de façon permissive sur /oauth2/authorize et appliquer la BCP sur celui d’un domaine. Ce qu’un domaine ne peut pas apporter avec lui, c’est un SCHÉMA : le port principal est en https ou ne l’est pas, pour tous les domaines à la fois, et GET /oauth2/rfc9700 indique lequel."
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "Service d’authentification"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "Ses propres sessions et seconds facteurs — identifiants WebAuthn, secrets TOTP et codes de récupération —, si bien que se connecter à un domaine ne connecte qu’à ce domaine. C’est la raison d’être d’un domaine plutôt qu’une de ses limites. L’identité SOUS laquelle vous pouvez vous connecter n’est partagée qu’au sens où ce service ne vérifie de mot de passe nulle part — la PERSONNE est une entrée dans l’annuaire propre au domaine. La console d’administration est le SEUL lecteur qui franchit cette limite : elle connecte une personne par le domaine par lequel elle est atteinte, et conserve sa PROPRE session dans le domaine PAR DÉFAUT, afin qu’une même session de console puisse être retrouvée depuis tous les domaines. La ligne ci-dessous indique ce que cette session peut administrer."
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "Son propre entityID et son propre providerID (amorcés distincts lors de la création du domaine), sa propre clé de signature, son état de requête, ses artefacts et ses métadonnées par fournisseur de services — dont l’URL porte donc le domaine en plus de l’empreinte du SP. Les ENTRÉES DE FOURNISSEURS DE SERVICES sont propres à chaque domaine, pour la même raison que les clients OAuth : ce sont des applications de l’annuaire propre au domaine."
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "Son propre émetteur de jetons et sa propre clé de signature."
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "Son propre entityID et sa propre clé de signature. L’authentification unique avec OAuth est préservée AU SEIN d’un domaine et ne traverse pas les domaines, car la session sur laquelle elle s’appuie ne les traverse pas."
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "Ses propres offres d’identifiants, codes pré-autorisés, transactions différées, nonces d’émission et transactions de présentation — et sa propre réponse à la question de ce qu’affirme un identifiant et de ce que demande le vérificateur. L’identifiant did:web porte le segment du domaine, ce qui sépare les documents DID de deux domaines."
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "Un serveur d’autorisation par domaine (RFC 9635), avec ses propres grants, continuations, interactions, codes utilisateur, jetons, handles de gestion, état de rejeu des preuves de clé et connexions de serveurs de ressources (RFC 9767) — douze magasins, chacun propre au domaine et supprimé avec lui. Un client GNAP est une application de l’annuaire propre au domaine, et `gnap.enabled` est un paramètre de domaine, si bien qu’un domaine peut répondre sur /gnap tandis qu’un autre refuse."
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "Shared Signals (SSF, CAEP, RISC)"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "Son propre émetteur : les flux, leurs sujets, leurs files d’attente et lettres mortes, ainsi que le registre des sessions de CAEP et celui des comptes de RISC sont propres à chaque domaine. Un événement est émis dans le domaine où il s’est produit, et la console et le portail propres à ce service sont amorcés comme récepteurs dans chaque domaine, si bien que chacun n’entend que son propre domaine."
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "Son propre référentiel de politiques (ou=policies) et son propre registre de PEP distants (ou=peps), tous deux dans l’annuaire du domaine. Le référentiel d’un nouveau domaine commence VIDE et ne se rabat jamais sur celui du domaine par défaut, ce qui couplerait deux domaines : les deux politiques par lesquelles ce service décide de ses propres émissions et accès sont intégrées et APPELÉES, si bien qu’elles décident dans chaque domaine, et une entrée du référentiel d’un domaine ne les remplace que dans ce domaine. Un PEP distant appartient au domaine dans lequel il est enregistré, et le certificat de son écouteur HTTPS est émis par l’AC émettrice pep-tls de ce domaine."
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Fédération"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "Ses propres relations — ou=federations se trouve dans l’annuaire du domaine — et ses propres connexions en cours, plafonnées par domaine afin qu’un afflux dans un domaine ne puisse pas évincer celles d’un autre. Un flux commencé dans un domaine ne peut pas se terminer sur le /federation/acs/{id} d’un autre domaine : l’assertion est vérifiée par rapport au certificat d’une relation du domaine où elle arrive."
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "Portail utilisateur"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "Le compte propre d’une personne dans le domaine où elle se trouve : le portail se connecte par le serveur d’autorisation propre au domaine en tant que client amorcé dans chaque domaine, et chaque page lit et écrit l’entrée de la personne dans l’annuaire de ce domaine, soumise à la politique de mot de passe de ce domaine."
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "Déconnexion globale"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "Elle ne détient aucun état propre : /logout, /admin/logout et /admin/sessions lisent les magasins du domaine par lequel ils sont atteints, si bien qu’une déconnexion met fin à la session de ce domaine et à ce qui en dépend, et à rien dans un autre domaine."
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "Statistiques et journal d’audit"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "Chaque domaine compte et consigne ce qui s’est produit sous son propre préfixe. Les numéros de séquence d’audit sont eux aussi propres à chaque domaine, si bien que les lignes d’un domaine sont contiguës."
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "Les points de terminaison ET le magasin. Un utilisateur créé par le /scim/v2 d’un domaine est une entrée du ou=users de ce domaine et n’existe nulle part ailleurs — cette ligne indiquait `partial` et affirmait le contraire jusqu’au 2026-08-25, date à laquelle l’annuaire est devenu propre à chaque domaine. SCIM ne prend toujours aucune décision propre à ce sujet : il provisionne dans l’annuaire, et c’est l’annuaire qui est partitionné."
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "Console d’administration et API de gestion"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "2d1b64bdd91feaba",
+    "text": "Chaque page et chaque opération est propre à un domaine — /admin/config LIT et ÉCRIT le domaine par lequel elle est atteinte, et /admin/users liste les personnes propres au domaine. Les RÔLES D’ADMINISTRATION sont détenus DEUX FOIS, délibérément, depuis le 2026-09-14 (#32) : les cn=admin-read et cn=admin-write du domaine PAR DÉFAUT constituent la liste du SERVICE et administrent tous les domaines, et chaque autre domaine possède les deux mêmes groupes dans son propre ou=groups, amorcés avec un compte `admin`, dont les membres n’administrent QUE ce domaine — chaque page et opération portant sur l’ensemble du processus (le magasin, la base de données, le magasin de secrets, les écouteurs, le débogueur, l’explorateur), la création ou la suppression d’un domaine, le remplacement de la racine du service et les paramètres propres au processus leur sont refusés. La liste propre à un domaine n’accorde donc rien en dehors du domaine, ce qui a rendu son ajout sûr. La console connecte une personne par le domaine par lequel elle est atteinte, et /admin et /portal sans préfixe demandent d’abord quel domaine choisir lorsque des domaines sont définis. /admin-api accepte partout le jeton du domaine par défaut, et le jeton sts-management-api propre à un domaine uniquement dans ce domaine."
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP (389 / 636)"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "UN ANNUAIRE PAR DOMAINE derrière un seul socket — un magasin distinct, et non une sous-arborescence d’un magasin partagé, depuis le 2026-08-25. La disposition des DN est ce que voit un client : CHAQUE DOMAINE EST UNE ARBORESCENCE À PART ENTIÈRE, dont la racine est la correspondance RFC 2247 du DOMAINE DNS du domaine (depuis le 2026-09-18) — le domaine par défaut à celle de global.domain (dc=example,dc=com), un domaine dont le domaine DNS est iyasec.io à dc=iyasec,dc=io, et un domaine créé sans domaine DNS à <id>.<global.domain>, c’est-à-dire le dc=<id> sous la base du domaine par défaut qu’avaient tous les domaines auparavant. Un domaine DNS situé à l’intérieur de celui d’un autre domaine est autorisé et constitue un contexte de nommage distinct. Ainsi, ou=users, ou=groups, ou=applications, ou=federations et les deux conteneurs SPIFFE existent une fois par domaine et ne partagent rien — cette ligne indiquait `none` et affirmait que tous les domaines voyaient les mêmes personnes jusqu’au 2026-08-25. Le domaine figure dans le DN et non dans un magasin partitionné PARCE QUE le socket n’a pas de chemin où placer un segment : un ldapsearch arrive avec un DN de base et rien d’autre, si bien que `-b dc=acme,dc=example,dc=com` est la seule façon dont un client pourrait jamais nommer un domaine, et cela fonctionne. CHAQUE OPÉRATION REÇOIT SA RÉPONSE DU MAGASIN QUE NOMME LE DN, depuis le 2026-08-25 et à la demande de rcbj — cette ligne affirmait qu’une recherche de sous-arborescence depuis le contexte de nommage renvoyait les entrées de tous les domaines, au motif qu’un contexte de nommage EST l’arborescence entière. Cela laissait le port 389 comme la seule porte par laquelle un domaine pouvait voir les personnes, groupes et applications d’un autre domaine, alors que la console, /scim/v2 et le claim de groupes ne montraient à chaque domaine que les siens. Ainsi, `-b dc=example,dc=com` est l’annuaire du domaine par défaut, `-b dc=acme,dc=example,dc=com` celui d’acme, et le root DSE publie une valeur namingContexts par domaine afin qu’un client puisse les découvrir. Un ajout, une modification, une suppression, une comparaison ou une recherche de portée base reçoit sa réponse dans le domaine que nomme son DN, car écrire le DN en entier est la façon dont un client nomme un domaine sur un socket qui n’offre aucun autre endroit où le placer ; un modifyDN qui traverserait un domaine est refusé avec LDAP_AFFECTS_MULTIPLE_DSAS (71), deux domaines étant ici deux annuaires."
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "42fe03497278a0e3",
+    "text": "Un KDC par domaine de confiance sur le port 88 PARTAGÉ, distingués par le nom de domaine Kerberos contenu dans chaque requête — le discriminant que le protocole porte déjà. Un domaine est créé avec krb5.enabled DÉSACTIVÉ ; définissez-lui un krb5.realm propre (deux domaines ne peuvent pas répondre au même nom) et activez-le, et ce domaine construit sa propre base de principaux, ses clés à long terme et son propre krbtgt, à partir de ses propres paramètres. Ses personnes sont celles de sa propre sous-arborescence d’annuaire. UDP/TCP 88 brut et un /KdcProxy sans préfixe routent par le nom ; le /realm/<id>/KdcProxy propre à un domaine est épinglé à ce domaine et refuse le nom d’un autre domaine avec KDC_ERR_WRONG_REALM. Ce qui appartient encore au PROCESSUS : les deux sockets, et la confiance du mode développement avec krb5.trustedRealm — les domaines de confiance ne font pas confiance au Kerberos des uns et des autres. Avant le 2026-09-15, il y avait un seul KDC, une seule base de principaux et un seul nom de domaine pour tout le processus. SPNEGO transporte les mêmes tickets sur HTTP ; ses routes répondent donc sous le préfixe de chemin de chaque domaine comme toutes les autres."
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "Autorité de certification (CRL, OCSP)"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "UNE RACINE POUR LE SERVICE, UNE INTERMÉDIAIRE PAR DOMAINE, et une AC émettrice par cas d’usage sous chaque intermédiaire, si bien qu’un certificat émis par un domaine ne remonte pas jusqu’à l’intermédiaire d’un autre domaine. Ce qui est partagé, c’est la racine, qu’aucun domaine ne possède. Les CRL, répondeurs OCSP et chaînes sont nommés par un segment {scope} dans /pki/... plutôt que par le préfixe du domaine, car ces adresses figurent À L’INTÉRIEUR des certificats et sont récupérées par des clients qui ne savent rien des domaines de ce service — et la racine n’appartient à aucun domaine ; elle ne pourrait donc pas s’écrire avec l’un d’eux."
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "Inscription de certificats (ACME, EST, SCEP)"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "Chacun des trois dispose de sa propre AC émettrice sous l’intermédiaire de chaque domaine, et de ses propres magasins par domaine — les comptes, commandes, autorisations et nonces d’ACME (un nonce est un MAC sur le domaine, si bien que celui d’un domaine est refusé par un autre), le certificat de RA et les transactions de SCEP. Qui peut obtenir un certificat est décidé au regard de l’annuaire propre au domaine : une clé External Account Binding ACME, un identifiant EST et un défi SCEP sont chacun liés à une entrée d’un domaine, et un certificat émis par un autre domaine échoue à la vérification de l’intermédiaire. EST est atteint par le préfixe de chemin OU en nommant le domaine à la position du libellé EST, /.well-known/est/<realm>/..., car un client EST ne peut pas placer de chemin devant une URI well-known (#251). Ce qui est partagé, c’est la limitation de débit par adresse d’EST, indexée par l’adresse du client et non par le domaine."
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "Chaque domaine est une entité de fédération à part entière : son Entity Identifier est son émetteur, ses Federation Entity Keys, subordonnés, Trust Anchors et Trust Marks sont des entrées de son propre ou=oidfed, et ses points de terminaison se trouvent sous son propre préfixe. Ce qui traverse les domaines est DÉLIBÉRÉ et signé : avec oidfed.realmsAreSubordinates activé, le domaine par défaut se porte garant de chaque autre domaine et ceux-ci lui font confiance, chaque chaîne étant vérifiée comme n’importe quelle autre — résolue dans le processus plutôt que via HTTP."
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "Certificat TLS"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "UN SEUL CERTIFICAT POUR LE PROCESSUS, présenté par le port principal, par LDAPS 636 et par l’écouteur du débogueur intégré. Ce que présente un socket est une propriété du socket et non d’un domaine, et les deux premiers portent tous les domaines. Cette ligne indiquait `TLS (8443 / 9443)` jusqu’au 2026-09-16, date à laquelle ces deux écouteurs ont été supprimés : la valeur d’un certificat client est décidée là où il est UTILISÉ, c’est-à-dire dans le domaine par lequel la requête est arrivée."
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "UN DOMAINE DE CONFIANCE, UNE AUTORITÉ, UN REGISTRE ET UNE PAIRE DE SOCKETS gRPC PAR DOMAINE depuis le 2026-09-12 — cette ligne indiquait `none` jusque-là et parlait d’un seul domaine de confiance, d’une seule autorité de signature et de quatre sockets partagés. **LE DISCRIMINANT EST L’ADRESSE DU POINT DE TERMINAISON, ET IL N’AURAIT PAS PU EN ÊTRE AUTREMENT** : gRPC a un chemin et c’est la MÉTHODE — `/SpiffeWorkloadAPI/FetchX509SVID` est fixée par cette spécification et les API SPIRE par les leurs —, si bien qu’un segment de domaine y serait une méthode qu’aucun client conforme n’appelle. Un domaine est créé avec `spiffe.trustDomain` défini sur son DOMAINE DNS (depuis le 2026-09-18 ; c’était `<realm>.<the process's>` avant que les domaines n’en aient un) et avec SPIFFE DÉSACTIVÉ ; l’activer construit les autorités de ce domaine et lie sa propre Workload API et sa propre SPIRE Server API, sur des chemins de sockets Unix amorcés lors de la création du domaine — et sur TCP uniquement une fois que quelqu’un lui a donné une adresse (`spiffe.grpcHost`) et des ports, ce dont un domaine est dépourvu à sa création, car ceux dont il hériterait sont ceux du domaine par défaut et déjà liés. Les jetons de jonction sont eux aussi propres à chaque domaine, car un jeton de jonction est un identifiant permettant de rejoindre un domaine de confiance. **CE QUI EST ENCORE PARTAGÉ, CE SONT LES QUATRE SOCKETS PROPRES AU PROCESSUS**, qui appartiennent au domaine par défaut et restent liés quoi qu’indique `spiffe.enabled` — un socket qui disparaîtrait passerait pour un service arrêté. Les bundles FÉDÉRÉS sont propres à chaque domaine depuis le 2026-09-12, et aucun ne peut être enregistré sous un domaine de confiance que sert l’un des domaines de ce service."
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "Débogueur intégré"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "Un seul écouteur pour le processus (`debugger.port`), auquel on se connecte par le serveur d’autorisation du domaine PAR DÉFAUT et qui n’est ouvert qu’aux administrateurs de la console de ce domaine. Les administrateurs propres à un domaine s’en voient refuser l’accès, car c’est une surface du processus et non d’un domaine."
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "Persistance et cluster"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "Un seul magasin pour le processus — la mémoire, un fichier LDIF par domaine, ou une base postgres — et une seule appartenance au cluster, un seul bail et un seul jeton de fencing. Chaque magasin propre à un domaine ci-dessus conserve ses lignes sous son domaine dans ce magasin et est supprimé avec le domaine ; ce qui est partagé, c’est le magasin lui-même, la connexion à celui-ci et les nœuds qui le partagent."
+  }
+}

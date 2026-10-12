@@ -1,0 +1,98 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Todo lo que PostgreSQL le dirá a este servicio sobre sí mismo, y el estado del esquema que este servicio posee en él."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode es \"{{mode}}\", así que este servicio no tiene ninguna base de datos sobre la que informar. `memory` no escribe nada en absoluto y `ldif` escribe archivos RFC 2849 — ninguno tiene conexión, grupo de conexiones ni catálogo. Establezca persistence.mode en `postgres` (solo se aplica al reiniciar: el almacén se abre antes de que se enlace la escucha)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode es \"postgres\" y este proceso NO TIENE NINGÚN ALMACÉN ABIERTO. Es un fallo y no una configuración: el almacén se abre desde persistence.start() antes de que se enlace la escucha, y un fallo ahí es fatal — así que un servicio en ejecución en este estado ha tenido su almacén detenido bajo sus pies. El registro de arranque indica qué ocurrió."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "el controlador abierto no informa ninguna función de métricas, lo que significa una compilación de persistence_postgres.js anterior al 2026-09-11."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "Qué PostgreSQL es este, COMO quién está conectado este servicio y cuánto tiempo lleva activo el servidor."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "Cuánto disco ocupa esta base de datos."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Todos los contadores que PostgreSQL mantiene para esta base de datos: confirmaciones y reversiones, bloques leídos frente a bloques encontrados en caché, tuplas en todas las direcciones, interbloqueos, archivos temporales, y los tiempos de E/S y de sesión cuando el servidor los recopila."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Consultas canceladas por conflictos de recuperación. Todo en cero en un servidor que no es standby, que es el caso habitual aquí."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Cuántos backends tiene esta base de datos, frente al límite del servidor."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "Una fila por backend en esta base de datos. Un backend que pertenece a otro rol aparece como una fila con su estado y su consulta ocultos, que es lo que se muestra a un rol sin permisos de supervisión."
+  },
+  "postgres.probes.locks.what": {
+    "en": "9d8cff275d6437f5",
+    "text": "Bloqueos mantenidos y esperados, por modo. Un bloqueo en espera en un simulador es casi siempre este servicio compitiendo consigo mismo a través del grupo de workers de solicitudes."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "El escritor en segundo plano. ONCE columnas antes de PostgreSQL 17 y CUATRO desde la 17, cuando los contadores de checkpoint salieron de él — por eso esto pide todas ellas en lugar de nombrar alguna."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "El checkpointer. Tiene una vista propia desde PostgreSQL 17; antes, estos contadores son la cola de pg_stat_bgwriter, más arriba."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Generación del registro de escritura anticipada (WAL). PostgreSQL 14 y posteriores."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "Archivado del WAL. Todo en cero salvo que archive_mode esté activado, y no lo está en ninguna pila que distribuya este repositorio."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Servidores standby que transmiten desde este servidor. VACÍO es la respuesta habitual, y también es lo que se muestra a un rol sin pg_monitor cuando SÍ hay servidores standby — así que una tabla vacía aquí son dos hechos distintos, y la página dice cuál de ellos no puede distinguir."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Todos los contadores que PostgreSQL mantiene por tabla: exploraciones secuenciales y por índice, tuplas en todas las direcciones, filas vivas y muertas, y cuándo se hizo el último vacuum y el último analyze de cada una."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "E/S de bloques por tabla: cuánto salió de la caché de búferes y cuánto del disco, para el heap, sus índices y su TOAST."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "Cuánto disco ocupa cada tabla, dividido entre el heap, sus índices y su TOAST, con la estimación de filas del planificador."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Cada índice, con qué frecuencia se ha explorado, qué tamaño tiene y si es una clave primaria o único."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Cada columna de cada tabla que posee este servicio, con su tipo, si admite nulos y su valor predeterminado."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Claves primarias, restricciones de unicidad, claves foráneas y restricciones check."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Cada parámetro que un operador ha cambiado respecto de su valor predeterminado integrado, y dónde se estableció — más el puñado que importa lo haya tocado alguien o no."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "Extensiones instaladas en esta base de datos."
+  }
+}

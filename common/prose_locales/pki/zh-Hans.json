@@ -1,0 +1,130 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "信任锚。自签名，是三层中有效期最长的，也是层次结构中唯一必须以带外方式提供给依赖方的证书——其下的一切都随证书链一起传输。"
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "由根 CA 签名。它的存在是为了让根 CA 的密钥用过一次之后就可以搁置：这一层被攻破时，可以通过重新签发这一层来修复，而根 CA 被攻破则根本无法修复。pathLen 为 1，因此它可以再签署一个 CA，但不能更深。"
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "由中间 CA 签名，是唯一签署本服务所分发内容的一层。pathLen 为 0——它签署叶证书而不再签署任何 CA，这使得“应用证书不能用来铸造另一张证书”成为编码本身的属性，而不是依赖于本服务的自觉。"
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "本领域用来签署 JWT 的密钥——RS256 背后的 RSA 密钥、四条 ECDSA 曲线、两条 Edwards 曲线，以及生成后的十一把后量子密钥。客户端对照 /oauth2/jwks 验证的就是它们。"
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "签署 XML 文档的密钥：SAML 2.0 和 1.1 断言及响应、WS-Federation、WS-Trust，以及按服务提供方区分的元数据。尽管目前由一把 RSA 密钥同时承担两项工作，它仍是与上面那个独立的颁发机构——因 SAML 而信任本服务的依赖方，并不因此对其 OAuth 令牌作出任何表态，而两个签发 CA 正是让这一点得以表达的方式。"
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "为 RFC 7521 和 RFC 7523 签发给应用的签名密钥对——用于客户端断言或 JWT bearer 授权许可。这是层次结构扩展出其他 CA 之前本模块就有的签发 CA，现在用一个能表明它是五者中哪一个的名称。"
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "在 LDAPS 636 上、在 global.https 开启时的主端口上以及嵌入式调试器的监听器上提供的证书——此用例名称仍沿用的 8443 和 9443 监听器已于 2026-09-16 删除。之所以是进程范围的，是因为那些套接字是进程范围的：一张证书应答所有领域，因此如果由某个领域的中间 CA 签署，就等于让一个领域为其他所有领域的大门作担保。"
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "以单元方式部署的服务中，各节点在单元间通道（cells.port）上作为服务器和客户端相互出示的证书，每张都在 urn:sts:cell: subjectAltName 中指明其单元。有效期短，由各节点重新铸造，且从不记录。只有出示由该颁发机构签发的叶证书的对端才会被接受。在单单元模式下不使用。"
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "本领域铸造的每个 X509-SVID 所用的 X.509 签名颁发机构。自 2026-09-11 起为领域范围——在此之前它位于进程级中间 CA 之下，是自签名的，完全在这棵树之外。信任锚不受此次迁移影响，这正是关键所在：信任包发布的是所有领域共享的服务根 CA，因此任何领域颁发机构签署的 SVID 都能对照同一个信任锚验证，而其证书链仍能说明是哪个领域签发的。"
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "远程 XACML 策略执行点在其 HTTPS 监听器上提供的证书。之所以是领域范围的，是因为远程 PEP 向一个领域注册并执行该领域的策略，因此为其大门作担保的颁发机构就是该领域的。从 /admin/xacml/peps 或 POST /admin-api/xacml/issue-pep-certificate 签发给已注册的 PEP；私钥只交付一次，本服务不保留副本。"
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "自定义 HTTPS 监听器（#472：listeners.custom 用于服务的监听器，listeners.realm 用于领域自己的监听器）在其定义未指明证书文件时，为其主机名出示的证书。之所以是领域范围的，是因为监听器属于一个领域——服务的监听器属于默认领域。每个监听器在每个节点上一张；私钥从不离开提供它的节点。"
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "本领域的 KDC 用来签署其 PKINIT 回复的证书（RFC 4556）：其扩展密钥用法中包含 id-pkinit-KPKdc，id-pkinit-san 中包含本领域的票据授予服务 krbtgt/REALM@REALM。每个进程一张，在首次使用 PKINIT 时生成；私钥从不离开生成它的进程。"
+  },
+  "pki.useCases.acme.what": {
+    "en": "85c88fe668bcb64d",
+    "text": "通过 ACME（RFC 8555）在 /enroll/acme 签发的证书，签发给为其签发了 External Account Binding 密钥的人员或应用条目。每张叶证书都在 urn:sts:person: 或 urn:sts:application: subjectAltName 中指明该条目。"
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "通过 EST（RFC 7030）在 /.well-known/est 签发的证书，签发给经密码、客户端密钥或本领域签发的客户端证书验证身份的条目，或者——对于管理员——签发给请求所指明的条目。这是本服务可以生成密钥对的唯一注册途径（/serverkeygen）。"
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "通过 SCEP（RFC 8894）在 /enroll/scep 签发的证书，签发给为其签发了一次性质询密码的条目。SCEP 用来加密请求的 RA 证书也是此 CA 的叶证书，使用 RSA 密钥，因为 SCEP 的密钥传输是 RSA。"
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "903e048677f8ab58",
+    "text": "人们在用户门户上为自己签发的 TLS 客户端证书：clientAuth、此人的 urn:sts:person: 名称，以及以 PKCS#12 形式只交付一次的私钥。由该颁发机构签发的证书可在本领域主端口的 GET /tls/sign-in 处让持有人登录；本服务任何其他颁发机构签发的证书则不能，尽管它们都链接到同一个根 CA。"
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "已注册的 OAuth 客户端或依赖方。其密钥对写入它在 ou=applications 中自己的条目。"
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "ou=users 中的某个人。其密钥对签署关于其本人、而非关于任何其他人的 RFC 7523 section 2.1 断言——参见 common/person_assertions.js，拒绝的理由在那里论证。"
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "JWS 签名密钥。其公钥部分以 JWKS（oauthAssertionJwks）的形式写入应用，并在 x5c 中携带证书链，这正是 RFC 7523 注册密钥的方式。"
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "XML Signature 密钥。其证书以 PEM（oauthSamlAssertionCertificate）的形式写入应用，因为 SAML 没有 JWKS，参与方为该配置文件注册的就是一张证书。"
+  },
+  "pki.report.encoder": {
+    "en": "e62315ba46619e60",
+    "text": "common/vendored/x509.js——父项目自己的 PKI 代码，逐字节相同，基于 pkijs 和 asn1js。本服务和该项目的 PKI / X.509 页面共用一个编码器。"
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "CA 私钥保存在持久化存储中，以与签名密钥相同的密钥加密密钥密封，并在重启后保留。"
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "CA 私钥仅保存在内存中。本服务处于开发模式，密钥材料在每次启动时生成——现在构建的层次结构会在本进程退出时消失。"
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "未给出原因。RFC 5280 section 5.3.1 规定，对于此值 SHOULD 省略原因代码扩展，因此以这种方式吊销的条目根本不带原因——这就是线路上“unspecified”的含义。"
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "已知或怀疑私钥落入他人之手。这是唯一一个表明证书从来就不安全、而不仅仅是不再需要的原因。"
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "CA 自己的密钥已被攻破。用于中间 CA 或签发 CA，其下的一切也应视为已被攻破。"
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "主体的名称或隶属关系发生了变化，因此证书所述内容不再属实。"
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "已签发替代证书。**本服务在轮换或重新签发证书时使用的就是这个原因**，这也是所有这些列表中最常见的条目。"
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "主体已停止从事该证书所服务的活动。"
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "暂时挂起。**唯一可以撤销的原因**——其他一切都是永久性的，验证方有权在 CRL 声明其新鲜的时间内缓存永久性吊销。"
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "主体已不再有权享有证书所声明的内容。"
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "属性颁发机构的密钥已被攻破。列于此处只是为了完整：本服务不签发属性证书。"
+  }
+}

@@ -192,6 +192,70 @@ const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 // `handlersInRealm()` like the other two surfaces.
 const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
 
+// ---------------------------------------------------------------------------
+// WHAT A CALLER HAS TO PRESENT ON EACH LISTENER, IN WORDS (#543 phase 2b):
+// every sentence a binding's `authentication` can carry, and the note a
+// Workload API connection gets when nothing can attest it. Each reaches
+// `GET /admin-api/spiffe` (the listeners and `workloadAttestation`) and
+// `GET /admin-api/spiffe/brokers` (the Broker API's listeners), and the
+// server translates one there when it is EXACTLY one of these or a filling
+// of one of the templates. A `{{problem}}` is the native module's own
+// reason, a failure, and is carried over in English.
+//
+// The Workload API TCP port's two sentences are whole, rather than the
+// socket's sentence and a second one appended, so that each is ONE message
+// a translation can reorder.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  localTrusted: 'No credential. This socket is the `local` entity and is ' +
+                'trusted outright, which is how the spire-server CLI works.',
+  localVerified: 'No credential, from a process running as this service\'s ' +
+                 'own uid: product mode verifies per connection that the ' +
+                 'socket is private and reads the caller\'s uid from the ' +
+                 'kernel before it is the `local` entity.',
+  nobodyLocal: 'Nobody is the `local` entity here: product mode verifies ' +
+               'the socket\'s boundary and cannot ({{reason}}). Present an ' +
+               'administrator\'s X509-SVID on the TCP port.',
+  uidUnreadable: 'the peer\'s uid cannot be read — {{problem}}',
+  svidRequired: 'An X509-SVID is required even here ' +
+                '(spiffe.trustLocalSocket is off).',
+  workloadNone: 'None, and there must be none: the Workload Endpoint ' +
+                'specification forbids requiring one.',
+  mutualTls: 'Mutual TLS. Verify this server against the trust bundle, ' +
+             'present your own X509-SVID, and expect to be authorized per ' +
+             'method.',
+  serverOpen: 'None — authentication is off, so this port is plain gRPC ' +
+              'and every method is open to everybody.',
+  workloadTcpDeclared: 'None, and there must be none: the Workload Endpoint ' +
+                       'specification forbids requiring one. The network ' +
+                       'is DECLARED to authenticate source addresses ' +
+                       '(spiffe.workloadTcpSourceAuthenticated), so a ' +
+                       'caller is answered with the entries its peer: ' +
+                       'address selects.',
+  workloadTcpUnattested: 'None, and there must be none: the Workload ' +
+                         'Endpoint specification forbids requiring one. ' +
+                         'Nothing attests a caller here (development): ' +
+                         'the deployment secures this port by other means ' +
+                         'or does not expose it.',
+  nothingListening: 'Nothing is listening here.',
+  brokerMutualTls: 'Mutual TLS. Verify this server as ' +
+                   'spiffe://<trust domain>/spire/server against the trust ' +
+                   'bundle, present the X509-SVID of a broker named in ' +
+                   'spiffe.brokers, and send broker.spiffe.io: true on ' +
+                   'every call.',
+  attestationUnavailable: 'workload attestation is unavailable here: ' +
+                          '{{problem}}',
+  // Phrases that appear only INSIDE a template above.
+  param: Object.freeze({
+    notPrivate: 'the socket is not private'
+  })
+});
+
+/**
+ * The `/admin-api` routes whose answers carry this module's prose.
+ */
+const PROSE_ROUTES = ['/admin-api/spiffe', '/admin-api/spiffe/brokers'];
+
 /**
  * The SPIFFE family's socket owner: the bundle endpoint, the `/spiffe` page,
  * and the gRPC listeners of every realm with SPIFFE turned on.
@@ -211,6 +275,59 @@ class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
     deps.log.debug("Leaving SpiffeServer.constructor().");
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * the listener sentences and their templates, and what each workload
+   * attestor of the table this module builds verifies.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeServer.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(SENTENCES).forEach(function (key) {
+      if (key !== 'param') {
+        out['spiffe.server.sentences.' + key] = SENTENCES[key];
+      }
+    });
+    Object.keys(SENTENCES.param).forEach(function (key) {
+      out['spiffe.server.param.' + key] = SENTENCES.param[key];
+    });
+    // Keyed by each one's type, as `spiffe.workloadAttestors` names it.
+    const attestors: Array<[string, { VERIFIES: string }]> = [
+      ['unix', unixAttestor.UnixWorkloadAttestor],
+      ['docker', dockerAttestor.DockerWorkloadAttestor],
+      ['k8s', k8sAttestor.K8sWorkloadAttestor],
+      ['systemd', systemdAttestor.SystemdWorkloadAttestor]];
+    attestors.forEach(function (pair) {
+      out['spiffe.workloadAttestors.' + pair[0] + '.verifies'] =
+        pair[1].VERIFIES;
+    });
+    helpers.log.debug("Leaving SpiffeServer.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * Fills a template of `SENTENCES` through `ServerProse.fill()`, required
+   * LAZILY: that module requires `config.js` at its load.
+   *
+   * @param template - the template
+   * @param params - name → value
+   * @returns the sentence
+   */
+  static fill(template: string, params: Record<string, unknown>): string {
+    helpers.log.debug("Entering SpiffeServer.fill().");
+    const serverProse = require('../common/server_prose');
+    helpers.log.debug("Leaving SpiffeServer.fill().");
+    return serverProse.fill(template, params);
   }
 
   // What the composition root passes, from the real modules.
@@ -1196,7 +1313,7 @@ class SpiffeServer {
         results.push({ address: entry.address, listening: false, error: why,
                        port: 0, tls: false, socket: !!entry.socketPath,
                        realm: realmId || '',
-                       authentication: 'Nothing is listening here.' });
+                       authentication: SENTENCES.nothingListening });
         continue;
       }
       // THE WORKLOAD API'S UNIX SOCKET IS ATTESTED (#40 phase four), and in
@@ -1216,7 +1333,7 @@ class SpiffeServer {
         results.push({ address: entry.address, listening: false, error: why,
                        port: 0, tls: false, socket: true,
                        realm: realmId || '',
-                       authentication: 'Nothing is listening here.' });
+                       authentication: SENTENCES.nothingListening });
         continue;
       }
       // THE WORKLOAD API'S TCP PORT IS SERVED ONLY WHERE THE NETWORK
@@ -1243,7 +1360,7 @@ class SpiffeServer {
                          listening: false, error: posture.why,
                          port: 0, tls: false, socket: false,
                          realm: realmId || '',
-                         authentication: 'Nothing is listening here.' },
+                         authentication: SENTENCES.nothingListening },
                        posture.errorCode));
           continue;
         }
@@ -1290,51 +1407,34 @@ class SpiffeServer {
       // What a caller has to do to use this address, said on the page rather
       // than left to be met as a handshake failure — the rule `tls_server.js`
       // follows about the main port.
+      // The sentences are `SENTENCES`' (#543), one per case.
       bound.authentication = entry.socketPath
         ? (surface === 'server'
             ? (auth.trustLocalSocket()
                 ? (this.deps.mode.trustsUnverifiedLocalSocket()
-                    ? 'No credential. This socket is the `local` entity and ' +
-                      'is trusted outright, which is how the spire-server ' +
-                      'CLI works.'
+                    ? SENTENCES.localTrusted
                     : (peerRead && bound.restricted
-                        ? 'No credential, from a process running as this ' +
-                          'service\'s own uid: product mode verifies per ' +
-                          'connection that the socket is private and reads ' +
-                          'the caller\'s uid from the kernel before it is ' +
-                          'the `local` entity.'
-                        : 'Nobody is the `local` entity here: product mode ' +
-                          'verifies the socket\'s boundary and cannot (' +
-                          (peerRead ? 'the socket is not private'
-                                    : 'the peer\'s uid cannot be read — ' +
-                                      this.deps.peer.availability().problem) +
-                          '). Present an administrator\'s X509-SVID on the ' +
-                          'TCP port.'))
-                : 'An X509-SVID is required even here ' +
-                  '(spiffe.trustLocalSocket is off).')
-            : 'None, and there must be none: the Workload Endpoint ' +
-              'specification forbids requiring one.')
+                        ? SENTENCES.localVerified
+                        : SpiffeServer.fill(SENTENCES.nobodyLocal, {
+                            reason: peerRead
+                              ? SENTENCES.param.notPrivate
+                              : SpiffeServer.fill(SENTENCES.uidUnreadable, {
+                                  problem:
+                                    this.deps.peer.availability().problem })
+                          })))
+                : SENTENCES.svidRequired)
+            : SENTENCES.workloadNone)
         : (tls
-            ? 'Mutual TLS. Verify this server against the trust bundle, ' +
-              'present your own X509-SVID, and expect to be authorized per ' +
-              'method.'
+            ? SENTENCES.mutualTls
             : (surface === 'server'
-                ? 'None — authentication is off, so this port is plain ' +
-                  'gRPC and every method is open to everybody.'
-                : 'None, and there must be none: the Workload Endpoint ' +
-                  'specification forbids requiring one. ' +
-                  (this.inRealm(realmId, function () {
+                ? SENTENCES.serverOpen
+                : (this.inRealm(realmId, function () {
                     return auth.workloadTcpPosture().declared;
                   }) && !this.inRealm(realmId, function () {
                     return self.deps.mode.servesUnattestedWorkloadTcp();
                   })
-                    ? 'The network is DECLARED to authenticate source ' +
-                      'addresses (spiffe.workloadTcpSourceAuthenticated), ' +
-                      'so a caller is answered with the entries its ' +
-                      'peer: address selects.'
-                    : 'Nothing attests a caller here (development): the ' +
-                      'deployment secures this port by other means or does ' +
-                      'not expose it.')));
+                    ? SENTENCES.workloadTcpDeclared
+                    : SENTENCES.workloadTcpUnattested)));
       bound.realm = realmId || '';
       results.push(bound);
     }
@@ -1632,8 +1732,8 @@ class SpiffeServer {
       // DEVELOPMENT WITHOUT THE NATIVE MODULE: served on transport selectors
       // alone, as the socket always was, and GET /spiffe says so.
       facts.error = '';
-      facts.note = 'workload attestation is unavailable here: ' +
-                   peer.availability().problem;
+      facts.note = SpiffeServer.fill(SENTENCES.attestationUnavailable,
+                                     { problem: peer.availability().problem });
     }
     log.debug('Leaving SpiffeServer.attestConnection(). ' + facts.tag + ' ' +
               facts.selectors.length + ' selector(s)' +
@@ -1782,7 +1882,7 @@ class SpiffeServer {
       const row: Record<string, any> = {
         address: wanted, listening: false, error: '', port: 0, tls: false,
         socket: false, realm: realmId || '',
-        authentication: 'Nothing is listening here.' };
+        authentication: SENTENCES.nothingListening };
       const taken = this.claimedBy(wanted, realmId);
       if (taken !== null) {
         row.error = 'the "' + (taken || 'default') + '" realm already ' +
@@ -1820,10 +1920,7 @@ class SpiffeServer {
       bound.tls = true;
       bound.socket = false;
       bound.realm = realmId || '';
-      bound.authentication = 'Mutual TLS. Verify this server as ' +
-        'spiffe://<trust domain>/spire/server against the trust bundle, ' +
-        'present the X509-SVID of a broker named in spiffe.brokers, and send ' +
-        'broker.spiffe.io: true on every call.';
+      bound.authentication = SENTENCES.brokerMutualTls;
       results.push(bound);
     }
     log.debug('Leaving SpiffeServer.bindBroker(). ' + results.length);
@@ -2370,6 +2467,9 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   SpiffeServer: SpiffeServer,
+  // The `spiffe` namespace's routes and English (#543).
+  PROSE_ROUTES: SpiffeServer.PROSE_ROUTES,
+  prose: (): Record<string, string> => SpiffeServer.prose(),
   installInstance: (instance: SpiffeServer): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   listen: slot.forward('listen'),

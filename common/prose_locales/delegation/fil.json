@@ -1,0 +1,262 @@
+{
+  "delegation.modes.impersonation.label": {
+    "en": "0595515700012854",
+    "text": "Impersonation"
+  },
+  "delegation.modes.impersonation.what": {
+    "en": "0abf4e622a5f3af4",
+    "text": "Ang lumalabas ay nagpapangalan sa initial identity at wala nang iba. Hindi masasabi ng serbisyo sa dulo na may intermediary na kasangkot, at hindi rin ng sinumang magbabasa ng credential pagkatapos — kaya ang issuer lang ang lugar kung saan ito nakikita."
+  },
+  "delegation.modes.delegation.label": {
+    "en": "a6d910ba93b7f894",
+    "text": "Delegation"
+  },
+  "delegation.modes.delegation.what": {
+    "en": "701b2586c236706c",
+    "text": "DALA ng lumalabas ang chain: isang `act` claim, isang composite ActAs, o S4U_DELEGATION_INFO sa PAC. Nakikita ng dulo kung sino talaga ang humihingi, at puwedeng magpasya nang iba dahil doon."
+  },
+  "delegation.types.krb5-s4u2self.label": {
+    "en": "3227b5f96dc73440",
+    "text": "S4U2Self (protocol transition)"
+  },
+  "delegation.types.krb5-s4u2self.what": {
+    "en": "7cf298da49f12a6c",
+    "text": "Humingi ang isang serbisyo ng ticket PARA SA SARILI NITO na nagpapangalan sa user na hindi talaga kasangkot — walang password, walang ticket nila, walang anumang pinayagan nila. Ito ang paraan para makakuha ng Kerberos identity para sa isang tao ang serbisyong nag-authenticate sa kanya sa ibang paraan, at hindi ito pribilehiyo: para sa sarili mo ang ticket. Tinatawag ito ng [MS-SFU] na protocol transition, at ito ang nag-iisang impersonation sa isang Kerberos chain: delegation ang mga S4U2Proxy hop pagkatapos nito (#491)."
+  },
+  "delegation.types.krb5-s4u2proxy-classic.label": {
+    "en": "beee369772174369",
+    "text": "S4U2Proxy — classic constrained delegation"
+  },
+  "delegation.types.krb5-s4u2proxy-classic.what": {
+    "en": "7baf7337ca414a29",
+    "text": "Pagkatapos ay inabot ng front end ang IBANG serbisyo bilang user na iyon. Pinapahintulutan ng msDS-AllowedToDelegateTo sa FRONT-END account, na domain admin lang ang makapagtatakda, at kinakailangang forwardable ang evidence ticket. Delegation ito kahit galing sa S4U2Self ang evidence nito: dala ng ticket ang chain sa S4U_DELEGATION_INFO ng PAC ([MS-SFU] constrained delegation, #491)."
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.label": {
+    "en": "54906f258baae283",
+    "text": "S4U2Proxy — resource-based (RBCD)"
+  },
+  "delegation.types.krb5-s4u2proxy-rbcd.what": {
+    "en": "e8498b3165cb32f2",
+    "text": "Parehong mga mensahe, pinapahintulutan mula sa kabilang direksyon: msDS-AllowedToActOnBehalfOfOtherIdentity sa BACK-END account, na maitatakda mismo ng sinumang may kontrol sa object na iyon. Iyan ang buong kuwento ng seguridad ng RBCD. Kailangan nito ang PA-PAC-OPTIONS, at mula sa update ng CVE-2020-16996 ([MS-SFU] 3.2.5.2.3) pati forwardable na evidence (#492). Delegation, gaya ng classic (#491)."
+  },
+  "delegation.types.krb5-forwarded.label": {
+    "en": "6302b3aa3f095a40",
+    "text": "Forwarded TGT (unconstrained delegation)"
+  },
+  "delegation.types.krb5-forwarded.what": {
+    "en": "1068f04ad0a2b516",
+    "text": "Iniabot ng client ang buo nitong ticket-granting ticket. Sinumang may hawak nito ay makakaabot sa KAHIT ANO bilang client na iyon hanggang mag-expire ito, nang hindi na bumabalik sa KDC na ito — kaya walang listahan ng pinapayagang target, dahil walang constraint. Ang tanging kontrol ay sa oras ng pag-issue, at nasa ACCOUNT na pinoprotektahan (NOT_DELEGATED) ito sa halip na sa anumang serbisyo."
+  },
+  "delegation.types.wstrust-onbehalfof.label": {
+    "en": "097ac27476ff2f74",
+    "text": "WS-Trust OnBehalfOf"
+  },
+  "delegation.types.wstrust-onbehalfof.what": {
+    "en": "035f53a2a0d579d2",
+    "text": "Humingi ang requester ng token TUNGKOL sa ibang tao. Pinangangalanan ng token ang taong iyon at hindi ang requester, kaya ordinaryong sign-in ang nakikita ng relying party."
+  },
+  "delegation.types.wstrust-actas.label": {
+    "en": "6198e8f30a16a507",
+    "text": "WS-Trust ActAs (composite)"
+  },
+  "delegation.types.wstrust-actas.what": {
+    "en": "09402014c2ba9b4b",
+    "text": "Ang dagdag ng 1.4, at composite ayon sa kahulugan: tungkol sa pinangalanang subject ang token AT sinasabi nitong kumikilos ang requester. Ito ang element na dapat gamitin kapag dapat itong masabi ng dulo."
+  },
+  "delegation.types.oauth-impersonation.label": {
+    "en": "0faea9c66541845d",
+    "text": "Token exchange — impersonation"
+  },
+  "delegation.types.oauth-impersonation.what": {
+    "en": "a3c3326ffc08702e",
+    "text": "Isang subject_token at walang actor_token. Ang bumabalik ay token para sa subject nang walang tala kung sino ang nag-exchange nito."
+  },
+  "delegation.types.oauth-delegation.label": {
+    "en": "00dfa35ca43f5f5d",
+    "text": "Token exchange — delegation"
+  },
+  "delegation.types.oauth-delegation.what": {
+    "en": "3575eb791d8ae545",
+    "text": "Isang subject_token AT isang actor_token. Ang bumabalik ay may dalang `act` claim na nagpapangalan sa actor — at nagne-nest ang `act`, kaya lumalabas ang ikalawang hop sa ilalim ng una sa halip na palitan ito."
+  },
+  "delegation.types.oauth-assertion-grant.label": {
+    "en": "e8d42c687f71ad96",
+    "text": "JWT bearer assertion grant"
+  },
+  "delegation.types.oauth-assertion-grant.what": {
+    "en": "1406839ec28888cb",
+    "text": "Pumipirma ang isang pinagkakatiwalaang party ng JWT na nagsasabi kung para kanino ang token, at nag-iissue ng isa ang authorization server na ito. Walang browser, walang password at walang consent step: ang signature ang kabuuan ng authorization, kaya dapat ideklara ang issuer sa isang application entry bilang `oauthAssertionIssuer` bago paniwalaan ang alinman dito."
+  },
+  "delegation.types.oauth-saml-assertion-grant.label": {
+    "en": "4ea51ffb0d6de32b",
+    "text": "SAML 2.0 bearer assertion grant"
+  },
+  "delegation.types.oauth-saml-assertion-grant.what": {
+    "en": "ae3da4b1ba10b743",
+    "text": "Pumipirma ang isang pinagkakatiwalaang party ng SAML 2.0 assertion na nagsasabi kung para kanino ang token, at nag-iissue ng isa ang authorization server na ito. Walang browser, walang password at walang consent step: ang XML Signature ang kabuuan ng authorization, kaya dapat ideklara ang Issuer sa isang application entry bilang `oauthSamlAssertionIssuer` at nakarehistro roon ang certificate bago paniwalaan ang alinman dito. Kapatid ito ng RFC 7523 at HINDI parehong mekanismo — magkahiwalay na key pair ang hawak ng dalawang profile, at hindi makakapirma ang isa para sa isa."
+  },
+  "delegation.types.gnap-impersonation.label": {
+    "en": "bc3d8b66ed9bd3b7",
+    "text": "GNAP grant sa pamamagitan ng user assertion, nang walang interaction"
+  },
+  "delegation.types.gnap-impersonation.what": {
+    "en": "999928d9b84010b9",
+    "text": "Isang client na pinagkakatiwalaang lumaktaw sa interaction (gnapSkipInteraction) ang nagpakita ng na-verify na assertion tungkol sa isang tao at na-issue-han ng mga token para sa kanya. Hindi tinanong ang tao: ang assertion ang kabuuan ng kanyang bahagi rito, at kanya ang token nang walang tala ng client sa loob nito."
+  },
+  "delegation.types.gnap-derivation.label": {
+    "en": "7441b7b960ae3a04",
+    "text": "GNAP token derivation (resource server papunta sa downstream)"
+  },
+  "delegation.types.gnap-derivation.what": {
+    "en": "d160cc26eabf4540",
+    "text": "Nagpakita ang isang resource server ng token na iniabot dito at humingi ng isa para maabot ang isang downstream resource server bilang parehong tao. Walang higit na access ang derived token kaysa sa pinagmulan nito, at pinangangalanan nito ang nag-derive na resource server sa act chain nito."
+  },
+  "delegation.roles.initial.label": {
+    "en": "e28c5dfe701033ab",
+    "text": "Initial identity"
+  },
+  "delegation.roles.initial.what": {
+    "en": "9ab21122a5f78d50",
+    "text": "Kung TUNGKOL kanino ang credential. Ang taong nag-sign in sa ibang lugar, o hindi kailanman nag-sign in — sa ilalim ng S4U2Self at OnBehalfOf wala sila roon at wala silang pinatunayan."
+  },
+  "delegation.roles.intermediary.label": {
+    "en": "cbf2c59661b0c067",
+    "text": "Intermediary"
+  },
+  "delegation.roles.intermediary.what": {
+    "en": "26b5aa6ecacdf551",
+    "text": "Kung sino ang kumikilos para sa kanila: ang front-end service, ang requester, ang client na gumagawa ng exchange. Ito ang party na nagpakita ng sarili nitong credential, at sa ilalim ng impersonation ito ang party na hindi kailanman makikita ng dulo."
+  },
+  "delegation.roles.target.label": {
+    "en": "978354db0c00fc78",
+    "text": "Target"
+  },
+  "delegation.roles.target.what": {
+    "en": "d21e8125ace1bfed",
+    "text": "Kung ano ang inaabot — ang back-end service, ang AppliesTo, ang audience o resource. Application ito sa halip na tao, at ito ang layer na nagpapasya kung may halaga ang alinman dito."
+  },
+  "delegation.mapKey.table": {
+    "en": "4db151f5c8c7b7ac",
+    "text": "<table class=\"key\"><tr><th>Hugis</th><th>Ano ang ibig sabihin</th></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}</td></tr><tr><td class=\"art\">{{art3}}</td><td>{{what3}}</td></tr><tr><td class=\"art\">{{art4}}</td><td>{{what4}}</td></tr><tr><td class=\"art\">{{art5}}</td><td>{{what5}}</td></tr><tr><td class=\"art\">{{art6}}</td><td>{{what6}}</td></tr><tr><td class=\"art\">{{art7}}</td><td>{{what7}}</td></tr><tr><td class=\"art\">{{art8}}</td><td>{{what8}}</td></tr><tr><td class=\"art\">{{art9}}</td><td>{{what9}}</td></tr><tr><td class=\"art\">{{art10}}</td><td>{{what10}}</td></tr><tr><td class=\"art\">{{art11}}</td><td>{{what11}}</td></tr><tr><td class=\"art\">{{art12}}</td><td>{{what12}}</td></tr><tr><td class=\"art\">{{art13}}</td><td>{{what13}}</td></tr></table>"
+  },
+  "delegation.mapKey.tail": {
+    "en": "f364a7825f8f3e5f",
+    "text": "{{last}}</td></tr><tr><td class=\"art\">{{art0}}</td><td>{{what0}}</td></tr><tr><td class=\"art\">{{art1}}</td><td>{{what1}}</td></tr><tr><td class=\"art\">{{art2}}</td><td>{{what2}}"
+  },
+  "delegation.federationKey.table": {
+    "en": "dde23dd944f3bc36",
+    "text": "<h3>Ang mga kahon</h3><table><tr><th>Iginuhit bilang</th><th>Ano ito</th></tr><tr><td>{{box0}}</td><td>{{boxWhat0}}</td></tr><tr><td>{{box1}}</td><td>{{boxWhat1}}</td></tr><tr><td>{{box2}}</td><td>{{boxWhat2}}</td></tr><tr><td>{{box3}}</td><td>{{boxWhat3}}</td></tr></table><h3>Ang mga linya</h3>{{note}}<table><tr><th>Kulay</th><th>Ano ang ibig sabihin</th></tr><tr><td>{{line0}}</td><td>{{lineWhat0}}</td></tr><tr><td>{{line1}}</td><td>{{lineWhat1}}</td></tr><tr><td>{{line2}}</td><td>{{lineWhat2}}</td></tr><tr><td>{{line3}}</td><td>{{lineWhat3}}</td></tr></table>"
+  },
+  "delegation.federationKey.fold": {
+    "en": "2ebcf71641b4acc2",
+    "text": "<details class=\"note fold\"><summary>{{summary}}</summary><div class=\"foldbody\">{{body}}</div></details>"
+  },
+  "delegation.mapKey.param.row0": {
+    "en": "9dcdf27572f0fd6c",
+    "text": "<strong>Isang tao.</strong> Isang bagay na may entry sa ilalim ng <code>ou=users</code> — sinumang na-authenticate ng serbisyong ito, sa alinman sa labing-anim na family."
+  },
+  "delegation.mapKey.param.row1": {
+    "en": "0011b3f302f63292",
+    "text": "<strong>Isang application.</strong> Isang bagay na may entry sa ilalim ng <code>ou=applications</code> — isang OAuth client, isang service provider, isang Kerberos service, isang WS-Trust relying party."
+  },
+  "delegation.mapKey.param.row2": {
+    "en": "974ae8fb2049ef51",
+    "text": "<strong>Pareho, na kadalasang kalagayan ng middle tier.</strong> Nag-a-authenticate ang <code>HTTP/frontend.example.com</code> (kaya inihahanay ito ng funnel kasama ng mga tao) AT may mga ticket na na-issue PARA rito (kaya nasa registry ito). Dalawang entry, isang party."
+  },
+  "delegation.mapKey.param.row3": {
+    "en": "5e08092d0d84020a",
+    "text": "<strong>Ang serbisyong ito, sa isang trust realm.</strong> Umiiral ang bawat linya rito dahil nag-issue o tumanggi ito ng credential. Nasa kahon ang realm dahil ang realm ay isang buong lohikal na kopya ng serbisyong ito."
+  },
+  "delegation.mapKey.param.row4": {
+    "en": "863933eca45014e5",
+    "text": "<strong>Magkaibang pangungusap ang dalawang maliit na linya sa ilalim ng isang pangalan.</strong> Ang una ay kung ANO ang kahon &mdash; alin sa dalawang store ang nakakakilala rito, o ang role na pinaghulaan ng hugis nito. Ang ikalawa ay <strong>ang identifier na kailangang ipakita ng isang protocol para maabot ito, gamit ang sariling salita ng protocol na iyon para rito</strong>: <code>client_id</code> para sa OAuth 2.0 at OpenID Connect, <code>entityID</code> para sa alinmang SAML profile, <code>wtrealm</code> para sa WS-Federation, <code>AppliesTo</code> para sa WS-Trust, <code>SPN</code> para sa Kerberos. Ang PANGALAN sa kahon ay kung ano ang ITINAWAG ng isang tao sa bagay na ito &mdash; isang <code>cn</code>, isang <code>appName</code> &mdash; at walang silbi sa request na bubuuin mo, kaya nasa larawan ang identifier at hindi lang sa tooltip. Kapag pareho ang string ng dalawa, ang salita lang ang iginuguhit, dahil label na ang value; kapag ang IISANG string ay identifier ng dalawang family, iginuguhit ang dalawang salita (<code>AppliesTo / entityID</code>); at kapag sumasagot ang application sa ilang MAGKAKAIBANG pangalan, ang iginuguhit ay ang talagang dinala ng kilos na ito &mdash; o, kung may dinala ang kilos na hindi hawak ng anumang identifier attribute, ang unang idineklara, at sinasabi iyon ng tooltip. Nasa tooltip na iyon ang bawat pangalang sinasagot nito sa alinmang kaso."
+  },
+  "delegation.mapKey.param.row5": {
+    "en": "4954aa8673157fa8",
+    "text": "<strong>Ang dashed na outline ay isang bagay na hindi kilala ng alinmang store.</strong> Iginuguhit ito sa hugis na ipinahihiwatig ng ROLE nito at hindi ito error: ang RFC 8693 <code>audience</code> na hindi nabanggit ng sinuman sa ibang paraan ay eksaktong ganito."
+  },
+  "delegation.mapKey.param.row6": {
+    "en": "87f079ab380e9f00",
+    "text": "<strong>Nasa PAREHONG dulo ng linya kung saan ito papunta.</strong> Umaalis ito sa kahon na may bilog na dulo at dumarating sa kahon na may arrowhead &mdash; kaya ang tanong na talagang itinatanong ng mambabasa, habang nakatayo sa isang kahon: <em>akin ba ang linyang ito, o sa iba na nakaturo sa akin?</em>, ay nasasagot kung saan siya nakatayo sa halip na sa malayong dulo ng kurbang tumatawid sa tatlong iba pa sa daan. May parehong marka ang bawat linya rito, at walang linyang dalawahan ang direksyon dito: ang dalawang application na umaabot sa isa't isa ay iginuguhit bilang dalawang linya."
+  },
+  "delegation.mapKey.param.row7": {
+    "en": "22997b6d1c902ee3",
+    "text": "<strong>kumikilos para sa &mdash; isang IMPERSONATION.</strong> Ang lumabas ay nagpapangalan sa initial identity at wala nang iba, kaya walang anuman sa dulo ang makapagsasabing may intermediary na kasangkot. Amber dahil ang larawang ito ang tanging lugar kung saan iiral ang katotohanang iyon."
+  },
+  "delegation.mapKey.param.row8": {
+    "en": "94664ec3a3f92920",
+    "text": "<strong>kumikilos para sa &mdash; isang DELEGATION.</strong> DALA ng lumabas ang chain: isang <code>act</code> claim, isang composite <code>ActAs</code>, <code>S4U_DELEGATION_INFO</code> sa PAC."
+  },
+  "delegation.mapKey.param.row9": {
+    "en": "932da9e5324d3417",
+    "text": "<strong>umaabot sa &mdash; ang TRUST relationship.</strong> Kung PARA SAAN ang credential: ang back-end service, ang <code>AppliesTo</code>, ang audience o resource. Sinasabi ng label kung kaninong pangalan ang dala nito."
+  },
+  "delegation.mapKey.param.row10": {
+    "en": "bbc1db8c9b1f7797",
+    "text": "<strong>Ang putol na linya ay lumulukso sa party na walang nagpangalan.</strong> Ang forwarded na ticket-granting ticket ay walang intermediary at hindi puwedeng magkaroon — ibinibigay ito ng client sa anumang serbisyong pipiliin nito at hindi kailanman sinasabihan ang KDC na ito kung alin."
+  },
+  "delegation.mapKey.param.row11": {
+    "en": "d10f0a35aeebc729",
+    "text": "<strong>puwedeng mag-delegate &mdash; isang NAKA-CONFIGURE na relationship, DASHED hanggang may kilos na gumamit nito.</strong> Isang linya bawat pares na pinapayagan ng isang entry: <code>appAllowedToDelegateTo</code> sa pinagmulan (constrained) o <code>appAllowedToActOnBehalfOf</code> sa target (resource-based) &mdash; parehong mga kontrol para sa OAuth 2.0 token exchange, WS-Trust at Kerberos. Solid kapag may kilos nang tumawid dito. Iginuguhit maliban kung pinakitid ang mga kilos ayon sa resulta, type o text."
+  },
+  "delegation.mapKey.param.row12": {
+    "en": "9344a1085b5a8403",
+    "text": "<strong>Ang pula ay chain na hindi kailanman pinag-issue-han ng anuman.</strong> Dala ng tooltip ang sariling salita ng KDC kung bakit, na siyang parehong pangungusap na ipinadala sa client."
+  },
+  "delegation.mapKey.param.row13": {
+    "en": "98bf6ee6df94528f",
+    "text": "<strong>Abo at dashed, mula sa hexagon: NAG-ISSUE ang serbisyong ito sa party na iyon.</strong> Napupunta ito sa kung sino ang HUMINGI — ang intermediary kapag may chain, ang initial identity kapag wala."
+  },
+  "delegation.mapKey.param.issuance0": {
+    "en": "03efeb293124715d",
+    "text": "<strong>Dotted, papasok sa hexagon: NAG-AUTHENTICATE dito ang taong ito.</strong> Ang label ay ang protocol family at ang tooltip ay ang method — ang sign-in screen, isang AS-REQ, isang UsernameToken, isang federated assertion. Ito ang dahilan kung bakit pinayagan ang lahat ng iba pa sa larawan."
+  },
+  "delegation.mapKey.param.issuance1": {
+    "en": "d8370d518b229ac4",
+    "text": "<strong>Solid na indigo: isang ORDINARYONG GRANT, at ang label ang eksaktong grant</strong> — <code>authorization_code</code>, <code>refresh_token</code>, <code>client_credentials</code>, kasama ang seksyon ng specification sa tooltip. Mula sa TAO, ang ibig sabihin ay napunta sa application na iyon ang credential na nagpapangalan sa kanya; mula sa HEXAGON, ang ibig sabihin ay walang ibang may hawak nito — ang <code>client_credentials</code> token ay tungkol sa client mismo at walang audience ang X509-SVID, kaya iisang kahon ang subject at ang holder at iisa ang linya sa halip na dalawa. Walang amber o berde ito, dahil katangian ng delegation mechanism ang impersonation at delegation at wala sa dalawa ang inaangkin ng isang grant."
+  },
+  "delegation.mapKey.param.issuance2": {
+    "en": "45f720e187b11ba4",
+    "text": "<strong>Ang solid na indigo mula sa isang APPLICATION ay ang parehong relationship na iyon nang isang hakbang pa: kung kanino NAKA-ADDRESS ang credential na hawak nito.</strong> Ito ang linyang <em>umaabot sa</em> sa itaas, sinabi tungkol sa ordinaryong grant sa halip na sa delegation — ang access token na na-issue sa isang web front end at naka-address sa isang API gateway ay ang serbisyong ito na nagsasabing puwedeng abutin ng una ang ikalawa sa pangalan ng taong ito, nang walang anumang na-exchange para makarating doon. Ang mekanismo sa label ang nagpapakita ng pagkakaiba ng dalawa: isang grant, o <code>Token exchange</code>. Nasa tooltip ang audience na talagang dala ng token, dahil ipinangalan ang kahon sa kung aling application ang nagrehistro ng audience na iyon. <strong>Pinangangalanan ng linya sa ilalim nito ang mga DELEGATED PERMISSION sa token na iyon</strong> — ang mga value sa <code>scope</code> claim nito na DINEPINE ng resource sa dulo, na siyang hinihingi ng client sa pagpapadala ng buong permission identifier (ang base URI ng resource na sinusundan ng pangalan) bilang scope. <strong>Ang ibig sabihin ng <code>default permissions</code> ay pinangalanan ng token ang resource at wala itong hininging alinman sa mga iyon</strong>: iyan ang nalilikha ng scope na nagpapangalan sa sariling <code>client_id</code> ng resource, dahil nagiging audience ang value na iyon at natatanggal sa scope claim. Sinasabi nito kung ano ang NA-ISSUE at hindi kung ano ang IBINIGAY — <a href=\"/admin/delegation/allowed\">ang naka-configure na register</a> ang kabilang tanong, at sa development ay naka-off bilang default ang <code>oauth2.delegatedPermissionsEnforced</code>, kaya puwedeng magdala ang token ng permission na hindi kailanman ibinigay sa client nito (tinatanggihan ito ng product mode)."
+  },
+  "delegation.federationKey.param.box0": {
+    "en": "4c914ed78ba82e25",
+    "text": "Ang trust realm na tinitingnan mo. Nagsisimula o nagtatapos dito ang bawat linya sa larawan, dahil bawat relationship ay sa pagitan ng realm na ito at ng iba."
+  },
+  "delegation.federationKey.param.box1": {
+    "en": "c7665e3dec149b4a",
+    "text": "Isang application na nakarehistro DITO na ang mga tao ay na-authenticate sa ibang lugar. Ang nagtuturo nito sa isang partner ay ang <code>appFederationRelationship</code> sa entry nito sa ilalim ng <code>ou=applications</code>."
+  },
+  "delegation.federationKey.param.box2": {
+    "en": "26b7b7ae72e14cd3",
+    "text": "Isang DAYUHANG SERVICE PROVIDER. Hinihiling nito sa serbisyong ito na i-authenticate ang isang tao. Dashed, dahil hindi ito ang serbisyong ito at walang anuman dito ang nakakakita sa loob nito."
+  },
+  "delegation.federationKey.param.box3": {
+    "en": "882c09b8e23c53ac",
+    "text": "Isang DAYUHANG IDENTITY PROVIDER. Ina-authenticate nito ang tao at ginagamit ng serbisyong ito ang ini-issue nito. Dashed sa parehong dahilan — at hexagon sa halip na rectangle dahil identity service ito, na siya ring serbisyong ito."
+  },
+  "delegation.federationKey.param.line0": {
+    "en": "7b7e2aed4da51756",
+    "text": "<strong>Handa</strong> — naka-enable at buong naka-configure. Gagana ito."
+  },
+  "delegation.federationKey.param.line1": {
+    "en": "42faa997275831ac",
+    "text": "<strong>Naka-disable</strong> — na siyang simula ng bawat relationship. Ito ang karaniwang estado ng isang bagay na hindi pa natatapos i-set up ng isang tao, hindi sira."
+  },
+  "delegation.federationKey.param.line2": {
+    "en": "55067642229aee17",
+    "text": "<strong>Naka-enable at HINDI naka-configure</strong> — ang maingay, at karapat-dapat itong maging nag-iisang pula sa pahinang ito: TATANGGI ito sa sandaling may sumubok gumamit nito, at mukha itong tapos mula sa bawat anggulo maliban dito."
+  },
+  "delegation.federationKey.param.line3": {
+    "en": "774b03ad7183a842",
+    "text": "<strong>Isang broker na hindi makapag-broker</strong> — maayos ang relationship at hindi maayos ang relationship na DINADAANAN nito para mag-authenticate, kaya ang sign-in screen ang nasasalubong ng tao sa halip na ang partner. Walang sinusuring password ang screen na iyon, kaya karapat-dapat ito sa sariling kulay: ito lang ang pagkabigo rito na nagbubunga ng gumaganang sign-in."
+  },
+  "delegation.federationKey.param.noteSummary": {
+    "en": "1d497e16c1a376ab",
+    "text": "Ang arrow ay isang REQUEST at hindi isang assertion, na siyang nag-iisang bagay sa larawang ito na&hellip;"
+  },
+  "delegation.federationKey.param.note": {
+    "en": "67dc19dd12a069bd",
+    "text": "<strong>Ang arrow ay isang REQUEST at hindi isang assertion</strong>, na siyang nag-iisang bagay sa larawang ito na mukhang baligtad hangga't hindi ito sinasabi. Lahat ng nasa kaliwa ay dumarating na may gustong ipa-sign in; lahat ng nasa kanan ay hinihilingang gawin ang pag-sign in. Kaya ang relationship sa identity-provider side — kung saan NAG-AASSERT ang serbisyong ito sa partner — ay nakaturo PAPASOK, dahil ang ginawa ng partner ay humiling. Kung iguguhit sa kabilang paraan, ang identity broker ay dalawang arrow na umaalis sa parehong kahon nang walang nagdudugtong; kung iguguhit sa ganitong paraan, isa itong tuwid na linya sa gitna, na siyang isang tulay."
+  }
+}

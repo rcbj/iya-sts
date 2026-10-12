@@ -3287,6 +3287,32 @@ class Devices {
         what: 'When it was last used, ISO 8601.' }
     ]
   };
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/devices`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/devices']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): each object
+   * class's and attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering Devices.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('./server_prose') =
+      require('./server_prose');
+    const out = serverProse.harvest('devices.schema', Devices.SCHEMA,
+                                    ['what']);
+    helpers.log.debug("Leaving Devices.prose(). " + Object.keys(out).length);
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3328,6 +3354,10 @@ export = {
   keyKindsOf: Devices.keyKindsOf,
   sentence: Devices.sentence,
   SCHEMA: Devices.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: Devices.PROSE_ROUTES,
+  prose: Devices.prose,
   OWNER_KINDS: OWNER_KINDS,
   KEY_KINDS: KEY_KINDS,
   KEY_KIND_FILTERS: KEY_KIND_FILTERS,

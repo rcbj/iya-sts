@@ -3752,6 +3752,9 @@ const WRITE_REFUSALS = {
     'before the start to be able to mint one.'
 };
 
+// What a marked row whose predicate has no sentence above ends with.
+const DEFAULT_WRITE_REFUSAL = 'the setting is for development mode only.';
+
 /**
  * Explains why a development-only value is not allowed in product, by the
  * predicate its row names.
@@ -3763,8 +3766,7 @@ const WRITE_REFUSALS = {
 function writeRefusalReason(predicate) {
   log.debug("Entering writeRefusalReason(). " + predicate);
   log.debug("Leaving writeRefusalReason().");
-  return WRITE_REFUSALS[predicate] ||
-    'the setting is for development mode only.';
+  return WRITE_REFUSALS[predicate] || DEFAULT_WRITE_REFUSAL;
 }
 
 // Every row carrying the `onlyWhile` marker, with the value the ambient realm
@@ -3815,6 +3817,45 @@ function report() {
     developmentOnlySettings: developmentOnlySettings(),
     notYet: NOT_YET
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE MODE NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b). `GET
+// /admin-api/mode` answers `report()`, and what it carries that is prose is
+// this file's: each requirement's `what`, `development` and `product` (and
+// `inForce`, which is one of the two copied, so the exact match finds it), each
+// NOT_YET row's `what`, and each development-only setting's `why` — a
+// WRITE_REFUSALS sentence, which is also the end of the write REFUSAL and the
+// ignored-value warning. Those two stay English: the refusal is answered on
+// other routes and the warning is written to the log, and a phrase is matched
+// only on the routes listed here. `where` is file paths, every `id` a code.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/mode'];
+
+/**
+ * Extracts the mode namespace (#543 phase 2b): the requirements, NOT_YET and
+ * the sentence a development-only setting's `why` carries.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const out = {};
+  Object.assign(out, harvest('mode.requirements', REQUIREMENTS,
+                             ['what', 'development', 'product']));
+  Object.assign(out, harvest('mode.notYet', NOT_YET, ['what']));
+  Object.assign(out, harvest('mode.why', WRITE_REFUSALS,
+                             Object.keys(WRITE_REFUSALS)));
+  out['mode.why.default'] = DEFAULT_WRITE_REFUSAL;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
 }
 
 /**
@@ -3923,5 +3964,7 @@ module.exports = {
   writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
-  report: report
+  report: report,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

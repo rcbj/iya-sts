@@ -1,0 +1,310 @@
+{
+  "stats.operations.create.what": {
+    "en": "a9f3a873aa328908",
+    "text": "创建了一个资源（RFC 7644 section 3.3）。"
+  },
+  "stats.operations.list.what": {
+    "en": "b0284ee2afa292c9",
+    "text": "查询了一个集合（section 3.4.2），带或不带过滤器。"
+  },
+  "stats.operations.read.what": {
+    "en": "822f587658cd4d92",
+    "text": "按 id 检索了一个资源（section 3.4.1）。"
+  },
+  "stats.operations.search.what": {
+    "en": "a40bc982b7011279",
+    "text": "以 POST 方式发送到 .search 的查询（section 3.4.3），客户端在过滤器太长、无法放入 URL 时使用。"
+  },
+  "stats.operations.replace.what": {
+    "en": "0102fc5d08470507",
+    "text": "替换了整个资源（section 3.5.1）。"
+  },
+  "stats.operations.modify.what": {
+    "en": "933e8a0eaeb3eee3",
+    "text": "应用了一个 PATCH（section 3.5.2）。这是预配客户端最常用的操作，也是路径语法最难处理正确的操作——这正是本服务没有自行实现它的原因。"
+  },
+  "stats.operations.delete.what": {
+    "en": "45b55ac9659cbf0f",
+    "text": "删除了一个资源（section 3.6）。"
+  },
+  "stats.operations.bulk.what": {
+    "en": "c14ea1925044b133",
+    "text": "应用了一个 BulkRequest（section 3.7）。其中包含的操作也会逐个计数，因此一个包含五个创建操作的批量请求计为一行批量和五行创建——这是如实的计法，页面上也作了说明，否则把这一列加起来的读者会发现总数对不上。"
+  },
+  "stats.operations.discovery.what": {
+    "en": "9879abecdf50a7ea",
+    "text": "ServiceProviderConfig、ResourceTypes 或 Schemas（section 4）。客户端在做任何其他事情之前读取的内容，也是这里唯一不涉及任何目录条目的操作。"
+  },
+  "stats.operations.unknown.what": {
+    "en": "cfc21d1c585bec9c",
+    "text": "对 /scim/v2 下未指明任何端点的路径发出的请求，以 SCIM Error 模式（RFC 7644 section 3.12）应答 404，而不是由 express 以 HTML 页面应答（#206）。"
+  },
+  "stats.unlistedOperation": {
+    "en": "a58d0324c93bcb2e",
+    "text": "以 admin_stats.js 的 SCIM_OPERATIONS 未列出的名称计数。它会被显示而不是丢弃，因为悄悄丢弃它的表格会让这一列加不起来，而且无从查明原因。"
+  },
+  "scim.doesNotDo.permissive": {
+    "en": "34742646d0317611",
+    "text": "它进行身份验证，但几乎什么都不检查。需要凭据，而该要求背后的每种方案都是宽松的：任何调用方都可以通过任何授权类型从本服务自己的令牌端点获得带有任一范围的访问令牌，任何用户名配除 \"invalid\" 以外的任何密码都能通过 Basic，任何用户名配那一个共享密码都能通过 Digest，任何人都可以为任何名称注册 HOBA 密钥。它是一道闸门，而不是一把锁。它带来的好处是，客户端对 401、403、质询-响应和范围的处理终于能够得到检验——这些都是开放端点无法产生的。不要因此就把此端口放在公共地址上。"
+  },
+  "scim.doesNotDo.permissiveOff": {
+    "en": "d13d4ee5c43db5b9",
+    "text": "它进行身份验证，但几乎什么都不检查。需要凭据——只不过这里目前已将其关闭，因此并不需要，而该要求背后的每种方案都是宽松的：任何调用方都可以通过任何授权类型从本服务自己的令牌端点获得带有任一范围的访问令牌，任何用户名配除 \"invalid\" 以外的任何密码都能通过 Basic，任何用户名配那一个共享密码都能通过 Digest，任何人都可以为任何名称注册 HOBA 密钥。它是一道闸门，而不是一把锁。它带来的好处是，客户端对 401、403、质询-响应和范围的处理终于能够得到检验——这些都是开放端点无法产生的。不要因此就把此端口放在公共地址上。"
+  },
+  "scim.doesNotDo.product": {
+    "en": "63b3779ff81c6f12",
+    "text": "它进行身份验证，并且在产品模式下会检查。需要凭据，而该要求背后的每种方案都会被验证：访问令牌必须来自本服务自己的令牌端点并带有相应范围，Basic 密码会对照此人条目上经过哈希的 userPassword 检查，HOBA 密钥必须由其已登录的所有者注册，并且不提供 Digest。"
+  },
+  "scim.doesNotDo.productOff": {
+    "en": "2d0e7626a5d8a9b8",
+    "text": "它进行身份验证，并且在产品模式下会检查。需要凭据——只不过这里目前已将其关闭，因此并不需要，而该要求背后的每种方案都会被验证：访问令牌必须来自本服务自己的令牌端点并带有相应范围，Basic 密码会对照此人条目上经过哈希的 userPassword 检查，HOBA 密钥必须由其已登录的所有者注册，并且不提供 Digest。"
+  },
+  "scim.doesNotDo.scope": {
+    "en": "bbf9a990cb80b46c",
+    "text": "范围只在这里授予权限，其他地方都不读取范围。scim:read 和 scim:write 是本服务中第一个范围要求，并且只适用于这些端点——这里没有其他界面读取范围，持有范围在 /scim/v2 之外不赋予任何权限。另请注意，只有 OAuth 方案才携带范围：Basic、Digest、HOBA、cookie 和客户端证书所验证的调用方随后读写皆可，因此无法获得范围的调用方完全可以改用另一种方案。正是出于这个原因，每种方案都有自己的开关。"
+  },
+  "scim.doesNotDo.active": {
+    "en": "063502f94b8717f2",
+    "text": "active: false 会停用账户（自 2026-09-17 起）。它就是条目上的密码策略锁定 pwdAccountLockedTime，在其设置期间每道门都会拒绝此人——密码、会话、令牌授权、Kerberos AS-REQ——并且写入时会结束此人持有的一切。active: true 会重新启用；省略 active 的资源会让账户保持原样。"
+  },
+  "scim.doesNotDo.etag": {
+    "en": "d9e78344446d3ef5",
+    "text": "不支持 ETag，也不支持 changePassword，两者都被公布为不支持，而不是半实现。基于一秒分辨率时间戳构建的版本，会是一种客户端信任却是错误的并发控制；而本服务不检查任何密码，因此也没有可更改的密码。"
+  },
+  "scim.doesNotDo.member": {
+    "en": "3cce88d4d02d3509",
+    "text": "不指向任何对象的成员也会被接受。本目录有意不做引用完整性检查——删除用户会把其 DN 留在每个列出过它的组中——因此在这里拒绝悬空成员会使这种状态无法重现。/admin/groups 会报告它们。"
+  },
+  "scim.endpoints.serviceProviderConfig": {
+    "en": "ec5c59eeb4453e91",
+    "text": "本服务器支持的功能。请先读取它。"
+  },
+  "scim.endpoints.resourceTypes": {
+    "en": "20ac2318fc32a81a",
+    "text": "User 和 Group。"
+  },
+  "scim.endpoints.schemas": {
+    "en": "ed2cc578ba4c5003",
+    "text": "核心 User 和 Group 模式，以及企业 User 扩展。"
+  },
+  "scim.endpoints.usersList": {
+    "en": "d772456010cee030",
+    "text": "列表，支持 ?filter、?sortBy、?startIndex、?count、?attributes。"
+  },
+  "scim.endpoints.usersCreate": {
+    "en": "ed6ef4d572de7082",
+    "text": "创建。"
+  },
+  "scim.endpoints.usersSearch": {
+    "en": "301d2bdfd3b6fcad",
+    "text": "以 POST 请求体发送的同样查询，用于太长而无法放入 URL 的过滤器。"
+  },
+  "scim.endpoints.userRead": {
+    "en": "e451ccebd6ae2d95",
+    "text": "单个用户。"
+  },
+  "scim.endpoints.userReplace": {
+    "en": "10c2d84cbed90cef",
+    "text": "替换。"
+  },
+  "scim.endpoints.userModify": {
+    "en": "26410632ba4e7d61",
+    "text": "修改（section 3.5.2），包括完整的路径语法。"
+  },
+  "scim.endpoints.userDelete": {
+    "en": "0042ecdb060ae12e",
+    "text": "删除。"
+  },
+  "scim.endpoints.groups": {
+    "en": "228c8cdc3717f718",
+    "text": "组，其成员同样从 member、uniqueMember 和 memberUid 解析。"
+  },
+  "scim.endpoints.search": {
+    "en": "a366df1d37258f63",
+    "text": "同时跨两种资源类型的查询。"
+  },
+  "scim.endpoints.bulk": {
+    "en": "6f419a02fa746e5c",
+    "text": "一个请求中最多 {{n}} 个操作。"
+  },
+  "scim.endpoints.me": {
+    "en": "ca94fbd8dcbe2b39",
+    "text": "本请求经身份验证所对应的主体（section 3.11），委托给同样的 User 处理程序。没有任何身份验证时以及对 POST 返回 501；凭据指明的人在这里没有条目时返回 404。"
+  },
+  "scim.endpoints.hoba": {
+    "en": "78e83905543539dc",
+    "text": "注册 HOBA 公钥（RFC 7486 section 7）。有意不需要身份验证——这正是调用方获得凭据的方式。GET 会对其进行说明。"
+  },
+  "scim.negatives.noCredential.what": {
+    "en": "19d7f0fcd3764116",
+    "text": "不带凭据的请求"
+  },
+  "scim.negatives.noCredential.answer": {
+    "en": "677b3bb94689bc2b",
+    "text": "401，并为每种提供的方案各带一个 WWW-Authenticate 标头——RFC 7644 section 2 规定该标头为 SHALL。发现端点不受此限，除非开启了 scim.authDiscovery。"
+  },
+  "scim.negatives.wrongScope.what": {
+    "en": "b1b1e1f4ef979ce5",
+    "text": "范围与操作不符的访问令牌"
+  },
+  "scim.negatives.wrongScope.answer": {
+    "en": "3699a24bfa551621",
+    "text": "403，并带 WWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"{{write}}\"。读取需要 \"{{read}}\"，写入需要 \"{{write}}\"；两者互不隐含。"
+  },
+  "scim.negatives.foreignToken.what": {
+    "en": "224693a8e83465fa",
+    "text": "并非本服务签发的访问令牌，或已被吊销的令牌"
+  },
+  "scim.negatives.foreignToken.answer": {
+    "en": "e71231b2cb1a9d38",
+    "text": "401。这些端点会验证签名，这与接受外部令牌的 OID4VCI 凭证端点不同：一个无人验证的令牌上的范围，就是其持有人自己写给自己的权限。"
+  },
+  "scim.negatives.refusedPassword.what": {
+    "en": "b6240d896a183cfe",
+    "text": "使用密码 \"{{password}}\" 的 Basic"
+  },
+  "scim.negatives.refusedPassword.answer": {
+    "en": "0b050a874643f074",
+    "text": "401——与这里其他所有协议族拒绝的保留值相同。"
+  },
+  "scim.negatives.digest.what": {
+    "en": "a1ae2bb3b98538a8",
+    "text": "密码错误、nonce 过期或 nc 重复的 Digest"
+  },
+  "scim.negatives.digest.answer": {
+    "en": "2d00c539d384292f",
+    "text": "三种情况都返回 401：这里确实会检查密码；过期的 nonce 带有 stale=true（符合规范的客户端会静默重试）；而重放的 nonce 计数不带——它曾是有效凭据且之前已被见过，这是另一回事。"
+  },
+  "scim.negatives.hoba.what": {
+    "en": "fc304cec6c17e496",
+    "text": "无法验证通过的 HOBA 签名，或重复使用的（kid, challenge, nonce）"
+  },
+  "scim.negatives.hoba.answer": {
+    "en": "45994ffeadec09fe",
+    "text": "401。签名确实会被验证——对 RFC 7486 section 5 的长度前缀数据块进行 RSA-SHA256 验证——并且质询在其 max-age 之前可以重复使用，因此作为重放被拒绝的是这个三元组，而不是质询。"
+  },
+  "scim.negatives.otherScheme.what": {
+    "en": "fd15d107e64d7600",
+    "text": "使用本服务不提供的方案的凭据"
+  },
+  "scim.negatives.otherScheme.answer": {
+    "en": "4753d6cedaf51d13",
+    "text": "401，并指明本服务提供的方案。查询字符串中的访问令牌会被单独拒绝，所用检查与 /oauth2/userinfo 相同。"
+  },
+  "scim.negatives.meAlias.what": {
+    "en": "1270ece98779d4ea",
+    "text": "不带凭据的 GET /Me，或 POST /Me"
+  },
+  "scim.negatives.meAlias.answer": {
+    "en": "fd67bff19b9d787d",
+    "text": "501——是别名不可用，而不是资源不存在。凭据指明的人在这里没有条目时得到 404。"
+  },
+  "scim.negatives.refusedUsername.what": {
+    "en": "06afe95f3e7de42b",
+    "text": "userName 为 \"{{username}}\""
+  },
+  "scim.negatives.refusedUsername.answer": {
+    "en": "7d46037af58bb17d",
+    "text": "400 invalidValue——与这里的密码授权、WS-Trust、WS-Federation 登录界面以及每个 LDAP 绑定所拒绝的保留值相同。"
+  },
+  "scim.negatives.duplicate.what": {
+    "en": "8d8c6d9ab4da0abf",
+    "text": "第二个使用他人已有 userName 的用户"
+  },
+  "scim.negatives.duplicate.answer": {
+    "en": "ed8b8754aaa714bf",
+    "text": "409 uniqueness。"
+  },
+  "scim.negatives.specialCharacter.what": {
+    "en": "d2136ee121b84487",
+    "text": "包含 RFC 4514 特殊字符（逗号、引号、加号、井号、分号、等号、尖括号或反斜杠）的 userName 或 displayName"
+  },
+  "scim.negatives.specialCharacter.answer": {
+    "en": "ab4a092219e4a7c1",
+    "text": "400 invalidValue——条目的 DN 由名称构建，因此包含此类字符的名称会产生其他入口无法指明的条目。这与控制台和管理 API 给出的拒绝相同，出自同一条规则；ldapadd 仍可以写出转义后创建这样的条目。"
+  },
+  "scim.negatives.dnShaped.what": {
+    "en": "b6fdfae975fca22b",
+    "text": "形如 DN 或形如 DID 的 userName"
+  },
+  "scim.negatives.dnShaped.answer": {
+    "en": "173e1cab8b6124e5",
+    "text": "400 invalidValue——以可分辨名称命名的条目是通过出示客户端证书来到这里的，以去中心化标识符命名的条目是通过出示该标识符来到这里的，因此没有任何东西可以用来手动创建它们。这也是控制台和管理 API 的回答，出自同一个函数。"
+  },
+  "scim.negatives.unknownId.what": {
+    "en": "710c51b43eeb899d",
+    "text": "不指向任何对象的 id"
+  },
+  "scim.negatives.badFilter.what": {
+    "en": "ffcbe90773101dd8",
+    "text": "本服务器无法求值的过滤器"
+  },
+  "scim.negatives.badFilter.answer": {
+    "en": "121c060a88700126",
+    "text": "400 invalidFilter——拒绝而不是以空列表应答，因为“没有结果”和“我无法读懂您的过滤器”是不同的回答。"
+  },
+  "scim.negatives.meMethod.what": {
+    "en": "3497e1e6b3a81197",
+    "text": "对 /Me 使用的任何方法"
+  },
+  "scim.description.store": {
+    "en": "94a5c148728c1a50",
+    "text": "本进程中的嵌入式 LDAP 目录。没有第二个存储，也没有缓存：SCIM POST 和 ldapadd 写入的是同一个条目，在这里预配的人员会出现在 /admin/users 上、ldapsearch 中，以及其访问令牌所携带的属性中。"
+  },
+  "scim.description.identifiersWhy": {
+    "en": "3e9886c5109432b9",
+    "text": "RFC 7643 section 3.1 要求一个不透明的、由服务器分配的、唯一且永不重新分配的标识符。直到 2026-09-14 它一直是条目的 DN，而重命名会重新分配它。entryUUID 在条目创建时分配，在重命名后保持不变，并且与人员令牌中 `sub` 以 urn:uuid:<value> 形式携带的值相同。作为 id 出示的 DN 仍然可以解析，以照顾在此变更之前存储了 DN 的客户端。成员和经理的值也是 id，并以 LDAP 所保存的 DN 形式存储。"
+  },
+  "scim.description.mapping": {
+    "en": "808ad5bee1c6ce18",
+    "text": "每个 SCIM 成员对应哪个 LDAP 属性。完整的表格以及定义每个属性的模式文档在 /admin/scim 上。"
+  },
+  "auth.schemes.bearer": {
+    "en": "690a025e3d401473",
+    "text": "由本服务自己的授权服务器签发的访问令牌，以 \"Authorization: Bearer <token>\" 出示。任何授权类型均可——授权码、客户端凭据、密码、刷新、设备、令牌交换——但在每种模式下，SCIM 范围只签发给其 oauthAllowedScope 声明了这些范围的客户端。令牌必须携带读取范围才能读取，携带写入范围才能写入，其客户端必须仍然声明该范围，它必须由本服务签名，不得已被吊销，也不得已被 RFC 8707 缩小到其他资源。"
+  },
+  "auth.schemes.dpop": {
+    "en": "4a6cf765e9ede961",
+    "text": "RFC 7644 section 2 所指的持有证明令牌，采用本服务已经签发的形式：绑定到密钥（cnf.jkt）的访问令牌，以 \"Authorization: DPoP <token>\" 出示，并附带针对方法和 URL 的新鲜 DPoP 证明。RFC 8705 证书绑定令牌是另一种持有证明形式，在同一路径上同样被认可。由与 Bearer 一行相同的检查处理——它们是同一种凭据的两种持有方式——单独列出是因为阅读本文档的客户端有权知道绑定形式是被支持的。"
+  },
+  "auth.schemes.basic": {
+    "en": "82a6bd8a34b144f8",
+    "text": "任何用户名和任何密码，就像这里的每个 LDAP 绑定都会成功一样——唯一的例外是密码 \"invalid\"，它会被拒绝，以便 401 仍然可以触发。RFC 7644 section 2 明确表示不鼓励（DISCOURAGES）此方案，因为它依赖相对静态的对称密钥；尽管如此仍然实现了它，因为它是预配客户端最常遇到的方案，能够运行其 401 处理很有价值。不检查任何密码，因此它验证的是一个名称，审计日志记录的也是这个名称。"
+  },
+  "auth.schemes.digest": {
+    "en": "3bdbbdcf677299f6",
+    "text": "这里唯一确实会检查密码的方案，而且不可能不检查：响应是对密码计算的哈希，因此接受任何内容的服务器根本就没有在执行这一交换。所以它采取了 Kerberos 出于同样原因所采取的做法——任何用户名都能通过身份验证，并且所有用户名共享一个密码（scim.digestPassword）。按顺序提供 SHA-256 和 SHA-512-256 及其 -sess 变体，只有在 scim.digestMd5 开启时才在最后提供 MD5；qop 为 auth。错误的密码返回 401，过期的 nonce 返回带 stale=true 的 401，重放的 nonce 计数返回 401——这三种否定情况在别处很难触发。"
+  },
+  "auth.schemes.hoba": {
+    "en": "3a4aaa2bb134b547",
+    "text": "RFC 7644 section 2 所指的基于签名的方案，也是六种方案中唯一完全不涉及密码的方案。客户端在 /.well-known/hoba/register 注册公钥——任何人都可以，本服务为所有人注册——然后对服务器的质询连同源、领域以及其自己的密钥 id 和 nonce 一起签名。签名确实会被验证，原因与 Digest 密码确实会被检查相同：放行一切的签名检查就不是这个方案了。仅支持 RSA with SHA-256（算法 0）。"
+  },
+  "auth.schemes.cookie": {
+    "en": "b558e5c68d9956f1",
+    "text": "本服务已有的浏览器登录会话——由 /authn/login 建立、与 WS-Federation 共享的那个——之所以在这里提供，是因为 section 2 提到了它：\"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\"。正是它使本服务页面上的 SCIM 调用无需第二个凭据即可工作。它没有质询：服务器无法在 WWW-Authenticate 中请求 cookie，因此有就使用，从不强求。"
+  },
+  "auth.schemes.clientcert": {
+    "en": "9241c3d8b86de17f",
+    "text": "双向 TLS，RFC 7644 section 2 提到的第一种方案。只有当本请求通过 TLS 到达，且所带证书能对照某人 POST 到 /tls/trust 的信任锚验证通过时才可用——因此在主端口上，只有当它以 HTTPS 绑定时才可用（global.https，由 oauth2.rfc9700 开启）。身份是 RFC 4514 形式的主体，与 /admin/users 和目录用来归档证书的字符串相同。这里不会再次记录它：tls_server.js 有意按连接记录一次证书，按请求计数会从另一端抵消这一设计。"
+  },
+  "auth.policy.oauth": {
+    "en": "25657a7b65df5ecd",
+    "text": "OAuth 凭据——Bearer 或 DPoP 访问令牌——可以做其范围所允许的事：\"{{read}}\" 用于读取，\"{{write}}\" 用于写入。两者互不隐含，以便本服务能够真正产生只读凭据，供检验客户端的处理。"
+  },
+  "auth.policy.others": {
+    "en": "e23c0683e2f710ad",
+    "text": "其他每种方案都可以读写。Basic、Digest、HOBA、会话 cookie 和客户端证书不携带范围，因此对它们的策略就是整个界面。这一点值得多读一遍：无法获得范围的调用方可以改用 Basic，这正是每种方案都有自己开关的原因——检验范围处理的部署会关闭其他五种方案。"
+  },
+  "auth.policy.rfc": {
+    "en": "aa742405b5e3b449",
+    "text": "RFC 7644 section 2 要求提供方能够把经过身份验证的客户端映射到访问控制策略。这就是该策略。它只有两行，因为从真正重要的意义上说，本服务不对任何人进行身份验证——它是一道闸门，而不是一把锁。"
+  },
+  "auth.policy.tied": {
+    "en": "695420f96b495164",
+    "text": "范围与客户端绑定（#110）。在两种模式下，SCIM 范围都只签发给其 oauthAllowedScope 声明了这些范围的客户端，并且只有当令牌的客户端仍然声明其所用范围时，令牌才会被认可——因此移除声明会切断已签发的令牌（STS-SCIM-0079）。"
+  },
+  "auth.refusedByMode": {
+    "en": "024ae1b294c68b2d",
+    "text": "HTTP Digest 需要服务器保存每个密码或其 RFC 7616 哈希，而产品模式只保存 scrypt 哈希；共享的 scim.digestPassword 不是部署可以提供的凭据。"
+  }
+}

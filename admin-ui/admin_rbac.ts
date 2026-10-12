@@ -202,6 +202,28 @@ const ROLE_IDS = ROLES.map(function (role) {
   return role.id;
 });
 
+// THE ROLES NAMESPACE'S PART OF THIS MODULE (#543 phase 2b): the two console
+// roles' labels and sentences, which `/admin-api/rbac` carries as
+// `roleChoices`.
+/** The routes whose answers carry this module's roles prose. */
+const PROSE_ROUTES = ['/admin-api/rbac'];
+
+/**
+ * Extracts this module's part of the roles namespace (#543): the console
+ * roles' `label` and `what`.
+ *
+ * @returns key → English
+ */
+function prose(): Record<string, string> {
+  helpers.log.debug("Entering prose().");
+  // LAZILY: `common/credentials.ts` and its neighbours require this module
+  // early, and `server_prose` is needed only to extract.
+  const harvest = require('../common/server_prose').harvest;
+  const out = harvest('roles.console', ROLES, ['label', 'what']);
+  helpers.log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // The slot. See the header.
 // ---------------------------------------------------------------------------
@@ -1893,6 +1915,9 @@ export = {
   AdminRbac: AdminRbac,
   ROLES: AdminRbac.ROLES,
   ROLE_IDS: AdminRbac.ROLE_IDS,
+  // #543: the roles namespace's routes and English, this module's part.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   /**
    * Installs the instance the composition root built and runs its
    * wire step; a second install is refused.

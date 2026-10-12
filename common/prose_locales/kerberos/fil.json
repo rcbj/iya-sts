@@ -1,0 +1,34 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "Walang key material sa sagot na ito o sa pahina. Dine-derive ang mga key ng isang tao mula sa password niya kapag itinakda o vine-verify ito at hindi kailanman ipinapakita; iniaabot ang keytab ng isang service principal nang ISANG BESES, ng create o rotate na gumawa nito, at ang keytab ng isang tao nang ISANG BESES, dine-derive mula sa password na hawak — ang itinatakda ng administrator sa pahina ng tao, o ang sarili niya sa /portal/kerberos."
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "PRODUCT na KDC ito: nag-a-authenticate ang tao gamit ang sarili niyang password sa pamamagitan ng mga key na naka-store sa directory entry niya, at ang taong walang key ay tinatanggihan na may \"sign in once\"."
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "DEVELOPMENT na KDC ito: bawat user ay naka-key mula sa krb5.userPassword at hindi kailanman binibigyan ng naka-store na key ang mga tao. Ginagamit sa parehong mode ang mga service principal na ginawa rito."
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "ISANG KDC BAWAT TRUST REALM: ito ang mga tao at application ng trust realm kung saan binabasa ang pahinang ito, bilang mga principal ng sarili nitong Kerberos realm na {{kerberosRealm}}."
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "WALANG KDC ANG TRUST REALM NA ITO: {{reason}}. Itakda ang krb5.realm sa realm at i-on ang krb5.enabled para bigyan ito ng isa; niruruta ng port 88 ang isang request ayon sa pangalan ng Kerberos realm sa loob nito."
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "Dine-derive ang mga key PAGKATAPOS itakda o i-verify ang password at ilang sampung millisecond bago lumapag; hanggang hindi pa, tinatanggihan ng KDC ang tao sa halip na tumanggap ng mas lumang key."
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "Pinananatili ng pagpapalit ng password o ng rotation ang bersyong pinalitan nito — hanggang krb5.retainedKeyVersions sa mga ito, bawat isa nang krb5.retainedKeyTtlS — kaya tinatanggap pa rin ang ticket na na-issue sa ilalim nito hanggang sa puwede na itong mag-expire. BINUBUKSAN lang ng dating bersyon ang ganoong ticket: walang na-issue sa ilalim nito at hindi kailanman nakakapag-sign in ang lumang password. Tinatapos agad ng \"Drop previous versions\" ang window, pagkatapos ng isang compromise."
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "naka-off ang krb5.enabled para dito"
+  }
+}

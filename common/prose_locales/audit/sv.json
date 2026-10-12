@@ -1,0 +1,1382 @@
+{
+  "audit.categories.authentication.label": {
+    "en": "66880d2d8216260d",
+    "text": "Autentisering"
+  },
+  "audit.categories.authentication.what": {
+    "en": "a75d8d51a0eb704d",
+    "text": "En autentiseringsuppgift GODTOGS, i någon av de sexton protokollfamiljerna här. Registreras i den enda tratt som var och en av dem redan passerar, så det är ett ställe och inte sexton. SCIM anslöt sent och SPIFFE ännu senare. SCIM: tre av de scheman som dess slutpunkter godtar — Basic, Digest och HOBA — presenterar en autentiseringsuppgift vid varje begäran, och att godta en är en autentisering. Dess andra tre syns inte här, eftersom var och en fortsätter en autentisering som registrerats någon annanstans: en åtkomsttoken godtogs när den utfärdades, en sessionscookie när dess session började och ett klientcertifikat en gång per ANSLUTNING snarare än en gång per begäran. SPIFFE är den sextonde och når hit på tre sätt: ett X509-SVID som presenteras över ömsesidig TLS vid SPIRE Server API (en gång per anslutning, av samma skäl som ett klientcertifikat), en agent som attesterar och ett JWT-SVID som verifieras vid ValidateJWTSVID. Att UTFÄRDAS ett SVID är inte ett av dem."
+  },
+  "audit.categories.session.label": {
+    "en": "6fa3cbf451b2a1d5",
+    "text": "Sessioner"
+  },
+  "audit.categories.session.what": {
+    "en": "da2cf9fdd76b22ff",
+    "text": "En inloggningssession i webbläsaren skapades eller avslutades. Delas mellan OAuth 2.0 / OIDC och WS-Federation, så en utloggning i WS-Federation och en /oauth2/logout ger samma rad."
+  },
+  "audit.categories.directory.label": {
+    "en": "c8f84c3c5378b920",
+    "text": "Katalog"
+  },
+  "audit.categories.directory.what": {
+    "en": "1783abc24177bf60",
+    "text": "Den inbäddade LDAP-katalogen: poster som skapats, tagits bort, uppdaterats, bytt namn och frågats efter, över vanlig 389 och över LDAPS 636 likadant."
+  },
+  "audit.categories.admin.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Administratörskonsol"
+  },
+  "audit.categories.admin.what": {
+    "en": "84e06d85d9c8036d",
+    "text": "Varje sida i /admin som visades och varje formulär som skickades. Inkluderar begäran som ritade upp sidan du läser."
+  },
+  "audit.categories.api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "Hanterings-API"
+  },
+  "audit.categories.api.what": {
+    "en": "71c007163c40d555",
+    "text": "Varje anrop till /admin-api, läsning och skrivning likadant."
+  },
+  "audit.categories.application.label": {
+    "en": "98e33b0f3104fcf1",
+    "text": "Applikationer"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "En applikation — en OAuth-klient, en förlitande part i OIDC, en SAML-tjänsteleverantör, en WS-Federation-applikation, en förlitande part i WS-Trust, en Kerberos-tjänst — sågs för första gången eller registrerade något nytt. Motsvarigheten till autentiseringsraden ovan: den säger VEM, den här säger VAD DE LOGGADE IN TILL. En handling skriver ofta båda."
+  },
+  "audit.categories.protocol.label": {
+    "en": "00052adcbc9e9b70",
+    "text": "Protokollslutpunkter"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "Varje annan HTTP-slutpunkt: tokenslutpunkten, KDC-proxyn, slutpunkten för intyg, metadatadokumenten, allt."
+  },
+  "audit.categories.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "audit.categories.spiffe.what": {
+    "en": "a3485b52ee7b4222",
+    "text": "De tre SPIFFE-ytorna på serversidan: ett SVID som präglats, en registreringspost som skapats, ändrats eller tagits bort, en agent som attesterar och förtroendepaketet som hämtas eller federeras. En SVID-rad är INTE en autentiseringsrad — att UTFÄRDAS en autentiseringsuppgift är inte att presentera en — så en utfärdan hamnar här och aldrig i `authentication`. Det som FINNS i båda är en autentiseringsuppgift som PRESENTERATS för en av dessa ytor och godtagits: ett X509-SVID över ömsesidig TLS, en agent som attesterar, ett validerat JWT-SVID. Dessa skriver också en autentiseringsrad, i tratten, på samma sätt som en handling skriver rader på flera lager överallt annars här."
+  },
+  "audit.categories.signals.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "Shared Signals Framework: en ström som kommits överens om, ändrats eller tagits bort, ett subjekt som lagts till eller tagits bort, en status som flyttats, och varje Security Event Token som den här tjänsten SÄNT eller TAGIT EMOT — inklusive dem som en mottagare avvisade, vilket är den rad som betyder mest, eftersom en avvisad push per definition är osynlig från den mottagande sidan."
+  },
+  "audit.categories.authorization.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "Behörighetsbeslut: vad PDP:n tillfrågades, vad den svarade och — separat — vad den inbäddade PEP:en GJORDE med det svaret. De två är avsiktligt separata rader: en PDP som säger Indeterminate och en nekande PEP som avvisar är en händelse för en användare och två beslut av två komponenter, och när de går emot någons förväntan beror det alltid på att man bara tittade på en av dem. Policyändringar är LDAP-rader mot ou=policies, inte rader här, eftersom lagret är katalogen."
+  },
+  "audit.categories.service.label": {
+    "en": "d677190e0a9990e7",
+    "text": "Tjänst"
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "Fel i något som den här tjänsten gör på egen hand snarare än som svar på en begäran: beständighet, samordning mellan processer, arbetarpoolerna, hantering av nycklar och hemligheter, bakgrundsuppgifter och utgående begäranden. Varje rad har en felkod."
+  },
+  "audit.categories.mail.label": {
+    "en": "07ed6ccf6bf6393d",
+    "text": "E-post"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "Ett meddelande köades, skickades, fångades, blev en dead letter eller avvisades (ett hastighetstak, en avanmälan, ingen adress), och e-postkanalens egna handlingar: ett nytt försök, ett testmeddelande, en sparad mall. En rad namnger mottagaren och kategorin, aldrig innehållet."
+  },
+  "audit.actions.authentication.label": {
+    "en": "579808c825684965",
+    "text": "En autentiseringsuppgift godtogs"
+  },
+  "audit.actions.portal.activate.label": {
+    "en": "979387f5c20ade32",
+    "text": "Någon slutförde kontokonfigurationen från en aktiveringslänk"
+  },
+  "audit.actions.portal.activate.refused.label": {
+    "en": "b70b90f7c094681b",
+    "text": "En aktiveringslänk avvisades"
+  },
+  "audit.actions.portal.password.changed.label": {
+    "en": "f1da75066d25fade",
+    "text": "Någon ändrade sitt eget lösenord"
+  },
+  "audit.actions.authn.password.changed.label": {
+    "en": "d386485290b35131",
+    "text": "Någon ändrade ett lösenord som de var tvungna att ändra vid inloggningen"
+  },
+  "audit.actions.portal.password.refused.label": {
+    "en": "47f69cc67c7ed68a",
+    "text": "En lösenordsändring avvisades"
+  },
+  "audit.actions.portal.password.csrf.label": {
+    "en": "d0d17a1db73fc8e9",
+    "text": "Ett portalformulär avvisades på grund av en felaktig CSRF-token"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "Någon loggade ut från användarportalen"
+  },
+  "audit.actions.portal.signout.csrf.label": {
+    "en": "5c6a2c095c428958",
+    "text": "En utloggning från portalen avvisades på grund av en felaktig CSRF-token"
+  },
+  "audit.actions.portal.key.enrolled.label": {
+    "en": "a3f3da7733b18c08",
+    "text": "Någon registrerade en säkerhetsnyckel på sitt eget konto"
+  },
+  "audit.actions.portal.key.removed.label": {
+    "en": "9df626538a846900",
+    "text": "Någon tog bort en säkerhetsnyckel från sitt eget konto"
+  },
+  "audit.actions.portal.key.renamed.label": {
+    "en": "60304bcfd89153d4",
+    "text": "Någon bytte namn på en av sina egna passkeys"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "Någon utfärdade ett TLS-klientcertifikat till sig själv"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "Någon återkallade ett av sina egna TLS-klientcertifikat"
+  },
+  "audit.actions.activation.issued.label": {
+    "en": "5889a60b1396424b",
+    "text": "En administratör utfärdade en aktiveringslänk"
+  },
+  "audit.actions.portal.password-reset.label": {
+    "en": "92c286943e08eabe",
+    "text": "Någon satte ett nytt lösenord från en länk för lösenordsåterställning"
+  },
+  "audit.actions.portal.password-reset.refused.label": {
+    "en": "23968f6638f00db4",
+    "text": "En länk för lösenordsåterställning avvisades"
+  },
+  "audit.actions.authn.mfa.enrolment.required.label": {
+    "en": "7c0e0aaea8f8b2c4",
+    "text": "En inloggning ombads konfigurera en obligatorisk andra faktor"
+  },
+  "audit.actions.authn.mfa.enrolment.started.label": {
+    "en": "209d46dc07311972",
+    "text": "En hemlighet för en autentiseringsapp visades vid inloggningen"
+  },
+  "audit.actions.authn.mfa.enrolment.offered.label": {
+    "en": "1ed9cdf1827f2e5b",
+    "text": "En administratör utan andra faktor erbjöds en"
+  },
+  "audit.actions.authn.mfa.enrolment.declined.label": {
+    "en": "ba0e0e725746bbf3",
+    "text": "En administratör ignorerade erbjudandet och loggade in med ett lösenord"
+  },
+  "audit.actions.authn.second-factor.skipped.label": {
+    "en": "8ea4bca1ff36014e",
+    "text": "En ihågkommen webbläsare ersatte den andra faktorn (#265)"
+  },
+  "audit.actions.authn.mfa.enrolment.at-risk.label": {
+    "en": "c9d54d1c53954c0d",
+    "text": "En andra faktor konfigurerades vid en inloggning med förhöjd risk"
+  },
+  "audit.actions.authn.mfa.enrolled.label": {
+    "en": "9f66bf08890386c9",
+    "text": "Någon konfigurerade en obligatorisk andra faktor vid inloggningen"
+  },
+  "audit.actions.portal.mfa.started.label": {
+    "en": "d51f6daad15168fd",
+    "text": "Någon visades en ny hemlighet för en autentiseringsapp"
+  },
+  "audit.actions.portal.mfa.enrolled.label": {
+    "en": "06603e0b57ab3156",
+    "text": "Någon konfigurerade en autentiseringsapp på sitt eget konto"
+  },
+  "audit.actions.portal.mfa.refused.label": {
+    "en": "2118006526a28182",
+    "text": "En konfiguration av en autentiseringsapp bekräftades inte"
+  },
+  "audit.actions.portal.mfa.removed.label": {
+    "en": "5bb7d0985ef3e565",
+    "text": "Någon tog bort autentiseringsappen från sitt eget konto"
+  },
+  "audit.actions.portal.mfa.csrf.label": {
+    "en": "228f7d738861aa3c",
+    "text": "En ändring av autentiseringsappen avvisades på grund av en felaktig CSRF-token"
+  },
+  "audit.actions.portal.activate.mfa.started.label": {
+    "en": "df561a24375c8165",
+    "text": "En hemlighet för en autentiseringsapp visades medan en aktiveringslänk användes"
+  },
+  "audit.actions.portal.activate.mfa.refused.label": {
+    "en": "7a566c67501c3cbf",
+    "text": "En autentiseringsapp bekräftades inte under aktiveringen"
+  },
+  "audit.actions.portal.activate.key.started.label": {
+    "en": "df93eecfc112a97a",
+    "text": "En ceremoni för en säkerhetsnyckel startades medan en aktiveringslänk användes"
+  },
+  "audit.actions.portal.activate.key.enrolled.label": {
+    "en": "6f06ac6bc8ba305b",
+    "text": "En säkerhetsnyckel registrerades medan en aktiveringslänk användes"
+  },
+  "audit.actions.portal.activate.key.refused.label": {
+    "en": "0a96c72ca7f0d27e",
+    "text": "En säkerhetsnyckel registrerades inte under aktiveringen"
+  },
+  "audit.actions.session.start.label": {
+    "en": "e88b0f8f798c2f1f",
+    "text": "En inloggningssession skapades"
+  },
+  "audit.actions.session.end.label": {
+    "en": "4edfa53f58db7a9b",
+    "text": "En inloggningssession avslutades"
+  },
+  "audit.actions.session.renew.label": {
+    "en": "0bfd5e67a3f0fdc2",
+    "text": "En värdbaserad yta förnyade sina tokens inom samma session"
+  },
+  "audit.actions.logout.global.label": {
+    "en": "db32c1466e054343",
+    "text": "Allt som hölls för en identitet avslutades, i varje protokoll"
+  },
+  "audit.actions.logout.selective.label": {
+    "en": "e291d5be7d6ee6b6",
+    "text": "Namngivna sessioner eller autentiseringsuppgifter avslutades för en identitet"
+  },
+  "audit.actions.logout.backchannel.label": {
+    "en": "8814d3131ad9808b",
+    "text": "En Logout Token via bakkanalen nådde en förlitande part, eller till slut inte"
+  },
+  "audit.actions.mail.queued.label": {
+    "en": "b3de8ca7af29b8f6",
+    "text": "Ett meddelande köades för en mottagare"
+  },
+  "audit.actions.mail.sent.label": {
+    "en": "fa6f816945723d59",
+    "text": "Ett meddelande godtogs av transporten, eller fångades"
+  },
+  "audit.actions.mail.dead.label": {
+    "en": "9af6832caf6ce8ab",
+    "text": "Ett meddelande levererades inte och är en dead letter"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "Ett meddelande köades inte (hastighetstak, avanmälan, ingen adress, ingen transport)"
+  },
+  "audit.actions.mail.reset-requested.label": {
+    "en": "96d00a4e43d335ab",
+    "text": "En person bad om en länk för självbetjäningsåterställning av lösenord; raden säger om en skickades, vilket formuläret aldrig gör"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "En dead letter köades igen av en administratör"
+  },
+  "audit.actions.mail.template.label": {
+    "en": "e647419ca1d6ef3f",
+    "text": "En sfärs meddelandemall sparades eller återställdes"
+  },
+  "audit.actions.mail.verified.label": {
+    "en": "3b2f440c71a1db39",
+    "text": "En person verifierade adressen på sin post"
+  },
+  "audit.actions.mail.preferences.label": {
+    "en": "3bcffd401e71abf8",
+    "text": "En person ändrade vilka valfria meddelanden de tar emot"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "Ett schemalagt jobb kördes, köades manuellt eller togs över"
+  },
+  "audit.actions.scheduler.step-down.label": {
+    "en": "c632cf6ff6fe1c5f",
+    "text": "Schemaläggarens ledare ombads kliva av"
+  },
+  "audit.actions.keys.rotate.label": {
+    "en": "d6193043627c50dd",
+    "text": "En sfärs signeringsnycklar roterades"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "En sfärs signeringsnycklar roterades i en NÖDSITUATION: certifikat återkallade för keyCompromise, sessioner avslutade"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "En applikations klienthemlighet går snart ut"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "En applikations klienthemlighet har gått ut"
+  },
+  "audit.actions.keys.retire.label": {
+    "en": "04a39be278dba264",
+    "text": "Pensionerade signeringsnycklar vars respitperiod löpt ut togs bort"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "Datakrypteringsnycklar roterades"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "Värden under ersatta datakrypteringsnycklar förseglades på nytt"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "Ersatta datakrypteringsnycklar som ingenting är förseglat under förstördes"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "Nyckelkrypteringsnyckeln roterades i sin nyckelhanteringstjänst och datanycklarna omslöts på nytt"
+  },
+  "audit.actions.keys.pin.label": {
+    "en": "d76686444b21987a",
+    "text": "Ett nyckelpar fästes som en sfärs signeringsnyckel för en algoritm"
+  },
+  "audit.actions.keys.unpin.label": {
+    "en": "54192b081654a36e",
+    "text": "En fäst signeringsnyckel lossades; den genererade nyckeln signerar igen"
+  },
+  "audit.actions.oidfed.key-minted.label": {
+    "en": "757374057c690128",
+    "text": "En sfärs första Federation Entity Key skapades"
+  },
+  "audit.actions.oidfed.key-rotated.label": {
+    "en": "421ae5fd8aeff013",
+    "text": "En sfärs Federation Entity Key roterades"
+  },
+  "audit.actions.oidfed.key-revoked.label": {
+    "en": "d44e60f7c3b5dfd2",
+    "text": "En Federation Entity Key återkallades"
+  },
+  "audit.actions.oidfed.subordinate-set.label": {
+    "en": "9bed214a635cd3f6",
+    "text": "En entitet registrerades som underordnad i federationen"
+  },
+  "audit.actions.oidfed.subordinate-removed.label": {
+    "en": "0c067c73e73448f8",
+    "text": "En underordnad i federationen togs bort"
+  },
+  "audit.actions.oidfed.anchor-set.label": {
+    "en": "ead499e281c4e6de",
+    "text": "Ett Trust Anchor för federationen konfigurerades"
+  },
+  "audit.actions.oidfed.anchor-removed.label": {
+    "en": "2b7251797963c5ef",
+    "text": "Ett Trust Anchor för federationen togs bort"
+  },
+  "audit.actions.oidfed.mark-type-set.label": {
+    "en": "9e9372675eaa32ad",
+    "text": "En Trust Mark-typ registrerades för utfärdande"
+  },
+  "audit.actions.oidfed.remove-mark-type.label": {
+    "en": "835f965dca447e5d",
+    "text": "En Trust Mark-typ slutade utfärdas"
+  },
+  "audit.actions.oidfed.mark-policy-set.label": {
+    "en": "d5ab1ca537a13651",
+    "text": "Ett Trust Anchors policy för en Trust Mark-typ sattes"
+  },
+  "audit.actions.oidfed.remove-mark-policy.label": {
+    "en": "9dccb0790296dce2",
+    "text": "Ett Trust Anchors policy för en Trust Mark-typ togs bort"
+  },
+  "audit.actions.oidfed.mark-issued.label": {
+    "en": "e64f13f3406e1762",
+    "text": "Ett Trust Mark utfärdades"
+  },
+  "audit.actions.oidfed.mark-revoked.label": {
+    "en": "6f2328d050fa14d0",
+    "text": "Ett Trust Mark återkallades"
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "Ett Trust Mark utfärdat till sfären lades till i dess Entity Configuration"
+  },
+  "audit.actions.oidfed.held-mark-removed.label": {
+    "en": "95a2ca1dbc9523c2",
+    "text": "Ett medfört Trust Mark togs bort"
+  },
+  "audit.actions.oidfed.act-refused.label": {
+    "en": "401bfc3383109058",
+    "text": "En OpenID Federation-handling avvisades på grund av sina indata"
+  },
+  "audit.actions.oidfed.resolved.label": {
+    "en": "f143a7ceda9e1a0a",
+    "text": "En administratör löste upp en entitets Trust Chain"
+  },
+  "audit.actions.device.create.label": {
+    "en": "3db68946dc0a58b8",
+    "text": "En enhet registrerades"
+  },
+  "audit.actions.device.browser.remembered.label": {
+    "en": "49ff1994e426c867",
+    "text": "En person bad att den här webbläsaren skulle kommas ihåg (#265)"
+  },
+  "audit.actions.device.update.label": {
+    "en": "3bc1ce21da5ded97",
+    "text": "En enhet ändrades: dess etikett, ägare, applikationer eller status"
+  },
+  "audit.actions.device.delete.label": {
+    "en": "65e418409a57cb08",
+    "text": "En enhet togs bort"
+  },
+  "audit.actions.device.evict.label": {
+    "en": "b1cb118450f0fbef",
+    "text": "En enhet togs bort för att ge plats inom personens gräns"
+  },
+  "audit.actions.device.attestation-revoked.label": {
+    "en": "3571d30810b2d9c7",
+    "text": "En enhetsnyckel är inte längre attesterad: Googles statuslista för Android-attestering återkallar dess kedja"
+  },
+  "audit.actions.webauthn.attestation-revoked.label": {
+    "en": "0be46b8b29aaf446",
+    "text": "En säkerhetsnyckels attestering är inte längre betrodd: Googles statuslista för Android-attestering återkallar dess kedja"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "En nyckel lades till på en enhet"
+  },
+  "audit.actions.device.key-remove.label": {
+    "en": "edae701aed965cc2",
+    "text": "En nyckel togs bort från en enhet"
+  },
+  "audit.actions.device.compliance.label": {
+    "en": "60bbcc3da44c2094",
+    "text": "En enhets efterlevnad sattes"
+  },
+  "audit.actions.device.enrol.refused.label": {
+    "en": "9dd9615a103316c6",
+    "text": "En enhetsnyckel utan verifierad attestering avvisades"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "En användare skapades"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "En användare togs bort"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "En användare uppdaterades"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "En användare bytte namn"
+  },
+  "audit.actions.cells.rehome.label": {
+    "en": "5d1b93eaa6c979c6",
+    "text": "En person flyttades till en annan cell"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "En sökning returnerade minst en användare"
+  },
+  "audit.actions.group.create.label": {
+    "en": "58d10c676bac86f0",
+    "text": "En grupp skapades"
+  },
+  "audit.actions.group.delete.label": {
+    "en": "c09f3ad40bb637a6",
+    "text": "En grupp togs bort"
+  },
+  "audit.actions.group.update.label": {
+    "en": "7b8bdc21120a364b",
+    "text": "En grupp uppdaterades"
+  },
+  "audit.actions.group.rename.label": {
+    "en": "7249c5235cd5c992",
+    "text": "En grupp bytte namn"
+  },
+  "audit.actions.entry.create.label": {
+    "en": "d15a6deade1530ee",
+    "text": "En post någon annanstans i trädet skapades"
+  },
+  "audit.actions.entry.delete.label": {
+    "en": "7c1e5a26bd61edeb",
+    "text": "En post någon annanstans i trädet togs bort"
+  },
+  "audit.actions.entry.update.label": {
+    "en": "a04e6a7c2bb7c122",
+    "text": "En post någon annanstans i trädet uppdaterades"
+  },
+  "audit.actions.entry.rename.label": {
+    "en": "ca4b7726b4ea6fc4",
+    "text": "En post någon annanstans i trädet bytte namn"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "En sökning som inte returnerade någon användare"
+  },
+  "audit.actions.directory.compare.label": {
+    "en": "3045c116ef8b9c13",
+    "text": "Ett attributvärde jämfördes"
+  },
+  "audit.actions.directory.bind.label": {
+    "en": "df3057c73cc1b56c",
+    "text": "En bind"
+  },
+  "audit.actions.application.create.label": {
+    "en": "24f5ef2da42260cf",
+    "text": "En applikation sågs för första gången"
+  },
+  "audit.actions.application.secret-revealed.label": {
+    "en": "8f3f50eb41e457f1",
+    "text": "En autentiseringsuppgift för en applikation visades för en administratör"
+  },
+  "audit.actions.application.export.label": {
+    "en": "6cf3b675c20a94b9",
+    "text": "En applikation exporterades till en LDIF-fil"
+  },
+  "audit.actions.application.import.label": {
+    "en": "11baa5a45c403972",
+    "text": "En applikation importerades från en LDIF-fil"
+  },
+  "audit.actions.application.update.label": {
+    "en": "fdd9e6c7aff9da36",
+    "text": "En applikation registrerade något nytt"
+  },
+  "audit.actions.consent.grant.label": {
+    "en": "b293aef893d9084c",
+    "text": "En person gav samtycke till en applikations omfång"
+  },
+  "audit.actions.consent.deny.label": {
+    "en": "39e3064d53842768",
+    "text": "En person nekade en applikations omfång"
+  },
+  "audit.actions.consent.revoke.label": {
+    "en": "3f62e1d9194a46d3",
+    "text": "Ett registrerat samtycke drogs tillbaka"
+  },
+  "audit.actions.application.delete.label": {
+    "en": "d0041a29161906a3",
+    "text": "En applikation togs bort från registret"
+  },
+  "audit.actions.oidfed.registered.label": {
+    "en": "477befa37c2832e8",
+    "text": "En förlitande part registrerades genom en OpenID Federation"
+  },
+  "audit.actions.oidfed.registration-refused.label": {
+    "en": "da4aeca7dea3666c",
+    "text": "En registrering genom en OpenID Federation avvisades"
+  },
+  "audit.actions.admin.view.label": {
+    "en": "0e19d702f1b129e8",
+    "text": "En konsolsida visades"
+  },
+  "audit.actions.admin.change.label": {
+    "en": "cfd6adfa05969133",
+    "text": "Ett konsolformulär skickades"
+  },
+  "audit.actions.claims.change.label": {
+    "en": "34e69552072a4ab5",
+    "text": "En anspråksuppsättning för en token eller ett intygande ändrades"
+  },
+  "audit.actions.admin.role.change.label": {
+    "en": "01b01e9a91df66f7",
+    "text": "En roll i administratörskonsolen beviljades eller togs bort"
+  },
+  "audit.actions.admin.console.bootstrap.label": {
+    "en": "fb5ea855b492ffb3",
+    "text": "Startadministratören skapades, eller loggade in i konsolen för första gången"
+  },
+  "audit.actions.admin.mail.set.label": {
+    "en": "00a6e30371abdc2d",
+    "text": "En persons adress sattes av en administratör"
+  },
+  "audit.actions.admin.mfa.totp.cleared.label": {
+    "en": "478c7ee15248637f",
+    "text": "En operatör rensade någons autentiseringsapp"
+  },
+  "audit.actions.admin.mfa.key.cleared.label": {
+    "en": "d62700d9f7751e8b",
+    "text": "En operatör tog bort någons säkerhetsnyckel"
+  },
+  "audit.actions.admin.mfa.key.renamed.label": {
+    "en": "c179dbd3cb227763",
+    "text": "En operatör bytte namn på någons passkey"
+  },
+  "audit.actions.admin.password.reset.label": {
+    "en": "079b0b2fbe1a3633",
+    "text": "En operatör återställde någons lösenord"
+  },
+  "audit.actions.admin.password.reset-link.label": {
+    "en": "852a4863afb8c14c",
+    "text": "En operatör utfärdade en länk för lösenordsåterställning till någon"
+  },
+  "audit.actions.admin.mfa.primary-keys.removed.label": {
+    "en": "862aab6d15756275",
+    "text": "En operatör inaktiverade någons lösenordsfria inloggning"
+  },
+  "audit.actions.admin.mfa.disabled.label": {
+    "en": "3173c5ea3812f14e",
+    "text": "En operatör tog bort varje andra faktor som någon hade"
+  },
+  "audit.actions.admin.mfa.required.label": {
+    "en": "26c5d8ef5b36a4ad",
+    "text": "En operatör krävde en andra faktor av någon"
+  },
+  "audit.actions.admin.mfa.unrequired.label": {
+    "en": "e9ee0fbe15904e35",
+    "text": "En operatör slutade kräva en andra faktor av någon"
+  },
+  "audit.actions.admin.delegation.not-delegated.label": {
+    "en": "305dc1462bc75cc4",
+    "text": "En operatör markerade någon som en som inte kan delegeras, eller rensade det"
+  },
+  "audit.actions.admin.delegation.may-act.label": {
+    "en": "2d5a617736d0c319",
+    "text": "En operatör namngav eller rensade den part som får agera för någon"
+  },
+  "audit.actions.admin.delegation.semantics.label": {
+    "en": "370cb73f7a19a60b",
+    "text": "En operatör satte den delegeringssemantik som en person tillåter, eller dess standard (#186)"
+  },
+  "audit.actions.portal.delegation.may-act.label": {
+    "en": "faa7f1245749fea5",
+    "text": "En person namngav eller rensade den part som får agera för dem"
+  },
+  "audit.actions.admin.password-policy.change.label": {
+    "en": "3919c9c6efb6ee77",
+    "text": "En profil för lösenordspolicyn ändrades"
+  },
+  "audit.actions.admin.authn-policy.change.label": {
+    "en": "be6362a1a19bae26",
+    "text": "En profil för autentiseringspolicyn ändrades"
+  },
+  "audit.actions.admin.locale-policy.change.label": {
+    "en": "4dfe507526bb6dd5",
+    "text": "En profil för språkpolicyn ändrades"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "En andra faktor via e-post slogs på eller av"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "En inloggningskod eller -länk via e-post skickades"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "En inloggningskod eller -länk via e-post godtogs"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "En inloggningskod eller -länk via e-post avvisades"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "Ett förtroendeankare för klientcertifikat lades till eller togs bort"
+  },
+  "audit.actions.krb5.keys.derived.label": {
+    "en": "048452fd758565c6",
+    "text": "En persons Kerberos-nycklar härleddes från deras lösenord"
+  },
+  "audit.actions.admin.krb5.keys.cleared.label": {
+    "en": "a9405f7ee523fd30",
+    "text": "En operatör rensade någons Kerberos-nycklar"
+  },
+  "audit.actions.admin.krb5.service.created.label": {
+    "en": "c81b1d8c217579ec",
+    "text": "En Kerberos-tjänsteprincipal skapades med en slumpmässig nyckel"
+  },
+  "audit.actions.admin.krb5.service.rotated.label": {
+    "en": "322d960ee729793c",
+    "text": "En Kerberos-tjänsteprincipals nyckel roterades"
+  },
+  "audit.actions.admin.krb5.service.deleted.label": {
+    "en": "e9d7662a459d7ad5",
+    "text": "En Kerberos-tjänsteprincipals lagrade nyckel togs bort"
+  },
+  "audit.actions.admin.krb5.previous.dropped.label": {
+    "en": "1016d50b8a7601b9",
+    "text": "En operatör tog bort de tidigare Kerberos-nyckelversioner som en person eller en tjänsteprincipal fortfarande behöll"
+  },
+  "audit.actions.api.read.label": {
+    "en": "5d856ba543153b94",
+    "text": "En läsning i hanterings-API:t"
+  },
+  "audit.actions.api.change.label": {
+    "en": "258c82b64e15408a",
+    "text": "En skrivning i hanterings-API:t"
+  },
+  "audit.actions.protocol.call.label": {
+    "en": "9f6c67e10d66e597",
+    "text": "En protokollslutpunkt anropades"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "En klient återkallade en OAuth 2.0-token vid /oauth2/revoke, eller nekades en annan klients"
+  },
+  "audit.actions.protocol.failure.label": {
+    "en": "7a4b45f0a9763acd",
+    "text": "En protokolloperation avvisades eller misslyckades"
+  },
+  "audit.actions.service.failure.label": {
+    "en": "20f1fa365cfbca21",
+    "text": "Något som den här tjänsten gör på egen hand misslyckades"
+  },
+  "audit.actions.spiffe.svid.issue.label": {
+    "en": "f6a1c6d754b03f45",
+    "text": "Ett SVID utfärdades"
+  },
+  "audit.actions.spiffe.svid.validate.label": {
+    "en": "2985e02244f967c8",
+    "text": "Ett JWT-SVID validerades"
+  },
+  "audit.actions.spiffe.entry.create.label": {
+    "en": "9949b94180356b54",
+    "text": "En registreringspost skapades"
+  },
+  "audit.actions.spiffe.entry.update.label": {
+    "en": "4d768a07aee4e2c9",
+    "text": "En registreringspost ändrades"
+  },
+  "audit.actions.spiffe.entry.delete.label": {
+    "en": "53297b800cad6afc",
+    "text": "En registreringspost togs bort"
+  },
+  "audit.actions.spiffe.agent.create.label": {
+    "en": "3d5c2896da415cbe",
+    "text": "En agent attesterade för första gången"
+  },
+  "audit.actions.spiffe.agent.attest.label": {
+    "en": "2878b0a388b202ab",
+    "text": "En agent attesterade igen"
+  },
+  "audit.actions.spiffe.agent.ban.label": {
+    "en": "da40021ba677279f",
+    "text": "En agent spärrades"
+  },
+  "audit.actions.spiffe.agent.unban.label": {
+    "en": "77326a7c253442bb",
+    "text": "En agents spärr hävdes"
+  },
+  "audit.actions.spiffe.agent.delete.label": {
+    "en": "d7b8483047ba641e",
+    "text": "En agent togs bort"
+  },
+  "audit.actions.spiffe.bundle.read.label": {
+    "en": "7f6e38b4ab094630",
+    "text": "Förtroendepaketet hämtades"
+  },
+  "audit.actions.spiffe.bundle.change.label": {
+    "en": "61fe1f3cbe80f39c",
+    "text": "En utfärdarmyndighet roterades, eller ett federerat paket sattes eller togs bort"
+  },
+  "audit.actions.spiffe.call.refuse.label": {
+    "en": "40d52233dda92cda",
+    "text": "Ett anrop till SPIRE Server API avvisades på grund av vem som anropade"
+  },
+  "audit.actions.xacml.decision.label": {
+    "en": "8930a657b99988a7",
+    "text": "PDP:n kom fram till ett beslut"
+  },
+  "audit.actions.xacml.enforcement.label": {
+    "en": "d9fe267d0aae76d6",
+    "text": "Den inbäddade PEP:en verkställde ett beslut"
+  },
+  "audit.actions.xacml.issuance.refused.label": {
+    "en": "f1b5bcbea74861a0",
+    "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"
+  },
+  "audit.actions.xacml.access.refused.label": {
+    "en": "82838f9e909973d8",
+    "text": "Åtkomst-PEP:en avvisade en begäran till en spärrad yta"
+  },
+  "audit.actions.xacml.issuance.alarm.label": {
+    "en": "38060f35597fa37d",
+    "text": "Utfärdande-PEP:en släppte igenom en förhöjd risk, utan någon faktor att stega upp till, för en applikation som risk aldrig får låsa ute"
+  },
+  "audit.actions.xacml.pep.register.label": {
+    "en": "f6687cc2fa5b3bac",
+    "text": "En fjärransluten Policy Enforcement Point registrerades"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "En fjärransluten PEP fick ett certifikat för en HTTPS-lyssnare"
+  },
+  "audit.actions.xacml.pip.query.label": {
+    "en": "af3eace9dacb68c6",
+    "text": "En fjärransluten PEP frågade PIP:en efter ett subjekts attribut"
+  },
+  "audit.actions.saml2.request.signature.label": {
+    "en": "2c3788ba6491a142",
+    "text": "En SAML 2.0-tjänsteleverantörs signatur på en begäran kontrollerades"
+  },
+  "audit.actions.gnap.grant.request.label": {
+    "en": "76968511df03acf3",
+    "text": "Ett GNAP-beviljande begärdes"
+  },
+  "audit.actions.gnap.grant.consent.label": {
+    "en": "c353731b459990c0",
+    "text": "En resursägare godkände ett GNAP-beviljande"
+  },
+  "audit.actions.gnap.grant.deny.label": {
+    "en": "55de39fc99dc456d",
+    "text": "En resursägare godkände inte ett GNAP-beviljande"
+  },
+  "audit.actions.gnap.grant.approve.label": {
+    "en": "d2aa94094296bd99",
+    "text": "Ett GNAP-beviljande godkändes och dess tokens släpptes"
+  },
+  "audit.actions.gnap.grant.revoke.label": {
+    "en": "5fb758cf8f654e10",
+    "text": "Ett GNAP-beviljande återkallades"
+  },
+  "audit.actions.gnap.grant.owner-queued.label": {
+    "en": "27d7c634cbbfeeca",
+    "text": "Ett GNAP-beviljande väntar på godkännande från sin frånvarande resursägare i portalen (#432 fas 6)"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "Personen på en GNAP-godkännandesida var inte den användare som begäran namngav, och beviljandet skickades till den användarens portal (#432 fas 6)"
+  },
+  "audit.actions.gnap.grant.finalize.label": {
+    "en": "fee9afbd448956f2",
+    "text": "Ett GNAP-beviljande slutfördes, med orsaken: utfärdat, återkallat, avvisat eller utgånget"
+  },
+  "audit.actions.gnap.token.issue.label": {
+    "en": "01a8a01e0a6de666",
+    "text": "En GNAP-åtkomsttoken utfärdades"
+  },
+  "audit.actions.gnap.token.rotate.label": {
+    "en": "2577dadbfe39e706",
+    "text": "En GNAP-åtkomsttoken roterades"
+  },
+  "audit.actions.gnap.token.revoke.label": {
+    "en": "400717d57ee49589",
+    "text": "En GNAP-åtkomsttoken återkallades"
+  },
+  "audit.actions.gnap.rs.introspect.label": {
+    "en": "95163051792199f3",
+    "text": "En resursserver introspekterade en GNAP-åtkomsttoken"
+  },
+  "audit.actions.gnap.rs.register.label": {
+    "en": "616528ec363696a9",
+    "text": "En resursserver registrerade en GNAP-resursuppsättning"
+  },
+  "audit.actions.ssf.stream.create.label": {
+    "en": "3d4873ca2f3e8a95",
+    "text": "En Shared Signals-ström skapades"
+  },
+  "audit.actions.ssf.stream.update.label": {
+    "en": "153bad40b9661b0f",
+    "text": "En Shared Signals-ström ändrades"
+  },
+  "audit.actions.ssf.stream.delete.label": {
+    "en": "ab202e818b58bb83",
+    "text": "En Shared Signals-ström togs bort"
+  },
+  "audit.actions.ssf.stream.status.label": {
+    "en": "b7b5eb76ca067916",
+    "text": "En ström aktiverades, pausades eller inaktiverades"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "Ett subjekt lades till i eller togs bort från en ström"
+  },
+  "audit.actions.ssf.event.transmit.label": {
+    "en": "3a3cd80f6d3a215a",
+    "text": "En Security Event Token levererades till en mottagare"
+  },
+  "audit.actions.ssf.event.refused.label": {
+    "en": "29910e5a49b21a0c",
+    "text": "En mottagare avvisade en Security Event Token"
+  },
+  "audit.actions.ssf.stream.dead.label": {
+    "en": "06c053574e130b1a",
+    "text": "En push-ström förklarades död efter enbart misslyckade push-försök"
+  },
+  "audit.actions.ssf.stream.revived.label": {
+    "en": "bb572a202bd6c70a",
+    "text": "En död push-ström återupplivades"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "En ströms dead letter-kö tömdes manuellt"
+  },
+  "audit.actions.ssf.event.receive.label": {
+    "en": "12ab6669f5a136e8",
+    "text": "En Security Event Token skickades med push TILL den här tjänsten"
+  },
+  "audit.actions.caep.event.auto.label": {
+    "en": "b5f40accc5e9e150",
+    "text": "En CAEP-händelse blev aktuell eftersom en session ändrades"
+  },
+  "audit.actions.caep.event.emit.label": {
+    "en": "b0c8137c489493d5",
+    "text": "En CAEP-händelse sändes manuellt"
+  },
+  "audit.actions.caep.session.reset.label": {
+    "en": "dc5cd9a8d40da255",
+    "text": "En sessions CAEP-tillstånd återställdes"
+  },
+  "audit.actions.caep.session.clear.label": {
+    "en": "5d7001f86cd8a1e9",
+    "text": "CAEP-sessionsregistret rensades"
+  },
+  "audit.actions.risc.event.auto.label": {
+    "en": "1ce902ca9f8e640a",
+    "text": "En RISC-händelse blev aktuell eftersom katalogen ändrades"
+  },
+  "audit.actions.risc.event.emit.label": {
+    "en": "b1167bf71ee133e2",
+    "text": "En RISC-händelse sändes manuellt"
+  },
+  "audit.actions.risc.account.reset.label": {
+    "en": "94728541aaba5150",
+    "text": "Ett kontos RISC-tillstånd återställdes"
+  },
+  "audit.actions.risc.account.clear.label": {
+    "en": "38e9f05ac95fd655",
+    "text": "RISC-kontoregistret rensades"
+  },
+  "audit.actions.admin.aud-sub.set.label": {
+    "en": "67489d67e805ecfd",
+    "text": "En persons aud_sub-inställning ändrades av en administratör"
+  },
+  "audit.actions.admin.mfa.backup-codes.cleared.label": {
+    "en": "ea84314da98659bf",
+    "text": "En administratör rensade en persons återställningskoder"
+  },
+  "audit.actions.admin.password.reset-keytab.label": {
+    "en": "b038ba117b4de668",
+    "text": "En administratör återställde ett lösenord och lämnade över personens keytab"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "En administratör satte, lade till eller tog bort ett attribut för en person"
+  },
+  "audit.actions.admin.service-account.set.label": {
+    "en": "5f269de6647c621b",
+    "text": "En administratör gjorde en person till ett tjänstekonto, eller ändrade dess ägare eller destination"
+  },
+  "audit.actions.admin.service-account.cleared.label": {
+    "en": "b2581e6ddce1f837",
+    "text": "En administratör gjorde ett tjänstekonto till en vanlig person igen"
+  },
+  "audit.actions.admin.service-account.rotate.label": {
+    "en": "9eab836b051b0346",
+    "text": "En administratör bad om att ett tjänstekontos lösenord skulle roteras"
+  },
+  "audit.actions.admin.app-password.created.label": {
+    "en": "39ab2dba96dcf58b",
+    "text": "En administratör skapade ett applösenord för en person"
+  },
+  "audit.actions.admin.app-password.revoked.label": {
+    "en": "0509990ff43e2d9e",
+    "text": "En administratör återkallade en persons applösenord"
+  },
+  "audit.actions.admin.ciba.answered.label": {
+    "en": "0f2e483fa60b8d8f",
+    "text": "En administratör godkände eller nekade en CIBA-begäran (testkontroll)"
+  },
+  "audit.actions.admin.device.removed.label": {
+    "en": "893a2ce1d871ed95",
+    "text": "En administratör tog bort en persons enhet"
+  },
+  "audit.actions.admin.ida.recorded.label": {
+    "en": "b68f52de80751f43",
+    "text": "En administratör registrerade en identitetsverifiering för en person"
+  },
+  "audit.actions.admin.ida.removed.label": {
+    "en": "071852997fcc15ca",
+    "text": "En administratör tog bort en persons identitetsverifiering"
+  },
+  "audit.actions.admin.siop.enrolled.label": {
+    "en": "f6e33546d3d23472",
+    "text": "En administratör registrerade ett självutfärdat (SIOPv2) subjekt för en person"
+  },
+  "audit.actions.admin.siop.removed.label": {
+    "en": "f6af7681f3d25fd7",
+    "text": "En administratör tog bort en persons självutfärdade (SIOPv2) subjekt"
+  },
+  "audit.actions.ssf.signals.discover.label": {
+    "en": "55d2d7d9682c339a",
+    "text": "En federationspartners Shared Signals-konfiguration upptäcktes"
+  },
+  "audit.actions.ssf.signals.stream.label": {
+    "en": "737beffd42f5852e",
+    "text": "En ström skapades hos en federationspartners Shared Signals-sändare"
+  },
+  "audit.actions.ssf.signals.unblock.label": {
+    "en": "5219dcbe14570844",
+    "text": "Inloggningar som en federationspartners signal hade blockerat tilläts igen"
+  },
+  "audit.actions.ssf.signals.read-stream.label": {
+    "en": "ffea29094f8154a0",
+    "text": "En federationspartners ström lästes"
+  },
+  "audit.actions.ssf.signals.update-stream.label": {
+    "en": "9450fed407b4c350",
+    "text": "En federationspartners ström uppdaterades"
+  },
+  "audit.actions.ssf.signals.delete-stream.label": {
+    "en": "b15530168632eb08",
+    "text": "En federationspartners ström togs bort"
+  },
+  "audit.actions.ssf.signals.set-status.label": {
+    "en": "285b162026e85285",
+    "text": "En federationspartners strömstatus sattes"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "Ett subjekt lades till i en federationspartners ström"
+  },
+  "audit.actions.ssf.signals.remove-subject.label": {
+    "en": "c316b73a1a06cc62",
+    "text": "Ett subjekt togs bort från en federationspartners ström"
+  },
+  "audit.actions.ssf.signals.verify.label": {
+    "en": "d9dca81bc6808ffa",
+    "text": "En federationspartners ström ombads om en verifieringshändelse"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "En värdbaserad ytas klientnyckelpar utfärdades av certifikatutfärdaren"
+  },
+  "audit.actions.enrollment.acme.account.create.label": {
+    "en": "3e069a334b19666a",
+    "text": "Ett ACME-konto skapades"
+  },
+  "audit.actions.enrollment.acme.account.deactivate.label": {
+    "en": "72423ecca6d7a8d3",
+    "text": "Ett ACME-konto inaktiverades"
+  },
+  "audit.actions.enrollment.acme.account.key-change.label": {
+    "en": "45caca51b10836c9",
+    "text": "Ett ACME-kontos nyckel byttes"
+  },
+  "audit.actions.enrollment.eab.create.label": {
+    "en": "02cae811cec833c3",
+    "text": "En ACME External Account Binding-nyckel skapades"
+  },
+  "audit.actions.enrollment.eab.delete.label": {
+    "en": "c8aa53e6726431da",
+    "text": "En ACME External Account Binding-nyckel togs bort"
+  },
+  "audit.actions.enrollment.challenge.create.label": {
+    "en": "28c2f31734c71daf",
+    "text": "Ett SCEP-utmaningslösenord skapades"
+  },
+  "audit.actions.enrollment.challenge.delete.label": {
+    "en": "f6ccc4485e9cef99",
+    "text": "Ett SCEP-utmaningslösenord togs bort"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "Ett certifikat utfärdades via ACME, EST eller SCEP"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "En certifikatregistrering avvisades"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "Ett registrerat certifikat återkallades"
+  },
+  "audit.actions.federation.signal-block.label": {
+    "en": "0f06883b0dbb2366",
+    "text": "En federationspartners Shared Signals blockerade dess inloggningar av en person (#373)"
+  },
+  "audit.actions.federation.signal-unblock.label": {
+    "en": "f1b6331059f472d3",
+    "text": "En federationspartners Shared Signals hävde dess blockering av en person (#373)"
+  },
+  "audit.actions.federation.signout.label": {
+    "en": "2e6c01e23921383f",
+    "text": "En federationspartners utloggning avslutade en session"
+  },
+  "audit.actions.federation.signout-answered.label": {
+    "en": "156d4e2f462e9126",
+    "text": "En federationspartner bekräftade en utloggning som den här tjänsten skickade"
+  },
+  "audit.actions.federation.unlink.label": {
+    "en": "a5c85407fff2c148",
+    "text": "En federationslänk togs bort från en person"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "En medlem lades till i en grupp"
+  },
+  "audit.actions.krb5.keytab.person.label": {
+    "en": "7f9ec638380e53d7",
+    "text": "En persons keytab skapades från ett lösenord som fanns till hands"
+  },
+  "audit.actions.logout.backchannel.retry.label": {
+    "en": "48c1b798cbbd16cc",
+    "text": "En död leverans av en Logout Token via bakkanalen prövades igen"
+  },
+  "audit.actions.oauth.device-secret.revoke.label": {
+    "en": "f382e451311ceacd",
+    "text": "En enhetshemlighet för Native SSO återkallades"
+  },
+  "audit.actions.oauth2.ciba.notify.label": {
+    "en": "40247d2486a53b3f",
+    "text": "En CIBA ping- eller push-avisering levererades eller misslyckades"
+  },
+  "audit.actions.oauth2.claim-source-linked.label": {
+    "en": "378743408d814c69",
+    "text": "En person länkade en Claims Provider"
+  },
+  "audit.actions.oauth2.claims-providers.add-provider.label": {
+    "en": "32689eddc489b284",
+    "text": "En Claims Provider registrerades"
+  },
+  "audit.actions.oauth2.claims-providers.update-provider.label": {
+    "en": "47c730b95278173b",
+    "text": "En Claims Provider ändrades"
+  },
+  "audit.actions.oauth2.claims-providers.remove-provider.label": {
+    "en": "be1f28b2db7c1656",
+    "text": "En Claims Provider togs bort"
+  },
+  "audit.actions.oauth2.claims-providers.revoke-link.label": {
+    "en": "a320d071faf639f1",
+    "text": "En persons länk till en Claims Provider återkallades"
+  },
+  "audit.actions.oauth2.command.label": {
+    "en": "e00f7bb85d9450bc",
+    "text": "Ett OpenID Provider Command togs emot"
+  },
+  "audit.actions.oauth2.command.tenant.label": {
+    "en": "9615a82791bf97fd",
+    "text": "Ett klientorganisationskommando för OpenID Provider utfördes"
+  },
+  "audit.actions.oauth2.grant-revoked.label": {
+    "en": "822d13c8d94685a0",
+    "text": "Ett Grant Management-beviljande återkallades"
+  },
+  "audit.actions.oauth2.par.withdraw.label": {
+    "en": "f3413ee65719b6eb",
+    "text": "En pushad auktoriseringsbegäran drogs tillbaka"
+  },
+  "audit.actions.password.set.label": {
+    "en": "2a1b07a8ecbc1d84",
+    "text": "En administratör satte en persons lösenord"
+  },
+  "audit.actions.service-account.rotated.label": {
+    "en": "260f3e0c6496aafe",
+    "text": "Ett tjänstekontos lösenord roterades och skickades till dess destination"
+  },
+  "audit.actions.service-account.rotation-failed.label": {
+    "en": "e37cc3c875768aba",
+    "text": "Ett tjänstekontos lösenord roterades inte; ingenting ändrades"
+  },
+  "audit.actions.portal.app-password.created.label": {
+    "en": "1128ac83789c2235",
+    "text": "En person skapade ett applösenord"
+  },
+  "audit.actions.portal.app-password.revoked.label": {
+    "en": "cc585fef9d245590",
+    "text": "En person återkallade ett applösenord"
+  },
+  "audit.actions.portal.app-password.csrf.label": {
+    "en": "e77bbbd5f3d6480d",
+    "text": "Ett formulär för applösenord avvisades på grund av sin CSRF-token"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "Ett certifikatformulär avvisades på grund av sin CSRF-token"
+  },
+  "audit.actions.portal.device.remove.label": {
+    "en": "a23e3b91423c45b6",
+    "text": "En person tog bort en Native SSO-enhet"
+  },
+  "audit.actions.portal.device.remember-browser.label": {
+    "en": "3e6dd7c211c0de5a",
+    "text": "En person lät den webbläsare de använde kommas ihåg på /portal/devices (#265)"
+  },
+  "audit.actions.portal.kerberos.keytab.label": {
+    "en": "d228ad6c8de67f3a",
+    "text": "En person laddade ner sin egen keytab"
+  },
+  "audit.actions.portal.kerberos.refused.label": {
+    "en": "06c1bf49bafd77aa",
+    "text": "En persons begäran om keytab avvisades"
+  },
+  "audit.actions.portal.kerberos.csrf.label": {
+    "en": "45607efabeb88b85",
+    "text": "Ett Kerberos-formulär avvisades på grund av sin CSRF-token"
+  },
+  "audit.actions.portal.key.started.label": {
+    "en": "94d7c38c91fd3cbe",
+    "text": "En person började registrera en säkerhetsnyckel"
+  },
+  "audit.actions.portal.key.refused.label": {
+    "en": "6679aa8b834badee",
+    "text": "En persons registrering av en säkerhetsnyckel avvisades"
+  },
+  "audit.actions.portal.mfa.backup-codes.generated.label": {
+    "en": "18ec89def789c4a2",
+    "text": "En person genererade en uppsättning återställningskoder"
+  },
+  "audit.actions.portal.mfa.backup-codes.confirmed.label": {
+    "en": "d00909f08b87672d",
+    "text": "En person bekräftade att de sparat sina återställningskoder"
+  },
+  "audit.actions.portal.mfa.backup-codes.discarded.label": {
+    "en": "6dd158a3c30ffda1",
+    "text": "En person kastade en genererad uppsättning återställningskoder"
+  },
+  "audit.actions.portal.risc.optOutInitiated.label": {
+    "en": "5ab0bc8a8b2b737e",
+    "text": "En person började avregistrera sig från RISC"
+  },
+  "audit.actions.portal.risc.optOutCancelled.label": {
+    "en": "b84e60c2060ee85e",
+    "text": "En person avbröt en avregistrering från RISC"
+  },
+  "audit.actions.portal.risc.optIn.label": {
+    "en": "fddad4840e8f7000",
+    "text": "En person anmälde sig till RISC igen"
+  },
+  "audit.actions.portal.signing-key.issued.label": {
+    "en": "ef02d14e5ec6fe11",
+    "text": "En person utfärdade sitt eget signeringsnyckelpar"
+  },
+  "audit.actions.portal.signing-key.removed.label": {
+    "en": "cc45482e315cf6a0",
+    "text": "En person tog bort sitt signeringsnyckelpar"
+  },
+  "audit.actions.portal.signing-key.csrf.label": {
+    "en": "51cd295b713684de",
+    "text": "Ett formulär för signeringsnyckel avvisades på grund av sin CSRF-token"
+  },
+  "audit.actions.portal.siop.remove.label": {
+    "en": "b6f77328c0b99b89",
+    "text": "En person tog bort ett självutfärdat subjekt"
+  },
+  "audit.actions.risk.feedback.label": {
+    "en": "e244d70b4d5a8c39",
+    "text": "Återkoppling på en riskbedömning registrerades"
+  },
+  "audit.actions.risk.response.label": {
+    "en": "36887af166b69ed0",
+    "text": "En riskåtgärd utfördes"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "En leverantörs villkor för en riskdatamängd godkändes"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "En attributkälla lades till"
+  },
+  "audit.actions.attribute-sources.update.label": {
+    "en": "3b252df30382723d",
+    "text": "En attributkälla ändrades"
+  },
+  "audit.actions.attribute-sources.remove.label": {
+    "en": "ba337c73fb4dc623",
+    "text": "En attributkälla togs bort"
+  },
+  "audit.actions.attribute-sources.refresh.label": {
+    "en": "9b6a000459343ab3",
+    "text": "Personer lästes manuellt från en attributkälla"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "En utgående SCIM-klient lades till, ändrades eller togs bort"
+  },
+  "audit.actions.scim-client.delivery.label": {
+    "en": "daca3d57491288f9",
+    "text": "En ändring levererades till en SCIM-tjänsteleverantör, eller blev en dead letter"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "En utgående SCIM-klient stämde av sin tjänsteleverantör"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "En dead letter för en utgående SCIM-klient prövades igen eller rensades"
+  },
+  "audit.actions.secret-destination.push.label": {
+    "en": "184a296748506865",
+    "text": "Ett tjänstekontos lösenord skickades till en hemlighetsdestination"
+  },
+  "audit.actions.secret-destination.test-push.label": {
+    "en": "38f7979ecec34d0a",
+    "text": "En kanarieversion skickades till en hemlighetsdestinations testhemlighet"
+  },
+  "audit.actions.roles.create.label": {
+    "en": "a510e6ae7b1a9adb",
+    "text": "En roll skapades"
+  },
+  "audit.actions.roles.delete.label": {
+    "en": "2426599aa1c52b19",
+    "text": "En roll togs bort"
+  },
+  "audit.actions.roles.describe.label": {
+    "en": "896007dff32a6824",
+    "text": "En rolls beskrivning, visningsnamn eller medlemstyper sattes"
+  },
+  "audit.actions.saml2.authnrequest.label": {
+    "en": "8d29d93421323443",
+    "text": "En SAML 2.0 AuthnRequest avvisades"
+  },
+  "audit.actions.saml2.artifact.resolve.label": {
+    "en": "0f9a2c3b3c7b36ea",
+    "text": "En SAML 2.0-artefaktupplösning avvisades"
+  },
+  "audit.actions.saml2.attribute-query.label": {
+    "en": "c93dbc04d8c0ead5",
+    "text": "En SAML 2.0-attributfråga besvarades eller avvisades"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "En MDQ-uppslagning av SAML-metadata gjordes eller avvisades"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "En tjänsteleverantörs SAML-metadata uppdaterades"
+  },
+  "audit.actions.session.reauthenticate.label": {
+    "en": "f6867c3c6a1d35bd",
+    "text": "Samma person loggade in igen i en levande session"
+  },
+  "audit.actions.session.refuse.label": {
+    "en": "c8703bfa89913b23",
+    "text": "En session avvisades på grund av sin inloggningsmekanism"
+  },
+  "audit.actions.session.refused.label": {
+    "en": "9422128afb69d8ad",
+    "text": "En värdbaserad yta avvisade en session"
+  },
+  "audit.actions.ssf.event.act.label": {
+    "en": "bf25b2c0497d20f6",
+    "text": "En mottagen Security Event åtgärdades"
+  },
+  "audit.actions.ssf.stream.swept.label": {
+    "en": "a5277d5fd80dfb8e",
+    "text": "En inaktuell mottagarström sopades bort"
+  },
+  "audit.actions.xacml.pep.enable.label": {
+    "en": "4584cff2d4f455e6",
+    "text": "En fjärransluten PEP aktiverades"
+  },
+  "audit.actions.xacml.pep.disable.label": {
+    "en": "1ca5e416c1bfdf45",
+    "text": "En fjärransluten PEP inaktiverades"
+  },
+  "audit.actions.xacml.pep.forget.label": {
+    "en": "82df232dbe72d709",
+    "text": "En fjärransluten PEP glömdes"
+  },
+  "audit.actions.xacml.policy.write.label": {
+    "en": "29b7a729b51d40c7",
+    "text": "En XACML-policy skrevs"
+  },
+  "audit.actions.xacml.policy.delete.label": {
+    "en": "90274c33f8a0cbe3",
+    "text": "En XACML-policy togs bort"
+  }
+}
