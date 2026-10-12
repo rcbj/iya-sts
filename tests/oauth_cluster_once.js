@@ -515,32 +515,20 @@ function childMain() {
                 oauthTokenEndpointAuthMethod: 'client_secret_basic' } });
     const basic = 'Basic ' + Buffer.from('once-a:' + SECRET).toString('base64');
 
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first) {
       if (!(first.status === 302 &&
             /\/authn\/login/.test(String(first.headers.location || '')))) {
         return first;
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = 'once-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
-      return back ? request(port, 'GET', back, { cookies: true }) : posted;
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: 'once-alice',
+                  password: 'anything' } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
+      return back ? request(port, 'GET', back, { cookies: true }) : sent;
     };
     const codeFrom = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
