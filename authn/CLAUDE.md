@@ -132,7 +132,7 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET /authn-api/openapi.json` | generated from the table and the zod bodies (`account_api_spec.ts`'s converter) |
 | `GET /authn-api/pending/{id}` | the screen's view, `csrf`, `uiLocales`, a locked person's `preferredLanguage` |
 | `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
-| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body |
+| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0331`, `tests/authn_api.js` 5i-ii) |
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
 
 **UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
