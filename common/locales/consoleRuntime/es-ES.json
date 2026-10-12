@@ -1,6 +1,7 @@
 {
-  "reauth.text": "Vuelve a iniciar sesión para continuar. Esta página y lo que has escrito se quedan como están, y lo que has pulsado se envía en cuanto vuelvas.",
-  "reauth.finish": "Termina de iniciar sesión en la ventana que se ha abierto.",
+  "reauth.text": "Vuelva a iniciar sesión para continuar. Esta página y lo que ha escrito se quedan como están, y lo que ha pulsado se envía en cuanto vuelva.",
+  "reauth.finish": "Termine de iniciar sesión en la ventana que se ha abierto.",
   "otherPerson.waiting": "Ha iniciado sesión otra persona, así que lo que esperaba en esta página no se envió.",
-  "otherPerson.typed": "Ha iniciado sesión otra persona, así que lo que se había escrito antes en esta página no se restauró."
+  "otherPerson.typed": "Ha iniciado sesión otra persona, así que lo que se había escrito antes en esta página no se restauró.",
+  "restored": "Ha vuelto a iniciar sesión. Lo que había escrito en esta página se ha restaurado y no se ha enviado nada: pulse el botón otra vez para enviarlo."
 }
