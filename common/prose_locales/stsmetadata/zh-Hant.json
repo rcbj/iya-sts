@@ -2359,6 +2359,22 @@
     "en": "926917f15c6fd9a9",
     "text": "「與協定無關的登出」，也是此處唯一同時涉及全部十六個系列的端點。GET 列出本服務仍為某個身分保留的一切——每個瀏覽器單一登入工作階段、在其上登入的每個 OIDC 信賴方、WS-Federation 領域與 SAML 2.0 服務提供者、它仍可撤銷的每個權杖、每個未完成的授權與預先授權碼、以其身分繫結的每個目錄連線，以及 Kerberos 票證狀態——每一項旁邊都有核取方塊。POST 結束已勾選的項目，而什麼都「沒有」勾選的 POST 就是「全域」登出，這是預設值，也是重點所在。它也會送出只有瀏覽器才能送出的內容：Front-Channel Logout iframe、wsignoutcleanup1.0 圖片，以及作為連結的 SAML LogoutRequest。「它無法傳達的內容會連同原因列出」——已簽發的判斷提示、服務票證或 SVID 自 2026-09-05 起在這裡被「否認」，但在外部已無法收回，因為出示時沒有任何東西會詢問本服務，而隱藏這些會讓全域登出看起來完整，實則不然。不需要任何主控台角色；沒有工作階段時，它會將瀏覽器送往 /authn/login 再返回。logout.anyUser 決定在「開發」模式下 ?username= 是否可以指名他人，在該模式下這並不授予任何以其身分登入所不能取得的權限；在「產品」模式下，無論該設定為何，登出只能指名已登入的呼叫者。加上 ?format=json。"
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC（#577）。自 #577 起，瀏覽器的 GET /logout 是一個靜態頁面，這是它的指令碼：它根據 /authn-api/logout 繪製頁面，並把登出傳送到那裡。公開。"
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC（#577）。伺服器繪製的登出頁面以內嵌方式攜帶的規則，供靜態頁面使用。"
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC（#577）。當登出為瀏覽器留下待辦事項時，頁面會把收到的結果提交到這裡，由此像 /logout 一向那樣繪製出來，包括 Front-Channel Logout 的 iframe、清理圖像和 LogoutRequest 連結。僅接受來自本服務自身頁面、且由本服務產生的結果。"
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "繪製登出的結果；不終止任何內容"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "驗證服務。自 #571 起為靜態介面：此處回應外殼頁面，由 /authn/signin.js 依據 /authn-api/pending/{id} 繪製畫面，並將輸入的內容以 JSON 傳送到那裡；回應會指名下一個步驟，瀏覽器以 GET 跟隨它，就如同它以往跟隨表單所得到的 303 回應一樣（RFC 9700 section 4.12）。此處每個需要識別某人的協定，都會將其送往這唯一的畫面，並附上完整承載其自身請求的返回 URL，再於建立工作階段 Cookie 後取回。在開發模式下不檢查任何密碼，輸入的使用者名稱會成為後續每個權杖、判斷提示與認證中的身分；在產品模式下，會驗證密碼，或領域驗證原則所允許的金鑰或代碼。它對將人送來的協定一無所知：畫面上顯示的關於其所中斷之請求的內容由呼叫端提供，而拒絕會以 authn_error=access_denied 傳回，由呼叫端依其自身規格轉換為拒絕應有的樣子。返回 URL 會經過檢查，確認是本服務上的路徑——一個在讓人登入後會重新導向至任何地方的驗證服務，就是前面擺著登入畫面的網路釣魚工具。"
@@ -2542,6 +2558,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "驗證錢包的回應，並讓送出該回應的瀏覽器登入"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC（#577）。GET 回傳瀏覽器工作階段所指之人仍持有的內容，以及 CSRF 權杖；POST 攜帶該權杖，登出全部內容或已勾選的內容。"
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "POST 終止工作階段並撤銷此人持有的內容"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

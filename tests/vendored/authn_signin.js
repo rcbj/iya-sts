@@ -753,6 +753,127 @@ async function asFormAnswer(answer, go) {
            answer: answer };
 }
 
+// ===========================================================================
+// AND THE SIGN-OUT (#577): `/logout` is a static page whose view and act
+// are on this API and bound the same way —
+//
+//   GET  /logout[?username=]              the shell (an arrival cookie for a
+//                                         browser holding none)
+//   GET  /authn-api/logout[?username=]    { view, csrf }
+//   POST /authn-api/logout                JSON, Origin, X-CSRF-Token
+//        -> { ok, next: 'signed-out', view }    nothing to fan out
+//        -> { ok, next: 'signed-out', form }    the signed-out document,
+//           which the page posts as a navigation: POST /logout/signed-out
+//
+// `signOut()` walks it as the page does and answers the last response —
+// the signed-out document's HTML where the act answered its form, the
+// act's JSON otherwise — with every cookie the walk set folded in.
+// ===========================================================================
+/**
+ * Signs out at `/logout` as its page does.
+ *
+ * @param {string} base - the service's base, a realm's prefix included
+ * @param {object} fields - the old form's: `scope`, `select` (one or
+ *   several), `username`
+ * @param {object} [options] - `cookie`, the request's cookie header;
+ *   `headers`, sent on every request
+ * @returns {Promise<object>} `{ status, text, json, view, csrf, act,
+ *   document, cookie, setCookies, headers }` — `document` true where the
+ *   answer is the signed-out document
+ */
+async function signOut(base, fields, options) {
+  log.debug("Entering signOut().");
+  const opts = options || {};
+  const f = fields || {};
+  const b = baseOf(base);
+  const extra = opts.headers || {};
+  const q = f.username ? "?username=" + encodeURIComponent(f.username) : "";
+  let cookie = String(opts.cookie || "");
+  const setCookies = [];
+  const keep = function (res) {
+    log.debug("Entering keep().");
+    setCookiesOf(res).forEach(function (one) {
+      setCookies.push(one);
+    });
+    cookie = foldCookies(cookie, setCookiesOf(res));
+    log.debug("Leaving keep().");
+  };
+  const shell = await fetch(b.base + "/logout" + q, { redirect: "manual",
+    headers: Object.assign({}, extra, cookie ? { cookie: cookie } : {}) });
+  keep(shell);
+  await shell.text();
+  const seen = await fetch(b.base + "/authn-api/logout" + q, {
+    headers: Object.assign({ accept: "application/json" }, extra,
+                           cookie ? { cookie: cookie } : {}) });
+  keep(seen);
+  const seenText = await seen.text();
+  let json = null;
+  try {
+    json = JSON.parse(seenText);
+  } catch (e) {
+    log.debug("Caught in signOut(): " + ((e && e.message) || e));
+    // Not JSON: the caller reads the status and the text.
+    json = null;
+  }
+  const headersOf = function (res) {
+    log.debug("Entering headersOf().");
+    log.debug("Leaving headersOf().");
+    return {
+      get: function (name) {
+        return String(name).toLowerCase() === "set-cookie"
+          ? (setCookies.length ? setCookies.join(", ") : null)
+          : res.headers.get(name);
+      },
+      getSetCookie: function () {
+        return setCookies.slice();
+      }
+    };
+  };
+  if (seen.status !== 200 || !json) {
+    log.debug("Leaving signOut(). The view: " + seen.status);
+    return { status: seen.status, text: seenText, json: json,
+             view: json && json.view, csrf: "", act: null, document: false,
+             cookie: cookie, setCookies: setCookies,
+             headers: headersOf(seen) };
+  }
+  const body = {};
+  if (f.scope) {
+    body.scope = f.scope;
+  }
+  if (f.select !== undefined) {
+    body.select = [].concat(f.select);
+  }
+  if (f.username) {
+    body.username = f.username;
+  }
+  const answer = await act(base, "/authn-api/logout", body,
+    { cookie: cookie, csrf: json.csrf, headers: extra });
+  answer.setCookies.forEach(function (one) {
+    setCookies.push(one);
+  });
+  cookie = answer.cookie;
+  const j = answer.json || {};
+  if (j.ok && j.form) {
+    const doc = await fetch(b.origin + String(j.form.action), {
+      method: String(j.form.method || "POST"), redirect: "manual",
+      headers: Object.assign({}, extra, {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: b.origin }, cookie ? { cookie: cookie } : {}),
+      body: new URLSearchParams(j.form.fields || {}).toString() });
+    keep(doc);
+    const text = await doc.text();
+    log.debug("Leaving signOut(). The signed-out document: " + doc.status);
+    return { status: doc.status, text: text, json: null, view: json.view,
+             csrf: json.csrf, act: answer, document: true, cookie: cookie,
+             setCookies: setCookies, headers: headersOf(doc) };
+  }
+  log.debug("Leaving signOut(). The act: " + answer.status);
+  return { status: answer.status, text: answer.text, json: answer.json,
+           view: json.view, csrf: json.csrf, act: answer, document: false,
+           cookie: cookie, setCookies: setCookies,
+           headers: answer.headers };
+}
+
 // ---------------------------------------------------------------------------
 // THE OAUTH CONSENT SCREEN (#576): a page of the same surface.
 //
@@ -953,6 +1074,7 @@ async function consentWithJar(where, decision, jar, options) {
 }
 
 module.exports = {
+  signOut: signOut,
   isConsent: isConsent,
   consentPage: consentPage,
   answerConsent: answerConsent,

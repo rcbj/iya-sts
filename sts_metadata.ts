@@ -7550,6 +7550,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'nothing that signing in as them would not; in PRODUCT mode a ' +
           'sign-out names only the signed-in caller, whatever that setting ' +
           'says. Add ?format=json.' },
+  { path: '/logout/signout.js', group: 'Authentication',
+    name: 'The sign-out page\'s script', specs: [],
+    what: 'NON-SPEC (#577). A browser\'s GET /logout is a static page ' +
+          'since #577, and this is its script: it draws the page from ' +
+          '/authn-api/logout and sends the sign-out there. Public.' },
+  { path: '/logout/signout.css', group: 'Authentication',
+    name: 'The sign-out page\'s stylesheet', specs: [],
+    what: 'NON-SPEC (#577). The rules the server-drawn sign-out page ' +
+          'carried inline, for the static one.' },
+  { path: '/logout/signed-out', group: 'Authentication',
+    name: 'The signed-out page', specs: ['oidc-fclogout', 'ws-federation',
+                                         'saml2'],
+    effect: 'draws a sign-out\'s result; ends nothing',
+    what: 'NON-SPEC (#577). Where a sign-out left the browser something ' +
+          'to do, the page posts here the result it was answered, and this ' +
+          'draws it as /logout always did, with the Front-Channel Logout ' +
+          'iframes, the cleanup images and the LogoutRequest links. Only ' +
+          'from this service\'s own pages, with a result it made.' },
   { path: '/authn/login', group: 'Authentication', name: 'Sign-in screen',
     specs: ['oidc'],
     effect: 'shows the sign-in screen for a request another endpoint sent ' +
@@ -7973,6 +7991,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'from the browser that started the sign-in and from this ' +
           'service\'s own origin (STS-VC-0074); since #574 also only as ' +
           'JSON with the X-CSRF-Token of the browser\'s session.' },
+  { path: '/authn-api/logout', group: 'Authentication',
+    name: 'What a sign-out would end, and the sign-out', specs: [],
+    effect: 'POST ends sessions and revokes what the person holds',
+    what: 'NON-SPEC (#577). GET answers what the person the browser\'s ' +
+          'session names still holds, and the CSRF token; POST, with that ' +
+          'token, signs out of everything or of what was ticked.' },
   { path: '/authn-api/consent/:id', group: 'OAuth 2.0 / OIDC',
     name: 'What the consent screen asks, and the answer', specs: ['rfc9396'],
     effect: 'POST records Allow or Deny and names the authorization request ' +

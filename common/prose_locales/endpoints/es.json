@@ -1339,6 +1339,18 @@
     "en": "1228edbd8a552e3b",
     "text": "Cerrar sesión en todo"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "El script de la página de cierre de sesión"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "La hoja de estilo de la página de cierre de sesión"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "La página de sesión cerrada"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "Pantalla de inicio de sesión"
@@ -1458,6 +1470,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "Inicio de sesión con billetera: la respuesta de la Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "Lo que terminaría un cierre de sesión, y el cierre de sesión"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

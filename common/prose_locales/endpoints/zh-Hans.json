@@ -1339,6 +1339,18 @@
     "en": "1228edbd8a552e3b",
     "text": "注销所有内容"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "注销页面的脚本"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "注销页面的样式表"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "已注销页面"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "登录界面"
@@ -1458,6 +1470,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "钱包登录：Digital Credentials API 的应答"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "注销会终止什么，以及注销本身"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

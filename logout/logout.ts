@@ -211,6 +211,18 @@ import kit = require('../admin-ui/web_kit');
 // that registers no route and closes no cycle.
 import PageLocale = require('../common/page_locale');
 import realms = require('../common/realms');
+// THE SIGN-OUT AS A STATIC SURFACE (#577): the shell every browser GET of
+// `/logout` answers, and the bundle it loads — `ShellDocument`, a library
+// (#570). The signed-out document's result travels MACed under a secret
+// every node shares (`cluster_secrets.ts`, a library `websecurity.ts`
+// already loaded) and deflated (`zlib`), so a node that did not end the
+// sessions can draw it and nothing else can make it say anything.
+import zlib = require('zlib');
+import ShellDocument = require('../common/shell_document');
+import clusterSecrets = require('../cluster/cluster_secrets');
+// The origins this service answers on (a LIBRARY, rule 3), for the
+// signed-out document's Origin check: the list the CORS answer is built from.
+import cors = require('../common/cors');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -222,6 +234,88 @@ const LOGOUT_FORM = validation.z.looseObject({
     validation.z.string().max(validation.CAP.TOKEN)).optional(),
   csrf_token: validation.types.opt(validation.types.token)
 });
+
+// ---------------------------------------------------------------------------
+// THE SIGN-OUT IS A STATIC SURFACE (#577, 2026-10-12).
+//
+// A browser's `GET /logout` answers the SHELL; `/logout/signout.js` (built
+// from `web_signout.ts`, on disk `signout-spa.js`) draws the inventory from
+// `GET /authn-api/logout` and sends the act to `POST /authn-api/logout`,
+// bound as every act on that API is (JSON, an Origin of this service, the
+// `X-CSRF-Token` of the `sts_session` cookie). The page's stylesheet is
+// `/logout/signout.css`, the rules the server-drawn page carried inline.
+//
+// THE RESULT IS TWO KINDS OF PAGE, and rcbj's plan on #577 is why. Where the
+// act left the BROWSER something to do — a Front-Channel Logout iframe, a
+// WS-Federation cleanup image, a SAML LogoutRequest link, a back-channel
+// delivery's state, a federation partner's sign-out (`fanOutOf()`,
+// `partnerLogouts`) — the result is the SERVER-DRAWN document it always was
+// (`resultPage()`, unchanged), because those are the specifications'
+// fan-out and its frame and image origins are in that document's own
+// policy. The act answers it as a form the runtime POSTs to
+// `/logout/signed-out`, carrying the result MACed (`sealResult()`). Where
+// there is nothing to fan out, the act answers the result's VIEW and the
+// runtime draws it in place.
+// ---------------------------------------------------------------------------
+const SIGNOUT_SCRIPT_PATH = '/logout/signout.js';
+const SIGNOUT_STYLE_PATH = '/logout/signout.css';
+// The bundle's file beside this module: never `signout.js`, the name a
+// compiled server module would have.
+const SIGNOUT_BUNDLE_FILE = 'signout-spa.js';
+/**
+ * The path the signed-out document is drawn at, from a sealed result.
+ */
+const SIGNED_OUT_PATH = '/logout/signed-out';
+// The cluster secret a sealed result is MACed under, and the label every MAC
+// begins with, so a value MACed for anything else never verifies here.
+const RESULT_SECRET = 'logout-result';
+const RESULT_LABEL = 'sts-logout-result-v1';
+// How long a sealed result may be drawn: the runtime posts it at once, and a
+// copy drawn later only fans out again to sessions that have already ended.
+const RESULT_TTL_MS = 5 * 60 * 1000;
+const SIGNED_OUT_FORM = validation.z.looseObject({
+  result: validation.z.string().max(4 * 1024 * 1024)
+});
+
+// The page's own rules, inline in the server-drawn document (`page()`) and
+// served as `/logout/signout.css` for the static one, so the two cannot
+// drift. The CSS is exactly what `page()` drew before #577.
+const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
+  'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
+  'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
+  'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
+  'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
+  'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
+  'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
+  '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
+  '.8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;' +
+  'margin:.3rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;' +
+  'border-bottom:1px solid #ddd;vertical-align:top;font-size:.92rem}' +
+  'th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;' +
+  'color:#555}code{background:#f4f4f4;padding:.05rem .25rem;' +
+  'border-radius:3px;word-break:break-all}.cannot{color:#8a6d00}' +
+  '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
+  '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
+  'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
+  'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
+  'gap:.8rem;flex-wrap:wrap;align-items:center}' +
+  // The console's fold, restyled for this page's palette: a `<details>`
+  // whose summary is the prose's opening sentence (`WebKit.note()`), so
+  // the explanation is one line until somebody asks for the rest.
+  '.note{color:#444;font-size:.88rem;margin:.2rem 0 .6rem}' +
+  'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
+  'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
+  'baseline}details.fold>summary::-webkit-details-marker{display:' +
+  'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
+  'font-size:.9em}details.fold[open]>summary::before{content:' +
+  '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
+  '#555;outline-offset:2px}.foldbody{margin:.3rem 0 0 1.05em}' +
+  'details.note.fold>summary:hover{color:#111}' +
+  // The language chooser (#539), small and to one side, as on the
+  // sign-in screen: the page's first business is the sign-out.
+  'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
+  '1rem}form.language-chooser button{padding:.15rem .5rem}' +
+  'form.language-chooser label{margin-right:.3rem}';
 
 // A FAMILIES row, a live-session row, an inventory: open records, as the
 // JavaScript built them.
@@ -282,6 +376,9 @@ class Logout {
    * The expiry rule of each kind of live session, in words.
    */
   readonly sessionExpiryRules: Loose;
+  // The static sign-out's bundle, read once (#577).
+  private bundleFile: ReturnType<typeof ShellDocument.readFile> | null =
+    null;
 
   /**
    * Builds the families and the expiry rules from the modules given.
@@ -2979,10 +3076,13 @@ class Logout {
   // console's view of the same functions and wears the console's chrome, which
   // is what rule 7's parity asks for.
   //
-  // NO SCRIPT, like every page in this service bar the seven that argue for
-  // one. The checkboxes are checkboxes and the buttons are submit buttons; the
-  // selective and global forms are two forms rather than one with a script
-  // deciding, because that is what makes both work with `script-src 'none'`.
+  // SINCE #577 IT DRAWS ONE DOCUMENT: the signed-out page a sign-out that
+  // left the browser something to fan out answers (`resultPage()`), exactly
+  // as it was. It has NO SCRIPT: the iframes and images load by themselves
+  // and the LogoutRequests and partner sign-outs are links and forms. The
+  // inventory, and a result with nothing to fan out, are the static
+  // surface's (`web_signout_pages.ts`), drawn in the browser over the same
+  // rules (`LOGOUT_CSS`).
   //
   // IN THE READER'S LANGUAGE (#539): `t` is the page's translator, which sets
   // `lang` and `dir` on <html>; `title` arrives already translated. The
@@ -2999,176 +3099,9 @@ class Logout {
       '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
-      '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-      'Roboto,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;' +
-      'line-height:1.5;color:#111}h1{font-size:1.5rem;margin-bottom:.2rem}' +
-      'h2{font-size:1.05rem;margin:1.6rem 0 .3rem}.sub{color:#555;' +
-      'font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;' +
-      'padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;' +
-      'border-left:4px solid #f9a825;padding:.6rem .8rem;margin:1rem 0}' +
-      '.err{background:#ffebee;border-left:4px solid #b00020;padding:.6rem ' +
-      '.8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;' +
-      'margin:.3rem 0 1rem}th,td{text-align:left;padding:.4rem .5rem;' +
-      'border-bottom:1px solid #ddd;vertical-align:top;font-size:.92rem}' +
-      'th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;' +
-      'color:#555}code{background:#f4f4f4;padding:.05rem .25rem;' +
-      'border-radius:3px;word-break:break-all}.cannot{color:#8a6d00}' +
-      '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
-      '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
-      'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
-      'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
-      'gap:.8rem;flex-wrap:wrap;align-items:center}' +
-      // The console's fold, restyled for this page's palette: a `<details>`
-      // whose summary is the prose's opening sentence (`WebKit.note()`), so
-      // the explanation is one line until somebody asks for the rest.
-      '.note{color:#444;font-size:.88rem;margin:.2rem 0 .6rem}' +
-      'details.fold{margin:.3rem 0 .8rem}details.fold>summary{cursor:' +
-      'pointer;list-style:none;display:flex;gap:.45em;align-items:' +
-      'baseline}details.fold>summary::-webkit-details-marker{display:' +
-      'none}details.fold>summary::before{content:"\\25b8";flex:none;' +
-      'font-size:.9em}details.fold[open]>summary::before{content:' +
-      '"\\25be"}details.fold>summary:focus-visible{outline:2px solid ' +
-      '#555;outline-offset:2px}.foldbody{margin:.3rem 0 0 1.05em}' +
-      'details.note.fold>summary:hover{color:#111}' +
-      // The language chooser (#539), small and to one side, as on the
-      // sign-in screen: the page's first business is the sign-out.
-      'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
-      '1rem}form.language-chooser button{padding:.15rem .5rem}' +
-      'form.language-chooser label{margin-right:.3rem}</style></head>' +
+      '</title><style>' + LOGOUT_CSS + '</style></head>' +
       '<body>' + PageLocale.chooser(t, realms.currentPrefix(), returnTo) +
       inner + '</body></html>' };
-  }
-
-  private whenText(ms?) {
-    const { log } = this.deps;
-    log.debug("Entering Logout.whenText().");
-    if (!ms) {
-      log.debug("Leaving Logout.whenText().");
-      return '—';
-    }
-    log.debug("Leaving Logout.whenText().");
-    return new Date(ms).toISOString();
-  }
-
-  // One family's table. The checkbox column is omitted entirely for a family
-  // that cannot be ended, rather than drawn disabled: a disabled control
-  // invites somebody to work out why it is disabled, and the sentence in the
-  // row already says.
-  //
-  // The family's label, protocol, prose and rows are the MODEL's words — the
-  // same strings `/admin/logout` and the API answer with — and stay as they
-  // are; `t` translates what this table adds around them (#539). A family
-  // that could not be read is a failure, and stays English.
-  private familyTable(family?, t?) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Logout.familyTable().");
-    const head = '<h2>' + xmlEscape(family.label) + '</h2>' +
-      '<div class="spec">' + xmlEscape(family.protocol) + ' — ' +
-      xmlEscape(family.spec) + '</div>' +
-      this.deps.kit.note(xmlEscape(family.what));
-    if (family.failure) {
-      log.debug("Leaving Logout.familyTable().");
-      return head + '<div class="err">This could not be read: ' +
-             xmlEscape(family.failure) +
-             '. Everything else on this page is unaffected, and a global ' +
-             'logout still tries this family again.</div>';
-    }
-    if (!family.rows.length) {
-      log.debug("Leaving Logout.familyTable().");
-      return head + '<p class="sub">' + t.html('logout.family.nothingLive') +
-        '</p>';
-    }
-    const body = family.rows.map((r) => {
-      const box = r.terminable
-        ? '<input type="checkbox" name="select" value="' + xmlEscape(r.id) +
-            '">'
-        : '<span class="cannot" title="' + xmlEscape(r.why) + '">—</span>';
-      return '<tr><td>' + box + '</td>' +
-        '<td><code>' + xmlEscape(r.label) + '</code><br><span class="sub">' +
-        xmlEscape(r.detail) + '</span>' +
-        (r.terminable ? '' :
-         '<br><span class="cannot">' + xmlEscape(r.why) + '</span>') +
-        '</td><td>' + xmlEscape(r.kind) + '</td><td ' +
-        'class="sub">' + xmlEscape(this.whenText(r.startedAt)) + '</td>' +
-        '<td class="sub">' + xmlEscape(this.whenText(r.expiresAt)) +
-            '</td></tr>';
-    }).join('');
-    log.debug("Leaving Logout.familyTable().");
-    return head +
-      '<table><thead><tr><th>' + t.html('logout.family.colEnd') +
-      '</th><th>' + t.html('logout.family.colWhat') + '</th><th>' +
-      t.html('logout.family.colKind') + '</th><th>' +
-      t.html('logout.family.colSince') + '</th><th>' +
-      t.html('logout.family.colUntil') + '</th></tr></thead><tbody>' + body +
-      '</tbody></table>' +
-      (family.notListed
-        ? this.deps.kit.note(t.html('logout.family.notListed',
-          { count: family.notListed, held: family.held }))
-        : '');
-  }
-
-  private inventoryPage(base?, inventory?, username?, message?, error?) {
-    const { log, mode, xmlEscape, kit } = this.deps;
-    log.debug("Entering Logout.inventoryPage(). key=" + inventory.key);
-    // THE LANGUAGE (#539): the person the page is drawn for, the chooser, the
-    // browser. No application — /logout is drawn for none. The notice and
-    // the error passed in stay as they came.
-    const t = PageLocale.forPage({ username: username });
-    const familiesHeld = inventory.families.filter((f) => {
-      return f.rows.length;
-    }).length;
-    // THE GLOBAL LOGOUT IS AT THE TOP (2026-10-08), above the inventory it
-    // ends, because it is what nearly everybody arriving here came to press
-    // and the inventory runs to a dozen tables. It is the default too — a
-    // POST that selects nothing does the same — so the page leads with what
-    // the endpoint does when asked nothing. The ticked-items button is up
-    // there with it, as the FIRST thing in its own form — the form has to
-    // wrap the tables whose checkboxes it posts, so the button opens it
-    // rather than closing it, and nobody has to scroll past a dozen tables
-    // to press it. Every paragraph of explanation goes
-    // through the console's fold (`kit.note()` / `kit.warn()`): one line
-    // until somebody opens it, the amber box keeping its colour closed.
-    const globalForm = '<form method="post" ' +
-      'action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '"><input type="hidden" name="scope" value="global"><div ' +
-      'class="actions"><button type="submit" class="global">' +
-      t.html('logout.inventory.globalButton') + '</button><span ' +
-      'class="sub">' + t.html('logout.inventory.globalNote') +
-      '</span></div></form>';
-    const inner =
-      '<h1>' + t.html('logout.heading') + '</h1>' +
-      '<p class="sub">' + t.html('logout.inventory.holding',
-                                 { username: username }) + '</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (message ? '<div class="ok">' + xmlEscape(message) + '</div>' : '') +
-      globalForm +
-      '<form method="post" action="' + xmlEscape(LOGOUT_PATH) + '">' +
-      '<input type="hidden" name="username" value="' + xmlEscape(username) +
-      '"><div class="actions"><button type="submit" name="scope" ' +
-      'value="selected">' + t.html('logout.inventory.selectedButton') +
-      '</button><span class="sub">' +
-      t.html('logout.inventory.selectedNote') + '</span></div>' +
-      kit.warn(t.html('logout.inventory.liveCount',
-                      { total: inventory.total, families: familiesHeld })) +
-      inventory.families.map((family) => {
-        return this.familyTable(family, t);
-      }).join('') + '</form>' +
-      // BUILT FROM THE MODE, because "this service checks no password anywhere"
-      // was printed on a product-mode page for as long as that mode existed.
-      kit.note(
-        (this.anyUserAllowed()
-          ? t.html('logout.inventory.anyUserOpen')
-          : (mode.opensTestControls()
-              ? t.html('logout.inventory.anyUserOff')
-              : t.html('logout.inventory.productMode'))) +
-        ' ' + t.html('logout.inventory.operatorView'));
-    log.debug("Leaving Logout.inventoryPage().");
-    // A GET draws this page, so the chooser returns to that GET, query and
-    // all; drawn otherwise, to /logout under the realm.
-    return this.page(t, PageLocale.herePath(realms.currentPrefix() +
-                                            LOGOUT_PATH),
-                     t.text('logout.title'), inner);
   }
 
   // The page a termination answers with: what was ended, what was not and why,
@@ -3482,12 +3415,14 @@ class Logout {
     return /json/i.test(accept) && !/text\/html/i.test(accept);
   }
 
-  private refusedNamedUser(req?, res?, asked?) {
-    const { log, authn, errorCodes, mode, xmlEscape } = this.deps;
-    log.debug("Entering Logout.refusedNamedUser().");
-    // THE REASON NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a
-    // setting somebody can turn back on, or a mode in which it is not offered.
-    const message = (mode.opensTestControls()
+  // WHY A NAME IS REFUSED, in English (rcbj's decision on #539). THE REASON
+  // NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting
+  // somebody can turn back on, or a mode in which it is not offered.
+  private refusedNameMessage(asked?) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.refusedNameMessage().");
+    log.debug("Leaving Logout.refusedNameMessage().");
+    return (mode.opensTestControls()
         ? 'logout.anyUser is off on this instance'
         : 'This service is in product mode, where a sign-out cannot name ' +
           'somebody else whatever logout.anyUser says') +
@@ -3496,36 +3431,45 @@ class Logout {
       asked + '". To sign another person out, use /admin/logout (the ' +
       'console\'s Admin Write role) or POST /admin-api/logout (an access ' +
       'token carrying admin:write).';
+  }
+
+  // The JSON door's refusal of a name (`GET|POST /logout` asked for JSON).
+  // The page draws the same refusal from `GET /authn-api/logout` (#577).
+  private refusedNamedUser(req?, res?, asked?) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Logout.refusedNamedUser().");
+    void req;
     errorCodes.mark(res, 'STS-LOGOUT-0001');
-    if (this.wantsJson(req)) {
-      res.status(403).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ error: 'forbidden',
-           error_description: message },
-                              null, 2));
-      log.debug("Leaving Logout.refusedNamedUser().");
-      return;
-    }
-    // THE LANGUAGE (#539) of the person holding the session, where there is
-    // one. Only the title and heading are translated: the refusal, and the
-    // paragraph that is the rest of it, stay English (rcbj's decision).
-    const own = authn.sessionOf(req);
-    const t = PageLocale.forPage({
-      username: (own && own.user && own.user.username) || undefined });
-    this.send(res,
-         this.page(t, realms.currentPrefix() + LOGOUT_PATH,
-              t.text('logout.title'),
-              '<h1>' + t.html('logout.heading') + '</h1><div class="err">' +
-                   xmlEscape(message) +
-                   '</div><p class="sub">' +
-                   (mode.verifiesCredentials()
-                     ? 'Signing yourself out needs no role; signing somebody ' +
-                       'else out is an act on their account and needs the ' +
-                       'operator\'s door.'
-                     : 'Sign in as that person at <code>/authn/login</code> ' +
-                       '— no password is checked in development mode') +
-                   ' <code>/admin/logout</code> is the operator\'s door and ' +
-                   'is behind the console\'s two roles.</p>'), 403);
+    res.status(403).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify({ error: 'forbidden',
+         error_description: this.refusedNameMessage(asked) }, null, 2));
     log.debug("Leaving Logout.refusedNamedUser().");
+  }
+
+  // WHY NOBODY CAN BE ACTED ON, in English: the GET's sentence and the
+  // act's, as each always read.
+  private nobodyMessage(act?: boolean) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.nobodyMessage().");
+    const closed = (mode.opensTestControls() ? 'logout.anyUser is off' :
+                    'product mode');
+    log.debug("Leaving Logout.nobodyMessage().");
+    if (act) {
+      return this.anyUserAllowed()
+        ? 'There is nobody to sign out: this request carries no session ' +
+          'cookie and named no username. A POST is never redirected to ' +
+          'the sign-in screen — a 303 would make it a GET and the fields ' +
+          'would be gone.'
+        : 'There is nobody to sign out: this request carries no session ' +
+          'cookie, and naming somebody is closed (' + closed + ').';
+    }
+    return this.anyUserAllowed()
+      ? 'There is no session cookie on this request. Name ' +
+        'somebody with ?username=, or sign in at /authn/login ' +
+        'first.'
+      : 'There is no session cookie on this request, and naming ' +
+        'somebody is closed (' + closed + '), so there is nobody for this ' +
+        'endpoint to act on. Sign in at /authn/login first.';
   }
 
   // The issuer identifier a front-channel notification's `iss` carries. This
@@ -3540,22 +3484,351 @@ class Logout {
   }
 
   // ---------------------------------------------------------------------------
-  // THE TWO ROUTES, in the order they always were (rule 1). Called by
-  // `common/protocol_stack.ts` through the module's `registerRoutes(app)`.
+  // THE ACT, ONCE, for both doors that perform it: the JSON door at `POST
+  // /logout` and the page's at `POST /authn-api/logout` (#577).
+  //
+  // `scope=global` is explicit and an empty selection means the same thing.
+  // Both are spelt out because the button says "global" and a caller with no
+  // form should get the same behaviour from an empty body.
+  //
+  // The cookie is cleared whenever the CALLER'S OWN session was among the
+  // things ended, and only then: this endpoint can end somebody else's
+  // sessions, and clearing the cookie of a browser signed in as a third party
+  // would sign the wrong person out. It is checked against what was actually
+  // ENDED rather than against the scope, so a selective logout that happened
+  // to include this browser's session clears it too — a cookie naming a
+  // session this service no longer holds is a browser that looks signed in
+  // and is not.
+  // ---------------------------------------------------------------------------
+  private endFor(req?, res?, subject?, body?) {
+    const { log, authn, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.endFor().");
+    const explicitGlobal = String(body.scope || '') === 'global';
+    const raw = body.select === undefined ? [] : body.select;
+    const selection = explicitGlobal ? [] :
+                      (Array.isArray(raw) ? raw : [raw]).filter(Boolean);
+    const ownSessionId = subject.session ? subject.session.id : '';
+    const result = this.terminate(subject.key, selection, {
+      issuer: this.issuerFor(req),
+      // THE BROWSER THAT WILL FOLLOW A PARTNER'S SIGN-OUT (#167), and the
+      // name this service has with the partner — its base URL here.
+      base: baseUrlOf(req), browser: true,
+      actor: subject.username,
+      // The person's own sign-out, or — only while `logout.anyUser`, a
+      // development test control, is open — somebody else naming them,
+      // which is an operator's act rather than theirs (#242).
+      initiatingEntity: subject.named ? 'admin' : 'user',
+      // A noun phrase (#294): it finishes CAEP's "ended by …".
+      by: subject.named ? 'a /logout request naming ' +
+          subject.username : 'the person\'s own sign-out at /logout'
+    });
+    const endedOwn = !!ownSessionId && result.terminated.some((one) => {
+      return one.id === 'session:' + ownSessionId;
+    });
+    if (endedOwn) {
+      authn.clearSessionCookie(res);
+    }
+    log.debug("Leaving Logout.endFor(). " + result.terminated.length +
+              " ended.");
+    return { result: result, endedOwn: endedOwn };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PAGE'S API (#577): what `GET` and `POST /authn-api/logout` answer.
+  // `authn/authn_api.ts` is the door — the CSRF binding, the body, the
+  // operation table — and this module the logic, as `authn.ts` is for the
+  // sign-in screen's operations. Each answers `{ status, code, json }`, and
+  // the door sends it. Facts, no words: the page draws them in the
+  // `logout` catalogs' words; refusals are English.
+  // ---------------------------------------------------------------------------
+  // Who may be named here, for the page's closing note.
+  private namingOf() {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.namingOf().");
+    log.debug("Leaving Logout.namingOf().");
+    return this.anyUserAllowed() ? 'open'
+      : (mode.opensTestControls() ? 'off' : 'product');
+  }
+
+  // A refusal of the subject, for either operation.
+  private subjectRefusal(subject?, act?) {
+    const { log, mode } = this.deps;
+    log.debug("Entering Logout.subjectRefusal().");
+    if (subject.refused) {
+      log.debug("Leaving Logout.subjectRefusal(). A name.");
+      return { status: 403, code: 'STS-LOGOUT-0001', json: { ok: false,
+        errors: [this.refusedNameMessage(subject.asked)],
+        view: { state: 'refused',
+                verifiesCredentials: !!mode.verifiesCredentials() } } };
+    }
+    log.debug("Leaving Logout.subjectRefusal(). Nobody.");
+    return { status: 401, code: 'STS-LOGOUT-0002', json: { ok: false,
+      errors: [this.nobodyMessage(act)], view: { state: 'nobody' } } };
+  }
+
+  /**
+   * `GET /authn-api/logout`: the sign-out page's view — everything the
+   * person this request is about still holds, as `inventoryFor()` lists it,
+   * whom the page names and who may be named.
+   *
+   * @param req - the request; `?username=` where naming is open
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutView(req?): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.signOutView().");
+    const subject = this.subjectOf(req, null);
+    if (subject.refused || !subject.key) {
+      log.debug("Leaving Logout.signOutView(). Refused.");
+      return this.subjectRefusal(subject, false);
+    }
+    const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
+    log.debug("Leaving Logout.signOutView(). " + inventory.total +
+              " live item(s).");
+    return { status: 200, json: { ok: true, view: Object.assign({
+      state: 'inventory', username: subject.username,
+      named: !!subject.named, naming: this.namingOf() }, inventory) } };
+  }
+
+  /**
+   * `POST /authn-api/logout`: ends what the body selected (everything where
+   * it selected nothing). Where the browser has something to fan out the
+   * answer is the signed-out document's form; otherwise the result's view.
+   *
+   * @param req - the request
+   * @param res - the response, for the cookie a sign-out of this browser's
+   *   own session clears
+   * @param body - `{ scope, select, username }`, already validated
+   * @returns `{ status, code, json }` for the API to send
+   */
+  signOutAct(req?, res?, body?): Loose {
+    const { log } = this.deps;
+    log.debug("Entering Logout.signOutAct().");
+    const subject = this.subjectOf(req, body || {});
+    if (subject.refused || !subject.key) {
+      log.debug("Leaving Logout.signOutAct(). Refused.");
+      return this.subjectRefusal(subject, true);
+    }
+    const ended = this.endFor(req, res, subject, body || {});
+    const result = ended.result;
+    const answer: Loose = { ok: true, next: 'signed-out',
+      username: subject.username, ownSessionEnded: ended.endedOwn,
+      scope: result.scope };
+    if (this.fansOut(result)) {
+      answer.form = { method: 'POST',
+        action: realms.currentPrefix() + SIGNED_OUT_PATH,
+        fields: { result: this.sealResult(result) } };
+      log.debug("Leaving Logout.signOutAct(). The signed-out document.");
+      return { status: 200, json: answer };
+    }
+    const remaining = this.inventoryFor(subject.key, this.issuerFor(req));
+    answer.view = this.resultView(result, remaining);
+    log.debug("Leaving Logout.signOutAct(). The result's view.");
+    return { status: 200, json: answer };
+  }
+
+  // Whether a result leaves the browser something to do — `fanOutOf()`'s
+  // iframes, images, links and back-channel table, or a partner's sign-out.
+  private fansOut(result?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.fansOut().");
+    const out = !!this.fanOutOf([result]).html ||
+      !!(result.partnerLogouts || []).length;
+    log.debug("Leaving Logout.fansOut(). " + out);
+    return out;
+  }
+
+  // The result as the page draws it where there is nothing to fan out:
+  // `resultPage()`'s facts. The messages are the model's words, as on the
+  // server-drawn page.
+  private resultView(result?, remaining?) {
+    const { log } = this.deps;
+    log.debug("Entering Logout.resultView().");
+    const rows = function (list) {
+      return (list || []).map(function (one) {
+        return { id: one.id, label: one.label || '', message: one.message };
+      });
+    };
+    log.debug("Leaving Logout.resultView().");
+    return { state: 'result', scope: result.scope, key: result.key,
+      message: result.message, terminated: rows(result.terminated),
+      skipped: rows(result.skipped), remaining: remaining.total };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SEALED RESULT (#577). The act is answered by one request and the
+  // signed-out document drawn by the next, possibly on another node or in
+  // another request worker, so what the document draws travels WITH the
+  // browser rather than in a store this module would have to grow (rule
+  // 3m: it holds no state). It is MACed, not encrypted: everything in it is
+  // what the document shows the person, and the MAC is what keeps anybody
+  // else from making this origin frame, load or link what they choose. It
+  // names the realm and expires; drawn again within its life it only fans
+  // out again to sessions that have already ended.
+  // ---------------------------------------------------------------------------
+  private sealResult(result?) {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Logout.sealResult().");
+    const payload = {
+      realm: String(realms.currentId() || ''),
+      exp: Date.now() + RESULT_TTL_MS,
+      result: {
+        key: result.key, scope: result.scope, message: result.message,
+        terminated: result.terminated, skipped: result.skipped,
+        unknown: result.unknown, notifications: result.notifications,
+        cleanups: result.cleanups, logoutRequests: result.logoutRequests,
+        partnerLogouts: result.partnerLogouts,
+        backchannel: result.backchannel
+      }
+    };
+    const packed = zlib.deflateRawSync(Buffer.from(JSON.stringify(payload),
+                                                   'utf8'))
+      .toString('base64url');
+    const mac = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
+                            RESULT_LABEL + '.' + packed, 'base64url');
+    log.debug("Leaving Logout.sealResult(). " + packed.length + " bytes.");
+    return packed + '.' + mac;
+  }
+
+  // The result a sealed value carries, or `{ why }` saying why not.
+  private openResult(sealed?): Loose {
+    const { log, crypto } = this.deps;
+    log.debug("Entering Logout.openResult().");
+    const text = String(sealed || '');
+    const dot = text.lastIndexOf('.');
+    if (dot <= 0) {
+      log.debug("Leaving Logout.openResult(). Not a sealed result.");
+      return { why: 'That is not a sign-out result.' };
+    }
+    const packed = text.slice(0, dot);
+    const expected = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
+                                 RESULT_LABEL + '.' + packed, 'base64url');
+    if (!crypto.constantTimeEquals(text.slice(dot + 1), expected)) {
+      log.debug("Leaving Logout.openResult(). The MAC.");
+      return { why: 'That sign-out result was not made by this service.' };
+    }
+    let payload: Loose = null;
+    try {
+      payload = JSON.parse(zlib.inflateRawSync(
+        Buffer.from(packed, 'base64url'),
+        { maxOutputLength: 16 * 1024 * 1024 }).toString('utf8'));
+    } catch (e) {
+      log.debug("Caught in Logout.openResult(): " + ((e && e.message) || e));
+      payload = null;
+    }
+    if (!payload || !payload.result) {
+      log.debug("Leaving Logout.openResult(). Unreadable.");
+      return { why: 'That sign-out result could not be read.' };
+    }
+    if (String(payload.realm) !== String(realms.currentId() || '')) {
+      log.debug("Leaving Logout.openResult(). Another realm.");
+      return { why: 'That sign-out result was made in another trust realm.' };
+    }
+    if (!(Number(payload.exp) > Date.now())) {
+      log.debug("Leaving Logout.openResult(). Expired.");
+      return { why: 'That sign-out result has expired. What is still live ' +
+                    'is at /logout.' };
+    }
+    log.debug("Leaving Logout.openResult().");
+    return { result: payload.result };
+  }
+
+  // A refusal of the signed-out document: a page of its own, English, with
+  // the way back.
+  private refusedDocument(res?, status?, code?, why?) {
+    const { log, errorCodes, xmlEscape } = this.deps;
+    log.debug("Entering Logout.refusedDocument(). " + code);
+    errorCodes.mark(res, code);
+    const t = PageLocale.forPage({});
+    this.send(res,
+         this.page(t, realms.currentPrefix() + LOGOUT_PATH,
+              t.text('logout.title'),
+              '<h1>' + t.html('logout.heading') + '</h1><div ' +
+                   'class="err">' + xmlEscape(why) +
+                   '</div><p class="sub"><a href="' +
+                   xmlEscape(LOGOUT_PATH) +
+                   '">' + t.html('logout.startAgain') + '</a>' +
+                   t.html('logout.startAgainEnd') + '</p>'), status);
+    log.debug("Leaving Logout.refusedDocument().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SHELL (#577): the one document a browser's `GET /logout` answers,
+  // drawn by `ShellDocument`. SCRIPT IS REQUIRED (rcbj on #569): the
+  // `<noscript>` says so and nothing else is drawn.
+  // ---------------------------------------------------------------------------
+  private shell(req?, res?) {
+    const { log, app } = this.deps;
+    log.debug("Entering Logout.shell().");
+    const html = ShellDocument.document({
+      title: 'Sign out',
+      attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
+                   Array<[string, string]>)
+        .concat(PageLocale.shellAttributes(req, '')),
+      stylesheets: [SIGNOUT_STYLE_PATH],
+      script: SIGNOUT_SCRIPT_PATH,
+      open: '',
+      close: '',
+      noscript: '<h1>Sign out</h1><div class="err">This sign-out page is ' +
+        'a script that runs in your browser, and with scripts blocked ' +
+        'there is nothing it can show. Allow scripts for this page to see ' +
+        'what you are still signed into and to sign out.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>'
+    });
+    ShellDocument.serve(app, req, res, html,
+                        { csp: { 'style-src': "'self'" } });
+    log.debug("Leaving Logout.shell().");
+  }
+
+  // The bundle and its precompressed forms, read once. A tree that was never
+  // built has none, and the shell then loads a script that says so.
+  private bundle(): ReturnType<typeof ShellDocument.readFile> {
+    const { log } = this.deps;
+    log.debug("Entering Logout.bundle().");
+    if (!this.bundleFile) {
+      this.bundleFile = ShellDocument.readFile(__dirname, SIGNOUT_BUNDLE_FILE,
+        'document.body.textContent = "This service has no sign-out script ' +
+        '(logout/' + SIGNOUT_BUNDLE_FILE + '): it was not built by ' +
+        'build-typescript.sh.";');
+    }
+    log.debug("Leaving Logout.bundle().");
+    return this.bundleFile;
+  }
+
+  /**
+   * The paths of the static sign-out, for the tests and `sts_metadata.ts`.
+   *
+   * @returns the shell's, the script's, the stylesheet's and the signed-out
+   *   document's
+   */
+  surfacePaths(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering Logout.surfacePaths().");
+    log.debug("Leaving Logout.surfacePaths().");
+    return [LOGOUT_PATH, SIGNOUT_SCRIPT_PATH, SIGNOUT_STYLE_PATH,
+            SIGNED_OUT_PATH];
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROUTES, in the order they always were (rule 1), and the static
+  // surface's after them. Called by `common/protocol_stack.ts` through the
+  // module's `registerRoutes(app)`.
   // ---------------------------------------------------------------------------
   /**
-   * Registers `GET /logout` (the inventory) and `POST /logout` (the
-   * sign-out). Called by `common/protocol_stack.ts`.
+   * Registers `GET /logout` (the shell, or the inventory as JSON), `POST
+   * /logout` (the JSON door's sign-out), the static sign-out's script and
+   * stylesheet, and `POST /logout/signed-out`. Called by
+   * `common/protocol_stack.ts`.
    *
    * @param app - the express app
    */
   registerRoutes(app?) {
-    const { log, authn, baseUrlOf, errorCodes, mode, parseBody, validation,
-      xmlEscape } = this.deps;
+    const { log, authn, baseUrlOf, errorCodes, parseBody, validation } =
+      this.deps;
     log.debug("Entering Logout.registerRoutes().");
 
     // -------------------------------------------------------------------------
-    // GET /logout — the inventory.
+    // GET /logout — the shell, or the inventory as JSON.
     //
     // With no session and no `username`, the browser goes to the authentication
     // service and comes back here. That is the same contract every protocol
@@ -3564,40 +3837,36 @@ class Logout {
     // signing in first, because this service has no other way to know who is
     // asking. The session that creates is listed like any other and a global
     // logout ends it too — which is why the cookie is cleared on the way out of
-    // the POST.
+    // the act.
+    //
+    // A NAME THAT MAY NOT BE USED is the shell too (#577): the page asks
+    // `/authn-api/logout`, which refuses it, and draws the refusal.
     // -------------------------------------------------------------------------
 
     app.get(LOGOUT_PATH, (req, res) => {
       log.debug("Entering the logout endpoint.");
       const subject = this.subjectOf(req, null);
+      const json = this.wantsJson(req);
       if (subject.refused) {
-        this.refusedNamedUser(req, res, subject.asked);
+        if (json) {
+          this.refusedNamedUser(req, res, subject.asked);
+        } else {
+          this.shell(req, res);
+        }
         log.debug("Leaving the logout endpoint. A name was given and " +
-                  "logout.anyUser is off.");
+                  "naming somebody else is closed.");
         return;
       }
       if (!subject.key) {
-        if (this.wantsJson(req)) {
+        if (json) {
           // A program is told to name somebody rather than redirected to a
           // screen it cannot read — the distinction admin.js's gate makes, for
           // the same reason: a 302 to HTML arrives as a 200 full of markup.
           errorCodes.mark(res, 'STS-LOGOUT-0002');
           res.status(401).type('application/json').set('Cache-Control',
                                                        'no-store')
-             .send(JSON.stringify({
-               error: 'no_subject',
-               error_description: this.anyUserAllowed()
-                 ? 'There is no session cookie on this request. Name ' +
-                   'somebody with ?username=, or sign in at /authn/login ' +
-                   'first.'
-                 : 'There is no session cookie on this request, and naming ' +
-                   'somebody is closed (' +
-                   (mode.opensTestControls() ? 'logout.anyUser is off' :
-                    'product ' +
-                       'mode') +
-                   '), so there is nobody for this endpoint to act on. Sign ' +
-                   'in at /authn/login first.'
-             }, null, 2));
+             .send(JSON.stringify({ error: 'no_subject',
+               error_description: this.nobodyMessage(false) }, null, 2));
           log.debug("Leaving the logout endpoint. No subject, answered 401.");
           return;
         }
@@ -3615,8 +3884,8 @@ class Logout {
                   "service first.");
         return;
       }
-      const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
-      if (this.wantsJson(req)) {
+      if (json) {
+        const inventory = this.inventoryFor(subject.key, this.issuerFor(req));
         res.status(200).type('application/json').set('Cache-Control',
                                                      'no-store')
            .send(JSON.stringify(Object.assign({ username: subject.username },
@@ -3624,155 +3893,162 @@ class Logout {
         log.debug("Leaving the logout endpoint. Answered JSON.");
         return;
       }
-      this.send(res, this.inventoryPage(baseUrlOf(req), inventory,
-                              subject.username, String(req.query.notice || ''),
-                                  ''));
-      log.debug("Leaving the logout endpoint. " + inventory.total +
-                " live item(s).");
+      this.shell(req, res);
+      log.debug("Leaving the logout endpoint. The shell.");
     });
 
     // -------------------------------------------------------------------------
-    // POST /logout — end them.
+    // POST /logout — the JSON door's sign-out.
     //
     // `select` repeated names rows; anything else — including a body with
     // nothing in it at all — is a GLOBAL logout, which is the documented
-    // default and the reason `curl -X POST .../logout` with a cookie does the
-    // obvious thing.
+    // default and the reason `curl -X POST -H 'Accept: application/json'
+    // .../logout` with a cookie does the obvious thing.
     //
-    // The cookie is cleared whenever the CALLER'S OWN session was among the
-    // things ended, and only then: this endpoint can end somebody else's
-    // sessions, and clearing the cookie of a browser signed in as a third party
-    // would sign the wrong person out.
+    // THE FORM POST IS GONE (#577), as the sign-in screen's was (#571): the
+    // page's act is `POST /authn-api/logout`, bound to the browser's session.
+    // A form that still posts here — a page drawn before the cutover, a
+    // bookmark of a result — is sent to the page with a 303, which ends
+    // nothing and shows what there is to end.
     // -------------------------------------------------------------------------
     app.post(LOGOUT_PATH, (req, res) => {
       log.debug("Entering the logout action endpoint.");
+      if (!this.wantsJson(req)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0010');
+        res.redirect(303, realms.currentPrefix() + LOGOUT_PATH);
+        log.debug("Leaving the logout action endpoint. A form: the page.");
+        return;
+      }
       const body = parseBody(req);
       const subject = this.subjectOf(req, body);
       if (subject.refused) {
         this.refusedNamedUser(req, res, subject.asked);
         log.debug("Leaving the logout action endpoint. A name was given and " +
-                  "logout.anyUser is off.");
+                  "naming somebody else is closed.");
         return;
       }
       if (!subject.key) {
-        const message = this.anyUserAllowed()
-          ? 'There is nobody to sign out: this request carries no session ' +
-            'cookie and named no username. A POST is never redirected to ' +
-            'the sign-in screen — a 303 would make it a GET and the fields ' +
-            'would be gone.'
-          : 'There is nobody to sign out: this request carries no session ' +
-            'cookie, and naming somebody is closed (' +
-            (mode.opensTestControls() ? 'logout.anyUser is off' :
-             'product mode') +
-            ').';
         errorCodes.mark(res, 'STS-LOGOUT-0002');
-        if (this.wantsJson(req)) {
-          res.status(401).type('application/json').set('Cache-Control',
-                                                       'no-store')
-             .send(JSON.stringify({ error: 'no_subject',
-                                    error_description: message }, null, 2));
-        } else {
-          // THE LANGUAGE (#539): nobody is known here, so the chooser and
-          // the browser decide. The refusal stays English; the link back is
-          // the page's own words, and the link is markup, so its words and
-          // the full stop after it are two messages.
-          const t = PageLocale.forPage({});
-          this.send(res,
-               this.page(t, realms.currentPrefix() + LOGOUT_PATH,
-                    t.text('logout.title'),
-                    '<h1>' + t.html('logout.heading') + '</h1><div ' +
-                         'class="err">' + xmlEscape(message) +
-                         '</div><p class="sub"><a href="' +
-                         xmlEscape(LOGOUT_PATH) +
-                         '">' + t.html('logout.startAgain') + '</a>' +
-                         t.html('logout.startAgainEnd') + '</p>'), 401);
-        }
+        res.status(401).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'no_subject',
+                                  error_description: this.nobodyMessage(true) },
+                                null, 2));
         log.debug("Leaving the logout action endpoint. No subject.");
         return;
       }
-      // `scope=global` is explicit and an empty selection means the same thing.
-      // Both are spelt out because the button says "global" and a caller with
-      // no form should get the same behaviour from an empty body.
       // ---------------------------------------------------------------------
-      // WHAT THIS FORM MAY SAY.
+      // WHAT THIS BODY MAY SAY.
       //
       // **`scope` IS A CLOSED SET OF TWO**, and it is the parameter that
       // decides whether this ends ONE session or EVERY session this identity
-      // has. The comparison below is `=== 'global'`, so anything else has
-      // always meant "selected" — a typo, a stale link and a hand-made post all
+      // has. The comparison is `=== 'global'`, so anything else has always
+      // meant "selected" — a typo, a stale link and a hand-made post all
       // silently chose the narrower of the two. Naming the set makes an
       // unrecognised value an error rather than a quiet reinterpretation of
       // what somebody asked for.
       //
-      // **`select` IS REPEATABLE AND MUST BE**, because it is a CHECKBOX COLUMN
-      // — one `<input name="select" value="<id>">` per live session — so a
-      // person ticking three boxes sends the parameter three times. That is the
-      // one shape `common/validation.js` refuses by default, and declaring it
-      // here is what keeps a multi-session sign-out working. The values are
-      // this service's own session and credential identifiers, so they are
+      // **`select` IS REPEATABLE AND MUST BE**: one value per row to end, so
+      // a form-encoded body repeats the parameter. That is the one shape
+      // `common/validation.js` refuses by default, and declaring it here is
+      // what keeps a multi-item sign-out working. The values are this
+      // service's own session and credential identifiers, so they are
       // bounded rather than typed.
       //
-      // Case-sensitive, matching the comparison below exactly: nothing here
+      // Case-sensitive, matching the comparison exactly: nothing here
       // lower-cases, so a validator that accepted `Global` would accept a value
       // the handler then reads as "selected".
       // ---------------------------------------------------------------------
       const asked = validation.checkParsed(body, 'body', LOGOUT_FORM);
       if (!asked.ok) {
-        log.debug("Leaving the sign-out endpoint. " + asked.detail);
         errorCodes.mark(res, 'STS-LOGOUT-0003');
-        // THE LANGUAGE (#539) of the person signing out; the refusal itself
-        // stays English.
-        const t = PageLocale.forPage({ username: subject.username });
-        return this.send(res, this.page(t,
-          realms.currentPrefix() + LOGOUT_PATH, t.text('logout.title'),
-          '<h1>' + t.html('logout.heading') + '</h1><div class="err">' +
-          xmlEscape(asked.detail) + '</div>'), 400);
-      }
-      const explicitGlobal = String(body.scope || '') === 'global';
-      const raw = body.select === undefined ? [] : body.select;
-      const selection = explicitGlobal ? [] :
-                        (Array.isArray(raw) ? raw : [raw]).filter(Boolean);
-      const ownSessionId = subject.session ? subject.session.id : '';
-      const result = this.terminate(subject.key, selection, {
-        issuer: this.issuerFor(req),
-        // THE BROWSER THAT WILL FOLLOW A PARTNER'S SIGN-OUT (#167), and the
-        // name this service has with the partner — its base URL here.
-        base: baseUrlOf(req), browser: true,
-        actor: subject.username,
-        // The person's own sign-out, or — only while `logout.anyUser`, a
-        // development test control, is open — somebody else naming them,
-        // which is an operator's act rather than theirs (#242).
-        initiatingEntity: subject.named ? 'admin' : 'user',
-        // A noun phrase (#294): it finishes CAEP's "ended by …".
-        by: subject.named ? 'a /logout request naming ' +
-            subject.username : 'the person\'s own sign-out at /logout'
-      });
-      // Did the caller's own session go? Only then is the cookie cleared. It is
-      // checked against what was actually ENDED rather than against the scope,
-      // so a selective logout that happened to include this browser's session
-      // clears it too — a cookie naming a session this service no longer holds
-      // is a browser that looks signed in and is not.
-      const endedOwn = !!ownSessionId && result.terminated.some((one) => {
-        return one.id === 'session:' + ownSessionId;
-      });
-      if (endedOwn) authn.clearSessionCookie(res);
-      if (this.wantsJson(req)) {
-        res.status(200).type('application/json').set('Cache-Control',
+        res.status(400).type('application/json').set('Cache-Control',
                                                      'no-store')
-           .send(JSON.stringify(Object.assign({ username: subject.username,
-                                                ownSessionEnded: endedOwn },
-                                              result), null, 2));
-        log.debug("Leaving the logout action endpoint. Answered JSON.");
+           .send(JSON.stringify({ error: 'invalid_request',
+                                  error_description: String(asked.detail) },
+                                null, 2));
+        log.debug("Leaving the logout action endpoint. " + asked.detail);
         return;
       }
-      // The inventory is read AGAIN, after the terminations, so the page's
-      // "what is still live" is the state now rather than the state the form
-      // was drawn from.
-      const remaining = this.inventoryFor(subject.key, this.issuerFor(req));
-      this.send(res, this.resultPage(baseUrlOf(req), result, remaining));
-      log.debug("Leaving the logout action endpoint. " +
-          result.terminated.length + " " +
-          "ended.");
+      const ended = this.endFor(req, res, subject, body);
+      res.status(200).type('application/json').set('Cache-Control',
+                                                   'no-store')
+         .send(JSON.stringify(Object.assign({ username: subject.username,
+                                              ownSessionEnded: ended.endedOwn },
+                                            ended.result), null, 2));
+      log.debug("Leaving the logout action endpoint. Answered JSON, " +
+                ended.result.terminated.length + " ended.");
+    });
+
+    // -------------------------------------------------------------------------
+    // THE STATIC SIGN-OUT'S SCRIPT AND STYLESHEET (#577).
+    // -------------------------------------------------------------------------
+    app.get(SIGNOUT_SCRIPT_PATH, (req, res) => {
+      log.debug("Entering the sign-out's script.");
+      ShellDocument.sendFile(req, res, this.bundle(), 'application/javascript');
+      log.debug("Leaving the sign-out's script.");
+    });
+    app.get(SIGNOUT_STYLE_PATH, (req, res) => {
+      log.debug("Entering the sign-out's stylesheet.");
+      res.set('Cache-Control', 'no-cache').type('text/css').send(LOGOUT_CSS);
+      log.debug("Leaving the sign-out's stylesheet.");
+    });
+
+    // -------------------------------------------------------------------------
+    // POST /logout/signed-out — THE SIGNED-OUT DOCUMENT (#577), drawn from the
+    // sealed result the act answered, by the runtime's native form post: a
+    // NAVIGATION, so the document is the browser's page and its policy the
+    // fan-out's own (`fanOutOf()`). It ends nothing. Posted by a page of this
+    // service only (its `Origin`), and only with a result this service MACed
+    // in this realm within `RESULT_TTL_MS`. What is still live is read again
+    // now, as it always was after the act.
+    // -------------------------------------------------------------------------
+    app.post(SIGNED_OUT_PATH, (req, res) => {
+      log.debug("Entering the signed-out document.");
+      const origin = String((req.headers && req.headers.origin) || '');
+      let own: string[] = [];
+      try {
+        own = cors.ownOrigins(req) || [];
+      } catch (e) {
+        log.debug("Caught in the signed-out document: " +
+                  ((e && e.message) || e));
+        own = [];
+      }
+      // A NAVIGATION'S ORIGIN IS `null` HERE, and that is this service's
+      // own doing: every page is sent `Referrer-Policy: no-referrer`
+      // (`app.js`), under which a browser sends `Origin: null` on a form
+      // POST that navigates. So `null` — or none — is taken where the
+      // browser itself says the post came from this origin
+      // (`Sec-Fetch-Site: same-origin`, Fetch Metadata), and refused
+      // otherwise; any other origin is refused whatever it says. The MAC
+      // is what keeps a result from being made up; this keeps a page
+      // elsewhere from posting one it was handed.
+      const site = String((req.headers &&
+                           req.headers['sec-fetch-site']) || '');
+      const sameSite = (!origin || origin === 'null') &&
+        site === 'same-origin';
+      if (!sameSite && (!origin || own.indexOf(origin) < 0)) {
+        this.refusedDocument(res, 403, 'STS-LOGOUT-0009',
+          'This page is posted by the sign-out page of this service: the ' +
+          'request carried ' + (origin && origin !== 'null'
+            ? 'another origin' : 'no origin of this service') + '.');
+        log.debug("Leaving the signed-out document. Not this origin.");
+        return;
+      }
+      const posted = validation.checkParsed(parseBody(req) || {}, 'body',
+                                            SIGNED_OUT_FORM);
+      const opened = posted.ok ? this.openResult(posted.value.result)
+                               : { why: 'There is no sign-out result here.' };
+      if (!opened.result) {
+        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', String(opened.why));
+        log.debug("Leaving the signed-out document. " + opened.why);
+        return;
+      }
+      const remaining = this.inventoryFor(opened.result.key,
+                                          this.issuerFor(req));
+      this.send(res, this.resultPage(baseUrlOf(req), opened.result,
+                                     remaining));
+      log.debug("Leaving the signed-out document.");
     });
     log.debug("Leaving Logout.registerRoutes().");
   }
@@ -3864,6 +4140,13 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   LOGOUT_PATH: LOGOUT_PATH,
+  // THE STATIC SIGN-OUT (#577): the path of the signed-out document, the
+  // two operations `authn/authn_api.ts` is the door of, and the surface's
+  // paths.
+  SIGNED_OUT_PATH: SIGNED_OUT_PATH,
+  signOutView: slot.forward('signOutView'),
+  signOutAct: slot.forward('signOutAct'),
+  surfacePaths: slot.forward('surfacePaths'),
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list
   // over there would be a second answer that goes stale on the day a family

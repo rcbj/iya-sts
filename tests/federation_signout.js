@@ -177,6 +177,14 @@ function childMain() {
         req.end(body);
       });
     }
+    // THE SIGN-OUT PAGE IN THE SP REALM, as its page signs out (#577):
+    // the view, the act over /authn-api/logout, and the signed-out
+    // document it answers where the browser has a partner to tell.
+    function signOutHere(fields) {
+      return authnScreen.signOut({ port: port, ca: caPem, jar: jar,
+        prefix: '/realm/' + SP, fields: fields,
+        origin: new URL(base).origin });
+    }
     function inSp(fn) {
       return realms.run(realms.get(SP), fn);
     }
@@ -583,8 +591,7 @@ function childMain() {
       return !row.terminable && /own sign-out/.test(row.why);
     }), '4a. with no browser (/admin/logout, the API) the partner row is ' +
         'listed and cannot be ended', JSON.stringify(partnerRows));
-    const out = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const out = await signOutHere({ scope: 'global' });
     const link = decodeHtml((/href="([^"]*end_session[^"]*|[^"]*oauth2\/logout[^"]*)"/
       .exec(out.text) || [])[1] || '');
     const asked = link ? new URL(link) : null;
@@ -779,8 +786,7 @@ function childMain() {
     // signed LogoutRequest; its LogoutResponse is matched once.
     await samlSignIn('idx-two-' + MODE, '');
     held = fedSession(SAML);
-    const bye = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const bye = await signOutHere({ scope: 'global' });
     const outLink = decodeHtml((/href="(https:\/\/partner\.invalid\/slo[^"]*)"/
       .exec(bye.text) || [])[1] || '');
     let sent = null;

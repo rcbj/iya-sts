@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4308** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4311** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
 * [Registries (`STS-REG`)](#sts-reg) — 170
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
@@ -4735,13 +4735,16 @@ Raised from: logout/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-LOGOUT-0001` | A sign-out named somebody other than the caller while naming another person is closed (logout.anyUser off, or product mode). | HTTP 403 {error: forbidden} or a 403 page |
-| `STS-LOGOUT-0002` | A sign-out request carried no session cookie and named nobody, so there is nobody to act on. (A browser GET is sent to sign in instead, which is not a failure.) | HTTP 401 {error: no_subject} or a 401 page |
-| `STS-LOGOUT-0003` | A sign-out form failed validation (an unrecognised scope value, or an over-long selection). | HTTP 400 page |
+| `STS-LOGOUT-0001` | A sign-out named somebody other than the caller while naming another person is closed (logout.anyUser off, or product mode). | HTTP 403 {error: forbidden}, or { ok: false, errors } from /authn-api/logout |
+| `STS-LOGOUT-0002` | A sign-out request carried no session cookie and named nobody, so there is nobody to act on. (A browser GET is sent to sign in instead, which is not a failure.) | HTTP 401 {error: no_subject}, or { ok: false, errors } from /authn-api/logout |
+| `STS-LOGOUT-0003` | A sign-out's body failed validation (an unrecognised scope value, an over-long selection, or a field the page's act does not take). | HTTP 400 {error: invalid_request}, or { ok: false, errors } from /authn-api/logout |
 | `STS-LOGOUT-0004` | One family's live items could not be read for a sign-out inventory; the page reports that family as unreadable. | — |
 | `STS-LOGOUT-0005` | One family's live items could not be read while a sign-out was ending them, so nothing in that family was ended. | — |
 | `STS-LOGOUT-0006` | Ending one live item during a sign-out failed with an exception; it is reported as not ended. | — |
 | `STS-LOGOUT-0007` | A sign-out ended nothing: nothing live was found for the identity, or nothing that was selected could be ended. | — |
+| `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
+| `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
+| `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
 
 ## STS-REG
 

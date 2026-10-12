@@ -186,6 +186,17 @@ const ROWS: Row[] = [
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
     why: 'the session to end is where the browser is pinned' },
+  // THE SIGN-OUT AS A STATIC SURFACE (#577): its script and stylesheet are
+  // the same in every cell; its view and act, like the page they replaced,
+  // read and end the session where the browser is pinned; the signed-out
+  // document re-reads what is still live there too.
+  { prefix: '/logout/signout.js', strategy: 'local',
+    why: 'the static sign-out\'s script (#577)' },
+  { prefix: '/logout/signout.css', strategy: 'local',
+    why: 'the static sign-out\'s stylesheet (#577)' },
+  { prefix: '/authn-api/logout', strategy: 'affinity', browser: true,
+    why: 'the sign-out\'s view and act (#577): the session to read and end ' +
+         'is where the browser is pinned, as at /logout' },
   // THE PORTAL IS A STATIC DOCUMENT SINCE #568, the same in every cell; what
   // it acts on is its API's, which goes home.
   { prefix: '/portal', strategy: 'local',

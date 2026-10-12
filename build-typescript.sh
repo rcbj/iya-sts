@@ -226,6 +226,12 @@ bundle_surface "the sign-in screen" authn/web_authn_pages.ts StsAuthn \
 bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
   StsGnapInteract gnap/gnap-interaction.bundle.js gnap/web_gnap_interact.ts \
   gnap/gnap-interaction-spa.js
+# THE SIGN-OUT (#577): `logout/signout.bundle.js` (`StsSignout`,
+# `web_signout_pages.ts`) and `logout/signout-spa.js` (`web_signout.ts`),
+# served at `/logout/signout.js` — `-spa` for the rule above, though no
+# server module beside it is called `signout`.
+bundle_surface "the sign-out" logout/web_signout_pages.ts StsSignout \
+  logout/signout.bundle.js logout/web_signout.ts logout/signout-spa.js
 
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public

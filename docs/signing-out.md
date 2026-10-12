@@ -32,6 +32,19 @@ GET /logout?username=alice        somebody else's list (development mode only)
 GET /logout?format=json           the same thing, for a test
 ```
 
+**The page is drawn in your browser** (since 2026-10-12): `/logout` answers a
+small document whose script, `/logout/signout.js`, reads the list from
+`GET /authn-api/logout` and sends what you press to `POST /authn-api/logout`.
+It needs JavaScript; with scripts blocked it says so and shows nothing else.
+The Global logout is at the top, the checkboxes are beside each row, and
+**pressing "End the ticked items" with nothing ticked ends nothing.**
+
+When the sign-out leaves your browser something to do — loading an
+application's Front-Channel Logout page, a WS-Federation cleanup image, a
+SAML `LogoutRequest` link or a partner's sign-out — the page you land on is
+`/logout/signed-out`, drawn by the service with those in it, exactly as the
+sign-out page always drew them. Otherwise the result is drawn in place.
+
 Signing out may mean signing in first. This service has no other way to know who
 is asking, and the session that creates is listed with everything else. **No
 console role is needed, and that is not an oversight**: signing yourself out
@@ -46,19 +59,27 @@ yourself is fine) and anything else is a 403 pointing at `/admin/logout` and
 
 ## `POST /logout`
 
-Ends what was ticked. **A POST that ticks nothing ends everything** — that is the
-default and the point of the endpoint:
+Ends what was named, and answers JSON. **A POST that names nothing ends
+everything** — that is the default and the point of the endpoint. The body is
+JSON (or the request asks for JSON with `Accept: application/json`); a form
+posted here ends nothing and is sent to the page with a `303`, because the
+page's own sign-out is `POST /authn-api/logout`, bound to your browser's
+session.
 
 ```bash
 # global logout for whoever holds this cookie
-curl -k -b cookies.txt -X POST https://localhost:8081/logout
+curl -k -b cookies.txt -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' -d '{}'
 
-# global logout for somebody named, no cookie needed
-curl -k -X POST https://localhost:8081/logout -d 'username=alice&scope=global'
+# global logout for somebody named, no cookie needed (development mode)
+curl -k -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","scope":"global"}'
 
 # just two things
 curl -k -X POST https://localhost:8081/logout \
-     -d 'username=alice&select=session:8Qk3…&select=token:abc…'
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","select":["session:8Qk3…","token:abc…"]}'
 ```
 
 Row ids come from the GET. They look like `session:<id>`, `token:<jti>`,

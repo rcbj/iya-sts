@@ -677,7 +677,12 @@ const ARRIVAL_PATHS = [
   // are. A person types a user code on a device that may never have been
   // here; the approval page is where a start link lands.
   '/gnap/code',
-  '/gnap/approve'
+  '/gnap/approve',
+  // AND THE SIGN-OUT (#577): `/logout` answers a shell whose act is bound
+  // to this cookie as the screen's are. A browser holding a session already
+  // has one; this mints one only where `?username=` names somebody (a
+  // development test control) for a browser that holds none.
+  '/logout'
 ];
 
 // ---------------------------------------------------------------------------
@@ -712,7 +717,12 @@ const ARRIVAL_PATHS = [
 // ---------------------------------------------------------------------------
 const NOT_ARRIVAL_PATHS = [
   '/admin/signals/receive',
-  '/portal/signals/receive'
+  '/portal/signals/receive',
+  // THE SIGNED-OUT DOCUMENT (#577) is the end of a sign-out: the browser
+  // whose session it ended is not arriving, and a fresh cookie minted on
+  // the page that says it is signed out would be a session it never asked
+  // for.
+  '/logout/signed-out'
 ];
 
 // ---------------------------------------------------------------------------

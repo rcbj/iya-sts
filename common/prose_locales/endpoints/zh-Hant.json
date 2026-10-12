@@ -1339,6 +1339,18 @@
     "en": "1228edbd8a552e3b",
     "text": "登出所有服務"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "登出頁面的指令碼"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "登出頁面的樣式表"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "已登出頁面"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "登入畫面"
@@ -1458,6 +1470,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "錢包登入：Digital Credentials API 的回應"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "登出會終止什麼，以及登出本身"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

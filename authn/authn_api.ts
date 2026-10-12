@@ -230,6 +230,25 @@ const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
                                   data: vz.any() })]).optional()
 })).strict();
 
+// ---------------------------------------------------------------------------
+// THE SIGN-OUT'S BODY AND QUERY (#577). The act's fields are what the
+// server-drawn page's two forms posted: `scope` (`global` or `selected`, the
+// set `logout/logout.ts` holds the JSON door to), `select` (the rows ticked,
+// this service's own ids, bounded and never typed) and `username` (the name
+// the page was drawn for — honoured only where naming is open, or where it
+// is the caller's own). The view's query is `username` alone.
+// ---------------------------------------------------------------------------
+const LOGOUT_BODY = vz.object({
+  scope: vt.opt(vt.oneOf(['global', 'selected'])),
+  select: vz.array(vz.string().max(validation.CAP.TOKEN)).max(10000)
+    .optional(),
+  username: vt.opt(vt.name)
+}).strict();
+
+const LOGOUT_QUERY = vz.object({
+  username: vt.opt(vt.name)
+});
+
 /**
  * One operation of the API.
  */
@@ -242,8 +261,11 @@ interface Operation {
   // step's id; `mfa` — a second-factor or emailed-factor step's id (#572,
   // #573); `wallet` — a wallet sign-in's transaction (#574), keyed by its
   // state where the path names one; `consent` — a pending consent's id
-  // (#576); `public` — none.
-  access: 'public' | 'pending' | 'step' | 'mfa' | 'wallet' | 'consent';
+  // (#576); `session` — the person the browser's `sts_session` cookie
+  // names, or `?username=` where naming is open (the sign-out, #577);
+  // `public` — none.
+  access: 'public' | 'pending' | 'step' | 'mfa' | 'wallet' | 'consent' |
+    'session';
   // The page or form control this operation is the door of, for the
   // runtime and the reader (`/account-api`'s convention, rule 7's twin).
   mirrors: string | null;
@@ -568,6 +590,60 @@ const WALLET_OPERATIONS: Operation[] = [
 ];
 
 OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
+
+// ---------------------------------------------------------------------------
+// THE SIGN-OUT (#577): the page `/logout` is drawn from the first and acts
+// through the second. Under `/authn-api` because the sign-out is the other
+// end of what this API does — the same session, the same cookie, the same
+// binding — and `/logout` is the authentication service's application
+// (`hosted_applications.js`). The logic is `logout/logout.ts`'s
+// (`signOutView()`, `signOutAct()`), reached when an operation arrives.
+// ---------------------------------------------------------------------------
+const LOGOUT_ANSWER = {
+  type: 'object',
+  description: 'The sign-out\'s result. `next` is `signed-out`. Where the ' +
+    'browser has something to fan out — Front-Channel Logout iframes, ' +
+    'WS-Federation cleanup images, SAML LogoutRequest links, back-channel ' +
+    'deliveries, a federation partner\'s sign-out — `form` names the ' +
+    'signed-out document: POST its `fields` to its `action` as a ' +
+    'navigation. Otherwise `view` is the result to draw: what was ended, ' +
+    'what was not and why, and how much is still live. The `sts_session` ' +
+    'cookie is cleared on this answer where the browser\'s own session was ' +
+    'ended (`ownSessionEnded`).',
+  properties: {
+    ok: { type: 'boolean' },
+    next: { type: 'string', enum: ['signed-out'] },
+    username: { type: 'string' },
+    ownSessionEnded: { type: 'boolean' },
+    scope: { type: 'string', enum: ['global', 'selected'] },
+    form: { type: 'object' },
+    view: { type: 'object' },
+    errors: { type: 'array', items: { type: 'string' } }
+  }
+};
+
+const LOGOUT_OPERATIONS: Operation[] = [
+  { method: 'GET', path: API + '/logout', operationId: 'getSignOut',
+    access: 'session', mirrors: 'GET /logout', handler: 'logoutView',
+    summary: 'Everything a sign-out would end',
+    description: 'The sign-out page\'s view, as facts and no words: every ' +
+      'family of live session or credential this service holds for the ' +
+      'person the browser\'s session names — or `username`, where naming ' +
+      'somebody is open (a development test control) — each row with ' +
+      'whether it can be ended and why not, and `csrf`. Refused (403) for ' +
+      'a name that may not be used, and (401) with nobody to act on.' },
+  { method: 'POST', path: API + '/logout', operationId: 'signOut',
+    access: 'session', mirrors: 'POST /logout', action: 'logout',
+    handler: 'logoutAct', body: LOGOUT_BODY, answer: LOGOUT_ANSWER,
+    refusedCode: 'STS-LOGOUT-0003',
+    summary: 'Signs out: everything, or what was ticked',
+    description: 'A `scope` of `global`, or no selection, ends everything ' +
+      'the person holds; `select` ends those rows only, each looked up ' +
+      'again now. The answer is the result, or the signed-out document ' +
+      'that carries what the browser must still do.' }
+];
+
+OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
 
 // ---------------------------------------------------------------------------
 // THE OAUTH CONSENT SCREEN'S OPERATIONS (#576; rcbj's decision on #576: the
@@ -1241,6 +1317,80 @@ class AuthnApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SIGN-OUT'S OPERATIONS (#577): the view, with this browser's `csrf`
+  // and the person's own language; the act, bound as every act here is and
+  // its body checked, then answered by `logout/logout.ts`.
+  //
+  // `logout` is required HERE, when an operation arrives, and not at load:
+  // this module is built just after `authn` (8a) and that one second to
+  // last (23a), after the nine modules it reads — `ldap_server.js` among
+  // them, a JavaScript module whose require registers its routes (rule 1).
+  // ---------------------------------------------------------------------------
+  private static logout(): Json {
+    helpers.log.debug("Entering AuthnApi.logout().");
+    helpers.log.debug("Leaving AuthnApi.logout().");
+    return require('../logout/logout');
+  }
+
+  /**
+   * `GET /authn-api/logout`: the sign-out page's view.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  logoutView(req: Json, res: Json): void {
+    const { log, authn, validation, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.logoutView().");
+    const asked = validation.checkParsed(req.query || {}, 'query',
+                                         LOGOUT_QUERY);
+    if (!asked.ok) {
+      errorCodes.mark(res, 'STS-LOGOUT-0003');
+      this.refuse(res, 400, String(asked.detail || 'The query is refused.'));
+      log.debug("Leaving AuthnApi.logoutView(). The query.");
+      return;
+    }
+    const seen = AuthnApi.logout().signOutView(req);
+    if (seen.code) {
+      errorCodes.mark(res, seen.code);
+    }
+    const view = seen.json.view || {};
+    const own = view.username
+      ? authn.preferredLanguageOf(String(view.username)) : null;
+    authn.answerJson(res, seen.status, Object.assign({}, seen.json,
+      { csrf: this.csrfOf(req) }, own ? { preferredLanguage: own } : {}));
+    log.debug("Leaving AuthnApi.logoutView(). " + seen.status);
+  }
+
+  /**
+   * `POST /authn-api/logout`: the sign-out.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns nothing
+   */
+  logoutAct(req: Json, res: Json, op: Operation): void {
+    const { log, authn, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.logoutAct().");
+    if (!this.bound(req, res)) {
+      log.debug("Leaving AuthnApi.logoutAct(). Refused at the door.");
+      return;
+    }
+    const body = this.bodyOf(req, res, op);
+    if (!body) {
+      log.debug("Leaving AuthnApi.logoutAct(). The body.");
+      return;
+    }
+    const done = AuthnApi.logout().signOutAct(req, res, body);
+    if (done.code) {
+      errorCodes.mark(res, done.code);
+    }
+    authn.answerJson(res, done.status, done.json);
+    log.debug("Leaving AuthnApi.logoutAct(). " + done.status);
+  }
+
+  // ---------------------------------------------------------------------------
   // A WALLET OPERATION (#574): an act is bound as every act here is, and its
   // body checked; then `oid4vc/vc_signin.ts` answers it, handed the state in
   // the path, the body, the query and the CSRF token a view answers.
@@ -1402,6 +1552,15 @@ class AuthnApi {
       helpers.log.debug("Leaving AuthnApi.parametersOf(). None.");
       return [];
     }
+    if (op.access === 'session') {
+      helpers.log.debug("Leaving AuthnApi.parametersOf(). The sign-out's.");
+      return op.method === 'GET'
+        ? [{ name: 'username', in: 'query', required: false,
+             description: 'Whom the page is about, where naming somebody ' +
+               'is open (development mode and `logout.anyUser`), or the ' +
+               'caller\'s own name; the browser\'s session otherwise.',
+             schema: { type: 'string' } }] : [];
+    }
     if (op.access === 'wallet') {
       helpers.log.debug("Leaving AuthnApi.parametersOf(). The wallet's.");
       if (op.path.indexOf(':state') >= 0) {
@@ -1491,7 +1650,9 @@ class AuthnApi {
           'a pending sign-in, and the acts it sends. Unauthenticated and ' +
           'keyed by the pending sign-in\'s id; every act is bound to the ' +
           'browser\'s session cookie by a CSRF token. Answers name the next ' +
-          'step; refusals are English and carry no error code.'
+          'step; refusals are English and carry no error code. And the ' +
+          'sign-out page\'s (#577): what a sign-out would end for the ' +
+          'person the session names, and the act that ends it.'
       },
       servers: [{ url: base }],
       tags: [{ name: 'Sign-in' }],

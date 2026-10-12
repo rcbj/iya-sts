@@ -474,6 +474,87 @@ async function passkeyStep(o, make) {
   return { armed: armed, answer: answer };
 }
 
+// ===========================================================================
+// AND THE SIGN-OUT (#577): `/logout` is a static page of the same kind, its
+// view and act on the same API and bound the same way —
+//
+//   GET  /logout[?username=]              the shell (an arrival cookie for a
+//                                         browser holding none)
+//   GET  /authn-api/logout[?username=]    { view, csrf }
+//   POST /authn-api/logout                JSON, Origin, X-CSRF-Token
+//        -> { ok, next: 'signed-out', view }       nothing to fan out
+//        -> { ok, next: 'signed-out', form }       the signed-out document,
+//           which the page posts as a navigation: POST /logout/signed-out
+//
+// `signOut()` walks it as the page does and answers the last response:
+// the signed-out document's HTML where the act answered its form, the
+// act's JSON otherwise.
+// ===========================================================================
+/**
+ * Signs out at `/logout` as its page does.
+ *
+ * @param {object} o - `port`, `jar`, `userAgent`, `ca`; `prefix`, a
+ *   realm's (`/realm/x`); `fields`, the old form's: `scope`, `select` (one
+ *   or several), `username`; `origin`, `csrf` to send something else
+ * @returns {Promise<object>} `{ status, text, json, view, act, document,
+ *   headers }` — `document` true where the answer is the signed-out
+ *   document, `view` the page's view, `act` the act's response
+ */
+async function signOut(o) {
+  log.debug("Entering signOut().");
+  const prefix = o.prefix || '';
+  const f = o.fields || {};
+  const q = f.username ? '?username=' + encodeURIComponent(f.username) : '';
+  const common = { port: o.port, ca: o.ca, jar: o.jar,
+                   userAgent: o.userAgent };
+  await call(Object.assign({ method: 'GET', path: prefix + '/logout' + q },
+                           common));
+  const view = await call(Object.assign({ method: 'GET',
+    path: prefix + '/authn-api/logout' + q,
+    headers: { accept: 'application/json' } }, common));
+  if (view.status !== 200 || !view.json) {
+    log.debug("Leaving signOut(). The view: " + view.status);
+    return { status: view.status, text: view.text, json: view.json,
+             view: view.json && view.json.view, act: null, document: false,
+             headers: view.headers };
+  }
+  const body = {};
+  if (f.scope) {
+    body.scope = f.scope;
+  }
+  if (f.select !== undefined) {
+    body.select = [].concat(f.select);
+  }
+  if (f.username) {
+    body.username = f.username;
+  }
+  const origin = o.origin ||
+    (o.ca ? 'https' : 'http') + '://127.0.0.1:' + o.port;
+  const csrf = o.csrf === undefined ? view.json.csrf : o.csrf;
+  const act = await call(Object.assign({ method: 'POST',
+    path: prefix + '/authn-api/logout',
+    headers: Object.assign({ accept: 'application/json',
+      'content-type': 'application/json', origin: origin },
+      csrf ? { 'x-csrf-token': csrf } : {}),
+    body: JSON.stringify(body) }, common));
+  const j = act.json || {};
+  if (j.ok && j.form) {
+    const doc = await call(Object.assign({ method: String(j.form.method),
+      path: String(j.form.action),
+      headers: { 'content-type': 'application/x-www-form-urlencoded',
+                 origin: origin },
+      body: new URLSearchParams(j.form.fields || {}).toString() }, common));
+    log.debug("Leaving signOut(). The signed-out document: " + doc.status);
+    return { status: doc.status, text: doc.text, json: null,
+             view: view.json.view, act: act, document: true,
+             headers: doc.headers };
+  }
+  log.debug("Leaving signOut(). The act: " + act.status);
+  return { status: act.status, text: act.text, json: act.json,
+           view: view.json.view, act: act, document: false,
+           headers: act.headers };
+}
+
 // THE OAUTH CONSENT SCREEN (#576): `/oauth2/consent?consent=<id>` answers
 // the sign-in surface's shell, the page is drawn from `GET
 // /authn-api/consent/{id}`, and Allow or Deny goes to `POST
@@ -548,6 +629,7 @@ async function answerConsent(o) {
 }
 
 module.exports = {
+  signOut: signOut,
   consentOf: consentOf,
   openConsent: openConsent,
   answerConsent: answerConsent,

@@ -193,3 +193,6 @@ authn/authn-spa.js*
 # And GNAP's interaction pages' (#578), for the same reason.
 gnap/gnap-interaction.bundle.js
 gnap/gnap-interaction-spa.js*
+# And the sign-out's (#577), for the same reason.
+logout/signout.bundle.js
+logout/signout-spa.js*

@@ -2359,6 +2359,22 @@
     "en": "926917f15c6fd9a9",
     "text": "与协议无关的注销，也是此处唯一同时涉及全部十六个协议族的端点。GET 列出本服务仍为某个身份持有的一切——每个浏览器单点登录会话、在会话上登录过的每个 OIDC 依赖方、WS-Federation realm 和 SAML 2.0 服务提供方、它仍可吊销的每个令牌、每个未完成的授权码和预授权码、以其身份绑定的每个目录连接，以及 Kerberos 票据状况——每项旁都有一个复选框。POST 结束所勾选的项，而一项都不勾选的 POST 就是全局注销，这是默认行为，也是重点所在。它还会发送只有浏览器才能发送的内容：前端通道注销 iframe、wsignoutcleanup1.0 图像，以及以链接形式提供的 SAML LogoutRequest。它无法传达的内容会连同原因一起列出——已颁发的断言、服务票据或 SVID 自 2026-09-05 起在此处被否认，但在外部无法召回，因为出示它们时没有任何东西会咨询本服务，隐藏它们会让全局注销看起来已经完整，而实际上并非如此。不需要任何控制台角色；没有会话时，它会将浏览器送往 /authn/login 再返回。logout.anyUser 决定在开发模式下 ?username= 能否指定别人，在开发模式下它授予的权限不会超过以其身份登录所能获得的；在产品模式下，无论该设置如何，注销只能指定已登录的调用方本人。可添加 ?format=json。"
   },
+  "stsmetadata.endpoints./logout/signout.js.what": {
+    "en": "00c87cd0674479c3",
+    "text": "NON-SPEC（#577）。自 #577 起，浏览器的 GET /logout 是一个静态页面，这是它的脚本：它根据 /authn-api/logout 绘制页面，并把注销发送到那里。公开。"
+  },
+  "stsmetadata.endpoints./logout/signout.css.what": {
+    "en": "53394c77370adcb0",
+    "text": "NON-SPEC（#577）。服务器绘制的注销页面以内联方式携带的规则，供静态页面使用。"
+  },
+  "stsmetadata.endpoints./logout/signed-out.what": {
+    "en": "82adec9c5f60a820",
+    "text": "NON-SPEC（#577）。当注销给浏览器留下了待办事项时，页面会把收到的结果提交到这里，由此像 /logout 一贯那样绘制出来，包括 Front-Channel Logout 的 iframe、清理图像和 LogoutRequest 链接。仅接受来自本服务自身页面、且由本服务生成的结果。"
+  },
+  "stsmetadata.endpoints./logout/signed-out.effect": {
+    "en": "7d809bbad4d0e130",
+    "text": "绘制注销的结果；不终止任何内容"
+  },
   "stsmetadata.endpoints./authn/login.what": {
     "en": "216331db89ea9d80",
     "text": "认证服务。自 #571 起为静态界面：此处应答外壳页面，由 /authn/signin.js 根据 /authn-api/pending/{id} 绘制界面，并将所输入的内容以 JSON 发送到那里；应答指明下一步，浏览器以 GET 跟随它，就像它过去跟随表单所得到的 303 应答一样（RFC 9700 section 4.12）。此处每个需要识别某个人的协议，都会带着包含其完整请求的返回 URL 将此人送到这一个界面，并在建立会话 Cookie 后将其带回。在开发模式下不检查任何密码，所输入的用户名成为之后每个令牌、断言和凭证中的身份；在产品模式下，会验证密码，或领域的认证策略所允许的密钥或代码。它对将人送到这里的协议一无所知：界面上显示的关于被中断请求的内容由调用方提供，拒绝则以 authn_error=access_denied 返回，由调用方将其转换为其自身规范所规定的拒绝形式。会检查返回 URL 是否为本服务上的路径——一个在让人登录后会重定向到任何地方的认证服务，就是一个前面挂着登录界面的钓鱼工具。"
@@ -2542,6 +2558,14 @@
   "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
     "en": "f04802283b57225d",
     "text": "验证钱包的应答，并让发送该应答的浏览器登录"
+  },
+  "stsmetadata.endpoints./authn-api/logout.what": {
+    "en": "6a07fdc45a8adb17",
+    "text": "NON-SPEC（#577）。GET 返回浏览器会话所指之人仍持有的内容，以及 CSRF 令牌；POST 携带该令牌，注销全部内容或已勾选的内容。"
+  },
+  "stsmetadata.endpoints./authn-api/logout.effect": {
+    "en": "c2016f561ef917cf",
+    "text": "POST 终止会话并撤销此人持有的内容"
   },
   "stsmetadata.endpoints./authn-api/consent/:id.what": {
     "en": "b0e6e117fd23a284",

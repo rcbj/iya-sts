@@ -20275,16 +20275,20 @@ const CODES = [
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
       'mode).',
-    spec: 'HTTP 403 {error: forbidden} or a 403 page' },
+    spec: 'HTTP 403 {error: forbidden}, or { ok: false, errors } from ' +
+      '/authn-api/logout' },
   { code: 'STS-LOGOUT-0002',
     summary: 'A sign-out request carried no session cookie and named nobody, ' +
       'so there is nobody to act on. (A browser GET is sent to sign ' +
       'in instead, which is not a failure.)',
-    spec: 'HTTP 401 {error: no_subject} or a 401 page' },
+    spec: 'HTTP 401 {error: no_subject}, or { ok: false, errors } from ' +
+      '/authn-api/logout' },
   { code: 'STS-LOGOUT-0003',
-    summary: 'A sign-out form failed validation (an unrecognised scope ' +
-      'value, or an over-long selection).',
-    spec: 'HTTP 400 page' },
+    summary: 'A sign-out\'s body failed validation (an unrecognised scope ' +
+      'value, an over-long selection, or a field the page\'s act does not ' +
+      'take).',
+    spec: 'HTTP 400 {error: invalid_request}, or { ok: false, errors } ' +
+      'from /authn-api/logout' },
   { code: 'STS-LOGOUT-0004',
     summary: 'One family\'s live items could not be read for a sign-out ' +
       'inventory; the page reports that family as unreadable.',
@@ -20301,6 +20305,21 @@ const CODES = [
     summary: 'A sign-out ended nothing: nothing live was found for the ' +
       'identity, or nothing that was selected could be ended.',
     spec: '' },
+  { code: 'STS-LOGOUT-0008',
+    summary: 'The signed-out document (POST /logout/signed-out, #577) was ' +
+      'posted no sign-out result, or one this service did not MAC, made ' +
+      'in another trust realm, or expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-LOGOUT-0009',
+    summary: 'The signed-out document (POST /logout/signed-out, #577) was ' +
+      'posted with an origin this service does not answer on, or with ' +
+      'none (or null) and no Sec-Fetch-Site: same-origin.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-LOGOUT-0010',
+    summary: 'A form was posted to /logout, which is no longer an act ' +
+      '(#577): the page\'s act is POST /authn-api/logout. The browser is ' +
+      'sent to the page, which ends nothing.',
+    spec: 'HTTP 303 to /logout' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +

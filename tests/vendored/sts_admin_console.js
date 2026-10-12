@@ -3119,7 +3119,10 @@ async function theSignOutButtonSignsYouOut(driver) {
   // sign-out, `/logout`, which lists everything this service still holds for
   // the person and ends it. So the button's claim is that it lands THERE, and
   // the sign-out is that page's Global logout, pressed as a person would.
-  const offered = await survey(driver);
+  // THE SIGN-OUT PAGE IS A STATIC SURFACE SINCE #577: the shell loads,
+  // then its script draws the page from /authn-api/logout, so the page is
+  // read once its Global logout is drawn rather than when the document is.
+  const offered = await waitForText(driver, /Global logout/);
   const offeredUrl = await driver.getCurrentUrl();
   check("Sign out sends the browser to the sign-out page, which offers to " +
         "end everything", function () {
@@ -3134,7 +3137,10 @@ async function theSignOutButtonSignsYouOut(driver) {
   assert.ok(global >= 0, "/logout should draw the Global logout form.");
   await fillAndPress(driver, global, {}, { buttonText: "Global logout" });
 
-  const landed = await survey(driver);
+  // The act goes to /authn-api/logout, and what it answers is drawn in
+  // place or is the signed-out document the page posts to: either way the
+  // page is read once it says what ended.
+  const landed = await waitForText(driver, /signed out/i);
   check("it answers a page saying what ended", function () {
     assert.ok(/signed out/i.test(landed.text || ""),
       "the Global logout should land on a page that SAYS so. The page " +
@@ -3204,6 +3210,30 @@ function theRealmIsLeftBehind() {
            root("/admin/realms?realm=" + encodeURIComponent(REALM)) + ", or " +
            "remove it by hand when you are done with it.");
   log.debug("Leaving theRealmIsLeftBehind().");
+}
+
+// THE PAGE ONCE IT SAYS SOMETHING (#577): a static surface outside the
+// console — the sign-out — draws itself after its document has loaded, so
+// `waitForDrawn()` (which knows the console's own placeholder) cannot say
+// when it is drawn. This waits until the page's text matches, and answers
+// the survey either way: a caller asserting on it says what was there.
+async function waitForText(driver, pattern, timeoutMs) {
+  log.debug("Entering waitForText(). " + pattern);
+  await driver.wait(async function () {
+    const text = await driver.executeScript(
+      "return document.body ? document.body.innerText : '';")
+      .catch(function (e) {
+        // A document torn down under the probe: asked again.
+        log.debug("Caught in waitForText(): " + ((e && e.message) || e));
+        return "";
+      });
+    return pattern.test(String(text || ""));
+  }, timeoutMs || 20000).catch(function (e) {
+    log.debug("Caught in waitForText(): " + ((e && e.message) || e));
+  });
+  const page = await survey(driver);
+  log.debug("Leaving waitForText().");
+  return page;
 }
 
 // The index of the first form on the current page carrying a submit button

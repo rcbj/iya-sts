@@ -1339,6 +1339,18 @@
     "en": "1228edbd8a552e3b",
     "text": "Logga ut från allt"
   },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "Utloggningssidans skript"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "Utloggningssidans formatmall"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "Sidan för utloggad"
+  },
   "endpoints.route./authn/login.name": {
     "en": "cff20aed466d99d5",
     "text": "Inloggningsskärm"
@@ -1458,6 +1470,10 @@
   "endpoints.route./authn-api/wallet/:state/dc-api.name": {
     "en": "6f6ac9c72bde33a8",
     "text": "Plånboksinloggning: svaret från Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "Vad en utloggning skulle avsluta, och utloggningen"
   },
   "endpoints.route./authn-api/consent/:id.name": {
     "en": "1f22b542171d33ef",

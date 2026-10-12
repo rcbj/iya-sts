@@ -448,10 +448,13 @@ async function test() {
     { application: client.client_id, attribute: "oauthRedirectUri",
       value: REDIRECT }, "removed the one the frontchannel URI matched");
   // The inventory first: /logout lists every relying party the session
-  // holds, and says why one will not be notified.
-  const inventory = await b.go("GET", R + "/logout");
+  // holds, and says why one will not be notified. The page is a static
+  // surface since #577: its shell, then the view it is drawn from.
+  const shell = await b.go("GET", R + "/logout");
+  const inventory = await b.go("GET", R + "/authn-api/logout");
   check("/logout lists the client as not to be notified, with section 2's " +
         "reason", function () {
+    assert.strictEqual(shell.status, 200, shell.text.slice(0, 400));
     assert.strictEqual(inventory.status, 200, inventory.text.slice(0, 400));
     assert.ok(/Front-Channel Logout 1\.0 section 2/.test(inventory.text),
               inventory.text.slice(0, 2000));

@@ -69,7 +69,7 @@ opening it spends nothing until Continue is pressed.
 | Federation hand-offs | `/federation/login/…`, `/federation/acs/…`, `/federation/slo/…` | Is posted to or from a partner identity provider | Yes, no chooser |
 | Link an account | `/federation/link/…` | Joins a partner's account to one here at first sign-in. The person sees the sign-in screen, fixed to that account. | Yes |
 | Application sign-out (RP-initiated logout) | `/oauth2/logout` | Confirms signing out of an application, then sees "Signed out" | Yes |
-| Sign out of everything | `/logout` | Sees every live session and signs out of them | Yes |
+| Sign out of everything | `/logout` | Sees every live session and signs out of them; drawn in the browser, so it needs JavaScript. Where the sign-out has applications to tell, the person lands on `/logout/signed-out` | Yes |
 | Device sign-in (RFC 8628) | `/portal/device` | Types the code shown on a TV or console | Yes |
 | GNAP | `/gnap/code`, `/gnap/approve/…` | Types a user code; approves or refuses a grant | Yes |
 | The OP iframe | `/oauth2/check_session` | Nothing visible: a relying party's session check | n/a |
