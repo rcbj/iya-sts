@@ -31,6 +31,8 @@
 // and management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -223,14 +225,21 @@ async function follow(who, first) {
   let r = first;
   let at = "";
   for (let i = 0; i < 20; i++) {
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
+    // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+    // each realm's own, signed in through the one helper as the person that
+    // realm knows, where the flow is sent to it.
+    if ((r.status === 302 || r.status === 303) &&
+        /\/authn\/login\?authn=/.test(r.location)) {
+      at = r.location;
       const realmBase = realmBaseOf(at);
-      const fields = hiddenFields(r.text);
-      fields.username = realmBase === cpBase ? CP_PERSON : PERSON;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      at = realmBase + "/authn/login";
-      r = await hop(who, "POST", at, { form: fields });
+      const answer = await authnSignin.submit(realmBase, at,
+        { action: "login", password: PASSWORD,
+          username: realmBase === cpBase ? CP_PERSON : PERSON },
+        { cookie: who.header(at) });
+      who.take({ headers: answer.headers }, at);
+      r = { status: authnSignin.responseLike(answer).status,
+            text: answer.text || "", json: answer.json,
+            location: answer.location };
       continue;
     }
     if (r.status === 200 && /id="consent-allow"/.test(r.text)) {

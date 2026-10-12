@@ -21,6 +21,8 @@
 // OWNED HERE (local: true): this repository's authorization server and API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -192,6 +194,21 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
+// Signs `username` in at the screen `location` names, over `/authn-api`
+// (#571), keeping this jar's cookies; answered in `hop()`'s shape, read as
+// the form's 303 was.
+async function signInHere(who, location, username) {
+  log.debug("Entering signInHere(). " + username);
+  const answer = await authnSignin.submit(base, location,
+    { action: "login", username: username, password: PASSWORD },
+    { cookie: who.header(location) });
+  who.take({ headers: answer.headers }, location);
+  const like = authnSignin.responseLike(answer);
+  log.debug("Leaving signInHere(). " + answer.next);
+  return { status: like.status, text: answer.text || "", json: answer.json,
+           location: answer.location };
+}
+
 // Follows redirects inside this service, signing the person in on the
 // realm's screen and allowing a consent screen, until the answer leaves the
 // service or is a page.
@@ -199,12 +216,11 @@ async function follow(who, first) {
   log.debug("Entering follow().");
   let r = first;
   for (let i = 0; i < 20; i++) {
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = PERSON;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await hop(who, "POST", base + "/authn/login", { form: fields });
+    // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+    // signed in through the one helper where the flow is sent to it.
+    if ((r.status === 302 || r.status === 303) &&
+        /\/authn\/login\?authn=/.test(r.location)) {
+      r = await signInHere(who, r.location, PERSON);
       continue;
     }
     if (r.status === 200 && /id="consent-allow"/.test(r.text)) {

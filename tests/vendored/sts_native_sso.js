@@ -42,6 +42,8 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -189,21 +191,6 @@ async function hop(who, method, url, opts) {
                                 "" };
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 function pkce() {
   log.debug("Entering pkce().");
   const verifier = crypto.randomBytes(32).toString("base64url");
@@ -239,12 +226,15 @@ async function codeGrant(who, app, scope, extra) {
   for (let n = 0; n < 8 && r.location && r.location.indexOf(root) === 0 &&
                   !consentScreen.isConsentScreen(r.location); n += 1) {
     if (/\/authn\/login\?/.test(r.location)) {
-      const page = await hop(who, "GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = HOLDER;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await hop(who, "POST", base + "/authn/login", { form: fields });
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
+      // this jar's cookies; its answer's `location` is where the flow goes.
+      const answer = await authnSignin.submit(base, r.location,
+        { action: "login", username: HOLDER, password: PASSWORD },
+        { cookie: who.header() });
+      who.take({ headers: answer.headers });
+      r = { status: authnSignin.responseLike(answer).status,
+            text: answer.text || "", json: answer.json,
+            location: answer.location };
     } else {
       r = await hop(who, "GET", r.location);
     }
