@@ -44,8 +44,8 @@
     "text": "POST /ssf/receive 以及控制台和门户自己的接收方会接受它、记录它，并说明它为何未通过验证——这是调试器的姿态——除非 ssf.receiveRequireSignature 已开启。不会据此采取任何行动。"
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "550da4b67dda6fd9",
-    "text": "无论 ssf.receiveRequireSignature 如何设置，每个接收方都应答 400 invalid_key（#117）：不对任何人进行身份验证的 /ssf/receive 不记录任何内容；控制台和门户的接收方由其流自己的机密保护，会把它保存在收件箱中并标记为已拒绝。"
+    "en": "4f092f14fe13b4a7",
+    "text": "无论 ssf.receiveRequireSignature 如何设置，控制台和门户的接收方都应答 400 invalid_key（#117），并把它保存在收件箱中、标记为已拒绝。/ssf/receive 是开发端点，在此不存在（#585）。"
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -692,8 +692,8 @@
     "text": "在授权、PAR 和令牌端点，任何绝对 URI 都被接受为资源并成为令牌的 aud；未指明任何资源服务器的 GNAP 位置会被排除在令牌受众之外，但权限照样授予。"
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "b69c19d5b722a369",
-    "text": "资源（令牌交换除外，其目标属于策略的 unregistered-target）以及 GNAP 访问权限的每个位置都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源指示符；/admin-api；GNAP 演示资源服务器），或事先注册的应用（appRegisteredBy 已设置——被观察到不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——嵌入式调试器的 api 就是其中之一，植入时即已注册。位于已注册资源服务器的 gnapResourceServerUri 处或其下的 GNAP 位置也指明该服务器。否则为 invalid_target：从授权端点重定向，在 PAR 返回 400（STS-OAUTH-0950），在令牌端点于消耗任何内容之前返回 400（STS-OAUTH-0951）；对于 GNAP，请求以 invalid_request 拒绝（STS-GNAP-0903），而不是丢弃该权限。"
+    "en": "a5fd26a9d49203a6",
+    "text": "资源（令牌交换除外，其目标属于策略的 unregistered-target）以及 GNAP 访问权限的每个位置都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源指示符；/admin-api；GNAP 演示资源服务器（在提供它的地方）），或事先注册的应用（appRegisteredBy 已设置——被观察到不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——嵌入式调试器的 api 就是其中之一，植入时即已注册。位于已注册资源服务器的 gnapResourceServerUri 处或其下的 GNAP 位置也指明该服务器。否则为 invalid_target：从授权端点重定向，在 PAR 返回 400（STS-OAUTH-0950），在令牌端点于消耗任何内容之前返回 400（STS-OAUTH-0951）；对于 GNAP，请求以 invalid_request 拒绝（STS-GNAP-0903），而不是丢弃该权限。"
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -707,13 +707,25 @@
     "en": "c9aeb6e9c45812da",
     "text": "只使用在应用自身条目上注册的地址——观察永远不会添加地址。仍标记为“已观察到”的地址不算已注册：它是开发模式放上去的，在运维人员于应用页面或通过 POST /admin-api/applications/confirm-address 确认之前会被拒绝（STS-REG-0049）。在开始标记观察之前记录的地址没有标记，在切换领域之前仍需审查。控制台和门户自己的回调不从请求的 Host 标头获知（请设置 global.publicBaseUrl），与主机不符的 WebAuthn RP ID 会拒绝该仪式，而不是回退到主机。"
   },
+  "mode.requirements.demo-endpoints.what": {
+    "en": "b3d5164c887fa785",
+    "text": "演示、模拟和测试控制端点存在"
+  },
+  "mode.requirements.demo-endpoints.development": {
+    "en": "fedcc0409581e879",
+    "text": "提供并列出：模拟依赖方和服务提供方（/wsfed/rp、/saml2/sp、/saml11/rp、/oauth2/commands/mock-rp），演示颁发方和验证方页面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回读端点，/did/generate，VC-API 测试端点，受保护的 Kerberos 服务（/krb5/service 及其 TCP 套接字），/krb5/principals，/spnego 和 /spnego/protected，/xacml/protected，升级认证替身资源，GNAP 演示资源服务器，/dpop/nonce-mode，/devices/test/compliance，/tls、/tls/forwarded、/tls/trust 和 /tls/trust/clear，以及 /ssf/receive 和 /ssf/received。"
+  },
+  "mode.requirements.demo-endpoints.product": {
+    "en": "0ca09045a89e11d0",
+    "text": "它们都不会被提供或列出。每一个的应答都与没有注册任何内容的路径完全相同——Express 自己的 404 \"Cannot GET\"——任何元数据页面、控制台页面、文档或日志行都不会提及它们。产品进程中的开发领域会保留它们，但信任库入口和受保护服务的套接字除外，二者属于进程。管理入口仍然存在：/admin-api 启动验证、读取主体并更改信任库，用户门户则提供凭据。"
+  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "测试控件处于开放状态"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "POST /tls/trust 和 /tls/trust/clear、POST /dpop/nonce-mode、POST /devices/test/compliance（设备的合规状态，无需 device:compliance 范围，#164）、/krb5/principals 上的密码、使用 ?username= 将他人注销、开放的动态客户端注册、SAML 1.1 属性颁发机构以及 HOBA 密钥注册都对任何人应答，被拒绝的 SCIM Digest 质询会打印共享密码，控制台的 restore-kerberos 会清除 Kerberos 注销时刻。"
+    "en": "fd65d2d3c735e23e",
+    "text": "使用 ?username= 将他人注销、开放的动态客户端注册、SAML 1.1 属性颁发机构以及 HOBA 密钥注册都对任何人应答，被拒绝的 SCIM Digest 质询会打印共享密码，控制台的 restore-kerberos 会清除 Kerberos 注销时刻。"
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",
@@ -1010,6 +1022,10 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "SPIFFE Workload Endpoint 规范（section 3）规定，不带 workload.spiffe.io 标头的调用 MUST 被拒绝。"
+  },
+  "mode.why.servesDemoEndpoints": {
+    "en": "ea60854b2569441d",
+    "text": "它配置的是演示端点，而产品模式不提供任何演示端点。请在开发领域中尝试。"
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

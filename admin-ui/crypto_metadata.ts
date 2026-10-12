@@ -1027,6 +1027,9 @@ class CryptoMetadata {
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
         decrypts: row.decrypts, hashes: row.hashes,
         whatItDoesNot: row.whatItDoesNot || '',
+        // What a product realm reads instead (#585), translated like the
+        // rest.
+        verifiesWithoutDemos: (row.withoutDemos || {}).verifies || '',
         algorithms: tables[i].map(function (pair) {
           return { what: chips.has(String(pair[0])) ? '' : pair[0] };
         })
@@ -1044,7 +1047,7 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'whatItDoesNot', 'what']),
+               'whatItDoesNot', 'verifiesWithoutDemos', 'what']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),

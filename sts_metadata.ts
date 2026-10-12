@@ -9606,7 +9606,8 @@ class StsMetadata {
   /**
    * Extracts the stsmetadata namespace (#543 phase 3): every
    * specification's coverage note and `what`, every endpoint's `what`,
-   * `effect` and `coverage`, every protocol card's `what` and `sockets`,
+   * `effect` and `coverage`, every protocol card's `what`, `sockets` and
+   * `whatWithoutDemos` (#585),
    * and the sentences this module makes.
    *
    * NOT HARVESTED, because each is a join key or a name rather than prose:
@@ -9633,8 +9634,9 @@ class StsMetadata {
                  coverage: one.coverage };
       }), ['what', 'effect', 'coverage']),
       harvest('stsmetadata.protocols', PROTOCOLS.map(function (one) {
-        return { key: one.name, what: one.what, sockets: one.sockets };
-      }), ['what', 'sockets']),
+        return { key: one.name, what: one.what, sockets: one.sockets,
+                 whatWithoutDemos: one.whatWithoutDemos };
+      }), ['what', 'sockets', 'whatWithoutDemos']),
       harvest('stsmetadata.sentence', SENTENCES, Object.keys(SENTENCES)),
       { 'stsmetadata.param.aParameter': A_PARAMETER });
     helpers.log.debug("Leaving StsMetadata.prose(). " +
