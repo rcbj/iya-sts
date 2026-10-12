@@ -63,6 +63,16 @@ interface PortalMailDeps {
   realms: Json;
 }
 
+// WHAT WAS SENT, A PAGE AT A TIME (#313's sweep): the outbox keeps every
+// message to this person until its retention, and the page drew the newest
+// twenty and silently stopped there. It pages on `sentPage`, twenty a page.
+const SENT_PER_PAGE = 20;
+
+const EMAIL_QUERY = vz.object({
+  sentPage: vt.opt(vt.integer(1, 100000))
+    .describe('Which page of `sent`, newest first. Clamped to the last.')
+});
+
 const EMAIL_FORM = vz.object({
   // `change` (#64, D5): a new address, pending until its link is used.
   action: vt.opt(vt.oneOf(['verify', 'preferences', 'change']))
@@ -148,9 +158,10 @@ class PortalMail {
    * change, the categories and the person's choices, and what was sent.
    *
    * @param username - the signed-in person
+   * @param wanted - the page of `sent` asked for; the first when left out
    * @returns the view
    */
-  emailView(username: string): Json {
+  emailView(username: string, wanted?: number): Json {
     const { log, mail } = this.deps;
     log.debug("Entering PortalMail.emailView().");
     const person = mail.recipient(username) || { address: '',
@@ -166,6 +177,9 @@ class PortalMail {
                      pending.toLowerCase() !== person.address.toLowerCase()
       ? pending : (pending && !person.address ? pending : '');
     const declined: string[] = mail.declined(username) || [];
+    const allSent: Json[] = mail.list({ username: username }) || [];
+    const sentPages = Math.max(1, Math.ceil(allSent.length / SENT_PER_PAGE));
+    const sentAt = Math.min(Math.max(1, Number(wanted) || 1), sentPages);
     const view = {
       address: String(person.address || ''),
       verified: !!person.verified,
@@ -178,11 +192,14 @@ class PortalMail {
       }),
       // The subject, the address and the delivery state are data; the time
       // is drawn as a human date in the page's language (#539).
-      sent: mail.list({ username: username }).slice(0, 20)
+      sent: allSent.slice((sentAt - 1) * SENT_PER_PAGE,
+                          sentAt * SENT_PER_PAGE)
         .map(function (row: Json): Json {
           return { queuedAt: row.queuedAt || null, subject: row.subject,
                    to: row.to, state: row.state };
-        })
+        }),
+      sentPaging: { page: sentAt, pages: sentPages, per: SENT_PER_PAGE,
+                    total: allSent.length }
     };
     log.debug("Leaving PortalMail.emailView().");
     return view;
@@ -436,12 +453,14 @@ class PortalMail {
         description: '`address` and whether it is `verified`, a change ' +
           'waiting for its link (`changing`), whether mail can be sent ' +
           '(`available`), the message `categories` (only `notification` ' +
-          'is `optional`; `sent` says whether you are sent it), and the ' +
-          'last twenty messages `sent` — never their bodies.',
-        query: vz.object({}),
-        handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
-          return ctx.json(res, 200, self.emailView(caller.username));
+          'is `optional`; `sent` says whether you are sent it), and one ' +
+          'page of the messages `sent` to you, newest first — never their ' +
+          'bodies — moved by `sentPage` and described by `sentPaging`.',
+        query: EMAIL_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return ctx.json(res, 200,
+            self.emailView(caller.username, input.query.sentPage || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/email', operationId: 'postEmail',
         tag: 'Email', access: 'person', mirrors: 'POST ' + ctx.PORTAL +

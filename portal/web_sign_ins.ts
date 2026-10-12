@@ -99,6 +99,8 @@ class SignInsPages {
         '</p>';
     return '<div class="card"><h2>' + t.html('portalSignIns.heading') +
       '</h2><p class="sub">' + t.html('portalSignIns.sub') + '</p>' + body +
+      // Thirty days of sign-ins, a page at a time (#313's sweep).
+      kit.pageNav(PATH, ctx.query, view.paging, 'page', t) +
       '</div>';
   }
 

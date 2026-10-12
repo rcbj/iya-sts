@@ -57,6 +57,10 @@ const vt = validation.types;
  */
 const PATH = '/portal/claim-sources';
 const CALLBACK = PATH + '/callback';
+// THE PROVIDERS ARE PAGED (#313's sweep): `ou=claimproviders` is a register
+// an operator adds to without a bound, so the page draws a page of it on
+// `?page=`, twenty at a time — the portal's other lists' size.
+const PER_PAGE = 20;
 
 interface PortalClaimSourcesDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -80,6 +84,8 @@ const LINK_FORM = vz.object({
 });
 
 const PAGE_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+    .describe('Which page of `providers`. Clamped to the last.'),
   done: vz.string().max(200).optional()
     .describe('What a finished link said, from the callback.'),
   problem: vz.string().max(400).optional()
@@ -140,28 +146,44 @@ class PortalClaimSources {
   }
 
   /**
-   * The page's view: every Claims Provider of the realm, and the person's
-   * link to each.
+   * The page's view: one page of the realm's Claims Providers, and the
+   * person's link to each.
    *
    * @param username - the signed-in person
-   * @returns `{ providers }`
+   * @param wanted - the page asked for; the first when left out
+   * @returns `{ providers, paging, linked }`
    */
-  view(username: string): Json {
+  view(username: string, wanted?: number): Json {
     const { log, claimsProviders } = this.deps;
     log.debug("Entering PortalClaimSources.view().");
     const linked: Json = {};
     claimsProviders.linksOf(username).forEach(function (one: Json): void {
       linked[one.provider] = one;
     });
-    const providers = claimsProviders.list().map(function (p: Json): Json {
-      const link = linked[p.id];
-      return { id: p.id, name: p.name, issuer: p.issuer,
-               claims: (p.claims || []).slice(0), delivery: p.delivery,
-               link: link ? { linkedAt: link.linkedAt, stale: !!link.stale }
-                          : null };
-    });
-    log.debug("Leaving PortalClaimSources.view(). " + providers.length);
-    return { providers: providers };
+    const all: Json[] = claimsProviders.list() || [];
+    // Paged on the register, decorated on the page: only the rows shown
+    // are turned into the answer's shape.
+    const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+    const at = Math.min(Math.max(1, Number(wanted) || 1), pages);
+    const providers = all.slice((at - 1) * PER_PAGE, at * PER_PAGE)
+      .map(function (p: Json): Json {
+        const link = linked[p.id];
+        return { id: p.id, name: p.name, issuer: p.issuer,
+                 claims: (p.claims || []).slice(0), delivery: p.delivery,
+                 link: link ? { linkedAt: link.linkedAt,
+                                stale: !!link.stale }
+                            : null };
+      });
+    log.debug("Leaving PortalClaimSources.view(). Page " + at + " of " +
+              pages + ", " + providers.length + " of " + all.length + ".");
+    return { providers: providers,
+             paging: { page: at, pages: pages, per: PER_PAGE,
+                       total: all.length },
+             // How many of the realm's providers this person has linked,
+             // over the whole register rather than the page.
+             linked: all.filter(function (p: Json): boolean {
+               return !!linked[p.id];
+             }).length };
   }
 
   /**
@@ -356,16 +378,18 @@ class PortalClaimSources {
         operationId: 'getClaimSources', tag: 'Claim sources',
         access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/claim-sources',
         summary: 'The Claims Providers you can link, and your links',
-        description: '`providers`: every Claims Provider this realm ' +
-          'registered — its id, name, issuer, the claims it supplies and ' +
-          'whether they are aggregated or distributed — with your `link` ' +
-          '(when, and whether it has gone `stale`) or null. `done` and ' +
-          '`problem`, which the provider\'s callback sends back, come back ' +
-          'as `notice` and `problem`.',
+        description: '`providers`: one page (`paging`, moved by ' +
+          '`page`) of the Claims Providers this realm registered — each ' +
+          'one\'s id, name, issuer, the claims it supplies and whether ' +
+          'they are aggregated or distributed — with your `link` (when, ' +
+          'and whether it has gone `stale`) or null. `linked` counts your ' +
+          'links over every page. `done` and `problem`, which the ' +
+          'provider\'s callback sends back, come back as `notice` and ' +
+          '`problem`.',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
-          const view = self.view(caller.username);
+          const view = self.view(caller.username, input.query.page || 1);
           if (input.query.done) {
             view.notice = String(input.query.done);
           }

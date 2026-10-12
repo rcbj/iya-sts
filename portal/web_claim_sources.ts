@@ -91,7 +91,9 @@ class ClaimSourcesPages {
       '</p></div>' +
       (rows.length ? rows.join('')
         : '<div class="card"><p id="claim-sources-none">' +
-          t.html('portalClaimSources.none') + '</p></div>');
+          t.html('portalClaimSources.none') + '</p></div>') +
+      // The register is paged on `?page=` (#313's sweep).
+      kit.pageNav(PATH, ctx.query, view.paging, 'page', t);
   }
 
   /**

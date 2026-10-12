@@ -56,6 +56,17 @@ interface PortalSignInsDeps {
 
 // How far back the page looks.
 const DAYS = 30;
+// A PAGE AT A TIME (#313's sweep). Thirty days of sign-ins is as many rows
+// as the person signed in, and the page drew the risk engine's default fifty
+// of them and silently stopped there. The store pages in SQL — `limit` and
+// `offset`, and `total` for the whole thirty days — so a page reads twenty
+// rows whatever the person has.
+const PER_PAGE = 20;
+
+const PAGE_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+    .describe('Which page of `rows`, newest first. Clamped to the last.')
+});
 
 const ANSWER_FORM = vz.object({
   action: vt.oneOf(['confirm', 'deny'])
@@ -102,51 +113,67 @@ class PortalSignIns {
     };
   }
 
-  // The person's own assessments of the last DAYS days, newest first.
+  // The person's own assessments of the last DAYS days, newest first, one
+  // page of them, and how many there are in all.
   /**
-   * The caller's own assessments.
+   * One page of the caller's own assessments.
    *
    * @param caller - the signed-in person
-   * @returns the rows
+   * @param offset - the first row wanted
+   * @returns `{ total, rows }`
    */
-  async rowsOf(caller: AccountCaller): Promise<Json[]> {
+  async pageOf(caller: AccountCaller, offset: number): Promise<Json> {
     const { log } = this.deps;
-    log.debug("Entering PortalSignIns.rowsOf().");
-    let rows: Json[] = [];
+    log.debug("Entering PortalSignIns.pageOf(). offset=" + offset);
+    let out: Json = { total: 0, rows: [] };
     try {
       const engine = this.deps.riskEngine();
       const view = await engine.view(this.deps.realms().currentId(), {
-        subject: caller.sub, days: DAYS });
-      rows = (view.assessments && view.assessments.rows || [])
-        .filter(function (a: Json): boolean {
-          return a.subject === caller.sub;
-        });
+        subject: caller.sub, days: DAYS, limit: PER_PAGE, offset: offset });
+      const found = view.assessments || {};
+      out = { total: Number(found.total) || 0,
+              rows: (found.rows || []).filter(function (a: Json): boolean {
+                return a.subject === caller.sub;
+              }) };
     } catch (e) {
-      log.debug("Caught in PortalSignIns.rowsOf(): " +
+      log.debug("Caught in PortalSignIns.pageOf(): " +
                 ((e && e.message) || e));
       // No risk engine in this process: nothing to list, and the page says
       // so rather than failing.
-      rows = [];
+      out = { total: 0, rows: [] };
     }
-    log.debug("Leaving PortalSignIns.rowsOf(). " + rows.length);
-    return rows;
+    log.debug("Leaving PortalSignIns.pageOf(). " + out.rows.length +
+              " of " + out.total + ".");
+    return out;
   }
 
   /**
    * The page's view.
    *
    * @param caller - the signed-in person
-   * @returns `{ days, rows, thisSession }`
+   * @param wanted - the page asked for; the first when left out
+   * @returns `{ days, rows, paging, thisSession }`
    */
-  async view(caller: AccountCaller): Promise<Json> {
+  async view(caller: AccountCaller, wanted?: number): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering PortalSignIns.view().");
-    const rows = await this.rowsOf(caller);
-    log.debug("Leaving PortalSignIns.view().");
+    let at = Math.max(1, Number(wanted) || 1);
+    let found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+    const pages = Math.max(1, Math.ceil(found.total / PER_PAGE));
+    // PAST THE END, the last page: the total is only known once one page
+    // has been asked for, so a stale link costs a second query.
+    if (at > pages) {
+      at = pages;
+      found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+    }
+    log.debug("Leaving PortalSignIns.view(). Page " + at + " of " + pages +
+              ".");
     return { days: DAYS,
              thisSession: String((caller.session.risk || {}).assessmentId ||
                                  ''),
-             rows: rows.map(function (a: Json): Json {
+             paging: { page: at, pages: pages, per: PER_PAGE,
+                       total: found.total },
+             rows: found.rows.map(function (a: Json): Json {
                return { id: a.id, at: a.at, city: a.city || '',
                         country: a.country || '', asOrg: a.asOrg || '',
                         addressPrefix: a.addressPrefix || '',
@@ -198,7 +225,8 @@ class PortalSignIns {
       return ctx.json(res, 200, { ok: true, ended: true,
         message: t.text('portalSignIns.doneDenied',
                         { path: ctx.PORTAL + '/password' }),
-        view: { days: DAYS, thisSession: '', rows: [] } });
+        view: { days: DAYS, thisSession: '', rows: [],
+                paging: { page: 1, pages: 1, per: PER_PAGE, total: 0 } } });
     }
     log.debug("Leaving PortalSignIns.answer(). Confirmed.");
     return ctx.json(res, 200, { ok: true,
@@ -222,16 +250,19 @@ class PortalSignIns {
         operationId: 'getSignIns', tag: 'Recent sign-ins', access: 'person',
         mirrors: 'GET ' + ctx.PORTAL + '/sign-ins',
         summary: 'Your sign-ins of the last thirty days, as assessed',
-        description: 'Each assessment of a sign-in of yours: when, the ' +
-          'city, country and network, the browser and system, the door, the ' +
-          'risk level, and your answer if you gave one. `thisSession` is ' +
-          'the assessment of the session this token was issued on.',
-        query: vz.object({}),
-        handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
-          return self.view(caller).then(function (view: Json) {
-            return ctx.json(res, 200, view);
-          });
+        description: 'One page (`paging`, moved by `page`, newest ' +
+          'first) of the assessments of your sign-ins: when, the city, ' +
+          'country and network, the browser and system, the door, the risk ' +
+          'level, and your answer if you gave one. `paging.total` counts ' +
+          'every sign-in of the thirty days. `thisSession` is the ' +
+          'assessment of the session this token was issued on.',
+        query: PAGE_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.view(caller, input.query.page || 1)
+            .then(function (view: Json) {
+              return ctx.json(res, 200, view);
+            });
         } },
       { method: 'POST', path: ctx.BASE + '/sign-ins',
         operationId: 'answerSignIn', tag: 'Recent sign-ins',

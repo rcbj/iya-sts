@@ -462,6 +462,57 @@ class PortalKit {
     const qs = new URLSearchParams(keep).toString();
     return qs ? '?' + qs : '';
   }
+
+  // ONE PAGER FOR A PAGED LIST (#313's sweep). The portal's earlier lists
+  // each drew their own Previous / Page n of m / Next on `?page=` alone;
+  // this is the same control for a list whose answer carries `paging`
+  // (`page`, `pages`) and which moves on a parameter of its own. Every
+  // other parameter the reader is carrying rides along, except the two a
+  // callback or a form brought back (`notice`, `problem`), which belong to
+  // the moment they were said and not to the list. Nothing is drawn when
+  // the list fits on one page.
+  /**
+   * The Previous / Page n of m / Next control under a paged list.
+   *
+   * @param path - the page's path
+   * @param query - the page's own query parameters
+   * @param paging - the list's `paging` from its answer
+   * @param param - the query parameter the list moves on
+   * @param t - the translator
+   * @returns the HTML, '' for one page
+   */
+  static pageNav(path: string, query: Json, paging: Json, param: string,
+                 t: Json): string {
+    const at = Number(paging && paging.page) || 1;
+    const pages = Number(paging && paging.pages) || 1;
+    if (pages <= 1) {
+      return '';
+    }
+    const carried: Json = {};
+    Object.keys(query || {}).forEach(function (name) {
+      if (name !== 'notice' && name !== 'problem' && name !== 'done') {
+        carried[name] = query[name];
+      }
+    });
+    const href = function (page: number): string {
+      const move: Json = Object.assign({}, carried);
+      move[param] = page > 1 ? String(page) : '';
+      return PortalKit.esc(path + PortalKit.queryOf(move));
+    };
+    return '<p class="pagenav" id="pager-' + PortalKit.esc(param) + '">' +
+      (at > 1
+        ? '<a href="' + href(at - 1) + '">' +
+          t.html('portal.paging.previous') + '</a>'
+        : '<span class="off">' + t.html('portal.paging.previous') +
+          '</span>') +
+      '<span class="here">' + t.html('portal.paging.page',
+        { at: at, pages: pages }) + '</span>' +
+      (at < pages
+        ? '<a href="' + href(at + 1) + '">' +
+          t.html('portal.paging.next') + '</a>'
+        : '<span class="off">' + t.html('portal.paging.next') + '</span>') +
+      '</p>';
+  }
 }
 
 export = PortalKit;

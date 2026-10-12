@@ -1631,6 +1631,36 @@ other portal page's 303 is still a bare path (`portal_ciba.ts`, the MFA
 pages), which is the same defect in a non-default realm and is left for its
 own change.
 
+## EVERY PORTAL LIST THAT CAN GROW WITHOUT A BOUND IS PAGED (#313's sweep, 2026-10-12)
+
+The console's rule (`admin-ui/CLAUDE.md`, *EVERY LIST THAT CAN GROW WITHOUT A
+BOUND IS PAGED*) holds here too. Three lists broke it and page now, twenty a
+page, each answer carrying the slice and a paging member beside it
+(`page`, `pages`, `per`, `total` — the portal's shape since #172):
+
+| Page | List | Moves on | Was |
+|---|---|---|---|
+| `/portal/claim-sources` | `providers`, the realm's Claims Providers (`ou=claimproviders` grows with what an operator registers) | `page`; `linked` counts the person's links over every page | the whole register |
+| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of thirty days | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
+| `/portal/email` | `sent`, the outbox's messages to the person | `sentPage`, beside `sentPaging` — named because the page holds other things than the list | the newest twenty, silently truncated |
+
+`PortalKit.pageNav()` (`web_portal_kit.ts`) draws the control for a list that
+moves on a parameter of its own and carries the reader's other parameters,
+less `notice`, `problem` and `done`, which belong to the moment they were
+said. The three older lists (consents, GNAP grants, the overview's
+applications and signals) still draw their own `?page=` controls.
+
+**Left unpaged, each with its bound**: devices (`devices.maxPerPerson`),
+app passwords (`appPasswords.maxPerPerson`), passkeys
+(`webauthn.maxKeysPerPerson`), enrolled certificates
+(`pki.enrollmentMaxCertificatesPerEntry`), TLS client certificates
+(`pki.personTlsClientCertificateMax`), EAB keys and SCEP challenges (10 a
+person), self-issued subjects (10), CIBA and GNAP requests waiting (each
+expires with its request), administrative consents (`portal_consents.ts`
+argues it), and `/portal/wallet`'s credential configurations — a `<select>`
+over the realm's configurations, not a table, and a menu is drawn whole so it
+can be chosen from.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a
