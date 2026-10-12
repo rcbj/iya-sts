@@ -929,7 +929,9 @@ const SCHEMA = {
             'identity-provider (it asserts). One relationship is one ' +
             'direction — see the header.' },
     { name: 'fedProtocol', kind: 'single', role: 'both', from: 'this register',
-      what: 'One of saml2, saml11, wsfed, oidc, oauth2.' },
+      what: 'One of saml2, saml11, wsfed, oidc, oauth2 — the five ' +
+            'sign-in protocols — or ssf, a partner that only sends Shared ' +
+            'Signals and signs nobody in.' },
     { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
       what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
             'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
