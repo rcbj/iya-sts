@@ -193,6 +193,9 @@ import InstanceSlot = require('./../common/instance_slot');
 // no route and closes no cycle. Only the pages a PERSON passes through use it
 // — the outbound hand-off and the signed-in page; refusals stay English.
 import PageLocale = require('./../common/page_locale');
+// THE FEDERATION PAGES' SHELL (#580): the landing page, and what the login
+// and linking endpoints say, drawn in the browser.
+import FederationPages = require('./federation_pages');
 // WHICH PEOPLE A PARTNER MAY ASSERT (#109). `mode.js` answers whether a name
 // match is allowed at all; `federation_links.ts` is the link's format, a
 // static utility class; the console roster (`admin_rbac.ts`, built by the
@@ -515,6 +518,12 @@ class FederationSp {
     app.get(federation.PATHS.jwks + '/:id', (req, res) => {
       return this.jwksEndpoint(req, res);
     });
+    // GET /federation/pages.js — the script of the three pages above that
+    // are this service's own (#580): the landing page, and what the login
+    // and linking endpoints say.
+    app.get(FederationPages.SCRIPT_PATH, (req, res) => {
+      return FederationPages.script(req, res);
+    });
     // GET /federation
     app.get(BASE_PATH, (req, res) => {
       return this.indexEndpoint(req, res);
@@ -692,12 +701,24 @@ class FederationSp {
   // A refusal, and it does three things every time: it draws the reason, it
   // writes `fedLastError` on the relationship, and it answers a status code a
   // test can assert on. See decision 6 — it never redirects.
+  //
+  // ON THE LOGIN AND LINKING ENDPOINTS (#580) the reason is drawn in the
+  // browser: the shell, with `what`, `why` and the relationship in
+  // `data-sts-state` (`federation_pages.ts`), the status unchanged. On the
+  // assertion consumer service — a specification's endpoint — it is drawn
+  // here, as it always was. `what` and `why` are TEXT either way.
   // error-code: none — the definition of the helper, not a call to it
   private refuse(res, record, status, what, why, extra?) {
     const { federation, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.refuse(). what=" + what);
     const id = (record && record.fedId) || '';
     if (id) federation.recordFailure(id, what + ': ' + why);
+    if (FederationPages.onSurface(res)) {
+      FederationPages.send(res, status,
+                           FederationPages.refusedView(what, why, id));
+      log.debug("Leaving FederationSp.refuse(). " + status + ', the shell.');
+      return;
+    }
     const body = '<h1>The federated sign-in was refused</h1>' +
       '<p class="bad">' + xmlEscape(what) + '</p>' +
       '<p>' + xmlEscape(why) + '</p>' +
@@ -1945,14 +1966,14 @@ class FederationSp {
   // order.
   // ---------------------------------------------------------------------------
   private linkEndpoint(req, res) {
-    const { federation, fedMap, authn, errorCodes, audit, log, xmlEscape } =
-      this.deps;
+    const { federation, fedMap, authn, errorCodes, audit, log } = this.deps;
     log.debug("Entering the federation linking endpoint.");
+    // A PAGE OF THE FEDERATION SURFACE (#580): every refusal below, and the
+    // signed-in page where nothing asked to be returned to, is the shell.
+    FederationPages.mark(res);
     if (!this.enabled()) {
       errorCodes.mark(res, 'STS-FED-0001');
-      res.status(404).type('html').send(this.page('Not here',
-        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-        'off.</p>'));
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
       log.debug("Leaving the federation linking endpoint. Federation is off.");
       return;
     }
@@ -1976,7 +1997,7 @@ class FederationSp {
                 "is not usable now.");
       return this.refuse(res, record || null, 403, 'That relationship is ' +
                                                    'not usable',
-        'The relationship "' + xmlEscape(context.id) + '" is disabled, ' +
+        'The relationship "' + context.id + '" is disabled, ' +
         'half-configured or gone since the partner answered.');
     }
     // THE BROWSER THAT STARTED IT (see LINK_COOKIE), asked before anything
@@ -2352,6 +2373,16 @@ class FederationSp {
         res.redirect(303, returnTo);
         return;
       }
+      // THE LINKING STEP'S OUTCOME (#580) is a page of the federation
+      // surface: its facts in the shell, drawn in the browser in the
+      // person's language — the application's default, then their own.
+      if (FederationPages.onSurface(res)) {
+        FederationPages.send(res, 200, self.signedInView(record,
+          Object.assign({}, mapped, { username: username }), result,
+          session), { application: result.application || '',
+                      own: self.deps.authn.preferredLanguageOf(username) });
+        return;
+      }
       // In the person's language (#539): the application they were signing
       // in to, where the login endpoint was told it, and the person.
       const t = PageLocale.forPage({ application: result.application || '',
@@ -2490,12 +2521,47 @@ class FederationSp {
       }).join('') + '</table>';
   }
 
+  // THE SAME PAGE'S FACTS, for the federation surface (#580): what
+  // `signedInPage()` draws, with no word of it — the browser draws them from
+  // the `handoff` catalogs (`federation/web_federation_views.ts`).
+  private signedInView(record, mapped, result, session) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.signedInView().");
+    const view = {
+      kind: 'signedIn', relationship: String(record.fedId),
+      partner: String(record.fedName || record.fedId),
+      peer: String(record.fedPeer || ''),
+      protocol: String((federation.protocolRow(record.fedProtocol) ||
+                        {}).label || record.fedProtocol || ''),
+      subject: String(result.subject || ''),
+      username: String(mapped.username || ''),
+      usernamePrefixed: !!mapped.usernamePrefixed,
+      usernameFrom: String(mapped.usernameFrom || ''),
+      session: String((session && session.id) || ''),
+      autocreate: federation.boolOf(record.fedAutocreateUsers, true),
+      updates: federation.boolOf(record.fedUpdateUserAttributes, true),
+      mapped: (mapped.mapped || []).map(function (one) {
+        return { incoming: String(one.incoming), ldap: String(one.ldap),
+                 values: (one.values || []).map(String),
+                 where: String(one.where || '') };
+      }),
+      unmapped: (mapped.unmapped || []).map(function (one) {
+        return { incoming: String(one.incoming),
+                 values: (one.values || []).map(String) };
+      })
+    };
+    log.debug("Leaving FederationSp.signedInView().");
+    return view;
+  }
+
   //
   // IN THE PERSON'S LANGUAGE (#539): `t` is the page's translator. What the
   // partner sent, the mapping's own words and the setting names are data
   // and stay as they are. No language chooser: the page is drawn by the
   // assertion consumer service, at the end of a POST or a redirect carrying
-  // a one-time answer, and no GET draws it again.
+  // a one-time answer, and no GET draws it again. (The same page at the end
+  // of a linking step is the federation surface's since #580:
+  // `signedInView()`.)
   private signedInPage(record, mapped, result, session, t) {
     const { federation, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.signedInPage().");
@@ -2781,12 +2847,14 @@ class FederationSp {
       federation, errorCodes, log, xmlEscape, baseUrlOf, randomId
     } = this.deps;
     log.debug("Entering the federation login endpoint. id=" + req.params.id);
+    // A PAGE OF THE FEDERATION SURFACE (#580): what this endpoint SAYS — it
+    // will not start a sign-in — is the shell, drawn in the browser. Where
+    // it starts one it answers the redirect or the POST binding's form, as
+    // it always did.
+    FederationPages.mark(res);
     if (!this.enabled()) {
       errorCodes.mark(res, 'STS-FED-0001');
-      res.status(404).type('html').send(this.page('Not here',
-        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-        'off, so no federation endpoint answers. No relationship was ' +
-        'changed.</p>'));
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
       log.debug("Leaving the federation login endpoint. Federation is off.");
       return;
     }
@@ -2794,12 +2862,8 @@ class FederationSp {
     const record = federation.get(id);
     if (!record) {
       errorCodes.mark(res, 'STS-FED-0002');
-      res.status(404).type('html').send(this.page('No such relationship',
-        '<h1>No such federation relationship</h1><p>There is no relationship ' +
-        'called <code>' +
-        xmlEscape(id) + '</code>. The configured ones are at <a href="' +
-        BASE_PATH + '">' +
-        BASE_PATH + '</a>.</p>'));
+      FederationPages.send(res, 404,
+                           FederationPages.notHereView('noRelationship', id));
       log.debug("Leaving the federation login endpoint. No such relationship.");
       return;
     }
@@ -2824,7 +2888,7 @@ class FederationSp {
     if (!federation.isEnabled(record)) {
       errorCodes.mark(res, 'STS-FED-0005');
       return this.refuse(res, record, 403, 'That relationship is disabled',
-        'It exists and is configured, and <code>fedEnabled</code> is FALSE. ' +
+        'It exists and is configured, and fedEnabled is FALSE. ' +
         'Every relationship is created disabled deliberately: a partner that ' +
         'half-exists and silently accepts assertions is the failure this ' +
         'whole register is arranged to prevent. Enable it on ' +
@@ -2994,7 +3058,7 @@ class FederationSp {
           errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
           log.debug("Leaving the federation login endpoint. Not resolved.");
           return this.refuse(res, record, 502, 'The OpenID Provider could ' +
-                             'not be trusted', xmlEscape(String(got.why)));
+                             'not be trusted', String(got.why));
         }
         const handle = this.putContext(contextRecord);
         const params = this.authorizationParams(base, got.record,
@@ -3011,7 +3075,7 @@ class FederationSp {
                   (e && e.stack ? e.stack : e));
         errorCodes.mark(res, 'STS-FED-0042');
         this.refuse(res, record, 500, 'This service failed while starting ' +
-                    'the sign-in', xmlEscape(String((e && e.message) || e)));
+                    'the sign-in', String((e && e.message) || e));
       });
       log.debug("Leaving the federation login endpoint. Resolving the OP.");
       return;
@@ -4811,144 +4875,59 @@ class FederationSp {
 
   // ---------------------------------------------------------------------------
   // GET /federation — what all of this is.
+  //
+  // A PAGE OF THE FEDERATION SURFACE SINCE #580: the shell, with the facts
+  // in `data-sts-state` — the relationships in each direction, the
+  // endpoints' paths, the base this service sees itself at and whether the
+  // sign-in screen offers partners — and every word of it drawn in the
+  // browser from the `federationPages` catalogs
+  // (`federation/web_federation_views.ts`).
   // ---------------------------------------------------------------------------
   private indexEndpoint(req, res) {
-    const { config, federation, log, xmlEscape, baseUrlOf } = this.deps;
+    const { config, federation, log, baseUrlOf } = this.deps;
     log.debug("Entering the federation index.");
-    const base = baseUrlOf(req);
+    FederationPages.mark(res);
     const all = federation.list();
-    const consuming =
-        all.filter((one) => { return one.fedRole === 'service-provider'; });
+    const protocolOf = function (record): string {
+      return String((federation.protocolRow(record.fedProtocol) || {})
+        .label || record.fedProtocol || '');
+    };
+    const consuming = all.filter((one) => {
+      return one.fedRole === 'service-provider';
+    }).map((record) => {
+      const usable = federation.isUsable(record);
+      return {
+        id: String(record.fedId), protocol: protocolOf(record),
+        peer: String(record.fedPeer || ''),
+        state: usable ? 'ready'
+          : (federation.isEnabled(record) ? 'incomplete' : 'disabled'),
+        missing: usable ? [] : federation.readinessOf(record).missing
+          .map(String),
+        metadata: record.fedProtocol === 'saml2' ||
+                  record.fedProtocol === 'saml11'
+      };
+    });
     const asserting = all.filter((one) => {
       return one.fedRole === 'identity-provider';
+    }).map((record) => {
+      return {
+        id: String(record.fedId), protocol: protocolOf(record),
+        application: String(record.fedApplication || ''),
+        release: (record.fedRelease || []).map(String)
+      };
     });
-
-    const consumeRows = consuming.map((record) => {
-      const readiness = federation.readinessOf(record);
-      const usable = federation.isUsable(record);
-      return '<tr><td><code>' + xmlEscape(record.fedId) + '</code></td>' +
-        '<td>' +
-        xmlEscape((federation.protocolRow(record.fedProtocol) || {}).label ||
-                           record.fedProtocol) + '</td>' +
-        '<td><code>' + xmlEscape(record.fedPeer || '(none set)') +
-        '</code></td><td ' +
-        'class="' + (usable ? 'ok' : 'bad') + '">' +
-          (usable ? 'ready'
-                  : (federation.isEnabled(record)
-                       ? 'enabled, not configured: ' +
-                         xmlEscape(readiness.missing.join(', '))
-                       : 'disabled')) + '</td>' +
-        '<td>' + (usable
-          ? '<a href="' + LOGIN_PATH + '/' + encodeURIComponent(record.fedId) +
-              '">Sign ' +
-              'in</a>'
-          : '<span class="note">—</span>') +
-          ((record.fedProtocol === 'saml2' || record.fedProtocol === 'saml11')
-            ? ' · <a href="' + METADATA_PATH + '/' +
-              encodeURIComponent(record.fedId) +
-              '">metadata</a>'
-            : '') + '</td></tr>';
-    }).join('');
-
-    const assertRows = asserting.map((record) => {
-      return '<tr><td><code>' + xmlEscape(record.fedId) + '</code></td>' +
-        '<td>' +
-        xmlEscape((federation.protocolRow(record.fedProtocol) || {}).label ||
-                           record.fedProtocol) + '</td>' +
-        '<td><code>' +
-        xmlEscape(record.fedApplication || '(no application named)') +
-        '</code></td><td>' + (record.fedRelease && record.fedRelease.length
-          ? xmlEscape(record.fedRelease.join(', '))
-          : '<span class="note">no release policy — this partner gets ' +
-            'whatever /admin/claims and /admin/saml-attributes would give ' +
-            'anybody</span>') + '</td></tr>';
-    }).join('');
-
-    const body = '<h1>Federation</h1><p>This service can be <strong>either ' +
-      'end</strong> of a federation relationship, in five protocols: SAML ' +
-      '2.0, ' +
-      'SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0.</p><p ' +
-      'class="note"><strong>This is the one feature here that has to be ' +
-      'configured before it will do anything.</strong> Everywhere else this ' +
-      'service accepts what it is given — any username, any client_id, any ' +
-      'entityID, any LDAP bind. It cannot do that here: what arrives at an ' +
-      'assertion consumer service is an unauthenticated request claiming to ' +
-      'be ' +
-      'a person, and the session it produces is the one every other protocol ' +
-      'in this process reads. So a relationship is created DISABLED, and an ' +
-      'assertion is refused unless it verifies against the key configured on ' +
-      'it.</p><h2>Consuming: a foreign identity provider signs people in ' +
-      'here</h2>' +
-      (consumeRows
-        ? '<table><tr><th>Relationship</th><th>Protocol</th><th>Partner</th>' +
-          '<th>State</th><th></th></tr>' + consumeRows + '</table>'
-        : '<p class="note">None configured. Add one on ' +
-          '<a href="/admin/federation">/admin/federation</a>, or through ' +
-          '<code>POST /admin-api/federation/create</code>.</p>') +
-      '<h2>Asserting: this service signs people in to a foreign service ' +
-      'provider</h2>' +
-      (assertRows
-        ? '<table><tr><th>Relationship</th><th>Protocol</th><th>' +
-          'Application</th><th>Attributes ' +
-          'released</th></tr>' + assertRows + '</table>'
-        : '<p class="note">None configured. Every protocol endpoint here ' +
-          'already issues to anybody that asks — what an ' +
-          'identity-provider-side relationship adds is the partner being ' +
-          'marked as a federation partner rather than a test client, and a ' +
-          'list of which attributes are released to it.</p>') +
-      '<h2>Endpoints</h2><table><tr><th>Path</th><th>What</th></tr>' +
-      '<tr><td><code>' + LOGIN_PATH + '/{id}</code></td><td>Start a ' +
-        'federated ' +
-        'sign-in. Takes <code>?returnTo=</code>, a path on this service to ' +
-        'land on ' +
-        'afterwards.</td></tr><tr><td><code>' + ACS_PATH +
-      '/{id}</code></td><td>Where ' +
-        'the answer comes back: the assertion consumer service, the ' +
-        'WS-Federation <code>wreply</code> and the OAuth 2.0 ' +
-        '<code>redirect_uri</code>, all one path. <strong>This is the URL to ' +
-        'configure at the ' +
-        'partner.</strong></td></tr><tr><td><code>' + METADATA_PATH +
-      '/{id}</code></td><td>This ' +
-        'service\'s own SAML metadata for that partner. Unsigned, ' +
-        'deliberately.</td></tr>' +
-      // A PARTNER'S SIGN-OUT (#167), served by federation_slo.ts.
-      '<tr><td><code>' + SLO_PATH + '/{id}</code></td><td>Where a ' +
-        'partner\'s sign-out arrives in a browser: the SAML ' +
-        'SingleLogoutService, the WS-Federation cleanup URL and the OpenID ' +
-        'Connect post_logout_redirect_uri. It ends only the session the ' +
-        'partner names, after the same signature check a sign-in gets.' +
-        '</td></tr><tr><td><code>' + federation.PATHS.backchannelLogout +
-        '/{id}</code></td><td>The OpenID Connect backchannel_logout_uri to ' +
-        'register at the partner.</td></tr><tr><td><code>' +
-        federation.PATHS.frontchannelLogout + '/{id}</code></td><td>The ' +
-        'OpenID Connect frontchannel_logout_uri to register at the partner, ' +
-        'with frontchannel_logout_session_required.</td></tr></table>' +
-        '<p class="note">The base URL this ' +
-        'service sees itself at is <code>' + xmlEscape(base) +
-      '</code>, so the URLs above are absolute from there.</p>' +
-      // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
-      // SENT TO.** That endpoint draws a form for a PENDING AUTHENTICATION
-      // RECORD and answers `There is no sign-in waiting under that id` to a
-      // request naming none, so this link was an error page for as long as it
-      // existed. `/portal` has no session either, so `requireSignIn()` there
-      // calls `beginAuthentication()` and the browser arrives at the very
-      // screen this link promises — with the partner buttons on it, which is
-      // the whole point of the sentence around it — and lands on the reader's
-      // own account page once they have used one. The record is minted when the
-      // link is PRESSED rather than when this page is drawn, which is what
-      // keeps it from expiring on a page somebody left open. `portal/portal.ts`
-      // carries the full argument; the same mistake was in two other files on
-      // 2026-09-06.
-      '<p><a href="/admin/federation">Configure relationships in the ' +
-      'console</a> · <a href="/portal">The sign-in screen</a>' +
-      (config.value('federation.loginButtons')
-        ? ', which offers every usable partner as a button'
-        : ' (federation.loginButtons is off, so no partner is offered there)') +
-      '</p>';
-    res.type('html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page('Federation', body));
-    log.debug("Leaving the federation index.");
+    const view = {
+      kind: 'index', base: String(baseUrlOf(req)),
+      loginButtons: !!config.value('federation.loginButtons'),
+      consuming: consuming, asserting: asserting,
+      paths: { login: LOGIN_PATH, acs: ACS_PATH, metadata: METADATA_PATH,
+               slo: SLO_PATH,
+               backchannel: federation.PATHS.backchannelLogout,
+               frontchannel: federation.PATHS.frontchannelLogout }
+    };
+    FederationPages.send(res, 200, view);
+    log.debug("Leaving the federation index. " + consuming.length +
+              " consuming, " + asserting.length + " asserting.");
   }
 }
 

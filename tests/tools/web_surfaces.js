@@ -44,6 +44,9 @@
 // is said after a decision, and a refusal.
 // The sign-out (#577) draws its one page from views alone: the inventory,
 // the result drawn in place, and the two refusals' pages.
+// The federation pages (#580) draw every page from a view alone, as each
+// shell carries it: the landing page, the linking step's outcome, a
+// refusal of the login or linking endpoint, and the two pages not there.
 // The OpenID4VC demonstration (#582) draws all five of its pages from views
 // alone, the QR codes among them.
 //
@@ -719,6 +722,92 @@ function signoutCases(root) {
 }
 
 /**
+ * The federation pages' cases (#580): the landing page with relationships
+ * in every state and with none, in English and in French; the linking
+ * step's outcome with attributes mapped and thrown away, and with none; a
+ * refusal of the login and linking endpoints with and without a
+ * relationship; the two pages that are not there; a view the page does not
+ * know. Every value a partner or an administrator chose carries markup, so
+ * the escaping is held too.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function federationCases(root) {
+  log.debug("Entering federationCases().");
+  const ns = ['federationPages', 'handoff'];
+  const en = { t: translatorFor(root, ns, ['en']), query: {}, prefix: '',
+               origin: 'https://sts.example', here: '/federation' };
+  const fr = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['fr', 'en']) });
+  const zh = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['zh-Hans', 'en']) });
+  const paths = { login: '/federation/login', acs: '/federation/acs',
+                  metadata: '/federation/metadata', slo: '/federation/slo',
+                  backchannel: '/federation/backchannel-logout',
+                  frontchannel: '/federation/frontchannel-logout' };
+  const index = { kind: 'index', base: 'https://sts.example/realm/a&b',
+    loginButtons: true, paths: paths,
+    consuming: [
+      { id: 'idp<1>', protocol: 'SAML 2.0', peer: 'https://idp.example/"x"',
+        state: 'ready', missing: [], metadata: true },
+      { id: 'half', protocol: 'OpenID Connect', peer: '',
+        state: 'incomplete', missing: ['fedClientId', 'fedSsoUrl'],
+        metadata: false },
+      { id: 'off one', protocol: 'WS-Federation 1.2', peer: 'urn:x',
+        state: 'disabled', missing: ['fedSigningCertificate'],
+        metadata: false }],
+    asserting: [
+      { id: 'sp1', protocol: 'SAML 1.1', application: 'urn:sp:<1>',
+        release: ['mail', 'cn'] },
+      { id: 'sp2', protocol: 'OpenID Connect', application: '',
+        release: [] }] };
+  const signedIn = { kind: 'signedIn', relationship: 'idp<1>',
+    partner: 'The <Partner>', peer: 'https://idp.example',
+    protocol: 'SAML 2.0', subject: 'urn:uuid:"abc"',
+    username: 'alice&co', usernamePrefixed: true,
+    usernameFrom: 'NameID <persistent>', session: 's<1>',
+    autocreate: true, updates: false,
+    mapped: [{ incoming: 'email', ldap: 'mail',
+               values: ['a@example', '<b>@example'], where: 'layer 2' }],
+    unmapped: [{ incoming: 'shoe<size>', values: ['9', '10'] }] };
+  log.debug("Leaving federationCases().");
+  return [
+    { label: 'the landing page, relationships in every state, in English',
+      path: '/federation', view: index, ctx: en },
+    { label: 'the landing page, relationships in every state, in French',
+      path: '/federation', view: index, ctx: fr },
+    { label: 'the landing page with nothing configured and no buttons',
+      path: '/federation', ctx: en,
+      view: Object.assign({}, index, { consuming: [], asserting: [],
+                                       loginButtons: false }) },
+    { label: 'the linking step signed in, attributes mapped and thrown away',
+      path: '/federation/link/fed-abc', view: signedIn, ctx: en },
+    { label: 'the linking step signed in, no attributes, in Chinese',
+      path: '/federation/link/fed-abc', ctx: zh,
+      view: Object.assign({}, signedIn, { mapped: [], unmapped: [],
+        peer: '', subject: '', usernamePrefixed: false, autocreate: false,
+        updates: true }) },
+    { label: 'a linking step refused, recorded on the relationship',
+      path: '/federation/link/fed-abc', ctx: fr,
+      view: { kind: 'refused', what: 'The account was not linked',
+              why: 'This linking step was started in a <different> ' +
+                   'browser & "so" on.', relationship: 'idp<1>' } },
+    { label: 'a sign-in the login endpoint would not start, no relationship',
+      path: '/federation/login/x', ctx: en,
+      view: { kind: 'refused', what: 'That relationship goes the other way',
+              why: '"x" is an identity-provider-side relationship.',
+              relationship: '' } },
+    { label: 'federation turned off', path: '/federation/login/x', ctx: en,
+      view: { kind: 'off' } },
+    { label: 'no such relationship', path: '/federation/login/x', ctx: fr,
+      view: { kind: 'noRelationship', id: '<script>alert(1)</script>' } },
+    { label: 'a view the page does not know', path: '/federation',
+      ctx: en, view: { kind: 'other<1>' } }
+  ];
+}
+
+/**
  * The OpenID4VC demonstration's cases (#582): the issuer's page, the offer
  * page while the offer is made and its QR page for H.2 and H.3, the bar
  * door asking for claims and for the whole credential (an ldp_vc request
@@ -834,6 +923,10 @@ module.exports = [
     pages: 'logout/web_signout_pages.ts', global: 'StsSignout',
     bundle: 'logout/signout.bundle.js', runtime: 'logout/signout-spa.js',
     cases: signoutCases },
+  { name: 'the federation pages',
+    pages: 'federation/web_federation_pages.ts', global: 'StsFederation',
+    bundle: 'federation/federation-pages.bundle.js',
+    runtime: 'federation/federation-pages-spa.js', cases: federationCases },
   { name: 'the OpenID4VC demonstration',
     pages: 'oid4vc/web_vc_demo_pages.ts', global: 'StsVcDemo',
     bundle: 'oid4vc/vc-demo.bundle.js', runtime: 'oid4vc/vc-demo-spa.js',

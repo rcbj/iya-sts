@@ -318,6 +318,7 @@
   "endpoints.route./saml11/autopost.js.name": "Browser/POST profile auto-post script",
   "endpoints.route./saml11/rp.name": "Mock relying party (not a spec endpoint)",
   "endpoints.route./federation.name": "What federation is here",
+  "endpoints.route./federation/pages.js.name": "The federation pages' script",
   "endpoints.route./federation/login/:id.name": "Start a federated sign-in",
   "endpoints.route./federation/acs/:id.name": "Assertion consumer service / wreply / redirect_uri",
   "endpoints.route./federation/link/:handle.name": "Link a partner's subject at first sign-in",

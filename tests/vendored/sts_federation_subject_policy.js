@@ -140,6 +140,17 @@ function htmlDecode(text) {
     .replace(/&amp;/g, "&");
 }
 
+// THE LINKING STEP'S PAGES ARE THE FEDERATION PAGES' SHELL SINCE #580: a
+// refusal or the signed-in page at /federation/link/{handle} carries its
+// view in `data-sts-state`, which the browser draws. The view, or null for a
+// page the server drew (the assertion consumer service's).
+function linkView(body) {
+  log.debug("Entering linkView().");
+  const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(body || ""));
+  log.debug("Leaving linkView().");
+  return m ? JSON.parse(htmlDecode(m[1])).view : null;
+}
+
 // The management API in the realm named; the run's token is attached by
 // tests/tools/attach-admin-token.js.
 async function api(realm, method, path, payload) {
@@ -543,7 +554,9 @@ async function linkAtFirstSignIn(world) {
   await check("the linking screen completed in ANOTHER browser is refused " +
               "403 (STS-FED-0111) and links nothing", async function () {
     assert.strictEqual(other.status, 403, squash(other.body));
-    assert.ok(/different browser/.test(other.body), squash(other.body));
+    const said = linkView(other.body) || {};
+    assert.strictEqual(said.kind, "refused", squash(other.body));
+    assert.ok(/different browser/.test(said.why), JSON.stringify(said));
     assert.strictEqual(view.links.length, 0);
   });
 
@@ -552,7 +565,9 @@ async function linkAtFirstSignIn(world) {
   await check("Cancel at the linking screen is refused 403 and links " +
               "nothing", async function () {
     assert.strictEqual(got.r.status, 403, squash(got.r.body));
-    assert.ok(/was not linked/.test(got.r.body), squash(got.r.body));
+    const said = linkView(got.r.body) || {};
+    assert.strictEqual(said.what, "The account was not linked",
+                       squash(got.r.body));
     assert.strictEqual(view.links.length, 0);
     assert.ok(await codesInAudit("STS-FED-0099") >= 1,
               "no STS-FED-0099 row on the service provider's audit");
@@ -564,7 +579,9 @@ async function linkAtFirstSignIn(world) {
   await check("the right password links the partner's iss + sub and signs " +
               "the person in", async function () {
     assert.strictEqual(got.r.status, 200, squash(got.r.body));
-    assert.ok(/Signed in through/.test(got.r.body), squash(got.r.body));
+    const said = linkView(got.r.body) || {};
+    assert.strictEqual(said.kind, "signedIn", squash(got.r.body));
+    assert.strictEqual(said.username, who, JSON.stringify(said));
     assert.strictEqual(view.links.length, 1, JSON.stringify(view.links));
     assert.strictEqual(view.links[0].relationship, REL);
     assert.strictEqual(view.links[0].issuer, world.issuer);

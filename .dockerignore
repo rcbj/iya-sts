@@ -199,3 +199,6 @@ logout/signout-spa.js*
 # And the OpenID4VC demonstration's (#582), for the same reason.
 oid4vc/vc-demo.bundle.js
 oid4vc/vc-demo-spa.js*
+# And the federation pages' (#580), for the same reason.
+federation/federation-pages.bundle.js
+federation/federation-pages-spa.js*

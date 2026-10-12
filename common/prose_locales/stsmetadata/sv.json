@@ -2263,6 +2263,10 @@
     "en": "890f59f522646882",
     "text": "En beskrivningssida som listar varje konfigurerad relation i båda riktningarna och den URL som ska konfigureras hos varje partner. GET /saml2, GET /saml11 och GET /wsfed svarar på samma sätt och av samma skäl. Det är också den enda sidan i den här tjänsten som säger högt att en funktion här VÄGRAR som standard."
   },
+  "stsmetadata.endpoints./federation/pages.js.what": {
+    "en": "53bb085209311437",
+    "text": "NON-SPEC (#580). Körmiljön och renderarna för den här tjänstens egna federationssidor i en fil, byggd av build-typescript.sh (federation/federation-pages-spa.js) och serverad förkomprimerad: den ritar /federation, och det som /federation/login/{id} och /federation/link/{handle} säger när de avvisar eller loggar in någon utan någonstans att skicka dem, utifrån tillståndet varje skal bär. Svaren från assertion consumer service hör inte dit."
+  },
   "stsmetadata.endpoints./federation/login/:id.what": {
     "en": "5d0e34662cdedbd3",
     "text": "Tar ?returnTo=, en sökväg på den här tjänsten att landa på efteråt, vilket är hur en partnerknapp på /authn/login fullföljer det flöde som redan pågick. Den VÄGRAR en relation som är inaktiverad (403) eller aktiverad men halvt konfigurerad (409) i stället för att starta något som inte kan slutföras — de enda slutpunkterna i den här tjänsten som vägrar av ett konfigurationsskäl. PKCE skickas alltid i de två OAuth-liknande protokollen och det finns ingen inställning som stoppar det."

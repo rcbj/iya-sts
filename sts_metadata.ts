@@ -7249,6 +7249,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'GET /saml11 and GET /wsfed answer the same way and for the same ' +
           'reason. It is also the one page in this service that says out ' +
           'loud that a feature here REFUSES by default.' },
+  { path: '/federation/pages.js', group: 'Federation',
+    name: 'The federation pages\' script', specs: [],
+    what: 'NON-SPEC (#580). The runtime and renderers of the federation ' +
+          'pages that are this service\'s own, in one file built by ' +
+          'build-typescript.sh (federation/federation-pages-spa.js) and ' +
+          'served precompressed: it draws /federation, and what ' +
+          '/federation/login/{id} and /federation/link/{handle} say when they ' +
+          'refuse or sign somebody in with nowhere to send them, from the ' +
+          'state each shell carries. The assertion consumer service\'s ' +
+          'answers are not among them.' },
   { path: '/federation/login/:id', group: 'Federation',
     name: 'Start a federated sign-in',
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc',
