@@ -13,11 +13,12 @@
 // operation its view is the answer of; the wallet's start and wait pages
 // (#574), likewise; the SPNEGO sign-in's bodies (#575), whose view the
 // shell carries instead; and the second-factor and emailed-factor steps
-// (#572, #573). Each operation names its resource in the PATH (the pending
-// sign-in's id, the step's id), which the browser reads off the location's
-// query (`?authn=`, `?change=`, `?mfa=`) — the addresses
-// `beginAuthentication()` and the screen's acts have always sent a browser
-// to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
+// (#572, #573); and the OAuth consent screen (#576). Each operation names
+// its resource in the PATH (the pending sign-in's id, the step's id, the
+// pending consent's id), which the browser reads off the location's query
+// (`?authn=`, `?change=`, `?mfa=`, `?consent=`) — the addresses
+// `beginAuthentication()`, `beginConsent()` and the screen's acts have
+// always sent a browser to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
 // global `StsAuthn`, which `tests/web_surfaces.js` loads to draw a page from
 // a view after the wire and compare it, byte for byte, with this process's
 // drawing.
@@ -34,6 +35,9 @@ import WebAuthnEmail = require('./web_authn_email');
 // module in `oid4vc/`.
 import WebVcSignin = require('../oid4vc/web_vc_signin');
 import WebAuthnSpnego = require('../kerberos/web_authn_spnego');
+// THE OAUTH CONSENT SCREEN (#576), whose renderer is beside its server
+// module in `oauth-oidc/`.
+import WebConsentScreen = require('../oauth-oidc/web_consent_screen');
 
 type Json = any;
 
@@ -178,7 +182,22 @@ const PAGES = [
   stepRow('/authn/mfa-setup', 'setup', WebAuthnMfa.setup),
   emailRow('/authn/email-code', 'email-code'),
   emailRow('/authn/email-link', 'email-link'),
-  emailRow('/authn/email-link/open', 'email-link-open')
+  emailRow('/authn/email-link/open', 'email-link-open'),
+  // THE OAUTH CONSENT SCREEN (#576): `/oauth2/consent?consent=<id>`, the
+  // address the authorization endpoint has always sent a person to, drawn
+  // from `GET /authn-api/consent/{id}`. The one page of this surface outside
+  // `/authn`: the runtime owns it beside its base (`AuthnSurface`).
+  { path: '/oauth2/consent',
+    operation: function (query: Json): string {
+      return '/authn-api/consent/' +
+        encodeURIComponent(String(query.consent || ''));
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebConsentScreen.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebConsentScreen.title(view, ctx);
+    } }
 ];
 
 /**
@@ -203,9 +222,12 @@ class AuthnPages {
     if (!ctx || !ctx.view) {
       return body;
     }
-    // The SPNEGO sign-in's tables need the wide card (#575).
-    return '<div class="card' + (ctx.view.door === 'spnego' ? ' wide' : '') +
-      '">' + body + '</div>';
+    // The SPNEGO sign-in's tables need the wide card (#575); the consent
+    // screen's scope rows a wider card of their own (#576), as its own
+    // stylesheet had it.
+    return '<div class="card' + (ctx.view.door === 'spnego' ? ' wide'
+      : (ctx.view.consent === true ? ' consent' : '')) + '">' + body +
+      '</div>';
   }
 
   /**

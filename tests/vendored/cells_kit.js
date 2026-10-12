@@ -366,22 +366,22 @@ async function drive(jar, url, clientRedirect) {
       at = r.location;
       continue;
     }
-    const consentId = (String(r.text).match(
-      /name="consent_id" value="([^"]+)"/) || [])[1];
-    if (r.status === 200 && consentId) {
-      const shown = new URL(at);
-      const answered = await browse(jar, shown.origin + shown.pathname,
-        { form: { consent_id: consentId, action: "allow" } });
-      hops.push({ url: shown.origin + shown.pathname,
-                  status: answered.status, location: answered.location,
-                  set: answered.set });
-      if (answered.location) {
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576: its
+    // shell is what a browser is answered, and Allow goes to
+    // `/authn-api/consent/{id}` through the one helper.
+    if (r.status === 200 && authnSignin.isConsent(at)) {
+      const answered = await authnSignin.consentFor(at, jar.header());
+      const set = jar.take({ headers: answered.headers });
+      hops.push({ url: at, status: answered.status,
+                  location: answered.location, set: set });
+      if (answered.next === "redirect" && answered.location) {
         at = answered.location;
         continue;
       }
       log.debug("Leaving drive(). The consent answer did not redirect.");
       return { code: "", state: "", error: "", hops: hops,
-               stopped: answered };
+               stopped: { status: answered.status, location: "",
+                          text: answered.text || "", set: set } };
     }
     log.debug("Leaving drive(). Stopped on a page.");
     return { code: "", state: "", error: "", hops: hops, stopped: r };

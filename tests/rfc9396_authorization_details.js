@@ -471,17 +471,6 @@ function childMain() {
     const local = function (location) {
       return String(location || '').replace(/^https?:\/\/[^/]+/, '');
     };
-    const hidden = function (text) {
-      const form = {};
-      (text.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-        const name = /name="([^"]+)"/.exec(tag);
-        const value = /value="([^"]*)"/.exec(tag);
-        if (name) {
-          form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-        }
-      });
-      return form;
-    };
     // Follow sign-in and consent until the client's redirect_uri (or an
     // error page), answering consent with `answer`. Every page on the way is
     // kept for the assertions.
@@ -505,14 +494,15 @@ function childMain() {
           continue;
         }
         if (/\/oauth2\/consent/.test(where)) {
-          const page = await request(port, 'GET', local(where),
-                                     { cookies: true });
+          // THE CONSENT SCREEN OVER `/authn-api/consent` (#576): the page
+          // is its view, and the answer is read as the form's 303 was.
+          const page = await screen.openConsent({ port: port, jar: jar,
+                                                  at: local(where) });
           pages.consent = page;
           pages.consentCount += 1;
-          const form = hidden(page.text);
-          form.action = answer || 'allow';
-          r = await request(port, 'POST', '/oauth2/consent',
-                            { form: form, cookies: true });
+          r = await screen.answerConsent({ port: port, jar: jar,
+            at: local(where), opened: page,
+            decision: answer === 'deny' ? 'deny' : 'allow' });
           continue;
         }
         r = await request(port, 'GET', local(where), { cookies: true });

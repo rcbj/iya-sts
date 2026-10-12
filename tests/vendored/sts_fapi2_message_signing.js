@@ -243,13 +243,15 @@ async function follow(b, first, who, onConsent) {
       r = signed;
       continue;
     }
-    r = await b.go("GET", where);
-    if (r.status === 200 && /id="consent-allow"/.test(r.text) && onConsent) {
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576: its
+    // view and its answer are `/authn-api/consent`'s, through the one
+    // helper, with this browser's jar; the answer is read as the form's 303.
+    if (authnSignin.isConsent(where) && onConsent) {
       onConsent.shown += 1;
-      const fields = hiddenFields(r.text);
-      fields.action = "allow";
-      r = await b.go("POST", R + "/oauth2/consent", form(fields));
+      r = await authnSignin.consentWithJar(where, "allow", b.jar);
+      continue;
     }
+    r = await b.go("GET", where);
   }
   log.debug("Leaving follow(). " + r.status);
   return r;

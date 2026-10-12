@@ -105,10 +105,15 @@ const APPLICATIONS = [
   { id: 'management-api', label: 'Management API', rescued: true,
     what: '/admin-api, every console control reachable by a machine.',
     prefixes: ['/admin-api'], exact: [] },
+  // `/authn-api/consent` IS THE CONSENT SCREEN'S API (#576), and goes with
+  // the page — `/oauth2/consent` and its script — so the screen's calls are
+  // answered on the listener that drew it, whichever listener `/authn` is
+  // on: no answer here is ever credentialed to another origin
+  // (`common/cors.js`). It is longer than `/authn-api`, so it is found first.
   { id: 'oauth-oidc', label: 'OAuth 2.0 / OpenID Connect', session: true,
     what: 'The authorization server and OpenID provider, their discovery ' +
           'documents and the access-token status list.',
-    prefixes: ['/oauth2', '/status-lists', '/dpop',
+    prefixes: ['/oauth2', '/authn-api/consent', '/status-lists', '/dpop',
                '/.well-known/openid-configuration',
                '/.well-known/oauth-authorization-server',
                '/.well-known/webfinger'],

@@ -1459,6 +1459,10 @@
     "en": "6f6ac9c72bde33a8",
     "text": "錢包登入：Digital Credentials API 的回應"
   },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "同意畫面詢問的內容及回答"
+  },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",
     "text": "強制變更密碼"
@@ -1546,6 +1550,10 @@
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "同意畫面"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "同意畫面的指令碼"
   },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",

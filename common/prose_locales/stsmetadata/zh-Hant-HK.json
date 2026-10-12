@@ -1236,8 +1236,8 @@
     "text": "非規範（#164 決策 9），供測試使用：MDM 饋送的主體——依 id、指紋或證書指名裝置的報告，或 reports: [...]——「不需要」device:compliance 範圍，以來源 test-control 記錄，讓受測客戶端能觸發其所回應的 CAEP device-compliance-change。「產品模式會以 403 拒絕」（mode.opensTestControls()，STS-DEVICE-0035）：在那裡，入口是位於其範圍之下的 /admin-api/device-compliance 饋送。"
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "「為規範行為而設的非規範畫面」。OAuth 2.0 與 OpenID Connect 都假設授權伺服器會取得資源擁有者的同意，但都沒有說明那看起來是什麼樣子；這就是它在這裡的樣子。當請求指名了已登入者尚未對該 client_id 同意過的範圍時，授權端點會將其送來這裡，在其回答之前不會簽發任何東西。「允許」會在其位於 ou=users 下的自身項目上，為每個範圍寫入一個 oauthConsent 值——<when> <scope> <client_id>，每個（人、應用程式、範圍）一個值——因此第二次登入會靜默完成，而 ldapsearch 可以讀取某人同意了什麼。「拒絕」會透過授權端點將 access_denied 傳回客戶端，由授權端點決定其傳遞方式：form_post 回應是表單而非重新導向，而此畫面不得知道這一點。委派權限以其「完整」識別碼記錄，絕不以單純的權限名稱記錄，因為兩個資源可能都公開 `read`。「記錄存於伺服器端」，URL 中唯一的東西是一個無法猜測的 id，因此沒有任何人能改寫的返回地址；回答是 POST，因為記錄同意的 GET 會成為任何預先擷取連結的東西都能給出的同意；工作階段也會與被詢問的那個人核對，這是此處唯一會將不實內容寫入目錄的失敗情況。「沒有腳本」——表單中的兩個按鈕，因此全服務的 script-src 'none' 不受影響。oauth2.consentRequired 可將其關閉，預設為「開啟」；/admin/consent 是其登錄，而應用程式項目上的 oauthGlobalConsent 會為所有人略過提示，且不寫入任何關於任何人的內容。"
+    "en": "a03a6663434a737e",
+    "text": "「為規範行為而設的非規範畫面」。OAuth 2.0 與 OpenID Connect 都假設授權伺服器會取得資源擁有者的同意，但都沒有說明那看起來是什麼樣子；這就是它在這裡的樣子。當請求指名了已登入者尚未對該 client_id 同意過的範圍時，授權端點會將其送來這裡，在其回答之前不會簽發任何東西。「允許」會在其位於 ou=users 下的自身項目上，為每個範圍寫入一個 oauthConsent 值——<when> <scope> <client_id>，每個（人、應用程式、範圍）一個值——因此第二次登入會靜默完成，而 ldapsearch 可以讀取某人同意了什麼。「拒絕」會透過授權端點將 access_denied 傳回客戶端，由授權端點決定其傳遞方式：form_post 回應是表單而非重新導向，而此畫面不得知道這一點。委派權限以其「完整」識別碼記錄，絕不以單純的權限名稱記錄，因為兩個資源可能都公開 `read`。「記錄存於伺服器端」，URL 中唯一的東西是一個無法猜測的 id，因此沒有任何人能改寫的返回地址；回答是 POST，因為記錄同意的 GET 會成為任何預先擷取連結的東西都能給出的同意；工作階段也會與被詢問的那個人核對，這是此處唯一會將不實內容寫入目錄的失敗情況。自 #576 起是登入介面的一個頁面：這些檢查通過後，此 GET 回應外殼頁面，由 /oauth2/consent.js 根據 /authn-api/consent/{id} 繪製頁面，並將「允許」或「拒絕」以 JSON 送往該處；必須啟用腳本。oauth2.consentRequired 可將其關閉，預設為「開啟」；/admin/consent 是其登錄，而應用程式項目上的 oauthGlobalConsent 會為所有人略過提示，且不寫入任何關於任何人的內容。"
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

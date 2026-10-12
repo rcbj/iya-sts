@@ -2543,6 +2543,14 @@
     "en": "f04802283b57225d",
     "text": "vérifie la réponse du portefeuille et connecte le navigateur qui l’a envoyée"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576). GET répond par la vue de l’écran de consentement — l’application, chaque portée et chaque détail d’autorisation, les limites qu’une personne peut abaisser, ce qui a déjà été accepté — et le jeton CSRF ; POST reçoit Autoriser ou Refuser en JSON, avec une Origin de ce service et le X-CSRF-Token de la session du navigateur, et uniquement de la personne à qui la question a été posée. L’identifiant est une capacité au porteur et n’est jamais journalisé."
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "POST enregistre Autoriser ou Refuser et nomme la requête d’autorisation à laquelle revenir"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET répond quel est le compte dont le mot de passe doit changer ; POST enregistre le nouveau et poursuit la connexion."
@@ -2636,12 +2644,16 @@
     "text": "NON-SPEC, pour les tests et pour essayer l’échange à la main : active et désactive à l’exécution l’exigence de nonce fourni par le serveur des sections 8/9 de la RFC 9449, afin que l’échange 401/nouvelle tentative puisse être exercé sans redémarrer le service. GET indique l’état actuel ; POST {\"required\": true|false} le définit — pour le DOMAINE DE CONFIANCE dans lequel il est atteint, en écrivant oauth2.dpopNonceRequired (c’était un commutateur unique pour tout le processus jusqu’au 2026-09-12). LE MODE PRODUIT REFUSE LE POST par une 403, car c’est une commande de test : le paramètre s’y modifie via /admin/oauth2 ou POST /admin-api/config/set."
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "ÉCRAN HORS SPÉCIFICATION POUR UN COMPORTEMENT DE LA SPÉCIFICATION. OAuth 2.0 et OpenID Connect supposent tous deux qu’un serveur d’autorisation obtient le consentement du propriétaire de la ressource, et aucun ne dit à quoi cela ressemble ; voici à quoi cela ressemble ici. Le point de terminaison d’autorisation envoie ici une personne connectée lorsque la requête nomme une portée qu’elle n’a pas encore acceptée pour ce client_id, et rien n’est émis tant qu’elle n’a pas répondu. Autoriser écrit une valeur oauthConsent par portée sur sa propre entrée sous ou=users — <when> <scope> <client_id>, une valeur par (personne, application, portée) — si bien que la deuxième connexion est silencieuse et qu’un ldapsearch peut lire ce que quelqu’un a accepté. Refuser renvoie access_denied au client via le point de terminaison d’autorisation, qui décide de la manière dont cela transite : une réponse form_post est un formulaire et non une redirection, et cet écran ne doit pas le savoir. Une permission déléguée est enregistrée par son identifiant COMPLET, jamais par le simple nom de la permission, car deux ressources peuvent toutes deux exposer `read`. L’ENREGISTREMENT EST CÔTÉ SERVEUR et la seule chose dans l’URL est un identifiant impossible à deviner, il n’y a donc aucune adresse de retour que quiconque pourrait réécrire ; la réponse est un POST, car un GET qui enregistrerait le consentement serait un consentement que pourrait donner tout ce qui précharge un lien ; et la session est vérifiée par rapport à la personne à qui la question a été posée, la seule défaillance ici qui écrirait quelque chose de faux dans l’annuaire. AUCUN SCRIPT — deux boutons dans un formulaire, si bien que le script-src 'none' de tout le service reste intact. oauth2.consentRequired le désactive, et il est ACTIVÉ par défaut ; /admin/consent est le registre, et oauthGlobalConsent sur une entrée d’application saute l’invite pour tout le monde sans rien écrire sur personne."
+    "en": "a03a6663434a737e",
+    "text": "ÉCRAN HORS SPÉCIFICATION POUR UN COMPORTEMENT DE LA SPÉCIFICATION. OAuth 2.0 et OpenID Connect supposent tous deux qu’un serveur d’autorisation obtient le consentement du propriétaire de la ressource, et aucun ne dit à quoi cela ressemble ; voici à quoi cela ressemble ici. Le point de terminaison d’autorisation envoie ici une personne connectée lorsque la requête nomme une portée qu’elle n’a pas encore acceptée pour ce client_id, et rien n’est émis tant qu’elle n’a pas répondu. Autoriser écrit une valeur oauthConsent par portée sur sa propre entrée sous ou=users — <when> <scope> <client_id>, une valeur par (personne, application, portée) — si bien que la deuxième connexion est silencieuse et qu’un ldapsearch peut lire ce que quelqu’un a accepté. Refuser renvoie access_denied au client via le point de terminaison d’autorisation, qui décide de la manière dont cela transite : une réponse form_post est un formulaire et non une redirection, et cet écran ne doit pas le savoir. Une permission déléguée est enregistrée par son identifiant COMPLET, jamais par le simple nom de la permission, car deux ressources peuvent toutes deux exposer `read`. L’ENREGISTREMENT EST CÔTÉ SERVEUR et la seule chose dans l’URL est un identifiant impossible à deviner, il n’y a donc aucune adresse de retour que quiconque pourrait réécrire ; la réponse est un POST, car un GET qui enregistrerait le consentement serait un consentement que pourrait donner tout ce qui précharge un lien ; et la session est vérifiée par rapport à la personne à qui la question a été posée, la seule défaillance ici qui écrirait quelque chose de faux dans l’annuaire. UNE PAGE DE LA SURFACE DE CONNEXION depuis #576 : ce GET répond par le shell une fois ces vérifications passées, et /oauth2/consent.js dessine la page à partir de /authn-api/consent/{id} et y envoie Autoriser ou Refuser en JSON ; le script est obligatoire. oauth2.consentRequired le désactive, et il est ACTIVÉ par défaut ; /admin/consent est le registre, et oauthGlobalConsent sur une entrée d’application saute l’invite pour tout le monde sans rien écrire sur personne."
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "requiert un identifiant de consentement en attente — répond 400 lorsqu’il est suivi sans paramètres"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576). Le bundle de la surface de connexion — le même fichier que /authn/signin.js — à l’adresse propre de l’écran de consentement, pour que l’écouteur de la page serve son script. Public : rien n’y est secret."
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

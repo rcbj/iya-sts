@@ -74,6 +74,12 @@ opening it spends nothing until Continue is pressed.
 | GNAP | `/gnap/code`, `/gnap/approve/…` | Types a user code; approves or refuses a grant | Yes |
 | The OP iframe | `/oauth2/check_session` | Nothing visible: a relying party's session check | n/a |
 
+**Since #576 the consent screen is a static page too**, drawn from
+[`/authn-api/consent/{id}`](authn-api.md#the-consent-screen) in the browser's
+own language, with Allow and Deny sent there; it needs JavaScript, and with
+scripts blocked it says so. The authorization endpoint, its redirects and
+how the answer reaches the application are unchanged.
+
 ## The front door and the realm chooser
 
 | Page | Path | What a person does there | Language |

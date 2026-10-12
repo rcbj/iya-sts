@@ -1,9 +1,19 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 // File: consent_screen.js
 //
 // ---------------------------------------------------------------------------
 // PASS THE MOCK STS'S CONSENT SCREEN. One implementation, shared by every job
 // in this suite that signs a person in to that service and then expects an
 // OAuth 2.0 or OpenID Connect authorization response.
+//
+// LOCALISED (#576, the rule rcbj set for the sign-in screen's copies on
+// #569): it was the parent project's copy until the consent screen became a
+// page of the sign-in surface; `settleAuthorization()` answers it over
+// `/authn-api/consent` through `authn_signin.js` since then, and the
+// browser surface presses the buttons the page still carries
+// (`consent-allow`, `consent-deny`).
 //
 // WHY THIS EXISTS
 //
@@ -54,6 +64,9 @@
 "use strict";
 
 const bunyan = require("bunyan");
+// The sign-in surface's pages over `/authn-api` (#571, #576): the consent
+// screen is one of them.
+const authnSignin = require("./authn_signin.js");
 
 const log = bunyan.createLogger({ name: "consent_screen",
                                   level: process.env.LOG_LEVEL || "info" });
@@ -71,10 +84,14 @@ const CONSENT_PATH = /\/oauth2\/consent(\?|$)/;
 const AUTHORIZE_PATH = /\/oauth2\/authorize(\?|$)/;
 
 function isConsentScreen(url) {
+  log.debug("Entering isConsentScreen().");
+  log.debug("Leaving isConsentScreen().");
   return CONSENT_PATH.test(String(url || ""));
 }
 
 function isAuthorizeEndpoint(url) {
+  log.debug("Entering isAuthorizeEndpoint().");
+  log.debug("Leaving isAuthorizeEndpoint().");
   return AUTHORIZE_PATH.test(String(url || ""));
 }
 
@@ -83,8 +100,10 @@ function isAuthorizeEndpoint(url) {
 // for a client's redirect_uri, which is exactly the distinction these jobs care
 // about — so this is careful not to turn the second into the first.
 function absolute(base, location) {
+  log.debug("Entering absolute().");
   const target = String(location || "");
   if (/^https?:\/\//i.test(target)) {
+    log.debug("Leaving absolute(). Already absolute.");
     return target;
   }
   // A Location already carrying the base's own path — what a trust realm's
@@ -98,22 +117,18 @@ function absolute(base, location) {
     log.debug("Caught in absolute(): " + ((e && e.message) || e));
   }
   if (prefix && target.startsWith(prefix + "/")) {
+    log.debug("Leaving absolute(). On the base's origin.");
     return new URL(target, String(base)).toString();
   }
+  log.debug("Leaving absolute().");
   return String(base || "").replace(/\/+$/, "") + target;
-}
-
-// Where the Allow on a consent screen is posted: the screen's own path, so a
-// screen drawn inside a trust realm is answered inside it.
-function consentAction(base, location) {
-  const shown = new URL(absolute(base, location));
-  return shown.origin + shown.pathname;
 }
 
 // Is this URL still on the service we are driving? Only same-origin hops are
 // followed, so a client redirect_uri that happens to contain the word `consent`
 // is never mistaken for the screen.
 function sameOrigin(base, location) {
+  log.debug("Entering sameOrigin().");
   let here, there;
   try {
     here = new URL(String(base));
@@ -125,15 +140,18 @@ function sameOrigin(base, location) {
     log.debug("Leaving sameOrigin(). Unparseable: " + e.message);
     return false;
   }
+  log.debug("Leaving sameOrigin().");
   return here.origin === there.origin;
 }
 
-// The `consent_id` on the screen, or "". Read out of the markup rather than off
-// the query string, because the FORM is what the answer is posted with and a
-// test that posted the query parameter would be asserting its own reading of
-// the page rather than the page.
-function consentIdOf(html) {
-  return (String(html || "").match(/name="consent_id" value="([^"]+)"/) || [])[1] || "";
+// The pending consent's id in the screen's address, or "". Until #576 it was
+// read out of the form's markup; the page is drawn in the browser since then,
+// and the id is the address's `consent` — the one the page itself reads.
+function consentIdOf(where) {
+  log.debug("Entering consentIdOf().");
+  log.debug("Leaving consentIdOf().");
+  const m = String(where || "").match(/[?&]consent=([^&#]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
 }
 
 // ---------------------------------------------------------------------------
@@ -176,27 +194,33 @@ async function settleAuthorization(opts) {
       break;
     }
     if (isConsentScreen(location)) {
-      const shown = await fetch(absolute(base, location),
-                               { redirect: "manual", headers: headers });
-      page = await shown.text();
-      const id = consentIdOf(page);
-      if (!id) {
+      // THE SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576: its view is
+      // `GET /authn-api/consent/<id>` and the answer `POST` there, bound to
+      // the session cookie by a CSRF token (`authn_signin.js`).
+      const opened = await authnSignin.consentPage(absolute(base, location),
+        { cookie: cookie, headers: options.headers || {} });
+      page = opened.text;
+      if (!opened.view) {
         // The screen refused to draw — an expired record, or a session that
         // belongs to somebody else. Handing the caller the status is more use
         // than throwing here: the job knows what it was expecting.
-        log.debug("Leaving settleAuthorization(). The consent screen carried no " +
-                  "consent_id; status " + shown.status + ".");
+        log.debug("Leaving settleAuthorization(). The consent screen drew " +
+                  "no view; status " + opened.status + ".");
         return { location: location, cookie: cookie, screens: screens,
-                 page: page, status: shown.status, blocked: true };
+                 page: page, status: opened.shellStatus === 200
+                   ? opened.status : opened.shellStatus, blocked: true };
       }
-      const answered = await fetch(consentAction(base, location), {
-        method: "POST", redirect: "manual",
-        headers: Object.assign({ "Content-Type": "application/x-www-form-urlencoded" },
-                               headers),
-        body: new URLSearchParams({ consent_id: id, action: decision }).toString()
-      });
+      const answered = await authnSignin.answerConsent(opened, decision,
+        { headers: options.headers || {} });
       screens++;
-      location = answered.headers.get("location") || "";
+      location = answered.next === "redirect" ? answered.location : "";
+      if (!location) {
+        log.debug("Leaving settleAuthorization(). The answer was refused: " +
+                  answered.status + ".");
+        return { location: "", cookie: cookie, screens: screens,
+                 page: answered.text, status: answered.status,
+                 blocked: true };
+      }
       continue;
     }
     if (isAuthorizeEndpoint(location) && screens > 0) {

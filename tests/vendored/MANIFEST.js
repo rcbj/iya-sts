@@ -1555,7 +1555,6 @@ const JOBS = [
 // ---------------------------------------------------------------------------
 const HELPERS = [
   'browser_flags.js',
-  'consent_screen.js',
   'expectation.js',
   'jwt_vc_json_common.js',
   'module_paths.js',
@@ -1587,6 +1586,11 @@ const LOCAL_HELPERS = [
   // static surface over /authn-api since #571, through `authn_signin.js`;
   // it was a copy of the parent's (listed in HELPERS until then).
   'sts_applications.js',
+  // LOCALISED (#576, on #569's rule): it passes the consent screen, a page
+  // of the sign-in surface over /authn-api/consent since #576, through
+  // `authn_signin.js`; it was a copy of the parent's (listed in HELPERS
+  // until then).
+  'consent_screen.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.

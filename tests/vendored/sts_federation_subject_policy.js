@@ -307,6 +307,18 @@ async function federatedSignIn(idpUser, opts) {
         }
         continue;
       }
+      // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+      // answered over `/authn-api/consent` through the one helper.
+      if (authnSignin.isConsent(next)) {
+        const answer = await authnSignin.consentFor(next,
+          cookies && cookies.has() ? cookies.header() : "");
+        cookies.take({ headers: answer.headers });
+        r = { status: authnSignin.responseLike(answer).status,
+              headers: answer.headers, url: next,
+              body: answer.text || JSON.stringify(answer.json),
+              location: answer.location };
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }

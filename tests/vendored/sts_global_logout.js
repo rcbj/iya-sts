@@ -306,7 +306,7 @@ function hiddenFields(html) {
 }
 
 // THE SIGN-IN SCREEN AND THE CONSENT SCREEN, answered wherever they appear.
-// Both are ordinary forms; the loop is bounded because a flow that kept
+// Both are pages of the sign-in surface since #571 and #576; the loop is bounded because a flow that kept
 // redrawing one would otherwise hang rather than fail.
 async function throughTheScreens(cookies, started, username) {
   log.debug("Entering throughTheScreens().");
@@ -329,13 +329,21 @@ async function throughTheScreens(cookies, started, username) {
         break;
       }
       ({ r, landed } = await follow(cookies, answer.location));
-    } else if (/\/oauth2\/consent/.test(r.body)) {
-      const b = hiddenFields(r.body);
-      b.set("action", "allow");
-      b.set("decision", "allow");
-      ({ r, landed } = await follow(cookies, base + "/oauth2/consent", {
-        method: "POST", body: b.toString(),
-        headers: { "content-type": "application/x-www-form-urlencoded" } }));
+    } else if (authnSignin.isConsent(r.url)) {
+      // THE CONSENT SCREEN IS ITS SHELL SINCE #576, a page of the same
+      // surface over `/authn-api/consent`: answered through the one helper,
+      // and the flow followed from where its answer says.
+      const answer = await authnSignin.consentFor(r.url,
+        cookies && cookies.has() ? cookies.header() : "");
+      if (cookies) {
+        cookies.take({ headers: answer.headers });
+      }
+      if (answer.next !== "redirect") {
+        r = { status: answer.status, headers: answer.headers,
+              body: answer.text || JSON.stringify(answer.json), url: r.url };
+        break;
+      }
+      ({ r, landed } = await follow(cookies, answer.location));
     } else {
       break;
     }

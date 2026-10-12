@@ -229,17 +229,6 @@ function childMain() {
       req.end(body);
     });
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
   const local = function (location) {
     return String(location || '').replace(/^https?:\/\/[^/]+/, '');
   };
@@ -421,11 +410,10 @@ function childMain() {
       r = await byValue('jti-consent', asked);
       const toConsent = await complete(r, 'jti-consenter');
       const consentPage = local(toConsent.headers.location);
-      const drawn = await request(port, 'GET', consentPage, { cookies: true });
-      const form = hiddenFields(drawn.text);
-      form.action = 'allow';
-      const allowed = await request(port, 'POST', '/oauth2/consent',
-                                    { form: form, cookies: true });
+      // THE CONSENT SCREEN OVER `/authn-api/consent` (#576), this test's
+      // jar kept; its answer is read as the 303 the form was answered with.
+      const allowed = await screen.answerConsent({ port: port, jar: jar,
+                                                   at: consentPage });
       final = await request(port, 'GET', local(allowed.headers.location),
                             { cookies: true });
       note(/\/oauth2\/consent/.test(consentPage) &&

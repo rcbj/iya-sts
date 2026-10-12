@@ -36,7 +36,8 @@
 // in the states its view can name, the federation chooser and the forced
 // password change; the SPNEGO sign-in's three bodies (#575), from the
 // state their shell carries; and the wallet's start and wait pages (#574),
-// the QR code and a refusal.
+// the QR code and a refusal. The OAuth consent screen (#576) is a page of
+// the same surface, and its cases are drawn from views alone too.
 //
 // GNAP's interaction pages (#578) draw every page from a view alone: the
 // user code page, the approval page in the states its view can name, what
@@ -436,12 +437,96 @@ function stepCases(en, fr) {
 }
 
 /**
+ * The OAuth consent screen's cases (#576): every part of the page — the
+ * application by name with its client_id, a scope with a permission and
+ * one without, an RFC 9396 detail member by member, every kind of limit as
+ * a control, the fold of what was already agreed (by the person, at a
+ * time, and for everybody) and the request's own parameters — in English
+ * and in French; a refused answer over it; and the plainest page there is.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function consentCases(root) {
+  log.debug("Entering consentCases().");
+  const en = { t: translatorFor(root, 'consent', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/oauth2/consent?consent=c1', error: '' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'consent', ['fr', 'en']) });
+  const limits = { amount: '100.00', currency: 'EUR', count: 5,
+                   receiver: ['DE89 <one>', 'FR76 & two'],
+                   interval: 'R5/2026-10-01T00:00:00Z/P1M',
+                   window: { notBefore: '2026-10-01', notAfter: '2026-12-31' },
+                   vendor: { x: 1 } };
+  const rows = [
+    { member: 'amount', label: 'At most', value: '100.00 EUR' },
+    { member: 'currency', label: 'In', value: 'EUR' },
+    { member: 'count', label: 'At most', value: '5 operations' },
+    { member: 'receiver', label: 'Only to', value: 'DE89 <one>, FR76 & two' },
+    { member: 'interval', label: 'Resetting every',
+      value: 'R5/2026-10-01T00:00:00Z/P1M' },
+    { member: 'window', label: 'Only',
+      value: 'from 2026-10-01 until 2026-12-31' },
+    { member: 'vendor', label: 'vendor', value: '{"x":1}' }];
+  const everything = { consent: true, username: 'alice <a>',
+    base: 'https://sts.example',
+    client: { id: 'demo "client"', name: 'Demo <App> & co' },
+    scopes: [{ scope: 'read', permission: null },
+             { scope: 'https://api.example/write', permission: {
+               description: 'Write <things>', name: 'write',
+               identifier: 'https://api.example/write',
+               baseUri: 'https://api.example' } },
+             { scope: 'https://api.example/admin', permission: {
+               description: '', name: 'admin & more',
+               identifier: 'https://api.example/admin',
+               baseUri: 'https://api.example' } }],
+    authorizationDetails: [{ type: 'payment_initiation',
+      description: 'Initiate a <payment>', resource: 'Bank & co',
+      audience: 'https://pay.example',
+      members: [{ name: 'instructedAmount', value: '{"amount":"100.00"}' },
+                { name: 'creditorName', value: 'Merchant <A>' }] },
+      { type: 'account_information', description: '',
+        resource: 'r96-bank', audience: 'https://acct.example',
+        members: [] }],
+    already: [{ scope: 'openid', global: false, at: '' },
+              { scope: 'email', global: false,
+                at: '2026-10-12T09:00:00Z' },
+              { scope: 'profile', global: true, at: '' }],
+    limits: [{ r: 0, type: 'payment_initiation', limits: limits,
+               rows: rows }],
+    attribute: 'oauthConsent', protocol: 'OAuth 2.0 / OIDC',
+    details: [{ label: 'client_id', value: 'demo "client"', note: '' },
+              { label: 'scope', value: 'openid read', note: '' },
+              { label: 'request', value: 'signed request object (ES256)',
+                note: 'verified <ok>' }] };
+  const plain = { consent: true, username: 'bob', base: 'https://sts.example',
+    client: { id: 'plain', name: 'plain' },
+    scopes: [{ scope: 'openid', permission: null }],
+    authorizationDetails: [], already: [], limits: [],
+    attribute: 'oauthConsent', protocol: 'OAuth 2.0 / OIDC', details: [] };
+  log.debug("Leaving consentCases().");
+  return [
+    { label: 'the consent screen, every part, in English',
+      path: '/oauth2/consent', view: everything, ctx: en },
+    { label: 'the consent screen, every part, in French',
+      path: '/oauth2/consent', view: everything, ctx: fr },
+    { label: 'the consent screen with a raised limit refused',
+      path: '/oauth2/consent', view: everything,
+      ctx: Object.assign({}, en, { error: 'The limits of ' +
+        '"payment_initiation" may only be lowered here: amount.' }) },
+    { label: 'the plainest consent screen',
+      path: '/oauth2/consent', view: plain, ctx: fr }
+  ];
+}
+
+/**
  * GNAP's interaction pages' cases (#578): the user code page; the approval
  * page with everything it can draw — a registered data: logo, a name and a
  * home page the client declared, a self-declared class, two labelled
  * tokens one of them a bearer, a registered and an unregistered reference,
- * a right with every dimension and an identifier, server-drawn limit
- * controls, what the policy narrowed, the subject asked for, a redirect
+ * a right with every dimension and an identifier, every kind of limit
+ * as a control, what the policy narrowed, the subject asked for, a redirect
  * finish — in English and in French; a bare approval with a push finish and
  * none; each thing said after a decision; the request sent to its owner;
  * and a refusal carrying markup.
@@ -467,22 +552,33 @@ function gnapCases(root) {
     tokens: [
       { label: 'read <only>', number: 1, bearer: true, heading: true,
         rights: [
-          { field: 't0r0', limitsHtml: '',
+          { field: 't0r0', token: 0, index: 0, limits: null, limitRows: [],
             right: { reference: 'ref-<1>',
                      registered: { rs: 'rs.example', access: ['a', 'b&c'] } } },
-          { field: 't0r1', limitsHtml: '',
+          { field: 't0r1', token: 0, index: 1, limits: null, limitRows: [],
             right: { reference: 'ref-2', registered: null } }] },
       { label: '', number: 2, bearer: false, heading: true,
         rights: [
-          { field: 't1r0',
-            limitsHtml: '<div class="limits"><span>Limits</span><div>at ' +
-              'most <input name="lim_t1r0_amount" value="50" ' +
-              'inputmode="decimal" size="24"> EUR</div></div>',
+          { field: 't1r0', token: 1, index: 0,
+            limits: { amount: '50', currency: 'EUR<', count: 3,
+                      receiver: ['acct:<a>', 'acct:b'],
+                      interval: 'R/2026-10-01T00:00:00Z/P1M',
+                      window: { notBefore: '2026-10-01T00:00:00Z' },
+                      region: 'eu' },
+            limitRows: [
+              { member: 'amount', label: 'at most', value: '50 EUR<' },
+              { member: 'currency', label: 'currency', value: 'EUR<' },
+              { member: 'count', label: 'at most', value: '3' },
+              { member: 'receiver', label: 'only to', value: 'acct:<a>' },
+              { member: 'interval', label: 'resetting',
+                value: 'R/2026-10-01T00:00:00Z/P1M' },
+              { member: 'window', label: 'between', value: '…' },
+              { member: 'region', label: 'region', value: 'eu' }],
             right: { type: 'payment<x>', identifier: 'acct&1',
                      dimensions: [
                        { name: 'actions', values: ['read', 'pay'] },
                        { name: 'locations', values: ['https://x/<y>'] }] } },
-          { field: 't1r1', limitsHtml: '',
+          { field: 't1r1', token: 1, index: 1, limits: null, limitRows: [],
             right: { type: 'photo', identifier: '', dimensions: [] } }] }],
     narrowed: [
       { type: 'payment<x>', changes: [
@@ -554,7 +650,8 @@ module.exports = [
     cases: function (root) {
       log.debug("Entering the sign-in screen's cases.");
       log.debug("Leaving the sign-in screen's cases.");
-      return authnCases(root).concat(walletCases(root));
+      return authnCases(root).concat(walletCases(root),
+                                     consentCases(root));
     } },
   { name: 'GNAP\'s interaction pages',
     pages: 'gnap/web_gnap_interact_pages.ts', global: 'StsGnapInteract',

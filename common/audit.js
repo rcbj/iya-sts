@@ -2047,12 +2047,14 @@ function recordHttp(req, res, detail) {
 // open — `/authn/login?authn=`, `/authn/wallet/wait?authn=&state=&mfa=`, a
 // wallet's same-device return with its `response_code` — so a full URL a
 // line records has those values replaced too (`REDACTED_CAPABILITIES`).
+// THE PENDING CONSENT'S ID (#576) is one more: `/authn-api/consent/{id}`,
+// the capability `/oauth2/consent?consent=` always carried.
 const REDACTED_PATHS =
-  /(\/authn-api\/(?:pending|password-change|wallet|mfa)\/)[^/?#]+/g;
+  /(\/authn-api\/(?:pending|password-change|wallet|mfa|consent)\/)[^/?#]+/g;
 // And a mailed sign-in link's token (#573, `/authn/email-link/open?t=`),
 // which is a credential rather than a capability over a step.
 const REDACTED_CAPABILITIES = ['authn', 'mfa', 'state', 'response_code',
-                               'change', 't'];
+                               'change', 't', 'consent'];
 const REDACTED_QUERY_VALUES = new RegExp('([?&](?:' +
   REDACTED_CAPABILITIES.join('|') + ')=)[^&#]*', 'g');
 
