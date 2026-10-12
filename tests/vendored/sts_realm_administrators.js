@@ -262,21 +262,17 @@ async function theChooserAsksWhichRealm() {
         assert.ok(!unknown.location, "it redirected to " + unknown.location);
       });
     const here = await call("GET", base + surface + "?realm=default");
-    // THE CONSOLE SIGNS IN IN THE BROWSER since the #446 cutover: past the
-    // chooser `/admin` answers the static console's document, whose script
-    // starts the authorization request; the portal still redirects to it.
-    check("?realm=default signs in where it is: an authorization request" +
-          (surface === "/admin" ? ", started by the console's document" : ""),
-      function () {
-        if (surface === "/admin") {
-          assert.ok(here.status === 200 &&
-                    /<script src="\/admin\/console\.js"/.test(here.text),
-            "it answered " + here.status + " " + here.text.slice(0, 200));
-          return;
-        }
-        assert.ok(/\/oauth2\/authorize\?/.test(here.location),
-          "it answered " + here.status + " -> " + here.location);
-      });
+    // BOTH SIGN IN IN THE BROWSER — the console since the #446 cutover, the
+    // portal since #568: past the chooser each answers its static document,
+    // whose script starts the authorization request.
+    const script = surface === "/admin" ? "/admin/console.js"
+                                        : "/portal/portal.js";
+    check("?realm=default signs in where it is: an authorization request " +
+          "started by the " + surface + " document", function () {
+      assert.ok(here.status === 200 &&
+                here.text.indexOf('<script src="' + script + '"') >= 0,
+        "it answered " + here.status + " " + here.text.slice(0, 200));
+    });
   }
   const deep = await call("GET", base + "/admin/tokens");
   check("a deep link is never asked: /admin/tokens is the console's " +
@@ -287,10 +283,14 @@ async function theChooserAsksWhichRealm() {
         "it answered " + deep.status + " " + deep.text.slice(0, 200));
     });
   const prefixed = await call("GET", base + "/realm/" + REALM + "/portal");
-  check("a surface already under a realm prefix is never asked",
+  check("a surface already under a realm prefix is never asked: it is the " +
+        "portal's document, which signs in where it is (#568)",
     function () {
-      assert.ok(/\/oauth2\/authorize\?/.test(prefixed.location),
-        "it answered " + prefixed.status + " -> " + prefixed.location);
+      assert.ok(prefixed.status === 200 &&
+                prefixed.text.indexOf("/realm/" + REALM +
+                                      "/portal/portal.js") >= 0,
+        "it answered " + prefixed.status + " -> " + prefixed.location + " " +
+        prefixed.text.slice(0, 200));
     });
   log.debug("Leaving theChooserAsksWhichRealm().");
 }

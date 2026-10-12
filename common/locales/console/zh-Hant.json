@@ -187,6 +187,7 @@
   "nav.debugger": "協定偵錯工具",
   "nav.sts-metadata": "服務中繼資料",
   "nav.api-explorer": "API 瀏覽器",
+  "nav.account-api": "帳戶 API",
   "nav.keys": "金鑰組",
   "nav.crypto-metadata": "密碼學",
   "shell.language": "語言",

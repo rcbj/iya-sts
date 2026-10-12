@@ -162,10 +162,21 @@ const ROWS: Row[] = [
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
     why: 'the session to end is where the browser is pinned' },
-  { prefix: '/portal', strategy: 'handler', browser: true,
-    handler: 'portal/portal.ts',
-    why: 'the portal manages a person\'s own entry, which only their home ' +
-         'cell holds; a projected session is sent home' },
+  // THE PORTAL IS A STATIC DOCUMENT SINCE #568, the same in every cell; what
+  // it acts on is its API's, which goes home.
+  { prefix: '/portal', strategy: 'local',
+    why: 'the static portal\'s document, script and stylesheet (#568)' },
+  { prefix: '/portal/signals/receive', strategy: 'local',
+    why: 'the portal\'s Shared Signals stream is received where it is ' +
+         'delivered' },
+  { prefix: '/portal/claim-sources/callback', strategy: 'affinity',
+    browser: true,
+    why: 'a Claims Provider sends the browser back where the link began' },
+  { prefix: '/account-api', strategy: 'handler',
+    handler: 'account-api/account_api.ts',
+    why: 'the account API manages a person\'s own entry, which only their ' +
+         'home cell holds: the token\'s person, or the person a link ' +
+         'names, is sent home' },
   { prefix: '/admin', strategy: 'affinity', browser: true,
     why: 'the console acts on the global tier and on the serving cell\'s ' +
          'residents; its session is the cell\'s, so another cell\'s ' +

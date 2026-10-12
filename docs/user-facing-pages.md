@@ -68,12 +68,23 @@ started the sign-in.
 
 ## The user portal
 
-A person's own account, at `/portal`. **Every page is translated**, with the
-language chooser in the header beside Refresh and Sign out, and on the pages
-drawn for nobody (activation, a password reset, address verification). The
-Overview has a **Language and region** card: it sets the person's own
-`preferredLanguage`, or removes it to follow the browser
-(`POST /portal/language`). Error text stays English.
+A person's own account, at `/portal`. **Since #568 it is a static
+application**, like the admin console: the page signs in in the browser as
+the public client `sts-user-portal`, holds a DPoP-bound token in memory, and
+draws every page from the [account API](account-api.md), `/account-api`.
+Every form is sent there too. The paths below still name the pages, so a
+link mailed to a person and the browser's history work as before. The
+portal needs JavaScript; with scripts blocked it says so and shows nothing.
+
+**Every page is translated**, with the language chooser in the header beside
+Refresh and Sign out, and on the pages drawn for nobody (activation, a
+password reset, address verification). The Overview has a **Language and
+region** card: it sets the person's own `preferredLanguage`, or removes it
+to follow the browser. Error text stays English.
+
+**Sign out** in the header ends the sign-on session, and with it the
+portal's tokens. A person signed in to the admin console is signed in to the
+portal through single sign-on, with no screen.
 
 | Page | Path |
 |---|---|

@@ -107,8 +107,13 @@ function run(t) {
           'identity by default');
   websecurity.reset();
 
+  // The pages' server halves since #568: the signing key's operations and
+  // the overview family's (applications), and the applications renderer.
   const portalSource = fs.readFileSync(path.join(__dirname, '..', 'portal',
-                                                 'portal.ts'), 'utf8');
+    'account_signing_key.ts'), 'utf8') + fs.readFileSync(path.join(__dirname,
+    '..', 'portal', 'account_overview.ts'), 'utf8');
+  const portalWeb = fs.readFileSync(path.join(__dirname, '..', 'portal',
+                                              'web_overview.ts'), 'utf8');
   t.check(/attempt(?:Shared)?\('portal-signing-key',\s*req,\s*username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
             .test(portalSource),
           'the portal\'s signing-key door passes the two settings rather ' +
@@ -129,7 +134,7 @@ function run(t) {
 
   // -----------------------------------------------------------------------
   t.log.info('=== 3. the applications page\'s cap ===');
-  t.check(/const limit = (?:self\.)?scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
+  t.check(/const limit = (?:self\.|this\.)?scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
             .test(portalSource) &&
           /config\.value\('portal\.applicationScanLimit'\)/.test(portalSource),
           'the portal slices the registry at portal.applicationScanLimit — ' +
@@ -137,8 +142,8 @@ function run(t) {
           'reach over HTTP');
   // Since #539 the sentence is a catalog message, and t.html() escapes every
   // value it is handed; what matters is that the value is the limit in force.
-  t.check(/limit: found\.limit \}/.test(portalSource) &&
-          /portal\.apps\.notLookedWhat/.test(portalSource),
+  t.check(/limit: view\.limit \}/.test(portalWeb) &&
+          /portal\.apps\.notLookedWhat/.test(portalWeb),
           'and the sentence that says it stopped prints the number in force ' +
           'rather than the constant');
 

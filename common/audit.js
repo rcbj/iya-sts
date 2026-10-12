@@ -1190,6 +1190,9 @@ const ACTIONS = [
     label: 'A CIBA ping or push notification was delivered or failed' },
   { action: 'oauth2.claim-source-linked', category: 'authentication',
     label: 'A person linked a Claims Provider' },
+  { action: 'oauth2.claim-source-link-refused', category: 'authentication',
+    label: 'A Claims Provider\'s callback was refused: the link was ' +
+           'unknown, or arrived in another sign-on session (#568)' },
   { action: 'oauth2.claims-providers.add-provider', category: 'admin',
     label: 'A Claims Provider was registered' },
   { action: 'oauth2.claims-providers.update-provider', category: 'admin',

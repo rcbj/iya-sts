@@ -24,7 +24,9 @@
 //      an ML-DSA-44 key the code flow issues an ID Token bound to an AKP key.
 //
 // OWNED HERE (local: true): this repository's authorization server, portal
-// and API.
+// and API. Since #568 the person approves on the STATIC portal: signed in as
+// it signs in (`portal_signin.js`), `/portal/device` its operation's answer
+// drawn by its renderers, Approve that form's operation (200, not 303).
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
@@ -32,6 +34,7 @@ const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const PORTAL_SIGNIN = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -184,12 +187,6 @@ function hiddenFields(html) {
     });
   log.debug("Leaving hiddenFields().");
   return out;
-}
-
-function csrfOf(html) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (/name="csrf_token" value="([^"]+)"/.exec(html) || [])[1] || "";
 }
 
 async function ok(url, payload, what) {
@@ -368,25 +365,30 @@ async function test() {
     assert.strictEqual(slow.json.error, "slow_down", slow.text.slice(0, 200));
   });
 
+  // THE PERSON, AS THE STATIC PORTAL SIGNS THEM IN (#568): `/portal/device`
+  // is drawn from `/account-api/device`'s answer by the portal's renderers,
+  // and the approval is that page's form sent to the operation mirroring it.
   const browser = jar();
-  await follow(browser, await hop(browser, "GET", base + "/portal/device"));
-  const wrong = await hop(browser, "GET", base +
-                          "/portal/device?user_code=ZZZZ-ZZZZ");
-  const found = await follow(browser, await hop(browser, "GET",
-    codes.verification_uri_complete));
+  const portal = await PORTAL_SIGNIN.signInToThePortal(base, PERSON, null,
+                                                       { password: PASSWORD });
+  const wrong = await portal.page("/portal/device",
+                                  { user_code: "ZZZZ-ZZZZ" });
+  const found = await portal.draw("/portal/device", { user_code:
+    new URL(codes.verification_uri_complete).searchParams.get("user_code") });
   check("a wrong code finds nothing; the right one shows the client and " +
         "scopes before anything is approved", function () {
-    assert.strictEqual(wrong.status, 404, wrong.text.slice(0, 200));
-    assert.strictEqual(found.status, 200, found.text.slice(0, 300));
-    assert.ok(/id="device-request"/.test(found.text));
-    assert.ok(found.text.indexOf("Device " + TAG) >= 0);
-    assert.ok(found.text.indexOf("bound_key") >= 0);
+    assert.strictEqual(wrong.status, 404, String(wrong.text).slice(0, 200));
+    assert.strictEqual(found.status, 200,
+                       JSON.stringify(found.json).slice(0, 300));
+    assert.ok(/id="device-request"/.test(found.html));
+    assert.ok(found.html.indexOf("Device " + TAG) >= 0);
+    assert.ok(found.html.indexOf("bound_key") >= 0);
   });
-  const approved = await hop(browser, "POST", base + "/portal/device", {
-    form: { action: "approve", user_code: codes.user_code,
-            csrf_token: csrfOf(found.text) } });
+  const approved = await portal.act("/portal/device",
+    { action: "approve", user_code: codes.user_code });
   check("the person approves", function () {
-    assert.strictEqual(approved.status, 303, approved.text.slice(0, 300));
+    assert.ok(approved.status === 200 && approved.json && approved.json.ok,
+              String(approved.text).slice(0, 300));
   });
 
   log.info("=== 3. Key Binding at the device_code grant ===");

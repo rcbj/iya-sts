@@ -2507,6 +2507,21 @@ const SECTIONS = [
                'so an operation you may not perform is refused here by the ' +
                'same policy that would refuse it anywhere else. It is the ' +
                'only page in this console with a script on it.' },
+      // THE ACCOUNT API'S DOCUMENT (#568), beside the management API's
+      // explorer and for its reason: the other API this service publishes,
+      // the one the user portal draws every page from. It is a document to
+      // read and not a form to call — every operation acts on the SIGNED-IN
+      // PERSON's own account, so a console administrator's token is no
+      // credential there and a "try it" would only ever be refused.
+      { path: '/admin/account-api', label: 'Account API',
+        blurb: 'The OpenAPI document of <code>/account-api</code>, the ' +
+               'user portal\'s only door since the portal became a static ' +
+               'application (#568): every operation, the portal page or ' +
+               'form it is the door of, its parameters and request body, ' +
+               'and what it needs — a person\'s DPoP-bound token carrying ' +
+               '<code>account:manage</code>, or, for an activation or reset ' +
+               'link, nothing but the link. Built from the table that ' +
+               'registers the routes, as the management API\'s is.' },
       { path: '/admin/keys', label: 'Key pairs',
         blurb: 'Every key pair this process generated at start, what each ' +
                'one is used for, and <strong>a way to take it away</strong>. ' +
@@ -2737,13 +2752,21 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
 }));
 
 // PROTOCOLS → CERT ISSUANCE AS TABS (rcbj, 2026-10-12): Metadata and one
-// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page.
+// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page, and
+// the ACME, EST and SCEP tabs one sub-tab per section.
 // `admin-ui/web_pages.ts` draws them; the stylesheet needs the ids to mark
 // the tab being read.
 const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
   'cert-tab-scep', 'cert-tab-spiffe'];
 const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
-  'cert-spiffe-agents', 'cert-spiffe-brokers'];
+  'cert-spiffe-agents', 'cert-spiffe-brokers', 'cert-acme-ca',
+  'cert-acme-profiles', 'cert-acme-eab', 'cert-acme-accounts',
+  'cert-acme-certificates', 'cert-acme-host-names', 'cert-acme-mode',
+  'cert-acme-settings', 'cert-est-ca', 'cert-est-profiles',
+  'cert-est-credentials', 'cert-est-issue', 'cert-est-host-names',
+  'cert-est-certificates', 'cert-est-settings', 'cert-scep-ca',
+  'cert-scep-profiles', 'cert-scep-challenges', 'cert-scep-host-names',
+  'cert-scep-certificates', 'cert-scep-exceptions', 'cert-scep-settings'];
 
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells

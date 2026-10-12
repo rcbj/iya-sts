@@ -399,29 +399,35 @@ class AcmePage {
         (json.enabled ? '' : ' ' + t.html('consoleAcme.turnedOff'))) +
       kit.warn(t.html('consoleAcme.noDialOut',
                       { challenge: json.challengeType })) +
-      '<h2>' + t.html('consoleAcme.hIssuingCa') + '</h2>' +
-      self.authorityHtml(json, t) +
-      '<h2>' + t.html('consoleAcme.hProfiles') + '</h2>' +
-      self.profilesHtml(json, t) +
-      '<h2 id="eab">' + t.html('consoleAcme.hEab') + '</h2>' +
-      self.eabHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hAccounts') + '</h2>' +
-      self.accountsHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hCertificates') + '</h2>' +
-      self.certificatesHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hHostNames') + '</h2>' +
-      self.hostNamesHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hMode') + '</h2>' +
-      kit.note('<strong>' + esc(json.mode.current) +
-        '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
-        t.html('consoleAcme.development') + ' ' +
-        esc(json.mode.development) + '</div><div ' +
-        'class="sub">' + t.html('consoleAcme.product') + ' ' +
-        esc(json.mode.product) + '</div>') +
-      '<h2>' + t.html('consoleAcme.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings,
-                          '/admin/cert-issuance#cert-tab-acme', undefined,
-                          t) +
+      // EACH SECTION A SUB-TAB (2026-10-12): the ACME tab of Protocols →
+      // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
+      // CERT_SUB_TAB_IDS.
+      kit.subTabbedPanels(t.text('console.nav.acme'), [
+        { id: 'cert-acme-ca', label: t.text('consoleAcme.hIssuingCa'),
+          html: self.authorityHtml(json, t) },
+        { id: 'cert-acme-profiles', label: t.text('consoleAcme.hProfiles'),
+          html: self.profilesHtml(json, t) },
+        { id: 'cert-acme-eab', label: t.text('consoleAcme.hEab'),
+          html: self.eabHtml(ctx, json) },
+        { id: 'cert-acme-accounts', label: t.text('consoleAcme.hAccounts'),
+          html: self.accountsHtml(ctx, json) },
+        { id: 'cert-acme-certificates',
+          label: t.text('consoleAcme.hCertificates'),
+          html: self.certificatesHtml(ctx, json) },
+        { id: 'cert-acme-host-names', label: t.text('consoleAcme.hHostNames'),
+          html: self.hostNamesHtml(ctx, json) },
+        { id: 'cert-acme-mode', label: t.text('consoleAcme.hMode'),
+          html: kit.note('<strong>' + esc(json.mode.current) +
+            '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
+            t.html('consoleAcme.development') + ' ' +
+            esc(json.mode.development) + '</div><div ' +
+            'class="sub">' + t.html('consoleAcme.product') + ' ' +
+            esc(json.mode.product) + '</div>') },
+        { id: 'cert-acme-settings', label: t.text('consoleAcme.hSettings'),
+          html: SettingsForms.forms(json.settings,
+                                    '/admin/cert-issuance#cert-acme-settings',
+                                    undefined, t) }
+      ]) +
       '<p class="links"><a href="/admin/acme?format=json">JSON</a> · ' +
       '<code>GET /admin-api/acme</code> · <a ' +
       'href="/admin/acme/monitor">' + t.html('consoleAcme.linkMonitor') +

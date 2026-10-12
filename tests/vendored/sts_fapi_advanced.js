@@ -30,9 +30,11 @@
 //   g. HYBRID: code id_token by value, with no PKCE, answered in the
 //      fragment with an ID Token carrying c_hash and s_hash.
 //   h. oauth2.fapiRequireMtls: a DPoP-only token request is refused.
-//   i. THE HOSTED SURFACES: the portal signs its person in under Advanced —
-//      signed request, PAR, JARM — and, with oauth2.fapiRequireMtls on, over
-//      a loopback that presents its CA-issued client certificate.
+//   i. THE HOSTED SURFACES: the static portal (#568) signs its person in
+//      under Advanced as its runtime does — the public client
+//      sts-user-portal, PKCE, a DPoP-bound token — with
+//      oauth2.fapiRequireMtls on. Until #568 this process signed in for it,
+//      with a signed request, PAR, JARM and a CA-issued certificate.
 //   j. JARM outside FAPI: a named server with fapi=off answers query.jwt and
 //      refuses query.jwt carrying an id_token in clear.
 //
@@ -43,6 +45,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -356,6 +359,27 @@ function halfHash(value) {
   return digest.subarray(0, 16).toString("base64url");
 }
 
+// THE STATIC PORTAL'S SIGN-IN (#568): in the browser, as the public client
+// `sts-user-portal` with PKCE and a DPoP-bound token — the one public client
+// besides the console a FAPI profile lets through (`fapi.js`
+// PUBLIC_CLIENT_EXEMPT) — driven the way its runtime drives it, then the
+// account API asked who it is. Answers `{ problem, me }`.
+async function portalSignsIn(who, password) {
+  log.debug("Entering portalSignsIn().");
+  let problem = "";
+  let me = null;
+  try {
+    const portal = await portalSignin.signInToThePortal(absolute(R), who,
+      null, { password: password });
+    me = await portal.api("GET", "/account-api/me");
+  } catch (e) {
+    log.debug("Caught in portalSignsIn(): " + ((e && e.message) || e));
+    problem = String((e && e.message) || e);
+  }
+  log.debug("Leaving portalSignsIn().");
+  return { problem: problem, me: me };
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving FAPI 1.0 Advanced at " + base + R);
@@ -649,17 +673,14 @@ async function test() {
   });
 
   log.info("=== i. the hosted surfaces ===");
-  const portal = browser("portal");
-  const portalConsent = { shown: 0 };
-  r = await follow(portal, await portal.go("GET", R + "/portal"), ALICE,
-                   portalConsent);
-  check("the portal signs its person in under Advanced with mTLS required: " +
-        "a signed request pushed, a JARM response, a certificate-bound token",
+  const signedIn = await portalSignsIn(ALICE, PASSWORD);
+  check("the portal signs its person in under Advanced with mTLS required, " +
+        "as its static runtime does — and its account API answers them",
         function () {
-    assert.ok(r.status === 200 || (r.status === 302 &&
-              /\/portal/.test(r.location)),
-              r.status + " " + r.location + " " + r.text.slice(0, 400));
-    assert.ok(!/cannot sign/i.test(r.text), r.text.slice(0, 400));
+    assert.strictEqual(signedIn.problem, "", signedIn.problem.slice(0, 600));
+    assert.ok(signedIn.me && signedIn.me.status === 200 &&
+              signedIn.me.json.user.username === ALICE,
+              signedIn.me ? signedIn.me.text.slice(0, 300) : "no answer");
   });
   await ok(realmApi + "/config/set", { key: "oauth2.fapiRequireMtls",
                                        value: false }, "mTLS back to optional");

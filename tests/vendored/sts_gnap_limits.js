@@ -29,6 +29,8 @@
 //      naming somebody who does not own the identifier waits on their
 //      portal and their approval is REFUSED there; one naming the owner is
 //      approved with its limit LOWERED on the portal, and the token says so.
+//      The portal is the static application of #568, answered through
+//      /account-api.
 //
 // The in-process half — the vocabulary, lookups, the policy in both stages,
 // the totals across periods and the shared store's statement — is
@@ -42,6 +44,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -86,38 +89,37 @@ function claimsOf(value) {
                           .toString("utf8"));
 }
 
-// A browser signed in to the realm's portal, through the portal's own code
-// flow and the sign-in screen, and the page at `path` once it is drawn.
-async function portal(b, who, path) {
-  log.debug("Entering portal().");
-  let r = await b.go("GET", "/realm/" + h.realm + path);
-  for (let hop = 0; hop < 12; hop++) {
-    if (r.status === 302 || r.status === 303) {
-      r = await b.go("GET", r.location);
-      continue;
-    }
-    const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) ||
-                     [])[1];
-    if (r.status === 200 && authnId) {
-      r = await b.go("POST", "/realm/" + h.realm + "/authn/login",
-                     { authn_id: authnId, username: who, password: PASSWORD,
-                       action: "login", csrf_token: h.csrfOf(r.text) });
-      continue;
-    }
-    break;
+// THE PERSON'S PORTAL (#568): the static portal's own sign-in, as its
+// public client with PKCE and a DPoP-bound token for the realm's
+// /account-api — one per person, kept — and the page at `path` drawn by the
+// portal's renderers from its operation's answer. `b` is unused since the
+// portal holds no cookie of its own.
+const portals = {};
+async function portalOf(who) {
+  log.debug("Entering portalOf().");
+  if (!portals[who]) {
+    portals[who] = await portalSignin.signInToThePortal(h.realmBase, who,
+      null, { password: PASSWORD });
   }
-  log.debug("Leaving portal().");
-  return r;
+  log.debug("Leaving portalOf().");
+  return portals[who];
 }
 
-// The waiting GNAP request on a /portal/ciba page, and its CSRF token.
+async function portal(b, who, path) {
+  log.debug("Entering portal().");
+  const drawn = await (await portalOf(who)).draw(path);
+  log.debug("Leaving portal().");
+  return { status: drawn.status, text: drawn.html, json: drawn.json };
+}
+
+// The waiting GNAP request on a /portal/ciba page.
 function waitingOn(page) {
   log.debug("Entering waitingOn().");
   const m = new RegExp('name="action" value="gnap-approve"><input ' +
                        'type="hidden" name="id" value="([^"]+)"')
     .exec(page.text);
   log.debug("Leaving waitingOn().");
-  return { id: m ? m[1] : "", csrf: h.csrfOf(page.text) };
+  return { id: m ? m[1] : "" };
 }
 
 async function test() {
@@ -335,15 +337,16 @@ async function test() {
   };
   const answerOnPortal = async function (who, form) {
     log.debug("Entering answerOnPortal().");
-    const browser = h.browser();
-    const page = await portal(browser, who, "/portal/ciba");
+    const page = await portal(null, who, "/portal/ciba");
     const waiting = waitingOn(page);
     assert.ok(waiting.id, "the request is listed on " + who + "'s portal: " +
               page.text.slice(0, 600));
-    const answer = await browser.go("POST", "/realm/" + h.realm +
-      "/portal/ciba", "action=gnap-approve&id=" +
-      encodeURIComponent(waiting.id) + "&right=t0r0&csrf_token=" +
-      encodeURIComponent(waiting.csrf) + (form || ""));
+    // The form's fields, sent to its /account-api operation as JSON (#568).
+    const fields = { action: "gnap-approve", id: waiting.id, right: "t0r0" };
+    new URLSearchParams(form || "").forEach(function (value, name) {
+      fields[name] = value;
+    });
+    const answer = await (await portalOf(who)).act("/portal/ciba", fields);
     log.debug("Leaving answerOnPortal().");
     return { page: page, answer: answer };
   };
@@ -371,7 +374,7 @@ async function test() {
         function () {
     assert.ok(/name="lim_t0r0_count" value="3"/.test(answered.page.text),
               answered.page.text.slice(0, 800));
-    assert.strictEqual(answered.answer.status, 303,
+    assert.strictEqual(answered.answer.status, 200,
                        answered.answer.text.slice(0, 400));
   });
   r = await absent.send("POST", waitingCont.uri,

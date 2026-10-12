@@ -71,6 +71,7 @@ const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
 const wire = require("./krb5_wire.js");
 const { declineToRun } = require("./expectation.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -201,7 +202,7 @@ function theGeneratorIsRight() {
 }
 
 // ---------------------------------------------------------------------------
-// THE ADMIN API, AND A BROWSER FOR THE PORTAL (sts_portal_totp.js's).
+// THE ADMIN API, AND THE PORTAL (sts_portal_totp.js's).
 // ---------------------------------------------------------------------------
 async function apiPost(pathName, body) {
   log.debug("Entering apiPost(). " + pathName);
@@ -232,101 +233,28 @@ async function ensurePerson(who) {
   log.debug("Leaving ensurePerson().");
 }
 
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
-function browser() {
-  log.debug("Entering browser().");
-  const self = {
-    jar: {},
-    cookieHeader: function () {
-      log.debug("Entering cookieHeader().");
-      log.debug("Leaving cookieHeader().");
-      return Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-    },
-    async go(method, where, body) {
-      log.debug("Entering go(). " + method + " " + where);
-      const headers = { cookie: self.cookieHeader() };
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const url = /^https?:\/\//i.test(where) ? where : base + where;
-      const r = await fetch(url, { method: method, redirect: "manual",
-                                   headers: headers, body: body });
-      (r.headers.getSetCookie ? r.headers.getSetCookie() : [])
-        .forEach(function (one) {
-          const pair = String(one).split(";")[0];
-          const name = pair.split("=")[0];
-          const value = pair.slice(name.length + 1);
-          if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(one)) {
-            delete self.jar[name];
-          } else {
-            self.jar[name] = value;
-          }
-        });
-      log.debug("Leaving go(). " + r.status);
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text() };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-// Sign in to the portal (an OIDC relying party of this service) as `who`.
-async function portalSignIn(who) {
-  log.debug("Entering portalSignIn(). " + who);
-  const b = browser();
-  let r = await b.go("GET", "/portal/mfa?realm=default");
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id: " +
-            String(r.text).slice(0, 300));
-  r = await b.go("POST", "/authn/login", form({
-    authn_id: authnId, username: who, password: PASSWORD, action: "login",
-    csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-            "the password sign-in for " + who + " answered " + r.status +
-            ": " + String(r.text).slice(0, 300));
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  log.debug("Leaving portalSignIn().");
-  return b;
-}
-
-// Enrol an authenticator app for `who` at /portal/mfa, confirmed with a code
+// Enrol an authenticator app for `who` on the portal, confirmed with a code
 // computed here. Answers the secret and the step the confirmation spent.
+// SINCE #568 the portal is a static application over `/account-api`: `who`
+// signs in as the portal does (`portal_signin.js`), and `/portal/mfa`'s form
+// is `POST /account-api/mfa`; the secret is read off the page's view, the
+// one the portal draws its "type it in" cell from.
 async function enrolAuthenticator(who) {
   log.debug("Entering enrolAuthenticator(). " + who);
-  const b = await portalSignIn(who);
-  let page = await b.go("GET", "/portal/mfa");
-  let r = await b.go("POST", "/portal/mfa",
-                     form({ action: "start", csrf_token: csrfOf(page.text) }));
-  page = await b.go("GET", "/portal/mfa");
-  const cell = String(page.text)
-    .match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
-  const secret = cell ? cell[1].replace(/\s+/g, "") : "";
+  const p = await portal.signInToThePortal(base, who, null,
+                                           { password: PASSWORD });
+  let r = await p.act("/portal/mfa", { action: "start" });
+  assert.strictEqual(r.status, 200, "starting the enrolment answered " +
+                     r.status + ": " + String(r.text).slice(0, 300));
+  const page = await p.page("/portal/mfa");
+  const secret = String(((page.json || {}).setup || {}).grouped || "")
+    .replace(/\s+/g, "");
   assert.ok(secret.length >= 32, "no secret on /portal/mfa: " +
             String(page.text).slice(0, 400));
   const step = stepNow();
-  r = await b.go("POST", "/portal/mfa",
-                 form({ action: "confirm", code: codeAtStep(secret, step),
-                        csrf_token: csrfOf(page.text) }));
-  assert.ok((r.status === 303 || r.status === 302 || r.status === 200) &&
-            !/class="err"/.test(r.text),
+  r = await p.act("/portal/mfa", { action: "confirm",
+                                   code: codeAtStep(secret, step) });
+  assert.ok(r.status === 200 && r.json && r.json.ok === true,
             "the confirmation answered " + r.status + ": " +
             String(r.text).slice(0, 300));
   log.debug("Leaving enrolAuthenticator().");

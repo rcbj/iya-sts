@@ -2407,13 +2407,26 @@ async function theNewUserPageDescribesAPerson(driver) {
   // sign-in this browser is not set up for mid-job. The answer is what the
   // check is about, and a fetch is a request with no session at all, which
   // is what the person the link is for will make.
-  const opened = await fetch(new URL(String(link).trim(), root("/")).href,
-                             { redirect: "manual" });
+  //
+  // **AND IT ASKS THE OPERATION THE PAGE IS DRAWN FROM (#568).** The portal
+  // is a static application: `/portal/activate` answers its document, 200,
+  // for any token at all, and the link is checked by the page's operation,
+  // `GET /account-api/activation`, with the link's own query. That is what
+  // the person's browser asks when the link is opened.
+  const linked = new URL(String(link).trim(), root("/"));
+  const opened = await fetch(new URL(linked.pathname.replace(
+    /\/portal\/activate$/, "/account-api/activation") + linked.search,
+    linked).href, { redirect: "manual",
+                    headers: { accept: "application/json" } });
+  const view = await opened.json().catch(function () {
+    return {};
+  });
   check("and spending it reaches the setup screen", function () {
-    assert.strictEqual(opened.status, 200,
-      "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. It answered " +
-      opened.status + ". A link that 400s is indistinguishable, on the page " +
-      "that issued it, from one that works — and it is the only copy: this " +
+    assert.ok(opened.status === 200 && view.step === "setup",
+      "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. Its operation " +
+      "answered " + opened.status + " " + JSON.stringify(view).slice(0, 200) +
+      ". A link that is refused is indistinguishable, on the page that " +
+      "issued it, from one that works — and it is the only copy: this " +
       "service stores a hash of the token and cannot produce it again.");
   });
 
@@ -7442,6 +7455,56 @@ async function theBrowserConsoleIsClean(driver) {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ACCOUNT API'S DOCUMENT, IN THE CONSOLE (#568).
+//
+// The user portal became a static application over `/account-api`, and the
+// console's *Account API* page draws that API's OpenAPI document from
+// `GET /admin-api/account-api` — every operation, by tag. Two claims: the
+// operation answers the document the account API publishes itself, and the
+// page draws one fold per operation of it and calls nothing.
+// ---------------------------------------------------------------------------
+async function theAccountApiPageDrawsItsDocument(driver) {
+  log.debug("Entering theAccountApiPageDrawsItsDocument().");
+  log.info("=== the account API's document (#568) ===");
+  const answer = await apiJson("/admin-api/account-api");
+  const published = await common.httpJson(base + "/account-api/openapi.json");
+  const doc = (answer.body && answer.body.document) || {};
+  check("GET /admin-api/account-api answers the account API's OpenAPI 3.1 " +
+        "document, the one /account-api/openapi.json publishes", function () {
+    assert.strictEqual(answer.status, 200, JSON.stringify(answer.body)
+      .slice(0, 300));
+    assert.ok(/^3\.1\./.test(String(doc.openapi || "")),
+      "openapi is " + JSON.stringify(doc.openapi));
+    assert.deepStrictEqual(Object.keys(doc.paths || {}).sort(),
+      Object.keys((published.body && published.body.paths) || {}).sort(),
+      "the console's copy and the published one describe different paths");
+    assert.ok(Number(answer.body.operations) >= 40,
+      "only " + answer.body.operations + " operations");
+  });
+  await open(driver, root("/admin/account-api"));
+  const drawn = await driver.wait(async function () {
+    const n = await driver.executeScript(
+      "return document.querySelectorAll('details.op').length;");
+    return n > 0 ? n : false;
+  }, 20000, "the Account API page drew no operation");
+  check("the console's Account API page draws one fold per operation of " +
+        "the document, and no form that calls it", function () {
+    assert.strictEqual(drawn, Number(answer.body.operations),
+      "the page drew " + drawn + " operations and the document has " +
+      answer.body.operations);
+  });
+  const forms = await driver.executeScript(
+    "return document.querySelectorAll('.main form[action*=\"account-api\"]')" +
+    ".length;");
+  check("and nothing on it posts to the account API: every operation acts " +
+        "on the signed-in person's own account, with their token",
+        function () {
+    assert.strictEqual(forms, 0, forms + " form(s) post there");
+  });
+  log.debug("Leaving theAccountApiPageDrawsItsDocument().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving IYA STS admin console at " + base + "/admin");
@@ -7513,6 +7576,7 @@ async function test() {
       // LAST: it switches this run's session to a read-only reader and
       // back, and every section above needs the writer.
       await theRolesArePressedAndEnforced(driver, created);
+      await theAccountApiPageDrawsItsDocument(driver);
       // AND THE SIGN OUT BUTTON, WHICH MUST BE THE LAST THING: pressing it
       // closes this console against this run's own session, so nothing that
       // needs the console may come after it.

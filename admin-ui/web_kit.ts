@@ -2392,6 +2392,21 @@ class WebKit {
       }).join('') + '</select></label>';
   }
 
+  // A SECTION DRAWN AS A SUB-TAB (2026-10-12): the sub-tab's label is its
+  // heading, so the section's own first `<h2>` goes and any later one is a
+  // heading inside the tab — Cert issuance's ACME, EST and SCEP tabs.
+  /**
+   * A section's markup without its own heading, any further `<h2>` drawn
+   * as an `<h3>`.
+   *
+   * @param html - the section, its heading first
+   * @returns the section's body
+   */
+  static untitled(html: string): string {
+    return String(html || '').replace(/^\s*<h2\b[^>]*>[\s\S]*?<\/h2>/, '')
+      .replace(/<h2\b([^>]*)>([\s\S]*?)<\/h2>/g, '<h3$1>$2</h3>');
+  }
+
   /**
    * Draws panels as sub-tabs: a bar of links, then each panel with something
    * in it, the first shown when no fragment picks one. `tabbedPanels()`'s

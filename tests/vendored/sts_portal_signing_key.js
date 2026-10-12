@@ -27,6 +27,12 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE, WHICH IS THE FIRST QUESTION tests/CLAUDE.md ASKS.
 //
+// **SINCE #568 THE PORTAL IS A STATIC APPLICATION** over `/account-api`: the
+// page is `GET /account-api/signing-key` drawn by the portal's own
+// renderers, and the PEM is read off the VIEW the generate answers, drawn in
+// place — still the page a person reads it from. The CSRF checks became the
+// token's: a request without the person's token issues nothing.
+//
 // `local: true`. It drives this service's own `/portal` and its `/admin-api`,
 // which is the OWNERSHIP argument rather than a capability one: the tree that
 // adds a control to those surfaces is the tree that should go red when the
@@ -52,6 +58,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const portal = require("./portal_signin.js");
 // RFC 7522's signer is this suite's own XML Signature, for the reason the JWS
 // signer below is this file's own: see `saml_xmldsig.js`'s header.
 const samlSigner = require("./saml_xmldsig.js");
@@ -135,71 +142,6 @@ function jti() {
   return nodeCrypto.randomUUID();
 }
 
-// ---------------------------------------------------------------------------
-// ONE BROWSER, with manual redirects and a cookie jar of its own — every
-// assertion here is about WHICH page came back, and a fetch that followed the
-// redirects would answer the question by hiding it.
-// ---------------------------------------------------------------------------
-function formBody(o) {
-  log.debug("Entering formBody().");
-  log.debug("Leaving formBody().");
-  return new URLSearchParams(o).toString();
-}
-
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
-}
-
-function browser(name) {
-  log.debug("Entering browser().");
-  const self = {
-    name: name,
-    cookie: "",
-    jar: {},
-    cookieHeader: function () {
-      log.debug("Entering cookieHeader().");
-      log.debug("Leaving cookieHeader().");
-      return Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-    },
-    async go(method, path, body) {
-      log.debug("Entering go().");
-      const headers = {};
-      if (self.cookie) headers.cookie = self.cookie;
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(path),
-                            { method: method, redirect: "manual",
-                                              headers: headers, body: body });
-      // KEYED BY NAME: a browser signed in to a hosted surface holds TWO
-      // cookies — the sign-on session and the surface's own — and keeping only
-      // the last one seen drops whichever arrived first.
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const key = pair.split("=")[0];
-        const value = pair.slice(key.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[key];
-        } else {
-          self.jar[key] = value;
-        }
-        self.cookie = self.cookieHeader();
-      });
-      log.debug("Leaving go().");
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text(), headers: r.headers };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
 async function apiPost(path, body) {
   log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
@@ -258,13 +200,6 @@ function claimsOf(token) {
   log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(String(token).split(".")[1], "base64url")
     .toString("utf8"));
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -340,38 +275,77 @@ function refused(r, code, what) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN AT A PORTAL DOOR. `/portal` is an OpenID Connect relying party of
-// this service's own authorization server, so this is a code flow: the browser
-// goes to `/oauth2/authorize`, meets the sign-in screen because the
-// AUTHORIZATION ENDPOINT decides it needs one, and comes back with a code.
+// SIGN IN AS THE STATIC PORTAL DOES (#568): the code flow with PKCE as the
+// public client `sts-user-portal`, a DPoP-bound token for `/account-api`
+// (`portal_signin.js`). `door` is the page the person came for.
 // ---------------------------------------------------------------------------
 async function signIn(door, who) {
   log.debug("Entering signIn(). door=" + door + " who=" + who);
-  const b = browser(who);
-  let r = await b.go("GET", door);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    door + " should send an unauthenticated browser to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
-    "the authorization endpoint should ask for a sign-in; it answered " +
-    r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 formBody({ authn_id: authnId, username: who,
-                            password: PASSWORD, action: "login",
-                            csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in should end in a redirect; got " + r.status + " " +
-    String(r.text).slice(0, 300));
-  r = await b.go("GET",
-                 r.location);   // the authorization endpoint, with a code
-  r = await b.go("GET", r.location);   // the callback, which mints the session
-  assert.ok(b.cookie, "completing the flow should establish a session cookie.");
+  const b = { portal: await portal.signInToThePortal(base, who, null,
+                                                     { password: PASSWORD }) };
+  await knowMe(b);
   log.debug("Leaving signIn().");
   return b;
+}
+
+// ---------------------------------------------------------------------------
+// THE PORTAL, AS ITS PAGES ARE DRAWN SINCE #568. A page is its operation's
+// view drawn by the portal's own renderers (`portal/portal.bundle.js`), and
+// a form is the operation that mirrors it, sent as JSON; an act that shows
+// something once answers a VIEW, drawn in place.
+// ---------------------------------------------------------------------------
+function drawView(b, path, view) {
+  log.debug("Entering drawView(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+  log.debug("Leaving drawView().");
+  return row.render(view, { t: t, query: {}, prefix: "", origin: base,
+                            me: b.me, locale: b.me && b.me.locale,
+                            version: b.me && b.me.version, here: path });
+}
+
+async function knowMe(b) {
+  log.debug("Entering knowMe().");
+  if (!b.me) {
+    b.me = (await b.portal.api("GET", "/account-api/me")).json;
+  }
+  log.debug("Leaving knowMe().");
+}
+
+// The page at `path`: `{ status, json, text, headers }`.
+async function pageOf(b, path) {
+  log.debug("Entering pageOf(). " + path);
+  await knowMe(b);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  const answer = await b.portal.api("GET", row.operation);
+  log.debug("Leaving pageOf().");
+  return { status: answer.status, json: answer.json, headers: answer.headers,
+           text: answer.status === 200 && answer.json
+             ? drawView(b, path, answer.json) : "" };
+}
+
+// The form at `path`, acted on: `{ status, json, text, said, headers }` —
+// `text` the view it answered drawn (or its raw text), `said` its message or
+// its refusal.
+async function act(b, path, fields) {
+  log.debug("Entering act(). " + path);
+  await knowMe(b);
+  const r = await b.portal.act(path, fields);
+  const json = r.json || {};
+  log.debug("Leaving act().");
+  return { status: r.status, json: r.json, headers: r.headers,
+           said: String(json.message || "") + " " +
+                 (json.errors || []).join(" "),
+           text: json.view ? drawView(b, path, json.view)
+                           : String(r.text || "") };
 }
 
 async function test() {
@@ -408,49 +382,49 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 1. the page, holding nothing ===");
   const b = await signIn("/portal/signing-key", OWNER);
-  const empty = await b.go("GET", "/portal/signing-key");
+  const empty = await pageOf(b, "/portal/signing-key");
   check("the page is drawn for a signed-in person and says they hold no key",
         function () {
           assert.strictEqual(empty.status, 200,
-            "it answered " + empty.status + " -> " + empty.location);
+            "it answered " + empty.status);
           assert.ok(/You have no RFC 7523 signing key/.test(empty.text) &&
                     /You have no RFC 7522 signing key/.test(empty.text),
             "the page does not say either key is missing: " +
             String(empty.text).slice(0, 400));
         });
-  check("and offers to issue one, with the CSRF token every form here carries",
+  check("and offers to issue one, one control per profile",
         function () {
           assert.ok(/name="action" value="generate"/.test(empty.text),
             "there is no generate control on the page");
           assert.ok(/name="purpose" value="jwt"/.test(empty.text) &&
                     /name="purpose" value="saml"/.test(empty.text),
             "the page does not offer one control per profile");
-          assert.ok(csrfOf(empty.text), "the form carries no CSRF token");
         });
-  check("and the account column marks it as the page being read, so it is a " +
-        "page in this application rather than a URL somebody has to be told",
-        function () {
-          assert.ok(/aria-current="page">Signing keys</.test(empty.text),
-            "the navigation does not carry this page: " +
-            (String(empty.text).match(/<nav[\s\S]*?<\/nav>/) || [""])[0]
-              .slice(0, 400));
+  // THE COLUMN IS THE PORTAL'S FRAME, drawn in the browser around the
+  // page's cards (#568); what can be asked over HTTP is that the path is a
+  // page of the portal, answered by its shell.
+  const shell = await fetch(base + "/portal/signing-key");
+  check("the path is a page in this application rather than a URL somebody " +
+        "has to be told: the portal's shell answers it", function () {
+          assert.strictEqual(shell.status, 200,
+            "it answered " + shell.status);
+          assert.ok(/text\/html/.test(String(shell.headers.get(
+            "content-type") || "")), "the shell is not a page");
         });
 
   // -------------------------------------------------------------------------
   // 2. GENERATING IT, AND THE ONE MOMENT THE KEY EXISTS IN THE OPEN.
   // -------------------------------------------------------------------------
   log.info("=== 2. generating ===");
-  const issued = await b.go("POST", "/portal/signing-key",
-                            formBody({ action: "generate",
-                                       csrf_token: csrfOf(empty.text) }));
+  const issued = await act(b, "/portal/signing-key", { action: "generate" });
   const pem = privateKeyOn(issued.text);
   const kid = kidOn(issued.text);
-  check("**the POST ANSWERS WITH A PAGE and the private key is on it.** A " +
-        "303 has nowhere to put a credential, and a query string would write " +
-        "this key into a browser history entry and every log between here " +
-        "and the person", function () {
+  check("**the act ANSWERS WITH THE PAGE'S VIEW and the private key is on " +
+        "it**, drawn in place: a query string would write this key into a " +
+        "browser history entry and every log between here and the person",
+        function () {
           assert.strictEqual(issued.status, 200,
-            "it answered " + issued.status + " -> " + issued.location + " " +
+            "it answered " + issued.status + " " +
             String(issued.text).slice(0, 300));
           assert.ok(/BEGIN (RSA )?PRIVATE KEY/.test(pem),
             "no private key block on the page: " +
@@ -516,7 +490,7 @@ async function test() {
   // 4. SHOWN ONCE MEANS SHOWN ONCE.
   // -------------------------------------------------------------------------
   log.info("=== 4. what the page says afterwards ===");
-  const after = await b.go("GET", "/portal/signing-key");
+  const after = await pageOf(b, "/portal/signing-key");
   check("**the private key is NOT on the page again** — the stored copy is " +
         "sealed and nothing here opens it, so a person who closed the tab " +
         "has to generate a new pair", function () {
@@ -532,11 +506,12 @@ async function test() {
             "the certificate is not on the page");
         });
 
-  const overview = await b.go("GET", "/portal");
+  const overview = await pageOf(b, "/portal");
   check("and NONE of it is on the Overview, by name or by value — that page " +
         "draws a FIXED LIST of standard attributes, so a credential this " +
         "service invents cannot arrive on it by accident", function () {
-          const whole = String(overview.text);
+          const whole = String(overview.text) +
+                        JSON.stringify(overview.json || {});
           ["stsAssertionPrivateKey", "stsassertionprivatekey",
            "stsAssertionJwks", "stsassertionjwks"].forEach(function (name) {
             assert.ok(whole.indexOf(name) < 0,
@@ -549,34 +524,37 @@ async function test() {
   // -------------------------------------------------------------------------
   // 5. THE CSRF CHECK, AND THAT A REFUSED POST ISSUES NOTHING.
   // -------------------------------------------------------------------------
-  log.info("=== 5. a post with no CSRF token ===");
-  const forged = await b.go("POST", "/portal/signing-key",
-                            formBody({ action: "generate" }));
-  check("a generate with no CSRF token is refused 403 — the token is what " +
-        "stops another origin's form pressing this button in a live session",
-        function () {
-          assert.strictEqual(forged.status, 403,
-            "it answered " + forged.status + " " +
-            String(forged.text).slice(0, 200));
+  // THE CSRF TOKEN WENT WITH THE COOKIE IT GUARDED (#568): what stops
+  // another origin's form pressing this button is that the act takes the
+  // person's DPoP-bound token and a proof by a key only their page holds.
+  log.info("=== 5. a post with no access token ===");
+  const forgedRaw = await fetch(base + "/account-api/signing-key", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "generate" }) });
+  const forgedText = await forgedRaw.text();
+  check("a generate with no access token is refused 401 — the token is what " +
+        "stops another origin's form pressing this button", function () {
+          assert.strictEqual(forgedRaw.status, 401,
+            "it answered " + forgedRaw.status + " " +
+            forgedText.slice(0, 200));
+          assert.strictEqual(privateKeyOn(forgedText), "",
+            "the refusal carried a key");
         });
+  const stillPage = await pageOf(b, "/portal/signing-key");
   check("and NOTHING was issued by the refusal: the key handle on the page " +
         "is still the one from before, which is the half a status code " +
         "cannot show", function () {
-          const still = kidOn(forged.text);
-          assert.ok(!still || still === kid,
-            "the refused post seems to have replaced the key: " + still +
-            " where " + kid + " was held");
+          assert.strictEqual(kidOn(stillPage.text), kid,
+            "the refused post seems to have replaced the key");
         });
 
   // -------------------------------------------------------------------------
   // 6. THE RULE THIS PORTAL IS BUILT ON: the identity is the session's.
   // -------------------------------------------------------------------------
   log.info("=== 6. a username in the body changes nothing ===");
-  const smuggled = await b.go("POST", "/portal/signing-key",
-                              formBody({ action: "generate",
-                                         username: OTHER, user: OTHER,
-                                         identifier: OTHER,
-                                         csrf_token: csrfOf(after.text) }));
+  const smuggled = await act(b, "/portal/signing-key",
+                             { action: "generate", username: OTHER,
+                               user: OTHER, identifier: OTHER });
   check("a generate carrying somebody else's name in every parameter a " +
         "future author might plausibly read still issues to the SIGNED-IN " +
         "person", function () {
@@ -629,16 +607,15 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 7. taking it off ===");
   const newPem = privateKeyOn(smuggled.text);
-  const removed = await b.go("POST", "/portal/signing-key",
-                             formBody({ action: "remove",
-                                        csrf_token: csrfOf(smuggled.text) }));
-  check("the remove answers 303 with a message rather than a page — there is " +
-        "nothing to hand back, which is why this half is a redirect and the " +
-        "generate is not", function () {
-          assert.strictEqual(removed.status, 303,
-            "it answered " + removed.status);
-          assert.ok(/\/portal\/signing-key\?done=/.test(removed.location),
-            "it redirected to " + removed.location);
+  const removed = await act(b, "/portal/signing-key", { action: "remove" });
+  check("the remove answers a MESSAGE and no view — there is nothing to hand " +
+        "back, which is why this half carries no page and the generate does",
+        function () {
+          assert.ok(removed.status === 200 && removed.json &&
+                    removed.json.ok === true && !removed.json.view &&
+                    removed.json.message,
+            "it answered " + removed.status + " " +
+            String(removed.text).slice(0, 200));
         });
   const afterRemoval = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: replacedKid },
@@ -655,17 +632,12 @@ async function test() {
   // 8. RFC 7522: A SECOND KEY PAIR, ON A SET OF ITS OWN (2026-09-13).
   // -------------------------------------------------------------------------
   log.info("=== 8. an RFC 7522 key pair beside the RFC 7523 one ===");
-  const page8 = await b.go("GET", "/portal/signing-key");
-  const jwtAgain = await b.go("POST", "/portal/signing-key",
-                              formBody({ action: "generate", purpose: "jwt",
-                                         csrf_token: csrfOf(page8.text) }));
+  const jwtAgain = await act(b, "/portal/signing-key",
+                             { action: "generate", purpose: "jwt" });
   const jwtPem = privateKeyOn(jwtAgain.text);
   const jwtKid = kidOn(jwtAgain.text);
-  const samlIssued = await b.go("POST", "/portal/signing-key",
-                                formBody({ action: "generate",
-                                           purpose: "saml",
-                                           csrf_token:
-                                             csrfOf(jwtAgain.text) }));
+  const samlIssued = await act(b, "/portal/signing-key",
+                               { action: "generate", purpose: "saml" });
   const samlPem = privateKeyOn(samlIssued.text);
   const thumbprint = thumbprintOn(samlIssued.text);
   check("**`purpose=saml` ISSUES AN RFC 7522 KEY PAIR** and the page that " +
@@ -740,18 +712,15 @@ async function test() {
           refused(jwtWithSamlKey, "invalid_grant",
                   "a JWT signed with the SAML key");
         });
-  const afterSaml = await b.go("GET", "/portal/signing-key");
+  const afterSaml = await pageOf(b, "/portal/signing-key");
   check("the SAML private key is not on the page again either", function () {
     assert.strictEqual(privateKeyOn(afterSaml.text), "",
       "a private key block is still on the page");
     assert.strictEqual(thumbprintOn(afterSaml.text), thumbprint);
   });
 
-  const badPurpose = await b.go("POST", "/portal/signing-key",
-                                formBody({ action: "generate",
-                                           purpose: "kerberos",
-                                           csrf_token:
-                                             csrfOf(afterSaml.text) }));
+  const badPurpose = await act(b, "/portal/signing-key",
+                               { action: "generate", purpose: "kerberos" });
   check("a profile this page does not know is refused 400 at the form's " +
         "shape, and issues nothing", function () {
           assert.strictEqual(badPurpose.status, 400,
@@ -760,10 +729,8 @@ async function test() {
             "a key came back for an unknown profile");
         });
 
-  const samlRemoved = await b.go("POST", "/portal/signing-key",
-                                 formBody({ action: "remove", purpose: "saml",
-                                            csrf_token:
-                                              csrfOf(afterSaml.text) }));
+  const samlRemoved = await act(b, "/portal/signing-key",
+                                { action: "remove", purpose: "saml" });
   const samlGone = await samlGrant(OWNER, OWNER, samlPem);
   const jwtStill = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: jwtKid },
@@ -772,24 +739,22 @@ async function test() {
   check("**TAKING THE RFC 7522 KEY OFF LEAVES THE RFC 7523 ONE WORKING** — " +
         "the SAML key is refused from that moment and the JWT key still " +
         "obtains a token", function () {
-          assert.strictEqual(samlRemoved.status, 303,
+          assert.strictEqual(samlRemoved.status, 200,
             "the remove answered " + samlRemoved.status);
-          assert.ok(/RFC%207522/.test(samlRemoved.location),
-            "the message does not name the profile: " + samlRemoved.location);
+          assert.ok(/RFC 7522/.test(samlRemoved.said),
+            "the message does not name the profile: " + samlRemoved.said);
           refused(samlGone, "invalid_grant",
                   "an assertion signed with the SAML key taken off");
           assert.strictEqual(jwtStill.status, 200,
             JSON.stringify(jwtStill.body).slice(0, 300));
         });
-  const pageAfter = await b.go("GET", "/portal/signing-key");
-  const nothingLeft = await b.go("POST", "/portal/signing-key",
-                                 formBody({ action: "remove", purpose: "saml",
-                                            csrf_token:
-                                              csrfOf(pageAfter.text) }));
+  const nothingLeft = await act(b, "/portal/signing-key",
+                                { action: "remove", purpose: "saml" });
   check("and a second SAML remove is refused 400 naming the profile, while " +
         "the page still shows the RFC 7523 key", function () {
           assert.strictEqual(nothingLeft.status, 400);
-          assert.ok(/no RFC 7522 signing key/.test(nothingLeft.text));
+          assert.ok(/no RFC 7522 signing key/.test(nothingLeft.said),
+            nothingLeft.said);
           assert.strictEqual(kidOn(nothingLeft.text), jwtKid);
           assert.strictEqual(thumbprintOn(nothingLeft.text), "");
         });
@@ -823,7 +788,7 @@ async function test() {
     return found ? { name: found[1],
                      bytes: Buffer.from(found[2], "base64") } : null;
   };
-  const tlsPage = await b.go("GET", "/portal/signing-key");
+  const tlsPage = await pageOf(b, "/portal/signing-key");
   check("the page carries a TLS client certificate card with a generate form " +
         "asking for a file password twice", function () {
           assert.ok(/id="tls-client"/.test(tlsPage.text),
@@ -835,10 +800,9 @@ async function test() {
           assert.ok(/You have no TLS client certificate/.test(tlsPage.text),
             "the card does not say none is held");
         });
-  const mismatched = await b.go("POST", "/portal/signing-key",
-    formBody({ action: "generate-tls-client", label: "laptop",
-               p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD + "x",
-               csrf_token: csrfOf(tlsPage.text) }));
+  const mismatched = await act(b, "/portal/signing-key",
+    { action: "generate-tls-client", label: "laptop",
+      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD + "x" });
   check("two different file passwords are refused 400 and nothing is issued",
         function () {
           assert.strictEqual(mismatched.status, 400,
@@ -848,20 +812,21 @@ async function test() {
           assert.ok(/You have no TLS client certificate/.test(mismatched.text),
             "a certificate was issued anyway");
         });
-  const noCsrfTls = await b.go("POST", "/portal/signing-key",
-    formBody({ action: "generate-tls-client", p12_password: FILE_PASSWORD,
-               p12_confirm: FILE_PASSWORD }));
-  check("a generate with no CSRF token is refused 403 and issues nothing",
-        function () {
-          assert.strictEqual(noCsrfTls.status, 403,
-            "it answered " + noCsrfTls.status);
-          assert.ok(!dataLink(noCsrfTls.text, ".p12", "application/x-pkcs12"));
+  const noTokenTls = await fetch(base + "/account-api/signing-key", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "generate-tls-client",
+                           p12_password: FILE_PASSWORD,
+                           p12_confirm: FILE_PASSWORD }) });
+  const noTokenText = await noTokenTls.text();
+  check("a generate with no access token is refused 401 and issues nothing " +
+        "(it was the CSRF check until #568)", function () {
+          assert.strictEqual(noTokenTls.status, 401,
+            "it answered " + noTokenTls.status);
+          assert.ok(!/pkcs12/i.test(noTokenText), "a file came back");
         });
-  const tlsIssued = await b.go("POST", "/portal/signing-key",
-    formBody({ action: "generate-tls-client", label: "laptop",
-               key_alg: "ec-p256", p12_password: FILE_PASSWORD,
-               p12_confirm: FILE_PASSWORD,
-               csrf_token: csrfOf(mismatched.text) }));
+  const tlsIssued = await act(b, "/portal/signing-key",
+    { action: "generate-tls-client", label: "laptop", key_alg: "ec-p256",
+      p12_password: FILE_PASSWORD, p12_confirm: FILE_PASSWORD });
   const p12 = dataLink(tlsIssued.text, ".p12", "application/x-pkcs12");
   const keyFile = dataLink(tlsIssued.text, "-key.pem",
                            "application/x-pem-file");
@@ -916,7 +881,7 @@ async function test() {
             "the .p12 is not a DER SEQUENCE");
         });
   const tlsSerial = tlsLeaf ? String(tlsLeaf.serialNumber).toLowerCase() : "";
-  const tlsListed = await b.go("GET", "/portal/signing-key");
+  const tlsListed = await pageOf(b, "/portal/signing-key");
   check("afterwards the page lists it as valid and offers the files NO MORE",
         function () {
           assert.ok(tlsListed.text.toLowerCase()
@@ -928,11 +893,11 @@ async function test() {
             "the PKCS#12 is still on the page");
         });
   const otherBrowser = await signIn("/portal/signing-key", OTHER);
-  const otherPage = await otherBrowser.go("GET", "/portal/signing-key");
-  const otherRevoke = await otherBrowser.go("POST", "/portal/signing-key",
-    formBody({ action: "revoke-tls-client", serial: tlsSerial,
-               reason: "keyCompromise", csrf_token: csrfOf(otherPage.text) }));
-  const ownerStill = await b.go("GET", "/portal/signing-key");
+  const otherPage = await pageOf(otherBrowser, "/portal/signing-key");
+  const otherRevoke = await act(otherBrowser, "/portal/signing-key",
+    { action: "revoke-tls-client", serial: tlsSerial,
+      reason: "keyCompromise" });
+  const ownerStill = await pageOf(b, "/portal/signing-key");
   check("**ANOTHER PERSON NAMING THE SERIAL REVOKES NOTHING** — refused 400, " +
         "and the holder's certificate is still valid", function () {
           assert.ok(otherPage.text.toLowerCase().indexOf(tlsSerial.slice(-16)) <
@@ -942,14 +907,13 @@ async function test() {
           assert.ok(/class="state-valid">valid/.test(ownerStill.text),
             "the owner's certificate is no longer valid");
         });
-  const ownRevoke = await b.go("POST", "/portal/signing-key",
-    formBody({ action: "revoke-tls-client", serial: tlsSerial,
-               reason: "cessationOfOperation",
-               csrf_token: csrfOf(ownerStill.text) }));
-  const afterRevoke = await b.go("GET", "/portal/signing-key");
-  check("the holder revokes it: a 303 saying so, and the page lists it as " +
-        "revoked with no Revoke button left on it", function () {
-          assert.strictEqual(ownRevoke.status, 303,
+  const ownRevoke = await act(b, "/portal/signing-key",
+    { action: "revoke-tls-client", serial: tlsSerial,
+      reason: "cessationOfOperation" });
+  const afterRevoke = await pageOf(b, "/portal/signing-key");
+  check("the holder revokes it: a message saying so, and the page lists it " +
+        "as revoked with no Revoke button left on it", function () {
+          assert.strictEqual(ownRevoke.status, 200,
             "it answered " + ownRevoke.status + " " +
             String(ownRevoke.text).slice(0, 300));
           assert.ok(/class="state-revoked">revoked/.test(afterRevoke.text),
@@ -974,13 +938,15 @@ program
   .description("/portal/signing-key: a person issues themselves an RFC 7523 " +
       "key pair, the private half is shown once on the page that comes back, " +
       "it obtains an access token as them at /oauth2/token and obtains " +
-      "nothing as anybody else, it never appears again, a post with no CSRF " +
-      "token is refused, a username in the body changes nothing, generating " +
+      "nothing as anybody else, it never appears again, a post with no " +
+      "access token is refused, a username in the body changes nothing, " +
+      "generating " +
       "replaces and taking it off stops it being accepted; and the same " +
       "for an RFC 7522 key pair beside it, which signs no JWT, is signed " +
       "for by no JWT key, and comes off alone; and a TLS client certificate " +
       "downloaded once as a PKCS#12 and PEM files, refused on a mismatched " +
-      "file password or no CSRF token, revocable by its holder and by nobody " +
+      "file password or no access token, revocable by its holder and by " +
+      "nobody " +
       "else.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

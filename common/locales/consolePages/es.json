@@ -24,6 +24,7 @@
   "title.crypto-metadata": "Criptografía",
   "title.home": "Consola de administración",
   "title.api-explorer": "Explorador de la API",
+  "title.account-api": "API de la cuenta",
   "title.sts-metadata": "Metadatos del servicio",
   "title.delegation": "Delegación",
   "title.delegation-allowed": "Las correspondencias permitidas",

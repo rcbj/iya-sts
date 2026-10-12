@@ -43,6 +43,10 @@
 //      under `disallow` it signs nobody in (STS-AUTHN-0313, on an audit row)
 //      and a new one is not registered (STS-AUTHN-0312), each page saying
 //      why, while the device-bound key from A still signs in.
+//
+// THE ACTIVATION LINK'S PAGE is the static portal's since #568: drawn for
+// nobody from `/account-api/activation`'s answer, its steps that
+// operation's answers (`portalPages()`).
 // ===========================================================================
 
 const assert = require("assert");
@@ -269,6 +273,142 @@ function absolute(location) {
     : (/^\/realm\//.test(text) ? ORIGIN + text : base + text);
 }
 
+// ---------------------------------------------------------------------------
+// THE PORTAL'S PAGES SINCE #568, BEHIND THE VERB THIS JOB ALWAYS USED.
+//
+// The portal is a static application since #568: `/portal/*` answers one
+// shell document, every page is drawn in the browser from an `/account-api`
+// operation and every form is sent there as JSON, with a DPoP-bound token
+// and no CSRF field. `portalPages()` keeps this job's `go(method, path,
+// body)` and does what the portal's runtime does instead of what the server
+// used to: a GET asks the operation that MIRRORS the page and draws its
+// answer with the portal's own renderers (`portal/portal.bundle.js`); a POST
+// sends the form's fields to the operation that mirrors the form. What comes
+// back is the page as the browser would show it — `text` the drawn markup
+// with any refusal or message above it, `location` an answer's `go`, `csp`
+// the shell's policy — so an assertion about what the page SAYS still reads
+// the page. A signed-in page takes `client`, the portal's client
+// (`portal_signin.js`); a page drawn for nobody (an activation link) takes
+// none.
+// ---------------------------------------------------------------------------
+const portalSignin = require("./portal_signin.js");
+
+// The forms that post to a path with no page of its own, and the page whose
+// view their answer carries.
+const DRAWN_ON = { "/portal/remove-key": "/portal/keys",
+                   "/portal/rename-key": "/portal/keys" };
+
+function portalPages(root, client) {
+  log.debug("Entering portalPages().");
+  const rootPath = new URL(root + "/").pathname.replace(/\/+$/, "");
+  let translator = null;
+  const translate = async function () {
+    log.debug("Entering translate().");
+    if (!translator) {
+      const table = portalSignin.portalBundle();
+      let locale = null;
+      if (client) {
+        const me = await client.api("GET", "/account-api/me");
+        locale = me.json && me.json.locale;
+      } else {
+        const said = await portalSignin.nobody(root, "GET",
+                                               "/account-api/locale");
+        locale = said.json && said.json.locale;
+      }
+      translator = table.messages.WebTranslator.fromData(locale);
+    }
+    log.debug("Leaving translate().");
+    return translator;
+  };
+  const operation = async function (method, page) {
+    log.debug("Entering operation().");
+    const ops = await portalSignin.operationsOf(root);
+    log.debug("Leaving operation().");
+    return ops.filter(function (op) {
+      return op.mirrors === method + " " + page;
+    })[0] || null;
+  };
+  const call = async function (op, method, target, body) {
+    log.debug("Entering call().");
+    log.debug("Leaving call().");
+    return op.access === "person" ? client.api(method, target, body)
+                                  : portalSignin.nobody(root, method, target,
+                                                        body);
+  };
+  const draw = async function (page, view, query) {
+    log.debug("Entering draw().");
+    const row = portalSignin.portalBundle().PAGES.filter(function (one) {
+      return one.path === page;
+    })[0];
+    if (!row || !view) {
+      log.debug("Leaving draw(). Nothing to draw.");
+      return "";
+    }
+    const t = await translate();
+    log.debug("Leaving draw().");
+    return row.render(view, { t: t, query: query || {}, prefix: "",
+                              origin: new URL(root).origin, me: null,
+                              locale: null, version: null, here: page });
+  };
+  const said = function (json) {
+    log.debug("Entering said().");
+    log.debug("Leaving said().");
+    return (json && Array.isArray(json.errors) ? json.errors.join(" ") + " "
+                                               : "") +
+           (json && json.message ? String(json.message) + " " : "");
+  };
+  log.debug("Leaving portalPages().");
+  return {
+    client: client,
+    go: async function (method, path, body) {
+      log.debug("Entering go().");
+      // A root-relative path is under `root`, the realm's prefix added
+      // where the caller left it off, as this job's browser read one.
+      const raw = String(path);
+      const url = /^https?:\/\//i.test(raw) ? new URL(raw)
+        : new URL(new URL(root).origin +
+                  (rootPath && raw.indexOf(rootPath + "/") === 0 ? raw
+                                                                 : rootPath +
+                                                                   raw));
+      const page = url.pathname.slice(rootPath.length) || "/portal";
+      const query = {};
+      url.searchParams.forEach(function (value, name) {
+        if (name !== "realm") {
+          query[name] = value;
+        }
+      });
+      const op = await operation(method, page);
+      assert.ok(op, "no /account-api operation mirrors " + method + " " +
+                page);
+      if (method === "GET") {
+        const qs = new URLSearchParams(query).toString();
+        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""));
+        const view = r.json && r.json.view ? r.json.view : r.json;
+        const shell = await fetch(root + page + url.search);
+        log.debug("Leaving go(). GET " + page);
+        return { status: r.status, json: r.json,
+                 text: said(r.json) + await draw(page, view, query),
+                 location: "",
+                 csp: shell.headers.get("content-security-policy") || "" };
+      }
+      const fields = {};
+      new URLSearchParams(String(body || "")).forEach(function (value, name) {
+        if (name === "csrf_token") {
+          return;
+        }
+        fields[name] = Object.prototype.hasOwnProperty.call(fields, name)
+          ? [].concat(fields[name], value) : value;
+      });
+      const r = await call(op, "POST", op.path, fields);
+      log.debug("Leaving go(). POST " + page);
+      return { status: r.status, json: r.json,
+               text: said(r.json) + await draw(DRAWN_ON[page] || page,
+                                               r.json && r.json.view, {}),
+               location: (r.json && r.json.go) || "", csp: "" };
+    }
+  };
+}
+
 function browser() {
   log.debug("Entering browser().");
   const self = {
@@ -401,7 +541,9 @@ async function registerThePasskey(authenticator) {
   assert.ok(issued.status === 200 && url,
     "issuing an activation link answered " + issued.status + " " +
     String(issued.raw).slice(0, 300));
-  const b = browser();
+  // THE ACTIVATION PAGE IS THE STATIC PORTAL'S since #568: drawn for
+  // nobody from its `/account-api` operation (`portalPages()`).
+  const b = portalPages(base, null);
   const setup = await b.go("GET", url);
   const token = hidden(setup.text, "token");
   const armed = await b.go("POST", "/portal/activate",
@@ -553,7 +695,9 @@ async function activatedWith(person, authenticator) {
               "";
   assert.ok(issued.status === 200 && url, "issuing " + person + "'s " +
     "activation link answered " + issued.status);
-  const b = browser();
+  // THE ACTIVATION PAGE IS THE STATIC PORTAL'S since #568: drawn for
+  // nobody from its `/account-api` operation (`portalPages()`).
+  const b = portalPages(base, null);
   const setup = await b.go("GET", url);
   const token = hidden(setup.text, "token");
   const armed = await b.go("POST", "/portal/activate",

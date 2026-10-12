@@ -699,10 +699,13 @@ class ClaimsProviders {
    * @param username - the person
    * @param id - the provider id
    * @param base - the request's base URL
+   * @param sessionId - the sign-on session the person started it from: the
+   *   callback is honoured only in a browser holding that session (#568)
    * @returns `{ ok: true, location }` to send the browser to, or `{ ok: false,
    *   code, why }`
    */
-  beginLink(username: string, id: string, base: string): Json {
+  beginLink(username: string, id: string, base: string,
+            sessionId?: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.beginLink(). " + id);
     const provider = this.get(id);
@@ -715,9 +718,18 @@ class ClaimsProviders {
     const verifier = stsCrypto.randomBytes(32).toString('base64url');
     const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     const redirectUri = base + CALLBACK_PATH;
+    // THE SIGN-ON SESSION IT WAS STARTED FROM (#568). The portal held a
+    // session cookie of its own until it became a static application, and
+    // the callback asked for it, so a browser that was not the person's
+    // could not finish their link — the account-linking CSRF, in which
+    // somebody starts a link on their own account and sends the provider's
+    // address to a victim, whose provider account then lands on the
+    // attacker's entry. The portal's API holds no cookie, so the flow names
+    // the sign-on session instead and the callback asks the browser's
+    // (`flowFor()`, `portal_claim_sources.ts`).
     flows.set(state, { username: String(username), provider: id,
                        verifier: verifier, redirectUri: redirectUri,
-                       at: now() });
+                       session: String(sessionId || ''), at: now() });
     const target = new URL(provider.authorizationEndpoint);
     target.searchParams.set('response_type', 'code');
     target.searchParams.set('client_id', provider.clientId);
@@ -728,6 +740,29 @@ class ClaimsProviders {
     target.searchParams.set('code_challenge_method', 'S256');
     log.debug("Leaving ClaimsProviders.beginLink().");
     return { ok: true, location: target.toString() };
+  }
+
+  // WHOSE A LINK REQUEST IS, read without spending it (#568): the callback
+  // has no portal session to name the person, so it asks the flow, and then
+  // checks the browser holds the sign-on session the flow was started from.
+  /**
+   * The person and sign-on session a live link request belongs to.
+   *
+   * @param state - the callback's `state`
+   * @returns `{ username, session }`, or null for a request that is unknown
+   *   or expired
+   */
+  flowFor(state: string): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering ClaimsProviders.flowFor().");
+    const flow = state ? flows.get(String(state)) : null;
+    if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS) {
+      log.debug("Leaving ClaimsProviders.flowFor(). None.");
+      return null;
+    }
+    log.debug("Leaving ClaimsProviders.flowFor().");
+    return { username: String(flow.username),
+             session: String(flow.session || '') };
   }
 
   // The provider sent the person back. Resolves { ok, provider } or
@@ -1456,6 +1491,7 @@ export = {
   unlink: slot.forward('unlink'),
   beginLink: slot.forward('beginLink'),
   finishLink: slot.forward('finishLink'),
+  flowFor: slot.forward('flowFor'),
   verifyFrom: slot.forward('verifyFrom'),
   sourcesFor: slot.forward('sourcesFor'),
   resolve: slot.forward('resolve'),

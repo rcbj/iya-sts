@@ -1722,6 +1722,37 @@ function childMain() {
          'D-Cert-sections. Metadata draws each protocol\'s endpoints under ' +
          'its own heading, and the ACME, EST, SCEP and SPIFFE tabs list none',
          misfiled.map(function (row) { return row.route; }).join(', '));
+    // THE ACME, EST AND SCEP TABS' SECTIONS ARE SUB-TABS (2026-10-12): one
+    // per section, the first shown, and no section heading left above them.
+    const familySubTabs = {
+      'cert-tab-acme': ['ca', 'profiles', 'eab', 'accounts', 'certificates',
+                        'host-names', 'mode', 'settings'],
+      'cert-tab-est': ['ca', 'profiles', 'credentials', 'issue',
+                       'host-names', 'certificates', 'settings'],
+      'cert-tab-scep': ['ca', 'profiles', 'challenges', 'host-names',
+                        'certificates', 'exceptions', 'settings']
+    };
+    const missingSubTabs = [];
+    Object.keys(familySubTabs).forEach(function (tab) {
+      const family = tab.replace('cert-tab-', '');
+      const html = certTabs[tab] ? certTabs[tab][1] : '';
+      familySubTabs[tab].forEach(function (one, n) {
+        const id = 'cert-' + family + '-' + one;
+        if (!new RegExp('<div class="subpanel' + (n === 0 ? ' first' : '') +
+                        '" id="' + id + '">').test(html) ||
+            html.indexOf('href="#' + id + '"') < 0) {
+          missingSubTabs.push(id);
+        }
+      });
+      // The settings block draws its own heading, as on every page.
+      const settingsAt = html.indexOf('id="cert-' + family + '-settings"');
+      if (/<h2\b/.test(settingsAt < 0 ? html : html.slice(0, settingsAt))) {
+        missingSubTabs.push(tab + ' still has a section <h2>');
+      }
+    });
+    note(missingSubTabs.length === 0,
+         'D-Cert-subtabs. the ACME, EST and SCEP tabs draw each section as a ' +
+         'sub-tab', missingSubTabs.join(', '));
     // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
     // and the three SPIFFE lists search `q`, so on one page each carries
     // its prefix — in its links, its pager's anchor and its filter form.

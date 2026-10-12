@@ -72,3 +72,11 @@ tests/vectors/
 # launcher may write a key pair here, and none is ever committed.
 xacml-pep/certs/*
 !xacml-pep/certs/.gitkeep
+
+# THE PORTAL'S BUNDLES (#568), written by build-typescript.sh inside an image
+# build — and by hand into a worktree, to run a protocol job's `draw()` from
+# the host. Generated, never committed.
+portal/portal.bundle.js
+portal/portal-spa.js
+portal/portal-spa.js.br
+portal/portal-spa.js.gz

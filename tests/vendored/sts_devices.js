@@ -29,7 +29,10 @@
 //   7. The person's portal JSON doors: a challenge, a device-key-proof+jwt
 //      over it registering a device (portal, self-asserted in development),
 //      the challenge refused a second time, a body that is not JSON refused,
-//      and the page offering both ways.
+//      and the page offering both ways. Since #568 the doors are
+//      `/account-api/devices/challenge` and `/proof`, called with the
+//      person's DPoP-bound token, and the page is drawn from its operation
+//      by the portal's renderers.
 //   8. EST's device profile: /.well-known/est/device/simpleenroll issues a
 //      certificate to a NEW device owned by the person, naming only
 //      urn:sts:device:<id>, kept on the device as an x509 key.
@@ -79,6 +82,7 @@ const path = require("path");
 const est = require("./est_client.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const PORTAL_SIGNIN = require("./portal_signin.js");
 const registry = require("./sts_applications.js");
 
 var appconfig;
@@ -268,27 +272,60 @@ function hiddenFields(html) {
 }
 
 // Signs in to this realm's portal through its code flow, landing on `where`.
+// SIGNING IN TO THE PORTAL AS THE STATIC PORTAL DOES (#568): the code flow
+// with PKCE as the public client `sts-user-portal`, a DPoP-bound token for
+// the realm's `/account-api` (`portal_signin.js`). Answers `browser`, whose
+// `go()` keeps this job's shape for the two JSON doors — which are
+// `/account-api/devices/challenge` and `/proof` since #568, called with the
+// person's token and its proof where they were called with the portal's
+// cookie — and `page`, `/portal/devices` drawn by the portal's renderers.
 async function portalSignIn(who, where) {
-  log.debug("Entering portalSignIn(). " + who);
-  const b = browser();
-  let r = await b.go("GET", where);
-  for (let hop = 0; hop < 12 && r.status !== 200; hop++) {
-    assert.ok(r.status === 302 || r.status === 303,
-      "signing in to " + where + " stopped at " + r.status + " " +
-      r.text.slice(0, 300));
-    r = await b.go("GET", r.location);
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+  log.debug("Entering portalSignIn(). " + who + " " + where);
+  const client = await PORTAL_SIGNIN.signInToThePortal(base, who, null,
+                                                       { password: PASSWORD });
+  const drawn = await client.draw("/portal/devices");
+  assert.strictEqual(drawn.status, 200, "the signed-in page: " +
+                     drawn.status + " " + JSON.stringify(drawn.json)
+                       .slice(0, 300));
+  const doors = {};
+  doors[R + "/portal/devices/challenge"] = "/account-api/devices/challenge";
+  doors[R + "/portal/devices/proof"] = "/account-api/devices/proof";
+  const b = {
+    async go(method, where2, body, type) {
+      log.debug("Entering go(). " + method + " " + where2);
+      const target = doors[where2];
+      assert.ok(target, "no account API door for " + where2);
+      let r = null;
+      if (type === "application/json") {
+        r = await client.api(method, target,
+                             body === undefined ? undefined : JSON.parse(body));
+      } else {
+        // A BODY THAT IS NOT JSON, sent with the token and a proof as the
+        // portal would send anything: refused 415 by the account API.
+        const url = base + target;
+        const res = await fetch(url, { method: method, body: body,
+          headers: { authorization: "DPoP " + client.token,
+                     dpop: client.key.proof(method, url, client.token),
+                     "content-type": "application/x-www-form-urlencoded",
+                     accept: "application/json" } });
+        const text = await res.text();
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in go(): " + ((e && e.message) || e));
+          // Not JSON: answered as its text.
+          json = null;
+        }
+        r = { status: res.status, json: json, text: text };
+      }
+      log.debug("Leaving go(). status=" + r.status);
+      return { status: r.status, json: r.json, text: r.text || "" };
     }
-  }
-  assert.strictEqual(r.status, 200, "the signed-in page: " + r.status + " " +
-                     r.text.slice(0, 300));
+  };
   log.debug("Leaving portalSignIn().");
-  return { browser: b, page: r };
+  return { browser: b, page: { status: drawn.status, text: drawn.html },
+           client: client };
 }
 
 // A compact ES256 JWS, built by hand.
@@ -535,7 +572,8 @@ async function test() {
   const issued = await b.go("POST", R + "/portal/devices/challenge",
                             JSON.stringify({ purpose: "key" }),
                             "application/json");
-  check("a challenge, bound to the portal session; a form body refused",
+  check("a challenge, bound to the sign-on session the token was issued " +
+        "on; a form body refused",
         function () {
     assert.strictEqual(notJson.status, 415, notJson.text.slice(0, 200));
     assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));

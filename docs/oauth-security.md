@@ -439,29 +439,34 @@ new certificate (section 7.1), and the new tokens bind to it.
 `tls_client_certificate_bound_access_tokens` is advertised only where the port
 is TLS.
 
-### The admin console as a public client
+### The admin console and the user portal as public clients
 
-The admin console is being converted to a static application that runs in the
-browser and holds its own tokens (a public client,
-`token_endpoint_auth_method` `none`). Until that conversion is finished the
-seeded `sts-admin-console` client is still a confidential client, and nothing
-in this section applies to it.
+The admin console and the user portal are static applications that run in the
+browser and hold their own tokens. Each is a public client
+(`token_endpoint_auth_method` `none`): `sts-admin-console` since #446 and
+`sts-user-portal` since #568. Two rules apply to these two clients and to no
+other. Neither is a setting:
 
-Once it is a public client, two rules apply to it and to no other client.
-Neither is a setting:
-
-* **Every token issued to it is DPoP-bound.** The token endpoint refuses a
-  request from it that carries no DPoP proof (`invalid_dpop_proof`). Its
+* **Every token issued to them is DPoP-bound.** The token endpoint refuses a
+  request from either that carries no DPoP proof (`invalid_dpop_proof`). The
   refresh token is bound to the same key, as RFC 9449 section 5 requires for
-  any public client. The management API refuses an access token issued to it
-  that carries no `cnf.jkt`.
-* **It is the one public client a confidential-only FAPI profile allows.**
+  any public client. The management API and the [account API](account-api.md)
+  refuse an access token issued to them that carries no `cnf.jkt`.
+* **They are the two public clients a confidential-only FAPI profile allows.**
   FAPI 1.0 Advanced and FAPI 2.0 support no public client. In a realm with one
-  of those profiles on, the console may still sign in. **The console does not
-  conform to the profile in that realm.** Every other client is held to the
-  profile, and the console's tokens are still sender-constrained.
+  of those profiles on, the console and the portal may still sign in. **They
+  do not conform to the profile in that realm.** Every other client is held to
+  the profile, and their tokens are still sender-constrained.
 
-The user portal is not affected. It stays a confidential client.
+Each rule checks both the client's id and its declared method. A seeded entry
+that an operator changed back to a confidential method is not affected.
+
+Under a FAPI profile the two clients also push their authorization requests
+where the realm requires it (RFC 9126), and ask for and verify a JARM
+response where the realm offers no other response mode. They are not
+required to sign their request objects, because a public client in a browser
+holds no registered key; an explicit `oauth2.requireSignedRequestObject`
+still applies to them.
 
 ### Requiring a sender constraint — five settings
 

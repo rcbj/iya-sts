@@ -17,6 +17,12 @@
 // opt-in on /portal/mfa needs. Its mail transport starts OFF, which is what
 // section 0 is about.
 //
+// SINCE #568 the portal is a static application over `/account-api`: a
+// sign-in starts at the portal's own authorization request (the public
+// client `sts-user-portal`, PKCE), and the opt-in is `POST /account-api/mfa`
+// with the portal's token, taken through the sign-on session the walk set
+// (`portal_signin.js`).
+//
 //   0. THE POLICIES PAGE: both policies on one resource; a realm with no
 //      authentication policy of its own follows the default realm's; in a
 //      realm that cannot send mail the email rows are DISABLED and a save
@@ -38,6 +44,8 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const nodeCrypto = require("crypto");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -237,13 +245,6 @@ function browser(name) {
   return self;
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
 function hiddenValue(html, name) {
   log.debug("Entering hiddenValue().");
   const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(html);
@@ -264,11 +265,36 @@ async function person(who) {
   return who + "@" + DOMAIN;
 }
 
-// To the realm's sign-in screen through its portal, as a browser arrives:
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// The realm portal's authorization request, as its runtime sends it (#568).
+function portalAuthorizeUrl() {
+  log.debug("Entering portalAuthorizeUrl().");
+  const verifier = b64u(nodeCrypto.randomBytes(32));
+  const url = realmBase() + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: realmBase() + "/portal/callback",
+    scope: "openid account:manage", state: b64u(nodeCrypto.randomBytes(16)),
+    code_challenge: b64u(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: realmBase() + "/account-api" })
+    .toString();
+  log.debug("Leaving portalAuthorizeUrl().");
+  return url;
+}
+
+// To the realm's sign-in screen through its portal, as a browser arrives —
+// the portal's page loads, and its runtime sends the authorization request:
 // answers the browser and the screen.
 async function toSignIn(b) {
   log.debug("Entering toSignIn().");
-  let r = await b.go("GET", realmBase() + "/portal");
+  await b.go("GET", realmBase() + "/portal");
+  let r = await b.go("GET", portalAuthorizeUrl());
   for (let hop = 0; hop < 4 && r.location &&
        !/\/authn\/login\?authn=/.test(r.location); hop++) {
     r = await b.go("GET", r.location);
@@ -401,16 +427,19 @@ async function aCodeAsTheSecondFactor(fields) {
     form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
            password: PASSWORD, action: "login" }));
   r = await finish(b, r);
-  r = await b.go("GET", realmBase() + "/portal/mfa");
+  // THE PORTAL'S OWN TOKEN, through the sign-on session just set (#568).
+  const p = await portal.signInToThePortal(realmBase(), who, null,
+                                           { cookie: b.cookieHeader() });
+  const drawn = await p.draw("/portal/mfa");
   check("1. /portal/mfa offers email as a second factor", function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 200));
-    assert.ok(/id="email-factor-code"/.test(r.text), "no email option");
+    assert.strictEqual(drawn.status, 200,
+                       JSON.stringify(drawn.json).slice(0, 200));
+    assert.ok(/id="email-factor-code"/.test(drawn.html), "no email option");
   });
-  r = await b.go("POST", realmBase() + "/portal/mfa",
-    form({ action: "email-factor-on", kind: "code",
-           csrf_token: csrfOf(r.text) }));
+  r = await p.act("/portal/mfa", { action: "email-factor-on", kind: "code" });
   check("1. and the person turns it on", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 300));
+    assert.ok(r.status === 200 && r.json && r.json.ok === true,
+              String(r.text).slice(0, 300));
   });
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;

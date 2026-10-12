@@ -924,9 +924,28 @@ class OidcRelyingParty {
    */
   ensureConsoleCallback(req: any): any {
     const { log } = this.deps;
-    const self = this;
     log.debug('Entering OidcRelyingParty.ensureConsoleCallback().');
-    const surface = SURFACES.admin;
+    log.debug('Leaving OidcRelyingParty.ensureConsoleCallback().');
+    return this.ensureSurfaceCallback(req, 'admin');
+  }
+
+  // AND THE STATIC PORTAL'S (#568): the portal signs in in the browser too
+  // since it became a static application, as the public client
+  // `sts-user-portal`, and comes back to the realm's `/portal/callback`. The
+  // same three answers, asked when its shell is served.
+  /**
+   * Makes sure a static surface's client entry carries the callback it is
+   * about to sign in with, in the realm the request is under.
+   *
+   * @param req - the request for the shell
+   * @param id - the surface, `admin` or `portal`
+   * @returns `{ ok, why }`, as `ensureRedirectUri()` answers
+   */
+  ensureSurfaceCallback(req: any, id: string): any {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering OidcRelyingParty.ensureSurfaceCallback(). ' + id);
+    const surface = SURFACES[id];
     const answer = this.inFlowRealm(surface, function () {
       const found = self.clientOf(surface);
       if (!found.ok) {
@@ -937,7 +956,7 @@ class OidcRelyingParty {
       return self.ensureRedirectUri(surface, found.client,
                                     base + surface.callbackPath);
     });
-    log.debug('Leaving OidcRelyingParty.ensureConsoleCallback(). ' +
+    log.debug('Leaving OidcRelyingParty.ensureSurfaceCallback(). ' +
               (answer && answer.ok !== false ? 'Registered.' : 'Refused.'));
     return answer;
   }
@@ -3543,6 +3562,7 @@ export = {
   SURFACES: SURFACES,
   surfaceOf: slot.forward('surfaceOf'),
   ensureConsoleCallback: slot.forward('ensureConsoleCallback'),
+  ensureSurfaceCallback: slot.forward('ensureSurfaceCallback'),
   beginSignIn: slot.forward('beginSignIn'),
   handleCallback: slot.forward('handleCallback'),
   sessionFor: slot.forward('sessionFor'),

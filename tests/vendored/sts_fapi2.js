@@ -35,6 +35,7 @@ const nodeCrypto = require("crypto");
 const tls = require("tls");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -594,15 +595,26 @@ async function test() {
   });
 
   log.info("=== g. the portal ===");
-  const portal = browser("portal");
-  r = await follow(portal, await portal.go("GET", R + "/portal"), ALICE,
-                   { shown: 0 });
+  // THE STATIC PORTAL (#568) signs in IN THE BROWSER, as the public client
+  // `sts-user-portal` with PKCE and a DPoP-bound token — the one public client
+  // besides the console a FAPI profile lets through (`fapi.js`
+  // PUBLIC_CLIENT_EXEMPT) — so the sign-in is driven the way its runtime
+  // drives it, and the account API answers the person.
+  let portalProblem = "";
+  let portalMe = null;
+  try {
+    const portal = await portalSignin.signInToThePortal(absolute(R), ALICE,
+      null, { password: PASSWORD });
+    portalMe = await portal.api("GET", "/account-api/me");
+  } catch (e) {
+    portalProblem = String((e && e.message) || e);
+  }
   check("the portal signs its person in under FAPI 2.0 — pushed, code, " +
-        "DPoP-bound", function () {
-    assert.ok(r.status === 200 || (r.status === 302 &&
-              /\/portal/.test(r.location)),
-              r.status + " " + r.location + " " + r.text.slice(0, 400));
-    assert.ok(!/cannot sign/i.test(r.text), r.text.slice(0, 400));
+        "PKCE, DPoP-bound — and its account API answers them", function () {
+    assert.strictEqual(portalProblem, "", portalProblem.slice(0, 600));
+    assert.ok(portalMe && portalMe.status === 200 && portalMe.json &&
+              portalMe.json.user.username === ALICE,
+              portalMe ? portalMe.text.slice(0, 300) : "no answer");
   });
 
   log.info("=== h. TLS ===");

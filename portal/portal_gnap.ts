@@ -24,9 +24,7 @@
 // (`gnap:<hash>`, `gnap/CLAUDE.md`) that say nothing a person can read; the
 // grant is where the readable rights are. Folding grants into the consents
 // page would put two lists with two meanings of "withdraw" under one
-// heading, which is the thing the portal's navigation exists to avoid. It
-// sits beside Consents under *Your account*, for Consents' reason: not a
-// credential, but what this person has let applications do.
+// heading, which is the thing the portal's navigation exists to avoid.
 //
 // **REVOKING IS THE CLIENT'S OWN SECTION 5.4 ACT, PERFORMED FOR THEM** —
 // `gnap_grants.ts`'s `revokeGrantBy()`, the one path the client's DELETE and
@@ -34,364 +32,65 @@
 // grant is finalized as `revoked`, and CAEP `session-revoked` is sent
 // (`gnap_signals.ts`). The page says so above the buttons.
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
-// portal's rule (portal/CLAUDE.md, OWASP A01). The form names a GRANT, and
-// `gnap_console.ts`'s `revokeOwnGrant()` refuses one whose resource owner is
-// not the signed-in person (`STS-PORTAL-0163`), the `/portal/keys`
-// credential id's arrangement. `manage-own`, CSRF on the POST, and the
-// revocation audited as `gnap.grant.revoke` with the person as actor.
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
+// drawn in the browser by `web_gnap.ts`. **THE IDENTITY IS THE TOKEN'S AND
+// THERE IS NO PARAMETER FOR IT** — the portal's rule (portal/CLAUDE.md, OWASP
+// A01). The body names a GRANT, and `gnap_console.ts`'s `revokeOwnGrant()`
+// refuses one whose resource owner is not the signed-in person
+// (`STS-PORTAL-0163`), the `/portal/keys` credential id's arrangement. The
+// revocation is audited as `gnap.grant.revoke` with the person as actor.
 //
 // **WHAT IS LISTED** is `gnap_console.ts`'s `personGrantsView()` — the same
 // view the console's user page and `/admin-api/users?user=` draw — so the
 // person and an administrator cannot see different things. Under cells (#98)
 // it is this cell's grants, and the page says so when that can leave one
-// out (that file's header).
+// out. Twenty grants a page.
 //
-// **NO SCRIPT**: a real form per grant, under the service-wide
-// `script-src 'none'`. Twenty grants a page.
-//
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// as `portal_consents.ts` is, and for its reason. GNAP's view layer is
-// required LAZILY: the portal is built at 8a and GNAP at 23d.
+// GNAP's view layer is required LAZILY: the portal is built at 8a and GNAP
+// at 23d.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import validation = require('../common/validation');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_consents.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
-  // The portal's translator for a page drawn for this session (#539
-  // phase 3): the portal's application and the person's own language.
-  translatorFor(session: Json): any;
-}
+const vz = validation.z;
+const vt = validation.types;
 
 interface PortalGnapDeps {
   log: { debug(message: string): void };
-  // GNAP's view and action layer, asked for when a page is drawn or a form
-  // answered.
+  // GNAP's view and action layer, asked for when a request arrives.
   gnapConsole: () => Json;
 }
 
 // Grants per page.
 const PER_PAGE = 20;
 
-class PortalGnapPage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
+// `grant` is a grant identifier this service minted (base64url, a cell's
+// stamp included where there is one), checked against the person's own
+// grants, which is the rule that matters.
+const REVOKE_FORM = vz.object({
+  grant: vt.base64url.describe('The grant to end, from the list.'),
+  page: vt.opt(vt.integer(1, 100000))
+    .describe('The page of the list the form was on.')
+});
 
-  constructor(private readonly deps: PortalGnapDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalGnapPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/gnap';
-    // `grant` is a grant identifier this service minted (base64url, a
-    // cell's stamp included where there is one), checked against the
-    // person's own grants, which is the rule that matters.
-    this.FORM = vz.object({
-      grant: vt.base64url,
-      page: vt.opt(vt.integer(1, 100000)),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      done: vz.string().max(300).optional(),
-      page: vt.opt(vt.integer(1, 100000))
-    });
-    ctx.log.debug("Leaving PortalGnapPage.constructor().");
-  }
-
-  // Epoch seconds as a reader writes a date — in the reader's language and
-  // their locale's way of writing it (#539), in UTC and saying so.
-  private readable(seconds: unknown, t: Json): string {
-    const { log } = this.ctx;
-    log.debug("Entering PortalGnapPage.readable().");
-    const n = Number(seconds);
-    log.debug("Leaving PortalGnapPage.readable().");
-    return n > 0
-      ? t.date(n * 1000, { dateStyle: 'medium', timeStyle: 'short' }) +
-        ' UTC'
-      : '—';
-  }
-
-  // One access right, in words: the type (or reference) and what it names,
-  // including any limits it carries. The dimension names (`actions`,
-  // `identifier`, `limits`) are RFC 9635's own field names, and stay as
-  // they are in every language (#539).
-  private right(one: Json): string {
-    const { log, esc } = this.ctx;
-    log.debug("Entering PortalGnapPage.right().");
-    if (typeof one === 'string') {
-      log.debug("Leaving PortalGnapPage.right(). A reference.");
-      return '<code>' + esc(one) + '</code>';
-    }
-    const parts: string[] = [];
-    ['actions', 'locations', 'datatypes', 'privileges'].forEach(
-        function (dimension) {
-      if (Array.isArray(one[dimension]) && one[dimension].length) {
-        parts.push(dimension + ': ' + one[dimension].join(', '));
-      }
-    });
-    if (one.identifier) {
-      parts.push('identifier: ' + one.identifier);
-    }
-    if (one.limits !== undefined) {
-      parts.push('limits: ' + JSON.stringify(one.limits));
-    }
-    log.debug("Leaving PortalGnapPage.right().");
-    return '<code>' + esc(one.type || '') + '</code>' +
-      (parts.length ? ' — ' + esc(parts.join('; ')) : '');
-  }
-
-  // What a finalized grant's reason means, for the person: the four this
-  // service writes in the catalog's words (#539), anything else as it came.
-  private ended(reason: string, t: Json): string {
-    const { log } = this.ctx;
-    log.debug("Entering PortalGnapPage.ended().");
-    log.debug("Leaving PortalGnapPage.ended().");
-    return t.text('portalGnap.ended', { reason: String(reason) });
-  }
-
-  private card(session: Json, row: Json, at: number): string {
-    const { log, esc, websecurity } = this.ctx;
-    const self = this;
-    log.debug("Entering PortalGnapPage.card().");
-    const t = this.ctx.translatorFor(session);
-    const state = row.finalization
-      ? t.text('portalGnap.stateEnded',
-               { reason: this.ended(row.finalization.reason, t),
-                 when: this.readable(row.finalization.at, t) })
-      : (row.state === 'approved' ? t.text('portalGnap.stateActive')
-                                  : t.text('portalGnap.stateWaiting'));
-    // `bearer` is RFC 9635's flag on the token and stays as written; the
-    // token's state (`live`, `rotated`, `revoked`, `expired`) is the
-    // catalog's.
-    const tokens = row.tokens.length
-      ? '<table><tr><th>' + t.html('portalGnap.token') + '</th><th>' +
-        t.html('portalGnap.format') + '</th><th>' +
-        t.html('portalGnap.expires') + '</th><th>' +
-        t.html('portalGnap.tokenState') + '</th></tr>' +
-        row.tokens.map(function (token: Json) {
-          return '<tr><td>' + esc(token.label || '—') + '</td><td><code>' +
-            esc(token.format) + '</code>' +
-            (token.bearer ? ' <span class="sub">bearer</span>' : '') +
-            '</td><td>' + esc(self.readable(token.expiresAt, t)) +
-            '</td><td>' +
-            t.html('portalGnap.tokenStateValue',
-                   { state: String(token.state) }) + '</td></tr>';
-        }).join('') + '</table>'
-      : '<p class="sub">' + t.html('portalGnap.noTokens') + '</p>';
-    const revoke = row.revocable
-      ? '<form method="post" action="' + esc(this.PATH) + '">' +
-        websecurity.field(session.id) +
-        '<input type="hidden" name="grant" value="' + esc(row.id) + '">' +
-        '<input type="hidden" name="page" value="' + esc(String(at)) + '">' +
-        '<button type="submit" class="danger">' +
-        t.html('portalGnap.revoke') + '</button>' +
-        '</form>'
-      : '';
-    log.debug("Leaving PortalGnapPage.card().");
-    return '<div class="card"><h2>' + esc(row.clientName || row.client) +
-      '</h2><p class="sub"><code>' + esc(row.client) + '</code> · ' +
-      esc(state) + '</p>' +
-      '<p>' + (row.rightsAre === 'approved' ? t.html('portalGnap.may')
-                                            : t.html('portalGnap.askedTo')) +
-      '</p>' +
-      '<ul>' + (row.rights.map(function (one: Json) {
-        return '<li>' + self.right(one) + '</li>';
-      }).join('') || '<li>' + t.html('portalGnap.nothingSpecific') +
-        '</li>') + '</ul>' +
-      (row.subjectReleasedAt
-        ? '<p class="note">' + t.html('portalGnap.subjectReleased',
-            { when: this.readable(row.subjectReleasedAt, t) }) + '</p>'
-        : '') +
-      tokens +
-      '<p class="note">' + (row.finalization
-        ? t.html('portalGnap.granted',
-                 { when: this.readable(row.createdAt, t) })
-        : t.html('portalGnap.grantedRenewable',
-                 { when: this.readable(row.createdAt, t),
-                   until: this.readable(row.grantExpiresAt, t) })) +
-      '</p>' +
-      revoke + '</div>';
-  }
-
-  private page(session: Json, wanted: number, message: unknown,
-               error: unknown): string {
-    const { log, esc, shell } = this.ctx;
-    const self = this;
-    log.debug("Entering PortalGnapPage.page().");
-    const t = this.ctx.translatorFor(session);
-    // THE PERSON IS THE SESSION'S, and nothing else names them.
-    const view = this.deps.gnapConsole().personGrantsView(
-        String(session.user.username), { per: String(PER_PAGE),
-                                         gnapGrantsPage: String(wanted) });
-    const paging = view.paging || { page: 1, pages: 1 };
-    const at = paging.page;
-    const body = view.rows.length
-      ? view.rows.map(function (row: Json): string {
-          return self.card(session, row, at);
-        }).join('')
-      : '<div class="card"><p class="sub">' + t.html('portalGnap.none') +
-        '</p></div>';
-    const nav = paging.pages > 1
-      ? '<p class="pagenav">' +
-        (at > 1
-          ? '<a href="' + esc(this.PATH + '?page=' + (at - 1)) +
-            '">' + t.html('portalGnap.previous') + '</a>'
-          : '<span class="off">' + t.html('portalGnap.previous') +
-            '</span>') +
-        '<span class="here">' +
-        t.html('portalGnap.pageOf', { page: at, pages: paging.pages }) +
-        '</span>' +
-        (at < paging.pages
-          ? '<a href="' + esc(this.PATH + '?page=' + (at + 1)) + '">' +
-            t.html('portalGnap.next') + '</a>'
-          : '<span class="off">' + t.html('portalGnap.next') +
-            '</span>') +
-        '</p>'
-      : '';
-    // The view layer's note is English prose for the console; the portal
-    // draws the same sentence from its own catalog (#539).
-    const cells = view.cells && view.cells.multiCell
-      ? '<p class="note">' + t.html('portalGnap.cellsNote') + '</p>' : '';
-    log.debug("Leaving PortalGnapPage.page(). Page " + at + ".");
-    return shell(this.PATH, session, message, error,
-      '<div class="card"><p class="sub">' + t.html('portalGnap.sub') +
-      '</p>' + cells + '</div>' +
-      body + nav);
-  }
-
-  // -------------------------------------------------------------------------
-  // GET /portal/gnap
-  // -------------------------------------------------------------------------
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, asked.value.page || 1,
-                                        asked.value.done || null, null));
-  }
-
-  // -------------------------------------------------------------------------
-  // POST /portal/gnap — `manage-own`: it revokes one of this person's own
-  // grants, and every token issued under it.
-  // -------------------------------------------------------------------------
-  private postPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const at = body.page || 1;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0083');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, at, null, csrf.detail));
-    }
-    // THE PERSON IS THE SESSION'S; the view layer refuses a grant whose
-    // resource owner is anybody else.
-    const result = this.deps.gnapConsole().revokeOwnGrant(
-        who, String(body.grant), { req: req });
-    if (!result || !result.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0163');
-      log.debug('Leaving POST ' + PATH + '. Nothing of theirs to revoke.');
-      return ctx.send(res, 400, this.page(session, at, null,
-        'There is no such grant of yours with anything left to revoke. It ' +
-        'may already have ended.'));
-    }
-    const name = result.grant.clientName || result.grant.client;
-    log.debug('Leaving POST ' + PATH + '. Revoked.');
-    // In the person's language (#539): the text rides the redirect, and
-    // the client's name is data, a parameter.
-    res.redirect(303, PATH + '?page=' + at + '&done=' + encodeURIComponent(
-      ctx.translatorFor(session).text('portalGnap.doneRevoked',
-                                      { name: name })));
-    return undefined;
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalGnapPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    log.debug("Leaving PortalGnapPage.registerRoutes().");
-  }
-}
+const GNAP_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+});
 
 /**
- * The portal page at /portal/gnap: where a person sees the GNAP grants they
- * gave and revokes one (#432 phase 7).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/gnap`'s account API operations: the GNAP grants a person gave,
+ * and ending one (#432 phase 7).
  */
 class PortalGnap {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -419,18 +118,102 @@ class PortalGnap {
   }
 
   /**
-   * Registers the page's routes on the portal's app.
+   * The page's view: one page of the person's own grants.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param username - the signed-in person
+   * @param wanted - the page asked for
+   * @returns `personGrantsView()`'s answer
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalGnap.register().");
-    const page = new PortalGnapPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalGnap.register().");
-    return { path: page.PATH };
+  view(username: string, wanted: number): Json {
+    const { log } = this.deps;
+    log.debug("Entering PortalGnap.view().");
+    // THE PERSON IS THE TOKEN'S, and nothing else names them.
+    const view = this.deps.gnapConsole().personGrantsView(
+      String(username), { per: String(PER_PAGE),
+                          gnapGrantsPage: String(wanted || 1) });
+    log.debug("Leaving PortalGnap.view().");
+    return view;
+  }
+
+  /**
+   * Revokes one of the caller's own grants.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request, which the revocation's audit row reads
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  revoke(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log } = this.deps;
+    log.debug("Entering PortalGnap.revoke().");
+    const who = caller.username;
+    const at = body.page || 1;
+    // THE PERSON IS THE TOKEN'S; the view layer refuses a grant whose
+    // resource owner is anybody else.
+    const result = this.deps.gnapConsole().revokeOwnGrant(
+      who, String(body.grant), { req: req });
+    if (!result || !result.ok) {
+      log.debug("Leaving PortalGnap.revoke(). Nothing of theirs.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0163',
+        'There is no such grant of yours with anything left to revoke. It ' +
+        'may already have ended.', { view: this.view(who, at) });
+    }
+    const name = result.grant.clientName || result.grant.client;
+    log.debug("Leaving PortalGnap.revoke(). Revoked.");
+    // In the person's language (#539): the client's name is a parameter.
+    return ctx.json(res, 200, { ok: true,
+      go: ctx.PORTAL + '/gnap?page=' + at,
+      message: ctx.translatorFor(who).text('portalGnap.doneRevoked',
+                                           { name: name }) });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalGnap.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/gnap',
+        operationId: 'getGnapGrants', tag: 'GNAP grants', access: 'person',
+        mirrors: 'GET ' + ctx.PORTAL + '/gnap',
+        summary: 'The GNAP grants you gave',
+        description: 'One page (`paging`) of `rows`: each grant whose ' +
+          'resource owner you are — the client, its state or why it ended, ' +
+          'its access rights (RFC 9635 objects or references), the tokens ' +
+          'issued under it, when it was granted and until when, and ' +
+          'whether you may revoke it. The same view an administrator\'s ' +
+          'user page draws. Under cells, `cells` says when another cell ' +
+          'may hold more.',
+        query: GNAP_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return ctx.json(res, 200,
+                          self.view(caller.username, input.query.page || 1));
+        } },
+      { method: 'POST', path: ctx.BASE + '/gnap',
+        operationId: 'revokeGnapGrant', tag: 'GNAP grants',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/gnap',
+        summary: 'Revokes a GNAP grant you gave',
+        description: 'The client\'s own RFC 9635 section 5.4 act, performed ' +
+          'for you: every token issued under the grant stops working, the ' +
+          'grant is finalized as revoked, and CAEP session-revoked is ' +
+          'sent. A grant that is not yours is refused.',
+        body: REVOKE_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.revoke(ctx, req, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalGnap.accountOperations().");
+    return rows;
   }
 }
 
@@ -443,12 +226,12 @@ const slot = new InstanceSlot<PortalGnap>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/gnap, registered by `portal.ts`.
+ * `/portal/gnap`'s account API operations (#432, #568).
  * @namespace
  */
 export = {
   PortalGnap: PortalGnap,
   installInstance: (instance: PortalGnap): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

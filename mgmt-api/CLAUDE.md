@@ -2263,6 +2263,17 @@ the question to ask:
 `sts-admin-console` seeded earlier declares no `admin:console`, and the
 console's frame answers 403 `STS-API-0127`, whose text names the fix.
 
+## `GET /admin-api/account-api` — THE OTHER API'S DOCUMENT (#568, 2026-10-12)
+
+The user portal became a static application over `/account-api`
+(`account-api/CLAUDE.md`), whose OpenAPI document that API publishes itself,
+to anybody, at `/account-api/openapi.json`. This operation answers the same
+document — for the realm the call is in, since the account API is per realm —
+with where it is published and how many operations it holds, so the console's
+*Account API* page (`/admin/account-api`) is drawn from an operation here like
+every other page, and rule 7's parity check finds its management GET. It
+requires `admin:read` and changes nothing.
+
 ## `/admin-api/verifications` — THE DEMONSTRATION VERIFIER'S ADMINISTRATOR TWIN (#587, 2026-10-12)
 
 `POST /admin-api/verifications/start` (Admin Write) and `GET

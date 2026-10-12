@@ -3145,6 +3145,53 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
+      // THE ACCOUNT API'S DOCUMENT (#568). The user portal's API,
+      // `/account-api`, publishes its OpenAPI document itself at
+      // `/account-api/openapi.json`, to anybody, because it carries no secret;
+      // this is the same document for the console's *Account API* page, which
+      // draws it from here like every page — the realm's, since the account
+      // API is per realm. It describes and calls nothing: every operation of
+      // that API acts on the signed-in person's own account.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/account-api', tag: 'Service',
+        operationId: 'getAccountApi',
+        summary: 'The account API\'s OpenAPI document',
+        description: 'The OpenAPI 3.1 document of `/account-api` — the ' +
+                     'user portal\'s API — for the realm the call is in ' +
+                     '(`document`), where that API publishes it (`url`), ' +
+                     'and how many paths and operations it holds. The ' +
+                     'same document `GET /account-api/openapi.json` ' +
+                     'answers, built from the table that registers those ' +
+                     'routes.',
+        mirrors: 'GET /admin/account-api',
+        responseDescription: 'The document and where it is published.',
+        responseSchema: { type: 'object', properties: {
+          url: { type: 'string', description: 'Where the account API ' +
+                 'publishes the document itself.' },
+          paths: { type: 'integer', description: 'Paths in the document.' },
+          operations: { type: 'integer',
+                        description: 'Operations in it.' },
+          document: { type: 'object',
+                      description: 'The OpenAPI 3.1 document.' } } },
+        handler: function (req, res) {
+          log.debug("Entering the management API account API endpoint.");
+          // LAZILY, for the explorer's reason: the account API gathers its
+          // operations from the portal's page modules when its routes are
+          // registered, and this file is loaded later than that anyway.
+          const accountApi = require('../account-api/account_api');
+          const document = accountApi.document(req);
+          let operations = 0;
+          Object.keys(document.paths || {}).forEach(function (path) {
+            operations += Object.keys(document.paths[path]).length;
+          });
+          self.sendJson(res, 200, {
+            url: helpers.baseUrlOf(req) + '/account-api/openapi.json',
+            paths: Object.keys(document.paths || {}).length,
+            operations: operations, document: document });
+          log.debug("Leaving the management API account API endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
       // THE LISTENERS (#423), AND THE CUSTOM ONES WITH WHICH APPLICATION IS ON
       // WHICH (#472). `listenersAdmin.listenersView()`, the function
       // `/admin/listeners` answers, and its two writes. The built-in

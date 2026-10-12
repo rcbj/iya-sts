@@ -107,6 +107,7 @@ import DelegationPage = require('./web_delegation');
 import DashboardPage = require('./web_dashboard');
 import StsMetadataPage = require('./web_sts_metadata');
 import ExplorerPage = require('./web_explorer');
+import AccountApiPage = require('./web_account_api');
 import WebAnswers = require('./web_answers');
 
 type Json = any;
@@ -359,6 +360,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ExplorerPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/account-api', title: 'Account API',
+    operation: '/admin-api/account-api', render: AccountApiPage.render },
   { path: '/admin/sts-metadata', title: 'Service metadata',
     operation: '/admin-api/sts-metadata',
     render: function (view: Json, ctx?: Json): string {
