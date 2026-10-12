@@ -574,6 +574,41 @@ async function signInWithJar(base, where, fields, jar, options) {
            answer: answer };
 }
 
+/**
+ * An answer read as the form's POST was answered, for a job with a
+ * browser of its own: `redirect` as the 303 it was, `{ status: 303,
+ * location }`; a next step on a page of its own (`mfa`,
+ * `password-change`) as that page — fetched with the job's own `go(method,
+ * url)`, as a browser fetches it after the 303 — which is the page the form's
+ * POST used to answer with; anything else at its status, its body the
+ * JSON's text. The job keeps the answer's cookies first
+ * (`answer.headers.getSetCookie()`).
+ *
+ * @param {object} answer - `submit()`'s, `signIn()`'s or `act()`'s answer
+ * @param {Function} go - the job's `go(method, url)`, answering
+ *   `{ status, location, text }`
+ * @returns {Promise<object>} `{ status, location, text, answer }`
+ */
+async function asFormAnswer(answer, go) {
+  log.debug("Entering asFormAnswer(). " + answer.next);
+  if (answer.next === "redirect" && answer.location) {
+    log.debug("Leaving asFormAnswer(). A redirect.");
+    return { status: 303, location: answer.location, text: "",
+             answer: answer };
+  }
+  if ((answer.next === "mfa" || answer.next === "password-change") &&
+      answer.location) {
+    const page = await go("GET", answer.location);
+    log.debug("Leaving asFormAnswer(). The step's page.");
+    return Object.assign({}, page, { answer: answer });
+  }
+  log.debug("Leaving asFormAnswer(). " + answer.status);
+  return { status: answer.status, location: "",
+           text: typeof answer.text === "string" ? answer.text
+                                                 : JSON.stringify(answer.json),
+           answer: answer };
+}
+
 module.exports = {
   pendingIdOf: pendingIdOf,
   foldCookies: foldCookies,
@@ -582,6 +617,7 @@ module.exports = {
   submit: submit,
   signIn: signIn,
   responseLike: responseLike,
+  asFormAnswer: asFormAnswer,
   signInWithJar: signInWithJar,
   passkeyOptions: passkeyOptions,
   changePassword: changePassword,
