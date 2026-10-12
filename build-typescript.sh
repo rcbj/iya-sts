@@ -233,6 +233,15 @@ bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
 bundle_surface "the sign-out" logout/web_signout_pages.ts StsSignout \
   logout/signout.bundle.js logout/web_signout.ts logout/signout-spa.js
 
+# THE FEDERATION PAGES (#580): `federation/federation-pages.bundle.js`
+# (`StsFederation`, `web_federation_pages.ts`) and
+# `federation/federation-pages-spa.js` (`web_federation_surface.ts`), served
+# at `/federation/pages.js` — never `federation_pages.js`, which is
+# `federation_pages.ts`.
+bundle_surface "the federation pages" federation/web_federation_pages.ts \
+  StsFederation federation/federation-pages.bundle.js \
+  federation/web_federation_surface.ts federation/federation-pages-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).

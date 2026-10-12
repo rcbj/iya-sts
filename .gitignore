@@ -100,3 +100,8 @@ logout/signout.bundle.js
 logout/signout-spa.js
 logout/signout-spa.js.br
 logout/signout-spa.js.gz
+# The federation pages' (#580), the same kind of file.
+federation/federation-pages.bundle.js
+federation/federation-pages-spa.js
+federation/federation-pages-spa.js.br
+federation/federation-pages-spa.js.gz

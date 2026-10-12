@@ -196,3 +196,6 @@ gnap/gnap-interaction-spa.js*
 # And the sign-out's (#577), for the same reason.
 logout/signout.bundle.js
 logout/signout-spa.js*
+# And the federation pages' (#580), for the same reason.
+federation/federation-pages.bundle.js
+federation/federation-pages-spa.js*

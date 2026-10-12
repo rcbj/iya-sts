@@ -19,8 +19,9 @@
 // `data-sts-state` — `kerberos/spnego_authn.ts`'s arrangement (#575), which
 // GNAP's refusals follow (#578): there is nothing to fetch, since a verdict
 // exists only on the response that carries it. `/federation/pages.js`
-// (`web_federation*.ts`, bundled by `build-typescript.sh`) draws it, in the
-// browser's language from the `federationPages` and `handoff` catalogs,
+// (`web_federation_surface.ts` over `web_federation_pages.ts` and
+// `web_federation_views.ts`, bundled by `build-typescript.sh`) draws it, in
+// the browser's language from the `federationPages` and `handoff` catalogs,
 // with every refusal's words English (#539's decision 6). SCRIPT IS
 // REQUIRED (rcbj on #569): the shell's `<noscript>` says so.
 //

@@ -23,10 +23,11 @@
 // refresh is the runtime's poll (`web_authn.ts`). An `end` page is a
 // refusal, English every word (#539), as `endPage()` drew it.
 //
-// A `web_` MODULE: it requires another `web_` module only and logs nothing.
+// A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
 
 import WebAuthnLogin = require('./web_authn_login');
+import WebOutcome = require('../common/web_outcome');
 
 type Json = any;
 
@@ -87,16 +88,17 @@ class WebAuthnEmail {
   }
 
   /**
-   * A refusal that ends the page: English, as `endPage()` drew it.
+   * A refusal that ends the page: English, as `endPage()` drew it — through
+   * the one outcome renderer since #580, to the same bytes.
    *
    * @param v - `{ title, sentence }`
    * @returns the markup
    */
   static end(v: Json): string {
-    const esc = WebAuthnLogin.esc;
-    return '<h1>' + esc(v.title) + '</h1><div class="err" id="email-error">' +
-      esc(v.sentence) + '</div><p class="meta">Start again from the ' +
-      'application that sent you here.</p>';
+    return WebOutcome.draw({ heading: String(v.title || ''),
+      why: String(v.sentence || ''), whyTone: 'err',
+      ids: { why: 'email-error' },
+      notes: ['Start again from the application that sent you here.'] });
   }
 
   /**
