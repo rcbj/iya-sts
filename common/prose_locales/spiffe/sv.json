@@ -156,12 +156,12 @@
     "text": "Operatörens vägledning när en arbetslast får mer än ett SVID — `internal`, `external`. Skickas vidare till Workload API ordagrant; ingenting här läser det."
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "TRUE där innehavaren får anropa SPIRE Server API:s administrativa metoder. REGISTRERAT OCH INTE UPPRÄTTHÅLLET, som varje annat auktoriseringsfaktum i den här tjänsten: inget anrop här vägras för att det saknas."
+    "en": "fefc555630e7c657",
+    "text": "TRUE där innehavaren får anropa SPIRE Server API:s administrativa metoder — poster, agenter, paket, federationsrelationer, prägling av ett SVID — över ömsesidig TLS. UPPRÄTTHÅLLS i båda lägena: server-API:t gör en anropare till `admin` när en ej utgången post för dess identitet bär den här flaggan eller spiffe.adminIds anger den, och nekar de metoderna till en fjärranropare som inte är någondera (den privata Unix-socketens `local`-anropare är den andra vägen in). Läses vid varje anrop, så en ändring gäller från nästa anrop."
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "TRUE där innehavaren är en nedströms SPIRE-server som får begära en mellanliggande CA (NewDownstreamX509CA). Registrerat, inte upprätthållet."
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE där innehavaren är en nedströms SPIRE-server som får begära en mellanliggande CA (NewDownstreamX509CA) och publicera en JWT- eller WIT-auktoritet. UPPRÄTTHÅLLS i båda lägena: de metoderna nekas till en anropare som ingen ej utgången post markerar som nedströms, och flaggan ger inget annat."
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",

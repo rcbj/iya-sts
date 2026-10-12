@@ -19,6 +19,10 @@
     "en": "8b5e4bb62b24c1f7",
     "text": "DEN HÄR FÖRTROENDESFÄREN HAR INGEN KDC: {{reason}}. Sätt krb5.realm på sfären och slå på krb5.enabled för att ge den en; port 88 dirigerar en begäran efter Kerberos-sfärens namn i den."
   },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "DEN HÄR FÖRTROENDESFÄRENS KDC ÄR PÅ MEN KAN INTE ANVÄNDAS: {{reason}}. Dess Kerberos-realm är {{kerberosRealm}}."
+  },
   "kerberos.notes.window": {
     "en": "f23c2b84dd49da4d",
     "text": "Nycklar härleds EFTER att ett lösenord har satts eller verifierats och tar några tiotals millisekunder att komma på plats; tills de har gjort det avvisar KDC:n personen snarare än att godta en äldre nyckel."

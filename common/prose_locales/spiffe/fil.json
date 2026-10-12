@@ -156,12 +156,12 @@
     "text": "Ang gabay ng operator kapag nakakuha ang workload ng higit sa isang SVID — `internal`, `external`. Ipinapasa nang verbatim sa Workload API; walang bumabasa nito rito."
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "TRUE kung saan puwedeng tawagin ng may hawak ang mga administrative method ng SPIRE Server API. ITINATALA AT HINDI IPINAPATUPAD, gaya ng bawat ibang authorization fact sa serbisyong ito: walang tawag dito na tinatanggihan dahil sa kawalan nito."
+    "en": "fefc555630e7c657",
+    "text": "TRUE kung saan puwedeng tawagin ng may hawak ang mga administrative method ng SPIRE Server API — mga entry, agent, bundle, federation relationship, paggawa ng SVID — sa mutual TLS. IPINAPATUPAD sa parehong mode: ginagawang `admin` ng server API ang caller kapag may dalang flag na ito ang hindi pa nag-e-expire na entry para sa identity nito o pinapangalanan ito ng spiffe.adminIds, at tinatanggihan ang mga method na iyon sa remote caller na hindi alinman (ang `local` caller ng pribadong Unix socket ang isa pang daan papasok). Binabasa sa bawat tawag, kaya umiiral ang pagbabago sa susunod na tawag."
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "TRUE kung saan downstream SPIRE server ang may hawak na puwedeng humingi ng intermediate CA (NewDownstreamX509CA). Itinatala, hindi ipinapatupad."
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE kung saan downstream SPIRE server ang may hawak na puwedeng humingi ng intermediate CA (NewDownstreamX509CA) at maglathala ng JWT o WIT authority. IPINAPATUPAD sa parehong mode: tinatanggihan ang mga method na iyon sa caller na hindi minamarkahang downstream ng anumang hindi pa nag-e-expire na entry, at wala nang iba pang ibinibigay ang flag."
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",

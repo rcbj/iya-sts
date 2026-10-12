@@ -76,8 +76,8 @@
     "text": "Användarnamn och lösenord"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "Den här tjänstens egen inloggningsskärm, som inte kontrollerar något lösenord. Det vanliga fallet, och det som en osatt mekanism faller tillbaka på när inget annat har någon åsikt."
+    "en": "3c7b942fed61a172",
+    "text": "Den här tjänstens egen inloggningsskärm: ett användarnamn och ett lösenord, där lösenordet verifieras i produktläge och inte i utvecklingsläge. Det vanliga fallet, och det som en osatt mekanism faller tillbaka på när inget annat har någon åsikt."
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Kerberos-biljett (SPNEGO)"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "INTEGRERAD AUTENTISERING. Personen skickas till /authn/spnego, som svarar 401 med WWW-Authenticate: Negotiate och loggar in dem på den tjänstebiljett som deras klient skickar tillbaka (RFC 4559 över RFC 4178 över RFC 4121). Ingenting skrivs in och ingen skärm ritas. Det är den enda mekanismen här som vilar på en autentiseringsuppgift som den här tjänsten verkligen verifierar — varje annan inloggning tar det namn den får — och det som sessionen sedan gör anspråk på läses från BILJETTENS egna flaggor: amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och INGENTING alls för en biljett som inte gör anspråk på någon av dem. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ensam 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden."
+    "en": "0f52a102d4c01229",
+    "text": "INTEGRERAD AUTENTISERING. Personen skickas till /authn/spnego, som svarar 401 med WWW-Authenticate: Negotiate och loggar in dem på den tjänstebiljett som deras klient skickar tillbaka (RFC 4559 över RFC 4178 över RFC 4121). Ingenting skrivs in och ingen skärm ritas. Liksom en säkerhetsnyckel eller en plånbok vilar den på en autentiseringsuppgift som den här tjänsten verifierar i varje läge — inloggningsskärmens lösenord verifieras bara i produktläge — och det som sessionen sedan gör anspråk på läses från BILJETTENS egna flaggor: amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och INGENTING alls för en biljett som inte gör anspråk på någon av dem. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ensam 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden."
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "VILKEN ÄNDE DEN HÄR TJÄNSTEN ÄR: service-provider (den konsumerar) eller identity-provider (den intygar). En relation är en riktning — se rubriken."
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "En av saml2, saml11, wsfed, oidc, oauth2."
+    "en": "06ec8c6d5bce784c",
+    "text": "En av saml2, saml11, wsfed, oidc, oauth2 — de fem inloggningsprotokollen — eller ssf, en partner som bara skickar Shared Signals och inte loggar in någon."
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "Den här tjänsten"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "Inloggningsskärmen, som inte kontrollerar något lösenord"
+    "en": "85a969d1a113b8c5",
+    "text": "Inloggningsskärmen (användarnamn och lösenord)"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

@@ -19,6 +19,10 @@
     "en": "8b5e4bb62b24c1f7",
     "text": "WALANG KDC ANG TRUST REALM NA ITO: {{reason}}. Itakda ang krb5.realm sa realm at i-on ang krb5.enabled para bigyan ito ng isa; niruruta ng port 88 ang isang request ayon sa pangalan ng Kerberos realm sa loob nito."
   },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "NAKA-ON ANG KDC NG TRUST REALM NA ITO PERO HINDI MAGAMIT: {{reason}}. Ang Kerberos realm nito ay {{kerberosRealm}}."
+  },
   "kerberos.notes.window": {
     "en": "f23c2b84dd49da4d",
     "text": "Dine-derive ang mga key PAGKATAPOS itakda o i-verify ang password at ilang sampung millisecond bago lumapag; hanggang hindi pa, tinatanggihan ng KDC ang tao sa halip na tumanggap ng mas lumang key."

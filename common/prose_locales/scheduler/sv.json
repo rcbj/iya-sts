@@ -480,12 +480,12 @@
     "text": "cron {{cron}} (UTC)"
   },
   "sched.sentence.every": {
-    "en": "05f22fb4833ac391",
-    "text": "var {{span}}"
+    "en": "cad7aff2b61c1a2d",
+    "text": "var {{span}} (ett fast intervall)"
   },
   "sched.sentence.everyFrom": {
-    "en": "3893802ebe2b3ab1",
-    "text": "var {{span}}, från {{setting}}"
+    "en": "e3f70e78d2f74d9a",
+    "text": "var {{span}} (från {{setting}})"
   },
   "sched.sentence.noInterval": {
     "en": "ea9235468f83c6bf",
@@ -512,8 +512,12 @@
     "text": "angiven i scheduler.disabledJobs"
   },
   "sched.sentence.offZero": {
-    "en": "e9453e79cc9c7d92",
-    "text": "{{setting}} är 0"
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} är 0, så jobbet är av"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "dess intervall är 0, så jobbet är av"
   },
   "sched.sentence.clockProcess": {
     "en": "bd7af0544bafb825",

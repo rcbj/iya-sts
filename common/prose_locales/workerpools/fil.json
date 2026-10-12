@@ -12,12 +12,12 @@
     "text": "Naka-off: 0 ang {{setting}}, kaya ang front process mismo ang sumasagot sa bawat request, sa iisang thread."
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito (STS-WORKER-0023). Pumupunta ang mga hosted surface sa request pool."
+    "en": "db7b7ee1f099024a",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Pumupunta ang mga hosted surface sa request pool."
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito (STS-WORKER-0023). Ang front process ang sumasagot sa bawat request."
+    "en": "ced50089d8744adc",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito. Ang front process ang sumasagot sa bawat request."
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

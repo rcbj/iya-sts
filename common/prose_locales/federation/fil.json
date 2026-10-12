@@ -76,8 +76,8 @@
     "text": "Username at password"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "Ang sariling sign-in screen ng serbisyong ito, na walang sinusuring password. Ang karaniwang kaso, at kung saan bumabagsak ang hindi naitakdang mechanism kapag wala nang ibang may opinyon."
+    "en": "3c7b942fed61a172",
+    "text": "Ang sariling sign-in screen ng serbisyong ito: isang username at isang password, vine-verify ang password sa product mode at hindi sa development mode. Ang karaniwang kaso, at kung saan bumabagsak ang hindi naitakdang mechanism kapag wala nang ibang may opinyon."
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Kerberos ticket (SPNEGO)"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "INTEGRATED AUTHENTICATION. Ipinapadala ang tao sa /authn/spnego, na sumasagot ng 401 na may WWW-Authenticate: Negotiate at sina-sign in siya batay sa service ticket na ibinabalik ng client niya (RFC 4559 sa ibabaw ng RFC 4178 sa ibabaw ng RFC 4121). Walang itinitipa at walang screen na iginuguhit. Ito ang nag-iisang mechanism dito na nakasandig sa credential na tunay na vine-verify ng serbisyong ito — tinatanggap ng bawat ibang sign-in ang pangalang ibinigay dito — at ang inaangkin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET: amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at WALANG ANUMAN para sa ticket na wala sa dalawa ang inaangkin. Ang client na hindi makakuha ng ticket ay nakakasalubong ng pahinang may link papunta sa sign-in screen, dahil dead end ang hubad na 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito."
+    "en": "0f52a102d4c01229",
+    "text": "INTEGRATED AUTHENTICATION. Ipinapadala ang tao sa /authn/spnego, na sumasagot ng 401 na may WWW-Authenticate: Negotiate at sina-sign in siya batay sa service ticket na ibinabalik ng client niya (RFC 4559 sa ibabaw ng RFC 4178 sa ibabaw ng RFC 4121). Walang itinitipa at walang screen na iginuguhit. Gaya ng security key o wallet, nakasandig ito sa credential na vine-verify ng serbisyong ito sa bawat mode — sa product mode lang vine-verify ang password ng sign-in screen — at ang inaangkin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET: amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at WALANG ANUMAN para sa ticket na wala sa dalawa ang inaangkin. Ang client na hindi makakuha ng ticket ay nakakasalubong ng pahinang may link papunta sa sign-in screen, dahil dead end ang hubad na 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito."
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "ALING DULO ANG SERBISYONG ITO: service-provider (gumagamit) o identity-provider (nag-a-assert). Ang isang relationship ay isang direksyon — tingnan ang header."
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "Isa sa saml2, saml11, wsfed, oidc, oauth2."
+    "en": "06ec8c6d5bce784c",
+    "text": "Isa sa saml2, saml11, wsfed, oidc, oauth2 — ang limang sign-in protocol — o ssf, isang partner na Shared Signals lang ang ipinapadala at walang sina-sign in."
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "Ang serbisyong ito"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "Ang sign-in screen, na walang sinusuring password"
+    "en": "85a969d1a113b8c5",
+    "text": "Ang sign-in screen (username at password)"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

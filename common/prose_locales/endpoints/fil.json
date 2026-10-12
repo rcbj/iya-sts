@@ -451,6 +451,10 @@
     "en": "657c84b412c86001",
     "text": "Ang Shared Signals receive endpoint ng portal"
   },
+  "endpoints.route./portal/claim-sources/start.name": {
+    "en": "088ae53146e71c4d",
+    "text": "Mga nakakonektang claim source — pag-bind ng browser sa isang link"
+  },
   "endpoints.route./portal/claim-sources/callback.name": {
     "en": "152919279ecea855",
     "text": "Mga nakakonektang claim source — ang sagot ng provider"

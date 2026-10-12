@@ -1342,5 +1342,33 @@
   "caches.remaining.staleChanged": {
     "en": "1134a1cffa605ffb",
     "text": "stale: nagbago na ang {{basis}}"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "hanggang alisin ito ng bound bilang least recently used"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "hanggang alisin ito ng bound"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "hanggang ma-activate ang isang version ng dataset"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "hanggang hindi ito magamit sa buong idle timeout"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "stale: nag-expire na ang nonce nito"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "stale: nag-expire na ang challenge nito"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "stale: na-disown na ang credential"
   }
 }

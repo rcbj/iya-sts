@@ -587,6 +587,18 @@
     "en": "2d0556abc166bc57",
     "text": "Inget av det. Katalogen, principaldatabasen och registret innehåller det som konfigurerats eller provisionerats, och ingenting annat — de två XACML-rollgrupperna finns och är tomma, och KDC:n vägrar bygga krbtgt eller dess tjänstekonto på de lösenord som publiceras i det här förrådet."
   },
+  "mode.requirements.test-double.what": {
+    "en": "f06cf29c4a61e31d",
+    "text": "Tjänstens metadatadokument säger att den här tjänsten är en testdubblett"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "241755f4aaf4cb6b",
+    "text": "`testDouble` är true i GET /admin-api/sts-metadata: den här tjänsten kontrollerar inga lösenord och validerar inga åtkomsttoken, och en lista över slutpunkter får inte läsas som ett påstående om att den gör det."
+  },
+  "mode.requirements.test-double.product": {
+    "en": "252476cbd5f62e18",
+    "text": "`testDouble` är false: lösenord verifieras och åtkomsttoken valideras, och dokumentet säger det."
+  },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",
     "text": "Ett anspråksvärde får hittas på"
