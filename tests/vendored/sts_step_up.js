@@ -111,6 +111,8 @@
 // the client is given a global consent for the one scope it asks for.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -304,6 +306,34 @@ async function ok(url, payload, what) {
 
 // One browser: a cookie jar kept BY NAME — the sign-on cookie, which the
 // static portal (#568) is signed in out of.
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
@@ -434,17 +464,21 @@ function atClient(r) {
 // step. Answers every hop, so a section can look at each screen.
 async function signInScreen(b, location, who, code) {
   log.debug("Entering signInScreen(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200,
-    "the sign-in screen should be drawn; it answered " + page.status + " " +
-    page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  assert.ok(fields.authn_id,
-    "the sign-in screen carries no authn_id: " + page.text.slice(0, 300));
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  let posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper: `page`
+  // is its VIEW now (what the screen offers, as facts), and the act's
+  // answer is read as the form's POST was — the code page fetched from the
+  // address it names.
+  const answer = await authnSignin.submit(base + R, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  assert.ok(answer.view,
+    "the sign-in screen should be drawn; it answered " + answer.status +
+    " " + JSON.stringify(answer.errors));
+  const page = { view: answer.view };
+  keepCookies(b, answer);
+  let posted = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   let totpPage = null;
   if (posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
     totpPage = posted;
@@ -958,10 +992,11 @@ async function stepUpToMfa(held) {
   // step the enrolment's confirmation code spent is refused as a replay.
   const done = await signInScreen(alice, first.location, ALICE,
                                   codeFor(secret, Date.now() + 30000));
-  check("the sign-in screen DEMANDS the second factor: the checkbox drawn " +
-        "checked and disabled", function () {
-    assert.ok(/id="use_webauthn"[^>]*checked disabled/.test(done.page.text),
-      done.page.text.slice(0, 600));
+  check("the sign-in screen DEMANDS the second factor: its view says the " +
+        "request demands one, which the page draws as the checkbox checked " +
+        "and disabled", function () {
+    assert.ok(done.page.view.demands && done.page.view.demands.mfa === true,
+      JSON.stringify(done.page.view).slice(0, 600));
   });
   check("and the password is answered with the one-time code screen, not " +
         "a redirect", function () {
