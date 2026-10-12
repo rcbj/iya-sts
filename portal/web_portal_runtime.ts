@@ -566,7 +566,12 @@ class PortalRuntime extends SpaClient {
         max_age: json.stepUp.maxAge });
       return;
     }
-    if (answer.status !== 200 && !json.view) {
+    // A REFUSAL IS SAID whether or not it carries a view to draw the page
+    // from (an unknown device code, a lockout) — unless that view draws it
+    // itself (`answered()`'s rule).
+    const own = json.view && (json.view.refused || json.view.notOffered ||
+                              json.view.tooMany);
+    if ((answer.status !== 200 || json.ok === false) && !own) {
       this.flash = { error: (json.errors || []).join(' ') ||
                             'The account API answered ' + answer.status + '.' };
     }
@@ -677,9 +682,15 @@ class PortalRuntime extends SpaClient {
    */
   async answered(path: string | null, answer: Json): Promise<void> {
     const json = answer.json || { ok: answer.status < 400 };
+    // A VIEW THAT DRAWS ITS OWN REFUSAL — a link page's one sentence, the
+    // forgotten-password form when reset is not offered or the rate limit
+    // was met — says so (`refused`, `notOffered`, `tooMany`), and the
+    // refusal is not drawn a second time above it.
+    const v = json.view || {};
+    const ownRefusal = !!(v.refused || v.notOffered || v.tooMany);
     const said = json.ok === false
-      ? { error: (json.errors || []).join(' ') ||
-                 'Refused (' + answer.status + ').' }
+      ? (ownRefusal ? {} : { error: (json.errors || []).join(' ') ||
+                                    'Refused (' + answer.status + ').' })
       : { message: String(json.message || '') };
     if (Array.isArray(json.files) && json.files.length) {
       const self = this;

@@ -840,6 +840,60 @@ class AccountApi {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // THE ACCOUNT API IS SERVED AT THE PERSON'S HOME (#98), as the portal was:
+  // it manages a person's own entry, which only their home cell holds. The
+  // person is the token's — its claims READ here only to route, never
+  // trusted: the home cell verifies the token as any cell would — or, on an
+  // operation that takes none, the person an activation, reset or
+  // verification link names. Relayed whole, before the gate, so nothing is
+  // read or spent in the wrong cell. `common/cell_placement.ts` is the table.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays an account API request to the home cell of its person.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req: Json, res: Json): Promise<boolean> {
+    const { log, realms, parseBody } = this.deps;
+    log.debug("Entering AccountApi.placeRequest().");
+    const cells = require('../common/cells');
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving AccountApi.placeRequest(). Here.");
+      return false;
+    }
+    const placement = require('../common/cell_placement');
+    let named = '';
+    const token = this.presentedTokenOf(req).token;
+    const parts = String(token || '').split('.');
+    if (parts.length === 3) {
+      try {
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+                                    .toString('utf8'));
+        named = String(claims.username ||
+                       helpers.nameForSubject(claims.sub) || '');
+      } catch (e) {
+        // Not a JWT this cell can read: answered here, where the gate says
+        // why it is no token.
+        log.debug("Caught in AccountApi.placeRequest(): " +
+                  ((e && e.message) || e));
+        named = '';
+      }
+    }
+    if (!named) {
+      const body = String(req.method || 'GET') === 'POST'
+        ? (parseBody(req) || {}) : {};
+      named = String((req.query && req.query.user) || body.user || '').trim();
+    }
+    log.debug("Leaving AccountApi.placeRequest(). " +
+              (named ? 'Placed by its person.' : 'Nobody named.'));
+    return named ? placement.relayToHome(req, res, realms.currentId(), 'name',
+                                         named, 'account-api')
+                 : false;
+  }
+
   /**
    * Registers every operation of the table as an express route.
    *
@@ -850,6 +904,20 @@ class AccountApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AccountApi.registerRoutes().");
+    app.use(BASE, function (req: Json, res: Json, next: () => void) {
+      log.debug("Entering the account API's cell placement.");
+      self.placeRequest(req, res).then(function (relayed) {
+        log.debug("Leaving the account API's cell placement. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e) {
+        log.debug("Caught in the account API's cell placement: " +
+                  ((e && e.message) || e));
+        next();
+      });
+    });
     this.operations().forEach(function (op) {
       const route = function (req: Json, res: Json): unknown {
         return self.run(op, req, res);

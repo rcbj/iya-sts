@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4301** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4305** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 230
 * [Management API (`STS-API`)](#sts-api) — 81
-* [User portal (`STS-PORTAL`)](#sts-portal) — 85
+* [User portal (`STS-PORTAL`)](#sts-portal) — 89
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 170
@@ -4676,6 +4676,10 @@ Raised from: portal/.
 | `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
 | `STS-PORTAL-0245` | A person's rename of one of their passkeys on /portal/keys was refused: the name was not one, or the id is not one of theirs (#470). | HTTP 400 page |
 | `STS-PORTAL-0246` | A method other than GET was sent to a /portal path: the portal is a static application since #568 and nothing is posted to it. | HTTP 404 |
+| `STS-PORTAL-0300` | A Claims Provider's callback arrived in a browser whose sign-on session is not the one the link was started from, so it was refused (#568: the account-linking CSRF the portal session closed). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0301` | A claim-source link was not started: the account API token is placed on no sign-on session the registry still holds, so the callback could never be bound to it. | HTTP 400 |
+| `STS-PORTAL-0302` | The access policy refused a Claims Provider's callback (user-portal, manage-own). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0310` | A device challenge or link could not be bound: the account API token's sign-on session is not known (the token registry dropped it), so the person is asked to sign in again. | HTTP 400 |
 
 ## STS-ACCOUNT
 

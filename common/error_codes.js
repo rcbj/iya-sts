@@ -20037,6 +20037,25 @@ const CODES = [
     summary: 'A method other than GET was sent to a /portal path: the portal ' +
       'is a static application since #568 and nothing is posted to it.',
     spec: 'HTTP 404' },
+  { code: 'STS-PORTAL-0300',
+    summary: 'A Claims Provider\'s callback arrived in a browser whose ' +
+      'sign-on session is not the one the link was started from, so it was ' +
+      'refused (#568: the account-linking CSRF the portal session closed).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0301',
+    summary: 'A claim-source link was not started: the account API token is ' +
+      'placed on no sign-on session the registry still holds, so the ' +
+      'callback could never be bound to it.',
+    spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0302',
+    summary: 'The access policy refused a Claims Provider\'s callback ' +
+      '(user-portal, manage-own).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0310',
+    summary: 'A device challenge or link could not be bound: the account ' +
+      'API token\'s sign-on session is not known (the token registry ' +
+      'dropped it), so the person is asked to sign in again.',
+    spec: 'HTTP 400' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

@@ -90,6 +90,10 @@ export interface AccountOperation {
   // the operation's parameters and request body.
   query?: any;
   body?: any;
+  // A JSON Schema that DOCUMENTS a body the handler checks itself, where no
+  // zod schema can (CIBA's repeated per-right limit controls): the document
+  // shows it, the wrapper checks nothing with it.
+  bodyDoc?: any;
   // The JSON Schema of a successful answer, where one is declared.
   answer?: any;
   // The HTTP statuses the handler answers besides 200, with what each means.

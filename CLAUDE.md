@@ -60,7 +60,8 @@ files did not change; the paths did.
 | `common/vendored/` | Byte-identical copies of the parent project's files — the PKI encoders and `bbs2023.js` — plus the JSON-LD `contexts/`. **Do not edit them here** — except `pqc.js`, `pqc_x509.js` and `xmldsig.js`, this service's own since #363 and never re-synced. `common/vendored/CLAUDE.md`. |
 | `home/` | The front door: `GET /` and the one image on it. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `GET|POST /logout`, and the one model of what a live session is, per identity (`/admin/logout`) and service-wide (`/admin/sessions`). `logout/CLAUDE.md`. |
-| `portal/` | **The user portal**: the pages that belong to the person looking at them, where no route takes an identity from the request, behind a navigation column that is not the console's. `portal/CLAUDE.md`. |
+| `portal/` | **The user portal**: the pages that belong to the person looking at them, behind a navigation column that is not the console's. **A static application since #568 (2026-10-12)**, on the console's pattern: the `web_*.ts` files are its renderers and runtime, bundled for a browser, and each page module (`account_*.ts`, `portal_*.ts`) contributes that page's `/account-api` operations. `portal/CLAUDE.md`. |
+| `account-api/` | **`/account-api`, the portal's only door (#568)**: the gate (this realm's DPoP-bound token carrying `account:manage`, the person ALWAYS its subject), the operation table the portal's page modules contribute, and its OpenAPI document — drawn in the console at `/admin/account-api`. `account-api/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider: RFC 9700 mode, DPoP, mTLS, client authentication, both RFC 7523 and RFC 7522 assertion profiles, the multi-AS profiles, the consent screen and UserInfo. `oauth-oidc/CLAUDE.md`. |
 | `authn/` | The sign-in service, which **owns the SESSION**: the WebAuthn relying party and the TOTP and recovery-code steps. `/authn/spnego` lives in `kerberos/`, `/authn/wallet` in `oid4vc/`. `authn/CLAUDE.md`. |
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
@@ -156,6 +157,7 @@ the exceptions, and each is argued where it lives.
 | the SPIFFE Broker API (`spiffe.brokerPort`) | an X509-SVID over mutual TLS naming a broker in `spiffe.brokers`, and a reference type that broker may use; the workload it references is attested here (#170) | `spiffe/CLAUDE.md` |
 | `/xacml/pep/*`, `POST /xacml/pip` | a verified client certificate whose subject DN resolves to an entry holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | the same chain, holding `XACML_USER` | `xacml/CLAUDE.md` |
+| `/account-api` (#568) | an OAuth 2.0 access token from THIS realm's authorization server, audienced to this realm's `/account-api`, DPoP-bound, carrying `account:manage`, issued to a client that declares it, on a sign-on session still live — the person is its subject and never a parameter. The operations behind an activation, reset or verification link take none and spend the link | `account-api/CLAUDE.md` |
 | `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`, issued to a client that declares them (#110) — and `admin:console` for the console's own operations under `/admin-api/console` (#454); `adminApi.authRequired` restores the open API, in development mode only (#446) | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication — for an RFC 9701 JWT response in every mode, for RFC 7662 JSON in product mode only | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener (`debugger.port`) | an access token audienced to `urn:sts:debugger-api:` carrying the debugger permission — issued to console administrators only — or the debugger client's session holding one; four landing paths excepted. **Cannot be turned off** | `debugger/CLAUDE.md` |
@@ -367,13 +369,22 @@ outside it:
 
 ## This service's own two surfaces are clients of its own authorization server
 
-`/portal` is an **OpenID Connect relying party** of this service (since
-2026-09-06): a seeded confidential client, a real back-channel HTTP request to
-`/oauth2/token`, a relying-party session that names the sign-on session it came
-from and dies with it, and a Sign out that ends both. `common/CLAUDE.md`
-(`oidc_rp.js`) carries the design, the realm split and the `Location`-header
-bug; `authn/CLAUDE.md` the two kinds of session; `portal/CLAUDE.md` the gate
-exemptions and sign-out.
+**Both were OpenID Connect relying parties run by this process** (the portal
+since 2026-09-06): seeded confidential clients, a back-channel request to
+`/oauth2/token`, a relying-party session dying with the sign-on session it
+came from. `common/CLAUDE.md` (`oidc_rp.ts`) still carries that design, the
+realm split and the `Location`-header bug, for the embedded debugger, which
+is one still.
+
+**`/portal` has been a STATIC application since #568 (2026-10-12)**, on the
+console's pattern below: every `/portal/*` path answers one document and
+`/portal/portal.js`, which signs in in the browser as the PUBLIC client
+`sts-user-portal` (PKCE S256, `resource` the realm's `/account-api`,
+`account:manage`), holds a DPoP-bound token in memory, and draws every page
+from `/account-api` and sends every form there. rcbj's decisions on #568 —
+the console's pattern, reversing #444's D9 for the portal too; `/account-api`;
+the pages for nobody drawn the same way; the console-session adoption
+dropped. `account-api/CLAUDE.md` and `portal/CLAUDE.md` argue it.
 
 **`/admin` was one too until the cutover of #446 (2026-10-05), and is now a
 STATIC application**: every `/admin/*` path answers one document and
@@ -516,6 +527,7 @@ is and the named file says why.
 | 8-email | `authn/email_factor` (and `common/mail_factor`, a library built with it) | Just after `authn`, whose pending steps it reads through that module's exports and whose three `/authn/email-*` paths it registers (#64) — `vc_signin`'s and `spnego_authn`'s arrangement. | `authn/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
 | 8a-mail | `common/mail`, `common/mail_uses`, `portal/portal_mail` | Built with the portal, before it: the portal's `registerRoutes()` registers `portal_mail`'s three pages. The channel and its uses are LIBRARIES; the directory fills the channel's slot at 21. | `common/CLAUDE.md` |
+| 8a-acct | `portal/account_*` (seven), then `account-api/account_api` | Just after the portal (#568): the seven page modules that came out of `portal.ts` are built, then the account API, whose `register()` gathers every portal page module's operations — all built by now — and registers them behind its gate and cell placement. Reaches `oauth2` and the token modules only when a request arrives. | `account-api/CLAUDE.md` |
 | 8b | `oauth-oidc/consent_screen` | After `authn`, before `oauth2`. | `oauth-oidc/CLAUDE.md` |
 | 9 | `oauth-oidc/oauth2` | Before `admin-ui/admin` (rule 5). | `oauth-oidc/CLAUDE.md` |
 | 9a | `oauth-oidc/access_token_status` | Just after `oauth2` and `grant_management` (#432): the access-token status list both `oauth2` and `gnap/gnap_tokens` allocate through; `/status-lists*` collide with nothing. Requires the status-list codec, built at 11–14, whose facades are called only at request time. | `oauth-oidc/CLAUDE.md` |
@@ -682,6 +694,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3ci | `i18n.ts`, `page_locale.ts`, `locale_policy.ts` (#539): any BCP 47 locale from catalogs in `common/locales/`, the order a page's language is chosen in (ui_locales, preferredLanguage, the chooser, Accept-Language, the locale policy), the chooser on every page, errors English, the locale policy's named profiles by application and its population of a new person's preferredLanguage | `common/CLAUDE.md` |
 | 3cj | `scope_claims.ts` (#395): OIDC Core 5.4's scope claims released only when their scope was granted, in every configured layer of an access token, ID Token and UserInfo; a resource server's declared access-token claims (`oauthAccessTokenClaim`, intersected across audiences); per-application union / intersection choices for realm-vs-application and client-vs-resource-server; `preferred_username` no longer on every access token; a resource server's own permissions mapped to catalogue claims (`oauthPermissionClaims`, the Scope claims tab), the granted permission being their grant | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | 3cg | `hosted_applications.js` and `listener_map.js` (#472): a closed catalogue of hosted applications held to the router, custom listeners (the service's and a realm's own), a per-realm mapping with an advertised listener per application, four rules judged over the whole state at every write, URLs built on the advertised base, and `listeners.adminOnMain` | `common/CLAUDE.md`, `tls/CLAUDE.md` |
+| 3ck | `account_api.ts` (#568): the user portal's only door — a person's DPoP-bound token from THIS realm carrying `account:manage`, the person always its subject, the access policy as the portal's pages asked it; an operation per portal page and form, contributed by the page's own module, `mirrors` naming it (rule 7's twin); the answer conventions the portal's runtime draws by | `account-api/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -724,7 +737,7 @@ repository where failing to open something stops the process.
 ## `frame-ancestors` is the one CSP clause a page may not drop
 
 RFC 9700 section 4.14. `app.js` sets the policy on every response, and a
-growing number of routes relax it — the fourteen kinds of scripted page below, and others
+growing number of routes relax it — the eleven kinds of scripted page below, and others
 that widen `img-src`, `style-src`, `frame-src` or `connect-src` — by SETTING
 THE WHOLE HEADER, so each of them could lose the framing clause with nothing
 failing: the page works, the script runs, and the protection is gone.
@@ -759,18 +772,22 @@ argues it.
 silently.
 
 
-## Fourteen kinds of page here have a script on them, and each is the same exception
+## Eleven kinds of page here have a script on them, and each is the same exception
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. Fourteen kinds of page need a script and each takes the SAME shape of
+than merely unlikely. Eleven kinds of page need a script and each takes the SAME shape of
 exception — `script-src 'self'` naming one resource, never `'unsafe-inline'` —
-and **each but the OP iframe and the admin console carries a REAL SUBMIT
-BUTTON as well**, because with the script blocked the button is the whole
-mechanism. The OP iframe has no person in front of it and nothing to submit,
-and the console IS a script — an application that reaches this service only
-through `/admin-api` — so with script blocked it says so and does nothing;
-their arguments are their rows.
+and **each but the OP iframe, the admin console and the user portal carries a
+REAL SUBMIT BUTTON as well**, because with the script blocked the button is
+the whole mechanism. The OP iframe has no person in front of it and nothing to
+submit, and the console and the portal ARE scripts — applications that reach
+this service only through `/admin-api` and `/account-api` — so with script
+blocked each says so and does nothing; their arguments are their rows. **The
+portal's four rows became one on #568** (`/portal/keys`, `/portal/activate`'s
+key step, `/portal/devices`' link ceremony and `/portal/mfa`'s Copy button):
+the ceremonies and the button are its runtime's now
+(`portal/web_portal_webauthn.ts`).
 
 | Page | Script | Argued in |
 |---|---|---|
@@ -780,10 +797,7 @@ their arguments are their rows.
 | `/admin` and every `/admin/*` path — **the admin console, a static application since #446 (2026-10-05)** | `/admin/console.js` — the console's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/admin-api` operation, sends every form there, writes a Copy button's URL to the clipboard, and loads the API explorer's own script (`/admin/api-explorer/explorer.js`) when that page is drawn. **No submit button stands in for it**: a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn. `connect-src 'self'` beside `script-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/portal/keys` | `/authn/webauthn.js` — the SAME resource, not a copy; since #470 it also carries the WebAuthn Signal API's data where no other realm is defined | `portal/CLAUDE.md` |
-| `/portal/activate`, **only while the security key step is drawn** (2026-10-01) | `/authn/webauthn.js` in `create` mode — the registration a key instead of a password needs, authorised by the activation link; no other state of the page runs a script | `portal/CLAUDE.md` |
-| `/portal/devices`, **only while a WebAuthn link ceremony is armed** (#164 phase 2) | `/authn/webauthn.js` in `get` mode — a fresh assertion links a platform credential to a device; the page's key-proof form beside it runs no script | `portal/CLAUDE.md` |
-| `/portal/mfa`, **only while a freshly generated set of recovery codes is shown** (#224, 2026-10-06) | `/portal/copy.js` — the Copy all codes button, which writes the codes to the clipboard, which no markup can. The set is also in a read-only box ONE PER LINE, which a selection copies as drawn, so with script blocked the button stays hidden and the box is the mechanism; no other state of the page runs a script | `portal/portal.ts` (the COPY_SCRIPT header) |
+| `/portal` and every `/portal/*` path — **the user portal, a static application since #568 (2026-10-12)** | `/portal/portal.js` — the portal's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/account-api` operation, sends every form there, runs the WebAuthn ceremonies of `/portal/keys`, `/portal/activate` and `/portal/devices` itself (the markup `/authn/webauthn.js` read, `web_portal_webauthn.ts`), and reveals the Copy buttons. **No submit button stands in for it**, for the console's reason; the shell's `<noscript>` says so. `connect-src 'self'` and `img-src 'self' data:` (a QR code) beside `script-src 'self'` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
 | `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while `risk.fingerprinting` is on in the realm** (#62 P6, off by default) | `/authn/fingerprint.js` — FingerprintJS (MIT, served with its notice) computing a browser identifier, which no markup can; the form works with it blocked, the field simply empty | `authn/CLAUDE.md`, `risk/CLAUDE.md` |
 | the sign-in screen `/authn/login`, **only while it offers a passkey with no username** (#474; the passkey policy's `allowUsernameless`, ON by default since 2026-10-10, #527) | `/authn/webauthn.js` — the SAME resource as `/authn/webauthn`'s, not a copy: a ceremony with no `allowCredentials`, and the username field's autofill (conditional mediation), neither of which markup can run. *Sign in with a passkey* is a REAL submit button: with script blocked it posts `action=passkey` and is told the ceremony needs JavaScript, and the password form beside it works as before. `sendLoginPage()` reads the policy off the markup, so the page and its CSP cannot disagree | `authn/CLAUDE.md` |

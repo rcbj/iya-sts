@@ -131,7 +131,9 @@ class AccountApiSpec {
       if (tags.indexOf(op.tag) < 0) {
         tags.push(op.tag);
       }
-      const body = AccountApiSpec.jsonSchemaOf(op.body);
+      // A zod body is what the wrapper checks; `bodyDoc` documents one the
+      // handler checks itself.
+      const body = AccountApiSpec.jsonSchemaOf(op.body) || op.bodyDoc || null;
       const responses: Json = {
         200: { description: 'The answer.',
                content: { 'application/json': {

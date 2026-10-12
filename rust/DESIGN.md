@@ -44,10 +44,9 @@ sequence of phases, each of which leaves a service that passes the suite
          │  listeners · TLS · realm layer · CSP · every protocol family │
          │  /admin-api  /account-api  · scheduler · caches · store      │
          │  /admin/*, /portal/*  ── the two SPAs' static files          │
-         │  the portal's backend-for-frontend: OIDC client, token holder│
          └──────────────────────────────▲──────────────────────────────┘
-                                        │ same origin; console: DPoP-bound
-                                        │ token, portal: session cookie
+                                        │ same origin; both SPAs hold a
+                                        │ DPoP-bound token (#446, #568)
                      ┌──────────────────┴──────────────────┐
                      │  browser: console SPA · portal SPA   │
                      │  (TypeScript, built at image build)  │
@@ -89,16 +88,15 @@ sequence of phases, each of which leaves a service that passes the suite
     because the API's gate is now the console's only gate.
   * The console's static files are public, so nothing secret is built into
     them.
-* **The portal's tokens never reach the browser (decision D9, as first
-  made).** The runtime is the portal's backend-for-frontend, as the IETF's
-  *OAuth 2.0 for Browser-Based Applications* recommends: the portal stays a
-  confidential OIDC client of the runtime's own authorization server, as
-  today (`private_key_jwt`, PKCE), the runtime holds the person's access and
-  refresh tokens server-side against an `HttpOnly`, `SameSite`, `Secure`
-  session cookie, and an API call from the portal carries that cookie and is
-  answered with the PERSON's token's authority — never a credential of the
-  portal's own. A script injected into the page has no token to steal. A
-  cookie-carried call that changes state also carries a CSRF token.
+* **The portal's tokens are in the browser too (decision D9, REVERSED FOR
+  THE PORTAL on #568, 2026-10-12).** As first made, D9 kept the portal a
+  backend-for-frontend: a confidential client whose tokens the runtime held
+  behind a session cookie. rcbj's decision on #568 is the console's pattern
+  instead: `sts-user-portal` is a public client, the authorization code flow
+  with PKCE, every token DPoP-bound to a key the browser cannot export, held
+  in memory and dying with the sign-on session it was issued on, and exempt
+  from FAPI's confidential-client rule as the console is. The portal and the
+  console share that client half (`admin-ui/web_spa_client.ts`).
 * **The SPAs run script, and nothing else here does (decision D10).** Every
   page of this service works without JavaScript today (`script-src 'none'`,
   thirteen argued exceptions). A single-page application cannot, so `/admin/`
@@ -332,7 +330,8 @@ actions take `(body, actor)` and are shared with the API.
    every call, so a role revoked after minting stops working at once. The
    audit `actor` becomes the token's subject. **This is the same security
    model with one improvement**: the API now sees the person, not the console.
-2. **A second API, `/account-api`, for a person acting on their own entry.**
+2. **A second API, `/account-api`, for a person acting on their own entry**
+   — BUILT on the Node service by #568 (2026-10-12), `account-api/`.
    The subject is the token's, never a parameter. The scope is
    `account:manage`, held by every person and declared only by
    `sts-user-portal`. It covers every portal-only function: password change
@@ -365,9 +364,12 @@ actions take `(body, actor)` and are shared with the API.
 2026-10-05)**: every page becomes a pure client of Node's `/admin-api`,
 which is expanded until no page needs anything else. The Rust runtime then
 inherits a finished console and an OpenAPI document that is complete. The
-portal is written against the Rust runtime's API, family by family, as each
-family's operations land there; it is a pure API client from its first
-commit. The suite's Selenium jobs (`sts_admin_console.js`,
+portal was converted on the Node service too (#568, owner, 2026-10-12),
+withdrawing the plan that it be written against the Rust runtime: it is a
+static application over Node's `/account-api`, so the Rust runtime inherits
+a finished portal as it inherits the console, and the account API's OpenAPI
+document (`GET /account-api/openapi.json`) is the contract its Rust
+operations must equal. The suite's Selenium jobs (`sts_admin_console.js`,
 `sts_xacml_editor.js`) are adapted to pages drawn in the browser, and the
 rule-7 parity jobs keep walking the console's page list.
 
@@ -484,7 +486,7 @@ the vectors are checked in.
 | **D6** | **The in-process half of the suite** (`tests/*.js`, about 150k lines) does not run against Rust. | Rewrite each file as Rust tests in the phase that moves what it tests, and delete it from `tests/` in that commit, with `tests/CLAUDE.md`'s table updated |
 | **D7** | **`/account-api`** as a second API rather than more `/admin-api` operations. | Accept it. A person acting on their own entry is a different authority from an operator acting on anyone's, and one API holding both would put that difference in a parameter |
 | **D8** | **The embedded debugger** stays the parent project's Node build, run as a child process. | Accept it |
-| **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05, and REVERSED FOR THE CONSOLE the same day (#446)**: the console is a public client whose tokens are in the browser, in memory, bound to a non-extractable DPoP key; it is exempt from FAPI's confidential-client rule; and `adminApi.authRequired=false` is development-only. **The portal keeps the first decision**: a backend-for-frontend in the runtime, the tokens server-side behind a session cookie (section 2) |
+| **D9** | **Where the SPAs' tokens live.** | **DECIDED by the owner, 2026-10-05, and REVERSED FOR THE CONSOLE the same day (#446)**: the console is a public client whose tokens are in the browser, in memory, bound to a non-extractable DPoP key; it is exempt from FAPI's confidential-client rule; and `adminApi.authRequired=false` is development-only. **REVERSED FOR THE PORTAL on #568 (2026-10-12)**: the same pattern, the public client `sts-user-portal`, its tokens audienced to `/account-api` (section 2) |
 | **D10** | **Script on the console and portal.** | **DECIDED by the owner, 2026-10-05: `script-src 'self'` on `/admin/` and `/portal/` only**, reversing the works-without-script rule for those two surfaces (section 2) |
 
 ## 10. How each phase is proved
