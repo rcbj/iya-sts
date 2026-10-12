@@ -4994,7 +4994,7 @@ weeks at a time, and a column like that stops being read. A section that is
 empty says so in one line, and a section with rows in it is the thing somebody
 notices.
 
-### It is NOT filtered and NOT paged, unlike the table above it
+### It is NOT filtered, unlike the table above it — but it IS paged (#313)
 
 The two lists answer different questions. The main one is *what is live*, which
 is long and needs narrowing. This one is *is anybody in here without having
@@ -5002,6 +5002,14 @@ signed in*, which is a question about the whole service — and a search box
 somebody had left set could hide the one row that matters. That is worth the
 inconsistency of two tables on one page behaving differently, and the section
 says so out loud rather than leaving it to be discovered.
+
+**It was unpaged as well until 2026-10-12, and that half is reversed.** While
+`authn.unauthenticatedSessions` is on, the section holds a row per anonymous
+visit until each expires — a list nothing bounds but time, which is exactly
+what *every list that can grow without a bound is paged* is about. It moves on
+`anonymousPage` with the shared `per`, and paging hides nothing from the
+question the section exists for: `unauthenticatedHeld` and the tile count the
+whole list, and `unauthenticatedPaging` says where the page is in it.
 
 ### It draws whether or not the setting is on
 

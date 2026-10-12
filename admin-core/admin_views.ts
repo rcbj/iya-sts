@@ -2163,7 +2163,15 @@ class AdminViews {
       : register.roles;
     const rolePage = this.pagedRows(q0, matched,
       { name: 'roles', noun: 'roles', defaultPer: 25 });
+    // THE APPLICATIONS THAT NARROWED WHAT THEY REQUIRE, PAGED (#313) on
+    // `requiringPage`: a row per such application, which only
+    // `applications.max` bounds. `counts.requiring` and
+    // `counts.unsatisfiable` stay the register's whole counts.
+    const requiringPage = this.pagedRows(q0, register.requiring,
+      { name: 'requiring', noun: 'applications' });
     const json = Object.assign({}, register, {
+      requiring: requiringPage.shown,
+      requiringPaging: this.pagingJson(requiringPage.paging),
       matched: matched.length,
       shown: rolePage.shown.length,
       paging: this.pagingJson(rolePage.paging),
@@ -4153,13 +4161,20 @@ class AdminViews {
     });
     // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
     //
-    // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
-    // both. The two lists answer different questions: the main one is *what is
-    // live*, which is long and needs narrowing, and this one is *is anybody in
-    // here without having signed in*, which is a question about the whole
-    // service and would be answered wrongly by a filter somebody had left set.
-    // A search box that could hide one of these rows would make the section
-    // worse than not having it.
+    // NOT FILTERED, deliberately, where the table above it is. The two lists
+    // answer different questions: the main one is *what is live*, which is
+    // long and needs narrowing, and this one is *is anybody in here without
+    // having signed in*, which is a question about the whole service and
+    // would be answered wrongly by a filter somebody had left set. A search
+    // box that could hide one of these rows would make the section worse
+    // than not having it.
+    //
+    // BUT PAGED (#313), on `anonymousPage` with the shared `per`. It was
+    // drawn whole, and while `authn.unauthenticatedSessions` is on it holds a
+    // row per anonymous visit until each expires — a list nothing bounds but
+    // time, which is what the console's paging rule is about. Paging hides no
+    // row from the count: `unauthenticatedHeld` is the whole list, and the
+    // tile reads it.
     //
     // It is a SECTION rather than a column on the table above because the
     // answer is almost always "none", and a column that is the same on every
@@ -4168,6 +4183,8 @@ class AdminViews {
     const unauthenticated = all.filter(function (row) {
       return row.authenticated === false;
     });
+    const anonymousPage = this.pagedRows(query, unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
@@ -4185,7 +4202,7 @@ class AdminViews {
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
         unauthenticatedHeld: unauthenticated.length,
-        unauthenticatedSessions: unauthenticated.map(function (row) {
+        unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
                    sessionId: row.sessionId,
@@ -4215,7 +4232,9 @@ class AdminViews {
         // Whether sessions that authenticated nobody are kept, which the
         // page says beside them.
         unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
-        paging: this.pagingJson(paging)
+        paging: this.pagingJson(paging),
+        // The unauthenticated section's page (#313), on `anonymousPage`.
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
       }
     };
   }

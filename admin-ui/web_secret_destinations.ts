@@ -215,13 +215,18 @@ class SecretDestinationsPage {
     const t = c.t;
     const rows = (json.destinations || []).map((row: Json) =>
       this.row(t, json, row, c)).join('');
+    // The register is paged on `destinationsPage` (#313).
+    const nav = json.destinationsPaging
+      ? kit.pageNavPair(PAGE, kit.pageParamsOf(c.query || {}),
+                        json.destinationsPaging, t)
+      : { head: '', foot: '' };
     return kit.note(t.html('consoleSecretDestinations.body.lead')) +
       (json.fileAllowed
         ? kit.warn(t.html('consoleSecretDestinations.body.development'))
         : '') +
       '<h3 id="destinations" data-tab="destinations">' +
       t.html('consoleSecretDestinations.body.destinations') +
-      '</h3><table><thead><tr>' +
+      '</h3>' + nav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleSecretDestinations.body.thDestination') +
       '</th><th>' + t.html('consoleSecretDestinations.body.thProvider') +
       '</th><th>' + t.html('consoleSecretDestinations.body.thPayload') +
@@ -232,7 +237,7 @@ class SecretDestinationsPage {
       (rows || '<tr><td colspan="6"><span class="state-none">' +
                t.html('consoleSecretDestinations.body.none') +
                '</span></td></tr>') +
-      '</tbody></table>' +
+      '</tbody></table>' + nav.foot +
       '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
       '</p>' +
       (c.write

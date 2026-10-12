@@ -104,6 +104,8 @@
   "roleRow.none": "wala",
   "roleRow.setOn": "itinakda sa ",
   "roleRow.remove": "Alisin",
+  "roleRow.more": "at {n} pa",
+  "roleRow.removeOther": "Alisin ang iba:",
   "roleRow.consoleRole": "console role",
   "roleRow.nativeRole": "native role",
   "roleRow.roleOf": "role ng <code>{application}</code>, dinadala bilang <code>{local}</code>",

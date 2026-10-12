@@ -432,10 +432,18 @@ class GnapConsole {
                                                { name: 'resources',
                                                  noun: 'resource ' +
                                                    'sets' });
-    const profiles = authorizationServers.list().map(function (profile) {
-      return { id: profile.id, label: profile.label || '',
-               capabilities: grants.capabilities(req, profile.id) };
-    });
+    // THE NAMED AUTHORIZATION SERVERS, PAGED (#313) on `serversPage`, as
+    // they are on /admin/authorization-servers: an operator can name them
+    // without a bound. Each one's capabilities are worked out only for the
+    // rows shown — pagedRows()'s page-then-decorate order.
+    const serverPage = adminViews.pagedRows(query,
+      authorizationServers.list(),
+      { name: 'servers', noun: 'authorization servers',
+        decorate: function (profile) {
+          return { id: profile.id, label: profile.label || '',
+                   capabilities: grants.capabilities(req, profile.id) };
+        } });
+    const profiles = serverPage.shown;
     let material: any = {};
     try {
       material = tokens.publicMaterial(base);
@@ -480,6 +488,7 @@ class GnapConsole {
       },
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,
+      authorizationServersPaging: adminViews.pagingJson(serverPage.paging),
       tokenFormats: tokens.FORMATS,
       verificationMaterial: material,
       grants: {

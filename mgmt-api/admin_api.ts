@@ -3452,9 +3452,6 @@ class AdminApi {
           { name: 'address', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'An IPv4 or IPv6 address to look up.' },
-          { name: 'offset', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 0 },
-            description: 'Where the page of failures starts.' },
           { name: 'level', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Only the assessments at this level.' },
@@ -3470,14 +3467,17 @@ class AdminApi {
                          'default.' },
           { name: 'subjects',
             description: 'The realm\'s people by current standing, highest ' +
-                         'score first, twenty-five by default.' }
+                         'score first, twenty-five by default.' },
+          { name: 'failures',
+            description: 'The refused passwords of the last 7 days, newest ' +
+                         'first, fifty by default (#313).' }
         ])),
         responseDescription: 'The datasets, the lookup, the failures, the ' +
                              'assessments and the standings.',
         responseSchema: { type: 'object',
           description: '`store`, `datasets`, `formats`, `lookup`, ' +
-                       '`failures`, `assessments`, `assessmentsPaging`, ' +
-                       '`subjects`, `subjectsPaging`.' },
+                       '`failures`, `failuresPaging`, `assessments`, ' +
+                       '`assessmentsPaging`, `subjects`, `subjectsPaging`.' },
         handler: function (req, res) {
           log.debug("Entering the management API risk endpoint.");
           const realmOnly = riskAdmin.realmOnly(req);
@@ -7978,7 +7978,13 @@ class AdminApi {
                          '`protocol` values in the reply are what there is ' +
                          'to ask for; they are read off the live rows rather ' +
                          'than written down, because a federated sign-in ' +
-                         'names the relationship it came through.' }
+                         'names the relationship it came through.' },
+          { name: 'anonymousPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `unauthenticatedSessions`, the ' +
+                         'sessions that authenticated nobody. They are ' +
+                         'never filtered, and `unauthenticatedHeld` counts ' +
+                         'them all. It shares `per` with the live list.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The live sessions, filtered and paged.',
         responseSchema: { $ref: '#/components/schemas/SessionList' },
@@ -14521,8 +14527,10 @@ class AdminApi {
         description: 'Everything /admin/gnap draws. The endpoints of this ' +
                      'realm\'s GNAP authorization server (RFC 9635) and its ' +
                      'RS-facing API (RFC 9767); the section 9 capabilities ' +
-                     'of the default authorization server and of every named ' +
-                     'one, after that profile\'s GNAP overrides — which are ' +
+                     'of the default authorization server and of each named ' +
+                     'one (paged, `serversPage`, answered by ' +
+                     '`authorizationServersPaging`), after that profile\'s ' +
+                     'GNAP overrides — which are ' +
                      'what each grant endpoint ENFORCES; the five token ' +
                      'formats and the public material that verifies the ' +
                      'self-contained ones; the grants this realm holds ' +
@@ -20931,6 +20939,24 @@ class AdminApi {
                      'by a different route and ' +
                      'is the way back if a policy edit locks something out.',
         mirrors: 'GET /admin/roles',
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Narrows the configured roles to those whose ' +
+                         'name, description or a member contains this.' },
+          { name: 'rolesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the configured roles the search ' +
+                         'matched, answered by `paging` and ' +
+                         '`shownRoles`; twenty-five by default.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })).concat(this.detailPagingParameters([
+          { name: 'requiring',
+            description: 'The applications that narrowed the roles they ' +
+                         'require (#313); `requiringPaging` says where the ' +
+                         'page is and `counts.requiring` counts them all.' }
+        ])),
         responseDescription: 'The six built-in roles, every configured role ' +
                              'with its three membership lists, every ' +
                              'application that has been narrowed, and ' +

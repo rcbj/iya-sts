@@ -516,6 +516,11 @@ function checkNothingRequiresItEarly(t) {
                    // only — who moved a person's home — required LAZILY in
                    // the request; the page is 18k-ii, after the console.
                    'admin-ui/cells_admin.ts',
+                   // The secret destinations' operation (#313, 2026-10-12),
+                   // for `adminViews`' paging only — the register's one
+                   // list — required LAZILY in the request; the module is
+                   // built with the other API modules, after the console.
+                   'mgmt-api/secret_destinations_api.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,
