@@ -327,6 +327,7 @@ class VcDemoApi {
     const { log } = this.deps;
     log.debug("Entering VcDemoApi.viewOrRefusal().");
     if (!made.ok) {
+      // error-code: none — the code is the refusal's own, set where it was found (STS-VC-0025/0026/0032/0033, the builder's).
       this.refuse(res, made.status || 400, made.code, String(made.error));
       log.debug("Leaving VcDemoApi.viewOrRefusal(). Refused.");
       return;
@@ -346,6 +347,7 @@ class VcDemoApi {
     const { log } = this.deps;
     log.debug("Entering VcDemoApi.acted().");
     if (!made.ok) {
+      // error-code: none — the code is the refusal's own, set where it was found (STS-VC-0025/0026/0032/0033, the builder's).
       this.refuse(res, made.status || 400, made.code, String(made.error));
       log.debug("Leaving VcDemoApi.acted(). Refused.");
       return;
