@@ -70,8 +70,11 @@ const APPLICATIONS = [
   { id: 'home', label: 'Front door',
     what: 'GET /, its image, the documentation, terms and policy pages and ' +
           'the realm list.',
-    prefixes: [],
-    exact: ['/', '/logo.png', '/docs', '/tos', '/policy', '/realms'] },
+    // `/home-api`, `/home.js` and `/home.css` are the static front door's
+    // API, script and stylesheet (#579), beside the shell they serve.
+    prefixes: ['/home-api'],
+    exact: ['/', '/home.js', '/home.css', '/logo.png', '/docs', '/tos',
+            '/policy', '/realms'] },
   { id: 'authn', label: 'Authentication service', session: true,
     what: 'The sign-in service and its second factors, the wallet, ' +
           'SPNEGO and certificate sign-ins, and the sign-out.',

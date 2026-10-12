@@ -78,7 +78,8 @@ const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
 // — taken out.
 const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
                     'admin-ui/console.js', 'portal/portal.bundle.js',
-                    'portal/portal-spa.js'];
+                    'portal/portal-spa.js', 'home/home.bundle.js',
+                    'home/home-spa.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
 

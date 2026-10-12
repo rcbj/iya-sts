@@ -4390,7 +4390,35 @@ const ENDPOINTS: EndpointEntry[] = [
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
           'It was an unrouted path until 2026-08-24, so the answer to the ' +
-          'one URL a person types first was Express\'s "Cannot GET /".' },
+          'one URL a person types first was Express\'s "Cannot GET /". ' +
+          'Since #579 a static surface: this answers the shell, and ' +
+          '/home.js draws the card in the browser\'s language from ' +
+          '/home-api/front.' },
+  { path: '/home.js', group: 'Service', name: 'The front page\'s script',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door\'s runtime and renderer in one ' +
+          'file over the public surfaces\' shared runtime, built by ' +
+          'build-typescript.sh (home/home-spa.js) and served precompressed. ' +
+          'Public: nothing in it is secret.' },
+  { path: '/home.css', group: 'Service',
+    name: 'The front page\'s stylesheet', specs: [],
+    what: 'NON-SPEC (#579). The front door\'s own rules over ' +
+          '/web/card.css: the wider card, the band behind the logo, the ' +
+          'version line, the warning and the link rows.' },
+  { path: '/home-api', group: 'Service', name: 'The front door API index',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door API\'s operations, each with ' +
+          'the page it is the door of (mirrors), as /account-api lists its ' +
+          'own. Public and language-free.' },
+  { path: '/home-api/front', group: 'Service',
+    name: 'The front page\'s view', specs: [],
+    what: 'NON-SPEC (#579). Everything the front page draws, as facts and ' +
+          'no words: the name, the version and its build, whether a ' +
+          'sign-in checks the password and whether the console is gated, ' +
+          'the logo, and the five links as ids and addresses — the ' +
+          'console\'s and the portal\'s on the listener that answers them ' +
+          '(#472). Public, no-store; it lists no endpoints, as the page ' +
+          'never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
     what: 'The only image this service serves: the parent project\'s logo, ' +
