@@ -224,9 +224,9 @@ const spMetadata = require('./saml/sp_metadata');
 //
 // Two things follow and neither is hidden.
 //
-// **There is then no plain listener in this process at all.** `POST /tls/trust`
-// and `GET /tls/server-certificate` are on this port on purpose — they are what
-// a caller reaches BEFORE it trusts anything — so with HTTPS on, the first
+// **There is then no plain listener in this process at all.** `GET
+// /tls/server-certificate` is on this port on purpose — it is what a caller
+// reaches BEFORE it trusts anything — so with HTTPS on, the first
 // fetch of the certificate has to be made without verifying it (`curl -k`).
 // That is the ordinary bootstrap for a service whose certificate is regenerated
 // every start, and it is said here, on /tls, and in the startup line below
@@ -584,9 +584,11 @@ function announce() {
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
            'GET /tls/sign-in signs the holder of a verified one in; the token ' +
-           'endpoint binds a token to it (RFC 8705); /tls shows the ' +
-           'certificate this service presents. The client truststore starts ' +
-           'EMPTY — POST the issuing CA to /tls/trust — because the CA it has ' +
+           'endpoint binds a token to it (RFC 8705); ' +
+           '/tls/server-certificate is the certificate this service ' +
+           'presents. The client truststore starts EMPTY — add the issuing ' +
+           'CA through /admin/tls/trust or POST /admin-api/tls/trust/add — ' +
+           'because the CA it has ' +
            'to verify is usually generated in a browser minutes before the ' +
            'connection.');
   log.debug('Leaving announce().');
@@ -1120,7 +1122,7 @@ if (useHttps) {
   const mainServer = https.createServer(Object.assign({
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
-    // THE CLIENT TRUSTSTORE, THE ONE /tls/trust FILLS (2026-09-06; it
+    // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
     // covered 8443 and 9443 too until they were deleted on 2026-09-16).
     // Passed at creation AND kept current by the registration below, because
     // anchors arrive at runtime — the CA a caller presents a
@@ -1149,7 +1151,7 @@ if (useHttps) {
     // explicitly permits a self-signed one — the proof is that the same key
     // completed this handshake, not that a CA vouched for it. Requiring
     // verification would also make the feature unreachable, since the
-    // truststore at /tls/trust starts empty by design.
+    // client truststore starts empty by design.
     //
     // THE OPERATOR'S TO CHANGE SINCE #423, the default unchanged:
     // tls.mainPortDisableOptionalClientCertificate asks for none, and
@@ -1177,7 +1179,7 @@ if (useHttps) {
   // listener and editable since #429: listenerMain.keepAliveTimeoutS and the
   // rest, inheriting http.*, re-applied by tls_server.js when they change.
   tlsServer.registerHttpListener(mainServer, 'main');
-  // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
+  // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
   // is a registration rather than a require in the other direction because

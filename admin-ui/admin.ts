@@ -9664,8 +9664,9 @@ let signalsReporter = null;
 // passes rule 3e's test both ways round like the eighth above it.
 //
 //   * a require from THIS file to `../tls/tls_server.js` would MOVE ROUTES on
-//     the order this repository documents — `/tls`, `/tls/server-certificate`
-//     and `/tls/trust` belong at 20, after the management API — and would make
+//     the order this repository documents — `/tls/sign-in` and
+//     `/tls/server-certificate` belong at 20, after the management API — and
+//     would make
 //     the console the reason they are where they are.
 //   * a require the other way round, from `tls_server.js` to this file at its
 //     own top level, would CLOSE A CYCLE — and not a theoretical one: that
@@ -10448,7 +10449,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'one and requires none — and the route signs in whoever presented ' +
            'a verified one, for its common name, with the response carrying ' +
            'the cookie. What verification proved is unchanged: a chain to an ' +
-           'anchor somebody POSTed to <code>/tls/trust</code>. No token is ' +
+           'anchor in the <a href="/admin/tls/trust">client-certificate ' +
+           'truststore</a>. No token is ' +
            'issued. The session is on <a ' +
            'href="/admin/sessions">Sessions</a> and ends like any other.',
            '<strong>The handshake refusal 9443 performed has no successor, ' +
@@ -10472,10 +10474,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>oauth2.rfc9700</code> is — RFC 9700 section 2.1 says an ' +
            'authorization response must not travel over an unencrypted ' +
            'connection, and the authorization endpoint is on that port.'],
-    links: [['/tls', 'the certificate, the truststore and the main port\'s ' +
-                'posture'],
-            ['/tls/trust', 'the certificate, to trust it'],
-            ['/tls/forwarded', 'what a proxy said about the connection'],
+    links: [['/tls/server-certificate', 'the certificate, to trust it'],
+            ['/admin/tls-connection', 'what this service saw of your ' +
+             'connection, and what a proxy said about it'],
             ['/admin/cert-issuance#cert-spiffe-overview',
              'the one place a certificate authenticates']] }
 ];

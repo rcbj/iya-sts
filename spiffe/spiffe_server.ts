@@ -437,7 +437,7 @@ class SpiffeServer {
   // ---------------------------------------------------------------------------
   // WHAT THIS IS, FOR A PERSON — and, with ?format=json, for a program.
   //
-  // The same shape `GET /admin/ldap/service` and `GET /tls` have, and it
+  // The same shape `GET /admin/ldap/service` has (and `GET /tls` had), and it
   // carries the same kind of thing: what the surfaces are, where they are,
   // whether the sockets actually bound, and — at length — what is NOT checked.
   // That last part is most of the page on purpose. A mock that quietly issued

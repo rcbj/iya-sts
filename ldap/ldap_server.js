@@ -863,8 +863,8 @@ function pepsDn() {
 
 // ou=trustAnchors is the DURABLE half of the client-certificate truststore
 // (2026-09-12) — one entry per anchor somebody added at runtime, through
-// /admin/tls/trust, POST /admin-api/tls/trust/add or (in development)
-// POST /tls/trust. It is in the DEFAULT realm's tree and only there, because
+// /admin/tls/trust or POST /admin-api/tls/trust/add (and, until #597
+// deleted it, the open POST /tls/trust). It is in the DEFAULT realm's tree and only there, because
 // the truststore is one array for every listener in the process: a container
 // per realm would be a per-realm truststore this service does not have.
 //

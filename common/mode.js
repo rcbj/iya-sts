@@ -755,9 +755,8 @@ function acceptsUnregisteredAddresses() {
   return !isProduct();
 }
 
-// Are the TEST CONTROLS open to anybody who can reach the port? Adding a trust
-// anchor at POST /tls/trust, switching DPoP nonces, reading the Kerberos
-// fixture passwords off /krb5/principals, signing somebody ELSE out with
+// Are the TEST CONTROLS open to anybody who can reach the port? Reading the
+// Kerberos fixture passwords off /krb5/principals, signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
@@ -780,7 +779,7 @@ function opensTestControls() {
 // issuer and verifier pages, the protected Kerberos service and SPNEGO page,
 // the embedded PEP's demonstration, the step-up stand-in, the GNAP
 // demonstration resource server, the VC-API test endpoints, the OpenID4VCI
-// readbacks, the TLS diagnostics and truststore door, the SSF receiver and
+// readbacks, the SSF receiver and
 // the rest of `demo-endpoints`' list below. Development serves and lists
 // them. Product neither serves nor lists one: each answers EXACTLY as an
 // unrouted path does — Express's own `Cannot GET …` 404, because the route
@@ -792,8 +791,7 @@ function opensTestControls() {
 // whether an endpoint that exists only to be exercised exists. Asked per
 // realm, like every predicate here, so a development realm in a product
 // process keeps them — except where the thing is the PROCESS's (the
-// truststore, the protected service's socket), whose callers ask it in the
-// default realm.
+// protected service's socket), whose callers ask it in the default realm.
 /**
  * Tells whether the demonstration, mock and test-control endpoints are
  * served and listed; in product each answers as an unrouted path does.
@@ -3071,15 +3069,13 @@ const REQUIREMENTS = [
                  'and its TCP socket), /krb5/principals, /spnego and ' +
                  '/spnego/protected, /xacml/protected, the step-up ' +
                  'stand-in resource, the GNAP demonstration resource server, ' +
-                 '/dpop/nonce-mode, /devices/test/compliance, /tls, ' +
-                 '/tls/forwarded, /tls/trust and /tls/trust/clear, and ' +
-                 '/ssf/receive and /ssf/received.',
+                 'and /ssf/receive and /ssf/received.',
     product: 'None of them is served or listed. Each answers exactly as a ' +
              'path nothing is registered on does — Express\'s own 404 ' +
              '"Cannot GET" — and no metadata page, console page, document ' +
              'or log line names one. A development realm in a product ' +
-             'process keeps them, except the truststore door and the ' +
-             'protected service\'s socket, which belong to the process. The ' +
+             'process keeps them, except the protected service\'s socket, ' +
+             'which belongs to the process. The ' +
              'administrative doors stay: /admin-api starts a verification, ' +
              'reads the principals and changes the truststore, and the ' +
              'user portal makes a credential offer.',

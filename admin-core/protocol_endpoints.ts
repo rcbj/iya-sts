@@ -318,7 +318,6 @@ class ProtocolEndpoints {
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
         '/oauth2/oauth21',
         '/oauth2/fapi', '/oauth2/grants/:grantId',
-        '/dpop/nonce-mode',
         // The access-token status list (#432), shared with GNAP's JWTs; its
         // two settings are on this page.
         '/status-lists/access-tokens', '/status-lists'
@@ -445,13 +444,12 @@ class ProtocolEndpoints {
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),
-      '/admin/tls': [this.socket('tls'), this.route('/tls'),
-                     this.route('/tls/forwarded'),
-                     this.route('/tls/server-certificate'),
-                     this.route('/tls/trust'),
-                     this.route('/tls/trust/clear')],
-      '/admin/tls/trust': [this.socket('tls'), this.route('/tls/trust'),
-                           this.route('/tls/trust/clear')],
+      // `/tls`, `/tls/forwarded` and the two open truststore acts went with
+      // #597: what the first two showed is Monitoring → TLS connection, and
+      // the truststore's doors are the console's and /admin-api's.
+      '/admin/tls': [this.socket('tls'), this.route('/tls/sign-in'),
+                     this.route('/tls/server-certificate')],
+      '/admin/tls/trust': [this.socket('tls')],
       // ===== OpenID Federation endpoints row (#132) =====
       '/admin/oidfed': [
         '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',

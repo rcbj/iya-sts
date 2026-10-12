@@ -77,7 +77,7 @@ function childMain() {
       '/authn/login': 'authn',
       '/logout': 'authn',
       '/tls/sign-in': 'authn',
-      '/tls/trust': 'tls',
+      '/tls/server-certificate': 'tls',
       '/portal/keys': 'portal',
       '/oauth2/token': 'oauth-oidc',
       '/finance/oauth2/token': 'oauth-oidc',
