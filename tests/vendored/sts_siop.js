@@ -28,9 +28,10 @@
 //      NEW key, lands on /portal/self-issued — and a browser with no session
 //      is refused.
 //   6. A REMOVED KEY signs nobody in.
-//   7. THE VERIFIER AT /oid4vp/start: a by-value SIOPv2 request with
-//      response_mode form_post, answered through the "browser", verified on
-//      /oid4vp/result.
+//   7. THE VERIFIER, started at POST /admin-api/verifications/start
+//      (#587): a by-value SIOPv2 request with response_mode form_post,
+//      answered through the "browser", verified on GET
+//      /admin-api/verifications?state=.
 //
 // THE WALLET IS INDEPENDENT: its keys and signatures are node's own
 // `crypto`, as `sts_oid4vp_wallet.js`'s are.
@@ -491,18 +492,27 @@ async function test() {
     assert.ok(/not enrolled/.test(removedPage.text), "the page says why");
   });
 
-  log.info("=== 7. the Verifier at /oid4vp/start ===");
-  const start = await hop(null, "GET", base + "/oid4vp/start?" +
-    "response_type=id_token&response_mode=form_post");
-  const q = start.location ? new URL(start.location).searchParams : null;
+  // STARTED THROUGH `/admin-api` (#587): the demonstration's /oid4vp/start
+  // becomes development-only (#585) and this realm is in the process's
+  // mode, product in the single-node and cluster stacks. The operation
+  // builds the request with the page's own function and answers the wallet
+  // URL the page would have redirected to.
+  log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
+  const start = await hop(null, "POST", api + "/verifications/start",
+    { json: { response_type: "id_token", response_mode: "form_post" } });
+  const walletUrl = (start.json || {}).walletUrl || "";
+  const q = walletUrl ? new URL(walletUrl).searchParams : null;
   const posted = q ? await hop(jar(), "POST", q.get("redirect_uri"),
     { form: { state: q.get("state"), id_token: selfIssued(walletKey(),
       q.get("client_id"), q.get("nonce")) } }) : null;
-  const verdict = q ? await hop(null, "GET", base + "/oid4vp/result/" +
+  const verdict = q ? await hop(null, "GET", api + "/verifications?state=" +
                                 encodeURIComponent(q.get("state"))) : null;
   check("a by-value request (redirect_uri: client, form_post) is answered " +
         "through the browser and verified; it signs nobody in", function () {
-    assert.strictEqual(start.status, 302, start.text.slice(0, 300));
+    assert.strictEqual(start.status, 200, start.text.slice(0, 300));
+    assert.ok(/^siopv2:\/\/\?/.test(start.json.requestUri),
+              "an ID Token alone is offered as siopv2://: " +
+              start.json.requestUri);
     assert.strictEqual(q.get("response_type"), "id_token");
     assert.ok(/^redirect_uri:/.test(q.get("client_id")));
     assert.strictEqual(q.get("response_mode"), "form_post");

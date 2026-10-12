@@ -14106,13 +14106,16 @@ const CODES = [
     spec: '' },
   { code: 'STS-VC-0032',
     summary: 'The OID4VP Verifier page\'s or presentation start endpoint\'s ' +
-      'query parameters failed input validation.',
-    spec: 'HTTP 400 plain text' },
+      'query parameters — or the body of POST ' +
+      '/admin-api/verifications/start, which starts one the same way ' +
+      '(#587) — failed input validation.',
+    spec: 'HTTP 400 plain text; HTTP 400 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0033',
     summary: 'Where only registered addresses are accepted, the presentation ' +
-      'start\'s wallet parameter named a URL that is neither ' +
+      'start\'s wallet parameter (or POST /admin-api/verifications/start\'s ' +
+      '`wallet`) named a URL that is neither ' +
       'oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls.',
-    spec: 'HTTP 400 plain text' },
+    spec: 'HTTP 400 plain text; HTTP 400 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0034',
     summary: 'The QR code for a cross-device OID4VP Authorization Request ' +
       'could not be rendered.',
@@ -14148,9 +14151,10 @@ const CODES = [
       'audience, validity or requested claims).',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-VC-0042',
-    summary: 'The non-spec presentation result endpoint was asked for a ' +
+    summary: 'The non-spec presentation result endpoint — or GET ' +
+      '/admin-api/verifications?state= (#587) — was asked for a ' +
       'state it has no record of.',
-    spec: 'invalid_request (HTTP 404)' },
+    spec: 'invalid_request (HTTP 404); HTTP 404 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0043',
     summary: 'The key credentials are signed with is not in this realm\'s ' +
       'key set, so the DID document cannot publish it.',
@@ -14385,7 +14389,7 @@ const CODES = [
       'typ verifier-attestation+jwt, no sub, expired, or its cnf is not ' +
       'this realm\'s request-signing key — so no signed request with the ' +
       'verifier_attestation prefix was built (#129).',
-    spec: 'HTTP 500' },
+    spec: 'HTTP 500 (JSON `errors` at POST /admin-api/verifications/start)' },
   { code: 'STS-VC-0093',
     summary: 'A SIOPv2 enrolment was started or collected by a browser ' +
       'holding no sign-on session, or for a person other than the one now ' +
@@ -14469,7 +14473,8 @@ const CODES = [
       'Host a request arrived with is not certified there — whoever sent ' +
       'it would choose the host a signed, trusted request sends ' +
       'presentations to (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; the sign-in door\'s 500 ' +
+    spec: 'HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST ' +
+      '/admin-api/verifications/start); the sign-in door\'s 500 ' +
       'page; 409 JSON at /oid4vp/verifier-certificate' },
   { code: 'STS-VC-0111',
     summary: 'The x509_san_dns name is not the host of the Response URI, or ' +
@@ -14477,20 +14482,23 @@ const CODES = [
       'wallet that does not otherwise trust the Client Identifier require ' +
       'the response_uri\'s FQDN to be it, so such a request would be ' +
       'refused by every such wallet (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST ' +
+      '/admin-api/verifications/start); 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0112',
     summary: 'The OpenID4VP Verifier\'s certificate could not be issued, or ' +
       'was not in place over the key the Request Object is signed with ' +
       'when it was built, so no x509_san_dns or x509_hash request was ' +
       'made (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST ' +
+      '/admin-api/verifications/start); 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0113',
     summary: 'oid4vp.x509SigningAlgorithm names an algorithm this realm ' +
       'holds no signing key for, so no x509_san_dns or x509_hash request ' +
       'can be signed (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 text/plain at /oid4vp/start (JSON `errors` at POST ' +
+      '/admin-api/verifications/start); 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0114',
     summary: 'An application DID document was asked for and none is ' +

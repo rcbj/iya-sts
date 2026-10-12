@@ -135,6 +135,11 @@ import oidcRp = require('../common/oidc_rp');
 import rbac = require('../admin-ui/admin_rbac');
 import vcClaims = require('../oid4vc/vc_claims');
 import vpConfig = require('../oid4vc/vc_verifier_config');
+// THE VERIFIER ITSELF (#587), for the verifications an administrator started
+// and their verdicts. A plain require in the ordinary direction: it is a
+// converted route module, so requiring it registers nothing (rule 1), it is
+// loaded at 11–14 long before this layer, and it requires nothing here.
+import vcVerifier = require('../oid4vc/vc_verifier');
 import claimAttributes = require('../common/claim_attributes');
 import scimMap = require('../scim/scim_map');
 import groupClaims = require('../common/group_claims');
@@ -328,6 +333,12 @@ const CHOOSER_HITS = WebKit.CHOOSER_HITS;
  * Rows per page when the query names none.
  */
 const DEFAULT_PER_PAGE = 50;
+// HOW MANY OPEN VERIFICATIONS THE VERIFIER REQUEST TAB AND `GET
+// /admin-api/verifications` LIST (#587). A transaction lives for
+// oid4vp.presentationRequestTtlS and the store is bounded by
+// oid4vp.maxTransactions, so this is a page of the newest, not the store;
+// `total` says how many there are, and any one is `?state=` away.
+const VERIFICATIONS_SHOWN = 25;
 
 // Rows per page for EVERY list on /admin/delegation, which is the one page here
 // that carries seven of them at once.
@@ -519,6 +530,7 @@ interface AdminViewsDeps {
   rbac: typeof rbac;
   vcClaims: typeof vcClaims;
   vpConfig: typeof vpConfig;
+  vcVerifier: typeof vcVerifier;
   claimAttributes: typeof claimAttributes;
   scimMap: typeof scimMap;
   groupClaims: typeof groupClaims;
@@ -633,6 +645,7 @@ class AdminViews {
       rbac: rbac,
       vcClaims: vcClaims,
       vpConfig: vpConfig,
+      vcVerifier: vcVerifier,
       claimAttributes: claimAttributes,
       scimMap: scimMap,
       groupClaims: groupClaims,
@@ -2579,12 +2592,62 @@ class AdminViews {
       }).map(function (row) {
         return { claim: row.claim,
                  paths: vpConfig.dcqlPathsFor(format, row.claim) };
-      })
+      }),
+      // THE VERIFICATIONS STILL OPEN, AND WHAT EACH DECIDED (#587): the tab's
+      // outcome list under its Start a verification form, the answer of
+      // `GET /admin-api/verifications` with no `state` — one function, so the
+      // tab and the operation cannot list different things. It rides on this
+      // view because the tab is drawn from it alone.
+      recentVerifications: this.deps.vcVerifier.recentVerifications(
+        VERIFICATIONS_SHOWN),
+      // What the Start a verification form may name, read off the Verifier
+      // (#587) so the form's menus are the lists the start checks against.
+      startChoices: this.deps.vcVerifier.START_VOCABULARY
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
               " claim(s).");
     return json;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `GET /admin-api/verifications` (#587) — the OpenID4VP Verifier's, NOT a
+  // person's identity verifications (`verificationsJson()`, #127). With
+  // `state`, the verdict
+  // `/oid4vp/result/:state` answers — the same object from the same
+  // function, `found: true` beside it — or `found: false` for a state this
+  // realm holds no record of, which the operation answers 404 with
+  // STS-VC-0042 as the result page does. Without it, the realm's open
+  // verifications, newest first: the list the Verifier request tab draws.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/verifications`'s answer: one verdict, or the open
+   * verifications.
+   *
+   * @param req - the request; only `req.query.state` is read
+   * @returns `{ found, ...outcome }` for a state, or `{ verifications,
+   *   total, limit }`
+   */
+  presentationVerificationsJson(req) {
+    const { log, vcVerifier } = this.deps;
+    log.debug("Entering AdminViews.presentationVerificationsJson().");
+    const query = (req && req.query) || {};
+    const state = String(query.state || '');
+    if (!state) {
+      const list = vcVerifier.recentVerifications(VERIFICATIONS_SHOWN);
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                list.total + " open.");
+      return list;
+    }
+    const outcome = vcVerifier.verificationOutcome(state);
+    if (!outcome) {
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                "Unknown state.");
+      return { found: false, state: state };
+    }
+    log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+              "received=" + outcome.received);
+    return Object.assign({ found: true }, outcome);
   }
 
   // The base URL of this service WITHOUT any realm prefix. Every URL this page
@@ -6460,7 +6523,7 @@ class AdminViews {
    */
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
-      adminActions } = this.deps;
+      adminActions, mode } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
     const query = (req && req.query) || {};
     // PAGED, THEN DESCRIBED (#352): the population is the undescribed rows,
@@ -6508,6 +6571,21 @@ class AdminViews {
                    ttlSetting: Number(config.value('krb5.retainedKeyTtlS')) },
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
+      // WHICH NAMES THIS KDC WILL ANSWER FOR THAT IT DOES NOT HOLD (#587):
+      // the facts `/krb5/principals` publishes as `accountPolicy`, read from
+      // the same three places, so a job that asks "can this KDC produce an
+      // account under this name" (`random_username.js`'s
+      // requireKnownOrCreatable()) has an administrator's door to ask in a
+      // product realm, where the demonstration page is going (#585). THE TWO
+      // SHARED PASSWORDS ARE NOT HERE, in either mode: nothing in this answer
+      // is key material (`notes.keys`), and an administrator who needs a
+      // keytab makes one.
+      accountPolicy: {
+        anyUsernameAuthenticates: mode.autoCreates(),
+        neverCreated: krb5Principals.reservedUnknown(),
+        serviceHosts: mode.autoCreates()
+          ? krb5Principals.SERVICE_DOMAINS : []
+      },
       // THE REALM'S KRBTGT (#169): where its key comes from, the kvno, when
       // it was made and last rotated, the versions kept, and the schedule —
       // never a key. `null` in a realm with no KDC.
@@ -13120,6 +13198,8 @@ export = {
   vcPreviewUser: slot.forward('vcPreviewUser'),
   vcJson: slot.forward('vcJson'),
   vpConfigJson: slot.forward('vpConfigJson'),
+  presentationVerificationsJson: slot.forward(
+    'presentationVerificationsJson'),
   realmRootUrl: slot.forward('realmRootUrl'),
   realmSettingRows: slot.forward('realmSettingRows'),
   realmJson: slot.forward('realmJson'),

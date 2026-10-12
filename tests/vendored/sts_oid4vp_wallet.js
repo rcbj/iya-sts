@@ -74,10 +74,16 @@
 //      of this file's own. In product mode the credential endpoint refuses it
 //      (`invalid_token`); in development it issues on it as it always has, and
 //      that credential VERIFIES at the sign-in and signs nobody in.
-//   7. THE VERIFIER AT `/oid4vp/start` (the bar door): a request by
-//      reference for the configured claims, answered with the Disclosures it
-//      asks for — accepted, reported on `/oid4vp/result`, and no session — and
-//      the same answer for another nonce, refused.
+//   7. THE VERIFIER (the bar door): a request by reference for the
+//      configured claims, started by an administrator at `POST
+//      /admin-api/verifications/start` (#587) and answered with the
+//      Disclosures it asks for — accepted, reported on `GET
+//      /admin-api/verifications?state=`, and no session — and the same answer
+//      for another nonce, refused. IN DEVELOPMENT the demonstration's own
+//      `/oid4vp/start` and `/oid4vp/result/:state` are driven once more, the
+//      same way: they become development-only (#585), and the operations
+//      call the same two functions, so the demonstration is held here rather
+//      than left untested.
 //
 // THE WALLET IS INDEPENDENT. Every key, signature, hash and Disclosure below
 // is made with node's own `crypto`, and nothing is borrowed from the
@@ -571,10 +577,16 @@ async function respond(requestObject, format, presentation) {
   return r;
 }
 
-async function verdictOf(state) {
-  log.debug("Entering verdictOf().");
-  const r = await hop(null, "GET", base + "/oid4vp/result/" +
-                      encodeURIComponent(state));
+// What the Verifier decided: `GET /admin-api/verifications?state=` (#587),
+// the administrator's read, or — `viaPage`, development only — the
+// demonstration's `/oid4vp/result/:state`, which answers the same object.
+async function verdictOf(state, viaPage) {
+  log.debug("Entering verdictOf(). viaPage=" + !!viaPage);
+  const r = viaPage
+    ? await hop(null, "GET", base + "/oid4vp/result/" +
+                encodeURIComponent(state))
+    : await hop(null, "GET", api + "/verifications?state=" +
+                encodeURIComponent(state));
   log.debug("Leaving verdictOf(). " + r.status);
   return (r.json && r.json.verdict) || null;
 }
@@ -887,7 +899,7 @@ async function test() {
   }
 
   // ==== 7. THE VERIFIER (THE BAR DOOR) =====================================
-  await barDoor(sd, sdKey);
+  await barDoor(sd, sdKey, product);
 
   const floor = signInOn ? 30 : 9;
   assert.ok(checks >= floor, "only " + checks + " checks ran (the floor " +
@@ -1182,17 +1194,26 @@ function sdPayloadVct(sd) {
   return payloadOf(String(sd.credential).split("~")[0]).vct;
 }
 
-// Section 7: the Verifier at /oid4vp/start, which asks for the configured
-// claims and signs nobody in whatever it decides.
-async function barDoor(sd, sdKey) {
-  log.debug("Entering barDoor().");
-  log.info("=== 7. the Verifier at /oid4vp/start ===");
+// Section 7: the Verifier, which asks for the configured claims and signs
+// nobody in whatever it decides. Started through `/admin-api` in every mode
+// (#587); in development the demonstration page is driven once more.
+async function barDoor(sd, sdKey, product) {
+  log.debug("Entering barDoor(). product=" + !!product);
+  log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
   const visitor = jar();
-  async function begin() {
-    log.debug("Entering begin().");
-    const started = await hop(visitor, "GET", base +
-      "/oid4vp/start?by=reference&format=" + encodeURIComponent("dc+sd-jwt"));
-    const walletUrl = started.location ? new URL(started.location) : null;
+  // `viaPage` starts it at the demonstration's `/oid4vp/start`, whose
+  // redirect is the wallet URL; otherwise the operation answers the wallet
+  // URL as `walletUrl`, which is the same address.
+  async function begin(viaPage) {
+    log.debug("Entering begin(). viaPage=" + !!viaPage);
+    const started = viaPage
+      ? await hop(visitor, "GET", base + "/oid4vp/start?by=reference&" +
+                  "format=" + encodeURIComponent("dc+sd-jwt"))
+      : await hop(null, "POST", api + "/verifications/start",
+                  { json: { by: "reference", format: "dc+sd-jwt" } });
+    const address = viaPage ? started.location
+                            : ((started.json || {}).walletUrl || "");
+    const walletUrl = address ? new URL(address) : null;
     const requestUri = walletUrl ? walletUrl.searchParams.get("request_uri") :
       "";
     const got = requestUri ? await hop(null, "GET", requestUri) : null;
@@ -1207,10 +1228,13 @@ async function barDoor(sd, sdKey) {
   const asked = (claimQuery.claims || []).map(function (c) {
     return c.path[0];
   });
-  check("a request by reference is handed to the wallet, signed by the " +
-        "realm, asking for a dc+sd-jwt by direct_post", function () {
-          assert.strictEqual(one.started.status, 302,
+  check("a request by reference, started at POST " +
+        "/admin-api/verifications/start, is handed to the wallet, signed by " +
+        "the realm, asking for a dc+sd-jwt by direct_post", function () {
+          assert.strictEqual(one.started.status, 200,
                              one.started.text.slice(0, 200));
+          assert.strictEqual((one.started.json || {}).state,
+                             (one.ro || {}).state);
           assert.ok(one.ro, "no request object");
           assert.ok(key && verifyJws(one.jwt, key), "signature");
           assert.strictEqual(one.ro.response_mode, "direct_post");
@@ -1252,6 +1276,28 @@ async function barDoor(sd, sdKey) {
           assert.ok(refusedVerdict && refusedVerdict.ok === false,
                     JSON.stringify(refusedVerdict));
         });
+  if (product) {
+    log.info("product mode: the demonstration's /oid4vp/start is not " +
+             "driven (#585)");
+    log.debug("Leaving barDoor().");
+    return;
+  }
+  // THE DEMONSTRATION, IN DEVELOPMENT (#585, #587): its own start and its
+  // own result page, answered the same way.
+  const three = await begin(true);
+  r = await respond(three.ro, "dc+sd-jwt",
+                    presentSdJwt(sd.credential, sdKey, three.ro.nonce,
+                                 three.ro.client_id, { disclose: asked }));
+  const pageVerdict = await verdictOf(three.ro.state, true);
+  check("in development the demonstration's /oid4vp/start still redirects " +
+        "the wallet with a request by reference, and /oid4vp/result reports " +
+        "the answer accepted", function () {
+          assert.strictEqual(three.started.status, 302,
+                             three.started.text.slice(0, 200));
+          assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+          assert.ok(pageVerdict && pageVerdict.ok,
+                    JSON.stringify(pageVerdict));
+        });
   log.debug("Leaving barDoor().");
 }
 
@@ -1262,7 +1308,8 @@ program
     "holder-bound credential issued on a real access token signs its " +
     "person in at /authn/wallet in the browser that asked, once; wrong " +
     "nonces, audiences, keys, issuers, browsers and replays sign nobody in; " +
-    "and the Verifier at /oid4vp/start accepts and refuses.")
+    "and the Verifier, started at /admin-api/verifications/start, accepts " +
+    "and refuses.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

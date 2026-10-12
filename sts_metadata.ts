@@ -7214,6 +7214,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'absent claims member as the whole credential. A request already ' +
           'in flight keeps the claims it was built with. Mirrors POST ' +
           '/admin/vc-verifier-config.' },
+  { path: '/admin-api/verifications/start', group: 'Management API',
+    name: 'Start a verification',
+    specs: ['oid4vp', 'siopv2', 'rfc9101'],
+    effect: 'builds an OID4VP Authorization Request and records its ' +
+            'transaction',
+    what: 'NON-SPEC (#587). The administrator\'s /oid4vp/start, through the ' +
+          'same function: the body names what that page\'s query names ' +
+          '(format, by, client_id_prefix, response_type, response_mode, ' +
+          'mode, wallet), and the answer is JSON — the state, the wallet ' +
+          'URL a same-device start redirects to, the openid4vp:// (or ' +
+          'siopv2://) URI a cross-device QR code carries, and the ' +
+          'request_uri by reference — rather than a redirect. Answered in ' +
+          'every mode. Mirrors the Start a verification form on ' +
+          '/admin/vc.' },
+  { path: '/admin-api/verifications', group: 'Management API',
+    name: 'A verification\'s outcome',
+    specs: ['oid4vp'],
+    what: 'NON-SPEC (#587). With ?state=, the verdict /oid4vp/result/:state ' +
+          'answers, from the same function (404 for a state with no ' +
+          'record); without, the realm\'s open verifications and what each ' +
+          'decided, newest first — the list the Verifier request tab ' +
+          'draws. A wallet sign-in is not listed.' },
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',

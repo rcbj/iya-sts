@@ -2262,3 +2262,65 @@ the question to ask:
 **AN ENTRY PERSISTED BEFORE #454 IS NOT MIGRATED** (no migrations): a
 `sts-admin-console` seeded earlier declares no `admin:console`, and the
 console's frame answers 403 `STS-API-0127`, whose text names the fix.
+
+## `/admin-api/verifications` — THE DEMONSTRATION VERIFIER'S ADMINISTRATOR TWIN (#587, 2026-10-12)
+
+`POST /admin-api/verifications/start` (Admin Write) and `GET
+/admin-api/verifications` (Admin Read) do what the demonstration Verifier's
+`/oid4vp/start` and `/oid4vp/result/:state` do, as JSON and in every mode.
+Those pages become development-only (#585); an operator in product, and every
+product-mode job (`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
+`sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`), starts a
+verification here instead.
+
+* **ONE FUNCTION PER QUESTION, AND THE VERIFIER OWNS BOTH.**
+  `vcVerifier.startVerification(req, asked, where)` validates what was asked
+  against the page's own schema, issues the x509 certificate first where one
+  is needed, calls `buildVpRequest()`, builds the query and applies the
+  wallet rule, and RETURNS what it built; the page redirects or draws a QR
+  code from it and this operation answers it. `verificationOutcome(state)` is
+  the result page's object, which `GET ?state=` answers with `found: true`.
+  The refusals are the page's, status and code: 400 `STS-VC-0032`, 400
+  `STS-VC-0033`, 500 with the builder's code (`STS-VC-0092`,
+  `STS-VC-0110`–`0113`), and 404 `STS-VC-0042` for an unknown state.
+* **THE START IS THE ONE WRITE THAT CALLS A PROTOCOL MODULE RATHER THAN AN
+  `admin-core` ACTION**, and it is argued, not drifted into: building a
+  request reads the REQUEST's origin a dozen times below it (the Response URI,
+  the did:web, the OpenID Federation entity identifier, the x509 name), and
+  an action never sees a request (`tests/admin_actions_layer.js`). Rule 7
+  loses nothing — the static console's form posts to this operation, so there
+  is no second admin door — and the sharing that matters, with the page, is
+  in the Verifier. The READ is an ordinary view,
+  `adminViews.presentationVerificationsJson(req)` (named apart from #127's
+  `verificationsJson()`, a person's identity verifications).
+* **WITHOUT `state` IT LISTS, AND THAT IS WHAT MAKES IT A RESOURCE.** The
+  realm's open verifications, newest first, at most 25 of `total`, each what
+  it asked and what it decided — the claim NAMES, never a value, and no
+  wallet sign-in (a person signing in, with their name on the transaction).
+  `sts_admin_api_operations.js` reads every GET bare and reads a written
+  resource back, so a bare GET that answered 404 would have failed both.
+  `GET /admin-api/verifier-request` carries the same list as
+  `recentVerifications` (and the start's menus as `startChoices`) because
+  the Verifier request tab is drawn from that view alone; one function
+  answers both.
+* **THE CLOSED SETS ARE THE VERIFIER'S** (`START_VOCABULARY`), and `format`
+  is deliberately not one, for `/verifier-request/format`'s reason: a
+  form-encoded `+` arrives as a space and is put back.
+* **THE CONSOLE'S TWIN** is the *Start a verification* form and the *Open
+  verifications* list on the Verifier request tab
+  (`oid4vc/web_vc_verifier_config.ts`). The form posts to
+  `/admin/vc-verifier-config` with `action=start`, which `vcTabLinks()`
+  moves to the tab and `WebForms.resolve()` sends here through this row's
+  `mirrors`; the answer's `message` is what the strip shows.
+* **CELLS (#98) ARE NOT FOLLOWED.** `/oid4vp/result/:state` is placed on the
+  cell that minted the state; this read answers from the cell it arrives at.
+  A start and its read through the same address meet in the same cell, which
+  is every caller here; a cross-cell read is not built.
+
+`GET /admin-api/kerberos/principals` gained `accountPolicy` in the same change
+(`anyUsernameAuthenticates`, `neverCreated`, `serviceHosts` — the facts
+`/krb5/principals` publishes, from the same places, without either shared
+password), so `random_username.js`'s `requireKnownOrCreatable()` has an
+administrator's door to ask. No job in this repository asks it in a product
+realm today: `sts_kerberos_samba.js` reads `/krb5/principals` in a development
+realm of its own, which keeps the page.

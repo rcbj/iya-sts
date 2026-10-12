@@ -1454,6 +1454,18 @@ is configured to mint.
 * **What a request asks for is frozen onto it**, so the verdict at
   `/oid4vp/result/:state` records that exchange rather than the console's
   current state.
+* **Start a verification** (#587) builds the next request as the Verifier's
+  own `/oid4vp/start` link does — a format, by value or by reference, a
+  Client Identifier Prefix, a response type and mode, and same-device or
+  cross-device, each left on the Verifier's default unless chosen — and the
+  notice names its `state`, the wallet URL to send the holder to and the
+  `openid4vp://` URI a QR code would carry. It is
+  `POST /admin-api/verifications/start`.
+* **Open verifications** lists the requests still waiting or decided in this
+  realm, newest first: what each asked for, when it expires, and whether the
+  wallet's answer was accepted or refused, with the disclosed claims' names
+  and any failed checks — never a value. One whole verdict is
+  `GET /admin-api/verifications?state=`. A wallet sign-in is not listed.
 
 **This page admits nobody.** A presentation at the bar door starts no session
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
