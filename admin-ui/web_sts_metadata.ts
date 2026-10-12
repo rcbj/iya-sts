@@ -142,8 +142,13 @@ class StsMetadataPage {
           ' &middot; ' + specs + '</div></div>';
       }).join('') + '</div>';
 
-    html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
-      '</p>';
+    // Only where the document says so: `testDouble` follows the mode
+    // (`mode.describesItselfAsTestDouble()`), and a product service, which
+    // checks passwords and validates tokens, is not one.
+    if (json.testDouble) {
+      html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
+        '</p>';
+    }
 
     // -----------------------------------------------------------------------
     // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the

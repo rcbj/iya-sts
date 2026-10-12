@@ -158,6 +158,10 @@ import version = require('./common/version');
 // here and closes no cycle.
 import StsMetadataPage = require('./admin-ui/web_sts_metadata');
 import InstanceSlot = require('./common/instance_slot');
+// Whether the document calls this service a test double is a question of the
+// mode (`describesItselfAsTestDouble()`). A LEAF library `helpers.js` loads
+// first, so requiring it here moves no route and closes no cycle.
+import mode = require('./common/mode');
 // #543: the prose this page's answer carries is translated where it is sent,
 // and the sentences made here are filled from templates `prose()` lists. A
 // top-level require is safe: `server_prose` requires only libraries the
@@ -9482,6 +9486,7 @@ interface StsMetadataDeps {
   authorizationServers: typeof authorizationServers;
   cryptoMetadata: typeof cryptoMetadata;
   version: typeof version;
+  mode: typeof mode;
 }
 
 /**
@@ -9528,7 +9533,8 @@ class StsMetadata {
       admin: admin,
       authorizationServers: authorizationServers,
       cryptoMetadata: cryptoMetadata,
-      version: version
+      version: version,
+      mode: mode
     };
   }
 
@@ -9879,13 +9885,16 @@ class StsMetadata {
   }
 
   private metadataJson(base, report) {
-    const { log, config, port } = this.deps;
+    const { log, config, port, mode } = this.deps;
     const self = this;
     const APP_VERSION = this.appVersion;
     log.debug("Entering StsMetadata.metadataJson().");
     log.debug("Leaving StsMetadata.metadataJson().");
     return {
-      service: 'idptools mock Security Token Service',
+      // The service's own name since the 2026-09-15 rename (it read
+      // 'idptools mock Security Token Service', the parent project's), as
+      // the OpenAPI documents and the README spell it.
+      service: 'IYA STS — Security Token Service',
       // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
       // from the running router, so it describes the process that answered —
       // and this says which process that was. Downloaded, the two travel
@@ -9902,7 +9911,10 @@ class StsMetadata {
       issuer: base,
       wsTrustIssuer: IssuerNames.issuer(),
       port: port,
-      testDouble: true,
+      // True only where it is true: development checks no password and
+      // validates no access token; product does both. It was the literal
+      // `true` in both modes.
+      testDouble: mode.describesItselfAsTestDouble(),
       endpoints: report.rows.map(function (r) {
         const link = self.linkabilityOf(r);
         return { path: r.path, methods: r.methods, name: r.name,
