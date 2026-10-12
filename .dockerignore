@@ -190,3 +190,6 @@ home/home-spa.js*
 # And the sign-in screen's (#571), for the same reason.
 authn/authn.bundle.js
 authn/authn-spa.js*
+# And the sign-out's (#577), for the same reason.
+logout/signout.bundle.js
+logout/signout-spa.js*

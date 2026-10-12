@@ -38,6 +38,9 @@
 // state their shell carries; and the wallet's start and wait pages (#574),
 // the QR code and a refusal.
 //
+// The sign-out (#577) draws its one page from views alone: the inventory,
+// the result drawn in place, and the two refusals' pages.
+//
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
 // ===========================================================================
@@ -431,6 +434,89 @@ function stepCases(en, fr) {
   ];
 }
 
+/**
+ * The sign-out's cases (#577): the inventory with every kind of family row —
+ * terminable, not, a failure, nothing live, a capped list — in English and
+ * in French, under each of the three naming notes; the result drawn in
+ * place, with something still live and with nothing left; and the two
+ * refusals' pages.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function signoutCases(root) {
+  log.debug("Entering signoutCases().");
+  const en = { t: translatorFor(root, 'logout', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example', here: '/logout' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'logout', ['fr', 'en']) });
+  const families = [
+    { id: 'session', label: 'Browser sign-on <sessions>', protocol: 'HTTP',
+      spec: 'this service & its cookie', what: 'One sentence about it.',
+      terminable: true, held: 2, notListed: 0, failure: '',
+      rows: [{ id: 'session:abc"1', label: 'sid <abc>', detail: 'via "x"',
+               kind: 'Browser session', startedAt: 1760227200000,
+               expiresAt: 0, terminable: true, why: '' },
+             { id: 'session:def', label: 'sid def', detail: '',
+               kind: 'Browser session', startedAt: 0,
+               expiresAt: 1760230800000, terminable: false,
+               why: 'it is <held> elsewhere' }] },
+    { id: 'issued', label: 'Already issued', protocol: 'SAML & co',
+      spec: 'none', what: 'A long explanation of why nothing that was ' +
+        'already issued can be recalled by anybody, which runs to well ' +
+        'over one line so that the console\'s fold collapses it into a ' +
+        'summary and a body.',
+      terminable: false, held: 0, notListed: 0, failure: '', rows: [] },
+    { id: 'ldap', label: 'Directory connections', protocol: 'LDAP',
+      spec: 'RFC 4511', what: 'Bound connections.', terminable: true,
+      held: 0, notListed: 0, failure: 'the <directory> is down', rows: [] },
+    { id: 'token', label: 'Tokens', protocol: 'OAuth 2.0', spec: 'RFC 7009',
+      what: 'Tokens.', terminable: true, held: 300, notListed: 299,
+      failure: '',
+      rows: [{ id: 'token:t1', label: 'jti t1', detail: 'access token',
+               kind: 'Access token', startedAt: 1760227200000,
+               expiresAt: 1760230800000, terminable: true, why: '' }] }
+  ];
+  const inventory = function (naming, username) {
+    log.debug("Entering inventory().");
+    log.debug("Leaving inventory().");
+    return { state: 'inventory', username: username, key: username,
+             named: false, naming: naming, total: 302, listed: 3,
+             notListed: 299, maxRows: 3, families: families };
+  };
+  const result = { state: 'result', scope: 'global', key: 'alice & co',
+    message: 'Global logout for alice: 2 item(s) ended, 1 that could not ' +
+             'be.',
+    terminated: [{ id: 'session:abc', label: 'sid <abc>',
+                   message: 'ended "now"' },
+                 { id: 'code:1', label: '', message: 'dropped' }],
+    skipped: [{ id: 'issued:x', label: 'assertion x',
+                message: 'cannot be <recalled>' }],
+    remaining: 1 };
+  log.debug("Leaving signoutCases().");
+  return [
+    { label: 'the inventory, naming open, in English', path: '/logout',
+      view: inventory('open', 'alice <a> & "co"'), ctx: en },
+    { label: 'the inventory, naming off, in French', path: '/logout',
+      view: inventory('off', 'bob'), ctx: fr },
+    { label: 'the inventory in product mode, nothing held', path: '/logout',
+      ctx: en, view: { state: 'inventory', username: 'carol', key: 'carol',
+        naming: 'product', total: 0, families: [families[1]] } },
+    { label: 'a global result with something still live', path: '/logout',
+      view: result, ctx: en },
+    { label: 'a selective result with nothing left, in French',
+      path: '/logout', ctx: fr,
+      view: Object.assign({}, result, { scope: 'selected', skipped: [],
+                                        terminated: [], remaining: 0 }) },
+    { label: 'a name that may not be used, product', path: '/logout',
+      ctx: en, view: { state: 'refused', verifiesCredentials: true } },
+    { label: 'a name that may not be used, development', path: '/logout',
+      ctx: fr, view: { state: 'refused', verifiesCredentials: false } },
+    { label: 'nobody to sign out', path: '/logout', ctx: en,
+      view: { state: 'nobody' } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -451,5 +537,9 @@ module.exports = [
       log.debug("Entering the sign-in screen's cases.");
       log.debug("Leaving the sign-in screen's cases.");
       return authnCases(root).concat(walletCases(root));
-    } }
+    } },
+  { name: 'the sign-out',
+    pages: 'logout/web_signout_pages.ts', global: 'StsSignout',
+    bundle: 'logout/signout.bundle.js', runtime: 'logout/signout-spa.js',
+    cases: signoutCases }
 ];

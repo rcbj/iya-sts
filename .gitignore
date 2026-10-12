@@ -90,3 +90,8 @@ authn/authn.bundle.js
 authn/authn-spa.js
 authn/authn-spa.js.br
 authn/authn-spa.js.gz
+# The sign-out's (#577), the same kind of file.
+logout/signout.bundle.js
+logout/signout-spa.js
+logout/signout-spa.js.br
+logout/signout-spa.js.gz
