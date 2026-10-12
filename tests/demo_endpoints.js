@@ -76,7 +76,10 @@ function childMain() {
     '/oid4vci/status-lists/bitstring/:purpose/publish',
     '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
     '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
-    '/ssf/receive', '/ssf/received'];
+    '/ssf/receive', '/ssf/received',
+    // The two diagnostic surfaces' scripts (#583), demonstrations like the
+    // pages they draw.
+    '/tls/pages.js', '/spnego/pages.js'];
   // A concrete path for a pattern.
   function concrete(p) {
     return p.replace(/:([A-Za-z_]+)/g, 'probe');

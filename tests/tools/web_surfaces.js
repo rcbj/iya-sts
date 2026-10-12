@@ -47,6 +47,9 @@
 // The federation pages (#580) draw every page from a view alone, as each
 // shell carries it: the landing page, the linking step's outcome, a
 // refusal of the login or linking endpoint, and the two pages not there.
+// The TLS diagnostic pages and the SPNEGO demonstration pages (#583) draw
+// every page from a view alone, as each shell carries it, and the TLS
+// page's acts' outcomes from what the acts answered.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -805,6 +808,206 @@ function federationCases(root) {
   ];
 }
 
+/**
+ * The TLS diagnostic pages' cases (#583): `/tls` with the truststore
+ * holding anchors and empty, on the HTTPS and the plain port, with and
+ * without its two acts and with a listener that did not bind, in English
+ * and in French; `/tls/forwarded` believing a proxy and not, with headers
+ * sent and not; what the two acts answered — anchors added, the store
+ * emptied, an act refused; a view the page does not know. Every value a
+ * request or a certificate chose carries markup, so the escaping is held.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function tlsCases(root) {
+  log.debug("Entering tlsCases().");
+  const ns = ['tlsPages'];
+  const en = { t: translatorFor(root, ns, ['en']), query: {}, prefix: '',
+               origin: 'https://sts.example', here: '/tls' };
+  const fr = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['fr', 'en']) });
+  const zh = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['zh-Hant', 'en']) });
+  const info = {
+    listeners: [{ url: 'https://sts.example:8081/', mode: 'optional',
+                  requiresClientCertificate: false, listening: true,
+                  what: 'The main port <asks> & requires none.' }],
+    listenError: null,
+    serverCertificate: { subject: 'CN=sts.example, O="Iya"',
+                         names: ['sts.example', '127.0.0.1'],
+                         fingerprint256: 'AB:CD', notAfter: '2027-01-01',
+                         selfSigned: true },
+    truststore: { anchors: 2, subjects: ['CN=Root <1>', 'CN=Two & co'],
+                  fingerprints: ['11:22', '33:44'],
+                  addUrl: '/tls/trust', clearUrl: '/tls/trust/clear',
+                  consoleUrl: '/admin/tls/trust' },
+    revocation: { sentence: 'Revocation is <checked> & "reported".' }
+  };
+  const bare = Object.assign({}, info, {
+    listeners: [Object.assign({}, info.listeners[0],
+                              { listening: false })],
+    listenError: 'EADDRINUSE <8443>',
+    truststore: { anchors: 0, subjects: [], fingerprints: [],
+                  addUrl: null, clearUrl: null,
+                  consoleUrl: '/admin/tls/trust' } });
+  const forwarded = { kind: 'forwarded', trustProxy: false,
+    socket: { scheme: 'https', host: 'sts.example:8081<x>',
+              encrypted: true },
+    effectiveBaseUrl: 'https://sts.example:8081',
+    what_it_means: 'global.trustProxy is OFF & "so" on.',
+    forwarding: [{ header: 'x-forwarded-proto', present: true,
+                   value: 'http<s>', what: 'The scheme the CLIENT used.' },
+                 { header: 'forwarded', present: false, value: null,
+                   what: 'RFC 7239.' }],
+    clientCertificateHeaders: { readByThisService: false,
+      seen: ['x-client-cert'], note: 'THIS SERVICE READS NONE <of these>.',
+      headers: [{ header: 'x-client-cert', present: true,
+                  value: '-----BEGIN <CERT>', what: 'A forwarded cert.' }] },
+    proxyMustSanitize: 'RFC 9700 section 2.6 & a proxy.' };
+  log.debug("Leaving tlsCases().");
+  return [
+    { label: '/tls with anchors and its acts, on HTTPS, in English',
+      path: '/tls', ctx: en, view: { kind: 'tls', https: true, info: info } },
+    { label: '/tls with anchors and its acts, on plain HTTP, in French',
+      path: '/tls', ctx: fr,
+      view: { kind: 'tls', https: false, info: info } },
+    { label: '/tls empty, no acts, a listener down, in Traditional Chinese',
+      path: '/tls', ctx: zh, view: { kind: 'tls', https: true, info: bare } },
+    { label: '/tls/forwarded believing nothing, headers sent',
+      path: '/tls/forwarded', ctx: en, view: forwarded },
+    { label: '/tls/forwarded believing a proxy, in French',
+      path: '/tls/forwarded', ctx: fr,
+      view: Object.assign({}, forwarded, { trustProxy: true,
+        socket: { scheme: 'http', host: 'x', encrypted: false } }) },
+    { label: 'anchors added', path: '/tls', ctx: fr,
+      view: { kind: 'trusted', added: 2, anchors: 3 } },
+    { label: 'one anchor added', path: '/tls', ctx: en,
+      view: { kind: 'trusted', added: 1, anchors: 1 } },
+    { label: 'the truststore emptied', path: '/tls', ctx: zh,
+      view: { kind: 'cleared', removed: 4 } },
+    { label: 'an act refused', path: '/tls', ctx: en,
+      view: { kind: 'notAdded', act: 'trust',
+              error: 'No <PEM> & "certificate" found.' } },
+    { label: 'the clear refused', path: '/tls', ctx: fr,
+      view: { kind: 'notAdded', act: 'clear', error: 'Not this origin.' } },
+    { label: 'a view the page does not know', path: '/tls/forwarded',
+      ctx: en, view: { kind: 'other<1>' } }
+  ];
+}
+
+/**
+ * The SPNEGO demonstration pages' cases (#583): the advertisement with the
+ * sign-in on and off, in English and in Swedish; the body of every kind of
+ * answer `/spnego/protected` gives — the bare challenge, a wrong scheme, an
+ * empty token, an undecodable one, no common mechanism (with and without
+ * `?mech=none`), a pessimistic token, a non-Kerberos mechanism, a refused
+ * ticket, both wordings of a bad mechListMIC, a required MIC,
+ * `request-mic`, an unmatched continuation, a continuation without the MIC,
+ * a code no page knows, and the protected content (negotiated or bare,
+ * mutual or `?mutual=off`).
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function spnegoCases(root) {
+  log.debug("Entering spnegoCases().");
+  const ns = ['spnegoPages'];
+  const en = { t: translatorFor(root, ns, ['en']), query: {}, prefix: '',
+               origin: 'https://sts.example', here: '/spnego' };
+  const sv = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['sv', 'en']) });
+  const es = Object.assign({}, en, { t: translatorFor(root, ns,
+                                                      ['es', 'en']) });
+  const advert = { kind: 'advert', realm: 'EXAMPLE.COM<1>',
+    protectedResource: '/spnego/protected', signInResource: '/authn/spnego',
+    signInEnabled: true,
+    servicePrincipalName: 'HTTP/sts.example@EXAMPLE.COM',
+    mechanisms: [{ oid: '1.2.840.113554.1.2.2', name: 'Kerberos <5>' },
+                 { oid: '1.2.840.48018.1.2.2', name: 'Kerberos (MS)' }],
+    scheme: 'Negotiate' };
+  const checks = [{ name: 'the ticket <decrypts>', ok: true,
+                    detail: 'under the service key' },
+                  { name: 'the authenticator', ok: false,
+                    detail: 'skew & "late"' }];
+  const verdict = function (extra) {
+    return Object.assign({ kind: 'verdict', ok: false, code: '',
+      spn: 'HTTP/sts.example', reason: 'Because <of> & this.', scheme: '',
+      client: '', selected: '', selectedName: '', offered: [],
+      offeredNames: [], supported: [], continuation: false,
+      rawKerberos: false, micVerified: false, requirementReason: '',
+      mutual: false, mutualOff: false, micNote: '', checks: null }, extra);
+  };
+  const accepted = verdict({ ok: true, code: 'accepted',
+    client: 'alice@EXAMPLE.COM<1>', selected: '1.2.840.113554.1.2.2',
+    selectedName: 'Kerberos 5', micVerified: true, mutual: true,
+    checks: checks });
+  log.debug("Leaving spnegoCases().");
+  return [
+    { label: 'the advertisement, the sign-in on, in English',
+      path: '/spnego', ctx: en, view: advert },
+    { label: 'the advertisement, the sign-in off, in Swedish',
+      path: '/spnego', ctx: sv,
+      view: Object.assign({}, advert, { signInEnabled: false }) },
+    { label: 'the bare challenge', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'no-authorization' }) },
+    { label: 'a wrong scheme, in Spanish', path: '/spnego/protected',
+      ctx: es, view: verdict({ code: 'wrong-scheme', scheme: 'Basic<x>' }) },
+    { label: 'an empty token', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'empty-token' }) },
+    { label: 'an undecodable token', path: '/spnego/protected', ctx: sv,
+      view: verdict({ code: 'undecodable', checks: [] }) },
+    { label: 'no common mechanism', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'no-common-mechanism',
+        offered: ['1.3.6.1.5.5.2<x>', '1.2.3'],
+        offeredNames: ['SPNEGO', ''],
+        supported: ['1.2.840.113554.1.2.2'] }) },
+    { label: 'no common mechanism, ?mech=none, in Spanish',
+      path: '/spnego/protected', ctx: es,
+      view: verdict({ code: 'no-common-mechanism', offered: ['1.2.3'],
+                      offeredNames: ['x'], supported: [] }) },
+    { label: 'a pessimistic token', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'no-mech-token',
+                      selected: '1.2.840.113554.1.2.2',
+                      selectedName: 'Kerberos <5>' }) },
+    { label: 'a non-Kerberos mechanism', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'non-kerberos-mechanism',
+                      selected: '1.3.6.1.4.1.311.2.2.10<x>' }) },
+    { label: 'a refused ticket, with the checks', path: '/spnego/protected',
+      ctx: sv, view: verdict({ code: 'ticket-refused', checks: checks }) },
+    { label: 'a bad mechListMIC on the first token',
+      path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'bad-mech-list-mic' }) },
+    { label: 'a bad mechListMIC on the continuation, in Spanish',
+      path: '/spnego/protected', ctx: es,
+      view: verdict({ code: 'bad-mech-list-mic', continuation: true }) },
+    { label: 'a required MIC', path: '/spnego/protected', ctx: en,
+      view: verdict({ code: 'mic-required',
+                      requirementReason: 'section 5 <requires> it' }) },
+    { label: 'request-mic', path: '/spnego/protected', ctx: sv,
+      view: verdict({ code: 'request-mic', checks: checks }) },
+    { label: 'an unmatched continuation', path: '/spnego/protected',
+      ctx: en, view: verdict({ code: 'no-pending-continuation' }) },
+    { label: 'a continuation without the MIC', path: '/spnego/protected',
+      ctx: en, view: verdict({ code: 'continuation-no-mic' }) },
+    { label: 'a code no page knows is a reject', path: '/spnego/protected',
+      ctx: en, view: verdict({ code: 'acceptor-threw' }) },
+    { label: 'the protected content, negotiated and mutual',
+      path: '/spnego/protected', ctx: en, view: accepted },
+    { label: 'the protected content, bare, ?mutual=off, in Swedish',
+      path: '/spnego/protected', ctx: sv,
+      view: Object.assign({}, accepted, { rawKerberos: true,
+        micVerified: false, requirementReason: 'no list <to protect>',
+        mutual: false, mutualOff: true, micNote: 'a note & "more"',
+        client: '' }) },
+    { label: 'the protected content, no AP-REP, in Spanish',
+      path: '/spnego/protected', ctx: es,
+      view: Object.assign({}, accepted, { mutual: false, checks: null }) },
+    { label: 'a view the page does not know', path: '/spnego', ctx: en,
+      view: { kind: 'other<1>' } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -838,5 +1041,13 @@ module.exports = [
   { name: 'the federation pages',
     pages: 'federation/web_federation_pages.ts', global: 'StsFederation',
     bundle: 'federation/federation-pages.bundle.js',
-    runtime: 'federation/federation-pages-spa.js', cases: federationCases }
+    runtime: 'federation/federation-pages-spa.js', cases: federationCases },
+  { name: 'the TLS diagnostic pages',
+    pages: 'tls/web_tls_pages.ts', global: 'StsTlsPages',
+    bundle: 'tls/tls-pages.bundle.js', runtime: 'tls/tls-pages-spa.js',
+    cases: tlsCases },
+  { name: 'the SPNEGO demonstration pages',
+    pages: 'kerberos/web_spnego_pages.ts', global: 'StsSpnegoPages',
+    bundle: 'kerberos/spnego-pages.bundle.js',
+    runtime: 'kerberos/spnego-pages-spa.js', cases: spnegoCases }
 ];
