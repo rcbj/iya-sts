@@ -3047,7 +3047,7 @@ class WsTrust {
     log.debug("Entering the STS description endpoint.");
     // #523: one name, the realm's OAuth issuer, for every token this STS
     // issues — a SAML assertion's Issuer and a JWT's `iss`.
-    res.type('text/plain').send('WS-Trust STS mock. POST a SOAP ' +
+    res.type('text/plain').send('WS-Trust STS. POST a SOAP ' +
                                 'RequestSecurityToken here.\nIssuer: ' +
                                 this.oauthIssuer(helpers.baseUrlOf(req)) +
                                 '\n');

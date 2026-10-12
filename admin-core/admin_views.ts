@@ -6575,7 +6575,8 @@ class AdminViews {
         '`value` and `values` are CHECKED and not honoured. This service ' +
           'could echo back whatever a client asked it to assert and ' +
           'deliberately does not — everything it says about a person comes ' +
-          'from the directory or from the invented persona, and a mock that ' +
+          'from the directory or from the invented persona, and a service ' +
+          'that ' +
           'agreed with the request could not be used to test anything. A ' +
           'mismatch is reported in the log and in the response\'s artifact.',
         'A claims request IS filtered by the federation release policy, ' +

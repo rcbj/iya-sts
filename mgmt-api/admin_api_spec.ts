@@ -1538,7 +1538,7 @@ const SCHEMAS = {
                                'half — PKCS#8 for PEM and DER, PBES2 as a ' +
                                '.jwe for JWK. Empty means the private key ' +
                                'comes out in the clear, which is usually ' +
-                               'what is wanted from a mock and never ' +
+                               'what is wanted in development and never ' +
                                'anywhere else.' }
     }),
 
@@ -3701,7 +3701,8 @@ const SCHEMAS = {
     }),
 
   VerifierRequest: openObject(
-    'What the mock OID4VP Verifier at /oid4vp/verifier asks a wallet for, ' +
+    'What the demonstration OID4VP Verifier at /oid4vp/verifier asks a ' +
+    'wallet for, ' +
     'and in which credential format. It reaches the wire as the `dcql_query` ' +
     'of the next Authorization Request and is then what the presentation is ' +
     'checked against.',
@@ -4833,7 +4834,7 @@ const SCHEMAS = {
             description: 'The access control policy RFC 7644 section 2 ' +
                          'requires a provider to be able to map an ' +
                          'authenticated client to. It is two lines, which is ' +
-                         'the honest length for a mock.'
+                         'the honest length for this service.'
           }
         }),
       store: openObject(
@@ -6026,7 +6027,8 @@ const TAG_DESCRIPTIONS = {
   'Credential claims': 'What an issued Verifiable Credential carries.',
   'Credential status': 'The status lists every issued Verifiable ' +
     'Credential names, and suspending, reinstating or revoking one.',
-  'Verifier request': 'What the mock OID4VP Verifier asks a wallet for.',
+  'Verifier request': 'What the demonstration OID4VP Verifier asks a wallet ' +
+  'for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +
                      'before this service stops believing one of its own. ' +

@@ -2710,7 +2710,8 @@ class Saml11Sso {
              ' about "' + username + '" for "' + (rpId ||
                                                   '(nobody named)') + '" ' +
              'with no credential presented and no attribute release policy ' +
-             'applied. That is what this mock is for; it is not what an ' +
+             'applied. That is what development mode is for; it is not what ' +
+             'an ' +
              'attribute authority does.');
 
     if (authnQuery) {
@@ -2974,7 +2975,8 @@ class Saml11Sso {
                      'with none registered the flow is refused.'
                    : 'This realm is in PRODUCT mode, so it must be one of ' +
                      'the samlAssertionConsumerService values on the relying ' +
-                     'party\'s entry, compared exactly, and there is no mock ' +
+                     'party\'s entry, compared exactly, and there is no ' +
+                     'demonstration ' +
                      'fallback.')],
        ['providerId', 'Who the assertion is FOR — the audience restriction. ' +
                       'Shibboleth\'s parameter, and the only way a SAML 1.1 ' +

@@ -666,7 +666,7 @@ var config = {
     canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
     allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
     organizationName: "sts",                                // Metadata OrganizationName
-    organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
+    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
     organizationUrl: ""                                     // Metadata OrganizationURL
   },
 
@@ -793,7 +793,7 @@ var config = {
     proofIatWindowS: 600,                                  // Proof of possession iat window (s)
     cNonceTtlS: 300,                                       // c_nonce lifetime (s)
     cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
-    issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
+    issuerDisplayName: "IdP Tools Credential Issuer", // Issuer display name
     domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
     generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
     sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply

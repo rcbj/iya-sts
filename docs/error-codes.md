@@ -2121,7 +2121,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
 | `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
-| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401 or 409 {error} |
+| `STS-OAUTH-0782` | The demonstration relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401 or 409 {error} |
 | `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
@@ -2201,8 +2201,8 @@ Raised from: saml/.
 | `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Success and no message (HTTP 200) — saml-core-2.0-os 3.5.3's empty response (#160) |
 | `STS-SAML-0019` | The SAMLRequest at the SAML 2.0 Single Logout service is not a readable <samlp:LogoutRequest>. | HTTP 400 page |
 | `STS-SAML-0020` | A SAML 2.0 LogoutRequest carried an <saml:EncryptedID> this service could not decrypt, so the session was not ended. | HTTP 400 page |
-| `STS-SAML-0021` *(retired)* | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the mock relying parties were deleted. | — |
-| `STS-SAML-0022` *(retired)* | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
+| `STS-SAML-0021` *(retired)* | The demonstration SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the demonstration relying parties were deleted. | — |
+| `STS-SAML-0022` *(retired)* | A response delivered to the demonstration SAML 2.0 service provider failed at least one of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
 | `STS-SAML-0023` | A SAML 2.0 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
@@ -2222,8 +2222,8 @@ Raised from: saml/.
 | `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0042` *(retired)* | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the mock relying parties were deleted. | — |
-| `STS-SAML-0043` *(retired)* | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
+| `STS-SAML-0042` *(retired)* | The demonstration SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the demonstration relying parties were deleted. | — |
+| `STS-SAML-0043` *(retired)* | A response delivered to the demonstration SAML 1.1 relying party failed at least one of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
 | `STS-SAML-0044` | A service provider metadata refresh named an application that is not in the registry. | — |
 | `STS-SAML-0045` | Service provider metadata was not fetched because federation.outbound is off. | — |
 | `STS-SAML-0046` | Service provider metadata was not fetched because samlSpMetadataUrl is empty, not a URL, or not a scheme the outbound policy dials. | — |
@@ -2355,7 +2355,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
 | `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
-| `STS-WSFED-0016` *(retired)* | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. Retired by #592: the mock relying parties were deleted. | — |
+| `STS-WSFED-0016` *(retired)* | The demonstration relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
 | `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
 | `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |

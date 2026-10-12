@@ -8385,7 +8385,7 @@ const SETTINGS = [
   { key: 'saml.organizationDisplayName', group: 'SAML',
     label: 'Metadata OrganizationDisplayName',
     env: 'STS_SAML_ORGANIZATION_DISPLAY_NAME', type: 'string',
-    dflt: 'Mock security token service', runtime: true,
+    dflt: 'Security token service', runtime: true,
     description: 'The <md:OrganizationDisplayName> beside the name above. ' +
                  'Empty omits the element for the reason given there.' },
 
@@ -9789,7 +9789,7 @@ const SETTINGS = [
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
     env: 'OID4VCI_ISSUER_DISPLAY_NAME', type: 'string',
-    dflt: 'IdP Tools Mock Credential Issuer', runtime: true,
+    dflt: 'IdP Tools Credential Issuer', runtime: true,
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +

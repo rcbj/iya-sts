@@ -479,7 +479,7 @@ const CAEP_EVENTS = [
               'between themselves — so a value not on it is carried with a ' +
               'warning rather than refused. Refusing would make this ' +
               'service unable to carry a vendor\'s own type, which is ' +
-              'precisely what a mock is for.' },
+              'precisely what testing needs.' },
       { name: 'change_type', required: true, type: 'enum',
         values: ['create', 'revoke', 'update', 'delete'],
         what: 'What happened to it. CLOSED, unlike the type above: these ' +
