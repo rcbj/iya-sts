@@ -69,6 +69,14 @@ class WebCardCss {
     'order:1px solid #12107c;color:#12107c;background:#fff;text-decoration:no' +
     'ne;font-size:.9em}a.fedbtn span{display:block;font-size:.75em;color:#777' +
     '}' +
+    // THE WALLET SIGN-IN'S PAGES (#574), which carried these in a `<style>`
+    // of their own until they became routes of the sign-in surface: the QR
+    // code, the presentation's checks, and the Digital Credentials API
+    // button, which is a button and looks like the link beside it.
+    '.qr{display:block;margin:12px auto;text-align:center}.checks{font-size:' +
+    '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
+    'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
+    'block;font-size:.75em}' +
     WebCardCss.CHOOSER_CSS;
 }
 

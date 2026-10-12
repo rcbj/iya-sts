@@ -152,6 +152,35 @@ const ID_PARAMS = vz.object({
   id: vt.base64url
 });
 
+// ---------------------------------------------------------------------------
+// THE WALLET'S BODIES (#574). The ids an act names beside the transaction
+// in its path — the pending sign-in, the second-factor step, an enrolment —
+// are compared with the ones the transaction was started for, as the wait
+// page's query was; `response_code` is the one the wallet sent the person
+// back with (OpenID4VP section 8.2); `response` the DigitalCredential the
+// browser's API answered, as `{ protocol, data }` or its JSON text.
+// ---------------------------------------------------------------------------
+const WALLET_IDS = {
+  authn: vt.opt(vt.opaque),
+  mfa: vt.opt(vt.opaque),
+  enrol: vt.opt(vt.oneOf(['1']))
+};
+
+const WALLET_START_BODY = vz.object(Object.assign({}, WALLET_IDS, {
+  siop: vt.opt(vt.oneOf(['1'])),
+  wallet: vt.opt(vt.uri)
+})).strict();
+
+const WALLET_STATUS_BODY = vz.object(Object.assign({}, WALLET_IDS, {
+  response_code: vt.opt(vt.opaque)
+})).strict();
+
+const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
+  response: vz.union([vz.string().max(1024 * 1024),
+                      vz.object({ protocol: vz.string().max(200),
+                                  data: vz.any() })]).optional()
+})).strict();
+
 /**
  * One operation of the API.
  */
@@ -161,8 +190,9 @@ interface Operation {
   path: string;
   operationId: string;
   // `pending` — keyed by a pending sign-in's id; `step` — a password change
-  // step's id; `public` — neither.
-  access: 'public' | 'pending' | 'step';
+  // step's id; `wallet` — a wallet sign-in's transaction (#574), keyed by
+  // its state where the path names one; `public` — neither.
+  access: 'public' | 'pending' | 'step' | 'wallet';
   // The page or form control this operation is the door of, for the
   // runtime and the reader (`/account-api`'s convention, rule 7's twin).
   mirrors: string | null;
@@ -174,6 +204,10 @@ interface Operation {
   // The answer's shape, documented.
   answer?: Json;
   handler: string;
+  // For a wallet operation (#574): the `oid4vc/vc_signin.ts` method it is.
+  walletAct?: string;
+  // The code a body this operation does not take is recorded under.
+  refusedCode?: string;
 }
 
 // THE ANSWERS, DOCUMENTED ONCE for the OpenAPI document.
@@ -292,6 +326,85 @@ const OPERATIONS: Operation[] = [
     description: 'Held to the password policy; the sign-in then continues ' +
       'exactly as after the password step — second factor included.' }
 ];
+
+// ---------------------------------------------------------------------------
+// THE WALLET SIGN-IN'S OPERATIONS (#574): `/authn/wallet` and
+// `/authn/wallet/wait` are routes of this surface, and these are their
+// doors. The logic is `oid4vc/vc_signin.ts`'s (`walletAct`), as the screen's
+// is `authn.ts`'s; this table is where they are bound, as every act here is.
+// A table of their own beside the screen's, which the other sign-in steps'
+// tickets extend in theirs.
+// ---------------------------------------------------------------------------
+const WALLET_ANSWER = {
+  type: 'object',
+  description: 'As the screen\'s acts answer: `redirect` (the session ' +
+    'cookie set on this answer), `mfa` (a second factor after the wallet, ' +
+    'at `location`), or `refused` with `errors` and a `view` of kind ' +
+    '`refused` (the heading, the presentation\'s checks, `retry` and ' +
+    '`back`). The poll answers `wait` while the wallet has not answered.',
+  properties: {
+    ok: { type: 'boolean' },
+    next: { type: 'string',
+            enum: ['wait', 'redirect', 'mfa', 'refused'] },
+    location: { type: 'string' },
+    go: { type: 'string' },
+    state: { type: 'string' },
+    expiresIn: { type: 'integer' },
+    errors: { type: 'array', items: { type: 'string' } },
+    view: { type: 'object' }
+  }
+};
+
+const WALLET_OPERATIONS: Operation[] = [
+  { method: 'GET', path: API + '/wallet', operationId: 'getWalletStart',
+    access: 'wallet', mirrors: 'GET /authn/wallet', handler: 'wallet',
+    walletAct: 'startView',
+    summary: 'What a wallet sign-in\'s start page needs',
+    description: 'Takes the start page\'s query — `authn` (a pending ' +
+      'sign-in) or `mfa` (a second-factor step), `siop=1` for a ' +
+      'self-issued ID Token, `enrol=1` to enrol one from a session — and ' +
+      'answers what is being started and `csrf`, after the refusals a ' +
+      'start would meet. It creates nothing.' },
+  { method: 'POST', path: API + '/wallet', operationId: 'startWalletSignIn',
+    access: 'wallet', mirrors: 'GET /authn/wallet', handler: 'wallet',
+    walletAct: 'start', body: WALLET_START_BODY, answer: WALLET_ANSWER,
+    refusedCode: 'STS-VC-0069',
+    summary: 'Starts a wallet sign-in',
+    description: 'An OpenID4VP request bound to the pending sign-in (or ' +
+      'the step, or the enrolment) and to this browser by the ' +
+      '`sts_wallet_binding` cookie this answer sets; `go` names the wait ' +
+      'page.' },
+  { method: 'GET', path: API + '/wallet/:state', operationId: 'getWalletWait',
+    access: 'wallet', mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
+    walletAct: 'waitView',
+    summary: 'What the wallet sign-in\'s wait page draws',
+    description: 'For the browser that started the transaction only: the ' +
+      'Digital Credentials API request, the same-device link, the QR ' +
+      'code\'s text where `oid4vp.signInCrossDevice` offers it, the ' +
+      'seconds left and the poll\'s interval, and `csrf`.' },
+  { method: 'POST', path: API + '/wallet/:state/status',
+    operationId: 'walletStatus', access: 'wallet',
+    mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
+    walletAct: 'status', body: WALLET_STATUS_BODY, answer: WALLET_ANSWER,
+    refusedCode: 'STS-VC-0069',
+    summary: 'Whether the wallet has answered, and the sign-in once it has',
+    description: 'The poll: `wait` until the wallet has answered, then the ' +
+      'sign-in finished in this request — once, in the browser that ' +
+      'started it, with the right `response_code` where one is carried.' },
+  { method: 'POST', path: API + '/wallet/:state/dc-api',
+    operationId: 'answerWalletDcApi', access: 'wallet',
+    mirrors: 'GET /authn/wallet/wait', handler: 'wallet',
+    walletAct: 'dcApi', body: WALLET_DC_API_BODY, answer: WALLET_ANSWER,
+    refusedCode: 'STS-VC-0069',
+    summary: 'The Digital Credentials API\'s answer',
+    description: 'The DigitalCredential `navigator.credentials.get()` ' +
+      'answered, from a page on this service\'s own origin: decrypted ' +
+      'where the request asked for `dc_api.jwt`, verified with ' +
+      '`origin:<origin>` as the audience, answered once, and the sign-in ' +
+      'finished in this request.' }
+];
+
+OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
 
 interface AuthnApiDeps {
   log: typeof helpers.log;
@@ -478,8 +591,9 @@ class AuthnApi {
     const posted = validation.checkParsed(helpers.parseBody(req) || {},
                                           'body', op.body || EMPTY_BODY);
     if (!posted.ok) {
-      errorCodes.mark(res, op.access === 'step' ? 'STS-AUTHN-0145'
-                                                : 'STS-AUTHN-0002');
+      errorCodes.mark(res, op.refusedCode ||
+                           (op.access === 'step' ? 'STS-AUTHN-0145'
+                                                 : 'STS-AUTHN-0002'));
       this.refuse(res, 400, String(posted.detail || 'The body is refused.'));
       log.debug("Leaving AuthnApi.bodyOf(). Refused.");
       return null;
@@ -745,11 +859,90 @@ class AuthnApi {
   }
 
   // ---------------------------------------------------------------------------
+  // A WALLET OPERATION (#574): an act is bound as every act here is, and its
+  // body checked; then `oid4vc/vc_signin.ts` answers it, handed the state in
+  // the path, the body, the query and the CSRF token a view answers.
+  //
+  // `vc_signin` is required HERE, when an operation arrives, and not at
+  // load: this module is built just after `authn` (8a), and requiring the
+  // wallet door then would load the Verifier and its libraries ahead of
+  // their place in the require order (11–14a) — the load-time effects rule
+  // 3e warns of.
+  // ---------------------------------------------------------------------------
+  /**
+   * `/authn-api/wallet…`: a wallet sign-in's operation, bound and handed to
+   * `oid4vc/vc_signin.ts`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns a promise settled when the answer is sent
+   */
+  async wallet(req: Json, res: Json, op: Operation): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering AuthnApi.wallet(). " + op.operationId);
+    let body: Json = null;
+    if (op.method === 'POST') {
+      if (!this.bound(req, res)) {
+        log.debug("Leaving AuthnApi.wallet(). Refused at the door.");
+        return;
+      }
+      body = this.bodyOf(req, res, op);
+      if (!body) {
+        log.debug("Leaving AuthnApi.wallet(). The body.");
+        return;
+      }
+    }
+    const signIn = require('../oid4vc/vc_signin');
+    await signIn[String(op.walletAct)](req, res, {
+      state: req.params && req.params.state !== undefined
+        ? String(req.params.state) : undefined,
+      body: body, query: req.query || {}, csrf: this.csrfOf(req) });
+    log.debug("Leaving AuthnApi.wallet().");
+  }
+
+  // ---------------------------------------------------------------------------
   // THE OPENAPI DOCUMENT: a pure function over the operation table, on
   // `account-api/account_api_spec.ts`'s rule — the schemas are the
   // operations' own zod objects, converted, so a field documented and a
   // field refused are one declaration.
   // ---------------------------------------------------------------------------
+  /**
+   * An operation's parameters, for the OpenAPI document.
+   *
+   * @param op - the operation
+   * @returns the parameter objects
+   */
+  static parametersOf(op: Operation): Json[] {
+    helpers.log.debug("Entering AuthnApi.parametersOf().");
+    if (op.access === 'public') {
+      helpers.log.debug("Leaving AuthnApi.parametersOf(). None.");
+      return [];
+    }
+    if (op.access === 'wallet') {
+      helpers.log.debug("Leaving AuthnApi.parametersOf(). The wallet's.");
+      if (op.path.indexOf(':state') >= 0) {
+        return [{ name: 'state', in: 'path', required: true,
+                  description: 'The wallet sign-in\'s transaction: a bearer ' +
+                    'capability, answered to this browser only (its ' +
+                    '`sts_wallet_binding` cookie).',
+                  schema: { type: 'string' } }];
+      }
+      return op.method === 'GET'
+        ? ['authn', 'mfa', 'siop', 'enrol'].map(function (name) {
+          return { name: name, in: 'query', required: false,
+                   schema: { type: 'string' } };
+        }) : [];
+    }
+    helpers.log.debug("Leaving AuthnApi.parametersOf().");
+    return [{ name: 'id', in: 'path', required: true,
+              description: op.access === 'step'
+                ? 'The password change step\'s id.'
+                : 'The pending sign-in\'s id: a bearer capability, as the ' +
+                  '`authn` the screen was opened with.',
+              schema: { type: 'string' } }];
+  }
+
   /**
    * The OpenAPI 3.1 document of this API.
    *
@@ -777,13 +970,7 @@ class AuthnApi {
               'of this service and `X-CSRF-Token` — the `csrf` the page\'s ' +
               'view answered, bound to the browser\'s `sts_session` cookie.'
             : ''),
-        parameters: op.access === 'public' ? [] :
-          [{ name: 'id', in: 'path', required: true,
-             description: op.access === 'step'
-               ? 'The password change step\'s id.'
-               : 'The pending sign-in\'s id: a bearer capability, as the ' +
-                 '`authn` the screen was opened with.',
-             schema: { type: 'string' } }],
+        parameters: AuthnApi.parametersOf(op),
         responses: {
           200: { description: 'The answer.', content: { 'application/json': {
             schema: op.answer || { type: 'object' } } } },

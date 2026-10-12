@@ -343,16 +343,10 @@ const WALLET_PATH = '/authn/wallet';
  * The path of the wallet sign-in's waiting page.
  */
 const WALLET_WAIT_PATH = '/authn/wallet/wait';
-// And, since #38's follow-ups, the Digital Credentials API answer the wait
-// page's script posts, and that script. Declared here for the same reason.
-/**
- * The path the wait page's script posts a Digital Credentials API answer to.
- */
-const WALLET_DCAPI_PATH = '/authn/wallet/dc-api';
-/**
- * The path of the wallet sign-in's Digital Credentials API script.
- */
-const WALLET_SCRIPT_PATH = '/authn/wallet.js';
+// The Digital Credentials API answer the wait page's script posted to
+// (`/authn/wallet/dc-api`) and that script (`/authn/wallet.js`) were declared
+// here until #574: both are the sign-in surface's now — the answer an
+// `/authn-api/wallet` operation, the call the surface's runtime.
 
 // ---------------------------------------------------------------------------
 // A PASSWORD AS THE SECOND FACTOR (#38's follow-ups). A wallet presentation is
@@ -662,7 +656,12 @@ const ARRIVAL_PATHS = [
   // that is not on this list, or a cookie that ran out at the screen.
   '/authn/login',
   '/authn/select-idp',
-  '/authn/password-change'
+  '/authn/password-change',
+  // AND THE WALLET'S TWO (#574): `/authn/wallet` and `/authn/wallet/wait`,
+  // matched by prefix. A wallet's same-device redirect brings a browser
+  // back to the wait page, and the sign-in a person starts from a second
+  // factor's page or from the portal starts here.
+  '/authn/wallet'
 ];
 
 // ---------------------------------------------------------------------------
@@ -8093,8 +8092,14 @@ class Authn {
           firstAmr: firstAmr, mfaAllowed: mfaAllowed,
           expires: Date.now() + this.mfaStepTtlMs()
         });
-        this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
-                                                     offered, ''));
+        // TO `/authn-api` (#574, the wallet's poll) the step is an answer
+        // naming its page; to a form, the page itself, as before.
+        if (this.answersJson(res)) {
+          this.stepAnswer(res, 'mfa', 'enrol', setupId, MFA_SETUP_PATH, 'mfa');
+        } else {
+          this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
+                                                       offered, ''));
+        }
         log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Enrolment.");
         return { handled: true };
       }
@@ -8145,7 +8150,39 @@ class Authn {
              'factor is needed (' + (record.forceMfa ? 'the request demands ' +
              'two' : requirement.required ? 'required of them' :
              'they hold one') + '); asking for ' + factor + '.');
-    if (factor === 'totp') {
+    // TO `/authn-api` (#574): the wallet's poll answers the step as an
+    // address, which the step's own GET draws — for an emailed factor once
+    // its first message is sent, as the sign-in screen's act does (#571).
+    const json = this.answersJson(res);
+    if (json && (factor === 'email-code' || factor === 'email-link')) {
+      const self = this;
+      this.emailDoor().armSecondFactor(req, res, mfaId).then(function () {
+        self.stepAnswer(res, 'mfa', factor, mfaId,
+                        factor === 'email-code' ? EMAIL_CODE_PATH
+                                                : EMAIL_LINK_PATH, 'mfa');
+      }, function (e) {
+        log.debug("Caught in Authn.beginSecondFactorAfterWallet(): " +
+                  ((e && e.message) || e));
+        // The step stands; its page says what could not be sent.
+        self.stepAnswer(res, 'mfa', factor, mfaId,
+                        factor === 'email-code' ? EMAIL_CODE_PATH
+                                                : EMAIL_LINK_PATH, 'mfa');
+      });
+    } else if (json) {
+      // THE CEREMONY THIS STEP WAS MINTED FOR is drawn by `GET
+      // /authn/webauthn` now, as the sign-in screen's is (#571): the page is
+      // the one this function drew in place until #574, for this step.
+      const minted = pendingMfa.get(mfaId);
+      if (minted && factor === 'webauthn') {
+        minted.atSignIn = true;
+        pendingMfa.set(mfaId, minted);
+      }
+      this.stepAnswer(res, 'mfa', factor, mfaId,
+                      factor === 'totp' ? TOTP_PATH
+                        : (factor === 'webauthn' ? WEBAUTHN_PATH
+                                                 : PASSWORD_FACTOR_PATH),
+                      'mfa');
+    } else if (factor === 'totp') {
       this.sendTotpPage(res, this.totpPage(base, mfaId, username, '', ''));
     } else if (factor === 'email-code' || factor === 'email-link') {
       this.emailDoor().beginSecondFactor(req, res, base, mfaId);
@@ -10396,8 +10433,13 @@ class Authn {
              String((step.authn || {}).application || '') + '" does not ' +
              'allow; asking them to set up one it does (' +
              allowed.join(', ') + ').');
-    this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, step.username,
-                                                 offered, ''));
+    // A wallet's poll (#574) is answered the step's address.
+    if (this.answersJson(res)) {
+      this.stepAnswer(res, 'mfa', 'enrol', setupId, MFA_SETUP_PATH, 'mfa');
+    } else {
+      this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, step.username,
+                                                   offered, ''));
+    }
     log.debug('Leaving Authn.enrolAfterProof().');
   }
 
@@ -14476,8 +14518,11 @@ export = {
   // `pendingFor` and `completeAuthentication` for the Kerberos door's reasons.
   WALLET_PATH: WALLET_PATH,
   WALLET_WAIT_PATH: WALLET_WAIT_PATH,
-  WALLET_DCAPI_PATH: WALLET_DCAPI_PATH,
-  WALLET_SCRIPT_PATH: WALLET_SCRIPT_PATH,
+  // The wallet's two pages are routes of the sign-in surface (#574): the
+  // shell they answer, and the address an answer names, as a redirect
+  // would have named it.
+  signInShell: slot.forward('signInShell'),
+  locationOf: slot.forward('locationOf'),
   PASSWORD_FACTOR_PATH: PASSWORD_FACTOR_PATH,
   // The wallet as a factor (#38's follow-ups): read a second-factor step,
   // finish one with a presentation, and ask for a second factor after one.

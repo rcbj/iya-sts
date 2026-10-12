@@ -48,6 +48,9 @@ import WebSurface = require('../common/web_surface');
 import WebPage = require('../common/web_page');
 import WebWebAuthn = require('../common/web_webauthn');
 import AuthnPages = require('./web_authn_pages');
+// THE WALLET'S PAGES RUN (#574): the start, the poll, the Digital
+// Credentials API call — `/authn/wallet.js` until then.
+import WebVcSignin = require('../oid4vc/web_vc_signin');
 
 type Json = any;
 
@@ -71,6 +74,8 @@ class AuthnSurface extends WebSurface {
   private rpId: string;
   // Whether the fingerprint's script is on the page.
   private fingerprintLoaded: boolean;
+  // The wallet sign-in's pages' runtime (#574).
+  private walletFlow: Json;
 
   /**
    * Makes the runtime.
@@ -79,13 +84,14 @@ class AuthnSurface extends WebSurface {
    */
   constructor(env: Json) {
     super(env, { base: '/authn', api: '/authn-api',
-                 pages: AuthnPages.PAGES, namespaces: ['authn'],
+                 pages: AuthnPages.PAGES, namespaces: ['authn', 'wallet'],
                  frame: AuthnPages.frame, brand: '' });
     this.actError = '';
     this.autofill = true;
     this.pendingAutofill = null;
     this.rpId = '';
     this.fingerprintLoaded = false;
+    this.walletFlow = new WebVcSignin.Flow(this);
   }
 
   /**
@@ -115,6 +121,9 @@ class AuthnSurface extends WebSurface {
     super.put(title, body, ctx);
     this.actError = '';
     const view = ctx && ctx.view;
+    // A wallet page's start, poll and button (#574); any other page stops
+    // a poll the last one armed.
+    this.walletFlow.onPut(view, ctx);
     if (!view) {
       return;
     }
@@ -174,8 +183,8 @@ class AuthnSurface extends WebSurface {
     return rows.length ? rows[0] : null;
   }
 
-  // The index's operations, once.
-  private indexRows: Json[] | null = null;
+  // The index's operations, once; the wallet's runtime reads them too.
+  indexRows: Json[] | null = null;
 
   /**
    * Reads the API's index, once.
@@ -258,6 +267,29 @@ class AuthnSurface extends WebSurface {
     const answer = await this.send(String(op.path)
       .replace('{id}', encodeURIComponent(this.idHere())), body);
     await this.next(answer);
+  }
+
+  /**
+   * Draws a view an act answered in place of the page in hand, under the
+   * act's sentence (#574: a wallet sign-in's refusal), or a problem page
+   * where the answer carried none.
+   *
+   * @param json - the view, or null
+   * @param error - the sentence, English
+   * @returns nothing
+   */
+  showView(json: Json, error: string): void {
+    const page = this.find(this.surfacePath(this.env.location.pathname) ||
+                           '');
+    if (!page || !json) {
+      this.view = null;
+      this.drawProblem('Nobody was signed in', error);
+      return;
+    }
+    this.view = { page: page, query: WebPage.queryOf(this.env.location.search),
+                  json: json };
+    this.flash = error ? { error: error } : null;
+    this.drawView();
   }
 
   /**

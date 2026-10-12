@@ -1092,7 +1092,9 @@ app.use(function (req, res, next) {
   const request = {
     path: audit.redactedPath(String(req.originalUrl || '')),
     method: req.method,
-    query: req.query,
+    // And the capabilities in its query (#574): the pending sign-in, the
+    // step, the wallet's transaction.
+    query: audit.redactedQuery(req.query),
     headers: headersOf(req.headers),
     body: bodyOf(req.body)
   };

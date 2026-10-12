@@ -8,8 +8,9 @@
 // ---------------------------------------------------------------------------
 // THE SIGN-IN SURFACE'S PAGE TABLE (#571, 2026-10-12).
 //
-// Three rows in `common/web_surface.ts`'s shape — the screen, the federation
-// chooser and the forced password change — each with the `/authn-api`
+// Rows in `common/web_surface.ts`'s shape — the screen, the federation
+// chooser, the forced password change and, since #574, the wallet's start and
+// wait pages — each with the `/authn-api`
 // operation its view is the answer of. Each operation names its resource in
 // the PATH (the pending sign-in's id, the step's id), which the browser
 // reads off the location's query (`?authn=`, `?change=`) — the addresses
@@ -25,6 +26,9 @@
 import WebAuthnLogin = require('./web_authn_login');
 import WebAuthnSelect = require('./web_authn_select');
 import WebAuthnPassword = require('./web_authn_password');
+// THE WALLET'S TWO PAGES (#574), whose renderers are beside their server
+// module in `oid4vc/`.
+import WebVcSignin = require('../oid4vc/web_vc_signin');
 
 type Json = any;
 
@@ -65,6 +69,36 @@ const PAGES = [
     },
     title: function (view: Json, ctx: Json): string {
       return WebAuthnPassword.title(view, ctx);
+    } },
+  // THE WALLET SIGN-IN (#574): the start, asked with the location's
+  // `authn`/`mfa`, `siop` and `enrol`; and the wait page, whose view is the
+  // transaction's (its `state`) for the browser that started it.
+  { path: '/authn/wallet',
+    operation: function (query: Json): string {
+      const asked = ['authn', 'mfa', 'siop', 'enrol'].filter(function (name) {
+        return query[name] !== undefined && query[name] !== '';
+      }).map(function (name) {
+        return name + '=' + encodeURIComponent(String(query[name]));
+      });
+      return '/authn-api/wallet' + (asked.length ? '?' + asked.join('&')
+                                                 : '');
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.title(view, ctx);
+    } },
+  { path: '/authn/wallet/wait',
+    operation: function (query: Json): string {
+      return '/authn-api/wallet/' + encodeURIComponent(String(query.state ||
+                                                              ''));
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebVcSignin.Pages.title(view, ctx);
     } }
 ];
 

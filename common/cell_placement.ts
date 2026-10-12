@@ -174,7 +174,10 @@ const ROWS: Row[] = [
     why: 'the sign-in screen\'s acts (#571): the login name decides the ' +
          'home cell (D9), in `screenAct()`, as at the form it replaced; a ' +
          'pinned browser first, where its pending sign-in is held' },
-  { prefix: '/authn/wallet.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/authn-api/wallet', strategy: 'affinity', browser: true,
+    why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
+         'sign-in it is bound to and the binding cookie\'s hash are where ' +
+         'the browser that started it is pinned; no login name is typed' },
   { prefix: '/authn/fingerprint.js', strategy: 'local',
     why: 'a static script' },
   { prefix: '/logout', strategy: 'affinity', browser: true,
