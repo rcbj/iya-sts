@@ -843,7 +843,9 @@ do*.
   means no stream asked for that type.
 - **`GET /admin-api/caep`** and **`GET /admin-api/caep/sessions`** — the same,
   without a browser; the per-receiver rows are the `applications` member of
-  both, searched with `appq` and paged with `applicationsPage`.
+  both, searched with `appq` and paged with `applicationsPage`. On
+  `/admin/caep-sessions` and `GET /admin-api/caep/sessions` the streams table
+  is paged as well, with `streamsPage`; `streamCounts` counts the whole list.
 
 ## The settings
 

@@ -4484,9 +4484,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because a ' +
                      'session with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the sessions list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the sessions list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any CAEP event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `CAEP` setting group as /admin/caep draws it. ' +
@@ -4672,9 +4678,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because an ' +
                      'account with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the accounts list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the accounts list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any RISC event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `RISC` setting group as /admin/risc draws it. ' +
@@ -5011,7 +5023,9 @@ const SCHEMAS = {
                      'first: `state` is `dead`, `half-open`, `failing`, ' +
                      '`healthy`, `poll` or `unknown` (letters for a stream ' +
                      'this process does not hold), with its letters by ' +
-                     'cause and its dead or failing times.',
+                     'cause and its dead or failing times. Narrowed by ' +
+                     '`dlstream` and `dlcause` (a stream holding a letter ' +
+                     'of that cause) and paged by `streamsPage`.',
         items: openObject('One stream.', {}) },
       letters: { type: 'array',
         description: 'Held letters, newest first, narrowed by `dlq`, ' +
@@ -5022,8 +5036,8 @@ const SCHEMAS = {
         description: 'How many letters the narrowing matched, before paging.' },
       filter: openObject('`q`, `stream` and `cause`, each null when not ' +
                          'narrowed.', {}),
-      paging: openObject('`letters`: where in the matched list this page is.',
-                         {}),
+      paging: openObject('`letters` and `streams`: where in each narrowed ' +
+                         'list its page is.', {}),
       settings: openObject('The seven `ssf.*` settings that decide what is ' +
                            'dead-lettered and for how long.', {}),
       process: openObject(

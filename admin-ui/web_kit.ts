@@ -230,8 +230,9 @@ const LIST_PARAMS = {
   // (2026-09-14). No control on that page posts, so what spends these is the
   // links between its own tables — a stream row's letters, a cause's letters
   // — each of which keeps the rest of the view as the reader left it.
+  // `streamsPage` is the streams table's (#313), narrowed by the same two.
   '/admin/ssf/dead-letters': ['dlq', 'dlstream', 'dlcause', 'per',
-                              'lettersPage'],
+                              'lettersPage', 'streamsPage'],
   // The truststore's one list (2026-09-12). Spent by the Remove button's
   // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
   // last page there is — rather than on page 1.
@@ -278,14 +279,18 @@ const LIST_PARAMS = {
   // named apart from the CAEP page's `appq` for the same reason.
   '/admin/risc': ['acctq2', 'acctfrom'],
   '/admin/risc-accounts': ['acctq', 'per', 'accountsPage',
-                           'rappq', 'rapplicationsPage'],
+                           'rappq', 'rapplicationsPage',
+                           // The streams table's page (#313).
+                           'streamsPage'],
   '/admin/caep-sessions': ['sessq', 'per', 'sessionsPage',
                           // The per-receiver section's own search and page
                           // (2026-09-04). Carried for the reason every other
                           // list's are: a reader who narrowed that table and
                           // then opened a session should come back to what
                           // they were reading.
-                          'appq', 'applicationsPage']
+                          'appq', 'applicationsPage',
+                          // The streams table's page (#313), the third list.
+                          'streamsPage']
 };
 
 /**

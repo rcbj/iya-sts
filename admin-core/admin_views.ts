@@ -6985,10 +6985,26 @@ class AdminViews {
     });
     const page = this.pagedRows(req.query, rows,
       { name: 'letters', noun: 'dead letters' });
+    // THE STREAMS TABLE, NARROWED BY THE SAME TWO EXACT FILTERS AND PAGED
+    // (#313): a row per stream holding a letter or not delivering, however
+    // many receivers there are. `dlstream` keeps its one row and `dlcause`
+    // the streams holding a letter of that cause; `dlq` is over the letters
+    // and leaves this table whole. Filter first, then page.
+    const streamRows = (report.streams || []).filter(function (row) {
+      if (stream && row.stream_id !== stream) {
+        return false;
+      }
+      if (cause && !(row.causes && row.causes[cause] > 0)) {
+        return false;
+      }
+      return true;
+    });
+    const streamPage = this.pagedRows(req.query, streamRows,
+      { name: 'streams', noun: 'streams' });
     log.debug("Leaving AdminViews.ssfDeadLettersState(). " + rows.length +
               " match(es).");
     return { wanted: wanted, stream: stream, cause: cause, rows: rows,
-             page: page };
+             page: page, streamPage: streamPage };
   }
 
   /**
@@ -7007,7 +7023,9 @@ class AdminViews {
                totals: { held: 0 }, matched: 0,
                filter: { q: null, stream: null, cause: null },
                paging: { letters: this.pagingJson(this.pagingOf(req.query, 0,
-                 { name: 'letters', noun: 'dead letters' })) },
+                 { name: 'letters', noun: 'dead letters' })),
+                 streams: this.pagingJson(this.pagingOf(req.query, 0,
+                 { name: 'streams', noun: 'streams' })) },
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals dead-letter ' +
                      'queues.' };
@@ -7023,7 +7041,9 @@ class AdminViews {
                 cause: state.cause || null },
       matched: state.rows.length,
       letters: state.page.shown,
-      paging: { letters: this.pagingJson(state.page.paging) }
+      streams: state.streamPage.shown,
+      paging: { letters: this.pagingJson(state.page.paging),
+                streams: this.pagingJson(state.streamPage.paging) }
     });
   }
 
@@ -7137,6 +7157,42 @@ class AdminViews {
     return { wanted: wanted, matched: matched, page: page };
   }
 
+  // ---------------------------------------------------------------------------
+  // WHERE AN EVENT COULD GO, PAGED (#313).
+  //
+  // `/admin/caep-sessions` and `/admin/risc-accounts` each list every Shared
+  // Signals stream in the realm with the event types it takes, and
+  // `ssf.maxStreams` limits each receiver, not the number of receivers — so
+  // the list grows with the realm. It is the third list on each page and
+  // moves on `streamsPage`, so paging it keeps the other two where they are.
+  // The tile above the tables counts the streams that take any event of the
+  // page's family, which is a count over the WHOLE list: it is taken here,
+  // before the slice, and published as `streamCounts`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Pages the streams a CAEP or RISC report lists.
+   *
+   * @param req - the request
+   * @param report - the CAEP or RISC report
+   * @returns the counts over the whole list, and the page
+   */
+  signalStreamsState(req, report) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signalStreamsState().");
+    const all = report.streams || [];
+    const counts = {
+      total: all.length,
+      taking: all.filter(function (row) {
+        return (row.takes || []).length > 0;
+      }).length
+    };
+    const page = this.pagedRows(req.query, all,
+      { name: 'streams', noun: 'streams' });
+    log.debug("Leaving AdminViews.signalStreamsState(). " +
+              page.shown.length + " of " + all.length + ".");
+    return { counts: counts, page: page };
+  }
+
   // The reply BOTH doors answer with. `/admin/caep-sessions?format=json` and
   // GET /admin-api/caep/sessions are the same document — rule 7 — and the
   // drill- down is `?session=`, which is one operation answering two shapes for
@@ -7167,18 +7223,26 @@ class AdminViews {
     }
     const state = this.caepSessionsState(req, json);
     const appState = this.caepApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.caepSessionsJson(). The list.");
     return Object.assign({}, json, {
       filter: { sessions: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { sessions: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
       // The rows each table's page shows and how many each filter matched
-      // (#446): the page draws its two tables from this answer.
+      // (#446): the page draws its three tables from this answer.
       shown: { sessions: state.page.shown,
-               applications: appState.page.shown },
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
       matched: { sessions: state.matched.length,
-                 applications: appState.matched.length }
+                 applications: appState.matched.length,
+                 streams: streamState.page.paging.total },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -7317,16 +7381,23 @@ class AdminViews {
     }
     const state = this.riscAccountsState(req, json);
     const appState = this.riscApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.riscAccountsJson(). The list.");
     return Object.assign({}, json, {
       filter: { accounts: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { accounts: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
-      // The rows each table's page shows (#446): the page draws its two
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
+      // The rows each table's page shows (#446): the page draws its three
       // tables from this answer.
       shown: { accounts: state.page.shown,
-               applications: appState.page.shown }
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -13370,6 +13441,7 @@ export = {
   caepSessionsState: slot.forward('caepSessionsState'),
   caepApplicationsState: slot.forward('caepApplicationsState'),
   caepSessionsJson: slot.forward('caepSessionsJson'),
+  signalStreamsState: slot.forward('signalStreamsState'),
   riscJson: slot.forward('riscJson'),
   riscAccountsState: slot.forward('riscAccountsState'),
   riscApplicationsState: slot.forward('riscApplicationsState'),

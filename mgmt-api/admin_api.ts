@@ -16606,7 +16606,12 @@ class AdminApi {
           { name: 'lettersPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the matched letters. Clamped, like ' +
-                         'every page parameter here.' }
+                         'every page parameter here.' },
+          { name: 'streamsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the streams holding a letter or not ' +
+                         'delivering, after `dlstream` and `dlcause` have ' +
+                         'narrowed them. It shares `per` with the letters.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The dead-letter queues of this realm, counted, ' +
                              'and a page of their letters.',
@@ -16994,6 +16999,10 @@ class AdminApi {
                          '`per` with the register above ' +
                          'it, which is the arrangement ' +
                          'every page here that carries two lists has.' },
+          { name: 'streamsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the streams a CAEP event could go ' +
+                         'to. It shares `per` with the two lists above.' },
           { name: 'eventsPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description:
@@ -17250,6 +17259,10 @@ class AdminApi {
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the per-receiver list. It shares ' +
                          '`per` with the register above it.' },
+          { name: 'streamsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the streams a RISC event could go ' +
+                         'to. It shares `per` with the two lists above.' },
           { name: 'eventsPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description:
