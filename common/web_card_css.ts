@@ -122,6 +122,33 @@ class WebCardCss {
     '95em}';
 
   /**
+   * The OpenID4VC demonstration's pages (#582), the issuer and the bar
+   * door, which carried these in a `<style>` of their own (`vc_offers.ts`,
+   * `vc_verifier.ts`) until they became a static surface: the wider card,
+   * the links drawn as buttons, the QR pages' centred column, the
+   * Transaction Code, the URI's box and the verdict. Every rule is scoped to
+   * `.vcdemo`, the class the surface's card carries, so no other page of
+   * the card changes.
+   */
+  static readonly VC_DEMO_CSS =
+    '.card.vcdemo{width:560px}.vcdemo h1{font-size:1.3em;margin:0 0 6px}.v' +
+    'cdemo p{line-height:1.5;color:#333}.vcdemo a.cta{display:inline-block;' +
+    'margin-top:14px;margin-right:10px;padding:10px 16px;border-radius:6px;' +
+    'background:#12107c;color:#fff;text-decoration:none;font-weight:600}.vc' +
+    'demo a.cta.secondary{background:#fff;color:#12107c;border:1px solid #1' +
+    '2107c}.vcdemo p.alt{margin-top:20px;font-size:.92em;color:#555}.vcdemo' +
+    ' .center{text-align:center}.vcdemo .small{font-size:.8em;color:#777}.v' +
+    'cdemo .txcode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
+    'font-size:2.1em;letter-spacing:.28em;font-weight:700;color:#12107c;bac' +
+    'kground:#f0f0fa;border-radius:8px;padding:12px 6px;margin:6px 0 2px}.v' +
+    'cdemo .uri{word-break:break-all;font-family:ui-monospace,SFMono-Regula' +
+    'r,Menlo,monospace;font-size:.72em;color:#555;background:#fafafa;border' +
+    ':1px solid #eee;border-radius:6px;padding:8px;text-align:left}.vcdemo ' +
+    '.meta{font-size:.78em;word-break:normal}.vcdemo .meta div{margin-top:8' +
+    'px}.vcdemo p.verdict{font-weight:700}.vcdemo p.verdict.good{color:#2e7' +
+    'd32}.vcdemo p.verdict.bad{color:#b00020}.vcdemo ul{line-height:1.5}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -159,9 +186,11 @@ class WebCardCss {
     WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
     WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS +
-    // GNAP's last (#578): scoped to its own card, and after the steps'
+    // GNAP's (#578): scoped to its own card, and after the steps'
     // code field, which its own replaces.
-    WebCardCss.GNAP_CSS;
+    WebCardCss.GNAP_CSS +
+    // The OpenID4VC demonstration's last (#582), scoped to its own card.
+    WebCardCss.VC_DEMO_CSS;
 }
 
 export = WebCardCss;
