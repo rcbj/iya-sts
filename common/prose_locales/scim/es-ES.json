@@ -1,0 +1,26 @@
+{
+  "scim.doesNotDo.permissive": {
+    "en": "34742646d0317611",
+    "text": "AUTENTICA, Y NO COMPRUEBA CASI NADA. Se exige una credencial, y todos los esquemas detrás de ese requisito son permisivos: cualquier llamante puede obtener un token de acceso con cualquiera de los dos ámbitos del propio endpoint de token de este servicio con cualquier concesión, cualquier nombre de usuario con cualquier contraseña salvo \"invalid\" supera Basic, cualquier nombre de usuario supera Digest con la única contraseña compartida, y cualquiera puede registrar una clave HOBA para cualquier nombre. Es un torniquete, no una cerradura. Lo que aporta es que se puedan probar la gestión de 401, 403, desafío-respuesta y ámbitos de un cliente — nada de lo cual puede producir un endpoint abierto. No ponga este puerto en una dirección pública basándose en esto."
+  },
+  "scim.doesNotDo.permissiveOff": {
+    "en": "d13d4ee5c43db5b9",
+    "text": "AUTENTICA, Y NO COMPRUEBA CASI NADA. Se exige una credencial — salvo que aquí está desactivado actualmente, así que no se exige, y todos los esquemas detrás de ese requisito son permisivos: cualquier llamante puede obtener un token de acceso con cualquiera de los dos ámbitos del propio endpoint de token de este servicio con cualquier concesión, cualquier nombre de usuario con cualquier contraseña salvo \"invalid\" supera Basic, cualquier nombre de usuario supera Digest con la única contraseña compartida, y cualquiera puede registrar una clave HOBA para cualquier nombre. Es un torniquete, no una cerradura. Lo que aporta es que se puedan probar la gestión de 401, 403, desafío-respuesta y ámbitos de un cliente — nada de lo cual puede producir un endpoint abierto. No ponga este puerto en una dirección pública basándose en esto."
+  },
+  "auth.schemes.dpop": {
+    "en": "4a6cf765e9ede961",
+    "text": "El token de prueba de posesión que nombra la sección 2 de RFC 7644, en la forma que este servicio ya emite: un token de acceso vinculado a una clave (cnf.jkt), presentado como \"Authorization: DPoP <token>\" con una prueba DPoP reciente sobre el método y la URL. Un token vinculado a certificado de RFC 8705 es la otra forma de prueba de posesión y se respeta en la misma ruta. Lo gestiona la misma comprobación que la fila Bearer — son una credencial con dos formas de tenerla — y se lista por separado porque un cliente que lee este documento tiene derecho a saber que se entiende la forma vinculada."
+  },
+  "auth.schemes.basic": {
+    "en": "82a6bd8a34b144f8",
+    "text": "Cualquier nombre de usuario y cualquier contraseña, exactamente como aquí tiene éxito todo bind LDAP — con la única excepción de la contraseña \"invalid\", que se rechaza para que un 401 siga siendo alcanzable. La sección 2 de RFC 7644 DESACONSEJA este esquema, con esas palabras, porque se basa en un secreto simétrico relativamente estático; se implementa de todos modos porque es lo que un cliente de aprovisionamiento encuentra con más frecuencia y vale la pena poder ejecutar su gestión del 401. No se comprueba ninguna contraseña, así que lo que esto autentica es un NOMBRE, y ese nombre es lo que registra el log de auditoría."
+  },
+  "auth.policy.oauth": {
+    "en": "25657a7b65df5ecd",
+    "text": "Una credencial OAuth — un token de acceso Bearer o DPoP — puede hacer lo que dicen sus ámbitos: \"{{read}}\" para leer y \"{{write}}\" para escribir. Ninguno implica el otro, para que la gestión por parte de un cliente de una credencial de solo lectura sea algo que este servicio pueda producir realmente."
+  },
+  "auth.policy.others": {
+    "en": "e23c0683e2f710ad",
+    "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y un certificado de cliente no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba la gestión de ámbitos desactiva los otros cinco."
+  }
+}

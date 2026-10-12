@@ -1,0 +1,34 @@
+{
+  "ldap.applications.sourceOfTruth": {
+    "en": "c927447175e35efb",
+    "text": "Estas entradas SON el registro. Un ldapmodify aquí cambia lo que hacen los endpoints de protocolo — añadir un valor a oauthRedirectUri añade un URI de redirección que el modo RFC 9700 aceptará entonces por coincidencia exacta."
+  },
+  "ldap.roles.sourceOfTruth": {
+    "en": "88697020f123dac5",
+    "text": "Estas entradas SON la mitad de pertenencia del registro de roles. Un ldapmodify que añade un valor a roleMemberUser concede ese rol, y la próxima decisión de emisión se toma con él. Lo que EXIGE un rol es appRequiredRole en una entrada de aplicación bajo ou=applications, que es otro contenedor."
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "Una cartera que recoge una credencial verificable del emisor. La cartera no presenta ningún identificador de aplicación propio en ese flujo — se autentica como un cliente OAuth y se registra como tal —, así que esta familia no tiene tipo y nada la marcará nunca como vista."
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "1e1a912a88773d34",
+    "text": "EL CLIENT_ID, y el atributo identificador de tres familias: una parte que confía OpenID Connect ES un cliente OAuth, y una cartera que recoge una credencial en el emisor OpenID4VCI se autentica como uno, así que las tres declaran su nombre aquí en lugar de en tres atributos que serían tres formas de escribir un mismo hecho. Normalmente igual a appIdentifier, que es lo que escribe un avistamiento de protocolo; un SEGUNDO valor es un client_id al que esta aplicación también responde — un id por entorno — y es la razón por la que esto se acumula en lugar de asignarse. Ausente en una entrada para la que no se ha declarado ninguna familia OAuth."
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "b498dbc0da8ba7a9",
+    "text": "LA AUDIENCIA A LA QUE RESPONDE ESTA APLICACIÓN — el `aud` que lleva un token de acceso dirigido a ella, y lo que un cliente pone en el `audience` (o `resource`) de RFC 8693 sección 2.1 cuando intercambia un token para llegar a esta aplicación. Es la forma OAuth de un hecho que otras tres familias de aquí ya registran con sus propios nombres: `wstrustAppliesTo` es lo mismo en un RequestSecurityToken y `samlEntityId` es lo mismo en la AudienceRestriction de una aserción, y un atributo que contuviera los tres sería una cadena que tendría que significar lo que pidiera el último protocolo.\n\nEs DECLARADO — nadie presenta una audiencia como su propio nombre, así que nada aquí lo escribe y no puede derivarse — y es un URI y no un client_id porque eso es una audiencia: el recurso, no el cliente que lo llama. Varios valores es el caso habitual (un nombre de host por entorno), por eso se acumula.\n\n**SE LEE, LO QUE LO CONVIERTE EN LA EXCEPCIÓN** entre los atributos de declaración que tiene al lado. El intercambio de tokens BUSCA aquí una `audience` — forAudience() — para que una delegación registrada para `https://esb1.example.com` nombre la aplicación `esb1` en /admin/delegation y en su dibujo, en lugar de dibujar un recuadro para una URL que nada más en el registro menciona. Es una BÚSQUEDA y no un permiso: una audiencia que nadie registró se intercambia exactamente como antes y se registra textualmente, porque un simulador que la rechazara eliminaría un caso de prueba en lugar de añadir uno."
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "LOS SECRETOS QUE ESTE SERVICIO ACUÑÓ O RECIBIÓ. Cada valor está SELLADO con la clave de cifrado de claves dondequiera que el proceso tenga una duradera (desde el 2026-10-01), así que una lectura del directorio, una fila de base de datos y una copia de seguridad contienen texto cifrado; sin una (desarrollo) está en claro. La consola y /admin-api, tras una credencial, lo muestran abierto. Nunca se escribe en el registro de auditoría.\n\nVARIOS DESDE EL 2026-10-01, CADA UNO UN REGISTRO: {\"id\",\"secret\",\"created\",\"expires\",\"description\"}, los dos tiempos en segundos desde la época y `expires` 0 para nunca. Todo secreto no vencido autentica; el no vencido MÁS RECIENTE es con el que este servicio firma y cifra y el client_secret que devuelven RFC 7591 y 7592. Un valor simple (un ldapmodify, un set) es un secreto sin vencimiento; un set REEMPLAZA todos los secretos, y la sección Credenciales los añade, quita y rota de uno en uno, como máximo oauth2.clientSecretsMax."
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "EL URI BASE DEL QUE CUELGA CADA PERMISO QUE DEFINE ESTA APLICACIÓN, y lo que hace que un nombre de permiso sea único globalmente aquí. Un permiso se identifica con este valor seguido de su nombre — la base `https://example.com/` y el nombre `write` son el permiso `https://example.com/write` —, que es lo que un cliente pone en un `scope` y a lo que luego se DIRIGE la audiencia del token de acceso. Entra ID lo llama Application ID URI y lo escribe `api://<guid>`; la forma es la misma y nada aquí exige ese esquema.\n\nSE NORMALIZA PARA QUE TERMINE EN UN SEPARADOR cuando se escribe mediante este módulo — se añade una `/` final cuando no hay `/`, `#` ni `:` al final — porque base + nombre es una simple concatenación y `https://example.com` + `write` produciría de otro modo `https://example.comwrite`. Un `ldapmodify` llega a este atributo como a cualquier otro y no se normaliza, así que una base escrita a mano significa exactamente lo que dice.\n\nDE VALOR ÚNICO, y es el único atributo de este grupo que no podría ampliarse sin decidir algo: dos bases significarían que cada permiso de la entrada tendría dos identificadores, y la búsqueda que convierte un ámbito en una audiencia tendría que elegir uno para poner en `aud`."
+  },
+  "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
+    "en": "2d52b0e0fe8e25ca",
+    "text": "CUÁNDO SE RETIRÓ UN CONSENTIMIENTO GLOBAL, como `<when> <scope>` con el instante al milisegundo. La concesión de renovación rechaza un token de renovación concedido antes de ese momento que se apoyaba en esa anulación, incluso después de que la anulación se vuelva a añadir — una concesión retirada no revive con la siguiente. Un valor por ámbito; una retirada posterior reemplaza a la anterior. Lo escribe el registro de consentimiento y nunca un formulario."
+  }
+}
