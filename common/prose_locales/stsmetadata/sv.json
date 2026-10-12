@@ -784,12 +784,28 @@
     "text": "Avsnitt 4.1.4: samma start nådd via en applikations-URI snarare än en omdirigering i webbläsaren."
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "Avsnitt 4.1.2 och 4.1.3: GET ritar formuläret som en person skriver in en användarkod i, eller tar koden i frågesträngen för user_code_uri; POST förbrukar den. Hastighetsbegränsad per adress, och en kod är engångs och skiftlägesvikt."
+    "en": "fd269ed42ffe5f8f",
+    "text": "Avsnitt 4.1.2 och 4.1.3: sidan som en person skriver in en användarkod på, för både user_code och user_code_uri. En sida i GNAP:s interaktionsyta sedan #578: koden skickas till /gnap-api/code, som förbrukar den. Hastighetsbegränsad per adress, och en kod är engångs och skiftlägesvikt."
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "Sidan som frågar den inloggade resursägaren om klientinstansen får det den bad om, en rättighet i taget, och formuläret som besvarar det. Skyddad av sessionen och en CSRF-token. Ett godkännande kommer ihåg i samtyckesregistret när gnap.rememberApprovals är på, så att samma begäran från samma applikation inte efterfrågas två gånger. Vid en avslutning med omdirigering återvänder den till den registrerade avslutnings-URI:n med interaktionshashen; vid push POSTar den hashen till den."
+    "en": "83a294ad5bb0b18a",
+    "text": "Sidan som frågar den inloggade resursägaren om klientinstansen får det den bad om, en rättighet i taget. En sida i GNAP:s interaktionsyta sedan #578: svaret skickas till /gnap-api/approve/{id}, skyddat av sessionen och en CSRF-token. Ett godkännande kommer ihåg i samtyckesregistret när gnap.rememberApprovals är på, så att samma begäran från samma applikation inte efterfrågas två gånger. Vid en avslutning med omdirigering återvänder webbläsaren till den registrerade avslutnings-URI:n med interaktionshashen; vid push POSTas hashen till den."
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC (#578). Körmiljön och renderarna för GNAP:s interaktionssidor i en fil, byggd av build-typescript.sh (gnap/gnap-interaction-spa.js) och serverad förkomprimerad: den ritar /gnap/code och /gnap/approve/{id} från /gnap-api, skickar deras handlingar dit och ritar de sidor ett skal bär."
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC (#578). Operationerna i GNAP:s interaktions-API, var och en med den sida eller kontroll som den är dörren för (mirrors). Språkoberoende."
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC-dörr till avsnitt 4.1.2 och 4.1.3 (#578). GET svarar med användarkodssidans CSRF-token; POST förbrukar en kod — JSON, en Origin för den här tjänsten och X-CSRF-Token bunden till sts_session-kakan — och namnger godkännandesidan den leder till. Hastighetsbegränsad per adress."
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC-dörr till avsnitt 4 (#578). GET svarar med vad godkännandesidan frågar den inloggade resursägaren, som fakta, eller skickar tillbaka webbläsaren till sidan där den först måste logga in eller stega upp; POST är svaret — rättigheterna som förblev ikryssade, gränserna som de sänktes och om det ska sägas vem personen är — bundet som varje handling är, och svarar med avslutnings-URI:n att gå till eller vad som ska sägas."
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",

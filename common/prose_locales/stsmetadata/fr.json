@@ -784,12 +784,28 @@
     "text": "Section 4.1.4 : le même démarrage, atteint par une URI d’application plutôt que par une redirection du navigateur."
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "Sections 4.1.2 et 4.1.3 : GET affiche le formulaire dans lequel une personne saisit un code utilisateur, ou prend le code dans la requête pour user_code_uri ; POST le consomme. Débit limité par adresse, et un code est à usage unique et insensible à la casse."
+    "en": "fd269ed42ffe5f8f",
+    "text": "Sections 4.1.2 et 4.1.3 : la page dans laquelle une personne saisit un code utilisateur, pour user_code comme pour user_code_uri. Une page de la surface d’interaction GNAP depuis #578 : le code est envoyé à /gnap-api/code, qui le consomme. Débit limité par adresse, et un code est à usage unique et insensible à la casse."
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "La page qui demande au propriétaire de la ressource connecté si l’instance cliente peut obtenir ce qu’elle a demandé, un droit à la fois, et le formulaire qui y répond. Protégée par la session et un jeton CSRF. Une approbation est mémorisée dans le registre des consentements lorsque gnap.rememberApprovals est activé, de sorte que la même demande de la même application n’est pas posée deux fois. Pour une finalisation par redirection, elle revient à l’URI de finalisation enregistrée avec le hachage d’interaction ; pour push, elle envoie le hachage à celle-ci en POST."
+    "en": "83a294ad5bb0b18a",
+    "text": "La page qui demande au propriétaire de la ressource connecté si l’instance cliente peut obtenir ce qu’elle a demandé, un droit à la fois. Une page de la surface d’interaction GNAP depuis #578 : la réponse est envoyée à /gnap-api/approve/{id}, protégée par la session et un jeton CSRF. Une approbation est mémorisée dans le registre des consentements lorsque gnap.rememberApprovals est activé, de sorte que la même demande de la même application n’est pas posée deux fois. Pour une finalisation par redirection, le navigateur revient à l’URI de finalisation enregistrée avec le hachage d’interaction ; pour push, le hachage lui est envoyé en POST."
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC (#578). L’environnement d’exécution et les moteurs de rendu des pages d’interaction GNAP en un seul fichier, construit par build-typescript.sh (gnap/gnap-interaction-spa.js) et servi précompressé : il dessine /gnap/code et /gnap/approve/{id} à partir de /gnap-api, y envoie leurs actes, et dessine les pages que porte une coquille."
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC (#578). Les opérations de l’API d’interaction GNAP, chacune avec la page ou la commande dont elle est la porte (mirrors). Indépendante de la langue."
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC, porte des sections 4.1.2 et 4.1.3 (#578). GET renvoie le jeton CSRF de la page du code utilisateur ; POST consomme un code — en JSON, avec une Origin de ce service et un X-CSRF-Token lié au cookie sts_session — et nomme la page d’approbation à laquelle il mène. Débit limité par adresse."
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC, porte de la section 4 (#578). GET renvoie ce que la page d’approbation demande au propriétaire de la ressource connecté, sous forme de faits, ou renvoie le navigateur vers la page lorsqu’il doit d’abord se connecter ou renforcer son authentification ; POST est la réponse — les droits restés cochés, les limites telles qu’abaissées, et s’il faut dire qui il est — liée comme l’est tout acte, et renvoie l’URI de finalisation où aller ou ce qu’il faut dire."
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",

@@ -784,12 +784,28 @@
     "text": "第 4.1.4 节：通过应用 URI 而不是浏览器重定向到达的同一起点。"
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "第 4.1.2 和 4.1.3 节：GET 绘制供人输入用户代码的表单，或针对 user_code_uri 从查询中获取代码；POST 使用该代码。按地址进行速率限制，代码只能使用一次且不区分大小写。"
+    "en": "fd269ed42ffe5f8f",
+    "text": "第 4.1.2 和 4.1.3 节：供人输入用户代码的页面，user_code 和 user_code_uri 均适用。自 #578 起为 GNAP 交互界面的一个页面：代码发送到 /gnap-api/code，由其使用。按地址进行速率限制，代码只能使用一次且不区分大小写。"
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "询问已登录的资源所有者是否允许客户端实例获得其所请求内容的页面，一次一项权限，以及作出应答的表单。受会话和 CSRF 令牌保护。当 gnap.rememberApprovals 打开时，批准会记入同意登记册，因此同一应用的相同请求不会被问两次。在重定向结束时，它带着交互哈希返回到已注册的结束 URI；在推送方式下，它将哈希 POST 到该 URI。"
+    "en": "83a294ad5bb0b18a",
+    "text": "询问已登录的资源所有者是否允许客户端实例获得其所请求内容的页面，一次一项权限。自 #578 起为 GNAP 交互界面的一个页面：答复发送到 /gnap-api/approve/{id}，受会话和 CSRF 令牌保护。当 gnap.rememberApprovals 打开时，批准会记入同意登记册，因此同一应用的相同请求不会被问两次。在重定向结束时，浏览器带着交互哈希返回到已注册的结束 URI；在推送方式下，哈希被 POST 到该 URI。"
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC（#578）。GNAP 交互页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（gnap/gnap-interaction-spa.js）并以预压缩形式提供：它根据 /gnap-api 绘制 /gnap/code 和 /gnap/approve/{id}，将其操作发送到那里，并绘制外壳所携带的页面。"
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC（#578）。GNAP 交互 API 的各项操作，每项都附有它作为其入口的页面或控件（mirrors）。与语言无关。"
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC，第 4.1.2 和 4.1.3 节的入口（#578）。GET 返回用户代码页面的 CSRF 令牌；POST 使用一个代码——JSON、本服务的 Origin 以及绑定到 sts_session Cookie 的 X-CSRF-Token——并指明它通往的批准页面。按地址进行速率限制。"
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC，第 4 节的入口（#578）。GET 以事实形式返回批准页面向已登录的资源所有者询问的内容，或在必须先登录或提升认证时将浏览器送回该页面；POST 是答复——仍勾选的权限、调低后的限制以及是否说明其身份——与每个操作一样受到绑定，并返回要前往的结束 URI 或要显示的内容。"
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",

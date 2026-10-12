@@ -784,12 +784,28 @@
     "text": "Sección 4.1.4: el mismo inicio, alcanzado mediante un URI de aplicación en lugar de una redirección del navegador."
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "Secciones 4.1.2 y 4.1.3: GET dibuja el formulario en el que una persona escribe un código de usuario, o toma el código de la consulta para user_code_uri; POST lo gasta. Con límite de frecuencia por dirección; un código es de un solo uso y no distingue mayúsculas de minúsculas."
+    "en": "fd269ed42ffe5f8f",
+    "text": "Secciones 4.1.2 y 4.1.3: la página en la que una persona escribe un código de usuario, tanto para user_code como para user_code_uri. Una página de la superficie de interacción de GNAP desde #578: el código va a /gnap-api/code, que lo gasta. Con límite de frecuencia por dirección; un código es de un solo uso y no distingue mayúsculas de minúsculas."
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "La página que pregunta al propietario del recurso con sesión iniciada si la instancia de cliente puede tener lo que pidió, un derecho a la vez, y el formulario que lo responde. Protegida por la sesión y un token CSRF. Una aprobación se recuerda en el registro de consentimiento cuando gnap.rememberApprovals está activado, para que la misma solicitud de la misma aplicación no se pregunte dos veces. En un final por redirección vuelve al URI de finalización registrado con el hash de interacción; en uno por push envía el hash por POST a ese URI."
+    "en": "83a294ad5bb0b18a",
+    "text": "La página que pregunta al propietario del recurso con sesión iniciada si la instancia de cliente puede tener lo que pidió, un derecho a la vez. Una página de la superficie de interacción de GNAP desde #578: la respuesta va a /gnap-api/approve/{id}, protegida por la sesión y un token CSRF. Una aprobación se recuerda en el registro de consentimiento cuando gnap.rememberApprovals está activado, para que la misma solicitud de la misma aplicación no se pregunte dos veces. En un final por redirección el navegador vuelve al URI de finalización registrado con el hash de interacción; en uno por push el hash se le envía por POST."
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC (#578). El entorno de ejecución y los renderizadores de las páginas de interacción de GNAP en un solo archivo, generado por build-typescript.sh (gnap/gnap-interaction-spa.js) y servido precomprimido: dibuja /gnap/code y /gnap/approve/{id} a partir de /gnap-api, envía allí sus actos, y dibuja las páginas que lleva un shell."
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC (#578). Las operaciones de la API de interacción de GNAP, cada una con la página o el control del que es la puerta (mirrors). Independiente del idioma."
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC, puerta de las secciones 4.1.2 y 4.1.3 (#578). GET responde el token CSRF de la página del código de usuario; POST gasta un código — en JSON, con un Origin de este servicio y un X-CSRF-Token ligado a la cookie sts_session — y nombra la página de aprobación a la que lleva. Con límite de frecuencia por dirección."
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC, puerta de la sección 4 (#578). GET responde lo que la página de aprobación pregunta al propietario del recurso con sesión iniciada, como hechos, o devuelve el navegador a la página cuando antes debe iniciar sesión o reforzar la autenticación; POST es la respuesta — los derechos que quedan marcados, los límites tal como se rebajaron y si se dice quién es — ligada como todo acto, y responde el URI de finalización al que ir o lo que hay que decir."
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",

@@ -784,12 +784,28 @@
     "text": "Section 4.1.4: ang parehong simula na naaabot sa pamamagitan ng application URI sa halip na browser redirect."
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "Sections 4.1.2 at 4.1.3: iginuguhit ng GET ang form na pagtatayparan ng tao ng user code, o tinatanggap ang code sa query para sa user_code_uri; ginagamit ito ng POST. May rate limit bawat address, at single-use at case-folded ang code."
+    "en": "fd269ed42ffe5f8f",
+    "text": "Sections 4.1.2 at 4.1.3: ang page kung saan tina-type ng tao ang user code, para sa user_code at user_code_uri. Isang page ng interaction surface ng GNAP mula #578: ipinapadala ang code sa /gnap-api/code, na siyang gumagamit nito. May rate limit bawat address, at single-use at case-folded ang code."
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "Ang page na nagtatanong sa naka-sign-in na resource owner kung puwedeng makuha ng client instance ang hiningi nito, isang karapatan sa bawat pagkakataon, at ang form na sumasagot dito. Protektado ng session at ng isang CSRF token. Inaalala ang approval sa consent register kapag naka-on ang gnap.rememberApprovals, para hindi tanungin nang dalawang beses ang parehong request mula sa parehong application. Sa redirect finish, bumabalik ito sa nakarehistrong finish URI na may interaction hash; sa push, ipino-POST nito ang hash doon."
+    "en": "83a294ad5bb0b18a",
+    "text": "Ang page na nagtatanong sa naka-sign-in na resource owner kung puwedeng makuha ng client instance ang hiningi nito, isang karapatan sa bawat pagkakataon. Isang page ng interaction surface ng GNAP mula #578: ipinapadala ang sagot sa /gnap-api/approve/{id}, protektado ng session at ng isang CSRF token. Inaalala ang approval sa consent register kapag naka-on ang gnap.rememberApprovals, para hindi tanungin nang dalawang beses ang parehong request mula sa parehong application. Sa redirect finish, bumabalik ang browser sa nakarehistrong finish URI na may interaction hash; sa push, ipino-POST doon ang hash."
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC (#578). Ang runtime at mga renderer ng mga interaction page ng GNAP sa iisang file, binuo ng build-typescript.sh (gnap/gnap-interaction-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /gnap/code at /gnap/approve/{id} mula sa /gnap-api, doon ipinapadala ang kanilang mga act, at iginuguhit ang mga page na dala ng isang shell."
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC (#578). Ang mga operasyon ng interaction API ng GNAP, bawat isa kasama ang page o control na siyang pinto nito (mirrors). Walang wika."
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC na pinto sa sections 4.1.2 at 4.1.3 (#578). Sinasagot ng GET ang CSRF token ng user code page; ginagamit ng POST ang isang code — JSON, isang Origin ng serbisyong ito at X-CSRF-Token na nakatali sa sts_session cookie — at pinapangalanan ang approval page na pinupuntahan nito. May rate limit bawat address."
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC na pinto sa section 4 (#578). Sinasagot ng GET ang itinatanong ng approval page sa naka-sign-in na resource owner, bilang mga fact, o ibinabalik ang browser sa page kapag kailangan muna nitong mag-sign in o mag-step up; ang POST ang sagot — ang mga karapatang nanatiling naka-tick, ang mga limit ayon sa pagbaba sa mga ito, at kung sasabihin kung sino sila — nakatali gaya ng bawat act, at sinasagot ang finish URI na pupuntahan o ang sasabihin."
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",

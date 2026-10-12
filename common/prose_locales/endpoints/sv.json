@@ -79,6 +79,22 @@
     "en": "7224d2fd77b49df7",
     "text": "Resursägarens godkännande"
   },
+  "endpoints.route./gnap/interaction.js.name": {
+    "en": "50effd29342dd164",
+    "text": "Interaktionssidornas skript"
+  },
+  "endpoints.route./gnap-api.name": {
+    "en": "7a180f1f38b7e340",
+    "text": "Interaktions-API:ts index"
+  },
+  "endpoints.route./gnap-api/code.name": {
+    "en": "438612a8b0200673",
+    "text": "Ange en GNAP-användarkod"
+  },
+  "endpoints.route./gnap-api/approve/:id.name": {
+    "en": "6bde2975aeb9128a",
+    "text": "Besvara ett GNAP-godkännande"
+  },
   "endpoints.route./.well-known/gnap-as-rs.name": {
     "en": "0fd056c79efdd3a0",
     "text": "Upptäckt av resursserver"

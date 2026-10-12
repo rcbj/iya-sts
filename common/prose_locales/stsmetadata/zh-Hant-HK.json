@@ -476,12 +476,12 @@
     "text": "第 4.1.1 節：客戶端實例將資源擁有者的瀏覽器導向的 URI。它透過此程序唯一的驗證服務讓該人登入（經 GNAP 驗證的人與其他任何人取得相同的目錄項目），並導向核准頁面。"
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "第 4.1.2 與 4.1.3 節：GET 繪製讓人輸入用戶代碼的表單，或針對 user_code_uri 從查詢中取得代碼；POST 使用該代碼。依地址限制速率，且代碼只能使用一次並不分大小寫。"
+    "en": "fd269ed42ffe5f8f",
+    "text": "第 4.1.2 與 4.1.3 節：讓人輸入用戶代碼的頁面，user_code 與 user_code_uri 皆適用。自 #578 起為 GNAP 互動介面的一個頁面：代碼傳送至 /gnap-api/code，由其使用。依地址限制速率，且代碼只能使用一次並不分大小寫。"
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "詢問已登入的資源擁有者，客戶端實例是否可以取得它所要求的內容（一次一項權利）的頁面，以及回答它的表單。受工作階段與 CSRF 權杖保護。當 gnap.rememberApprovals 開啟時，核准會記錄在同意登錄中，因此同一應用程式的相同請求不會被詢問兩次。若結束方式為重新導向，則帶著互動雜湊返回已登錄的結束 URI；若為 push，則將雜湊 POST 至該 URI。"
+    "en": "83a294ad5bb0b18a",
+    "text": "詢問已登入的資源擁有者，客戶端實例是否可以取得它所要求的內容（一次一項權利）的頁面。自 #578 起為 GNAP 互動介面的一個頁面：回答傳送至 /gnap-api/approve/{id}，受工作階段與 CSRF 權杖保護。當 gnap.rememberApprovals 開啟時，核准會記錄在同意登錄中，因此同一應用程式的相同請求不會被詢問兩次。若結束方式為重新導向，瀏覽器帶著互動雜湊返回已登錄的結束 URI；若為 push，則將雜湊 POST 至該 URI。"
   },
   "stsmetadata.endpoints./gnap/resource.what": {
     "en": "f31555286ca321d5",

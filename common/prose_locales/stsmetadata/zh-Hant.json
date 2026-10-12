@@ -784,12 +784,28 @@
     "text": "第 4.1.4 節：以應用程式 URI 而非瀏覽器重新導向抵達的相同起點。"
   },
   "stsmetadata.endpoints./gnap/code.what": {
-    "en": "f99abe13be92f9b9",
-    "text": "第 4.1.2 與 4.1.3 節：GET 繪製讓人輸入使用者代碼的表單，或針對 user_code_uri 從查詢中取得代碼；POST 使用該代碼。依位址限制速率，且代碼只能使用一次並不分大小寫。"
+    "en": "fd269ed42ffe5f8f",
+    "text": "第 4.1.2 與 4.1.3 節：讓人輸入使用者代碼的頁面，user_code 與 user_code_uri 皆適用。自 #578 起為 GNAP 互動介面的一個頁面：代碼傳送至 /gnap-api/code，由其使用。依位址限制速率，且代碼只能使用一次並不分大小寫。"
   },
   "stsmetadata.endpoints./gnap/approve/:id.what": {
-    "en": "5a928ea12233d015",
-    "text": "詢問已登入的資源擁有者，用戶端執行個體是否可以取得它所要求的內容（一次一項權利）的頁面，以及回答它的表單。受工作階段與 CSRF 權杖保護。當 gnap.rememberApprovals 開啟時，核准會記錄在同意登錄中，因此同一應用程式的相同請求不會被詢問兩次。若結束方式為重新導向，則帶著互動雜湊返回已登錄的結束 URI；若為 push，則將雜湊 POST 至該 URI。"
+    "en": "83a294ad5bb0b18a",
+    "text": "詢問已登入的資源擁有者，用戶端執行個體是否可以取得它所要求的內容（一次一項權利）的頁面。自 #578 起為 GNAP 互動介面的一個頁面：回答傳送至 /gnap-api/approve/{id}，受工作階段與 CSRF 權杖保護。當 gnap.rememberApprovals 開啟時，核准會記錄在同意登錄中，因此同一應用程式的相同請求不會被詢問兩次。若結束方式為重新導向，瀏覽器帶著互動雜湊返回已登錄的結束 URI；若為 push，則將雜湊 POST 至該 URI。"
+  },
+  "stsmetadata.endpoints./gnap/interaction.js.what": {
+    "en": "e1d2c0fc5c4b35c1",
+    "text": "NON-SPEC（#578）。GNAP 互動頁面的執行階段與轉譯器合為一個檔案，由 build-typescript.sh 建置（gnap/gnap-interaction-spa.js）並以預先壓縮的形式提供：它依據 /gnap-api 繪製 /gnap/code 與 /gnap/approve/{id}，將其動作傳送至該處，並繪製外殼所攜帶的頁面。"
+  },
+  "stsmetadata.endpoints./gnap-api.what": {
+    "en": "d7b52f88b3c6cba0",
+    "text": "NON-SPEC（#578）。GNAP 互動 API 的各項操作，每項都附有它作為其入口的頁面或控制項（mirrors）。與語言無關。"
+  },
+  "stsmetadata.endpoints./gnap-api/code.what": {
+    "en": "631897d89d7ab6bb",
+    "text": "NON-SPEC，第 4.1.2 與 4.1.3 節的入口（#578）。GET 回傳使用者代碼頁面的 CSRF 權杖；POST 使用一個代碼——JSON、本服務的 Origin 以及繫結至 sts_session Cookie 的 X-CSRF-Token——並指出它通往的核准頁面。依位址限制速率。"
+  },
+  "stsmetadata.endpoints./gnap-api/approve/:id.what": {
+    "en": "61d43afe09b1ef72",
+    "text": "NON-SPEC，第 4 節的入口（#578）。GET 以事實形式回傳核准頁面向已登入的資源擁有者詢問的內容，或在必須先登入或提升驗證時將瀏覽器送回該頁面；POST 是回答——仍勾選的權利、調低後的限制，以及是否說明其身分——如同每個動作一樣受到繫結，並回傳要前往的結束 URI 或要顯示的內容。"
   },
   "stsmetadata.endpoints./.well-known/gnap-as-rs.what": {
     "en": "d35042f6613e289c",
