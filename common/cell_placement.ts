@@ -249,8 +249,6 @@ const ROWS: Row[] = [
     why: 'the device code is minted here and stamped (D10)' },
   { prefix: '/oauth2/challenge', strategy: 'local',
     why: 'an attestation challenge is valid where it is issued' },
-  { prefix: '/oauth2/commands/mock-rp', strategy: 'local',
-    why: 'a test relying party with no state of anybody\'s' },
   { prefix: '/oauth2/commands/callback', strategy: 'local',
     why: 'a Command callback token is global configuration' },
   { prefix: '/oauth2/token', strategy: 'handler',

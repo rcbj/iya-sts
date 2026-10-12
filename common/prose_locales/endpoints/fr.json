@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "Le référentiel de politiques"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "Le PEP intégré"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "Un PEP distant s’enregistre"
@@ -1678,10 +1674,6 @@
   "endpoints.route./oauth2/commands/callback.name": {
     "en": "077e67ad034f4945",
     "text": "Point de terminaison de rappel des OpenID Provider Commands"
-  },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Point de terminaison de commande de la partie de confiance fictive (pas un point de terminaison de la spécification)"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

@@ -724,8 +724,8 @@
     "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "af795b0ed0acd819",
-    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Se sirven y se listan: los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

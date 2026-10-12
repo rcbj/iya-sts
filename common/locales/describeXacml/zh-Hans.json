@@ -14,8 +14,6 @@
   "nobody": "（无——没有人持有）",
   "enforced": "上面的每个端点都要求一个<strong>客户端证书</strong>，本服务会根据其自身信任库中的锚点对其进行验证（<code>{door}</code>）。主体 DN 被解析为一个目录条目，该条目的组成员身份决定授予最后一列中的角色：<code>{userGroup}</code> 授予 <code>XACML_USER</code>，<code>{pepGroup}</code> 授予 <code>REMOTE_PEPS</code>。<strong>证书说明是谁，组说明是否允许</strong>——一张完全有效、但通用名不属于任一组的证书，会被完整认证，但仍被拒绝。",
   "notEnforced": "访问强制已<strong>关闭</strong>（<code>xacml.enforceAccess</code>），因此上面的每个端点无需凭据即可应答。最后一列中的角色是开启后所需的角色。",
-  "embedded": "嵌入式 PEP",
-  "embeddedText": "<code>{probe}</code> 询问此 PDP，然后<em>强制执行</em>应答。它是 <code>{bias}</code>：两种偏向在每个 Permit 和每个 Deny 上一致，在 Indeterminate 和 NotApplicable 上不同，这正是值得关注的情形。它无法履行的义务会把 Permit 变成拒绝，这是第 7.2 节的规定，也是各实现常常略过的部分。",
   "remote": "远程强制点",
   "remoteOn": "另一个进程中的策略强制点（PEP）在 <code>/xacml/pep/register</code> 注册，从 <code>/xacml/pep/policies</code> <strong>拉取</strong>已启用的策略，并用它自己的该引擎副本自行评估。已注册 {registered} 个。存储库的同步令牌是 <code>{syncToken}</code>；将其作为 <code>?since=</code> 传入，存储库未变化时应答 304。",
   "remoteOff": "远程策略强制点已<strong>关闭</strong>（<code>xacml.remotePeps</code>）；这三个端点应答 501。",

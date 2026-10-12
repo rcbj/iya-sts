@@ -1784,8 +1784,8 @@
     "text": "Kung saan ipo-POST ang change nudge, kung nagbigay nito ang PEP. ANG NUDGE AY HINDI KAILANMAN ANG MEKANISMO — nagpu-pull ang PEP sa sarili nitong interval at nagkakasundo nang wala ito — kaya ang wala, tinanggihan o hindi maabot na URL ay nagkakahalaga ng latency at wala nang iba."
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "Ang bias na iniuulat ng remote PEP na ginagamit nito. INIUULAT NITO, hindi kailanman itinatakda mula rito: pinamamahalaan ng xacml.pepBias ang EMBEDDED PEP sa /xacml/protected at ang control na mukhang nagtatakda ng remote ay tahimik na walang gagawin."
+    "en": "9d0aed2bdeb99a4b",
+    "text": "Ang bias na iniuulat ng remote PEP na ginagamit nito. IUULAT NITO, hindi kailanman itinatakda mula rito: sarili itong configuration ng PEP (PEP_BIAS), at ang kontrol na mukhang nagtatakda nito ay tahimik na walang gagawin."
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",

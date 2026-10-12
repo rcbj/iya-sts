@@ -388,7 +388,7 @@ class ProtocolEndpoints {
         this.socket('spiffe-broker')
       ]),
       '/admin/xacml': [
-        '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
+        '/xacml', '/xacml/pdp', '/xacml/policies',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
         '/xacml/pip'
       ].map(route),
@@ -467,7 +467,7 @@ class ProtocolEndpoints {
       ].map(route),
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
-        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
+        '/oauth2/commands/callback'
       ].map(route)
     };
   }

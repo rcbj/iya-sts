@@ -2135,10 +2135,6 @@
     "en": "e314479293ab689b",
     "text": "一個 PEM CA 證書檔案，在公開根證書與客戶端自身的 scimClientCaCertificates 之外，受每個 SCIM 客戶端的服務提供者與權杖端點信任。"
   },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "這是 PEP 的決定而非 PDP 的決定，這正是它成為設定的全部理由。XACML section 7.2 允許 PEP 採拒絕偏向（任何非 Permit 皆為拒絕）或允許偏向（任何非 Deny 皆允許），而實際部署各有不同。預設為拒絕偏向，因為保護任何東西的 PEP 都應如此；允許偏向的存在，是為了讓客戶端看到另一種選擇如何處理 Indeterminate，這正是兩者意見分歧、也是沒有人測試的情況。僅限開發模式：它唯一的讀取者 /xacml/protected 是示範端點（#585）。"
-  },
   "xacml.pepRequireCertificate|label": {
     "en": "247fadcd14dfeb45",
     "text": "註冊的 PEP 必須出示客戶端證書"
@@ -2442,10 +2438,6 @@
   "roles.remotePepGroup|description": {
     "en": "b27532805d40edd3",
     "text": "其成員擁有內建 REMOTE_PEPS 角色的目錄群組，這是三個 /xacml/pep 端點所要求的。出示經此服務「驗證」之客戶端證書的遠端 Policy Enforcement Point，是它能指名的對象；此群組的成員資格才是讓它被允許進入的條件，兩者刻意分開——證書證明身分，群組授予權限。將它設為空字串表示「沒有人」擁有此角色，這會對每個呼叫者關閉這三個端點，包括設定正確的 PEP。"
-  },
-  "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是四個 XACML 本體端點所要求的——GET /xacml、POST /xacml/pdp、GET /xacml/policies 與 GET /xacml/protected。出示經此服務「驗證」之客戶端證書的呼叫者，是它能指名的對象；此群組的成員資格才是讓它被允許進入的條件，兩者分開的理由與上方 roles.remotePepGroup 相同：證書證明身分，群組授予權限。「它是第二個群組，而不是同一個」：REMOTE_PEPS 可觸及三個 /xacml/pep 端點，這些端點提供此服務用來強制執行其自身存取控制的文件，若由一個群組同時授予兩者，允許呼叫者進入示範介面就會在無聲無息中也允許其進入那些端點。將它設為空字串表示「沒有人」擁有此角色，這會對每個呼叫者關閉這四個端點；這是移除 XACML 介面、而不必關閉 xacml.enabled 並因此一併失去嵌入式簽發與存取 PEP 的方式。"
   },
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",

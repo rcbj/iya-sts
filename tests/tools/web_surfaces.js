@@ -846,8 +846,6 @@ function descriptionCases(root) {
     metadata: 'https://sts.example/saml11/metadata?a=1&b="2"' };
   const xacmlDoc = { enabled: true,
     repository: { policies: 3, enabledPolicies: 2, root: 'root<"set">' },
-    pep: { embeddedAt: 'https://sts.example/xacml/protected',
-           bias: 'deny-biased' },
     remotePeps: { enabled: true, registered: 2, syncToken: 'tok&<1>' },
     endpoints: [
       { method: 'GET', path: '/xacml', what: 'this document',
@@ -956,7 +954,7 @@ function descriptionCases(root) {
     { label: 'XACML, off, unenforced, no root, product, in Swedish',
       path: '/xacml', ctx: tag('describeXacml', ['sv', 'en']),
       view: { kind: 'xacml', trustAnchorDoor: 'door',
-        document: Object.assign({}, xacmlDoc, { enabled: false, pep: null,
+        document: Object.assign({}, xacmlDoc, { enabled: false,
           repository: { policies: 0, enabledPolicies: 0, root: null },
           remotePeps: { enabled: false },
           access: { enforced: false } }) } },

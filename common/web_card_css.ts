@@ -61,6 +61,24 @@ class WebCardCss {
     'ter;color:#12107c}';
 
   /**
+   * The console's prose fold (`WebKit.note()`, rcbj 2026-10-12): the
+   * sign-in screen's explanations — the federation, Kerberos and wallet
+   * blurbs and the notes at its foot — are each a `<p class="note">` or,
+   * longer than a line, a `<details class="note fold">` whose summary is
+   * the first sentence. The palette is the text's own (a fold reads as the
+   * sentence it summarises), the marker the console's triangles.
+   */
+  static readonly FOLD_CSS =
+    'p.note{margin:2px 0}.fed p.note,.fed details.note{font-size:.78em;color' +
+    ':#666;margin:0 0 8px}details.fold{margin:2px 0}details.fold>summary{curs' +
+    'or:pointer;color:inherit;list-style:none;display:flex;gap:.45em;align-i' +
+    'tems:baseline}details.fold>summary::-webkit-details-marker{display:none' +
+    '}details.fold>summary::before{content:"\\25b8";flex:none;font-size:.9e' +
+    'm}details.fold[open]>summary::before{content:"\\25be"}details.fold>sum' +
+    'mary:focus-visible{outline:2px solid #555;outline-offset:2px}.foldbody{m' +
+    'argin:.3em 0 0 1.05em}';
+
+  /**
    * The WIDE card (#575): the SPNEGO sign-in's pages carry tables — the
    * service principal, the ticket's flags, the acceptor's checks — that do
    * not fit the 380-pixel card, so `.card.wide` lifts the width and every
@@ -185,7 +203,7 @@ class WebCardCss {
     '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
     'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
     'block;font-size:.75em}' +
-    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
+    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS + WebCardCss.FOLD_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
     WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS +
     // GNAP's (#578): scoped to its own card, and after the steps'

@@ -747,10 +747,6 @@
     "en": "606444be2da8fa32",
     "text": "Varje policy så som PDP:n ser den, DOKUMENTEN INRÄKNADE, med de statiska typkontrollproblemen för var och en. Dokumenten visas avsiktligt, till skillnad från de hemligheter som /admin/ldap/* döljer: en policy är en regel snarare än en inloggningsuppgift, och en regel som ingen kan läsa är en regel som ingen kan kontrollera. VEM SOM FÅR LÄSA DEN ÄR EN ANNAN FRÅGA ÄN OM DEN ÄR MASKERAD, och detta kräver XACML_USER: sedan åtkomst- och utfärdande-PEP:arna bäddades in är dessa dokument de som den här tjänsten fattar beslut om sina egna insläpp med, och att ge en anonym anropare de exakta villkoren för när den släpper in folk är inte samma handling som att publicera en demonstrationspolicy. Lagret är ou=policies i den inbäddade katalogen — den behållaren ÄR förrådet."
   },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "En resurs som den här tjänsten skyddar med sin egen PDP. Tar subject, resource och action som frågeparametrar, frågar PDP:n och UPPRÄTTHÅLLER svaret — 200 eller 403. Det är här xacml.pepBias syns: deny-biased och permit-biased är överens om varje Permit och varje Deny och skiljer sig åt för Indeterminate och NotApplicable, vilket är fallet som ingen testar. En obligation som den inte kan fullgöra förvandlar ett Permit till en nekan (avsnitt 7.2), vilket är den del som implementationer hoppar över. TVÅ GRINDAR, OM TVÅ OLIKA PERSONER: ANROPAREN behöver XACML_USER för att alls få driva den, och SUBJEKTET som namnges i ?subject= är det som PEP:n sedan upprätthåller beslutet om. Att hålla isär dem är det som låter en insläppt anropare fråga om någon som policyn nekar och se den neka — vilket är hela demonstrationen."
-  },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
     "text": "En Policy Enforcement Point i en ANNAN PROCESS meddelar att den finns, över ömsesidig TLS på samma port — server.js sätter redan requestCert: true, så detta behövde ingen ny lyssnare. DEN ENDA SLUTPUNKTEN I DEN HÄR FAMILJEN SOM BER OM EN INLOGGNINGSUPPGIFT, och den ställer en annan fråga än /xacml/pdp: inte vem beslutet gäller, utan VILKEN PEP detta är — eftersom en registrering skriver en post och anger en adress som den här tjänsten senare kommer att ringa upp. Det är en vändkors som varje annan grind här (certifikatet behöver inte kedja till något, argumentet i RFC 8705 avsnitt 3) och det är INTE det som låter en PEP upprätthålla beslut: en oregistrerad hämtar och beslutar lika bra. xacml.pepRequireCertificate stänger av den."
@@ -2782,10 +2778,6 @@
   "stsmetadata.endpoints./oauth2/commands/callback.what": {
     "en": "7573076dce7e186e",
     "text": "Dit en förlitande part POSTar resultatet av ett _async-kommando eller ber om en färsk metadata eller audit_tenant, med Bearer den callback_token som kommandot bar (#151). 204, eller RFC 6750:s fel."
-  },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, endast i utvecklingsläge (#151): en förlitande parts command_endpoint som kontrollerar en Command Token som avsnitt 9 kräver och besvarar varje konto- och tenant-kommando, strömmar inräknade; GET visar vad den håller. 404 i produktläge."
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

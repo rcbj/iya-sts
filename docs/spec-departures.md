@@ -4,8 +4,6 @@ title: Departures from the specifications
 
 # Departures from the specifications
 
-> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 This page lists every place where iya-sts's **default** behaviour departs from
 what a specification requires (MUST, SHALL, REQUIRED) or recommends (SHOULD,
 RECOMMENDED). Each row cites the clause and says three things: what the
@@ -276,7 +274,7 @@ credentials carry none needs its issuer listed in `oid4vp.statusOptionalIssuers`
 | What iya-sts does by default | What the specification says | Product mode | Changing it |
 |---|---|---|---|
 | **Different.** A request with `CombinedDecision="true"` gets an ordinary single decision. So does one with several `<Attributes>` of the same category. The Multiple Decision Profile is not implemented, and neither request is refused. | [XACML 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html) §5.42: a PDP without the Multiple Decision Profile must return Indeterminate with `processing-error` for `CombinedDecision="true"`. | Same | —. See [XACML](xacml.md). |
-| **Weaker.** The embedded access and issuance PEPs grant on Permit without checking the decision's obligations. An obligation they do not know, returned by an operator's policy, is dropped. The demo PEP at `/xacml/protected` and the remote PEP do refuse one. | [XACML 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html) §7.2: on Permit with obligations, the PEP SHALL permit access only if it understands and can discharge them. | Same | —. |
+| **Weaker.** The embedded access and issuance PEPs grant on Permit without checking the decision's obligations. An obligation they do not know, returned by an operator's policy, is dropped. The remote PEP container does refuse one. | [XACML 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html) §7.2: on Permit with obligations, the PEP SHALL permit access only if it understands and can discharge them. | Same | —. |
 | **Weaker.** A Deny from the issuance policy's risk rules is recorded, and the issuance proceeds on the roles alone. | [XACML 3.0](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html) §7.2: if the decision is Deny, the PEP SHALL deny access. | Enforced | `risk.enforceInDevelopment`, default `false`. |
 
 ## Shared Signals (SSF, CAEP, RISC)

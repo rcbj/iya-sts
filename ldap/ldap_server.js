@@ -3981,8 +3981,8 @@ function seed() {
   //
   // **A SECOND IDENTITY AND A SECOND GROUP RATHER THAN A SECOND MEMBER OF THE
   // PAIR ABOVE**, and that is the whole reason these four entries exist rather
-  // than two. `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` and
-  // `GET /xacml/protected` require `XACML_USER`; `/xacml/pep/*` requires
+  // than two. `GET /xacml`, `POST /xacml/pdp` and `GET /xacml/policies`
+  // require `XACML_USER`; `/xacml/pep/*` requires
   // `REMOTE_PEPS`, and those endpoints hand out the documents this service
   // enforces its own access with. One group granting both would make admitting
   // a caller to the demonstration surface silently admit it to those, which is
@@ -4020,8 +4020,8 @@ function seed() {
                    'client certificate whose subject common name is ' +
                    '"xacml-user-1" resolves to this entry, and its ' +
                    'membership of cn=xacml-users below is what lets it reach ' +
-                   'GET /xacml, POST /xacml/pdp, GET /xacml/policies and GET ' +
-                   '/xacml/protected. It is NOT a member of cn=remote-peps ' +
+                   'GET /xacml, POST /xacml/pdp and GET /xacml/policies. It ' +
+                   'is NOT a member of cn=remote-peps ' +
                    'and must not be made one: those three endpoints publish ' +
                    'the documents this service enforces its own access with. ' +
                    'Seeded, and authenticated by nothing until a certificate ' +
@@ -4033,10 +4033,10 @@ function seed() {
       objectClass: ['top', 'groupOfNames'],
       cn: xacmlUserGroup,
       description: 'Members hold the built-in XACML_USER role, which is what ' +
-                   'the four XACML endpoints proper require — GET /xacml, ' +
-                   'POST /xacml/pdp, GET /xacml/policies and GET ' +
-                   '/xacml/protected. The group is named by ' +
-                   'roles.xacmlUserGroup; emptying it closes those four ' +
+                   'the three XACML endpoints proper require — GET /xacml, ' +
+                   'POST /xacml/pdp and GET /xacml/policies. The group is ' +
+                   'named by roles.xacmlUserGroup; emptying it closes those ' +
+                   'three ' +
                    'endpoints to everybody, and adding a member — a person, ' +
                    'or the DN a client certificate resolves to — is how a ' +
                    'caller is admitted. It is deliberately NOT ' +

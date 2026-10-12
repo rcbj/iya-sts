@@ -747,10 +747,6 @@
     "en": "606444be2da8fa32",
     "text": "PDP 所見的每一項原則，包含文件本身，以及每項原則的靜態型別檢查問題。文件是刻意顯示的，不同於 /admin/ldap/* 所隱藏的機密：原則是規則而不是認證資訊，沒有人能讀的規則就是沒有人能檢查的規則。誰可以讀取，與是否遮蔽是不同的問題，而此端點需要 XACML_USER：自從內嵌了存取與簽發 PEP，這些文件就是本服務用來決定自身准入的文件，把它讓人進入的確切條件交給匿名呼叫端，與發布一份示範原則並不是同一回事。存放位置是內嵌目錄中的 ou=policies——該容器「就是」存放庫。"
   },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "本服務以自己的 PDP 保護的資源。以查詢參數接收 subject、resource 與 action，詢問 PDP，並「強制執行」答案——200 或 403。xacml.pepBias 的效果在這裡可見：deny-biased 與 permit-biased 在每個 Permit 與每個 Deny 上一致，而在 Indeterminate 與 NotApplicable 上不同，這正是沒有人測試的情況。無法履行的義務（obligation）會把 Permit 變成拒絕（第 7.2 節），這是實作常會略過的部分。兩道閘門，針對兩個不同的人：呼叫端需要 XACML_USER 才能驅動它，而 ?subject= 中指名的主體則是 PEP 隨後據以強制執行的對象。將兩者分開，才能讓獲准的呼叫端詢問一個原則會拒絕的人並看著它拒絕——這就是整個示範。"
-  },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
     "text": "位於「另一個程序」中的原則強制執行點（PEP）透過同一連接埠上的相互 TLS 宣告自己存在——server.js 已設定 requestCert: true，因此不需要新的接聽程式。這是此系列中唯一要求認證資訊的端點，而它問的問題與 /xacml/pdp 不同：不是決策針對誰，而是這是「哪一個」PEP——因為註冊會寫入一個項目，並提供一個本服務稍後會連線的位址。它和此處其他每道閘門一樣只是一道旋轉門（憑證不必鏈結至任何對象，即 RFC 8705 第 3 節的論點），而且它並不是讓 PEP 能夠強制執行的條件：未註冊的 PEP 一樣能拉取並做決策。xacml.pepRequireCertificate 可將其關閉。"
@@ -2782,10 +2778,6 @@
   "stsmetadata.endpoints./oauth2/commands/callback.what": {
     "en": "7573076dce7e186e",
     "text": "信賴方 POST _async 命令結果，或要求新的 metadata 或 audit_tenant 之處，以命令所承載的 callback_token 作為 Bearer（#151）。回傳 204，或 RFC 6750 的錯誤。"
-  },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "非規範，僅限開發模式（#151）：一個信賴方的 command_endpoint，依 section 9 的要求檢查 Command Token，並回應每個帳戶與租用戶命令，包括串流；GET 顯示其所保存的內容。在產品模式下回傳 404。"
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — simulerad autentiseringstjänst",
+  "shell.title": "{title} — autentiseringstjänst",
   "checkEmail": "Kolla din e-post",
   "signingInAs": "Loggar in som <code>{name}</code>",
   "secondFactorFor": "Andra faktor för <code>{name}</code>",

@@ -149,7 +149,7 @@ function nobodyElseBuilds(t) {
   t.equal(building.join(', '), '',
           'C1. no module but the builder writes a request of its own');
   ['xacml/xacml_role_pep.ts', 'xacml/xacml_access_pep.ts',
-   'xacml/xacml_risk_pep.ts', 'xacml/xacml_signal_pep.ts', 'xacml/xacml.ts',
+   'xacml/xacml_risk_pep.ts', 'xacml/xacml_signal_pep.ts',
    'xacml/xacml_admin.ts'].forEach(function (file) {
     t.check(/AuthorizationRequest/.test(statementsOf(file)),
             'C2. ' + file + ' builds through AuthorizationRequest');

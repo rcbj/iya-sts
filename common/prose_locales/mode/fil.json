@@ -724,8 +724,8 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "af795b0ed0acd819",
-    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, at /xacml/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Inihahain at inililista: ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

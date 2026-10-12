@@ -25,15 +25,16 @@
 //   RFC 9470 resource server     /oauth2/step-up/resource/{a}   peer_stepup.js
 //   GNAP resource server         /gnap/rs/resource, /spend      peer_gnap.js
 //   SSF receiver (push)          /ssf/receive                   peer_ssf.js
+//   OP Commands relying party    /oauth2/commands/mock-rp       peer_commands.js
 //
 // ---------------------------------------------------------------------------
 // TENANTS. A job starts from a known state (#586): it creates a realm,
 // configures a TENANT here for it — `PUT /peer/tenants/{id}` with the
 // realm's base URL and the anchors to trust the service's TLS with — and
 // registers what the answer describes (the tenant's entityID, return
-// addresses, signing certificate, GNAP key, push URL) as an application in
-// that realm through `/admin-api`. `tests/vendored/test_peer.js` is the
-// jobs' side of that. Every key a tenant uses is made when it is first
+// addresses, signing certificate, GNAP key, push URL, command endpoint) as
+// an application in that realm through `/admin-api`.
+// `tests/vendored/test_peer.js` is the jobs' side of that. Every key a tenant uses is made when it is first
 // configured, and kept across a reconfiguration so a registration stays
 // true.
 //
@@ -67,12 +68,14 @@ const saml = require("./peer_saml.js");
 const stepUp = require("./peer_stepup.js");
 const gnap = require("./peer_gnap.js");
 const ssf = require("./peer_ssf.js");
+const commands = require("./peer_commands.js");
 
 const log = util.logger("sts-test-peer");
 
 const MAX_TENANTS = 500;
 const MAX_EVENTS = 2000;
-const ROLES = ["saml2", "saml11", "wsfed", "step-up", "gnap", "ssf"];
+const ROLES = ["saml2", "saml11", "wsfed", "step-up", "gnap", "ssf",
+               "commands"];
 
 // ---------------------------------------------------------------------------
 // TENANTS.
@@ -132,6 +135,7 @@ function viewOf(state, tenant) {
             resourceTls: secure + "/gnap/resource" },
     ssf: { pushUrl: secure + "/ssf/push",
            audience: tenant.ssf.audience || null },
+    commands: { endpoint: secure + "/commands" },
     caPem: state.ca.certPem,
     caFile: state.caFile
   };
@@ -184,6 +188,7 @@ function configureTenant(state, id, asked) {
   if (body.ssf || !tenant.ssf) {
     ssf.configure(tenant, body.ssf);
   }
+  commands.configure(tenant);
   tenant.metadataCache = {};
   log.info("peer: tenant " + id + " configured for " + tenant.realmBase);
   log.debug("Leaving configureTenant().");
@@ -297,6 +302,14 @@ async function route(state, request) {
       log.debug("Leaving route(). SSF push.");
       return ssf.push(tenant, request);
     }
+    if (rest === "commands" && request.method === "POST") {
+      log.debug("Leaving route(). OP command.");
+      return commands.command(tenant, request);
+    }
+    if (rest === "commands" && request.method === "GET") {
+      log.debug("Leaving route(). OP command accounts.");
+      return commands.accounts(tenant, request.query);
+    }
   }
   log.debug("Leaving route(). Not found.");
   return { status: 404, body: { ok: false, error: "no route " +
@@ -306,7 +319,8 @@ async function route(state, request) {
 // Which role a path belongs to, for recording a failure that escaped it.
 function roleOf(p) {
   log.debug("Entering roleOf().");
-  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf)\b/.exec(p);
+  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf|commands)\b/
+    .exec(p);
   log.debug("Leaving roleOf().");
   return m ? m[1] : null;
 }

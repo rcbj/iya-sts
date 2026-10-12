@@ -724,8 +724,8 @@
     "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "af795b0ed0acd819",
-    "text": "Serveras och listas: kommandonas simulerade förlitande part (/oauth2/commands/mock-rp), VC-API:s testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-socket), /krb5/principals, /spnego och /spnego/protected samt /xacml/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Serveras och listas: VC-API:s testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-socket), /krb5/principals, /spnego och /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

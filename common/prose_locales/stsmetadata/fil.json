@@ -747,10 +747,6 @@
     "en": "606444be2da8fa32",
     "text": "Bawat policy ayon sa nakikita ng PDP, KASAMA ANG MGA DOKUMENTO, at ang mga static type-check problem ng bawat isa. Sadyang ipinapakita ang mga dokumento, hindi gaya ng mga secret na itinatago ng /admin/ldap/*: ang policy ay isang patakaran at hindi credential, at ang patakarang walang makabasa ay patakarang walang makasuri. IBANG TANONG KUNG SINO ANG PUWEDENG BUMASA NITO KAYSA KUNG NAKA-REDACT ITO, at nangangailangan ito ng XACML_USER: mula nang i-embed ang access at issuance PEP, ang mga dokumentong ito ang ginagamit ng serbisyong ito sa pagpapasya ng sarili nitong mga pagtanggap, at ang pagbibigay sa isang anonymous na caller ng eksaktong mga kondisyon kung kailan nito pinapapasok ang mga tao ay hindi kapareho ng paglalathala ng isang demonstration policy. Ang store ay ou=policies sa embedded directory — ang container na iyon ANG repository."
   },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "Isang resource na binabantayan ng serbisyong ito gamit ang sarili nitong PDP. Tumatanggap ng subject, resource at action bilang mga query parameter, nagtatanong sa PDP, at IPINAPATUPAD ang sagot — 200 o 403. Dito nakikita ang xacml.pepBias: nagkakasundo ang deny-biased at permit-biased sa bawat Permit at bawat Deny at nagkakaiba sa Indeterminate at NotApplicable, na siyang kasong walang sumusubok. Ang obligation na hindi nito matupad ay ginagawang pagtanggi ang isang Permit (section 7.2), na siyang bahaging nilalaktawan ng mga implementation. DALAWANG GATE, TUNGKOL SA DALAWANG MAGKAIBANG TAO: kailangan ng CALLER ang XACML_USER para mapatakbo ito, at ang SUBJECT na pinangalanan sa ?subject= ang siyang ipinapatupad ng PEP. Ang paghihiwalay sa kanila ang nagpapahintulot sa isang tinanggap na caller na magtanong tungkol sa isang taong tinatanggihan ng policy at panoorin itong tumanggi — na siyang buong demonstrasyon."
-  },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
     "text": "Isang Policy Enforcement Point sa IBANG PROCESS ang nagsasabing umiiral ito, sa mutual TLS sa parehong port na ito — itinatakda na ng server.js ang requestCert: true, kaya hindi ito nangailangan ng bagong listener. ANG NAG-IISANG ENDPOINT SA FAMILY NA ITO NA HUMIHINGI NG CREDENTIAL, at iba ang tanong nito kaysa sa /xacml/pdp: hindi kung tungkol kanino ang desisyon, kundi KUNG ALING PEP ito — dahil ang registration ay nagsusulat ng entry at nagbibigay ng address na tatawagan ng serbisyong ito sa ibang pagkakataon. Turnstile ito gaya ng bawat ibang gate dito (hindi kailangang mag-chain ang certificate sa anuman, ang argumento ng RFC 8705 section 3) at HINDI ito ang nagpapahintulot sa isang PEP na magpatupad: ang hindi nakarehistro ay nakaka-pull at nakakapagpasya rin nang kasinghusay. Pinapatay ito ng xacml.pepRequireCertificate."
@@ -2782,10 +2778,6 @@
   "stsmetadata.endpoints./oauth2/commands/callback.what": {
     "en": "7573076dce7e186e",
     "text": "Kung saan nagpo-POST ang relying party ng resulta ng _async command o humihingi ng sariwang metadata o audit_tenant, Bearer ang callback_token na dala ng command (#151). 204, o ang mga error ng RFC 6750."
-  },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, development lamang (#151): command_endpoint ng relying party na sumusuri sa Command Token ayon sa hinihingi ng section 9 at sumasagot sa bawat account at tenant command, kasama ang mga stream; ipinapakita ng GET ang hawak nito. 404 sa product mode."
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — 模擬驗證服務",
+  "shell.title": "{title} — 驗證服務",
   "checkEmail": "請查看電子郵件",
   "signingInAs": "正在以 <code>{name}</code> 身分登入",
   "secondFactorFor": "<code>{name}</code> 的第二因素",

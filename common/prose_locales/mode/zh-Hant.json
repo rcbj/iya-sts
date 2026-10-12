@@ -724,8 +724,8 @@
     "text": "示範、模擬與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "af795b0ed0acd819",
-    "text": "提供並列出：命令的模擬信賴方（/oauth2/commands/mock-rp）、VC-API 測試端點、受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端）、/krb5/principals、/spnego 與 /spnego/protected，以及 /xacml/protected。"
+    "en": "3984f2e4ba94f429",
+    "text": "提供並列出：VC-API 測試端點、受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端）、/krb5/principals、/spnego 與 /spnego/protected。"
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

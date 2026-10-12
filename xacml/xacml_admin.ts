@@ -140,7 +140,7 @@ type ActionResult = Record<string, any>;
 // The parts of `xacml.ts` that `decideJson()` asks.
 interface XacmlRoutes {
   decide(request: object): any;
-  enforce(answer: object): any;
+  enforce(answer: object, bias?: string): any;
 }
 
 // The embedded PEPs' reports about their own policies.
@@ -315,8 +315,7 @@ class XacmlAdmin {
   // /admin/xacml — SETTINGS AND WHAT THE PDP DECIDES WITH.
   // ---------------------------------------------------------------------------
   /**
-   * Describes `/admin/xacml`: whether XACML is on, the PEP bias, the policy
-   * counts, the root policy, whether the PIP has a directory, and the
+   * Describes `/admin/xacml`: whether XACML is on, the policy counts, the root policy, whether the PIP has a directory, and the
    * settings.
    *
    * @returns the overview as JSON
@@ -328,7 +327,6 @@ class XacmlAdmin {
     const root = store.root();
     const json = {
       enabled: config.value('xacml.enabled') !== false,
-      pepBias: config.value('xacml.pepBias'),
       policies: rows.length,
       enabledPolicies: rows.filter(function (one) {
         return one.enabled;
@@ -1214,7 +1212,17 @@ class XacmlAdmin {
     }
     const request = built.build();
     const answer = xacml.decide(request);
-    const enforcement = xacml.enforce(answer);
+    // WHAT A PEP WOULD DO WITH IT, under BOTH biases (#596): the setting that
+    // chose one, `xacml.pepBias`, went with the demonstration PEP it
+    // governed, and a what-if has no PEP of its own to configure. The first is
+    // deny-biased — every embedded PEP's, and the remote PEP's default — and
+    // is the one the page draws.
+    const enforcements = ['deny-biased', 'permit-biased']
+      .map(function (bias) {
+        const one = xacml.enforce(answer, bias);
+        return { allowed: one.allowed, bias: one.bias, why: one.why };
+      });
+    const enforcement = enforcements[0];
     log.debug('Leaving XacmlAdmin.decideJson(). ' + answer.decision);
     return { asked: true, subject: subject, action: action,
              resource: resource || null,
@@ -1226,8 +1234,8 @@ class XacmlAdmin {
                return one.id;
              }),
              applicablePolicies: answer.policyIdentifiers || [],
-             enforcement: { allowed: enforcement.allowed,
-                            bias: enforcement.bias, why: enforcement.why } };
+             enforcement: enforcement,
+             enforcements: enforcements };
   }
 
   /**

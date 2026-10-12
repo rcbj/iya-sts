@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "原則存放庫"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "內嵌 PEP"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "遠端 PEP 註冊"
@@ -1678,10 +1674,6 @@
   "endpoints.route./oauth2/commands/callback.name": {
     "en": "077e67ad034f4945",
     "text": "OpenID Provider Commands 回呼端點"
-  },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "模擬依賴方命令端點（非規格端點）"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

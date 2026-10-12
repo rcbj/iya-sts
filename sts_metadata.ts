@@ -3503,22 +3503,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'lets people in is not the same act as publishing a demonstration ' +
           'policy. The store is ou=policies in the embedded directory — ' +
           'that container IS the repository.' },
-  { path: '/xacml/protected', group: 'XACML', name: 'The embedded PEP',
-    specs: ['xacml30'],
-    what: 'A resource this service guards with its own PDP. Takes subject, ' +
-          'resource and action as query parameters, asks the PDP, and ' +
-          'ENFORCES the answer — 200 or 403. It is where xacml.pepBias is ' +
-          'visible: deny-biased and permit-biased agree on every Permit and ' +
-          'every Deny and differ on Indeterminate and NotApplicable, which ' +
-          'is the case nobody tests. An obligation it cannot discharge turns ' +
-          'a Permit into a refusal (section 7.2), which is the part ' +
-          'implementations skip. TWO GATES, ABOUT TWO DIFFERENT PEOPLE: the ' +
-          'CALLER needs XACML_USER to drive it at all, and the SUBJECT named ' +
-          'in ?subject= is what the PEP then enforces about. Keeping them ' +
-          'apart is what lets an admitted caller ask about somebody the ' +
-          'policy refuses and watch it refuse — which is the whole ' +
-          'demonstration.',
-    demo: true },
   { path: '/xacml/pep/register', group: 'XACML',
     name: 'A remote PEP registers', specs: ['xacml30'],
     what: 'A Policy Enforcement Point in ANOTHER PROCESS says it exists, ' +
@@ -8417,14 +8401,6 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where a relying party POSTs an _async command\'s result or asks ' +
           'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
           'the command carried (#151). 204, or RFC 6750\'s errors.' },
-  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
-    name: 'Mock relying party command endpoint (not a spec endpoint)',
-    specs: ['oidc-provider-commands'],
-    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
-          'command_endpoint that checks a Command Token as section 9 asks ' +
-          'and answers every account and tenant command, streams included; ' +
-          'GET shows what it holds. 404 in product mode.',
-    demo: true },
   { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page over JSON',
     specs: ['oidc-claims-aggregation'],

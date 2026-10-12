@@ -1,5 +1,5 @@
 {
-  "title": "允許存取？— 模擬授權伺服器",
+  "title": "允許存取？— 授權伺服器",
   "heading": "允許存取？",
   "signedInAs": "已在 <code>{base}</code> 以 <code>{username}</code> 身分登入",
   "asking": "<strong>{client}</strong> 正在要求代表您進行存取。",

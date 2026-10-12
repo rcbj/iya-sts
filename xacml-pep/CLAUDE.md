@@ -59,13 +59,24 @@ image and starts a container itself.
 
 ## Why this exists at all, which is not obvious
 
-The mock already has a PEP: `/xacml/protected`, in `xacml/xacml.ts`. It builds
-a request, asks the PDP, applies the bias and the obligation rule, and answers
-200 or 403. It is a correct implementation of section 7.2 and it demonstrates
-almost nothing about a distributed deployment, because it **shares a process
-with the PDP**. It can never be stale. It can never hold a policy the PDP no
-longer has. It can never go on enforcing while the PDP is down. It cannot
-disagree with the PDP about anything, ever.
+**IT IS THE DEMONSTRATION PEP SINCE #596 (2026-10-12; #591 P5).** The
+service had one of its own, `GET /xacml/protected` in `xacml/xacml.ts`, with
+its bias in `xacml.pepBias`: it built a request from `subject`, `resource` and
+`action`, asked the PDP, applied the bias and the obligation rule, and
+answered 200 or 403. Both were deleted, because the runtime ships no
+demonstration code, and `GET /protected` here is the same thing — the request
+through the same builder, `PEP_BIAS` as the PEP-side option, `enforce.rs` as
+the rule — so nothing in this binary changed for it. Its tests moved with it:
+`tests/vendored/sts_xacml_remote_pep.js` section 4b asserts the obligation
+rule here, on policy this container pulled. What is still in the service is
+`enforce()`, for `/admin/xacml/decide`'s what-if under both biases, held with
+`enforce.rs` to `enforcement_cases.json`.
+
+That embedded PEP was a correct implementation of section 7.2 and it
+demonstrated almost nothing about a distributed deployment, because it
+**shared a process with the PDP**. It could never be stale. It could never hold a policy the PDP no
+longer had. It could never go on enforcing while the PDP was down. It could
+not disagree with the PDP about anything, ever.
 
 Every one of those is a state a real deployment lives in, and this container
 makes all of them reachable:
@@ -208,9 +219,10 @@ program. That is the thing `tests/vendored/sts_dpop.js` refuses to do when it
 writes its
 own DPoP client rather than importing the wallet's.
 
-Written out, this PEP can run a DIFFERENT bias from the mock's embedded one, and
-the two then disagree about exactly the answers the two biases disagree about —
-which is the demonstration worth having.
+Written out, this PEP can run a DIFFERENT bias from the one the console's
+what-if draws (deny-biased; `/admin/xacml/decide`, which reports both since
+#596), and the two then disagree about exactly the answers the two biases
+disagree about — which is the demonstration worth having.
 
 **`tests/xacml_pep.js` runs both implementations over the same seven decisions
 under both biases and asserts they agree** — and asserts that the two biases
@@ -223,7 +235,9 @@ deny-unless-permit policy, which is exactly where the two biases AGREE — so wh
 it measures is the POLICY reaching this process, not the enforcement rule. The
 one state where the bias is what decides is an empty holding, and that job goes
 there on purpose by disabling every policy and watching this PEP refuse the
-admin it was permitting a second earlier.
+admin it was permitting a second earlier. The OBLIGATION rule, though, is
+driven here since #596 (section 4b), because an undischargeable obligation
+refuses a Permit under either bias.
 
 ---
 

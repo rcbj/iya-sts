@@ -724,8 +724,8 @@
     "text": "Les points de terminaison de démonstration, simulés et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "af795b0ed0acd819",
-    "text": "Servis et listés : la partie de confiance fictive des commandes (/oauth2/commands/mock-rp), les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, et /xacml/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Servis et listés : les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

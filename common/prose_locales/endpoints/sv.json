@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "Policyarkivet"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "Den inbäddade PEP:en"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "En fjärr-PEP registrerar sig"
@@ -1678,10 +1674,6 @@
   "endpoints.route./oauth2/commands/callback.name": {
     "en": "077e67ad034f4945",
     "text": "Callback-slutpunkt för OpenID Provider Commands"
-  },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Kommandoslutpunkt för låtsad förlitande part (inte en specifikationsslutpunkt)"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

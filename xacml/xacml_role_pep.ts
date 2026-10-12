@@ -90,9 +90,9 @@
 // above. A Deny, a NotApplicable and an Indeterminate are not throws — they
 // are answers, and every one of them refuses here, because the policy is
 // `deny-unless-permit` and an issuance decision must not rest on a PEP's bias.
-// `xacml.pepBias` is the EMBEDDED DEMO PEP's setting at `/xacml/protected` and
-// it is deliberately not read here: that one exists to show what bias does,
-// and this one is enforcing.
+// `xacml.pepBias` was the EMBEDDED DEMO PEP's setting at `/xacml/protected`
+// (both moved to the remote PEP in #596) and it was deliberately never read
+// here: that one existed to show what bias does, and this one is enforcing.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
