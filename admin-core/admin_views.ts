@@ -5724,7 +5724,6 @@ class AdminViews {
    */
   federationMapKey() {
     const { log, federationDiagram } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.federationMapKey().");
     const shapes = [
       { kind: 'sts', label: 'This service',
