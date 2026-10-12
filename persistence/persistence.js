@@ -1873,9 +1873,13 @@ function databaseTlsCa() {
   }
   const blocks = text.match(
     /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+  // Parsed through common/crypto.js, the one place this service reads a
+  // certificate (rule 3r); lazily, because persistence.js is required before
+  // anything else that configures and crypto.js need not be loaded yet.
+  const stsCrypto = require('../common/crypto');
   const good = blocks.filter(function (pem) {
     try {
-      return !!new (require('crypto').X509Certificate)(pem);
+      return !!stsCrypto.parseCertificate(pem);
     } catch (e) {
       // A block that does not parse is not a trust anchor; it is left out
       // here, and a file with none left is refused below.
