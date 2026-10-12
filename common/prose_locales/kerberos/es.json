@@ -19,6 +19,10 @@
     "en": "8b5e4bb62b24c1f7",
     "text": "ESTE DOMINIO DE CONFIANZA NO TIENE KDC: {{reason}}. Establezca krb5.realm en el dominio y active krb5.enabled para darle uno; el puerto 88 enruta una solicitud por el nombre de dominio Kerberos que lleva dentro."
   },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "EL KDC DE ESTE DOMINIO DE CONFIANZA ESTÁ ACTIVADO PERO NO SE PUEDE USAR: {{reason}}. Su dominio Kerberos es {{kerberosRealm}}."
+  },
   "kerberos.notes.window": {
     "en": "f23c2b84dd49da4d",
     "text": "Las claves se derivan DESPUÉS de que se establece o verifica una contraseña y tardan unas decenas de milisegundos en quedar guardadas; hasta entonces, el KDC rechaza a la persona en lugar de aceptar una clave anterior."

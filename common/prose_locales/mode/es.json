@@ -587,6 +587,18 @@
     "en": "2d0556abc166bc57",
     "text": "Nada de eso. El directorio, la base de datos de principales y el registro contienen lo que se configuró o aprovisionó, y nada más — los dos grupos de roles de XACML existen y están vacíos, y el KDC se niega a construir krbtgt o su cuenta de servicio con las contraseñas publicadas en este repositorio."
   },
+  "mode.requirements.test-double.what": {
+    "en": "f06cf29c4a61e31d",
+    "text": "El documento de metadatos del servicio indica que este servicio es un doble de pruebas"
+  },
+  "mode.requirements.test-double.development": {
+    "en": "241755f4aaf4cb6b",
+    "text": "`testDouble` es true en GET /admin-api/sts-metadata: este servicio no comprueba ninguna contraseña ni valida ningún token de acceso, y una lista de endpoints no debe leerse como una afirmación de que lo hace."
+  },
+  "mode.requirements.test-double.product": {
+    "en": "252476cbd5f62e18",
+    "text": "`testDouble` es false: las contraseñas se verifican y los tokens de acceso se validan, y el documento lo indica."
+  },
   "mode.requirements.claim-values.what": {
     "en": "3e4acbf9a020d8f8",
     "text": "Se puede inventar el valor de un claim"

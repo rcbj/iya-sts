@@ -12,12 +12,12 @@
     "text": "Desactivado: {{setting}} es 0, así que cada solicitud la responde el propio proceso frontal, en un solo hilo."
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos (STS-WORKER-0023). Las superficies alojadas van al pool de solicitudes."
+    "en": "db7b7ee1f099024a",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Las superficies alojadas van al pool de solicitudes."
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos (STS-WORKER-0023). Cada solicitud la responde el proceso frontal."
+    "en": "ced50089d8744adc",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos. Cada solicitud la responde el proceso frontal."
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

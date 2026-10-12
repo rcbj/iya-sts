@@ -156,12 +156,12 @@
     "text": "La indicación del operador cuando una carga de trabajo obtiene más de un SVID — `internal`, `external`. Se pasa tal cual a la Workload API; aquí nada la lee."
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "TRUE cuando el titular puede llamar a los métodos administrativos de la API de SPIRE Server. REGISTRADO Y NO APLICADO, como cualquier otro hecho de autorización de este servicio: ninguna llamada aquí se rechaza por no tenerlo."
+    "en": "fefc555630e7c657",
+    "text": "TRUE cuando el titular puede llamar a los métodos administrativos de la API de SPIRE Server — entradas, agentes, bundles, relaciones de federación, acuñar un SVID — por TLS mutuo. APLICADO en ambos modos: la API del servidor considera `admin` a un llamante cuando una entrada no caducada para su identidad lleva este indicador o spiffe.adminIds lo nombra, y rechaza esos métodos a un llamante remoto que no sea ninguna de las dos cosas (el llamante `local` del socket Unix privado es la otra vía de entrada). Se lee en cada llamada, así que un cambio se aplica a la siguiente."
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "TRUE cuando el titular es un servidor SPIRE downstream que puede pedir una CA intermedia (NewDownstreamX509CA). Registrado, no aplicado."
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE cuando el titular es un servidor SPIRE downstream que puede pedir una CA intermedia (NewDownstreamX509CA) y publicar una autoridad JWT o WIT. APLICADO en ambos modos: esos métodos se rechazan a un llamante que ninguna entrada no caducada marca como downstream, y el indicador no concede nada más."
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",

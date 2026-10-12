@@ -76,8 +76,8 @@
     "text": "Nombre de usuario y contraseña"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "La propia pantalla de inicio de sesión de este servicio, que no comprueba ninguna contraseña. El caso común, y a lo que recurre un mecanismo no establecido cuando nada más tiene opinión."
+    "en": "3c7b942fed61a172",
+    "text": "La propia pantalla de inicio de sesión de este servicio: un nombre de usuario y una contraseña; la contraseña se verifica en modo producto y no en modo de desarrollo. El caso común, y a lo que recurre un mecanismo no establecido cuando nada más tiene opinión."
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Ticket Kerberos (SPNEGO)"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "AUTENTICACIÓN INTEGRADA. Se envía a la persona a /authn/spnego, que responde 401 con WWW-Authenticate: Negotiate e inicia su sesión con el ticket de servicio que devuelve su cliente (RFC 4559 sobre RFC 4178 sobre RFC 4121). No se escribe nada y no se dibuja ninguna pantalla. Es el único mecanismo aquí que se basa en una credencial que este servicio verifica de verdad — todos los demás inicios de sesión aceptan el nombre que se les da — y lo que la sesión afirma luego se lee de los propios indicadores del TICKET: amr [\"pwd\"] para pre-authent, [\"hwk\"] para hw-authent, ambos para ambos, y NADA en absoluto para un ticket que no afirma ninguno. Un cliente que no puede obtener un ticket se encuentra con una página que enlaza la pantalla de inicio de sesión, porque un 401 Negotiate a secas es un callejón sin salida en todo navegador que no esté configurado para este host."
+    "en": "0f52a102d4c01229",
+    "text": "AUTENTICACIÓN INTEGRADA. Se envía a la persona a /authn/spnego, que responde 401 con WWW-Authenticate: Negotiate e inicia su sesión con el ticket de servicio que devuelve su cliente (RFC 4559 sobre RFC 4178 sobre RFC 4121). No se escribe nada y no se dibuja ninguna pantalla. Como una llave de seguridad o una billetera, se basa en una credencial que este servicio verifica en todos los modos — la contraseña de la pantalla de inicio de sesión solo se verifica en modo producto — y lo que la sesión afirma luego se lee de los propios indicadores del TICKET: amr [\"pwd\"] para pre-authent, [\"hwk\"] para hw-authent, ambos para ambos, y NADA en absoluto para un ticket que no afirma ninguno. Un cliente que no puede obtener un ticket se encuentra con una página que enlaza la pantalla de inicio de sesión, porque un 401 Negotiate a secas es un callejón sin salida en todo navegador que no esté configurado para este host."
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "QUÉ EXTREMO ES ESTE SERVICIO: service-provider (consume) o identity-provider (afirma). Una relación es una dirección — vea el encabezado."
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "Uno de saml2, saml11, wsfed, oidc, oauth2."
+    "en": "06ec8c6d5bce784c",
+    "text": "Uno de saml2, saml11, wsfed, oidc, oauth2 — los cinco protocolos de inicio de sesión — o ssf, un socio que solo envía Shared Signals y no inicia la sesión de nadie."
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "Este servicio"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "La pantalla de inicio de sesión, que no comprueba ninguna contraseña"
+    "en": "85a969d1a113b8c5",
+    "text": "La pantalla de inicio de sesión (nombre de usuario y contraseña)"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

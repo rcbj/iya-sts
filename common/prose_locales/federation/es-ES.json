@@ -3,6 +3,10 @@
     "en": "6456326e0ffdbb1e",
     "text": "Este servicio autentica a la persona y un proveedor de servicios EXTERNO consume lo que emite. Cada endpoint de protocolo aquí ya hace eso para cualquier llamante — lo que añade la relación es que el socio quede marcado como socio de federación y no como cliente de prueba, y una lista de qué atributos se le liberan."
   },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "AUTENTICACIÓN INTEGRADA. Se envía a la persona a /authn/spnego, que responde 401 con WWW-Authenticate: Negotiate e inicia su sesión con el ticket de servicio que devuelve su cliente (RFC 4559 sobre RFC 4178 sobre RFC 4121). No se escribe nada y no se dibuja ninguna pantalla. Como una llave de seguridad o una cartera, se basa en una credencial que este servicio verifica en todos los modos — la contraseña de la pantalla de inicio de sesión solo se verifica en modo producto — y lo que la sesión afirma luego se lee de los propios indicadores del TICKET: amr [\"pwd\"] para pre-authent, [\"hwk\"] para hw-authent, ambos para ambos, y NADA en absoluto para un ticket que no afirma ninguno. Un cliente que no puede obtener un ticket se encuentra con una página que enlaza la pantalla de inicio de sesión, porque un 401 Negotiate a secas es un callejón sin salida en todo navegador que no esté configurado para este host."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Cartera (OpenID4VP)"

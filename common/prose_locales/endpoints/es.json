@@ -451,6 +451,10 @@
     "en": "657c84b412c86001",
     "text": "El endpoint de recepción de Shared Signals del portal"
   },
+  "endpoints.route./portal/claim-sources/start.name": {
+    "en": "088ae53146e71c4d",
+    "text": "Fuentes de claims conectadas — asociar el navegador a una vinculación"
+  },
   "endpoints.route./portal/claim-sources/callback.name": {
     "en": "152919279ecea855",
     "text": "Fuentes de claims conectadas — la respuesta del proveedor"
