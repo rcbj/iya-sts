@@ -157,9 +157,22 @@ class CryptoMetadataPage {
         '<tr><th class="n">' + t.html('consoleCryptoMetadata.hashing') +
         '</th><td>' + self.prose(row.hashes) +
         '</td></tr>' +
+        // The keys the family holds of its own, beside the realm's signing
+        // keys (which the key-material section below draws). A family with
+        // nothing to say has no row, rather than a dash that would read as
+        // "holds no key".
+        (row.keys
+          ? '<tr><th class="n">' + t.html('consoleCryptoMetadata.keyPairs') +
+            '</th><td>' + self.prose(row.keys) + '</td></tr>'
+          : '') +
+        // A row is a list of identifiers (chips) or, for PKI and the User
+        // portal, a sentence (prose) — the report says which by carrying
+        // `how`.
         row.algorithms.map(function (group) {
-          return '<tr><th class="n">' + esc(group.what) + '</th><td>' +
-            self.chips(group.values) + '</td></tr>';
+          return '<tr><th class="n">' + self.prose(group.what) + '</th><td>' +
+            (typeof group.how === 'string' && group.how
+              ? self.prose(group.how)
+              : self.chips(group.values)) + '</td></tr>';
         }).join('') +
         '<tr><th class="n">' + t.html('consoleCryptoMetadata.envelopes') +
         '</th><td>' +

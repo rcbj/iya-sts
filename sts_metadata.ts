@@ -158,6 +158,10 @@ import version = require('./common/version');
 // here and closes no cycle.
 import StsMetadataPage = require('./admin-ui/web_sts_metadata');
 import InstanceSlot = require('./common/instance_slot');
+// Whether the document calls this service a test double is a question of the
+// mode (`describesItselfAsTestDouble()`). A LEAF library `helpers.js` loads
+// first, so requiring it here moves no route and closes no cycle.
+import mode = require('./common/mode');
 // #543: the prose this page's answer carries is translated where it is sent,
 // and the sentences made here are filled from templates `prose()` lists. A
 // top-level require is safe: `server_prose` requires only libraries the
@@ -2206,11 +2210,13 @@ const SPECS: Spec[] = [
               'client\'s to keep: reuse of a code_challenge or nonce across ' +
               'transactions (which a real server generally cannot see and a ' +
               'mock that remembers can), an unbound access token (section ' +
-              '2.2 is a SHOULD and there is deliberately no "DPoP required" ' +
-              'mode), and symmetric client authentication where 2.5 ' +
+              '2.2 is a SHOULD, so no mode requires a bound one; a realm ' +
+              'can, with oauth2.accessTokenRequireDpop or ' +
+              'oauth2.accessTokenRequireMtls), and symmetric client ' +
+              'authentication where 2.5 ' +
               'recommends asymmetric — the preference is detected, but all ' +
               'SIX methods are now genuinely verified, the three asymmetric ' +
-              'ones included. Section 4.5 Sections 2.2 and 2.3 are covered ' +
+              'ones included. Sections 2.2 and 2.3 are covered ' +
               'as far as an authorization server can cover them: BOTH ' +
               'sender-constraining mechanisms are implemented (DPoP, and RFC ' +
               '8705 certificate binding wherever the main port is TLS), the ' +
@@ -9494,6 +9500,7 @@ interface StsMetadataDeps {
   authorizationServers: typeof authorizationServers;
   cryptoMetadata: typeof cryptoMetadata;
   version: typeof version;
+  mode: typeof mode;
 }
 
 /**
@@ -9540,7 +9547,8 @@ class StsMetadata {
       admin: admin,
       authorizationServers: authorizationServers,
       cryptoMetadata: cryptoMetadata,
-      version: version
+      version: version,
+      mode: mode
     };
   }
 
@@ -9891,13 +9899,16 @@ class StsMetadata {
   }
 
   private metadataJson(base, report) {
-    const { log, config, port } = this.deps;
+    const { log, config, port, mode } = this.deps;
     const self = this;
     const APP_VERSION = this.appVersion;
     log.debug("Entering StsMetadata.metadataJson().");
     log.debug("Leaving StsMetadata.metadataJson().");
     return {
-      service: 'idptools mock Security Token Service',
+      // The service's own name since the 2026-09-15 rename (it read
+      // 'idptools mock Security Token Service', the parent project's), as
+      // the OpenAPI documents and the README spell it.
+      service: 'IYA STS — Security Token Service',
       // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
       // from the running router, so it describes the process that answered —
       // and this says which process that was. Downloaded, the two travel
@@ -9914,7 +9925,10 @@ class StsMetadata {
       issuer: base,
       wsTrustIssuer: IssuerNames.issuer(),
       port: port,
-      testDouble: true,
+      // True only where it is true: development checks no password and
+      // validates no access token; product does both. It was the literal
+      // `true` in both modes.
+      testDouble: mode.describesItselfAsTestDouble(),
       endpoints: report.rows.map(function (r) {
         const link = self.linkabilityOf(r);
         return { path: r.path, methods: r.methods, name: r.name,
@@ -9982,15 +9996,22 @@ class StsMetadata {
   }
 
 
+  // REGISTERS NOTHING SINCE THE #446 CUTOVER (2026-10-05), and kept so the
+  // composition root's `register()` call — last of all — still has something
+  // to call. `/admin/sts-metadata` is the static console's document, answered
+  // by the console's shell for every `/admin/*` path, and its data is
+  // `GET /admin-api/sts-metadata`, which `mgmt-api/admin_api.ts` registers
+  // over `pageJson()`. The page still reads the router WHEN IT IS ASKED,
+  // which is why this module stays last in `common/protocol_stack.ts`.
   /**
-   * Registers `GET /admin/sts-metadata`, last of all the routes, drawn in the
-   * console's shell.
+   * Registers nothing: the page is the static console's document and its
+   * data `GET /admin-api/sts-metadata` (`pageJson()`); kept for the
+   * composition root's last `register()` call.
    *
    * @param app - the express app
    */
   registerRoutes(app: { get: Function }): void {
-    const { log, baseUrlOf, admin } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering StsMetadata.registerRoutes().");
     log.debug("Leaving StsMetadata.registerRoutes().");
   }
@@ -10011,9 +10032,9 @@ const slot = new InstanceSlot<StsMetadata>(
   helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
-// module no longer registers anything. `common/protocol_stack.ts` calls the
-// exported `registerRoutes(app)` last, at the point in the route order where
-// requiring this module used to register the page.
+// module registers nothing. `common/protocol_stack.ts` calls the exported
+// `registerRoutes(app)` last, where requiring this module used to register
+// the page — and since #446 that call registers nothing either.
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -10029,7 +10050,8 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   /**
-   * Registers `GET /admin/sts-metadata` on the installed instance.
+   * Registers nothing (see `StsMetadata.registerRoutes()`); forwarded to
+   * the installed instance for the composition root.
    */
   registerRoutes: slot.forward('registerRoutes'),
   /**

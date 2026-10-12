@@ -398,8 +398,14 @@ const STANDARDS = [
     specs: ['RFC 9449'],
     coverage: 'full: all twelve of section 4.3\'s checks, the `cnf.jkt` ' +
               'binding on access AND refresh tokens, `dpop_jkt`, `jti` ' +
-              'replay detection and the nonce handshake in both shapes. NOT ' +
-              'required — nonce mode makes proofs fresher, not mandatory.',
+              'replay detection and the nonce handshake in both shapes. Not ' +
+              'required by default — nonce mode makes proofs fresher, not ' +
+              'mandatory — but a realm can require it: ' +
+              '`oauth2.accessTokenRequireDpop` at every resource and ' +
+              '`oauth2.refreshTokenRequireDpop` at the token endpoint, both ' +
+              'off by default. A FAPI profile requires a sender constraint, ' +
+              'DPoP or mutual TLS, and the admin console\'s and the user ' +
+              'portal\'s public clients are always DPoP-bound.',
     what: 'The sender constraint that makes a stolen access token worthless ' +
           'without the key. Its algorithm list is a FILTER over the shared ' +
           'JWS table — asymmetric, and not post-quantum — rather than a ' +
@@ -855,8 +861,9 @@ const KEY_ESTABLISHMENT: Readonly<Record<string, string>> = Object.freeze({
 // and are NOT listed: their prose is not harvested yet.
 const PROSE_ROUTES = ['/admin-api/crypto'];
 
-// One identity service's row: the four verbs, the prose, the envelopes it
-// cites from STANDARDS, and its algorithm table, read when it is called.
+// One identity service's row: the four verbs, the prose, the keys it holds
+// of its own, the envelopes it cites from STANDARDS, and its algorithm table,
+// read when it is called.
 interface Family {
   name: string;
   signs: string;
@@ -868,6 +875,50 @@ interface Family {
   whatItDoesNot?: string;
   envelopes: string[];
   algorithms: () => any[];
+}
+
+// One row of a family's algorithm table as the report carries it: a label
+// and either a list of identifiers (`values`, chips the translation never
+// touches) or a sentence (`how`, prose).
+interface AlgorithmRow {
+  what: string;
+  values: string[];
+  how?: string;
+}
+
+// A family's `algorithms()` answers its rows in TWO SHAPES, and this is the
+// one place that reads both. Most families answer a PAIR, `[label, [ids]]`;
+// PKI and the User portal answer `{ what, how }` (a sentence) or
+// `{ what, values }` (identifiers), because their rows are mostly sentences.
+// `cryptoJson()` once read every row as a pair, so each object row reached
+// the answer as `{}` — a label-less, value-less row the page drew as an
+// empty header beside a dash — and `prose()` skipped them, so nothing had
+// failed. Both now go through this. `computed` (a sentence made from another
+// module's table or a setting, not written in this file) is `prose()`'s
+// business and is not carried.
+/**
+ * Reads one algorithm-table row in either shape a family answers.
+ *
+ * @param row - a `[label, values]` pair or a `{ what, values | how }` object
+ * @returns the row as the report carries it, and whether its sentence is
+ *   this file's prose
+ */
+function algorithmRow(row: any): { row: AlgorithmRow, computed: boolean } {
+  helpers.log.debug("Entering algorithmRow().");
+  if (Array.isArray(row)) {
+    helpers.log.debug("Leaving algorithmRow(). A pair.");
+    return { row: { what: String(row[0]), values: (row[1] || []).slice(0) },
+             computed: false };
+  }
+  const out: AlgorithmRow = {
+    what: String((row && row.what) || ''),
+    values: Array.isArray(row && row.values) ? row.values.slice(0) : []
+  };
+  if (row && typeof row.how === 'string') {
+    out.how = row.how;
+  }
+  helpers.log.debug("Leaving algorithmRow(). An object.");
+  return { row: out, computed: !!(row && row.computed) };
 }
 
 // Everything a `CryptoMetadata` reads. Named for the modules, because what
@@ -922,6 +973,7 @@ interface CryptoMetadataDeps {
   loadEstCodec: () => any;
   loadEstKeyMaterial: () => any;
   loadScepCms: () => any;
+  loadFederation: () => any;
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,18 +1054,18 @@ class CryptoMetadata {
       helpers.log.debug("Leaving isProse().");
       return /\b[a-z]{4,}\b/.test(String(text || '').replace(/`[^`]*`/g, ''));
     };
-    // Only a PAIR reaches the report (`cryptoJson()` reads `pair[0]` and
-    // `pair[1]`), so only a pair's label is harvested.
+    // Every row, in either shape, read the way `cryptoJson()` reads it. A
+    // row's `how` is harvested unless it is `computed` — made from another
+    // module's table or a setting, so a value of this process rather than a
+    // sentence of this file.
     const tables = instance.families.map(function (row) {
-      return row.algorithms().filter(function (pair) {
-        return Array.isArray(pair);
-      });
+      return row.algorithms().map(algorithmRow);
     });
     const chips = new Set<string>();
     tables.forEach(function (table) {
-      table.forEach(function (pair) {
-        (pair[1] || []).forEach(function (one) {
-          chips.add(String(one));
+      table.forEach(function (one) {
+        one.row.values.forEach(function (value) {
+          chips.add(String(value));
         });
       });
     });
@@ -1021,10 +1073,13 @@ class CryptoMetadata {
       return {
         key: slug(row.name),
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
-        decrypts: row.decrypts, hashes: row.hashes,
+        decrypts: row.decrypts, hashes: row.hashes, keys: row.keys || '',
         whatItDoesNot: row.whatItDoesNot || '',
-        algorithms: tables[i].map(function (pair) {
-          return { what: chips.has(String(pair[0])) ? '' : pair[0] };
+        algorithms: tables[i].map(function (one) {
+          return {
+            what: chips.has(one.row.what) ? '' : one.row.what,
+            how: one.computed ? '' : (one.row.how || '')
+          };
         })
       };
     });
@@ -1040,7 +1095,7 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'whatItDoesNot', 'what']),
+               'keys', 'whatItDoesNot', 'what', 'how']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),
@@ -1160,6 +1215,9 @@ class CryptoMetadata {
       },
       loadScepCms: function () {
         return require('../scep/scep_cms');
+      },
+      loadFederation: function () {
+        return require('../federation/federation');
       }
     };
   }
@@ -1255,9 +1313,9 @@ class CryptoMetadata {
   //
   // An empty string for a verb means this service does not do it in that
   // family, and every one of those is a documented non-goal rather than an
-  // oversight — `federation/CLAUDE.md` on decrypting a partner's assertion
-  // (`saml/CLAUDE.md` on verifying an AuthnRequest signature was the other,
-  // until #37 reversed it on 2026-09-17). The page prints
+  // oversight (federation's decrypting a partner's assertion was one until
+  // #168 reversed it on 2026-09-23, and SAML 2.0's verifying an AuthnRequest
+  // signature until #37 on 2026-09-17). The page prints
   // them as "—" and the `whatItDoesNot` line beside them says which.
   // ---------------------------------------------------------------------------
   private buildFamilies(): Family[] {
@@ -1266,7 +1324,7 @@ class CryptoMetadata {
             applicationRegistry, tlsServer, xmldsig, scimAuth, ssfEvents,
             ssfAuth, pki, loadRevocationStatus, loadGnapKeys,
             loadGnapTokens, loadAcmeJws, loadEstCodec, loadEstKeyMaterial,
-            loadScepCms } = this.deps;
+            loadScepCms, loadFederation } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.buildFamilies().");
     log.debug("Leaving CryptoMetadata.buildFamilies().");
@@ -1369,14 +1427,26 @@ class CryptoMetadata {
                    'common/vendored/x509.js, the parent project\'s own PKI ' +
                    'code, byte-identical. One encoder for this service and ' +
                    'for that project\'s PKI / X.509 page.' },
+            // THE TWO LISTS ARE IDENTIFIERS, so they are `values` — chips the
+            // translation never touches — and the weak ones are a list of
+            // their own rather than an English suffix on a chip.
             { what: 'CA key algorithms offered',
-              how: report.keyAlgorithms.map(function (one) { return one.id; })
-                .join(', ') },
+              values: report.keyAlgorithms.map(function (one) {
+                return one.id;
+              }) },
             { what: 'Certificate signature algorithms offered',
-              how: report.signatureAlgorithms.map(function (one) {
-                return one.id + (one.weak ? ' (weak, on purpose)' : '');
-              }).join(', ') },
-            { what: 'The three tiers',
+              values: report.signatureAlgorithms.map(function (one) {
+                return one.id;
+              }) },
+            { what: 'Of those, offered on purpose and marked weak',
+              values: report.signatureAlgorithms.filter(function (one) {
+                return one.weak;
+              }).map(function (one) {
+                return one.id;
+              }) },
+            // `computed`: the sentence is made from `pki.js`'s tier table, not
+            // written here, so `prose()` does not harvest it.
+            { what: 'The three tiers', computed: true,
               how: report.tiers.map(function (one) {
                 return one.label + ' (pathLen ' +
                   (one.pathLen === null || one.pathLen === undefined
@@ -1409,7 +1479,7 @@ class CryptoMetadata {
             // that performs the check now, which is this page's rule, so it
             // names the policy in force rather than a policy somebody once
             // wrote down.
-            { what: 'Revocation checked',
+            { what: 'Revocation checked', computed: true,
               how:
                 loadRevocationStatus().describePolicy().sentence },
             { what: 'Revocation check — how a foreign CRL is trusted',
@@ -1462,7 +1532,8 @@ class CryptoMetadata {
                    'its issuers fetched from its own caIssuers address. A ' +
                    'bare key with no certificate has nothing to check and is ' +
                    'reported as such.' },
-            { what: 'Where the CA private keys live', how: report.residency }
+            { what: 'Where the CA private keys live', computed: true,
+              how: report.residency }
           ];
         }
       },
@@ -1833,29 +1904,71 @@ class CryptoMetadata {
       { name: 'Federation',
         signs: 'The SAML 2.0 `<AuthnRequest>` it sends a foreign identity ' +
                'provider, enveloped, RSA-SHA256 over exclusive c14n — the ' +
-               'same signer every other document here goes through.',
+               'same signer every other document here goes through — and ' +
+               'the `<LogoutRequest>` that tells a partner of a sign-out ' +
+               'here, enveloped or as the Redirect binding\'s detached ' +
+               'query signature.',
         verifies: 'THE WHOLE POINT OF THE FEATURE. A partner\'s SAML ' +
                   'Response and the Assertion inside it, each checked ' +
                   'SEPARATELY and each against the certificate configured on ' +
                   'the relationship — never against a certificate the ' +
                   'document carries in its own `ds:KeyInfo`, which is the ' +
                   'check a naive implementation skips. A partner\'s ID Token ' +
-                  'as an ordinary JWS against the partner\'s published keys.',
+                  'as an ordinary JWS against the partner\'s published keys. ' +
+                  'A partner\'s SIGN-OUT — a SAML `<LogoutRequest>` or a ' +
+                  'Back-Channel Logout Token — against the same configured ' +
+                  'keys, and refused unsigned unless the relationship turns ' +
+                  '`fedRequireSignedLogout` off, which only development ' +
+                  'allows.',
         encrypts: '',
-        decrypts: '',
+        // Reversed by #168 (2026-09-23): this was empty, and the row said
+        // the feature decrypted nothing a partner sent.
+        decrypts: 'What a partner encrypts to the relationship\'s own ' +
+                  'key: an `<EncryptedAssertion>`, an `<EncryptedID>` or ' +
+                  '`<EncryptedAttribute>` inside a verified assertion or a ' +
+                  '`<LogoutRequest>`, a WS-Federation token, and a JWE ID ' +
+                  'Token or Logout Token — under exactly the one ' +
+                  'key-management and one content-encryption algorithm the ' +
+                  'relationship accepts. The assertion\'s signature is ' +
+                  'verified on its plaintext and the Response\'s on the ' +
+                  'ciphertext as it arrived; a JWE must hold a signed JWT. ' +
+                  'Every decryption failure is one answer, so the ACS is no ' +
+                  'oracle.',
         hashes: 'Whatever the partner\'s `DigestMethod` names, out of the ' +
                 'vendored table below.',
-        whatItDoesNot: 'It does not decrypt an assertion a partner ' +
-                       'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+        keys: 'One encryption key pair per SAML 2.0, WS-Federation or ' +
+              'OpenID Connect relationship, made when the relationship is ' +
+              'created: RSA 3072 or EC P-256 under the realm\'s ' +
+              'Intermediate, or for OpenID Connect X-Wing or ML-KEM-768, ' +
+              'which carry no certificate. Its private half is sealed under ' +
+              'the key-encryption key wherever keys persist; a rotation ' +
+              'keeps the one it replaced for ' +
+              '`federation.encryptionKeyGraceS`, and only the current key ' +
+              'is published. What it signs, it signs with the realm\'s ' +
+              'signing key.',
+        // #167 and #168 (2026-09-23) reversed both halves of what this line
+        // said — that the feature decrypted no assertion and consumed no
+        // sign-out.
+        whatItDoesNot: 'It encrypts nothing it sends, and it polls no ' +
+                       'partner about a session: what reaches a session ' +
+                       'after sign-in is the partner\'s sign-out, which ' +
+                       'ends it, and the SAML `SessionNotOnOrAfter` it ' +
+                       'sent at sign-in, which bounds it. In product mode ' +
+                       'it refuses a plaintext assertion that crosses the ' +
+                       'browser unless the relationship sets ' +
+                       '`fedAllowUnencrypted`; AES-CBC and RSA PKCS #1 ' +
+                       'v1.5 are refused in every mode. ' +
+                       'THE GATE IS ON THE SIGNER AND ON THE ' +
                        'SUBJECT (#109): past a verified signature only the ' +
                        'person the partner\'s subject is linked to is ' +
                        'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
-        envelopes: ['xmldsig', 'c14n', 'jws'],
+        envelopes: ['xmldsig', 'xmlenc', 'c14n', 'jws', 'jwe'],
         algorithms: function () {
           log.debug("Entering algorithms().");
+          // Read from the register that enforces them, like every row here.
+          const federation = loadFederation();
           log.debug("Leaving algorithms().");
           return [
             ['Outbound request signature',
@@ -1865,7 +1978,16 @@ class CryptoMetadata {
                function (row) {
                  return row.uri;
                })],
-            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS]
+            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS],
+            ['Encryption key types', federation.ENCRYPTION_KEY_TYPES],
+            ['XML Encryption key management, one of',
+             federation.XML_KEY_MANAGEMENT],
+            ['XML Encryption content encryption, one of',
+             federation.XML_CONTENT_ENCRYPTION],
+            ['JWE key management, one of', federation.JOSE_KEY_MANAGEMENT],
+            ['JWE content encryption, one of',
+             federation.JOSE_CONTENT_ENCRYPTION],
+            ['Refused in every mode', federation.REFUSED_ALGORITHMS]
           ];
         } },
 
@@ -1995,16 +2117,26 @@ class CryptoMetadata {
                'or 2.0, through the shared signer.',
         verifies: 'It READS a requester\'s `<wsse:Security>` credential and ' +
                   'the `<ds:X509Certificate>` in a signed request — the ' +
-                  'latter to find out who to ENCRYPT to. It checks no ' +
-                  'password behind it.',
+                  'latter to find out who to ENCRYPT to. In product mode a ' +
+                  'UsernameToken\'s password is verified against the ' +
+                  'person\'s `userPassword`, or an application\'s client ' +
+                  'secrets; development believes it, except the reserved ' +
+                  '`invalid`.',
         encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
                   'certificate found in the request signature. Same two ' +
                   'tables as SAML 2.0, because it is the same code — ' +
                   '`saml/saml2.ts` re-exports it.',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
-        whatItDoesNot: 'It polices no delegation: an RST asking for a token ' +
-                       'for somebody else is answered. And it produces no ' +
+        // "It polices no delegation" until #543's review: #108 and #186 put
+        // `OnBehalfOf` and `ActAs` under the delegation policy.
+        whatItDoesNot: 'It does not answer every request for a token for ' +
+                       'somebody else: `OnBehalfOf` (impersonation) and ' +
+                       '`ActAs` (delegation) are decided by the issuance ' +
+                       'policy over the delegation controls on the ' +
+                       'requester\'s and the subject\'s entries — refused ' +
+                       'in product, recorded as what would have been ' +
+                       'refused in development. And it produces no ' +
                        'signed SOAP envelope of its own — see WS-Security ' +
                        'below, which is the row that says what this service ' +
                        'does and does not do with that specification.',
@@ -2897,10 +3029,16 @@ class CryptoMetadata {
       // otherwise render as a dead cross-reference.
       envelopes: []
     };
+    // The dedupe compares the ENTRY it pushes. It compared the bare key
+    // against entries of the form 'family → key', which never matched, so
+    // a family listing one unknown envelope twice was reported twice. Two
+    // families citing the same unknown key are still two entries: each is
+    // a row to fix.
     self.families.forEach(function (row) {
       (row.envelopes || []).forEach(function (key) {
-        if (known.indexOf(key) < 0 && report.envelopes.indexOf(key) < 0) {
-          report.envelopes.push(row.name + ' → ' + key);
+        const entry = row.name + ' → ' + key;
+        if (known.indexOf(key) < 0 && report.envelopes.indexOf(entry) < 0) {
+          report.envelopes.push(entry);
         }
       });
     });
@@ -3807,10 +3945,14 @@ class CryptoMetadata {
           signs: row.signs, verifies: row.verifies,
           encrypts: row.encrypts, decrypts: row.decrypts,
           hashes: row.hashes,
+          // The keys the family holds OF ITS OWN, beside the realm's signing
+          // keys — written by eight families and carried by none until #543's
+          // review found it. Empty where the family has nothing to say.
+          keys: row.keys || '',
           whatItDoesNot: row.whatItDoesNot,
           envelopes: row.envelopes.slice(0),
-          algorithms: row.algorithms().map(function (pair) {
-            return { what: pair[0], values: pair[1] };
+          algorithms: row.algorithms().map(function (one) {
+            return algorithmRow(one).row;
           })
         };
       }),

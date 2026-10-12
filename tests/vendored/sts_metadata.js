@@ -119,12 +119,21 @@ async function theDocumentIsServed(consoleClient) {
     (doc && doc.endpoints ? doc.endpoints.length : "none"));
   assert.ok(Array.isArray(doc.specifications) && doc.specifications.length > 10,
     "and the specifications it implements.");
-  assert.strictEqual(doc.testDouble, true,
-    "it must say it is a test double. A page describing this service as an " +
-        "implementation of " +
-    "twenty specifications, without saying it checks no passwords and " +
-        "validates no access tokens, " +
-    "would be the most misleading thing in the repository.");
+  // `testDouble` FOLLOWS THE MODE (#543's review): it was the literal `true`
+  // and said so in product mode too, where passwords are verified. So the
+  // mode is asked of the service (`GET /admin-api/mode`, the console's
+  // Server mode page) rather than assumed.
+  const modeAnswer = await consoleClient.get("/admin/mode");
+  assert.ok(modeAnswer.status === 200 && modeAnswer.body &&
+            typeof modeAnswer.body.isProduct === "boolean",
+            "GET /admin-api/mode should answer 200 with isProduct; got " +
+            modeAnswer.status);
+  assert.strictEqual(doc.testDouble, !modeAnswer.body.isProduct,
+    "in development mode it must say it is a test double: a page " +
+    "describing this service as an implementation of twenty " +
+    "specifications, without saying it checks no passwords and validates " +
+    "no access tokens, would be the most misleading thing in the " +
+    "repository. In product mode, which checks both, it must not.");
 
   // THE ADDRESS ANSWERS THE CONSOLE'S DOCUMENT, as HTML: the static console
   // (#446) — a whole document that loads its one script from this origin.

@@ -604,6 +604,25 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service DESCRIBE ITSELF as a test double? (#543's review.) The
+// service metadata document (`GET /admin-api/sts-metadata`) carries a
+// `testDouble` member so that a reader of an endpoint list cannot take it for
+// a claim that every one of those endpoints checks what it is handed. It was
+// the literal `true` and said so in product mode too, where passwords are
+// verified and access tokens validated — the one place the document was
+// wrong about the service that served it.
+/**
+ * Tells whether the service metadata document describes this service as a
+ * test double: one that checks no password and validates no access token.
+ *
+ * @returns true in development mode
+ */
+function describesItselfAsTestDouble() {
+  log.debug("Entering describesItselfAsTestDouble().");
+  log.debug("Leaving describesItselfAsTestDouble().");
+  return !isProduct();
+}
+
 // Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
 // Product keeps a key set for as long as the store does, so a key that is
 // never replaced is a key whose compromise never ends; each unit gets a
@@ -2805,6 +2824,15 @@ const REQUIREMENTS = [
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
+  { id: 'test-double',
+    what: 'The service metadata document says this service is a test double',
+    development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
+                 'service checks no password and validates no access ' +
+                 'token, and an endpoint list must not read as a claim that ' +
+                 'it does.',
+    product: '`testDouble` is false: passwords are verified and access ' +
+             'tokens validated, and the document says so.',
+    where: 'sts_metadata.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -3895,6 +3923,7 @@ module.exports = {
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
+  describesItselfAsTestDouble: describesItselfAsTestDouble,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
