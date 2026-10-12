@@ -23,9 +23,9 @@
 //      prefers JSON answers the same; `*/*` and `?format=html` with an
 //      `Accept` of JSON answer the shell.
 //   4. Each family's `description.js` is served as a script.
-//   5. In product (#585) the SAML views name no mock service provider or
-//      relying party and the XACML document no embedded PEP; in
-//      development they do.
+//   5. The SAML views name no mock service provider or relying party in
+//      either mode (they were deleted, #592), and in product (#585) the
+//      XACML document names no embedded PEP; in development it does.
 //   6. The protocol endpoints beneath are not converted: the bare
 //      `/saml2/ars` and `/saml11/responder` GETs are still drawn by the
 //      server under `script-src 'none'`, and the metadata, SCIM discovery
@@ -230,22 +230,23 @@ function childMain() {
     const devSaml2 = json(await get('/saml2?format=json'));
     const devSaml11 = json(await get('/saml11?format=json'));
     const devXacml = json(await get('/xacml?format=json'));
-    note(devSaml2 && devSaml2.paths.sp === '/saml2/sp' && devSaml11 &&
-         devSaml11.paths.rp === '/saml11/rp' && devXacml && devXacml.pep,
-         '5a. development: the mock SP, the mock RP and the embedded PEP ' +
-         'are listed', JSON.stringify([devSaml2 && devSaml2.paths,
-                                       devSaml11 && devSaml11.paths]));
+    note(devSaml2 && !('sp' in devSaml2.paths) && devSaml11 &&
+         !('rp' in devSaml11.paths) && devXacml && devXacml.pep,
+         '5a. development: the embedded PEP is listed, and no mock SP or ' +
+         'RP (#592)', JSON.stringify([devSaml2 && devSaml2.paths,
+                                      devSaml11 && devSaml11.paths]));
     config.setOverride('global.mode', 'product');
     const prodSaml2 = json(await get('/saml2?format=json'));
     const prodSaml11 = json(await get('/saml11?format=json'));
     const prodXacml = json(await get('/xacml?format=json'));
     const prodShell = stateOf((await get('/saml2')).text);
     config.clearOverride('global.mode');
-    note(prodSaml2 && prodSaml2.paths.sp === null && prodSaml11 &&
-         prodSaml11.paths.rp === null && prodXacml && prodXacml.pep === null &&
+    note(prodSaml2 && !('sp' in prodSaml2.paths) && prodSaml11 &&
+         !('rp' in prodSaml11.paths) && prodXacml &&
+         prodXacml.pep === null &&
          !(prodXacml.endpoints || []).some(function (row) {
            return row.path === '/xacml/protected';
-         }) && prodShell && prodShell.view.paths.sp === null,
+         }) && prodShell && !('sp' in prodShell.view.paths),
          '5b. product: none of them is listed, in the JSON or the shell',
          JSON.stringify([prodSaml2 && prodSaml2.paths,
                          prodSaml11 && prodSaml11.paths,

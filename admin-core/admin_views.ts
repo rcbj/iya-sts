@@ -8576,10 +8576,7 @@ class AdminViews {
           mdqRefusedPaging: refused.paging,
           // The kind the applications page files these entries under, for
           // the page's link to them (#446).
-          kind: SAML2_SP_KIND,
-          // The mock service provider, where this realm is served it
-          // (#585): the page links it only then.
-          mockServiceProvider: mode.servesDemoEndpoints() ? '/saml2/sp' : null
+          kind: SAML2_SP_KIND
       };
       }())
     };
@@ -8923,9 +8920,7 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles,
-          // The mock relying party, where this realm is served it (#585).
-          mockRelyingParty: mode.servesDemoEndpoints() ? '/saml11/rp' : null
+          profiles: profiles
       });
       }())
     };

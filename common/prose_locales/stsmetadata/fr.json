@@ -248,8 +248,8 @@
     "text": "partial : HTTP Redirect (section 3.4) avec l’encodage DEFLATE et la signature détachée dans la chaîne de requête de 3.4.4.1, HTTP POST (3.5), HTTP Artifact (3.6) avec l’artefact de type 0x0004 et la règle d’usage unique de 3.6.4.1, et SOAP sur HTTP (3.2.3) pour le canal arrière de résolution d’artefacts, dont l’appelant est AUTHENTIFIÉ (un ArtifactResolve signé ou son certificat enregistré comme certificat client TLS) et doit être le fournisseur de services auquel l’artefact a été émis ; et HTTP-POST-SimpleSign (le binding SimpleSign d’OASIS) dans les deux sens, publié dans les métadonnées. PAS ici : PAOS (3.3), refusé nommément plutôt que traité discrètement via POST, et le binding URI (3.7). La signature de requête d’un fournisseur de services — la signature de requête 3.4.4.1 sur les paramètres tels que reçus, la signature SimpleSign sur les valeurs du formulaire, ou une signature enveloppée sur POST — EST VÉRIFIÉE contre son certificat ENREGISTRÉ (jamais son KeyInfo), dans tous les modes, dans toutes les familles que vérifie common/crypto.js (RSA, RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), avec l’une ou l’autre canonicalisation ; SHA-1 uniquement avec saml.allowSha1Signatures, jamais en mode produit ; une requête non signée est refusée là où saml2.requireSignedAuthnRequests (activé en mode produit) ou ses métadonnées exigent une signature."
   },
   "stsmetadata.specs.saml2-profiles.coverage": {
-    "en": "88da2e5ac2494e2e",
-    "text": "partial : le profil Web Browser SSO (section 4.1), initié par le fournisseur de services et initié par le fournisseur d’identité (#189), sur les quatre bindings, avec le SubjectConfirmationData bearer qu’exige 4.1.4.2, chaque assertion SIGNÉE en mode produit quel que soit le binding (4.1.3.5 et 4.1.4.5 l’exigent sur POST ; saml2.signAssertion désactivé relève du développement, #181) ; et Single Logout (4.4), dans les deux sens, SANS diffusion par le canal frontal — une déconnexion initiée par le fournisseur d’identité NOMME les autres fournisseurs de services et construit une LogoutRequest pour chacun plutôt que de les lancer dans des cadres qu’il ne peut pas observer, et met fin à la session qu’une LogoutRequest sans cookie (canal arrière) nomme par son SessionIndex (#192) ; le SSO initié par le fournisseur d’identité avec une Response non sollicitée (4.1.5, /saml2/unsolicited, #189) ; et la requête d’attributs du profil Assertion Query and Request (6, /saml2/aa, #189) au sujet d’un sujet pour lequel le fournisseur de services demandeur détient une session active. PAS ici : le profil ECP (4.2), Name Identifier Management (4.5), et les AuthnQuery et AuthzDecisionQuery du profil. En tant que FOURNISSEUR DE SERVICES d’un partenaire de fédération (#167), Single Logout dans les deux sens sur /federation/slo/{id} : la LogoutRequest signée du partenaire met fin aux sessions que nomment son NameID et son SessionIndex et reçoit en réponse une LogoutResponse signée, et une déconnexion ici lui envoie une LogoutRequest signée dont la LogoutResponse est rapprochée par InResponseTo ; le SessionNotOnOrAfter du partenaire borne la session. L’AssertionConsumerServiceURL est acceptée telle qu’envoyée en mode développement et doit être enregistrée sur l’entrée du fournisseur de services en mode PRODUIT (2026-09-12), sans repli vers le fournisseur de services fictif — et, une fois ses métadonnées consommées, doit être l’un des points de terminaison qu’il a enregistrés dans TOUS les modes, AssertionConsumerServiceIndex et le point de terminaison par défaut étant honorés. Une LogoutRequest d’un fournisseur de services est authentifiée par sa signature (4.4.3.1) selon la même politique qu’une AuthnRequest."
+    "en": "4271dad1ec658292",
+    "text": "partial : le profil Web Browser SSO (section 4.1), initié par le fournisseur de services et initié par le fournisseur d’identité (#189), sur les quatre bindings, avec le SubjectConfirmationData bearer qu’exige 4.1.4.2, chaque assertion SIGNÉE en mode produit quel que soit le binding (4.1.3.5 et 4.1.4.5 l’exigent sur POST ; saml2.signAssertion désactivé relève du développement, #181) ; et Single Logout (4.4), dans les deux sens, SANS diffusion par le canal frontal — une déconnexion initiée par le fournisseur d’identité NOMME les autres fournisseurs de services et construit une LogoutRequest pour chacun plutôt que de les lancer dans des cadres qu’il ne peut pas observer, et met fin à la session qu’une LogoutRequest sans cookie (canal arrière) nomme par son SessionIndex (#192) ; le SSO initié par le fournisseur d’identité avec une Response non sollicitée (4.1.5, /saml2/unsolicited, #189) ; et la requête d’attributs du profil Assertion Query and Request (6, /saml2/aa, #189) au sujet d’un sujet pour lequel le fournisseur de services demandeur détient une session active. PAS ici : le profil ECP (4.2), Name Identifier Management (4.5), et les AuthnQuery et AuthzDecisionQuery du profil. En tant que FOURNISSEUR DE SERVICES d’un partenaire de fédération (#167), Single Logout dans les deux sens sur /federation/slo/{id} : la LogoutRequest signée du partenaire met fin aux sessions que nomment son NameID et son SessionIndex et reçoit en réponse une LogoutResponse signée, et une déconnexion ici lui envoie une LogoutRequest signée dont la LogoutResponse est rapprochée par InResponseTo ; le SessionNotOnOrAfter du partenaire borne la session. L’AssertionConsumerServiceURL est acceptée telle qu’envoyée en mode développement et doit être enregistrée sur l’entrée du fournisseur de services en mode PRODUIT (2026-09-12) — et, une fois ses métadonnées consommées, doit être l’un des points de terminaison qu’il a enregistrés dans TOUS les modes, AssertionConsumerServiceIndex et le point de terminaison par défaut étant honorés. Une LogoutRequest d’un fournisseur de services est authentifiée par sa signature (4.4.3.1) selon la même politique qu’une AuthnRequest."
   },
   "stsmetadata.specs.saml2-metadata.coverage": {
     "en": "44eed676882b5ecc",
@@ -268,8 +268,8 @@
     "text": "partial : LES DEUX profils navigateur — Browser/Artifact (section 4.1) et Browser/POST (4.2) — chacun avec la méthode de confirmation qu’exige sa section, qui sont des valeurs différentes et non interchangeables. IL N’Y A PAS DE MESSAGE DE REQUÊTE DANS SAML 1.1 ; les deux sont donc initiés par le fournisseur d’identité : un flux démarre lorsqu’un navigateur arrive porteur d’un TARGET, la partie de confiance ne s’identifie jamais dans le protocole, et un échec est une PAGE plutôt qu’une Response, puisqu’il n’y a rien à quoi répondre. Le profil AuthnRequest non standard de Shibboleth (urn:mace:shibboleth:1.0:profiles:AuthnRequest) est accepté et annoncé, car c’est ce qu’envoie tout vrai fournisseur de services SAML 1.1. `shire` est utilisé tel qu’envoyé en mode développement et doit être enregistré sur l’entrée de la partie de confiance en mode PRODUIT (2026-09-12). La Response Browser/POST est signée comme l’exige la section 4.1.2.4, avec son assertion ; désactiver l’une ou l’autre signature est un cas de test de développement que le mode produit ignore (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "b8e3addc28819b6c",
-    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12), sans repli vers la partie de confiance fictive."
+    "en": "2abb20f4fd0f6ab0",
+    "text": "partial : le Web (Passive) Requestor Profile de la section 13 — wsignin1.0 avec wtrealm, wreply, wctx, wct, wfresh, wauth, whr et wreq, la réponse de connexion sous forme de POST de formulaire, et wsignout1.0/wsignoutcleanup1.0 avec des requêtes de nettoyage par le canal frontal ; en tant que partie de confiance de fédération (#167), le nettoyage d’un partenaire, non signé selon la spécification, ne met fin à la session qu’après que la personne l’a confirmé sur une page dotée d’un vrai bouton, et une déconnexion ici envoie wsignout1.0 au partenaire. Métadonnées de fédération signées (section 3.1) au chemin AD FS. NON implémentés, chacun étant nommé plutôt que passé sous silence : le profil de demandeur actif (SOAP) au-delà de ce à quoi /sts répond déjà, wresultptr, le service d’attributs (wattr1.0) et le service de pseudonymes (wpseudo1.0), qui répondent tous deux 501, wreqptr (refusé — déréférencer une URL issue d’un paramètre de requête est une falsification de requête côté serveur), le chiffrement des jetons dans ce profil (une requête passive ne porte aucun certificat de destinataire), et toute application d’autorisation ou de politique. wreply est utilisé tel qu’envoyé en mode développement et doit être une wsfedReplyUrl enregistrée en mode PRODUIT (2026-09-12)."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2104,8 +2104,8 @@
     "text": "Le certificat PEM dont la clé signe les assertions, afin qu’une partie de confiance puisse les vérifier."
   },
   "stsmetadata.endpoints./wsfed.what": {
-    "en": "77576b9ee16c01d5",
-    "text": "GET ou POST, aiguillé selon wa : wsignin1.0 connecte et envoie par POST un RSTR à wreply (section 13.2.2 — un POST de formulaire, jamais une redirection, de sorte que le jeton n’est pas limité en longueur et n’atteint jamais une URL ni un en-tête Referer) ; wsignout1.0 met fin à la session et envoie une requête de nettoyage à chaque partie de confiance à laquelle elle a connecté l’utilisateur ; wsignoutcleanup1.0 y met fin sans propagation. Lit wtrealm (obligatoire, et l’audience), wreply (facultatif — /wsfed/rp par défaut), wctx (renvoyé octet pour octet), wct, wfresh (en MINUTES), wauth (une exigence matérielle ou multifacteur que la session ne satisfait pas donne lieu à une authentification renforcée via la connexion, refusée seulement si celle-ci échoue), whr et un RST wreq par valeur. Le jeton est par défaut une assertion SAML 1.1, car c’est ce qu’émet AD FS ; ?tokenType=saml2 et ?trust=1.3 sont des commutateurs NON-SPEC pour l’autre type de jeton et l’enveloppe RSTR Collection de ws-sx. wattr1.0 et wpseudo1.0 répondent 501 ; wreqptr est refusé."
+    "en": "f41d3cfeabae9e59",
+    "text": "GET ou POST, aiguillé selon wa : wsignin1.0 connecte et envoie par POST un RSTR à wreply (section 13.2.2 — un POST de formulaire, jamais une redirection, de sorte que le jeton n’est pas limité en longueur et n’atteint jamais une URL ni un en-tête Referer) ; wsignout1.0 met fin à la session et envoie une requête de nettoyage à chaque partie de confiance à laquelle elle a connecté l’utilisateur ; wsignoutcleanup1.0 y met fin sans propagation. Lit wtrealm (obligatoire, et l’audience), wreply (facultatif — la wsfedReplyUrl enregistrée par défaut), wctx (renvoyé octet pour octet), wct, wfresh (en MINUTES), wauth (une exigence matérielle ou multifacteur que la session ne satisfait pas donne lieu à une authentification renforcée via la connexion, refusée seulement si celle-ci échoue), whr et un RST wreq par valeur. Le jeton est par défaut une assertion SAML 1.1, car c’est ce qu’émet AD FS ; ?tokenType=saml2 et ?trust=1.3 sont des commutateurs NON-SPEC pour l’autre type de jeton et l’enveloppe RSTR Collection de ws-sx. wattr1.0 et wpseudo1.0 répondent 501 ; wreqptr est refusé."
   },
   "stsmetadata.endpoints./wsfed.effect": {
     "en": "2f3e6657377dc4cb",
@@ -2122,22 +2122,6 @@
   "stsmetadata.endpoints./wsfed/metadata/:rp.what": {
     "en": "604e81aecab74125",
     "text": "LE MÊME DOCUMENT, PAR APPLICATION (#494) : son entityID est l’émetteur unique du domaine, son émetteur OAuth, comme partout (#523). Le segment est l’identifiant de l’application (son wtrealm) ou son slug. Un segment ne nommant aucune application ENREGISTRÉE donne une 404 dans les deux modes (STS-WSFED-0019). no-store."
-  },
-  "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC — une partie de confiance ne fait pas partie d’un fournisseur d’identité. Elle est là parce qu’elle est le wreply par défaut, et parce qu’elle VÉRIFIE la réponse de connexion contrôle par contrôle : la signature de l’assertion au regard de /sts/cert, l’émetteur, l’audience au regard de son propre domaine, la fenêtre de validité, et l’aller-retour de wctx (un fournisseur d’identité qui l’aurait réencodé produit le même symptôme qu’une session perdue). Répond aussi à wa=wsignoutcleanup1.0, qui est le sens pour lequel ce message est réellement défini."
-  },
-  "stsmetadata.endpoints./wsfed/rp.effect": {
-    "en": "e2444ef9ff08a2dd",
-    "text": "émet un wctx et propose une requête de connexion complète pour chaque forme que le point de terminaison peut émettre"
-  },
-  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /wsfed/rp/api/start et le verdict que porte la coquille de la réponse de réception."
-  },
-  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
-    "en": "6722e133f11cee61",
-    "text": "HORS SPÉCIFICATION (#581). Génère un wctx et répond, sous forme de faits, avec les demandes de connexion que propose la partie de confiance fictive — la vue de la page de départ. Indépendante de la langue ; no-store."
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2223,22 +2207,6 @@
     "en": "c76db63cae4e6994",
     "text": "La CINQUIÈME page à script de ce service, et l’argument est refait dans saml2_sso.js plutôt que par analogie : la liaison HTTP POST EST un formulaire qui se soumet tout seul, il n’en existe donc aucune version sans script. script-src est assoupli à 'self' en nommant cette seule ressource, jamais 'unsafe-inline', et la page porte un VRAI BOUTON D’ENVOI — lorsque les scripts sont désactivés, le bouton constitue tout le mécanisme."
   },
-  "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC — un fournisseur de services ne fait pas partie d’un fournisseur d’identité. Il est là parce qu’il est l’AssertionConsumerServiceURL par défaut, et parce qu’il VÉRIFIE la réponse contrôle par contrôle : les deux signatures, l’émetteur, l’audience, la fenêtre de validité, le SubjectConfirmationData bearer qu’exige la section 4.1.4.2, et l’aller-retour du RelayState. Il résout aussi un artefact, au sein du processus plutôt qu’en faisant un appel SOAP de ce service à lui-même."
-  },
-  "stsmetadata.endpoints./saml2/sp.effect": {
-    "en": "36f5856187bd32d6",
-    "text": "émet un RelayState et propose une AuthnRequest complète demandant la réponse en HTTP POST, HTTP Redirect et HTTP Artifact"
-  },
-  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /saml2/sp/api/start et le verdict que porte la coquille de la réponse de réception."
-  },
-  "stsmetadata.endpoints./saml2/sp/api/start.what": {
-    "en": "3b1ad0edc68af287",
-    "text": "HORS SPÉCIFICATION (#581). Génère un RelayState pour chacune des quatre AuthnRequest que propose le fournisseur de services fictif, en signe trois avec la clé de ce service, et y répond sous forme de faits — la vue de la page de départ. Indépendante de la langue ; no-store."
-  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "Une page de description : les points de terminaison, les deux profils de navigateur, et la liste de ce que SAML 1.1 écrit différemment de 2.0 — ce qui explique en grande partie qu’il s’agisse d’une implémentation distincte plutôt que d’un indicateur. GET /saml2, GET /sts et GET /wsfed répondent de la même manière. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
@@ -2282,22 +2250,6 @@
   "stsmetadata.endpoints./saml11/autopost.js.what": {
     "en": "e23713a2ecba90f0",
     "text": "La SIXIÈME page à script de ce service, et l’argument est refait dans saml11_sso.js plutôt que par analogie — ce qui importe ici précisément parce que la cinquième était /saml2/autopost.js et que « la même que celle d’à côté » est la chose la moins utile qu’on puisse dire. Le profil Browser/POST EST un formulaire qui se soumet tout seul dans sa propre spécification plus ancienne, auquel on est arrivé indépendamment. script-src est assoupli à 'self' en nommant cette seule ressource, jamais 'unsafe-inline', et la page porte un VRAI BOUTON D’ENVOI — lorsque les scripts sont désactivés, le bouton constitue tout le mécanisme."
-  },
-  "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC — une partie de confiance ne fait pas partie d’un fournisseur d’identité. Elle est là parce qu’elle est le consommateur d’assertions par défaut, et parce qu’elle VÉRIFIE contrôle par contrôle : les deux signatures via les attributs id qu’utilise réellement SAML 1.1, le QName du statut, le Recipient, l’ABSENCE d’InResponseTo sur un profil sans requête, la méthode de confirmation correspondant au profil, et la DoNotCacheCondition que porte Browser/POST et que le profil d’artefact ne porte pas. Elle résout un artefact AU SEIN DU PROCESSUS plutôt qu’en faisant un appel SOAP de ce service à lui-même, et recharger la page de résultat démontre la règle d’usage unique au lieu de produire une erreur."
-  },
-  "stsmetadata.endpoints./saml11/rp.effect": {
-    "en": "e9c534c324579c92",
-    "text": "démarre un flux complet sur l’un ou l’autre profil de navigateur et vérifie ce qui revient"
-  },
-  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /saml11/rp/api/start et le verdict que porte la coquille de la réponse de réception."
-  },
-  "stsmetadata.endpoints./saml11/rp/api/start.what": {
-    "en": "fbb7dc323454a57d",
-    "text": "HORS SPÉCIFICATION (#581). Répond, sous forme de faits, avec les départs des deux profils de navigateur au service de transfert inter-sites que propose la partie de confiance fictive — la vue de la page de départ. Indépendante de la langue ; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -3420,10 +3372,6 @@
     "text": "Également transporté dans un wresult WS-Federation et dans un RSTR WS-Trust, là où allait chaque assertion SAML 1.1 d’ici avant l’existence de ce profil."
   },
   "stsmetadata.protocols.WS-Federation.what": {
-    "en": "707fbb63d49a43b8",
-    "text": "Le Web (Passive) Requestor Profile 1.2 : /wsfed aiguillé selon wa, l’écran de connexion, des métadonnées de fédération signées au chemin d’AD FS, wsignout1.0, et une partie de confiance simulée qui montre ce qui lui a été envoyé."
-  },
-  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
     "en": "7ddf36d0c593e38b",
     "text": "Le Web (Passive) Requestor Profile 1.2 : /wsfed qui aiguille selon wa, l’écran de connexion, des métadonnées de fédération signées au chemin AD FS, et wsignout1.0."
   },

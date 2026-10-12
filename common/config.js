@@ -8653,15 +8653,6 @@ const SETTINGS = [
                  'refused with a page naming this value. Was the constant ' +
                  'REQUEST_TTL_MS in saml2_sso.js.' },
 
-  { key: 'saml2.mockSpContextTtlMin', group: 'SAML 2.0',
-    label: 'Mock service provider RelayState lifetime (minutes)',
-    env: 'STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /saml2/sp — the NON-SPEC mock service provider — ' +
-                 'remembers a RelayState it minted so it can check the round ' +
-                 'trip. It is that page\'s own state and nothing to do with ' +
-                 'the identity provider\'s.' },
-
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
     env: 'STS_SAML2_REDIRECT_WARN_LENGTH', type: 'int', dflt: 8000,
@@ -9025,16 +9016,6 @@ const SETTINGS = [
                  'expire a WS-Federation session while somebody was reading ' +
                  'the page it signed them into. An application may overrule ' +
                  'it with wsfedAssertionLifetimeMin on its entry.' },
-
-
-  { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
-    label: 'Mock relying party wctx lifetime (minutes)',
-    env: 'STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /wsfed/rp — the NON-SPEC mock relying party — ' +
-                 'remembers a wctx it minted so it can check the round trip. ' +
-                 'Its own state and nobody else\'s. Was the constant ' +
-                 'RP_CONTEXT_TTL_MS in wsfed.js.' },
 
   // --- TLS -----------------------------------------------------------------
   // -------------------------------------------------------------------------

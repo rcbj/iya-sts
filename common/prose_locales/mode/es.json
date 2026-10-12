@@ -724,8 +724,8 @@
     "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b1ce213f8c73ebc3",
-    "text": "Se sirven y se listan: las partes que confían y el proveedor de servicios simulados (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust y /tls/trust/clear."
+    "en": "95c0a71b7859de3e",
+    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust y /tls/trust/clear."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "0ca09045a89e11d0",

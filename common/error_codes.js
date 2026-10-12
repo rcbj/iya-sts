@@ -266,7 +266,7 @@ const SUBSYSTEMS = [
     what: 'The security token service, WS-Trust 1.0 through 1.4.' },
   { id: 'WSFED', label: 'WS-Federation',
     where: 'ws-federation/',
-    what: 'The passive requestor profile and the mock relying party.' },
+    what: 'The passive requestor profile.' },
   { id: 'FED', label: 'Federation',
     where: 'federation/',
     what: 'Relationships with foreign identity providers and service ' +
@@ -9469,7 +9469,8 @@ const CODES = [
     summary: 'In product mode, a SAML 2.0 AuthnRequest\'s ' +
       'AssertionConsumerServiceURL is not a ' +
       'samlAssertionConsumerService registered on the service ' +
-      'provider\'s entry, or none is registered.',
+      'provider\'s entry, or none is registered; in either mode, the ' +
+      'request names none and none is registered (#592).',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0006',
     summary: 'The SAML 2.0 assertion consumer service URL is not an absolute ' +
@@ -9537,12 +9538,14 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0021',
     summary: 'The mock SAML 2.0 service provider was handed an artifact that ' +
-      'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 200 error page' },
+      'does not resolve (already resolved, expired or never issued).' +
+      ' Retired by #592: the mock relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0022',
     summary: 'A response delivered to the mock SAML 2.0 service provider ' +
-      'failed at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+      'failed at least one of its verification checks.' +
+      ' Retired by #592: the mock relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0023',
     summary: 'A SAML 2.0 assertion could not be signed and was returned ' +
       'unsigned.',
@@ -9570,7 +9573,8 @@ const CODES = [
   { code: 'STS-SAML-0028',
     summary: 'In product mode, a SAML 1.1 flow\'s shire is not a ' +
       'samlAssertionConsumerService registered on the relying party\'s ' +
-      'entry, or none is registered.',
+      'entry, or none is registered; in either mode, the flow names no ' +
+      'shire and none is registered (#592).',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0029',
     summary: 'The SAML 1.1 assertion consumer URL is not an absolute http(s) ' +
@@ -9631,12 +9635,14 @@ const CODES = [
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0042',
     summary: 'The mock SAML 1.1 relying party was handed an artifact that ' +
-      'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 400 page' },
+      'does not resolve (already resolved, expired or never issued).' +
+      ' Retired by #592: the mock relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0043',
     summary: 'A response delivered to the mock SAML 1.1 relying party failed ' +
-      'at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+      'at least one of its verification checks.' +
+      ' Retired by #592: the mock relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0044',
     summary: 'A service provider metadata refresh named an application that ' +
       'is not in the registry.',
@@ -10189,7 +10195,8 @@ const CODES = [
   { code: 'STS-WSFED-0003',
     summary: 'Product mode: the wreply is not one of the wsfedReplyUrl ' +
       'values registered on the wtrealm\'s application entry (or none ' +
-      'is registered).',
+      'is registered); either mode: the request names no wreply and none ' +
+      'is registered (#592).',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0004',
     summary: 'The resolved wreply is not an absolute http(s) URL, so the ' +
@@ -10245,8 +10252,9 @@ const CODES = [
     spec: '', retired: true },
   { code: 'STS-WSFED-0016',
     summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
-      'response that failed one or more of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+      'response that failed one or more of its verification checks.' +
+      ' Retired by #592: the mock relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0017',
     summary: 'A WS-Federation sign-in reached a session whose sign-in ' +
       'mechanism the relying party does not allow (appAuthnMechanism, ' +

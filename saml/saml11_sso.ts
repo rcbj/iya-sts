@@ -38,17 +38,12 @@
 //                                      runs. The SIXTH scripted page in this
 //                                      service, and the argument is made again
 //                                      below rather than by analogy.
-//   GET|POST /saml11/rp                a mock RELYING PARTY. NON-SPEC, the
-//                                      default assertion consumer, and where a
-//                                      response can be verified check by check
-//                                      without standing up a second service.
-//                                      Its start page and its verdict are drawn
-//                                      in the browser (#581,
-//                                      `common/mock_rp_surface.ts`) from
-//                                      /saml11/rp/api/start and the verdict the
-//                                      receiving answer's shell carries.
 //   GET      /saml11                   what all of that is, for somebody who
 //                                      clicked the link.
+//
+//   There is NO mock relying party (#592): `/saml11/rp` was deleted with the
+//   other two, and the test peer (`tests/peer/`) plays the relying party a
+//   test needs.
 //
 // ---------------------------------------------------------------------------
 // SEVEN DECISIONS HERE ARE NOT OBVIOUS FROM THE SPECIFICATIONS, AND THE FIRST
@@ -213,10 +208,6 @@ const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // Read per request rather than captured at require time, so that /admin/config
@@ -290,11 +281,6 @@ import mtls = require('../oauth-oidc/mtls');
 import samlCells = require('./saml_cells');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
-// THE MOCK RELYING PARTY'S PAGES (#581): its start page and its verdict are
-// a static surface shared with WS-Federation's and SAML 2.0's mocks
-// (`common/CLAUDE.md` 3cm). A library; its routes are registered only when
-// this module's `registerRoutes()` asks, under `/saml11/rp`.
-import MockRpSurface = require('../common/mock_rp_surface');
 
 // --- the vocabulary --------------------------------------------------------
 // SAML 1.1's namespaces carry `1.0` and that is not a typo anywhere in this
@@ -418,8 +404,6 @@ const SSO_PATH = BASE_PATH + '/sso';
 const RESPONDER_PATH = BASE_PATH + '/responder';
 
 const METADATA_PATH = BASE_PATH + '/metadata';
-
-const RP_PATH = BASE_PATH + '/rp';
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -1052,8 +1036,8 @@ class Saml11Sso {
   // does, and a verifier that is not told resolves `#_abc` to nothing and
   // reports a perfectly good signature as broken. That cost `wsfed.ts` a
   // debugging session, and it is why both signers here and the mock relying
-  // party below used to thread an `idAttribute` argument around. **NONE OF THEM
-  // DOES NOW**: `common/crypto.js` resolves `AssertionID`, `ResponseID`,
+  // party (deleted, #592) used to thread an `idAttribute` argument around.
+  // **NONE OF THEM DOES NOW**: `common/crypto.js` resolves `AssertionID`, `ResponseID`,
   // `RequestID` and `ID` from the document itself, so there is no argument left
   // to pass and no way to pass it wrongly.
   private signDocument(xml, rootLocalName, id, placement) {
@@ -1732,9 +1716,9 @@ class Saml11Sso {
     // --- step 2: where does the answer go ------------------------------------
     // `shire` is Shibboleth's name for the assertion consumer service, and it
     // is the only thing in this protocol that carries one. Failing that: what
-    // the registry recorded for this relying party, and failing THAT this
-    // service's own mock relying party — so that a request naming no
-    // destination has somewhere real to go instead of nowhere.
+    // the registry recorded for this relying party, and failing THAT the flow
+    // is refused — there was a mock relying party to fall back on until #592,
+    // and there is nowhere real to deliver to now.
     //
     // **THAT PRECEDENCE IS DEVELOPMENT MODE'S (2026-09-12).** In product
     // (`mode.acceptsUnregisteredAddresses()` false) `shire` must be one of the
@@ -1750,7 +1734,7 @@ class Saml11Sso {
     const recorded = Array.isArray(recordedAcs)
       ? recordedAcs[recordedAcs.length - 1]
       : recordedAcs || '';
-    let acsUrl = String(carried.shire || recorded || (base + RP_PATH));
+    let acsUrl = String(carried.shire || recorded || '');
     if (!mode.acceptsUnregisteredAddresses()) {
       const early = this.relyingPartyFor(carried, scoped,
                                          String(carried.shire || ''));
@@ -1789,7 +1773,6 @@ class Saml11Sso {
         requested: carried.shire,
         registered: shireKnown.registered,
         unconfirmed: shireKnown.unconfirmed,
-        fallback: '',
         attribute: 'samlAssertionConsumerService',
         parameter: 'shire',
         application: early.id || '(no relying party named)'
@@ -1807,6 +1790,21 @@ class Saml11Sso {
                               where.why);
       }
       acsUrl = String(where.url);
+    }
+    // NOTHING NAMED AND NOTHING REGISTERED (#592): development had the mock
+    // relying party to deliver to; with it gone there is nowhere, in either
+    // mode, and saying so beats an "is not absolute" about an empty string.
+    if (!acsUrl) {
+      log.info('saml11: refused a browser flow: no shire, and no ' +
+               'samlAssertionConsumerService registered.');
+      errorCodes.mark(res, 'STS-SAML-0028');
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). Nowhere to deliver.");
+      return this.samlError(res, 400, 'There is nowhere to send it',
+        'The request named no shire, and the relying party has no ' +
+        'samlAssertionConsumerService registered, so there is no address ' +
+        'to deliver the response to. Send a shire, or register one on the ' +
+        'relying party\'s entry (the console, POST ' +
+        '/admin-api/applications/add, or an ldapmodify).');
     }
     if (!/^https?:\/\//i.test(acsUrl)) {
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The assertion " +
@@ -1834,12 +1832,7 @@ class Saml11Sso {
         'audience from the providerId parameter, from the {rp} path segment, ' +
         'or — failing both — from the origin of the TARGET. This request ' +
         'carried none of the three, and an assertion with no audience ' +
-        'restriction is one any relying party would be entitled to accept.',
-        // The mock RP only where this realm is served it (#585).
-        demoOnly.serves()
-          ? '<p>There is a mock relying party here that sends a complete ' +
-            'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>'
-          : '');
+        'restriction is one any relying party would be entitled to accept.');
     }
     const rpId = who.id;
     const providerId = this.providerId();
@@ -2225,8 +2218,8 @@ class Saml11Sso {
   // (*"Send providerId, or use /saml11/sso/{rp}"*) and does BOTH was minted
   // an artifact named one way and refused it when it came back named the
   // other: every artifact, for the one caller this check exists to protect,
-  // while this service's own mock relying party never noticed because
-  // `resolveForMockSp()` resolves in process and never reaches here.
+  // while this service's own mock relying party (deleted, #592) never
+  // noticed because it resolved in process and never reached here.
   //
   // `scopedId` is therefore stashed beside `rpId` at mint time — see
   // `deliver()` — and the segment has to match one of the two. It is not a
@@ -2816,26 +2809,6 @@ class Saml11Sso {
     return answer(STATUS_SUCCESS, '', assertion, requestId, rpId, rpId);
   }
 
-  // Resolve an artifact IN PROCESS, for the mock relying party below. It is a
-  // function call rather than an HTTP request to this service's own responder,
-  // and that is deliberate: a server calling itself over TCP works until
-  // somebody puts this behind a proxy that terminates TLS, and then the mock
-  // relying party fails in a way that has nothing to do with SAML. The one-shot
-  // rule is applied here exactly as it is on the wire, because the mock relying
-  // party is meant to exercise the same behaviour a real one would meet.
-  private resolveForMockRp(artifact) {
-    const { log } = this.deps;
-    log.debug("Entering Saml11Sso.resolveForMockRp().");
-    const held = artifacts.get(artifact);
-    if (!held) {
-      log.debug("Leaving Saml11Sso.resolveForMockRp(). Nothing to resolve.");
-      return null;
-    }
-    artifacts.delete(artifact);
-    log.debug("Leaving Saml11Sso.resolveForMockRp(). Resolved and destroyed.");
-    return held;
-  }
-
   // ---------------------------------------------------------------------------
   // THE METADATA — decision 5, and since #523 ONE DOCUMENT FOR BOTH VERSIONS.
   //
@@ -2979,11 +2952,7 @@ class Saml11Sso {
       'of, ' +
       'including why an error here is this page rather than a ' +
       'Response.</p><h2>Try it</h2><ul>' +
-      // The mock RP only where this realm is served it (#585).
-      (demoOnly.serves() ? '<li><a ' +
-      'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying ' +
-      'party here that starts both browser profiles and then verifies what ' +
-      'comes back check by check.</li>' : '') + '<li><a ' +
+      '<li><a ' +
       'href="' + xmlEscape(where.metadata) + '">' + xmlEscape(where.metadata) +
       '</a> — the signed identity provider metadata, which is what a relying ' +
       'party should be configured from.</li></ul><h2>What it reads</h2>' +
@@ -3000,9 +2969,9 @@ class Saml11Sso {
                  (mode.acceptsUnregisteredAddresses()
                    ? 'In development mode — this realm\'s — it is not ' +
                      'validated against any registration, like every other ' +
-                     'return URL here, and with none the response goes to ' +
-                     'this ' +
-                     'service\'s own mock relying party at ' + RP_PATH + '.'
+                     'return URL here; with none the response goes to the ' +
+                     'one registered on the relying party\'s entry, and ' +
+                     'with none registered the flow is refused.'
                    : 'This realm is in PRODUCT mode, so it must be one of ' +
                      'the samlAssertionConsumerService values on the relying ' +
                      'party\'s entry, compared exactly, and there is no mock ' +
@@ -3049,9 +3018,8 @@ class Saml11Sso {
   // #584; it is drawn in the browser now (`web_saml_description.ts`), from
   // this — which is also its JSON form, new with #584.
   /**
-   * The SAML 1.1 description page's view: the endpoints' paths — the mock
-   * relying party's only where this realm is served it (#585), null
-   * otherwise — and the metadata at the base this request reached.
+   * The SAML 1.1 description page's view: the endpoints' paths and the
+   * metadata at the base this request reached.
    *
    * @param base - the base URL the request reached
    * @returns the view
@@ -3064,406 +3032,9 @@ class Saml11Sso {
     return {
       kind: 'saml11',
       paths: { sso: SSO_PATH, responder: RESPONDER_PATH,
-               metadata: METADATA_PATH,
-               rp: demoOnly.serves() ? RP_PATH : null },
+               metadata: METADATA_PATH },
       metadata: where.metadata
     };
-  }
-
-  // ===========================================================================
-  // THE MOCK RELYING PARTY. NON-SPEC, and it earns its place for the two
-  // reasons /saml2/sp and /wsfed/rp do:
-  //
-  //   * it is the default assertion consumer, so a flow that names no
-  //     destination has somewhere real to go instead of nowhere;
-  //   * it makes the profile testable from one service. A Response POSTed into
-  //     the void could not be checked at all without standing up a second
-  //     service, and the checks below are the ones that catch the mistakes THIS
-  //     profile makes — a signature reference that will not resolve because
-  //     AssertionID was not named, a confirmation method that does not match
-  //     the profile the assertion arrived on, a status QName written as a URI,
-  //     an audience naming a guessed origin rather than the relying party.
-  // ===========================================================================
-  private verifySignature(xml, rootLocalName) {
-    const { STS, log, stsCrypto } = this.deps;
-    log.debug("Entering Saml11Sso.verifySignature(). root=" + rootLocalName);
-    // The shared verifier is told WHICH element's signature to check and takes
-    // the one that is that element's own direct child — the question this
-    // function has always been asking, now asked in one place for all four
-    // profiles. It also refuses a signature whose reference names a different
-    // element, which this file could not previously check at all.
-    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
-    const result = helpers.verifyOwnXml(xml, { element: rootLocalName });
-    log.debug("Leaving Saml11Sso.verifySignature(). ok=" + result.ok);
-    return result;
-  }
-
-  // Every check, in the order a relying party would apply them, each with its
-  // own verdict. One boolean for the whole response would say "it failed" and
-  // nothing anybody could act on — the same argument /wsfed/rp, /saml2/sp and
-  // the OID4VP verifier all make.
-  /**
-   * Verifies a SAML 1.1 Response as a relying party would, each check with its
-   * own verdict; the mock relying party's reading.
-   *
-   * @param xml - the Response
-   * @param rpId - the relying party's identifier
-   * @param acsUrl - the assertion consumer service URL it was sent to
-   * @param profile - `post` or `artifact`
-   * @returns `ok`, every check, and what the assertion said
-   */
-  verifyResponse(xml, rpId, acsUrl, profile) {
-    const { CONFIRMATION_ARTIFACT, CONFIRMATION_BEARER, firstByLocal, log,
-            textByLocal } = this.deps;
-    log.debug("Entering Saml11Sso.verifyResponse(). profile=" + profile);
-    const checks = [];
-    const add = (name, ok, detail) => {
-      log.debug("Entering add().");
-      checks.push({ name: name, ok: !!ok, detail: detail });
-      log.debug("Leaving add().");
-    };
-    const result = { checks: checks, subject: '', attributes: [], status: '',
-                     assertionId: '', ok: undefined as boolean };
-
-    let doc = null;
-    try {
-      doc = new DOMParser().parseFromString(xml, 'text/xml');
-    } catch (e) {
-      log.debug("Caught in Saml11Sso.verifyResponse(): " +
-                ((e && e.message) || e));
-      add('the response parses as XML', false, e.message);
-      log.debug("Leaving Saml11Sso.verifyResponse(). Not XML.");
-      return result;
-    }
-    const root = doc.documentElement;
-    add('it is a samlp:Response', !!root && root.localName === 'Response',
-        root ? '<' + root.localName + '> in ' + (root.namespaceURI || '(no ' +
-            'namespace)')
-             : 'nothing parsed');
-    if (!root || root.localName !== 'Response') {
-      log.debug("Leaving Saml11Sso.verifyResponse(). Not a Response.");
-      return result;
-    }
-
-    add('it is MajorVersion 1, MinorVersion 1',
-        root.getAttribute('MajorVersion') === '1' &&
-        root.getAttribute('MinorVersion') === '1',
-        'MajorVersion=' + (root.getAttribute('MajorVersion') || '(none)') +
-        ', MinorVersion=' + (root.getAttribute('MinorVersion') || '(none)') +
-        ' — SAML 1.1 carries its version in two attributes, where 2.0 has ' +
-        'Version="2.0"');
-
-    const statusEl = firstByLocal(root, 'StatusCode');
-    const status = statusEl ? (statusEl.getAttribute('Value') || '') : '';
-    result.status = status;
-    const statusMessage = textByLocal(root, 'StatusMessage');
-    // The QName check, which is the one a 2.0-shaped implementation fails: the
-    // status is `samlp:Success`, a qualified name, and NOT the URI
-    // `urn:oasis:names:tc:SAML:2.0:status:Success`.
-    add('the status is samlp:Success', status === STATUS_SUCCESS,
-        (status || '(no StatusCode)') + (statusMessage ? ' — ' + statusMessage :
-                                         '') +
-        (status && status.indexOf('urn:') === 0
-          ? ' — that is a URI, and a SAML 1.1 status code is a QName' : ''));
-
-    // Recipient, which section 4.2.1.4 requires of a Browser/POST response and
-    // which is what stops it being replayed at another relying party. The
-    // artifact profile's Response is built at the responder and names the SOAP
-    // caller instead, so the expectation differs by profile.
-    const recipient = root.getAttribute('Recipient') || '';
-    if (profile === 'post') {
-      add('Recipient names this assertion consumer', recipient === acsUrl,
-          recipient || '(none)');
-      // InResponseTo MUST be absent: there was no request. A Response that
-      // carries one names a RequestID nobody minted, and it is the single most
-      // common thing to get wrong by porting SAML 2.0 code.
-      add('InResponseTo is absent', !root.getAttribute('InResponseTo'),
-          root.getAttribute('InResponseTo')
-            ? 'it is "' + root.getAttribute('InResponseTo') + '", and there ' +
-              'was no request to be in response to — SAML 1.1 browser ' +
-              'profiles ' +
-              'are unsolicited'
-            : 'correct — the browser profiles have no request message');
-    } else {
-      add('InResponseTo names the SOAP request',
-          !!root.getAttribute('InResponseTo'),
-          root.getAttribute('InResponseTo') ||
-          '(none) — the artifact was resolved by a <samlp:Request>, so the ' +
-          'Response should name it');
-    }
-
-    const responseSig = this.verifySignature(xml, 'Response');
-    add('the Response signature verifies', responseSig.ok,
-        responseSig.present
-          ? (responseSig.ok ? 'RSA-SHA256, and the reference resolved ' +
-                              'through ' +
-                              'ResponseID'
-                            : responseSig.why)
-          : 'unsigned — saml11.signResponse is off, which development ' +
-            'mode allows as a test case (the Browser/POST profile requires ' +
-            'a signed Response, so product never sends one)');
-
-    const assertion = firstByLocal(root, 'Assertion');
-    add('it contains an assertion', !!assertion,
-        assertion ? 'in ' + assertion.namespaceURI : 'no saml:Assertion — ' +
-                                                     'see the status above');
-    if (!assertion) {
-      log.debug("Leaving Saml11Sso.verifyResponse(). No assertion.");
-      return result;
-    }
-    result.assertionId = assertion.getAttribute('AssertionID') || '';
-
-    add('the assertion is identified by AssertionID', !!result.assertionId,
-        result.assertionId ||
-        '(none) — SAML 1.1 spells it AssertionID, not ID, and a signature ' +
-        'reference cannot resolve without it');
-
-    const assertionSig = this.verifySignature(xml, 'Assertion');
-    add('the assertion signature verifies', assertionSig.ok,
-        assertionSig.present
-          ? (assertionSig.ok ? 'resolved through the AssertionID attribute — ' +
-                               'xml-crypto has to be told that name, or a ' +
-                               'good ' +
-                               'signature reports as broken'
-                             : assertionSig.why)
-          : 'unsigned — saml11.signAssertion is off');
-
-    // The Issuer is an ATTRIBUTE in SAML 1.1, not a child element. Reading it
-    // with textByLocal(), which is what a 2.0-shaped verifier would do, finds
-    // nothing.
-    const issuer = assertion.getAttribute('Issuer') || '';
-    add('the issuer is this identity provider',
-        issuer === this.providerId(),
-        (issuer || '(none)') +
-        (issuer === this.providerId() ? ' — read from the Issuer ' +
-                                          'ATTRIBUTE, ' +
-                                          'which is where SAML 1.1 puts it'
-                                        : ', expected ' +
-                                            this.providerId()));
-
-    const conditions = firstByLocal(assertion, 'Conditions');
-    const audience = conditions ? textByLocal(conditions, 'Audience') : '';
-    add('the audience is this relying party', audience === rpId,
-        'audience ' + (audience || '(none)') + ', expected ' + rpId +
-        (audience && audience !== rpId
-          ? ' — if this names an origin rather than an identifier, the ' +
-            'relying ' +
-            'party was GUESSED from the TARGET because nothing sent providerId'
-          : ''));
-
-    const notBefore = conditions ? conditions.getAttribute('NotBefore') : '';
-    const notOnOrAfter = conditions ? conditions.getAttribute('NotOnOrAfter') :
-                         '';
-    const now = Date.now();
-    add('it is inside its validity window',
-        !!notBefore && !!notOnOrAfter && Date.parse(notBefore) <= now &&
-        now < Date.parse(notOnOrAfter),
-        (notBefore || '(no NotBefore)') + ' to ' + (notOnOrAfter || '(no ' +
-            'NotOnOrAfter)'));
-
-    // DECISION 2, checked. This is the assertion's own statement of how it
-    // reached here, and the two profiles require different values.
-    const method = textByLocal(assertion, 'ConfirmationMethod');
-    const expected = profile === 'artifact' ? CONFIRMATION_ARTIFACT :
-                     CONFIRMATION_BEARER;
-    add('the confirmation method matches the profile', method === expected,
-        (method || '(none)') + ', expected ' + expected +
-        ' — section ' + (profile === 'artifact' ? '4.1.1.4' : '4.2.1.4') + ' ' +
-        'requires it, and the two are not interchangeable: an ' +
-        'artifact-profile assertion confirmed as bearer claims to have ' +
-        'travelled through the browser when it did not');
-
-    // The single-use policy, which Browser/POST carries and the artifact
-    // profile does not: the assertion passed through the browser, so the
-    // relying party is told not to keep it.
-    const doNotCache = !!firstByLocal(assertion, 'DoNotCacheCondition');
-    add('the single-use policy matches the profile',
-        doNotCache === (profile === 'post' &&
-                        !!this.deps.config.value(
-                          'saml11.doNotCacheCondition')),
-        doNotCache
-          ? 'a <DoNotCacheCondition> is present'
-          : 'no <DoNotCacheCondition> — correct for the artifact profile, ' +
-            'where the assertion never passed through the browser');
-
-    const statement = firstByLocal(assertion, 'AuthenticationStatement');
-    add('there is an authentication statement', !!statement,
-        statement
-          ? 'AuthenticationMethod=' +
-            (statement.getAttribute('AuthenticationMethod') || '(none)') +
-            ', AuthenticationInstant=' + (statement.getAttribute(
-                'AuthenticationInstant') || '(none)')
-          : 'none — the assertion says nothing about anybody having ' +
-            'authenticated');
-
-    const nameId = firstByLocal(assertion, 'NameIdentifier');
-    result.subject = nameId ? (nameId.textContent || '').trim() : '';
-    add('it names a subject', !!result.subject,
-        result.subject
-          ? result.subject + ' (Format=' +
-            (nameId.getAttribute('Format') || '(none)') +
-            ', NameQualifier=' + (nameId.getAttribute('NameQualifier') ||
-                                  '(none)') + ')'
-          : 'no <saml:NameIdentifier>');
-
-    const attributeEls = assertion.getElementsByTagNameNS('*', 'Attribute');
-    for (let i = 0; i < attributeEls.length; i++) {
-      const a = attributeEls[i];
-      const values = a.getElementsByTagNameNS('*', 'AttributeValue');
-      const list = [];
-      for (let j = 0; j < values.length; j++) {
-        list.push((values[j].textContent || '').trim());
-      }
-      result.attributes.push({
-        // BOTH halves, because that is what a SAML 1.1 attribute is: a relying
-        // party re-joins them into a claim URI, and showing only the name would
-        // hide the half that distinguishes two attributes called `name`.
-        namespace: a.getAttribute('AttributeNamespace') || '',
-        name: a.getAttribute('AttributeName') || '',
-        values: list
-      });
-    }
-    add('it carries attributes', result.attributes.length > 0,
-        result.attributes.length + ' <saml:Attribute> element(s), each an ' +
-        'AttributeName and an AttributeNamespace — the two halves SAML 2.0 ' +
-        'joins into one Name');
-
-    result.ok = checks.every((c) => { return c.ok; });
-    log.debug("Leaving Saml11Sso.verifyResponse(). " +
-              checks.filter((c) => { return c.ok; }).length +
-              "/" + checks.length + " checks passed.");
-    return result;
-  }
-
-  /**
-   * The mock relying party's start view (#581): its providerId, and the two
-   * profiles' starts at the inter-site transfer service — the facts its
-   * start page printed, the words the browser's.
-   *
-   * @param req - the request
-   * @returns the view
-   */
-  mockRpStartView(req: any): any {
-    const { baseUrlOf, log } = this.deps;
-    log.debug("Entering Saml11Sso.mockRpStartView().");
-    const base = baseUrlOf(req);
-    const rpId = base + RP_PATH;
-    const start = (profile) => {
-      log.debug("Entering start().");
-      log.debug("Leaving start().");
-      return SSO_PATH + '?providerId=' + encodeURIComponent(rpId) +
-        '&shire=' + encodeURIComponent(base + RP_PATH) +
-        '&TARGET=' + encodeURIComponent(base + RP_PATH + '?done=1') +
-        '&profile=' + profile;
-    };
-    log.debug("Leaving Saml11Sso.mockRpStartView().");
-    return { kind: 'start', family: 'saml11', providerId: rpId,
-             post: start('post'), artifact: start('artifact'),
-             transfer: SSO_PATH };
-  }
-
-  // The facts of a verdict, as the shell carries them (#581).
-  private mockRpResult(result, profile, xml, target, extra) {
-    const { log } = this.deps;
-    log.debug("Entering Saml11Sso.mockRpResult(). " + profile);
-    log.debug("Leaving Saml11Sso.mockRpResult().");
-    return Object.assign({
-      kind: 'result', family: 'saml11', profile: profile, ok: !!result.ok,
-      passed: result.checks.filter((c) => { return c.ok; }).length,
-      total: result.checks.length, subject: result.subject || '',
-      target: target,
-      checks: result.checks.map((c) => {
-        return { name: c.name, ok: !!c.ok, detail: String(c.detail) };
-      }),
-      attributes: result.attributes.map((a) => {
-        return { namespace: a.namespace, name: a.name, values: a.values };
-      }),
-      document: xml
-    }, extra || {});
-  }
-
-  // The mock relying party's assertion consumer. THREE things can arrive here
-  // and they are told apart by what they carry: a form POST with `SAMLResponse`
-  // is the Browser/POST profile, a GET with `SAMLart` is the Browser/Artifact
-  // profile, and anything else is somebody who opened the page.
-  //
-  // THE RECEIVING IS WHAT IT ALWAYS WAS (#581) — the same fields read, the
-  // artifact resolved once in process, the same checks, the same statuses
-  // (200, and 400 for a spent artifact) and the same error codes — and only
-  // the drawing moved: the answer is the shell, carrying the verdict's facts
-  // where something arrived, and asking the start view where nothing did.
-  private mockRelyingParty(req, res) {
-    const { baseUrlOf, errorCodes, genId, log, logArtifact } = this.deps;
-    log.debug("Entering Saml11Sso.mockRelyingParty(). method=" + req.method);
-    const base = baseUrlOf(req);
-    const params = this.paramsOf(req);
-    const rpId = base + RP_PATH;
-    const acsUrl = base + RP_PATH;
-    const target = params.TARGET === undefined ? null : String(params.TARGET);
-
-    if (params.SAMLResponse) {
-      const xml = Buffer.from(String(params.SAMLResponse), 'base64')
-                        .toString('utf8');
-      logArtifact('SAML 1.1 Response', 'as received on the Browser/POST ' +
-                                       'profile',
-                  xml);
-      const result = this.verifyResponse(xml, rpId, acsUrl, 'post');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-SAML-0043');
-      }
-      MockRpSurface.sendShell(req, res, 200, 'saml11',
-                              this.mockRpResult(result, 'post', xml, target,
-                                                null));
-      log.debug("Leaving Saml11Sso.mockRelyingParty(). A POST-profile " +
-                "response was verified.");
-      return;
-    }
-
-    if (params.SAMLart) {
-      const artifact = String(params.SAMLart);
-      // Resolved in process — see resolveForMockRp(). The one-shot rule applies
-      // here exactly as it does on the wire, which is what makes reloading this
-      // page a demonstration rather than a bug.
-      const held = this.resolveForMockRp(artifact);
-      if (!held) {
-        errorCodes.mark(res, 'STS-SAML-0042');
-        MockRpSurface.sendShell(req, res, 400, 'saml11',
-                                { kind: 'spent', family: 'saml11' });
-        log.debug("Leaving Saml11Sso.mockRelyingParty(). The artifact did " +
-                  "not resolve.");
-        return;
-      }
-      // Decision 3: the Response is built HERE, around the assertion, the way
-      // the responder builds it for a SOAP caller — carrying InResponseTo
-      // naming the request this mock would have sent.
-      const requestId = genId();
-      const response = this.buildResponse({
-        status: STATUS_SUCCESS, assertion: held.assertion,
-        inResponseTo: requestId, recipient: rpId, rp: rpId
-      });
-      logArtifact('SAML 1.1 Response', 'as resolved from an artifact over SOAP',
-                  response.xml);
-      const result = this.verifyResponse(response.xml, rpId, acsUrl,
-                                         'artifact');
-      if (!result.ok) {
-        errorCodes.mark(res, 'STS-SAML-0043');
-      }
-      // `again` is this very request, to load once more: the artifact is
-      // spent, and the second attempt is refused — the demonstration. Built
-      // from what arrived rather than `req.originalUrl`, which carries the
-      // realm's prefix the browser adds to every link itself.
-      const again = RP_PATH + '?SAMLart=' + encodeURIComponent(artifact) +
-        (target === null ? '' : '&TARGET=' + encodeURIComponent(target));
-      MockRpSurface.sendShell(req, res, 200, 'saml11',
-        this.mockRpResult(result, 'artifact', response.xml, target,
-                          { artifact: artifact, again: again }));
-      log.debug("Leaving Saml11Sso.mockRelyingParty(). An artifact-profile " +
-                "assertion was verified.");
-      return;
-    }
-
-    MockRpSurface.sendShell(req, res, 200, 'saml11', null);
-    log.debug("Leaving Saml11Sso.mockRelyingParty(). The shell.");
   }
 
   // THE ROUTES, in the order this module registered them at load
@@ -3471,7 +3042,7 @@ class Saml11Sso {
   // module's `registerRoutes(app)` (#50, R1).
   /**
    * Registers every route under `/saml11`: the inter-site transfer service, the
-   * responder, the metadata and the mock relying party.
+   * responder and the metadata.
    *
    * @param app - the shared express app
    */
@@ -3617,13 +3188,6 @@ class Saml11Sso {
       log.debug("Leaving the SAML 1.1 responder description.");
     });
 
-    // THE MOCK RELYING PARTY (#581): its pages are a static surface — the
-    // start view at `/saml11/rp/api/start` and the script beside it.
-    MockRpSurface.registerRoutes(app, 'saml11', (req) => {
-      return this.mockRpStartView(req);
-    });
-    app.get(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));
-    app.post(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));
     log.debug("Leaving Saml11Sso.registerRoutes().");
   }
 
@@ -3725,6 +3289,5 @@ export = {
   metadataParts: slot.forward('metadataParts'),
   artifactCount: slot.forward('artifactCount'),
   cachedAssertionCount: slot.forward('cachedAssertionCount'),
-  pendingFlowCount: slot.forward('pendingFlowCount'),
-  verifyResponse: slot.forward('verifyResponse')
+  pendingFlowCount: slot.forward('pendingFlowCount')
 };

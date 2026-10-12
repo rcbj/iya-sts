@@ -936,8 +936,8 @@
     "text": "Intyganden och Browser/POST-Responses, RSA-SHA256 över exklusiv c14n, genom samma signerare. PLACERINGEN skiljer sig och skälet är grammatiken snarare än kryptografin: ett 1.1-intygande har inget `<Issuer>`-ELEMENT — i 1.1 är utfärdaren ett ATTRIBUT — så \"efter utfärdaren\" är inte en position som finns och signaturen hamnar SIST. En Response signerar FÖRST, före intygandet den bär."
   },
   "crypto.families.saml-1-1.verifies": {
-    "en": "8398fc2b7e6fdb17",
-    "text": "Sina egna artefakter, för den simulerade förlitande parten."
+    "en": "f11251a4b826b873",
+    "text": "Ingenting: SAML 1.1 har inget begärandemeddelande att verifiera en signatur på."
   },
   "crypto.families.saml-1-1.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -946,10 +946,6 @@
   "crypto.families.saml-1-1.whatItDoesNot": {
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 har ingen kryptering alls — `<EncryptedAssertion>` kom med 2.0 — och inget begäranmeddelande att verifiera en signatur på. Referens-URI:n namnger `AssertionID` eller `ResponseID`, vilket är hela skälet till att den delade signeraren löser upp ett id genom att SÖKA efter ett snarare än att få veta dess namn."
-  },
-  "crypto.families.saml-1-1.verifiesWithoutDemos": {
-    "en": "f11251a4b826b873",
-    "text": "Ingenting: SAML 1.1 har inget begärandemeddelande att verifiera en signatur på."
   },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -960,8 +956,8 @@
     "text": "SAML-intygandet inuti `wresult`, i den version som den förlitande parten bad om, genom den delade signeraren."
   },
   "crypto.families.ws-federation.verifies": {
-    "en": "35faf906b09d64d8",
-    "text": "Den simulerade förlitande parten vid `/wsfed/rp` verifierar det intygandet kontroll för kontroll, och får veta VILKET element som ska verifieras snarare än att ta den första `<ds:Signature>` i dokumentet — defekten som fyra separata verifierare här brukade ha."
+    "en": "02c1a08782ac0629",
+    "text": "Ingenting: en inloggningsbegäran bär ingen signatur."
   },
   "crypto.families.ws-federation.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -970,10 +966,6 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "Den förfalskar ingen `wauth` — ett krav som sessionen inte kan uppfylla är en stegvis höjning, och en AuthenticationMethod är vad sessionen gjorde — och den följer ingen `wreqptr` — att hämta en URL som någon registrerat är en server-side request forgery med en källhänvisning bifogad."
-  },
-  "crypto.families.ws-federation.verifiesWithoutDemos": {
-    "en": "02c1a08782ac0629",
-    "text": "Ingenting: en inloggningsbegäran bär ingen signatur."
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",

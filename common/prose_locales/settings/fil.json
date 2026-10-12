@@ -4303,14 +4303,6 @@
     "en": "5622b8dd257d1d0a",
     "text": "Gaano katagal hinahawakan ang isang AuthnRequest habang nasa sign-in screen ang browser, o sa pagitan ng POST-binding request at ng GET na pinagbabaguhan nito. Lampas dito, tinatanggihan ang pagbalik na may pahinang nagpapangalan sa value na ito. Ito dati ang constant na REQUEST_TTL_MS sa saml2_sso.js."
   },
-  "saml2.mockSpContextTtlMin|label": {
-    "en": "8453902ae50bb2e7",
-    "text": "Tagal ng RelayState ng mock service provider (minuto)"
-  },
-  "saml2.mockSpContextTtlMin|description": {
-    "en": "27f0344e980fd01a",
-    "text": "Gaano katagal tinatandaan ng /saml2/sp — ang NON-SPEC na mock service provider — ang RelayState na mina-mint nito para ma-check nito ang round trip. Sariling state iyon ng pahinang iyon at walang kinalaman sa sa identity provider."
-  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Babala sa haba ng redirect-binding (character)"
@@ -4486,14 +4478,6 @@
   "wsfed.assertionLifetimeMin|description": {
     "en": "7d9a3360c0b23fa4",
     "text": "Gaano katagal valid ang SAML 1.1 assertion sa loob ng isang WS-Federation sign-in response, at ang wsu:Lifetime ng RequestSecurityTokenResponse na nakapaligid dito. Hiwalay ito sa saml11.assertionLifetimeMin sa dahilang ibinibigay ng sariling paglalarawan ng setting na iyon: kinokonsumo ang browser-profile assertion sa loob ng ilang segundo at makatotohanang test doon ang maikling tagal, kung saan ang parehong value ay magpapa-expire sa WS-Federation session habang binabasa ng isang tao ang pahinang pinag-sign in-an nito sa kanya. Puwede itong i-overrule ng isang application gamit ang wsfedAssertionLifetimeMin sa entry nito."
-  },
-  "wsfed.mockRpContextTtlMin|label": {
-    "en": "d414d71003107b1c",
-    "text": "Tagal ng wctx ng mock relying party (minuto)"
-  },
-  "wsfed.mockRpContextTtlMin|description": {
-    "en": "6316f83a4de38024",
-    "text": "Gaano katagal tinatandaan ng /wsfed/rp — ang NON-SPEC na mock relying party — ang wctx na mina-mint nito para ma-check nito ang round trip. Sarili nitong state at hindi ng iba. Ito dati ang constant na RP_CONTEXT_TTL_MS sa wsfed.js."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

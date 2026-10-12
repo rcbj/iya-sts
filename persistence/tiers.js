@@ -364,7 +364,7 @@ const CELL_MINTED = [
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
   'oidc_rp.flows', 'risc.register', 'saml11_sso.artifacts',
   'saml11_sso.assertionsById', 'saml11_sso.pendingFlows', 'saml2.mdqRefusals',
-  'saml2_sso.artifacts', 'saml2_sso.pendingRequests', 'saml2_sso.spContexts',
+  'saml2_sso.artifacts', 'saml2_sso.pendingRequests',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',
   'scim.digestNonces', 'scim.hobaChallenges', 'scim.hobaSeen',
   // The outbound SCIM client's (#552) deliveries, links and backoff state:
@@ -384,7 +384,7 @@ const CELL_MINTED = [
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
   'vc_offers.issuerStates', 'vc_offers.preAuthorizedCodes',
-  'vc_verifier.vpRequests', 'vc_verifier.vpTransactions', 'wsfed.rpContexts',
+  'vc_verifier.vpRequests', 'vc_verifier.vpTransactions',
   'xacml_monitor.counters'
 ];
 

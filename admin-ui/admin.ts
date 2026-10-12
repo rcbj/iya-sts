@@ -8705,7 +8705,8 @@ const SETTING_HOMES = [
   // over there.
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
-  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
+  // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
+  // went with it (#592); its assertions' row is homed above.
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the
@@ -10407,7 +10408,6 @@ const PROTOCOL_SETTINGS_PAGES = [
            'only if that one attempt still does not produce it. And this ' +
            'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
-            ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +
                 'metadata'],
             ['/admin/saml-attributes', 'what goes into the assertion']] },

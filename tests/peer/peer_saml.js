@@ -10,8 +10,8 @@
 // provider (Web Browser SSO on HTTP-POST and HTTP-Artifact), a SAML 1.1
 // relying party (Browser/POST and Browser/Artifact) and a WS-Federation 1.2
 // passive relying party. They replace `/saml2/sp`, `/saml11/rp` and
-// `/wsfed/rp`, which are the service's own mocks and development only
-// (#585).
+// `/wsfed/rp`, the service's own mocks, development only from #585 and
+// deleted by #592.
 //
 // **AN OUTSIDE PARTY, NOT A FRIEND OF THE SERVICE.** What the peer believes
 // about the identity provider it reads from the identity provider's own
@@ -19,7 +19,7 @@
 // certificates, nothing else — and it is believed in return only because a
 // job registered it as an application, with its entityID, its return
 // address and its own signing certificate. `/saml2/sp`'s entityID was
-// trusted implicitly (`saml2_sso.ts`); this one is not.
+// trusted implicitly (`saml2_sso.ts`, until #592); this one never was.
 //
 // **EVERY SIGNATURE IS VERIFIED THROUGH THE ATTRIBUTE THE PROFILE NAMES**
 // (`ID` for SAML 2.0, `ResponseID` and `AssertionID` for SAML 1.1), and the

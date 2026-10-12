@@ -724,8 +724,8 @@
     "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b1ce213f8c73ebc3",
-    "text": "Serveras och listas: de simulerade förlitande parterna och tjänsteleverantören (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust och /tls/trust/clear."
+    "en": "95c0a71b7859de3e",
+    "text": "Serveras och listas: den simulerade förlitande parten för kommandon (/oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust och /tls/trust/clear."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "0ca09045a89e11d0",

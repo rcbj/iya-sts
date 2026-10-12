@@ -5,7 +5,7 @@ nav_order: 3
 
 # Configuration
 
-> **Development mode only (#585):** `/wsfed/rp`, `/saml2/sp`, `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/xacml/protected`, `/did/generate`, `/dpop/nonce-mode`, `/tls/trust`, `/tls/trust/clear` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/xacml/protected`, `/did/generate`, `/dpop/nonce-mode`, `/tls/trust`, `/tls/trust/clear` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is exactly one place a setting is read**, `common/config.js`, and one
 table inside it. That is not tidiness — it is what makes the next three sentences
@@ -1815,7 +1815,6 @@ how this service behaves as an identity provider in a browser profile.
 | `saml2.unsolicitedSso` | `STS_SAML2_UNSOLICITED_SSO` | `true` | yes | Whether /saml2/unsolicited[/{sp}] sends an UNSOLICITED Response (saml-profiles-2.0-os section 4.1.5) — a sign-in started at this identity provider, for a service provider that did not ask: `providerId` (or the path segment) names it, `shire` one of its registered assertion consumer services, `target` the RelayState. The service provider must be registered in product, the address must be one its metadata or its entry registered, and the issuance policy is asked as for any sign-in. The assertion carries no InResponseTo, so a service provider decides for itself whether it accepts one; turn this off for a realm whose providers should only ever be answered. |
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a <samlp:LogoutResponse> goes when the service provider has no SingleLogoutService registered — neither from its consumed metadata nor declared on its entry. Without this the fallback is the assertion consumer service URL that application last used, which is stated on the page rather than done quietly. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the browser is at the sign-in screen. |
-| `saml2.mockSpContextTtlMin` | `STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock service provider at /saml2/sp remembers a RelayState it minted. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Response on the HTTP Redirect binding longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The cap on a service provider's metadata fetched by the refresh action or uploaded on the SAML 2.0 page. |
 | `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Whether the background refresher fetches a stale service provider metadata document again (past its `cacheDuration`, or halfway to `validUntil`) from its URL or the MDQ responder. A failed fetch changes nothing. Expiry is enforced either way. |
@@ -1863,7 +1862,6 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | How long the SAML 1.1 assertion inside a WS-Federation sign-in response is valid, and the wsu:Lifetime of the RequestSecurityTokenResponse around it. Per relying party with `wsfedAssertionLifetimeMin` on the application entry; the default is drawn on `/admin/saml-assertions`, because a WS-Federation response carries a SAML 1.1 assertion built by the same function. |
-| `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the non-spec mock relying party at /wsfed/rp remembers a wctx it minted. |
 
 ### TLS
 

@@ -724,8 +724,8 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b1ce213f8c73ebc3",
-    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear."
+    "en": "95c0a71b7859de3e",
+    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "0ca09045a89e11d0",

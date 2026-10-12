@@ -29,13 +29,10 @@
 //   GET  /wsfed/metadata/{rp} ONE registered relying party's own metadata
 //                            (#494), naming the entityID its assertions are
 //                            issued under; the shared document above stays
-//   GET|POST /wsfed/rp       a mock RELYING PARTY: non-spec, the default `wreply`,
-//                            and where the sign-in response can be verified check
-//                            by check without a second service; its start page
-//                            and its verdict are drawn in the browser (#581,
-//                            `common/mock_rp_surface.ts`), from
-//   GET  /wsfed/rp/api/start the start view, and the verdict the POST's shell
-//                            carries; the script is /wsfed/rp/mock-rp.js
+//
+// There is NO mock relying party (#592): `/wsfed/rp` was deleted with the
+// two SAML mocks, and the test peer (`tests/peer/`) plays the relying party a
+// test needs.
 //
 // **The response is a form POST, not a redirect** (13.2.2), and that single
 // fact is what makes this profile different from everything else in this
@@ -121,10 +118,6 @@ const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -177,11 +170,6 @@ import stepUp = require('../oauth-oidc/step_up');
 // no route and closes no cycle. Only the pages a PERSON passes through use it
 // — the sign-in response and the sign-out page; refusals stay English.
 import PageLocale = require('../common/page_locale');
-// THE MOCK RELYING PARTY'S PAGES (#581): its start page and its verdict are
-// a static surface shared with SAML's two mocks (`common/CLAUDE.md` 3cm). A
-// library; it registers its routes only when this module's
-// `registerRoutes()` asks it to, here, under `/wsfed/rp`.
-import MockRpSurface = require('../common/mock_rp_surface');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -287,8 +275,6 @@ const PASSIVE_PATH = '/wsfed';
 // turns the re-prompt into the refusal: it can skip the trip, never the rule.
 const MECHANISM_MARKER = 'sts_mechanism_retry';
 
-const RP_PATH = '/wsfed/rp';
-
 // ONE RELYING PARTY'S OWN METADATA (#494), as `/saml2/metadata/{sp}` is one
 // service provider's: `/wsfed/metadata/{rp}`, the segment the application's
 // identifier (its wtrealm) or its slug (`saml2_sso.slugOf()`, the one handle
@@ -304,20 +290,6 @@ const METADATA_PATH = '/wsfed/metadata';
 // on the query string of the return address instead, which is byte for byte
 // what that handler redirected to once it had a session. One less store, and
 // one less thing to make per realm.
-
-// The `wctx` values the mock relying party has minted, so it can check the
-// round trip. Its own state and nobody else's — which is the whole point of
-// wctx.
-//
-// Per realm for a quieter reason than the deleted store above had, and it is
-// worth stating rather than inheriting: `/wsfed/rp` is reachable under every
-// realm prefix, so there is one mock relying party PER REALM, and a wctx
-// minted by the one in `acme` being recognised by the one in the default realm
-// would make the check this map exists for — did my own value come back? —
-// answer yes across a boundary the rest of the profile does not cross.
-const rpContexts = realms.map({ persist: 'wsfed.rpContexts', retain: 'age',
-                                // #333: the context's `expires`, ms.
-                                expiresAt: realms.expiryField('expires', 1) });
 
 // Written with no regular expressions and nothing to escape, for the reason
 // oauth2.js's ceremony script records: a backslash in a script that passes
@@ -440,21 +412,6 @@ class WsFederation {
   static wire(instance: WsFederation): void {
     helpers.log.debug("Entering WsFederation.wire(). " + typeof instance);
     helpers.log.debug("Leaving WsFederation.wire().");
-  }
-
-  // How long the MOCK RELYING PARTY below keeps a wctx it minted. It is the
-  // only state that relying party holds, and it is nothing to do with the
-  // identity provider's own stores above — which is why it survived the
-  // deletion of SIGNIN_TTL_MS and pendingSignIns and has to be declared here
-  // rather than folded into them.
-  //
-  // `wsfed.mockRpContextTtlMin` since 2026-09-12; it was a thirty-minute
-  // constant.
-  private rpContextTtlMs() {
-    const { config, log } = this.deps;
-    log.debug("Entering WsFederation.rpContextTtlMs().");
-    log.debug("Leaving WsFederation.rpContextTtlMs().");
-    return Number(config.value('wsfed.mockRpContextTtlMin')) * 60 * 1000;
   }
 
   // --- reading the request ---------------------------------------------------
@@ -911,12 +868,7 @@ class WsFederation {
         'A wsignin1.0 request must name the relying party it is for (section ' +
         '13.2.1). The realm becomes the assertion\'s audience restriction, ' +
         'and an assertion with no audience is one any relying party would be ' +
-        'entitled to accept.',
-        // The mock RP only where this realm is served it (#585).
-        demoOnly.serves()
-          ? '<p>There is a mock relying party here that sends a complete ' +
-            'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>'
-          : '');
+        'entitled to accept.');
     }
 
     // A RELYING PARTY NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496).
@@ -944,10 +896,10 @@ class WsFederation {
         'ou=applications); one that was only seen is not registered.');
     }
 
-    // wreply is optional (13.2.1). With none, the response goes to this
-    // service's own mock relying party rather than nowhere: a real IdP would
-    // post to the endpoint registered for wtrealm, and there is no registration
-    // here to consult.
+    // wreply is optional (13.2.1). With none, the response goes to the
+    // wsfedReplyUrl registered for wtrealm, and with none registered the
+    // request is refused: until #592 it went to this service's own mock
+    // relying party, and there is nowhere real to post it now.
     //
     // It is NOT validated against anything IN DEVELOPMENT MODE, exactly as
     // post_logout_redirect_uri is not at /oauth2/logout, and for the same
@@ -956,11 +908,10 @@ class WsFederation {
     // **IN PRODUCT MODE IT IS (2026-09-12).**
     // `mode.acceptsUnregisteredAddresses()` false means the wreply must be one
     // of the `wsfedReplyUrl` values on the wtrealm's own application entry,
-    // compared exactly; a request naming none gets the registered one; and
-    // there is no fallback to /wsfed/rp — a real IdP posts to the endpoint
-    // registered for the realm, and in that mode there is a registration to
-    // consult. `saml/return_address.ts` is the rule, shared with both SAML
-    // profiles.
+    // compared exactly; a request naming none gets the registered one. An
+    // identity provider posts to the endpoint registered for the realm, and
+    // in that mode there is a registration to consult.
+    // `saml/return_address.ts` is the rule, shared with both SAML profiles.
     //
     // Either way it must be an absolute http(s) URL, because a form action that
     // is not one posts back to this origin and the failure reads as the relying
@@ -974,13 +925,11 @@ class WsFederation {
                                                       'wsfedReplyUrl');
     const replyTo = returnAddress.resolve({
       requested: params.wreply ? String(params.wreply) : '',
-      // THE DEVELOPMENT PRECEDENCE IS KEPT BYTE FOR BYTE: a request with no
-      // wreply went to /wsfed/rp even when the entry recorded one, so
-      // development passes no registration here. Product passes the entry's.
-      registered: mode.acceptsUnregisteredAddresses() ? [] :
-                  replyKnown.registered,
+      // A request with no wreply goes to the entry's registered one in both
+      // modes since #592 — development had passed no registration here and
+      // sent it to /wsfed/rp instead, which is deleted.
+      registered: replyKnown.registered,
       unconfirmed: replyKnown.unconfirmed,
-      fallback: base + RP_PATH,
       attribute: 'wsfedReplyUrl',
       parameter: 'wreply',
       application: realm
@@ -1769,12 +1718,7 @@ class WsFederation {
           'the assertion, and in development mode no password is checked.') +
       '</p><h2>Try ' +
       'it</h2><ul>' +
-      // The mock RP only where this realm is served it (#585).
-      (demoOnly.serves() ? '<li><a ' +
-      'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying party ' +
-      'here ' +
-      'that sends a complete sign-in request and then verifies the response ' +
-      'check by check.</li>' : '') + '<li><a ' +
+      '<li><a ' +
       'href="/FederationMetadata/2007-06/FederationMetadata.xml">' +
       '/FederationMetadata/2007-06/FederationMetadata.xml</a> — the signed ' +
       'federation metadata, which is what a relying party should be ' +
@@ -1792,14 +1736,15 @@ class WsFederation {
                    'and the assertion\'s audience restriction.'],
        ['wreply', mode.acceptsUnregisteredAddresses()
          ? 'Where the response is POSTed. Optional — with none it goes to ' +
-           '<code>' + RP_PATH +
-           '</code>. In development mode, which this realm is in, it is not ' +
+           'the <code>wsfedReplyUrl</code> registered on the wtrealm\'s ' +
+           'application entry, and with none registered the request is ' +
+           'refused. In development mode, which this realm is in, it is not ' +
            'validated against any registration, like every other return URL ' +
            'here.'
          : 'Where the response is POSTed. This realm is in PRODUCT mode, so ' +
            'it must be one of the <code>wsfedReplyUrl</code> values on the ' +
            'wtrealm\'s application entry, compared exactly; with none, the ' +
-           'registered one is used; there is no mock fallback.'],
+           'registered one is used.'],
        ['wctx', 'Echoed back byte for byte and never interpreted. It is the ' +
                 'relying party\'s state.'],
        ['wct', 'The request timestamp. Recorded with its skew from this ' +
@@ -2038,21 +1983,9 @@ class WsFederation {
   }
 
   // ===========================================================================
-  // The mock relying party. NON-SPEC — a relying party is not part of an
-  // identity provider, and this one is here for two reasons that earn it:
-  //
-  //   * it is the default `wreply`, so a sign-in request that names no return
-  //     address has somewhere real to go instead of nowhere;
-  //   * it makes the profile testable from one service. Everything else here is
-  //     verified by the client under test; a sign-in response POSTed into the
-  //     void could not be checked at all without standing up a second service,
-  //     and the checks below are the ones that catch the mistakes this profile
-  //     makes (an unresolvable signature reference, a mangled wctx, an audience
-  //     naming the wrong realm).
-  //
-  // It is also the only thing in this service that VERIFIES a WS-Federation
-  // response, which makes it the counterpart of what /oid4vp/response is for
-  // presentations.
+  // VERIFYING THIS SERVICE'S OWN SIGNATURE. The mock relying party that used
+  // to verify a whole sign-in response here was deleted (#592); what is left
+  // is the signature check a test asks of an assertion this service signed.
   // ===========================================================================
 
   // Whether the assertion's signature is this service's, resolved against the
@@ -2105,235 +2038,13 @@ class WsFederation {
              canonicalization: result.canonicalization };
   }
 
-  // Every check, in the order a relying party would apply them, each with its
-  // own verdict. One boolean for the whole response would say "it failed" and
-  // nothing a person could act on, which is the same argument the OID4VP
-  // verifier makes.
-  /**
-   * Checks a sign-in response as the mock relying party: each check a relying
-   * party would apply, in order, with its own verdict.
-   *
-   * @param params - the posted `wa`, `wresult` and `wctx`
-   * @param realm - the relying party's realm, the expected audience
-   * @returns `{ checks, subject, claims, tokenType, assertionVersion, ok }`
-   */
-  verifySignInResponse(params, realm) {
-    const { config, firstByLocal, log, textByLocal } = this.deps;
-    log.debug("Entering WsFederation.verifySignInResponse().");
-    const checks = [];
-    const add = (name, ok, detail) => {
-      log.debug("Entering add().");
-      checks.push({ name: name, ok: !!ok, detail: detail });
-      log.debug("Leaving add().");
-    };
-    const result = { checks: checks, subject: '', claims: [], tokenType: '',
-                     assertionVersion: '', ok: undefined as boolean };
-
-    add('wa is wsignin1.0', String(params.wa || '') === 'wsignin1.0',
-        'wa=' + (params.wa || '(none)'));
-    const wresult = params.wresult ? String(params.wresult) : '';
-    add('wresult is present', !!wresult,
-        wresult ? wresult.length + ' characters' : 'nothing to verify');
-    if (!wresult) {
-      log.debug("Leaving WsFederation.verifySignInResponse(). There was no " +
-                "wresult.");
-      return result;
-    }
-
-    let doc = null;
-    try {
-      doc = new DOMParser().parseFromString(wresult, 'text/xml');
-    } catch (e) {
-      log.debug("Caught in WsFederation.verifySignInResponse(): " +
-                ((e && e.message) || e));
-      // Kept as a failed check rather than thrown: the page's job is to report
-      // every check, and "it is not XML" is a verdict like any other.
-      add('wresult parses as XML', false, e.message);
-      log.debug("Leaving WsFederation.verifySignInResponse(). wresult is not " +
-                "XML.");
-      return result;
-    }
-    const rstr = firstByLocal(doc, 'RequestSecurityTokenResponse') ||
-      (doc.documentElement &&
-       doc.documentElement.localName === 'RequestSecurityTokenResponse'
-        ? doc.documentElement : null);
-    add('wresult carries an RSTR', !!rstr,
-        rstr ? 'in the ' + (rstr.namespaceURI || '(no)') +
-        ' namespace' : 'no ' +
-            'RequestSecurityTokenResponse');
-    const tokenType = textByLocal(doc, 'TokenType');
-    result.tokenType = tokenType;
-    add('the RSTR names a token type', !!tokenType,
-        tokenType || 'no t:TokenType');
-
-    const assertion = firstByLocal(doc, 'Assertion');
-    add('it contains an assertion', !!assertion,
-        assertion ? 'in ' + assertion.namespaceURI : 'no saml:Assertion');
-    if (!assertion) {
-      log.debug("Leaving WsFederation.verifySignInResponse(). There is no " +
-                "assertion.");
-      return result;
-    }
-    // SAML 1.1 and 2.0 are told apart by namespace, not by the TokenType the
-    // sender claimed: the assertion is the thing that was signed, so it is the
-    // thing whose own statement about itself counts.
-    const isSaml11 =
-        assertion.namespaceURI === 'urn:oasis:names:tc:SAML:1.0:assertion';
-    result.assertionVersion = isSaml11 ? 'SAML 1.1' : 'SAML 2.0';
-
-    // The ELEMENT is named, not the id attribute. Both versions spell the
-    // element <Assertion>, so this no longer branches on the version at all —
-    // which is the second thing the shared verifier removed here. The reference
-    // is resolved through `AssertionID` for 1.1 and `ID` for 2.0 by the
-    // verifier itself, from the document rather than from an argument a caller
-    // had to get right in opposite directions for the two versions.
-    const verdict = this.verifyAssertionSignature(wresult, 'Assertion');
-    add('the assertion signature verifies against /sts/cert', verdict.ok,
-        verdict.ok ? (verdict.signatureMethod || 'signed') + ' over ' +
-                     (verdict.canonicalization || 'a canonicalization') + ', ' +
-                         'resolved through ' +
-                     (isSaml11 ? 'AssertionID' : 'ID')
-                   : verdict.why);
-
-    const issuer = isSaml11 ? (assertion.getAttribute('Issuer') || '') :
-                   textByLocal(assertion, 'Issuer');
-    // #523: the realm's one name, which the metadata publishes — the check a
-    // relying party configured from the metadata makes.
-    const expectedIssuer = IssuerNames.issuer();
-    add('the issuer is this service', issuer === expectedIssuer,
-        (issuer || '(none)') +
-        (issuer === expectedIssuer ? '' : ', expected ' + expectedIssuer));
-
-    const conditions = firstByLocal(assertion, 'Conditions');
-    const audience = conditions ? textByLocal(conditions, 'Audience') : '';
-    add('the audience is this relying party', audience === realm,
-        'audience ' + (audience || '(none)') + ', expected ' + realm);
-
-    const notBefore = conditions ? conditions.getAttribute('NotBefore') : '';
-    const notOnOrAfter = conditions ? conditions.getAttribute('NotOnOrAfter') :
-                         '';
-    const now = Date.now();
-    const inWindow = !!notBefore && !!notOnOrAfter &&
-      Date.parse(notBefore) <= now && now < Date.parse(notOnOrAfter);
-    add('it is inside its validity window', inWindow,
-        (notBefore || '(no NotBefore)') + ' to ' + (notOnOrAfter || '(no ' +
-            'NotOnOrAfter)'));
-
-    // The wctx round trip. Its own state, so this relying party is the only
-    // thing that can check it — and an IdP that decoded and re-encoded it, or
-    // dropped it for being long, produces exactly the same symptom as a lost
-    // session.
-    const wctx = params.wctx ? String(params.wctx) : '';
-    const known = rpContexts.get(wctx);
-    add('wctx came back unaltered', !!known,
-        known ? 'the same value this relying party minted, byte for byte'
-              : (wctx ? 'this relying party did not mint "' + wctx + '" — it ' +
-                        'was altered, or this response was not started ' +
-                        'from ' + RP_PATH
-                      : 'no wctx came back'));
-    if (known) rpContexts.delete(wctx);
-
-    const nameEl = firstByLocal(assertion, 'NameIdentifier') ||
-                   firstByLocal(assertion, 'NameID');
-    result.subject = nameEl ? (nameEl.textContent || '').trim() : '';
-    add('the assertion names a subject', !!result.subject,
-        result.subject || '(none)');
-
-    const attributes = assertion.getElementsByTagNameNS('*', 'Attribute');
-    for (let i = 0; i < attributes.length; i++) {
-      const a = attributes[i];
-      // Two shapes, one list: SAML 1.1 splits the claim URI into a namespace
-      // and a name, SAML 2.0 has it whole in Name.
-      const uri = isSaml11
-        ? (a.getAttribute('AttributeNamespace') || '') + '/' + (a.getAttribute(
-            'AttributeName') || '')
-        : (a.getAttribute('Name') || '');
-      const valueEl = firstByLocal(a, 'AttributeValue');
-      result.claims.push({ uri: uri,
-                           value: valueEl ? (valueEl.textContent || '').trim() :
-                                  '' });
-    }
-    add('the claims arrived', result.claims.length > 0,
-        result.claims.length + ' ' +
-        'claim(s)');
-
-    result.ok = checks.every((c) => { return c.ok; });
-    log.debug("Leaving WsFederation.verifySignInResponse(). ok=" + result.ok +
-              ", " +
-        checks.length + " " +
-        "check(s).");
-    return result;
-  }
-
-  // The mock relying party's sign-out link: `wsignout1.0` back to itself.
-  private mockRpSignOut(base: string): string {
-    const { log } = this.deps;
-    log.debug("Entering WsFederation.mockRpSignOut().");
-    log.debug("Leaving WsFederation.mockRpSignOut().");
-    return PASSIVE_PATH + '?wa=wsignout1.0&wreply=' +
-      encodeURIComponent(base + RP_PATH);
-  }
-
-  /**
-   * The mock relying party's start view (#581): its realm, a fresh `wctx`,
-   * and the sign-in requests it offers — the facts its start page printed,
-   * the words the browser's. Minting the `wctx` is this relying party's own
-   * state, held for `wsfed.mockRpContextTtlMin` so the round trip can be
-   * checked on the way back; it is the only state it keeps.
-   *
-   * @param req - the request
-   * @returns the view
-   */
-  mockRpStartView(req: any): any {
-    const { baseUrlOf, iso, log, randomId } = this.deps;
-    log.debug("Entering WsFederation.mockRpStartView().");
-    const base = baseUrlOf(req);
-    const realm = base + RP_PATH;
-    // 128 bits (#65), section 13's floor for a value that looks up state.
-    const wctx = 'rp-' + randomId(16);
-    rpContexts.set(wctx,
-                   { realm: realm, expires: Date.now() +
-                    this.rpContextTtlMs() });
-    rpContexts.forEach((v, k) => {
-      if (v.expires < Date.now()) rpContexts.delete(k);
-    });
-    const request = (extra) => {
-      log.debug("Entering request().");
-      const usp = new URLSearchParams();
-      usp.set('wa', 'wsignin1.0');
-      usp.set('wtrealm', realm);
-      usp.set('wreply', base + RP_PATH);
-      usp.set('wctx', wctx);
-      usp.set('wct', iso(0));
-      Object.keys(extra || {}).forEach((k) => { usp.set(k, extra[k]); });
-      log.debug("Leaving request().");
-      return PASSIVE_PATH + '?' + usp.toString();
-    };
-    const view = {
-      kind: 'start', family: 'wsfed', realm: realm, wctx: wctx,
-      requests: [
-        { id: 'saml11', href: request({}) },
-        { id: 'saml2', href: request({ tokenType: 'saml2' }) },
-        { id: 'trust13', href: request({ trust: '1.3' }) },
-        { id: 'wfresh', href: request({ wfresh: '0' }) },
-        { id: 'multifactor', href: request({ wauth: AM_MULTIFACTOR }) },
-        { id: 'hardware', href: request({ wauth: AM_HARDWARE_SAML11 }) }
-      ],
-      signOut: this.mockRpSignOut(base),
-      metadata: '/FederationMetadata/2007-06/FederationMetadata.xml'
-    };
-    log.debug("Leaving WsFederation.mockRpStartView().");
-    return view;
-  }
-
   // THE ROUTES, in the order this module registered them at load
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
   /**
    * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata (the
-   * shared document and one per registered relying party) and the mock
-   * relying party; called by the composition root at this module's place
-   * in the route order.
+   * shared document and one per registered relying party); called by the
+   * composition root at this module's place in the route order.
    *
    * @param app - the express app
    */
@@ -2397,76 +2108,6 @@ class WsFederation {
                 "endpoint.");
     });
 
-    // THE MOCK RELYING PARTY (#581): its pages are a static surface. The
-    // start page is the shell, its view asked of `/wsfed/rp/api/start`
-    // (which mints the wctx); the verdict is the shell carrying it. What it
-    // does as a relying party is unchanged.
-    MockRpSurface.registerRoutes(app, 'wsfed', (req) => {
-      return this.mockRpStartView(req);
-    });
-
-    app.get(RP_PATH, demoOnly, (req, res) => {
-      log.debug("Entering the mock relying party (GET).");
-
-      // A cleanup request arriving at the relying party, which is the direction
-      // wsignoutcleanup1.0 is actually defined for. A real RP drops its own
-      // session here; this one has none and says so rather than pretending.
-      // A PROTOCOL PARTICIPANT'S DOOR, NOT A PAGE (#581): the identity
-      // provider's sign-out documents fetch it as a one-pixel image, so it
-      // answers exactly as it did, server-drawn.
-      if (String(req.query.wa || '') === 'wsignoutcleanup1.0') {
-        log.debug("Leaving the mock relying party. A cleanup request was " +
-                  "received.");
-        return this.sendPage(res, 200, 'Cleanup received — mock relying party',
-          '<h1>Cleanup received</h1><div class="ok">This relying party was ' +
-          'sent ' +
-          '<code>wa=wsignoutcleanup1.0</code> and would drop its own session ' +
-          'here.</div><p>It holds none: it verifies a sign-in response and ' +
-          'shows ' +
-          'it, and keeps nothing afterwards. The identity provider fetched ' +
-          'this ' +
-          'URL as a one-pixel image from its sign-out page, which is ' +
-          'front-channel logout.</p><p><a ' +
-          'href="' + RP_PATH + '">Start another ' +
-              'sign-in</a></p>');
-      }
-      MockRpSurface.sendShell(req, res, 200, 'wsfed', null);
-      log.debug("Leaving the mock relying party (GET). The shell.");
-      return undefined;
-    });
-
-    app.post(RP_PATH, demoOnly, (req, res) => {
-      log.debug("Entering the mock relying party (POST).");
-      const base = baseUrlOf(req);
-      const realm = base + RP_PATH;
-      const params = parseBody(req);
-      logArtifact('WS-Federation sign-in response', 'as received by the mock ' +
-                                                    'relying party', params);
-      const verdict = this.verifySignInResponse(params, realm);
-      // 200 whatever the verdict: the POST was answered, and the verdict is the
-      // document. A 400 here would be this relying party reporting on the
-      // identity provider's behaviour with a status code the browser attributes
-      // to itself.
-      if (!verdict.ok) {
-        errorCodes.mark(res, 'STS-WSFED-0016');
-      }
-      // THE VERDICT IS DRAWN IN THE BROWSER (#581), from the shell's state:
-      // the facts the page printed, and the words the `mockRp` catalog's.
-      MockRpSurface.sendShell(req, res, 200, 'wsfed', {
-        kind: 'result', family: 'wsfed', realm: realm, ok: !!verdict.ok,
-        assertionVersion: verdict.assertionVersion || '',
-        subject: verdict.subject || '',
-        checks: verdict.checks.map((c) => {
-          return { name: c.name, ok: !!c.ok, detail: String(c.detail) };
-        }),
-        claims: verdict.claims.map((c) => {
-          return { uri: c.uri, value: c.value };
-        }),
-        document: String(params.wresult || ''),
-        signOut: this.mockRpSignOut(base)
-      });
-      log.debug("Leaving the mock relying party (POST). ok=" + verdict.ok);
-    });
     log.debug("Leaving WsFederation.registerRoutes().");
   }
 }
@@ -2511,7 +2152,6 @@ export = {
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: slot.forward('federationMetadata'),
   roleDescriptor: slot.forward('roleDescriptor'),
-  verifySignInResponse: slot.forward('verifySignInResponse'),
   verifyAssertionSignature: slot.forward('verifyAssertionSignature'),
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so
   // that a global sign-out sends exactly what wsignout1.0 sends — see the block

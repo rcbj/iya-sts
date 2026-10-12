@@ -62,11 +62,8 @@ function childMain() {
   // path a demonstration mark is on, with which mark.
   const PROCESS_MARKED = ['/tls/trust', '/tls/trust/clear'];
   const REALM_MARKED = [
-    '/wsfed/rp', '/saml2/sp', '/saml11/rp', '/oauth2/commands/mock-rp',
-    // The mock relying parties' static surface (#581): each one's script
-    // and start view, under its own path.
-    '/wsfed/rp/mock-rp.js', '/wsfed/rp/api/start', '/saml2/sp/mock-rp.js',
-    '/saml2/sp/api/start', '/saml11/rp/mock-rp.js', '/saml11/rp/api/start',
+    // The SAML and WS-Federation mock relying parties were deleted (#592).
+    '/oauth2/commands/mock-rp',
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
@@ -230,10 +227,10 @@ function childMain() {
          'default realm every demonstration reaches its handler',
          missingInDevelopment.join(', ') || 'all served');
     const unregistered = await ask(port, 'GET',
-                                   '/realm/' + PRODUCT + '/saml2/sp');
+                                   '/realm/' + PRODUCT + '/spnego');
     const nothing = await ask(port, 'GET', '/realm/' + PRODUCT +
                               '/no-such-path-anywhere');
-    note(unregistered.body.replace(/\/saml2\/sp/, '/X') ===
+    note(unregistered.body.replace(/\/spnego/, '/X') ===
          nothing.body.replace(/\/no-such-path-anywhere/, '/X'),
          'B3. and the 404 is the unrouted one, body for body',
          unregistered.body.slice(0, 80));
@@ -245,10 +242,10 @@ function childMain() {
     config.setOverride('global.mode', 'product');
     try {
       const realmDemo = await ask(port, 'GET', '/realm/' + DEVELOPMENT +
-                                  '/saml2/sp');
+                                  '/spnego');
       const processDoor = await ask(port, 'POST', '/realm/' + DEVELOPMENT +
                                     '/tls/trust');
-      const defaultRealm = await ask(port, 'GET', '/saml2/sp');
+      const defaultRealm = await ask(port, 'GET', '/spnego');
       note(!unrouted(realmDemo, 'GET') && unrouted(processDoor, 'POST') &&
            unrouted(defaultRealm, 'GET'),
            'C1. with the process in product, a development realm keeps ' +
@@ -342,7 +339,7 @@ function childMain() {
       note(offered.length === 0, 'D4. the hosted-applications catalogue ' +
            'offers no demonstration prefix or application in a product realm',
            offered.join(', ') || 'none');
-      note(app.demoPathHidden('/saml2/sp') &&
+      note(app.demoPathHidden('/spnego') &&
            !app.demoPathHidden('/saml2/sso') &&
            !app.demoPathHidden('/no-such-path'),
            'D5. a link to a demonstration is hidden, and to anything else ' +
@@ -350,7 +347,7 @@ function childMain() {
     });
     note(hosted.list().some(function (one) {
       return one.id === 'devices';
-    }) && !app.demoPathHidden('/saml2/sp'),
+    }) && !app.demoPathHidden('/spnego'),
          'D6. and in development the catalogue and the links keep them');
 
     server.close();

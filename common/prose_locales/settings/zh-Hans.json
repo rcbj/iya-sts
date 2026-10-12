@@ -4303,14 +4303,6 @@
     "en": "5622b8dd257d1d0a",
     "text": "在浏览器停留在登录界面期间，或在 POST 绑定请求与其转换成的 GET 之间，AuthnRequest 被保留的时长。超过此时长，返回时会被拒绝，并显示一个指明此值的页面。原为 saml2_sso.js 中的常量 REQUEST_TTL_MS。"
   },
-  "saml2.mockSpContextTtlMin|label": {
-    "en": "8453902ae50bb2e7",
-    "text": "模拟服务提供方 RelayState 有效期（分钟）"
-  },
-  "saml2.mockSpContextTtlMin|description": {
-    "en": "27f0344e980fd01a",
-    "text": "/saml2/sp——非规范的模拟服务提供方——记住其生成的 RelayState 以便检查往返过程的时长。这是该页面自己的状态，与身份提供方的状态无关。"
-  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 绑定长度警告（字符）"
@@ -4486,14 +4478,6 @@
   "wsfed.assertionLifetimeMin|description": {
     "en": "7d9a3360c0b23fa4",
     "text": "WS-Federation 登录响应中的 SAML 1.1 断言的有效时长，以及包裹它的 RequestSecurityTokenResponse 的 wsu:Lifetime。它与 saml11.assertionLifetimeMin 相互独立，理由见该设置自身的描述：浏览器配置文件的断言在几秒内就会被使用，在那里设置较短的有效期是一种贴近实际的测试，而同样的值会让 WS-Federation 会话在用户阅读其登录后的页面时就过期。应用可以通过其条目上的 wsfedAssertionLifetimeMin 覆盖它。"
-  },
-  "wsfed.mockRpContextTtlMin|label": {
-    "en": "d414d71003107b1c",
-    "text": "模拟依赖方 wctx 有效期（分钟）"
-  },
-  "wsfed.mockRpContextTtlMin|description": {
-    "en": "6316f83a4de38024",
-    "text": "/wsfed/rp——非规范的模拟依赖方——记住其生成的 wctx 以便检查往返过程的时长。这只是它自己的状态，与其他任何人无关。原为 wsfed.js 中的常量 RP_CONTEXT_TTL_MS。"
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",

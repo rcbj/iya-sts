@@ -4303,14 +4303,6 @@
     "en": "5622b8dd257d1d0a",
     "text": "Hur länge en AuthnRequest hålls kvar medan webbläsaren är på inloggningssidan, eller mellan en begäran i POST-bindningen och den GET den görs om till. Därefter avvisas returresan med en sida som anger detta värde. Var konstanten REQUEST_TTL_MS i saml2_sso.js."
   },
-  "saml2.mockSpContextTtlMin|label": {
-    "en": "8453902ae50bb2e7",
-    "text": "Livslängd för RelayState hos mock-tjänsteleverantören (minuter)"
-  },
-  "saml2.mockSpContextTtlMin|description": {
-    "en": "27f0344e980fd01a",
-    "text": "Hur länge /saml2/sp — den ICKE-SPECIFICERADE mock-tjänsteleverantören — kommer ihåg en RelayState den skapat så att den kan kontrollera rundturen. Det är den sidans eget tillstånd och har inget med identitetsleverantörens att göra."
-  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Längdvarning för Redirect-bindning (tecken)"
@@ -4486,14 +4478,6 @@
   "wsfed.assertionLifetimeMin|description": {
     "en": "7d9a3360c0b23fa4",
     "text": "Hur länge SAML 1.1-intyget i ett WS-Federation-inloggningssvar är giltigt, och wsu:Lifetime för det RequestSecurityTokenResponse som omger det. Den är skild från saml11.assertionLifetimeMin av det skäl som den inställningens egen beskrivning anger: ett intyg i en webbläsarprofil förbrukas inom sekunder och en kort livslängd där är ett realistiskt test, medan samma värde skulle låta en WS-Federation-session gå ut medan någon läste sidan den loggade in dem på. En applikation kan åsidosätta det med wsfedAssertionLifetimeMin på sin post."
-  },
-  "wsfed.mockRpContextTtlMin|label": {
-    "en": "d414d71003107b1c",
-    "text": "Livslängd för wctx hos mock-förlitande part (minuter)"
-  },
-  "wsfed.mockRpContextTtlMin|description": {
-    "en": "6316f83a4de38024",
-    "text": "Hur länge /wsfed/rp — den ICKE-SPECIFICERADE mock-förlitande parten — kommer ihåg en wctx den skapat så att den kan kontrollera rundturen. Dess eget tillstånd och ingen annans. Var konstanten RP_CONTEXT_TTL_MS i wsfed.js."
   },
   "tls.trustIssuedClientCertificates|label": {
     "en": "d56dd529fa6d41ec",
