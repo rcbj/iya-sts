@@ -7482,15 +7482,15 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oidc'],
     effect: 'shows the sign-in screen for a request another endpoint sent ' +
             'here; needs an ?authn= id, so following it bare answers 400',
-    what: 'THE AUTHENTICATION SERVICE. The POST that carries a username and ' +
-          'a password is answered with a 303 and never a 307 (RFC 9700 ' +
-          'section 4.12): a 307 preserves the method and the body, so the ' +
-          'browser would repeat those credentials to whatever the redirect ' +
-          'points at — which after a sign-in is a URL the calling protocol ' +
-          'composed. Every protocol here that needs a person identified ' +
-          'sends them to this one screen with a return URL carrying its own ' +
-          'request whole, and gets them back with a session cookie ' +
-          'established — GET renders the screen, POST takes what was typed. ' +
+    what: 'THE AUTHENTICATION SERVICE. A static surface since #571: this ' +
+          'answers the shell, and /authn/signin.js draws the screen from ' +
+          '/authn-api/pending/{id} and sends what was typed there as JSON; ' +
+          'the answer names the next step, and the browser follows it with ' +
+          'a GET, as it followed the 303 the form was answered with (RFC ' +
+          '9700 section 4.12). Every protocol here that needs a person ' +
+          'identified sends them to this one screen with a return URL ' +
+          'carrying its own request whole, and gets them back with a ' +
+          'session cookie established. ' +
           'No password is checked; the username typed becomes the identity ' +
           'in every token, assertion and credential that follows. It knows ' +
           'nothing about the protocol that sent anybody here: what the ' +
@@ -7527,7 +7527,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'two buttons, and two buttons is exactly what a correct list of ' +
           'two draws. The list is re-read when this page is drawn rather ' +
           'than taken from the redirect that produced it, and if fewer than ' +
-          'two partners are left the sign-in screen is drawn instead.' },
+          'two partners are left the sign-in screen is drawn instead. A ' +
+          'static page since #571, drawn from ' +
+          '/authn-api/pending/{id}/partners.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
@@ -7762,7 +7764,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'would have, second factor included. Needs a ?change= id minted by ' +
           'that step, so following it bare answers 400. Every other door ' +
           'that verifies a password refuses such an account in product mode ' +
-          '(STS-AUTHN-0142) until the change is made here'
+          '(STS-AUTHN-0142) until the change is made here. A static page ' +
+          'since #571, drawn from /authn-api/password-change/{id}, which ' +
+          'also takes the new password.'
   },
   { path: '/authn/mfa-setup', group: 'Authentication',
     name: 'Required second factor set-up step',
@@ -7814,16 +7818,68 @@ const ENDPOINTS: EndpointEntry[] = [
           'page has NO SCRIPT and is served under the service-wide ' +
           'script-src \'none\' — a person reads digits and types them, so ' +
           'the exception the security-key page needs does not apply here.' },
+  { path: '/authn/signin.js', group: 'Authentication',
+    name: 'The sign-in screen\'s script', specs: [],
+    what: 'NON-SPEC (#571). The sign-in surface\'s runtime and renderers in ' +
+          'one file, built by build-typescript.sh (authn/authn-spa.js) and ' +
+          'served precompressed: it draws /authn/login, /authn/select-idp ' +
+          'and /authn/password-change from /authn-api and sends their acts ' +
+          'there. Public: nothing in it is secret.' },
+  { path: '/authn-api', group: 'Authentication',
+    name: 'The sign-in API index', specs: [],
+    what: 'NON-SPEC (#571). The sign-in API\'s operations, each with the ' +
+          'page or control it is the door of (mirrors). Public and ' +
+          'language-free.' },
+  { path: '/authn-api/openapi.json', group: 'Authentication',
+    name: 'The sign-in API\'s OpenAPI document', specs: [],
+    what: 'NON-SPEC (#571). Generated from the operation table and its ' +
+          'body schemas.' },
+  { path: '/authn-api/pending/:id', group: 'Authentication',
+    name: 'What the sign-in screen offers', specs: [],
+    what: 'NON-SPEC (#571). The screen\'s view for a pending sign-in, as ' +
+          'facts and no words, and the CSRF token its acts carry. The id ' +
+          'is a bearer capability and is never logged.' },
+  { path: '/authn-api/pending/:id/partners', group: 'Authentication',
+    name: 'The federation partners to choose between', specs: [],
+    what: 'NON-SPEC (#571). The chooser\'s view, resolved again from the ' +
+          'application\'s entry.' },
+  { path: '/authn-api/pending/:id/password', group: 'Authentication',
+    name: 'Sign in with a password', specs: [],
+    what: 'NON-SPEC (#571). The Sign In button: JSON, an Origin of this ' +
+          'service and the X-CSRF-Token of the browser\'s session. Rate ' +
+          'limited, risk-scored and decided by the issuance policy as the ' +
+          'form was; the answer names the next step.' },
+  { path: '/authn-api/pending/:id/cancel', group: 'Authentication',
+    name: 'Decline the sign-in', specs: [],
+    what: 'NON-SPEC (#571). Cancel: the caller is told access_denied.' },
+  { path: '/authn-api/pending/:id/anonymous', group: 'Authentication',
+    name: 'Continue without signing in', specs: [],
+    what: 'NON-SPEC (#571). Where authn.unauthenticatedSessions is on.' },
+  { path: '/authn-api/pending/:id/email', group: 'Authentication',
+    name: 'Sign in with an emailed code or link', specs: [],
+    what: 'NON-SPEC (#571). Where the authentication policy accepts one.' },
+  { path: '/authn-api/pending/:id/passkey/options', group: 'Authentication',
+    name: 'Arm a passkey ceremony', specs: [],
+    what: 'NON-SPEC (#571). A single-use challenge for a passkey with no ' +
+          'username.' },
+  { path: '/authn-api/pending/:id/passkey', group: 'Authentication',
+    name: 'Sign in with a passkey and no username', specs: [],
+    what: 'NON-SPEC (#571). The ceremony\'s result, verified with user ' +
+          'verification required.' },
+  { path: '/authn-api/password-change/:id', group: 'Authentication',
+    name: 'A forced password change', specs: [],
+    what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
+          'stores the new one and continues the sign-in.' },
   { path: '/authn/fingerprint.js', group: 'Authentication',
     name: 'Browser fingerprint script (optional)',
     specs: [],
     what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
-          'the realm — 404 otherwise — and then the sign-in screen is the ' +
-          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
-          'browser and sends nothing, its usage ping turned off) puts a ' +
-          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'the realm — 404 otherwise — and then the sign-in screen loads ' +
+          'it beside its own script: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) computes a ' +
+          'visitorId the sign-in sends, and the service keeps only a keyed ' +
           'digest of it, scored as a device this person never used. The ' +
-          'form works without it. Off by default: it is personal data, and ' +
+          'sign-in works without it. Off by default: it is personal data, and ' +
           'turning it on is the operator\'s decision, after the privacy ' +
           'impact assessment the risk-scoring page describes.' },
   { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
