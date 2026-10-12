@@ -410,24 +410,19 @@ function firstIndex(source, patterns) {
 
 function checkRegistration(t) {
   log.debug("Entering checkRegistration().");
-  t.log.info('the portal registers the renewal above everything that reads ' +
-             'the session');
-  // THE CONSOLE RENEWS NOTHING ON THE SERVER since the cutover (#446): it
-  // is a static application holding its own tokens in the browser, and its
-  // refresh is `web_runtime.ts`'s. The portal is the one surface left.
+  t.log.info('neither hosted surface renews on the server any more');
+  // THE CONSOLE RENEWS NOTHING ON THE SERVER since the cutover (#446), and
+  // the PORTAL since it became a static application too (#568): each holds
+  // its own tokens in the browser and refreshes them there
+  // (`admin-ui/web_spa_client.ts`). A renewal still registered on /portal
+  // would renew a relying-party session nothing makes any more. The library
+  // the checks above hold is the embedded debugger's still.
   const portal = fs.readFileSync(path.join(__dirname, '..', 'portal',
                                            'portal.ts'), 'utf8');
-  const renewPortal = portal.indexOf("app.use(BASE, oidcRp.renewal('portal'))");
-  const firstPortal = firstIndex(portal,
-                                 [/^\s*app\.(get|post|all|use)\((?!BASE, oidcRp\.renewal)(?!BASE, function \(req, res, next\) \{\n\s*log\.debug\("Entering the portal's cell placement)/m]);
-  // The one registration allowed above the renewal is the cell placement
-  // (#98): it reads no session of this cell's, it relays a request whose
-  // person lives in another cell, and a renewal run here first would renew a
-  // projection the home cell is the authority for.
-  t.check(renewPortal >= 0, 'the portal registers oidcRp.renewal(\'portal\')');
-  t.check(renewPortal >= 0 && firstPortal > renewPortal,
-          'ABOVE the first /portal route (rule 1)',
-          'renewal at ' + renewPortal + ', first route at ' + firstPortal);
+  t.check(portal.indexOf("oidcRp.renewal('portal')") < 0 &&
+          portal.indexOf('requireSignIn(') < 0,
+          'the portal registers no oidcRp.renewal(\'portal\') and has no ' +
+          'relying-party sign-in of its own (#568)');
   log.debug("Leaving checkRegistration().");
 }
 

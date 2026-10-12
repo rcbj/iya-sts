@@ -187,6 +187,7 @@
   "nav.debugger": "Protokollfelsökare",
   "nav.sts-metadata": "Tjänstens metadata",
   "nav.api-explorer": "API-utforskare",
+  "nav.account-api": "Konto-API",
   "nav.keys": "Nyckelpar",
   "nav.crypto-metadata": "Kryptografi",
   "shell.language": "Språk",
