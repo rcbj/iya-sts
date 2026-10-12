@@ -908,11 +908,10 @@ class WsFederation {
     // **IN PRODUCT MODE IT IS (2026-09-12).**
     // `mode.acceptsUnregisteredAddresses()` false means the wreply must be one
     // of the `wsfedReplyUrl` values on the wtrealm's own application entry,
-    // compared exactly; a request naming none gets the registered one; and
-    // there is no fallback to /wsfed/rp — a real IdP posts to the endpoint
-    // registered for the realm, and in that mode there is a registration to
-    // consult. `saml/return_address.ts` is the rule, shared with both SAML
-    // profiles.
+    // compared exactly; a request naming none gets the registered one. An
+    // identity provider posts to the endpoint registered for the realm, and
+    // in that mode there is a registration to consult.
+    // `saml/return_address.ts` is the rule, shared with both SAML profiles.
     //
     // Either way it must be an absolute http(s) URL, because a form action that
     // is not one posts back to this origin and the failure reads as the relying
