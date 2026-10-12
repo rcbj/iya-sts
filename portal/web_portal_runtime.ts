@@ -204,7 +204,9 @@ class PortalRuntime extends SpaClient {
    * @returns nothing
    */
   async finishSignIn(): Promise<void> {
-    const query = SpaClient.queryOf(this.env.location.search);
+    // A JARM answer is opened and checked first (`SpaClient`).
+    const query = await this.openAuthorizationResponse(
+      SpaClient.queryOf(this.env.location.search));
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||

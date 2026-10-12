@@ -316,6 +316,15 @@ class SpaClient {
   async authorizationRequestUrl(params: Json): Promise<string> {
     const authorize = this.url('/oauth2/authorize');
     const meta = await this.asMetadata();
+    // JARM WHERE THE REALM OFFERS NOTHING ELSE (FAPI 2.0 Message Signing,
+    // which leaves only the JWT-secured modes in `response_modes_supported`):
+    // the answer comes back as a signed `response`, which
+    // `openAuthorizationResponse()` verifies.
+    const modes = meta.response_modes_supported;
+    if (Array.isArray(modes) && modes.indexOf('query') < 0 &&
+        (modes.indexOf('jwt') >= 0 || modes.indexOf('query.jwt') >= 0)) {
+      params.response_mode = modes.indexOf('jwt') >= 0 ? 'jwt' : 'query.jwt';
+    }
     if (meta.require_pushed_authorization_requests !== true) {
       return authorize + '?' + new URLSearchParams(params).toString();
     }
@@ -345,6 +354,152 @@ class SpaClient {
     // A REFUSED PUSH: the ordinary request, which the authorization endpoint
     // then refuses with the reason, drawn where the person can read it.
     return authorize + '?' + new URLSearchParams(params).toString();
+  }
+
+  // ---------------------------------------------------------------------------
+  // A JWT-SECURED AUTHORIZATION RESPONSE (JARM, #568), OPENED AND CHECKED
+  // BEFORE ANYTHING IN IT IS BELIEVED: the signature against the realm's
+  // published key (by `kid`, verified with WebCrypto), `iss` the realm's
+  // issuer, `aud` this client, `exp` in the future — JARM section 2.4. Only
+  // then are its `code`, `state` and `error` handed back, in the shape an
+  // ordinary callback's query has. An answer that is not a JWT is that query.
+  // ---------------------------------------------------------------------------
+  /**
+   * Bytes of a base64url string.
+   *
+   * @param text - the encoding
+   * @returns the bytes
+   */
+  static fromB64u(text: string): Uint8Array {
+    let t = String(text || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (t.length % 4) {
+      t += '=';
+    }
+    const bin = atob(t);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) {
+      out[i] = bin.charCodeAt(i);
+    }
+    return out;
+  }
+
+  /**
+   * WebCrypto's names for a JWS algorithm: how its key is imported and how
+   * a signature is verified, or null for one WebCrypto does not do.
+   *
+   * @param alg - the JWS `alg`
+   * @returns `{ importAs, verifyAs }`, or null
+   */
+  static webCryptoAlg(alg: string): Json {
+    const ec = function (curve: string, hash: string): Json {
+      return { importAs: { name: 'ECDSA', namedCurve: curve },
+               verifyAs: { name: 'ECDSA', hash: hash } };
+    };
+    const pss = function (hash: string, salt: number): Json {
+      return { importAs: { name: 'RSA-PSS', hash: hash },
+               verifyAs: { name: 'RSA-PSS', saltLength: salt } };
+    };
+    const rsa = function (hash: string): Json {
+      return { importAs: { name: 'RSASSA-PKCS1-v1_5', hash: hash },
+               verifyAs: { name: 'RSASSA-PKCS1-v1_5' } };
+    };
+    const table: Json = {
+      ES256: ec('P-256', 'SHA-256'), ES384: ec('P-384', 'SHA-384'),
+      ES512: ec('P-521', 'SHA-512'),
+      PS256: pss('SHA-256', 32), PS384: pss('SHA-384', 48),
+      PS512: pss('SHA-512', 64),
+      RS256: rsa('SHA-256'), RS384: rsa('SHA-384'), RS512: rsa('SHA-512'),
+      EdDSA: { importAs: { name: 'Ed25519' }, verifyAs: { name: 'Ed25519' } },
+      Ed25519: { importAs: { name: 'Ed25519' },
+                 verifyAs: { name: 'Ed25519' } }
+    };
+    return table[alg] || null;
+  }
+
+  /**
+   * The authorization response a callback carries: a JARM `response`
+   * opened and checked, or the query itself.
+   *
+   * @param query - the callback's query
+   * @returns `{ code, state, error, error_description, iss }`
+   */
+  async openAuthorizationResponse(query: Json): Promise<Json> {
+    if (!query || !query.response) {
+      return query || {};
+    }
+    const refused = function (why: string): Json {
+      return { error: 'invalid_response', state: '',
+               error_description: 'The authorization response could not ' +
+                 'be trusted: ' + why + '.' };
+    };
+    const parts = String(query.response).split('.');
+    if (parts.length !== 3) {
+      return refused('it is not a signed JWT');
+    }
+    let header: Json = null;
+    let claims: Json = null;
+    try {
+      header = JSON.parse(new TextDecoder().decode(
+        SpaClient.fromB64u(parts[0])));
+      claims = JSON.parse(new TextDecoder().decode(
+        SpaClient.fromB64u(parts[1])));
+    } catch (e) {
+      return refused('its header or claims are not JSON');
+    }
+    const how = SpaClient.webCryptoAlg(String(header.alg || ''));
+    if (!how) {
+      return refused('its algorithm ' + JSON.stringify(header.alg) +
+                     ' is not one this browser can verify');
+    }
+    const meta = await this.asMetadata();
+    let keys: Json[] = [];
+    try {
+      const res = await this.env.fetch(String(meta.jwks_uri ||
+        this.url('/oauth2/jwks')),
+        { headers: { 'Accept': 'application/json' } });
+      keys = ((await res.json()) || {}).keys || [];
+    } catch (e) {
+      return refused('the realm\'s keys could not be read');
+    }
+    const jwk = keys.filter(function (one: Json): boolean {
+      return !header.kid || one.kid === header.kid;
+    })[0];
+    if (!jwk) {
+      return refused('no published key has its kid');
+    }
+    const material: Json = { kty: jwk.kty };
+    ['crv', 'x', 'y', 'n', 'e'].forEach(function (name) {
+      if (jwk[name] !== undefined) {
+        material[name] = jwk[name];
+      }
+    });
+    let valid = false;
+    try {
+      const key = await this.env.crypto.subtle.importKey('jwk', material,
+        how.importAs, false, ['verify']);
+      valid = await this.env.crypto.subtle.verify(how.verifyAs, key,
+        SpaClient.fromB64u(parts[2]),
+        new TextEncoder().encode(parts[0] + '.' + parts[1]));
+    } catch (e) {
+      valid = false;
+    }
+    if (!valid) {
+      return refused('its signature does not verify');
+    }
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    const now = Math.floor((this.env.now ? this.env.now() : Date.now()) /
+                           1000);
+    if (meta.issuer && claims.iss !== meta.issuer) {
+      return refused('it names another issuer');
+    }
+    if (audiences.indexOf(this.clientId) < 0) {
+      return refused('it is for another client');
+    }
+    if (!claims.exp || Number(claims.exp) <= now) {
+      return refused('it has expired');
+    }
+    return { code: claims.code, state: claims.state, error: claims.error,
+             error_description: claims.error_description, iss: claims.iss };
   }
 
   /**

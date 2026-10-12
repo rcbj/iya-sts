@@ -220,7 +220,9 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   async finishSignIn(): Promise<void> {
-    const query = ConsoleRuntime.queryOf(this.env.location.search);
+    // A JARM answer is opened and checked first (#568, `SpaClient`).
+    const query = await this.openAuthorizationResponse(
+      ConsoleRuntime.queryOf(this.env.location.search));
     // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
     // verifier and the key, and this window hands the answer back.
     if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {

@@ -261,6 +261,15 @@ async function signInToThePortal(base, user, log2, options) {
     }, function () {
       return {};
     });
+  // JARM WHERE THE REALM OFFERS NOTHING ELSE (FAPI 2.0 Message Signing), as
+  // the runtime asks for it; the answer is read back below.
+  const modes = meta.response_modes_supported;
+  if (Array.isArray(modes) && modes.indexOf("query") < 0 &&
+      (modes.indexOf("jwt") >= 0 || modes.indexOf("query.jwt") >= 0)) {
+    params.response_mode = modes.indexOf("jwt") >= 0 ? "jwt" : "query.jwt";
+    authorizeUrl = base + "/oauth2/authorize?" +
+      new URLSearchParams(params).toString();
+  }
   if (meta.require_pushed_authorization_requests === true) {
     const parUrl = String(meta.pushed_authorization_request_endpoint ||
                           base + "/oauth2/par");
@@ -351,6 +360,19 @@ async function signInToThePortal(base, user, log2, options) {
       return "";
     })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400) : "";
   const back = new URL(fromLocation(location));
+  // A JARM `response`: its claims carry the code and the state. Read, not
+  // verified — the runtime verifies it (`SpaClient`), and the code is spent
+  // with this walk's own verifier and key either way.
+  if (back.searchParams.get("response")) {
+    const jwtParts = String(back.searchParams.get("response")).split(".");
+    const jarm = JSON.parse(Buffer.from(jwtParts[1] || "", "base64url")
+      .toString("utf8") || "{}");
+    ["code", "state", "error", "error_description"].forEach(function (name) {
+      if (jarm[name] !== undefined) {
+        back.searchParams.set(name, String(jarm[name]));
+      }
+    });
+  }
   const code = back.searchParams.get("code");
   assert.ok(/\/portal\/callback$/.test(back.pathname) && code &&
             back.searchParams.get("state") === state,
