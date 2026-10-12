@@ -470,6 +470,23 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// THE SIGN-OUT PAGE at `base`, as the page signs out since #577
+// (`authn_signin.js`'s `signOut()`): the view, the act over
+// /authn-api/logout, and the signed-out document it answers where the
+// browser has a partner to tell — answered in `hop()`'s shape, with this
+// jar's cookies kept.
+async function signOutAt(cookies, base, fields) {
+  log.debug("Entering signOutAt().");
+  const out = await authnSignin.signOut(base, fields,
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: out.headers });
+  }
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, headers: out.headers, body: out.text || "",
+           url: base + "/logout", location: "" };
+}
+
 // Every form on a page, with its action and its hidden fields decoded.
 function formsIn(html) {
   log.debug("Entering formsIn().");
@@ -1479,8 +1496,8 @@ async function federation(idp) {
     });
     // THE OUTBOUND LogoutRequest: signing out at the service provider realm
     // offers the partner one, and the partner's LogoutResponse comes back.
-    const bye = await postForm(cookies, realmBase(sp) + "/logout",
-                               { scope: "global" });
+    const bye = await signOutAt(cookies, realmBase(sp),
+                                { scope: "global" });
     const toPartner = [...String(bye.body).matchAll(/href="([^"]+)"/g)]
       .map(function (x) {
         return htmlDecode(x[1]);

@@ -72,6 +72,9 @@ const { Command, Option } = require("commander");
 const { usernameFor, runStamp } = require("./random_username.js");
 const signin = require("./console_signin.js");
 const portalSignin = require("./portal_signin.js");
+// THE SIGN-OUT PAGE (#577): a static surface over /authn-api/logout, which
+// `authn_signin.js`'s `signOut()` walks as the page does.
+const authnSignin = require("./authn_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -209,6 +212,30 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
+}
+
+// THE SIGN-OUT PAGE, as it signs out since #577: its shell, its view, the
+// act over /authn-api/logout, and the signed-out document where the act
+// answers one — with this browser's cookies, every one the walk set kept
+// (a cleared one removed). Answers `{ status, text, view, shellStatus }`.
+async function signOutAt(b, fields) {
+  log.debug("Entering signOutAt().");
+  const shell = await b.go("GET", "/logout");
+  const out = await authnSignin.signOut(base, fields, { cookie: b.cookie });
+  out.setCookies.forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "" || /Max-Age=0/i.test(String(one))) {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  b.cookie = b.cookieHeader();
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, text: out.text || "", view: out.view,
+           shell: shell };
 }
 
 async function get(path) {
@@ -541,26 +568,21 @@ async function theConsoleSignOutEndsIt(b, who) {
   assert.ok(signOnId && await rowFor(signOnId),
     "precondition: " + who + "'s sign-on session should be listed");
 
-  const page = await b.go("GET", "/logout");
-  const global = /<form[^>]+action="[^"]*\/logout"[^>]*>((?:(?!<\/form>)[\s\S])*?name="scope" value="global"[\s\S]*?)<\/form>/
-    .exec(page.text);
-  check("/logout draws the Global logout form the console's Sign out " +
-        "leads to", function () {
-      assert.ok(page.status === 200 && global,
-        "/logout answered " + page.status + ": " +
-        String(page.text).slice(0, 300));
+  // THE PAGE IS A STATIC SURFACE SINCE #577: the shell, drawn in the
+  // browser from the view of everything this session holds, whose Global
+  // logout is an act on /authn-api/logout bound to the sign-on cookie.
+  const out = await signOutAt(b, { scope: "global" });
+  check("/logout answers the sign-out page the console's Sign out leads " +
+        "to, drawn from what this browser holds", function () {
+      assert.ok(out.shell.status === 200 &&
+                out.shell.text.indexOf("/logout/signout.js") > 0 &&
+                out.view && out.view.state === "inventory",
+        "/logout answered " + out.shell.status + ": " +
+        String(out.shell.text).slice(0, 300));
     });
-  const fields = {};
-  const hidden = /<input type="hidden" name="([^"]+)" value="([^"]*)"/g;
-  let m = hidden.exec(global ? global[1] : "");
-  while (m) {
-    fields[m[1]] = m[2];
-    m = hidden.exec(global[1]);
-  }
-  const out = await b.go("POST", "/logout", form(fields));
-  check("pressing it answers", function () {
-    assert.ok(out.status === 200 || out.status === 303 || out.status === 302,
-      "POST /logout answered " + out.status);
+  check("pressing its Global logout answers", function () {
+    assert.ok(out.status === 200, "the sign-out answered " + out.status +
+              ": " + out.text.slice(0, 300));
   });
 
   const gone = await rowFor(signOnId);
@@ -759,10 +781,10 @@ async function signingOutInvalidatesIt(b, who) {
   const id = sessionIdOf(b);
   assert.ok(await rowFor(id), "precondition: " + who + " should be signed in");
 
-  const out = await b.go("POST", "/logout", form({}));
+  const out = await signOutAt(b, {});
   check(who + "'s sign-out answers", function () {
-    assert.ok(out.status === 200 || out.status === 303 || out.status === 302,
-      "POST /logout answered " + out.status);
+    assert.ok(out.status === 200,
+      "the sign-out answered " + out.status + ": " + out.text.slice(0, 300));
   });
 
   const gone = await rowFor(id);

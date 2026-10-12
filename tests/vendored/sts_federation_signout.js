@@ -257,6 +257,23 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// THE SIGN-OUT PAGE at `base`, as the page signs out since #577
+// (`authn_signin.js`'s `signOut()`): the view, the act over
+// /authn-api/logout, and the signed-out document it answers where the
+// browser has a partner to tell — answered in `hop()`'s shape, the body
+// that document's HTML (or the act's JSON), with this jar's cookies kept.
+async function signOutAt(cookies, base, fields) {
+  log.debug("Entering signOutAt().");
+  const out = await authnSignin.signOut(base, fields,
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: out.headers });
+  }
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, headers: out.headers, body: out.text || "",
+           url: base + "/logout", location: "" };
+}
+
 // The service's sign-in screen at `url`, answered with a password over
 // `/authn-api` (#571, `authn_signin.js`) with this jar's cookies, and
 // answered in `hop()`'s shape: a 303 to where the act says the walk goes
@@ -754,7 +771,7 @@ async function samlRealmToRealm(world) {
 
   // The service-provider-initiated round trip.
   signedIn = await realmSignIn(REL.saml);
-  const bye = await postForm(signedIn.browser, realmBase(SP) + "/logout",
+  const bye = await signOutAt(signedIn.browser, realmBase(SP),
                              { scope: "global" });
   const toPartner = htmlDecode((new RegExp("href=\"(" + world.idpSlo
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\?[^\"]+)\"")
@@ -1074,7 +1091,7 @@ async function oidcPartnerWrittenHere(world) {
   // RP-Initiated Logout to the partner, from /logout here.
   await setRel(REL.oidcT, "fedEndSessionUrl", PARTNER_OIDC + "/logout");
   signedIn = await oidcSignIn(world, "sid-c-" + STAMP);
-  const bye = await postForm(signedIn.browser, realmBase(SP) + "/logout",
+  const bye = await signOutAt(signedIn.browser, realmBase(SP),
                              { scope: "global" });
   const toPartner = htmlDecode((/href="(https:\/\/oidc-partner\.invalid\/logout\?[^"]+)"/
     .exec(bye.body) || [])[1] || "");
@@ -1116,7 +1133,7 @@ async function oidcFrontChannelRealmToRealm(world) {
               async function () {
     assert.ok(await liveIn(signedIn.browser), squash(signedIn.r.body));
   });
-  const page = await postForm(signedIn.partner, realmBase(IDP) + "/logout",
+  const page = await signOutAt(signedIn.partner, realmBase(IDP),
                               { scope: "global" });
   const frame = htmlDecode((new RegExp("<iframe[^>]*src=\"(" +
     world.oidcFront.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
