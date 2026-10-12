@@ -13,7 +13,8 @@
 // console's own call to that operation — the TLS connection, the client
 // certificate on it, and the forwarding headers with what was believed of
 // them. Two tabs, Connection and Forwarded headers, the two development
-// pages (`/tls`, `/tls/forwarded`) it replaced.
+// pages (`/tls`, `/tls/forwarded`) it replaced, after the console's
+// Metadata tab, which carries the lead and the links.
 //
 // **THE PAGE SAYS WHICH REQUEST IT DESCRIBES**: the console is a static
 // application (#446), so the view is the API call the runtime made after
@@ -58,19 +59,22 @@ class TlsConnectionPage {
       '<h2 data-tab="connection">' +
       t.html('consoleTlsConnection.connection') + '</h2>' +
       TlsConnectionPage.connection(v.connection || {}, t) +
-      '<h2>' + t.html('consoleTlsConnection.clientCertificate') + '</h2>' +
+      // An `<h3>`, so the console's tab splitter keeps it inside the
+      // Connection tab (`WebPages.protocolTabs()`).
+      '<h3>' + t.html('consoleTlsConnection.clientCertificate') + '</h3>' +
       TlsConnectionPage.certificate(v.clientCertificate || {}, t) +
       '<h2 data-tab="forwarded">' +
       t.html('consoleTlsConnection.forwarded') + '</h2>' +
       TlsConnectionPage.forwarded(v.forwarded || {}, t) +
-      kit.note('<a href="/admin-api/tls-connection">' +
+      // The closing links go back to Metadata, beside the lead.
+      '<div data-metadata>' + kit.note('<a href="/admin-api/tls-connection">' +
         t.html('consoleTlsConnection.linkApi') + '</a> &middot; ' +
         '<a href="/admin/tls/trust">' +
         t.html('consoleTlsConnection.linkTrust') + '</a> &middot; ' +
         '<a href="/admin/tls">' +
         t.html('consoleTlsConnection.linkSettings') + '</a> &middot; ' +
         '<a href="/admin/listeners">' +
-        t.html('consoleTlsConnection.linkListeners') + '</a>');
+        t.html('consoleTlsConnection.linkListeners') + '</a>') + '</div>';
   }
 
   // A two-column table of label and value; a missing value is a dash.
