@@ -14133,9 +14133,11 @@ class OAuth2Server {
     // FAPI 1.0 Advanced section 5.2.2 items 5-6 (#139): every access token is
     // sender-constrained — by the client certificate this connection
     // presented, or (unless oauth2.fapiRequireMtls) by the DPoP proof checked
-    // above. Refused before any grant is spent.
+    // above. Refused before any grant is spent. The console and the portal,
+    // public clients whose one binding is DPoP, are told apart by `fapi.js`.
     const fapiBound = fapi.senderConstraintRefusal({
-      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) });
+      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) },
+      client.client_id, clientObservation.method);
     if (fapiBound) {
       log.debug("Leaving the token endpoint. FAPI: the token would be " +
                 "unconstrained.");
