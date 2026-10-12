@@ -526,7 +526,15 @@ class AuthnSurface extends WebSurface {
     const fp = this.fingerprint();
     const remember = fields.remember_browser ? '1' : undefined;
     let body: Json = {};
-    if (action === 'login') {
+    // THE FORCED PASSWORD CHANGE IS ASKED BY ITS PATH, FIRST: its form posts
+    // no `action`, so `pressed` defaults to `login`, and asked after the
+    // login branch it sent a login body — no new_password reached the
+    // service, which answered "Enter a new password." to every try and the
+    // change could never be made (2026-10-12, a fresh product instance).
+    if (path === '/authn/password-change') {
+      body = { new_password: fields.new_password,
+               confirm_password: fields.confirm_password };
+    } else if (action === 'login') {
       body = { username: fields.username, password: fields.password,
                use_webauthn: fields.use_webauthn ? '1' : undefined,
                webauthn_only: fields.webauthn_only ? '1' : undefined,
@@ -537,9 +545,6 @@ class AuthnSurface extends WebSurface {
       body = { username: fields.username,
                kind: pressed === 'email-link' ? 'link' : 'code',
                remember_browser: remember, device_fp: fp || undefined };
-    } else if (path === '/authn/password-change') {
-      body = { new_password: fields.new_password,
-               confirm_password: fields.confirm_password };
     }
     const answer = await this.send(String(op.path)
       .replace('{id}', encodeURIComponent(this.idHere())), body);
