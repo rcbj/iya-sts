@@ -26,13 +26,15 @@
 //
 // The words are the `gnap` catalogs #539 wrote for these pages; the
 // dimension names and values, the identifiers and the URIs are the
-// request's own and are drawn as they are. A right's limit controls arrive
-// drawn and escaped by the server (`common/limits_form.ts`, the portal's
-// `/portal/ciba` view carries them the same way), because the three pages
-// that draw them must draw them alike.
+// request's own and are drawn as they are. A right's limit controls are
+// drawn from the limits and their rows in the view by
+// `common/web_limits_form.ts` — the consent screen's drawing since #576 —
+// because every page that asks about limits must draw them alike.
 //
-// A `web_` MODULE: it requires nothing and logs nothing.
+// A `web_` MODULE: it requires only another `web_` module and logs nothing.
 // ---------------------------------------------------------------------------
+
+import WebLimitsForm = require('../common/web_limits_form');
 
 type Json = any;
 
@@ -182,8 +184,9 @@ class WebGnapInteractViews {
         rows += '<li><label><input type="checkbox" name="right" value="' +
           esc(one.field) + '" checked><span>' +
           WebGnapInteractViews.right(one.right, t) + '</span></label>' +
-          // Drawn and escaped by the server (`common/limits_form.ts`).
-          String(one.limitsHtml || '') + '</li>';
+          WebLimitsForm.controls(one.limits, one.limitRows || [],
+                                 Number(one.token), Number(one.index), esc) +
+          '</li>';
       });
     });
     const narrowed = (view.narrowed || []).map(function (one: Json): string {

@@ -246,12 +246,16 @@ async function test() {
     const p = rr.json;
     const browser = h.browser();
     const ap = await h.reachApproval(browser, p.interact.redirect, OWNER);
-    // The page's view carries the controls the server drew (#578), and the
-    // answer goes to /gnap-api with the lowered value beside the right.
-    const controls = ap.view && ap.view.kind === "approve"
-      ? String(ap.view.tokens[0].rights[0].limitsHtml || "") : "";
-    assert.ok(ap.page.status === 200 &&
-              /name="lim_t0r0_amount" value="100"/.test(controls),
+    // The page's view carries the right's limits and the rows its controls
+    // are drawn from (#578), and the answer goes to /gnap-api with the
+    // lowered value beside the right, under the control's name.
+    const shown = ap.view && ap.view.kind === "approve"
+      ? ap.view.tokens[0].rights[0] : {};
+    assert.ok(ap.page.status === 200 && shown.limits &&
+              String(shown.limits.amount) === "100" &&
+              (shown.limitRows || []).some(function (row) {
+                return row.member === "amount";
+              }),
               "the page draws the amount as a control: " +
               JSON.stringify(ap.view).slice(0, 800));
     rr = await h.answer(browser, ap, "allow", [],

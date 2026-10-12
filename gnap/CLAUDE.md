@@ -952,9 +952,10 @@ needs here:
 * **THE OPERATIONS**: `GET /gnap-api` (the index, each operation with the
   control it `mirrors`), `GET|POST /gnap-api/code`, `GET|POST
   /gnap-api/approve/{id}`. The view is facts (`approvalView()`): the client
-  as registered and as declared, each right as the request's own, the limit
-  controls drawn by the server (`limitsHtml`, as `/portal/ciba`'s view
-  carries them), what was narrowed, the subject asked for, the finish. Where
+  as registered and as declared, each right as the request's own with its
+  limits and the rows (`AccessLimits.rows()`) the browser draws their
+  controls from (`common/web_limits_form.ts`, the consent screen's drawing
+  since #576), what was narrowed, the subject asked for, the finish. Where
   the page's GET has a redirect to answer first, a view or an act answers
   `next: page` and the page's own address. A refusal that leaves the page
   standing (a stale token, a raised limit) is `{ ok: false, errors }` and

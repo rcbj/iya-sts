@@ -133,6 +133,9 @@ import gnapCells = require('./gnap_cells');
 // #432 phase 5: what a limit means, and the catalogue a lowered one must
 // still meet.
 import LimitsForm = require('../common/limits_form');
+// The rows a right's limits are drawn from (#578): the view carries them and
+// the browser draws the controls (`common/web_limits_form.ts`, #576).
+import AccessLimits = require('../common/access_limits');
 import gnapRights = require('./gnap_rights');
 // #432 phase 6: the step-up an approval needs, and approval by an absent
 // resource owner. A library.
@@ -567,8 +570,9 @@ class GnapInteract {
   // byte for byte; a changed one must be LOWER (`AccessLimits.raised()`:
   // STS-GNAP-0866) and the lowered limits must still meet the type's limits
   // schema (0867). A member this service gives no meaning is shown and not
-  // editable. The controls are drawn by the server into the view
-  // (`limitsHtml`) and sent back as the act's `lim_*` members (#578).
+  // editable. The view carries the limits and their rows, the browser draws
+  // the controls (`common/web_limits_form.ts`), and they come back as the
+  // act's `lim_*` members (#578).
   //
   // THE OWNERSHIP CHECK runs before the page is drawn and again before an
   // approval is recorded: `grants.approverRefusal()` puts the rights whose
@@ -686,13 +690,18 @@ class GnapInteract {
         label: String(token.label || ''), number: ti + 1,
         bearer: !!token.bearer, heading: many || !!token.label,
         rights: token.access.map(function (right: any, r: number): Json {
-          return { field: 't' + ti + 'r' + r, right: self.rightFacts(right),
-                   // The limit controls, drawn here (`common/limits_form.ts`,
-                   // shared with the portal's absent-owner approvals and
-                   // OAuth's consent screen), escaped by the server: the
-                   // portal's `/portal/ciba` view carries them the same way.
-                   limitsHtml: LimitsForm.controls(right, ti, r,
-                                                   self.deps.xmlEscape) };
+          // A right's LIMITS as facts: the member and the rows
+          // `AccessLimits.rows()` makes of it, from which the browser draws
+          // the controls a person may lower (`common/web_limits_form.ts`,
+          // the consent screen's since #576), named `lim_t<k>r<r>_<member>`
+          // as `LimitsForm.lowered()` reads them back.
+          const limited = right && typeof right === 'object' &&
+            right.limits && typeof right.limits === 'object';
+          return { field: 't' + ti + 'r' + r, token: ti, index: r,
+                   right: self.rightFacts(right),
+                   limits: limited ? right.limits : null,
+                   limitRows: limited ? AccessLimits.rows(right.limits)
+                                      : [] };
         })
       };
     });
