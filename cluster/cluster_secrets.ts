@@ -158,7 +158,12 @@ const DECLARED: Record<string, DeclaredSecret> = {
   // pointer its `next` carries must verify on every node.
   'oidfed-page': { bytes: 32, env: 'STS_OIDFED_PAGE_SECRET',
     what: 'The key an OpenID Federation listing\'s or collection\'s page ' +
-          'pointer is MACed with (oidfed/page_pointer.ts).' }
+          'pointer is MACed with (oidfed/page_pointer.ts).' },
+  // #577: the sign-out is answered by one request and its signed-out
+  // document drawn by the next, which may be another node's.
+  'logout-result': { bytes: 32, env: 'STS_LOGOUT_RESULT_SECRET',
+    what: 'The key a sign-out\'s result is MACed with on its way to the ' +
+          'signed-out document (logout/logout.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is
