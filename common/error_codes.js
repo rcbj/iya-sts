@@ -20086,15 +20086,15 @@ const CODES = [
       'placed on no sign-on session the registry still holds, so the ' +
       'callback could never be bound to it.',
     spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0302',
+    summary: 'The access policy refused a Claims Provider\'s callback ' +
+      '(user-portal, manage-own).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0303',
     summary: 'A Claims Provider\'s callback arrived in a browser that was ' +
       'not bound to the link at /portal/claim-sources/start — no binding ' +
       'cookie, or not that link\'s — so it was refused (the ' +
       'account-linking CSRF).',
-    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
-  { code: 'STS-PORTAL-0302',
-    summary: 'The access policy refused a Claims Provider\'s callback ' +
-      '(user-portal, manage-own).',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0310',
     summary: 'A device challenge or link could not be bound: the account ' +
