@@ -1311,10 +1311,6 @@
     "en": "53b9b1f559379ceb",
     "text": "讀取、更新或刪除已註冊的客戶端，以其註冊存取權杖保護。更新會如註冊一樣套用軟件聲明，而在原本關閉的端點上因受信任聲明而獲准的客戶端，每次更新都必須出示同一簽發者的受信任聲明。更新會指名其自身的 client_id 及其所獲簽發的任何 client_secret；已不存在之客戶端的權杖會被撤銷，並以 401 回應（section 3，#120）。"
   },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "a51abaf63e905bfe",
-    "text": "Appendix H.1：用戶開始簽發者發起之流程的地方。"
-  },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
     "text": "用以驗證 ldp_vc 證明的 BLS12-381 金鑰，以 Multikey 呈現。`/bbs/keys/<kid>` 是一般 ldp_vc 認證的 verificationMethod 所解參照的地址，適用於領域 BBS 金鑰的每個有效世代（目前的、下一個，以及仍在寬限期內的已淘汰者——此金鑰隨領域的簽署金鑰輪替，#49）；`/bbs/keys/1` 是目前的那一把。其他任何值回傳 404。"
@@ -1331,17 +1327,9 @@
     "en": "614fbb0376075e4a",
     "text": "此簽發者作為 did:web，RS256 金鑰以 JsonWebKey2020 呈現（當 oid4vci.credentialSigningAlgorithm 不是 RS256 時另附該金鑰），BBS 金鑰以 Multikey 呈現。DID 由請求所抵達的基礎 URL 推導——Host，或在固定時為 global.publicBaseUrl——因此一個容器在任何地址都能運作。信任領域的基礎 URL 帶有路徑，其 DID 會以 did:web 元件承載該路徑（did:web:host%3A8081:realm:acme），這些會在下方的 /did.json 解析，而不是在這裡。"
   },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "9093d8d40abcd66d",
-    "text": "response_type=vp_token，附上 DCQL 查詢、新的 nonce 與 response_mode=direct_post，以值或以參照傳遞，並為跨裝置提供 QR 畫面。`client_id_prefix` 指名「此」請求的 Client Identifier Prefix（section 5.9）並使其簽署；x509 前置字串會先為 Verifier 核發證書（#230）。"
-  },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
     "text": "JSON：此領域的 Verifier 用以簽署的 x509_san_dns 與 x509_hash Client Identifier（OpenID4VP 1.0 section 5.9.3），各附其證書、Request Object 所承載的 x5c，以及錢包所設定的信任錨點——這是錢包或合規測試套件在接受之前所需要的（#230）。提出要求會如請求一樣為 Verifier 核發證書。no-store。當沒有任何名稱可被核發證書時（產品模式且既沒有 oid4vp.x509DnsName 也沒有 global.publicBaseUrl），x509_san_dns 那一半為 null 並附上拒絕原因；兩半都無法回應時回傳 409。"
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "bfb887aebc76b016",
-    "text": "跨裝置出示後用戶抵達之處。"
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

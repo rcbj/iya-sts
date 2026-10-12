@@ -39,12 +39,33 @@ The bar door's endpoints:
 | Path | What it is |
 |---|---|
 | `GET /oid4vp/verifier` | the Verifier's page, where a presentation starts |
-| `GET /oid4vp/start` | builds an Authorization Request and sends the browser to the wallet (same device) or draws a QR code (`mode=cross-device`) |
+| `GET /oid4vp/start` | the page that builds an Authorization Request and sends the browser to the wallet (same device) or draws a QR code (`mode=cross-device`) |
 | `GET /oid4vp/request/{id}` | the signed Request Object, fetched by reference (`request_uri`) |
 | `GET /oid4vp/verifier-certificate` | the Verifier's `x509_san_dns` and `x509_hash` Client Identifiers, its certificate chain and the trust anchor (see *The x509 prefixes*) |
 | `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start page is given `?response_mode=direct_post.jwt`: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
 | `GET /oid4vp/result/{state}` | non-standard: the verdict, so a wallet page or a test can read it |
 | `GET /oid4vp/done` | the Verifier's closing page |
+
+**Since #582 the three pages are drawn in the browser** from
+`/vc-demo-api`, in the browser's own language, so they need JavaScript; with
+scripts blocked they say so. Loading `/oid4vp/start` builds nothing by
+itself: the page's script asks `POST /vc-demo-api/start` with the page's
+query, as JSON, from this service's origin and with the page's CSRF token,
+and is answered either the wallet address the page used to redirect to (the
+browser goes there, and Back does not start a second request) or the QR
+page's facts — the `openid4vp://` URI, the same-device link and the state.
+The QR code is drawn from that URI in the browser, and the page asks every
+few seconds whether the wallet on the other device has answered, then moves
+on to the closing page. The request, its URI, the Request Object and the
+response endpoint's answers, its `redirect_uri` included, are exactly what
+they were.
+
+| Path | What it is |
+|---|---|
+| `GET /vc-demo-api/verifier` | the bar door's facts: the claims asked for, the credential type and format, what an `ldp_vc` request leaves out |
+| `GET /vc-demo-api/start` | the start page's facts and its CSRF token; the query is checked and nothing is built |
+| `POST /vc-demo-api/start` | starts the request: `{ "location": … }` or `{ "view": { "requestUri", "walletUrl", "state", "pollSeconds" } }` |
+| `GET /vc-demo-api/done?state=` | what was decided: `received`, `accepted`, the claims and what was asked for |
 
 **An administrator starts one through the management API** (#587), in every
 mode: `POST /admin-api/verifications/start` (Admin Write) takes what

@@ -1165,9 +1165,11 @@ function childMain() {
     // status check working.
     const barKey = holderKey();
     const barCred = await issue('wsi-alice', barKey);
-    r = await request(port, 'GET', '/oid4vp/start?by=reference',
-                      { browser: barBrowser });
-    const barUrl = r.headers.location ? new URL(r.headers.location) : null;
+    // The bar door's start page: its act is `POST /vc-demo-api/start` since
+    // #582, whose `location` is the address the page's 302 named.
+    const barStart = await require(ROOT + '/tests/tools/vc_demo').start({
+      port: port, jar: barBrowser.cookies, query: { by: 'reference' } });
+    const barUrl = barStart.location ? new URL(barStart.location) : null;
     let barRo = null;
     if (barUrl) {
       const got = await request(port, 'GET',
@@ -1206,6 +1208,13 @@ function childMain() {
       note(done.status === 200 && !sessionCookie(done) &&
            !signedInSession(barBrowser),
            '7b. and its thank-you page signs nobody in either', done.status);
+      // The thank-you page is drawn from `/vc-demo-api/done` since #582.
+      const said = await require(ROOT + '/tests/tools/vc_demo').done({
+        port: port, jar: barBrowser.cookies, state: barRo.state });
+      note(said.status === 200 && said.view && said.view.received === true &&
+           said.view.accepted === true && !signedInSession(barBrowser),
+           '7c. and the view it is drawn from says the presentation was ' +
+           'accepted', said.status + ' ' + JSON.stringify(said.view));
     }
 
     server.close();

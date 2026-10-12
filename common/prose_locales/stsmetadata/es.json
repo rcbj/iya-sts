@@ -2936,16 +2936,32 @@
     "text": "Sirve una oferta obtenida mediante credential_offer_uri."
   },
   "stsmetadata.endpoints./issuer.what": {
-    "en": "a51abaf63e905bfe",
-    "text": "Apéndice H.1: donde un End-User inicia un flujo iniciado por el emisor."
+    "en": "948a7409a3fb1a86",
+    "text": "Apéndice H.1: donde un usuario final inicia un flujo iniciado por el emisor. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/issuer."
   },
   "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "54db90cddbc71442",
-    "text": "Construye una oferta y envía el navegador a la billetera o dibuja un código QR. ?mode=cross-device (H.2) y ?mode=deferred (H.3) seleccionan la concesión de código preautorizado con un Transaction Code."
+    "en": "47aafb085693f976",
+    "text": "La página que construye una oferta y envía el navegador a la billetera o la muestra como código QR. ?mode=cross-device (H.2) y ?mode=deferred (H.3) eligen la concesión de código preautorizado con un código de transacción. Una página de la superficie estática de la demostración desde #582: el GET no crea nada, y su script hace la oferta en POST /vc-demo-api/offer."
   },
-  "stsmetadata.endpoints./issuer/offer.effect": {
-    "en": "b41a89e5a430ee71",
-    "text": "acuña una oferta y redirige el navegador a la billetera"
+  "stsmetadata.endpoints./issuer/demo.js.what": {
+    "en": "873440e0c0834837",
+    "text": "NON-SPEC (#582). El tiempo de ejecución y los renderizadores de las páginas del emisor y del verificador de demostración en un solo archivo, creado por build-typescript.sh (oid4vc/vc-demo-spa.js) y servido precomprimido: dibuja /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start y /oid4vp/done a partir de /vc-demo-api, hace allí sus ofertas y solicitudes, y dibuja los códigos QR."
+  },
+  "stsmetadata.endpoints./vc-demo-api.what": {
+    "en": "f0d867a593ea76ea",
+    "text": "NON-SPEC (#582). Las operaciones de la API de la demostración OpenID4VC, cada una con la página o el control del que es la puerta (mirrors). Sin idioma."
+  },
+  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
+    "en": "68d3f0eed386add2",
+    "text": "NON-SPEC (#582). De lo que se dibuja /issuer: la configuración de credencial ofrecida, la billetera y el emisor."
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.what": {
+    "en": "17204bdcd2333d91",
+    "text": "NON-SPEC, puerta a la sección 4 y el apéndice H de OpenID4VCI (#582). GET responde la vista de la página de oferta y su token CSRF, con su consulta comprobada y sin emitir nada; POST hace la oferta — JSON, un Origin de este servicio y un X-CSRF-Token vinculado a la cookie sts_session — con el mismo makeOffer() que usa el portal, y responde la billetera a la que ir (location) o la vista de la página QR: la URI openid-credential-offer, el enlace de la billetera y el código de transacción."
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
+    "en": "2f295f0c5407473c",
+    "text": "POST emite una oferta"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -3016,16 +3032,28 @@
     "text": "Demuestra que este origen y este DID son la misma entidad. Para did:web es la única prueba no circular: resolver did:web:host significa obtener host."
   },
   "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "e4582cdb9e2f5e16",
-    "text": "Donde empieza una presentación: el verificador pregunta, la billetera responde."
+    "en": "179e4cfdad61673b",
+    "text": "Donde empieza una presentación: el verificador pide, la billetera responde. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/verifier."
   },
   "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "9093d8d40abcd66d",
-    "text": "response_type=vp_token con una consulta DCQL, un nonce reciente y response_mode=direct_post, pasado por valor o por referencia, con una pantalla QR para el modo entre dispositivos. `client_id_prefix` nombra el Client Identifier Prefix de ESTA solicitud (sección 5.9) y hace que vaya firmada; un prefijo x509 certifica primero al Verifier (#230)."
+    "en": "2fce28c03d8db666",
+    "text": "La página que inicia una presentación: response_type=vp_token con una consulta DCQL, un nonce nuevo y response_mode=direct_post, pasada por valor o por referencia, con una pantalla QR para otro dispositivo. `client_id_prefix` nombra el prefijo de identificador de cliente de ESTA solicitud (sección 5.9) y la hace firmada; un prefijo x509 certifica antes al verificador (#230). Una página de la superficie estática de la demostración desde #582: el GET no crea nada, y su script inicia la solicitud en POST /vc-demo-api/start."
   },
-  "stsmetadata.endpoints./oid4vp/start.effect": {
-    "en": "7e366edc28b49ffb",
-    "text": "construye una solicitud y redirige el navegador a la billetera"
+  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
+    "en": "905f6536ecad196e",
+    "text": "NON-SPEC (#582). De lo que se dibuja /oid4vp/verifier: las declaraciones que pide el verificador, el tipo de credencial, el formato, lo que deja fuera una solicitud ldp_vc y adónde envía la billetera."
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.what": {
+    "en": "e4075c708b0e75f9",
+    "text": "NON-SPEC, puerta a OpenID4VP (#582). GET responde la vista de la página de inicio y su token CSRF, con su consulta comprobada y sin construir nada; POST inicia la solicitud — vinculada como todo acto — con el mismo startVerification() que usa POST /admin-api/verifications/start, y responde la billetera a la que ir (location) o la vista de la página QR: la URI openid4vp, el enlace de la billetera y el estado que consulta la página."
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.effect": {
+    "en": "722eefdf9a57521a",
+    "text": "POST construye una solicitud"
+  },
+  "stsmetadata.endpoints./vc-demo-api/done.what": {
+    "en": "662a67fbe8c42ffe",
+    "text": "NON-SPEC (#582). De lo que se dibuja /oid4vp/done para ?state=: si llegó una presentación y se aceptó, sus declaraciones y lo que se pidió; la página QR lo consulta. No se responde la transacción de un inicio de sesión con billetera."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3044,8 +3072,8 @@
     "text": "NON-SPEC, para el paso 3 de la billetera y para pruebas: el veredicto por comprobación de una presentación."
   },
   "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "bfb887aebc76b016",
-    "text": "Donde llega el End-User tras una presentación entre dispositivos."
+    "en": "32b182a1f19bad6a",
+    "text": "Donde llega el usuario final tras una presentación desde otro dispositivo. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

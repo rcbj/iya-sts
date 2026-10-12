@@ -111,6 +111,18 @@ means the whole configured set.
   In product mode `/issuer` and `/issuer/offer` are not there at all — a
   realm in product mode answers them as unregistered paths. A person makes a
   pre-authorized offer for their own wallet on `/portal/wallet` instead.
+
+  **Since #582 both pages are drawn in the browser** from `/vc-demo-api`, in
+  the browser's own language, so they need JavaScript. Loading
+  `/issuer/offer` makes nothing by itself: the page's script asks `POST
+  /vc-demo-api/offer` with the page's query (as JSON, from this service's
+  origin, with the page's CSRF token) and is answered either the wallet
+  address the page used to redirect to — the browser goes there — or, for
+  another device, the offer's `openid-credential-offer://` URI, the
+  same-device link and the Transaction Code, from which the page draws the
+  QR code. The offer, its URI and the offer served by reference are exactly
+  what they were. `GET /vc-demo-api/issuer` and `GET /vc-demo-api/offer` are
+  the two pages' facts; the second checks the query and makes nothing.
 * **A credential about yourself, into your own wallet** (`/portal/wallet`,
   #589). A person signed in to the [user portal](user-facing-pages.md#the-user-portal)
   chooses a credential configuration and *now* (H.2) or *later* (H.3,

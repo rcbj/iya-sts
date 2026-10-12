@@ -1819,6 +1819,22 @@
     "en": "8c1458927d4601d8",
     "text": "Construire une Credential Offer"
   },
+  "endpoints.route./issuer/demo.js.name": {
+    "en": "1f0b6574385bc78a",
+    "text": "Le script des pages de démonstration"
+  },
+  "endpoints.route./vc-demo-api.name": {
+    "en": "2b22cd669050aa08",
+    "text": "L’index de l’API de démonstration"
+  },
+  "endpoints.route./vc-demo-api/issuer.name": {
+    "en": "b84b2e59bd5d0c1a",
+    "text": "La page de l’émetteur de démonstration"
+  },
+  "endpoints.route./vc-demo-api/offer.name": {
+    "en": "f43ad9bc295e1e95",
+    "text": "Faire une offre d’attestation de démonstration"
+  },
   "endpoints.route./bbs/keys/:id.name": {
     "en": "58347a1730d54e91",
     "text": "Clé publique BBS"
@@ -1886,6 +1902,18 @@
   "endpoints.route./oid4vp/start.name": {
     "en": "316fa1e4051e38a7",
     "text": "Construire une Authorization Request"
+  },
+  "endpoints.route./vc-demo-api/verifier.name": {
+    "en": "fe6ec994860492a6",
+    "text": "La page du vérificateur de démonstration"
+  },
+  "endpoints.route./vc-demo-api/start.name": {
+    "en": "897fe21b25f7d1c4",
+    "text": "Lancer une présentation de démonstration"
+  },
+  "endpoints.route./vc-demo-api/done.name": {
+    "en": "a423dc9b8b3cf4b6",
+    "text": "Le verdict du vérificateur de démonstration"
   },
   "endpoints.route./oid4vp/verifier-certificate.name": {
     "en": "9e006ca613ebe851",

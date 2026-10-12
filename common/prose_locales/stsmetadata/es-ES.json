@@ -115,22 +115,6 @@
     "en": "f24e1023bd81678a",
     "text": "NON-SPEC, para pruebas: lo que la cartera informó contra un notification_id."
   },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "54db90cddbc71442",
-    "text": "Construye una oferta y envía el navegador a la cartera o dibuja un código QR. ?mode=cross-device (H.2) y ?mode=deferred (H.3) seleccionan la concesión de código preautorizado con un Transaction Code."
-  },
-  "stsmetadata.endpoints./issuer/offer.effect": {
-    "en": "b41a89e5a430ee71",
-    "text": "acuña una oferta y redirige el navegador a la cartera"
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "e4582cdb9e2f5e16",
-    "text": "Donde empieza una presentación: el verificador pregunta, la cartera responde."
-  },
-  "stsmetadata.endpoints./oid4vp/start.effect": {
-    "en": "7e366edc28b49ffb",
-    "text": "construye una solicitud y redirige el navegador a la cartera"
-  },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
     "text": "JSON: los Client Identifiers x509_san_dns y x509_hash bajo los que firma el Verifier de este dominio (OpenID4VP 1.0 sección 5.9.3), cada uno con su certificado, el x5c que lleva el Request Object y el ancla de confianza con la que se configura una cartera: lo que necesita una cartera o una suite de conformidad antes de aceptar uno (#230). Preguntar certifica al Verifier como lo haría una solicitud. no-store. La mitad x509_san_dns es null, con el rechazo, cuando no se puede certificar ningún nombre (modo producto sin oid4vp.x509DnsName ni global.publicBaseUrl); 409 cuando ninguna de las dos mitades puede responder."

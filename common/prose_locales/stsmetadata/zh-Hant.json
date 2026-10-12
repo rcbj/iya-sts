@@ -2936,16 +2936,32 @@
     "text": "提供透過 credential_offer_uri 擷取的提議。"
   },
   "stsmetadata.endpoints./issuer.what": {
-    "en": "a51abaf63e905bfe",
-    "text": "Appendix H.1：使用者開始簽發者發起之流程的地方。"
+    "en": "948a7409a3fb1a86",
+    "text": "附錄 H.1：終端使用者開始由簽發者發起之流程的地方。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/issuer 繪製。"
   },
   "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "54db90cddbc71442",
-    "text": "建構一個提議，並將瀏覽器送往錢包或繪製 QR code。?mode=cross-device（H.2）與 ?mode=deferred（H.3）會選擇帶有 Transaction Code 的預先授權碼授權類型。"
+    "en": "47aafb085693f976",
+    "text": "建立要約並將瀏覽器送往錢包或將其顯示為 QR 碼的頁面。?mode=cross-device (H.2) 與 ?mode=deferred (H.3) 選擇附交易碼的預先授權碼授權。自 #582 起為示範靜態介面的一個頁面：GET 不建立任何內容，其指令碼在 POST /vc-demo-api/offer 建立要約。"
   },
-  "stsmetadata.endpoints./issuer/offer.effect": {
-    "en": "b41a89e5a430ee71",
-    "text": "產生一個提議並將瀏覽器重新導向至錢包"
+  "stsmetadata.endpoints./issuer/demo.js.what": {
+    "en": "873440e0c0834837",
+    "text": "NON-SPEC (#582)。示範簽發者與驗證者頁面的執行階段與轉譯器，合為一個檔案，由 build-typescript.sh 建置（oid4vc/vc-demo-spa.js）並以預先壓縮的形式提供：它從 /vc-demo-api 繪製 /issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start 與 /oid4vp/done，在那裡建立它們的要約與要求，並繪製 QR 碼。"
+  },
+  "stsmetadata.endpoints./vc-demo-api.what": {
+    "en": "f0d867a593ea76ea",
+    "text": "NON-SPEC (#582)。OpenID4VC 示範 API 的操作，每項都附有其作為入口的頁面或控制項（mirrors）。與語言無關。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
+    "en": "68d3f0eed386add2",
+    "text": "NON-SPEC (#582)。/issuer 的繪製來源：所提供的憑證設定、錢包與簽發者。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.what": {
+    "en": "17204bdcd2333d91",
+    "text": "NON-SPEC，OpenID4VCI 第 4 節與附錄 H 的入口（#582）。GET 回應要約頁面的檢視及其 CSRF 權杖，查詢已檢查且未簽發任何內容；POST 建立要約——JSON、本服務的 Origin 以及繫結到 sts_session Cookie 的 X-CSRF-Token——透過入口網站所用的同一個 makeOffer()，並回應要前往的錢包（location）或 QR 頁面的檢視：openid-credential-offer URI、錢包連結與交易碼。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
+    "en": "2f295f0c5407473c",
+    "text": "POST 簽發一個要約"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -3016,16 +3032,28 @@
     "text": "證明此來源與此 DID 是同一實體。對 did:web 而言，這是唯一非循環的證明：解析 did:web:host 就意味著擷取 host。"
   },
   "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "e4582cdb9e2f5e16",
-    "text": "出示開始之處：驗證者提出要求，錢包回應。"
+    "en": "179e4cfdad61673b",
+    "text": "出示開始之處：驗證者提出要求，錢包作出回應。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/verifier 繪製。"
   },
   "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "9093d8d40abcd66d",
-    "text": "response_type=vp_token，附上 DCQL 查詢、新的 nonce 與 response_mode=direct_post，以值或以參照傳遞，並為跨裝置提供 QR 畫面。`client_id_prefix` 指名「此」請求的 Client Identifier Prefix（section 5.9）並使其簽署；x509 前置字串會先為 Verifier 核發憑證（#230）。"
+    "en": "2fce28c03d8db666",
+    "text": "開始出示的頁面：response_type=vp_token，附上 DCQL 查詢、新的 nonce 與 response_mode=direct_post，以值或以參照傳遞，並為跨裝置提供 QR 畫面。`client_id_prefix` 指名此要求的用戶端識別碼前置字串（第 5.9 節）並使其簽署；x509 前置字串會先為驗證者核發憑證（#230）。自 #582 起為示範靜態介面的一個頁面：GET 不建立任何內容，其指令碼在 POST /vc-demo-api/start 開始要求。"
   },
-  "stsmetadata.endpoints./oid4vp/start.effect": {
-    "en": "7e366edc28b49ffb",
-    "text": "建構一個請求並將瀏覽器重新導向至錢包"
+  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
+    "en": "905f6536ecad196e",
+    "text": "NON-SPEC (#582)。/oid4vp/verifier 的繪製來源：驗證者要求的聲明、憑證類型、格式、ldp_vc 要求省略的內容，以及錢包的傳送位址。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.what": {
+    "en": "e4075c708b0e75f9",
+    "text": "NON-SPEC，OpenID4VP 的入口（#582）。GET 回應開始頁面的檢視及其 CSRF 權杖，查詢已檢查且未建立任何內容；POST 開始要求——與每個動作一樣受繫結——透過 POST /admin-api/verifications/start 所用的同一個 startVerification()，並回應要前往的錢包（location）或 QR 頁面的檢視：openid4vp URI、錢包連結以及頁面輪詢的狀態。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.effect": {
+    "en": "722eefdf9a57521a",
+    "text": "POST 建立一個要求"
+  },
+  "stsmetadata.endpoints./vc-demo-api/done.what": {
+    "en": "662a67fbe8c42ffe",
+    "text": "NON-SPEC (#582)。/oid4vp/done 針對 ?state= 的繪製來源：是否收到出示並獲接受、其聲明以及要求了什麼；QR 頁面會輪詢它。錢包登入的交易不予回應。"
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3044,8 +3072,8 @@
     "text": "非規範，供錢包的步驟 3 及測試使用：出示的逐項檢查判定。"
   },
   "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "bfb887aebc76b016",
-    "text": "跨裝置出示後使用者抵達之處。"
+    "en": "32b182a1f19bad6a",
+    "text": "跨裝置出示後終端使用者抵達之處。自 #582 起為示範靜態介面的一個頁面，從 /vc-demo-api/done 繪製。"
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

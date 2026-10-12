@@ -1600,6 +1600,12 @@ const LOCAL_HELPERS = [
   // with the same binding — what `sts_oid4vp_wallet.js` and `sts_siop.js`
   // drive since the wallet's pages became routes of the sign-in surface.
   'wallet_signin.js',
+  // The OpenID4VC demonstration's pages over `/vc-demo-api` (#582): the
+  // offer page's and the bar door's start page's shell, view and act, and
+  // the closing page's view — what `sts_oid4vci_preauth_subject.js`,
+  // `sts_oid4vci_conformance.js` and `sts_oid4vp_wallet.js` drive since the
+  // demonstration became a static surface.
+  'vc_demo.js',
   // The console's sign-in and a client of the operations its pages are
   // drawn from (#446). Copied from the parent on 2026-09-06 and written here
   // since; the static console (#446) made it a different helper from the

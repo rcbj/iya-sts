@@ -2936,16 +2936,32 @@
     "text": "Serverar ett erbjudande som hämtas via credential_offer_uri."
   },
   "stsmetadata.endpoints./issuer.what": {
-    "en": "a51abaf63e905bfe",
-    "text": "Bilaga H.1: där en slutanvändare startar ett utfärdarinitierat flöde."
+    "en": "948a7409a3fb1a86",
+    "text": "Bilaga H.1: där en slutanvändare startar ett utfärdarinitierat flöde. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/issuer."
   },
   "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "54db90cddbc71442",
-    "text": "Bygger ett erbjudande och skickar antingen webbläsaren till plånboken eller ritar en QR-kod. ?mode=cross-device (H.2) och ?mode=deferred (H.3) väljer beviljandet med förauktoriserad kod med en Transaction Code."
+    "en": "47aafb085693f976",
+    "text": "Sidan som bygger ett erbjudande och antingen skickar webbläsaren till plånboken eller visar det som en QR-kod. ?mode=cross-device (H.2) och ?mode=deferred (H.3) väljer beviljandet med förauktoriserad kod och en transaktionskod. En sida i demonstrationens statiska yta sedan #582: GET skapar inget, och dess skript gör erbjudandet vid POST /vc-demo-api/offer."
   },
-  "stsmetadata.endpoints./issuer/offer.effect": {
-    "en": "b41a89e5a430ee71",
-    "text": "skapar ett erbjudande och omdirigerar webbläsaren till plånboken"
+  "stsmetadata.endpoints./issuer/demo.js.what": {
+    "en": "873440e0c0834837",
+    "text": "NON-SPEC (#582). Körtiden och renderarna för demonstrationsutfärdarens och -verifierarens sidor i en fil, byggd av build-typescript.sh (oid4vc/vc-demo-spa.js) och serverad förkomprimerad: den ritar /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start och /oid4vp/done från /vc-demo-api, gör deras erbjudanden och begäranden där och ritar QR-koderna."
+  },
+  "stsmetadata.endpoints./vc-demo-api.what": {
+    "en": "f0d867a593ea76ea",
+    "text": "NON-SPEC (#582). OpenID4VC-demonstrationens API-operationer, var och en med den sida eller kontroll den är dörren till (mirrors). Språkoberoende."
+  },
+  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
+    "en": "68d3f0eed386add2",
+    "text": "NON-SPEC (#582). Det /issuer ritas från: intygskonfigurationen som erbjuds, plånboken och utfärdaren."
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.what": {
+    "en": "17204bdcd2333d91",
+    "text": "NON-SPEC-dörr till OpenID4VCI avsnitt 4 och bilaga H (#582). GET svarar med erbjudandesidans vy och dess CSRF-token, frågan kontrollerad och inget utfärdat; POST gör erbjudandet — JSON, en Origin från den här tjänsten och X-CSRF-Token bunden till kakan sts_session — genom samma makeOffer() som portalen använder, och svarar med plånboken att gå till (location) eller QR-sidans vy: openid-credential-offer-URI:n, plånbokslänken och transaktionskoden."
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
+    "en": "2f295f0c5407473c",
+    "text": "POST utfärdar ett erbjudande"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -3016,16 +3032,28 @@
     "text": "Bevisar att det här ursprunget och den här DID:en är samma entitet. För did:web är det det enda icke-cirkulära beviset: att lösa upp did:web:host innebär att hämta host."
   },
   "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "e4582cdb9e2f5e16",
-    "text": "Där en presentation börjar: verifieraren frågar, plånboken svarar."
+    "en": "179e4cfdad61673b",
+    "text": "Där en presentation börjar: verifieraren frågar, plånboken svarar. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/verifier."
   },
   "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "9093d8d40abcd66d",
-    "text": "response_type=vp_token med en DCQL-fråga, en färsk nonce och response_mode=direct_post, skickad som värde eller genom referens, med en QR-skärm för annan enhet. `client_id_prefix` namnger Client Identifier Prefix för DEN HÄR begäran (avsnitt 5.9) och gör den signerad; ett x509-prefix certifierar verifieraren först (#230)."
+    "en": "2fce28c03d8db666",
+    "text": "Sidan som startar en presentation: response_type=vp_token med en DCQL-fråga, en ny nonce och response_mode=direct_post, skickad som värde eller via referens, med en QR-skärm för en annan enhet. `client_id_prefix` namnger klientidentifierarprefixet för DENNA begäran (avsnitt 5.9) och gör den signerad; ett x509-prefix certifierar först verifieraren (#230). En sida i demonstrationens statiska yta sedan #582: GET skapar inget, och dess skript startar begäran vid POST /vc-demo-api/start."
   },
-  "stsmetadata.endpoints./oid4vp/start.effect": {
-    "en": "7e366edc28b49ffb",
-    "text": "bygger en begäran och omdirigerar webbläsaren till plånboken"
+  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
+    "en": "905f6536ecad196e",
+    "text": "NON-SPEC (#582). Det /oid4vp/verifier ritas från: uppgifterna verifieraren frågar efter, intygstypen, formatet, vad en ldp_vc-begäran utelämnar och vart plånboken skickar."
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.what": {
+    "en": "e4075c708b0e75f9",
+    "text": "NON-SPEC-dörr till OpenID4VP (#582). GET svarar med startsidans vy och dess CSRF-token, frågan kontrollerad och inget byggt; POST startar begäran — bunden som varje handling — genom samma startVerification() som POST /admin-api/verifications/start använder, och svarar med plånboken att gå till (location) eller QR-sidans vy: openid4vp-URI:n, plånbokslänken och tillståndet sidan frågar efter."
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.effect": {
+    "en": "722eefdf9a57521a",
+    "text": "POST bygger en begäran"
+  },
+  "stsmetadata.endpoints./vc-demo-api/done.what": {
+    "en": "662a67fbe8c42ffe",
+    "text": "NON-SPEC (#582). Det /oid4vp/done ritas från för ?state=: om en presentation kom fram och godtogs, dess uppgifter och vad som efterfrågades; QR-sidan frågar efter det. En plånboksinloggnings transaktion besvaras inte."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3044,8 +3072,8 @@
     "text": "NON-SPEC, för plånbokens steg 3 och för tester: utslaget per kontroll för en presentation."
   },
   "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "bfb887aebc76b016",
-    "text": "Där slutanvändaren landar efter en presentation från annan enhet."
+    "en": "32b182a1f19bad6a",
+    "text": "Där slutanvändaren hamnar efter en presentation från en annan enhet. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

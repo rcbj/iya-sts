@@ -14,9 +14,13 @@
 // endpoints are:
 //
 //   GET /issuer                     the issuer's web page, with the link
-//   GET /issuer/offer               builds an offer and redirects to the wallet,
-//                                   by value (credential_offer) or by reference
-//                                   (credential_offer_uri)
+//   GET /issuer/offer               builds an offer and sends the browser to
+//                                   the wallet, by value (credential_offer) or
+//                                   by reference (credential_offer_uri)
+//
+// (both a demonstration's pages, development only (#585), and a static
+// surface since #582: the shell, drawn from `/vc-demo-api` in the browser,
+// which makes the offer through `offerAct()` below)
 //   GET /oid4vci/credential-offer/:id  serves an offer fetched by reference
 //
 // A person's OWN pre-authorized offer is made on the user portal since #589
@@ -67,7 +71,6 @@
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
 // this module mints and read where it is presented. A leaf library.
 import cellLocator = require('../common/cell_locator');
-import qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -98,6 +101,9 @@ import clusterClaims = require('../cluster/cluster_claims');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 import validation = require('../common/validation');
+// THE DEMONSTRATION'S SHELL (#582): what `/issuer` and `/issuer/offer`
+// answer. A library over libraries; it requires nothing of this family.
+import VcDemoShell = require('./vc_demo_shell');
 
 const { VCI_CONFIG_ID } = vcConfigs;
 
@@ -716,14 +722,18 @@ class VcOffers {
    * accepted, must name the configured wallet or an allowed one.
    *
    * @param req - the request
+   * @param named - the wallet a caller named in a body (#582: the
+   *   demonstration's `POST /vc-demo-api/offer`); the query's `wallet`
+   *   where left out
    * @returns `{ url }`, or `{ error }` naming the refused wallet
    */
-  walletFor(req: any) {
+  walletFor(req: any, named?: unknown) {
     const { log, walletBaseUrl, config, mode } = this.deps;
     log.debug("Entering VcOffers.walletFor().");
     const configured = String(walletBaseUrl() || '').replace(/\/+$/, '');
-    const asked = req.query.wallet ?
-                  String(req.query.wallet).replace(/\/+$/, '') : '';
+    const given = named === undefined
+      ? (req && req.query ? req.query.wallet : '') : named;
+    const asked = given ? String(given).replace(/\/+$/, '') : '';
     if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
       const allowed = (config.value('oid4vci.allowedWalletUrls') || []).map(
           (one) => {
@@ -985,83 +995,138 @@ class VcOffers {
                                '');
   }
 
-  // The issuer's screen in a cross-device flow: a QR code carrying the
-  // Credential Offer, and — separately, which is the whole point — the
-  // Transaction Code.
+  // ---------------------------------------------------------------------------
+  // THE DEMONSTRATION ISSUER'S PAGES, AS VIEWS AND AN ACT (#582, 2026-10-12).
+  //
+  // `/issuer` and `/issuer/offer` were pages this module drew until #582 —
+  // the issuer's page with its four links, and the offer: a 302 to the
+  // wallet on this device, or a page drawing the offer as a QR code (a PNG
+  // the `qrcode` package made here) beside the Transaction Code. They are
+  // routes of the demonstration's static surface now (`vc_demo_shell.ts`,
+  // drawn by `web_vc_demo*.ts`), and these are what `/vc-demo-api`
+  // (`vc_demo_api.ts`) answers them with:
+  //
+  //   * `issuerView()` — the issuer's page: the configuration on offer, the
+  //     wallet a same-device offer goes to, and this issuer's identifier.
+  //   * `offerChecked()` — what an offer's query or body asked, checked as
+  //     the page checked its query (`STS-VC-0025` for what the schema
+  //     refuses, `STS-VC-0026` for a wallet this realm will not send to), and
+  //     NOTHING MINTED: the start page's view asks it, and a GET must create
+  //     nothing (#574's rule, since a prefetcher follows a GET).
+  //   * `offerAct()` — the act: `makeOffer()` exactly as the page called it,
+  //     answered as `location` (the wallet, on this device — the address the
+  //     302 named) or as the QR page's view (the offer URI, the wallet link
+  //     and the Transaction Code; the browser draws the code from the URI).
+  //
+  // **WHAT A WALLET IS HANDED IS NOT CHANGED**: the offer, its
+  // `openid-credential-offer://` URI and the wallet link are `makeOffer()`'s,
+  // to the byte, as they were when this page sent them.
+  //
+  // **WHO A PRE-AUTHORIZED OFFER IS FOR (#589, #585).** A cross-device or
+  // deferred offer carries a pre-authorized code, and that code IS the
+  // authorization: whoever redeems it is issued a credential about the
+  // person it names. This demonstration mints one for
+  // `oid4vci.offerUsername` and shows the Transaction Code beside it — H.2's
+  // story ("they uploaded documents to an employee portal days before"), a
+  // credential about a fixed person for the asking, and so a test control,
+  // served in a development realm only (`common/app.js`'s `demoOnly`). A
+  // person's own offer into their own wallet is the portal's
+  // (`/portal/wallet`, `portal/portal_wallet.ts`), through `makeOffer()` too.
+  // ---------------------------------------------------------------------------
   /**
-   * Sends the issuer's screen for a cross-device flow: a QR code carrying the
-   * offer, and the Transaction Code shown separately.
+   * The demonstration issuer's page's view.
    *
-   * @param res - the response
-   * @param opts - the offer URI, the mode and the Transaction Code
+   * @param req - the request (its realm and its base URL)
+   * @returns `{ kind: 'issuer', configurationId, wallet, issuer }`
    */
-  renderOfferQrPage(res: any, opts: any) {
-    const { log, xmlEscape, errorCodes } = this.deps;
-    log.debug("Entering VcOffers.renderOfferQrPage(). mode=" + opts.mode);
-    qrcode.toDataURL(opts.offerUri,
-                     { errorCorrectionLevel: 'M', margin: 2, width: 320 })
-      .then((dataUrl) => {
-        const deferred = opts.mode === 'deferred';
-        const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-          'charset="utf-8"><title>Mock University — scan to receive your ' +
-          'credential</title><style>body{font-family:system-ui,-apple-system,' +
-          '"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-          'display:flex;align-items:center;justify-content:center;' +
-          'min-height:100vh;color:#222}.card{background:#fff;border:1px ' +
-          'solid #d5d5dd;border-radius:10px;padding:30px 34px;width:560px;' +
-          'box-shadow:0 6px 24px rgba(0,0,0,.08);text-align:center}' +
-          'h1{font-size:1.25em;margin:0 0 6px}p{line-height:1.5;color:#333}' +
-          'img.qr{margin:14px auto;display:block;border:1px solid #eee;' +
-          'border-radius:8px}.txcode{font-family:ui-monospace,SFMono-Regular,' +
-          'Menlo,monospace;font-size:2.1em;letter-spacing:.28em;' +
-          'font-weight:700;color:#12107c;background:#f0f0fa;' +
-          'border-radius:8px;padding:12px 6px;margin:6px 0 2px}' +
-          '.uri{word-break:break-all;font-family:ui-monospace,SFMono-Regular,' +
-          'Menlo,monospace;font-size:.72em;color:#555;background:#fafafa;' +
-          'border:1px solid #eee;border-radius:6px;padding:8px;' +
-          'text-align:left}.meta{margin-top:20px;padding-top:14px;' +
-          'border-top:1px solid #eee;font-size:.78em;color:#777;' +
-          'text-align:left}code{font-family:ui-monospace,SFMono-Regular,' +
-          'Menlo,monospace}</style></head><body><div class="card"><h1>Scan ' +
-          'this with your wallet</h1><p>Your digital diploma is ready to be ' +
-          'claimed' +
-          (deferred ? ', though issuing it will take us a little time once ' +
-           'you ' +
-                      'ask.' : '.') + '</p><img ' +
-          'class="qr" id="offer_qr" alt="Credential Offer QR code" ' +
-          'src="' + dataUrl + '"><p>Then ' +
-          'type this Transaction Code into your wallet:</p><div ' +
-          'class="txcode" ' +
-          'id="tx_code">' + xmlEscape(opts.txCode) + '</div><p ' +
-          'style="font-size:.8em;color:#777">It is shown here, and only here ' +
-          '— it does not travel in the QR code.</p><div class="uri" ' +
-          'id="offer_uri">' + xmlEscape(opts.offerUri) + '</div><div ' +
-          'class="meta">OID4VCI ' +
-          'Appendix ' + (deferred ? 'H.3' : 'H.2') + '. ' +
-          'The offer uses the <code>pre-authorized_code</code> grant: you ' +
-          'already identified yourself to this issuer, so your wallet goes ' +
-          'straight to the token endpoint — there is no authorization ' +
-          'request. ' +
-          (deferred ? 'The credential endpoint will answer with a ' +
-                      '<code>transaction_id</code> and your wallet will have ' +
-                      'to come back for the credential. ' : '') +
-          'If your wallet is on this device, <a id="open_in_wallet" href="' +
-          xmlEscape(opts.walletUrl) + '">open ' +
-          'it here</a>.</div></div></body></html>\n';
-        res.status(200).type('text/html').send(page);
-        log.debug("Leaving VcOffers.renderOfferQrPage(). Rendered a QR code.");
-      })
-      .catch((e) => {
-        log.debug("Caught in VcOffers.renderOfferQrPage(): " +
-                  ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-VC-0028') +
-                  "could not render the offer QR code: " + e.message);
-        errorCodes.mark(res, 'STS-VC-0028');
-        res.status(500).type('text/plain').send('Could not render the ' +
-                                                'Credential Offer QR ' +
-                                                'code: ' + e.message);
-      });
-    log.debug("Leaving VcOffers.renderOfferQrPage().");
+  issuerView(req: any) {
+    const { log, baseUrlOf, walletBaseUrl } = this.deps;
+    log.debug("Entering VcOffers.issuerView().");
+    log.debug("Leaving VcOffers.issuerView().");
+    return { kind: 'issuer', configurationId: VCI_CONFIG_ID,
+             wallet: String(walletBaseUrl() || ''),
+             issuer: baseUrlOf(req) };
+  }
+
+  /**
+   * Checks what a demonstration offer asks for — the offer page's query, or
+   * the act's body — and mints nothing.
+   *
+   * @param req - the request
+   * @param asked - `mode`, `by`, `wallet`, `credential_configuration_ids`
+   * @param where - the input group's name for a refusal (`query`, `body`)
+   * @returns `{ ok: true, configurationIds, mode, byReference, wallet }`, or
+   *   `{ ok: false, status, code, error }`
+   */
+  offerChecked(req: any, asked: any, where: string) {
+    const { log, validation } = this.deps;
+    log.debug("Entering VcOffers.offerChecked(). where=" + where);
+    const checked = validation.checkParsed(asked || {}, where, OID4VC_QUERY);
+    if (!checked.ok) {
+      log.debug("Leaving VcOffers.offerChecked(). " + checked.detail);
+      return { ok: false, status: 400, code: 'STS-VC-0025',
+               error: String(checked.detail) };
+    }
+    const given: any = checked.value;
+    const walletChoice = this.walletFor(req, String(given.wallet || ''));
+    if (walletChoice.error) {
+      log.debug("Leaving VcOffers.offerChecked(). " + walletChoice.error);
+      return { ok: false, status: 400, code: 'STS-VC-0026',
+               error: walletChoice.error };
+    }
+    const configurationIds = given.credential_configuration_ids
+      ? String(given.credential_configuration_ids).split(',')
+          .filter(Boolean)
+      : [VCI_CONFIG_ID];
+    log.debug("Leaving VcOffers.offerChecked().");
+    return { ok: true, configurationIds: configurationIds,
+             mode: String(given.mode || 'same-device'),
+             byReference: String(given.by || '') === 'reference',
+             wallet: String(walletChoice.url) };
+  }
+
+  /**
+   * Makes the demonstration's Credential Offer and says how the page hands
+   * it to the wallet.
+   *
+   * @param req - the request
+   * @param asked - what was asked, as `offerChecked()` reads it
+   * @param where - the input group's name for a refusal
+   * @returns `{ ok: true, location }` (same device: the wallet), `{ ok:
+   *   true, view }` (another device: the QR page's view), or `{ ok: false,
+   *   status, code, error }`
+   */
+  offerAct(req: any, asked: any, where: string) {
+    const { log } = this.deps;
+    log.debug("Entering VcOffers.offerAct(). where=" + where);
+    const checked: any = this.offerChecked(req, asked, where);
+    if (!checked.ok) {
+      log.debug("Leaving VcOffers.offerAct(). Refused.");
+      return checked;
+    }
+    const made = this.makeOffer(req, {
+      configurationIds: checked.configurationIds, mode: checked.mode,
+      byReference: checked.byReference, wallet: checked.wallet });
+    const built = made.built;
+    // How the offer reaches the wallet: in the URL, or behind a URI it
+    // fetches.
+    const handed = made.byReference || made.byValue;
+    // Same device (H.1): the wallet is right here, so the browser goes to
+    // it — the address the 302 named.
+    if (built.mode !== 'cross-device' && built.mode !== 'deferred') {
+      log.debug("Leaving VcOffers.offerAct(). Same device.");
+      return { ok: true, location: handed.walletUrl };
+    }
+    // Cross device (H.2 / H.3): the wallet is on the End-User's OTHER
+    // device, so the offer is shown for it to scan — as the
+    // openid-credential-offer URI a wallet registers for — and the
+    // Transaction Code is shown beside it, on the issuer's screen, never in
+    // the offer.
+    log.debug("Leaving VcOffers.offerAct(). Another device.");
+    return { ok: true,
+             view: { kind: 'offer', mode: built.mode,
+                     offerUri: handed.offerUri, walletUrl: handed.walletUrl,
+                     txCode: built.txCode } };
   }
 
   // The three pages, in the order they were registered at load before
@@ -1075,144 +1140,20 @@ class VcOffers {
    * @param app - the shared express application
    */
   registerRoutes(app: any) {
-    const { log, baseUrlOf, xmlEscape, vciError, walletBaseUrl, mode,
-            errorCodes, validation, credentialOffers } = this.deps;
+    const { log, vciError, errorCodes, credentialOffers } = this.deps;
     log.debug("Entering VcOffers.registerRoutes().");
+    // THE ISSUER'S PAGE AND THE OFFER (#582): the demonstration's shell;
+    // the runtime draws each from `/vc-demo-api` and makes the offer there.
     app.get('/issuer', demoOnly, (req, res) => {
       log.debug("Entering the issuer web page.");
-      const base = baseUrlOf(req);
-      const configId = VCI_CONFIG_ID;
-      const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-        'charset="utf-8"><title>Mock University — digital ' +
-        'diploma</title><style>body{font-family:system-ui,-apple-system,' +
-        '"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-        'display:flex;align-items:center;justify-content:center;' +
-        'min-height:100vh;color:#222}.card{background:#fff;border:1px solid ' +
-        '#d5d5dd;border-radius:10px;padding:30px 34px;width:520px;' +
-        'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 ' +
-        '6px}p{line-height:1.5;color:#333}a.cta{display:inline-block;' +
-        'margin-top:14px;margin-right:10px;padding:10px 16px;' +
-        'border-radius:6px;background:#12107c;color:#fff;' +
-        'text-decoration:none;font-weight:600}' +
-        'a.cta.secondary{background:#fff;color:#12107c;border:1px solid ' +
-        '#12107c}p.alt{margin-top:20px;font-size:.92em;color:#555}' +
-        '.meta{margin-top:22px;padding-top:14px;border-top:1px solid #eee;' +
-        'font-size:.78em;color:#777}code{font-family:ui-monospace,' +
-        'SFMono-Regular,Menlo,monospace}</style></head><body><div ' +
-        'class="card"><h1>Mock University</h1><p>Congratulations on your ' +
-        'graduation. Your diploma is available as a digital credential ' +
-        '(<code>' + xmlEscape(configId) + '</code>) that you can keep in ' +
-        'your wallet.</p><p><a class="cta" href="/issuer/offer">Request your ' +
-        'digital diploma</a><a class="cta secondary" ' +
-        'href="/issuer/offer?by=reference">Request it (offer by ' +
-        'reference)</a></p><p class="alt">On a different device? These show ' +
-        'a QR code to scan with your wallet instead:<br><a class="cta ' +
-        'secondary" href="/issuer/offer?mode=cross-device">Show a QR code ' +
-        '(cross-device)</a><a class="cta secondary" ' +
-        'href="/issuer/offer?mode=deferred">Show a QR code (issuance takes a ' +
-        'while)</a></p><div class="meta">This is the Credential Issuer\'s ' +
-        'web page in OID4VCI Appendix H. The first two links build a ' +
-        'Credential Offer and send you to your wallet at ' +
-        '<code>' + xmlEscape(walletBaseUrl()) + '</code> ' +
-        '(H.1, same device). The other two hand the offer over by QR code ' +
-        'and a Transaction Code instead — H.2, and H.3 where the issuer ' +
-        'needs time to produce the credential. The issuer is ' +
-        '<code>' + xmlEscape(base) + '</code>.</div></div></body></html>\n';
-      res.status(200).type('text/html').send(page);
+      VcDemoShell.send(req, res, 'Mock University — digital diploma');
       log.debug("Leaving the issuer web page.");
     });
 
-    // The link on that page: build the offer and send the End-User to their
-    // wallet.
     app.get('/issuer/offer', demoOnly, (req, res) => {
-      log.debug("Entering the credential offer endpoint.");
-      const base = baseUrlOf(req);
-      const configurationIds = req.query.credential_configuration_ids
-        ? String(req.query.credential_configuration_ids).split(',')
-            .filter(Boolean)
-        : [VCI_CONFIG_ID];
-      const askedOffer = validation.check(req, 'query', OID4VC_QUERY);
-      if (!askedOffer.ok) {
-        log.debug('Leaving the offer page. ' + askedOffer.detail);
-        errorCodes.mark(res, 'STS-VC-0025');
-        return res.status(400).type('text/plain').send(askedOffer.detail +
-                                                       '\n');
-      }
-      const offerMode = String(req.query.mode || 'same-device');
-      const walletChoice = this.walletFor(req);
-      if (walletChoice.error) {
-        log.debug("Leaving the credential offer endpoint. " +
-                  walletChoice.error);
-        errorCodes.mark(res, 'STS-VC-0026');
-        return res.status(400).type('text/plain').send(walletChoice.error +
-                                                       '\n');
-      }
-      // -----------------------------------------------------------------------
-      // WHO A PRE-AUTHORIZED OFFER IS FOR, AND WHERE IT IS MADE (#589).
-      //
-      // A cross-device or deferred offer carries a pre-authorized code, and
-      // that code IS the authorization: whoever redeems it is issued a
-      // credential about the person it names. This page mints one for
-      // `oid4vci.offerUsername` and prints the Transaction Code beside it —
-      // H.2's DEMO ("they uploaded documents to an employee portal days
-      // before"), a credential about a fixed person for the asking, and so a
-      // test control.
-      //
-      // **WHERE THE TEST CONTROLS ARE CLOSED IT IS THE PORTAL'S NOW.** From
-      // 2026-09-12 this page required a sign-on session there and minted the
-      // offer for the person signed in — the real feature, a person putting
-      // a credential about themselves into their own wallet. rcbj decided on
-      // 2026-10-12 that it belongs to that person's own pages, and it moved
-      // to the user portal (`/portal/wallet`, over
-      // `POST /account-api/credentials/offers`, `portal/portal_wallet.ts`),
-      // which mints through `makeOffer()` below exactly as this page did,
-      // the session presented over CAEP included, and this page's old
-      // refusal of a session that continued without signing in
-      // (`STS-VC-0027`) is retired with it: the portal's sign-in is what
-      // decides now.
-      //
-      // **AND THIS PAGE IS A DEMONSTRATION (#585)**: `/issuer` and
-      // `/issuer/offer` carry `common/app.js`'s `demoOnly` mark, so a product
-      // realm answers as for a path nothing is registered on. From #589 until
-      // then a product realm's cross-device or deferred request was sent on
-      // to `/portal/wallet` (303); that was dropped, because the rule is that
-      // a demonstration in a product realm is NOT THERE, and no job or
-      // document depended on the redirect — the three jobs that made
-      // pre-authorized offers in product use `/account-api` (#589).
-      // Everything below runs in a development realm only.
-      // -----------------------------------------------------------------------
-      const made = this.makeOffer(req, {
-        configurationIds: configurationIds, mode: offerMode,
-        byReference: String(req.query.by || '') === 'reference',
-        wallet: walletChoice.url });
-      const built = made.built;
-      // How the offer reaches the wallet: in the URL, or behind a URI it
-      // fetches.
-      const handed = made.byReference || made.byValue;
-
-      // Same device (H.1): the wallet is right here, so send the browser to it.
-      if (built.mode !== 'cross-device' && built.mode !== 'deferred') {
-        res.redirect(302, handed.walletUrl);
-        log.debug("Leaving the credential offer endpoint. Sent the End-User " +
-                  "to " + walletChoice.url + ".");
-        return;
-      }
-
-      // Cross device (H.2 / H.3): the wallet is on the End-User's OTHER device,
-      // so the offer is displayed for it to scan — as the
-      // openid-credential-offer URI a wallet registers for — and the
-      // Transaction Code is shown here, on the issuer's screen, never in the
-      // offer.
-      this.renderOfferQrPage(res, {
-        base: base,
-        mode: built.mode,
-        offerUri: handed.offerUri,
-        walletUrl: handed.walletUrl,
-        txCode: built.txCode,
-        offer: built.offer
-      });
-      log.debug("Leaving the credential offer endpoint. Displayed a QR code " +
-                "for the wallet to scan.");
+      log.debug("Entering the credential offer page.");
+      VcDemoShell.send(req, res, 'Mock University — your digital diploma');
+      log.debug("Leaving the credential offer page.");
     });
 
     app.get('/oid4vci/credential-offer/:id', (req, res) => {
@@ -1364,5 +1305,9 @@ export = {
   // `POST /account-api/credentials/offers`; and the configured wallet.
   makeOffer: slot.forward('makeOffer'),
   configuredWalletUrl: slot.forward('configuredWalletUrl'),
-  renderOfferQrPage: slot.forward('renderOfferQrPage')
+  // #582: the demonstration issuer's pages' views and act, for
+  // `oid4vc/vc_demo_api.ts`.
+  issuerView: slot.forward('issuerView'),
+  offerChecked: slot.forward('offerChecked'),
+  offerAct: slot.forward('offerAct')
 };

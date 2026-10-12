@@ -374,6 +374,20 @@ const ROWS: Row[] = [
   { prefix: '/oid4vp/response', strategy: 'handler',
     handler: 'oid4vc/vc_verifier.ts',
     why: 'a wallet\'s direct_post names its transaction in the body' },
+  // THE DEMONSTRATION'S API (#582), placed as the pages it is the door of
+  // are: the issuer's views and its offer where `/issuer` is (local), the
+  // bar door's start where `/oid4vp` is (the pinned browser), and the
+  // closing page's view where its state was minted, as `/oid4vp/result`.
+  { prefix: '/vc-demo-api', strategy: 'local',
+    why: 'the demonstration issuer\'s pages and offers, and the bar door\'s ' +
+         'page: global configuration, or minted where asked (#582)' },
+  { prefix: '/vc-demo-api/start', strategy: 'affinity', browser: true,
+    why: 'the bar door\'s start (#582), where the browser is pinned, as ' +
+         '/oid4vp/start' },
+  { prefix: '/vc-demo-api/done', strategy: 'artifact', browser: true,
+    query: ['state'],
+    why: 'a verdict is found where its request was minted (D10), as at ' +
+         '/oid4vp/result (#582)' },
   // --- GNAP --- (`gnap/gnap_cells.ts` argues each row)
   { prefix: '/gnap', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
     why: 'a grant request is placed by the instance, token or person it ' +

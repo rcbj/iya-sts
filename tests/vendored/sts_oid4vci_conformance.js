@@ -41,6 +41,8 @@ const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
 const conformanceBrowser = require("./conformance_browser.js");
 const portal = require("./portal_signin.js");
+// The demonstration issuer's offer page over `/vc-demo-api` (#582).
+const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -366,12 +368,14 @@ function operatorFor(plan, prepared) {
     let link = "";
     let said = "";
     if (plan.offer === "same-device") {
-      const page = await oidf.send(prepared.realm.base + "/issuer/offer?" +
-        new URLSearchParams({ mode: plan.offer, by: "reference",
-                              credential_configuration_ids:
-                                CONFIGURATION_ID }).toString());
-      link = page.headers.get("location") || "";
-      said = page.status + " " + page.raw.slice(0, 300);
+      // The demonstration issuer's offer page, whose act is `POST
+      // /vc-demo-api/offer` since #582: its `location` is the wallet
+      // address the page's 302 named (`vc_demo.js`).
+      const page = await vcDemo.offer({}, prepared.realm.base,
+        { mode: plan.offer, by: "reference",
+          credential_configuration_ids: CONFIGURATION_ID });
+      link = page.location || "";
+      said = page.status + " " + String(page.text || "").slice(0, 300);
     } else {
       // The person's own offer (#589): by reference, as the page asked for
       // it, and the transaction code they would read off the portal.

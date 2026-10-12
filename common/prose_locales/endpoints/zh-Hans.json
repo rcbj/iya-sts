@@ -1819,6 +1819,22 @@
     "en": "8c1458927d4601d8",
     "text": "构建凭证要约"
   },
+  "endpoints.route./issuer/demo.js.name": {
+    "en": "1f0b6574385bc78a",
+    "text": "演示页面的脚本"
+  },
+  "endpoints.route./vc-demo-api.name": {
+    "en": "2b22cd669050aa08",
+    "text": "演示 API 索引"
+  },
+  "endpoints.route./vc-demo-api/issuer.name": {
+    "en": "b84b2e59bd5d0c1a",
+    "text": "演示签发方的页面"
+  },
+  "endpoints.route./vc-demo-api/offer.name": {
+    "en": "f43ad9bc295e1e95",
+    "text": "创建演示凭证要约"
+  },
   "endpoints.route./bbs/keys/:id.name": {
     "en": "58347a1730d54e91",
     "text": "BBS 公钥"
@@ -1886,6 +1902,18 @@
   "endpoints.route./oid4vp/start.name": {
     "en": "316fa1e4051e38a7",
     "text": "构建授权请求"
+  },
+  "endpoints.route./vc-demo-api/verifier.name": {
+    "en": "fe6ec994860492a6",
+    "text": "演示验证方的页面"
+  },
+  "endpoints.route./vc-demo-api/start.name": {
+    "en": "897fe21b25f7d1c4",
+    "text": "开始演示出示"
+  },
+  "endpoints.route./vc-demo-api/done.name": {
+    "en": "a423dc9b8b3cf4b6",
+    "text": "演示验证方的裁定"
   },
   "endpoints.route./oid4vp/verifier-certificate.name": {
     "en": "9e006ca613ebe851",
