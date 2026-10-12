@@ -32,6 +32,11 @@
 // view to compare.
 // ---------------------------------------------------------------------------
 
+// The console's prose fold (`WebKit.note()`), the standard collapsible
+// text the sign-out page uses too: a paragraph longer than a line becomes a
+// `<details>` whose summary is its first sentence (rcbj, 2026-10-12).
+import kit = require('../admin-ui/web_kit');
+
 type Json = any;
 
 /**
@@ -189,7 +194,7 @@ class WebAuthnLogin {
    */
   static partnerButtons(links: Json[], blurb: string): string {
     const esc = WebAuthnLogin.esc;
-    return '<div class="fed"><p>' + blurb + '</p>' +
+    return '<div class="fed">' + kit.note(blurb) +
       (links || []).map(function (one: Json): string {
         return '<a class="fedbtn" href="' + esc(one.href) + '">' +
           esc(one.label) + '<span>' + esc(one.protocolLabel) +
@@ -222,8 +227,8 @@ class WebAuthnLogin {
       out += '<div class="fed"><p>' +
         t.html('authn.options.kerberosWithheldMfa') + '</p></div>';
     } else if (k) {
-      out += '<div class="fed"><p>' + t.html('authn.options.kerberos') +
-        '</p><a class="fedbtn" href="' + esc(k.href) + '">' +
+      out += '<div class="fed">' + kit.note(t.html('authn.options.kerberos')) +
+        '<a class="fedbtn" href="' + esc(k.href) + '">' +
         t.html('authn.options.kerberosButton') +
         '<span>SPNEGO &middot; RFC 4559</span></a></div>';
     }
@@ -232,10 +237,10 @@ class WebAuthnLogin {
       out += '<div class="fed"><p id="wallet-withheld">' +
         t.html('authn.options.walletWithheld') + '</p></div>';
     } else if (w) {
-      out += '<div class="fed"><p>' + t.html('authn.options.wallet') +
+      out += '<div class="fed">' + kit.note(t.html('authn.options.wallet') +
         (w.mfaNote ? ' <span id="wallet-mfa-note">' +
-                     t.html('authn.options.walletMfaNote') + '</span>' : '') +
-        '</p><a class="fedbtn" id="wallet-signin" href="' + esc(w.href) +
+                     t.html('authn.options.walletMfaNote') + '</span>' : '')) +
+        '<a class="fedbtn" id="wallet-signin" href="' + esc(w.href) +
         '">' + t.html('authn.options.walletButton') +
         '<span>OpenID4VP &middot; Digital Credentials API</span></a>' +
         (w.siop
@@ -288,16 +293,17 @@ class WebAuthnLogin {
       (v.forgot ? '<p class="meta"><a href="' + esc(v.forgot) + '">' +
                   t.html('authn.login.forgot') + '</a></p>' : '') +
       WebAuthnLogin.doors(v, t) +
-      '<div class="meta"><div>' +
+      // The explanations fold (`kit.note()`); the facts under them — the
+      // protocol and its parameters — stay as lines.
+      '<div class="meta">' +
       (v.verifiesCredentials
-        ? t.html('authn.login.metaChecked') + '</div><div>' +
-          t.html('authn.login.metaPasswordlessChecked')
-        : t.html('authn.login.metaUnchecked') + '</div><div>' +
-          t.html('authn.login.metaPasswordlessUnchecked')) + '</div>' +
+        ? kit.note(t.html('authn.login.metaChecked')) +
+          kit.note(t.html('authn.login.metaPasswordlessChecked'))
+        : kit.note(t.html('authn.login.metaUnchecked')) +
+          kit.note(t.html('authn.login.metaPasswordlessUnchecked'))) +
       '<div>' + t.html('authn.login.signingInFor',
                        { protocol: String(v.protocol) }) + '</div>' +
-      (v.passkey ? '<div>' + t.html('authn.login.metaPasskey') + '</div>'
-                 : '') +
+      (v.passkey ? kit.note(t.html('authn.login.metaPasskey')) : '') +
       WebAuthnLogin.details(v.details) + '</div>';
   }
 
