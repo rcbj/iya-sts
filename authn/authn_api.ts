@@ -894,10 +894,17 @@ class AuthnApi {
       }
     }
     const signIn = require('../oid4vc/vc_signin');
-    await signIn[String(op.walletAct)](req, res, {
-      state: req.params && req.params.state !== undefined
-        ? String(req.params.state) : undefined,
-      body: body, query: req.query || {}, csrf: this.csrfOf(req) });
+    try {
+      await signIn[String(op.walletAct)](req, res, {
+        state: req.params && req.params.state !== undefined
+          ? String(req.params.state) : undefined,
+        body: body, query: req.query || {}, csrf: this.csrfOf(req) });
+    } catch (e) {
+      log.debug("Caught in AuthnApi.wallet(): " + ((e && e.message) || e));
+      // The wallet door's own answer to a throw, which keeps a code the
+      // Verifier's refusal carries.
+      signIn.failed(res, e);
+    }
     log.debug("Leaving AuthnApi.wallet().");
   }
 

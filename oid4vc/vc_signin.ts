@@ -1258,6 +1258,34 @@ class VcSignin {
     log.debug("Leaving VcSignin.finish(). Signed in.");
   }
 
+  // Every operation writes an answer; one that threw would leave a browser
+  // waiting on a request nothing answers. `/authn-api`'s door hands a throw
+  // here so that a refusal carrying its own code keeps it.
+  /**
+   * Answers an operation that threw: a refusal that carries its own code
+   * (the Verifier's, #230: an x509 Client Identifier with no certificate or
+   * name) keeps it; anything else is the unhandled failure.
+   *
+   * @param res - the response
+   * @param e - what was thrown
+   * @returns nothing
+   */
+  failed(res: any, e: any): void {
+    const { log, errorCodes, authn } = this.deps;
+    log.debug("Entering VcSignin.failed().");
+    const code = e && typeof e.code === 'string' &&
+                 /^STS-[A-Z]+-\d{4}$/.test(e.code) ? e.code : 'STS-VC-0067';
+    log.error(errorCodes.tag(code) + 'oid4vp-signin: ' +
+              (code === 'STS-VC-0067' ? 'unhandled failure: ' : '') +
+              ((e && (e.stack || e.message)) || e));
+    if (!res.headersSent) {
+      errorCodes.mark(res, code);
+      authn.answerJson(res, 500, { ok: false, next: 'refused',
+        errors: [String((e && e.message) || e)] });
+    }
+    log.debug("Leaving VcSignin.failed().");
+  }
+
   // ---------------------------------------------------------------------------
   // THE TWO SHELLS (#574): `/authn/wallet` and `/authn/wallet/wait` answer the
   // sign-in surface's document, drawn for the application the pending
@@ -1346,6 +1374,7 @@ export = {
   waitView: slot.forward('waitView'),
   status: slot.forward('status'),
   dcApi: slot.forward('dcApi'),
+  failed: slot.forward('failed'),
   qrOffered: slot.forward('qrOffered'),
   hashOf: slot.forward('hashOf'),
   originOf: slot.forward('originOf')

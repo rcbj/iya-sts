@@ -3346,49 +3346,49 @@ Raised from: oid4vc/.
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
 | `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_nonce (HTTP 400, #187) |
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
-| `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
-| `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |
-| `STS-VC-0054` *(retired)* | A wallet sign-in was refused for a request that demanded two factors (retired: it is now followed by a second factor). | HTTP 403 page |
-| `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 page |
-| `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 page |
+| `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0054` *(retired)* | A wallet sign-in was refused for a request that demanded two factors (retired: it is now followed by a second factor). | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0057` | A second OpenID4VP response arrived for a sign-in's transaction, which is answered once. | invalid_request (HTTP 400) |
-| `STS-VC-0058` | A presentation verified and signed nobody in: the credential was signed by a certificate in oid4vp.trustedIssuerCertificates, not by this realm's issuer. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0059` | A presentation verified and signed nobody in: this realm has no record of issuing the credential for a person on an access token it verified (another realm's, a foreign token's, or unknown). | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0060` | A presentation verified and signed nobody in: the directory entry the credential was issued for no longer exists. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0061` | A presentation made to sign in did not verify (or was not a presentation at all), so nobody was signed in. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0062` | A wallet sign-in was already finished — here or on another node — and was not finished again. | HTTP 400 page |
-| `STS-VC-0063` | The cluster claim store could not be asked whether a wallet sign-in was already finished, so it was refused rather than finished unproven. | HTTP 503 page |
-| `STS-VC-0064` | A presentation verified and mapped to a person, and the issuance policy refused them a session. | HTTP 403 page |
-| `STS-VC-0065` | A wallet sign-in was returned to with a response_code that is not the one given to the wallet. | HTTP 403 page |
-| `STS-VC-0066` | A presentation verified and signed nobody in: its subject or holder key disagrees with what this realm recorded when it issued the credential. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0067` | An unexpected failure inside the wallet sign-in door. | HTTP 500 page |
+| `STS-VC-0058` | A presentation verified and signed nobody in: the credential was signed by a certificate in oid4vp.trustedIssuerCertificates, not by this realm's issuer. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0059` | A presentation verified and signed nobody in: this realm has no record of issuing the credential for a person on an access token it verified (another realm's, a foreign token's, or unknown). | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0060` | A presentation verified and signed nobody in: the directory entry the credential was issued for no longer exists. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0061` | A presentation made to sign in did not verify (or was not a presentation at all), so nobody was signed in. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0062` | A wallet sign-in was already finished — here or on another node — and was not finished again. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0063` | The cluster claim store could not be asked whether a wallet sign-in was already finished, so it was refused rather than finished unproven. | HTTP 503 refusal at /authn-api/wallet |
+| `STS-VC-0064` | A presentation verified and mapped to a person, and the issuance policy refused them a session. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0065` | A wallet sign-in was returned to with a response_code that is not the one given to the wallet. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0066` | A presentation verified and signed nobody in: its subject or holder key disagrees with what this realm recorded when it issued the credential. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0067` | An unexpected failure inside the wallet sign-in door. | HTTP 500 refusal at /authn-api/wallet |
 | `STS-VC-0068` | An issued credential could not be recorded as one that may sign its subject in; the credential was issued anyway. | — |
-| `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 page |
-| `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0071` | A presentation verified and signed nobody in: the credential was disowned — by a global sign-out, an administrator's revocation, or its status-list entry. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0071` | A presentation verified and signed nobody in: the credential was disowned — by a global sign-out, an administrator's revocation, or its status-list entry. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
 | `STS-VC-0072` | A presented credential's status list says it is revoked or suspended, or no statement about its status could be made (the list could not be fetched or verified, or the credential names none). | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
-| `STS-VC-0073` | A Digital Credentials API answer was not a openid4vp-v1-signed DigitalCredential, was not in the response mode the request asked for, or its encrypted response could not be opened. | HTTP 400 page at /authn/wallet/dc-api |
-| `STS-VC-0074` | A Digital Credentials API answer was posted from a page on an origin other than the one the request named in expected_origins. | HTTP 403 page at /authn/wallet/dc-api |
+| `STS-VC-0073` | A Digital Credentials API answer was not a openid4vp-v1-signed DigitalCredential, was not in the response mode the request asked for, or its encrypted response could not be opened. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
+| `STS-VC-0074` | A Digital Credentials API answer was posted from a page on an origin other than the one the request named in expected_origins. | HTTP 403 refusal at /authn-api/wallet/{state}/dc-api |
 | `STS-VC-0075` | No status-list index could be allocated for a credential: the claim store could not be asked, or the list is full. | server_error (HTTP 500) at the credential endpoint |
 | `STS-VC-0076` | A status list (Token Status List or Bitstring Status List credential) could not be built or signed. | HTTP 500 |
 | `STS-VC-0077` | A historical status list was asked for (the time parameter), which this issuer does not keep. | HTTP 501 |
 | `STS-VC-0078` | A Bitstring Status List was asked for a purpose this issuer does not publish. | HTTP 404 |
 | `STS-VC-0079` | A credential could not be built (its status index, its signature, or its proof). | server_error (HTTP 500) |
 | `STS-VC-0080` | An ldp_vc credential was asked for a holder key no Data Integrity cryptosuite here can prove (RSA, secp256k1, Ed448, a composite). | invalid_proof (HTTP 400) |
-| `STS-VC-0081` | The Digital Credentials API form was submitted with no answer — the page's script did not run — and the same-device link was offered instead. | HTTP 400 page at /authn/wallet/dc-api |
+| `STS-VC-0081` | A Digital Credentials API answer was sent with nothing in it — nothing came back from the browser's API — and the same-device link was offered instead. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
 | `STS-VC-0082` | A status-list entry could not be changed from the console or the management API: no such index, an unknown status, or an INVALID entry asked to become valid again. | HTTP 400 / HTTP 404 |
-| `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 page at /authn/wallet/dc-api |
-| `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
+| `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 | `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
 | `STS-VC-0088` | A credential presented to the OpenID4VP Verifier names no status (no Token Status List claim, no BitstringStatusListEntry) and oid4vp.requireStatusReference requires one: a foreign credential under all whose issuer certificate is not in oid4vp.statusOptionalIssuers, or one this realm signed under all or own-only. | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
 | `STS-VC-0089` | An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, whose register holds the status) disclosed no credentialStatus entry, though the request asked for it and oid4vp.requireStatusReference requires one. | invalid_request (HTTP 400) |
 | `STS-VC-0090` | A self-issued ID Token (SIOPv2, #129) was refused: it did not verify (iss not sub, a subject key that did not resolve or match, a bad signature, the wrong aud or nonce, expired or too old), or with vp_token id_token its subject was not the presentation's holder. | invalid_request (HTTP 400), or a 303 for form_post |
-| `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 refusal at /authn-api/wallet/{state}/status |
 | `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 (JSON `errors` at POST /admin-api/verifications/start) |
-| `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
-| `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 refusal at /authn-api/wallet |
+| `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
 | `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
 | `STS-VC-0100` *(retired)* | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). Retired by #585: a product realm's request is passed on past the route to Express's own 404, which records no code. | — |
