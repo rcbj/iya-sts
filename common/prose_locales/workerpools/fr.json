@@ -12,12 +12,12 @@
     "text": "Désactivé : {{setting}} vaut 0, de sorte que chaque requête est traitée par le processus frontal lui-même, sur un seul thread."
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer (STS-WORKER-0023). Les surfaces hébergées vont au pool de requêtes."
+    "en": "db7b7ee1f099024a",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Les surfaces hébergées vont au pool de requêtes."
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer (STS-WORKER-0023). Chaque requête est traitée par le processus frontal."
+    "en": "ced50089d8744adc",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer. Chaque requête est traitée par le processus frontal."
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

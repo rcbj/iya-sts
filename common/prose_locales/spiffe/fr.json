@@ -156,12 +156,12 @@
     "text": "L’indication de l’opérateur lorsqu’une charge de travail reçoit plus d’un SVID — `internal`, `external`. Transmise telle quelle à la Workload API ; rien ici ne la lit."
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "TRUE lorsque le détenteur peut appeler les méthodes d’administration de l’API SPIRE Server. CONSIGNÉ ET NON APPLIQUÉ, comme tout autre fait d’autorisation dans ce service : aucun appel ici n’est refusé faute de celui-ci."
+    "en": "fefc555630e7c657",
+    "text": "TRUE lorsque le détenteur peut appeler les méthodes d’administration de l’API SPIRE Server — entrées, agents, bundles, relations de fédération, frappe d’un SVID — via TLS mutuel. APPLIQUÉ dans les deux modes : l’API du serveur fait d’un appelant un `admin` lorsqu’une entrée non expirée pour son identité porte cet indicateur ou que spiffe.adminIds le nomme, et refuse ces méthodes à un appelant distant qui n’est ni l’un ni l’autre (l’appelant `local` du socket Unix privé est l’autre voie d’accès). Lu à chaque appel, de sorte qu’une modification s’applique dès l’appel suivant."
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "TRUE lorsque le détenteur est un serveur SPIRE en aval qui peut demander une AC intermédiaire (NewDownstreamX509CA). Consigné, non appliqué."
+    "en": "16aab8ec2a97d549",
+    "text": "TRUE lorsque le détenteur est un serveur SPIRE en aval qui peut demander une AC intermédiaire (NewDownstreamX509CA) et publier une autorité JWT ou WIT. APPLIQUÉ dans les deux modes : ces méthodes sont refusées à un appelant qu’aucune entrée non expirée ne marque comme en aval, et l’indicateur n’accorde rien d’autre."
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",
