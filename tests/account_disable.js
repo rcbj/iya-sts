@@ -154,18 +154,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
-
   (async function () {
     if (PRODUCT) {
       // A PRODUCT PROCESS FROM THE START (`STS_MODE=product`), and not a
@@ -184,6 +172,7 @@ function childMain() {
       await keystore.start();
     }
     require(ROOT + '/common/protocol_stack');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -291,18 +280,15 @@ function childMain() {
         nonce: 'n' + crypto.randomBytes(3).toString('hex') }).toString());
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = PASSWORD;
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const sent = await b.go('POST', screen, { form: form });
-        if (sent.status === 200) {
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: PASSWORD } });
+        if (sent.next !== 'redirect') {
           return { screen: sent, token: null };
         }
-        r = await b.go('GET', String(sent.headers.location || ''));
+        r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
       const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
@@ -388,13 +374,12 @@ function childMain() {
                                 .update(crypto.randomBytes(32))
                                 .digest('base64url'),
                               code_challenge_method: 'S256' }).toString());
-      const page = await b.go('GET', String(start.headers.location || ''));
-      const form = hiddenFields(page.text);
-      form.username = ALICE;
-      form.password = '';
-      form.webauthn_only = '1';
-      form.action = 'login';
-      return b.go('POST', '/authn/login', { form: form });
+      // OVER `/authn-api` (#571): the act, and the ceremony's page it
+      // names opened with a GET, as the screen's page sends the browser.
+      return authnScreen.follow({ port: port, jar: b.jar,
+        at: String(start.headers.location || ''),
+        fields: { action: 'login', username: ALICE, password: '',
+                  webauthn_only: '1' } });
     };
     // A page's text for a finding, without its stylesheet.
     const pageText = function (r) {
@@ -506,11 +491,11 @@ function childMain() {
     // --- C. the doors --------------------------------------------------------
     const stranger = browser(port);
     r = await signIn(stranger, ALICE);
-    note(r.screen.status === 200 &&
+    note(r.screen.next === 'refused' &&
          /Authentication failed/.test(r.screen.text) && !r.token,
          'C1. the SIGN-IN SCREEN refuses their password — with the same ' +
          'sentence a wrong one gets, which is the enumeration answer',
-         r.screen.status + ' ' + r.screen.text.slice(0, 120));
+         r.screen.status + ' ' + String(r.screen.text).slice(0, 120));
     const loginPage = await stranger.go('GET', '/authn/login?authn=' +
       encodeURIComponent('x'));
     note(loginPage.status === 200 || loginPage.status === 400,
@@ -532,7 +517,7 @@ function childMain() {
     note(codeOfLastRow('session.refuse') === 'STS-AUTHN-0201',
          'C4. with STS-AUTHN-0201 on the audit row');
     const passwordless = await passwordlessAttempt();
-    note(passwordless.status === 200 &&
+    note(passwordless.next === 'refused' &&
          /Authentication failed/.test(passwordless.text) &&
          !/wa-credential/.test(passwordless.text),
          'C5. a PASSWORDLESS security-key sign-in is refused BEFORE the ' +

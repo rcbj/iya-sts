@@ -107,6 +107,7 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const base = 'https://127.0.0.1:' + port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const SP = 'fsp' + (MODE === 'product' ? 'p' : 'd');
     const REL = 'fsp-oidc';
     const PASSWORD = 'Fed-Link-Passw0rd!2026';
@@ -213,33 +214,63 @@ function childMain() {
       if (!opts.keepJar) {
         jar = {};
       }
-      const trail = { linkScreens: 0, linkScreen: '', totp: 0, setup: 0 };
+      const trail = { linkScreens: 0, linkScreen: '', linkView: null,
+                      linkId: '', totp: 0, setup: 0 };
       let r = await request('GET', '/realm/' + SP + '/federation/login/' +
                                    REL);
+      // THE SIGN-IN SCREENS ARE A STATIC SURFACE OVER `/authn-api` SINCE
+      // #571: a redirect to one is answered as its page does — the view,
+      // then the act — and the act's answer followed. A REFUSAL is the
+      // screen drawn again, so it counts as the next screen.
+      let linkAt = '';
+      let opened = null;
       for (let hop = 0; hop < 30; hop += 1) {
-        if (r.status >= 300 && r.status < 400 && r.headers.location) {
-          r = await request('GET', r.headers.location);
-          continue;
-        }
-        const authnId = hidden(r.text, 'authn_id');
-        if (r.status === 200 && authnId &&
-            r.path.indexOf('/realm/' + SP + '/') === 0) {
+        const at = String(r.headers.location || '');
+        const screenAt = r.status >= 300 && r.status < 400 &&
+          /\/authn\/login\?authn=/.test(at)
+          ? new URL(at, base) : null;
+        if (screenAt &&
+            screenAt.pathname.indexOf('/realm/' + SP + '/') === 0) {
+          linkAt = screenAt.pathname + screenAt.search;
+          opened = await authnScreen.open({ port: port, ca: caPem, jar: jar,
+                                           at: linkAt });
           trail.linkScreens += 1;
-          trail.linkScreen = r.text;
-          if (opts.link === 'stop' ||
-              trail.linkScreens > (opts.linkAttempts || 1)) {
+          trail.linkScreen = linkAt;
+          trail.linkView = opened.view;
+          trail.linkId = opened.id;
+          if (opts.link === 'stop') {
+            return { r: opened, trail: trail };
+          }
+        } else if (screenAt) {
+          r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+            at: screenAt.pathname + screenAt.search,
+            fields: { action: 'login', username: idpUser,
+                      password: IDP_PASSWORD } });
+          if (r.next !== 'redirect') {
             return { r: r, trail: trail };
           }
-          r = await request('POST', '/realm/' + SP + '/authn/login', {
-            form: { authn_id: authnId, username: 'somebody-else-typed',
-                    password: opts.password || PASSWORD,
-                    action: opts.link === 'cancel' ? 'cancel' : 'login' } });
+          r = await request('GET', r.location);
+          continue;
+        } else if (r.status >= 300 && r.status < 400 && at) {
+          r = await request('GET', at);
           continue;
         }
-        if (r.status === 200 && authnId) {
-          r = await request('POST', '/authn/login', { form: {
-            authn_id: authnId, username: idpUser, password: IDP_PASSWORD,
-            action: 'login' } });
+        if (screenAt || (r.next === 'refused' && opened)) {
+          if (!screenAt) {
+            trail.linkScreens += 1;
+          }
+          if (trail.linkScreens > (opts.linkAttempts || 1)) {
+            return { r: r, trail: trail };
+          }
+          r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+            at: linkAt, opened: opened,
+            fields: { action: opts.link === 'cancel' ? 'cancel' : 'login',
+                      username: 'somebody-else-typed',
+                      password: opts.password || PASSWORD } });
+          if (r.next === 'redirect' || r.next === 'mfa' ||
+              r.next === 'password-change') {
+            r = await request('GET', r.location);
+          }
           continue;
         }
         const mfaId = hidden(r.text, 'mfa_id');
@@ -385,14 +416,17 @@ function childMain() {
     let mark = auditCount();
     let got = await signIn(ALICE, { link: 'stop' });
     let alice = entryOf(ALICE);
-    note(got.trail.linkScreens === 1 && /readonly/.test(got.trail.linkScreen) &&
-         got.trail.linkScreen.indexOf('value="' + ALICE + '"') >= 0 &&
-         !/webauthn_only/.test(got.trail.linkScreen) &&
-         !/kc-anonymous/.test(got.trail.linkScreen),
+    // The screen's view (#571): the name locked — drawn readonly — and no
+    // passwordless key (never offered on a locked screen), no usernameless
+    // passkey and no anonymous session.
+    const linkView = got.trail.linkView || {};
+    note(got.trail.linkScreens === 1 && linkView.locked === ALICE &&
+         linkView.hint === ALICE && !linkView.passkey &&
+         !linkView.anonymous,
          '1a. an unlinked subject naming an existing person is sent to the ' +
          'SP realm\'s sign-in screen, the name fixed, no passwordless key ' +
          'and no anonymous session offered',
-         got.r.status + ' ' + got.r.path);
+         got.r.status + ' ' + JSON.stringify(linkView).slice(0, 200));
     note(attr(alice, 'federationLink').length === 0 &&
          JSON.stringify(attr(alice, 'mail')) ===
            '["local-alice@sp.example"]' &&
@@ -454,12 +488,15 @@ function childMain() {
     const VICTIM = 'fsp-victim-' + MODE;
     makePerson(VICTIM, 'local-victim@sp.example');
     got = await signIn(VICTIM, { link: 'stop' });
-    const handedOver = hidden(got.trail.linkScreen, 'authn_id');
+    const handedOver = got.trail.linkId;
     jar = {};
     mark = auditCount();
-    let other = await request('POST', '/realm/' + SP + '/authn/login', {
-      form: { authn_id: handedOver, username: VICTIM, password: PASSWORD,
-              action: 'login' } });
+    let other = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+      at: got.trail.linkScreen,
+      fields: { action: 'login', username: VICTIM, password: PASSWORD } });
+    if (other.next === 'redirect') {
+      other = await request('GET', other.location);
+    }
     for (let hop = 0; hop < 5 && other.status >= 300 && other.status < 400;
          hop += 1) {
       other = await request('GET', other.headers.location);

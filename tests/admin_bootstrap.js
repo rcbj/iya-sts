@@ -405,40 +405,51 @@ function childMain() {
     note(abClient && abClient.ok, 'precondition: ab-client is registered',
          JSON.stringify(abClient));
 
+    // THE SIGN-IN SCREEN AND THE CHANGE STEP ARE A STATIC SURFACE OVER
+    // `/authn-api` SINCE #571: the act answers the next step as JSON, and
+    // `tests/tools/authn_screen.js` drives it as the page does.
+    const screen = require(ROOT + '/tests/tools/authn_screen');
+    const signInAt = function (authnId, password) {
+      return screen.submit({ port: port, jar: {},
+        at: '/authn/login?authn=' + authnId,
+        fields: { action: 'login', username: 'admin', password: password } });
+    };
+    const changeAt = function (changeAt, chosen, again) {
+      return screen.changePassword({ port: port, jar: {}, at: changeAt,
+        fields: { new_password: chosen, confirm_password: again } });
+    };
+
     // Development first: any password, the change page, a mismatch, success.
     config.clearOverride('global.mode');
     let authnId = await startSignIn();
-    let r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: 'anything-at-all',
-        action: 'login' });
-    const changeId = (r.text.match(/name="change_id" value="([^"]+)"/) ||
-                      [])[1];
-    note(r.status === 200 && /Choose a new password/.test(r.text) &&
-         changeId && !cookieOf(r),
-         '7a. the sign-in screen draws the change step and starts no session',
-         r.status + ' ' + r.text.slice(0, 120));
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'one-Pass-1!',
-        confirm_password: 'two-Pass-1!' });
-    note(r.status === 200 && /not the same/.test(r.text),
+    let r = await signInAt(authnId, 'anything-at-all');
+    const changeLocation = r.next === 'password-change' ? r.location : '';
+    note(r.next === 'password-change' &&
+         /^\/authn\/password-change\?change=/.test(changeLocation) &&
+         !cookieOf(r),
+         '7a. the sign-in screen answers the change step (next: ' +
+         'password-change) and starts no session',
+         r.apiStatus + ' ' + r.text.slice(0, 160));
+    r = await changeAt(changeLocation, 'one-Pass-1!', 'two-Pass-1!');
+    note(r.apiStatus === 400 && /not the same/.test(r.errors.join(' ')),
          '7b. two different passwords are refused and the step kept',
-         r.status);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'invalid',
-        confirm_password: 'invalid' });
-    note(r.status === 200 && /reserved/.test(r.text),
-         '7c. the reserved refusal password is refused', r.status);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'Chosen-Pass-42!',
-        confirm_password: 'Chosen-Pass-42!' });
+         r.apiStatus + ' ' + r.text.slice(0, 160));
+    r = await changeAt(changeLocation, 'invalid', 'invalid');
+    note(r.apiStatus === 400 && /reserved/.test(r.errors.join(' ')),
+         '7c. the reserved refusal password is refused', r.apiStatus);
+    r = await changeAt(changeLocation, 'Chosen-Pass-42!', 'Chosen-Pass-42!');
     // The resumed sign-in OFFERS the administrator a second factor (#246,
-    // the authentication policy's `offer`); ignored, as rcbj asked of the
-    // tests for the time being.
-    const offered = r.status === 200 && /id="mfa-setup-ignore"/.test(r.text)
-      ? (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || '' : '';
-    if (offered) {
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: offered, action: 'ignore' });
+    // the authentication policy's `offer`), as its next step; ignored, as
+    // rcbj asked of the tests for the time being. Its page is server-drawn.
+    if (r.next === 'mfa' && r.step === 'enrol') {
+      const page = await request(port, 'GET', r.location);
+      const offered = /id="mfa-setup-ignore"/.test(page.text)
+        ? (page.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || ''
+        : '';
+      if (offered) {
+        r = await request(port, 'POST', '/authn/mfa-setup',
+          { mfa_id: offered, action: 'ignore' });
+      }
     }
     note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
          /\/oauth2\/authorize/.test(String(r.headers.location || '')) &&
@@ -447,10 +458,11 @@ function childMain() {
          }),
          '7d. a new password resumes the sign-in, starts the session and ' +
          'clears pwdReset', r.status + ' ' + r.headers.location);
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: changeId, new_password: 'Chosen-Pass-42!',
-        confirm_password: 'Chosen-Pass-42!' });
-    note(r.status === 400, '7e. the step is spent', r.status);
+    // A spent step has no view to draw (STS-AUTHN-0144), so its page has no
+    // token to send a change with either.
+    const spent = await screen.open({ port: port, jar: {}, at: changeLocation });
+    note(spent.status === 400 && !spent.view, '7e. the step is spent',
+         spent.status);
 
     // Product: the policy decides what a new password may be.
     //
@@ -469,25 +481,18 @@ function childMain() {
       return credentials.setPasswordResetRequired('admin', true);
     });
     authnId = await startSignIn();
-    r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: 'wrong-one',
-        action: 'login' });
-    note(r.status === 200 && !/Choose a new password/.test(r.text),
+    r = await signInAt(authnId, 'wrong-one');
+    note(r.next === 'refused' && r.next !== 'password-change',
          '7f. product: a wrong password never reaches the change step',
-         r.status);
+         r.apiStatus + ' ' + r.next);
     authnId = await startSignIn();
-    r = await request(port, 'POST', '/authn/login',
-      { authn_id: authnId, username: 'admin', password: strong,
-        action: 'login' });
-    const productChange = (r.text.match(/name="change_id" value="([^"]+)"/) ||
-                           [])[1];
-    r = await request(port, 'POST', '/authn/password-change',
-      { change_id: productChange, new_password: 'short',
-        confirm_password: 'short' });
-    note(productChange && r.status === 200 &&
-         /Choose a new password/.test(r.text) && !cookieOf(r),
+    r = await signInAt(authnId, strong);
+    const productChange = r.next === 'password-change' ? r.location : '';
+    r = await changeAt(productChange, 'short', 'short');
+    note(productChange && r.apiStatus === 400 && r.next === 'refused' &&
+         !cookieOf(r),
          '7g. product: the password policy refuses a weak new password on the ' +
-         'change page', r.status + ' ' + r.text.slice(0, 80));
+         'change page', r.apiStatus + ' ' + r.text.slice(0, 160));
     config.clearOverride('global.mode');
     config.clearOverride('oauth2.redirectUris');
 

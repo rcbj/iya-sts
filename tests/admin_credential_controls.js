@@ -417,14 +417,25 @@ function childMain() {
         }).filter(function (one) { return /^sts_session=./.test(one); })[0] ||
           '';
       };
+      // THE SIGN-IN SCREEN IS A STATIC SURFACE OVER `/authn-api` SINCE
+      // #571: the act answers its next step, and a step's page — still
+      // server-drawn — is opened with a GET (`authn_screen.follow()`).
+      const screen = require(ROOT + '/tests/tools/authn_screen');
+      const signInAt = function (authnId, fields) {
+        return screen.follow({ port: port, jar: {},
+          at: '/authn/login?authn=' + authnId,
+          fields: Object.assign({ action: 'login' }, fields) });
+      };
+      const noSession = function (res) {
+        return !cookieOf(res) && !(res.answer && cookieOf(res.answer));
+      };
       let authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', password: 'anything',
-          action: 'login' });
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    password: 'anything' });
       const setupId = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
                        [])[1];
       note(r.status === 200 && /Set up a second factor/.test(r.text) &&
-           setupId && !cookieOf(r),
+           setupId && noSession(r),
            '7a. the sign-in draws the set-up step and starts no session',
            r.status + ' ' + r.text.slice(0, 120));
       r = await request(port, 'POST', '/authn/mfa-setup',
@@ -451,9 +462,8 @@ function childMain() {
       note(r.status === 400, '7e. the step is spent', r.status);
 
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', password: 'anything',
-          action: 'login' });
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    password: 'anything' });
       note(r.status === 200 && /one-time code/i.test(r.text) &&
            !/Set up a second factor/.test(r.text),
            '7f. once enrolled, the sign-in asks for the code, not a set-up',
@@ -471,23 +481,21 @@ function childMain() {
       passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
                                                   { allowUsernameless: false }));
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-carol', webauthn_only: '1',
-          action: 'login' });
+      r = await signInAt(authnId, { username: 'ctl-carol',
+                                    webauthn_only: '1' });
       passkeyPolicy.reset('default');
-      note(r.status === 200 &&
-           /security key on\s+its own is one factor/.test(r.text) &&
-           !/\/authn\/webauthn\.js/.test(r.text) &&
-           !/Set up a second factor/.test(r.text) && !cookieOf(r),
-           '7g. a passwordless sign-in under the requirement is refused',
-           r.status + ' ' + r.text.slice(0, 100));
+      note(r.next === 'refused' &&
+           /security key on\s+its own is one factor/.test(
+             (r.errors || []).join(' ')) && noSession(r),
+           '7g. a passwordless sign-in under the requirement is refused ' +
+           '(next: refused), no ceremony and no set-up step',
+           r.status + ' ' + String(r.text).slice(0, 160));
 
       ldapServer.createUser('ctl-dave', {});
       policyWith({ requireSecondFactor: 'always' });
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-dave', password: 'anything',
-          action: 'login' });
+      r = await signInAt(authnId, { username: 'ctl-dave',
+                                    password: 'anything' });
       const daveSetup = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
                          [])[1];
       note(r.status === 200 && /Set up a second factor/.test(r.text) &&
@@ -502,11 +510,11 @@ function childMain() {
       policyWith({ requireSecondFactor: 'always', totpSecondFactor: false });
       config.setOverride('webauthn.enabled', 'false');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ctl-dave', password: 'anything',
-          action: 'login' });
-      note(r.status === 200 && /switched\s+off/.test(r.text) &&
-           !cookieOf(r),
+      r = await signInAt(authnId, { username: 'ctl-dave',
+                                    password: 'anything' });
+      note(r.next === 'refused' &&
+           /switched\s+off/.test((r.errors || []).join(' ')) &&
+           noSession(r),
            '7j. with both mechanisms off the sign-in is refused, not let ' +
            'through', r.status + ' ' + r.text.slice(0, 100));
       config.clearOverride('webauthn.enabled');
