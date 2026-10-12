@@ -269,7 +269,7 @@ const PASSWORD_CHANGE_PATH = '/authn/password-change';
  */
 const LANGUAGE_PATH = '/authn/language';
 // A SECOND FACTOR ENROLLED BECAUSE ONE IS REQUIRED (2026-09-13) — see the
-// block above `MFA_SETUP_FORM` for why a sign-in may now enrol an authenticator
+// block above `enrolmentOffered()` for why a sign-in may now enrol an authenticator
 // app where it never used to.
 /**
  * The path where a sign-in enrols a second factor that is required and not yet
@@ -662,7 +662,17 @@ const ARRIVAL_PATHS = [
   // that is not on this list, or a cookie that ran out at the screen.
   '/authn/login',
   '/authn/select-idp',
-  '/authn/password-change'
+  '/authn/password-change',
+  // AND THE STEPS AFTER IT (#572, #573), for the same reason: each is a
+  // shell whose acts are bound to that cookie. `/authn/email-link` covers
+  // `/authn/email-link/open`, where a mailed link lands.
+  '/authn/mfa-setup',
+  '/authn/webauthn',
+  '/authn/totp',
+  '/authn/backup-code',
+  '/authn/password-factor',
+  '/authn/email-code',
+  '/authn/email-link'
 ];
 
 // ---------------------------------------------------------------------------
@@ -925,17 +935,6 @@ function requirementForAdministrator(credentials: any, username: string) {
 // `/authn-api`'s operations, declared and checked in `authn/authn_api.ts`,
 // which hands `screenAct()` the object this module's handler used to read.
 
-// The WebAuthn ceremony's result. `credential` is a JSON document the browser's
-// authenticator produced, so it is bounded and parsed downstream rather than
-// described here — a schema for it would be a second, worse copy of the
-// specification `webauthn.js` already implements.
-const WEBAUTHN_FORM = vz.object({
-  mode: vt.opt(vt.oneOf(['create', 'get'])),
-  mfa_id: vt.opt(vt.base64url),
-  credential: vz.string().max(validation.CAP.TEXT).optional(),
-  csrf_token: vt.opt(vt.token)
-});
-
 const PASSWORD_CHANGE_QUERY = vz.object({
   change: vt.opt(vt.base64url)
 });
@@ -946,33 +945,6 @@ const PASSWORD_CHANGE_QUERY = vz.object({
 const LANGUAGE_FORM = vz.object({
   lang: vz.string().max(64).optional(),
   return: vz.string().max(2048).optional()
-});
-
-const MFA_SETUP_STYLE = '<style>body{font-family:system-ui,-apple-system,' +
-  '"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
-  'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-  '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-  'padding:28px 32px;width:440px;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
-  'h1{font-size:1.25em;margin:0 0 4px}h2{font-size:1em;margin:18px 0 6px}' +
-  'p.sub{color:#666;font-size:.85em;margin:0 0 18px}p{font-size:.9em}' +
-  'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
-  'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px ' +
-  'solid #c8c8d0;border-radius:5px;font-size:1.3em;letter-spacing:.3em;' +
-  'text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,' +
-  'monospace;margin-bottom:14px}button{padding:9px 12px;border-radius:5px;' +
-  'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.95em;' +
-  'cursor:pointer;width:100%;margin:4px 0}.err{background:#fdecea;border:' +
-  '1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-  'font-size:.85em;margin-bottom:12px}code{font-family:ui-monospace,' +
-  'SFMono-Regular,Menlo,monospace}.meta{margin-top:20px;padding-top:14px;' +
-  'border-top:1px solid #eee;font-size:.75em;color:#777}' + CHOOSER_CSS +
-  '</style>';
-
-const MFA_SETUP_FORM = vz.object({
-  mfa_id: vt.opt(vt.base64url),
-  action: vt.opt(vt.oneOf(['totp', 'webauthn', 'confirm-totp', 'ignore'])),
-  code: vz.string().max(32).optional(),
-  csrf_token: vt.opt(vt.token)
 });
 
 // The security-key screen, and it is ONE screen for both roles. It performs the
@@ -989,16 +961,13 @@ const MFA_SETUP_FORM = vz.object({
 // are the same bytes. It says it anyway, because the difference is what the
 // session ends up claiming and a person reading the tokens afterwards has to be
 // able to tell which one they did.
-// THE CEREMONY SCRIPT'S PATH, NAMED ONCE (2026-09-10). It had one caller and
-// was a literal in two places — the route and the `<script src>` on the page.
-// `/portal/keys` is the third since it runs a registration of its own against
-// the SAME script, and a path written out three times is two chances to move
-// one of them.
-/**
- * The path of the one WebAuthn ceremony script this service serves, also used
- * by `/portal/keys`.
- */
-const WEBAUTHN_SCRIPT_PATH = '/authn/webauthn.js';
+//
+// SINCE #572 THE CEREMONY RUNS IN THE SIGN-IN SURFACE'S BUNDLE
+// (`web_authn.ts` over `common/web_webauthn.ts`), armed by `POST
+// /authn-api/mfa/{id}/webauthn/options` and answered to `POST
+// /authn-api/mfa/{id}/webauthn`; `/authn/webauthn.js`, the script this page
+// loaded, is no longer served, since nothing draws a page that loads it.
+
 // THE BROWSER FINGERPRINT'S SCRIPT (#62 P6): FingerprintJS (MIT, v5 — it
 // runs in the browser and sends nothing anywhere; `monitoring: false` turns
 // off the one usage ping the library makes, which this service's CSP would
@@ -1019,268 +988,21 @@ const FINGERPRINT_GLUE = [
   '})();'
 ].join('\n');
 
-// The ceremony script, as its own resource. Written with split/join rather than
-// regular expressions on purpose: this string passes through a JavaScript
-// string literal on the way out, where `\+` collapses to `+` and `\/` to `/`,
-// which silently produced `/+/g` and `///g` in the delivered script the first
-// time this was written inline. split/join has nothing to escape.
-const WEBAUTHN_SCRIPT = [
-  '(function () {',
-  '  var d = document.getElementById("wa-data");',
-  '  var b64u = function (b) {',
-  '    var s = btoa(String.fromCharCode.apply(null, new Uint8Array(b)));',
-  '    return s.split("+").join("-").split("/").join("_").split("=").join("");',
-  '  };',
-  '  var bytes = function (s) {',
-  '    var t = s.split("-").join("+").split("_").join("/");',
-  '    while (t.length % 4) { t += "="; }',
-  '    var bin = atob(t), out = new Uint8Array(bin.length);',
-  '    for (var i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }',
-  '    return out;',
-  '  };',
-  '  var send = function (payload) {',
-  '    document.getElementById("wa-credential").value = ' +
-  'JSON.stringify(payload);',
-  '    document.getElementById("wa-form").submit();',
-  '  };',
-  // THE SIGNAL API (#470), WebAuthn Level 3 section 5.1.10: where the page
-  // carries a wa-signal element, tell the credential manager which of this
-  // person's passkeys this service still accepts, so one removed here leaves
-  // their phone or password manager too, and what their name is.
-  // Feature-detected and best-effort: a browser without it does nothing, and
-  // no answer is awaited.
-  '  var sg = document.getElementById("wa-signal");',
-  '  if (sg && window.PublicKeyCredential) {',
-  '    var srp = sg.getAttribute("data-rpid");',
-  '    var suid = sg.getAttribute("data-userid");',
-  '    var sids = (sg.getAttribute("data-accepted") || "").split(",")',
-  '      .filter(function (id) { return id; });',
-  '    var quiet = function () {};',
-  '    if (PublicKeyCredential.signalAllAcceptedCredentials) {',
-  '      PublicKeyCredential.signalAllAcceptedCredentials({ rpId: srp,',
-  '        userId: suid, allAcceptedCredentialIds: sids }).catch(quiet);',
-  '    }',
-  '    if (PublicKeyCredential.signalCurrentUserDetails) {',
-  '      PublicKeyCredential.signalCurrentUserDetails({ rpId: srp,',
-  '        userId: suid, name: sg.getAttribute("data-name"),',
-  '        displayName: sg.getAttribute("data-display") }).catch(quiet);',
-  '    }',
-  '  }',
-  // A PASSKEY AND NO USERNAME (#474), where the sign-in screen carries a
-  // wa-passkey element: the button runs a ceremony with no allowCredentials
-  // and user verification required, and where the browser supports
-  // conditional mediation the username field offers the same passkeys as it
-  // loads (WebAuthn Level 3 section 5.1.4, mediation "conditional"). Both
-  // post through the screen's own form, with action=passkey. The pending
-  // autofill request is aborted before the button's own ceremony, which a
-  // browser refuses to run beside it. And a credential the last attempt
-  // named that this realm holds for nobody is reported to the credential
-  // manager (section 5.1.10, signalUnknownCredential), where the page says
-  // so.
-  '  var pk = document.getElementById("wa-passkey");',
-  '  var pkGo = document.getElementById("wa-passkey-go");',
-  '  if (pk && pkGo && window.PublicKeyCredential && navigator.credentials) {',
-  '    var pkRp = pk.getAttribute("data-rpid");',
-  '    var pkUnknown = pk.getAttribute("data-unknown");',
-  '    if (pkUnknown && PublicKeyCredential.signalUnknownCredential) {',
-  '      PublicKeyCredential.signalUnknownCredential({ rpId: pkRp,',
-  '        credentialId: pkUnknown }).catch(function () {});',
-  '    }',
-  '    var po = {};',
-  '    try { po = JSON.parse(pk.getAttribute("data-options") || "{}") || {}; }',
-  '    catch (e) { po = {}; }',
-  '    var pkOptions = function () {',
-  '      return { challenge: bytes(pk.getAttribute("data-challenge")),',
-  '        rpId: po.rpId || pkRp, allowCredentials: [],',
-  // The sign-in's hints (#531), where the passkey policy names any.
-  '        hints: po.hints && po.hints.length ? po.hints : undefined,',
-  '        userVerification: "required", timeout: po.timeout || 60000 };',
-  '    };',
-  '    var pkSend = function (payload) {',
-  '      document.getElementById("wa-passkey-credential").value = ' +
-  'JSON.stringify(payload);',
-  '      document.getElementById("wa-passkey-action").disabled = false;',
-  '      pkGo.form.submit();',
-  '    };',
-  '    var pkAssertion = function (a) {',
-  '      return { id: a.id, rawId: b64u(a.rawId), type: a.type,',
-  '        authenticatorAttachment: a.authenticatorAttachment || null,',
-  '        response: {',
-  '          clientDataJSON: b64u(a.response.clientDataJSON),',
-  '          authenticatorData: b64u(a.response.authenticatorData),',
-  '          signature: b64u(a.response.signature),',
-  '          userHandle: a.response.userHandle ? ' +
-  'b64u(a.response.userHandle) : null } };',
-  '    };',
-  '    var pkAbort = null;',
-  // NOT ARMED AGAIN AFTER A REFUSAL (2026-10-10): a screen redrawn because a
-  // passkey answered the autofill and was refused says data-autofill="0".
-  // An authenticator that answers a conditional request with nobody choosing
-  // (a test's virtual one, an automatic password manager) would otherwise
-  // answer the redrawn page's request too, be refused again, and loop. The
-  // button still runs the ceremony.
-  '    if (pk.getAttribute("data-autofill") !== "0" &&',
-  '        PublicKeyCredential.isConditionalMediationAvailable &&',
-  '        window.AbortController) {',
-  '      PublicKeyCredential.isConditionalMediationAvailable()',
-  '        .then(function (yes) {',
-  '          if (!yes) { return null; }',
-  '          pkAbort = new AbortController();',
-  '          return navigator.credentials.get({ mediation: "conditional",',
-  '            signal: pkAbort.signal, publicKey: pkOptions() })',
-  '            .then(function (a) { if (a) { pkSend(pkAssertion(a)); } });',
-  '        })',
-  // Aborted by the button, or declined: the page goes on as a form.
-  '        .catch(function () {});',
-  '    }',
-  '    pkGo.addEventListener("click", function (ev) {',
-  '      ev.preventDefault();',
-  '      if (pkAbort) { pkAbort.abort(); pkAbort = null; }',
-  '      navigator.credentials.get({ publicKey: pkOptions() })',
-  '        .then(function (a) { pkSend(pkAssertion(a)); })',
-  '        .catch(function (e) {',
-  '          pkSend({ error: e.name, message: e.message });',
-  '        });',
-  '    });',
-  '  }',
-  // NO CEREMONY ON THIS PAGE (#470): the passkey list carries the signal and
-  // no button, so the script stops here rather than throwing.
-  '  if (!d || !document.getElementById("wa-go")) { return; }',
-  '  document.getElementById("wa-go").addEventListener("click", function () {',
-  '    var challenge = bytes(d.getAttribute("data-challenge"));',
-  '    var rpId = d.getAttribute("data-rpid");',
-  '    var user = d.getAttribute("data-user");',
-  '    var allow = d.getAttribute("data-allow");',
-  '    var exclude = (d.getAttribute("data-exclude") || "").split(",")',
-  '      .filter(function (id) { return id; });',
-  // EVERY CEREMONY PARAMETER ARRIVES AS ONE PARSED OBJECT (2026-09-10). The
-  // RP name, the algorithms, the attestation conveyance, the timeout, the
-  // authenticator selection and the extensions were all literals in the lines
-  // below until this day; they are `webauthn.*` settings now and this script
-  // is served static, so they travel on data-options. The fallback is what
-  // this script used to be, so a page served by an older build of the service
-  // still performs a ceremony rather than throwing on a missing attribute.
-  '    var o = {};',
-  '    try { o = JSON.parse(d.getAttribute("data-options") || "{}") || {}; }',
-  '    catch (e) { o = {}; }',
-  '    var sel = o.authenticatorSelection || { userVerification: "preferred" ' +
-  '};',
-  '    var algs = (o.algorithms && o.algorithms.length ? o.algorithms : [-7, ' +
-  '-257])',
-  '      .map(function (a) { return { type: "public-key", alg: a }; });',
-  '    var p;',
-  '    if (d.getAttribute("data-mode") === "create") {',
-  '      p = navigator.credentials.create({ publicKey: {',
-  '        rp: o.rp || { name: "IYA STS", id: rpId },',
-  // THE USER HANDLE (#474): 64 random bytes the page names, never the
-  // username — WebAuthn Level 3 section 5.4.3.
-  '        user: { id: bytes(d.getAttribute("data-userid") || ""), ' +
-  'name: user, displayName: d.getAttribute("data-display") || user },',
-  '        challenge: challenge,',
-  '        pubKeyCredParams: algs,',
-  '        authenticatorSelection: sel,',
-  // WEBAUTHN'S OWN "DO NOT ENROL THIS AUTHENTICATOR TWICE" (2026-09-10). A
-  // conforming authenticator that recognises one of these refuses rather than
-  // creating a second credential — which is what stops the commonest mistake
-  // when adding a BACKUP key: pressing Add and touching the one already
-  // plugged in, producing a second credential on the same device and a
-  // backup that is lost with the original. `credentials.js` checks it again
-  // at the write, because this is a request to the browser like every other
-  // option on this page.
-  '        excludeCredentials: exclude.map(function (id) {',
-  '          return { type: "public-key", id: bytes(id) };',
-  '        }),',
-  // credProps, and CTAP 2.1's minPinLength where the passkey policy asks
-  // for it (#529): the browser passes it to the authenticator, whose answer
-  // comes back in the authenticator data's extensions.
-  '        extensions: (o.credProps || o.minPinLength) ? Object.assign(',
-  '          o.credProps ? { credProps: true } : {},',
-  '          o.minPinLength ? { minPinLength: true } : {}) : undefined,',
-  // WHICH AUTHENTICATOR THE PAGE MEANS (#470), WebAuthn Level 3 section
-  // 5.4.8: "Create a passkey" and "Use a security key" are two buttons, and
-  // a hint is how the browser is told which UI to lead with without the
-  // hard `authenticatorAttachment` that broke enrolment on a browser with
-  // nothing built in (2026-09-26).
-  '        hints: o.hints && o.hints.length ? o.hints : undefined,',
-  '        attestation: o.attestation || "direct",',
-  '        timeout: o.timeout || 60000 } })',
-  '        .then(function (c) {',
-  '          var ext = {};',
-  '          try { ext = c.getClientExtensionResults ? ' +
-  'c.getClientExtensionResults() : {}; }',
-  '          catch (e) { ext = {}; }',
-  '          return { id: c.id, rawId: b64u(c.rawId), type: c.type,',
-  '            authenticatorAttachment: c.authenticatorAttachment || null,',
-  '            clientExtensionResults: ext, response: {',
-  '            clientDataJSON: b64u(c.response.clientDataJSON),',
-  // THE TRANSPORTS (#470), section 5.2.1, which the passkey list shows and
-  // groups an otherwise unreported key by.
-  '            transports: c.response.getTransports ? ' +
-  'c.response.getTransports() : [],',
-  '            attestationObject: b64u(c.response.attestationObject) } }; });',
-  '    } else {',
-  '      p = navigator.credentials.get({ publicKey: {',
-  '        challenge: challenge, rpId: o.rpId || rpId,',
-  // A LIST since 2026-09-10: a person may hold several keys of one role and
-  // the authenticator picks whichever it has. It was one id, because this
-  // module held one credential per person in a map of its own.
-  '        allowCredentials: allow ? allow.split(",").map(function (id) {',
-  '          return { type: "public-key", id: bytes(id) };',
-  '        }) : undefined,',
-  '        userVerification: o.userVerification || "preferred",',
-  '        hints: o.hints && o.hints.length ? o.hints : undefined,',
-  '        timeout: o.timeout || 60000 } })',
-  '        .then(function (a) { return { id: a.id, rawId: b64u(a.rawId), ' +
-  'type: a.type,',
-  '          authenticatorAttachment: a.authenticatorAttachment || null, ' +
-  'response: {',
-  '          clientDataJSON: b64u(a.response.clientDataJSON),',
-  '          authenticatorData: b64u(a.response.authenticatorData),',
-  '          signature: b64u(a.response.signature),',
-  '          userHandle: a.response.userHandle ? b64u(a.response.userHandle) ' +
-  ': null } }; });',
-  '    }',
-  '    p.then(send).catch(function (e) { send({ error: e.name, message: ' +
-  'e.message }); });',
-  '  });',
-  '})();',
-  ''
-].join('\n');
-
-const TOTP_FORM = vz.object({
-  mfa_id: vt.opt(vt.base64url),
-  // A STRING AND NOT AN INTEGER, deliberately. A code is `007123` and a number
-  // is 7123; parsing it as an integer here would lose the leading zeros that
-  // one code in ten has, and `common/totp.ts` refuses anything that is not
-  // exactly the enrolled number of digits — so the shape check belongs where
-  // the digit count is known and not in this schema.
-  code: vz.string().max(32).optional(),
-  csrf_token: vt.opt(vt.token)
-});
-
-const PASSWORD_FACTOR_FORM = vz.object({
-  mfa_id: vt.opt(vt.base64url),
-  password: vz.string().max(1024).optional(),
-  csrf_token: vt.opt(vt.token)
-});
+// THE SECOND-FACTOR STEPS' PAGES (#572), by the name `/authn-api` gives
+// each (`GET /authn-api/mfa/{id}?page=`).
+const STEP_PAGES: Record<string, string> = {
+  totp: TOTP_PATH,
+  webauthn: WEBAUTHN_PATH,
+  'backup-code': BACKUP_CODE_PATH,
+  password: PASSWORD_FACTOR_PATH,
+  setup: MFA_SETUP_PATH
+};
 
 const MFA_STEP_QUERY = vz.object({
   mfa: vt.opt(vt.base64url),
   // THE ONE PASSKEY A PERSON CHOSE (#534), where the passkey policy offers
   // them one by one: a credential id, base64url.
   key: vt.opt(vt.base64url)
-});
-
-const BACKUP_CODE_FORM = vz.object({
-  mfa_id: vt.opt(vt.base64url),
-  // A STRING WITH A GENEROUS BOUND, and no shape check here. A recovery code
-  // is letters, digits, dashes and whatever spaces somebody typed reading it
-  // off paper, and `common/backup_codes.ts` is where the alphabet lives —
-  // which is where the refusal belongs, because that is the module that knows
-  // what a code is made of. A schema that spelled the alphabet a second time
-  // would be the second place to edit when it changes.
-  code: vz.string().max(64).optional(),
-  csrf_token: vt.opt(vt.token)
 });
 
 // The express application the routes are registered on.
@@ -7420,21 +7142,21 @@ class Authn {
   // under the demand; this is the check, because a link that is not drawn is
   // still a URL. Refused BEFORE the code is checked, so a code is not spent
   // on a step it could not finish. True when it answered.
-  private keyDemandRefuses(res, step, what) {
-    const { log, errorCodes, oauthError } = this.deps;
-    log.debug("Entering Authn.keyDemandRefuses().");
+  // (#572: a problem answered, which the step's view and its acts each send
+  // in their own shape.)
+  private keyDemandProblem(step, what): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.keyDemandProblem().");
     if (!step || !step.authn || !step.authn.forceKey) {
-      log.debug("Leaving Authn.keyDemandRefuses(). No key was demanded.");
-      return false;
+      log.debug("Leaving Authn.keyDemandProblem(). No key was demanded.");
+      return null;
     }
     log.info('authn: ' + what + ' was offered for "' + step.username + '" ' +
              'where the sign-in demands a security key; refused.');
-    errorCodes.mark(res, 'STS-AUTHN-0204');
-    oauthError(res, 400, 'invalid_request',
-      'This sign-in demands a passkey, and ' + what + ' does not answer ' +
-      'that. Use your passkey on the previous screen.');
-    log.debug("Leaving Authn.keyDemandRefuses(). Refused.");
-    return true;
+    log.debug("Leaving Authn.keyDemandProblem(). Refused.");
+    return { code: 'STS-AUTHN-0204',
+             why: 'This sign-in demands a passkey, and ' + what + ' does not ' +
+                  'answer that. Use your passkey on the previous screen.' };
   }
 
   // A SESSION REFUSED AT THE END OF A SCREEN'S CEREMONY (2026-09-17; every
@@ -7650,13 +7372,24 @@ class Authn {
     log.debug("Entering Authn.screenRefused().");
     const asked = extra || {};
     const json = this.answersJson(res);
-    if (record && record.id && !(record.expires < Date.now())) {
-      record.screenError = json ? '' : String(message || '');
+    // A SESSION REFUSED AT THE END OF A SECOND-FACTOR STEP (#572): the step
+    // is spent and the pending sign-in put back, so the refusal is drawn on
+    // the SCREEN, where the person can sign in again — the sentence on the
+    // record, which the screen's view answers, and the screen's address in
+    // the answer for the step's page to go to.
+    const fromStep = json && !!(res && res.locals && res.locals.authnStep);
+    const live = !!(record && record.id && !(record.expires < Date.now()));
+    if (live) {
+      record.screenError = json && !fromStep ? '' : String(message || '');
       pending.set(record.id, record);
     }
     if (json) {
       const body: any = { ok: false, next: 'refused',
                           errors: [String(message || 'Refused.')] };
+      if (fromStep && live) {
+        body.location = this.locationOf(res, realms.currentPrefix() +
+          LOGIN_PATH + '?authn=' + encodeURIComponent(String(record.id)));
+      }
       if (asked.unknownCredential || asked.noAutofill) {
         body.passkey = { unknownCredential: asked.unknownCredential || '',
                          autofill: !asked.noAutofill };
@@ -8093,8 +7826,8 @@ class Authn {
           firstAmr: firstAmr, mfaAllowed: mfaAllowed,
           expires: Date.now() + this.mfaStepTtlMs()
         });
-        this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, username,
-                                                     offered, ''));
+        // The set-up step's page (#572), by its address.
+        this.stepAnswer(res, 'mfa', 'enrol', setupId, MFA_SETUP_PATH, 'mfa');
         log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Enrolment.");
         return { handled: true };
       }
@@ -8145,126 +7878,292 @@ class Authn {
              'factor is needed (' + (record.forceMfa ? 'the request demands ' +
              'two' : requirement.required ? 'required of them' :
              'they hold one') + '); asking for ' + factor + '.');
-    if (factor === 'totp') {
-      this.sendTotpPage(res, this.totpPage(base, mfaId, username, '', ''));
-    } else if (factor === 'email-code' || factor === 'email-link') {
-      this.emailDoor().beginSecondFactor(req, res, base, mfaId);
+    // THE STEP'S PAGE, BY ITS ADDRESS (#572): a 303 to the wallet door's
+    // form, the next step to `/authn-api`'s act — `stepAnswer()` decides.
+    // An emailed factor's first message is sent first, as it always was,
+    // and a message that could not be sent is said on its page.
+    const self = this;
+    if (factor === 'email-code' || factor === 'email-link') {
+      const path = factor === 'email-code' ? EMAIL_CODE_PATH : EMAIL_LINK_PATH;
+      Promise.resolve(this.emailDoor().armSecondFactor(req, res, mfaId))
+        .catch(function (e) {
+          log.debug("Caught in Authn.beginSecondFactorAfterWallet(): " +
+                    ((e && e.message) || e));
+          // The page says nothing was sent, and offers the other factors.
+          return null;
+        })
+        .then(function () {
+          self.stepAnswer(res, 'mfa', factor, mfaId, path, 'mfa');
+        });
+    } else if (factor === 'totp') {
+      this.stepAnswer(res, 'mfa', 'totp', mfaId, TOTP_PATH, 'mfa');
     } else if (factor === 'webauthn') {
-      this.sendWebauthnPage(res, this.webauthnPage(base, mfaId, username, ''));
+      this.stepAnswer(res, 'mfa', 'webauthn', mfaId, WEBAUTHN_PATH, 'mfa');
     } else {
-      this.sendPasswordFactorPage(res, this.passwordFactorPage(mfaId, username,
-                                                               ''));
+      this.stepAnswer(res, 'mfa', 'password', mfaId, PASSWORD_FACTOR_PATH,
+                      'mfa');
     }
+    void base;
     log.debug("Leaving Authn.beginSecondFactorAfterWallet(). " + factor + ".");
     return { handled: true };
   }
 
-  // THE LANGUAGE OF A SECOND-FACTOR PAGE (#539): what the pending sign-in
-  // knows — its application and `ui_locales` — and the person, who is known
-  // by now. A step that has already gone (an error path reaches a page that
-  // way) is read with neither, and the cookie and the browser decide.
-  private stepTranslator(step: any, username: string) {
+  // ===========================================================================
+  // THE SECOND-FACTOR STEPS ARE PAGES OF THE SIGN-IN SURFACE (#572,
+  // 2026-10-12).
+  //
+  // `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`,
+  // `/authn/password-factor` and `/authn/mfa-setup` were drawn here, each a
+  // page with a form posting back to its own path. Since #572 each path
+  // answers the sign-in surface's shell, the browser draws the page from
+  // `GET /authn-api/mfa/{id}?page=<page>` — `mfaView()` below, every
+  // decision the markup was drawn under as a fact and no words — and every
+  // act is `/authn-api`'s (`mfaTotpAct()` and its siblings, further down),
+  // whose answer is the next step in #571's shape.
+  //
+  // **WHAT A PAGE MAY BE DRAWN FOR DID NOT CHANGE**: `stepProblem()` is what
+  // each GET refused before it drew anything — a step that expired, a code
+  // page for somebody with no authenticator app, a passkey page for
+  // somebody holding no key of the step's role (except the enrolment
+  // ceremony the screen minted the step for), a recovery-code page for
+  // somebody with no unspent code, a password page after a password — and
+  // both the shell's GET (as the 400 it always answered) and the view ask
+  // it. The step id is a bearer capability, as `?mfa=` always was: it is
+  // never logged, and `common/audit.js` redacts it from a row's path.
+  // ===========================================================================
+
+  /**
+   * The page a second-factor step is drawn on, by the name `/authn-api`
+   * gives it.
+   *
+   * @param page - `totp`, `webauthn`, `backup-code`, `password` or `setup`
+   * @returns the path, or '' for a name that is not a page
+   */
+  stepPagePath(page: string): string {
     const { log } = this.deps;
-    log.debug("Entering Authn.stepTranslator().");
-    const authn = (step && step.authn) || {};
-    const t = PageLocale.forPage({ application: authn.application,
-                                   uiLocales: authn.uiLocales,
-                                   username: username || '' });
-    log.debug("Leaving Authn.stepTranslator(). " + t.locale);
-    return t;
-  }
-
-  // The password-as-second-factor page. No script.
-  private passwordFactorPage(mfaId: string, username: string,
-                             error: string): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Authn.passwordFactorPage().");
-    const step = pendingMfa.get(mfaId);
-    // THE LANGUAGE (#539), as the sign-in screen's: the pending sign-in's
-    // `ui_locales` and application, and the person. The error stays English.
-    const t = this.stepTranslator(step, username);
-    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
-      '><head><meta ' +
-      'charset="utf-8"><title>' +
-      xmlEscape(t.text('authn.passwordFactor.title')) + '</title><style>' +
-      CARD_CSS + '</style></head><body><div ' +
-      'class="card">' +
-      // Drawn by a GET or by a refused POST; the GET redraws it.
-      PageLocale.chooser(t, realms.currentPrefix(),
-        PageLocale.herePath(realms.currentPrefix() + PASSWORD_FACTOR_PATH +
-                            '?mfa=' + encodeURIComponent(mfaId))) +
-      '<h1>' + t.html('authn.passwordFactor.heading') +
-      '</h1><p class="sub">' +
-      t.html('authn.passwordFactor.sub', { name: username }) + '</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      '<form method="post" action="' + PASSWORD_FACTOR_PATH + '">' +
-      '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-      '<label for="password">' + t.html('authn.passwordFactor.password') +
-      '</label><input type="password" ' +
-      'id="password" name="password" autocomplete="current-password" ' +
-      'autofocus>' +
-      '<button type="submit" id="password-factor-submit">' +
-      t.html('authn.passwordFactor.signIn') + '</button>' +
-      '</form><div class="meta"><div>' +
-      t.html('authn.passwordFactor.meta', { amr: JSON.stringify(
-        this.firstAmrOf(step).concat(['pwd'])) }) + '</div>' +
-      (step && step.alternate === 'totp'
-        ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-          '">' + t.html('authn.secondFactor.totpInstead') + '</a></div>'
-        : '') +
-      '</div></div></body></html>\n';
-    log.debug("Leaving Authn.passwordFactorPage().");
-    return html;
-  }
-
-  // No policy of its own: no script, so the service-wide `script-src 'none'`.
-  private sendPasswordFactorPage(res: any, html: string): void {
-    const { log } = this.deps;
-    log.debug("Entering Authn.sendPasswordFactorPage().");
-    res.status(200).type('text/html').set('Cache-Control', 'no-store')
-      .send(html);
-    log.debug("Leaving Authn.sendPasswordFactorPage().");
-  }
-
-  // The links a second-factor page draws for the factors a wallet adds: the
-  // wallet itself after a password, and the password after a wallet. In the
-  // page's own language (#539): the page passes its translator.
-  private walletFactorLinksHtml(mfaId: string, step: any,
-                                t: ReturnType<typeof PageLocale.forPage>):
-                                string {
-    const { log, config } = this.deps;
-    log.debug("Entering Authn.walletFactorLinksHtml().");
-    if (!step) {
-      log.debug("Leaving Authn.walletFactorLinksHtml(). No step.");
-      return '';
-    }
-    const first = this.firstAmrOf(step);
-    let out = '';
-    if (first.indexOf('pop') < 0 && !step.passwordless &&
-        config.value('oid4vp.signIn') && this.stepAllowsWallet(step)) {
-      out += '<div><a id="wallet-second-factor" href="' + WALLET_PATH +
-        '?mfa=' + encodeURIComponent(mfaId) + '">' +
-        t.html('authn.secondFactor.walletInstead') + '</a></div>';
-    }
-    if (step.passwordAlternate) {
-      out += '<div><a id="password-second-factor" href="' +
-        PASSWORD_FACTOR_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-        '">' + t.html('authn.secondFactor.passwordInstead') + '</a></div>';
-    }
-    // THE EMAILED FACTOR (#64). A LINK TO A PAGE, not a send: the page it
-    // leads to asks before anything is mailed, because a GET is markup and
-    // must not be what sends somebody mail.
-    if (step.email === 'code' || step.email === 'link') {
-      out += '<div><a id="email-second-factor" href="' +
-        (step.email === 'code' ? EMAIL_CODE_PATH : EMAIL_LINK_PATH) +
-        '?mfa=' + encodeURIComponent(mfaId) + '">' +
-        (step.email === 'code'
-          ? t.html('authn.secondFactor.emailCodeInstead')
-          : t.html('authn.secondFactor.emailLinkInstead')) +
-        '</a></div>';
-    }
-    log.debug("Leaving Authn.walletFactorLinksHtml().");
+    log.debug("Entering Authn.stepPagePath(). " + page);
+    const out = STEP_PAGES[page] || '';
+    log.debug("Leaving Authn.stepPagePath().");
     return out;
+  }
+
+  /**
+   * Whether a step's page may be drawn: the step, or the refusal its GET
+   * always answered (`{ problem: { code, why } }`).
+   *
+   * @param page - the page's name (`stepPagePath()`)
+   * @param mfaId - the step's id
+   * @returns `{ step }` or `{ problem }`
+   */
+  stepProblem(page: string, mfaId: string): any {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Authn.stepProblem(). " + page);
+    const restart = ' Start the request again from the application that ' +
+                    'sent you here.';
+    if (page === 'setup') {
+      const setup = pendingMfa.get(mfaId);
+      if (!setup || setup.expires < Date.now() ||
+          ['enrol', 'enrol-totp'].indexOf(setup.factor) < 0) {
+        if (setup && setup.expires < Date.now()) {
+          pendingMfa.delete(mfaId);
+        }
+        log.debug("Leaving Authn.stepProblem(). No set-up step.");
+        return { problem: { code: 'STS-AUTHN-0173',
+          why: 'This second-factor set-up has expired or does not exist.' +
+               restart } };
+      }
+      log.debug("Leaving Authn.stepProblem(). The set-up step.");
+      return { step: setup };
+    }
+    const step = this.mfaStepFor(mfaId);
+    if (page === 'password') {
+      if (!step || this.firstAmrOf(step).indexOf('pwd') >= 0) {
+        log.debug("Leaving Authn.stepProblem(). No password step.");
+        return { problem: { code: 'STS-AUTHN-0019',
+          why: 'There is no sign-in waiting for a password as its second ' +
+               'factor.' + restart } };
+      }
+      log.debug("Leaving Authn.stepProblem(). The password step.");
+      return { step: step };
+    }
+    if (!step) {
+      log.debug("Leaving Authn.stepProblem(). The step had expired.");
+      return { problem: { code: 'STS-AUTHN-0019',
+        why: 'This second-factor step has expired.' + restart } };
+    }
+    if (page === 'totp') {
+      const demanded = this.keyDemandProblem(step, 'a one-time code');
+      if (demanded) {
+        log.debug("Leaving Authn.stepProblem(). A key was demanded.");
+        return { problem: demanded };
+      }
+      if (!credentials.mechanismsFor(step.username).totp) {
+        log.info('authn: a one-time code screen was asked for "' +
+                 step.username + '", who has no authenticator enrolled. ' +
+                 'Refused.');
+        log.debug("Leaving Authn.stepProblem(). Nothing is enrolled.");
+        return { problem: { code: 'STS-AUTHN-0076',
+          why: 'No authenticator app is enrolled for that account, so ' +
+               'there is no code to ask for.' } };
+      }
+    } else if (page === 'backup-code') {
+      const held = credentials.mechanismsFor(step.username).backupCodes;
+      if (!held || !held.remaining) {
+        log.info('authn: a recovery code screen was asked for "' +
+                 step.username + '", who has ' + ((held && held.total)
+                   ? 'spent every code in their set' : 'no recovery codes') +
+                 '. Refused.');
+        log.debug("Leaving Authn.stepProblem(). Nothing left to present.");
+        return { problem: (held && held.total)
+          ? { code: 'STS-AUTHN-0088',
+              why: 'Every recovery code on that account has been used. A ' +
+                   'set is issued once and is never topped up, so an ' +
+                   'administrator has to clear it before a new one can be ' +
+                   'issued.' }
+          : { code: 'STS-AUTHN-0087',
+              why: 'No recovery codes have been issued for that account, ' +
+                   'so there is nothing to ask for.' } };
+      }
+    } else if (page === 'webauthn') {
+      // THE KEYS OF THE STEP'S ROLE (#534): a passwordless step is drawn for
+      // somebody holding a PRIMARY key, a second-factor step for somebody
+      // holding an mfa key — EXCEPT THE ENROLMENT CEREMONY THE SCREEN (or
+      // the set-up step) MINTED THIS STEP FOR (#571, `step.atSignIn`). A
+      // hand-made address must not draw an enrolment for somebody whose
+      // account is configured for another factor: register a fresh key,
+      // skip the configured factor — the bypass `/authn/mfa-setup` refuses.
+      const held = step.passwordless
+        ? credentials.mechanismsFor(step.username).primaryKeys
+        : credentials.mechanismsFor(step.username).mfaKeys;
+      if (held < 1 && !(step.atSignIn && step.factor === 'webauthn')) {
+        log.info('authn: a security-key screen was asked for "' +
+                 step.username + '", who holds no key marked as a second ' +
+                 'factor. Refused.');
+        log.debug("Leaving Authn.stepProblem(). No key is enrolled.");
+        return { problem: { code: 'STS-AUTHN-0025',
+          why: 'No passkey is registered as a second factor for that ' +
+               'account.' } };
+      }
+    }
+    log.debug("Leaving Authn.stepProblem(). Drawn for " + step.username +
+              ".");
+    return { step: step };
+  }
+
+  // THE WAYS ROUND THE FACTOR A PAGE ASKS FOR, as each page drew them: the
+  // other mechanism the person holds (`alternate`, resolved when the step
+  // was minted so a link cannot offer a factor they have not enrolled), the
+  // wallet after a password and the password after a wallet, the emailed
+  // factor (#64), and — last, because the codes are finite and issued
+  // once — a recovery code.
+  private stepLinks(page: string, step: any): any {
+    const { log, config } = this.deps;
+    log.debug("Entering Authn.stepLinks(). " + page);
+    const links = { totp: false, webauthn: false, wallet: false,
+                    password: false, email: '', backup: false };
+    if (page === 'password') {
+      links.totp = step.alternate === 'totp';
+      log.debug("Leaving Authn.stepLinks(). The password page.");
+      return links;
+    }
+    if (page !== 'totp' && page !== 'webauthn') {
+      log.debug("Leaving Authn.stepLinks(). None on this page.");
+      return links;
+    }
+    links.totp = page === 'webauthn' && step.alternate === 'totp';
+    links.webauthn = page === 'totp' && step.alternate === 'webauthn';
+    links.wallet = this.firstAmrOf(step).indexOf('pop') < 0 &&
+      !step.passwordless && !!config.value('oid4vp.signIn') &&
+      this.stepAllowsWallet(step);
+    links.password = !!step.passwordAlternate;
+    // A LINK TO A PAGE, not a send: the page it leads to asks before
+    // anything is mailed, because a GET must not be what sends mail.
+    links.email = step.email === 'code' || step.email === 'link'
+      ? String(step.email) : '';
+    links.backup = !!step.backup;
+    log.debug("Leaving Authn.stepLinks().");
+    return links;
+  }
+
+  /**
+   * A second-factor step's view for its page: facts and no words.
+   *
+   * @param req - the request
+   * @param page - the page's name (`stepPagePath()`)
+   * @param mfaId - the step's id
+   * @param key - the passkey a person chose, on the passkey page (#534)
+   * @returns `{ view, uiLocales, preferredLanguage }`, or `{ problem }`
+   */
+  mfaView(req: any, page: string, mfaId: string, key?: string): any {
+    const { log, baseUrlOf, credentials } = this.deps;
+    log.debug("Entering Authn.mfaView(). " + page);
+    const found = this.stepProblem(page, mfaId);
+    if (found.problem) {
+      log.debug("Leaving Authn.mfaView(). Refused.");
+      return found;
+    }
+    const step = found.step;
+    const base = baseUrlOf(req);
+    const view: any = { page: page, id: String(mfaId),
+                        username: String(step.username),
+                        passwordless: !!step.passwordless,
+                        links: this.stepLinks(page, step) };
+    if (page === 'totp') {
+      // What the AUTHENTICATOR was told, off the person's own enrolment, so
+      // the field asks for the right number of digits.
+      const detail = credentials.mechanismsFor(step.username).totpDetail;
+      view.totp = { digits: (detail && detail.digits) || 6,
+                    period: (detail && detail.period) || 30 };
+    } else if (page === 'password') {
+      view.amr = this.firstAmrOf(step).concat(['pwd']);
+    } else if (page === 'backup-code') {
+      // The COUNT and never the codes, off the store rather than the step:
+      // a code may have been spent since the step was minted. WHICH
+      // MECHANISM it stands in for, as a kind (#539: a phrase dropped into a
+      // sentence does not decline in most of the page's languages).
+      const status = credentials.mechanismsFor(step.username).backupCodes ||
+                     { remaining: 0, total: 0 };
+      const factor = String(step.factor || '');
+      view.backup = {
+        factor: factor === 'webauthn' ? 'passkey'
+          : (factor.indexOf('email-') === 0
+            ? (factor === 'email-code' ? 'code' : 'link') : 'app'),
+        back: ['webauthn', 'email-code', 'email-link'].indexOf(factor) >= 0
+          ? factor : 'totp',
+        remaining: Number(status.remaining) || 0,
+        total: Number(status.total) || 0,
+        low: status.remaining > 0 && status.remaining <= 3 };
+    } else if (page === 'webauthn') {
+      const facts = this.webauthnFacts(base, String(mfaId), step, key);
+      delete facts.ceremony;
+      view.webauthn = facts;
+    } else if (page === 'setup') {
+      view.setup = this.mfaSetupFacts(base, step);
+    }
+    const own = this.preferredLanguageOf(String(step.username));
+    log.debug("Leaving Authn.mfaView().");
+    return { view: view,
+             uiLocales: String((step.authn && step.authn.uiLocales) || ''),
+             preferredLanguage: own || null };
+  }
+
+  // A REFUSAL OF A STEP'S ACT, drawn on the step's own page, which keeps the
+  // step: a wrong code, a ceremony that did not verify, a rate limit. The
+  // sentence is English (#539) and carries no code.
+  /**
+   * Refuses an act at a second-factor step; the page draws it.
+   *
+   * @param res - the response
+   * @param why - the sentence
+   * @param status - the HTTP status, 400 where left out
+   * @returns nothing
+   */
+  stepRefused(res: any, why: string, status?: number): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.stepRefused(). " + (status || 400));
+    this.answerJson(res, status || 400, { ok: false, next: 'refused',
+                                          errors: [String(why)] });
+    log.debug("Leaving Authn.stepRefused().");
   }
 
   /**
@@ -10362,9 +10261,14 @@ class Authn {
       // The realm switched both off since the step was minted.
       errorCodes.mark(res, 'STS-AUTHN-0306');
       log.debug('Leaving Authn.enrolAfterProof(). Nothing to enrol now.');
-      oauthError(res, 400, 'access_denied',
-        'This application accepts a second factor you have not set up, and ' +
-        'none that it accepts can be set up here. Ask an administrator.');
+      const why = 'This application accepts a second factor you have not ' +
+        'set up, and none that it accepts can be set up here. Ask an ' +
+        'administrator.';
+      if (this.answersJson(res)) {
+        this.stepRefused(res, why, 400);
+      } else {
+        oauthError(res, 400, 'access_denied', why);
+      }
       return;
     }
     const first: string[] = [];
@@ -10396,29 +10300,9 @@ class Authn {
              String((step.authn || {}).application || '') + '" does not ' +
              'allow; asking them to set up one it does (' +
              allowed.join(', ') + ').');
-    this.sendMfaSetupPage(res, this.mfaSetupPage(setupId, step.username,
-                                                 offered, ''));
+    // The set-up step's page (#572), by its address.
+    this.stepAnswer(res, 'mfa', 'enrol', setupId, MFA_SETUP_PATH, 'mfa');
     log.debug('Leaving Authn.enrolAfterProof().');
-  }
-
-  // THE LANGUAGE (#539): every page through this shell is drawn with the
-  // translator its caller built, and `title` is already in that language.
-  // The chooser returns to the set-up step's GET, which draws whichever of
-  // the two pages the step is at.
-  private mfaSetupShell(t: ReturnType<typeof PageLocale.forPage>, setupId,
-                        title, body) {
-    const { log, xmlEscape } = this.deps;
-    log.debug('Entering Authn.mfaSetupShell().');
-    log.debug('Leaving Authn.mfaSetupShell().');
-    return '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
-      '><head><meta charset="utf-8">' +
-      '<title>' + xmlEscape(t.text('authn.mfaSetup.titleSuffix',
-                                   { title: title })) + '</title>' +
-      MFA_SETUP_STYLE + '</head><body><div class="card">' +
-      PageLocale.chooser(t, realms.currentPrefix(),
-        PageLocale.herePath(realms.currentPrefix() + MFA_SETUP_PATH +
-                            '?mfa=' + encodeURIComponent(setupId))) +
-      body + '</div></body></html>\n';
   }
 
   // ENROLMENT AT ELEVATED RISK (#246, rcbj's decision 3): an administrator
@@ -10448,137 +10332,35 @@ class Authn {
     log.debug("Leaving Authn.noteEnrolmentAtRisk().");
   }
 
-  // The choice: an authenticator app or a security key, whichever this realm
-  // offers.
-  // `optional` (#246): the step was OFFERED rather than required — an
-  // administrator under the authentication policy's `offer` — and the page
-  // draws an Ignore button that signs them in on their password alone.
-  private mfaSetupPage(setupId, username, offered, error, optional?) {
-    const { log, xmlEscape } = this.deps;
-    log.debug('Entering Authn.mfaSetupPage(). username=' + username);
-    const button = function (action, label) {
-      log.debug('Entering button(). ' + action);
-      log.debug('Leaving button().');
-      return '<form method="post" action="' + MFA_SETUP_PATH + '">' +
-        '<input type="hidden" name="mfa_id" value="' + xmlEscape(setupId) +
-        '"><input type="hidden" name="action" value="' + action + '">' +
-        '<button type="submit" id="mfa-setup-' + action + '">' + label +
-        '</button></form>';
-    };
-    // A step after a proof (#475) is the application's, not the account's.
-    const setupStep = pendingMfa.get(setupId);
-    const proved = !!(setupStep && setupStep.proved);
-    // THE LANGUAGE (#539); the error stays English.
-    const t = this.stepTranslator(setupStep, username);
-    const html = this.mfaSetupShell(t, setupId,
-      t.text('authn.mfaSetup.title'),
-      '<h1>' + t.html('authn.mfaSetup.heading') + '</h1><p class="sub">' +
-      (proved
-        ? t.html('authn.mfaSetup.subProved', { name: username })
-        : optional
-        ? t.html('authn.mfaSetup.subOptional', { name: username })
-        : t.html('authn.mfaSetup.subRequired', { name: username })) + '</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (offered.totp
-        ? '<h2>' + t.html('authn.mfaSetup.totpHeading') + '</h2><p>' +
-          t.html('authn.mfaSetup.totpText') + '</p>' +
-          button('totp', t.html('authn.mfaSetup.totpButton'))
-        : '') +
-      (offered.webauthn
-        ? '<h2>' + t.html('authn.mfaSetup.passkeyHeading') + '</h2><p>' +
-          t.html('authn.mfaSetup.passkeyText') + '</p>' +
-          button('webauthn', t.html('authn.mfaSetup.passkeyButton'))
-        : '') +
-      (optional
-        ? '<h2>' + t.html('authn.mfaSetup.ignoreHeading') + '</h2><p>' +
-          t.html('authn.mfaSetup.ignoreText') + '</p>' +
-          button('ignore', t.html('authn.mfaSetup.ignoreButton'))
-        : '') +
-      '<div class="meta">' + t.html('authn.mfaSetup.meta') + '</div>');
-    log.debug('Leaving Authn.mfaSetupPage().');
-    return html;
-  }
-
-  // The authenticator app's secret, as a QR code and typed, and the code that
-  // confirms it.
-  private async mfaSetupTotpPage(base, setupId, username, error) {
-    const { log, xmlEscape, credentials, totp } = this.deps;
-    log.debug('Entering Authn.mfaSetupTotpPage(). username=' + username);
-    const held = credentials.pendingTotpFor(username);
-    if (!held) {
-      log.debug('Leaving Authn.mfaSetupTotpPage(). Nothing pending.');
-      return null;
-    }
-    const issuer = totp.issuerFor(base);
-    const uri = totp.otpauthUri({ issuer: issuer, account: username,
-      secret: held.secret, algorithm: held.algorithm, digits: held.digits,
-      period: held.period });
-    let qr = '';
-    try {
-      qr = await totp.qrSvgDataUri(uri);
-    } catch (e) {
-      // Not fatal: the typed secret below is the whole credential.
-      log.debug('Caught in Authn.mfaSetupTotpPage(): ' + ((e && e.message) ||
-                                                          e));
-      qr = '';
-    }
-    // THE LANGUAGE (#539); the error stays English.
-    const t = this.stepTranslator(pendingMfa.get(setupId), username);
-    const html = this.mfaSetupShell(t, setupId,
-      t.text('authn.mfaSetup.totpTitle'),
-      '<h1>' + t.html('authn.mfaSetup.scanHeading') + '</h1><p class="sub">' +
-      t.html('authn.mfaSetup.scanSub', { name: username }) + '</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (qr ? '<p><img src="' + xmlEscape(qr) + '" width="220" height="220" ' +
-            'alt="' + xmlEscape(t.text('authn.mfaSetup.qrAlt')) + '"></p>'
-          : '') +
-      '<p>' + t.html('authn.mfaSetup.typeIt', {
+  // THE SET-UP STEP'S FACTS (#572): the choice — an authenticator app or a
+  // security key, whichever this realm and the application offer (#475) —
+  // and, once an app was chosen, its secret: the `otpauth:` URI, which the
+  // browser draws as a QR code (`common/web_qr.ts`), and the secret typed
+  // out, as the page always showed it. No picture crosses the API.
+  // `optional` (#246): the step was OFFERED rather than required, and the
+  // page draws an Ignore button. `proved` (#475): the application's own.
+  private mfaSetupFacts(base: string, step: any): any {
+    const { log, credentials, totp } = this.deps;
+    log.debug('Entering Authn.mfaSetupFacts().');
+    const out: any = {
+      state: 'choose',
+      offered: this.enrolmentOfferedFor(step.mfaAllowed || []),
+      optional: !!step.optional, proved: !!step.proved, totp: null };
+    const held = step.factor === 'enrol-totp'
+      ? credentials.pendingTotpFor(step.username) : null;
+    if (held) {
+      out.state = 'totp';
+      out.totp = {
+        uri: totp.otpauthUri({ issuer: totp.issuerFor(base),
+          account: step.username, secret: held.secret,
+          algorithm: held.algorithm, digits: held.digits,
+          period: held.period }),
         secret: totp.grouped(held.secret),
         algorithm: 'HMAC-' + String(held.algorithm).replace(/^SHA/, 'SHA-'),
-        digits: held.digits, period: held.period }) + '</p>' +
-      '<form method="post" action="' + MFA_SETUP_PATH + '">' +
-      '<input type="hidden" name="mfa_id" value="' + xmlEscape(setupId) + '">' +
-      '<input type="hidden" name="action" value="confirm-totp">' +
-      '<label for="code">' + t.html('authn.mfaSetup.codeLabel',
-                                     { digits: held.digits }) +
-      '</label><input type="text" id="code" name="code" ' +
-      'autocomplete="one-time-code" inputmode="numeric" maxlength="' +
-      held.digits + '" autofocus>' +
-      '<button type="submit" id="mfa-setup-confirm">' +
-      t.html('authn.mfaSetup.finish') + '</button></form>');
-    log.debug('Leaving Authn.mfaSetupTotpPage().');
-    return html;
-  }
-
-  private sendMfaSetupPage(res, html, status?) {
-    const { log } = this.deps;
-    log.debug('Entering Authn.sendMfaSetupPage().');
-    res.status(status || 200).type('text/html').set('Cache-Control', 'no-store')
-       .send(html);
-    log.debug('Leaving Authn.sendMfaSetupPage().');
-  }
-
-  // The step, or null with the refusal already sent. Only a step minted as an
-  // enrolment is answered here: an ordinary second-factor step is somebody who
-  // HOLDS a factor, and enrolling for them is the bypass the header refuses.
-  private mfaSetupStep(res, setupId) {
-    const { log, oauthError, errorCodes } = this.deps;
-    log.debug('Entering Authn.mfaSetupStep().');
-    const step = pendingMfa.get(setupId);
-    if (!step || step.expires < Date.now() ||
-        ['enrol', 'enrol-totp'].indexOf(step.factor) < 0) {
-      if (step && step.expires < Date.now()) {
-        pendingMfa.delete(setupId);
-      }
-      errorCodes.mark(res, 'STS-AUTHN-0173');
-      oauthError(res, 400, 'invalid_request',
-        'This second-factor set-up has expired or does not exist. Start the ' +
-        'request again from the application that sent you here.');
-      log.debug('Leaving Authn.mfaSetupStep(). No step.');
-      return null;
+        digits: held.digits, period: held.period };
     }
-    log.debug('Leaving Authn.mfaSetupStep().');
-    return step;
+    log.debug('Leaving Authn.mfaSetupFacts(). ' + out.state);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -10672,36 +10454,40 @@ class Authn {
     return (props && typeof props.rk === 'boolean') ? props.rk : null;
   }
 
-  private webauthnPage(base, mfaId, username, error, chosenKey?) {
-    const { log, xmlEscape, credentials, webauthnPolicy } = this.deps;
-    log.debug("Entering Authn.webauthnPage(). username=" + username);
-    // ---------------------------------------------------------------------
-    // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10).
-    //
-    // It was a single credential out of this module's own map. It is now every
-    // key on their directory entry, which is what makes `allowCredentials` a
-    // LIST — the specification has expected several since Level 1 (a key at the
-    // desk and one on the keyring), an assertion NAMES the credential that
-    // produced it, and `webauthn.maxKeysPerPerson` is the setting that bounds
-    // it.
-    //
-    // **ONLY THE KEYS THAT ANSWER THIS ROLE.** A `primary` key signs somebody
+  // THE PASSKEY STEP'S FACTS (#572), which `webauthnPage()` drew as markup
+  // and data attributes until then: what the page says and, as `ceremony`,
+  // what `POST /authn-api/mfa/{id}/webauthn/options` hands the browser's
+  // ceremony. Nothing in it is secret and nothing in it is trusted on the
+  // way back: it is a REQUEST to the browser, and every security property
+  // is checked against the pending step and the origin when the result
+  // arrives.
+  /**
+   * The passkey step's facts: the page's, and the ceremony's options.
+   *
+   * @param base - the realm's base URL
+   * @param mfaId - the step's id
+   * @param step - the step
+   * @param chosenKey - the passkey chosen (#534), if any
+   * @returns the facts
+   */
+  webauthnFacts(base: string, mfaId: string, step: any,
+                chosenKey?: string): any {
+    const { log, credentials, webauthnPolicy } = this.deps;
+    const username = String(step.username);
+    log.debug("Entering Authn.webauthnFacts(). username=" + username);
+    // -------------------------------------------------------------------
+    // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10), AND
+    // ONLY THE KEYS THAT ANSWER THIS ROLE. A `primary` key signs somebody
     // in on its own and an `mfa` key is a second factor beside a password;
-    // offering both in one ceremony would let a person satisfy a second-factor
-    // step with a credential this service considers a way IN, which is the
-    // whole distinction `credentials.js`'s ROLES table exists to keep.
-    // ---------------------------------------------------------------------
-    const step = pendingMfa.get(mfaId);
-    // Absent where the step has already gone — an expired id reaches this
-    // function through one of the error paths — and false is the safe reading:
-    // the page then describes the more cautious of the two roles.
-    const passwordless = !!(step && step.passwordless);
+    // offering both in one ceremony would let a person satisfy a
+    // second-factor step with a credential this service considers a way IN.
+    // -------------------------------------------------------------------
+    const passwordless = !!step.passwordless;
     const wantedRole = passwordless ? 'primary' : 'mfa';
     // THE PASSKEY POLICY FOR THIS PERSON AND APPLICATION (#535): the
     // ceremony's options read it.
     this.deps.passkeyPolicy.select(username,
-                                   step && step.authn &&
-                                   step.authn.application);
+                                   step.authn && step.authn.application);
     const known = credentials.keysOf(username).filter(function (one) {
       return one.role === wantedRole;
     });
@@ -10717,223 +10503,61 @@ class Authn {
     })[0] || null : null;
     const choosing = separate && !chosen;
     const allowed = chosen ? [chosen] : known;
-    // THE USER HANDLE THE CREDENTIAL IS CREATED UNDER (#474), on the step so
-    // the registration branch records the one the browser was given. The
-    // person's own where their entry holds or can hold one; a fresh one for
-    // a name with no entry yet (development's first use), adopted when the
-    // key is written.
-    if (mode === 'create' && step && !step.userHandle) {
+    // THE USER HANDLE THE CREDENTIAL IS CREATED UNDER (#474), on the step
+    // so the registration branch records the one the browser was given.
+    if (mode === 'create' && !step.userHandle) {
       step.userHandle = credentials.userHandleOf(username, { mint: true }) ||
                         credentials.newUserHandle();
       pendingMfa.set(mfaId, step);
     }
-    // Read ONCE and used by the data attribute, the RP ID line and the line
-    // that says what is being asked for. rpIdOf() logs when it refuses a
-    // configured value, and calling it three times would print that warning
-    // three times for one page.
+    // Read ONCE: rpIdOf() logs when it refuses a configured value.
     const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
-    // THE LANGUAGE (#539); the error stays English, and so do the ceremony's
-    // parameter names and values in the technical fold.
-    const t = this.stepTranslator(step, username);
-    const html = '<!DOCTYPE html>\n<html' + PageLocale.htmlAttributes(t) +
-      '><head><meta ' +
-      'charset="utf-8"><title>' + xmlEscape(t.text('authn.webauthn.title')) +
-      '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
-      'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
-      'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-      '.card{background:#fff;border:1px solid ' +
-      '#d5d5dd;border-radius:10px;padding:28px 32px;width:420px;box-shadow:0 ' +
-      '6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
-      '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-      '18px}button{padding:9px 12px;border-radius:5px;border:1px solid ' +
-      '#12107c;background:#12107c;color:#fff;font-size:.95em;cursor:pointer;' +
-      'width:100%}button.secondary{margin-top:10px;background:#5a5a68;' +
-      'border-color:#5a5a68}details summary{cursor:pointer;color:#12107c}' +
-      '.links div{margin:6px 0;font-size:.85em}' +
-      '.err{background:#fdecea;border:1px solid ' +
-      '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-      'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
-      'padding-top:14px;border-top:1px solid ' +
-      '#eee;font-size:.75em;color:#777;word-break:break-all}.meta ' +
-      'div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
-      'monospace}' + CHOOSER_CSS + '</style></head><body><div ' +
-      'class="card">' +
-      // The chooser returns to this step's GET, with the passkey chosen
-      // (#534) where one is.
-      PageLocale.chooser(t, realms.currentPrefix(),
-        PageLocale.herePath(realms.currentPrefix() + WEBAUTHN_PATH +
-                            '?mfa=' + encodeURIComponent(mfaId) +
-                            (chosen ? '&key=' +
-                              encodeURIComponent(chosen.credentialId)
-                                    : ''))) +
-      // PASSKEY, IN A PERSON'S WORDS (#470): "passkey" covers one on this
-      // device, in a password manager, on a phone or on a security key, so
-      // the page no longer says "security key" for all four.
-      '<h1>' + (mode === 'create' ? t.html('authn.webauthn.headingCreate')
-                                  : t.html('authn.webauthn.headingGet')) +
-      '</h1><p class="sub">' + (passwordless
-        ? t.html('authn.webauthn.subPasswordless', { name: username })
-        : t.html('authn.webauthn.subSecond', { name: username })) +
-        '</p>' +
-      (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
-      (choosing
-        // THE CHOICE (#534): a link per passkey, which draws this page again
-        // for that one. Links, so no script is needed to choose.
-        ? '<p>' + t.html('authn.webauthn.choose') +
-          '</p><ul id="wa-choices">' +
-          known.map(function (one) {
-            return '<li><a href="' + WEBAUTHN_PATH + '?mfa=' +
-              encodeURIComponent(mfaId) + '&amp;key=' +
-              encodeURIComponent(one.credentialId) + '">' +
-              xmlEscape(credentials.keyName(one)) + '</a></li>';
-          }).join('') + '</ul>'
-        : (chosen
-          ? '<p class="sub">' + t.html('authn.webauthn.using',
-                                       { name: credentials.keyName(chosen) }) +
-            ' &middot; ' +
-            '<a href="' + WEBAUTHN_PATH + '?mfa=' +
-            encodeURIComponent(mfaId) + '">' +
-            t.html('authn.webauthn.chooseAnother') + '</a></p>'
-          : '') +
-      '<button id="wa-go" type="button">' +
-      (mode === 'create' ? t.html('authn.webauthn.create')
-                         : t.html('authn.webauthn.use')) +
-      '</button><form ' +
-      'method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
-      '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-      '<input type="hidden" name="mode" value="' + mode + '">' +
-      '<input type="hidden" name="credential" id="wa-credential">' +
-      // THE REAL BUTTON (#470), which every scripted page here carries but
-      // this one did not (the root CLAUDE.md's rule): with the script blocked
-      // it posts the step with no credential, and the endpoint answers that
-      // the browser ran no ceremony rather than the page doing nothing.
-      '<button class="secondary">' + t.html('authn.webauthn.noPrompt') +
-      '</button></form>' +
-      // The ceremony's parameters travel as data attributes and the script is a
-      // separate resource, so this page needs no inline script. That is not
-      // fastidiousness: this service sets `script-src 'none'` on everything by
-      // design (see app.js), and an inline script here would simply not run —
-      // silently, with the button doing nothing. One page relaxes it to 'self',
-      // which is the smallest exception that works.
-      '<div id="wa-data"' +
-      ' data-challenge="' + xmlEscape(step ? step.challenge : '') + '"' +
-      ' data-rpid="' + xmlEscape(rpId) + '"' +
-      ' data-user="' + xmlEscape(username) + '"' +
-      // THE NAME THE PROMPT SHOWS (#533): the passkey policy's
-      // userDisplayName, else the username, as it always was here.
-      ' data-display="' + xmlEscape(this.deps.passkeyPolicy.displayNameFor(
-        username, username)) + '"' +
-      ' data-userid="' + xmlEscape(step && step.userHandle || '') + '"' +
-      // EVERY key of this role, comma-separated, because a person may hold
-      // several and the authenticator picks. Empty on the enrolment path, where
-      // there is nothing to allow.
-      ' data-allow="' + xmlEscape(allowed.map(function (one) {
-        return one.credentialId;
-      }).join(',')) + '"' +
-      // EVERY key they hold, of EITHER role, so an authenticator already
-      // registered here cannot be registered again on the enrolment path. It is
-      // a fact about the DEVICE rather than about what the credential is for,
-      // which is why it is not the role-filtered list above.
-      ' data-exclude="' +
-      xmlEscape(credentials.keysOf(username).map(function (one) {
-        return one.credentialId;
-      }).join(',')) + '"' +
-      // THE CEREMONY'S OPTIONS, AS ONE JSON OBJECT (2026-09-10). Every one of
-      // these was a literal inside WEBAUTHN_SCRIPT below until this day, which
-      // is why /admin/webauthn did not exist: there was nothing to draw. The
-      // script is a STATIC resource under `script-src 'self'` and cannot be
-      // generated per request, so anything that varies has to travel as data —
-      // and one parsed object is one place to get it wrong rather than eleven
-      // attributes each coerced by hand. Nothing in it is secret and nothing in
-      // it is trusted on the way back: it is a REQUEST to the browser, and
-      // every security property is checked against the pending step and the
-      // origin when the result arrives.
-      ' data-options="' + xmlEscape(JSON.stringify(
-          mode === 'create' ? webauthnPolicy.creationOptions(rpId)
-                            : webauthnPolicy.requestOptions(rpId))) + '"' +
-      ' data-mode="' + mode + '"></div>') +
-      // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
-      // heading, the button and the ways out; somebody debugging opens the
-      // fold. A `<details>` is markup and needs no script.
-      '<details class="meta"><summary>' + t.html('authn.webauthn.details') +
-      '</summary>' +
-      '<div>' + (options.rpId
-        ? t.html('authn.webauthn.rpIdWidened', { rpId: rpId })
-        : t.html('authn.webauthn.rpId', { rpId: rpId })) + '</div>' +
-      '<div>challenge: <code>' + xmlEscape(step ? step.challenge : '') +
-      '</code></div>' +
-      // WHAT THIS CEREMONY IS ASKING FOR, said on the page rather than only in
-      // the options attribute. This is a debugging service and these four are
-      // the settings whose effect somebody is most likely to be here to
-      // observe; /admin/webauthn is where they are changed.
-      '<div>' + xmlEscape(
-        (mode === 'create'
-          ? 'attestation ' + options.attestation + ', ' +
-            'algorithms ' + options.algorithms.join('/') + ', '
-          : '') +
-        'user verification ' + options.userVerification) + ' ' +
-      // The ceremony's own names stay as they are; what is said ABOUT them
-      // is in the page's language (#539).
-      (options.userVerification === 'required'
-        ? t.html('authn.webauthn.uvChecked')
-        : t.html('authn.webauthn.uvRequested')) +
-      xmlEscape(
-        (mode === 'create' && options.residentKey !== 'discouraged'
-          ? ', resident key ' + options.residentKey
-          : '')) +
-      (mode === 'create' && options.authenticatorAttachment !== 'any'
-        ? ', ' + t.html('authn.webauthn.attachmentOnly',
-                        { attachment: options.authenticatorAttachment })
-        : '') + '</div>' +
-      '<div>' + (mode === 'create'
-        ? t.html('authn.webauthn.modeCreate')
-        : t.html('authn.webauthn.modeGet')) + '</div><div>' + (passwordless
-        ? t.html('authn.webauthn.amrPasswordless', { name: username })
-        : t.html('authn.webauthn.amrSecond', { name: username })) +
-      '</div></details><div class="links">' +
-      // THE OTHER SECOND FACTOR, WHERE THIS PERSON HOLDS ONE (2026-09-10). The
-      // step's `alternate` is resolved when the step is MINTED and not here, so
-      // this link cannot offer a mechanism the person has not enrolled — see
-      // the branch in the sign-in handler. The commonest reason to hold both is
-      // standing at a machine the key is not plugged into, which is exactly the
-      // moment a page with no way out is useless.
-      (step && step.alternate === 'totp'
-        ? '<div><a href="' + TOTP_PATH + '?mfa=' + encodeURIComponent(mfaId) +
-          '">' + t.html('authn.secondFactor.totpInstead') + '</a></div>'
-        : '') +
-      this.walletFactorLinksHtml(mfaId, step, t) +
-      // AND THE WAY OUT WHEN THE KEY IS NOT TO HAND AT ALL (2026-09-10), which
-      // is the commonest reason somebody is stuck at this screen: the key is in
-      // a drawer at home. Drawn only where the step says an unspent recovery
-      // code exists, and after the alternative above, because the codes are
-      // finite and issued once.
-      (step && step.backup
-        ? '<div><a href="' + BACKUP_CODE_PATH + '?mfa=' +
-          encodeURIComponent(mfaId) + '">' +
-          t.html('authn.webauthn.backup') + '</a></div>'
-        : '') +
-      '</div></div>' +
-      '<script src="' + WEBAUTHN_SCRIPT_PATH + '"></script></body></html>\n';
-    log.debug("Leaving Authn.webauthnPage(). mode=" + mode);
-    return html;
-  }
-
-  // The one page in this service that runs a script, and the one response that
-  // relaxes the policy for it — to 'self', not 'unsafe-inline', so the
-  // exception is a named resource rather than a hole. app.js sets script-src
-  // 'none' on everything by default and that default is worth keeping.
-  private sendWebauthnPage(res, html) {
-    const { app, log } = this.deps;
-    log.debug("Entering Authn.sendWebauthnPage().");
-    // Through the builder, so the framing clauses cannot be lost by editing
-    // this line — see the note above contentSecurityPolicy() in app.js. What is
-    // being relaxed is script-src and nothing else.
-    res.set('Content-Security-Policy',
-            app.contentSecurityPolicy({ 'script-src': "'self'" }));
-    res.status(200).type('text/html').set('Cache-Control', 'no-store')
-      .send(html);
-    log.debug("Leaving Authn.sendWebauthnPage().");
+    const out = {
+      mode: mode, passwordless: passwordless,
+      choices: choosing ? known.map(function (one) {
+        return { id: String(one.credentialId),
+                 name: String(credentials.keyName(one)) };
+      }) : [],
+      chosen: chosen ? { id: String(chosen.credentialId),
+                         name: String(credentials.keyName(chosen)) } : null,
+      // In product mode an RP ID that does not fit is said on the page as
+      // well as refused at the act: a ceremony drawn under a refusal would
+      // be a browser prompt whose answer is thrown away.
+      problem: String(this.rpIdProblem(base) || ''),
+      // The technical fold (#470): what this ceremony asks for. The
+      // ceremony's own names stay as they are; what is said ABOUT them is
+      // in the page's language (#539).
+      rpId: rpId, widened: !!options.rpId,
+      challenge: String(step.challenge || ''),
+      attestation: String(options.attestation || ''),
+      algorithms: (options.algorithms || []).map(String),
+      userVerification: String(options.userVerification || ''),
+      residentKey: String(options.residentKey || ''),
+      attachment: String(options.authenticatorAttachment || ''),
+      ceremony: {
+        mode: mode, challenge: String(step.challenge || ''), rpId: rpId,
+        // THE NAME THE PROMPT SHOWS (#533): the passkey policy's
+        // userDisplayName, else the username. The handle (#474): 64 random
+        // bytes, never the username.
+        user: { name: username,
+                displayName: String(this.deps.passkeyPolicy.displayNameFor(
+                  username, username)),
+                id: String(step.userHandle || '') },
+        // EVERY key of this role, because a person may hold several and the
+        // authenticator picks; empty on the enrolment path.
+        allow: allowed.map(function (one) {
+          return String(one.credentialId);
+        }),
+        // EVERY key they hold, of EITHER role, so an authenticator already
+        // registered here cannot be registered again on the enrolment path.
+        exclude: credentials.keysOf(username).map(function (one) {
+          return String(one.credentialId);
+        }),
+        options: mode === 'create' ? webauthnPolicy.creationOptions(rpId)
+                                   : webauthnPolicy.requestOptions(rpId) } };
+    log.debug("Leaving Authn.webauthnFacts(). mode=" + mode);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
