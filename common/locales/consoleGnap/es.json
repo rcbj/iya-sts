@@ -27,7 +27,7 @@
   "thKeyRotation": "Rotación de claves",
   "tokenFormats": "Formatos de token",
   "jwtSigned": "RS256, verificado con <code>{uri}</code>",
-  "jwtEncrypted": "Anidado en un JWE: para la <code>gnapJweKey</code> del servidor de recursos, o para este servidor de autorización (introspéctalo)",
+  "jwtEncrypted": "Anidado en un JWE: para la <code>gnapJweKey</code> del servidor de recursos, o para este servidor de autorización (introspéctelo)",
   "macaroon": "HMAC-SHA256 con una clave raíz por servidor de recursos, guardada sellada como <code>gnapMacaroonKey</code> en su entrada",
   "biscuit": "Clave raíz Ed25519 <code>{key}</code>",
   "zcap": "Delegación Ed25519Signature2020 de <code>{controller}</code>",
