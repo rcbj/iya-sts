@@ -2081,9 +2081,12 @@ class AdminApi {
                      'DN, whether a name seen for the first time gets an ' +
                      'entry, and the two ceilings that keep a mock from ' +
                      'being filled up.\n\nNOTHING HERE REFUSES A BIND, and ' +
-                     'no setting is missing: any DN with any password, and ' +
-                     'anonymous, are accepted on 389 and 636 alike. There is ' +
-                     'no such behaviour to turn on.\n\nThe base DN is the ' +
+                     'no setting is missing: the MODE decides. In ' +
+                     'development any DN with any password, and anonymous, ' +
+                     'are accepted on 389 and 636 alike; in product only a ' +
+                     'person binds, on 636, with a password verified ' +
+                     'against their entry. There is no such behaviour to ' +
+                     'turn on.\n\nThe base DN is the ' +
                      'DEFAULT realm\'s directory and every other realm is a ' +
                      'subtree beneath it, because a socket has no path to ' +
                      'put a realm segment in and a DN is the ' +

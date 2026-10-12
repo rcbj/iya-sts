@@ -236,7 +236,7 @@ binding 88 needs root, and on a host run it usually fails.
 
 ---
 
-## Kerberos is the exception to "it checks no password", and cannot not be
+## Kerberos is the exception to "development checks no password", and cannot not be
 
 * **Kerberos is the exception, and cannot not be.** The password there *is* the key:
   pre-authentication and the AS-REP's enc-part are both encrypted under it, so a KDC

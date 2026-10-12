@@ -63,10 +63,10 @@ var metadataUrl = process.env.OAUTH_METADATA_URL || (stsBase +
 var REDIRECT_URI = "http://localhost:9999/callback";
 var CLIENT_ID = "sts-endpoint-test-client";
 // The identity the password grant presents. Generated per run rather than
-// fixed: this mock checks no password (only the reserved string "invalid" is
-// refused) and records every authentication against the name presented, so a
-// name shared with every other test makes its users page and audit log
-// unreadable. The prefix names this file.
+// fixed: in development mode this mock checks no password (only the reserved
+// string "invalid" is refused) and records every authentication against the
+// name presented, so a name shared with every other test makes its users page
+// and audit log unreadable. The prefix names this file.
 var RO_USER = process.env.STS_RO_USER || usernameFor("oauth2-sts-endpoints");
 
 // ---------------------------------------------------------------------------

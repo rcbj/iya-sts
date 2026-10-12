@@ -130,9 +130,10 @@
 // client-certificate authentication is a real, deployed way for a person to
 // sign in to a web application, and this service exists to exercise clients of
 // exactly that kind. Every other family here resolves the same tension the same
-// way and always has: the KDC issues tickets to anybody who asks with the one
-// shared password, the sign-in screen checks no password at all, LDAP refuses
-// no bind — and all three start real sessions. **The permissiveness lives in
+// way in development mode and always has: the KDC issues tickets to anybody
+// who asks with the one shared password, the sign-in screen checks no password
+// at all, LDAP refuses no bind — and all three start real sessions (product
+// mode verifies all three). **The permissiveness lives in
 // what is ACCEPTED, not in refusing to record what was accepted.** Refusing the
 // session was the one place this service made the opposite choice, and what it
 // cost was that a global sign-out could not end a way in that it could not see.
@@ -4505,9 +4506,10 @@ function checkedSocket(socket) {
 // real, deployed way for a person to sign in to a web application; the thing a
 // mock must not do is pretend the chain check proved more than it did. Every
 // other family here resolves the same tension the same way and has for as long
-// as this service has existed: the KDC issues tickets to anybody who asks with
-// the one shared password, the sign-in screen checks no password at all, LDAP
-// refuses no bind — and all three start real sessions. **The permissiveness
+// as this service has existed, in development mode: the KDC issues tickets to
+// anybody who asks with the one shared password, the sign-in screen checks no
+// password at all, LDAP refuses no bind — and all three start real sessions
+// (product mode verifies all three). **The permissiveness
 // lives in what is accepted, not in refusing to record what was accepted.**
 //
 // SO THREE THINGS ARE TRUE AT ONCE AND THIS FUNCTION KEEPS THEM APART:

@@ -93,6 +93,9 @@
 import helpers = require('../common/helpers');
 // The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
 import errorCodes = require('../common/error_codes');
+// The mode (common/mode.js), a leaf over config: which sentence about
+// passwords is true in this realm (#543 round 2).
+import mode = require('../common/mode');
 import dagre = require('@dagrejs/dagre');
 import delegationMap = require('./delegation_map');
 import InstanceSlot = require('../common/instance_slot');
@@ -589,11 +592,15 @@ class FederationDiagram {
           'partner: it consumes somebody else\'s assertion and issues its own.'
         : 'How somebody is authenticated for it: ' + row.mechanismLabel + '.');
       if (row.brokerProblem) {
+        // Per mode (#543 round 2): the screen checks a password in product.
         parts.push('AND IT CANNOT: ' + row.brokerProblem + ' Until that is ' +
-                   'fixed the person meets the sign-in screen instead, which ' +
-                   'checks no password — a federated application ' +
-                   'authenticating people locally looks exactly like a ' +
-                   'federated application working.');
+                   'fixed the person meets the sign-in screen instead, ' +
+                   (mode.verifiesCredentials()
+                     ? 'and signs in with a credential held here'
+                     : 'which checks no password in development mode') +
+                   ' — a federated application authenticating people ' +
+                   'locally looks exactly like a federated application ' +
+                   'working.');
       }
       if (edge.use && edge.use.authentications) {
         parts.push(edge.use.users + ' person(s) and ' +

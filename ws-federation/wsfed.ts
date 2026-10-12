@@ -1719,8 +1719,8 @@ class WsFederation {
           : 'wpseudo1.0 is the pseudonym service (section 3.3/13.4), which ' +
             'issues a per-relying-party pseudonym for a subject. It is not ' +
             'implemented here. There would be nothing behind it: this ' +
-            'service authenticates nobody and holds no per-relying-party ' +
-            'state to map a pseudonym to.');
+            'service holds no per-relying-party state to map a pseudonym ' +
+            'to.');
     }
     log.debug("Leaving the passive requestor endpoint. An unknown wa: " + wa);
     errorCodes.mark(res, 'STS-WSFED-0013');
@@ -1750,8 +1750,15 @@ class WsFederation {
       PASSIVE_PATH + '</code></p>' +
       '<p>This endpoint takes a <code>wa</code> parameter, by GET or by form ' +
       'POST, and signs a browser in to a relying party by POSTing it a token ' +
-      '(section 13.2.2). It authenticates nobody: the username typed at the ' +
-      'screen becomes the subject of the assertion.</p><h2>Try ' +
+      // Per mode (#543 round 2): "It authenticates nobody" read as a claim
+      // about the service in product too, where the screen verifies.
+      '(section 13.2.2). It authenticates nobody itself: ' +
+      (mode.verifiesCredentials()
+        ? 'the person signs in at the sign-in screen, and the identity ' +
+          'verified there becomes the subject of the assertion.'
+        : 'the username typed at the sign-in screen becomes the subject of ' +
+          'the assertion, and in development mode no password is checked.') +
+      '</p><h2>Try ' +
       'it</h2><ul>' +
       // The mock RP only where this realm is served it (#585).
       (demoOnly.serves() ? '<li><a ' +

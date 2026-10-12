@@ -10316,12 +10316,18 @@ const PROTOCOL_SETTINGS_PAGES = [
           'applications, federation relationships and the SPIFFE registry ' +
           'live, so what a SCIM POST writes and what an <code>ldapadd</code> ' +
           'writes are one entry.',
-    also: ['<strong>No bind is ever refused.</strong> Any DN, any password, ' +
-           'anonymous, on 389 and 636 alike — there is no setting below that ' +
-           'changes it, which is why none of them is called ' +
-           '<code>authRequired</code>. What the directory is for here is ' +
-           'being READ by a client that expects a directory, and a bind that ' +
-           'failed would only ever stop that.',
+    // TRUE IN BOTH MODES (#543 round 2): it read "No bind is ever refused"
+    // on a product realm's page too, where every bind is verified.
+    also: ['<strong>In development mode no bind is refused</strong> but the ' +
+           'reserved password <code>invalid</code>: any DN, any password, ' +
+           'anonymous, on 389 and 636 alike, because what the directory is ' +
+           'for there is being READ by a client that expects a directory, ' +
+           'and a bind that failed would only ever stop that. <strong>In ' +
+           'product mode the password is verified</strong>: only a person ' +
+           'binds, on 636, against the hashed <code>userPassword</code> on ' +
+           'their entry, and an anonymous bind or any bind on 389 is ' +
+           'refused. The mode decides it, not a setting below, which is why ' +
+           'none of them is called <code>authRequired</code>.',
            '<strong>The base DN is the DEFAULT realm\'s directory, and every ' +
            'other realm is a subtree beneath it.</strong> A search scoped to ' +
            '<code>dc=example,dc=com</code> answers from the default realm ' +

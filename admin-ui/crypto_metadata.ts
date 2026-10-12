@@ -2315,14 +2315,17 @@ class CryptoMetadata {
       { name: 'SCIM',
         signs: 'Nothing. It MINTS no credential — it is the one family here ' +
                'that only ever checks them.',
+        // Both modes' truth (#543 round 2): "any password but one passes
+        // Basic" was unqualified, and product verifies it.
         verifies: 'A credential in any of the six schemes RFC 7644 section 2 ' +
-                  'names, and TWO OF THE SIX ARE REALLY VERIFIED: HTTP ' +
-                  'Digest computes the response over the configured ' +
-                  'password, and a HOBA signature is checked against the ' +
-                  'public key the client registered. The other four are ' +
-                  'turnstiles — any password but one passes Basic, and the ' +
-                  'OAuth ones need only a token this service issued carrying ' +
-                  '`scim:read` or `scim:write`.',
+                  'names. The OAuth ones need a token this service issued ' +
+                  'carrying `scim:read` or `scim:write`, and a HOBA ' +
+                  'signature is checked against the public key the client ' +
+                  'registered. In DEVELOPMENT mode HTTP Digest computes the ' +
+                  'response over the one configured password and any ' +
+                  'password but one passes Basic; in PRODUCT mode Basic ' +
+                  'verifies the password against the person\'s hashed ' +
+                  '`userPassword` and Digest is not offered.',
         encrypts: '',
         decrypts: '',
         hashes: 'RFC 7616 Digest: SHA-256, SHA-512-256 and MD5, each with ' +
@@ -4648,9 +4651,14 @@ class CryptoMetadata {
                    'signing after a restart — and a copy taken out of this ' +
                    'console goes on verifying against a live JWKS.'
                  : 'Every key here is generated at start, lives only in ' +
-                   'memory and dies with the process, and none of them ' +
-                   'protects anything — this service checks no password and ' +
-                   'validates no token it did not mint.')
+                   'memory and dies with the process' +
+                   // Per mode (#543 round 2): "checks no password" was said
+                   // of a product realm whose keys were not persisted too.
+                   (mode.verifiesCredentials()
+                     ? '.'
+                     : ', and none of them protects anything — this realm is ' +
+                       'in development mode, which checks no password and ' +
+                       'validates no token it did not mint.'))
     };
     log.debug("Leaving CryptoMetadata.keysJson(). " + rows.length + " key(s).");
     return out;

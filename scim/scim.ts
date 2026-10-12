@@ -258,6 +258,9 @@ import fedLinks = require('../federation/federation_links');
 // Every SCIM error this module sends carries an STS-SCIM-* code on the
 // response — see common/error_codes.js. A leaf.
 import errorCodes = require('../common/error_codes');
+// The mode (common/mode.js): which of the two warnings `GET /scim` draws is
+// true in this realm (#543 round 2).
+import mode = require('../common/mode');
 // WHICH CELL ANSWERS (#98): asked by handle() before the caller is
 // authenticated, and by the User ingress before a person is written. A
 // library that registers nothing; `scim_cells.ts` argues every operation.
@@ -3533,18 +3536,32 @@ class Scim {
         'credential' +
         (auth.required ? '' : ' — except that it is currently ' +
           'turned off here, so right now they do not') +
-        ', and almost nothing is checked about it.</strong> They create and ' +
-        'DELETE accounts, which is why this is the one surface in this ' +
-        'service that asks at all. The schemes below are permissive, bar ' +
-        'one: an access token carries a SCIM scope only when <a ' +
-        'href="/oauth2/token">the token endpoint</a> issued it to a client ' +
-        'whose <code>oauthAllowedScope</code> declares it, and only while ' +
-        'the client still does. Beside that, any ' +
-        'username with any password but <code>invalid</code> passes Basic, ' +
-        'any username passes Digest with one shared password, and anybody ' +
-        'can register a HOBA key for any name. A turnstile, not a lock — ' +
-        'what it buys is that a client\'s 401, 403 and challenge-response ' +
-        'paths can be run at all. <strong>And <code>active: false</code> ' +
+        // PER MODE (#543 round 2): the development sentence below was drawn
+        // in product too, where Basic is verified, Digest is not offered and
+        // HOBA registration is confined to an account's signed-in owner.
+        (mode.verifiesCredentials()
+          ? ', and it is verified.</strong> They create and DELETE ' +
+            'accounts. An access token carries a SCIM scope only when <a ' +
+            'href="/oauth2/token">the token endpoint</a> issued it to a ' +
+            'client whose <code>oauthAllowedScope</code> declares it, and ' +
+            'only while the client still does; a Basic password is ' +
+            'verified against the person\'s directory entry; Digest is not ' +
+            'offered; and only the signed-in owner of an existing account ' +
+            'may register a HOBA key for it. '
+          : ', and almost nothing is checked about it.</strong> They ' +
+            'create and DELETE accounts, which is why this is the one ' +
+            'surface in this service that asks at all. This realm is in ' +
+            'development mode, and the schemes below are permissive, bar ' +
+            'one: an access token carries a SCIM scope only when <a ' +
+            'href="/oauth2/token">the token endpoint</a> issued it to a ' +
+            'client whose <code>oauthAllowedScope</code> declares it, and ' +
+            'only while the client still does. Beside that, any ' +
+            'username with any password but <code>invalid</code> passes ' +
+            'Basic, any username passes Digest with one shared password, ' +
+            'and anybody can register a HOBA key for any name. A ' +
+            'turnstile, not a lock — what it buys is that a client\'s 401, ' +
+            '403 and challenge-response paths can be run at all. ') +
+        '<strong>And <code>active: false</code> ' +
         'disables the account</strong> — it writes the password-policy lock ' +
         '<code>pwdAccountLockedTime</code>, every door then refuses the ' +
         'person, and everything they held is ended, exactly as the Disable ' +

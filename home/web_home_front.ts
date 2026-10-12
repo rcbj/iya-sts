@@ -148,7 +148,12 @@ class WebHomeFront {
       '<p class="ver" title="' + WebHomeFront.esc(v.build) + '">' +
       t.html('home.version', { version: String(v.version || '') }) +
       '</p>' +
-      '<div class="warn">' + t.html('home.warn') + '</div><ul>' +
+      // DEVELOPMENT'S WARNING ONLY (#543 round 2): "It checks no password,
+      // validates no access token … do not put this port on a public
+      // address" was drawn on a product realm's front door too, where every
+      // password is verified and a public address is the point.
+      (v.mode && v.mode.verifiesCredentials ? ''
+        : '<div class="warn">' + t.html('home.warn') + '</div>') + '<ul>' +
       (Array.isArray(v.links) ? v.links : []).map(function (link: Json) {
         return WebHomeFront.linkRow(link, v, t);
       }).join('') + '</ul>';

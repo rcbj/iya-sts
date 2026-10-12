@@ -843,7 +843,8 @@ const MAX_SESSION_EVENTS = 20;
 // The screen itself. Unchanged from the one that used to be rendered inside the
 // authorization endpoint, in everything a person or a test can see: the same
 // element ids (`username`, `password`, `kc-login`, `kc-cancel`), the same
-// Keycloak-shaped vocabulary, the same statement that no password is checked.
+// Keycloak-shaped vocabulary, the same statement that no password is checked
+// — drawn in development mode only (`tests/passkey_first_use_product.js`).
 // What changed is where it lives, what it posts to, and that its footer rows
 // are supplied rather than read off an authorization request.
 // ---------------------------------------------------------------------------
@@ -3143,6 +3144,22 @@ class Authn {
     }
     log.debug("Leaving Authn.methodPhraseFor().");
     return 'sign-in screen (password)';
+  }
+
+  // THE NOTE A SIGN-IN'S ROWS CARRY WHERE THE CALLER WROTE NONE (#543 round
+  // 2). It was the literal "No password was checked; the name typed is the
+  // identity." in both modes, so every verified password sign-in in a product
+  // realm was recorded, on its stats row and its audit row, as the opposite
+  // of what happened. Asked per sign-in, because the mode is per realm.
+  private defaultSignInNote(): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.defaultSignInNote().");
+    log.debug("Leaving Authn.defaultSignInNote().");
+    return mode.verifiesCredentials()
+      ? 'What was presented was verified before the session started; the ' +
+        'method says what it was.'
+      : 'No password was checked (development mode); the name typed is ' +
+        'the identity.';
   }
 
   /**
@@ -5545,7 +5562,7 @@ class Authn {
       method: authenticatedNow ? this.methodPhraseFor(amr) : 'declined',
       amr: amr, acr: acr, sessionId: sessionId,
       note: authenticatedNow
-        ? 'No password was checked; the name typed is the identity.'
+        ? this.defaultSignInNote()
         : 'Nobody authenticated: this is the anonymous principal, from ' +
           '"Continue without signing in" at the sign-in screen.'
     }, statsExtra, { sessionId: sessionId }));
@@ -5760,9 +5777,8 @@ class Authn {
         // The caller's own sentence where it has one. A federated sign-in's
         // "No password was checked" is true and useless — nothing was typed
         // here at all — and the row is the only place that distinction will
-        // ever be recorded.
-        note: extra.note || 'No password was checked; the name typed is the ' +
-                            'identity.'
+        // ever be recorded. Without one, the mode's (defaultSignInNote()).
+        note: extra.note || this.defaultSignInNote()
       }
     });
     // THE ONE ACT IN THIS SERVICE THAT MAKES SOMETHING GO OUT WITHOUT ANYBODY

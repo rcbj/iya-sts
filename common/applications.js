@@ -140,8 +140,9 @@
 //
 // It is worth being precise about what that costs now that RFC 9700 mode
 // CHECKS that secret (section 2.5): anyone who can read this directory can
-// authenticate as that client. On a service that authenticates nobody and says
-// so on every page, that is the honest state of affairs rather than a hole —
+// authenticate as that client. On a development-mode service that
+// authenticates nobody and says so on every page, that is the honest state of
+// affairs rather than a hole —
 // but it is why `audit.js` must never be given this value. Its rule that no
 // credential is ever recorded is about the audit log and stands untouched: the
 // rows this module writes name the application and never its secret.
@@ -3481,10 +3482,14 @@ const SCHEMA = {
     { name: 'ldapBindDn', kind: 'multi', from: 'the console, or by hand',
       identifier: true,
       identifierName: 'bind DN',
-      what: 'THE DN A DIRECTORY CLIENT BINDS AS on 389 or LDAPS 636. EVERY ' +
-            'BIND HERE SUCCEEDS — any DN, any password, anonymous — so ' +
-            'nothing will ever write this and nothing will ever read it; it ' +
-            'is where an operator records which credential an application is ' +
+      // Both modes' truth (#543 round 2): "EVERY BIND HERE SUCCEEDS" was
+      // unqualified, and in product only a person binds.
+      what: 'THE DN A DIRECTORY CLIENT BINDS AS on 389 or LDAPS 636. Nothing ' +
+            'will ever write this and nothing will ever read it: in ' +
+            'development mode EVERY BIND SUCCEEDS — any DN, any password, ' +
+            'anonymous — and in product mode only a person binds, so an ' +
+            'application reads the directory through SCIM instead. It is ' +
+            'where an operator records which credential an application is ' +
             'expected to use, beside the rest of what that application is.' },
     { name: 'scimClientId', kind: 'multi', from: 'the console, or by hand',
       identifier: true,

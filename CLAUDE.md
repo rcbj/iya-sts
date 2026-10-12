@@ -926,9 +926,9 @@ the directory's two, plain 389 and LDAPS 636. Those
 have to be described by hand or they go unlisted with nothing failing.
 
 Coverage notes in that file **must start `full`, `partial` or `mock`** and say what is
-missing. A list of fifty specifications that did not mention that this service
-checks no passwords and validates no access tokens would be the most misleading thing
-in the repository.
+missing. A list of fifty specifications that did not mention that in
+development mode this service checks no passwords and validates no access
+tokens would be the most misleading thing in the repository.
 
 ## Every failure has an error code, and no client ever sees one
 

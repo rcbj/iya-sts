@@ -35,11 +35,12 @@
 // WHY THIS CANNOT BE MOCKED, WHICH IS THE ONE PLACE THIS FEATURE ARGUES WITH
 // THE REST OF THE SERVICE.
 //
-// `README.md` and every directory `CLAUDE.md` here say the same thing: this
-// service checks no password, validates no access token and attests no
-// workload. Three surfaces are already the exception (SCIM, the SPIRE Server
-// API, the admin console) and each has its argument written down. This is the
-// FOURTH, and its argument is different from all three of theirs.
+// `README.md` and every directory `CLAUDE.md` here say the same thing: in
+// development mode this service checks no password, validates no access token
+// and attests no workload (product mode verifies the first two). Three
+// surfaces are already the exception (SCIM, the SPIRE Server API, the admin
+// console) and each has its argument written down. This is the FOURTH, and
+// its argument is different from all three of theirs.
 //
 // Those three REFUSE a caller in order to make a client exercise a refusal.
 // This one refuses because THERE IS NO PERMISSIVE ANSWER AVAILABLE. "Accept

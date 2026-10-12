@@ -673,15 +673,22 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'Bearer row — they are one credential with two ways of being held ' +
     '— and listed separately because a client reading this document is ' +
     'entitled to know the bound form is understood.',
-  basic: 'Any username and any password, exactly as every LDAP bind here ' +
-    'succeeds — with the single exception of the password "invalid", ' +
-    'which is refused so that a 401 stays reachable. RFC 7644 section ' +
-    '2 DISCOURAGES this scheme, in those words, because it rests on a ' +
-    'relatively static symmetric secret; it is implemented anyway ' +
-    'because it is what a provisioning client most often meets and its ' +
-    '401 handling is worth being able to run. No password is checked, ' +
-    'so what this authenticates is a NAME, and that name is what the ' +
-    'audit log records.',
+  // BOTH MODES' TRUTH (#543 round 2): it said "No password is checked"
+  // unqualified, and it is also the ServiceProviderConfig's description of
+  // the scheme, built at require time before any realm's mode is known — so
+  // one sentence that is true in both rather than a choice per request.
+  basic: 'In product mode the password is verified against the person\'s ' +
+    'hashed userPassword, and a person who holds or must hold a second ' +
+    'factor is refused their own password and uses an app password. In ' +
+    'development mode any username and any password pass, exactly as ' +
+    'every LDAP bind there succeeds — with the single exception of the ' +
+    'password "invalid", which is refused so that a 401 stays reachable — ' +
+    'so what this authenticates there is a NAME, and that name is what the ' +
+    'audit log records. RFC 7644 section 2 DISCOURAGES this scheme, in ' +
+    'those words, because it rests on a relatively static symmetric ' +
+    'secret; it is implemented anyway because it is what a provisioning ' +
+    'client most often meets and its 401 handling is worth being able to ' +
+    'run.',
   digest: 'The one scheme here where the password really is checked, and it ' +
     'cannot not be: the response is a hash over the password, so a ' +
     'server that accepted anything would not be performing the ' +
@@ -743,8 +750,10 @@ const POLICY = Object.freeze({
     'other five off.',
   rfc: 'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
     'authenticated client to an access control policy. This is that ' +
-    'policy. It is two lines because this service authenticates nobody in ' +
-    'the sense that matters — it is a turnstile, not a lock.',
+    'policy. It is two lines because in development mode this service ' +
+    'authenticates nobody in the sense that matters — it is a turnstile, ' +
+    'not a lock — and in product mode, where every credential is verified, ' +
+    'what a verified caller may do is still these two lines.',
   tied: 'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
     'to a client whose oauthAllowedScope declares them, in both modes, and ' +
     'a token is honoured only while its client still declares the scope it ' +
@@ -1534,10 +1543,16 @@ class ScimAuth {
     const password = decoded.slice(cut + 1);
     if (!username) {
       log.debug("Leaving ScimAuth.attemptBasic(). The username is empty.");
+      // Per mode (#543 round 2): "This service checks no password" was the
+      // answer in product too, where the password is verified.
       return this.coded('STS-SCIM-0036', this.unauthenticated(req,
-        'The Basic credential names nobody. This service checks no password, ' +
-        'so the username is the whole of what it authenticates and an empty ' +
-        'one authenticates nothing.'));
+        'The Basic credential names nobody. ' +
+        (mode.verifiesCredentials()
+          ? 'A password is verified against a person\'s directory entry, ' +
+            'and an empty username names no entry to verify it against.'
+          : 'This realm is in development mode and checks no password, so ' +
+            'the username is the whole of what it authenticates and an ' +
+            'empty one authenticates nothing.')));
     }
     // THE CREDENTIAL (2026-09-06). One call, both modes. In development this is
     // exactly what the branch it replaced did — refuse the reserved string,

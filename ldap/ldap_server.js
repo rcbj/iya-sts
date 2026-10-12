@@ -16242,10 +16242,20 @@ registerWorkerOperations();
 // extractor.
 // ---------------------------------------------------------------------------
 const SERVICE_PROSE = Object.freeze({
+  // DEVELOPMENT's policy, and `bindPolicyProduct` product's (#543 round 2):
+  // `description()` answered this one in both modes until then, so a product
+  // realm's page said every bind succeeds while every bind was verified.
   bindPolicy: 'every bind succeeds — any DN, any password, including an ' +
     'anonymous one — except the literal password "' + REFUSED_PASSWORD +
     '", which is answered LDAP_INVALID_CREDENTIALS (49) so that a negative ' +
     'test has something to fail on',
+  bindPolicyProduct: 'only a person binds, only on LDAPS 636, and the ' +
+    'password is verified against the hashed userPassword on their entry. ' +
+    'An anonymous bind (48), any bind on 389 (13), an empty password (53), ' +
+    'a DN that is not a person (49) and a DN or address past its ' +
+    'failed-bind limit (53) are refused before a password is read; a wrong ' +
+    'password, and the literal password "' + REFUSED_PASSWORD + '", are ' +
+    'LDAP_INVALID_CREDENTIALS (49)',
   schema: 'none. No objectClass is enforced and no attribute is checked ' +
     'against a syntax, so an entry may carry whatever attributes a client ' +
     'sends. A real directory would refuse most of that.',
@@ -16422,7 +16432,8 @@ function description(req) {
       : serverProse.fill(SERVICE_SENTENCES.searchScopeOne,
                          { root: ROOT_DN }),
     ldapVersion: 3,
-    bindPolicy: SERVICE_PROSE.bindPolicy,
+    bindPolicy: mode.verifiesCredentials() ? SERVICE_PROSE.bindPolicyProduct
+      : SERVICE_PROSE.bindPolicy,
     refusedPassword: REFUSED_PASSWORD,
     schema: SERVICE_PROSE.schema,
     referentialIntegrity: false,
@@ -21911,7 +21922,8 @@ function prose() {
   log.debug("Entering prose().");
   /** @type {Record<string, string>} */
   const out = {};
-  ['bindPolicy', 'schema', 'authenticationFacts', 'implementation']
+  ['bindPolicy', 'bindPolicyProduct', 'schema', 'authenticationFacts',
+    'implementation']
     .forEach(function (name) {
       out['ldap.service.' + name] = SERVICE_PROSE[name];
     });

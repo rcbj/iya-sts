@@ -835,8 +835,9 @@ async function signIn(driver, username) {
     return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 &&
       (await driver.getCurrentUrl()).indexOf("/authn/mfa-setup") < 0;
   }, 15000, "signing in as " + username + " left the browser on the sign-in " +
-            "screen. The mock checks no password, so this is a name that was " +
-            "typed and a button that was pressed; if it did not open the " +
+            "screen. In development mode the mock checks no password, so " +
+            "this is a name that was typed and a button that was pressed; " +
+            "if it did not open the " +
             "console, the screen is broken rather than the credential.");
   // Back through the authorization endpoint and the console's callback to a
   // drawn page: the console signs in in the browser since #446.

@@ -256,7 +256,10 @@ function childMain() {
                                                 : own.signInDevelopment;
     note(drawn.indexOf('<h1>IYA STS</h1>') === 0 &&
          drawn.indexOf('version ' + view.version) > 0 &&
-         drawn.indexOf(own.warn) > 0 && drawn.indexOf(sentence) > 0 &&
+         // Development's warning, and only development's (#543 round 2).
+         (mode.verifiesCredentials() ? drawn.indexOf(own.warn) < 0
+                                     : drawn.indexOf(own.warn) > 0) &&
+         drawn.indexOf(sentence) > 0 &&
          view.links.every(function (one) {
            return drawn.indexOf('href="' + one.href + '"') > 0;
          }) && drawn.split('<li>').length === 6,

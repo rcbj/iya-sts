@@ -1235,7 +1235,7 @@ which is a per-process, per-setting answer rather than a property of the
 service. That is why `/admin/persistence` exists as a page and why
 `configFormsFor()`'s footer is computed rather than asserted: the same edit
 that made the service sentence conditional made the console's sentence
-conditional in a different way, and one sentence could not have carried both. "This service checks no password" belongs in the root table; "the
+conditional in a different way, and one sentence could not have carried both. "This service checks no password in development mode" belongs in the root table; "the
 gate proves that somebody typed a name that holds a role, and `/admin-api`
 takes an access token instead" belongs on the page, because it is the thing a person
 locked out of the console needs and the thing somebody about to expose the port
@@ -1632,11 +1632,12 @@ service can do is something to leave lying around, and a private key is not.
 
 **Why it is defensible here and would not be anywhere else.** Every key in this
 process is generated at start, lives only in memory, and dies with the process.
-None protects anything — the service checks no password and validates no token
-it did not mint. What a person constantly needs is the far end of an exchange: a
-keystore for a Java truststore, a PEM for `openssl s_client`, a JWK to paste
-into a client. Making them re-derive that from `/oauth2/jwks` and a screenshot
-is the friction this removes.
+None protects anything — in development mode the service checks no password and
+validates no token it did not mint; product mode verifies both and keeps its
+signing keys, and the page says so. What a person constantly needs is the far
+end of an exchange: a keystore for a Java truststore, a PEM for
+`openssl s_client`, a JWK to paste into a client. Making them re-derive that
+from `/oauth2/jwks` and a screenshot is the friction this removes.
 
 **It needs Admin Write**, which is a stronger requirement than any other READ on
 this console, and `mayWrite()` exists for that one caller. It goes through

@@ -43,7 +43,8 @@
 //
 // **Anybody can authenticate, and everybody's password is the same.** See
 // USER_PASSWORD below for why Kerberos cannot simply check no password the way
-// the rest of this service does not, and findOrCreateUser() for the accounts
+// the rest of this service does not in development mode, and
+// findOrCreateUser() for the accounts
 // that are not in the table until somebody asks for one.
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture

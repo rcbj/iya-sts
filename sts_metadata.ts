@@ -1024,9 +1024,13 @@ const SPECS: Spec[] = [
   { id: 'rfc7617', name: 'The Basic HTTP Authentication Scheme (RFC 7617)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc7617',
-    coverage: 'full as a scheme, and it verifies nothing: any username with ' +
-              'any password is accepted except the reserved "invalid", which ' +
-              'keeps a 401 reachable. charset="UTF-8" is in the challenge. ' +
+    // Both modes' truth (#543 round 2): "it verifies nothing" was
+    // unqualified, and product verifies the password.
+    coverage: 'full as a scheme. In development mode it verifies nothing: ' +
+              'any username with any password is accepted except the ' +
+              'reserved "invalid", which keeps a 401 reachable. In product ' +
+              'mode the password is verified against the person\'s hashed ' +
+              'userPassword. charset="UTF-8" is in the challenge. ' +
               'RFC 7644 section 2 DISCOURAGES this scheme in those words; it ' +
               'is offered because it is what a provisioning client most ' +
               'often meets.' },
@@ -1144,12 +1148,14 @@ const SPECS: Spec[] = [
     coverage: 'partial, and the part that is here is the TRANSPORT rather ' +
               'than the authentication: simple bind (section 5.1) is the ' +
               'only method offered — no SASL, so no EXTERNAL and no ' +
-              'DIGEST-MD5 — and it authenticates nobody, since every bind ' +
-              'succeeds except the literal password "invalid". What TLS on ' +
-              '636 adds is confidentiality for a password that was never ' +
-              'going to be checked, which is worth having for a client that ' +
-              'has to prove it can do LDAPS and worth saying out loud so ' +
-              'nobody reads the TLS as authentication. StartTLS (section 3) ' +
+              'DIGEST-MD5. In development mode it authenticates nobody, ' +
+              'since every bind succeeds except the literal password ' +
+              '"invalid", and what TLS on 636 adds is confidentiality for a ' +
+              'password that was never going to be checked, which is worth ' +
+              'having for a client that has to prove it can do LDAPS and ' +
+              'worth saying out loud so nobody reads the TLS as ' +
+              'authentication; in product mode a person\'s password is ' +
+              'verified, and only over 636. StartTLS (section 3) ' +
               'is NOT implemented: it is an extended operation and the ' +
               'ldapjs submodule this service is built on implements none, ' +
               'and this repository does not patch that submodule. Worth ' +
@@ -1338,9 +1344,14 @@ const SPECS: Spec[] = [
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
-    coverage: 'mock: a UsernameToken is accepted when both members are ' +
-              'present. No password is ever checked, except that the literal ' +
-              '"invalid" is refused so a negative test can force a failure.' },
+    // Both modes' truth (#543 round 2): "No password is ever checked" was
+    // unqualified, and product verifies it.
+    coverage: 'mock in development mode: a UsernameToken is accepted when ' +
+              'both members are present and no password is checked, except ' +
+              'that the literal "invalid" is refused so a negative test can ' +
+              'force a failure. In product mode the password is verified — ' +
+              'a person\'s against their hashed userPassword, an ' +
+              'application\'s against its client secrets.' },
   { id: 'saml2', name: 'SAML 2.0 Core',
     where: 'OASIS saml-core-2.0-os',
     url: 'https://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf',
@@ -7522,8 +7533,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'sends them to this one screen with a return URL carrying its own ' +
           'request whole, and gets them back with a session cookie ' +
           'established — GET renders the screen, POST takes what was typed. ' +
-          'No password is checked; the username typed becomes the identity ' +
-          'in every token, assertion and credential that follows. It knows ' +
+          // Both modes' truth (#543 round 2): it read "No password is
+          // checked" unqualified.
+          'In development mode no password is checked and the username ' +
+          'typed becomes the identity in every token, assertion and ' +
+          'credential that follows; in product mode the password, or the ' +
+          'key or code the realm\'s authentication policy allows, is ' +
+          'verified. It knows ' +
           'nothing about the protocol that sent anybody here: what the ' +
           'screen SHOWS about the request it interrupted is supplied by the ' +
           'caller, and a refusal comes back as authn_error=access_denied for ' +

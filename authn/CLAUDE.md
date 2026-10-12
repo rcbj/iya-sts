@@ -669,7 +669,7 @@ It is **not** called from `sessionOf()`, which looks like the obvious place and
 is not: that function is called several times per request, so an event there
 would be several events for one act.
 
-## It checks no password
+## It checks no password in development mode (product verifies it)
 
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 

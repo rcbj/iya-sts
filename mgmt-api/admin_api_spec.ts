@@ -2873,8 +2873,11 @@ const SCHEMAS = {
                                   'answers about.' },
       ldapVersion: { type: 'integer' },
       bindPolicy: { type: 'string',
-                    description: 'Every bind succeeds. This says so in the ' +
-                                 'reply rather than only on the page.' },
+                    description: 'Which binds succeed, in this realm\'s ' +
+                                 'mode: every bind in development, a ' +
+                                 'person\'s verified password over LDAPS in ' +
+                                 'product. This says so in the reply rather ' +
+                                 'than only on the page.' },
       refusedPassword: { type: 'string',
                          description: 'The ONE literal password answered ' +
                                       'LDAP_INVALID_CREDENTIALS (49), so ' +
