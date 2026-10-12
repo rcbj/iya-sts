@@ -175,10 +175,6 @@ function childMain() {
     function attr(entry, name) {
       return entry ? (entry.attributes[name.toLowerCase()] || []) : [];
     }
-    function hidden(text, name) {
-      const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(text);
-      return m ? m[1] : '';
-    }
     function codesSince(mark) {
       return inSp(function () { return audit.list(); })
         .slice(0, Math.max(0, inSp(function () {
@@ -229,6 +225,16 @@ function childMain() {
         const screenAt = r.status >= 300 && r.status < 400 &&
           /\/authn\/login\?authn=/.test(at)
           ? new URL(at, base) : null;
+        // A SECOND-FACTOR STEP IS A PAGE OF THE SAME SURFACE SINCE #572:
+        // opened as the browser opens it (its shell, then its view), and
+        // answered through its act below.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/(totp|webauthn|mfa-setup|backup-code|password-factor|email-code|email-link)\?/
+              .test(at)) {
+          r = await authnScreen.openStep({ port: port, ca: caPem, jar: jar,
+            at: new URL(at, base).pathname + new URL(at, base).search });
+          r.isStep = true;
+        }
         if (screenAt &&
             screenAt.pathname.indexOf('/realm/' + SP + '/') === 0) {
           linkAt = screenAt.pathname + screenAt.search;
@@ -267,23 +273,24 @@ function childMain() {
             fields: { action: opts.link === 'cancel' ? 'cancel' : 'login',
                       username: 'somebody-else-typed',
                       password: opts.password || PASSWORD } });
-          if (r.next === 'redirect' || r.next === 'mfa' ||
-              r.next === 'password-change') {
+          // A next step on a page of its own (#572) is a 303-shaped answer
+          // the loop opens; a redirect or the forced change is followed.
+          if (r.next === 'redirect' || r.next === 'password-change') {
             r = await request('GET', r.location);
           }
           continue;
         }
-        const mfaId = hidden(r.text, 'mfa_id');
-        if (r.status === 200 && mfaId && /\/authn\/totp/.test(r.text)) {
+        if (r.isStep && r.view && r.view.page === 'totp') {
           trail.totp += 1;
           if (!opts.totpSecret || trail.totp > 1) {
             return { r: r, trail: trail };
           }
-          r = await request('POST', '/realm/' + SP + '/authn/totp', {
-            form: { mfa_id: mfaId, code: totp.codeAt(opts.totpSecret) } });
+          r = await authnScreen.stepAct({ port: port, ca: caPem, jar: jar,
+            opened: r, op: 'totp',
+            body: { code: totp.codeAt(opts.totpSecret) } });
           continue;
         }
-        if (r.status === 200 && mfaId) {
+        if (r.isStep && r.view) {
           trail.setup += 1;
           return { r: r, trail: trail };
         }

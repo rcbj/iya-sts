@@ -194,9 +194,11 @@ function childMain() {
     const authn = require(ROOT + '/authn/authn');
     const logout = require(ROOT + '/logout/logout');
     // USERNAMELESS SIGN-IN OFF (it is on by default since 2026-10-10): with it
-    // on, the sign-in screen carries /authn/webauthn.js and relaxes
+    // on, the sign-in screen carried /authn/webauthn.js and relaxed
     // script-src for its own passkey button, and this test reads that
-    // screen's policy as the base one.
+    // screen's policy as the base one. (The screen is the sign-in surface's
+    // since #571 and that script is gone since #572; the setting is kept
+    // off so the test reads the same screen it always did.)
     {
       const passkeyPolicy = require(ROOT + '/common/passkey_policy');
       realms.run(realms.get(realms.DEFAULT_ID), function () {
