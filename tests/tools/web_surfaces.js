@@ -32,6 +32,10 @@
 // from a view alone, in English and in French, in both modes, with and
 // without the image, and with a console on another listener.
 //
+// The sign-in screen (#571) draws three pages from views alone: the screen
+// in the states its view can name, the federation chooser and the forced
+// password change.
+//
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
 // ===========================================================================
@@ -118,6 +122,92 @@ function homeCases(root) {
   ];
 }
 
+/**
+ * The sign-in screen's cases (#571): the screen with every door offered, in
+ * English and in French; the screen in product, locked to a person, with
+ * every demand on and a refusal over it; a screen the application allows
+ * nothing on; the federation chooser; and the forced password change.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function authnCases(root) {
+  log.debug("Entering authnCases().");
+  const en = { t: translatorFor(root, 'authn', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/authn/login?authn=abc', error: '', autofill: true };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'authn', ['fr', 'en']) });
+  const partner = { id: 'acme-saml', label: 'Acme <SAML> & co',
+    protocolLabel: 'SAML 2.0', peer: 'https://idp.acme.example',
+    href: '/federation/login/acme-saml?returnTo=%2Foauth2%2Fauthorize' };
+  const details = [{ label: 'client_id', value: 'demo "client"',
+                     note: '' },
+                   { label: 'issuer_state', value: '',
+                     note: 'from a Credential Offer' }];
+  const everything = { id: 'abc', base: 'https://sts.example',
+    protocol: 'OAuth 2.0', application: 'demo', error: '', locked: '',
+    hint: 'alice', screen: true, password: true,
+    keys: { enabled: true, mfaAllowed: true, primaryAllowed: true },
+    demands: { mfa: false, key: false, passwordless: false, via: '' },
+    remember: true, anonymous: true, passkey: true,
+    email: { code: true, link: true }, forgot: '/portal/forgot-password',
+    partners: { kind: 'any', options: [partner] },
+    kerberos: { state: 'offered', href: '/authn/spnego?authn=abc' },
+    wallet: { state: 'offered', mfaNote: false,
+              href: '/authn/wallet?authn=abc',
+              siop: '/authn/wallet?authn=abc&siop=1' },
+    verifiesCredentials: false, fingerprint: true, details: details };
+  const demanding = Object.assign({}, everything, {
+    error: 'The application names a disabled partner.',
+    locked: 'bob', hint: 'bob', password: true,
+    keys: { enabled: true, mfaAllowed: true, primaryAllowed: false },
+    demands: { mfa: true, key: true, passwordless: true,
+               via: 'partner-x' },
+    remember: false, anonymous: false, passkey: false,
+    email: { code: false, link: false }, forgot: '',
+    partners: { kind: 'own-many', options: [partner, partner] },
+    kerberos: { state: 'withheld-mfa', href: '' },
+    wallet: { state: 'withheld', mfaNote: false, href: '', siop: '' },
+    verifiesCredentials: true, fingerprint: false, details: [] });
+  const keysOff = Object.assign({}, everything, {
+    keys: { enabled: false, mfaAllowed: false, primaryAllowed: false },
+    partners: { kind: 'own-one', options: [partner] },
+    kerberos: { state: 'withheld-key', href: '' },
+    wallet: { state: 'offered', mfaNote: true, href: '/authn/wallet',
+              siop: '' } });
+  const nothing = Object.assign({}, everything, { screen: false,
+    partners: null, kerberos: null, wallet: null });
+  log.debug("Leaving authnCases().");
+  return [
+    { label: 'the sign-in screen, every door, in English',
+      path: '/authn/login', view: everything, ctx: en },
+    { label: 'the sign-in screen, every door, in French',
+      path: '/authn/login', view: everything, ctx: fr },
+    { label: 'the screen in product, locked, every demand, refused',
+      path: '/authn/login', view: demanding,
+      ctx: Object.assign({}, en, { error: 'Authentication failed for bob.',
+                                   autofill: false }) },
+    { label: 'the screen with passkeys off and a refused passkey',
+      path: '/authn/login', view: keysOff,
+      ctx: Object.assign({}, en, { autofill: false }) },
+    { label: 'the screen an application allows nothing on',
+      path: '/authn/login', view: nothing, ctx: en },
+    { label: 'the federation chooser', path: '/authn/select-idp',
+      view: { id: 'abc', base: 'https://sts.example', protocol: 'SAML 2.0',
+              application: 'urn:sp:<one>', partners: [partner, partner],
+              problems: ['The relationship "gone" is disabled.'],
+              details: details }, ctx: fr },
+    { label: 'the forced password change, after a breach',
+      path: '/authn/password-change',
+      view: { id: 'def', username: 'carol & co',
+              notice: 'The password you signed in with has appeared in a ' +
+                      'data breach.' },
+      ctx: Object.assign({}, en, { error: 'The two passwords are not the ' +
+                                          'same.' }) }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -130,5 +220,9 @@ module.exports = [
   { name: 'the front door',
     pages: 'home/web_home_pages.ts', global: 'StsHome',
     bundle: 'home/home.bundle.js', runtime: 'home/home-spa.js',
-    cases: homeCases }
+    cases: homeCases },
+  { name: 'the sign-in screen',
+    pages: 'authn/web_authn_pages.ts', global: 'StsAuthn',
+    bundle: 'authn/authn.bundle.js', runtime: 'authn/authn-spa.js',
+    cases: authnCases }
 ];

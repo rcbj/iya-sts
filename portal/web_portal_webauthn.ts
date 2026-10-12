@@ -23,12 +23,16 @@
 // parameter from `data-options` (the relying party, the algorithms, the
 // authenticator selection, `excludeCredentials`, credProps and minPinLength,
 // the hints, the attestation, the timeout), and the Signal API (WebAuthn
-// Level 3 section 5.1.10). The sign-in screen's username-less passkey stays
-// `/authn/webauthn.js`'s: that screen is not the portal's.
+// Level 3 section 5.1.10). The sign-in screen's username-less passkey is
+// that screen's own bundle's since #571 (`authn/web_authn.ts`); what both
+// share is `common/web_webauthn.ts`.
 //
-// A `web_` MODULE: it requires nothing and logs nothing. Its browser objects
+// A `web_` MODULE: it requires only `common/web_webauthn.ts` and logs
+// nothing. Its browser objects
 // arrive as arguments, so a test drives it with stand-ins.
 // ---------------------------------------------------------------------------
+
+import WebWebAuthn = require('../common/web_webauthn');
 
 type Json = any;
 
@@ -36,80 +40,16 @@ type Json = any;
  * The portal's WebAuthn ceremonies. A static utility class.
  */
 class PortalWebAuthn {
-  /**
-   * Base64url of bytes, no padding.
-   *
-   * @param b - an ArrayBuffer or a view
-   * @returns the encoding
-   */
-  static b64u(b: Json): string {
-    const bytes = new Uint8Array(b);
-    let s = '';
-    for (let i = 0; i < bytes.length; i++) {
-      s += String.fromCharCode(bytes[i]);
-    }
-    return btoa(s).split('+').join('-').split('/').join('_')
-      .split('=').join('');
-  }
+  // THE BYTES AND THE JSON FORMS ARE `common/web_webauthn.ts`'s since #571,
+  // which the sign-in screen's passkey shares; these names stay for the
+  // portal's callers.
+  static readonly b64u = WebWebAuthn.b64u;
 
-  /**
-   * Bytes of a base64url string.
-   *
-   * @param s - the encoding
-   * @returns the bytes
-   */
-  static bytes(s: string): Uint8Array {
-    let t = String(s || '').split('-').join('+').split('_').join('/');
-    while (t.length % 4) {
-      t += '=';
-    }
-    const bin = atob(t);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) {
-      out[i] = bin.charCodeAt(i);
-    }
-    return out;
-  }
+  static readonly bytes = WebWebAuthn.bytes;
 
-  /**
-   * A registration's answer, as the server reads it.
-   *
-   * @param c - the PublicKeyCredential
-   * @returns the JSON form
-   */
-  static created(c: Json): Json {
-    let ext = {};
-    try {
-      ext = c.getClientExtensionResults ? c.getClientExtensionResults() : {};
-    } catch (e) {
-      ext = {};
-    }
-    return { id: c.id, rawId: PortalWebAuthn.b64u(c.rawId), type: c.type,
-      authenticatorAttachment: c.authenticatorAttachment || null,
-      clientExtensionResults: ext, response: {
-        clientDataJSON: PortalWebAuthn.b64u(c.response.clientDataJSON),
-        transports: c.response.getTransports ? c.response.getTransports()
-                                             : [],
-        attestationObject: PortalWebAuthn.b64u(c.response.attestationObject)
-      } };
-  }
+  static readonly created = WebWebAuthn.created;
 
-  /**
-   * An assertion's answer, as the server reads it.
-   *
-   * @param a - the PublicKeyCredential
-   * @returns the JSON form
-   */
-  static asserted(a: Json): Json {
-    return { id: a.id, rawId: PortalWebAuthn.b64u(a.rawId), type: a.type,
-      authenticatorAttachment: a.authenticatorAttachment || null,
-      response: {
-        clientDataJSON: PortalWebAuthn.b64u(a.response.clientDataJSON),
-        authenticatorData: PortalWebAuthn.b64u(a.response.authenticatorData),
-        signature: PortalWebAuthn.b64u(a.response.signature),
-        userHandle: a.response.userHandle
-          ? PortalWebAuthn.b64u(a.response.userHandle) : null } };
-  }
+  static readonly asserted = WebWebAuthn.asserted;
 
   /**
    * The ceremony a `#wa-data` element describes.

@@ -212,6 +212,12 @@ bundle_surface "the user portal" portal/web_portal_pages.ts StsPortal \
 bundle_surface "the front door" home/web_home_pages.ts StsHome \
   home/home.bundle.js home/web_home.ts home/home-spa.js
 
+# THE SIGN-IN SCREEN (#571): `authn/authn.bundle.js` (`StsAuthn`,
+# `web_authn_pages.ts`) and `authn/authn-spa.js` (`web_authn.ts`), served at
+# `/authn/signin.js` — `authn-spa.js` because `authn/authn.js` is `authn.ts`.
+bundle_surface "the sign-in screen" authn/web_authn_pages.ts StsAuthn \
+  authn/authn.bundle.js authn/web_authn.ts authn/authn-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).
