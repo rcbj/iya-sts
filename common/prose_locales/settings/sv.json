@@ -8800,8 +8800,8 @@
     "text": "Verifiera databasens certifikat"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "ab7f2d3118042c46",
-    "text": "Om PostgreSQL-serverns certifikat måste verifieras mot ett förtroendeankare som den här processen har. AVSTÄNGT som standard, och det är ett påstående om STACKEN snarare än ett försvagat standardvärde: certifikatet genereras inuti postgres-containern vid dess första start och är inte signerat av någon, så det finns inget för en klient att verifiera det mot, och att slå på detta skulle neka varje anslutning med ett meddelande om ett självsignerat certifikat. ANSLUTNINGEN ÄR FORTFARANDE KRYPTERAD i båda fallen — den här tjänsten ansluter aldrig till sin databas i klartext (#273), databasens egen pg_hba.conf kräver också TLS, och detta avgör bara om servern AUTENTISERAS. Slå på det när du riktar detta mot en verklig databas vars certifikat kedjar till något som NODE_EXTRA_CA_CERTS anger."
+    "en": "f43d1062e91c3dbe",
+    "text": "Om PostgreSQL-serverns certifikat måste verifieras mot ett förtroendeankare som den här processen har. AVSTÄNGT som standard, och det är ett påstående om STACKEN snarare än ett försvagat standardvärde: certifikatet genereras inuti postgres-containern vid dess första start och är inte signerat av någon, så det finns inget för en klient att verifiera det mot, och att slå på detta skulle neka varje anslutning med ett meddelande om ett självsignerat certifikat. ANSLUTNINGEN ÄR FORTFARANDE KRYPTERAD i båda fallen — den här tjänsten ansluter aldrig till sin databas i klartext (#273), databasens egen pg_hba.conf kräver också TLS, och detta avgör bara om servern AUTENTISERAS. Slå på det när du riktar detta mot en verklig databas vars certifikat kedjar till något som NODE_EXTRA_CA_CERTS anger; då kontrolleras kedjan och värdnamnet. Det avgör bara för en anslutningssträng vars sslmode är oangivet, require eller prefer: sslmode=verify-full verifierar kedjan och värdnamnet, och sslmode=verify-ca bara kedjan (som libpq läser dem), oavsett vad detta säger."
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
     "en": "61c24dbb3c0a7674",

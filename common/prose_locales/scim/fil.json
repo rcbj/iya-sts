@@ -268,16 +268,16 @@
     "text": "Ang proof-of-possession token na pinangangalanan ng RFC 7644 section 2, sa hugis na in-iissue na ng serbisyong ito: isang access token na nakatali sa isang key (cnf.jkt), ipinapakita bilang \"Authorization: DPoP <token>\" na may sariwang DPoP proof sa method at URL. Ang RFC 8705 certificate-bound token ang isa pang anyo ng proof-of-possession at iginagalang sa parehong path. Hinahawakan ng parehong check ng Bearer row — iisang credential sila na may dalawang paraan ng paghawak — at hiwalay na nakalista dahil may karapatan ang client na nagbabasa ng dokumentong ito na malaman na nauunawaan ang bound na anyo."
   },
   "auth.schemes.basic": {
-    "en": "82a6bd8a34b144f8",
-    "text": "Anumang username at anumang password, eksaktong gaya ng pagtatagumpay ng bawat LDAP bind dito — maliban lang sa password na \"invalid\", na tinatanggihan para manatiling naaabot ang 401. HINIHIKAYAT NA HUWAG gamitin ng RFC 7644 section 2 ang scheme na ito, sa mismong mga salitang iyon, dahil nakasandal ito sa medyo static na symmetric secret; ini-implement pa rin ito dahil ito ang pinakamadalas na nakakaharap ng provisioning client at sulit na mapatakbo ang paghawak nito sa 401. Walang password na chine-check, kaya PANGALAN ang ina-authenticate nito, at ang pangalang iyon ang itinatala ng audit log."
+    "en": "7292c47a83a49365",
+    "text": "Sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao, at ang taong may hawak o dapat may hawak na second factor ay tinatanggihan sa sarili nilang password at gumagamit ng app password. Sa development mode, pumapasa ang anumang username at anumang password, eksaktong gaya ng pagtatagumpay ng bawat LDAP bind doon — maliban lang sa password na \"invalid\", na tinatanggihan para manatiling naaabot ang 401 — kaya PANGALAN ang ina-authenticate nito roon, at ang pangalang iyon ang itinatala ng audit log. HINIHIKAYAT NA HUWAG gamitin ng RFC 7644 section 2 ang scheme na ito, sa mismong mga salitang iyon, dahil nakasandal ito sa medyo static na symmetric secret; ini-implement pa rin ito dahil ito ang pinakamadalas na nakakaharap ng provisioning client at sulit na mapatakbo ang paghawak nito sa 401."
   },
   "auth.schemes.digest": {
-    "en": "3bdbbdcf677299f6",
-    "text": "Ang tanging scheme dito kung saan talagang chine-check ang password, at hindi ito puwedeng hindi i-check: hash sa password ang response, kaya ang server na tumatanggap ng kahit ano ay hindi talaga gumagawa ng exchange. Kaya ginagawa nito ang ginagawa ng Kerberos sa parehong dahilan — nag-a-authenticate ang ANUMANG username at iisang password ang pinagsasaluhan nilang lahat (scim.digestPassword). Iniaalok ang SHA-256 at SHA-512-256, sa ganoong pagkakasunod, kasama ang mga -sess variant, at MD5 sa huli kung saan lang ito in-on ng scim.digestMd5; auth ang qop. 401 ang maling password, 401 na may stale=true ang lumang nonce, at 401 ang ni-replay na nonce count — tatlong negative na kung hindi ay mahirap pukawin."
+    "en": "ab6220dc6edc03b2",
+    "text": "Sa product mode, HINDI iniaalok ang scheme na ito, at tinatanggihan ito: naka-store ang password bilang salted scrypt hash, na hindi makakasagot sa isang RFC 7616 exchange. Sa development mode, ito ang tanging scheme kung saan talagang chine-check ang password, at hindi ito puwedeng hindi i-check: hash sa password ang response, kaya ang server na tumatanggap ng kahit ano ay hindi talaga gumagawa ng exchange. Kaya ginagawa nito ang ginagawa ng Kerberos sa parehong dahilan — nag-a-authenticate ang ANUMANG username at iisang password ang pinagsasaluhan nilang lahat (scim.digestPassword). Iniaalok ang SHA-256 at SHA-512-256, sa ganoong pagkakasunod, kasama ang mga -sess variant, at MD5 sa huli kung saan lang ito in-on ng scim.digestMd5; auth ang qop. 401 ang maling password, 401 na may stale=true ang lumang nonce, at 401 ang ni-replay na nonce count — tatlong negative na kung hindi ay mahirap pukawin."
   },
   "auth.schemes.hoba": {
-    "en": "3a4aaa2bb134b547",
-    "text": "Ang signature-based scheme na pinangangalanan ng RFC 7644 section 2, at ang tanging isa sa anim na walang password kahit saan. Nagre-register ang client ng public key sa /.well-known/hoba/register — puwede kahit sino, nire-register ng serbisyong ito ang lahat — at saka pinipirmahan ang challenge ng server kasama ang origin, ang realm at ang sarili nitong key id at nonce. TALAGANG VINE-VERIFY ANG SIGNATURE, sa parehong dahilan kung bakit talagang chine-check ang Digest password: ang signature check na pumapasa sa kahit ano ay hindi ang scheme. RSA na may SHA-256 (algorithm 0) lang."
+    "en": "c1ed97fe4e57dbcb",
+    "text": "Ang signature-based scheme na pinangangalanan ng RFC 7644 section 2, at ang tanging isa sa anim na walang password kahit saan. Nagre-register ang client ng public key sa /.well-known/hoba/register — sa development mode, puwede kahit sino, para sa anumang pangalan; sa product mode, ang naka-sign in na may-ari lang ng umiiral na account ang puwede, at hindi kailanman lumilikha ng account ang isang registration — at saka pinipirmahan ang challenge ng server kasama ang origin, ang realm at ang sarili nitong key id at nonce. TALAGANG VINE-VERIFY ANG SIGNATURE, sa parehong mode: ang signature check na pumapasa sa kahit ano ay hindi ang scheme. RSA na may SHA-256 (algorithm 0) lang."
   },
   "auth.schemes.cookie": {
     "en": "b558e5c68d9956f1",
@@ -296,8 +296,8 @@
     "text": "PUWEDENG GAWIN NG BAWAT IBANG SCHEME ANG DALAWA. Walang dalang scope ang Basic, Digest, HOBA, session cookie at client certificate, kaya ang policy para sa kanila ay ang buong surface. Sulit itong basahin nang dalawang beses: ang tumatawag na hindi makakuha ng scope ay puwedeng gumamit na lang ng Basic, kaya may sariling switch ang bawat scheme — ino-off ng deployment na sumusubok sa paghawak ng scope ang lima pa."
   },
   "auth.policy.rfc": {
-    "en": "aa742405b5e3b449",
-    "text": "Hinihingi ng RFC 7644 section 2 na KAYA ng provider na i-map ang authenticated client sa isang access control policy. Ito ang policy na iyon. Dalawang linya ito dahil walang ina-authenticate ang serbisyong ito sa diwang mahalaga — isa itong turnstile, hindi kandado."
+    "en": "01badc7fa9089572",
+    "text": "Hinihingi ng RFC 7644 section 2 na KAYA ng provider na i-map ang authenticated client sa isang access control policy. Ito ang policy na iyon. Dalawang linya ito dahil sa development mode, walang ina-authenticate ang serbisyong ito sa diwang mahalaga — isa itong turnstile, hindi kandado — at sa product mode, kung saan vine-verify ang bawat credential, ang puwedeng gawin ng isang na-verify na caller ay ang dalawang linyang ito pa rin."
   },
   "auth.policy.tied": {
     "en": "695420f96b495164",

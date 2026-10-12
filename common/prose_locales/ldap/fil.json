@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "nagtatagumpay ang bawat bind — anumang DN, anumang password, kasama ang anonymous — maliban sa literal na password na \"invalid\", na sinasagot ng LDAP_INVALID_CREDENTIALS (49) para may kabibigoan ang isang negative test"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "tao lang ang nagba-bind, sa LDAPS 636 lang, at vine-verify ang password laban sa naka-hash na userPassword sa kanilang entry. Tinatanggihan bago pa basahin ang password ang anonymous bind (48), anumang bind sa 389 (13), walang lamang password (53), DN na hindi tao (49) at DN o address na lampas na sa failed-bind limit nito (53); LDAP_INVALID_CREDENTIALS (49) ang maling password, at ang literal na password na \"invalid\""
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "wala. Walang objectClass na ipinapatupad at walang attribute na sinusuri laban sa syntax, kaya puwedeng magdala ang entry ng anumang attribute na ipadala ng client. Tatanggihan ng totoong directory ang karamihan doon."
@@ -1212,8 +1216,8 @@
     "text": "ANG TAWAG NG ISANG FEDERATION PARTNER SA SARILI NITO — ang entityID ng isang banyagang identity provider, o ang issuer identifier nito kung OpenID Connect ang sinasalita ng relationship. WALA RITO ANG RELATIONSHIP: ang mga endpoint, ang certificate at ang attribute mapping ay nasa ilalim ng ou=federations at ang mga iyon ang talagang pinagve-verify-an ng /federation/acs/{id} (tingnan ang federation/CLAUDE.md). Ang entry na ito ay ang partner bilang PARTIDO, at ang attribute na ito ang pangalang ginagamit nito — kaya walang pinakikipag-federate-an ang value dito, at ito ang tanging lugar sa serbisyong ito kung saan may ngipin ang pangungusap na iyon."
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "ANG DN NA GINAGAMIT NG ISANG DIRECTORY CLIENT SA PAG-BIND sa 389 o LDAPS 636. NAGTATAGUMPAY ANG BAWAT BIND DITO — anumang DN, anumang password, anonymous — kaya walang kailanmang magsusulat nito at walang kailanmang magbabasa nito; dito itinatala ng operator kung aling credential ang inaasahang gagamitin ng isang application, katabi ng lahat ng iba pang tungkol sa application na iyon."
+    "en": "f1e68cbe5820e3d4",
+    "text": "ANG DN NA GINAGAMIT NG ISANG DIRECTORY CLIENT SA PAG-BIND sa 389 o LDAPS 636. Walang kailanmang magsusulat nito at walang kailanmang magbabasa nito: sa development mode, NAGTATAGUMPAY ANG BAWAT BIND — anumang DN, anumang password, anonymous — at sa product mode, tao lang ang nagba-bind, kaya binabasa ng isang application ang directory sa pamamagitan ng SCIM sa halip. Dito itinatala ng operator kung aling credential ang inaasahang gagamitin ng isang application, katabi ng lahat ng iba pang tungkol sa application na iyon."
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",

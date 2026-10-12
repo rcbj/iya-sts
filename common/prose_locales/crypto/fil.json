@@ -552,12 +552,12 @@
     "text": "Kung saan nakatira ang mga private key ng CA"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "Wala. Walang ini-issue ang portal na token, assertion o certificate — binabago nito ang mga credential sa halip na gumawa ng mga ito."
+    "en": "9febb36f585ca159",
+    "text": "Wala sa mga ini-issue nito. Walang mini-mint ang portal na token, assertion o certificate — binabago nito ang mga credential sa halip na gumawa ng mga ito. Iisang bagay ang pinipirmahan ng runtime nito, sa browser: isang RFC 9449 DPoP proof (ES256) sa bawat tawag sa `/account-api` at sa token endpoint, gamit ang P-256 key na ginawa ng WebCrypto bilang non-extractable para sa page load na iyon."
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "Isang IPINAKITANG PASSWORD, laban sa scrypt hash sa sariling entry ng tao, at isang ACTIVATION TOKEN laban sa scrypt hash ng in-issue. Constant-time ang parehong paghahambing sa pamamagitan ng common/crypto.js — ang byte-by-byte na maagang return sa alinman ay isang timing oracle. Vine-verify din ang isang WebAuthn assertion, pero ng authn/webauthn.js, kung saan naroon ang ceremony."
+    "en": "8a095d27cbed0ab1",
+    "text": "ANG BAWAT TAWAG SA `/account-api`, sa gate nito (account-api/account_api.ts): ang access token ay isang RFC 9068 `at+jwt` na vine-verify sa ilalim ng signing key ng realm NA ITO (anumang generation), chine-check ang issuer at audience nito, at tinutugma ang DPoP binding nito ng isang proof na vine-verify ng gate — hindi kailanman tinatanggap bilang Bearer. Ang taong pinangangalanan nito ang tanging account na kinikilusan nito. Bukod doon, isang IPINAKITANG PASSWORD (muling pinapatunayan ng pagpapalit ang kasalukuyan) laban sa scrypt hash sa sariling entry ng tao, at ang token ng isang ACTIVATION o PASSWORD RESET link laban sa scrypt hash ng in-issue, bawat isa ay pinaghahambing nang constant-time sa pamamagitan ng common/crypto.js. Vine-verify ng runtime ang isang JARM authorization response laban sa JWKS ng realm kung saan nagpapadala ang realm nito. Vine-verify ng authn/webauthn.js ang isang WebAuthn assertion; ang ceremony lang ang pinapatakbo ng runtime."
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "Wala."
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) para sa password at sa activation token, bawat isa ay may 16 na random byte ng salt, naka-store bilang `$scrypt$N$r$p$salt$hash` para maitaas ang cost sa ibang pagkakataon nang hindi ini-invalidate ang naka-store na. **HINDI digest**: mababa ang entropy ng password at ang mabilis na hash nito ay isang wordlist na lang ang layo mula sa mismong password. SHA-256 sa ilalim ng HMAC para sa CSRF token, na ibang trabaho — authenticity ng isang form, hindi proteksyon ng secret at rest."
+    "en": "2955567f83fe0eee",
+    "text": "SCRYPT (RFC 7914) para sa password at para sa token ng activation o reset link, bawat isa ay may 16 na random byte ng salt, sa cost na pinangangalanan ng security.passwordHashLogN, passwordHashR at passwordHashP (N=2^15, r=8, p=1 bilang default), naka-store bilang `$scrypt$N$r$p$salt$hash` para maitaas ang cost sa ibang pagkakataon nang hindi ini-invalidate ang naka-store na. **HINDI digest**: mababa ang entropy ng password at ang mabilis na hash nito ay isang wordlist na lang ang layo mula sa mismong password. SHA-256 sa browser para sa PKCE S256 challenge at sa `ath` ng DPoP proof, na ibang trabaho — pagbibigkis ng request sa isang sign-in at ng proof sa isang token, hindi proteksyon ng secret at rest."
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "Wala itong sarili. Ang CSRF token ay isang HMAC-SHA256 sa ilalim ng key na ginagawa bawat process at sadyang HINDI pine-persist — may kahulugan lang ang CSRF token habang buhay ang session, hindi nakakaligtas ang session sa restart, kaya ang key na makakaligtas ay walang mapoprotektahan at magiging isa pang secret at rest."
+    "en": "7a356445be1d2a7b",
+    "text": "Wala sa server. Nasa browser ang DPoP key pair: P-256, ginawa ng WebCrypto na non-extractable ang private na kalahati, hawak sa memory at nawawala kasama ng page, at bawat token na ini-issue sa portal ay nakatali sa thumbprint nito. Ang mga token mismo ay pinipirmahan ng authorization server ng realm (ang row ng OAuth2 / OIDC). Wala nang CSRF key: nawala ang per-process na HMAC key kasama ng CSRF token at ng session cookie na binabantayan nito (#568)."
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "Password at activation token at rest"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "Password at link token at rest"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt, N=32768, r=8, p=1, 32-byte na key, 16-byte na random salt"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt, N=32768, r=8, p=1 bilang default (security.passwordHash*), 32-byte na key, 16-byte na random salt"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "constant-time na equality"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "CSRF token"
+    "en": "e9ec660a650f5513",
+    "text": "Access token sa /account-api"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "HMAC-SHA256 sa ibabaw ng session id sa ilalim ng key bawat process"
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, vine-verify sa ilalim ng signing key ng realm na ito, DPoP-bound"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP proof (browser)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 na may non-extractable na WebCrypto P-256 key bawat page load"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "Wala. Wala itong GINAGAWANG credential — ito ang tanging family dito na nagsusuri lang ng mga ito."
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "Isang credential sa alinman sa anim na scheme na pinangangalanan ng RFC 7644 section 2, at DALAWA SA ANIM ANG TUNAY NA VINE-VERIFY: kinukuwenta ng HTTP Digest ang response sa naka-configure na password, at sinusuri ang HOBA signature laban sa public key na ni-register ng client. Turnstile ang apat na iba — pumapasa sa Basic ang anumang password maliban sa isa, at ang mga OAuth ay nangangailangan lang ng token na in-issue ng serbisyong ito na may dalang `scim:read` o `scim:write`."
+    "en": "90704e4d59344987",
+    "text": "Isang credential sa alinman sa anim na scheme na pinangangalanan ng RFC 7644 section 2. Nangangailangan ang mga OAuth ng token na in-issue ng serbisyong ito na may dalang `scim:read` o `scim:write`, at sinusuri ang HOBA signature laban sa public key na ni-register ng client. Sa DEVELOPMENT mode, kinukuwenta ng HTTP Digest ang response sa iisang naka-configure na password at pumapasa sa Basic ang anumang password maliban sa isa; sa PRODUCT mode, vine-verify ng Basic ang password laban sa naka-hash na `userPassword` ng tao at hindi iniaalok ang Digest."
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

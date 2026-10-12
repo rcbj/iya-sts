@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "varje bind lyckas — vilket DN som helst, vilket lösenord som helst, inklusive en anonym — utom det bokstavliga lösenordet \"invalid\", som besvaras med LDAP_INVALID_CREDENTIALS (49) så att ett negativt test har något att misslyckas på"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "bara en person binder, bara på LDAPS 636, och lösenordet verifieras mot det hashade userPassword på personens post. En anonym bind (48), varje bind på 389 (13), ett tomt lösenord (53), ett DN som inte är en person (49) och ett DN eller en adress som passerat sin gräns för misslyckade bindningar (53) vägras innan något lösenord läses; ett felaktigt lösenord, och det bokstavliga lösenordet \"invalid\", ger LDAP_INVALID_CREDENTIALS (49)"
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "inget. Ingen objectClass upprätthålls och inget attribut kontrolleras mot en syntax, så en post kan bära vilka attribut som helst som en klient skickar. En riktig katalog skulle avvisa det mesta av det."
@@ -1212,8 +1216,8 @@
     "text": "VAD EN FEDERATIONSPARTNER KALLAR SIG SJÄLV — en främmande identitetsleverantörs entityID, eller dess utfärdaridentifierare där relationen talar OpenID Connect. RELATIONEN FINNS INTE HÄR: slutpunkterna, certifikatet och attributmappningen finns under ou=federations och är det som /federation/acs/{id} faktiskt verifierar mot (se federation/CLAUDE.md). Den här posten är partnern som PART, och det här attributet är namnet den går under — så ett värde här federerar med ingen, vilket är det enda stället i den här tjänsten där den meningen har tänder."
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "DET DN SOM EN KATALOGKLIENT BINDER SOM på 389 eller LDAPS 636. VARJE BINDNING HÄR LYCKAS — vilket DN som helst, vilket lösenord som helst, anonymt — så ingenting kommer någonsin att skriva detta och ingenting kommer någonsin att läsa det; det är där en operatör registrerar vilken inloggningsuppgift en applikation förväntas använda, bredvid resten av det som applikationen är."
+    "en": "f1e68cbe5820e3d4",
+    "text": "DET DN SOM EN KATALOGKLIENT BINDER SOM på 389 eller LDAPS 636. Ingenting kommer någonsin att skriva detta och ingenting kommer någonsin att läsa det: i utvecklingsläge LYCKAS VARJE BINDNING — vilket DN som helst, vilket lösenord som helst, anonymt — och i produktläge binder bara en person, så en applikation läser katalogen via SCIM i stället. Det är där en operatör registrerar vilken inloggningsuppgift en applikation förväntas använda, bredvid resten av det som applikationen är."
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",

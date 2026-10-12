@@ -552,12 +552,12 @@
     "text": "Var CA:ernas privata nycklar finns"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "Ingenting. Portalen utfärdar ingen token, inget intygande och inget certifikat — den byter autentiseringsuppgifter snarare än skapar dem."
+    "en": "9febb36f585ca159",
+    "text": "Inget som den utfärdar. Portalen skapar ingen token, inget intygande och inget certifikat — den byter autentiseringsuppgifter snarare än skapar dem. Dess körmiljö, i webbläsaren, signerar en sak: ett RFC 9449 DPoP-bevis (ES256) vid varje anrop till `/account-api` och vid tokenslutpunkten, med en P-256-nyckel som WebCrypto genererat som icke-exporterbar för just den sidladdningen."
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "ETT UPPVISAT LÖSENORD, mot scrypt-hashen på personens egen post, och en AKTIVERINGSTOKEN mot scrypt-hashen av den som utfärdades. Båda jämförelserna sker i konstant tid genom common/crypto.js — ett tidigt avbrott byte för byte i någon av dem är ett tidsorakel. Ett WebAuthn-intygande verifieras också, men av authn/webauthn.js, som är där ceremonin bor."
+    "en": "8a095d27cbed0ab1",
+    "text": "VARJE ANROP TILL `/account-api`, vid dess grind (account-api/account_api.ts): åtkomsttoken är en RFC 9068 `at+jwt` som verifieras under DEN HÄR sfärens signeringsnyckel (vilken generation som helst), dess utfärdare och målgrupp kontrolleras, och dess DPoP-bindning matchas av ett bevis som grinden verifierar — den godtas aldrig som Bearer. Personen den namnger är det enda konto den agerar på. Utöver det ett UPPVISAT LÖSENORD (ett byte bevisar det nuvarande på nytt) mot scrypt-hashen på personens egen post, och token i en AKTIVERINGS- eller LÖSENORDSÅTERSTÄLLNINGSLÄNK mot scrypt-hashen av den som utfärdades, var och en jämförd i konstant tid genom common/crypto.js. Körmiljön verifierar ett JARM-auktoriseringssvar mot sfärens JWKS där sfären skickar ett. Ett WebAuthn-intygande verifieras av authn/webauthn.js; körmiljön kör bara ceremonin."
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "Ingenting."
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) för både lösenordet och aktiveringstoken, var och en med 16 slumpmässiga byte salt, lagrad som `$scrypt$N$r$p$salt$hash` så att kostnaden kan höjas senare utan att ogiltigförklara det som redan är lagrat. **INTE en sammanfattning**: ett lösenord har låg entropi och en snabb hash över ett ligger en ordlista ifrån att vara lösenordet. SHA-256 under en HMAC för CSRF-token, vilket är ett annat jobb — äkthet hos ett formulär, inte skydd av en hemlighet i vila."
+    "en": "2955567f83fe0eee",
+    "text": "SCRYPT (RFC 7914) för lösenordet och för token i en aktiverings- eller återställningslänk, var och en med 16 slumpmässiga byte salt, med den kostnad som security.passwordHashLogN, passwordHashR och passwordHashP anger (N=2^15, r=8, p=1 som standard), lagrad som `$scrypt$N$r$p$salt$hash` så att kostnaden kan höjas senare utan att ogiltigförklara det som redan är lagrat. **INTE en sammanfattning**: ett lösenord har låg entropi och en snabb hash över ett ligger en ordlista ifrån att vara lösenordet. SHA-256 i webbläsaren för PKCE S256-utmaningen och DPoP-bevisets `ath`, vilket är ett annat jobb — att binda en begäran till en inloggning och ett bevis till en token, inte att skydda en hemlighet i vila."
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "Inga egna. CSRF-token är en HMAC-SHA256 under en nyckel som genereras per process och medvetet INTE görs beständig — en CSRF-token är bara meningsfull under en sessions livstid, en session överlever inte en omstart, så en nyckel som gjorde det skulle inte skydda något och vara ytterligare en hemlighet i vila."
+    "en": "7a356445be1d2a7b",
+    "text": "Inga på servern. DPoP-nyckelparet finns i webbläsaren: P-256, genererat av WebCrypto med den privata halvan icke-exporterbar, hållet i minnet och borta med sidan, och varje token som portalen utfärdas är bunden till dess tumavtryck. Själva tokenen signeras av sfärens auktoriseringsserver (raden för OAuth2 / OIDC). Det finns ingen CSRF-nyckel längre: HMAC-nyckeln per process försvann med CSRF-token och den sessionscookie den skyddade (#568)."
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "Lösenord och aktiveringstoken i vila"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "Lösenord och länktoken i vila"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt, N=32768, r=8, p=1, 32 byte lång nyckel, 16 byte slumpmässigt salt"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt, N=32768, r=8, p=1 som standard (security.passwordHash*), 32 byte lång nyckel, 16 byte slumpmässigt salt"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "likhetsjämförelse i konstant tid"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "CSRF-token"
+    "en": "e9ec660a650f5513",
+    "text": "Åtkomsttoken vid /account-api"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "HMAC-SHA256 över sessions-id:t under en nyckel per process"
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, verifierad under den här sfärens signeringsnyckel, DPoP-bunden"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP-bevis (webbläsare)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 med en icke-exporterbar WebCrypto P-256-nyckel per sidladdning"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "Ingenting. Den SKAPAR ingen autentiseringsuppgift — det är den enda familjen här som bara kontrollerar dem."
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "En autentiseringsuppgift i något av de sex scheman som RFC 7644 avsnitt 2 namnger, och TVÅ AV DE SEX VERIFIERAS PÅ RIKTIGT: HTTP Digest beräknar svaret över det konfigurerade lösenordet, och en HOBA-signatur kontrolleras mot den publika nyckel som klienten registrerat. De andra fyra är spärrar — vilket lösenord som helst utom ett går igenom Basic, och OAuth-varianterna kräver bara en token som den här tjänsten utfärdat och som bär `scim:read` eller `scim:write`."
+    "en": "90704e4d59344987",
+    "text": "En autentiseringsuppgift i något av de sex scheman som RFC 7644 avsnitt 2 namnger. OAuth-varianterna kräver en token som den här tjänsten utfärdat och som bär `scim:read` eller `scim:write`, och en HOBA-signatur kontrolleras mot den publika nyckel som klienten registrerat. I UTVECKLINGSläge beräknar HTTP Digest svaret över det enda konfigurerade lösenordet och vilket lösenord som helst utom ett går igenom Basic; i PRODUKTläge verifierar Basic lösenordet mot personens hashade `userPassword` och Digest erbjuds inte."
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

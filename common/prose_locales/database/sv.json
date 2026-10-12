@@ -47,6 +47,14 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS, sslmode=prefer — uppringd endast över TLS: libpq skulle falla tillbaka till en anslutning i klartext för prefer, och det gör den här tjänsten aldrig; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är av). Anslutningen är krypterad i båda fallen."
   },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS, sslmode=verify-full; servercertifikatet verifieras mot den här processens förtroendeankare och dess värdnamn kontrolleras, som sslmode begär, oavsett vad persistence.databaseTlsRejectUnauthorized säger."
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS, sslmode=verify-ca; servercertifikatet verifieras mot den här processens förtroendeankare, som sslmode begär, oavsett vad persistence.databaseTlsRejectUnauthorized säger — men dess värdnamn kontrolleras INTE: verify-ca, som libpq läser det, litar på vilket certifikat som helst som en betrodd utfärdare har utfärdat. Använd verify-full för att även kontrollera namnet."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "INTE UPPRINGD — sslmode={{sslmode}} begär en anslutning i klartext, vilket den här tjänsten aldrig öppnar, så den startar inte med den här anslutningssträngen."

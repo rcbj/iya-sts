@@ -268,16 +268,16 @@
     "text": "Den proof-of-possession-token som RFC 7644 avsnitt 2 namnger, i den form som den här tjänsten redan utfärdar: en åtkomsttoken bunden till en nyckel (cnf.jkt), uppvisad som \"Authorization: DPoP <token>\" med ett färskt DPoP-bevis över metoden och URL:en. En RFC 8705-certifikatbunden token är den andra proof-of-possession-formen och respekteras på samma väg. Hanteras av samma kontroll som Bearer-raden — de är en autentiseringsuppgift med två sätt att innehas — och listas separat eftersom en klient som läser det här dokumentet har rätt att veta att den bundna formen förstås."
   },
   "auth.schemes.basic": {
-    "en": "82a6bd8a34b144f8",
-    "text": "Vilket användarnamn och vilket lösenord som helst, precis som varje LDAP-bindning här lyckas — med det enda undantaget lösenordet \"invalid\", som vägras så att ett 401 förblir nåbart. RFC 7644 avsnitt 2 AVRÅDER från detta schema, med de orden, eftersom det vilar på en relativt statisk symmetrisk hemlighet; det är implementerat ändå eftersom det är vad en provisioneringsklient oftast möter och dess hantering av 401 är värd att kunna köra. Inget lösenord kontrolleras, så det som detta autentiserar är ett NAMN, och det namnet är vad granskningsloggen registrerar."
+    "en": "7292c47a83a49365",
+    "text": "I produktläge verifieras lösenordet mot personens hashade userPassword, och en person som har eller måste ha en andra faktor nekas sitt eget lösenord och använder ett applösenord. I utvecklingsläge går vilket användarnamn och vilket lösenord som helst igenom, precis som varje LDAP-bindning där lyckas — med det enda undantaget lösenordet \"invalid\", som vägras så att ett 401 förblir nåbart — så det som detta autentiserar där är ett NAMN, och det namnet är vad granskningsloggen registrerar. RFC 7644 avsnitt 2 AVRÅDER från detta schema, med de orden, eftersom det vilar på en relativt statisk symmetrisk hemlighet; det är implementerat ändå eftersom det är vad en provisioneringsklient oftast möter och dess hantering av 401 är värd att kunna köra."
   },
   "auth.schemes.digest": {
-    "en": "3bdbbdcf677299f6",
-    "text": "Det enda schemat här där lösenordet verkligen kontrolleras, och det kan inte låta bli: svaret är en hash över lösenordet, så en server som accepterade vad som helst skulle inte alls utföra utbytet. Så den gör vad Kerberos gör av samma skäl — VILKET användarnamn som helst autentiseras och alla delar ett lösenord (scim.digestPassword). SHA-256 och SHA-512-256 erbjuds, i den ordningen, med -sess-varianterna, och MD5 sist endast där scim.digestMd5 slår på det; qop är auth. Fel lösenord ger 401, en inaktuell nonce ger 401 med stale=true, och en uppspelad nonce-räknare ger 401 — tre negativa fall som annars är svåra att framkalla."
+    "en": "ab6220dc6edc03b2",
+    "text": "I produktläge erbjuds detta schema INTE, och det vägras: ett lösenord lagras som en saltad scrypt-hash, som inte kan besvara ett RFC 7616-utbyte. I utvecklingsläge är det det enda schemat där lösenordet verkligen kontrolleras, och det kan inte låta bli: svaret är en hash över lösenordet, så en server som accepterade vad som helst skulle inte alls utföra utbytet. Så den gör vad Kerberos gör av samma skäl — VILKET användarnamn som helst autentiseras och alla delar ett lösenord (scim.digestPassword). SHA-256 och SHA-512-256 erbjuds, i den ordningen, med -sess-varianterna, och MD5 sist endast där scim.digestMd5 slår på det; qop är auth. Fel lösenord ger 401, en inaktuell nonce ger 401 med stale=true, och en uppspelad nonce-räknare ger 401 — tre negativa fall som annars är svåra att framkalla."
   },
   "auth.schemes.hoba": {
-    "en": "3a4aaa2bb134b547",
-    "text": "Det signaturbaserade schema som RFC 7644 avsnitt 2 namnger, och det enda av de sex utan något lösenord alls. En klient registrerar en publik nyckel på /.well-known/hoba/register — vem som helst får, den här tjänsten registrerar alla — och signerar sedan serverns utmaning tillsammans med ursprunget, sfären och sitt eget nyckel-id och sin nonce. SIGNATUREN VERIFIERAS VERKLIGEN, av samma skäl som Digest-lösenordet verkligen kontrolleras: en signaturkontroll som släpper igenom vad som helst är inte schemat. Endast RSA med SHA-256 (algoritm 0)."
+    "en": "c1ed97fe4e57dbcb",
+    "text": "Det signaturbaserade schema som RFC 7644 avsnitt 2 namnger, och det enda av de sex utan något lösenord alls. En klient registrerar en publik nyckel på /.well-known/hoba/register — i utvecklingsläge får vem som helst, för vilket namn som helst; i produktläge får bara den inloggade ägaren till ett befintligt konto, och en registrering skapar aldrig ett konto — och signerar sedan serverns utmaning tillsammans med ursprunget, sfären och sitt eget nyckel-id och sin nonce. SIGNATUREN VERIFIERAS VERKLIGEN, i båda lägena: en signaturkontroll som släpper igenom vad som helst är inte schemat. Endast RSA med SHA-256 (algoritm 0)."
   },
   "auth.schemes.cookie": {
     "en": "b558e5c68d9956f1",
@@ -296,8 +296,8 @@
     "text": "VARJE ANNAT SCHEMA FÅR GÖRA BÅDA. Basic, Digest, HOBA, en sessionscookie och ett klientcertifikat bär inga omfång, så policyn för dem är hela ytan. Det är värt att läsa två gånger: en anropare som inte kan få ett omfång kan använda Basic i stället, vilket är skälet till att varje schema har en egen brytare — en driftsättning som prövar omfångshantering stänger av de andra fem."
   },
   "auth.policy.rfc": {
-    "en": "aa742405b5e3b449",
-    "text": "RFC 7644 avsnitt 2 kräver att en leverantör ska KUNNA mappa en autentiserad klient till en åtkomstkontrollpolicy. Detta är den policyn. Den är två rader eftersom den här tjänsten inte autentiserar någon i den mening som spelar roll — den är en spärr, inte ett lås."
+    "en": "01badc7fa9089572",
+    "text": "RFC 7644 avsnitt 2 kräver att en leverantör ska KUNNA mappa en autentiserad klient till en åtkomstkontrollpolicy. Detta är den policyn. Den är två rader eftersom den här tjänsten i utvecklingsläge inte autentiserar någon i den mening som spelar roll — den är en spärr, inte ett lås — och i produktläge, där varje autentiseringsuppgift verifieras, är det en verifierad anropare får göra fortfarande de här två raderna."
   },
   "auth.policy.tied": {
     "en": "695420f96b495164",
