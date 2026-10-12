@@ -720,7 +720,7 @@ var config = {
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60 // Assertion lifetime (minutes)
+    assertionLifetimeMin: 60  // Assertion lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------
