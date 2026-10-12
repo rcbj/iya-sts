@@ -306,6 +306,9 @@ const ROWS: Row[] = [
     why: 'a relationship\'s metadata is the global tier\'s' },
   { prefix: '/federation/jwks', strategy: 'local',
     why: 'a relationship\'s keys are the global tier\'s' },
+  // THE FEDERATION PAGES' SCRIPT (#580): the same file in every cell.
+  { prefix: '/federation/pages.js', strategy: 'local',
+    why: 'the federation pages\' script, the same file in every cell (#580)' },
   { prefix: '/federation/link', strategy: 'artifact', browser: true,
     segment: 3, why: 'a link handle is found where it was minted (D10)' },
   { prefix: '/federation/backchannel-logout', strategy: 'handler',
