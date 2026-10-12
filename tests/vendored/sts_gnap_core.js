@@ -539,7 +539,10 @@ async function test() {
     assert.strictEqual(r.status, 303, r.text.slice(0, 300));
     assert.ok(/\/gnap\/approve\//.test(r.location));
   });
-  approval = await reachApproval({ go: async function (m, u, f) {
+  // The browser that typed the code, its first answer the approval page
+  // the code named (its jar and its JSON requests are that browser's).
+  approval = await reachApproval({ jar: b.jar, json: b.json,
+                                   go: async function (m, u, f) {
     log.debug("Entering go().");
     if (u === "START") {
       log.debug("Leaving go().");
