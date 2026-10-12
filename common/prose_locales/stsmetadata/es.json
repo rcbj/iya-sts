@@ -2396,44 +2396,44 @@
     "text": "NON-SPEC. El único script estático que carga la página de espera bajo script-src 'self': llama a la Digital Credentials API con la solicitud de la página y envía la respuesta en un formulario real."
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "Después de un inicio de sesión con billetera en una solicitud que exige dos factores, para una persona que no tiene aplicación de autenticación ni llave de seguridad: su contraseña, comprobada como la comprueba la pantalla de inicio de sesión y con límite de frecuencia en el mismo contenedor. La sesión registra amr [\"pop\",\"pwd\"] y acr \"mfa\". Sin script."
+    "en": "9dc6755b8f15d19f",
+    "text": "Después de un inicio de sesión con billetera en una solicitud que exige dos factores, para una persona que no tiene aplicación de autenticación ni llave de seguridad: su contraseña, comprobada como la comprueba la pantalla de inicio de sesión y con límite de frecuencia en el mismo contenedor. La sesión registra amr [\"pop\",\"pwd\"] y acr \"mfa\". Una página de la superficie de inicio de sesión desde #572: la contraseña va a /authn-api/mfa/{id}/password."
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "establece la sesión de inicio de sesión una vez que la contraseña verifica"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "El paso de llave de seguridad del flujo de inicio de sesión, en CUALQUIERA de sus dos funciones: como SEGUNDO FACTOR tras el paso de contraseña (al que se llega cuando la solicitud de autorización nombró mfa en acr_values o el usuario marcó esa casilla), o como credencial PRINCIPAL sin ninguna contraseña (la casilla sin contraseña, que el llamante puede prohibir exigiendo un segundo factor). El primer uso REGISTRA una llave para ese nombre de usuario; los inicios de sesión posteriores AFIRMAN con ella. La ceremonia se verifica aquí (desafío, origen, hash del RP ID, indicadores y la firma sobre authenticatorData || SHA-256(clientDataJSON)) mediante una implementación escrita de forma independiente de la del propio depurador, para que las dos puedan contrastarse entre sí. Las funciones difieren en lo que la sesión declara después y en nada más: un segundo factor registra amr [\"pwd\",\"hwk\"] y acr \"mfa\", un inicio de sesión sin contraseña registra amr [\"hwk\"] y acr \"1\" (UN factor, ya que esta ceremonia pide la verificación del usuario como preferida y no como obligatoria) y un inicio de sesión solo con contraseña registra amr [\"pwd\"] y acr \"1\". Un userHandle devuelto debe ser aquel con el que se creó la llave (Level 3 sección 7.2 paso 6): 64 bytes aleatorios por persona desde #474, nunca el nombre de usuario. Donde allowUsernameless de la política de llaves de acceso está activo (#527), la propia pantalla de inicio de sesión (POST /authn/login, action=passkey) acepta una credencial detectable sin nombre de usuario: el handle nombra la cuenta, la verificación del usuario es obligatoria y la sesión registra amr [\"hwk\",\"user\"] y acr \"mfa\". Ambas vías con llave son autenticaciones por derecho propio, así que ambas aparecen en /admin/users y crean una entrada de directorio; el segundo factor además marca esa entrada con mfaAuthenticated TRUE. El RP ID es el host de este origen y no es configurable: WebAuthn liga una ceremonia al origen llamante, y en eso consiste toda su resistencia al phishing."
+    "en": "fc50b364018fcbd3",
+    "text": "El paso de llave de seguridad del flujo de inicio de sesión, en CUALQUIERA de sus dos funciones: como SEGUNDO FACTOR tras el paso de contraseña (al que se llega cuando la solicitud de autorización nombró mfa en acr_values o el usuario marcó esa casilla), o como credencial PRINCIPAL sin ninguna contraseña (la casilla sin contraseña, que el llamante puede prohibir exigiendo un segundo factor). El primer uso REGISTRA una llave para ese nombre de usuario; los inicios de sesión posteriores AFIRMAN con ella. La ceremonia se verifica aquí (desafío, origen, hash del RP ID, indicadores y la firma sobre authenticatorData || SHA-256(clientDataJSON)) mediante una implementación escrita de forma independiente de la del propio depurador, para que las dos puedan contrastarse entre sí. Las funciones difieren en lo que la sesión declara después y en nada más: un segundo factor registra amr [\"pwd\",\"hwk\"] y acr \"mfa\", un inicio de sesión sin contraseña registra amr [\"hwk\"] y acr \"1\" (UN factor, ya que esta ceremonia pide la verificación del usuario como preferida y no como obligatoria) y un inicio de sesión solo con contraseña registra amr [\"pwd\"] y acr \"1\". Un userHandle devuelto debe ser aquel con el que se creó la llave (Level 3 sección 7.2 paso 6): 64 bytes aleatorios por persona desde #474, nunca el nombre de usuario. Donde allowUsernameless de la política de llaves de acceso está activo (#527), la propia pantalla de inicio de sesión (POST /authn/login, action=passkey) acepta una credencial detectable sin nombre de usuario: el handle nombra la cuenta, la verificación del usuario es obligatoria y la sesión registra amr [\"hwk\",\"user\"] y acr \"mfa\". Ambas vías con llave son autenticaciones por derecho propio, así que ambas aparecen en /admin/users y crean una entrada de directorio; el segundo factor además marca esa entrada con mfaAuthenticated TRUE. El RP ID es el host de este origen y no es configurable: WebAuthn liga una ceremonia al origen llamante, y en eso consiste toda su resistencia al phishing. Una página de la superficie de inicio de sesión desde #572: su script ejecuta la ceremonia, preparada por /authn-api/mfa/{id}/webauthn/options y respondida a /authn-api/mfa/{id}/webauthn."
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "registra o afirma una llave de seguridad y después completa el inicio de sesión"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "NON-SPEC, Y ES EL ÚNICO PASO DE AUTENTICACIÓN DE AQUÍ QUE NO IMPLEMENTA NINGUNA ESPECIFICACIÓN (2026-09-10). La forma de volver a entrar cuando el segundo factor no está a mano: el teléfono se perdió o no tiene batería, la llave de seguridad está en casa. **NUNCA ES LO QUE PIDE UN INICIO DE SESIÓN**: credentials.mechanismsFor().secondFactor responde webauthn o totp y nunca esto, así que la única forma de llegar aquí es un enlace en una de esas dos pantallas, con un id de paso que la persona ya tiene. EL GET DIBUJA LA PÁGINA PARA UN PASO QUE YA EXISTE y la rechaza para alguien que no tiene ningún código sin usar: una pantalla que pide una credencial que no puede existir parece un servicio que la ha perdido. EL POST COMPRUEBA EL CÓDIGO DE VERDAD EN AMBOS MODOS y lo GASTA: un gasto fallido RECHAZA el inicio de sesión, que es lo contrario de lo que hace /authn/totp con su contador y se argumenta en common/credentials.ts: un código de un solo uso que no se puede contar es reutilizable durante noventa segundos, y un código de recuperación que no se puede marcar como gastado funciona para siempre. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] y acr \"mfa\": RFC 8176 no registra ningún valor para un código de recuperación e inventar uno pondría en amr una cadena que ninguna parte que confíe puede consultar. Con límite de frecuencia por identidad Y por dirección, mediante los mismos contenedores que el paso de código. **NO EMITE NADA NI REGISTRA A NADIE**: un conjunto se crea por el ACTO de registrar un segundo factor, una vez, en common/credentials.ts. Esta página NO TIENE SCRIPT: una persona lee una cadena de un papel y la escribe."
+    "en": "5d6ce493418b33cb",
+    "text": "NON-SPEC, Y ES EL ÚNICO PASO DE AUTENTICACIÓN DE AQUÍ QUE NO IMPLEMENTA NINGUNA ESPECIFICACIÓN (2026-09-10). La forma de volver a entrar cuando el segundo factor no está a mano: el teléfono se perdió o no tiene batería, la llave de seguridad está en casa. **NUNCA ES LO QUE PIDE UN INICIO DE SESIÓN**: credentials.mechanismsFor().secondFactor responde webauthn o totp y nunca esto, así que la única forma de llegar aquí es un enlace en una de esas dos pantallas, con un id de paso que la persona ya tiene. EL GET DIBUJA LA PÁGINA PARA UN PASO QUE YA EXISTE y la rechaza para alguien que no tiene ningún código sin usar: una pantalla que pide una credencial que no puede existir parece un servicio que la ha perdido. EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS y se GASTA (/authn-api/mfa/{id}/backup-code desde #572): un gasto fallido RECHAZA el inicio de sesión, que es lo contrario de lo que hace /authn/totp con su contador y se argumenta en common/credentials.ts: un código de un solo uso que no se puede contar es reutilizable durante noventa segundos, y un código de recuperación que no se puede marcar como gastado funciona para siempre. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] y acr \"mfa\": RFC 8176 no registra ningún valor para un código de recuperación e inventar uno pondría en amr una cadena que ninguna parte que confíe puede consultar. Con límite de frecuencia por identidad Y por dirección, mediante los mismos contenedores que el paso de código. **NO EMITE NADA NI REGISTRA A NADIE**: un conjunto se crea por el ACTO de registrar un segundo factor, una vez, en common/credentials.ts. Una página de la superficie de inicio de sesión desde #572."
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "establece la sesión de inicio de sesión una vez que un código de recuperación verifica, y lo GASTA"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "NON-SPEC (#64). Un código de seis dígitos enviado por correo a la dirección VERIFICADA de la persona, como primer factor (el «Enviarme un código de inicio de sesión por correo» de la pantalla de inicio de sesión) o como segundo (activado por elección propia en /portal/mfa), donde la política de autenticación lo permite; DESACTIVADO por defecto, porque NIST SP 800-63B-4 sección 3.1.3.1 no considera el correo electrónico un autenticador. El GET dibuja la página para un paso que existe y no envía nada; el POST envía uno (action=send) o lo comprueba. Se guarda solo como hash scrypt en el paso, válido como máximo diez minutos, una sola vez en el clúster, con un número limitado de códigos erróneos por paso, y con límite de frecuencia como el paso de código de un solo uso. Como primer factor la página es la misma exista o no la cuenta y tenga o no una dirección verificada. amr [\"otp\"] y acr \"1\" solo, o el amr del primer factor más \"otp\" y acr \"mfa\" como segundo; nunca satisface una elevación por riesgo. Sin script."
+    "en": "8f3396e530fddf0f",
+    "text": "NON-SPEC (#64). Un código de seis dígitos enviado por correo a la dirección VERIFICADA de la persona, como primer factor (el «Enviarme un código de inicio de sesión por correo» de la pantalla de inicio de sesión) o como segundo (activado por elección propia en /portal/mfa), donde la política de autenticación lo permite; DESACTIVADO por defecto, porque NIST SP 800-63B-4 sección 3.1.3.1 no considera el correo electrónico un autenticador. La página no envía nada cuando se dibuja; /authn-api/mfa/{id}/email/send envía un código y /authn-api/mfa/{id}/email/code lo comprueba (#573). Se guarda solo como hash scrypt en el paso, válido como máximo diez minutos, una sola vez en el clúster, con un número limitado de códigos erróneos por paso, y con límite de frecuencia como el paso de código de un solo uso. Como primer factor la página es la misma exista o no la cuenta y tenga o no una dirección verificada. amr [\"otp\"] y acr \"1\" solo, o el amr del primer factor más \"otp\" y acr \"mfa\" como segundo; nunca satisface una elevación por riesgo. Una página de la superficie de inicio de sesión desde #573."
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "establece la sesión de inicio de sesión una vez que un código enviado por correo verifica"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "NON-SPEC (#64). La página en la que espera una persona después de que se envíe un enlace de inicio de sesión por correo (POST, action=send), refrescada por una etiqueta <meta>. El enlace completa el inicio de sesión SOLO en el navegador que lo inició (el paso guarda el hash de una cookie establecida cuando se envió), así que el inicio de sesión continúa en la pestaña que abre el enlace, y esta página entonces lo indica. Sin script."
+    "en": "266bec13f0b03d9f",
+    "text": "NON-SPEC (#64). La página en la que espera una persona después de que se envíe un enlace de inicio de sesión por correo (/authn-api/mfa/{id}/email/send), que vuelve a preguntar cada pocos segundos. El enlace completa el inicio de sesión SOLO en el navegador que lo inició (el paso guarda el hash de una cookie establecida cuando se envió), así que el inicio de sesión continúa en la pestaña que abre el enlace, y esta página entonces lo indica. Una página de la superficie de inicio de sesión desde #573."
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "NON-SPEC (#64). El GET no gasta nada (un escáner de correo obtiene cada enlace de un mensaje) y dibuja un botón Continuar; el POST comprueba la vinculación al navegador, el hash scrypt del token, la caducidad y la reclamación de un solo uso, e inicia la sesión. Abierto en otro navegador no gasta nada e indica dónde abrirlo."
+    "en": "08229e18bcdb6b86",
+    "text": "NON-SPEC (#64). El GET no gasta nada (un escáner de correo obtiene cada enlace de un mensaje) y dibuja un botón Continuar, que envía el token a /authn-api/mfa/{id}/email-link/open (#573): allí se comprueban la vinculación al navegador, el hash scrypt del token, la caducidad y la reclamación de un solo uso, y se inicia la sesión de la persona. Abierto en otro navegador no gasta nada e indica dónde abrirlo."
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2456,24 +2456,24 @@
     "text": "guarda una contraseña nueva y reanuda el inicio de sesión"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "UN SEGUNDO FACTOR EXIGIDO A ALGUIEN QUE NO TIENE NINGUNO (2026-09-13). Un paso de contraseña que tuvo éxito para una persona a la que se le exige un segundo factor (stsMfaRequired en su entrada, establecido desde su página de /admin/users, o la política de autenticación del dominio) y que no tiene ni una aplicación de autenticación ni una llave de seguridad con rol mfa llega aquí en lugar de iniciar la sesión. Elige uno: una aplicación de autenticación se registra en esta página (un código QR que dibuja este servidor y un código que se escribe de vuelta, confirmado mediante credentials.confirmTotpEnrolment(), sesión amr [\"pwd\",\"otp\"], acr \"mfa\"), y una llave de seguridad va al registro ordinario de /authn/webauthn. El paso rechaza a cualquiera que ya tenga un segundo factor, porque registrar un segundo en un inicio de sesión es la elusión contra la que está reservada la casilla de llave de seguridad. Necesita un id ?mfa= acuñado por el paso de contraseña, así que seguirlo sin él responde 400. Sin script."
+    "en": "1576811e849d9087",
+    "text": "UN SEGUNDO FACTOR EXIGIDO A ALGUIEN QUE NO TIENE NINGUNO (2026-09-13). Un paso de contraseña que tuvo éxito para una persona a la que se le exige un segundo factor (stsMfaRequired en su entrada, establecido desde su página de /admin/users, o la política de autenticación del dominio) y que no tiene ni una aplicación de autenticación ni una llave de seguridad con rol mfa llega aquí en lugar de iniciar la sesión. Elige uno: una aplicación de autenticación se registra en esta página (un código QR que dibuja el navegador a partir del URI otpauth: y un código que se escribe de vuelta, confirmado mediante credentials.confirmTotpEnrolment(), sesión amr [\"pwd\",\"otp\"], acr \"mfa\"), y una llave de seguridad va al registro ordinario de /authn/webauthn. El paso rechaza a cualquiera que ya tenga un segundo factor, porque registrar un segundo en un inicio de sesión es la elusión contra la que está reservada la casilla de llave de seguridad. Necesita un id ?mfa= acuñado por el paso de contraseña, así que seguirlo sin él responde 400. Una página de la superficie de inicio de sesión desde #572."
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "registra una aplicación de autenticación o inicia el registro de una llave de seguridad, y después establece la sesión de inicio de sesión"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "EL SEGUNDO SEGUNDO FACTOR (2026-09-10). Un paso de contraseña que tuvo éxito para alguien con una aplicación de autenticación registrada llega aquí, y este endpoint pide los seis dígitos que muestra su aplicación. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] (el valor de RFC 8176, cuya entrada en el registro nombra RFC 4226 y RFC 6238) y acr \"mfa\", que es el único caso en que este servicio puede decir dos factores con honestidad. **EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS**, a diferencia de la contraseña que lo precede: un verificador de contraseñas de un solo uso que aceptara cualesquiera seis dígitos no sería permisivo, estaría roto, y es el argumento de SPNEGO leído por segunda vez. Con límite de frecuencia por identidad Y por dirección, porque seis dígitos son un millón de valores y este es el espacio de búsqueda más pequeño del servicio. EL GET ES EL ENLACE *usar un código en su lugar* de la pantalla de llave de seguridad y no crea nada: dibuja la página para un paso que ya existe, y la rechaza para alguien que no tiene ningún registro. **NO REGISTRA A NADIE**, que es toda la diferencia con /authn/webauthn a su lado: registrarse significa que se le muestre a uno un secreto compartido, así que ocurre en /portal/mfa o mientras se gasta un enlace de activación, y nunca en una pantalla de inicio de sesión. Esta página NO TIENE SCRIPT y se sirve bajo el script-src 'none' de todo el servicio: una persona lee dígitos y los escribe, así que la excepción que necesita la página de llave de seguridad no se aplica aquí."
+    "en": "b62d7bad9442ea5c",
+    "text": "EL SEGUNDO SEGUNDO FACTOR (2026-09-10). Un paso de contraseña que tuvo éxito para alguien con una aplicación de autenticación registrada llega aquí, y este endpoint pide los seis dígitos que muestra su aplicación. Si tiene éxito, la sesión registra amr [\"pwd\",\"otp\"] (el valor de RFC 8176, cuya entrada en el registro nombra RFC 4226 y RFC 6238) y acr \"mfa\", que es el único caso en que este servicio puede decir dos factores con honestidad. **EL CÓDIGO SE COMPRUEBA DE VERDAD EN AMBOS MODOS**, a diferencia de la contraseña que lo precede: un verificador de contraseñas de un solo uso que aceptara cualesquiera seis dígitos no sería permisivo, estaría roto, y es el argumento de SPNEGO leído por segunda vez. Con límite de frecuencia por identidad Y por dirección, porque seis dígitos son un millón de valores y este es el espacio de búsqueda más pequeño del servicio. EL GET ES EL ENLACE *usar un código en su lugar* de la pantalla de llave de seguridad y no crea nada: dibuja la página para un paso que ya existe, y la rechaza para alguien que no tiene ningún registro. **NO REGISTRA A NADIE**, que es toda la diferencia con /authn/webauthn a su lado: registrarse significa que se le muestre a uno un secreto compartido, así que ocurre en /portal/mfa o mientras se gasta un enlace de activación, y nunca en una pantalla de inicio de sesión. Una página de la superficie de inicio de sesión desde #572: el código va a /authn-api/mfa/{id}/totp."
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "establece la sesión de inicio de sesión una vez que un código verifica"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC (#571). El entorno de ejecución y los renderizadores de la superficie de inicio de sesión en un solo archivo, generado por build-typescript.sh (authn/authn-spa.js) y servido precomprimido: dibuja /authn/login, /authn/select-idp y /authn/password-change a partir de /authn-api y envía allí sus acciones. Público: nada de lo que contiene es secreto."
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC (#571). El entorno de ejecución y los renderizadores de la superficie de inicio de sesión en un solo archivo, generado por build-typescript.sh (authn/authn-spa.js) y servido precomprimido: dibuja /authn/login, /authn/select-idp, /authn/password-change y, desde #572 y #573, todos los pasos posteriores a partir de /authn-api y envía allí sus acciones. Público: nada de lo que contiene es secreto."
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2519,13 +2519,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET responde de quién es la contraseña que debe cambiar; POST guarda la nueva y continúa el inicio de sesión."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC (#572, #573). La vista de la página de un paso de segundo factor o de factor por correo (?page=), como hechos y sin palabras, y el token CSRF que llevan sus acciones; rechazada donde la página nunca podría dibujarse para el paso. El id es una capacidad al portador y nunca se registra."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC (#572). Un código de una aplicación de autenticación, comprobado en todos los modos y con límite de frecuencia; uno erróneo conserva el paso."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC (#572). Comprobado y gastado; se rechaza un código que no se puede marcar como gastado."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC (#572). Después de una billetera, con límite de frecuencia en el contenedor de inicio de sesión."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC (#572). El desafío, el RP ID, el usuario y las llaves del paso, y las opciones de la política de llaves de acceso."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC (#572). El resultado de la ceremonia, verificado: un registro donde el paso registra una llave, una aserción en otro caso, según decida el paso."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC (#572). En el paso de configuración; su secreto se dibuja a continuación."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC (#572). Su primer código, con límite de frecuencia; una sesión de dos factores si es correcto."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC (#572). El paso siguiente es el registro de la página de llave de acceso."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC (#572, #246). Solo donde el paso se ofreció: el inicio de sesión termina con la contraseña."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC (#573). Solo a la dirección verificada; un reenvío sustituye al anterior."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC (#573). Una sola vez en el clúster, con un número limitado de códigos erróneos por paso."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC (#573). El botón Continuar de la página a la que lleva el enlace, solo en el navegador que lo pidió."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC (#62 P6). Se sirve solo mientras risk.fingerprinting está activo en el dominio (404 en caso contrario), y entonces la pantalla de inicio de sesión lo carga junto a su propio script: FingerprintJS (MIT, v5; se ejecuta en el navegador y no envía nada, con su ping de uso desactivado) calcula un visitorId que el inicio de sesión envía, y el servicio guarda solo un resumen con clave de él, puntuado como un dispositivo que esta persona nunca usó. El inicio de sesión funciona sin él. Desactivado por defecto: son datos personales, y activarlo es decisión del operador, tras la evaluación de impacto en la privacidad que describe la página de puntuación de riesgo."
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "El script que ejecuta la página de llave de seguridad, en sus dos funciones: la ceremonia que realiza un segundo factor y la que realiza un inicio de sesión sin contraseña son los mismos bytes. Es un recurso aparte y no un script en línea porque este servicio establece script-src 'none' en cada respuesta por defecto; esa única página lo relaja a 'self', que es la excepción más pequeña que funciona. Un script en línea allí simplemente no se ejecutaría, con el botón sin hacer nada y sin ningún error en ninguna parte."
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",

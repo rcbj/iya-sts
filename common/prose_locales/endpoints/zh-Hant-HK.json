@@ -215,10 +215,6 @@
     "en": "e79a24977ac0a595",
     "text": "瀏覽器指紋腳本（選用）"
   },
-  "endpoints.route./authn/webauthn.js.name": {
-    "en": "b82dcc38e2ea2cd9",
-    "text": "WebAuthn 儀式腳本"
-  },
   "endpoints.route./oauth2/check_session.js.name": {
     "en": "d9f2d9b37bfe6db9",
     "text": "OP iframe 腳本"

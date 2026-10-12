@@ -2396,44 +2396,44 @@
     "text": "NON-SPEC。等待页面在 script-src 'self' 下加载的唯一静态脚本：它用页面上的请求调用 Digital Credentials API，并通过一个真正的表单提交答复。"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "在要求两个因素的请求上完成钱包登录之后，对既没有身份验证器应用也没有安全密钥的人：使用其密码，按登录界面的方式检查，并与之共用同一个速率限制桶。会话记录 amr [\"pop\",\"pwd\"] 和 acr \"mfa\"。无脚本。"
+    "en": "9dc6755b8f15d19f",
+    "text": "在要求两个因素的请求上完成钱包登录之后，对既没有身份验证器应用也没有安全密钥的人：使用其密码，按登录界面的方式检查，并与之共用同一个速率限制桶。会话记录 amr [\"pop\",\"pwd\"] 和 acr \"mfa\"。自 #572 起是登录界面的一个页面：密码发送到 /authn-api/mfa/{id}/password。"
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "密码验证通过后建立单点登录会话"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "登录流程中的安全密钥步骤，可承担其两种角色中的任一种——作为密码步骤之后的第二因素（当授权请求在 acr_values 中指定了 mfa，或用户勾选了该框时到达），或作为完全不用密码的主凭据（无密码框，调用方可以通过要求第二因素来禁止）。首次使用时为该用户名注册一个密钥；之后的登录使用它进行断言。仪式在此处验证——挑战、源、RP ID 哈希、标志，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名——由一个独立于调试器自身实现编写的实现完成，因此两者可以相互核对。两种角色的区别仅在于会话随后声明的内容：第二因素记录 amr [\"pwd\",\"hwk\"] 和 acr \"mfa\"，无密码登录记录 amr [\"hwk\"] 和 acr \"1\"——一个因素，因为此仪式要求的用户验证是 preferred 而不是 required——仅密码登录则记录 amr [\"pwd\"] 和 acr \"1\"。返回的 userHandle 必须是创建该密钥时所用的那个（Level 3 section 7.2 step 6）——自 #474 起为每人 64 个随机字节，绝不是用户名。在通行密钥策略的 allowUsernameless 开启时（#527），登录界面本身（POST /authn/login，action=passkey）接受不带用户名的可发现凭据：句柄指明账户，要求用户验证，会话记录 amr [\"hwk\",\"user\"] 和 acr \"mfa\"。两条密钥路径本身都是认证，因此都会出现在 /admin/users 上并生成目录条目；第二因素还会将该条目标记为 mfaAuthenticated TRUE。RP ID 是本源的主机，不可配置：WebAuthn 将仪式绑定到调用方的源，这就是其抗钓鱼能力的全部。"
+    "en": "fc50b364018fcbd3",
+    "text": "登录流程中的安全密钥步骤，可承担其两种角色中的任一种——作为密码步骤之后的第二因素（当授权请求在 acr_values 中指定了 mfa，或用户勾选了该框时到达），或作为完全不用密码的主凭据（无密码框，调用方可以通过要求第二因素来禁止）。首次使用时为该用户名注册一个密钥；之后的登录使用它进行断言。仪式在此处验证——挑战、源、RP ID 哈希、标志，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名——由一个独立于调试器自身实现编写的实现完成，因此两者可以相互核对。两种角色的区别仅在于会话随后声明的内容：第二因素记录 amr [\"pwd\",\"hwk\"] 和 acr \"mfa\"，无密码登录记录 amr [\"hwk\"] 和 acr \"1\"——一个因素，因为此仪式要求的用户验证是 preferred 而不是 required——仅密码登录则记录 amr [\"pwd\"] 和 acr \"1\"。返回的 userHandle 必须是创建该密钥时所用的那个（Level 3 section 7.2 step 6）——自 #474 起为每人 64 个随机字节，绝不是用户名。在通行密钥策略的 allowUsernameless 开启时（#527），登录界面本身（POST /authn/login，action=passkey）接受不带用户名的可发现凭据：句柄指明账户，要求用户验证，会话记录 amr [\"hwk\",\"user\"] 和 acr \"mfa\"。两条密钥路径本身都是认证，因此都会出现在 /admin/users 上并生成目录条目；第二因素还会将该条目标记为 mfaAuthenticated TRUE。RP ID 是本源的主机，不可配置：WebAuthn 将仪式绑定到调用方的源，这就是其抗钓鱼能力的全部。自 #572 起是登录界面的一个页面：其脚本运行仪式，由 /authn-api/mfa/{id}/webauthn/options 准备，结果发送到 /authn-api/mfa/{id}/webauthn。"
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "注册或断言安全密钥，然后完成登录"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "NON-SPEC，而且它是此处唯一不实现任何规范的认证步骤（2026-09-10）。第二因素不在手边时重新进入的途径——手机丢了或没电了，安全密钥放在家里。**它从来不是登录所索要的**：credentials.mechanismsFor().secondFactor 应答 webauthn 或 totp，绝不是这个，因此到达这里的唯一途径是那两个界面之一上的链接，带有此人已持有的步骤 id。GET 只为已存在的步骤绘制页面，并拒绝为没有未用代码的人绘制——索要一个不可能存在的凭据的界面，看起来就像一个弄丢了它的服务。POST 在两种模式下都真正检查代码并将其用掉：用掉失败会拒绝登录，这与 /authn/totp 对其计数器的处理正好相反，其论证见 common/credentials.ts——无法计数的一次性代码在九十秒内可以重放，而无法标记为已用的恢复代码则永远有效。成功时会话记录 amr [\"pwd\",\"otp\"] 和 acr \"mfa\"：RFC 8176 没有为恢复代码注册任何值，自创一个会在 amr 中放入一个任何依赖方都无法查到的字符串。按身份和地址两者进行速率限制，与代码步骤共用同样的桶。**它不颁发任何东西，也不为任何人注册**——一组代码是在注册第二因素这一行为中创建的，仅一次，见 common/credentials.ts。此页面没有脚本：人从纸上读出一串字符并输入。"
+    "en": "5d6ce493418b33cb",
+    "text": "NON-SPEC，而且它是此处唯一不实现任何规范的认证步骤（2026-09-10）。第二因素不在手边时重新进入的途径——手机丢了或没电了，安全密钥放在家里。**它从来不是登录所索要的**：credentials.mechanismsFor().secondFactor 应答 webauthn 或 totp，绝不是这个，因此到达这里的唯一途径是那两个界面之一上的链接，带有此人已持有的步骤 id。GET 只为已存在的步骤绘制页面，并拒绝为没有未用代码的人绘制——索要一个不可能存在的凭据的界面，看起来就像一个弄丢了它的服务。在两种模式下都真正检查代码并将其用掉（自 #572 起为 /authn-api/mfa/{id}/backup-code）：用掉失败会拒绝登录，这与 /authn/totp 对其计数器的处理正好相反，其论证见 common/credentials.ts——无法计数的一次性代码在九十秒内可以重放，而无法标记为已用的恢复代码则永远有效。成功时会话记录 amr [\"pwd\",\"otp\"] 和 acr \"mfa\"：RFC 8176 没有为恢复代码注册任何值，自创一个会在 amr 中放入一个任何依赖方都无法查到的字符串。按身份和地址两者进行速率限制，与代码步骤共用同样的桶。**它不颁发任何东西，也不为任何人注册**——一组代码是在注册第二因素这一行为中创建的，仅一次，见 common/credentials.ts。自 #572 起是登录界面的一个页面。"
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "恢复代码验证通过后建立单点登录会话，并将其用掉"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "NON-SPEC（#64）。一个邮寄到此人已验证地址的六位代码，作为第一因素（登录界面的“通过电子邮件向我发送登录代码”）或第二因素（在 /portal/mfa 上选择启用），前提是认证策略允许——默认关闭，因为 NIST SP 800-63B-4 section 3.1.3.1 不把电子邮件算作身份验证器。GET 为已存在的步骤绘制页面且不发送任何东西；POST 发送（action=send）或检查代码。只以 scrypt 哈希形式保存在步骤上，有效期最长十分钟，在集群中只能使用一次，每个步骤错误代码次数有上限，速率限制与一次性代码步骤相同。作为第一因素时，无论账户是否存在、是否有已验证地址，页面都一样。单独使用时为 amr [\"otp\"] 和 acr \"1\"，作为第二因素时为第一因素的 amr 加上 \"otp\" 以及 acr \"mfa\"；它永远满足不了风险升级认证。无脚本。"
+    "en": "8f3396e530fddf0f",
+    "text": "NON-SPEC（#64）。一个邮寄到此人已验证地址的六位代码，作为第一因素（登录界面的“通过电子邮件向我发送登录代码”）或第二因素（在 /portal/mfa 上选择启用），前提是认证策略允许——默认关闭，因为 NIST SP 800-63B-4 section 3.1.3.1 不把电子邮件算作身份验证器。页面绘制时不发送任何东西；/authn-api/mfa/{id}/email/send 发送代码，/authn-api/mfa/{id}/email/code 检查代码（#573）。只以 scrypt 哈希形式保存在步骤上，有效期最长十分钟，在集群中只能使用一次，每个步骤错误代码次数有上限，速率限制与一次性代码步骤相同。作为第一因素时，无论账户是否存在、是否有已验证地址，页面都一样。单独使用时为 amr [\"otp\"] 和 acr \"1\"，作为第二因素时为第一因素的 amr 加上 \"otp\" 以及 acr \"mfa\"；它永远满足不了风险升级认证。自 #573 起是登录界面的一个页面。"
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "电子邮件代码验证通过后建立单点登录会话"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "NON-SPEC（#64）。发送电子邮件登录链接（POST，action=send）之后此人等待的页面，通过 <meta> 标签刷新。该链接只在发起登录的浏览器中完成登录——步骤保存发送时所设 Cookie 的哈希——因此登录会在链接打开的选项卡中继续，随后此页面会说明这一点。无脚本。"
+    "en": "266bec13f0b03d9f",
+    "text": "NON-SPEC（#64）。发送电子邮件登录链接（/authn-api/mfa/{id}/email/send）之后此人等待的页面，每隔几秒再询问一次。该链接只在发起登录的浏览器中完成登录——步骤保存发送时所设 Cookie 的哈希——因此登录会在链接打开的选项卡中继续，随后此页面会说明这一点。自 #573 起是登录界面的一个页面。"
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "NON-SPEC（#64）。GET 不会用掉任何东西——邮件扫描程序会获取邮件中的每个链接——并绘制一个“继续”按钮；POST 检查浏览器绑定、令牌的 scrypt 哈希、过期时间和一次性使用声明，然后完成登录。在另一个浏览器中打开时不会用掉任何东西，并会说明应在哪里打开。"
+    "en": "08229e18bcdb6b86",
+    "text": "NON-SPEC（#64）。GET 不会用掉任何东西——邮件扫描程序会获取邮件中的每个链接——并绘制一个“继续”按钮，它将令牌发送到 /authn-api/mfa/{id}/email-link/open（#573）：在那里检查浏览器绑定、令牌的 scrypt 哈希、过期时间和一次性使用声明，然后让此人登录。在另一个浏览器中打开时不会用掉任何东西，并会说明应在哪里打开。"
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2456,24 +2456,24 @@
     "text": "保存新密码并继续登录"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "要求第二因素、但此人一个也没有（2026-09-13）。对于被要求提供第二因素的人——其条目上的 stsMfaRequired（在其 /admin/users 页面上设置）或本领域的认证策略——如果既没有身份验证器应用，也没有 mfa 角色的安全密钥，密码步骤成功后会来到这里而不是直接登录。此人选择其一：身份验证器应用在此页面上注册（本服务器绘制的二维码，再输入一个代码回来，经由 credentials.confirmTotpEnrolment() 确认，会话 amr [\"pwd\",\"otp\"]，acr \"mfa\"），安全密钥则转到常规的 /authn/webauthn 注册。对于已持有第二因素的人，此步骤会拒绝，因为在登录时注册第二个正是安全密钥框所要防范的绕过手段。需要由密码步骤生成的 ?mfa= id，因此不带参数访问时应答 400。无脚本。"
+    "en": "1576811e849d9087",
+    "text": "要求第二因素、但此人一个也没有（2026-09-13）。对于被要求提供第二因素的人——其条目上的 stsMfaRequired（在其 /admin/users 页面上设置）或本领域的认证策略——如果既没有身份验证器应用，也没有 mfa 角色的安全密钥，密码步骤成功后会来到这里而不是直接登录。此人选择其一：身份验证器应用在此页面上注册（浏览器根据 otpauth: URI 绘制的二维码，再输入一个代码回来，经由 credentials.confirmTotpEnrolment() 确认，会话 amr [\"pwd\",\"otp\"]，acr \"mfa\"），安全密钥则转到常规的 /authn/webauthn 注册。对于已持有第二因素的人，此步骤会拒绝，因为在登录时注册第二个正是安全密钥框所要防范的绕过手段。需要由密码步骤生成的 ?mfa= id，因此不带参数访问时应答 400。自 #572 起是登录界面的一个页面。"
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "注册身份验证器应用或开始安全密钥注册，然后建立单点登录会话"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。此页面没有脚本，在全服务范围的 script-src 'none' 下提供——人读出数字并输入，因此安全密钥页面所需的例外在这里不适用。"
+    "en": "b62d7bad9442ea5c",
+    "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。自 #572 起是登录界面的一个页面：代码发送到 /authn-api/mfa/{id}/totp。"
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "代码验证通过后建立单点登录会话"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC（#571）。登录界面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（authn/authn-spa.js）并以预压缩形式提供：它根据 /authn-api 绘制 /authn/login、/authn/select-idp 和 /authn/password-change，并把它们的操作发送到那里。公开：其中没有任何机密内容。"
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC（#571）。登录界面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（authn/authn-spa.js）并以预压缩形式提供：它根据 /authn-api 绘制 /authn/login、/authn/select-idp、/authn/password-change，以及自 #572 和 #573 起其后的每个步骤，并把它们的操作发送到那里。公开：其中没有任何机密内容。"
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2519,13 +2519,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 应答谁的密码必须更改；POST 存储新密码并继续登录。"
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC（#572、#573）。第二因素或电子邮件因素步骤页面（?page=）的视图，只有事实而没有文字，以及其操作所携带的 CSRF 令牌；在该页面永远无法为此步骤绘制时拒绝。该 id 是一种持有者能力，绝不会被记录到日志。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC（#572）。来自身份验证器应用的代码，在每种模式下都会检查并有速率限制；错误的代码会保留该步骤。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC（#572）。检查并用掉；无法标记为已用的代码会被拒绝。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC（#572）。在钱包之后，使用登录桶的速率限制。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC（#572）。该步骤的挑战、RP ID、用户和密钥，以及通行密钥策略的选项。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC（#572）。仪式的结果，经过验证：步骤注册密钥时为注册，否则为断言——由步骤决定。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC（#572）。在设置步骤中；接下来绘制其密钥。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC（#572）。其第一个代码，有速率限制；正确时得到两个因素的会话。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC（#572）。下一步是通行密钥页面的注册。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC（#572、#246）。仅在该步骤是被提供的时候：登录以密码完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC（#573）。仅发往已验证地址；重新发送会取代上一次。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC（#573）。在集群中只能使用一次，每个步骤错误代码次数有上限。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC（#573）。链接所到页面上的“继续”按钮，仅在请求该链接的浏览器中有效。"
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC（#62 P6）。仅在本领域开启 risk.fingerprinting 时提供——否则返回 404——此时登录界面会在其自身脚本旁加载它：FingerprintJS（MIT，v5；它在浏览器中运行且不发送任何东西，其使用情况上报已关闭）计算出一个由登录发送的 visitorId，服务只保留其带密钥的摘要，并将其作为此人从未用过的设备来评分。没有它，登录也能工作。默认关闭：它属于个人数据，是否开启由运营方决定，并应在风险评分页面所述的隐私影响评估之后进行。"
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "安全密钥页面在其两种角色中运行的脚本——第二因素执行的仪式和无密码登录执行的仪式是相同的字节。它是独立的资源而不是内联脚本，因为本服务默认在每个响应上设置 script-src 'none'；那一个页面将其放宽为 'self'，这是能奏效的最小例外。那里的内联脚本根本不会运行，按钮什么都不做，也不会在任何地方报错。"
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",

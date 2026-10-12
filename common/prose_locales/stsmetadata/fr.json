@@ -2396,44 +2396,44 @@
     "text": "NON-SPEC. L’unique script statique que charge la page d’attente sous script-src 'self' : il appelle la Digital Credentials API avec la requête de la page et soumet la réponse dans un vrai formulaire."
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "Après une connexion par portefeuille sur une requête exigeant deux facteurs, pour une personne qui ne détient ni application d’authentification ni clé de sécurité : son mot de passe, vérifié comme l’écran de connexion en vérifie un et soumis à la limitation de débit du même compartiment. La session enregistre amr [\"pop\",\"pwd\"] et acr \"mfa\". Aucun script."
+    "en": "9dc6755b8f15d19f",
+    "text": "Après une connexion par portefeuille sur une requête exigeant deux facteurs, pour une personne qui ne détient ni application d’authentification ni clé de sécurité : son mot de passe, vérifié comme l’écran de connexion en vérifie un et soumis à la limitation de débit du même compartiment. La session enregistre amr [\"pop\",\"pwd\"] et acr \"mfa\". Une page de la surface de connexion depuis #572 : le mot de passe est envoyé à /authn-api/mfa/{id}/password."
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "établit la session de connexion une fois le mot de passe vérifié"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "L’étape de clé de sécurité du flux de connexion, dans L’UN OU L’AUTRE de ses deux rôles — comme SECOND FACTEUR après l’étape du mot de passe (atteinte lorsque la requête d’autorisation nommait mfa dans acr_values ou que l’utilisateur a coché cette case), ou comme identifiant PRINCIPAL sans aucun mot de passe (la case sans mot de passe, que l’appelant peut interdire en exigeant un second facteur). La première utilisation ENRÔLE une clé pour ce nom d’utilisateur ; les connexions suivantes l’utilisent pour une ASSERTION. La cérémonie est vérifiée ici — défi, origine, empreinte du RP ID, indicateurs et signature sur authenticatorData || SHA-256(clientDataJSON) — par une implémentation écrite indépendamment de celle du débogueur, si bien que les deux peuvent être vérifiées l’une par l’autre. Les rôles diffèrent par ce que la session revendique ensuite et par rien d’autre : un second facteur enregistre amr [\"pwd\",\"hwk\"] et acr \"mfa\", une connexion sans mot de passe enregistre amr [\"hwk\"] et acr \"1\" — UN SEUL facteur, puisque cette cérémonie demande la vérification de l’utilisateur comme préférée plutôt qu’exigée — et une connexion par mot de passe seul enregistre amr [\"pwd\"] et acr \"1\". Un userHandle renvoyé doit être celui sous lequel la clé a été créée (Level 3 section 7.2 étape 6) — 64 octets aléatoires par personne depuis #474, jamais le nom d’utilisateur. Lorsque l’allowUsernameless de la politique des clés d’accès est activé (#527), l’écran de connexion lui-même (POST /authn/login, action=passkey) accepte un identifiant découvrable sans nom d’utilisateur : le handle nomme le compte, la vérification de l’utilisateur est exigée, et la session enregistre amr [\"hwk\",\"user\"] et acr \"mfa\". Les deux voies par clé sont des authentifications à part entière, si bien que toutes deux apparaissent sur /admin/users et créent une entrée d’annuaire ; le second facteur marque en outre cette entrée mfaAuthenticated TRUE. Le RP ID est l’hôte de cette origine et n’est pas configurable : WebAuthn lie une cérémonie à l’origine appelante, et c’est là toute sa résistance à l’hameçonnage."
+    "en": "fc50b364018fcbd3",
+    "text": "L’étape de clé de sécurité du flux de connexion, dans L’UN OU L’AUTRE de ses deux rôles — comme SECOND FACTEUR après l’étape du mot de passe (atteinte lorsque la requête d’autorisation nommait mfa dans acr_values ou que l’utilisateur a coché cette case), ou comme identifiant PRINCIPAL sans aucun mot de passe (la case sans mot de passe, que l’appelant peut interdire en exigeant un second facteur). La première utilisation ENRÔLE une clé pour ce nom d’utilisateur ; les connexions suivantes l’utilisent pour une ASSERTION. La cérémonie est vérifiée ici — défi, origine, empreinte du RP ID, indicateurs et signature sur authenticatorData || SHA-256(clientDataJSON) — par une implémentation écrite indépendamment de celle du débogueur, si bien que les deux peuvent être vérifiées l’une par l’autre. Les rôles diffèrent par ce que la session revendique ensuite et par rien d’autre : un second facteur enregistre amr [\"pwd\",\"hwk\"] et acr \"mfa\", une connexion sans mot de passe enregistre amr [\"hwk\"] et acr \"1\" — UN SEUL facteur, puisque cette cérémonie demande la vérification de l’utilisateur comme préférée plutôt qu’exigée — et une connexion par mot de passe seul enregistre amr [\"pwd\"] et acr \"1\". Un userHandle renvoyé doit être celui sous lequel la clé a été créée (Level 3 section 7.2 étape 6) — 64 octets aléatoires par personne depuis #474, jamais le nom d’utilisateur. Lorsque l’allowUsernameless de la politique des clés d’accès est activé (#527), l’écran de connexion lui-même (POST /authn/login, action=passkey) accepte un identifiant découvrable sans nom d’utilisateur : le handle nomme le compte, la vérification de l’utilisateur est exigée, et la session enregistre amr [\"hwk\",\"user\"] et acr \"mfa\". Les deux voies par clé sont des authentifications à part entière, si bien que toutes deux apparaissent sur /admin/users et créent une entrée d’annuaire ; le second facteur marque en outre cette entrée mfaAuthenticated TRUE. Le RP ID est l’hôte de cette origine et n’est pas configurable : WebAuthn lie une cérémonie à l’origine appelante, et c’est là toute sa résistance à l’hameçonnage. Une page de la surface de connexion depuis #572 : son script exécute la cérémonie, préparée par /authn-api/mfa/{id}/webauthn/options et dont le résultat est envoyé à /authn-api/mfa/{id}/webauthn."
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "enrôle une clé de sécurité ou l’utilise pour une assertion, puis achève la connexion"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "NON-SPEC, ET C’EST LA SEULE ÉTAPE D’AUTHENTIFICATION ICI QUI N’IMPLÉMENTE AUCUNE SPÉCIFICATION (2026-09-10). Le moyen de revenir lorsque le second facteur n’est pas à portée de main — le téléphone est perdu ou déchargé, la clé de sécurité est restée à la maison. **CE N’EST JAMAIS CE QUE DEMANDE UNE CONNEXION** : credentials.mechanismsFor().secondFactor répond webauthn ou totp et jamais ceci, si bien que le seul moyen d’arriver ici est un lien sur l’un de ces deux écrans, avec un identifiant d’étape que la personne détient déjà. LE GET AFFICHE LA PAGE POUR UNE ÉTAPE QUI EXISTE DÉJÀ et la refuse à quelqu’un qui ne détient aucun code non utilisé — un écran demandant un identifiant qui ne peut pas exister donne l’impression d’un service qui l’a perdu. LE POST VÉRIFIE RÉELLEMENT LE CODE DANS LES DEUX MODES et le CONSOMME : une consommation échouée REFUSE la connexion, ce qui est l’inverse de ce que fait /authn/totp avec son compteur, et c’est argumenté dans common/credentials.ts — un code à usage unique qui ne peut pas être décompté est rejouable pendant quatre-vingt-dix secondes, et un code de récupération qui ne peut pas être marqué comme utilisé fonctionne indéfiniment. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] et acr \"mfa\" : la RFC 8176 n’enregistre aucune valeur pour un code de récupération, et en inventer une placerait dans amr une chaîne qu’aucune partie de confiance ne peut consulter. Débit limité par identité ET par adresse, par les mêmes compartiments que l’étape du code. **ELLE N’ÉMET RIEN ET N’ENRÔLE PERSONNE** — un jeu est créé par l’ACTE d’enrôler un second facteur, une fois, dans common/credentials.ts. Cette page n’a AUCUN SCRIPT : une personne lit une chaîne sur papier et la saisit."
+    "en": "5d6ce493418b33cb",
+    "text": "NON-SPEC, ET C’EST LA SEULE ÉTAPE D’AUTHENTIFICATION ICI QUI N’IMPLÉMENTE AUCUNE SPÉCIFICATION (2026-09-10). Le moyen de revenir lorsque le second facteur n’est pas à portée de main — le téléphone est perdu ou déchargé, la clé de sécurité est restée à la maison. **CE N’EST JAMAIS CE QUE DEMANDE UNE CONNEXION** : credentials.mechanismsFor().secondFactor répond webauthn ou totp et jamais ceci, si bien que le seul moyen d’arriver ici est un lien sur l’un de ces deux écrans, avec un identifiant d’étape que la personne détient déjà. LE GET AFFICHE LA PAGE POUR UNE ÉTAPE QUI EXISTE DÉJÀ et la refuse à quelqu’un qui ne détient aucun code non utilisé — un écran demandant un identifiant qui ne peut pas exister donne l’impression d’un service qui l’a perdu. LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES et CONSOMMÉ (/authn-api/mfa/{id}/backup-code depuis #572) : une consommation échouée REFUSE la connexion, ce qui est l’inverse de ce que fait /authn/totp avec son compteur, et c’est argumenté dans common/credentials.ts — un code à usage unique qui ne peut pas être décompté est rejouable pendant quatre-vingt-dix secondes, et un code de récupération qui ne peut pas être marqué comme utilisé fonctionne indéfiniment. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] et acr \"mfa\" : la RFC 8176 n’enregistre aucune valeur pour un code de récupération, et en inventer une placerait dans amr une chaîne qu’aucune partie de confiance ne peut consulter. Débit limité par identité ET par adresse, par les mêmes compartiments que l’étape du code. **ELLE N’ÉMET RIEN ET N’ENRÔLE PERSONNE** — un jeu est créé par l’ACTE d’enrôler un second facteur, une fois, dans common/credentials.ts. Une page de la surface de connexion depuis #572."
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "établit la session de connexion une fois un code de récupération vérifié, et le CONSOMME"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "NON-SPEC (#64). Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne, comme premier facteur (« M’envoyer un code de connexion par e-mail » sur l’écran de connexion) ou comme second (activé sur /portal/mfa), lorsque la politique d’authentification le permet — DÉSACTIVÉ par défaut, car la section 3.1.3.1 du NIST SP 800-63B-4 ne compte pas l’e-mail comme authentificateur. Le GET affiche la page pour une étape existante et n’envoie rien ; le POST en envoie un (action=send) ou en vérifie un. Conservé uniquement sous forme d’empreinte scrypt sur l’étape, valide au plus dix minutes, une seule fois pour le cluster, un nombre limité de codes erronés par étape, avec une limitation de débit identique à celle de l’étape du code à usage unique. Comme premier facteur, la page est identique que le compte existe ou non et qu’il ait ou non une adresse vérifiée. amr [\"otp\"] et acr \"1\" seul ; l’amr du premier facteur plus \"otp\" et acr \"mfa\" comme second ; il ne satisfait jamais une authentification renforcée liée au risque. Aucun script."
+    "en": "8f3396e530fddf0f",
+    "text": "NON-SPEC (#64). Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne, comme premier facteur (« M’envoyer un code de connexion par e-mail » sur l’écran de connexion) ou comme second (activé sur /portal/mfa), lorsque la politique d’authentification le permet — DÉSACTIVÉ par défaut, car la section 3.1.3.1 du NIST SP 800-63B-4 ne compte pas l’e-mail comme authentificateur. La page n’envoie rien lorsqu’elle est affichée ; /authn-api/mfa/{id}/email/send envoie un code et /authn-api/mfa/{id}/email/code en vérifie un (#573). Conservé uniquement sous forme d’empreinte scrypt sur l’étape, valide au plus dix minutes, une seule fois pour le cluster, un nombre limité de codes erronés par étape, avec une limitation de débit identique à celle de l’étape du code à usage unique. Comme premier facteur, la page est identique que le compte existe ou non et qu’il ait ou non une adresse vérifiée. amr [\"otp\"] et acr \"1\" seul ; l’amr du premier facteur plus \"otp\" et acr \"mfa\" comme second ; il ne satisfait jamais une authentification renforcée liée au risque. Une page de la surface de connexion depuis #573."
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "établit la session de connexion une fois un code envoyé par e-mail vérifié"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "NON-SPEC (#64). La page sur laquelle une personne attend après l’envoi d’un lien de connexion par e-mail (POST, action=send), rafraîchie par une balise <meta>. Le lien n’achève la connexion QUE dans le navigateur qui l’a démarrée — l’étape conserve l’empreinte d’un cookie défini lors de l’envoi — si bien que la connexion se poursuit dans l’onglet qu’ouvre le lien, et cette page l’indique alors. Aucun script."
+    "en": "266bec13f0b03d9f",
+    "text": "NON-SPEC (#64). La page sur laquelle une personne attend après l’envoi d’un lien de connexion par e-mail (/authn-api/mfa/{id}/email/send), qui redemande toutes les quelques secondes. Le lien n’achève la connexion QUE dans le navigateur qui l’a démarrée — l’étape conserve l’empreinte d’un cookie défini lors de l’envoi — si bien que la connexion se poursuit dans l’onglet qu’ouvre le lien, et cette page l’indique alors. Une page de la surface de connexion depuis #573."
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "NON-SPEC (#64). Le GET ne consomme rien — un analyseur de courrier récupère chaque lien d’un message — et affiche un bouton Continuer ; le POST vérifie la liaison au navigateur, l’empreinte scrypt du jeton, l’expiration et la revendication d’usage unique, puis connecte. Ouvert dans un autre navigateur, il ne consomme rien et indique où l’ouvrir."
+    "en": "08229e18bcdb6b86",
+    "text": "NON-SPEC (#64). Le GET ne consomme rien — un analyseur de courrier récupère chaque lien d’un message — et affiche un bouton Continuer, qui envoie le jeton à /authn-api/mfa/{id}/email-link/open (#573) : la liaison au navigateur, l’empreinte scrypt du jeton, l’expiration et la revendication d’usage unique y sont vérifiées, et la personne est connectée. Ouvert dans un autre navigateur, il ne consomme rien et indique où l’ouvrir."
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2456,24 +2456,24 @@
     "text": "enregistre un nouveau mot de passe et reprend la connexion"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "UN SECOND FACTEUR EXIGÉ DE QUELQU’UN QUI N’EN DÉTIENT AUCUN (2026-09-13). Une étape de mot de passe réussie pour une personne de qui un second facteur est exigé — stsMfaRequired sur son entrée, défini depuis sa page /admin/users, ou la politique d’authentification du domaine — et qui ne détient ni application d’authentification ni clé de sécurité de rôle mfa aboutit ici au lieu de la connecter. Elle en choisit un : une application d’authentification est enrôlée sur cette page (un code QR dessiné par ce serveur et un code saisi en retour, confirmé par credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), et une clé de sécurité passe par l’enregistrement ordinaire de /authn/webauthn. L’étape refuse quiconque détient déjà un second facteur, car en enrôler un second lors d’une connexion est le contournement contre lequel la case de clé de sécurité est réservée. Requiert un identifiant ?mfa= émis par l’étape du mot de passe, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres. Aucun script."
+    "en": "1576811e849d9087",
+    "text": "UN SECOND FACTEUR EXIGÉ DE QUELQU’UN QUI N’EN DÉTIENT AUCUN (2026-09-13). Une étape de mot de passe réussie pour une personne de qui un second facteur est exigé — stsMfaRequired sur son entrée, défini depuis sa page /admin/users, ou la politique d’authentification du domaine — et qui ne détient ni application d’authentification ni clé de sécurité de rôle mfa aboutit ici au lieu de la connecter. Elle en choisit un : une application d’authentification est enrôlée sur cette page (un code QR que le navigateur dessine à partir de l’URI otpauth: et un code saisi en retour, confirmé par credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), et une clé de sécurité passe par l’enregistrement ordinaire de /authn/webauthn. L’étape refuse quiconque détient déjà un second facteur, car en enrôler un second lors d’une connexion est le contournement contre lequel la case de clé de sécurité est réservée. Requiert un identifiant ?mfa= émis par l’étape du mot de passe, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres. Une page de la surface de connexion depuis #572."
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "enrôle une application d’authentification ou démarre l’enregistrement d’une clé de sécurité, puis établit la session de connexion"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Cette page n’a AUCUN SCRIPT et est servie sous le script-src 'none' de tout le service — une personne lit des chiffres et les saisit, si bien que l’exception dont a besoin la page de clé de sécurité ne s’applique pas ici."
+    "en": "b62d7bad9442ea5c",
+    "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Une page de la surface de connexion depuis #572 : le code est envoyé à /authn-api/mfa/{id}/totp."
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "établit la session de connexion une fois un code vérifié"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC (#571). Le moteur d’exécution et les moteurs de rendu de la surface de connexion en un seul fichier, construit par build-typescript.sh (authn/authn-spa.js) et servi précompressé : il affiche /authn/login, /authn/select-idp et /authn/password-change à partir de /authn-api et y envoie leurs actions. Public : rien de ce qu’il contient n’est secret."
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC (#571). Le moteur d’exécution et les moteurs de rendu de la surface de connexion en un seul fichier, construit par build-typescript.sh (authn/authn-spa.js) et servi précompressé : il affiche /authn/login, /authn/select-idp, /authn/password-change et, depuis #572 et #573, chaque étape qui les suit à partir de /authn-api et y envoie leurs actions. Public : rien de ce qu’il contient n’est secret."
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2519,13 +2519,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET répond quel est le compte dont le mot de passe doit changer ; POST enregistre le nouveau et poursuit la connexion."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC (#572, #573). La vue de la page d’une étape de second facteur ou de facteur par e-mail (?page=), sous forme de faits et sans aucun texte, et le jeton CSRF que portent ses actions ; refusée là où la page ne pourrait jamais être affichée pour l’étape. L’identifiant est une capacité au porteur et n’est jamais journalisé."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC (#572). Un code d’une application d’authentification, vérifié dans tous les modes et soumis à une limitation de débit ; un code erroné conserve l’étape."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC (#572). Vérifié et consommé ; un code qui ne peut pas être marqué comme utilisé est refusé."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC (#572). Après un portefeuille, avec la limitation de débit du compartiment de connexion."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC (#572). Le défi, le RP ID, l’utilisateur et les clés de l’étape, et les options de la politique des clés d’accès."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC (#572). Le résultat de la cérémonie, vérifié : un enregistrement là où l’étape enrôle une clé, une assertion sinon — c’est l’étape qui en décide."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC (#572). À l’étape de configuration ; son secret est affiché ensuite."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC (#572). Son premier code, avec limitation de débit ; une session de deux facteurs s’il est correct."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC (#572). L’étape suivante est l’enregistrement de la page de clé d’accès."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC (#572, #246). Uniquement là où l’étape a été proposée : la connexion s’achève sur le mot de passe."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC (#573). À l’adresse vérifiée uniquement ; un nouvel envoi remplace le précédent."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC (#573). Une seule fois pour le cluster, un nombre limité de codes erronés par étape."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC (#573). Le bouton Continuer de la page sur laquelle arrive le lien, uniquement dans le navigateur qui l’a demandé."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC (#62 P6). Servi uniquement lorsque risk.fingerprinting est activé dans le domaine — 404 sinon — et l’écran de connexion le charge alors à côté de son propre script : FingerprintJS (MIT, v5 ; il s’exécute dans le navigateur et n’envoie rien, son ping d’utilisation étant désactivé) calcule un visitorId que la connexion envoie, et le service n’en conserve qu’un condensé à clé, évalué comme un appareil que cette personne n’a jamais utilisé. La connexion fonctionne sans lui. Désactivé par défaut : il s’agit de données personnelles, et l’activer relève de la décision de l’opérateur, après l’analyse d’impact relative à la protection des données que décrit la page d’évaluation des risques."
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "Le script qu’exécute la page de clé de sécurité, dans ses deux rôles — la cérémonie qu’effectue un second facteur et celle qu’effectue une connexion sans mot de passe sont les mêmes octets. C’est une ressource distincte plutôt qu’un script en ligne, car ce service définit script-src 'none' sur chaque réponse par défaut ; cette seule page l’assouplit à 'self', soit la plus petite exception qui fonctionne. Un script en ligne ne s’y exécuterait tout simplement pas, le bouton ne faisant rien et aucune erreur n’apparaissant nulle part."
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",
