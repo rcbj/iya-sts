@@ -31,14 +31,6 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS，sslmode=prefer——僅透過 TLS 連線：對於 prefer，libpq 會退回為明文連線，而本服務絕不這麼做；伺服器證書「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉）。無論如何連線都是加密的。"
   },
-  "persistence.status.tlsVerifyModeVerified": {
-    "en": "d0f0103a58a0771c",
-    "text": "TLS，sslmode={{sslmode}}；伺服器證書會以此程序的信任錨點驗證，因為 persistence.databaseTlsRejectUnauthorized 已開啟——在此由該設定決定，而非 sslmode。"
-  },
-  "persistence.status.tlsVerifyModeUnverified": {
-    "en": "7e1c0146c2ab82ec",
-    "text": "TLS，sslmode={{sslmode}}——但伺服器證書「不」驗證：本服務是否驗證取決於 persistence.databaseTlsRejectUnauthorized（已關閉），而非 sslmode。連線是加密的，但伺服器的身分未經驗證。"
-  },
   "postgres.probes.size.what": {
     "en": "5bfdc024932105aa",
     "text": "此數據庫佔用多少磁碟空間。"

@@ -47,14 +47,6 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS, sslmode=prefer — sa TLS lang dina-dial: babagsak ang libpq sa connection na plaintext para sa prefer, at hindi iyon kailanman ginagawa ng serbisyong ito; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized). Naka-encrypt ang connection sa alinmang kaso."
   },
-  "persistence.status.tlsVerifyModeVerified": {
-    "en": "d0f0103a58a0771c",
-    "text": "TLS, sslmode={{sslmode}}; vine-verify ang server certificate laban sa mga trust anchor ng process na ito, dahil naka-on ang persistence.databaseTlsRejectUnauthorized — ang setting na iyon ang nagpapasya rito, hindi ang sslmode."
-  },
-  "persistence.status.tlsVerifyModeUnverified": {
-    "en": "7e1c0146c2ab82ec",
-    "text": "TLS, sslmode={{sslmode}} — pero HINDI vine-verify ang server certificate: kinukuha ng serbisyong ito ang verification mula sa persistence.databaseTlsRejectUnauthorized, na naka-off, at hindi mula sa sslmode. Naka-encrypt ang connection at hindi authenticated ang server."
-  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "HINDI DINA-DIAL — humihingi ang sslmode={{sslmode}} ng connection na plaintext, na hindi kailanman binubuksan ng serbisyong ito, kaya hindi ito nagsisimula sa connection string na ito."
