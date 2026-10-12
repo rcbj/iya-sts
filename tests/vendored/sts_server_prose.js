@@ -130,6 +130,26 @@ function shapeOf(value, path, out) {
   return out ? into : Array.from(into).sort();
 }
 
+// The members of a page that are RECORDS rather than prose: what they hold
+// changes between the English read and the French one whenever anything
+// happens on the stack in between, and an audit event's `detail` has members
+// of its own per action (`before` and `after` on a change, none on a sign-in),
+// so even folded to `[]` their shape is the data's, not the page's. None of
+// them is translated — an event is what happened, in the words it was
+// recorded in — so leaving them out loses nothing this job asks.
+const DATA = { "/audit": ["events"] };
+
+function withoutData(page, body) {
+  log.debug("Entering withoutData().");
+  (DATA[page] || []).forEach(function (name) {
+    if (body && typeof body === "object") {
+      delete body[name];
+    }
+  });
+  log.debug("Leaving withoutData().");
+  return body;
+}
+
 // Every string of an answer, in order.
 function stringsOf(value, out) {
   log.debug("Entering stringsOf().");
@@ -257,8 +277,8 @@ async function test() {
                fr.status);
       continue;
     }
-    const a = JSON.parse(enBody);
-    const b = JSON.parse(frBody);
+    const a = withoutData(page, JSON.parse(enBody));
+    const b = withoutData(page, JSON.parse(frBody));
     check(page + ": the same shape, and some prose in French", function () {
       assert.deepStrictEqual(shapeOf(b), shapeOf(a), page);
       const sa = stringsOf(a);
