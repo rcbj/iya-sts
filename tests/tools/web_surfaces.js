@@ -52,7 +52,8 @@ const log = require('bunyan').createLogger({ name: 'web_surfaces_table',
  * browser's `WebI18n` builds it (`ns.key` → message, along a chain).
  *
  * @param {string} root - the repository root
- * @param {string} ns - the namespace
+ * @param {string|string[]} ns - the namespace, or several (#573: the
+ *   sign-in surface draws `authn` and `emailFactor`)
  * @param {string[]} chain - the catalogs, most preferred first
  * @returns {object} the translator
  */
@@ -62,10 +63,12 @@ function translatorFor(root, ns, chain) {
   const catalogs = {};
   chain.forEach(function (tag) {
     const flat = {};
-    const own = JSON.parse(fs.readFileSync(path.join(root, 'common',
-      'locales', ns, tag + '.json'), 'utf8'));
-    Object.keys(own).forEach(function (key) {
-      flat[ns + '.' + key] = own[key];
+    [].concat(ns).forEach(function (one) {
+      const own = JSON.parse(fs.readFileSync(path.join(root, 'common',
+        'locales', one, tag + '.json'), 'utf8'));
+      Object.keys(own).forEach(function (key) {
+        flat[one + '.' + key] = own[key];
+      });
     });
     catalogs[tag] = flat;
   });
@@ -135,11 +138,12 @@ function homeCases(root) {
  */
 function authnCases(root) {
   log.debug("Entering authnCases().");
-  const en = { t: translatorFor(root, 'authn', ['en']), query: {},
+  const en = { t: translatorFor(root, ['authn', 'emailFactor'], ['en']),
+               query: {},
                prefix: '', origin: 'https://sts.example',
                here: '/authn/login?authn=abc', error: '', autofill: true };
   const fr = Object.assign({}, en,
-    { t: translatorFor(root, 'authn', ['fr', 'en']) });
+    { t: translatorFor(root, ['authn', 'emailFactor'], ['fr', 'en']) });
   const partner = { id: 'acme-saml', label: 'Acme <SAML> & co',
     protocolLabel: 'SAML 2.0', peer: 'https://idp.acme.example',
     href: '/federation/login/acme-saml?returnTo=%2Foauth2%2Fauthorize' };
@@ -313,6 +317,117 @@ function walletCases(root) {
       view: { wallet: 'refused', heading: 'Nothing is waiting for this ' +
               'sign-in', retry: '', verdict: '', checks: [], back: '',
               backKind: 'none' } }
+  ].concat(stepCases(en, fr));
+}
+
+/**
+ * The steps after the screen (#572, #573): every second-factor page, the
+ * set-up step's choice and its authenticator app's secret (the QR code
+ * drawn from the `otpauth:` URI), and every state of the emailed factor's
+ * pages, in English and in French, with refusals and notices over them.
+ *
+ * @param {object} en - the English context
+ * @param {object} fr - the French context
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function stepCases(en, fr) {
+  log.debug("Entering stepCases().");
+  const links = { totp: true, webauthn: false, wallet: true, password: true,
+                  email: 'link', backup: true };
+  const none = { totp: false, webauthn: false, wallet: false,
+                 password: false, email: '', backup: false };
+  const step = { id: 'mfa1', username: 'dana <d>', passwordless: false };
+  const refused = Object.assign({}, en, { error: 'That code is not right.' });
+  const others = { totp: true, webauthn: true, password: true,
+                   backup: true };
+  const email = { kind: 'code', id: 'mfa2', primary: false,
+                  username: 'erin', address: 'e***@example.org',
+                  minutes: 10, seconds: 4, notice: '', others: others };
+  log.debug("Leaving stepCases().");
+  return [
+    { label: 'the one-time code, every way round, refused',
+      path: '/authn/totp', ctx: refused,
+      view: Object.assign({ page: 'totp', links: Object.assign({}, links,
+        { totp: false, webauthn: true }),
+        totp: { digits: 8, period: 60 } }, step) },
+    { label: 'the passkey step: an assertion, in French',
+      path: '/authn/webauthn', ctx: fr,
+      view: Object.assign({ page: 'webauthn', links: links,
+        webauthn: { mode: 'get', passwordless: false, choices: [],
+          chosen: { id: 'AAAA', name: 'Key <one>' }, problem: '',
+          rpId: 'sts.example', widened: true, challenge: 'Q2hhbA',
+          attestation: 'direct', algorithms: ['-7', '-257'],
+          userVerification: 'required', residentKey: 'preferred',
+          attachment: 'any' } }, step) },
+    { label: 'the passkey step: a registration, passwordless, RP refused',
+      path: '/authn/webauthn', ctx: en,
+      view: Object.assign({ page: 'webauthn', links: none,
+        webauthn: { mode: 'create', passwordless: true, choices: [],
+          chosen: null, problem: 'The RP ID does not fit.',
+          rpId: 'sts.example', widened: false, challenge: 'Q2hhbA',
+          attestation: 'none', algorithms: ['-7'],
+          userVerification: 'preferred', residentKey: 'required',
+          attachment: 'platform' } }, step, { passwordless: true }) },
+    { label: 'the passkey step: choosing one of several',
+      path: '/authn/webauthn', ctx: en,
+      view: Object.assign({ page: 'webauthn', links: none,
+        webauthn: { mode: 'get', passwordless: false,
+          choices: [{ id: 'AAAA', name: 'Phone' },
+                    { id: 'BBBB', name: 'Desk & key' }],
+          chosen: null, problem: '', rpId: 'sts.example', widened: false,
+          challenge: 'Q2hhbA', attestation: 'direct', algorithms: ['-7'],
+          userVerification: 'preferred', residentKey: 'discouraged',
+          attachment: 'any' } }, step) },
+    { label: 'the recovery code, three left',
+      path: '/authn/backup-code', ctx: fr,
+      view: Object.assign({ page: 'backup-code', links: none,
+        backup: { factor: 'passkey', back: 'webauthn', remaining: 3,
+                  total: 10, low: true } }, step) },
+    { label: 'the password after a wallet',
+      path: '/authn/password-factor', ctx: refused,
+      view: Object.assign({ page: 'password', amr: ['pop', 'pwd'],
+        links: Object.assign({}, none, { totp: true }) }, step) },
+    { label: 'the set-up step, offered, every factor',
+      path: '/authn/mfa-setup', ctx: en,
+      view: Object.assign({ page: 'setup', links: none,
+        setup: { state: 'choose', offered: { totp: true, webauthn: true },
+                 optional: true, proved: false, totp: null } }, step) },
+    { label: 'the set-up step\'s authenticator app, in French',
+      path: '/authn/mfa-setup', ctx: fr,
+      view: Object.assign({ page: 'setup', links: none,
+        setup: { state: 'totp', offered: { totp: true, webauthn: false },
+          optional: false, proved: false,
+          totp: { uri: 'otpauth://totp/IYA%20STS:dana?secret=JBSWY3DPEHPK3' +
+                       'PXP&issuer=IYA%20STS&algorithm=SHA1&digits=6&' +
+                       'period=30',
+                  secret: 'JBSW Y3DP EHPK 3PXP', algorithm: 'HMAC-SHA-1',
+                  digits: 6, period: 30 } } }, step) },
+    { label: 'the emailed factor: asked before anything is mailed',
+      path: '/authn/email-code', ctx: en,
+      view: Object.assign({}, email, { state: 'ask' }) },
+    { label: 'the emailed code, sent again, in French',
+      path: '/authn/email-code', ctx: Object.assign({}, fr,
+                                                    { notice: 'resent' }),
+      view: Object.assign({}, email, { state: 'code' }) },
+    { label: 'the emailed code as a first factor, refused',
+      path: '/authn/email-code', ctx: refused,
+      view: Object.assign({}, email, { state: 'code', primary: true,
+        address: '', others: { totp: false, webauthn: false,
+                               password: false, backup: false } }) },
+    { label: 'the mailed link\'s waiting page',
+      path: '/authn/email-link', ctx: en,
+      view: Object.assign({}, email, { kind: 'link', state: 'wait',
+        notice: 'The message could not be sent just now.' }) },
+    { label: 'the waiting tab after the link was opened',
+      path: '/authn/email-link', ctx: fr, view: { state: 'elsewhere' } },
+    { label: 'where the mailed link lands',
+      path: '/authn/email-link/open', ctx: en,
+      view: { state: 'open', id: 'mfa2', username: 'erin' } },
+    { label: 'an emailed factor\'s end page',
+      path: '/authn/email-link/open', ctx: en,
+      view: { state: 'end', title: 'Open it where you started',
+              sentence: 'This link works only in the browser where you ' +
+                        'started signing in.' } }
   ];
 }
 

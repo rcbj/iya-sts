@@ -1447,13 +1447,61 @@
     "en": "f2d18b738357010b",
     "text": "Un changement de mot de passe imposé"
   },
+  "endpoints.route./authn-api/mfa/:id.name": {
+    "en": "b881ffb2600f827e",
+    "text": "Ce qu'affiche la page d'une étape de connexion"
+  },
+  "endpoints.route./authn-api/mfa/:id/totp.name": {
+    "en": "22a350cbbceaa429",
+    "text": "Vérifier un code à usage unique"
+  },
+  "endpoints.route./authn-api/mfa/:id/backup-code.name": {
+    "en": "f3e3fe66753f9114",
+    "text": "Consommer un code de récupération"
+  },
+  "endpoints.route./authn-api/mfa/:id/password.name": {
+    "en": "e59ea53b9b75ba40",
+    "text": "Vérifier un mot de passe comme second facteur"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn/options.name": {
+    "en": "f11cdfd17fc8a238",
+    "text": "Préparer la cérémonie d'une étape de clé d'accès"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn.name": {
+    "en": "243864657b195912",
+    "text": "Achever une étape de clé d'accès"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/totp.name": {
+    "en": "09679d4354c9ec13",
+    "text": "Commencer à configurer une application d'authentification"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/confirm.name": {
+    "en": "34a1798b4970fcf5",
+    "text": "Confirmer une application d'authentification"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/webauthn.name": {
+    "en": "731e67b177c594f5",
+    "text": "Choisir une clé d'accès à l'étape de configuration"
+  },
+  "endpoints.route./authn-api/mfa/:id/skip.name": {
+    "en": "d412e3d8a9215328",
+    "text": "Ignorer un second facteur proposé"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/send.name": {
+    "en": "f974b23b7838f712",
+    "text": "Envoyer par e-mail un code ou un lien de connexion"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/code.name": {
+    "en": "73fb62565006f03f",
+    "text": "Vérifier un code envoyé par e-mail"
+  },
+  "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
+    "en": "7d4cd6f48237ebb7",
+    "text": "Consommer un lien de connexion envoyé par e-mail"
+  },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
     "text": "Script d’empreinte du navigateur (facultatif)"
-  },
-  "endpoints.route./authn/webauthn.js.name": {
-    "en": "b82dcc38e2ea2cd9",
-    "text": "Script de la cérémonie WebAuthn"
   },
   "endpoints.route./oauth2/check_session.name": {
     "en": "267337fd3ad0ab7f",

@@ -2384,44 +2384,44 @@
     "text": "回應登入介面的外殼；其指令碼在錢包回應後於 /authn-api/wallet 完成登入"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "在要求兩個要素的請求上完成錢包登入之後，對於沒有驗證器應用程式或安全金鑰的人：其密碼，檢查方式與登入畫面相同，並使用相同的速率限制桶。工作階段記錄 amr [\"pop\",\"pwd\"] 與 acr \"mfa\"。沒有指令碼。"
+    "en": "9dc6755b8f15d19f",
+    "text": "在要求兩個要素的請求上完成錢包登入之後，對於沒有驗證器應用程式或安全金鑰的人：其密碼，檢查方式與登入畫面相同，並使用相同的速率限制桶。工作階段記錄 amr [\"pop\",\"pwd\"] 與 acr \"mfa\"。自 #572 起是登入介面的一個頁面：密碼傳送至 /authn-api/mfa/{id}/password。"
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "密碼驗證通過後建立單一登入工作階段"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "登入流程的安全金鑰步驟，可扮演其兩種角色中的「任一種」——作為密碼步驟之後的「第二要素」（當授權請求在 acr_values 中指名 mfa 或使用者勾選該方塊時抵達），或作為完全不需密碼的「主要」認證（無密碼方塊，呼叫端可藉由要求第二要素來禁止）。首次使用會為該使用者名稱「註冊」金鑰；之後的登入則以其「判斷提示」。儀式在這裡驗證——挑戰、來源、RP ID 雜湊、旗標，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章——由一個獨立於偵錯工具自身實作而撰寫的實作進行，讓兩者可以互相核對。兩種角色的差異僅在於工作階段隨後宣告的內容：第二要素記錄 amr [\"pwd\",\"hwk\"] 與 acr \"mfa\"，無密碼登入記錄 amr [\"hwk\"] 與 acr \"1\"——「一個」要素，因為此儀式將使用者驗證設為偏好而非必要——而僅密碼登入記錄 amr [\"pwd\"] 與 acr \"1\"。傳回的 userHandle 必須是建立金鑰時所用的那一個（Level 3 section 7.2 step 6）——自 #474 起每人 64 個隨機位元組，絕不是使用者名稱。在通行金鑰原則的 allowUsernameless 開啟時（#527），登入畫面本身（POST /authn/login，action=passkey）接受不帶使用者名稱的可探索認證：控點指名帳戶，使用者驗證為必要，工作階段記錄 amr [\"hwk\",\"user\"] 與 acr \"mfa\"。兩條金鑰途徑本身都是驗證，因此兩者都會出現在 /admin/users 上並建立目錄項目；第二要素另外會將該項目標記為 mfaAuthenticated TRUE。RP ID 是此來源的主機，且不可設定：WebAuthn 將儀式繫結至呼叫來源，而這就是其抗網路釣魚能力的全部。"
+    "en": "fc50b364018fcbd3",
+    "text": "登入流程的安全金鑰步驟，可扮演其兩種角色中的「任一種」——作為密碼步驟之後的「第二要素」（當授權請求在 acr_values 中指名 mfa 或使用者勾選該方塊時抵達），或作為完全不需密碼的「主要」認證（無密碼方塊，呼叫端可藉由要求第二要素來禁止）。首次使用會為該使用者名稱「註冊」金鑰；之後的登入則以其「判斷提示」。儀式在這裡驗證——挑戰、來源、RP ID 雜湊、旗標，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章——由一個獨立於偵錯工具自身實作而撰寫的實作進行，讓兩者可以互相核對。兩種角色的差異僅在於工作階段隨後宣告的內容：第二要素記錄 amr [\"pwd\",\"hwk\"] 與 acr \"mfa\"，無密碼登入記錄 amr [\"hwk\"] 與 acr \"1\"——「一個」要素，因為此儀式將使用者驗證設為偏好而非必要——而僅密碼登入記錄 amr [\"pwd\"] 與 acr \"1\"。傳回的 userHandle 必須是建立金鑰時所用的那一個（Level 3 section 7.2 step 6）——自 #474 起每人 64 個隨機位元組，絕不是使用者名稱。在通行金鑰原則的 allowUsernameless 開啟時（#527），登入畫面本身（POST /authn/login，action=passkey）接受不帶使用者名稱的可探索認證：控點指名帳戶，使用者驗證為必要，工作階段記錄 amr [\"hwk\",\"user\"] 與 acr \"mfa\"。兩條金鑰途徑本身都是驗證，因此兩者都會出現在 /admin/users 上並建立目錄項目；第二要素另外會將該項目標記為 mfaAuthenticated TRUE。RP ID 是此來源的主機，且不可設定：WebAuthn 將儀式繫結至呼叫來源，而這就是其抗網路釣魚能力的全部。自 #572 起是登入介面的一個頁面：其指令碼執行儀式，由 /authn-api/mfa/{id}/webauthn/options 準備，結果傳送至 /authn-api/mfa/{id}/webauthn。"
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "註冊或判斷提示安全金鑰，然後完成登入"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "非規範，而且它是此處唯一沒有實作任何規格的驗證步驟（2026-09-10）。當第二要素不在手邊時——手機遺失或沒電、安全金鑰放在家裡——重新進入的途徑。**它從來不是登入所要求的**：credentials.mechanismsFor().secondFactor 回答 webauthn 或 totp，從不是這個，因此到達這裡的唯一途徑是那兩個畫面之一上的連結，附上該人已持有的步驟 id。「GET 為已存在的步驟繪製頁面」，並對沒有任何未使用代碼的人拒絕——要求一個不可能存在之認證的畫面，看起來就像服務把它弄丟了。「POST 在兩種模式下都真正檢查代碼」並將其「用掉」：用掉失敗會「拒絕」登入，這與 /authn/totp 對其計數器的做法相反，其論證見 common/credentials.ts——無法計數的一次性代碼可在九十秒內重放，而無法標記為已使用的復原碼則永遠有效。成功時工作階段記錄 amr [\"pwd\",\"otp\"] 與 acr \"mfa\"：RFC 8176 沒有為復原碼註冊任何值，自創一個會在 amr 中放入一個沒有信賴方能查到的字串。依身分「以及」依位址進行速率限制，使用與代碼步驟相同的桶。**它不簽發任何東西，也不為任何人註冊**——一組代碼是由註冊第二要素的「動作」建立的，僅一次，於 common/credentials.ts 中。此頁面「沒有指令碼」：人從紙上讀出字串並輸入。"
+    "en": "5d6ce493418b33cb",
+    "text": "非規範，而且它是此處唯一沒有實作任何規格的驗證步驟（2026-09-10）。當第二要素不在手邊時——手機遺失或沒電、安全金鑰放在家裡——重新進入的途徑。**它從來不是登入所要求的**：credentials.mechanismsFor().secondFactor 回答 webauthn 或 totp，從不是這個，因此到達這裡的唯一途徑是那兩個畫面之一上的連結，附上該人已持有的步驟 id。「GET 為已存在的步驟繪製頁面」，並對沒有任何未使用代碼的人拒絕——要求一個不可能存在之認證的畫面，看起來就像服務把它弄丟了。「代碼在兩種模式下都真正檢查」並「用掉」（自 #572 起為 /authn-api/mfa/{id}/backup-code）：用掉失敗會「拒絕」登入，這與 /authn/totp 對其計數器的做法相反，其論證見 common/credentials.ts——無法計數的一次性代碼可在九十秒內重放，而無法標記為已使用的復原碼則永遠有效。成功時工作階段記錄 amr [\"pwd\",\"otp\"] 與 acr \"mfa\"：RFC 8176 沒有為復原碼註冊任何值，自創一個會在 amr 中放入一個沒有信賴方能查到的字串。依身分「以及」依位址進行速率限制，使用與代碼步驟相同的桶。**它不簽發任何東西，也不為任何人註冊**——一組代碼是由註冊第二要素的「動作」建立的，僅一次，於 common/credentials.ts 中。自 #572 起是登入介面的一個頁面。"
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "復原碼驗證通過後建立單一登入工作階段，並將其「用掉」"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "非規範（#64）。寄送至該人「已驗證」地址的六位數代碼，作為第一要素（登入畫面的「以電子郵件傳送登入代碼給我」）或第二要素（在 /portal/mfa 上選擇加入），前提是驗證原則允許——預設「關閉」，因為 NIST SP 800-63B-4 section 3.1.3.1 不將電子郵件視為驗證器。GET 為已存在的步驟繪製頁面，不寄送任何東西；POST 寄送（action=send）或檢查代碼。僅以 scrypt 雜湊保存於步驟上，最多有效十分鐘，在叢集中只能使用一次，每個步驟的錯誤代碼次數有上限，速率限制與一次性代碼步驟相同。作為第一要素時，無論帳戶是否存在或是否有已驗證地址，頁面都相同。單獨使用時為 amr [\"otp\"] 與 acr \"1\"，作為第二要素時為第一要素的 amr 加上 \"otp\" 與 acr \"mfa\"；它永遠不會滿足風險升級驗證。沒有指令碼。"
+    "en": "8f3396e530fddf0f",
+    "text": "非規範（#64）。寄送至該人「已驗證」地址的六位數代碼，作為第一要素（登入畫面的「以電子郵件傳送登入代碼給我」）或第二要素（在 /portal/mfa 上選擇加入），前提是驗證原則允許——預設「關閉」，因為 NIST SP 800-63B-4 section 3.1.3.1 不將電子郵件視為驗證器。頁面繪製時不寄送任何東西；/authn-api/mfa/{id}/email/send 寄送代碼，/authn-api/mfa/{id}/email/code 檢查代碼（#573）。僅以 scrypt 雜湊保存於步驟上，最多有效十分鐘，在叢集中只能使用一次，每個步驟的錯誤代碼次數有上限，速率限制與一次性代碼步驟相同。作為第一要素時，無論帳戶是否存在或是否有已驗證地址，頁面都相同。單獨使用時為 amr [\"otp\"] 與 acr \"1\"，作為第二要素時為第一要素的 amr 加上 \"otp\" 與 acr \"mfa\"；它永遠不會滿足風險升級驗證。自 #573 起是登入介面的一個頁面。"
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "電子郵件代碼驗證通過後建立單一登入工作階段"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "非規範（#64）。寄出電子郵件登入連結（POST，action=send）後該人等待的頁面，以 <meta> 標籤重新整理。連結「只」在開始登入的瀏覽器中完成登入——步驟保存寄送時所設定 Cookie 的雜湊——因此登入會在連結開啟的分頁中繼續，此頁面隨後也會如此說明。沒有指令碼。"
+    "en": "266bec13f0b03d9f",
+    "text": "非規範（#64）。寄出電子郵件登入連結（/authn-api/mfa/{id}/email/send）後該人等待的頁面，每隔幾秒再詢問一次。連結「只」在開始登入的瀏覽器中完成登入——步驟保存寄送時所設定 Cookie 的雜湊——因此登入會在連結開啟的分頁中繼續，此頁面隨後也會如此說明。自 #573 起是登入介面的一個頁面。"
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "非規範（#64）。GET 不會用掉任何東西——郵件掃描程式會擷取郵件中的每個連結——並繪製一個「繼續」按鈕；POST 檢查瀏覽器繫結、權杖的 scrypt 雜湊、到期時間與一次性宣告，然後登入。在其他瀏覽器中開啟時不會用掉任何東西，並說明應在何處開啟。"
+    "en": "08229e18bcdb6b86",
+    "text": "非規範（#64）。GET 不會用掉任何東西——郵件掃描程式會擷取郵件中的每個連結——並繪製一個「繼續」按鈕，它會將權杖傳送至 /authn-api/mfa/{id}/email-link/open（#573）：在那裡檢查瀏覽器繫結、權杖的 scrypt 雜湊、到期時間與一次性宣告，然後讓該人登入。在其他瀏覽器中開啟時不會用掉任何東西，並說明應在何處開啟。"
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2444,24 +2444,24 @@
     "text": "儲存新密碼並繼續登入"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "「要求某個沒有任何第二要素的人提供第二要素」（2026-09-13）。對於被要求第二要素的人——其項目上的 stsMfaRequired（從其 /admin/users 頁面設定）或領域的驗證原則——且既沒有驗證器應用程式也沒有 mfa 角色安全金鑰者，成功的密碼步驟會來到這裡而不是登入。他們選擇其一：驗證器應用程式在此頁面註冊（由本伺服器繪製的 QR code，並輸入回傳的代碼，透過 credentials.confirmTotpEnrolment() 確認，工作階段 amr [\"pwd\",\"otp\"]、acr \"mfa\"），安全金鑰則前往一般的 /authn/webauthn 註冊。此步驟會拒絕已持有第二要素的人，因為在登入時註冊第二個要素，正是安全金鑰方塊所防範的繞過方式。需要由密碼步驟產生的 ?mfa= id，因此直接開啟會回應 400。沒有指令碼。"
+    "en": "1576811e849d9087",
+    "text": "「要求某個沒有任何第二要素的人提供第二要素」（2026-09-13）。對於被要求第二要素的人——其項目上的 stsMfaRequired（從其 /admin/users 頁面設定）或領域的驗證原則——且既沒有驗證器應用程式也沒有 mfa 角色安全金鑰者，成功的密碼步驟會來到這裡而不是登入。他們選擇其一：驗證器應用程式在此頁面註冊（由瀏覽器依據 otpauth: URI 繪製的 QR code，並輸入回傳的代碼，透過 credentials.confirmTotpEnrolment() 確認，工作階段 amr [\"pwd\",\"otp\"]、acr \"mfa\"），安全金鑰則前往一般的 /authn/webauthn 註冊。此步驟會拒絕已持有第二要素的人，因為在登入時註冊第二個要素，正是安全金鑰方塊所防範的繞過方式。需要由密碼步驟產生的 ?mfa= id，因此直接開啟會回應 400。自 #572 起是登入介面的一個頁面。"
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "註冊驗證器應用程式或開始安全金鑰註冊，然後建立單一登入工作階段"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "「第二種第二要素」（2026-09-10）。對於已註冊驗證器應用程式的人，成功的密碼步驟會來到這裡，此端點會要求輸入其應用程式所顯示的六位數字。成功時工作階段記錄 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其登錄項目指名 RFC 4226 與 RFC 6238——以及 acr \"mfa\"，這是本服務能誠實宣稱兩個要素的唯一情況。**代碼在兩種模式下都會真正檢查**，與其前面的密碼不同：一個接受任意六位數字的一次性密碼驗證器不是寬鬆，而是故障，這是 SPNEGO 論證的再次應用。依身分「以及」依位址進行速率限制，因為六位數字只有一百萬個值，是本服務中最小的搜尋空間。「GET 是安全金鑰畫面上的 *use a code instead* 連結」，不會建立任何東西——它為已存在的步驟繪製頁面，並對沒有註冊的人拒絕。**它不為任何人註冊**，這正是它與旁邊的 /authn/webauthn 的全部差異：註冊意味著會看到共用密鑰，因此它發生在 /portal/mfa 或使用啟用連結時，絕不在登入畫面上。此頁面「沒有指令碼」，在全服務的 script-src 'none' 下提供——人讀出數字並輸入，因此安全金鑰頁面所需的例外在這裡不適用。"
+    "en": "b62d7bad9442ea5c",
+    "text": "「第二種第二要素」（2026-09-10）。對於已註冊驗證器應用程式的人，成功的密碼步驟會來到這裡，此端點會要求輸入其應用程式所顯示的六位數字。成功時工作階段記錄 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其登錄項目指名 RFC 4226 與 RFC 6238——以及 acr \"mfa\"，這是本服務能誠實宣稱兩個要素的唯一情況。**代碼在兩種模式下都會真正檢查**，與其前面的密碼不同：一個接受任意六位數字的一次性密碼驗證器不是寬鬆，而是故障，這是 SPNEGO 論證的再次應用。依身分「以及」依位址進行速率限制，因為六位數字只有一百萬個值，是本服務中最小的搜尋空間。「GET 是安全金鑰畫面上的 *use a code instead* 連結」，不會建立任何東西——它為已存在的步驟繪製頁面，並對沒有註冊的人拒絕。**它不為任何人註冊**，這正是它與旁邊的 /authn/webauthn 的全部差異：註冊意味著會看到共用密鑰，因此它發生在 /portal/mfa 或使用啟用連結時，絕不在登入畫面上。自 #572 起是登入介面的一個頁面：代碼傳送至 /authn-api/mfa/{id}/totp。"
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "代碼驗證通過後建立單一登入工作階段"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC（#571）。登入介面的執行階段與轉譯器合為一個檔案，由 build-typescript.sh 建置（authn/authn-spa.js）並以預先壓縮的形式提供：它依據 /authn-api 繪製 /authn/login、/authn/select-idp 與 /authn/password-change，並將它們的動作傳送到那裡。公開：其中沒有任何機密。"
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC（#571）。登入介面的執行階段與轉譯器合為一個檔案，由 build-typescript.sh 建置（authn/authn-spa.js）並以預先壓縮的形式提供：它依據 /authn-api 繪製 /authn/login、/authn/select-idp、/authn/password-change，以及自 #572 與 #573 起其後的每個步驟，並將它們的動作傳送到那裡。公開：其中沒有任何機密。"
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2531,13 +2531,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 回應誰的密碼必須變更；POST 儲存新密碼並繼續登入。"
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC（#572、#573）。第二要素或電子郵件要素步驟頁面（?page=）的檢視，只有事實而沒有文字，以及其動作所攜帶的 CSRF 權杖；在頁面永遠無法為該步驟繪製時拒絕。該 id 是一種持有者能力，絕不會記錄到日誌。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC（#572）。來自驗證器應用程式的代碼，在每種模式下都會檢查並有速率限制；錯誤的代碼會保留該步驟。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC（#572）。檢查並用掉；無法標記為已使用的代碼會被拒絕。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC（#572）。在錢包之後，使用登入桶的速率限制。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC（#572）。該步驟的挑戰、RP ID、使用者與金鑰，以及通行金鑰原則的選項。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC（#572）。儀式的結果，經過驗證：步驟註冊金鑰時為註冊，否則為判斷提示——由步驟決定。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC（#572）。在設定步驟中；接著繪製其密鑰。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC（#572）。其第一個代碼，有速率限制；正確時得到兩個要素的工作階段。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC（#572）。下一個步驟是通行金鑰頁面的註冊。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC（#572、#246）。僅在該步驟是提供而非要求時：登入以密碼完成。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC（#573）。僅寄往已驗證地址；重新寄送會取代上一次。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC（#573）。在叢集中只能使用一次，每個步驟的錯誤代碼次數有上限。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC（#573）。連結所抵達頁面上的「繼續」按鈕，僅在要求該連結的瀏覽器中有效。"
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC（#62 P6）。僅在領域中 risk.fingerprinting 開啟時提供——否則回傳 404——此時登入畫面會在其自身指令碼旁載入它：FingerprintJS（MIT，v5；它在瀏覽器中執行且不傳送任何東西，其使用回報已關閉）計算出一個由登入傳送的 visitorId，服務只保留其加鍵摘要，並以此人從未使用過的裝置進行評分。登入沒有它也能運作。預設關閉：這是個人資料，開啟它是營運者的決定，應在風險評分頁面所述的隱私影響評估之後進行。"
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "安全金鑰頁面在其兩種角色中執行的指令碼——第二要素執行的儀式與無密碼登入執行的儀式是相同的位元組。它是獨立資源而非內嵌指令碼，因為本服務預設在每個回應上設定 script-src 'none'；那一個頁面將其放寬為 'self'，這是能運作的最小例外。那裡的內嵌指令碼根本不會執行，按鈕會毫無作用，也不會在任何地方出現錯誤。"
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",

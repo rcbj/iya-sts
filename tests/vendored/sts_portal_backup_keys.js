@@ -656,6 +656,29 @@ async function screenSubmit(b, r, fields) {
   return page;
 }
 
+// THE SECURITY-KEY STEP IS A PAGE OF THE SIGN-IN SURFACE (#572): its
+// ceremony is armed by `POST /authn-api/mfa/{id}/webauthn/options` and its
+// result sent to `…/webauthn`. `make(ceremony)` answers the credential.
+// Answered as the form's POST was: `redirect` as its 303.
+async function stepCeremony(b, r, make) {
+  log.debug("Entering stepCeremony().");
+  assert.ok(r.step, "no security-key step was opened: " +
+    String(r.text).slice(0, 300));
+  const answer = await authnSignin.passkeyStep(r.step, make);
+  b.keep(answer.headers.getSetCookie());
+  log.debug("Leaving stepCeremony(). " + answer.next);
+  return { status: answer.next === "redirect" ? 303 : answer.status,
+           location: answer.location, text: answer.text };
+}
+
+// The security-key step's ceremony mode, off its view (#572).
+function stepMode(r) {
+  log.debug("Entering stepMode().");
+  log.debug("Leaving stepMode().");
+  return (r.step && r.step.view && r.step.view.webauthn &&
+          r.step.view.webauthn.mode) || "";
+}
+
 // Follows the sign-in's redirects back through the authorization endpoint
 // to the portal's callback; the code there is the shell's, not this job's.
 async function finishSignIn(b, r) {
@@ -683,13 +706,10 @@ async function signIn(door, authenticator) {
     assert.ok(authenticator,
       "a second factor was asked for and this call brought no authenticator: " +
       String(r.text).slice(0, 300));
-    const mode = attr(r.text, "data-mode");
-    const credential = mode === "create"
-      ? authenticator.register(attr(r.text, "data-challenge"))
-      : authenticator.assert(attr(r.text, "data-challenge"));
-    r = await b.go("POST", "/authn/webauthn",
-                   form({ mfa_id: hidden(r.text, "mfa_id"), mode: mode,
-                          credential: JSON.stringify(credential) }));
+    r = await stepCeremony(b, r, function (c) {
+      return c.mode === "create" ? authenticator.register(c.challenge)
+                                 : authenticator.assert(c.challenge);
+    });
   }
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in did not complete: " + r.status + " " +
@@ -1095,14 +1115,13 @@ async function eitherKeySignsThemIn(first, second) {
   let r = await startSignIn(b, base);
   r = await screenSubmit(b, r, { username: PERSON, password: PASSWORD,
                                  action: "login" });
-  const refused = await b.go("POST", "/authn/webauthn",
-    form({ mfa_id: hidden(r.text, "mfa_id"), mode: "get",
-           credential: JSON.stringify(
-             stranger.assert(attr(r.text, "data-challenge"))) }));
+  const refused = await stepCeremony(b, r, function (c) {
+    return stranger.assert(c.challenge);
+  });
   check("AND A THIRD AUTHENTICATOR NOBODY ENROLLED IS STILL REFUSED. Holding " +
         "two keys must not mean holding the door open — the assertion is " +
         "matched to a credential id on this person's own entry", function () {
-    assert.strictEqual(refused.status, 200,
+    assert.strictEqual(refused.status, 400,
       "a stranger's authenticator was accepted (" + refused.status + ").");
   });
   log.debug("Leaving eitherKeySignsThemIn().");
@@ -1294,7 +1313,7 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
   let r = await startSignIn(s, base);
   r = await screenSubmit(s, r, { username: NEWCOMER, webauthn_only: "1",
                                  action: "login" });
-  const mode = attr(r.text, "data-mode");
+  const mode = stepMode(r);
   check("THE SIGN-IN SCREEN ASKS FOR THE KEY THEY HOLD rather than enrolling " +
         "one or asking for a password", function () {
     assert.strictEqual(r.status, 200,
@@ -1303,10 +1322,9 @@ async function aKeyInsteadOfAPasswordAtActivation(authenticator) {
     assert.strictEqual(mode, "get",
       "the ceremony is not an assertion: " + mode);
   });
-  r = await s.go("POST", "/authn/webauthn",
-                 form({ mfa_id: hidden(r.text, "mfa_id"), mode: mode,
-                        credential: JSON.stringify(authenticator.assert(
-                          attr(r.text, "data-challenge"))) }));
+  r = await stepCeremony(s, r, function (c) {
+    return authenticator.assert(c.challenge);
+  });
   check("and the key alone signs them in", function () {
     assert.ok(r.status === 303 || r.status === 302,
       "the assertion answered " + r.status + " " +

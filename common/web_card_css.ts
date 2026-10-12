@@ -43,6 +43,24 @@ class WebCardCss {
     'bel{display:inline;margin:0 4px 0 0}';
 
   /**
+   * What the sign-in surface's steps draw beyond the screen (#572, #573):
+   * the notice a resend leaves, the warning of a set of recovery codes
+   * running low, the set-up step's headings, a code's wide field, the ways
+   * round a factor, the technical fold (the QR code's rule is the
+   * wallet's, #574). They were in each step page's own stylesheet while the
+   * server drew the steps.
+   */
+  static readonly STEP_CSS =
+    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:' +
+    '8px 10px;border-radius:5px;font-size:.85em;margin-bottom:12px}.warn{bac' +
+    'kground:#fff8e6;border:1px solid #f0dca8;color:#7a5a00;padding:8px 10px' +
+    ';border-radius:5px;font-size:.85em;margin-bottom:12px}.card h2{font-siz' +
+    'e:1em;margin:18px 0 6px}input.code{font-size:1.4em;letter-spacing:.35em' +
+    ';text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monosp' +
+    'ace}.links div{margin:6px 0;font-size:.85em}details summary{cursor:poin' +
+    'ter;color:#12107c}';
+
+  /**
    * The WIDE card (#575): the SPNEGO sign-in's pages carry tables — the
    * service principal, the ticket's flags, the acceptor's checks — that do
    * not fit the 380-pixel card, so `.card.wide` lifts the width and every
@@ -97,7 +115,9 @@ class WebCardCss {
     '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
     'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
     'block;font-size:.75em}' +
-    WebCardCss.CHOOSER_CSS + WebCardCss.WIDE_CSS;
+    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
+    // The steps' rules BEFORE the wide card's, which win where both speak.
+    WebCardCss.WIDE_CSS;
 }
 
 export = WebCardCss;

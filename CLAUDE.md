@@ -63,7 +63,7 @@ files did not change; the paths did.
 | `portal/` | **The user portal**: the pages that belong to the person looking at them, behind a navigation column that is not the console's. **A static application since #568 (2026-10-12)**, on the console's pattern: the `web_*.ts` files are its renderers and runtime, bundled for a browser, and each page module (`account_*.ts`, `portal_*.ts`) contributes that page's `/account-api` operations. `portal/CLAUDE.md`. |
 | `account-api/` | **`/account-api`, the portal's only door (#568)**: the gate (this realm's DPoP-bound token carrying `account:manage`, the person ALWAYS its subject), the operation table the portal's page modules contribute, and its OpenAPI document — drawn in the console at `/admin/account-api`. `account-api/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider: RFC 9700 mode, DPoP, mTLS, client authentication, both RFC 7523 and RFC 7522 assertion profiles, the multi-AS profiles, the consent screen and UserInfo. `oauth-oidc/CLAUDE.md`. |
-| `authn/` | The sign-in service, which **owns the SESSION**: the WebAuthn relying party and the TOTP and recovery-code steps. **The sign-in screen is a static surface since #571**, drawn from `/authn-api` (`authn_api.ts`) by the `web_authn*.ts` renderers. `/authn/spnego` lives in `kerberos/`, `/authn/wallet` in `oid4vc/`. `authn/CLAUDE.md`. |
+| `authn/` | The sign-in service, which **owns the SESSION**: the WebAuthn relying party and the TOTP and recovery-code steps. **The sign-in screen is a static surface since #571, and the steps after it since #572 and #573**, drawn from `/authn-api` (`authn_api.ts`) by the `web_authn*.ts` renderers. `/authn/spnego` lives in `kerberos/`, `/authn/wallet` in `oid4vc/`. `authn/CLAUDE.md`. |
 | `saml/` | The SAML 2.0 and SAML 1.1 assertion builders, each with a SEPARATE browser-facing identity provider rather than one with a version flag. `saml/CLAUDE.md`. |
 | `ws-trust/` | WS-Trust 1.0–1.4. `ws-trust/CLAUDE.md`. |
 | `ws-federation/` | WS-Federation 1.2's passive requestor profile and a mock relying party. `ws-federation/CLAUDE.md`. |
@@ -526,7 +526,7 @@ is and the named file says why.
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing; beside the front door, the first surface to draw with it. | `common/CLAUDE.md` (3cl) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
-| 8-api | `authn/authn_api` | Just after `authn` (#571): `/authn-api`, the sign-in screen's API, whose views and acts are `authn`'s, reached through its exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
+| 8-api | `authn/authn_api` | Just after `authn` (#571): `/authn-api`, the sign-in screen's API, whose views and acts are `authn`'s, reached through its exports — and the emailed factor's steps' (#573), `email_factor`'s, required when first asked; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
 | 8-email | `authn/email_factor` (and `common/mail_factor`, a library built with it) | Just after `authn`, whose pending steps it reads through that module's exports and whose three `/authn/email-*` paths it registers (#64) — `vc_signin`'s and `spnego_authn`'s arrangement. | `authn/CLAUDE.md` |
 | 8a | `portal/portal` | After `authn`, whose session every portal route reads; an OIDC relying party of `oauth2`, which needs that module's routes registered, not required. | `portal/CLAUDE.md` |
@@ -818,6 +818,7 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 | `/portal` and every `/portal/*` path — **the user portal, a static application since #568 (2026-10-12)** | `/portal/portal.js` — the portal's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/account-api` operation, sends every form there, runs the WebAuthn ceremonies of `/portal/keys`, `/portal/activate` and `/portal/devices` itself (the markup `/authn/webauthn.js` read, `web_portal_webauthn.ts`), and reveals the Copy buttons. **No submit button stands in for it**, for the console's reason; the shell's `<noscript>` says so. `connect-src 'self'` and `img-src 'self' data:` (a QR code) beside `script-src 'self'` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
 | `/` — **the front door, the first public surface, since #579 (2026-10-12)** | `/home.js` — drawn from `/home-api/front` in the browser's language, `/home.css` over `/web/card.css`; `style-src 'self'`, `connect-src 'self'` plus the sign-in service's origin where it is elsewhere | `home/CLAUDE.md` |
 | `/authn/login`, `/authn/select-idp`, `/authn/password-change` — **the sign-in screen, since #571 (2026-10-12)** | `/authn/signin.js` — drawn from `/authn-api`'s views in the browser's language, its acts sent there as JSON bound to the `sts_session` cookie (a CSRF token, an Origin of this service), the next step followed; it runs the usernameless passkey and its autofill and loads `/authn/fingerprint.js` where the realm asks. `style-src 'self'`, `connect-src 'self'` | `authn/CLAUDE.md` |
+| `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup` (#572) and `/authn/email-code`, `/authn/email-link`, `/authn/email-link/open` (#573) — **the steps after the screen, since 2026-10-12** | the same `/authn/signin.js`, over `/authn-api/mfa/{id}`: it runs the passkey step's ceremony (`/authn/webauthn.js` is gone), draws the set-up step's QR code from its `otpauth:` URI (`common/web_qr.ts`), and polls the mailed link's waiting page; the same policy | `authn/CLAUDE.md` |
 | `/authn/wallet` and `/authn/wallet/wait` — **the wallet sign-in, routes of the sign-in surface since #574 (2026-10-12)** | `/authn/signin.js`, the sign-in surface's runtime: the start, the poll (`?qr=1`'s QR code drawn in the browser), and the Digital Credentials API call `/authn/wallet.js` made, over `/authn-api/wallet` | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | each public surface #569 converts (the front door first, #579) | its own bundle over `common/web_surface.ts`, with `/web/card.css` and the catalogs under `/web/locales/`. **Not an OAuth client and holding no token**: the sign-on session is the `sts_session` cookie (#569's decision 3) | `common/CLAUDE.md` (3cl) |
 
@@ -829,7 +830,6 @@ surface is converted; the protocol documents never do.
 
 | Page | Script | Argued in |
 |---|---|---|
-| `/authn/webauthn` | `/authn/webauthn.js` | `authn/CLAUDE.md` |
 | WS-Federation's sign-in response | `/wsfed/autopost.js` | `ws-federation/CLAUDE.md` |
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
@@ -850,7 +850,6 @@ own file:
 | federation's outbound HTTP-POST binding | a person LEAVING this service gets a real form and a real button | `federation/CLAUDE.md` |
 | the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
-| the one-time code screen `/authn/totp` | typing six digits needs none, and the QR code is a server-rendered SVG | `authn/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
 
@@ -859,8 +858,8 @@ and "the same as the page next door" is not one** — while a new static surface
 needs none of it, because the rule above is the argument: it follows the
 recipe in `common/CLAUDE.md` (3cl). The federation picture is the delegation
 picture in every respect a reader would cite and got its own argument anyway;
-`/authn/totp` sits beside a page that DOES relax the policy and still had to
-argue its own case.
+the wallet's QR page sits beside a page that DOES relax the policy and still
+had to argue its own case.
 
 ---
 

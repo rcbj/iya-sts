@@ -211,16 +211,6 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name, within) {
-    let text = html;
-    if (within) {
-      const at = html.indexOf('id="' + within + '"');
-      text = at < 0 ? '' : html.slice(at, html.indexOf('>', at));
-    }
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(text);
-    return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-      : '';
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -298,24 +288,40 @@ function childMain() {
         opened: s.opened, fields: { action: 'login', username: name,
           password: passwordless ? '' : PASSWORD,
           webauthn_only: passwordless ? '1' : '' } });
-      return { s: s, step: step,
-               mfaId: (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1] };
+      return { s: s, step: step, mfaId: step.id };
+    };
+    // A STEP'S ANSWER READ AS THE FORM'S WAS (#572): `redirect` — and a
+    // session refused at the end, whose answer names the sign-in screen —
+    // as its 303 with `location`; a refusal on the step's own page at its
+    // status (400), the sentence its text.
+    const formLike = function (a) {
+      const loc = String(a.location || '');
+      const goes = a.next === 'redirect' || a.next === 'mfa' ||
+        (a.next === 'refused' && !!loc);
+      return { status: goes ? 303 : a.apiStatus,
+               headers: goes ? { location: loc } : {},
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || ''),
+               answer: a };
+    };
+    // The passkey step's ceremony (#572): armed by `…/webauthn/options`,
+    // made by the test's authenticator, sent to `…/webauthn`.
+    const ceremony = async function (f, make) {
+      const done = await authnScreen.passkeyStep({ port: port,
+        jar: f.s.b.jar, opened: f.step }, make);
+      return formLike(done.answer);
     };
     const register = async function (name, key) {
       const f = await firstStep(name, true);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'create',
-        credential: JSON.stringify(key.register(
-          dataAttribute(f.step.text, 'challenge'),
-          dataAttribute(f.step.text, 'userid'))) } });
+      return ceremony(f, function (c) {
+        return key.register(c.challenge, c.user.id);
+      });
     };
     const signIn = async function (name, key, passwordless) {
       const f = await firstStep(name, passwordless);
-      const r = await f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'get',
-        credential: JSON.stringify(key.assert(
-          dataAttribute(f.step.text, 'challenge', 'wa-data'))) } });
+      const r = await ceremony(f, function (c) {
+        return key.assert(c.challenge);
+      });
       // A SESSION REFUSED AT THE END OF THE CEREMONY sends the browser to
       // the sign-in screen with the sentence on its view (#571): the screen
       // is a static page, so the form's POST cannot draw it.
@@ -376,14 +382,14 @@ function childMain() {
          '2a. a key reporting 8 registers, and its row records 8',
          r.status + ' ' + r.text.slice(0, 200));
     r = await register('pkp-carol', makeAuthenticator(RPID, ORIGIN, 4));
-    note(r.status === 200 && !redirected(r) &&
+    note(r.status === 400 && !redirected(r) &&
          /requires at least 6/.test(r.text) &&
          codeRecorded('STS-AUTHN-0314') &&
          credentials.keysOf('pkp-carol').length === 0,
          '2b. one reporting 4 is refused (STS-AUTHN-0314): the page says ' +
          'why and nothing is written', r.status + ' ' + r.text.slice(0, 300));
     r = await register('pkp-dave', makeAuthenticator(RPID, ORIGIN, null));
-    note(r.status === 200 && !redirected(r) &&
+    note(r.status === 400 && !redirected(r) &&
          /did not report its minimum PIN length/.test(r.text) &&
          credentials.keysOf('pkp-dave').length === 0,
          '2c. and one that reports nothing is refused too',

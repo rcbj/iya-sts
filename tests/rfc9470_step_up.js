@@ -321,20 +321,11 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen and its steps over `/authn-api` (#571, #572).
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -405,27 +396,24 @@ function childMain() {
       return r && r.status === 302 && loc.indexOf(REDIRECT) === 0
         ? new URL(loc).searchParams : null;
     };
-    // The sign-in screen as a person uses it: the hidden fields it drew, a
-    // name and a password, and — when `code` is given — the one-time code
-    // screen after it. Answers every hop, so a test can look at the screens.
+    // The sign-in screen as a person uses it — a static page over
+    // `/authn-api` since #571: its view, a name and a password, and — when
+    // `code` is given — the one-time code step after it, a page of the same
+    // surface since #572 (its view, and the code sent to its act). Answers
+    // every hop, so a test can look at the screens.
     const signIn = async function (b, first, username, code) {
-      const page = await b.go('GET', first.headers.location);
-      const form = hiddenFields(page.text);
-      form.username = username;
-      form.password = 'anything';
-      form.action = 'login';
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      let posted = await b.go('POST', screen, { form: form });
+      const page = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(first.headers.location) });
+      let posted = await authnScreen.follow({ port: port, jar: b.jar,
+        opened: page, fields: { action: 'login', username: username,
+                                password: 'anything' } });
       let totpPage = null;
-      if (code && posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
+      if (code && posted.view && posted.view.page === 'totp') {
         totpPage = posted;
-        const mfaId = (posted.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1];
-        posted = await b.go('POST', '/authn/totp',
-                            { form: { mfa_id: mfaId, code: code } });
+        posted = await authnScreen.stepAct({ port: port, jar: b.jar,
+          opened: posted, op: 'totp', body: { code: code } });
       }
-      const back = String(posted.headers.location || '')
+      const back = String((posted.headers || {}).location || '')
         .replace(/^https?:\/\/[^/]+/, '');
       const final = back ? await b.go('GET', back) : posted;
       return { page: page, posted: posted, totpPage: totpPage, back: back,
@@ -539,8 +527,9 @@ function childMain() {
          first.status + ' ' + first.headers.location);
     done = await signIn(alice, first, 'su-alice',
                         totp.codeAt(began.secret, Date.now() + 30000));
-    note(/id="use_webauthn"[^>]*checked disabled/.test(done.page.text),
-         '3d2. the sign-in screen demands the second factor');
+    note(done.page.view && done.page.view.demands &&
+         done.page.view.demands.mfa === true,
+         '3d2. the sign-in screen demands the second factor (its view)');
     note(done.totpPage !== null, '3d3. and asks for the one-time code',
          done.posted.status);
     note(/step_up_honoured=1/.test(done.back),
@@ -637,26 +626,21 @@ function childMain() {
          'refusal, never a one-factor token',
          first.status + ' ' + first.headers.location);
 
-    // The screen's demand is read off the pending record, not off the hidden
-    // field it draws: a POST without `use_webauthn` is asked for the factor
-    // (su-bob holds none, so the security-key step) rather than signed in with
-    // one and refused on the way back.
+    // The screen's demand is read off the pending record, not off the box
+    // it draws: an act without `use_webauthn` is asked for the factor
+    // (su-bob holds none, so the security-key step) rather than signed in
+    // with one and refused on the way back.
     first = await bob.go('GET', authorizeQuery({ acr_values: 'mfa' }));
     if (toSignIn(first)) {
-      const page = await bob.go('GET', first.headers.location);
-      const form = hiddenFields(page.text);
-      delete form.use_webauthn;
-      form.username = 'su-bob';
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await bob.go('POST', String(first.headers.location)
-        .split('?')[0].replace(/^https?:\/\/[^/]+/, ''), { form: form });
-      note(posted.status === 200 && /webauthn/i.test(posted.text) &&
-           !posted.headers.location,
-           '3h4. a sign-in POST that drops the hidden second-factor field is ' +
-           'still asked for the factor', posted.status + ' ' +
-           String(posted.headers.location || '') + ' ' +
-           posted.text.slice(0, 160));
+      const posted = await authnScreen.submit({ port: port, jar: bob.jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: 'su-bob',
+                  password: 'anything' } });
+      note(posted.next === 'mfa' && posted.step === 'webauthn',
+           '3h4. a sign-in act that leaves out the second-factor box is ' +
+           'still asked for the factor', posted.apiStatus + ' ' +
+           posted.next + ' ' + posted.step + ' ' +
+           String(posted.text).slice(0, 160));
     } else {
       note(false, '3h4. (acr_values=mfa on a one-factor session goes to sign ' +
            'in)', first.status + ' ' + first.headers.location);

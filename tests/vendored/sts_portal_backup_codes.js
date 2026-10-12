@@ -160,12 +160,6 @@ function codeFor(secret, atMs, opts) {
 // assertion here is about WHICH screen came back — a fetch that followed the
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
 function absolute(location) {
   log.debug("Entering absolute().");
   log.debug("Leaving absolute().");
@@ -786,45 +780,49 @@ async function aCodeSignsThemIn(state) {
     // THE SCREEN THE PASSWORD LANDED ON is the authenticator's, because that
     // is what this person is CONFIGURED for — a recovery code is never the
     // factor a sign-in asks for.
-    assert.ok(/one-time code|authenticator app/i.test(asked.text),
+    // THE STEPS ARE PAGES OF THE SIGN-IN SURFACE (#572): what a page offers
+    // is its view.
+    const view = (asked.step && asked.step.view) || {};
+    assert.strictEqual(view.page, "totp",
       "the password step did not land on the one-time code screen: " +
       String(asked.text).slice(0, 300));
-    const link = String(asked.text)
-      .match(/href="(\/authn\/backup-code\?mfa=[^"]+)"/);
-    sawTheLink = !!link;
-    assert.ok(link,
+    sawTheLink = !!(view.links && view.links.backup);
+    assert.ok(sawTheLink,
       "the one-time code screen offers no way to a recovery code. A door " +
       "nothing points at is a door nobody standing in front of a dead phone " +
       "will find.");
-    const screen = await br.go("GET", link[1].replace(/&amp;/g, "&"));
-    assert.strictEqual(screen.status, 200,
-      "the recovery screen answered " + screen.status);
-    const mfaId = (screen.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-    assert.ok(mfaId, "the recovery screen carries no mfa_id to post back.");
+    const screen = await authnSignin.step(base + "/authn/backup-code?mfa=" +
+      encodeURIComponent(asked.step.id), { cookie: br.cookieHeader() });
+    assert.ok(screen.status === 200 && screen.view &&
+              screen.view.page === "backup-code",
+      "the recovery screen answered " + screen.status + " " +
+      String(screen.text).slice(0, 200));
+    const send = async function (code) {
+      const a = await authnSignin.stepAct(screen, "backup-code",
+                                          { code: code });
+      keepCookies(br, a);
+      return { status: a.next === "redirect" ? 303 : a.status,
+               location: a.location, text: a.text };
+    };
 
     // A WRONG CODE FIRST, because the interesting half of claim 5 is that a
     // refusal keeps the step AND spends nothing.
-    const wrong = await br.go("POST", "/authn/backup-code",
-                              form({ mfa_id: mfaId, code: "AAAAA-AAAAA" }));
-    assert.strictEqual(wrong.status, 200,
-      "a wrong recovery code should redraw this page rather than throwing " +
-      "the password step away; it answered " + wrong.status);
+    const wrong = await send("AAAAA-AAAAA");
+    assert.strictEqual(wrong.status, 400,
+      "a wrong recovery code should be refused on this page rather than " +
+      "throwing the password step away; it answered " + wrong.status);
 
     // THIS SERVICE'S OWN RENDERING HANDED BACK TO IT, lower-cased — the
     // dashes and the case are exactly what somebody reads off paper types,
     // and a service that refused its own printed form would be arguing with
     // its own page.
-    const ok = await br.go("POST", "/authn/backup-code",
-                           form({ mfa_id: mfaId,
-                                  code: spending.toLowerCase() }));
+    const ok = await send(spending.toLowerCase());
 
     // AND THE REPLAY, inside the same flow, before the step is gone. It cannot
     // be checked afterwards: the step is spent on success. Sent WITHOUT the
     // dashes this time, so that a replay guard which only ever saw one
     // spelling could not pass this.
-    refusedReplay = await br.go("POST", "/authn/backup-code",
-                                form({ mfa_id: mfaId,
-                                       code: spending.replace(/-/g, "") }));
+    refusedReplay = await send(spending.replace(/-/g, ""));
     return ok;
   });
 

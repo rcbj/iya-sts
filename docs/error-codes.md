@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4304** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4306** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 288
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 290
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1180,14 +1180,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0017` | The federation register threw while resolving a brokering relationship or building the sign-in screen's partner buttons; they were omitted. | — |
 | `STS-AUTHN-0018` | A request to a second-factor screen (security key, one-time code, recovery code) carried a step id that failed input validation. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0019` | The second-factor step named by the request has expired or does not exist. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0020` | The WebAuthn ceremony POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0021` | The WebAuthn ceremony result posted by the browser was not JSON. | HTTP 200 security-key page, redrawn with the reason |
-| `STS-AUTHN-0022` | The browser reported that the WebAuthn ceremony failed (declined, timed out, no authenticator), or sent no credential at all. | HTTP 200 security-key page, redrawn with the reason; on the portal, its own refusal |
-| `STS-AUTHN-0023` | In product mode the configured webauthn.rpId does not fit the host the request arrived on, so the ceremony is refused. | HTTP 200 security-key page with the reason |
+| `STS-AUTHN-0020` | The WebAuthn ceremony POST (the passkey step's act on /authn-api since #572) failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0021` | The WebAuthn ceremony result posted by the browser was not JSON. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0022` | The browser reported that the WebAuthn ceremony failed (declined, timed out, no authenticator), or sent no credential at all. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; on the portal, its own refusal |
+| `STS-AUTHN-0023` | In product mode the configured webauthn.rpId does not fit the host the request arrived on, so the ceremony is refused. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0024` | Product mode refused to enrol a credential (security key or authenticator app) for a person who has no directory entry, because enrolling would create them. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0025` | No security key is enrolled for this person in the role the step needs (second factor or passwordless). | invalid_request (HTTP 400), or HTTP 200 security-key page with the reason |
-| `STS-AUTHN-0026` | A WebAuthn assertion named a credential that is not one of the security keys enrolled for this person in this role. | HTTP 200 security-key page with the reason |
-| `STS-AUTHN-0027` | The WebAuthn registration or assertion could not be parsed or checked (malformed CBOR, authenticator data or clientDataJSON). | HTTP 200 security-key page with the reason; on the portal, its own refusal |
+| `STS-AUTHN-0026` | A WebAuthn assertion named a credential that is not one of the security keys enrolled for this person in this role. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0027` | The WebAuthn registration or assertion could not be parsed or checked (malformed CBOR, authenticator data or clientDataJSON). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; on the portal, its own refusal |
 | `STS-AUTHN-0028` | WebAuthn verification failed: clientDataJSON's type is not the ceremony's (webauthn.create / webauthn.get). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0029` | WebAuthn verification failed: the challenge in clientDataJSON is not the one this service issued for the step. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0030` | WebAuthn verification failed: the origin in clientDataJSON is not this service's origin or on webauthn.allowedOrigins. | HTTP 200 page naming the failed check |
@@ -1199,11 +1199,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0036` | WebAuthn assertion failed: the signature over authenticatorData and the clientDataJSON hash does not verify against the enrolled public key. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.ts is behind the verifier. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0038` | A security key's signature counter could not be recorded after a successful assertion; the sign-in stands and the replay defence has nothing new to check next time. | — |
-| `STS-AUTHN-0039` | The one-time code form POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 one-time code page, redrawn with the reason |
-| `STS-AUTHN-0041` | The recovery code form POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 recovery code page, redrawn with the reason |
-| `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 200 recovery code page asking to try again |
+| `STS-AUTHN-0039` | The one-time code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0041` | The recovery code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0044` | Security keys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0045` | A passwordless (primary) security key may not be enrolled in this realm (webauthn.primaryAllowed). | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0046` | A second-factor security key may not be enrolled in this realm (webauthn.mfaAllowed). | HTTP 200 page / action result with the reason |
@@ -1252,7 +1252,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0089` | The person's stored recovery codes cannot be read, so a presented code was refused rather than let through. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0090` | A presented recovery code is not the shape of one (letters and digits of the code alphabet); no comparison was made. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0091` | A presented recovery code has already been spent. | HTTP 200 recovery code page with the reason |
-| `STS-AUTHN-0092` | A presented recovery code is not one of the person's codes. | HTTP 200 recovery code page with the reason |
+| `STS-AUTHN-0092` | A presented recovery code is not one of the person's codes. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0093` | A recovery code verified but could not be marked spent, so it was refused: a code that cannot be spent works for ever. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0094` | A security-key enrolment was confirmed with an enrolment id that is not the one in progress (another tab). | action result with the reason |
 | `STS-AUTHN-0095` | A security-key enrolment was refused because that authenticator is already enrolled for the person. | action result with the reason |
@@ -1265,7 +1265,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0102` | A spent activation token could not be cleared from the credential store, so the link may still work. | — |
 | `STS-AUTHN-0103` | A presented one-time code is not the configured number of digits; no comparison was made. | HTTP 200 one-time code page with the reason; action result at enrolment |
 | `STS-AUTHN-0104` | A stored TOTP shared secret could not be decoded from base32, so the code could not be checked. | HTTP 200 one-time code page with the reason |
-| `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 200 one-time code page with the reason; action result at enrolment |
+| `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; action result at enrolment |
 | `STS-AUTHN-0106` | A presented one-time code was already used (RFC 6238 section 5.2): its time step is at or below the last one accepted. | HTTP 200 one-time code page with the reason |
 | `STS-AUTHN-0107` | A password policy save or reset named a profile other than 'default'. | action result with the reason |
 | `STS-AUTHN-0108` | A password policy save was refused because a field is missing, out of range, unreadable, or inconsistent with another. | action result with the reason |
@@ -1321,10 +1321,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0171` | A passwordless security-key sign-in was refused because a second factor is required of the person (their account or the realm's authentication policy). | the sign-in screen again with the reason |
 | `STS-AUTHN-0172` | A sign-in was refused: a second factor is required of the person, they hold none, and neither an authenticator app nor a security key can be enrolled in the realm. | the sign-in screen again with the reason |
 | `STS-AUTHN-0173` | The second-factor set-up step named by the request is expired, unknown, or not a set-up step. | OAuth-style invalid_request page, HTTP 400 |
-| `STS-AUTHN-0174` | A request to the second-factor set-up step was malformed, or asked to confirm a code before an authenticator app was chosen. | HTTP 400 page |
-| `STS-AUTHN-0175` | A second-factor set-up choice was refused: the mechanism is switched off in the realm, or the person holds a second factor already. | HTTP 400 page |
-| `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 page |
-| `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 page |
+| `STS-AUTHN-0174` | A request to the second-factor set-up step was malformed, or asked to confirm a code before an authenticator app was chosen. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0175` | A second-factor set-up choice was refused: the mechanism is switched off in the realm, or the person holds a second factor already. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0180` | A signed-in session was refused because the directory holds no entry for the person, so there is no subject to give it (ldap.autocreateUsers off, or a federation relationship with dynamic provisioning off and nobody provisioned). | the calling door's own refusal |
 | `STS-AUTHN-0181` | A security-key assertion verified and was refused because its ceremony challenge had already been answered, by another node or a request racing this one (#46). | HTTP 200 security-key page with the reason |
 | `STS-AUTHN-0182` | A single-use credential (a one-time code step, a recovery code, a security-key assertion, an activation or password reset link) could not be proved unspent because the cluster store could not be asked, so it was refused. | the calling door's own refusal page |
@@ -1338,7 +1338,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
-| `STS-AUTHN-0196` | A password presented as the second factor after a wallet sign-in was refused. | HTTP 200 page at /authn/password-factor, with the reason |
+| `STS-AUTHN-0196` | A password presented as the second factor after a wallet sign-in was refused. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0200` | A password was presented for an account that is disabled (pwdAccountLockedTime on its entry), and it was refused before it was compared, in every mode. | the door's own refusal: "authentication failed" on the sign-in screen, LDAP 49, invalid_grant, a SOAP fault, SCIM 401 |
 | `STS-AUTHN-0201` | A session, or anything issued on a person's behalf, was refused because the account is disabled — at authn.startSession(), a live session presented again, or the issuance gate. | the door's own refusal (the sign-in screen again, a 403 page, access_denied) |
 | `STS-AUTHN-0202` | Disabling or enabling an account could not write pwdAccountLockedTime onto the person's entry. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -1396,20 +1396,20 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0254` | A new security key was refused as a second factor: this realm's authentication policy does not accept one (#64). | sign-in screen or portal page with the reason |
 | `STS-AUTHN-0255` | A password was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0256` | A second factor was needed after a first and none this realm accepts was available: the person holds none, and the policy does not accept a password as one (#64). | sign-in refused with the reason |
-| `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | the page, with the reason |
-| `STS-AUTHN-0258` | Another emailed code or link was asked for sooner than the policy's resend interval (#64). | the page, with the reason |
-| `STS-AUTHN-0259` | An emailed code or link could not be queued by the mail channel; the line names the channel's refusal (#64). | the page offers the other factors |
+| `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0258` | Another emailed code or link was asked for sooner than the policy's resend interval (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0259` | An emailed code or link could not be queued by the mail channel; the line names the channel's refusal (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0260` | An emailed code or link was asked for as a first factor where this realm does not offer one, or where a key or a password is demanded (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0261` | An emailed first factor was asked for an account that has no verified address, is disabled, or does not exist; nothing was mailed and the page does not say so (#64). | the same page as a sent one |
-| `STS-AUTHN-0262` | An emailed code or link was presented after it had already been used (#64). | the page, with the reason |
-| `STS-AUTHN-0263` | Whether an emailed code or link had been used could not be asked of the store, so it was not accepted (#64). | the page, with the reason |
-| `STS-AUTHN-0264` | A wrong emailed code or link was presented (#64). | the page, with the attempts left |
-| `STS-AUTHN-0265` | An emailed code or link was presented after it expired (#64). | the page, with the reason |
-| `STS-AUTHN-0266` | An emailed sign-in link was opened in a browser other than the one that started the sign-in (#64, D3). | the page, with the reason |
-| `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | an error page |
+| `STS-AUTHN-0262` | An emailed code or link was presented after it had already been used (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0263` | Whether an emailed code or link had been used could not be asked of the store, so it was not accepted (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0264` | A wrong emailed code or link was presented (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0265` | An emailed code or link was presented after it expired (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0266` | An emailed sign-in link was opened in a browser other than the one that started the sign-in (#64, D3). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | HTTP 500 { ok: false, errors } from /authn-api (#573) |
 | `STS-AUTHN-0268` | A session was refused: this realm's authentication policy does not accept the mechanism the door named as a first factor (a certificate, a Kerberos ticket, a federation partner, a wallet, a passkey, a password or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0269` | A session was refused: this realm's authentication policy does not accept the mechanism that answered as a second factor (a password or wallet after another factor, or an emailed code or link) (#64). | the door's own refusal page |
-| `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
+| `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
 | `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
@@ -1449,6 +1449,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0326` | An act on the sign-in API (/authn-api, #571) carried no Origin header, or one this service does not answer on: it was not sent by a page of this service. | HTTP 403, { ok: false, errors } |
 | `STS-AUTHN-0327` | An act on the sign-in API (/authn-api, #571) carried no X-CSRF-Token, or one that is not the token of the session its sts_session cookie names, or the browser holds no session at all. | HTTP 403, { ok: false, errors } |
 | `STS-AUTHN-0328` | An operation of the sign-in API (/authn-api, #571) threw; the browser is told the sign-in could not continue. | HTTP 500, { ok: false, errors } |
+| `STS-AUTHN-0329` | The passkey step's ceremony was asked to be armed (POST /authn-api/mfa/{id}/webauthn/options, #572) while the person had still to choose one of several passkeys (the passkey policy offers them one by one, #534). | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0330` | An act on a second-factor or emailed-factor step of the sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the operation does not take, or a page that is not one. | HTTP 400, { ok: false, errors } |
 
 ## STS-OAUTH
 

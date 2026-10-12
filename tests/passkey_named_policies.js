@@ -305,16 +305,6 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name, within) {
-    let text = html;
-    if (within) {
-      const at = html.indexOf('id="' + within + '"');
-      text = at < 0 ? '' : html.slice(at, html.indexOf('>', at));
-    }
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(text);
-    return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-      : '';
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -390,24 +380,40 @@ function childMain() {
         opened: s.opened, fields: { action: 'login', username: name,
           password: passwordless ? '' : PASSWORD,
           webauthn_only: passwordless ? '1' : '' } });
-      return { s: s, step: step,
-               mfaId: (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1] };
+      return { s: s, step: step, mfaId: step.id };
+    };
+    // A STEP'S ANSWER READ AS THE FORM'S WAS (#572): `redirect` — and a
+    // session refused at the end, whose answer names the sign-in screen —
+    // as its 303 with `location`; a refusal on the step's own page at its
+    // status (400), the sentence its text.
+    const formLike = function (a) {
+      const loc = String(a.location || '');
+      const goes = a.next === 'redirect' || a.next === 'mfa' ||
+        (a.next === 'refused' && !!loc);
+      return { status: goes ? 303 : a.apiStatus,
+               headers: goes ? { location: loc } : {},
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || ''),
+               answer: a };
+    };
+    // The passkey step's ceremony (#572): armed by `…/webauthn/options`,
+    // made by the test's authenticator, sent to `…/webauthn`.
+    const ceremony = async function (f, make) {
+      const done = await authnScreen.passkeyStep({ port: port,
+        jar: f.s.b.jar, opened: f.step }, make);
+      return formLike(done.answer);
     };
     const register = async function (name, key) {
       const f = await firstStep(name, true);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'create',
-        credential: JSON.stringify(key.register(
-          dataAttribute(f.step.text, 'challenge'),
-          dataAttribute(f.step.text, 'userid'))) } });
+      return ceremony(f, function (c) {
+        return key.register(c.challenge, c.user.id);
+      });
     };
     const signIn = async function (name, key, passwordless) {
       const f = await firstStep(name, passwordless);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'get',
-        credential: JSON.stringify(key.assert(
-          dataAttribute(f.step.text, 'challenge', 'wa-data'))) } });
+      return ceremony(f, function (c) {
+        return key.assert(c.challenge);
+      });
     };
     const usernameless = async function (key) {
       const s = await screenFor();
@@ -430,7 +436,7 @@ function childMain() {
     note(ok.ok, 'B1. the group profile is saved', JSON.stringify(ok.errors));
     let r = await register('pkn-admin', makeAuthenticator(RPID, ORIGIN,
                                                           'synced'));
-    note(r.status === 200 && !redirected(r) &&
+    note(r.status === 400 && !redirected(r) &&
          /device-bound passkeys/.test(r.text) &&
          credentials.keysOf('pkn-admin').length === 0,
          'B2. the group\'s member: a synced passkey is refused by the ' +

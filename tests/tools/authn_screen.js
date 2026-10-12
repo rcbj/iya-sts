@@ -304,16 +304,100 @@ async function passkeyOptions(o) {
   return answer;
 }
 
+// THE STEPS AFTER THE SCREEN (#572, #573): each page's path, and the name
+// `GET /authn-api/mfa/{id}?page=` gives it.
+const STEP_PAGES = {
+  '/authn/totp': 'totp', '/authn/webauthn': 'webauthn',
+  '/authn/backup-code': 'backup-code', '/authn/password-factor': 'password',
+  '/authn/mfa-setup': 'setup', '/authn/email-code': 'email-code',
+  '/authn/email-link': 'email-link', '/authn/email-link/open': 'email-link-open'
+};
+
 /**
- * Submits the screen and, where the act names a page of its own — a second
- * factor's, the set-up step's, the forced password change's — opens that
- * page with a GET, as the screen's runtime sends the browser there. The
- * page is what the form's POST used to answer with; a `redirect` stays
- * `submit()`'s 303-shaped answer, and a refusal its JSON one.
+ * A step's address split into its prefix, its page and its query.
+ *
+ * @param {string} at - `/realm/x/authn/totp?mfa=…`, or a URL
+ * @returns {object} `{ prefix, path, page, id, key, t }`, `page` '' where
+ *   the address is not a step's
+ */
+function stepOf(at) {
+  log.debug("Entering stepOf().");
+  const url = new URL(String(at), 'http://here.invalid');
+  const path = Object.keys(STEP_PAGES).sort(function (x, y) {
+    return y.length - x.length;
+  }).filter(function (one) {
+    return url.pathname.endsWith(one);
+  })[0] || url.pathname;
+  const prefix = STEP_PAGES[path]
+    ? url.pathname.slice(0, url.pathname.length - path.length) : '';
+  log.debug("Leaving stepOf().");
+  return { prefix: prefix, path: path, page: STEP_PAGES[path] || '',
+           id: url.searchParams.get('mfa') || '',
+           key: url.searchParams.get('key') || '',
+           t: url.searchParams.get('t') || '' };
+}
+
+/**
+ * Opens a step's page as the sign-in surface does (#572, #573): the shell,
+ * then `GET /authn-api/mfa/{id}?page=`.
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`, `at` (the step's
+ *   address, as an act's `location` named it); `page`, another page of the
+ *   same step
+ * @returns {Promise<object>} `{ status, shell, json, view, csrf, prefix, id,
+ *   page, key, t, text }`
+ */
+async function openStep(o) {
+  log.debug("Entering openStep().");
+  const where = stepOf(o.at);
+  const page = o.page || where.page;
+  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
+                             userAgent: o.userAgent, method: 'GET',
+                             path: String(o.at).replace(/^https?:\/\/[^/]+/,
+                                                         '') });
+  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
+    userAgent: o.userAgent, method: 'GET',
+    path: where.prefix + '/authn-api/mfa/' + encodeURIComponent(where.id) +
+          '?page=' + page + (where.key ? '&key=' +
+                             encodeURIComponent(where.key) : ''),
+    headers: { accept: 'application/json' } });
+  log.debug("Leaving openStep(). " + view.status);
+  return { status: view.status, shell: shell, json: view.json,
+           view: view.json && view.json.view, text: view.text,
+           csrf: (view.json && view.json.csrf) || '',
+           prefix: where.prefix, id: where.id, page: page, key: where.key,
+           t: where.t, at: o.at };
+}
+
+/**
+ * Sends a step's act, bound as its page binds it (#572, #573).
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`, `opened` (an
+ *   `openStep()` answer), `op` (`totp`, `backup-code`, `password`,
+ *   `webauthn/options`, `webauthn`, `setup/totp`, `setup/confirm`,
+ *   `setup/webauthn`, `skip`, `email/send`, `email/code`,
+ *   `email-link/open`), `body`; `origin`, `contentType`, `csrf` to send
+ *   something else
+ * @returns {Promise<object>} the answer, as `act()`'s
+ */
+async function stepAct(o) {
+  log.debug("Entering stepAct(). " + o.op);
+  const answer = await act(Object.assign({}, o, {
+    path: '/authn-api/mfa/' + encodeURIComponent(o.opened.id) + '/' + o.op }));
+  log.debug("Leaving stepAct(). " + answer.apiStatus + " " + answer.next);
+  return answer;
+}
+
+/**
+ * Submits the screen and, where the act names a step's page of its own —
+ * a second factor's, the set-up step's (#572), an emailed factor's (#573),
+ * the forced password change's — opens it as the surface does: a step's
+ * view (`openStep()`), or the password change's (`open()`). A `redirect`
+ * stays `submit()`'s 303-shaped answer, and a refusal its JSON one.
  *
  * @param {object} o - as `submit()`
- * @returns {Promise<object>} the page `{ status, headers, text, json,
- *   answer }`, or `submit()`'s answer
+ * @returns {Promise<object>} the opened page with `answer`, or `submit()`'s
+ *   answer
  */
 async function follow(o) {
   log.debug("Entering follow().");
@@ -322,12 +406,69 @@ async function follow(o) {
     log.debug("Leaving follow(). " + answer.next);
     return answer;
   }
-  const page = await call({ port: o.port, ca: o.ca, jar: o.jar,
-                            userAgent: o.userAgent, method: 'GET',
-                            path: answer.location });
+  const page = answer.next === 'mfa'
+    ? await openStep({ port: o.port, ca: o.ca, jar: o.jar,
+                       userAgent: o.userAgent, at: answer.location })
+    : await open({ port: o.port, ca: o.ca, jar: o.jar,
+                   userAgent: o.userAgent, at: answer.location });
   page.answer = answer;
   log.debug("Leaving follow(). The step's page.");
   return page;
+}
+
+/**
+ * Where an answer names a step, opens it; where that step is an OFFERED
+ * set-up (#246), presses Ignore, as a person who only wants to sign in on a
+ * password does. Any other answer as it is.
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`
+ * @param {object} answer - an act's answer
+ * @returns {Promise<object>} the Ignore's answer, or `answer`
+ */
+async function ignoreOffer(o, answer) {
+  log.debug("Entering ignoreOffer().");
+  if (!(answer.next === 'mfa' && answer.step === 'enrol')) {
+    log.debug("Leaving ignoreOffer(). " + answer.next);
+    return answer;
+  }
+  const opened = await openStep(Object.assign({}, o,
+                                              { at: answer.location }));
+  if (!(opened.view && opened.view.setup && opened.view.setup.optional)) {
+    log.debug("Leaving ignoreOffer(). A required set-up step.");
+    answer.opened = opened;
+    return answer;
+  }
+  const ignored = await stepAct(Object.assign({}, o, { opened: opened,
+                                                       op: 'skip', body: {} }));
+  ignored.ignored = true;
+  log.debug("Leaving ignoreOffer(). Ignored.");
+  return ignored;
+}
+
+/**
+ * A step's passkey ceremony, its authenticator the test's own: arms it
+ * (`webauthn/options`), hands the options to `make` — which answers the
+ * credential's JSON form, or a promise of it — and sends the result.
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`, `opened` (the
+ *   passkey page, `openStep()`), `key` (a chosen passkey, #534)
+ * @param {Function} make - `(ceremony) => credential`
+ * @returns {Promise<object>} `{ armed, answer }`
+ */
+async function passkeyStep(o, make) {
+  log.debug("Entering passkeyStep().");
+  const armed = await stepAct(Object.assign({}, o, { op: 'webauthn/options',
+    body: o.key ? { key: o.key } : {} }));
+  if (!armed.json || !armed.json.ok) {
+    log.debug("Leaving passkeyStep(). Not armed.");
+    return { armed: armed, answer: armed };
+  }
+  const credential = await make(armed.json);
+  const answer = await stepAct(Object.assign({}, o, { op: 'webauthn',
+    body: { credential: typeof credential === 'string'
+      ? credential : JSON.stringify(credential) } }));
+  log.debug("Leaving passkeyStep(). " + answer.next);
+  return { armed: armed, answer: answer };
 }
 
 module.exports = {
@@ -336,6 +477,12 @@ module.exports = {
   act: act,
   submit: submit,
   follow: follow,
+  STEP_PAGES: STEP_PAGES,
+  stepOf: stepOf,
+  openStep: openStep,
+  stepAct: stepAct,
+  ignoreOffer: ignoreOffer,
+  passkeyStep: passkeyStep,
   passkeyOptions: passkeyOptions,
   changePassword: changePassword,
   bodyFor: bodyFor

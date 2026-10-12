@@ -28,6 +28,34 @@ holds it may act on that sign-in, so it is a bearer value, like the
 | `GET /authn-api/pending/{id}/partners` | The partners an application lets a person choose between |
 | `GET`, `POST /authn-api/password-change/{id}` | A password that must be changed before the sign-in continues |
 
+## The steps after the screen
+
+Since #572 and #573 the second-factor pages (`/authn/totp`,
+`/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`,
+`/authn/mfa-setup`) and the emailed code and link pages
+(`/authn/email-code`, `/authn/email-link`, `/authn/email-link/open`) are
+drawn the same way. A step's id — the `mfa` in the page's address — is a
+bearer value like the pending sign-in's.
+
+| Operation | What it answers or does |
+|---|---|
+| `GET /authn-api/mfa/{id}?page=` | What the step's page shows (`page`: `totp`, `webauthn`, `backup-code`, `password`, `setup`, `email-code`, `email-link`, `email-link-open`) and `csrf`. Refused where the page could never be drawn for the step |
+| `POST /authn-api/mfa/{id}/totp` | A one-time code (`code`) |
+| `POST /authn-api/mfa/{id}/backup-code` | A recovery code, spent |
+| `POST /authn-api/mfa/{id}/password` | A password as the second factor, after a wallet |
+| `POST /authn-api/mfa/{id}/webauthn/options`, `…/webauthn` | The passkey ceremony's options, then its result (`credential`) |
+| `POST /authn-api/mfa/{id}/setup/totp`, `…/setup/confirm`, `…/setup/webauthn` | Setting up a second factor: an authenticator app (its `otpauth:` URI is in the view; the first `code` confirms it) or a passkey |
+| `POST /authn-api/mfa/{id}/skip` | Ignore an offered second factor, where it was offered rather than required |
+| `POST /authn-api/mfa/{id}/email/send` | Mail a code or link (`kind`); answers `next: stay` |
+| `POST /authn-api/mfa/{id}/email/code` | An emailed code |
+| `POST /authn-api/mfa/{id}/email-link/open` | The mailed link's token (`t`), only in the browser that asked for it |
+
+A wrong code, a passkey that does not verify or a rate limit is shown on the
+step's own page, and the step is kept. When the account cannot be signed in
+at the end of a step, the answer is `refused` with `location` naming the
+sign-in screen, which shows why. An emailed factor's refusal that ends the
+sign-in also carries `end`, with the page's title.
+
 ## What every act needs
 
 Each `POST` is sent by a page of this service, and the API checks it:

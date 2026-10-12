@@ -49,8 +49,19 @@
 // cookie both requests set folded in; `headers` a `get()`/`getSetCookie()`
 // pair over the same, so a job's own jar `keep()`s the answer as it kept a
 // fetch response. A job follows `location` with a GET, as a browser follows
-// the 303 the form was answered with: a second factor's page is still
-// server-drawn (#572) and answers its HTML there.
+// the 303 the form was answered with.
+//
+// ---------------------------------------------------------------------------
+// AND THE STEPS AFTER THE SCREEN (#572, #573): the second-factor pages and
+// the emailed factor's are pages of the same surface, each drawn from
+//
+//   GET  /authn-api/mfa/<id>?page=<page>        { view, csrf }
+//   POST /authn-api/mfa/<id>/<operation>        JSON, Origin, X-CSRF-Token
+//
+// `step()` opens one at the address an answer named (the shell, then the
+// view), `stepAct()` sends one of its acts, and `passkeyStep()` runs a
+// passkey ceremony with the job's own authenticator. `ignoreOffer()`
+// presses the offered set-up step's Ignore over the API.
 // ===========================================================================
 
 const log = require("bunyan").createLogger({ name: "authn_signin",
@@ -454,63 +465,167 @@ async function signIn(base, where, fields, options) {
   return out;
 }
 
+// THE STEPS AFTER THE SCREEN (#572, #573): each page's path, and the name
+// `GET /authn-api/mfa/{id}?page=` gives it.
+const STEP_PAGES = {
+  "/authn/totp": "totp", "/authn/webauthn": "webauthn",
+  "/authn/backup-code": "backup-code", "/authn/password-factor": "password",
+  "/authn/mfa-setup": "setup", "/authn/email-code": "email-code",
+  "/authn/email-link": "email-link",
+  "/authn/email-link/open": "email-link-open"
+};
+
+/**
+ * Opens a step's page as the sign-in surface does (#572, #573): the shell
+ * (for the arrival cookie) and `GET /authn-api/mfa/{id}?page=`.
+ *
+ * @param {string} where - the step's address, absolute (an answer's
+ *   `location`, or a mailed link)
+ * @param {object} [options] - `cookie`; `headers`; `page`, another page of
+ *   the same step
+ * @returns {Promise<object>} `{ status, json, view, csrf, cookie,
+ *   setCookies, id, page, t, base }`
+ */
+async function step(where, options) {
+  log.debug("Entering step().");
+  const opts = options || {};
+  const url = new URL(String(where));
+  const path = Object.keys(STEP_PAGES).sort(function (x, y) {
+    return y.length - x.length;
+  }).filter(function (one) {
+    return url.pathname.endsWith(one);
+  })[0] || "";
+  const base = url.origin + url.pathname.slice(0, url.pathname.length -
+                                                path.length);
+  const id = url.searchParams.get("mfa") || "";
+  const key = url.searchParams.get("key") || "";
+  const page = opts.page || STEP_PAGES[path] || "totp";
+  let cookie = String(opts.cookie || "");
+  const setCookies = [];
+  const extra = opts.headers || {};
+  const shell = await fetch(url.toString(), { redirect: "manual",
+    headers: Object.assign({}, extra, cookie ? { cookie: cookie } : {}) });
+  setCookiesOf(shell).forEach(function (one) {
+    setCookies.push(one);
+  });
+  cookie = foldCookies(cookie, setCookies);
+  await shell.text();
+  const res = await fetch(base + "/authn-api/mfa/" + encodeURIComponent(id) +
+    "?page=" + page + (key ? "&key=" + encodeURIComponent(key) : ""), {
+      headers: Object.assign({ accept: "application/json" }, extra,
+                             cookie ? { cookie: cookie } : {}) });
+  setCookiesOf(res).forEach(function (one) {
+    setCookies.push(one);
+  });
+  cookie = foldCookies(cookie, setCookiesOf(res));
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in step(): " + ((e && e.message) || e));
+    // Not JSON: the caller reads the status.
+    json = null;
+  }
+  log.debug("Leaving step(). " + res.status);
+  return { status: res.status, shellStatus: shell.status, json: json,
+           text: text, view: json && json.view,
+           csrf: (json && json.csrf) || "", cookie: cookie,
+           setCookies: setCookies, id: id, page: page, key: key,
+           t: url.searchParams.get("t") || "", base: base };
+}
+
+/**
+ * Sends one of a step's acts, bound as its page binds it.
+ *
+ * @param {object} opened - a `step()` answer
+ * @param {string} op - `totp`, `backup-code`, `password`,
+ *   `webauthn/options`, `webauthn`, `setup/totp`, `setup/confirm`,
+ *   `setup/webauthn`, `skip`, `email/send`, `email/code`,
+ *   `email-link/open`
+ * @param {object} body - the act's JSON
+ * @param {object} [options] - `headers`; `cookie` (the step's where left
+ *   out); `origin`, `contentType`, `csrf` to send something else
+ * @returns {Promise<object>} the answer, as `act()`'s
+ */
+async function stepAct(opened, op, body, options) {
+  log.debug("Entering stepAct(). " + op);
+  const opts = options || {};
+  const answer = await act(opened.base, "/authn-api/mfa/" +
+    encodeURIComponent(opened.id) + "/" + op, body || {},
+    { cookie: opts.cookie || opened.cookie,
+      csrf: opts.csrf === undefined ? opened.csrf : opts.csrf,
+      origin: opts.origin, contentType: opts.contentType,
+      setCookies: opened.setCookies, headers: opts.headers });
+  log.debug("Leaving stepAct(). " + answer.status + " " + answer.next);
+  return answer;
+}
+
+/**
+ * A step's passkey ceremony with the job's own authenticator: arms it
+ * (`webauthn/options`), hands the options to `make` — which answers the
+ * credential's JSON form, or a promise of it — and sends the result.
+ *
+ * @param {object} opened - the passkey page, a `step()` answer
+ * @param {Function} make - `(ceremony) => credential`: `ceremony` is
+ *   `{ mode, challenge, rpId, user, allow, exclude, options }`
+ * @param {object} [options] - `key`, a chosen passkey (#534); `headers`
+ * @returns {Promise<object>} the answer, `armed` beside it
+ */
+async function passkeyStep(opened, make, options) {
+  log.debug("Entering passkeyStep().");
+  const opts = options || {};
+  const armed = await stepAct(opened, "webauthn/options",
+                              opts.key ? { key: opts.key } : {}, opts);
+  if (!armed.json || !armed.json.ok) {
+    log.debug("Leaving passkeyStep(). Not armed.");
+    armed.armed = armed;
+    return armed;
+  }
+  const credential = await make(armed.json);
+  const answer = await stepAct(opened, "webauthn",
+    { credential: typeof credential === "string" ? credential
+                                                 : JSON.stringify(credential) },
+    Object.assign({}, opts, { cookie: armed.cookie }));
+  answer.armed = armed;
+  log.debug("Leaving passkeyStep(). " + answer.next);
+  return answer;
+}
+
 /**
  * Where an answer is an administrator's OFFERED second factor (#246's
  * `requireSecondFactorForAdministrators: offer`), presses its Ignore button
- * and answers the set-up step's 303; any other answer as it is. For a walk
- * that reaches the offer after another step (the forced password change).
+ * over the API (#572) — any other answer as it is, and a REQUIRED set-up
+ * step's answer with the step's view beside it (`opened`). For a walk that
+ * reaches the offer after another step (the forced password change).
  *
- * @param {string} base - the service's base
+ * @param {string} base - the service's base (unused since #572: the
+ *   answer's address names it)
  * @param {object} answer - an act's answer
- * @returns {Promise<object>} `signIn()`'s answer
+ * @returns {Promise<object>} the Ignore's answer, `ignored: true`
  */
 async function ignoreOffer(base, answer) {
   log.debug("Entering ignoreOffer().");
+  void base;
   if (!(answer.next === "mfa" && answer.step === "enrol")) {
     log.debug("Leaving ignoreOffer(). " + answer.next);
     return answer;
   }
-  const page = await fetch(answer.location, { redirect: "manual",
-    headers: { cookie: answer.cookie } });
-  const html = await page.text();
-  if (!/id="mfa-setup-ignore"/.test(html)) {
+  const opened = await step(answer.location, { cookie: answer.cookie });
+  if (!(opened.view && opened.view.setup && opened.view.setup.optional)) {
     log.debug("Leaving ignoreOffer(). A required set-up step.");
-    answer.text = html;
+    answer.opened = opened;
+    answer.text = opened.text;
     return answer;
   }
-  const mfaId = (html.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "";
-  const b = baseOf(base);
-  const ignored = await fetch(b.base + "/authn/mfa-setup", { method: "POST",
-    redirect: "manual",
-    headers: { "content-type": "application/x-www-form-urlencoded",
-               cookie: answer.cookie },
-    body: "mfa_id=" + encodeURIComponent(mfaId) + "&action=ignore" });
-  await ignored.text();
-  const own = setCookiesOf(ignored);
-  const all = answer.setCookies.concat(own);
-  const location = ignored.headers.get("location")
-    ? new URL(ignored.headers.get("location"), b.origin).toString() : "";
+  const ignored = await stepAct(opened, "skip", {});
+  ignored.setCookies = (answer.setCookies || []).concat(
+    ignored.setCookies || []);
+  ignored.ignored = true;
+  ignored.view = answer.view;
+  ignored.csrf = answer.csrf;
   log.debug("Leaving ignoreOffer(). The offer was ignored.");
-  return { status: ignored.status, ok: ignored.status === 303,
-    next: ignored.status === 303 ? "redirect" : "refused",
-    location: location, ignored: true, json: null, errors: [],
-    view: answer.view, csrf: answer.csrf,
-    cookie: foldCookies(answer.cookie, own), setCookies: all,
-    headers: {
-      get: function (name) {
-        const n = String(name).toLowerCase();
-        if (n === "location") {
-          return location || null;
-        }
-        if (n === "set-cookie") {
-          return all.length ? all.join(", ") : null;
-        }
-        return ignored.headers.get(name);
-      },
-      getSetCookie: function () {
-        return all.slice();
-      }
-    } };
+  return ignored;
 }
 
 /**
@@ -615,7 +730,16 @@ async function asFormAnswer(answer, go) {
   }
   if ((answer.next === "mfa" || answer.next === "password-change") &&
       answer.location) {
+    // A STEP'S PAGE IS A PAGE OF THE SIGN-IN SURFACE (#572, #573): its
+    // shell is fetched with the job's `go()` (its cookies kept), and what
+    // the page shows is its view, beside it as `step`.
     const page = await go("GET", answer.location);
+    if (answer.next === "mfa") {
+      const opened = await step(answer.location, { cookie: answer.cookie });
+      log.debug("Leaving asFormAnswer(). The step's view.");
+      return Object.assign({}, page, { answer: answer, step: opened,
+                                       text: opened.text });
+    }
     log.debug("Leaving asFormAnswer(). The step's page.");
     return Object.assign({}, page, { answer: answer });
   }
@@ -639,5 +763,9 @@ module.exports = {
   signInWithJar: signInWithJar,
   passkeyOptions: passkeyOptions,
   changePassword: changePassword,
+  STEP_PAGES: STEP_PAGES,
+  step: step,
+  stepAct: stepAct,
+  passkeyStep: passkeyStep,
   bodyFor: bodyFor
 };

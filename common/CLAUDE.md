@@ -10952,8 +10952,11 @@ is the operator's page; each file's header argues its part.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
-The emailed six-digit code and the emailed sign-in link are drawn and checked
-by `authn/email_factor.ts` (`authn/CLAUDE.md`); what the screens, the
+The emailed six-digit code and the emailed sign-in link are answered and
+checked by `authn/email_factor.ts` (`authn/CLAUDE.md`) — their three pages
+are the sign-in surface's since #573, drawn in the browser from
+`/authn-api/mfa/{id}`, the mailed link still landing on
+`/authn/email-link/open`, whose GET spends nothing; what the screens, the
 credential store, the portal and the console must agree on is here:
 
 - **A PERSON OPTS IN (D8)** — `stsMailFactor` (`code` | `link`), from
@@ -11520,10 +11523,12 @@ portal translations).
 
 **#534 ADDED `aggregateDevices` (2026-10-08)**, on by default, which is what
 the passkey step did before: one ceremony with every key of the step's role
-in `allowCredentials`. Off, `authn.ts`'s `webauthnPage()` draws a list of
-links for a person holding more than one key. Each link is
-`/authn/webauthn?mfa=<step>&key=<credential id>`, and the page drawn for a
-chosen key names only that key in `data-allow`. A chosen id that is not one
+in `allowCredentials`. Off, the passkey step's page draws a list of
+links for a person holding more than one key (`webauthnFacts()`'s `choices`
+since #572, when `webauthnPage()` became facts). Each link is
+`/authn/webauthn?mfa=<step>&key=<credential id>`, and the ceremony armed for a
+chosen key (`POST /authn-api/mfa/{id}/webauthn/options`, `key`) names only
+that key in `allow`. A chosen id that is not one
 of the step's keys draws the list again. The GET now draws a passwordless
 step for a person holding a PRIMARY key, and still never the enrolment
 ceremony. `keyForAssertion()` still decides which key an assertion is
@@ -11547,8 +11552,8 @@ selects for the person where no door did) follow it.
 
 These doors select:
 - `startSessionHere()` (the person and the application);
-- `webauthnPage()` and `POST /authn/webauthn` (the step's person and
-  application);
+- `webauthnFacts()` and the passkey step's act (the step's person and
+  application; `webauthnPage()` and `POST /authn/webauthn` until #572);
 - `loginPage()` (the application, where nothing selected yet);
 - `passkeySignIn()` (the application, then the owner);
 - `/portal/keys` and activation (the person).
@@ -12003,8 +12008,9 @@ specification's endpoint is never converted**.
 | `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
 | `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
 | `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. |
-| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in screen's passkey (`authn/web_authn.ts`). |
-| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. |
+| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
+| `web_qr.ts` (`WebQr`) | A QR code drawn in the browser as inline SVG, ISO/IEC 18004 byte mode (#589) — the portal's Credential Offer, and since #572 the set-up step's authenticator app (`otpauth:`); moved here from `portal/` by #572. |
+| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code. |
 | `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
 | `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
 

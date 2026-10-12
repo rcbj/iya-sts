@@ -2039,16 +2039,20 @@ function recordHttp(req, res, detail) {
 // AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
 // sign-in's id and a forced password change's step id, each a bearer
 // capability over that sign-in, and the operation's path carries it. The row
-// keeps the operation and drops the id.
-// THE WALLET SIGN-IN'S TRANSACTION (#574) is a third: `/authn-api/wallet/
+// keeps the operation and drops the id. A second-factor or emailed-factor
+// step's id since #572 and #573 (`/authn-api/mfa/{id}`) is another, the same
+// capability `?mfa=` always was.
+// THE WALLET SIGN-IN'S TRANSACTION (#574) is another: `/authn-api/wallet/
 // {state}`. And the same capabilities travel in the QUERY of the pages they
 // open — `/authn/login?authn=`, `/authn/wallet/wait?authn=&state=&mfa=`, a
 // wallet's same-device return with its `response_code` — so a full URL a
 // line records has those values replaced too (`REDACTED_CAPABILITIES`).
 const REDACTED_PATHS =
-  /(\/authn-api\/(?:pending|password-change|wallet)\/)[^/?#]+/g;
+  /(\/authn-api\/(?:pending|password-change|wallet|mfa)\/)[^/?#]+/g;
+// And a mailed sign-in link's token (#573, `/authn/email-link/open?t=`),
+// which is a credential rather than a capability over a step.
 const REDACTED_CAPABILITIES = ['authn', 'mfa', 'state', 'response_code',
-                               'change'];
+                               'change', 't'];
 const REDACTED_QUERY_VALUES = new RegExp('([?&](?:' +
   REDACTED_CAPABILITIES.join('|') + ')=)[^&#]*', 'g');
 

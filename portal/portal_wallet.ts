@@ -22,7 +22,7 @@
 //   POST /account-api/credentials/offers      an offer, for this person
 //
 // and the page is drawn in the browser by `web_wallet.ts`, the QR code by
-// `web_qr.ts`, from the offer URI the answer carries.
+// `common/web_qr.ts`, from the offer URI the answer carries.
 //
 // **THE SUBJECT IS THE TOKEN'S, AND THERE IS NO PARAMETER FOR IT** — the
 // portal's rule (OWASP A01, `portal/CLAUDE.md`): the offer names

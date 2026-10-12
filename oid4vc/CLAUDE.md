@@ -13,7 +13,7 @@ DID Core with DIF domain linkage.
 | `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
 | `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
-| `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`portal/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
+| `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`common/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
@@ -314,7 +314,7 @@ above is the surface's rule rather than an exception:
   …/{state}/status` (the collection) and `POST …/{state}/dc-api`.
 * **The drawing is `web_vc_signin.ts`'s**: the start page (which starts at
   once and REPLACES itself in the history, so Back does not start a second),
-  the wait page, the QR code — drawn in the browser by `portal/web_qr.ts`,
+  the wait page, the QR code — drawn in the browser by `common/web_qr.ts`,
   the portal's encoder, from the request's text — and a refusal, whose `view`
   of kind `refused` carries the heading, the presentation's checks and the
   ways on, under its English sentence.
@@ -816,7 +816,7 @@ second catalogue. What is more than a number, and what
   moved to the user portal: `/portal/wallet`, over
   `GET /account-api/credentials/offerable` and
   `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
-  `portal/web_wallet.ts`, the QR code by `portal/web_qr.ts`), and
+  `portal/web_wallet.ts`, the QR code by `common/web_qr.ts`), and
   `STS-VC-0027` (a "continue without signing in" session refused there) is
   retired. **The `/issuer` pages are development-only since #585**: a
   product realm answers them as unregistered paths (Express's own 404). From

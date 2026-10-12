@@ -171,12 +171,6 @@ function codeFor(secret, atMs, opts) {
 // assertion here is about WHICH screen came back — a fetch that followed the
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
 function absolute(location) {
   log.debug("Entering absolute().");
   log.debug("Leaving absolute().");
@@ -720,20 +714,25 @@ async function theSignInDemandsIt(enrolment) {
   let amr = "";
 
   const b = await signIn(PORTAL_DOOR, OWNER, async function (bb, r) {
-    sawTheCodeScreen = /One-time code|one-time code|authenticator app/i.test(
-        r.text) &&
-                       /name="mfa_id"/.test(r.text);
+    // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): its view, opened at
+    // the address the screen's act named.
+    sawTheCodeScreen = !!(r.step && r.step.view &&
+                          r.step.view.page === "totp");
     assert.ok(sawTheCodeScreen,
       "the password alone got through, or some other screen was drawn: " +
       String(r.text).slice(0, 400));
-    const mfaId = (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
+    const send = async function (code) {
+      const a = await authnSignin.stepAct(r.step, "totp", { code: code },
+                                          { cookie: bb.cookieHeader() });
+      keepCookies(bb, a);
+      return { status: a.next === "redirect" ? 303 : a.status,
+               location: a.location, text: a.errors.join(" ") || a.text };
+    };
 
     // RFC 6238 SECTION 5.2, END TO END. The code that CONFIRMED the enrolment
     // is a code, and a code is accepted once.
-    let x = await bb.go("POST", "/authn/totp",
-                        form({ mfa_id: mfaId,
-                               code: enrolment.confirmationCode }));
-    replayRefused = x.status === 200 && /already been used/.test(x.text);
+    let x = await send(enrolment.confirmationCode);
+    replayRefused = x.status === 400 && /already been used/.test(x.text);
     assert.ok(replayRefused,
       "the code that confirmed the enrolment was accepted a second time, or " +
       "was refused with the wrong reason: " + x.status + " " +
@@ -744,7 +743,7 @@ async function theSignInDemandsIt(enrolment) {
     // accepted now — which is the whole point of the window and lets this run
     // in milliseconds instead of half a minute.
     const next = codeFor(enrolment.secret, Date.now() + 30000);
-    x = await bb.go("POST", "/authn/totp", form({ mfa_id: mfaId, code: next }));
+    x = await send(next);
     return x;
   });
 

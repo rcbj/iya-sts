@@ -2384,44 +2384,44 @@
     "text": "svarar med inloggningsytans skal; dess skript slutför inloggningen på /authn-api/wallet när plånboken har svarat"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "Efter en plånboksinloggning på en begäran som kräver två faktorer, för en person som varken har någon autentiseringsapp eller säkerhetsnyckel: deras lösenord, kontrollerat som inloggningsskärmen kontrollerar ett och hastighetsbegränsat i samma hink. Sessionen registrerar amr [\"pop\",\"pwd\"] och acr \"mfa\". Inget skript."
+    "en": "9dc6755b8f15d19f",
+    "text": "Efter en plånboksinloggning på en begäran som kräver två faktorer, för en person som varken har någon autentiseringsapp eller säkerhetsnyckel: deras lösenord, kontrollerat som inloggningsskärmen kontrollerar ett och hastighetsbegränsat i samma hink. Sessionen registrerar amr [\"pop\",\"pwd\"] och acr \"mfa\". En sida på inloggningsytan sedan #572: lösenordet går till /authn-api/mfa/{id}/password."
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "etablerar inloggningssessionen när lösenordet har verifierats"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "Säkerhetsnyckelsteget i inloggningsflödet, i NÅGON av dess två roller — som ANDRA FAKTOR efter lösenordssteget (nås när auktoriseringsbegäran namngav mfa i acr_values eller användaren kryssade i den rutan), eller som den PRIMÄRA autentiseringsuppgiften utan något lösenord alls (rutan för lösenordsfri inloggning, som anroparen kan förbjuda genom att kräva en andra faktor). Första användningen REGISTRERAR en nyckel för det användarnamnet; senare inloggningar INTYGAR med den. Ceremonin verifieras här — utmaning, ursprung, RP ID-hash, flaggor och signaturen över authenticatorData || SHA-256(clientDataJSON) — av en implementation skriven oberoende av felsökarens egen, så att de två kan kontrolleras mot varandra. Rollerna skiljer sig i vad sessionen sedan påstår och i ingenting annat: en andra faktor registrerar amr [\"pwd\",\"hwk\"] och acr \"mfa\", en lösenordsfri inloggning registrerar amr [\"hwk\"] och acr \"1\" — EN faktor, eftersom den här ceremonin ber om användarverifiering som föredragen snarare än krävd — och en inloggning med enbart lösenord registrerar amr [\"pwd\"] och acr \"1\". Ett returnerat userHandle måste vara det som nyckeln skapades under (Level 3 avsnitt 7.2 steg 6) — 64 slumpmässiga byte per person sedan #474, aldrig användarnamnet. Där passkey-policyns allowUsernameless är på (#527) tar inloggningsskärmen själv (POST /authn/login, action=passkey) en upptäckbar autentiseringsuppgift utan användarnamn: handtaget namnger kontot, användarverifiering krävs, och sessionen registrerar amr [\"hwk\",\"user\"] och acr \"mfa\". Båda nyckelvägarna är autentiseringar i sin egen rätt, så båda syns på /admin/users och skapar en katalogpost; den andra faktorn flaggar dessutom den posten med mfaAuthenticated TRUE. RP ID är det här ursprungets värd och är inte konfigurerbart: WebAuthn binder en ceremoni till det anropande ursprunget, och det är hela dess motståndskraft mot nätfiske."
+    "en": "fc50b364018fcbd3",
+    "text": "Säkerhetsnyckelsteget i inloggningsflödet, i NÅGON av dess två roller — som ANDRA FAKTOR efter lösenordssteget (nås när auktoriseringsbegäran namngav mfa i acr_values eller användaren kryssade i den rutan), eller som den PRIMÄRA autentiseringsuppgiften utan något lösenord alls (rutan för lösenordsfri inloggning, som anroparen kan förbjuda genom att kräva en andra faktor). Första användningen REGISTRERAR en nyckel för det användarnamnet; senare inloggningar INTYGAR med den. Ceremonin verifieras här — utmaning, ursprung, RP ID-hash, flaggor och signaturen över authenticatorData || SHA-256(clientDataJSON) — av en implementation skriven oberoende av felsökarens egen, så att de två kan kontrolleras mot varandra. Rollerna skiljer sig i vad sessionen sedan påstår och i ingenting annat: en andra faktor registrerar amr [\"pwd\",\"hwk\"] och acr \"mfa\", en lösenordsfri inloggning registrerar amr [\"hwk\"] och acr \"1\" — EN faktor, eftersom den här ceremonin ber om användarverifiering som föredragen snarare än krävd — och en inloggning med enbart lösenord registrerar amr [\"pwd\"] och acr \"1\". Ett returnerat userHandle måste vara det som nyckeln skapades under (Level 3 avsnitt 7.2 steg 6) — 64 slumpmässiga byte per person sedan #474, aldrig användarnamnet. Där passkey-policyns allowUsernameless är på (#527) tar inloggningsskärmen själv (POST /authn/login, action=passkey) en upptäckbar autentiseringsuppgift utan användarnamn: handtaget namnger kontot, användarverifiering krävs, och sessionen registrerar amr [\"hwk\",\"user\"] och acr \"mfa\". Båda nyckelvägarna är autentiseringar i sin egen rätt, så båda syns på /admin/users och skapar en katalogpost; den andra faktorn flaggar dessutom den posten med mfaAuthenticated TRUE. RP ID är det här ursprungets värd och är inte konfigurerbart: WebAuthn binder en ceremoni till det anropande ursprunget, och det är hela dess motståndskraft mot nätfiske. En sida på inloggningsytan sedan #572: dess skript kör ceremonin, förberedd av /authn-api/mfa/{id}/webauthn/options och besvarad till /authn-api/mfa/{id}/webauthn."
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "registrerar eller intygar en säkerhetsnyckel och slutför sedan inloggningen"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "NON-SPEC, OCH DET ÄR DET ENDA AUTENTISERINGSSTEGET HÄR SOM INTE IMPLEMENTERAR NÅGON SPECIFIKATION (2026-09-10). Vägen tillbaka in när den andra faktorn inte finns till hands — telefonen är borta eller urladdad, säkerhetsnyckeln ligger hemma. **DET ÄR ALDRIG VAD EN INLOGGNING BER OM**: credentials.mechanismsFor().secondFactor svarar webauthn eller totp och aldrig detta, så den enda vägen hit är en länk på en av de två skärmarna, med ett steg-id som personen redan har. GET RITAR SIDAN FÖR ETT STEG SOM REDAN FINNS och vägrar ett för någon som inte har någon oförbrukad kod — en skärm som ber om en autentiseringsuppgift som inte kan finnas ser ut som en tjänst som har tappat bort den. POST KONTROLLERAR KODEN PÅ RIKTIGT I BÅDA LÄGENA och FÖRBRUKAR den: en misslyckad förbrukning VÄGRAR inloggningen, vilket är motsatsen till vad /authn/totp gör med sin räknare och argumenteras för i common/credentials.ts — en engångskod som inte kan räknas kan återanvändas i nittio sekunder, och en återställningskod som inte kan markeras som förbrukad fungerar för evigt. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] och acr \"mfa\": RFC 8176 registrerar inget värde för en återställningskod och att hitta på ett skulle lägga en sträng i amr som ingen förlitande part kan slå upp. Hastighetsbegränsad per identitet OCH per adress, genom samma hinkar som kodsteget. **DET UTFÄRDAR INGENTING OCH REGISTRERAR INGEN** — en uppsättning skapas genom HANDLINGEN att registrera en andra faktor, en gång, i common/credentials.ts. Den här sidan har INGET SKRIPT: en person läser av en sträng från papper och skriver in den."
+    "en": "5d6ce493418b33cb",
+    "text": "NON-SPEC, OCH DET ÄR DET ENDA AUTENTISERINGSSTEGET HÄR SOM INTE IMPLEMENTERAR NÅGON SPECIFIKATION (2026-09-10). Vägen tillbaka in när den andra faktorn inte finns till hands — telefonen är borta eller urladdad, säkerhetsnyckeln ligger hemma. **DET ÄR ALDRIG VAD EN INLOGGNING BER OM**: credentials.mechanismsFor().secondFactor svarar webauthn eller totp och aldrig detta, så den enda vägen hit är en länk på en av de två skärmarna, med ett steg-id som personen redan har. GET RITAR SIDAN FÖR ETT STEG SOM REDAN FINNS och vägrar ett för någon som inte har någon oförbrukad kod — en skärm som ber om en autentiseringsuppgift som inte kan finnas ser ut som en tjänst som har tappat bort den. KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA och FÖRBRUKAS (/authn-api/mfa/{id}/backup-code sedan #572): en misslyckad förbrukning VÄGRAR inloggningen, vilket är motsatsen till vad /authn/totp gör med sin räknare och argumenteras för i common/credentials.ts — en engångskod som inte kan räknas kan återanvändas i nittio sekunder, och en återställningskod som inte kan markeras som förbrukad fungerar för evigt. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] och acr \"mfa\": RFC 8176 registrerar inget värde för en återställningskod och att hitta på ett skulle lägga en sträng i amr som ingen förlitande part kan slå upp. Hastighetsbegränsad per identitet OCH per adress, genom samma hinkar som kodsteget. **DET UTFÄRDAR INGENTING OCH REGISTRERAR INGEN** — en uppsättning skapas genom HANDLINGEN att registrera en andra faktor, en gång, i common/credentials.ts. En sida på inloggningsytan sedan #572."
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "etablerar inloggningssessionen när en återställningskod har verifierats, och FÖRBRUKAR den"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "NON-SPEC (#64). En sexsiffrig kod som skickas med e-post till personens VERIFIERADE adress, som första faktor (inloggningsskärmens \"Mejla mig en inloggningskod\") eller andra faktor (som man väljer på /portal/mfa), där autentiseringspolicyn tillåter det — AV som standard, eftersom NIST SP 800-63B-4 avsnitt 3.1.3.1 inte räknar e-post som en autentiserare. GET ritar sidan för ett steg som finns och skickar ingenting; POST skickar (action=send) eller kontrollerar en. Sparas endast som en scrypt-hash på steget, giltig i högst tio minuter, en gång för klustret, ett begränsat antal felaktiga koder per steg, hastighetsbegränsad som engångskodsteget är. Som första faktor är sidan densamma oavsett om kontot finns eller har en verifierad adress. amr [\"otp\"] och acr \"1\" ensam, den första faktorns amr plus \"otp\" och acr \"mfa\" som andra faktor; den möter aldrig en riskbaserad step-up. Inget skript."
+    "en": "8f3396e530fddf0f",
+    "text": "NON-SPEC (#64). En sexsiffrig kod som skickas med e-post till personens VERIFIERADE adress, som första faktor (inloggningsskärmens \"Mejla mig en inloggningskod\") eller andra faktor (som man väljer på /portal/mfa), där autentiseringspolicyn tillåter det — AV som standard, eftersom NIST SP 800-63B-4 avsnitt 3.1.3.1 inte räknar e-post som en autentiserare. Sidan skickar ingenting när den ritas; /authn-api/mfa/{id}/email/send skickar en kod och /authn-api/mfa/{id}/email/code kontrollerar en (#573). Sparas endast som en scrypt-hash på steget, giltig i högst tio minuter, en gång för klustret, ett begränsat antal felaktiga koder per steg, hastighetsbegränsad som engångskodsteget är. Som första faktor är sidan densamma oavsett om kontot finns eller har en verifierad adress. amr [\"otp\"] och acr \"1\" ensam, den första faktorns amr plus \"otp\" och acr \"mfa\" som andra faktor; den möter aldrig en riskbaserad step-up. En sida på inloggningsytan sedan #573."
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "etablerar inloggningssessionen när en kod som skickats med e-post har verifierats"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "NON-SPEC (#64). Sidan som en person väntar på efter att en inloggningslänk har skickats med e-post (POST, action=send), uppdaterad av en <meta>-tagg. Länken slutför inloggningen ENDAST i webbläsaren som startade den — steget behåller hashen av en cookie som sattes när den skickades — så inloggningen fortsätter i fliken som länken öppnar, och den här sidan säger då det. Inget skript."
+    "en": "266bec13f0b03d9f",
+    "text": "NON-SPEC (#64). Sidan som en person väntar på efter att en inloggningslänk har skickats med e-post (/authn-api/mfa/{id}/email/send), som frågar igen med några sekunders mellanrum. Länken slutför inloggningen ENDAST i webbläsaren som startade den — steget behåller hashen av en cookie som sattes när den skickades — så inloggningen fortsätter i fliken som länken öppnar, och den här sidan säger då det. En sida på inloggningsytan sedan #573."
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "NON-SPEC (#64). GET förbrukar ingenting — en e-postskanner hämtar varje länk i ett meddelande — och ritar en Fortsätt-knapp; POST kontrollerar webbläsarbindningen, tokenets scrypt-hash, utgångstiden och engångsanspråket, och loggar in. Öppnad i en annan webbläsare förbrukar den ingenting och säger var den ska öppnas."
+    "en": "08229e18bcdb6b86",
+    "text": "NON-SPEC (#64). GET förbrukar ingenting — en e-postskanner hämtar varje länk i ett meddelande — och ritar en Fortsätt-knapp, som skickar tokenet till /authn-api/mfa/{id}/email-link/open (#573): där kontrolleras webbläsarbindningen, tokenets scrypt-hash, utgångstiden och engångsanspråket, och personen loggas in. Öppnad i en annan webbläsare förbrukar den ingenting och säger var den ska öppnas."
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2444,24 +2444,24 @@
     "text": "sparar ett nytt lösenord och återupptar inloggningen"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "EN ANDRA FAKTOR SOM KRÄVS AV NÅGON SOM INTE HAR NÅGON (2026-09-13). Ett lösenordssteg som lyckades för en person av vilken en andra faktor krävs — stsMfaRequired på deras post, satt från deras /admin/users-sida, eller sfärens autentiseringspolicy — och som varken har en autentiseringsapp eller en säkerhetsnyckel med mfa-roll landar här i stället för att loggas in. De väljer en: en autentiseringsapp registreras på den här sidan (en QR-kod som den här servern ritar och en kod som skrivs tillbaka, bekräftad via credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), och en säkerhetsnyckel går till den vanliga registreringen på /authn/webauthn. Steget vägrar alla som redan har en andra faktor, eftersom att registrera en till vid en inloggning är den förbikoppling som säkerhetsnyckelrutan är reserverad mot. Kräver ett ?mfa=-id som skapats av lösenordssteget, så att följa den utan det ger 400. Inget skript."
+    "en": "1576811e849d9087",
+    "text": "EN ANDRA FAKTOR SOM KRÄVS AV NÅGON SOM INTE HAR NÅGON (2026-09-13). Ett lösenordssteg som lyckades för en person av vilken en andra faktor krävs — stsMfaRequired på deras post, satt från deras /admin/users-sida, eller sfärens autentiseringspolicy — och som varken har en autentiseringsapp eller en säkerhetsnyckel med mfa-roll landar här i stället för att loggas in. De väljer en: en autentiseringsapp registreras på den här sidan (en QR-kod som webbläsaren ritar från otpauth:-URI:n och en kod som skrivs tillbaka, bekräftad via credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), och en säkerhetsnyckel går till den vanliga registreringen på /authn/webauthn. Steget vägrar alla som redan har en andra faktor, eftersom att registrera en till vid en inloggning är den förbikoppling som säkerhetsnyckelrutan är reserverad mot. Kräver ett ?mfa=-id som skapats av lösenordssteget, så att följa den utan det ger 400. En sida på inloggningsytan sedan #572."
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "registrerar en autentiseringsapp eller startar en registrering av säkerhetsnyckel, och etablerar sedan inloggningssessionen"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "DEN ANDRA ANDRA FAKTORN (2026-09-10). Ett lösenordssteg som lyckades för någon som har en autentiseringsapp registrerad landar här, och den här slutpunkten ber om de sex siffror som deras app visar. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] — RFC 8176:s värde, vars registerpost namnger RFC 4226 och RFC 6238 — och acr \"mfa\", vilket är det enda fall där den här tjänsten ärligt kan säga två faktorer. **KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA**, till skillnad från lösenordet framför den: en verifierare av engångslösenord som godtog vilka sex siffror som helst vore inte tillåtande, den vore trasig, och det är SPNEGO-argumentet läst en andra gång. Hastighetsbegränsad per identitet OCH per adress, eftersom sex siffror är en miljon värden och detta är det minsta sökutrymmet i tjänsten. GET ÄR LÄNKEN *använd en kod i stället* från säkerhetsnyckelskärmen och skapar ingenting — den ritar sidan för ett steg som redan finns, och vägrar ett för någon som inte har någon registrering. **DEN REGISTRERAR INGEN**, vilket är hela skillnaden mot /authn/webauthn bredvid: att registrera innebär att få se en delad hemlighet, så det sker på /portal/mfa eller medan en aktiveringslänk förbrukas, och aldrig på en inloggningsskärm. Den här sidan har INGET SKRIPT och serveras under den tjänstövergripande script-src 'none' — en person läser siffror och skriver in dem, så det undantag som säkerhetsnyckelsidan behöver gäller inte här."
+    "en": "b62d7bad9442ea5c",
+    "text": "DEN ANDRA ANDRA FAKTORN (2026-09-10). Ett lösenordssteg som lyckades för någon som har en autentiseringsapp registrerad landar här, och den här slutpunkten ber om de sex siffror som deras app visar. Vid framgång registrerar sessionen amr [\"pwd\",\"otp\"] — RFC 8176:s värde, vars registerpost namnger RFC 4226 och RFC 6238 — och acr \"mfa\", vilket är det enda fall där den här tjänsten ärligt kan säga två faktorer. **KODEN KONTROLLERAS PÅ RIKTIGT I BÅDA LÄGENA**, till skillnad från lösenordet framför den: en verifierare av engångslösenord som godtog vilka sex siffror som helst vore inte tillåtande, den vore trasig, och det är SPNEGO-argumentet läst en andra gång. Hastighetsbegränsad per identitet OCH per adress, eftersom sex siffror är en miljon värden och detta är det minsta sökutrymmet i tjänsten. GET ÄR LÄNKEN *använd en kod i stället* från säkerhetsnyckelskärmen och skapar ingenting — den ritar sidan för ett steg som redan finns, och vägrar ett för någon som inte har någon registrering. **DEN REGISTRERAR INGEN**, vilket är hela skillnaden mot /authn/webauthn bredvid: att registrera innebär att få se en delad hemlighet, så det sker på /portal/mfa eller medan en aktiveringslänk förbrukas, och aldrig på en inloggningsskärm. En sida på inloggningsytan sedan #572: koden går till /authn-api/mfa/{id}/totp."
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "etablerar inloggningssessionen när en kod har verifierats"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC (#571). Inloggningsytans körtidsmiljö och renderare i en enda fil, byggd av build-typescript.sh (authn/authn-spa.js) och serverad förkomprimerad: den ritar /authn/login, /authn/select-idp och /authn/password-change från /authn-api och skickar deras handlingar dit. Offentlig: ingenting i den är hemligt."
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC (#571). Inloggningsytans körtidsmiljö och renderare i en enda fil, byggd av build-typescript.sh (authn/authn-spa.js) och serverad förkomprimerad: den ritar /authn/login, /authn/select-idp, /authn/password-change och, sedan #572 och #573, varje steg efter dem från /authn-api och skickar deras handlingar dit. Offentlig: ingenting i den är hemligt."
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2531,13 +2531,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET svarar vems lösenord som måste bytas; POST lagrar det nya och fortsätter inloggningen."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC (#572, #573). Vyn för sidan i ett steg för andra faktor eller e-postfaktor (?page=), som fakta och inga ord, och den CSRF-token som dess handlingar bär; vägras där sidan aldrig skulle kunna ritas för steget. Id:t är en bärarbefogenhet och loggas aldrig."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC (#572). En kod från en autentiseringsapp, kontrollerad i alla lägen och hastighetsbegränsad; en felaktig behåller steget."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC (#572). Kontrollerad och förbrukad; en kod som inte kan markeras som förbrukad vägras."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC (#572). Efter en plånbok, hastighetsbegränsad i inloggningshinken."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC (#572). Stegets utmaning, RP ID, användare och nycklar, och passkey-policyns alternativ."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC (#572). Ceremonins resultat, verifierat: en registrering där steget registrerar en nyckel, annars ett intygande — det avgör steget."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC (#572). I konfigurationssteget; dess hemlighet ritas härnäst."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC (#572). Dess första kod, hastighetsbegränsad; en session med två faktorer om den stämmer."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC (#572). Nästa steg är passkey-sidans registrering."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC (#572, #246). Endast där steget erbjöds: inloggningen avslutas på lösenordet."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC (#573). Endast till den verifierade adressen; ett nytt utskick ersätter det senaste."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC (#573). En gång för klustret, ett begränsat antal felaktiga koder per steg."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC (#573). Fortsätt-knappen på sidan som länken leder till, endast i webbläsaren som bad om den."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC (#62 P6). Serveras endast medan risk.fingerprinting är på i sfären — 404 annars — och då laddar inloggningsskärmen det bredvid sitt eget skript: FingerprintJS (MIT, v5; det körs i webbläsaren och skickar ingenting, dess användningsping avstängd) beräknar ett visitorId som inloggningen skickar, och tjänsten behåller endast en nyckelad sammanfattning av det, poängsatt som en enhet som den här personen aldrig har använt. Inloggningen fungerar utan det. Av som standard: det är personuppgifter, och att slå på det är operatörens beslut, efter den konsekvensbedömning avseende integritet som riskbedömningssidan beskriver."
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "Skriptet som säkerhetsnyckelsidan kör, i båda dess roller — ceremonin som en andra faktor utför och den som en lösenordsfri inloggning utför är samma byte. Det är en separat resurs snarare än ett inbäddat skript eftersom den här tjänsten sätter script-src 'none' på varje svar som standard; den enda sidan lättar på det till 'self', vilket är det minsta undantag som fungerar. Ett inbäddat skript där skulle helt enkelt inte köras, med knappen som inte gör något och inget fel någonstans."
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",

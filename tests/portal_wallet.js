@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (#589).
 //
-//   A. THE QR CODE THE BROWSER DRAWS (`portal/web_qr.ts`) is the `qrcode`
+//   A. THE QR CODE THE BROWSER DRAWS (`common/web_qr.ts`) is the `qrcode`
 //      package's, module for module: every error correction level, every
 //      mask, lengths from one byte to the versions an offer reaches. An
 //      encoder that is wrong draws a picture that scans as nothing.
@@ -263,7 +263,7 @@ function childMain() {
 // A. The encoder against the `qrcode` package, for every level and mask.
 function qrMatchesTheReference(t) {
   log.debug("Entering qrMatchesTheReference().");
-  const WebQr = require('../portal/web_qr');
+  const WebQr = require('../common/web_qr');
   const QRCode = require('qrcode');
   const lengths = [1, 14, 15, 40, 100, 130, 200, 400, 900, 1500, 2300];
   let compared = 0;

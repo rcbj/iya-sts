@@ -278,10 +278,12 @@ function childMain() {
          !/sts_session=/.test(String(r.headers['set-cookie'] || '')),
          '5j. a person holding an authenticator app is answered next: mfa, ' +
          'the code page\'s address', r.text);
-    const page = await screen.call({ port: port, jar: tj, method: 'GET',
-                                     path: r.location });
-    note(page.status === 200 && /name="mfa_id"/.test(page.text),
-         '5k. and that page is drawn by its own GET', page.status);
+    const page = await screen.openStep({ port: port, jar: tj,
+                                         at: r.location });
+    note(page.shell.status === 200 && page.status === 200 && page.view &&
+         page.view.page === 'totp' && page.view.username === 'aa-tom',
+         '5k. and that page is the surface\'s, drawn from its step\'s view ' +
+         '(#572)', page.status + ' ' + page.text.slice(0, 200));
 
     // The forced password change.
     ldap.createUser('aa-pat', { invent: false });
@@ -318,10 +320,11 @@ function childMain() {
                 use_webauthn: '1' } });
     note(r.next === 'mfa' && r.step === 'webauthn',
          '5p. ticking the passkey box answers the ceremony\'s step', r.text);
-    const ceremony = await screen.call({ port: port, jar: kj, method: 'GET',
-                                         path: r.location });
-    note(ceremony.status === 200 && /data-mode="create"/.test(ceremony.text),
-         '5q. and GET /authn/webauthn draws its enrolment ceremony',
+    const ceremony = await screen.openStep({ port: port, jar: kj,
+                                             at: r.location });
+    note(ceremony.status === 200 && ceremony.view &&
+         ceremony.view.webauthn && ceremony.view.webauthn.mode === 'create',
+         '5q. and the passkey page\'s view is its enrolment ceremony',
          ceremony.status + ' ' + ceremony.text.slice(0, 200));
 
     // --- 6. the id in the audit log ------------------------------------------

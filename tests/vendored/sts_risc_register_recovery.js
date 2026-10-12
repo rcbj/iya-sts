@@ -428,19 +428,25 @@ async function signInWithRecoveryCode(who, code) {
       r = await authnSignin.asFormAnswer(answer, function (m, u) {
         return b.go(m, u);
       });
-      if (r.status === 200) {
-        const link = (String(r.text)
-          .match(/href="([^"]*\/authn\/backup-code\?mfa=[^"]+)"/) || [])[1];
-        assert.ok(link, "the one-time code screen offers no recovery code " +
-                  "link: " + String(r.text).slice(0, 400));
-        const screen = await b.go("GET", link.replace(/&amp;/g, "&"));
-        const mfaId = (String(screen.text)
-          .match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-        const action = (String(screen.text)
-          .match(/<form[^>]*action="([^"]*backup-code[^"]*)"/) || [])[1] ||
-          R + "/authn/backup-code";
-        r = await b.go("POST", action.replace(/&amp;/g, "&"),
-                       form({ mfa_id: mfaId, code: code }));
+      if (r.status === 200 && r.step) {
+        // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): it offers the
+        // recovery code as a way round (its view's `links.backup`), whose
+        // page is the same step's, and the code goes to that page's act.
+        assert.ok(r.step.view && r.step.view.links &&
+                  r.step.view.links.backup,
+                  "the one-time code screen offers no recovery code link: " +
+                  String(r.text).slice(0, 400));
+        const screen = await authnSignin.step(base + R +
+          "/authn/backup-code?mfa=" + encodeURIComponent(r.step.id),
+          { cookie: jarHeader(b), headers: { "User-Agent": AGENT } });
+        assert.ok(screen.view && screen.view.page === "backup-code",
+                  "the recovery code page was not drawn: " +
+                  String(screen.text).slice(0, 300));
+        const a = await authnSignin.stepAct(screen, "backup-code",
+          { code: code }, { headers: { "User-Agent": AGENT } });
+        keepCookies(b, a);
+        r = { status: a.next === "redirect" ? 303 : a.status,
+              location: a.location, text: a.text };
         spent = r.status === 302 || r.status === 303;
       }
       continue;

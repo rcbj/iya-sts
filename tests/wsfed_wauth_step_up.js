@@ -204,10 +204,6 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name) {
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(html);
-    return found ? found[1].replace(/&amp;/g, '&') : '';
-  };
 
 
   (async function () {
@@ -252,14 +248,14 @@ function childMain() {
         opened: page, fields: { action: 'login', username: username,
                                 password: 'anything' } });
       let totpPage = null;
-      if (code && posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
+      // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): its view, and the
+      // code sent to its act.
+      if (code && posted.view && posted.view.page === 'totp') {
         totpPage = posted;
-        const mfaId = (posted.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1];
-        posted = await b.go('POST', '/authn/totp',
-                            { form: { mfa_id: mfaId, code: code } });
+        posted = await authnScreen.stepAct({ port: port, jar: b.jar,
+          opened: posted, op: 'totp', body: { code: code } });
       }
-      const back = String(posted.headers.location || '')
+      const back = String((posted.headers || {}).location || '')
         .replace(/^https?:\/\/[^/]+/, '');
       const final = back ? await b.go('GET', back) : posted;
       return { page: page, posted: posted, totpPage: totpPage, back: back,
@@ -404,18 +400,18 @@ function childMain() {
         opened: screen, fields: { action: 'login', username: username,
           password: passwordless ? '' : 'anything',
           webauthn_only: passwordless ? '1' : '' } });
-      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      const challenge = dataAttribute(step.text, 'challenge');
-      const rpId = dataAttribute(step.text, 'rpid');
-      const mode = dataAttribute(step.text, 'mode');
-      const authenticator = makeAuthenticator(rpId,
-                                              'http://127.0.0.1:' + port);
-      const credential = mode === 'create'
-        ? authenticator.register(challenge) : authenticator.assert(challenge);
-      const done = await b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: mfaId, mode: mode,
-        credential: JSON.stringify(credential) } });
+      // THE CEREMONY IS ARMED AND ANSWERED OVER `/authn-api` (#572): what
+      // the page's data attributes carried is `webauthn/options`' answer.
+      let mode = '';
+      const ran = await authnScreen.passkeyStep({ port: port, jar: b.jar,
+        opened: step }, function (c) {
+        mode = c.mode;
+        const authenticator = makeAuthenticator(c.rpId,
+                                                'http://127.0.0.1:' + port);
+        return c.mode === 'create' ? authenticator.register(c.challenge)
+                                   : authenticator.assert(c.challenge);
+      });
+      const done = ran.answer;
       const backTo = String(done.headers.location || '')
         .replace(/^https?:\/\/[^/]+/, '');
       const answer = backTo ? await b.go('GET', backTo) : done;
@@ -455,11 +451,12 @@ function childMain() {
         at: String(start.headers.location),
         fields: { action: 'login', username: 'wa-codeless',
                   password: 'anything' } });
-      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      return b.go('POST', '/authn/totp', { form: {
-        mfa_id: mfaId || 'none',
-        code: totp.codeAt(began.secret, Date.now() + 90000) } });
+      // The code is sent to the step's code act (#572), as a hand-made
+      // request would: the step is the key ceremony's.
+      return authnScreen.stepAct({ port: port, jar: b.jar,
+        opened: { prefix: '', id: step.id || 'none', csrf: step.csrf },
+        op: 'totp',
+        body: { code: totp.codeAt(began.secret, Date.now() + 90000) } });
     })();
     note(codeAttempt.status === 400 &&
          /demands a passkey/.test(codeAttempt.text),

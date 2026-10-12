@@ -91,9 +91,10 @@ function childMain() {
     const riskEngine = require(ROOT + '/risk/risk_engine');
     const realms = require(ROOT + '/common/realms');
     // USERNAMELESS SIGN-IN OFF (it is on by default since 2026-10-10): with it
-    // on, the sign-in screen carries /authn/webauthn.js and relaxes
-    // script-src for its own passkey button, and this test reads that
-    // screen's policy as the base one.
+    // on, the sign-in screen offers its passkey (once by
+    // /authn/webauthn.js, by the sign-in surface's own bundle since #571
+    // and #572), and this test reads that screen's policy as the base
+    // one.
     {
       const passkeyPolicy = require(ROOT + '/common/passkey_policy');
       realms.run(realms.get(realms.DEFAULT_ID), function () {

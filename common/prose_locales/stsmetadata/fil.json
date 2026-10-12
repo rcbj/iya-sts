@@ -2384,44 +2384,44 @@
     "text": "sinasagot ang shell ng sign-in surface; tinatapos ng script nito ang sign-in sa /authn-api/wallet kapag sumagot na ang wallet"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
-    "en": "2cc72f6d88f75a44",
-    "text": "Pagkatapos ng wallet sign-in sa request na humihingi ng dalawang factor, para sa taong walang authenticator app o security key: ang kanilang password, sinusuri tulad ng pagsuri ng sign-in screen at naka-rate limit sa parehong bucket. Nire-record ng session ang amr [\"pop\",\"pwd\"] at acr \"mfa\". Walang script."
+    "en": "9dc6755b8f15d19f",
+    "text": "Pagkatapos ng wallet sign-in sa request na humihingi ng dalawang factor, para sa taong walang authenticator app o security key: ang kanilang password, sinusuri tulad ng pagsuri ng sign-in screen at naka-rate limit sa parehong bucket. Nire-record ng session ang amr [\"pop\",\"pwd\"] at acr \"mfa\". Isang page ng sign-in surface mula noong #572: pumupunta ang password sa /authn-api/mfa/{id}/password."
   },
   "stsmetadata.endpoints./authn/password-factor.effect": {
     "en": "c436918af226367c",
     "text": "itinatatag ang sign-on session kapag na-verify ang password"
   },
   "stsmetadata.endpoints./authn/webauthn.what": {
-    "en": "1688243886ea4285",
-    "text": "Ang security-key step ng login flow, sa ALINMAN sa dalawang papel nito — bilang SECOND FACTOR pagkatapos ng password step (naaabot kapag pinangalanan ng authorization request ang mfa sa acr_values o kapag tinik ng user ang kahong iyon), o bilang PRIMARY credential nang walang password (ang passwordless na kahon, na maaaring ipagbawal ng caller sa paghingi ng second factor). Sa unang paggamit ay NAG-EENROL ng key para sa username na iyon; sa mga susunod na sign-in ay nag-a-ASSERT gamit ito. Vine-verify dito ang ceremony — challenge, origin, RP ID hash, mga flag at ang signature sa authenticatorData || SHA-256(clientDataJSON) — ng implementasyong isinulat nang hiwalay sa sariling implementasyon ng debugger, kaya masusuri ang dalawa laban sa isa't isa. Nagkakaiba ang mga papel sa inaangkin ng session pagkatapos at wala nang iba: ang second factor ay nagre-record ng amr [\"pwd\",\"hwk\"] at acr \"mfa\", ang passwordless na sign-in ay nagre-record ng amr [\"hwk\"] at acr \"1\" — ISANG factor, dahil humihingi ang ceremony na ito ng user verification bilang preferred sa halip na required — at ang password-only na sign-in ay nagre-record ng amr [\"pwd\"] at acr \"1\". Ang ibinalik na userHandle ay dapat ang pinaggawaan ng key (Level 3 section 7.2 step 6) — 64 na random byte bawat tao mula noong #474, hindi kailanman ang username. Kung naka-on ang allowUsernameless ng passkey policy (#527), ang sign-in screen mismo (POST /authn/login, action=passkey) ay tumatanggap ng discoverable credential nang walang username: pinangangalanan ng handle ang account, kailangan ang user verification, at nire-record ng session ang amr [\"hwk\",\"user\"] at acr \"mfa\". Parehong authentication sa sarili nilang karapatan ang dalawang key path, kaya parehong lumalabas sa /admin/users at nagse-seed ng directory entry; dagdag pa rito, mina-markahan ng second factor ang entry na iyon ng mfaAuthenticated TRUE. Ang RP ID ay ang host ng origin na ito at hindi nako-configure: itinatali ng WebAuthn ang ceremony sa tumatawag na origin, at iyon ang kabuuan ng phishing resistance nito."
+    "en": "fc50b364018fcbd3",
+    "text": "Ang security-key step ng login flow, sa ALINMAN sa dalawang papel nito — bilang SECOND FACTOR pagkatapos ng password step (naaabot kapag pinangalanan ng authorization request ang mfa sa acr_values o kapag tinik ng user ang kahong iyon), o bilang PRIMARY credential nang walang password (ang passwordless na kahon, na maaaring ipagbawal ng caller sa paghingi ng second factor). Sa unang paggamit ay NAG-EENROL ng key para sa username na iyon; sa mga susunod na sign-in ay nag-a-ASSERT gamit ito. Vine-verify dito ang ceremony — challenge, origin, RP ID hash, mga flag at ang signature sa authenticatorData || SHA-256(clientDataJSON) — ng implementasyong isinulat nang hiwalay sa sariling implementasyon ng debugger, kaya masusuri ang dalawa laban sa isa't isa. Nagkakaiba ang mga papel sa inaangkin ng session pagkatapos at wala nang iba: ang second factor ay nagre-record ng amr [\"pwd\",\"hwk\"] at acr \"mfa\", ang passwordless na sign-in ay nagre-record ng amr [\"hwk\"] at acr \"1\" — ISANG factor, dahil humihingi ang ceremony na ito ng user verification bilang preferred sa halip na required — at ang password-only na sign-in ay nagre-record ng amr [\"pwd\"] at acr \"1\". Ang ibinalik na userHandle ay dapat ang pinaggawaan ng key (Level 3 section 7.2 step 6) — 64 na random byte bawat tao mula noong #474, hindi kailanman ang username. Kung naka-on ang allowUsernameless ng passkey policy (#527), ang sign-in screen mismo (POST /authn/login, action=passkey) ay tumatanggap ng discoverable credential nang walang username: pinangangalanan ng handle ang account, kailangan ang user verification, at nire-record ng session ang amr [\"hwk\",\"user\"] at acr \"mfa\". Parehong authentication sa sarili nilang karapatan ang dalawang key path, kaya parehong lumalabas sa /admin/users at nagse-seed ng directory entry; dagdag pa rito, mina-markahan ng second factor ang entry na iyon ng mfaAuthenticated TRUE. Ang RP ID ay ang host ng origin na ito at hindi nako-configure: itinatali ng WebAuthn ang ceremony sa tumatawag na origin, at iyon ang kabuuan ng phishing resistance nito. Isang page ng sign-in surface mula noong #572: pinapatakbo ng script nito ang ceremony, inihahanda ng /authn-api/mfa/{id}/webauthn/options at sinasagot sa /authn-api/mfa/{id}/webauthn."
   },
   "stsmetadata.endpoints./authn/webauthn.effect": {
     "en": "9f9c0e5dd6d9925f",
     "text": "nag-eenrol o nag-a-assert ng security key, pagkatapos ay kinukumpleto ang sign-in"
   },
   "stsmetadata.endpoints./authn/backup-code.what": {
-    "en": "9c0ad60b9a0c94b8",
-    "text": "NON-SPEC, AT ITO ANG NAG-IISANG AUTHENTICATION STEP DITO NA WALANG IPINAPATUPAD NA SPECIFICATION (2026-09-10). Ang daan pabalik kapag wala sa kamay ang second factor — nawala o lowbat ang phone, nasa bahay ang security key. **HINDI ITO KAILANMAN ANG HINIHINGI NG SIGN-IN**: sumasagot ang credentials.mechanismsFor().secondFactor ng webauthn o totp at hindi kailanman nito, kaya ang tanging daan dito ay isang link sa isa sa dalawang screen na iyon, na may step id na hawak na ng tao. IGINUGUHIT NG GET ANG PAGE PARA SA STEP NA UMIIRAL NA at tinatanggihan ito para sa taong walang hawak na hindi pa nagagamit na code — ang screen na humihingi ng credential na hindi maaaring umiral ay mukhang serbisyong nawalan nito. TUNAY NA SINUSURI NG POST ANG CODE SA PAREHONG MODE at GINAGAMIT ito: ang nabigong paggamit ay TUMATANGGI sa sign-in, na kabaligtaran ng ginagawa ng /authn/totp sa counter nito at ipinapaliwanag sa common/credentials.ts — ang one-time code na hindi mabilang ay maaaring i-replay nang siyamnapung segundo, at ang recovery code na hindi mamarkahang nagamit na ay gagana magpakailanman. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] at acr \"mfa\": walang nirerehistrong value ang RFC 8176 para sa recovery code at ang pag-imbento ng isa ay maglalagay ng string sa amr na hindi mahahanap ng anumang relying party. Naka-rate limit ayon sa identity AT ayon sa address, sa pamamagitan ng parehong mga bucket ng code step. **WALA ITONG IBINIBIGAY AT WALANG INIEENROL** — ginagawa ang set ng AKTO ng pag-enrol ng second factor, minsan, sa common/credentials.ts. WALANG SCRIPT ang page na ito: nagbabasa ang tao ng string mula sa papel at tina-type ito."
+    "en": "5d6ce493418b33cb",
+    "text": "NON-SPEC, AT ITO ANG NAG-IISANG AUTHENTICATION STEP DITO NA WALANG IPINAPATUPAD NA SPECIFICATION (2026-09-10). Ang daan pabalik kapag wala sa kamay ang second factor — nawala o lowbat ang phone, nasa bahay ang security key. **HINDI ITO KAILANMAN ANG HINIHINGI NG SIGN-IN**: sumasagot ang credentials.mechanismsFor().secondFactor ng webauthn o totp at hindi kailanman nito, kaya ang tanging daan dito ay isang link sa isa sa dalawang screen na iyon, na may step id na hawak na ng tao. IGINUGUHIT NG GET ANG PAGE PARA SA STEP NA UMIIRAL NA at tinatanggihan ito para sa taong walang hawak na hindi pa nagagamit na code — ang screen na humihingi ng credential na hindi maaaring umiral ay mukhang serbisyong nawalan nito. TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE at GINAGAMIT ito (/authn-api/mfa/{id}/backup-code mula noong #572): ang nabigong paggamit ay TUMATANGGI sa sign-in, na kabaligtaran ng ginagawa ng /authn/totp sa counter nito at ipinapaliwanag sa common/credentials.ts — ang one-time code na hindi mabilang ay maaaring i-replay nang siyamnapung segundo, at ang recovery code na hindi mamarkahang nagamit na ay gagana magpakailanman. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] at acr \"mfa\": walang nirerehistrong value ang RFC 8176 para sa recovery code at ang pag-imbento ng isa ay maglalagay ng string sa amr na hindi mahahanap ng anumang relying party. Naka-rate limit ayon sa identity AT ayon sa address, sa pamamagitan ng parehong mga bucket ng code step. **WALA ITONG IBINIBIGAY AT WALANG INIEENROL** — ginagawa ang set ng AKTO ng pag-enrol ng second factor, minsan, sa common/credentials.ts. Isang page ng sign-in surface mula noong #572."
   },
   "stsmetadata.endpoints./authn/backup-code.effect": {
     "en": "17dd6720ad2140f5",
     "text": "itinatatag ang sign-on session kapag na-verify ang recovery code, at GINAGAMIT ito"
   },
   "stsmetadata.endpoints./authn/email-code.what": {
-    "en": "d01a157a49ebcd2c",
-    "text": "NON-SPEC (#64). Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao, bilang first factor (ang \"Email me a sign-in code\" ng sign-in screen) o second (pinili sa /portal/mfa), kung pinapayagan ito ng authentication policy — NAKA-OFF bilang default, dahil hindi itinuturing ng NIST SP 800-63B-4 section 3.1.3.1 na authenticator ang email. Iginuguhit ng GET ang page para sa step na umiiral at walang ipinapadala; nagpapadala (action=send) o nagsusuri ng isa ang POST. Pinananatili lamang bilang scrypt hash sa step, valid nang hanggang sampung minuto, minsan para sa cluster, may limitadong bilang ng maling code bawat step, naka-rate limit tulad ng one-time code step. Bilang first factor ay pareho ang page umiiral man o hindi ang account o may verified na address man ito. amr [\"otp\"] at acr \"1\" kapag mag-isa, ang amr ng first factor dagdag ang \"otp\" at acr \"mfa\" bilang second; hindi nito kailanman natutugunan ang risk step-up. Walang script."
+    "en": "8f3396e530fddf0f",
+    "text": "NON-SPEC (#64). Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao, bilang first factor (ang \"Email me a sign-in code\" ng sign-in screen) o second (pinili sa /portal/mfa), kung pinapayagan ito ng authentication policy — NAKA-OFF bilang default, dahil hindi itinuturing ng NIST SP 800-63B-4 section 3.1.3.1 na authenticator ang email. Walang ipinapadala ang page kapag iginuguhit ito; nagpapadala ng code ang /authn-api/mfa/{id}/email/send at nagsusuri ng isa ang /authn-api/mfa/{id}/email/code (#573). Pinananatili lamang bilang scrypt hash sa step, valid nang hanggang sampung minuto, minsan para sa cluster, may limitadong bilang ng maling code bawat step, naka-rate limit tulad ng one-time code step. Bilang first factor ay pareho ang page umiiral man o hindi ang account o may verified na address man ito. amr [\"otp\"] at acr \"1\" kapag mag-isa, ang amr ng first factor dagdag ang \"otp\" at acr \"mfa\" bilang second; hindi nito kailanman natutugunan ang risk step-up. Isang page ng sign-in surface mula noong #573."
   },
   "stsmetadata.endpoints./authn/email-code.effect": {
     "en": "8950e929aacef9f6",
     "text": "itinatatag ang sign-on session kapag na-verify ang emailed na code"
   },
   "stsmetadata.endpoints./authn/email-link.what": {
-    "en": "6b86e014127fafab",
-    "text": "NON-SPEC (#64). Ang page na hinihintayan ng tao pagkatapos maipadala ang emailed na sign-in link (POST, action=send), nire-refresh ng <meta> tag. Kinukumpleto ng link ang sign-in SA BROWSER LAMANG na nagsimula nito — pinananatili ng step ang hash ng cookie na itinakda nang ipadala ito — kaya nagpapatuloy ang sign-in sa tab na binubuksan ng link, at sinasabi iyon ng page na ito pagkatapos. Walang script."
+    "en": "266bec13f0b03d9f",
+    "text": "NON-SPEC (#64). Ang page na hinihintayan ng tao pagkatapos maipadala ang emailed na sign-in link (/authn-api/mfa/{id}/email/send), na muling nagtatanong bawat ilang segundo. Kinukumpleto ng link ang sign-in SA BROWSER LAMANG na nagsimula nito — pinananatili ng step ang hash ng cookie na itinakda nang ipadala ito — kaya nagpapatuloy ang sign-in sa tab na binubuksan ng link, at sinasabi iyon ng page na ito pagkatapos. Isang page ng sign-in surface mula noong #573."
   },
   "stsmetadata.endpoints./authn/email-link/open.what": {
-    "en": "722fde58aad864dd",
-    "text": "NON-SPEC (#64). Walang ginagamit ang GET — kinukuha ng mail scanner ang bawat link sa mensahe — at gumuguhit ng Continue button; sinusuri ng POST ang browser binding, ang scrypt hash ng token, ang expiry at ang single-use claim, at nagsa-sign in. Kapag binuksan sa ibang browser ay walang ginagamit ito at sinasabi kung saan ito bubuksan."
+    "en": "08229e18bcdb6b86",
+    "text": "NON-SPEC (#64). Walang ginagamit ang GET — kinukuha ng mail scanner ang bawat link sa mensahe — at gumuguhit ng Continue button, na nagpapadala ng token sa /authn-api/mfa/{id}/email-link/open (#573): doon sinusuri ang browser binding, ang scrypt hash ng token, ang expiry at ang single-use claim, at naisa-sign in ang tao. Kapag binuksan sa ibang browser ay walang ginagamit ito at sinasabi kung saan ito bubuksan."
   },
   "stsmetadata.endpoints./authn/email-link/open.effect": {
     "en": "2bfe4245528e60dc",
@@ -2444,24 +2444,24 @@
     "text": "nag-iimbak ng bagong password at ipinagpapatuloy ang sign-in"
   },
   "stsmetadata.endpoints./authn/mfa-setup.what": {
-    "en": "72b2ee2261b659db",
-    "text": "SECOND FACTOR NA KINAKAILANGAN SA TAONG WALANG HAWAK NITO (2026-09-13). Ang password step na nagtagumpay para sa taong kinakailangan ng second factor — stsMfaRequired sa entry nila, itinakda mula sa kanilang /admin/users page, o ang authentication policy ng realm — at walang hawak na authenticator app o mfa-role security key ay bumabagsak dito sa halip na ma-sign in. Pumipili sila ng isa: ine-enrol sa page na ito ang authenticator app (isang QR code na iginuguhit ng server na ito at code na ita-type pabalik, kinukumpirma sa pamamagitan ng credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), at pumupunta ang security key sa karaniwang /authn/webauthn registration. Tinatanggihan ng step ang sinumang may hawak nang second factor, dahil ang pag-enrol ng ikalawa sa isang sign-in ay ang bypass na pinag-iingatan ng security-key box. Kailangan ng ?mfa= id na mina-mint ng password step, kaya sumasagot ng 400 kapag sinundan nang walang laman. Walang script."
+    "en": "1576811e849d9087",
+    "text": "SECOND FACTOR NA KINAKAILANGAN SA TAONG WALANG HAWAK NITO (2026-09-13). Ang password step na nagtagumpay para sa taong kinakailangan ng second factor — stsMfaRequired sa entry nila, itinakda mula sa kanilang /admin/users page, o ang authentication policy ng realm — at walang hawak na authenticator app o mfa-role security key ay bumabagsak dito sa halip na ma-sign in. Pumipili sila ng isa: ine-enrol sa page na ito ang authenticator app (isang QR code na iginuguhit ng browser mula sa otpauth: URI at code na ita-type pabalik, kinukumpirma sa pamamagitan ng credentials.confirmTotpEnrolment(), session amr [\"pwd\",\"otp\"], acr \"mfa\"), at pumupunta ang security key sa karaniwang /authn/webauthn registration. Tinatanggihan ng step ang sinumang may hawak nang second factor, dahil ang pag-enrol ng ikalawa sa isang sign-in ay ang bypass na pinag-iingatan ng security-key box. Kailangan ng ?mfa= id na mina-mint ng password step, kaya sumasagot ng 400 kapag sinundan nang walang laman. Isang page ng sign-in surface mula noong #572."
   },
   "stsmetadata.endpoints./authn/mfa-setup.effect": {
     "en": "997e77c58a56af97",
     "text": "nag-eenrol ng authenticator app o nagsisimula ng security-key registration, pagkatapos ay itinatatag ang sign-on session"
   },
   "stsmetadata.endpoints./authn/totp.what": {
-    "en": "d46dcc2a752af70a",
-    "text": "ANG IKALAWANG SECOND FACTOR (2026-09-10). Ang password step na nagtagumpay para sa taong may naka-enrol na authenticator app ay bumabagsak dito, at humihingi ang endpoint na ito ng anim na digit na ipinapakita ng kanilang app. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] — ang value ng RFC 8176, na ang registry entry ay nagpapangalan sa RFC 4226 at RFC 6238 — at acr \"mfa\", na siyang nag-iisang kaso kung saan tapat na masasabi ng serbisyong ito na dalawang factor. **TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE**, hindi tulad ng password sa harap nito: ang one-time password verifier na tumatanggap ng anumang anim na digit ay hindi permissive, kundi sira, at ito ang argumento ng SPNEGO na binasa sa ikalawang pagkakataon. Naka-rate limit ayon sa identity AT ayon sa address, dahil isang milyong value ang anim na digit at ito ang pinakamaliit na search space sa serbisyo. ANG GET AY ANG *use a code instead* NA LINK mula sa security-key screen at walang ginagawa — iginuguhit nito ang page para sa step na umiiral na, at tinatanggihan ito para sa taong walang enrolment. **WALA ITONG INIEENROL**, na siyang buong pagkakaiba sa /authn/webauthn sa tabi nito: ang pag-enrol ay nangangahulugang ipinapakita ang shared secret, kaya nangyayari ito sa /portal/mfa o habang ginagamit ang activation link, at hindi kailanman sa sign-in screen. WALANG SCRIPT ang page na ito at inihahain sa ilalim ng service-wide na script-src 'none' — nagbabasa ang tao ng mga digit at tina-type ang mga ito, kaya hindi nalalapat dito ang eksepsyong kailangan ng security-key page."
+    "en": "b62d7bad9442ea5c",
+    "text": "ANG IKALAWANG SECOND FACTOR (2026-09-10). Ang password step na nagtagumpay para sa taong may naka-enrol na authenticator app ay bumabagsak dito, at humihingi ang endpoint na ito ng anim na digit na ipinapakita ng kanilang app. Kapag nagtagumpay, nire-record ng session ang amr [\"pwd\",\"otp\"] — ang value ng RFC 8176, na ang registry entry ay nagpapangalan sa RFC 4226 at RFC 6238 — at acr \"mfa\", na siyang nag-iisang kaso kung saan tapat na masasabi ng serbisyong ito na dalawang factor. **TUNAY NA SINUSURI ANG CODE SA PAREHONG MODE**, hindi tulad ng password sa harap nito: ang one-time password verifier na tumatanggap ng anumang anim na digit ay hindi permissive, kundi sira, at ito ang argumento ng SPNEGO na binasa sa ikalawang pagkakataon. Naka-rate limit ayon sa identity AT ayon sa address, dahil isang milyong value ang anim na digit at ito ang pinakamaliit na search space sa serbisyo. ANG GET AY ANG *use a code instead* NA LINK mula sa security-key screen at walang ginagawa — iginuguhit nito ang page para sa step na umiiral na, at tinatanggihan ito para sa taong walang enrolment. **WALA ITONG INIEENROL**, na siyang buong pagkakaiba sa /authn/webauthn sa tabi nito: ang pag-enrol ay nangangahulugang ipinapakita ang shared secret, kaya nangyayari ito sa /portal/mfa o habang ginagamit ang activation link, at hindi kailanman sa sign-in screen. Isang page ng sign-in surface mula noong #572: pumupunta ang code sa /authn-api/mfa/{id}/totp."
   },
   "stsmetadata.endpoints./authn/totp.effect": {
     "en": "be3fd55c22c005b5",
     "text": "itinatatag ang sign-on session kapag na-verify ang code"
   },
   "stsmetadata.endpoints./authn/signin.js.what": {
-    "en": "67232bcc1fd0a54a",
-    "text": "NON-SPEC (#571). Ang runtime at mga renderer ng sign-in surface sa iisang file, binuo ng build-typescript.sh (authn/authn-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /authn/login, /authn/select-idp at /authn/password-change mula sa /authn-api at doon ipinapadala ang mga aksiyon nila. Pampubliko: walang lihim sa loob nito."
+    "en": "4b9d80501c8e1e61",
+    "text": "NON-SPEC (#571). Ang runtime at mga renderer ng sign-in surface sa iisang file, binuo ng build-typescript.sh (authn/authn-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /authn/login, /authn/select-idp, /authn/password-change at, mula noong #572 at #573, ang bawat step pagkatapos ng mga iyon mula sa /authn-api at doon ipinapadala ang mga aksiyon nila. Pampubliko: walang lihim sa loob nito."
   },
   "stsmetadata.endpoints./authn-api.what": {
     "en": "fbfe4ed0573429d0",
@@ -2531,13 +2531,61 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). Sinasagot ng GET kung kaninong password ang kailangang palitan; iniimbak ng POST ang bago at ipinagpapatuloy ang sign-in."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id.what": {
+    "en": "91b7f4a74c9391a3",
+    "text": "NON-SPEC (#572, #573). Ang view ng page ng isang second-factor o emailed-factor step (?page=), bilang mga fact at walang salita, at ang CSRF token na dala ng mga aksiyon nito; tinatanggihan kung hindi kailanman maiguguhit ang page para sa step. Ang id ay bearer capability at hindi kailanman nilo-log."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/totp.what": {
+    "en": "996baaf39743253e",
+    "text": "NON-SPEC (#572). Isang code mula sa authenticator app, sinusuri sa bawat mode at naka-rate limit; pinananatili ng maling code ang step."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/backup-code.what": {
+    "en": "85c36e0444e0b812",
+    "text": "NON-SPEC (#572). Sinusuri at ginagamit; tinatanggihan ang code na hindi mamarkahang nagamit na."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/password.what": {
+    "en": "c06e35458d6a63bd",
+    "text": "NON-SPEC (#572). Pagkatapos ng wallet, naka-rate limit sa sign-in bucket."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn/options.what": {
+    "en": "05dcac1f6c0bbf9a",
+    "text": "NON-SPEC (#572). Ang challenge, RP ID, user at mga key ng step, at ang mga option ng passkey policy."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/webauthn.what": {
+    "en": "51a47c35adbbc0b5",
+    "text": "NON-SPEC (#572). Ang resulta ng ceremony, vine-verify: registration kung nag-eenrol ng key ang step, assertion kung hindi — ang step ang nagpapasya."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/totp.what": {
+    "en": "90062824e22863bd",
+    "text": "NON-SPEC (#572). Sa set-up step; susunod na iginuguhit ang secret nito."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/confirm.what": {
+    "en": "651b8a5c40a806cb",
+    "text": "NON-SPEC (#572). Ang unang code nito, naka-rate limit; isang session ng dalawang factor kapag tama ito."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/setup/webauthn.what": {
+    "en": "7e963b41f54cb678",
+    "text": "NON-SPEC (#572). Ang susunod na step ay ang registration ng passkey page."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": {
+    "en": "cac68486550dfe19",
+    "text": "NON-SPEC (#572, #246). Kung inalok lamang ang step: natatapos ang sign-in sa password."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
+    "en": "7b9faf3a24fd710d",
+    "text": "NON-SPEC (#573). Sa verified na address lamang; pinapalitan ng muling pagpapadala ang huli."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": {
+    "en": "0e2331e480483043",
+    "text": "NON-SPEC (#573). Minsan para sa cluster, may limitadong bilang ng maling code bawat step."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
+    "en": "5280ace174afe50f",
+    "text": "NON-SPEC (#573). Ang Continue button ng page na binubuksan ng link, sa browser lamang na humingi nito."
+  },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
     "text": "NON-SPEC (#62 P6). Inihahain lamang habang naka-on ang risk.fingerprinting sa realm — 404 kung hindi — at sa ganoon ay nilo-load ito ng sign-in screen katabi ng sarili nitong script: kinukuwenta ng FingerprintJS (MIT, v5; tumatakbo ito sa browser at walang ipinapadala, naka-off ang usage ping nito) ang isang visitorId na ipinapadala ng sign-in, at keyed digest lamang nito ang pinananatili ng serbisyo, sinusuri bilang device na hindi pa kailanman ginamit ng taong ito. Gumagana ang sign-in nang wala ito. Naka-off bilang default: personal data ito, at ang pag-on nito ay desisyon ng operator, pagkatapos ng privacy impact assessment na inilalarawan ng risk-scoring page."
-  },
-  "stsmetadata.endpoints./authn/webauthn.js.what": {
-    "en": "1ac86ac809b57d92",
-    "text": "Ang script na pinapatakbo ng security-key page, sa parehong papel nito — ang ceremony na ginagawa ng second factor at ang ginagawa ng passwordless na sign-in ay parehong mga byte. Hiwalay itong resource sa halip na inline script dahil itinatakda ng serbisyong ito ang script-src 'none' sa bawat response bilang default; niluluwagan iyon ng page na iyon sa 'self', na siyang pinakamaliit na eksepsyong gumagana. Ang inline script doon ay hindi lang tatakbo, walang ginagawa ang button at walang error saanman."
   },
   "stsmetadata.endpoints./oauth2/check_session.what": {
     "en": "67b6934792210c8e",

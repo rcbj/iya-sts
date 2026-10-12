@@ -166,14 +166,14 @@ const ROWS: Row[] = [
   { prefix: '/authn/login', strategy: 'handler', browser: true,
     handler: 'authn/authn.ts',
     why: 'the login name decides the home cell (D9)' },
-  { prefix: '/authn/webauthn.js', strategy: 'local', why: 'a static script' },
   { prefix: '/authn/signin.js', strategy: 'local',
     why: 'the sign-in surface\'s script, the same file in every cell (#571)' },
   { prefix: '/authn-api', strategy: 'handler', browser: true,
     handler: 'authn/authn.ts',
     why: 'the sign-in screen\'s acts (#571): the login name decides the ' +
          'home cell (D9), in `screenAct()`, as at the form it replaced; a ' +
-         'pinned browser first, where its pending sign-in is held' },
+         'pinned browser first, where its pending sign-in is held — and ' +
+         'its steps (#572, #573), held where the pending sign-in was' },
   { prefix: '/authn-api/wallet', strategy: 'affinity', browser: true,
     why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
          'sign-in it is bound to and the binding cookie\'s hash are where ' +

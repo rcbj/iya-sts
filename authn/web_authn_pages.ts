@@ -9,13 +9,15 @@
 // THE SIGN-IN SURFACE'S PAGE TABLE (#571, 2026-10-12).
 //
 // Rows in `common/web_surface.ts`'s shape — the screen, the federation
-// chooser and the forced password change, each with the `/authn-api`
+// chooser and the forced password change (#571), each with the `/authn-api`
 // operation its view is the answer of; the wallet's start and wait pages
-// (#574), likewise; and the SPNEGO sign-in's bodies (#575), whose view the
-// shell carries instead. Each operation names its resource in the PATH (the pending sign-in's id, the step's id), which the
-// browser reads off the location's query (`?authn=`, `?change=`) — the
-// addresses `beginAuthentication()` and the screen's acts have always sent a
-// browser to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
+// (#574), likewise; the SPNEGO sign-in's bodies (#575), whose view the
+// shell carries instead; and the second-factor and emailed-factor steps
+// (#572, #573). Each operation names its resource in the PATH (the pending
+// sign-in's id, the step's id), which the browser reads off the location's
+// query (`?authn=`, `?change=`, `?mfa=`) — the addresses
+// `beginAuthentication()` and the screen's acts have always sent a browser
+// to. It is also the renderers' bundle, `authn/authn.bundle.js` under the
 // global `StsAuthn`, which `tests/web_surfaces.js` loads to draw a page from
 // a view after the wire and compare it, byte for byte, with this process's
 // drawing.
@@ -26,12 +28,63 @@
 import WebAuthnLogin = require('./web_authn_login');
 import WebAuthnSelect = require('./web_authn_select');
 import WebAuthnPassword = require('./web_authn_password');
+import WebAuthnMfa = require('./web_authn_mfa');
+import WebAuthnEmail = require('./web_authn_email');
 // THE WALLET'S TWO PAGES (#574), whose renderers are beside their server
 // module in `oid4vc/`.
 import WebVcSignin = require('../oid4vc/web_vc_signin');
 import WebAuthnSpnego = require('../kerberos/web_authn_spnego');
 
 type Json = any;
+
+/**
+ * A second-factor or emailed-factor step's view (#572, #573): `GET
+ * /authn-api/mfa/{id}?page=`, the step's id off `?mfa=`, and the passkey a
+ * person chose off `?key=` (#534).
+ *
+ * @param page - the page's name to the API
+ * @returns the row's `operation`
+ */
+function stepOperation(page: string): (query: Json) => string {
+  return function (query: Json): string {
+    return '/authn-api/mfa/' + encodeURIComponent(String(query.mfa || '')) +
+      '?page=' + page + (query.key ? '&key=' +
+                         encodeURIComponent(String(query.key)) : '');
+  };
+}
+
+/**
+ * A second-factor page's row.
+ *
+ * @param path - the page's path
+ * @param page - its name to the API
+ * @param render - its renderer
+ * @returns the row
+ */
+function stepRow(path: string, page: string,
+                 render: (view: Json, ctx: Json) => string): Json {
+  return { path: path, operation: stepOperation(page), render: render,
+           title: function (view: Json, ctx: Json): string {
+             return WebAuthnMfa.title(view, ctx);
+           } };
+}
+
+/**
+ * An emailed factor's page's row.
+ *
+ * @param path - the page's path
+ * @param page - its name to the API
+ * @returns the row
+ */
+function emailRow(path: string, page: string): Json {
+  return { path: path, operation: stepOperation(page),
+           render: function (view: Json, ctx: Json): string {
+             return WebAuthnEmail.render(view, ctx);
+           },
+           title: function (view: Json, ctx: Json): string {
+             return WebAuthnEmail.title(view, ctx);
+           } };
+}
 
 /**
  * The surface's pages.
@@ -116,7 +169,16 @@ const PAGES = [
     },
     title: function (view: Json, ctx: Json): string {
       return WebAuthnSpnego.title(view, ctx);
-    } }
+    } },
+  // THE STEPS AFTER THE SCREEN (#572, #573).
+  stepRow('/authn/totp', 'totp', WebAuthnMfa.totp),
+  stepRow('/authn/webauthn', 'webauthn', WebAuthnMfa.webauthn),
+  stepRow('/authn/backup-code', 'backup-code', WebAuthnMfa.backup),
+  stepRow('/authn/password-factor', 'password', WebAuthnMfa.password),
+  stepRow('/authn/mfa-setup', 'setup', WebAuthnMfa.setup),
+  emailRow('/authn/email-code', 'email-code'),
+  emailRow('/authn/email-link', 'email-link'),
+  emailRow('/authn/email-link/open', 'email-link-open')
 ];
 
 /**

@@ -23,7 +23,7 @@
 //   * THE WAIT PAGE (`/authn/wallet/wait`): the Digital Credentials API
 //     button, the same-device link, and — where the realm offers it — a link
 //     to the QR code (`?qr=1`), drawn here from the request's text by
-//     `portal/web_qr.ts` (the portal's encoder, imported from where it is).
+//     `common/web_qr.ts` (the portal's encoder, moved to `common/` by #572).
 //   * THE POLL: `POST …/status` every `pollSeconds` on the QR page, as its
 //     `<meta>` refresh did; once at once where the wallet sent the person
 //     back with a `response_code`; and on *Check now*. The plain wait page
@@ -43,7 +43,7 @@
 // the browser arrives through the surface's `env`.
 // ---------------------------------------------------------------------------
 
-import WebQr = require('../portal/web_qr');
+import WebQr = require('../common/web_qr');
 
 type Json = any;
 

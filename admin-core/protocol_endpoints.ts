@@ -410,10 +410,16 @@ class ProtocolEndpoints {
                             '/federation/signals/:id',
                             '/authn/select-idp'].map(route),
       // The portal's doors are its `/account-api` operations since #568.
-      '/admin/totp': ['/authn/totp', '/account-api/mfa'].map(route),
+      // The second-factor steps' acts since #572.
+      '/admin/totp': ['/authn/totp', '/authn-api/mfa/:id/totp',
+                      '/authn-api/mfa/:id/setup/confirm',
+                      '/account-api/mfa'].map(route),
       '/admin/backup-codes': ['/authn/backup-code',
+                              '/authn-api/mfa/:id/backup-code',
                               '/account-api/mfa'].map(route),
-      '/admin/webauthn': ['/authn/webauthn', '/account-api/keys',
+      '/admin/webauthn': ['/authn/webauthn',
+                          '/authn-api/mfa/:id/webauthn/options',
+                          '/authn-api/mfa/:id/webauthn', '/account-api/keys',
                           '/account-api/keys/remove'].map(route),
       // DEVICE REGISTRATION (#164, #218): the doors a device arrives and is
       // recognised through today — Native SSO's token endpoint and its

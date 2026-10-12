@@ -1447,13 +1447,61 @@
     "en": "f2d18b738357010b",
     "text": "強制變更密碼"
   },
+  "endpoints.route./authn-api/mfa/:id.name": {
+    "en": "b881ffb2600f827e",
+    "text": "登入步驟頁面顯示的內容"
+  },
+  "endpoints.route./authn-api/mfa/:id/totp.name": {
+    "en": "22a350cbbceaa429",
+    "text": "檢查一次性代碼"
+  },
+  "endpoints.route./authn-api/mfa/:id/backup-code.name": {
+    "en": "f3e3fe66753f9114",
+    "text": "用掉復原碼"
+  },
+  "endpoints.route./authn-api/mfa/:id/password.name": {
+    "en": "e59ea53b9b75ba40",
+    "text": "將密碼作為第二要素檢查"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn/options.name": {
+    "en": "f11cdfd17fc8a238",
+    "text": "準備通行金鑰步驟的儀式"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn.name": {
+    "en": "243864657b195912",
+    "text": "完成通行金鑰步驟"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/totp.name": {
+    "en": "09679d4354c9ec13",
+    "text": "開始設定驗證器應用程式"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/confirm.name": {
+    "en": "34a1798b4970fcf5",
+    "text": "確認驗證器應用程式"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/webauthn.name": {
+    "en": "731e67b177c594f5",
+    "text": "在設定步驟中選擇通行金鑰"
+  },
+  "endpoints.route./authn-api/mfa/:id/skip.name": {
+    "en": "d412e3d8a9215328",
+    "text": "忽略所提供的第二要素"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/send.name": {
+    "en": "f974b23b7838f712",
+    "text": "以電子郵件寄送登入代碼或連結"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/code.name": {
+    "en": "73fb62565006f03f",
+    "text": "檢查以電子郵件寄送的代碼"
+  },
+  "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
+    "en": "7d4cd6f48237ebb7",
+    "text": "用掉以電子郵件寄送的登入連結"
+  },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
     "text": "瀏覽器指紋指令碼（選用）"
-  },
-  "endpoints.route./authn/webauthn.js.name": {
-    "en": "b82dcc38e2ea2cd9",
-    "text": "WebAuthn 儀式指令碼"
   },
   "endpoints.route./oauth2/check_session.name": {
     "en": "267337fd3ad0ab7f",

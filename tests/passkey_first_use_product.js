@@ -165,9 +165,11 @@ function childMain() {
                  origin: origin, crossOrigin: false }), 'utf8')
                  .toString('base64url') } };
   };
-  const dataAttribute = function (html, name) {
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(html);
-    return found ? found[1].replace(/&amp;/g, '&') : '';
+  // The passkey step's ceremony mode, off its page's view (#572), or ''
+  // where no step's page was opened.
+  const modeOf = function (page) {
+    const w = page && page.view && page.view.webauthn;
+    return w ? String(w.mode || '') : '';
   };
 
   (async function () {
@@ -234,14 +236,18 @@ function childMain() {
       return { b: b, screen: opened.shell, view: opened.view || {},
                posted: posted };
     };
-    const finish = function (b, step) {
-      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      const credential = register(dataAttribute(step.text, 'rpid'), ORIGIN,
-                                  dataAttribute(step.text, 'challenge'));
-      return b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: mfaId, mode: 'create',
-        credential: JSON.stringify(credential) } });
+    // The passkey step's ceremony over `/authn-api` (#572): armed, made
+    // by the test's authenticator, sent; read as the form's answer was —
+    // `redirect` as its 303, a refusal at its status with its sentence.
+    const finish = async function (b, step) {
+      const done = await authnScreen.passkeyStep({ port: port, jar: b.jar,
+        opened: step }, function (c) {
+        return register(c.rpId, ORIGIN, c.challenge);
+      });
+      const a = done.answer;
+      return { status: a.next === 'redirect' ? 303 : a.apiStatus,
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || '') };
     };
     const primaryKeys = function (name) {
       return credentials.keysOf(name).filter(function (k) {
@@ -251,8 +257,7 @@ function childMain() {
 
     // 1. Development, the control.
     let s = await passwordless('pfu-dev');
-    note(s.posted.status === 200 &&
-         dataAttribute(s.posted.text, 'mode') === 'create',
+    note(s.posted.status === 200 && modeOf(s.posted) === 'create',
          '1a. DEVELOPMENT: a passwordless sign-in for a keyless person is the ' +
          'ENROL ceremony', s.posted.status + ' ' + s.posted.text.slice(0, 160));
     let done = await finish(s.b, s.posted);
@@ -272,8 +277,7 @@ function childMain() {
       s = await passwordless('pfu-victim');
       note(s.posted.apiStatus === 400 &&
            s.posted.text.indexOf(REFUSAL) >= 0 &&
-           !dataAttribute(s.posted.text, 'mode') &&
-           !/name="mfa_id"/.test(s.posted.text),
+           !modeOf(s.posted) && !s.posted.id,
            '2a. PRODUCT: a passwordless sign-in for somebody who exists and ' +
            'holds no key is REFUSED before any ceremony — it was the enrol ' +
            'ceremony, which gave the account to whoever asked',
@@ -291,15 +295,14 @@ function childMain() {
 
       // 4. A key holder is not refused.
       s = await passwordless('pfu-holder');
-      note(s.posted.status === 200 &&
-           dataAttribute(s.posted.text, 'mode') === 'get' &&
+      note(s.posted.status === 200 && modeOf(s.posted) === 'get' &&
            s.posted.text.indexOf(REFUSAL) < 0,
            '4. PRODUCT: a person who HOLDS a primary key still gets the ' +
            'ceremony, as an assertion — the refusal is about enrolling',
            s.posted.status + ' ' + s.posted.text.slice(0, 200));
 
       // 5. A development step completed in product.
-      note(dataAttribute(late.posted.text, 'mode') === 'create',
+      note(modeOf(late.posted) === 'create',
            '5a. (precondition: the step minted in development was an ' +
            'enrolment)', late.posted.text.slice(0, 160));
       done = await finish(late.b, late.posted);

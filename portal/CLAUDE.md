@@ -18,7 +18,7 @@ way, and the console-session adoption dropped.
 |---|---|
 | `portal.ts` | The server half that is left: the shell (drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
 | `account_*.ts` (seven), `portal_*.ts` (fourteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
-| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row), `web_qr.ts` (a QR code drawn from a string, #589) and one renderer module per family. |
+| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
 
 **WHAT THE SECTIONS BELOW SAY THAT IS NO LONGER SO**, read with this table
 rather than rewritten one by one, because most of each section is about what
@@ -1451,7 +1451,7 @@ that history and the one `makeOffer()` both doors call.
   pre-authorized code and the Transaction Code beside it must not reach the
   address bar or the history. A reload shows the form again, and a new offer
   is a new code.
-* **THE QR CODE IS DRAWN IN THE BROWSER** (`web_qr.ts`), from the offer BY
+* **THE QR CODE IS DRAWN IN THE BROWSER** (`common/web_qr.ts`, here until #572 moved it beside the sign-in surface, which draws one too), from the offer BY
   REFERENCE, which is short enough to scan; the open-in-wallet link carries
   the offer by value as the `openid-credential-offer://` URI a native wallet
   registers for, and the configured web wallet (`oid4vci.walletUrl`) gets a

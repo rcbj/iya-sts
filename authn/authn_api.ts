@@ -13,7 +13,8 @@
 // and `/authn/password-change` answer one shell, and the browser draws each
 // page from this API and sends each act to it. Every protocol's browser
 // sign-in passes through it, and the second-factor, email, wallet and SPNEGO
-// tickets (#572-#575) extend it.
+// tickets (#572-#575) extend it — since #572 and #573 with the steps after
+// the screen, keyed by the step's id (`/authn-api/mfa/{id}`, below).
 //
 // WHAT IT IS, AND WHAT IT IS NOT:
 //
@@ -148,6 +149,54 @@ const PASSWORD_CHANGE_BODY = vz.object({
   confirm_password: vz.string().max(1024).optional()
 }).strict();
 
+// THE SECOND-FACTOR AND EMAILED-FACTOR STEPS' BODIES (#572, #573): the
+// fields their forms posted, `mfa_id` gone into the path.
+//
+//   * `code` — a STRING, never a number: `007123` is not 7123, and
+//     `common/totp.ts` refuses anything that is not exactly the enrolled
+//     number of digits. A recovery code's bound is wider (letters, dashes
+//     and the spaces somebody typed off paper), and its alphabet is
+//     `common/backup_codes.ts`'s business.
+//   * `credential` — a ceremony's result, bounded and parsed downstream.
+//   * `key` — the passkey a person chose (#534), a credential id.
+//   * `t` — a mailed link's token, as the link carried it.
+const CODE_BODY = vz.object({
+  code: vz.string().max(32).optional()
+}).strict();
+
+const BACKUP_CODE_BODY = vz.object({
+  code: vz.string().max(64).optional()
+}).strict();
+
+const FACTOR_PASSWORD_BODY = vz.object({
+  password: vz.string().max(1024).optional()
+}).strict();
+
+const KEY_BODY = vz.object({
+  key: vt.opt(vt.base64url)
+}).strict();
+
+const CREDENTIAL_BODY = vz.object({
+  credential: vz.string().max(validation.CAP.TEXT).optional()
+}).strict();
+
+const SEND_BODY = vz.object({
+  kind: vt.oneOf(['code', 'link'])
+}).strict();
+
+const OPEN_BODY = vz.object({
+  t: vt.opt(vt.base64url)
+}).strict();
+
+// The pages a step's view is asked for (`?page=`), and the passkey chosen.
+const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
+                   'email-code', 'email-link', 'email-link-open'];
+
+const MFA_QUERY = vz.object({
+  page: vt.opt(vt.oneOf(MFA_PAGES)),
+  key: vt.opt(vt.base64url)
+});
+
 const ID_PARAMS = vz.object({
   id: vt.base64url
 });
@@ -190,9 +239,10 @@ interface Operation {
   path: string;
   operationId: string;
   // `pending` — keyed by a pending sign-in's id; `step` — a password change
-  // step's id; `wallet` — a wallet sign-in's transaction (#574), keyed by
-  // its state where the path names one; `public` — neither.
-  access: 'public' | 'pending' | 'step' | 'wallet';
+  // step's id; `mfa` — a second-factor or emailed-factor step's id (#572,
+  // #573); `wallet` — a wallet sign-in's transaction (#574), keyed by its
+  // state where the path names one; `public` — none.
+  access: 'public' | 'pending' | 'step' | 'mfa' | 'wallet';
   // The page or form control this operation is the door of, for the
   // runtime and the reader (`/account-api`'s convention, rule 7's twin).
   mirrors: string | null;
@@ -206,7 +256,9 @@ interface Operation {
   handler: string;
   // For a wallet operation (#574): the `oid4vc/vc_signin.ts` method it is.
   walletAct?: string;
-  // The code a body this operation does not take is recorded under.
+  // The code a body this operation does not take is recorded under, where
+  // its form had one of its own (#572: the one-time code's, the
+  // ceremony's, the recovery code's).
   refusedCode?: string;
 }
 
@@ -220,17 +272,23 @@ const NEXT_ANSWER = {
     '`email-link`) whose page is `location`. `password-change`: the forced ' +
     'change, at `location`. `home-cell`: the person is homed in another ' +
     'cell; send `form` (its `method`, `action` and `fields`) as it is. ' +
-    '`refused`: `errors` says why, in English, and the screen is drawn ' +
-    'again.',
+    '`refused`: `errors` says why, in English, and the page is drawn ' +
+    'again — or, where `location` is named (a session refused at the end ' +
+    'of a second-factor step), the sign-in screen at `location` says it; ' +
+    'with `end` (`{ title }`), the emailed factor\'s page ends there. ' +
+    '`stay`: an emailed factor was sent (`notice: resent`) and the page is ' +
+    'drawn again.',
   properties: {
     ok: { type: 'boolean' },
     next: { type: 'string',
             enum: ['redirect', 'mfa', 'password-change', 'home-cell',
-                   'refused'] },
+                   'stay', 'refused'] },
     location: { type: 'string' },
     step: { type: 'string' },
     id: { type: 'string' },
     form: { type: 'object' },
+    notice: { type: 'string' },
+    end: { type: 'object' },
     errors: { type: 'array', items: { type: 'string' } },
     passkey: { type: 'object',
                description: 'After a refused passkey: a credential nobody ' +
@@ -324,7 +382,111 @@ const OPERATIONS: Operation[] = [
     answer: NEXT_ANSWER,
     summary: 'Stores the new password and continues the sign-in',
     description: 'Held to the password policy; the sign-in then continues ' +
-      'exactly as after the password step — second factor included.' }
+      'exactly as after the password step — second factor included.' },
+  // --- the second-factor and emailed-factor steps (#572, #573) -----------
+  { method: 'GET', path: API + '/mfa/:id', operationId: 'getStep',
+    access: 'mfa', handler: 'mfaStep',
+    mirrors: 'GET /authn/totp, /authn/webauthn, /authn/backup-code, ' +
+             '/authn/password-factor, /authn/mfa-setup, /authn/email-code, ' +
+             '/authn/email-link, /authn/email-link/open',
+    summary: 'What a second-factor or emailed-factor step\'s page shows',
+    description: 'The step\'s view for the page `page` names (`totp`, ' +
+      '`webauthn`, `backup-code`, `password`, `setup`, `email-code`, ' +
+      '`email-link`, `email-link-open`; the step\'s own where left out), ' +
+      'as facts and no words: the person, the ways round the factor asked ' +
+      'for, the set-up step\'s choice and its authenticator app\'s ' +
+      '`otpauth:` URI, the passkey ceremony\'s description, an emailed ' +
+      'factor\'s state — and `csrf`. Refused (400) where the page could ' +
+      'never be drawn for the step: an expired step, a code page for ' +
+      'somebody with no authenticator app, a passkey page for somebody ' +
+      'holding no key of the step\'s role. `key` names the passkey a ' +
+      'person chose where the passkey policy offers them one by one.' },
+  { method: 'POST', path: API + '/mfa/:id/totp', operationId: 'checkCode',
+    access: 'mfa', mirrors: 'POST /authn/totp', action: 'totp',
+    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
+    refusedCode: 'STS-AUTHN-0039',
+    summary: 'Checks a one-time code from an authenticator app',
+    description: 'RFC 6238, checked in every mode and rate limited by ' +
+      'identity and address; a refused code keeps the step.' },
+  { method: 'POST', path: API + '/mfa/:id/backup-code',
+    operationId: 'spendRecoveryCode', access: 'mfa',
+    mirrors: 'POST /authn/backup-code', action: 'backup-code',
+    handler: 'mfaAct', body: BACKUP_CODE_BODY, answer: NEXT_ANSWER,
+    refusedCode: 'STS-AUTHN-0041',
+    summary: 'Checks and spends a recovery code',
+    description: 'In place of the second factor; a code that cannot be ' +
+      'marked spent is refused.' },
+  { method: 'POST', path: API + '/mfa/:id/password',
+    operationId: 'checkFactorPassword', access: 'mfa',
+    mirrors: 'POST /authn/password-factor', action: 'password',
+    handler: 'mfaAct', body: FACTOR_PASSWORD_BODY, answer: NEXT_ANSWER,
+    summary: 'Checks a password as the second factor after a wallet',
+    description: 'Rate limited on the sign-in bucket.' },
+  { method: 'POST', path: API + '/mfa/:id/webauthn/options',
+    operationId: 'passkeyStepOptions', access: 'mfa',
+    mirrors: 'POST /authn/webauthn', action: 'webauthn-options',
+    handler: 'mfaAct', body: KEY_BODY,
+    summary: 'Arms the passkey step\'s ceremony',
+    description: 'The step\'s challenge, the RP ID, the user (its handle ' +
+      'and display name), the keys allowed and excluded and the passkey ' +
+      'policy\'s options, for `navigator.credentials.create()` or ' +
+      '`.get()` as `mode` says.' },
+  { method: 'POST', path: API + '/mfa/:id/webauthn',
+    operationId: 'finishPasskeyStep', access: 'mfa',
+    mirrors: 'POST /authn/webauthn', action: 'webauthn',
+    handler: 'mfaAct', body: CREDENTIAL_BODY, answer: NEXT_ANSWER,
+    refusedCode: 'STS-AUTHN-0020',
+    summary: 'Verifies the passkey step\'s ceremony and finishes the step',
+    description: 'A registration where the step enrols a key, an ' +
+      'assertion otherwise — decided by the step, not the body.' },
+  { method: 'POST', path: API + '/mfa/:id/setup/totp',
+    operationId: 'beginAppEnrolment', access: 'mfa',
+    mirrors: 'POST /authn/mfa-setup', action: 'totp', handler: 'mfaAct',
+    body: EMPTY_BODY, answer: NEXT_ANSWER,
+    summary: 'Begins enrolling an authenticator app at the set-up step',
+    description: 'The next step is the set-up page again, drawing the ' +
+      'secret.' },
+  { method: 'POST', path: API + '/mfa/:id/setup/confirm',
+    operationId: 'confirmAppEnrolment', access: 'mfa',
+    mirrors: 'POST /authn/mfa-setup', action: 'confirm-totp',
+    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
+    summary: 'Confirms an authenticator app with its first code',
+    description: 'Rate limited; on success a session of two factors.' },
+  { method: 'POST', path: API + '/mfa/:id/setup/webauthn',
+    operationId: 'beginKeyEnrolment', access: 'mfa',
+    mirrors: 'POST /authn/mfa-setup', action: 'webauthn',
+    handler: 'mfaAct', body: EMPTY_BODY, answer: NEXT_ANSWER,
+    summary: 'Chooses a passkey at the set-up step',
+    description: 'The next step is the passkey page\'s registration.' },
+  { method: 'POST', path: API + '/mfa/:id/skip',
+    operationId: 'ignoreOffer', access: 'mfa',
+    mirrors: 'POST /authn/mfa-setup', action: 'ignore', handler: 'mfaAct',
+    body: EMPTY_BODY, answer: NEXT_ANSWER,
+    summary: 'Ignores an offered second factor (#246)',
+    description: 'Only where the step was offered rather than required: ' +
+      'the sign-in finishes on the password.' },
+  { method: 'POST', path: API + '/mfa/:id/email/send',
+    operationId: 'sendEmailedFactor', access: 'mfa',
+    mirrors: 'POST /authn/email-code, /authn/email-link', action: 'send',
+    handler: 'mfaAct', body: SEND_BODY, answer: NEXT_ANSWER,
+    summary: 'Mails a code or a sign-in link for the step (#64)',
+    description: 'To the person\'s verified address only; a resend ' +
+      'replaces the last. `next: stay` with `notice: resent` where it ' +
+      'went. A link\'s binding cookie is set on this answer.' },
+  { method: 'POST', path: API + '/mfa/:id/email/code',
+    operationId: 'checkEmailedCode', access: 'mfa',
+    mirrors: 'POST /authn/email-code', action: 'verify',
+    handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
+    summary: 'Checks an emailed code',
+    description: 'Once for the cluster, a bounded number of wrong codes ' +
+      'per step, rate limited as the one-time code is.' },
+  { method: 'POST', path: API + '/mfa/:id/email-link/open',
+    operationId: 'spendEmailedLink', access: 'mfa',
+    mirrors: 'POST /authn/email-link/open', action: 'open',
+    handler: 'mfaAct', body: OPEN_BODY, answer: NEXT_ANSWER,
+    summary: 'Spends a mailed sign-in link: its Continue button',
+    description: 'Only in the browser that asked for the link (the ' +
+      '`sts_email_binding` cookie). Opening the link spends nothing.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -591,9 +753,9 @@ class AuthnApi {
     const posted = validation.checkParsed(helpers.parseBody(req) || {},
                                           'body', op.body || EMPTY_BODY);
     if (!posted.ok) {
-      errorCodes.mark(res, op.refusedCode ||
-                           (op.access === 'step' ? 'STS-AUTHN-0145'
-                                                 : 'STS-AUTHN-0002'));
+      errorCodes.mark(res, op.refusedCode || (op.access === 'step'
+        ? 'STS-AUTHN-0145'
+        : (op.access === 'mfa' ? 'STS-AUTHN-0330' : 'STS-AUTHN-0002')));
       this.refuse(res, 400, String(posted.detail || 'The body is refused.'));
       log.debug("Leaving AuthnApi.bodyOf(). Refused.");
       return null;
@@ -859,6 +1021,157 @@ class AuthnApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SECOND-FACTOR AND EMAILED-FACTOR STEPS (#572, #573). Keyed by the
+  // step's id, which is a bearer capability as `?mfa=` always was: never
+  // logged here, and redacted from an audit row's path. The view is
+  // `authn.ts`'s (`mfaView()`) or the emailed factor's (`view()`); every
+  // act is bound as the screen's are, and handed to the module whose form
+  // POST it was. `res.locals.authnStep` says the answer belongs to a step,
+  // so that a session refused at its end is drawn on the screen
+  // (`authn.ts`, `screenRefused()`).
+  // ---------------------------------------------------------------------------
+  /**
+   * `GET /authn-api/mfa/{id}`: a step's page's view.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  mfaStep(req: Json, res: Json): void {
+    const { log, authn, validation, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.mfaStep().");
+    const id = this.idOf(req, res);
+    if (id === null) {
+      log.debug("Leaving AuthnApi.mfaStep(). No id.");
+      return;
+    }
+    const asked = validation.checkParsed(req.query || {}, 'query',
+                                         MFA_QUERY);
+    if (!asked.ok) {
+      errorCodes.mark(res, 'STS-AUTHN-0330');
+      this.refuse(res, 400, 'That is not a page of a sign-in step.');
+      log.debug("Leaving AuthnApi.mfaStep(). Not a page.");
+      return;
+    }
+    const page = String(asked.value.page || this.pageOf(id));
+    const csrf = this.csrfOf(req);
+    if (page.indexOf('email-') === 0) {
+      const seen = AuthnApi.emailFactor().view(req, page, id);
+      if (seen.code) {
+        errorCodes.mark(res, seen.code);
+      }
+      authn.answerJson(res, seen.status, Object.assign({
+        ok: seen.status === 200, view: seen.view, csrf: csrf,
+        uiLocales: seen.uiLocales },
+        seen.status === 200 ? {} : { errors: [String(seen.view.sentence)] },
+        seen.preferredLanguage ? { preferredLanguage: seen.preferredLanguage }
+                               : {}));
+      log.debug("Leaving AuthnApi.mfaStep(). " + page);
+      return;
+    }
+    const seen = authn.mfaView(req, page, id, String(asked.value.key || ''));
+    if (seen.problem) {
+      errorCodes.mark(res, seen.problem.code);
+      // error-code: none — marked on the line above, stepProblem()'s code
+      this.refuse(res, 400, String(seen.problem.why));
+      log.debug("Leaving AuthnApi.mfaStep(). Refused.");
+      return;
+    }
+    authn.answerJson(res, 200, Object.assign({ ok: true, view: seen.view,
+      csrf: csrf, uiLocales: seen.uiLocales },
+      seen.preferredLanguage ? { preferredLanguage: seen.preferredLanguage }
+                             : {}));
+    log.debug("Leaving AuthnApi.mfaStep(). " + page);
+  }
+
+  // The page a step is drawn on where the view was asked for none: the
+  // factor it asks for.
+  private pageOf(id: string): string {
+    const { log, authn } = this.deps;
+    log.debug("Entering AuthnApi.pageOf().");
+    const step = authn.mfaStepFor(id);
+    const factor = String((step && step.factor) || '');
+    const out = factor === 'enrol' || factor === 'enrol-totp' ? 'setup'
+      : (['totp', 'webauthn', 'password', 'email-code', 'email-link']
+          .indexOf(factor) >= 0 ? factor : 'totp');
+    log.debug("Leaving AuthnApi.pageOf(). " + out);
+    return out;
+  }
+
+  // The emailed factor's door, loaded when first used: it is built beside
+  // `authn`, after it, and requires it.
+  private static emailFactor(): Json {
+    helpers.log.debug("Entering AuthnApi.emailFactor().");
+    helpers.log.debug("Leaving AuthnApi.emailFactor().");
+    return require('./email_factor');
+  }
+
+  /**
+   * `POST /authn-api/mfa/{id}/…`: an act at a step, handed to the module
+   * whose form it was.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns a promise settled when the answer is sent
+   */
+  async mfaAct(req: Json, res: Json, op: Operation): Promise<void> {
+    const { log, authn } = this.deps;
+    log.debug("Entering AuthnApi.mfaAct(). " + op.operationId);
+    const id = this.idOf(req, res);
+    if (id === null || !this.bound(req, res)) {
+      log.debug("Leaving AuthnApi.mfaAct(). Refused at the door.");
+      return;
+    }
+    const body = this.bodyOf(req, res, op);
+    if (!body) {
+      log.debug("Leaving AuthnApi.mfaAct(). The body.");
+      return;
+    }
+    res.locals.authnStep = true;
+    const ef = AuthnApi.emailFactor();
+    switch (op.operationId) {
+      case 'checkCode':
+        await authn.mfaTotpAct(req, res, id, body);
+        break;
+      case 'spendRecoveryCode':
+        await authn.mfaBackupCodeAct(req, res, id, body);
+        break;
+      case 'checkFactorPassword':
+        await authn.mfaPasswordAct(req, res, id, body);
+        break;
+      case 'passkeyStepOptions':
+        authn.mfaWebauthnOptions(req, res, id, String(body.key || ''));
+        break;
+      case 'finishPasskeyStep':
+        authn.mfaWebauthnAct(req, res, id, body);
+        break;
+      case 'beginAppEnrolment':
+        await authn.mfaSetupAct(req, res, id, 'totp', body);
+        break;
+      case 'confirmAppEnrolment':
+        await authn.mfaSetupAct(req, res, id, 'confirm', body);
+        break;
+      case 'beginKeyEnrolment':
+        await authn.mfaSetupAct(req, res, id, 'webauthn', body);
+        break;
+      case 'ignoreOffer':
+        await authn.mfaSetupAct(req, res, id, 'skip', body);
+        break;
+      case 'sendEmailedFactor':
+        await ef.sendAct(req, res, id, body.kind);
+        break;
+      case 'checkEmailedCode':
+        await ef.codeAct(req, res, id, String(body.code || ''));
+        break;
+      default:
+        await ef.openAct(req, res, id, String(body.t || ''));
+        break;
+    }
+    log.debug("Leaving AuthnApi.mfaAct().");
+  }
+
+  // ---------------------------------------------------------------------------
   // A WALLET OPERATION (#574): an act is bound as every act here is, and its
   // body checked; then `oid4vc/vc_signin.ts` answers it, handed the state in
   // the path, the body, the query and the CSRF token a view answers.
@@ -945,6 +1258,9 @@ class AuthnApi {
     return [{ name: 'id', in: 'path', required: true,
               description: op.access === 'step'
                 ? 'The password change step\'s id.'
+                : op.access === 'mfa'
+                ? 'The second-factor or emailed-factor step\'s id: a ' +
+                  'bearer capability, as the `mfa` its page was opened with.'
                 : 'The pending sign-in\'s id: a bearer capability, as the ' +
                   '`authn` the screen was opened with.',
               schema: { type: 'string' } }];
@@ -1038,7 +1354,7 @@ class AuthnApi {
           .catch(function (e: Json) {
             log.debug("Caught in AuthnApi route: " +
                       ((e && e.message) || e));
-            self.failed(res, e);
+            self.failed(res, e, op);
           });
         log.debug('Leaving ' + op.method + ' ' + op.path + '.');
       });
@@ -1048,13 +1364,18 @@ class AuthnApi {
 
   // Every handler writes an answer; one that threw would leave a browser
   // waiting on a request nothing answers.
-  private failed(res: Json, e: Json): void {
+  // AN EMAILED FACTOR'S OPERATION (#573) keeps the code its door's own
+  // failures were recorded under.
+  private failed(res: Json, e: Json, op?: Operation): void {
     const { log, errorCodes, authn } = this.deps;
     log.debug("Entering AuthnApi.failed().");
-    log.error(errorCodes.tag('STS-AUTHN-0328') + 'authn: a sign-in API ' +
-              'operation failed: ' + ((e && (e.stack || e.message)) || e));
+    const email = !!op && /^\/authn-api\/mfa\/:id\/(email|email-link)\//
+      .test(op.path);
+    log.error(errorCodes.tag(email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328') +
+              'authn: a sign-in API operation failed: ' +
+              ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
-      errorCodes.mark(res, 'STS-AUTHN-0328');
+      errorCodes.mark(res, email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328');
       authn.answerJson(res, 500, { ok: false,
         errors: ['Something went wrong; this sign-in could not continue.'] });
     }
