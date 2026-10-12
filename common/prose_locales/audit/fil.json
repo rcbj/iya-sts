@@ -1259,6 +1259,10 @@
     "en": "b6f77328c0b99b89",
     "text": "May taong nag-alis ng self-issued subject"
   },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "Gumawa ang isang tao ng Credential Offer para sa sarili niyang wallet"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Naitala ang feedback sa isang risk assessment"
