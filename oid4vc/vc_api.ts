@@ -35,11 +35,13 @@
 //     mode that refuses an undefined term or a redefined protected one is
 //     `vc_jsonld.ts`'s closed loader, which fetches nothing.
 //
-// **A TEST CONTROL, SO NEVER IN PRODUCT** (`mode.opensTestControls()`): an
+// **A TEST CONTROL, SO NEVER IN PRODUCT** (`mode.servesDemoEndpoints()`): an
 // endpoint that signs, with a realm's key, any document its caller writes is
 // what a test suite needs and what no deployment should expose. In a realm
-// whose mode is product every route here answers 404 (`STS-VC-0100`), as
-// though it did not exist.
+// whose mode is product every route here answers EXACTLY as an unrouted path
+// does — each carries `common/app.js`'s `demoOnly` mark (#585), which passes
+// the request on past the route to Express's own `Cannot GET …` 404. Until
+// #585 this module answered a 404 of its own, `STS-VC-0100` (retired).
 //
 // **AUTHENTICATED ALL THE SAME**, the way the suites allow
 // (`vc-test-suite-implementations`: none, a zcap, or an OAuth 2.0 client
@@ -69,6 +71,10 @@
 
 import crypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
@@ -91,7 +97,6 @@ type RouteApp = typeof app;
 interface VcApiDeps {
   log: typeof helpers.log;
   baseUrlOf: typeof helpers.baseUrlOf;
-  opensTestControls: () => boolean;
   errorCodes: typeof errorCodes;
   isRevoked: (jti: unknown) => boolean;
   declares: (clientId: unknown, scope: string) => boolean;
@@ -255,7 +260,6 @@ class VcApi {
     return {
       log: helpers.log,
       baseUrlOf: helpers.baseUrlOf,
-      opensTestControls: mode.opensTestControls,
       errorCodes: errorCodes,
       isRevoked: stats.isRevoked,
       declares: scopePolicy.declares,
@@ -348,12 +352,13 @@ class VcApi {
   }
 
   // ---------------------------------------------------------------------------
-  // THE GATE: a test control (404 outside one), then the access token.
+  // THE GATE: the access token (a product realm never gets here: the route's
+  // `demoOnly` mark passed the request on, #585).
   // Answers true when the request may go on; otherwise it has answered.
   // ---------------------------------------------------------------------------
   /**
-   * The gate: a test control (404 outside one), then an access token with the
-   * scope.
+   * The gate: an access token with the scope. A product realm never reaches
+   * it — the route's `demoOnly` mark has passed the request on.
    *
    * @param req - the request
    * @param res - the response
@@ -361,14 +366,8 @@ class VcApi {
    * @returns true when the request may go on; otherwise it has been answered
    */
   admitted(req: any, res: any, scope: string): boolean {
-    const { log, opensTestControls, presentedAccessToken, isRevoked,
-            declares } = this.deps;
+    const { log, presentedAccessToken, isRevoked, declares } = this.deps;
     log.debug("Entering VcApi.admitted(). " + scope);
-    if (!opensTestControls()) {
-      this.refuse(res, 404, 'STS-VC-0100', 'Not found.');
-      log.debug("Leaving VcApi.admitted(). Test controls are closed.");
-      return false;
-    }
     const presented = presentedAccessToken(req, res, 'the VC-API ' +
       'test endpoints', { requireVerified: true });
     if (!presented) {
@@ -1268,7 +1267,8 @@ class VcApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering VcApi.registerRoutes().");
-    app.post(BASE + '/issuers/:issuer/credentials/issue', function (req, res) {
+    app.post(BASE + '/issuers/:issuer/credentials/issue', demoOnly,
+             function (req, res) {
       log.debug("Entering POST " + BASE + "/issuers/:issuer/credentials/" +
                 "issue.");
       if (self.admitted(req, res, SCOPE_ISSUE)) {
@@ -1277,14 +1277,14 @@ class VcApi {
       log.debug("Leaving POST " + BASE + "/issuers/:issuer/credentials/" +
                 "issue.");
     });
-    app.get(BASE + '/issuers', function (req, res) {
+    app.get(BASE + '/issuers', demoOnly, function (req, res) {
       log.debug("Entering GET " + BASE + "/issuers.");
       if (self.admitted(req, res, SCOPE_ISSUE)) {
         self.send(res, 200, { issuers: self.issuers(req) });
       }
       log.debug("Leaving GET " + BASE + "/issuers.");
     });
-    app.post(BASE + '/credentials/verify', function (req, res) {
+    app.post(BASE + '/credentials/verify', demoOnly, function (req, res) {
       log.debug("Entering POST " + BASE + "/credentials/verify.");
       const body = self.admitted(req, res, SCOPE_VERIFY) &&
         self.readBody(req, res);
@@ -1296,7 +1296,7 @@ class VcApi {
       }
       log.debug("Leaving POST " + BASE + "/credentials/verify.");
     });
-    app.post(BASE + '/presentations/verify', function (req, res) {
+    app.post(BASE + '/presentations/verify', demoOnly, function (req, res) {
       log.debug("Entering POST " + BASE + "/presentations/verify.");
       const body = self.admitted(req, res, SCOPE_VERIFY) &&
         self.readBody(req, res);
@@ -1309,7 +1309,7 @@ class VcApi {
       }
       log.debug("Leaving POST " + BASE + "/presentations/verify.");
     });
-    app.post(BASE + '/holders/:holder/presentations/prove',
+    app.post(BASE + '/holders/:holder/presentations/prove', demoOnly,
              function (req, res) {
       log.debug("Entering POST " + BASE + "/holders/:holder/presentations/" +
                 "prove.");
@@ -1319,14 +1319,14 @@ class VcApi {
       log.debug("Leaving POST " + BASE + "/holders/:holder/presentations/" +
                 "prove.");
     });
-    app.post(BASE + '/credentials/derive', function (req, res) {
+    app.post(BASE + '/credentials/derive', demoOnly, function (req, res) {
       log.debug("Entering POST " + BASE + "/credentials/derive.");
       if (self.admitted(req, res, SCOPE_ISSUE)) {
         self.run(res, self.derive(req, res));
       }
       log.debug("Leaving POST " + BASE + "/credentials/derive.");
     });
-    app.post(BASE + '/credentials/status', function (req, res) {
+    app.post(BASE + '/credentials/status', demoOnly, function (req, res) {
       log.debug("Entering POST " + BASE + "/credentials/status.");
       if (self.admitted(req, res, SCOPE_ISSUE)) {
         self.changeStatus(req, res);
@@ -1336,21 +1336,21 @@ class VcApi {
     // DID RESOLUTION AND DEREFERENCING (#199): DID Core section 7's two
     // functions over `vc_did_resolver.ts`, answering its result structures
     // as JSON. `function` is resolve (the default) or resolveRepresentation.
-    app.get(BASE + '/resolve', function (req, res) {
+    app.get(BASE + '/resolve', demoOnly, function (req, res) {
       log.debug("Entering GET " + BASE + "/resolve.");
       if (self.admitted(req, res, SCOPE_VERIFY)) {
         self.run(res, self.resolveDid(req, res));
       }
       log.debug("Leaving GET " + BASE + "/resolve.");
     });
-    app.get(BASE + '/dereference', function (req, res) {
+    app.get(BASE + '/dereference', demoOnly, function (req, res) {
       log.debug("Entering GET " + BASE + "/dereference.");
       if (self.admitted(req, res, SCOPE_VERIFY)) {
         self.run(res, self.dereferenceDidUrl(req, res));
       }
       log.debug("Leaving GET " + BASE + "/dereference.");
     });
-    app.post(PUBLISH_PATH, function (req, res) {
+    app.post(PUBLISH_PATH, demoOnly, function (req, res) {
       log.debug("Entering POST " + PUBLISH_PATH + ".");
       if (self.admitted(req, res, SCOPE_ISSUE)) {
         self.send(res, 204, null);

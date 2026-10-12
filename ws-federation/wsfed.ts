@@ -117,6 +117,10 @@ const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -2312,7 +2316,7 @@ class WsFederation {
                 "endpoint.");
     });
 
-    app.get(RP_PATH, (req, res) => {
+    app.get(RP_PATH, demoOnly, (req, res) => {
       log.debug("Entering the mock relying party (GET).");
       const base = baseUrlOf(req);
       const realm = base + RP_PATH;
@@ -2405,7 +2409,7 @@ class WsFederation {
       log.debug("Leaving the mock relying party (GET).");
     });
 
-    app.post(RP_PATH, (req, res) => {
+    app.post(RP_PATH, demoOnly, (req, res) => {
       log.debug("Entering the mock relying party (POST).");
       const base = baseUrlOf(req);
       const realm = base + RP_PATH;

@@ -208,6 +208,10 @@ const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // Read per request rather than captured at require time, so that /admin/config
@@ -3672,8 +3676,8 @@ class Saml11Sso {
       log.debug("Leaving the SAML 1.1 responder description.");
     });
 
-    app.get(RP_PATH, this.mockRelyingParty.bind(this));
-    app.post(RP_PATH, this.mockRelyingParty.bind(this));
+    app.get(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));
+    app.post(RP_PATH, demoOnly, this.mockRelyingParty.bind(this));
     log.debug("Leaving Saml11Sso.registerRoutes().");
   }
 

@@ -116,6 +116,10 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -220,8 +224,8 @@ type Handler = (req: Req, res: Res) => unknown;
 
 // The routes' own table of what an express app offers.
 interface RouteTable {
-  get(path: string, handler: Handler): unknown;
-  post(path: string, handler: Handler): unknown;
+  get(path: string, ...handlers: Handler[]): unknown;
+  post(path: string, ...handlers: Handler[]): unknown;
 }
 
 // What `callerIdentity()` answers: what the connection carried, never a
@@ -1817,7 +1821,7 @@ class XacmlSurface {
     // from its own context; here they are supplied so that one endpoint can
     // exercise a whole policy without a client having to be written.
     // -------------------------------------------------------------------------
-    app.get('/xacml/protected', function (req, res) {
+    app.get('/xacml/protected', demoOnly, function (req, res) {
       log.debug('Entering GET /xacml/protected.');
       if (self.offCheck(res)) {
         log.debug('Leaving GET /xacml/protected. Off.');

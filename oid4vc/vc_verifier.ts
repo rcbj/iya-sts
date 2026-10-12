@@ -113,6 +113,10 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import qrcode = require('qrcode');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
@@ -4159,7 +4163,7 @@ class VcVerifier {
             errorCodes, stats, vpConfig, vpTransactions,
             vpRequests } = this.deps;
     log.debug("Entering VcVerifier.registerRoutes().");
-    app.get('/oid4vp/verifier', (req, res) => {
+    app.get('/oid4vp/verifier', demoOnly, (req, res) => {
       log.debug("Entering the verifier web page. format=" +
                 (req.query.format || 'dc+sd-jwt'));
       const base = baseUrlOf(req);
@@ -4296,7 +4300,7 @@ class VcVerifier {
     });
 
     // The link on that page: build the request and hand it to the wallet.
-    app.get('/oid4vp/start', async (req, res) => {
+    app.get('/oid4vp/start', demoOnly, async (req, res) => {
       log.debug("Entering the presentation start endpoint. mode=" +
                 (req.query.mode || 'same-device') +
                 ", format=" + (req.query.format || 'dc+sd-jwt'));
@@ -4683,7 +4687,7 @@ class VcVerifier {
     // machine-readable. Its CORS header is `common/cors.js`'s decision
     // (2026-09-13) — the `*` this route set for itself would have let any page
     // read a presentation's verdict.
-    app.get('/oid4vp/result/:state', (req, res) => {
+    app.get('/oid4vp/result/:state', demoOnly, (req, res) => {
       log.debug("Entering the presentation result endpoint. state=" +
                 req.params.state);
       // `GET /admin-api/verifications?state=` answers the same object
@@ -4700,7 +4704,7 @@ class VcVerifier {
     });
 
     // Where the wallet sends the End-User once the Verifier has answered.
-    app.get('/oid4vp/done', (req, res) => {
+    app.get('/oid4vp/done', demoOnly, (req, res) => {
       log.debug("Entering the verifier done page.");
       const record = vpTransactions.get(String(req.query.state || ''));
       const verdict = record && record.verdict;

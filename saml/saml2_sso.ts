@@ -167,6 +167,10 @@ import xmldom = require('@xmldom/xmldom');
 // code the debugger uses to check it.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
@@ -777,7 +781,7 @@ class Saml2Sso {
     app.post(SLO_PATH, singleLogout);
     app.post(SLO_PATH + '/:sp', singleLogout);
 
-    app.get(SP_PATH, function (req, res) {
+    app.get(SP_PATH, demoOnly, function (req, res) {
       log.debug("Entering the mock service provider (GET).");
       const base = baseUrlOf(req);
       const spEntityId = base + SP_PATH;
@@ -872,7 +876,7 @@ class Saml2Sso {
       log.debug("Leaving the mock service provider (GET).");
     });
 
-    app.post(SP_PATH, function (req, res) {
+    app.post(SP_PATH, demoOnly, function (req, res) {
       log.debug("Entering the mock service provider (POST).");
       const base = baseUrlOf(req);
       self.receiveAtMockSp(req, res, self.paramsOf(req), base, base + SP_PATH,

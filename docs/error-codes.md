@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4298** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4294** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -1630,7 +1630,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0175` | The access token presented at UserInfo was not issued with the openid scope. | insufficient_scope (HTTP 403, WWW-Authenticate challenge) |
 | `STS-OAUTH-0176` | A claims request sent directly to UserInfo is malformed. | invalid_request (HTTP 400, WWW-Authenticate challenge) |
 | `STS-OAUTH-0177` | The client's registered UserInfo signing or encryption could not be applied (unusable algorithm, or no usable recipient key). | server_error (HTTP 500) |
-| `STS-OAUTH-0178` | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. | access_denied (HTTP 403) |
+| `STS-OAUTH-0178` *(retired)* | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. Retired by #585: a product realm has no /dpop/nonce-mode, and answers as for a path nothing is registered on. | — |
 | `STS-OAUTH-0179` | POST /dpop/nonce-mode carried something other than required=true or required=false. | invalid_request (HTTP 400) |
 | `STS-OAUTH-0180` | The DPoP nonce setting could not be written. | server_error (HTTP 500) |
 | `STS-OAUTH-0181` | The directory threw while a person's profile claims were being read; the claims were omitted from what was issued. | — |
@@ -2114,7 +2114,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
 | `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
-| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
+| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401 or 409 {error} |
 | `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
@@ -3254,7 +3254,7 @@ Raised from: tls/.
 | `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
 | `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
-| `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
+| `STS-TLS-0024` *(retired)* | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. Retired by #585: a product process has neither route, and answers as for a path nothing is registered on. | — |
 | `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
 | `STS-TLS-0027` | The runtime trust anchor store was installed without one of its list, write and remove functions, and was refused whole; runtime anchors are not persisted. | — |
@@ -3384,7 +3384,7 @@ Raised from: oid4vc/.
 | `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
 | `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
 | `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
-| `STS-VC-0100` | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). | HTTP 404 |
+| `STS-VC-0100` *(retired)* | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). Retired by #585: a product realm's request is passed on past the route to Express's own 404, which records no code. | — |
 | `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
 | `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |
 | `STS-VC-0103` | The VC-API issuer refused a credential JSON-LD safe mode rejects — a context this service does not hold (it fetches none), an undefined term, a redefined protected term, a relative IRI — or one its cryptosuite could not sign (#194-#196). | HTTP 400 {errors} |
@@ -4057,7 +4057,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0032` | A certificate this service issued a compromised or removed device could not be revoked by its Issuing CA (#164 phase 4). | none — logged and audited; the device's change stands |
 | `STS-DEVICE-0033` | A device risk level outside LOW, MEDIUM and HIGH (CAEP section 3.8.1), or a source outside risk, compromise and admin, was refused (#164 phase 4). | none — the caller's refusal |
 | `STS-DEVICE-0034` | A device compliance feed request carried no report or more than devices.complianceFeedMaxReports, and was refused whole (#164 phase 3). | HTTP 400 |
-| `STS-DEVICE-0035` | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). | HTTP 403 |
+| `STS-DEVICE-0035` *(retired)* | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). Retired by #585: a product realm has no such route, and answers as for a path nothing is registered on. | — |
 | `STS-DEVICE-0036` | Risk scoring could not set the risk level of the registered device that proved a sign-in: the device register refused or did not store it (#164 phase 5). The sign-in stands and the device keeps the level it had. | none — logged as a warning |
 | `STS-DEVICE-0037` | An issuance was refused by the issuance policy's device-required rule: the realm requires a compliant registered device (devices.requireCompliantDevice) and this did not come from the subject's own (or an application's) compliant, uncompromised device — attested too where devices.compliantDeviceAttested says so (#164 phase 6). | the issuance site's own refusal — access_denied, a SOAP fault, a SAML status — whose description says a compliant registered device is required |
 | `STS-DEVICE-0038` | An issuance was refused by the issuance policy's device-compromised rule: it came from a registered device marked compromised, and the realm refuses one (devices.refuseCompromised, on by default) (#164 phase 6). | the issuance site's own refusal, saying only that authentication failed |
