@@ -96,6 +96,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -276,8 +277,8 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
-// One browser: a cookie jar kept BY NAME, because a browser signed in to the
-// portal holds the sign-on cookie and the portal's own.
+// One browser: a cookie jar kept BY NAME — the sign-on cookie, which the
+// static portal (#568) is signed in out of.
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
@@ -840,38 +841,33 @@ async function theResourceRefusesFirst(held) {
 // ===========================================================================
 async function enrolAnAuthenticator(alice) {
   log.debug("Entering enrolAnAuthenticator().");
-  // `/portal` is a relying party of the realm's own authorization server,
-  // so a browser holding a sign-on session goes round the code flow with no
-  // sign-in screen and lands on the page.
-  let r = await alice.go("GET", R + "/portal/mfa");
-  for (let i = 0; i < 6 && (r.status === 302 || r.status === 303); i++) {
-    assert.ok(!/\/authn\/login/.test(r.location),
-      "the portal should be answered out of the sign-on session; it sent " +
-      "the browser to sign in: " + r.location);
-    r = await alice.go("GET", r.location);
-  }
+  // THE PORTAL IS A STATIC APPLICATION SINCE #568: it signs in as its
+  // public client with PKCE and a DPoP-bound token, and a browser holding a
+  // sign-on session is answered by the authorization endpoint with no
+  // sign-in screen — the helper refuses to type a password when it was given
+  // a session only, so reaching the page IS that assertion.
+  const portal = await portalSignin.signInToThePortal(absolute(R),
+    ALICE, null, { cookie: Object.keys(alice.jar).map(function (k) {
+      return k + "=" + alice.jar[k];
+    }).join("; ") });
+  let r = await portal.page("/portal/mfa");
   assert.strictEqual(r.status, 200,
     "/portal/mfa should be drawn; it answered " + r.status + " " +
     r.text.slice(0, 300));
-  const csrf = (r.text.match(/name="csrf_token" value="([^"]+)"/) || [])[1];
-  r = await alice.go("POST", R + "/portal/mfa",
-                     form({ action: "start", csrf_token: csrf }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "starting the setup answered " + r.status);
-  const page = await alice.go("GET", R + "/portal/mfa");
-  const cell = page.text.match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
-  const secret = cell ? cell[1].replace(/\s+/g, "") : "";
+  r = await portal.act("/portal/mfa", { action: "start" });
+  assert.ok(r.status === 200 && r.json && r.json.ok,
+    "starting the setup answered " + r.status + " " + r.text.slice(0, 300));
+  const page = await portal.page("/portal/mfa");
+  const setup = (page.json && page.json.setup) || {};
+  const secret = String(setup.grouped || "").replace(/\s+/g, "");
   assert.ok(secret.length >= 32,
     "no secret on the setup page: " + page.text.slice(0, 400));
-  r = await alice.go("POST", R + "/portal/mfa",
-    form({ action: "confirm", code: codeFor(secret),
-           csrf_token: (page.text.match(
-             /name="csrf_token" value="([^"]+)"/) || [])[1] }));
+  r = await portal.act("/portal/mfa", { action: "confirm",
+                                        code: codeFor(secret) });
   check("(" + ALICE + " enrols an authenticator app at the realm's " +
         "/portal/mfa, confirmed with a code this job computed)", function () {
-    assert.ok(r.status === 200 || r.status === 302 || r.status === 303,
+    assert.ok(r.status === 200 && r.json && r.json.ok,
       r.status + " " + r.text.slice(0, 300));
-    assert.ok(!/class="err"/.test(r.text), r.text.slice(0, 300));
   });
   log.debug("Leaving enrolAnAuthenticator().");
   return secret;

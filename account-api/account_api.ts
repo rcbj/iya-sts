@@ -449,8 +449,10 @@ class AccountApi {
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, self.document(req));
         } },
+      // NOT A PAGE'S DOOR, so it mirrors nothing: the Overview's is
+      // `/account-api/overview`, and a lookup by `mirrors` must find one.
       { method: 'GET', path: BASE + '/me', operationId: 'getMe', tag: 'API',
-        access: 'person', mirrors: 'GET /portal',
+        access: 'person',
         summary: 'Who is signed in, and what every page is drawn with',
         description: 'The person (from the token, never the request), the ' +
           'realm, the language data — the negotiation, the portal\'s ' +

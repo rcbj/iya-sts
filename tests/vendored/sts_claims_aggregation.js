@@ -42,6 +42,7 @@ const registry = require("./sts_applications.js");
 const facts = require("./service_facts.js");
 const testCa = require("./outbound_test_ca.js");
 const expectation = require("./expectation.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -194,12 +195,6 @@ function hiddenFields(html) {
     });
   log.debug("Leaving hiddenFields().");
   return out;
-}
-
-function csrfOf(html) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (/name="csrf_token" value="([^"]+)"/.exec(html) || [])[1] || "";
 }
 
 async function ok(url, payload, what) {
@@ -441,33 +436,46 @@ async function test() {
   });
 
   log.info("=== 2. the person links the provider on the portal ===");
+  // THE STATIC PORTAL (#568): the person signs in to it as its public client
+  // (PKCE, a DPoP-bound token for /account-api), and the browser that will
+  // follow the provider's redirect holds the SAME sign-on session — the
+  // callback is honoured only in the browser whose session started the link.
+  const portal = await portalSignin.signInToThePortal(opBase, PERSON, null,
+    { password: PASSWORD });
   const browser = jar();
-  const page = await follow(browser, await hop(browser, "GET",
-    opBase + "/portal/claim-sources"));
+  String(portal.cookie).split(/;\s*/).filter(Boolean).forEach(function (pair) {
+    browser.take({ headers: { getSetCookie: function () {
+      return [pair];
+    } } }, opBase + "/portal");
+  });
+  const page = await portal.draw("/portal/claim-sources");
   assert.strictEqual(page.status, 200, "the portal page: " +
-                     page.text.slice(0, 300));
-  const unknown = await hop(browser, "POST", opBase + "/portal/claim-sources",
-    { form: { action: "link", id: "nobody", csrf_token: csrfOf(page.text) } });
-  const started = await hop(browser, "POST", opBase + "/portal/claim-sources",
-    { form: { action: "link", id: "cp", csrf_token: csrfOf(page.text) } });
-  const back = await follow(browser, started);
+                     JSON.stringify(page.json).slice(0, 300));
+  const unknown = await portal.act("/portal/claim-sources",
+                                   { action: "link", id: "nobody" });
+  const started = await portal.act("/portal/claim-sources",
+                                   { action: "link", id: "cp" });
+  const away = String((started.json && started.json.location) || "");
+  const back = away ? await follow(browser, await hop(browser, "GET", away))
+                    : { status: 0, text: "" };
+  const linked = await portal.draw("/portal/claim-sources");
   const links = (await hop(null, "GET", opBase + "/admin-api/claim-providers"))
     .json.links;
   check("an unknown provider is refused; Link goes to the provider realm, " +
         "and the person comes back linked, with no token shown anywhere",
         function () {
-    assert.strictEqual(unknown.status, 400, unknown.status + " " +
-      (/class="(?:error|msg)[^"]*"[^>]*>([^<]*)/.exec(unknown.text) || [])[1]);
-    assert.strictEqual(started.status, 303);
-    assert.ok(started.location.indexOf(cpBase + "/oauth2/authorize?") === 0,
-              started.location);
-    assert.ok(/code_challenge_method=S256/.test(started.location));
+    assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
+    assert.strictEqual(started.status, 200, started.text.slice(0, 300));
+    assert.ok(away.indexOf(cpBase + "/oauth2/authorize?") === 0, away);
+    assert.ok(/code_challenge_method=S256/.test(away));
+    // Back at the portal's page: the shell, which the portal draws from
+    // its operation — and the page, drawn, says the provider is linked.
     assert.strictEqual(back.status, 200, back.status + " " +
                        back.text.slice(0, 300));
-    assert.ok(/Linked/.test(back.text), back.status + " " +
-      ((/<title>([^<]*)/.exec(back.text) || [])[1] || "") + " " +
-      ((/class="(?:error|err|msg|flash)[^"]*"[^>]*>([^<]*)/
-        .exec(back.text) || [])[1] || back.text.replace(/<style[^]*?<\/style>/, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 900)));
+    assert.ok(/class="claim-source-linked"/.test(linked.html) &&
+              /value="unlink"/.test(linked.html),
+              linked.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")
+                .slice(0, 600));
     const mine = links.filter(function (l) {
       return l.username === PERSON && l.provider === "cp";
     });
@@ -538,10 +546,8 @@ async function test() {
   const again = await hop(null, "POST", opBase +
     "/admin-api/claim-providers/revoke-link",
     { json: { username: PERSON, provider: "cp" } });
-  const pageAgain = await hop(browser, "GET", opBase + "/portal/claim-sources");
-  const unlink = await hop(browser, "POST", opBase + "/portal/claim-sources",
-    { form: { action: "unlink", id: "cp",
-              csrf_token: csrfOf(pageAgain.text) } });
+  const unlink = await portal.act("/portal/claim-sources",
+                                  { action: "unlink", id: "cp" });
   check("a revoked link sends no source; revoking twice and unlinking what " +
         "is not linked are refused", function () {
     assert.strictEqual(afterRevoke._claim_sources, undefined,

@@ -345,7 +345,9 @@ const ADVANCED_REQUIREMENTS = [
     title: 'A JWS-signed request object, by value or by reference',
     note: 'An unsigned or absent request object is refused (RFC 9101, ' +
           'STS-OAUTH-0340 / 0357); a push must carry `request` ' +
-          '(STS-OAUTH-0415).' },
+          '(STS-OAUTH-0415). THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT ' +
+          '(#568): sts-admin-console and sts-user-portal hold no key to ' +
+          'sign one with, and do not conform to this profile.' },
   { id: 'response-type', section: '5.2.2 item 2', level: 'SHALL',
     enforced: 'yes',
     title: 'code id_token, or code with response_mode=jwt (JARM)',
@@ -504,7 +506,9 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
   { id: 'signed-request-at-par', section: '5.3.2 item 1', level: 'SHALL',
     enforced: 'yes',
     title: 'A JAR-signed request object at the PAR endpoint',
-    note: 'A push of plain parameters is refused (STS-OAUTH-0415).' },
+    note: 'A push of plain parameters is refused (STS-OAUTH-0415), except ' +
+          'from the two hosted public clients (#568), which hold no key ' +
+          'to sign one with and do not conform to this profile.' },
   { id: 'request-object-claims', section: '5.3.2 items 2-4', level: 'SHALL',
     enforced: 'yes',
     title: 'aud the issuer; nbf at most 60 minutes old; exp at most 60 ' +

@@ -21,7 +21,8 @@
 //      the same grant;
 //   c. /admin-api/tokens revoking everything a person holds sends
 //      session-revoked `admin` for the grant still live;
-//   d. a CIBA approval on /portal/ciba is a session-presented naming CIBA,
+//   d. a CIBA approval on /portal/ciba (its operation since #568, the portal
+//      signed in by single sign-on) is a session-presented naming CIBA,
 //      and its tokens are issued ON the approving sign-on session — listed
 //      under it, and their refresh token inactive once that session ends;
 //   e. in product mode, a pre-authorized (cross-device) OpenID4VCI offer
@@ -36,6 +37,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -143,6 +145,15 @@ function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    // The cookies held, as a Cookie header: the sign-on session the static
+    // portal's sign-in is answered from (#568).
+    cookieHeader() {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
+      return Object.keys(jar).map(function (k) {
+        return k + "=" + jar[k];
+      }).join("; ");
+    },
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -505,14 +516,19 @@ async function test() {
   check("the backchannel request is acknowledged", function () {
     assert.strictEqual(asked.status, 200, asked.raw.slice(0, 300));
   });
-  const page = await follow(b, R + "/portal/ciba");
-  const csrf = (/name="csrf_token" value="([^"]+)"/.exec(page.text) ||
-                [])[1] || "";
+  // THE PORTAL IS A STATIC APPLICATION SINCE #568: the person's browser
+  // signs in to it through single sign-on — the sign-on session `b` holds
+  // answers the portal's code flow with no screen — and the Approve button
+  // is `POST /account-api/ciba`, deciding on the sign-on session the
+  // portal's token was issued on, which is `b`'s.
+  const portalClient = await portal.signInToThePortal(root + R, ALICE, null,
+    { cookie: b.cookieHeader() });
   mark = SEEN.length;
-  const approved = await b.go("POST", R + "/portal/ciba", form({
-    action: "approve", id: reqId, csrf_token: csrf }));
+  const approved = await portalClient.act("/portal/ciba",
+                                          { action: "approve", id: reqId });
   check("the person approves on /portal/ciba", function () {
-    assert.strictEqual(approved.status, 303, approved.text.slice(0, 300));
+    assert.ok(approved.status === 200 && approved.json && approved.json.ok,
+              approved.status + " " + approved.text.slice(0, 300));
   });
   hits = await waitFor(token, streamId, "the CIBA presentation",
                        [presentedVia("CIBA")], mark);

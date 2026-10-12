@@ -178,8 +178,8 @@ class PortalRuntime extends SpaClient {
         params[name] = String(extra[name]);
       }
     });
-    return this.url('/oauth2/authorize') + '?' +
-      new URLSearchParams(params).toString();
+    // Pushed first where the realm requires it (RFC 9126, `SpaClient`).
+    return this.authorizationRequestUrl(params);
   }
 
   /**

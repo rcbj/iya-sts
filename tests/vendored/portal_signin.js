@@ -188,7 +188,8 @@ async function nobody(base, method, path, body) {
 // `user` the name to sign in as; `log2` optional; `options.password` the
 // password of an account that exists, `options.cookie` a sign-on session
 // already held (no password typed: single sign-on answers the flow), and
-// `options.acrValues` / `options.prompt` for a step-up.
+// `options.acrValues` / `options.prompt` for a step-up, and
+// `options.consent: false` to stop at a consent screen rather than allow.
 async function signInToThePortal(base, user, log2, options) {
   log.debug("Entering signInToThePortal().");
   const say = (log2 && log2.info) ? log2.info.bind(log2) : function () {};
@@ -247,8 +248,45 @@ async function signInToThePortal(base, user, log2, options) {
   if (opts.acrValues) {
     params.acr_values = opts.acrValues;
   }
-  let at = await fetchKeeping(base + "/oauth2/authorize?" +
-                              new URLSearchParams(params).toString());
+  // PUSHED FIRST WHERE THE REALM REQUIRES IT (RFC 9126; FAPI 2.0), as the
+  // portal's runtime does (`SpaClient.authorizationRequestUrl()`): the
+  // parameters POSTed to the PAR endpoint with a DPoP proof, the browser sent
+  // with the request_uri alone.
+  let authorizeUrl = base + "/oauth2/authorize?" +
+    new URLSearchParams(params).toString();
+  const meta = await fetch(base + "/.well-known/oauth-authorization-server",
+    { headers: { "User-Agent": AGENT } })
+    .then(function (r) {
+      return r.status === 200 ? r.json() : {};
+    }, function () {
+      return {};
+    });
+  if (meta.require_pushed_authorization_requests === true) {
+    const parUrl = String(meta.pushed_authorization_request_endpoint ||
+                          base + "/oauth2/par");
+    let pushed = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(parUrl, { method: "POST", headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": AGENT, dpop: key.proof("POST", parUrl, "") },
+        body: new URLSearchParams(params).toString() });
+      key.keepNonce(r);
+      pushed = { status: r.status, json: await r.json().catch(function () {
+        return {};
+      }) };
+      if (!(r.status === 400 && pushed.json.error === "use_dpop_nonce")) {
+        break;
+      }
+    }
+    assert.ok(pushed.status === 201 && pushed.json.request_uri,
+      "the realm requires pushed authorization requests, and pushing the " +
+      "portal's answered " + pushed.status + " " +
+      JSON.stringify(pushed.json).slice(0, 300));
+    authorizeUrl = base + "/oauth2/authorize?" + new URLSearchParams({
+      client_id: "sts-user-portal",
+      request_uri: pushed.json.request_uri }).toString();
+  }
+  let at = await fetchKeeping(authorizeUrl);
   let location = at.headers.get("location") || "";
   const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
   if (authn) {
@@ -283,9 +321,28 @@ async function signInToThePortal(base, user, log2, options) {
     }
     location = at.headers.get("location") || "";
   }
-  for (let i = 0; i < 5 && !/\/portal\/callback\?/.test(location) &&
-       (at.status === 302 || at.status === 303); i++) {
-    at = await fetchKeeping(fromLocation(location));
+  // A CONSENT SCREEN is answered Allow, and counted: the portal's seeded
+  // global consent answers it in most realms, and a FAPI profile, which
+  // honours no global consent, asks the person (`consentScreens`).
+  let consentScreens = 0;
+  for (let i = 0; i < 8 && !/\/portal\/callback\?/.test(location); i++) {
+    if (at.status === 200) {
+      const page = await at.text();
+      const consentId = (page.match(/name="consent_id" value="([^"]+)"/) ||
+                         [])[1];
+      if (!consentId || opts.consent === false) {
+        break;
+      }
+      consentScreens += 1;
+      at = await fetchKeeping(base + "/oauth2/consent", { method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "consent_id=" + encodeURIComponent(consentId) +
+              "&action=allow" });
+    } else if (at.status === 302 || at.status === 303) {
+      at = await fetchKeeping(fromLocation(location));
+    } else {
+      break;
+    }
     location = at.headers.get("location") || "";
   }
   const back = new URL(fromLocation(location));
@@ -399,14 +456,28 @@ async function signInToThePortal(base, user, log2, options) {
       return refreshToken;
     },
     cookie: cookies.header(),
+    // How many consent screens the sign-in met and answered Allow.
+    consentScreens: consentScreens,
     api: api,
     refresh: refresh,
     key: key,
     // The page's view: the GET operation that mirrors it, with its query.
     page: async function (path, query) {
-      const row = await mirroring(base, "GET", path);
+      // The bundle's page table first, as the runtime routes; the index's
+      // `mirrors` where the bundle is not at hand.
+      let operation = "";
+      try {
+        const known = portalBundle().find(path);
+        operation = known ? known.operation : "";
+      } catch (e) {
+        log.debug("Caught in page(): " + ((e && e.message) || e));
+        operation = "";
+      }
+      if (!operation) {
+        operation = (await mirroring(base, "GET", path)).path;
+      }
       const qs = new URLSearchParams(query || {}).toString();
-      return api("GET", row.path + (qs ? "?" + qs : ""));
+      return api("GET", operation + (qs ? "?" + qs : ""));
     },
     // The page drawn by the portal's own renderers, in the reader's
     // language: `{ status, json, html }`.

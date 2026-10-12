@@ -411,13 +411,14 @@ class ConsoleRuntime extends SpaClient {
    * @returns the URL
    */
   async authorizeUrl(state: string, verifier: string): Promise<string> {
-    const params = new URLSearchParams({
+    // Pushed first where the realm requires it (RFC 9126, #568's
+    // `SpaClient.authorizationRequestUrl()`).
+    return this.authorizationRequestUrl({
       response_type: 'code', client_id: CLIENT_ID,
       redirect_uri: this.url('/admin/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256', resource: this.resource()
     });
-    return this.url('/oauth2/authorize') + '?' + params.toString();
   }
 
   /**

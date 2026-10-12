@@ -424,10 +424,24 @@ class RequestObject {
     log.debug("Entering RequestObject.signedRequired().");
     // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
     // item 1, #139).
-    const required = !!config.value('oauth2.requireSignedRequestObject') ||
-                     !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true) ||
-                     this.deps.fapi.requiresSignedRequestObject();
+    const explicit = !!config.value('oauth2.requireSignedRequestObject') ||
+                     !!(client && client.require_signed_request_object);
+    const byProfile = !!(profile && profile.requireSigned === true) ||
+                      this.deps.fapi.requiresSignedRequestObject();
+    // THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT FROM WHAT A PROFILE DEMANDS
+    // (#568): the static console and the static portal sign in from a
+    // browser, as public clients, and hold no registered key a request object
+    // could be signed with — so FAPI 1.0 Advanced or FAPI 2.0 Message
+    // Signing, which demand one of every client, would leave such a realm
+    // with no console and no portal. It is the confidential-only rule's
+    // exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT, #446) read for this
+    // requirement too, and on the same terms: those two clients do not
+    // conform to the profile in that realm, and say so. An operator's own
+    // `oauth2.requireSignedRequestObject`, or the entry's own flag, still
+    // binds them.
+    const exempt = !!client && this.deps.fapi.publicClientExempt(
+      client.client_id, client.token_endpoint_auth_method);
+    const required = explicit || (byProfile && !exempt);
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }

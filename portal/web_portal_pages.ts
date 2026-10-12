@@ -44,6 +44,8 @@ import ActivationPages = require('./web_activation');
 import ResetPages = require('./web_reset');
 
 import WebMessages = require('../admin-ui/web_messages');
+import PortalShell = require('./web_portal_shell');
+import PortalKit = require('./web_portal_kit');
 
 type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
@@ -83,6 +85,12 @@ class PortalPages {
    * builds the reader's translator as the runtime does.
    */
   static readonly messages = WebMessages;
+  /**
+   * The frame and the kit, so a test draws a whole page — the column, its
+   * `aria-current`, Refresh and Sign out — as the runtime does.
+   */
+  static readonly shell = PortalShell;
+  static readonly kit = PortalKit;
 
   /**
    * The page a path names, or null.

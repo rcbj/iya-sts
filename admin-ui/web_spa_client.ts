@@ -71,6 +71,8 @@ class SpaClient {
   // realm prefix included, from the shell's `data-sts-*` attributes; '' where
   // they are here, which is every service without a custom listener.
   protected elsewhere: Json;
+  // The realm's authorization server metadata, read once (`asMetadata()`).
+  protected metadata: Json;
 
   /**
    * Makes the client.
@@ -94,6 +96,7 @@ class SpaClient {
     this.publicJwk = null;
     this.nonce = '';
     this.subject = '';
+    this.metadata = null;
     const root = env.document && env.document.documentElement;
     const read = function (name: string): string {
       return root && typeof root.getAttribute === 'function'
@@ -266,6 +269,82 @@ class SpaClient {
       return { status: res.status, json: json };
     }
     return { status: 400, json: { error: 'use_dpop_nonce' } };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PUSHED AUTHORIZATION REQUESTS (RFC 9126), WHERE THE REALM REQUIRES THEM
+  // (#568). FAPI 2.0 makes PAR the only way to send an authorization request,
+  // and a realm may require it on its own (`oauth2.requirePar`). The server-
+  // rendered surfaces pushed through `oidc_rp.ts`; a static one pushes from
+  // the browser: its parameters POSTed to the PAR endpoint the metadata names
+  // — a public client authenticates with nothing, as section 2 allows — with a
+  // DPoP proof, and the browser sent to the authorization endpoint with the
+  // `request_uri` it answered and the client id alone. Where the metadata
+  // requires nothing, the request is the ordinary query, as it always was.
+  // ---------------------------------------------------------------------------
+  /**
+   * The authorization server's metadata for this realm (RFC 8414), once.
+   *
+   * @returns the metadata, or {} where it cannot be read
+   */
+  async asMetadata(): Promise<Json> {
+    if (this.metadata) {
+      return this.metadata;
+    }
+    let json: Json = {};
+    try {
+      const res = await this.env.fetch(
+        this.url('/.well-known/oauth-authorization-server'),
+        { headers: { 'Accept': 'application/json' } });
+      json = res.status === 200 ? await res.json() : {};
+    } catch (e) {
+      // No metadata: the ordinary request, which a realm that requires PAR
+      // refuses in words the page draws.
+      json = {};
+    }
+    this.metadata = json || {};
+    return this.metadata;
+  }
+
+  /**
+   * The authorization request's URL: pushed first where the realm requires
+   * it, the query otherwise.
+   *
+   * @param params - the request's parameters, `client_id` among them
+   * @returns the URL to send the browser to
+   */
+  async authorizationRequestUrl(params: Json): Promise<string> {
+    const authorize = this.url('/oauth2/authorize');
+    const meta = await this.asMetadata();
+    if (meta.require_pushed_authorization_requests !== true) {
+      return authorize + '?' + new URLSearchParams(params).toString();
+    }
+    const endpoint = String(meta.pushed_authorization_request_endpoint ||
+                            this.url('/oauth2/par'));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await this.env.fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
+                   'DPoP': await this.proof('POST', endpoint, '') },
+        body: new URLSearchParams(params).toString() });
+      this.keepNonce(res);
+      const json = await res.json().catch(function () {
+        return {};
+      });
+      if (res.status === 400 && json.error === 'use_dpop_nonce' &&
+          attempt === 0) {
+        continue;
+      }
+      if (res.status === 201 && json.request_uri) {
+        return authorize + '?' + new URLSearchParams({
+          client_id: String(params.client_id || this.clientId),
+          request_uri: String(json.request_uri) }).toString();
+      }
+      break;
+    }
+    // A REFUSED PUSH: the ordinary request, which the authorization endpoint
+    // then refuses with the reason, drawn where the person can read it.
+    return authorize + '?' + new URLSearchParams(params).toString();
   }
 
   /**

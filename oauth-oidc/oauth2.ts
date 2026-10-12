@@ -9651,10 +9651,12 @@ class OAuth2Server {
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
                        (outer.request_uri !== undefined &&
                         outer.request_uri !== '');
-    if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
-        !client.require_signed_request_object &&
-        !self.deps.fapi.requiresSignedRequestObject() &&
-        self.capabilitiesFor(req).require_signed_request_object !== true) {
+    // `signedRequired()` is the one reading of the requirement — the setting,
+    // the entry, the authorization server's metadata and FAPI — including
+    // the hosted public clients' exemption (#568).
+    if (!jwtSecured &&
+        !requestObject.signedRequired(client,
+                                      self.authorizationProfileOf(req))) {
       log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);

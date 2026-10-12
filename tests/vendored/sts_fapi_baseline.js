@@ -26,9 +26,11 @@
 //      naming two clients is refused (item 19).
 //   g. A NAMED AUTHORIZATION SERVER with `fapi=off` opts out of its realm's
 //      profile.
-//   h. THE HOSTED SURFACES: a portal sign-in in the realm asks the person's
-//      own consent, and the portal's client authenticated by
-//      private_key_jwt with a key this realm's CA issued it.
+//   h. THE HOSTED SURFACES: the static portal (#568) signs its person in
+//      under the profile as its runtime does — the public client
+//      sts-user-portal, PKCE, a DPoP-bound token — and its client
+//      authenticates by none and holds no secret. Until #568 it was a
+//      private_key_jwt relying party run by this process.
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -287,6 +290,27 @@ function assertion(clientId, key, aud) {
     { key: key.privateKey, dsaEncoding: "ieee-p1363" });
   log.debug("Leaving assertion().");
   return input + "." + sig.toString("base64url");
+}
+
+// THE STATIC PORTAL'S SIGN-IN (#568): in the browser, as the public client
+// `sts-user-portal` with PKCE and a DPoP-bound token — the one public client
+// besides the console a FAPI profile lets through (`fapi.js`
+// PUBLIC_CLIENT_EXEMPT) — driven the way its runtime drives it, then the
+// account API asked who it is. Answers `{ problem, me }`.
+async function portalSignsIn(who, password) {
+  log.debug("Entering portalSignsIn().");
+  let problem = "";
+  let me = null;
+  try {
+    const portal = await portalSignin.signInToThePortal(absolute(R), who,
+      null, { password: password });
+    me = await portal.api("GET", "/account-api/me");
+  } catch (e) {
+    log.debug("Caught in portalSignsIn(): " + ((e && e.message) || e));
+    problem = String((e && e.message) || e);
+  }
+  log.debug("Leaving portalSignsIn().");
+  return { problem: problem, me: me };
 }
 
 async function test() {
@@ -543,17 +567,13 @@ async function test() {
   });
 
   log.info("=== h. the hosted surfaces ===");
-  const portal = browser("portal");
-  const portalConsent = { shown: 0 };
-  r = await follow(portal, await portal.go("GET", R + "/portal"), ALICE,
-                   portalConsent);
-  check("the portal signs its person in under FAPI, asking their own " +
-        "consent rather than taking its seeded global one", function () {
-    assert.strictEqual(portalConsent.shown, 1,
-                       "consent screens: " + portalConsent.shown);
-    assert.ok(r.status === 200 || (r.status === 302 &&
-              /\/portal/.test(r.location)),
-              r.status + " " + r.location + " " + r.text.slice(0, 300));
+  const signedIn = await portalSignsIn(ALICE, PASSWORD);
+  check("the portal signs its person in under FAPI, as its static runtime " +
+        "does — and its account API answers them", function () {
+    assert.strictEqual(signedIn.problem, "", signedIn.problem.slice(0, 600));
+    assert.ok(signedIn.me && signedIn.me.status === 200 &&
+              signedIn.me.json.user.username === ALICE,
+              signedIn.me ? signedIn.me.text.slice(0, 300) : "no answer");
   });
   const view = await send(realmApi + "/applications?application=" +
                           "sts-user-portal");
@@ -562,13 +582,13 @@ async function test() {
   const first = function (v) {
     return String((Array.isArray(v) ? v[0] : v) || "");
   };
-  check("the portal's client authenticates by private_key_jwt, holds no " +
-        "secret, and was issued its key by this realm's CA", function () {
+  // A PUBLIC CLIENT SINCE #568: the static portal holds no credential, and
+  // what stands in for one is the DPoP key every token is bound to.
+  check("the portal's client is a public client: it authenticates by " +
+        "none and holds no secret", function () {
     assert.strictEqual(first(fields.oauthTokenEndpointAuthMethod),
-                       "private_key_jwt", JSON.stringify(fields).slice(0, 400));
+                       "none", JSON.stringify(fields).slice(0, 400));
     assert.strictEqual(first(fields.oauthClientSecret), "");
-    assert.ok(first(fields.oauthAssertionKid), "no kid on the entry");
-    assert.strictEqual(first(fields.oauthAssertionKeySource), "issued");
   });
 
   assert.ok(checks >= 23, "only " + checks + " checks ran; a section has " +

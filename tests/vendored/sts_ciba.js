@@ -25,7 +25,8 @@
 //      tokens, the ID Token naming the request.
 //
 // OWNED HERE (local: true): this repository's authorization server and
-// portal.
+// portal. The portal is a static application since #568: the person signs
+// in to it as its public client and answers through `/account-api`.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
@@ -36,6 +37,7 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const facts = require("./service_facts.js");
 const testCa = require("./outbound_test_ca.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -154,21 +156,6 @@ async function hop(who, method, url, opts) {
                                 "" };
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 async function ok(url, payload, what) {
   log.debug("Entering ok().");
   const r = await hop(null, "POST", url, { json: payload || {} });
@@ -179,31 +166,21 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
-// A portal page in a browser that signs in with the password on the way.
+// THE PERSON'S PORTAL (#568): the static portal's own sign-in — the public
+// client `sts-user-portal`, PKCE and a DPoP-bound token — with the password,
+// once, and kept: the page is `/account-api`'s answer drawn by the portal's
+// renderers, and an answer is the form's operation. The portal holds no
+// cookie of its own, so the browser jar a section passes is not needed.
+let portalClient = null;
 async function portal(who, path) {
   log.debug("Entering portal(). " + path);
-  let r = await hop(who, "GET", base + path);
-  for (let n = 0; n < 14 && r.status !== 200; n += 1) {
-    if (r.status !== 302 && r.status !== 303) {
-      break;
-    }
-    r = await hop(who, "GET", r.location);
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = HOLDER;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await hop(who, "POST", base + "/authn/login", { form: fields });
-    }
+  if (!portalClient) {
+    portalClient = await portalSignin.signInToThePortal(base, HOLDER, null,
+      { password: PASSWORD });
   }
-  log.debug("Leaving portal(). " + r.status);
-  return r;
-}
-
-function csrfOf(html) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (/name="csrf_token" value="([^"]+)"/.exec(html) || [])[1] || "";
+  const drawn = await portalClient.draw(path);
+  log.debug("Leaving portal(). " + drawn.status);
+  return { status: drawn.status, text: drawn.html, json: drawn.json };
 }
 
 async function authorize(client, fields) {
@@ -227,8 +204,7 @@ async function token(client, id) {
 async function answerOnPortal(browser, id, action) {
   log.debug("Entering answerOnPortal(). " + action);
   const page = await portal(browser, "/portal/ciba");
-  const r = await hop(browser, "POST", base + "/portal/ciba", { form: {
-    action: action, id: id, csrf_token: csrfOf(page.text) } });
+  const r = await portalClient.act("/portal/ciba", { action: action, id: id });
   log.debug("Leaving answerOnPortal(). " + r.status);
   return { page: page, answer: r };
 }
@@ -322,8 +298,10 @@ async function test() {
     assert.strictEqual(approved.page.status, 200,
                        approved.page.text.slice(0, 300));
     assert.ok(approved.page.text.indexOf(binding) >= 0, "no binding message");
-    assert.strictEqual(approved.answer.status, 303,
+    assert.strictEqual(approved.answer.status, 200,
                        approved.answer.text.slice(0, 300));
+    assert.ok(approved.answer.json && approved.answer.json.ok,
+              approved.answer.text.slice(0, 300));
   });
   await new Promise(function (resolve) { setTimeout(resolve, 11000); });
   const tokens = await token("ciba-poll", id);
@@ -345,10 +323,10 @@ async function test() {
 
   log.info("=== 5. the user code ===");
   const missing = await authorize("ciba-code", { login_hint: HOLDER });
-  let page = await portal(browser, "/portal/ciba");
-  const set = await hop(browser, "POST", base + "/portal/ciba", { form: {
-    action: "set-code", code: "blue-horse-7", csrf_token: csrfOf(page.text) }
-  });
+  await portal(browser, "/portal/ciba");
+  const set = await portalClient.act("/portal/ciba",
+                                     { action: "set-code",
+                                       code: "blue-horse-7" });
   const wrong = await authorize("ciba-code", { login_hint: HOLDER,
                                                user_code: "red-horse-7" });
   const right = await authorize("ciba-code", { login_hint: HOLDER,
@@ -357,7 +335,7 @@ async function test() {
         "another, and the right one is accepted", function () {
     assert.strictEqual(missing.json.error, "missing_user_code",
                        missing.text);
-    assert.strictEqual(set.status, 303, set.text.slice(0, 300));
+    assert.strictEqual(set.status, 200, set.text.slice(0, 300));
     assert.strictEqual(wrong.json.error, "invalid_user_code", wrong.text);
     assert.strictEqual(right.status, 200, right.text.slice(0, 300));
   });
