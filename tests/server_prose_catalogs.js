@@ -17,9 +17,12 @@
 //      Stale, it fails, with the command that rewrites it.
 //   B. Every translation file is a catalog `common/locales/catalogs.json`
 //      lists, every entry carries a sixteen-digit hash and a text, and a
-//      CURRENT translation keeps every `code span` of its English verbatim —
-//      a setting key, a path or a value translated is a sentence that now
-//      names something that does not exist.
+//      CURRENT translation keeps its English's MARKS verbatim: every `code
+//      span` (a setting key, a path or a value translated names something
+//      that does not exist), every `{{placeholder}}` of a template (#543
+//      phase 2; a dropped one loses a value, an invented one draws braces),
+//      every HTML tag and entity (some prose is drawn as markup), and every
+//      `**` (a renderer strips them in pairs).
 //   C. Every catalog is CURRENT (rcbj, 2026-10-12): a base catalog holds a
 //      translation of every English message, made from the English the
 //      source says NOW; an overlay holds only current translations; and no
@@ -49,10 +52,23 @@ const log = require('bunyan').createLogger({ name: 'server_prose_catalogs',
 const ROOT = path.join(__dirname, '..');
 const DIRECTORY = path.join(ROOT, 'common', 'prose_locales');
 
-// The `code spans` of a text, sorted, as one string.
+// The MARKS of a text a translation must keep — its `code spans`, its
+// {{placeholders}}, its HTML tags and entities, and its ** — sorted, as one
+// string.
+// The HTML elements prose may carry, drawn as markup by a raw renderer.
+const TAGS = 'a|b|br|code|em|i|kbd|li|ol|p|pre|small|span|strong|sub|sup|' +
+             'ul';
+
 function spansOf(text) {
   log.debug("Entering spansOf().");
-  const out = (String(text).match(/`[^`]+`/g) || []).sort().join('\n');
+  const t = String(text);
+  const out = [].concat(t.match(/`[^`]+`/g) || [],
+                        t.match(/\{\{[A-Za-z0-9]+\}\}/g) || [],
+                        // HTML elements by name; `<this value>` is prose.
+                        t.match(new RegExp('</?(' + TAGS + ')(\\s[^<>]*)?/?>',
+                                           'g')) || [],
+                        t.match(/&[A-Za-z]+;|&#[0-9]+;/g) || [],
+                        t.match(/\*\*/g) || []).sort().join('\n');
   log.debug("Leaving spansOf().");
   return out;
 }
@@ -116,7 +132,7 @@ async function run(t) {
               ' entry has a hash and a text', malformed.slice(0, 5)
               .join(', '));
       t.check(altered.length === 0, 'B. every current ' + ns + '/' + tag +
-              ' translation keeps its English code spans verbatim',
+              ' translation keeps its English marks verbatim',
               altered.slice(0, 5).map(function (key) {
                 return key + ': ' + spansOf(entries[key].text)
                   .replace(/\n/g, ' ') + ' against ' +
@@ -201,6 +217,70 @@ async function run(t) {
             'D. coverage counts current, stale and missing',
             JSON.stringify({ current: c.current, stale: c.stale.length,
                              missing: c.missing.length, total: c.total }));
+
+    // D, a PHRASE source (#543 phase 2): exact, templated, a list inside a
+    // template, a parameter-only phrase, and nothing off its routes.
+    fs.mkdirSync(path.join(tmp, 'demo'));
+    const demoEnglish = {
+      'a.label': 'Minimum length',
+      'a.mechanism.totp': 'Authenticator app (TOTP)',
+      'a.mechanism.mail': 'An emailed code, and a link',
+      'a.sentences.factors': 'first factors: {{list}}',
+      'a.sentences.length': 'at least {{n}} characters',
+      'a.sentences.param.none': 'none'
+    };
+    const demoFr = {
+      'a.label': 'Longueur minimale',
+      'a.mechanism.totp': 'Application d\'authentification (TOTP)',
+      'a.mechanism.mail': 'Un code envoyé, et un lien',
+      'a.sentences.factors': 'premiers facteurs : {{list}}',
+      'a.sentences.length': 'au moins {{n}} caractères',
+      'a.sentences.param.none': 'aucun'
+    };
+    const demoFile = {};
+    Object.keys(demoFr).forEach(function (k) {
+      demoFile[k] = { en: prose.hashOf(demoEnglish[k]), text: demoFr[k] };
+    });
+    fs.writeFileSync(path.join(tmp, 'demo', 'fr.json'),
+                     JSON.stringify(demoFile));
+    const demo = new prose.ServerProse(Object.assign(
+      prose.ServerProse.defaultDeps(), { directory: tmp, sources: {
+        demo: prose.phraseSource({ routes: ['/admin-api/demo'],
+                                   extract: function () {
+                                     return demoEnglish;
+                                   } }) } }));
+    const on = demo.translatorFor('fr', '/admin-api/demo');
+    const answer = { title: 'Minimum length', none: 'none',
+                     rules: ['at least 12 characters',
+                             'first factors: Authenticator app (TOTP), ' +
+                             'An emailed code, and a link',
+                             'first factors: none',
+                             'first factors: Authenticator app (TOTP), ' +
+                             'cn=someone'],
+                     data: 'cn=Minimum length' };
+    const fr2 = demo.translateView(answer, on);
+    t.equal(fr2.title, 'Longueur minimale', 'D. a phrase is translated');
+    t.equal(fr2.rules[0], 'au moins 12 caractères',
+            'D. a template is refilled, its number carried over');
+    t.equal(fr2.rules[1], 'premiers facteurs : Application ' +
+            'd\'authentification (TOTP), Un code envoyé, et un lien',
+            'D. a list inside a template is translated item by item, a ' +
+            'phrase holding a comma kept whole');
+    t.equal(fr2.rules[2], 'premiers facteurs : aucun',
+            'D. a parameter-only phrase is translated inside a template');
+    t.equal(fr2.none, 'none',
+            'D. a parameter-only phrase is never translated on its own');
+    t.equal(fr2.rules[3], 'premiers facteurs : Authenticator app (TOTP), ' +
+            'cn=someone', 'D. a list with an item that is data is carried ' +
+            'over whole');
+    t.equal(fr2.data, 'cn=Minimum length', 'D. data is left as it is');
+    const off = demo.translateView(answer,
+                                   demo.translatorFor('fr', '/admin-api/x'));
+    t.equal(off.title, 'Minimum length',
+            'D. a phrase source translates nothing off its routes');
+    t.equal(prose.fill('at least {{n}} characters, {{m}}', { n: 3 }),
+            'at least 3 characters, {{m}}',
+            'D. fill() leaves a placeholder with no parameter as written');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

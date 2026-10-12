@@ -17,7 +17,11 @@
 //      same as in English;
 //   c. a language no catalog answers (`de`) reads English;
 //   d. the OpenAPI document is byte-identical whatever the request names;
-//   e. the answer says `Vary: Accept-Language`.
+//   e. the answer says `Vary: Accept-Language`;
+//   f. Directory → Policies (#543 phase 2): with `fr`, the password policy's
+//      rule sentences — templates refilled with the profile's numbers — and
+//      its field help are French, and every value of the profile is the same
+//      as in English.
 // ---------------------------------------------------------------------------
 "use strict";
 
@@ -159,7 +163,36 @@ async function test() {
               french.headers.get("vary"));
   });
 
-  assert.ok(checks >= 6, "only " + checks + " checks ran; a section has " +
+  log.info("=== f. the policies page's sentences are translated ===");
+  const polEn = JSON.parse((await get(api + "/policies", "en")).raw);
+  const polFr = JSON.parse((await get(api + "/policies", "fr")).raw);
+  check("the password policy's rules and field help are French",
+    function () {
+      const rulesEn = polEn.password.rules;
+      const rulesFr = polFr.password.rules;
+      assert.strictEqual(rulesFr.length, rulesEn.length);
+      rulesEn.forEach(function (rule, i) {
+        assert.notStrictEqual(rulesFr[i], rule, rule);
+        // A number the template was filled with is carried over.
+        (rule.match(/[0-9]+/g) || []).forEach(function (n) {
+          assert.ok(rulesFr[i].indexOf(n) >= 0, rulesFr[i] + " / " + n);
+        });
+      });
+      polEn.password.fields.forEach(function (field, i) {
+        assert.notStrictEqual(polFr.password.fields[i].what, field.what,
+                              field.key);
+      });
+    });
+  check("the policies page's values are the same in both", function () {
+    assert.deepStrictEqual(polFr.password.profile, polEn.password.profile);
+    assert.deepStrictEqual(polFr.kinds.map(function (k) {
+      return k.id + " " + k.container;
+    }), polEn.kinds.map(function (k) {
+      return k.id + " " + k.container;
+    }));
+  });
+
+  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
                                            "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

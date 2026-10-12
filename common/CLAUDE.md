@@ -11798,5 +11798,64 @@ Why it is shaped this way:
   base catalogs' prose.
 * `STS-I18N-0011`: a prose catalog could not be read.
 
-Phase 1 is the infrastructure and the settings namespace. The policies and
-module prose follow, then `sts_metadata.ts`.
+### Phrase sources and templates (phase 2, from the policies on)
+
+A setting row has a `key` to be recognised by. Most other prose does not: a
+`describe()` sentence is a bare string in an array, and many sentences are
+COMPUTED. So the second kind of source is a PHRASE source
+(`phraseSource()`).
+
+* **Scoped by route.** It translates any string of an answer to one of its
+  routes that is EXACTLY one of its messages.
+  - Only on those routes, so a value elsewhere that reads like one of its
+    sentences is never touched.
+  - The route is `res.locals.proseRoute`, which `admin_api.ts`'s
+    registration loop sets on every request.
+  - A console twin (`/admin-api/console/...`) and a moved form helper carry
+    the route they mirror (`proseRoute` on the copied entry), so a source
+    names an operation once.
+* **A computed sentence is a TEMPLATE**, with `{{name}}` placeholders,
+  declared once beside the code that makes it. The policy modules' and
+  `policy_kinds.ts`'s tables are `SENTENCES` and `MESSAGES`.
+  - The code fills it with `ServerProse.fill()`. A template and the sentence
+    it is matched against therefore cannot drift: the English output is
+    byte-identical to the concatenation it replaced.
+  - The server matches the answer's sentence against the template and
+    refills the TRANSLATED template.
+  - Each parameter is translated in turn when it is itself a message of the
+    namespace, a filled template, or a list of those joined with `, `. The
+    list is segmented so that a phrase holding a comma stays whole.
+  - Anything else is carried over: a number, a profile name, a DN.
+* **A key holding `.param.`** names a phrase used only inside a template
+  ("none" in "first factors: none"). It is never matched as a whole string,
+  where it could be a value a form sends back.
+* **`harvest()`** collects a table's prose members, keyed
+  `<prefix>.<id>.<member>` by each element's own id.
+  - It skips identifiers: camelCase names (a `governs` of `userPassword`),
+    bare paths, and strings with no letter. Harvesting one would translate
+    that name wherever the route's answer carries it.
+* **The marks a translation must keep**, which test B checks:
+  - code spans and `{{placeholders}}`;
+  - HTML elements by name (`<code>`, `<strong>`; never `<this value>`,
+    which is prose) and entities;
+  - `**`, which a renderer strips in pairs.
+  It caught a Traditional Chinese setting description that had invented a
+  `**` pair.
+
+The **policies** namespace is `admin-core/policy_kinds.ts`'s `prose()`:
+- every kind's label, its `governs`, `appliesTo` and `fallsBackTo`, and the
+  noun a message names it by;
+- each kind module's `FIELDS`, `SCHEMA`, `MECHANISMS`, `DOORS` and
+  `SELECTORS`, and its `describe()` templates;
+- the save and reset messages;
+- `VIEW_PROSE`: the page's enforcement, generator, doors and mail notes,
+  moved out of `admin_views.ts` so the namespace extracts without loading the
+  views.
+It is registered lazily in `defaultDeps()`, because the policy modules
+require this one to fill their templates.
+
+Phase 1 is the infrastructure and the settings namespace. Phase 2a is phrase
+sources and the policies. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
+Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
+audit, roles, delegation, devices, GNAP, listeners, the crypto report,
+scheduler jobs, caches, node health), then `sts_metadata.ts`.
