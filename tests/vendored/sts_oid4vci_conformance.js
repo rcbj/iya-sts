@@ -278,7 +278,8 @@ async function prepare(plan) {
       tasks: [
         { task: "Sign in", optional: true,
           match: realm.base + "/authn/login*",
-          commands: [["text", "id", "username", person, "optional"],
+          commands: [["wait", "id", "kc-login", 10],
+                     ["text", "id", "username", person, "optional"],
                      ["text", "id", "password", PASSWORD, "optional"],
                      ["click", "id", "kc-login"]] },
         { task: "Consent", optional: true,
@@ -309,7 +310,8 @@ function overridesFor(base, person) {
     match: base + "/oauth2/authorize*",
     tasks: [
       { task: "Cancel", match: base + "/authn/login*",
-        commands: [["click", "id", "kc-cancel"]] },
+        commands: [["wait", "id", "kc-cancel", 10],
+                   ["click", "id", "kc-cancel"]] },
       { task: "Verify complete", match: oidf.SUITE + "test/*/callback*",
         commands: [["wait", "id", "submission_complete", 10]] }
     ]
@@ -326,7 +328,8 @@ function overridesFor(base, person) {
     match: base + "/oauth2/authorize*",
     tasks: [
       { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: [["text", "id", "username", person, "optional"],
+        commands: [["wait", "id", "kc-login", 10],
+                   ["text", "id", "username", person, "optional"],
                    ["text", "id", "password", PASSWORD, "optional"],
                    ["click", "id", "kc-login"]] },
       { task: "Consent", optional: true, match: base + "/oauth2/consent*",

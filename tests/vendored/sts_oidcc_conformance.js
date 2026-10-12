@@ -336,7 +336,10 @@ function browserFor(base, person, frontchannel) {
 function signInCommands(person) {
   log.debug("Entering signInCommands().");
   log.debug("Leaving signInCommands().");
-  return [["text", "id", "username", person, "optional"],
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): its form exists once the page has drawn it.
+  return [["wait", "id", "kc-login", 10],
+          ["text", "id", "username", person, "optional"],
           ["text", "id", "password", PASSWORD, "optional"],
           ["click", "id", "kc-login"]];
 }
