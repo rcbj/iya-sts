@@ -540,24 +540,16 @@ async function test() {
             rp.jar);
           continue;
         }
+        // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+        // answered over /authn-api/consent through the one helper, with
+        // this browser's jar, the lowered limits beside Allow; its answer
+        // comes back as the form's 303, or the refusal at its status.
+        if (authnSignin.isConsent(res.location)) {
+          res = await authnSignin.consentWithJar(h.absolute(res.location),
+            "allow", rp.jar, { limits: lowering || {} });
+          continue;
+        }
         res = await rp.go("GET", res.location);
-        continue;
-      }
-      const consentAction = (res.text.match(
-        /<form method="post" action="([^"]*oauth2\/consent[^"]*)"/) || [])[1];
-      if (res.status === 200 && consentAction) {
-        const form = {};
-        (res.text.match(/<input type="hidden"[^>]*>/g) || [])
-          .forEach(function (tag) {
-            const name = /name="([^"]+)"/.exec(tag);
-            const value = /value="([^"]*)"/.exec(tag);
-            if (name) {
-              form[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-            }
-          });
-        form.action = "allow";
-        Object.assign(form, lowering || {});
-        res = await rp.go("POST", consentAction.replace(/&amp;/g, "&"), form);
         continue;
       }
       break;
@@ -659,13 +651,20 @@ async function test() {
   const limitedPair = pkce();
   const drawn = await rp.go("GET", authorizeUrl(asked,
                                                 pkceExtra(limitedPair)));
-  const drawnPage = drawn.status === 302 || drawn.status === 303
-    ? await rp.go("GET", drawn.location) : drawn;
+  // The screen's view carries the detail's limits, which its page draws as
+  // controls (#576).
+  const drawnView = authnSignin.isConsent(drawn.location)
+    ? await authnSignin.consentPage(h.absolute(drawn.location), {
+      cookie: Object.keys(rp.jar).map(function (k) {
+        return k + "=" + rp.jar[k];
+      }).join("; ") }) : null;
   check("8g. the consent screen draws the limit as a control", function () {
-    assert.ok(/name="lim_t0r0_amount" value="50"/.test(drawnPage.text),
-              String(drawnPage.text).slice(0, 800));
+    const limited = drawnView && drawnView.view &&
+      (drawnView.view.limits || [])[0];
+    assert.ok(limited && String(limited.limits.amount) === "50",
+              JSON.stringify(drawnView && drawnView.view).slice(0, 800));
   });
-  r = await follow(drawnPage, { "lim_t0r0_amount": "20" });
+  r = await follow(drawn, { "lim_t0r0_amount": "20" });
   const limitedCode = new URL(r.location || "https://x/").searchParams
     .get("code");
   const redeem = function (form) {
