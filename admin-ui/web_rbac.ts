@@ -179,7 +179,8 @@ class RbacPage {
       '</div>';
 
     const forms = mayWrite && info.available
-      ? '<h2 id="grant">' + t.html('consoleRbac.body.grantHeading') +
+      ? '<h2 id="grant" data-tab="grant">' +
+        t.html('consoleRbac.body.grantHeading') +
         '</h2>' + kit.note(t.html('consoleRbac.body.grantNote')) +
         personPane +
         (picked
@@ -238,7 +239,10 @@ class RbacPage {
         : '<input type="hidden" name="' + name + '" value="' + kit.esc(value) +
           '">';
     }).join('');
+    // WHO HOLDS A ROLE IS A TAB (2026-10-12), headed by the page's own
+    // name; the status, the tiles and the notes are Metadata.
     const inner = noDirectory + status + tiles +
+      '<h2 data-tab="holders">' + t.html('console.nav.rbac') + '</h2>' +
       '<form method="get" action="/admin/rbac"><div class="formrow">' +
       personCarry +
       '<label for="q">' + t.html('consoleRbac.body.person') + '</label>' +
@@ -314,8 +318,8 @@ class RbacPage {
       // this console rather than about the settings, which is why they are not
       // in config.js either.
       SettingsForms.forms(json.settings, '/admin/rbac', undefined, t) +
-      kit.note(t.html('consoleRbac.body.renaming')) +
-      RbacPage.rbacCaveat(t);
+      '<div data-metadata>' + kit.note(t.html('consoleRbac.body.renaming')) +
+      RbacPage.rbacCaveat(t) + '</div>';
 
     return inner;
   }

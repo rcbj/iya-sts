@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4294** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4298** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 205
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 208
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 11
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
@@ -2796,6 +2796,9 @@ Raised from: kerberos/.
 | `STS-KRB-0203` | A PAC presented to the KDC carries a client claims buffer that does not decode (a compression format other than XPRESS Huffman, or malformed NDR); the ticket being built carries none of those claims (#493). | none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18) |
 | `STS-KRB-0204` | A request worker failed a Kerberos message from TCP or UDP 88 before answering it (the worker went away, or the operation threw); it is not answered again in the front process, because the worker may already have written (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
 | `STS-KRB-0205` | A request worker answered a Kerberos message from TCP or UDP 88 with no reply bytes; the client is told the KDC is unavailable (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0206` | The message router a service deployed as cells installs on TCP and UDP 88 failed on a message; it is answered by this cell's KDC as it was before the router (#588, 2026-10-12). | none — #98, RFC 4120 7.2 |
+| `STS-KRB-0207` | A Kerberos message on TCP or UDP 88 whose client is homed in another cell could not be answered there (the cell unreachable, or no reply); the client is told the KDC is unavailable, fail-closed (#588, 2026-10-12). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6 |
+| `STS-KRB-0208` | Another cell relayed a Kerberos message here with no message in it; the inter-cell operation kdc-message failed (#588, 2026-10-12). | none — #98 |
 
 ## STS-LDAP
 
@@ -3654,6 +3657,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
 | `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
 | `STS-I18N-0011` | A prose catalog under common/prose_locales — the translations of the sentences the server writes into a console view, such as a setting's description — could not be read or parsed; that prose falls back along its chain to English (#543). | none — an error in the log |
+| `STS-I18N-0012` | GET /web/locales/<namespace>/<catalog>.json named a namespace or a catalog this service does not have, or a file name that is not <catalog>.json; nothing is read from disk by a requested name (#570). | HTTP 404 |
 
 ## STS-GNAP
 

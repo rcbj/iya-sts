@@ -114,7 +114,8 @@ class SsfTransmittersPage {
         t.html('consoleSsfTransmitters.none.federation') + '</a>' +
         t.html('consoleSsfTransmitters.none.after') + '</p>';
     const blocks = json.blocks.length
-      ? '<h3>' + t.html('consoleSsfTransmitters.blocks.heading') +
+      ? '<h3 data-tab="blocks">' +
+        t.html('consoleSsfTransmitters.blocks.heading') +
         '</h3><table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
@@ -127,7 +128,8 @@ class SsfTransmittersPage {
         }).join('') + '</tbody></table>'
       : '';
     const locks = json.locks.length
-      ? '<h3>' + t.html('consoleSsfTransmitters.locks.heading') +
+      ? '<h3 data-tab="locks">' +
+        t.html('consoleSsfTransmitters.locks.heading') +
         '</h3><table><thead><tr><th>' +
         t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
         t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
@@ -170,8 +172,15 @@ class SsfTransmittersPage {
     return kit.note(t.html('consoleSsfTransmitters.note') +
         (json.observeOnly
           ? ' ' + t.html('consoleSsfTransmitters.note.observeOnly')
-          : '')) + cards + blocks + locks +
-      '<h3>' + t.html('consoleSsfTransmitters.arrived.heading') +
+          : '')) +
+      // A TAB PER LIST (2026-10-12): the note is Metadata
+      // (`WebPages.protocolTabs()`); the cards are headed by federation's
+      // own word for them.
+      '<h3 data-tab="relationships">' +
+      t.html('consoleFederation.headingRelationships') + '</h3>' + cards +
+      blocks + locks +
+      '<h3 data-tab="arrived">' +
+      t.html('consoleSsfTransmitters.arrived.heading') +
       '</h3><table><thead><tr><th>' +
       t.html('consoleSsfTransmitters.th.relationship') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.when') + '</th><th>' +
@@ -180,7 +189,8 @@ class SsfTransmittersPage {
       t.html('consoleSsfTransmitters.th.person') + '</th><th>' +
       t.html('consoleSsfTransmitters.th.reactions') +
       '</th></tr></thead><tbody>' + received + '</tbody></table>' +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="' + PAGE +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/ssf/transmitters</code></p>';
   }
 }

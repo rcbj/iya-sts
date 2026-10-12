@@ -87,6 +87,11 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import InstanceSlot = require('../common/instance_slot');
+// #543: the rows' names are translated where an answer is sent, and the
+// computed ones are filled from templates `prose()` lists. A top-level
+// require is safe: `server_prose` requires only the early libraries, none
+// of which requires this module.
+import serverProse = require('../common/server_prose');
 
 const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
                       '/ssf/status', '/ssf/subjects/add',
@@ -106,6 +111,37 @@ const EXEMPT = {
                                 'endpoints read, and has no endpoint of ' +
                                 'its own to list'
 };
+
+// ---------------------------------------------------------------------------
+// THE NAMES OF THE ROWS THIS FILE BUILDS ITSELF (#543 phase 3) — the
+// listeners the router cannot see — each filled where its row is built, so
+// the name and the template the server matches it against cannot differ.
+// A Kerberos realm's name is data. Not here, because each is a protocol or
+// product name or a transport, and on every route (the namespace's route is
+// `*`) such a word could equal a value anywhere: 'LDAP', 'LDAPS', the three
+// SPIFFE and SPIRE APIs, 'TCP', 'UDP', 'TLS', 'gRPC', 'gRPC over TLS' and
+// 'unix socket'.
+// ---------------------------------------------------------------------------
+const SOCKET_NAMES = Object.freeze({
+  kdc: 'Key Distribution Center',
+  kdcRealm: 'Key Distribution Center (realm {{realm}})',
+  krb5Service: 'The protected Kerberos service (AP-REQ)',
+  mainPort: 'Client certificates on the main port',
+  mainPortTransport: 'TLS (a client certificate asked for, never required)'
+});
+
+// THE ENDPOINT NAMES NOT TRANSLATED although they hold a space: each is a
+// protocol or product name, the same on every page in every language. A
+// name of ONE WORD is never translated either ('SCIM', 'Users', 'Mode'):
+// on every route a single word is the likeliest thing to equal a value a
+// form sends back or a label another namespace owns.
+const UNTRANSLATED_NAMES = ['KDC Proxy (MS-KKDCP)', 'Shared Signals'];
+
+// The routes whose answers carry this namespace's prose (#543): EVERY
+// route, because every Protocols page answers `protocolEndpoints`, and
+// `/admin-api/sts-metadata` carries the same names. Kept to names short
+// and specific enough to be matched anywhere.
+const PROSE_ROUTES = ['*'];
 
 // One entry of THE TABLE: a route, a route per named server, or a socket.
 interface Entry {
@@ -166,6 +202,60 @@ class ProtocolEndpoints {
     this.pagesTable = this.buildPages();
     this.sockets = this.buildSockets();
     deps.log.debug("Leaving ProtocolEndpoints.constructor().");
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the endpoints namespace (#543 phase 3): the name of every
+   * route `sts_metadata.ts`'s `ENDPOINTS` describes, keyed by its path, and
+   * the names of the socket rows this file builds.
+   *
+   * `sts_metadata` is required HERE, when the namespace is first extracted
+   * — after the stack is up — and never at load, for the reason in the
+   * header. A name is left out when it is one word, when it is in
+   * `UNTRANSLATED_NAMES`, or when it is also a protocol card's name, an
+   * endpoint group or a specification's name: those are join keys, and on
+   * every route a translated one would no longer join.
+   *
+   * The name of a route repeated per named authorization server, `<name> —
+   * <id>`, is translated only as far as the whole string is a name: a
+   * template `{{name}} — {{server}}` would match any sentence on any page
+   * with a dash in it.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering ProtocolEndpoints.prose().");
+    const metadata = require('../sts_metadata');
+    const keys = new Set<string>(UNTRANSLATED_NAMES);
+    metadata.PROTOCOLS.forEach(function (card) {
+      keys.add(card.name);
+      card.groups.forEach(function (group) {
+        keys.add(group);
+      });
+    });
+    metadata.ENDPOINTS.forEach(function (row) {
+      keys.add(row.group);
+    });
+    metadata.SPECS.forEach(function (spec) {
+      keys.add(spec.name);
+    });
+    const named = metadata.ENDPOINTS.filter(function (row) {
+      return / /.test(row.name) && !keys.has(row.name);
+    }).map(function (row) {
+      return { key: row.path, name: row.name };
+    });
+    const out: Record<string, string> = Object.assign({},
+      serverProse.harvest('endpoints.route', named, ['name']),
+      serverProse.harvest('endpoints.socket', SOCKET_NAMES,
+                          Object.keys(SOCKET_NAMES)));
+    helpers.log.debug("Leaving ProtocolEndpoints.prose(). " +
+                      Object.keys(out).length);
+    return out;
   }
 
   // What the composition root passes, from the real modules: `require.cache`
@@ -386,12 +476,14 @@ class ProtocolEndpoints {
         log.debug("Entering the kdc socket builder.");
         const kdc = self.loaded('../kerberos/krb5_kdc');
         const port = config.value('krb5.kdcPort');
-        const realm = kdc ? ' (realm ' + kdc.REALM + ')' : '';
+        const name = kdc
+          ? serverProse.fill(SOCKET_NAMES.kdcRealm, { realm: kdc.REALM })
+          : SOCKET_NAMES.kdc;
         log.debug("Leaving the kdc socket builder.");
         return [
-          { name: 'Key Distribution Center' + realm, methods: [],
+          { name: name, methods: [],
             url: 'tcp://' + host + ':' + port, transport: 'TCP' },
-          { name: 'Key Distribution Center' + realm, methods: [],
+          { name: name, methods: [],
             url: 'udp://' + host + ':' + port, transport: 'UDP' }
         ];
       },
@@ -408,7 +500,7 @@ class ProtocolEndpoints {
           return [];
         }
         log.debug("Leaving the krb5-service socket builder.");
-        return [{ name: 'The protected Kerberos service (AP-REQ)', methods: [],
+        return [{ name: SOCKET_NAMES.krb5Service, methods: [],
                   url: 'tcp://' + host + ':' + config.value('krb5.servicePort'),
                   transport: 'TCP' }];
       },
@@ -445,9 +537,9 @@ class ProtocolEndpoints {
         // in, so this answers the same under every prefix and carries none.
         log.debug("Leaving the tls socket builder.");
         return [
-          { name: 'Client certificates on the main port', methods: [],
+          { name: SOCKET_NAMES.mainPort, methods: [],
             url: 'https://' + host + ':' + config.value('global.port') + '/',
-            transport: 'TLS (a client certificate asked for, never required)' }
+            transport: SOCKET_NAMES.mainPortTransport }
         ];
       },
       'spiffe-workload': function () {
@@ -743,6 +835,10 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   ProtocolEndpoints: ProtocolEndpoints,
+  // The routes whose answers carry this module's prose, and its English
+  // (#543).
+  PROSE_ROUTES: ProtocolEndpoints.PROSE_ROUTES,
+  prose: ProtocolEndpoints.prose,
   installInstance: (instance: ProtocolEndpoints): void =>
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),

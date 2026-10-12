@@ -59,7 +59,6 @@ function childMain() {
   const OUT = process.env.AG_OUT;
   const fsC = require('fs');
   const pathC = require('path');
-  const vm = require('vm');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
@@ -341,35 +340,26 @@ function childMain() {
          proseDiffers.join(', '));
 
     // --- C. the bundle -------------------------------------------------------
+    // Loaded by the round-trip harness every static surface shares (#570):
+    // no require, process, module or Buffer, which is what a browser has
+    // not.
+    const harness = require(ROOT_DIR + '/tests/tools/web_round_trip');
     const bundlePath = pathC.join(dir, 'console.bundle.js');
-    let code = '';
-    try {
-      code = fsC.readFileSync(bundlePath, 'utf8');
-    } catch (e) {
-      // No bundle: C1 reports it.
-      code = '';
-    }
+    const loaded = harness.loadBundle(bundlePath, 'StsConsole');
+    const code = loaded.code;
     note(code.length > 500,
          'C1. the image build wrote the browser bundle',
          bundlePath + ' ' + code.length + ' byte(s)');
-    let StsConsole = null;
-    let loadProblem = '';
-    try {
-      // No require, process, module or Buffer: what a browser has not.
-      const sandbox = vm.createContext({});
-      StsConsole = vm.runInContext(code + '\n;StsConsole;', sandbox,
-                                   { filename: 'console.bundle.js' });
-      // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
-      // the page's own (`applyLocale()`), so a helper handed no translator
-      // draws in the reader's language. Here there is no runtime, so the
-      // bundle is given node's — English — and the two draw the same words.
-      if (StsConsole && StsConsole.messages) {
-        StsConsole.messages.WebTranslator.setDefault(function () {
-          return WebKit.context().t;
-        });
-      }
-    } catch (e) {
-      loadProblem = String((e && e.message) || e);
+    const StsConsole = loaded.value;
+    const loadProblem = loaded.problem;
+    // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
+    // the page's own (`applyLocale()`), so a helper handed no translator
+    // draws in the reader's language. Here there is no runtime, so the
+    // bundle is given node's — English — and the two draw the same words.
+    if (StsConsole && StsConsole.messages) {
+      StsConsole.messages.WebTranslator.setDefault(function () {
+        return WebKit.context().t;
+      });
     }
     note(!!StsConsole && Array.isArray(StsConsole.PAGES) &&
          typeof StsConsole.render === 'function',
@@ -1786,7 +1776,9 @@ function childMain() {
       const bar = /<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/.exec(html);
       const ids = bar ? (bar[1].match(/href="#([^"]+)"/g) || [])
         .map(function (h) { return h.slice(7, -1); }) : [];
-      if (ids[0] !== slug + '-tab-metadata') {
+      // A page that drew no marked section this time is drawn as it was
+      // (`protocolTabs()`), with no tab bar to check.
+      if (ids.length && ids[0] !== slug + '-tab-metadata') {
         protocolProblems.push(path + ' does not open on Metadata: ' +
                               ids.join(' '));
       }
@@ -1797,7 +1789,8 @@ function childMain() {
                                 'list: ' + name);
         }
       });
-      if (pview.protocolEndpoints && pview.protocolEndpoints.length) {
+      if (ids.length && pview.protocolEndpoints &&
+          pview.protocolEndpoints.length) {
         const meta = new RegExp('<section class="tabpanel first" id="' +
           slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
         if (!meta || meta[1].indexOf('data-copy="' +
@@ -1887,7 +1880,8 @@ function childMain() {
     }).concat(report.developmentOnlySettings.filter(function (row) {
       return here.indexOf('id="setting-' + WebKit.esc(row.key) + '"') < 0;
     }));
-    note(missing.length === 0 && here.indexOf('<div class="tiles">') === 0 &&
+    // The page is tabs since 2026-10-12, its tiles on Metadata.
+    note(missing.length === 0 && here.indexOf('<div class="tiles">') >= 0 &&
          report.requirements.length > 10,
          'D2. and it carries every requirement and every development-only ' +
          'setting of the report', missing.length + ' missing of ' +

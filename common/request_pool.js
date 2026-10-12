@@ -1014,6 +1014,14 @@ const affinities = {};
 affinities[PROTOCOL_POOL] = new Map();
 affinities[SURFACE_POOL] = new Map();
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const AFFINITY_SENTENCES = Object.freeze({
+  lifetime: 'No expiry: forgotten when its worker exits; the oldest goes ' +
+    'first when a pool holds {{max}}. Front process only.'
+});
+
 // Described to `/admin/caches` (#74, rule 3ap), one row per pin across both
 // pools. Only the FRONT process fills these, so a request worker drawing the
 // page lists none. Keys are session ids and flow values, shown digested.
@@ -1031,9 +1039,13 @@ const affinityCount = cacheRegistry.register({
   },
   bound: 'Enforced: 5000 per pool, the oldest dropped; a dropped pin is ' +
     'simply routed afresh.',
+  sentences: AFFINITY_SENTENCES,
   lifetime: function () {
-    return 'No expiry: forgotten when its worker exits; the oldest goes ' +
-      'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
+    // Lazily: this module is loaded long before what server_prose.ts
+    // requires.
+    const serverProse = require('./server_prose');
+    return serverProse.fill(AFFINITY_SENTENCES.lifetime,
+                            { max: AFFINITY_MAX });
   },
   entries: function () {
     const out = [];

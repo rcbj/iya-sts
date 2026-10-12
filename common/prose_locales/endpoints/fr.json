@@ -1,0 +1,1978 @@
+{
+  "endpoints.route./krb5/principals.name": {
+    "en": "533f66256ae25c27",
+    "text": "Ce que connaît le KDC"
+  },
+  "endpoints.route./krb5/service.name": {
+    "en": "591e0168bdd0f251",
+    "text": "Le service protégé"
+  },
+  "endpoints.route./spnego.name": {
+    "en": "23bfd6168fa5fd44",
+    "text": "Une page protégée par SPNEGO est annoncée ici"
+  },
+  "endpoints.route./spnego/protected.name": {
+    "en": "8c763f4b490426dd",
+    "text": "La ressource protégée"
+  },
+  "endpoints.route./xacml.name": {
+    "en": "1184e17250970dab",
+    "text": "Ce qu’est la surface XACML"
+  },
+  "endpoints.route./xacml/pdp.name": {
+    "en": "a372155e5808a3ef",
+    "text": "Une décision"
+  },
+  "endpoints.route./xacml/policies.name": {
+    "en": "beb8ca12489eec05",
+    "text": "Le référentiel de politiques"
+  },
+  "endpoints.route./xacml/protected.name": {
+    "en": "f400e014a6fec063",
+    "text": "Le PEP intégré"
+  },
+  "endpoints.route./xacml/pep/register.name": {
+    "en": "042b865d703aee20",
+    "text": "Un PEP distant s’enregistre"
+  },
+  "endpoints.route./xacml/pep/policies.name": {
+    "en": "d7b1a01d26f2cc80",
+    "text": "Le référentiel, qu’un PEP distant CHARGE"
+  },
+  "endpoints.route./xacml/pep/heartbeat.name": {
+    "en": "9570c5ba15aef084",
+    "text": "Ce qu’un PEP distant a appliqué"
+  },
+  "endpoints.route./xacml/pip.name": {
+    "en": "b0b1791a44311248",
+    "text": "Le Policy Information Point, sur HTTP"
+  },
+  "endpoints.route./gnap.name": {
+    "en": "33b8b1fd38b28a51",
+    "text": "Le point de terminaison d’octroi"
+  },
+  "endpoints.route./:as/gnap.name": {
+    "en": "4e8b789cccef4597",
+    "text": "Le point de terminaison d’octroi d’un serveur d’autorisation nommé"
+  },
+  "endpoints.route./gnap/continue/:grant.name": {
+    "en": "db55ac21174c6f99",
+    "text": "Poursuite d’un octroi"
+  },
+  "endpoints.route./gnap/token/:handle.name": {
+    "en": "741af09dc62e9a62",
+    "text": "Gestion des jetons"
+  },
+  "endpoints.route./gnap/interact/:id.name": {
+    "en": "94671ff4687a0e0b",
+    "text": "Le démarrage de l’interaction par redirection"
+  },
+  "endpoints.route./gnap/app/:id.name": {
+    "en": "271e2b3bb99d4e34",
+    "text": "Le démarrage de l’interaction par application"
+  },
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "Saisie du code utilisateur"
+  },
+  "endpoints.route./gnap/approve/:id.name": {
+    "en": "7224d2fd77b49df7",
+    "text": "Approbation par le propriétaire de la ressource"
+  },
+  "endpoints.route./.well-known/gnap-as-rs.name": {
+    "en": "0fd056c79efdd3a0",
+    "text": "Découverte du serveur de ressources"
+  },
+  "endpoints.route./.well-known/gnap-as-rs/:as.name": {
+    "en": "6df94c58d2c4986a",
+    "text": "Découverte du serveur de ressources d’un serveur d’autorisation nommé"
+  },
+  "endpoints.route./gnap/introspect.name": {
+    "en": "7e194fb9c34129c7",
+    "text": "Introspection de jeton"
+  },
+  "endpoints.route./gnap/resource.name": {
+    "en": "541dc030fa6fb91c",
+    "text": "Enregistrement d’un ensemble de ressources"
+  },
+  "endpoints.route./gnap/keys.name": {
+    "en": "c0d78f3392b95c6b",
+    "text": "Matériel de vérification des formats de jeton"
+  },
+  "endpoints.route./gnap/biscuit/revocations.name": {
+    "en": "337581d2c9bece04",
+    "text": "Biscuits révoqués"
+  },
+  "endpoints.route./gnap/zcap/controller.name": {
+    "en": "6757bf6175282a42",
+    "text": "Le document de contrôleur ZCAP"
+  },
+  "endpoints.route./gnap/rs/resource.name": {
+    "en": "f4816b24c4f7295e",
+    "text": "Le serveur de ressources de démonstration"
+  },
+  "endpoints.route./gnap/rs/spend.name": {
+    "en": "70a2444f2afabc4c",
+    "text": "La dépense du serveur de ressources de démonstration"
+  },
+  "endpoints.route./admin-api/gnap.name": {
+    "en": "c34c3f89f048c143",
+    "text": "La page GNAP de la console, en JSON"
+  },
+  "endpoints.route./admin-api/gnap/monitor.name": {
+    "en": "369d3bf3a6c7b46f",
+    "text": "Les autorisations GNAP, en JSON"
+  },
+  "endpoints.route./admin-api/gnap/:action.name": {
+    "en": "812de4df596c12ef",
+    "text": "Révoquer un octroi ou supprimer un ensemble de ressources"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "La liste de révocation de certificats d’une autorité"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca.name": {
+    "en": "26e09611c77104e2",
+    "text": "Le répondeur OCSP d’une autorité (POST)"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca/*.name": {
+    "en": "78daac5586a16467",
+    "text": "Le répondeur OCSP d’une autorité (GET)"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "Le certificat propre d’une autorité de certification"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "La chaîne de certificats que nomme le x5u d’un jeton signé"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "Le document de métadonnées cryptographiques, selon Accept"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "Le document de métadonnées cryptographiques, en JSON"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "Le document de métadonnées cryptographiques, en XML"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "Le document de métadonnées cryptographiques, signé en JWS"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "Le document de métadonnées cryptographiques, en XML signé"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "Le schéma XML du document de métadonnées cryptographiques"
+  },
+  "endpoints.route./pki/revocation.name": {
+    "en": "f399711ce1261bf4",
+    "text": "Chaque CRL et répondeur OCSP que publie ce service"
+  },
+  "endpoints.route./admin-api/xacml.name": {
+    "en": "d3b1d402a612012c",
+    "text": "La page XACML de la console, en JSON"
+  },
+  "endpoints.route./admin-api/xacml/policies.name": {
+    "en": "8e1fec42df374e4c",
+    "text": "Le référentiel de politiques, en JSON"
+  },
+  "endpoints.route./admin-api/xacml/editor.name": {
+    "en": "97c8bc015f73b3f1",
+    "text": "Une politique sous forme d’arbre modifiable"
+  },
+  "endpoints.route./admin-api/xacml/decide.name": {
+    "en": "17f8129044f6440e",
+    "text": "Poser une question au PDP, en JSON"
+  },
+  "endpoints.route./admin-api/xacml/peps.name": {
+    "en": "7f8ea0c37cf4776c",
+    "text": "Les points d’application distants, en JSON"
+  },
+  "endpoints.route./admin-api/xacml/monitor.name": {
+    "en": "c31e79f61be7e43b",
+    "text": "Ce que fait l’autorisation, en JSON"
+  },
+  "endpoints.route./admin-api/xacml/:action.name": {
+    "en": "264e6d022675cd79",
+    "text": "Modifier une politique, le référentiel ou un PEP distant"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "Métadonnées de configuration de l’émetteur (transmitter)"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "Métadonnées de configuration de l’émetteur (transmitter), forme à chemin inséré"
+  },
+  "endpoints.route./ssf.name": {
+    "en": "29eb248f16235183",
+    "text": "Ce qu’est la surface Shared Signals"
+  },
+  "endpoints.route./ssf/stream.name": {
+    "en": "b0a8d86b9e533735",
+    "text": "L’API de gestion des flux"
+  },
+  "endpoints.route./ssf/status.name": {
+    "en": "60416f189a3afec0",
+    "text": "L’état d’un flux"
+  },
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "Ajouter un sujet à un flux"
+  },
+  "endpoints.route./ssf/subjects/remove.name": {
+    "en": "e963dffef9e3d06b",
+    "text": "Retirer un sujet d’un flux"
+  },
+  "endpoints.route./ssf/verify.name": {
+    "en": "9394a228c5271a2d",
+    "text": "Demander un événement de vérification"
+  },
+  "endpoints.route./federation/signals/:id.name": {
+    "en": "b041f89b9c1dbd10",
+    "text": "Point de terminaison push pour les Shared Signals d’un partenaire de fédération (RFC 8935)"
+  },
+  "endpoints.route./ssf/poll.name": {
+    "en": "ac4ccca804188b23",
+    "text": "Remise par interrogation (RFC 8936)"
+  },
+  "endpoints.route./ssf/receive.name": {
+    "en": "115adfc135af6faf",
+    "text": "Un Security Event Token poussé VERS ce service"
+  },
+  "endpoints.route./ssf/received.name": {
+    "en": "7ba22ad915534fad",
+    "text": "Ce qui a été poussé ici"
+  },
+  "endpoints.route./scim.name": {
+    "en": "56accbf45038167b",
+    "text": "Ce qu’est la surface SCIM"
+  },
+  "endpoints.route./scim/v2/ServiceProviderConfig.name": {
+    "en": "e7267904e2f73e0c",
+    "text": "Ce que prend en charge ce serveur SCIM"
+  },
+  "endpoints.route./scim/v2/ResourceTypes.name": {
+    "en": "c4842dd1549d02ce",
+    "text": "Les types de ressources"
+  },
+  "endpoints.route./scim/v2/ResourceTypes/:id.name": {
+    "en": "f50850744e5d0035",
+    "text": "Un type de ressource"
+  },
+  "endpoints.route./scim/v2/Schemas.name": {
+    "en": "b290eec1709feb6f",
+    "text": "Les schémas"
+  },
+  "endpoints.route./scim/v2/Schemas/:id.name": {
+    "en": "5034a0e2cbb7b12b",
+    "text": "Un schéma"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "Utilisateurs : lister et créer"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "Utilisateurs : rechercher par POST"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "Un utilisateur : lire, remplacer, modifier, supprimer"
+  },
+  "endpoints.route./scim/v2/Groups.name": {
+    "en": "365b6120828199b6",
+    "text": "Groupes : lister et créer"
+  },
+  "endpoints.route./scim/v2/Groups/.search.name": {
+    "en": "c0618941d836a76f",
+    "text": "Groupes : rechercher par POST"
+  },
+  "endpoints.route./scim/v2/Groups/:id.name": {
+    "en": "31e2cc7e078de787",
+    "text": "Un groupe : lire, remplacer, modifier, supprimer"
+  },
+  "endpoints.route./scim/v2/.search.name": {
+    "en": "ad4bb06fc5614a1c",
+    "text": "Rechercher dans les deux types de ressources"
+  },
+  "endpoints.route./scim/v2/*.name": {
+    "en": "09fc8d6021972a82",
+    "text": "Tout autre chemin sous la base"
+  },
+  "endpoints.route./scim/v2/Me.name": {
+    "en": "bfb6c6f542c0607b",
+    "text": "/Me, le sujet authentifié"
+  },
+  "endpoints.route./.well-known/hoba/register.name": {
+    "en": "b95adde7badbdef3",
+    "text": "Enregistrer une clé publique HOBA"
+  },
+  "endpoints.route./tls.name": {
+    "en": "80219fab36a81bcc",
+    "text": "Ce qu’est le point de terminaison TLS"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "Se connecter avec un certificat client"
+  },
+  "endpoints.route./tls/forwarded.name": {
+    "en": "d077fbd8d5da171e",
+    "text": "Ce qu’un proxy a indiqué à ce service"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "Le certificat du serveur (PEM)"
+  },
+  "endpoints.route./tls/trust.name": {
+    "en": "32502f26135e90a0",
+    "text": "Faire confiance à un émetteur de certificats clients"
+  },
+  "endpoints.route./tls/trust/clear.name": {
+    "en": "de8fc06fa11fa918",
+    "text": "Vider le magasin de confiance des clients"
+  },
+  "endpoints.route./.name": {
+    "en": "a064be014d290217",
+    "text": "La page d’accueil"
+  },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "Le script de la page d’accueil"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "La feuille de style de la page d’accueil"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "L’index de l’API de la porte d’entrée"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "La vue de la page d’accueil"
+  },
+  "endpoints.route./logo.png.name": {
+    "en": "5d9164ce79341469",
+    "text": "Le logo de la page d’accueil"
+  },
+  "endpoints.route./realms.name": {
+    "en": "3bc74315dcf2fb5e",
+    "text": "L’annuaire des domaines de confiance"
+  },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "La feuille de style de carte des surfaces publiques"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "L’index des catalogues de langue"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "Les messages d’un espace de noms dans un catalogue"
+  },
+  "endpoints.route./healthcheck.name": {
+    "en": "14290e1d06812977",
+    "text": "Contrôle de santé"
+  },
+  "endpoints.route./docs.name": {
+    "en": "a7091d45b01e0e30",
+    "text": "Documentation du service"
+  },
+  "endpoints.route./policy.name": {
+    "en": "c134e729e1cc3153",
+    "text": "Politique de l’opérateur"
+  },
+  "endpoints.route./tos.name": {
+    "en": "e69e06144877d81c",
+    "text": "Conditions d’utilisation"
+  },
+  "endpoints.route.*.name": {
+    "en": "4898865b52c1132a",
+    "text": "Requête CORS préalable (preflight)"
+  },
+  "endpoints.route./spiffe.name": {
+    "en": "04302eb70b6b3d39",
+    "text": "Ce que sont les surfaces SPIFFE"
+  },
+  "endpoints.route./spiffe/bundle.name": {
+    "en": "dfc63f78fe42ef9e",
+    "text": "Le bundle de confiance"
+  },
+  "endpoints.route./spiffe/federated/:trustDomain.name": {
+    "en": "9f481b0436f86e81",
+    "text": "Le bundle d’un domaine de confiance fédéré, tel que détenu"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "Script de l’explorateur d’API"
+  },
+  "endpoints.route./admin.name": {
+    "en": "ddf870cabeb295ab",
+    "text": "Console d’administration"
+  },
+  "endpoints.route./admin/*.name": {
+    "en": "e146f5e15e76dfe5",
+    "text": "Chaque page de la console"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "Le script de la console"
+  },
+  "endpoints.route./admin/console.css.name": {
+    "en": "cd6aeb9c9e8ebf8a",
+    "text": "La feuille de style de la console"
+  },
+  "endpoints.route./portal.name": {
+    "en": "5212610fe0e7c89a",
+    "text": "Le compte propre d’une personne"
+  },
+  "endpoints.route./portal/*.name": {
+    "en": "5b81a7e12cca9cd3",
+    "text": "Chaque page du portail"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "Le script du portail"
+  },
+  "endpoints.route./portal/portal.css.name": {
+    "en": "3b05a0008cdc0eb1",
+    "text": "La feuille de style du portail"
+  },
+  "endpoints.route./portal/signals/receive.name": {
+    "en": "657c84b412c86001",
+    "text": "Le point de réception Shared Signals du portail"
+  },
+  "endpoints.route./portal/claim-sources/callback.name": {
+    "en": "152919279ecea855",
+    "text": "Sources de revendications connectées — la réponse du fournisseur"
+  },
+  "endpoints.route./admin-api.name": {
+    "en": "eb75193bc8755faa",
+    "text": "Index de l’API de gestion"
+  },
+  "endpoints.route./admin-api/logout.name": {
+    "en": "b068dc8553d2b4f2",
+    "text": "Sessions actives, et leur fin"
+  },
+  "endpoints.route./admin-api/logout/:action.name": {
+    "en": "6c2dc375eee8253d",
+    "text": "Sessions actives : y mettre fin"
+  },
+  "endpoints.route./admin-api/openapi.json.name": {
+    "en": "ef18228535f6e74f",
+    "text": "Document OpenAPI"
+  },
+  "endpoints.route./admin-api/account-api.name": {
+    "en": "1ae155ffa9680b4a",
+    "text": "Le document OpenAPI de l’API de compte"
+  },
+  "endpoints.route./admin-api/console/language.name": {
+    "en": "40be2295e7d1766a",
+    "text": "La langue de la console, pour vous-même"
+  },
+  "endpoints.route./admin-api/console/api-explorer.name": {
+    "en": "dc472022273007e2",
+    "text": "Ce que lit l’explorateur de la console"
+  },
+  "endpoints.route./admin-api/console/delegation/map.name": {
+    "en": "58e1aa37ecc8aa2b",
+    "text": "Le schéma des délégations"
+  },
+  "endpoints.route./admin-api/console/delegation/chain.name": {
+    "en": "2f4c2883e0a7367a",
+    "text": "Une relation de délégation, dessinée"
+  },
+  "endpoints.route./admin-api/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "Les délégations d’une application, dessinées"
+  },
+  "endpoints.route./admin-api/console/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "Les délégations d’une application, dessinées"
+  },
+  "endpoints.route./admin-api/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Tout ce qui est fait au nom d’une personne, dessiné"
+  },
+  "endpoints.route./admin-api/console/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Tout ce qui est fait au nom d’une personne, dessiné"
+  },
+  "endpoints.route./admin-api/console/delegation/allowed.name": {
+    "en": "8ae675640fa7d934",
+    "text": "Les permissions déléguées configurées, dessinées"
+  },
+  "endpoints.route./admin-api/console/delegation/cluster.name": {
+    "en": "ad732f8760d744ba",
+    "text": "Un groupe d’applications liées par des permissions, dessiné"
+  },
+  "endpoints.route./admin-api/console/delegation-settings.name": {
+    "en": "502fcd0e4edaea72",
+    "text": "Le registre des permissions configurées, tel que sa page l’affiche"
+  },
+  "endpoints.route./admin-api/tokens/credential.name": {
+    "en": "f45c68ae09f2d7fc",
+    "text": "Un identifiant et chaque génération derrière lui"
+  },
+  "endpoints.route./admin-api/console/federation/map.name": {
+    "en": "99866b83425ba5c7",
+    "text": "Les relations de fédération de ce domaine, dessinées"
+  },
+  "endpoints.route./admin-api/console.name": {
+    "en": "f166c0c9b6ef8c18",
+    "text": "Ce que la console dessine autour de chaque page"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "La chaîne de certificats d’une clé de signature"
+  },
+  "endpoints.route./admin-api/sts-metadata.name": {
+    "en": "88b4c8d5056bd368",
+    "text": "Chaque protocole, point de terminaison et spécification que ce service sert"
+  },
+  "endpoints.route./admin-api/me.name": {
+    "en": "548b8ddef38a8823",
+    "text": "L’appelant"
+  },
+  "endpoints.route./admin-api/status.name": {
+    "en": "cce5eda33f91d11c",
+    "text": "État du service"
+  },
+  "endpoints.route./admin-api/console/dashboard.name": {
+    "en": "9b5ccd90b2944d73",
+    "text": "La page d’accueil de la console"
+  },
+  "endpoints.route./admin-api/console/operations.name": {
+    "en": "09b6da5088de6afb",
+    "text": "Chaque opération, pour les formulaires de la console"
+  },
+  "endpoints.route./admin-api/console/openapi.json.name": {
+    "en": "c5b582c6e41c78dd",
+    "text": "Le document OpenAPI des opérations de la console"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "Les assistants du formulaire de certificat"
+  },
+  "endpoints.route./admin-api/console/applications/:action.name": {
+    "en": "18ea7bf0d0fcc0d4",
+    "text": "L’assistant du formulaire de nouvelle application"
+  },
+  "endpoints.route./admin-api/console/applications/new.name": {
+    "en": "226595ce0d487761",
+    "text": "Formulaire de nouvelle application, tel que la console le dispose"
+  },
+  "endpoints.route./admin-api/keys.name": {
+    "en": "b50a1f343114c6fa",
+    "text": "Paires de clés"
+  },
+  "endpoints.route./admin-api/keys/history.name": {
+    "en": "13b97697b4e1e2b0",
+    "text": "L’historique des clés de signature"
+  },
+  "endpoints.route./admin-api/keys/:action.name": {
+    "en": "02bd417f55c9790f",
+    "text": "Exporter une paire de clés, ou renouveler les clés de signature"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "L’autorité de certification que détient ce domaine"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "Construire une hiérarchie, émettre une paire de clés, rédiger un certificat"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "Chaque certificat que détient ce domaine, ou l’un d’eux en entier"
+  },
+  "endpoints.route./admin-api/secrets.name": {
+    "en": "d13ef7e84b6dc8bb",
+    "text": "Le magasin de secrets, et si ce processus y a lu"
+  },
+  "endpoints.route./admin-api/debugger.name": {
+    "en": "542e5e1c1841299c",
+    "text": "L’écouteur et le processus api du débogueur de protocoles intégré"
+  },
+  "endpoints.route./admin-api/database.name": {
+    "en": "30f6100d283f4d80",
+    "text": "Métriques PostgreSQL et statistiques du schéma"
+  },
+  "endpoints.route./admin-api/risk/metrics.name": {
+    "en": "740320b44f69683c",
+    "text": "Métriques de l’évaluation du risque"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "Téléversement d’un jeu de données de risque"
+  },
+  "endpoints.route./admin-api/risk/:action.name": {
+    "en": "caad559e549e3108",
+    "text": "Actions sur les risques"
+  },
+  "endpoints.route./admin-api/vc-status.name": {
+    "en": "ced60a751fc82211",
+    "text": "Statut des attestations"
+  },
+  "endpoints.route./admin-api/vc-status/:action.name": {
+    "en": "be2f7ebc85c75b68",
+    "text": "Actions sur le statut des attestations"
+  },
+  "endpoints.route./admin-api/scheduler/:action.name": {
+    "en": "3483d9e9aab04915",
+    "text": "Actions du planificateur"
+  },
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "Actions de courrier"
+  },
+  "endpoints.route./admin-api/mail/outbox.name": {
+    "en": "d40abea9379f4e22",
+    "text": "Boîte d’envoi"
+  },
+  "endpoints.route./admin-api/mail/outbox/:action.name": {
+    "en": "0311fbdb2c996481",
+    "text": "Actions sur la boîte d’envoi"
+  },
+  "endpoints.route./admin-api/worker-pools.name": {
+    "en": "8bf5d84f5ee5dd08",
+    "text": "Pools de workers"
+  },
+  "endpoints.route./admin-api/node-health.name": {
+    "en": "6a14636c8aef5de3",
+    "text": "Santé des nœuds"
+  },
+  "endpoints.route./admin-api/encryption.name": {
+    "en": "eb626f73d72649aa",
+    "text": "Chiffrement au repos"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "Les quatre actes des clés de chiffrement des données"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "Actions sur les utilisateurs"
+  },
+  "endpoints.route./admin-api/groups.name": {
+    "en": "c1524c47a0c5db15",
+    "text": "Groupes de l’annuaire"
+  },
+  "endpoints.route./admin-api/groups/:action.name": {
+    "en": "aa987cf14daa872f",
+    "text": "Actions sur les groupes"
+  },
+  "endpoints.route./admin-api/backup-codes.name": {
+    "en": "58306d7221d1bf72",
+    "text": "Paramètres des codes de récupération"
+  },
+  "endpoints.route./admin-api/totp.name": {
+    "en": "947a66c0238e7e56",
+    "text": "Paramètres MFA TOTP"
+  },
+  "endpoints.route./admin-api/webauthn.name": {
+    "en": "dcc6aecb3740fef3",
+    "text": "Paramètres WebAuthn"
+  },
+  "endpoints.route./admin-api/mfa.name": {
+    "en": "63fc7f058d95883b",
+    "text": "Qui détient un second facteur"
+  },
+  "endpoints.route./admin-api/mfa/:action.name": {
+    "en": "725b36f8b92fded4",
+    "text": "Effacer un second facteur"
+  },
+  "endpoints.route./admin-api/rbac.name": {
+    "en": "85d2e32f951ee980",
+    "text": "Rôles de la console d’administration"
+  },
+  "endpoints.route./admin-api/rbac/:action.name": {
+    "en": "de7f185fcea232a6",
+    "text": "Actions sur les rôles d’administration"
+  },
+  "endpoints.route./admin-api/sessions.name": {
+    "en": "366487a11e4c5380",
+    "text": "Sessions actives"
+  },
+  "endpoints.route./admin-api/sessions/:action.name": {
+    "en": "f1fa288cb9378ffc",
+    "text": "Sessions actives : en terminer une"
+  },
+  "endpoints.route./admin-api/tokens.name": {
+    "en": "7d8ad8a77751253f",
+    "text": "Jetons, assertions et tickets émis, regroupés par émission"
+  },
+  "endpoints.route./admin-api/tokens/set.name": {
+    "en": "8db1ad0da0eb0cd8",
+    "text": "Une émission, et chaque identifiant qu’elle portait"
+  },
+  "endpoints.route./admin-api/tokens/:action.name": {
+    "en": "70ffb2afdb826704",
+    "text": "Actions sur les jetons"
+  },
+  "endpoints.route./admin-api/applications/:action.name": {
+    "en": "f78d20689fac7101",
+    "text": "Actions sur les applications"
+  },
+  "endpoints.route./admin-api/users/app-passwords.name": {
+    "en": "dbce87b518a55c12",
+    "text": "Les mots de passe d’application d’une personne"
+  },
+  "endpoints.route./admin-api/users/devices.name": {
+    "en": "cbd7e46575f64db6",
+    "text": "Les appareils d’une personne"
+  },
+  "endpoints.route./admin-api/devices.name": {
+    "en": "2785787c7598b5f2",
+    "text": "Le registre des appareils"
+  },
+  "endpoints.route./admin-api/devices/:action.name": {
+    "en": "82d6c528e12bbe02",
+    "text": "Actions sur le registre des appareils"
+  },
+  "endpoints.route./admin-api/device-compliance.name": {
+    "en": "1b28ca2ff0e0999f",
+    "text": "Le flux de conformité des appareils (MDM / posture)"
+  },
+  "endpoints.route./admin-api/device-registration.name": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "Enregistrement des appareils"
+  },
+  "endpoints.route./admin-api/service-accounts.name": {
+    "en": "330b2e1630d653b8",
+    "text": "Comptes de service et leur renouvellement"
+  },
+  "endpoints.route./admin-api/devices/monitor.name": {
+    "en": "8a3269dd4401ce60",
+    "text": "Le registre des appareils, en chiffres"
+  },
+  "endpoints.route./admin-api/users/self-issued-subjects.name": {
+    "en": "ec5770a23a0c10c0",
+    "text": "Les sujets auto-émis (SIOPv2) d’une personne"
+  },
+  "endpoints.route./admin-api/users/verifications.name": {
+    "en": "aa12d03c659af2a0",
+    "text": "Les vérifications d’identité d’une personne"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "Formulaire de nouvel utilisateur"
+  },
+  "endpoints.route./admin-api/applications/new.name": {
+    "en": "46a0fea8394de3a4",
+    "text": "Formulaire de nouvelle application"
+  },
+  "endpoints.route./admin-api/authorization-servers.name": {
+    "en": "7c36031d3ab3bdc8",
+    "text": "Serveurs d’autorisation"
+  },
+  "endpoints.route./admin-api/authorization-servers/:action.name": {
+    "en": "2bab6ab3f36adca7",
+    "text": "Actions sur les serveurs d’autorisation"
+  },
+  "endpoints.route./admin-api/risc/accounts.name": {
+    "en": "ac79739f3e78bebc",
+    "text": "Comptes RISC"
+  },
+  "endpoints.route./admin-api/risc/:action.name": {
+    "en": "31d09cc1241351d4",
+    "text": "Émettre un événement RISC, ou réinitialiser l’état RISC d’un compte"
+  },
+  "endpoints.route./admin-api/scim/monitor.name": {
+    "en": "6d0d6f35a18900e9",
+    "text": "Trafic SCIM"
+  },
+  "endpoints.route./admin-api/ssf/transmitters.name": {
+    "en": "bc790602233f8949",
+    "text": "Signaux des partenaires"
+  },
+  "endpoints.route./admin-api/deliveries.name": {
+    "en": "2175d3f98d233447",
+    "text": "Envois sortants"
+  },
+  "endpoints.route./admin-api/deliveries/:action.name": {
+    "en": "870b99f43bcd07a3",
+    "text": "Relancer un envoi sortant"
+  },
+  "endpoints.route./admin-api/ssf/dead-letters.name": {
+    "en": "3f2fb3008f53f3c8",
+    "text": "Lettres mortes"
+  },
+  "endpoints.route./admin-api/signals.name": {
+    "en": "5a70784a76f04344",
+    "text": "Signaux reçus"
+  },
+  "endpoints.route./admin-api/signals/:action.name": {
+    "en": "abf5e7e60e98fa56",
+    "text": "Vider la boîte de réception Shared Signals de la console"
+  },
+  "endpoints.route./admin-api/caep/sessions.name": {
+    "en": "646dc38ef308df94",
+    "text": "Sessions CAEP"
+  },
+  "endpoints.route./admin-api/caep/:action.name": {
+    "en": "ba2a3add441f2808",
+    "text": "Émettre un événement CAEP, ou réinitialiser l’état CAEP d’une session"
+  },
+  "endpoints.route./admin-api/ssf/:action.name": {
+    "en": "d83510d002423a7b",
+    "text": "Modifier un flux, ou transmettre un événement"
+  },
+  "endpoints.route./admin-api/spiffe.name": {
+    "en": "dbcb7b6226a620be",
+    "text": "Le domaine de confiance SPIFFE"
+  },
+  "endpoints.route./admin-api/spiffe/:action.name": {
+    "en": "e59d04e51fdc2e77",
+    "text": "Renouveler une autorité, ou définir un bundle fédéré"
+  },
+  "endpoints.route./admin-api/spiffe/entries.name": {
+    "en": "3bf5e6f5489f682c",
+    "text": "Les entrées d’enregistrement"
+  },
+  "endpoints.route./admin-api/spiffe/entries/:action.name": {
+    "en": "74d79cc22326e3cd",
+    "text": "Créer, modifier ou supprimer une entrée d’enregistrement"
+  },
+  "endpoints.route./admin-api/spiffe/agents.name": {
+    "en": "d5576daf0ffe1c68",
+    "text": "Les agents attestés"
+  },
+  "endpoints.route./admin-api/spiffe/agents/:action.name": {
+    "en": "109f2fc8119d9c06",
+    "text": "Bannir, réhabiliter ou oublier un agent"
+  },
+  "endpoints.route./admin-api/spiffe/brokers.name": {
+    "en": "3afd6d3f274707ff",
+    "text": "Les courtiers de la SPIFFE Broker API"
+  },
+  "endpoints.route./admin-api/spiffe/brokers/:action.name": {
+    "en": "6c08f9dc74c0d0b9",
+    "text": "Autoriser ou retirer un courtier SPIFFE"
+  },
+  "endpoints.route./admin-api/delegation/policy.name": {
+    "en": "f062ac9572a07d80",
+    "text": "Politique de délégation (WS-Trust et échange de jetons)"
+  },
+  "endpoints.route./admin-api/permissions.name": {
+    "en": "cce5e2f6b790b802",
+    "text": "Permissions déléguées"
+  },
+  "endpoints.route./admin-api/permissions/groups.name": {
+    "en": "c20e5fba08d328a5",
+    "text": "Quelles applications sont liées entre elles"
+  },
+  "endpoints.route./admin-api/permissions/:action.name": {
+    "en": "d6d712ed91d38438",
+    "text": "Définir et accorder des permissions déléguées"
+  },
+  "endpoints.route./admin-api/attribute-sources.name": {
+    "en": "c5a898cd54934862",
+    "text": "Sources d’attributs"
+  },
+  "endpoints.route./admin-api/attribute-sources/:action.name": {
+    "en": "df8c7ea77b91b6af",
+    "text": "Modifier les sources d’attributs"
+  },
+  "endpoints.route./admin-api/secret-destinations.name": {
+    "en": "4daa34966ee9102d",
+    "text": "Destinations de publication des secrets"
+  },
+  "endpoints.route./admin-api/secret-destinations/:action.name": {
+    "en": "f8f3c83e76dc9f4c",
+    "text": "Modifier les destinations de publication des secrets"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "Clients SCIM sortants"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "Modifier les clients SCIM sortants"
+  },
+  "endpoints.route./admin-api/roles/preview.name": {
+    "en": "c2e62734c4466542",
+    "text": "Cela serait-il émis ?"
+  },
+  "endpoints.route./admin-api/roles/:action.name": {
+    "en": "1baadaaa0e1df852",
+    "text": "Créer et modifier des rôles"
+  },
+  "endpoints.route./admin-api/policies/:action.name": {
+    "en": "a5461fc6541725a3",
+    "text": "Modifier une politique"
+  },
+  "endpoints.route./admin-api/consent/:action.name": {
+    "en": "a7acd63ff9b05a72",
+    "text": "Accorder et révoquer un consentement"
+  },
+  "endpoints.route./admin-api/used-assertions.name": {
+    "en": "73611edaf06c6db9",
+    "text": "Assertions utilisées"
+  },
+  "endpoints.route./admin-api/error-codes.name": {
+    "en": "b485a2ff39ac01b5",
+    "text": "Codes d’erreur"
+  },
+  "endpoints.route./admin-api/audit.name": {
+    "en": "e4d36f9a4e22d3a2",
+    "text": "Journal d’audit"
+  },
+  "endpoints.route./admin-api/realms.name": {
+    "en": "6dd313699a1bc23c",
+    "text": "Domaines de confiance"
+  },
+  "endpoints.route./admin-api/realms/:action.name": {
+    "en": "2e89e91f0984a5ce",
+    "text": "Actions sur les domaines de confiance"
+  },
+  "endpoints.route./admin-api/cells/:action.name": {
+    "en": "e801f925c59521a5",
+    "text": "Changer la cellule de rattachement d’une personne"
+  },
+  "endpoints.route./admin-api/cells/people.name": {
+    "en": "3487e884b7bb0884",
+    "text": "Résidents de la cellule"
+  },
+  "endpoints.route./admin-api/listeners/:action.name": {
+    "en": "f35429cc1bbc09a8",
+    "text": "Définir des écouteurs personnalisés, ou leur associer des applications"
+  },
+  "endpoints.route./admin-api/config/:action.name": {
+    "en": "7e8873a02dca9738",
+    "text": "Actions de configuration"
+  },
+  "endpoints.route./admin-api/oauth2.name": {
+    "en": "e39e74c6a9c77af0",
+    "text": "Paramètres OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./admin-api/oid4vci-settings.name": {
+    "en": "82c9b9b35fc23789",
+    "text": "Paramètres OpenID4VCI"
+  },
+  "endpoints.route./admin-api/oid4vp-settings.name": {
+    "en": "87b67f1b979a04d8",
+    "text": "Paramètres OpenID4VP"
+  },
+  "endpoints.route./admin-api/kerberos.name": {
+    "en": "288b1e0163e753a9",
+    "text": "Paramètres Kerberos"
+  },
+  "endpoints.route./admin-api/ldap.name": {
+    "en": "b4b5794e4fe30cc2",
+    "text": "Paramètres LDAP / LDAPS"
+  },
+  "endpoints.route./admin-api/ldap/directory.name": {
+    "en": "f02a3e57dc2e468e",
+    "text": "Chaque entrée de l’annuaire"
+  },
+  "endpoints.route./admin-api/ldap/applications.name": {
+    "en": "47e8fc7f73cf7414",
+    "text": "Le registre des applications tel que l’annuaire le détient"
+  },
+  "endpoints.route./admin-api/ldap/federations.name": {
+    "en": "834988ab8b5b6754",
+    "text": "Le registre des fédérations tel que l’annuaire le détient"
+  },
+  "endpoints.route./admin-api/ldap/spiffe.name": {
+    "en": "6d82cdc8d7fb4c53",
+    "text": "Les conteneurs SPIFFE tels que l’annuaire les détient"
+  },
+  "endpoints.route./admin-api/ldap/roles.name": {
+    "en": "b0619c49a1d25fe7",
+    "text": "Les entrées de rôles telles que l’annuaire les détient"
+  },
+  "endpoints.route./admin-api/ldap/policies.name": {
+    "en": "05f1b17e20b06c12",
+    "text": "Le référentiel de politiques tel que l’annuaire le détient"
+  },
+  "endpoints.route./admin-api/ldap/devices.name": {
+    "en": "69b995f018f2f463",
+    "text": "Le registre des appareils tel que l’annuaire le détient"
+  },
+  "endpoints.route./admin-api/ldap/peps.name": {
+    "en": "c36d4e8180e7ccbf",
+    "text": "Les PEP distants enregistrés tels que l’annuaire les détient"
+  },
+  "endpoints.route./admin-api/ldap/service.name": {
+    "en": "f6c749e9d414c44e",
+    "text": "Ce qu’EST l’annuaire, en ce moment"
+  },
+  "endpoints.route./admin-api/wstrust.name": {
+    "en": "9f6a673422101370",
+    "text": "Paramètres WS-Trust"
+  },
+  "endpoints.route./admin-api/wsfed.name": {
+    "en": "87ba4432c64fb34a",
+    "text": "Paramètres WS-Federation"
+  },
+  "endpoints.route./admin-api/tls.name": {
+    "en": "96b20b887882a558",
+    "text": "Paramètres TLS / TLS mutuel"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "Magasin de confiance des certificats clients"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "Ajouter ou retirer une ancre de confiance de certificats clients"
+  },
+  "endpoints.route./admin-api/kerberos/claims.name": {
+    "en": "5033ca8bef02346f",
+    "text": "Revendications PAC Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "Ajouter, retirer, effacer ou remplacer une revendication PAC Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/principals.name": {
+    "en": "2832cf5b58397e32",
+    "text": "Principaux Kerberos"
+  },
+  "endpoints.route./admin-api/kerberos/principals/:action.name": {
+    "en": "e3b666e9c2cf04a5",
+    "text": "Créer, renouveler ou supprimer un principal de service, effacer les clés d’une personne, abandonner les versions de clé précédentes, ou renouveler la clé krbtgt"
+  },
+  "endpoints.route./admin-api/token-lifetimes.name": {
+    "en": "ddad2319f680d9f9",
+    "text": "Durées de vie des jetons"
+  },
+  "endpoints.route./admin-api/token-lifetimes/:action.name": {
+    "en": "b4ceed5378a53501",
+    "text": "Actions sur les durées de vie des jetons"
+  },
+  "endpoints.route./admin-api/saml-assertions.name": {
+    "en": "baa38758f2ab7660",
+    "text": "Assertions SAML"
+  },
+  "endpoints.route./admin-api/saml-assertions/:action.name": {
+    "en": "37942134597c5c23",
+    "text": "Actions sur les assertions SAML"
+  },
+  "endpoints.route./admin-api/claims.name": {
+    "en": "65b9df09c075b30c",
+    "text": "Revendications personnalisées"
+  },
+  "endpoints.route./admin-api/claims/:action.name": {
+    "en": "cff4a3fe8d0b0994",
+    "text": "Actions sur les revendications personnalisées"
+  },
+  "endpoints.route./admin-api/userinfo-claims.name": {
+    "en": "ba426b442708b016",
+    "text": "Revendications UserInfo"
+  },
+  "endpoints.route./admin-api/userinfo-claims/:action.name": {
+    "en": "a538bc346df5c3ee",
+    "text": "Actions sur les revendications UserInfo"
+  },
+  "endpoints.route./admin-api/federation.name": {
+    "en": "ec49c08ccb8dd325",
+    "text": "Relations de fédération"
+  },
+  "endpoints.route./admin-api/federation/:action.name": {
+    "en": "ae7246fdf8a72fad",
+    "text": "Configurer une relation de fédération"
+  },
+  "endpoints.route./admin-api/saml2.name": {
+    "en": "fad22d219a6fe6f3",
+    "text": "Fournisseur d’identité SAML 2.0"
+  },
+  "endpoints.route./admin-api/saml2/:action.name": {
+    "en": "81efebabec383a15",
+    "text": "Actions sur les fournisseurs de services SAML 2.0"
+  },
+  "endpoints.route./admin-api/saml11.name": {
+    "en": "cb7331a7d83104ee",
+    "text": "Fournisseur d’identité SAML 1.1"
+  },
+  "endpoints.route./admin-api/saml11/:action.name": {
+    "en": "f507cdd5e7327df3",
+    "text": "Actions sur les parties de confiance SAML 1.1"
+  },
+  "endpoints.route./admin-api/saml-attributes.name": {
+    "en": "e9808df4bc485128",
+    "text": "Attributs SAML personnalisés"
+  },
+  "endpoints.route./admin-api/saml-attributes/:action.name": {
+    "en": "98f2c7dbe4c6c89c",
+    "text": "Actions sur les attributs SAML personnalisés"
+  },
+  "endpoints.route./admin-api/credential-claims.name": {
+    "en": "b3466196455ff65d",
+    "text": "Revendications des attestations"
+  },
+  "endpoints.route./admin-api/credential-claims/:action.name": {
+    "en": "c6f0e9281179a739",
+    "text": "Actions sur les revendications des attestations"
+  },
+  "endpoints.route./admin-api/verifier-request.name": {
+    "en": "41b747157d916a8b",
+    "text": "Requête du vérificateur (la porte du bar)"
+  },
+  "endpoints.route./admin-api/verifier-request/:action.name": {
+    "en": "6b2d5671c824f225",
+    "text": "Actions sur la requête du vérificateur"
+  },
+  "endpoints.route./admin-api/verifications/start.name": {
+    "en": "2eacfd95342c2fd3",
+    "text": "Démarrer une vérification"
+  },
+  "endpoints.route./admin-api/verifications.name": {
+    "en": "1a34e870e6381c91",
+    "text": "Le résultat d’une vérification"
+  },
+  "endpoints.route./sts.name": {
+    "en": "974efec49bd38548",
+    "text": "Security Token Service"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "Certificat du STS"
+  },
+  "endpoints.route./wsfed.name": {
+    "en": "174e4d79e29b5d71",
+    "text": "Point de terminaison du demandeur passif"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "Script d’envoi automatique de la réponse de connexion"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "Métadonnées de fédération"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "Métadonnées de fédération pour UNE partie de confiance"
+  },
+  "endpoints.route./wsfed/rp.name": {
+    "en": "1f62bc9e9246c363",
+    "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./saml2.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Ce qu’est le profil"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Métadonnées du fournisseur d’identité"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "Métadonnées du fournisseur d’identité pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/sso.name": {
+    "en": "e16a38fa8fbc04a0",
+    "text": "Service d’authentification unique (Single Sign-On)"
+  },
+  "endpoints.route./saml2/sso/:sp.name": {
+    "en": "004995b3099eff0b",
+    "text": "Service d’authentification unique pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/unsolicited.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Connexion initiée par le fournisseur d’identité"
+  },
+  "endpoints.route./saml2/unsolicited/:sp.name": {
+    "en": "2a237a561e4bdb89",
+    "text": "Connexion initiée par le fournisseur d’identité pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/aa.name": {
+    "en": "162f9d403c0bae47",
+    "text": "Autorité d’attributs"
+  },
+  "endpoints.route./saml2/aa/:sp.name": {
+    "en": "fddab449328f6e63",
+    "text": "Autorité d’attributs pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/ars.name": {
+    "en": "46cbd4aa352d2c6d",
+    "text": "Artifact Resolution Service"
+  },
+  "endpoints.route./saml2/ars/:sp.name": {
+    "en": "4ef0f8d60c58078a",
+    "text": "Artifact Resolution Service pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/slo.name": {
+    "en": "4edb185d6016b03e",
+    "text": "Service de déconnexion unique (Single Logout)"
+  },
+  "endpoints.route./saml2/slo/:sp.name": {
+    "en": "98b9e34fbd53cb3f",
+    "text": "Service de déconnexion unique pour UN fournisseur de services"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "Script d’envoi automatique du binding HTTP POST"
+  },
+  "endpoints.route./saml2/sp.name": {
+    "en": "a09df9ed92de4454",
+    "text": "Fournisseur de services fictif (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./saml11.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Ce qu’est le profil"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Métadonnées du fournisseur d’identité"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "Métadonnées du fournisseur d’identité pour UNE partie de confiance"
+  },
+  "endpoints.route./saml11/sso.name": {
+    "en": "bf8583daf48f7e2b",
+    "text": "Service de transfert inter-sites"
+  },
+  "endpoints.route./saml11/sso/:rp.name": {
+    "en": "9fe980e24e7a8dfd",
+    "text": "Service de transfert inter-sites pour UNE partie de confiance"
+  },
+  "endpoints.route./saml11/responder.name": {
+    "en": "4c0c301abdc81459",
+    "text": "Répondeur SAML (SOAP)"
+  },
+  "endpoints.route./saml11/responder/:rp.name": {
+    "en": "fff6a87d7e14a3a4",
+    "text": "Répondeur SAML pour UNE partie de confiance"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "Script d’envoi automatique du profil Browser/POST"
+  },
+  "endpoints.route./saml11/rp.name": {
+    "en": "1f62bc9e9246c363",
+    "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./federation.name": {
+    "en": "c025c7c05450031b",
+    "text": "Ce qu’est la fédération ici"
+  },
+  "endpoints.route./federation/login/:id.name": {
+    "en": "561e36f4539a01de",
+    "text": "Démarrer une connexion fédérée"
+  },
+  "endpoints.route./federation/acs/:id.name": {
+    "en": "fff6118cbd019f5e",
+    "text": "Assertion consumer service / wreply / redirect_uri"
+  },
+  "endpoints.route./federation/link/:handle.name": {
+    "en": "b1f3d17607ed42ee",
+    "text": "Lier le sujet d’un partenaire à la première connexion"
+  },
+  "endpoints.route./federation/slo/:id.name": {
+    "en": "4974c5129575d272",
+    "text": "La déconnexion d’un partenaire, dans un navigateur (#167)"
+  },
+  "endpoints.route./federation/backchannel-logout/:id.name": {
+    "en": "27265e6379adee8c",
+    "text": "OpenID Connect Back-Channel Logout, en tant que partie de confiance (#167)"
+  },
+  "endpoints.route./federation/frontchannel-logout/:id.name": {
+    "en": "f0ccc33fe373786e",
+    "text": "OpenID Connect Front-Channel Logout, en tant que partie de confiance (#167)"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "Les métadonnées SAML PROPRES à ce service, par partenaire"
+  },
+  "endpoints.route./federation/jwks/:id.name": {
+    "en": "56f010e78f399989",
+    "text": "La clé de chiffrement d’une relation OpenID Connect (#168)"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "Authorization Server Metadata"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "Authorization Server Metadata (émetteur avec un chemin)"
+  },
+  "endpoints.route./.well-known/webfinger.name": {
+    "en": "4ee1f8cf469f5a7d",
+    "text": "Découverte de l’émetteur par WebFinger"
+  },
+  "endpoints.route./.well-known/openid-configuration.name": {
+    "en": "4f19360f1fe5690d",
+    "text": "OpenID Provider Configuration"
+  },
+  "endpoints.route./.well-known/openid-configuration/*.name": {
+    "en": "34de55b655967e89",
+    "text": "OpenID Provider Configuration (forme à chemin inséré de RFC 8414)"
+  },
+  "endpoints.route./*/.well-known/openid-configuration.name": {
+    "en": "4cd225c57c9e9ff5",
+    "text": "OpenID Provider Configuration (émetteur avec un chemin)"
+  },
+  "endpoints.route./oauth2/authorize.name": {
+    "en": "91ef8dd96110c183",
+    "text": "Point de terminaison d’autorisation"
+  },
+  "endpoints.route./logout.name": {
+    "en": "1228edbd8a552e3b",
+    "text": "Se déconnecter de tout"
+  },
+  "endpoints.route./authn/login.name": {
+    "en": "cff20aed466d99d5",
+    "text": "Écran de connexion"
+  },
+  "endpoints.route./authn/select-idp.name": {
+    "en": "afae7eb3e60fb142",
+    "text": "Choix du partenaire de fédération"
+  },
+  "endpoints.route./authn/spnego.name": {
+    "en": "0a014fa4b2685cd7",
+    "text": "Se connecter avec un ticket Kerberos"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "Se connecter avec un portefeuille"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "Connexion par portefeuille : attendre, puis terminer"
+  },
+  "endpoints.route./authn/wallet/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "Connexion par portefeuille : la réponse de la Digital Credentials API"
+  },
+  "endpoints.route./authn/wallet.js.name": {
+    "en": "61ec0700cb9645d2",
+    "text": "Script de connexion par portefeuille"
+  },
+  "endpoints.route./authn/password-factor.name": {
+    "en": "153eb47c253809aa",
+    "text": "Le mot de passe comme second facteur"
+  },
+  "endpoints.route./authn/webauthn.name": {
+    "en": "5bebca79ee720f59",
+    "text": "Étape de la clé de sécurité WebAuthn"
+  },
+  "endpoints.route./authn/backup-code.name": {
+    "en": "305d816e110db5e1",
+    "text": "Étape de second facteur par code de récupération"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "Étape du code envoyé par courriel"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "Lien de connexion envoyé par courriel : la page d’attente"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "Lien de connexion envoyé par courriel : là où il aboutit"
+  },
+  "endpoints.route./authn/language.name": {
+    "en": "33466e5d338f55b0",
+    "text": "Choix de la langue"
+  },
+  "endpoints.route./authn/password-change.name": {
+    "en": "7e99dc1a87faaf46",
+    "text": "Étape de changement de mot de passe obligatoire"
+  },
+  "endpoints.route./authn/mfa-setup.name": {
+    "en": "48e0b4bbb949a879",
+    "text": "Étape de configuration du second facteur requis"
+  },
+  "endpoints.route./authn/totp.name": {
+    "en": "a89de574ee2c21ab",
+    "text": "Étape de second facteur par code à usage unique"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "Script d’empreinte du navigateur (facultatif)"
+  },
+  "endpoints.route./authn/webauthn.js.name": {
+    "en": "b82dcc38e2ea2cd9",
+    "text": "Script de la cérémonie WebAuthn"
+  },
+  "endpoints.route./oauth2/check_session.name": {
+    "en": "267337fd3ad0ab7f",
+    "text": "Iframe de l’OP (check_session_iframe)"
+  },
+  "endpoints.route./oauth2/check_session.js.name": {
+    "en": "d9f2d9b37bfe6db9",
+    "text": "Script de l’iframe de l’OP"
+  },
+  "endpoints.route./oauth2/logout.name": {
+    "en": "9901e3b8fd763f16",
+    "text": "Fin de session (end_session_endpoint)"
+  },
+  "endpoints.route./oauth2/token.name": {
+    "en": "f60f44154acbc444",
+    "text": "Point de terminaison de jeton"
+  },
+  "endpoints.route./devices/test/compliance.name": {
+    "en": "8bf03cfce0422802",
+    "text": "Contrôle de test de la conformité des appareils (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./dpop/nonce-mode.name": {
+    "en": "ea5ac586b3661176",
+    "text": "Commutateur du mode nonce DPoP (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oauth2/consent.name": {
+    "en": "f38b4a6b64fec408",
+    "text": "Écran de consentement"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "Le script de la réponse form-post"
+  },
+  "endpoints.route./:as/oauth2/authorize.name": {
+    "en": "35a6a7905bcfc924",
+    "text": "Point de terminaison d’autorisation (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/token.name": {
+    "en": "eff543132d567c86",
+    "text": "Point de terminaison de jeton (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/userinfo.name": {
+    "en": "448a4f61fc7b0310",
+    "text": "Point de terminaison UserInfo (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/introspect.name": {
+    "en": "d1e650a8a10a9e1f",
+    "text": "Introspection (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/par.name": {
+    "en": "1540774db9722dee",
+    "text": "Requêtes d’autorisation poussées (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/revoke.name": {
+    "en": "5f15734899e15325",
+    "text": "Révocation (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/register.name": {
+    "en": "20e51292a909bb24",
+    "text": "Enregistrement (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "Gestion des clients enregistrés (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/logout.name": {
+    "en": "9f3e0399c82bb2d2",
+    "text": "Fin de session (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./:as/oauth2/jwks.name": {
+    "en": "da3c9537b549c3a3",
+    "text": "JWKS (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./oauth2/rfc9700.name": {
+    "en": "d1dfc6ccb5d6f5ab",
+    "text": "Rapport du mode RFC 9700 (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oauth2/fapi.name": {
+    "en": "c0f8666df47dcdde",
+    "text": "Rapport du profil FAPI (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./:as/oauth2/fapi.name": {
+    "en": "2db6a31fbce294e3",
+    "text": "Rapport du profil FAPI (un serveur d’autorisation nommé)"
+  },
+  "endpoints.route./oauth2/oauth21.name": {
+    "en": "632451480bda3aec",
+    "text": "Rapport du mode OAuth 2.1 (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oauth2/userinfo.name": {
+    "en": "aebc2aa96e6b1b70",
+    "text": "Point de terminaison UserInfo"
+  },
+  "endpoints.route./oauth2/introspect.name": {
+    "en": "328dfd36fb81f446",
+    "text": "Point de terminaison d’introspection"
+  },
+  "endpoints.route./status-lists/access-tokens.name": {
+    "en": "f059bd82cb3acaac",
+    "text": "Liste de statut des jetons d’accès"
+  },
+  "endpoints.route./status-lists.name": {
+    "en": "187ac505c7e39fc8",
+    "text": "Agrégation des listes de statut des jetons d’accès"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "Point de terminaison de défi d’attestation du client"
+  },
+  "endpoints.route./oauth2/par.name": {
+    "en": "59993176c4a0e4a5",
+    "text": "Point de terminaison des requêtes d’autorisation poussées"
+  },
+  "endpoints.route./oauth2/step-up/resource/:application.name": {
+    "en": "2d9263a1f29be372",
+    "text": "Ressource de substitution pour l’authentification renforcée (step-up)"
+  },
+  "endpoints.route./admin-api/oauth2/monitor.name": {
+    "en": "21eb6990b9a90996",
+    "text": "Activité OAuth 2.0 / OIDC, en JSON"
+  },
+  "endpoints.route./admin-api/oauth2/monitor/:action.name": {
+    "en": "b9d72b1b82f53e0d",
+    "text": "L’action de supervision OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./oauth2/grants/:grantId.name": {
+    "en": "c949ed02f1ba90a5",
+    "text": "Grant Management API"
+  },
+  "endpoints.route./admin-api/grants.name": {
+    "en": "b0eb5b67d86e7f62",
+    "text": "La page Autorisations de la console, en JSON"
+  },
+  "endpoints.route./admin-api/grants/:action.name": {
+    "en": "d78e7d6c27003500",
+    "text": "Révoquer une autorisation"
+  },
+  "endpoints.route./admin-api/commands.name": {
+    "en": "88006178bfa3632d",
+    "text": "La page OpenID Provider Commands de la console, en JSON"
+  },
+  "endpoints.route./admin-api/commands/:action.name": {
+    "en": "b784156dac51ba48",
+    "text": "Envoyer une commande, ou en relancer une"
+  },
+  "endpoints.route./oauth2/commands/callback.name": {
+    "en": "077e67ad034f4945",
+    "text": "Point de terminaison de rappel des OpenID Provider Commands"
+  },
+  "endpoints.route./oauth2/commands/mock-rp.name": {
+    "en": "bd13343933f0af89",
+    "text": "Point de terminaison de commande de la partie de confiance fictive (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./admin-api/claim-providers.name": {
+    "en": "263c769f55b58ee3",
+    "text": "La page Fournisseurs de revendications de la console, en JSON"
+  },
+  "endpoints.route./admin-api/claim-providers/:action.name": {
+    "en": "51791ee150e7550c",
+    "text": "Modifier le registre des fournisseurs de revendications"
+  },
+  "endpoints.route./oauth2/device_authorization.name": {
+    "en": "17f9953de35f59f9",
+    "text": "Device Authorization Endpoint"
+  },
+  "endpoints.route./oauth2/bc-authorize.name": {
+    "en": "8abae32691ff0227",
+    "text": "Backchannel Authentication Endpoint (CIBA)"
+  },
+  "endpoints.route./oauth2/revoke.name": {
+    "en": "9033948292614d8a",
+    "text": "Point de terminaison de révocation"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "Enregistrement dynamique de client"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "Gestion des clients enregistrés"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "Credential Issuer Metadata"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "Credential Issuer Metadata (émetteur avec un chemin)"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "JWT VC Issuer Metadata"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "JWT VC Issuer Metadata (émetteur avec un chemin)"
+  },
+  "endpoints.route./oid4vci/nonce.name": {
+    "en": "64d7b165db23d809",
+    "text": "Point de terminaison de nonce"
+  },
+  "endpoints.route./oid4vci/credential.name": {
+    "en": "f1a74c0c1d1a9142",
+    "text": "Point de terminaison d’attestation (credential)"
+  },
+  "endpoints.route./oid4vci/status-lists/1.name": {
+    "en": "6bc2372d3bb214c3",
+    "text": "Token Status List"
+  },
+  "endpoints.route./oid4vci/status-lists.name": {
+    "en": "b7c39aa8efc43f99",
+    "text": "Status List Aggregation"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
+    "en": "69e5a2172fd0dff1",
+    "text": "Attestation Bitstring Status List"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
+    "en": "843ce39d261d74ad",
+    "text": "Publier une liste de statut (VC-API, contrôle de test)"
+  },
+  "endpoints.route./oid4vci/deferred_credential.name": {
+    "en": "b64bd315376ba1ef",
+    "text": "Point de terminaison d’attestation différée"
+  },
+  "endpoints.route./oid4vci/notification.name": {
+    "en": "e1a25561e414b22c",
+    "text": "Point de terminaison de notification"
+  },
+  "endpoints.route./oid4vci/notification/:id.name": {
+    "en": "deea622c6c4f613a",
+    "text": "Relecture d’une notification (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oid4vci/last_request.name": {
+    "en": "401134042ffcd533",
+    "text": "Dernière Credential Request (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oid4vci/credential-offer/:id.name": {
+    "en": "357ca7bdfcc31665",
+    "text": "Credential Offer par référence"
+  },
+  "endpoints.route./issuer.name": {
+    "en": "8c387c4af4624cf3",
+    "text": "Page web de l’émetteur"
+  },
+  "endpoints.route./issuer/offer.name": {
+    "en": "8c1458927d4601d8",
+    "text": "Construire une Credential Offer"
+  },
+  "endpoints.route./bbs/keys/:id.name": {
+    "en": "58347a1730d54e91",
+    "text": "Clé publique BBS"
+  },
+  "endpoints.route./vc-api/issuers.name": {
+    "en": "02093df3defa8360",
+    "text": "Les émetteurs VC-API (contrôle de test)"
+  },
+  "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
+    "en": "413cb2bffe95b83f",
+    "text": "Émettre une attestation (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/credentials/verify.name": {
+    "en": "f4d98610242a61f2",
+    "text": "Vérifier une attestation (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/presentations/verify.name": {
+    "en": "8653b56b034f4dff",
+    "text": "Vérifier une présentation (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
+    "en": "71a4cace2f394f23",
+    "text": "Prouver une présentation (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/credentials/derive.name": {
+    "en": "25c9160867a02407",
+    "text": "Dériver une divulgation sélective (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/credentials/status.name": {
+    "en": "bc88654c0b540225",
+    "text": "Modifier le statut d’une attestation (VC-API, contrôle de test)"
+  },
+  "endpoints.route./vc-api/resolve.name": {
+    "en": "24b89e8d97970744",
+    "text": "Résoudre un DID (contrôle de test)"
+  },
+  "endpoints.route./vc-api/dereference.name": {
+    "en": "94ef1efe3d8eb38f",
+    "text": "Déréférencer une URL DID (contrôle de test)"
+  },
+  "endpoints.route./.well-known/did.json.name": {
+    "en": "9400b0ba526646db",
+    "text": "Document DID (did:web)"
+  },
+  "endpoints.route./did.json.name": {
+    "en": "64a6ef9ae9a20c82",
+    "text": "Document DID sur un chemin did:web (domaines de confiance)"
+  },
+  "endpoints.route./applications/:application/did.json.name": {
+    "en": "7d0bcaaf2c946cba",
+    "text": "Le document DID d’une application"
+  },
+  "endpoints.route./did/generate.name": {
+    "en": "a1c060c730eef358",
+    "text": "Générer un DID vérifiable (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./.well-known/did-configuration.json.name": {
+    "en": "ea3b5de3683521ad",
+    "text": "Domain Linkage Credential"
+  },
+  "endpoints.route./oid4vp/verifier.name": {
+    "en": "d4002638665322b1",
+    "text": "Page web du vérificateur"
+  },
+  "endpoints.route./oid4vp/start.name": {
+    "en": "316fa1e4051e38a7",
+    "text": "Construire une Authorization Request"
+  },
+  "endpoints.route./oid4vp/verifier-certificate.name": {
+    "en": "9e006ca613ebe851",
+    "text": "L’identité x509 du vérificateur"
+  },
+  "endpoints.route./oid4vp/request/:id.name": {
+    "en": "72816b085ee822bd",
+    "text": "Request Object"
+  },
+  "endpoints.route./oid4vp/response.name": {
+    "en": "041dda1707b526b4",
+    "text": "Response URI"
+  },
+  "endpoints.route./oid4vp/result/:state.name": {
+    "en": "14e2c5c0b3aca8de",
+    "text": "Verdict de vérification (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./oid4vp/done.name": {
+    "en": "f324991aa3adb3d3",
+    "text": "Page de présentation terminée"
+  },
+  "endpoints.route./enroll/acme/directory.name": {
+    "en": "104ffd34f6a0e8e7",
+    "text": "Le répertoire ACME"
+  },
+  "endpoints.route./enroll/acme/new-nonce.name": {
+    "en": "58500cdad5cfc4d8",
+    "text": "Un Replay-Nonce neuf"
+  },
+  "endpoints.route./enroll/acme/new-account.name": {
+    "en": "19f7ad85f8039402",
+    "text": "Créer ou retrouver un compte"
+  },
+  "endpoints.route./enroll/acme/account/:id.name": {
+    "en": "d8e1731e5f342c53",
+    "text": "Un compte"
+  },
+  "endpoints.route./enroll/acme/account/:id/orders.name": {
+    "en": "d2c2d051de5a7992",
+    "text": "Les commandes d’un compte"
+  },
+  "endpoints.route./enroll/acme/new-order.name": {
+    "en": "18adf271f8844b21",
+    "text": "Créer une commande"
+  },
+  "endpoints.route./enroll/acme/order/:id.name": {
+    "en": "8040f78fc2b0df03",
+    "text": "Une commande"
+  },
+  "endpoints.route./enroll/acme/order/:id/finalize.name": {
+    "en": "b6644906e260eb21",
+    "text": "Finaliser une commande"
+  },
+  "endpoints.route./enroll/acme/authz/:id.name": {
+    "en": "56c0850aaa4bcf14",
+    "text": "Une autorisation"
+  },
+  "endpoints.route./enroll/acme/challenge/:id.name": {
+    "en": "cecfa83a474620dc",
+    "text": "Un défi"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "Télécharger un certificat"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "Révoquer un certificat"
+  },
+  "endpoints.route./enroll/acme/key-change.name": {
+    "en": "e5e400a69df90c45",
+    "text": "Faire passer un compte à une nouvelle clé"
+  },
+  "endpoints.route./enroll/acme/renewal-info/:id.name": {
+    "en": "3baccc984057446f",
+    "text": "Informations de renouvellement"
+  },
+  "endpoints.route./admin-api/acme.name": {
+    "en": "ccdc212d6fcfff07",
+    "text": "La page ACME de la console, en JSON"
+  },
+  "endpoints.route./admin-api/acme/monitor.name": {
+    "en": "96d92e1bcdcc2d27",
+    "text": "Les inscriptions ACME, en JSON"
+  },
+  "endpoints.route./admin-api/acme/:action.name": {
+    "en": "aa09fbaeffaec922",
+    "text": "Les actions ACME de la console"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "Certificats d’AC"
+  },
+  "endpoints.route./.well-known/est/simpleenroll.name": {
+    "en": "1ffad68b1154847d",
+    "text": "Inscription simple"
+  },
+  "endpoints.route./.well-known/est/simplereenroll.name": {
+    "en": "cd138debc7dcace9",
+    "text": "Réinscription simple"
+  },
+  "endpoints.route./.well-known/est/serverkeygen.name": {
+    "en": "beb605660186e4e5",
+    "text": "Génération de clé côté serveur"
+  },
+  "endpoints.route./.well-known/est/csrattrs.name": {
+    "en": "fa0a2c47c0b1dfba",
+    "text": "Attributs de CSR"
+  },
+  "endpoints.route./.well-known/est/fullcmc.name": {
+    "en": "d8a28887e3416c39",
+    "text": "Full CMC"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "Certificats d’AC (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/:label/simpleenroll.name": {
+    "en": "cd563ee6554e6733",
+    "text": "Inscription simple (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/:label/simplereenroll.name": {
+    "en": "cf34b617dc30eb0d",
+    "text": "Réinscription simple (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/:label/serverkeygen.name": {
+    "en": "698e0b99518ef7a0",
+    "text": "Génération de clé côté serveur (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/:label/csrattrs.name": {
+    "en": "a99bf6e38057e196",
+    "text": "Attributs de CSR (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/:label/fullcmc.name": {
+    "en": "9342cd6960af927d",
+    "text": "Full CMC (avec étiquette)"
+  },
+  "endpoints.route./.well-known/est/nonce.name": {
+    "en": "fac4d513cd37ea55",
+    "text": "Nonce de fraîcheur d’attestation"
+  },
+  "endpoints.route./.well-known/est/:label/nonce.name": {
+    "en": "228380fc44850d1a",
+    "text": "Nonce de fraîcheur d’attestation (avec étiquette)"
+  },
+  "endpoints.route./admin-api/est.name": {
+    "en": "d52ede6acd0f288e",
+    "text": "La page EST de la console, en JSON"
+  },
+  "endpoints.route./admin-api/est/monitor.name": {
+    "en": "d92f192b9774f4df",
+    "text": "Les inscriptions EST, en JSON"
+  },
+  "endpoints.route./admin-api/est/:action.name": {
+    "en": "560ee5483e3bac3e",
+    "text": "Émettre avec une clé serveur, révoquer, ou modifier les noms d’hôte"
+  },
+  "endpoints.route./.well-known/openid-federation.name": {
+    "en": "d1df780ba25b939c",
+    "text": "L’Entity Configuration"
+  },
+  "endpoints.route./oidfed/fetch.name": {
+    "en": "f5422a3881454156",
+    "text": "Récupérer un Subordinate Statement"
+  },
+  "endpoints.route./oidfed/list.name": {
+    "en": "ce37f0ea513eb35f",
+    "text": "Subordinate Listing"
+  },
+  "endpoints.route./oidfed/resolve.name": {
+    "en": "7adde00f12c465ff",
+    "text": "Résoudre une entité"
+  },
+  "endpoints.route./oidfed/trust-mark.name": {
+    "en": "77987668f6339bf8",
+    "text": "Le point de terminaison Trust Mark"
+  },
+  "endpoints.route./oidfed/extended-list.name": {
+    "en": "b14e63c94c9083ed",
+    "text": "Extended Subordinate Listing"
+  },
+  "endpoints.route./oidfed/collection.name": {
+    "en": "fdaa144094945599",
+    "text": "Entity Collection"
+  },
+  "endpoints.route./oidfed/subordinate-events.name": {
+    "en": "7a12871efa2aa1bc",
+    "text": "Subordinate Events"
+  },
+  "endpoints.route./oidfed/trust-mark-status.name": {
+    "en": "5721566a90e07bbb",
+    "text": "Trust Mark Status"
+  },
+  "endpoints.route./oidfed/trust-mark-list.name": {
+    "en": "b0d733b58ace3f80",
+    "text": "Trust Marked Entities Listing"
+  },
+  "endpoints.route./oidfed/historical-keys.name": {
+    "en": "186db2a5169ec661",
+    "text": "Federation Historical Keys"
+  },
+  "endpoints.route./oidfed/register.name": {
+    "en": "d04d3abbbcd68dca",
+    "text": "Explicit Registration"
+  },
+  "endpoints.route./admin-api/oidfed.name": {
+    "en": "1cf7cd853d6d692e",
+    "text": "La page OpenID Federation de la console, en JSON"
+  },
+  "endpoints.route./admin-api/oidfed/:action.name": {
+    "en": "68da5fb8efee3487",
+    "text": "Subordonnés, ancres, Trust Marks, résolution et clés"
+  },
+  "endpoints.route./enroll/scep.name": {
+    "en": "7bfb8a0c73122b01",
+    "text": "Le serveur SCEP"
+  },
+  "endpoints.route./enroll/scep/pkiclient.exe.name": {
+    "en": "8bb99181dc5c31e3",
+    "text": "Le serveur SCEP (nom CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile/pkiclient.exe.name": {
+    "en": "b857590b45832439",
+    "text": "Le serveur SCEP pour un profil (nom CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile.name": {
+    "en": "db710be736714314",
+    "text": "Le serveur SCEP pour un profil"
+  },
+  "endpoints.route./admin-api/scep.name": {
+    "en": "27aaa89dfa182129",
+    "text": "La page SCEP de la console, en JSON"
+  },
+  "endpoints.route./admin-api/scep/monitor.name": {
+    "en": "d1775471cb421bca",
+    "text": "Les inscriptions SCEP, en JSON"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "Défis, le certificat de la RA, la révocation et les noms d’hôte"
+  },
+  "endpoints.socket.kdc": {
+    "en": "a07cb128332c46ff",
+    "text": "Centre de distribution de clés (KDC)"
+  },
+  "endpoints.socket.kdcRealm": {
+    "en": "bf03c3bc314da5cf",
+    "text": "Centre de distribution de clés (royaume {{realm}})"
+  },
+  "endpoints.socket.krb5Service": {
+    "en": "a510f49fab5cf00e",
+    "text": "Le service Kerberos protégé (AP-REQ)"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "Certificats clients sur le port principal"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS (un certificat client demandé, jamais exigé)"
+  }
+}

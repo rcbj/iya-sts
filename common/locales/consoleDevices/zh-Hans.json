@@ -167,6 +167,8 @@
   "monitorHtml.leadBefore": "本领域登记簿当前的计数，以及它所发生的事件：每次注册、移除，以及人员达到 <code>devices.maxPerPerson</code> 时的逐出，最多保留 <code>devices.eventsKept</code> 条，以及按操作者区分的每次合规性更改——admin、mdm、test-control、caep",
   "monitorHtml.since": "（最早的一条来自 {since}）",
   "monitorHtml.leadAfter": "。通过套接字上的 <code>ldapdelete</code> 移除的设备不会在此记为事件——登记簿从未看到它。",
+  "monitorHtml.tabRegister": "注册表（当前计数）",
+  "monitorHtml.tabActivity": "本进程中的活动",
   "monitorHtml.byOwner": "按所有者",
   "monitorHtml.byCompliance": "按合规性",
   "monitorHtml.byRisk": "按风险等级",

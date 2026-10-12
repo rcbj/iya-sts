@@ -438,6 +438,7 @@ import mode = require('../common/mode');
 // something that is fixed for the life of the process is work in the one place
 // this console does the most of it.
 import version = require('../common/version');
+import ShellDocument = require('../common/shell_document');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
@@ -4518,7 +4519,8 @@ class AdminConsole {
        'kerberos-tab-claims', 'kerberos-tab-principals',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-profiles'],
+       'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
+       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
@@ -4565,29 +4567,30 @@ class AdminConsole {
     // `web_runtime.ts`, only where one is not this listener — so a service
     // with no custom listener draws the shell it always did.
     const there = elsewhere || {};
-    const data = (there.oauth ? ' data-sts-oauth="' + this.esc(there.oauth) +
-                                '"' : '') +
-                 (there.api ? ' data-sts-api="' + this.esc(there.api) + '"'
-                            : '') +
-                 (there.authn ? ' data-sts-authn="' + this.esc(there.authn) +
-                                '"' : '');
-    const html = '<!DOCTYPE html>\n<html lang="en"' + data + '><head><meta ' +
-      'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>IYA STS admin</title>' +
-      '<link rel="stylesheet" href="/admin/console.css">' +
-      (refused ? '' : '<script src="/admin/console.js" defer></script>') +
-      '</head><body><div class="shell"><div class="main"><div ' +
-      'class="card"><h1>IYA STS admin</h1>' +
-      (refused
+    // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
+    // what this method drew by hand until then.
+    const html = ShellDocument.document({
+      title: 'IYA STS admin',
+      attributes: [['data-sts-oauth', there.oauth || ''],
+                   ['data-sts-api', there.api || ''],
+                   ['data-sts-authn', there.authn || '']],
+      stylesheets: ['/admin/console.css'],
+      script: '/admin/console.js',
+      open: '<div class="shell"><div class="main"><div class="card">' +
+            '<h1>IYA STS admin</h1>',
+      close: '</div></div></div>',
+      refusal: refused
         ? this.warn(this.esc(registered.why || 'This console cannot sign ' +
                              'in at this address.'),
                     'This console cannot sign in here')
-        : '<noscript>' + this.warn('This console is a script that runs ' +
-            'in your browser and draws every page from <code>/admin-api' +
-            '</code>; with scripts blocked there is nothing it can show.',
-            'Scripts are blocked') + '</noscript><p class="lede">' +
-          'Signing in&hellip;</p>') +
-      '</div></div></div></body></html>\n';
+        : null,
+      noscript: this.warn('This console is a script that runs ' +
+        'in your browser and draws every page from <code>/admin-api' +
+        '</code>; with scripts blocked there is nothing it can show.',
+        'Scripts are blocked'),
+      loading: '<p class="lede">Signing in&hellip;</p>',
+      esc: (value: unknown) => this.esc(value)
+    });
     log.debug("Leaving AdminConsole.shellDocument().");
     return html;
   }
@@ -4647,20 +4650,8 @@ class AdminConsole {
    * @returns `br`, `gzip` or '' for none
    */
   static acceptedEncoding(header: any): string {
-    const offered = {};
-    String(header || '').split(',').forEach(function (part) {
-      const bits = part.trim().split(';');
-      const name = bits[0].trim().toLowerCase();
-      const q = /q=([0-9.]+)/.exec(bits.slice(1).join(';'));
-      if (name) {
-        offered[name] = q ? Number(q[1]) : 1;
-      }
-    });
-    const takes = function (name) {
-      const q = name in offered ? offered[name] : offered['*'];
-      return q !== undefined && q > 0;
-    };
-    return takes('br') ? 'br' : (takes('gzip') ? 'gzip' : '');
+    // `ShellDocument`'s since #570, which every static surface sends through.
+    return ShellDocument.acceptedEncoding(header);
   }
 
   // ONE OF THE CONSOLE'S FILES, COMPRESSED WHERE THE REQUEST ACCEPTS IT:
@@ -4683,27 +4674,10 @@ class AdminConsole {
   sendConsoleFile(req, res, text: string, packed: any, finish: any): void {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sendConsoleFile().");
-    const zlib = require('zlib');
-    res.vary('Accept-Encoding');
-    const encoding = AdminConsole.acceptedEncoding(
-      req.headers && req.headers['accept-encoding']);
-    if (!encoding) {
-      res.send(text);
-      log.debug("Leaving AdminConsole.sendConsoleFile(). Uncompressed.");
-      return;
-    }
-    let bytes = packed && packed[encoding];
-    if (!bytes) {
-      const final = Buffer.from(finish ? finish(text) : text, 'utf8');
-      bytes = encoding === 'br'
-        ? zlib.brotliCompressSync(final, { params: {
-            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
-            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: final.length } })
-        : zlib.gzipSync(final, { level: 6 });
-    }
-    res.set('Content-Encoding', encoding).send(bytes);
-    log.debug("Leaving AdminConsole.sendConsoleFile(). " + encoding + ", " +
-              bytes.length + " bytes.");
+    // `ShellDocument.sendCompressed()` since #570: one copy for every static
+    // surface's files.
+    ShellDocument.sendCompressed(req, res, text, packed, finish);
+    log.debug("Leaving AdminConsole.sendConsoleFile().");
   }
 
   /**
@@ -8515,23 +8489,14 @@ class AdminConsole {
       // runtime is told their bases, and `connect-src` names their origins,
       // since the token request and every API call are `fetch()`es there.
       const elsewhere = self.consoleServersElsewhere(req);
-      const origins = [elsewhere.oauth, elsewhere.api].filter(Boolean)
-        .map(function (one: string): string {
-          return new URL(one).origin;
-        }).filter(function (one: string, at: number, all: string[]): boolean {
-          return all.indexOf(one) === at;
-        });
-      res.set('Content-Security-Policy', app.contentSecurityPolicy({
-        'script-src': "'self'",
-        'connect-src': ["'self'"].concat(origins).join(' '),
-        'style-src': "'self' 'unsafe-inline'"
-      }));
-      res.status(200).type('text/html').set('Cache-Control', 'no-store');
-      self.sendConsoleFile(req, res,
-                           self.shellDocument(registered, elsewhere), null,
-        function (html) {
-          return app.withRealmLinks(html, realms.currentPrefix());
-        });
+      // The policy through `app.contentSecurityPolicy()`, compressed, and the
+      // realm's links put on before compressing (`ShellDocument.serve()`).
+      ShellDocument.serve(app, req, res,
+                          self.shellDocument(registered, elsewhere), {
+        connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
+        compress: true,
+        prefix: realms.currentPrefix()
+      });
       log.debug("Leaving the static console shell.");
     };
     // GET (and with it HEAD) for the document, and the methods a form or a
@@ -10601,6 +10566,9 @@ const consoleExports = {
   // being the longest page in the service. See the block above note().
   note: slot.forward('note'),
   warn: slot.forward('warn'),
+  // The static console's shell (#570: `tests/web_foundation.js` holds its
+  // bytes to the document drawn by hand before `ShellDocument`).
+  shellDocument: slot.forward('shellDocument'),
   bullet: slot.forward('bullet'),
   tip: slot.forward('tip'),
   // Filled by ldap_server.js at its require time; see the note above it.

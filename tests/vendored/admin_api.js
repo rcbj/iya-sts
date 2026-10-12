@@ -394,17 +394,24 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
   assert.strictEqual(metadata.build.stamped, index.stamped,
     "and agree about whether it was stamped.");
 
-  // THE FRONT PAGE. Not JSON and not gated: it is HTML, so the assertion is
-  // that the string is ON it. This is the surface that carried the wrong
+  // THE FRONT PAGE. Not gated. This is the surface that carried the wrong
   // number for the whole life of the service before this feature existed,
   // which is why it is checked here rather than assumed from the two above.
+  // Since #579 it is a static surface: the browser draws the number from
+  // its view, `/home-api/front`, and the shell carries the build its
+  // catalogs are versioned by — both must be this API's string.
   const home = await fetch(base + "/", { redirect: "manual" });
   const html = await home.text();
-  assert.ok(html.indexOf(index.version) >= 0,
-    "the front page should carry the version this API reports (" +
+  assert.ok(html.indexOf(' data-sts-version="' + index.version + '"') >= 0,
+    "the front page's shell should carry the version this API reports (" +
     index.version + "). It is the surface that reported package.json's " +
     "placeholder patch for every build ever made, so it is checked against " +
     "the string rather than trusted.");
+  const front = await fetch(base + "/home-api/front");
+  const frontView = ((await front.json()) || {}).view || {};
+  assert.strictEqual(frontView.version, index.version,
+    "the front page's view should carry the version this API reports, " +
+    "which is what the page draws (#579).");
 
   log.info("[version] OK — " + index.version + " (build " + index.build +
            ", " + (index.stamped ? "stamped at build time" :

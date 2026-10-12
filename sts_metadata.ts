@@ -158,6 +158,11 @@ import version = require('./common/version');
 // here and closes no cycle.
 import StsMetadataPage = require('./admin-ui/web_sts_metadata');
 import InstanceSlot = require('./common/instance_slot');
+// #543: the prose this page's answer carries is translated where it is sent,
+// and the sentences made here are filled from templates `prose()` lists. A
+// top-level require is safe: `server_prose` requires only libraries the
+// early modules are, and this module is required last.
+import serverProse = require('./common/server_prose');
 
 // One specification: what it is, who publishes it, where to read it, and how
 // far this service implements it. A few carry a `what` as well.
@@ -4412,13 +4417,42 @@ const ENDPOINTS: EndpointEntry[] = [
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
           'It was an unrouted path until 2026-08-24, so the answer to the ' +
-          'one URL a person types first was Express\'s "Cannot GET /".' },
+          'one URL a person types first was Express\'s "Cannot GET /". ' +
+          'Since #579 a static surface: this answers the shell, and ' +
+          '/home.js draws the card in the browser\'s language from ' +
+          '/home-api/front.' },
+  { path: '/home.js', group: 'Service', name: 'The front page\'s script',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door\'s runtime and renderer in one ' +
+          'file over the public surfaces\' shared runtime, built by ' +
+          'build-typescript.sh (home/home-spa.js) and served precompressed. ' +
+          'Public: nothing in it is secret.' },
+  { path: '/home.css', group: 'Service',
+    name: 'The front page\'s stylesheet', specs: [],
+    what: 'NON-SPEC (#579). The front door\'s own rules over ' +
+          '/web/card.css: the wider card, the band behind the logo, the ' +
+          'version line, the warning and the link rows.' },
+  { path: '/home-api', group: 'Service', name: 'The front door API index',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door API\'s operations, each with ' +
+          'the page it is the door of (mirrors), as /account-api lists its ' +
+          'own. Public and language-free.' },
+  { path: '/home-api/front', group: 'Service',
+    name: 'The front page\'s view', specs: [],
+    what: 'NON-SPEC (#579). Everything the front page draws, as facts and ' +
+          'no words: the name, the version and its build, whether a ' +
+          'sign-in checks the password and whether the console is gated, ' +
+          'the logo, and the five links as ids and addresses — the ' +
+          'console\'s and the portal\'s on the listener that answers them ' +
+          '(#472). Public, no-store; it lists no endpoints, as the page ' +
+          'never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
-    what: 'The only image this service serves: the parent project\'s logo, ' +
-          'resized and reduced to 31 kB, read from disk once at startup. If ' +
-          'it could not be read this answers 404 in its own words rather ' +
-          'than Express\'s, and the front page is drawn without it.' },
+    what: 'The front page\'s logo, `home/assets/logo.png`, read from ' +
+          'disk once at startup. The front page has been a static page ' +
+          'since #579 and names it in `GET /home-api/front` (`logo`), ' +
+          'with `null` when it could not be read; this route then answers ' +
+          '404 in its own words rather than Express\'s.' },
   { path: '/realms', group: 'Service', name: 'The trust realm directory',
     specs: [],
     what: 'NON-SPEC, and deliberately UNGATED. Every trust realm this ' +
@@ -4439,6 +4473,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
 
+  { path: '/web/card.css', group: 'Service',
+    name: 'The public surfaces\' card stylesheet', specs: [],
+    what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
+          'chooser\'s rules, as one stylesheet a static public surface\'s ' +
+          'shell links (common/web_card_css.ts). Answered on every ' +
+          'listener; an address carrying this build\'s ?v= is cached for ' +
+          'good.' },
+  { path: '/web/locales/catalogs.json', group: 'Service',
+    name: 'The locale catalog index', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
+          'base an overlay extends) and which locales the language chooser ' +
+          'offers — common/locales/catalogs.json, for a static surface\'s ' +
+          'runtime to negotiate the page\'s language in the browser in ' +
+          '#539\'s order. Public, on every listener, cached for good under ' +
+          'this build\'s ?v=.' },
+  { path: '/web/locales/:ns/:file', group: 'Service',
+    name: 'One namespace\'s messages in one catalog', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). The messages a static surface draws, as ' +
+          'common/i18n.ts loaded them: <namespace>/<catalog>.json, a flat ' +
+          'object key to ICU-subset message. An unknown namespace, catalog ' +
+          'or file name is a 404 (STS-I18N-0012) — nothing is read from ' +
+          'disk by a requested name; a known pair with no file is {}. ' +
+          'Errors are not in any catalog: they stay English (#539).' },
   { path: '/healthcheck', group: 'Service', name: 'Health check',
     specs: [], what: 'Liveness only. Answers 200 with a JSON message; used ' +
                      'by the compose healthcheck.' },
@@ -9441,6 +9498,31 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                      'Admin', 'Management API', 'Admin console API',
                      'Undocumented'];
 
+// ---------------------------------------------------------------------------
+// THE SENTENCES THIS MODULE MAKES (#543 phase 3), each a template filled with
+// `serverProse.fill()` where it is made, so the sentence and the template the
+// server matches it against cannot differ: why a path is not a link, and
+// what an undescribed route's row says. A method, a method list and a
+// parameter name are data and stay as they are; 'a parameter' is the one
+// phrase that is only ever a parameter.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  only: '{{method}} only',
+  noGet: 'no GET ({{methods}})',
+  takes: 'takes {{name}}',
+  wildcard: 'wildcard',
+  undocumented: 'This route is registered but sts_metadata.ts does not ' +
+                'describe it.'
+});
+
+// The phrase `takes {{name}}` is filled with when the path names no
+// parameter the pattern can read.
+const A_PARAMETER = 'a parameter';
+
+// The routes whose answers carry this namespace's prose (#543): the page's
+// own operation. The two OpenAPI documents stay English.
+const PROSE_ROUTES = ['/admin-api/sts-metadata'];
+
 // One row of the router's own list: a path and the methods it answers.
 interface RegisteredRoute {
   path: string;
@@ -9514,6 +9596,50 @@ class StsMetadata {
       cryptoMetadata: cryptoMetadata,
       version: version
     };
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the stsmetadata namespace (#543 phase 3): every
+   * specification's coverage note and `what`, every endpoint's `what`,
+   * `effect` and `coverage`, every protocol card's `what` and `sockets`,
+   * and the sentences this module makes.
+   *
+   * NOT HARVESTED, because each is a join key or a name rather than prose:
+   * a specification's `id`, `name`, `where` and `url`; a card's `name`,
+   * which `/admin/crypto-metadata` and `realms.realmSupport()` join on; an
+   * endpoint's `path`, `group` and `specs`. An endpoint's `name` is the
+   * `endpoints` namespace's (`admin-core/protocol_endpoints.ts`), which
+   * every Protocols page carries as well. Each table is keyed by what
+   * identifies a row — a specification by its id, an endpoint by its path,
+   * a card by its name — since `harvest()` would key a specification by its
+   * name and an endpoint by a name five rows share.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering StsMetadata.prose().");
+    const harvest = serverProse.harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('stsmetadata.specs', SPECS.map(function (one) {
+        return { key: one.id, coverage: one.coverage, what: one.what };
+      }), ['coverage', 'what']),
+      harvest('stsmetadata.endpoints', ENDPOINTS.map(function (one) {
+        return { key: one.path, what: one.what, effect: one.effect,
+                 coverage: one.coverage };
+      }), ['what', 'effect', 'coverage']),
+      harvest('stsmetadata.protocols', PROTOCOLS.map(function (one) {
+        return { key: one.name, what: one.what, sockets: one.sockets };
+      }), ['what', 'sockets']),
+      harvest('stsmetadata.sentence', SENTENCES, Object.keys(SENTENCES)),
+      { 'stsmetadata.param.aParameter': A_PARAMETER });
+    helpers.log.debug("Leaving StsMetadata.prose(). " +
+                      Object.keys(out).length);
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -9790,8 +9916,7 @@ class StsMetadata {
       rows.push({ path: route.path, methods: route.methods,
                   group: 'Undocumented',
                   name: '(undocumented)', specs: [],
-                  what: 'This route is registered but sts_metadata.ts does ' +
-                        'not describe it.',
+                  what: SENTENCES.undocumented,
                   documented: false });
     });
     // Whatever is left was described and is not registered.
@@ -9879,18 +10004,20 @@ class StsMetadata {
       log.debug("Leaving StsMetadata.linkabilityOf().");
       return { linkable: false,
                reason: methods.length === 1
-                 ? methods[0] + ' only'
-                 : 'no GET (' + methods.join(', ') + ')' };
+                 ? serverProse.fill(SENTENCES.only, { method: methods[0] })
+                 : serverProse.fill(SENTENCES.noGet,
+                                    { methods: methods.join(', ') }) };
     }
     if (row.path.indexOf(':') !== -1) {
       const name = (/:([A-Za-z0-9_]+)/.exec(row.path) || [])[0] ||
-        'a parameter';
+        A_PARAMETER;
       log.debug("Leaving StsMetadata.linkabilityOf().");
-      return { linkable: false, reason: 'takes ' + name };
+      return { linkable: false,
+               reason: serverProse.fill(SENTENCES.takes, { name: name }) };
     }
     if (row.path.indexOf('*') !== -1) {
       log.debug("Leaving StsMetadata.linkabilityOf().");
-      return { linkable: false, reason: 'wildcard' };
+      return { linkable: false, reason: SENTENCES.wildcard };
     }
     log.debug("Leaving StsMetadata.linkabilityOf().");
     return { linkable: true, reason: '' };
@@ -10053,6 +10180,14 @@ export = {
    */
   pageJson: slot.forward('pageJson'),
   StsMetadata: StsMetadata,
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  PROSE_ROUTES: StsMetadata.PROSE_ROUTES,
+  /**
+   * Extracts the stsmetadata namespace (#543).
+   */
+  prose: StsMetadata.prose,
   /**
    * Installs the instance the module-level functions forward to.
    */

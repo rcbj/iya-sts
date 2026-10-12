@@ -184,3 +184,6 @@ rust/target
 # the source copy fails tests/typecheck.js's marker check.
 portal/portal.bundle.js
 portal/portal-spa.js*
+# And the front door's (#579), for the same reason.
+home/home.bundle.js
+home/home-spa.js*

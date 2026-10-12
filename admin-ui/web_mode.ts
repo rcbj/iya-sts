@@ -94,7 +94,10 @@ class ModePage {
       return '<td>' + (inForce ? '<strong>' : '') + WebKit.esc(text) +
         (inForce ? '</strong>' : '') + '</td>';
     };
-    const requirements = '<h2>' + t.html('consoleMode.changesHeading') +
+    // THE THREE TABLES ARE TABS (2026-10-12); the tiles, what the mode is
+    // and the warning about ignored values are Metadata.
+    const requirements = '<h2 data-tab="requirements">' +
+      t.html('consoleMode.changesHeading') +
       '</h2>' +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleMode.thRequirement') + '</th>' +
@@ -108,7 +111,8 @@ class ModePage {
           cell(row.product, product) + '<td><small>' +
           WebKit.esc(row.where || '') + '</small></td></tr>';
       }).join('') + '</tbody></table>';
-    const settings = '<h2>' + t.html('consoleMode.devOnlyHeading') + '</h2>' +
+    const settings = '<h2 data-tab="development">' +
+      t.html('consoleMode.devOnlyHeading') + '</h2>' +
       '<p>' + t.html('consoleMode.devOnlyLead') + '</p>' +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleMode.thSetting') + '</th><th>' +
@@ -133,7 +137,8 @@ class ModePage {
             : ModePage.shown(row.inForce, t)) +
           '</td><td><small>' + WebKit.esc(row.why) + '</small></td></tr>';
       }).join('') + '</tbody></table>';
-    const notYet = '<h2>' + t.html('consoleMode.notYetHeading') + '</h2>' +
+    const notYet = '<h2 data-tab="notyet">' +
+      t.html('consoleMode.notYetHeading') + '</h2>' +
       '<ul>' + json.notYet.map(function (row: Json): string {
         return '<li id="not-yet-' + WebKit.esc(row.id) + '">' +
           WebKit.esc(row.what) + '</li>';

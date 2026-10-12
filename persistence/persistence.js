@@ -3622,6 +3622,53 @@ function coordinate() {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT `status()` SAYS IN WORDS, as a table (#543 phase 2c), so that the
+// database namespace can carry it and `common/server_prose.ts` refill an
+// answer to `GET /admin-api/ldap/service`, `GET /admin-api/persistence` and
+// `GET /admin-api/database` (whose `target` is `describeDatabase()`) in a
+// console reader's language. Each is what `status()` and `describeDatabase()`
+// wrote inline until #543, byte for byte: the two notes are each the whole
+// sentence the concatenation made, the shared tail about what this service
+// mints included; the two TLS templates fill the connection string's own
+// `sslmode`, carried over.
+// ---------------------------------------------------------------------------
+const MINTED_TAIL = 'What this service MINTS — sessions, tokens, codes, ' +
+  'artifacts, Kerberos tickets, the counters and the audit log — is ' +
+  'persisted in PRODUCT mode on a postgres store, encrypted under the same ' +
+  'key-encryption key as the signing keys, and in no other configuration: ' +
+  'development mode regenerates the signing key on every start, so a ' +
+  'restored token would verify against nothing.';
+const STATUS_PROSE = Object.freeze({
+  coordinating: 'Processes against this store COORDINATE: every change is ' +
+    'written to a monotonic log inside the transaction that made it, and ' +
+    'each process applies what the others committed. The LISTEN/NOTIFY ' +
+    'nudge only makes that prompt — the log is the contract, so a missed ' +
+    'notification costs latency and never a change. What is NOT shared is ' +
+    'sockets: the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s four ' +
+    'are per process, and the replay caches converge rather than ' +
+    'synchronise. ' + MINTED_TAIL,
+  notCoordinating: 'Persistence is not coordination in this configuration. ' +
+    'Two processes pointed at one store each hold their own copy in memory ' +
+    'and will not see each other\'s writes until they restart. Set ' +
+    'persistence.coordinate on a postgres store to change that. ' +
+    MINTED_TAIL,
+  tlsVerified: 'TLS, sslmode={{sslmode}}; the server certificate is ' +
+    'verified against this process\'s trust anchors.',
+  tlsUnverified: 'TLS, sslmode={{sslmode}}; the server certificate is NOT ' +
+    'verified (persistence.databaseTlsRejectUnauthorized is off), which is ' +
+    'the honest setting for the self-signed pair the compose stack ' +
+    'generates. The connection is encrypted either way.',
+  noTls: 'NOT TLS — the connection string does not ask for it. The compose ' +
+    'stack\'s database REFUSES a plaintext connection, because every host ' +
+    'rule in its pg_hba.conf is hostssl, so this configuration will not ' +
+    'connect there.',
+  tlsUnknown: 'unknown — the connection string is not a URL, so the sslmode ' +
+    'cannot be read out of it.',
+  notAUrl: 'the connection string is not a URL; nothing about it is shown, ' +
+    'because it carries a password.'
+});
+
+// ---------------------------------------------------------------------------
 // WHAT THIS MODULE SAYS ABOUT ITSELF. One shape, read by GET
 // /admin/ldap/service, by /admin/persistence and by GET /admin-api/persistence
 // — for the reason config.js's describe() is one shape: a console and an API
@@ -3699,26 +3746,8 @@ function status() {
     eventLoop: lagHistogram ? { lastReport: lagReport,
                                 sinceReport: lagSample(false),
                                 warnAboveMs: LAG_WARN_MS } : null,
-    note: (replication.status().coordinating
-            ? 'Processes against this store COORDINATE: every change is ' +
-              'written to a monotonic log inside the transaction that made ' +
-              'it, and each process applies what the others committed. The ' +
-              'LISTEN/NOTIFY nudge only makes that prompt — the log is the ' +
-              'contract, so a missed notification costs latency and never a ' +
-              'change. What is NOT shared is sockets: the KDC, the LDAP ' +
-              'listeners, the TLS ports and SPIFFE\'s four are per process, ' +
-              'and the replay caches converge rather than synchronise. '
-            : 'Persistence is not coordination in this configuration. Two ' +
-              'processes pointed at one store each hold their own copy in ' +
-              'memory and will not see each other\'s writes until they ' +
-              'restart. Set persistence.coordinate on a postgres store to ' +
-              'change that. ') +
-          'What this service MINTS — sessions, tokens, codes, artifacts, ' +
-          'Kerberos tickets, the counters and the audit log — is persisted ' +
-          'in PRODUCT mode on a postgres store, encrypted under the same ' +
-          'key-encryption key as the signing keys, and in no other ' +
-          'configuration: development mode regenerates the signing key on ' +
-          'every start, so a restored token would verify against nothing.'
+    note: replication.status().coordinating ? STATUS_PROSE.coordinating
+                                            : STATUS_PROSE.notCoordinating
   };
   shadow.forEach(function (rows) { out.entriesTracked += rows.size; });
   log.debug('Leaving status().');
@@ -3774,29 +3803,18 @@ function describeDatabase() {
       port: parsed.port || '5432',
       database: String(parsed.pathname || '').replace(/^\//, ''),
       user: parsed.username || null,
-      passwordFrom: password.configured
-        ? (password.label +
-           (password.where && password.where.from
-             ? ' (' + password.where.from + ')' : '') +
-           (password.shared ? ', shared with the key-encryption key' : ''))
-        : 'the connection string',
+      // The phrase is `secrets.js`'s, beside the labels it holds (#543).
+      passwordFrom: secrets.passwordFromText(password),
       passwordProvider: password.provider,
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
       verifyCertificate: verifiesDatabaseTls(),
       tls: encrypted
-        ? ('TLS, sslmode=' + sslmode + '; the server certificate is ' +
-           (verifiesDatabaseTls()
-             ? 'verified against this process\'s trust anchors.'
-             : 'NOT verified (persistence.databaseTlsRejectUnauthorized is ' +
-               'off), which is the honest setting for the self-signed pair ' +
-               'the compose stack generates. The connection is encrypted ' +
-               'either way.'))
-        : ('NOT TLS — the connection string does not ask for it. The compose ' +
-           'stack\'s database REFUSES a plaintext connection, because every ' +
-           'host rule in its pg_hba.conf is hostssl, so this configuration ' +
-           'will not connect there.')
+        ? require('../common/server_prose').fill(verifiesDatabaseTls()
+          ? STATUS_PROSE.tlsVerified : STATUS_PROSE.tlsUnverified,
+          { sslmode: sslmode })
+        : STATUS_PROSE.noTls
     };
   } catch (err) {
     log.debug("Caught in describeDatabase(): " + ((err && err.message) || err));
@@ -3806,10 +3824,8 @@ function describeDatabase() {
     // password is in there somewhere and we do not know where.
     return { host: null, port: null, database: null, user: null,
              sslmode: 'unknown', encrypted: false, verifyCertificate: false,
-             tls: 'unknown — the connection string is not a URL, so the ' +
-                  'sslmode cannot be read out of it.',
-             note: 'the connection string is not a URL; nothing about it is ' +
-                   'shown, because it carries a password.' };
+             tls: STATUS_PROSE.tlsUnknown,
+             note: STATUS_PROSE.notAUrl };
   }
 }
 
@@ -3979,12 +3995,15 @@ const DATABASE_WHY = Object.freeze({
     'build of persistence_postgres.js older than 2026-09-11.'
 });
 
-// The routes whose answers carry the database namespace's prose (#543).
-const PROSE_ROUTES = ['/admin-api/database'];
+// The routes whose answers carry the database namespace's prose (#543): the
+// database page, and since phase 2c the two that carry `status()` whole.
+const PROSE_ROUTES = ['/admin-api/database', '/admin-api/ldap/service',
+                      '/admin-api/persistence'];
 
 /**
  * Extracts this module's part of the database namespace (#543 phase 2b):
- * why there is no database to report on.
+ * why there is no database to report on — and since phase 2c what
+ * `status()` and `describeDatabase()` say in words.
  *
  * @returns key → English
  */
@@ -3992,8 +4011,12 @@ function prose() {
   log.debug("Entering prose().");
   // LAZILY, like the require in `databaseMetrics()`: this module is
   // required at 4a, while config.js's neighbours may still be loading.
-  const out = require('../common/server_prose').harvest('persistence.why',
-    DATABASE_WHY, Object.keys(DATABASE_WHY));
+  const serverProse = require('../common/server_prose');
+  const out = Object.assign({},
+    serverProse.harvest('persistence.why', DATABASE_WHY,
+                        Object.keys(DATABASE_WHY)),
+    serverProse.harvest('persistence.status', STATUS_PROSE,
+                        Object.keys(STATUS_PROSE)));
   log.debug("Leaving prose(). " + Object.keys(out).length);
   return out;
 }

@@ -1,0 +1,1346 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "en uppslagning som besvarades ur cacheminnet"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "uppslagningen finns i en fil som det här repositoriet inte redigerar"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "ACME-nonces"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "De Replay-Nonce-värden som redan har visats upp för ACME-servern (RFC 8555 avsnitt 6.5), så att vart och ett godtas en gång."
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "Upprätthållen: acme.maxSpentNonces förbrukade nonces per sfär. Utgångna rensas vid gränsen; en historik som fortfarande är full NEKAR nästa förbrukning (besvaras med badNonce) i stället för att glömma en som fortfarande lever."
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "Tills noncen går ut; utgångna rensas när gränsen nås."
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "en nonce som redan förbrukats, så begäran nekades"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "Listning av applikationsregistret"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "Varje applikationspost i en sfär, tolkad, med en uppslagning per client_id, målgrupp, AppliesTo och behörighet — så att en sida eller en tokenbegäran inte tolkar hela registret för varje fråga."
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "Strukturell: en listning per sfär, lika stor som ou=applications (som i sin tur begränsas av applications.max)."
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "Tills något under sfärens ou=applications ändras; nästa läsning tolkar det då på nytt."
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Behörigheter för Shared Signals-mottagare"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "Vilken applikation som äger en Shared Signals-ström och vilka händelser den får ta emot, per huvudman, så att en sessionshändelse inte går igenom varje registrerad applikation."
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "Upprätthållen: 4096 svar per sfär, där det äldsta släpps och slås upp igen nästa gång det behövs."
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "Tills något under sfärens ou=applications ändras; nästa uppslagning tömmer då den sfärens svar."
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "Uppslagningar i attributkällor"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "Raden som en attributkälla returnerade för en persons nyckel, som hålls en kort stund så att en skur av inloggningar blir en enda fråga (#94)."
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "Upprätthållen: 2000 rader per process, där den äldsta släpps."
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "en inloggning som besvarades från en uppslagning som gjordes sekunder tidigare"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "{{seconds}} s efter uppslagningen; en ändring av källan släpper dess rader."
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "Tolkade certifikatuppgifter"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "Subjekt, utfärdare och notAfter som en certifikatlista visar, och huruvida ett certifikat bär en postkvantnyckel, tolkade en gång per certifikat för /admin/pki och GET /admin-api/certificates. Nyckeln är certifikatets egen SHA-256."
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "Upprätthållen: 4 096 certifikat, där det äldsta släpps och tolkas igen nästa gång det visas."
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "Ingen utgång: nyckeln är certifikatets innehåll, vars uppgifter aldrig ändras. Det äldsta går först när det är fullt."
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "Utlåtanden om autentiseringshemligheter"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "Huruvida varje förseglad autentiseringshemlighet (TOTP) som den här processen har tillfrågats om går att öppna under sin nyckelkrypteringsnyckel (#352), så att användarlistan och förteckningen över andra faktorer kan rapportera en registrering som läsbar eller inte utan att avförsegla den vid varje begäran. Nyckeln är den förseglade texten; värdet är ja eller nej, aldrig hemligheten."
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "Upprätthållen: 20000 utlåtanden; när det är fullt släpps det äldsta och den hemligheten öppnas igen nästa gång någon frågar om den."
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "Tills nyckelkrypteringsnycklarna ändras, eller tills det släpps för att ge plats. En ny registrering är en ny förseglad text och tillfrågas på nytt."
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "en förseglad hemlighet vars utlåtande redan var känt, så den öppnades inte"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "Den inbäddade felsökarens statiska filer"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "Den inbäddade felsökarens klientfiler med den här tjänstens adress insatt, sparade per filversion och adress så att felsökarens lyssnare inte skriver om en fil vid varje begäran."
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "Upprätthållen: 400 filer, där den äldsta släpps och läses igen nästa gång den levereras."
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "Tills filen ändras på disk (en ny ändringstid är en ny post); den äldsta går först när det är fullt."
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "Utmaningar för enhetsregistrering"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "De utmaningar som /portal/devices har utfärdat för ett nyckelbevis, ett App Attest-utlåtande eller en WebAuthn-länkning, och de färskhetsnonces som EST /nonce har utfärdat för en TPM-nyckelattestering, var och en bunden till den session (eller EST-cookie) den utfärdades till och besvarad en gång."
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "Upprätthållen: devices.maxChallenges per sfär, där den äldsta släpps vid infogningen; en per session och syfte."
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "en utmaning som den här sfären utfärdade, så beviset kontrollerades"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "Händelser i enhetsregistret"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "En rad per enhet som skapats, tagits bort eller trängts ut vid en persons gräns i den här sfären — det som Övervakning → Enheter ritar över tid. Aldrig en nyckel, en hemlighet eller en ägares namn."
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "Upprätthållen: devices.eventsKept per sfär, där den äldsta händelsen släpps vid infogningen."
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "Tills devices.eventsKept nyare händelser tränger ut den."
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "DPoP-nonces"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "Serverutfärdade DPoP-nonces (RFC 9449 avsnitt 8), så att ett bevis som bär en kan kontrolleras mot det som delades ut."
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "Upprätthållen: oauth2.dpopNonceCacheSize per sfär; den äldsta noncen släpps, och en klient som visar upp den får en ny."
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "en nonce som befanns aktuell, så beviset godtogs"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "DPoP-bevis-ID:n"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "jti för varje godtaget DPoP-bevis, så att ett bevis gäller för en enda begäran (RFC 9449 avsnitt 11.1)."
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "Upprätthållen: oauth2.dpopReplayCacheSize levande ID:n per sfär. En full historik NEKAR nästa bevis (STS-OAUTH-0554) i stället för att glömma ett levande, vilket skulle öppna för återuppspelning av det igen."
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "ett bevis som redan använts, så begäran nekades"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "Index över attribututlämning i federationer"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "Vilken partners utlämningslista som gäller för vilken applikation, byggt från ou=federations så att ett tokenutfärdande inte går igenom registret. Ett index per sfär."
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "Strukturell: ett index per sfär, med en post per applikation som har en utlämningslista."
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "federation.releaseIndexTtlMs ({{ms}} ms) efter att det byggdes, eller omedelbart när en federationsrelation skrivs via den här tjänsten."
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "Betrodda proxyintervall"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies, tolkad till en BlockList, så att en begäran inte tolkar om inställningen för att avgöra vems vidarebefordrade adress som ska tros."
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Strukturell: en tolkad kopia av inställningen."
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "Tills texten i global.trustedProxies ändras."
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "Återkallade biscuits"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "Återkallelseidentifierarna för varje återkallad biscuit-åtkomsttoken, publicerade på /gnap/biscuit/revocations för en resursserver som själv verifierar biscuits."
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "Upprätthållen: oauth2.maxRevokedJtis per sfär — återkallelseregistrets egen gräns, för samma löfte om samma token. Vid gränsen går en utgången rad först; annars glöms den ÄLDSTA återkallelsen (STS-GNAP-0752), och den biscuiten godtas igen av en resursserver som bara kontrollerar den här listan tills den går ut."
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "tills den återkallade tokens egen exp."
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "den publicerade listan lästes"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "Uppslagna resursägare"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "Den ägare som en resursservers gnapOwnerLookupUri angav för en identifierare, så att ett beviljandes begäran, godkännandesida och utfärdande frågar resursservern en gång (#432 fas 5)."
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "Upprätthållen: 1024 ägare per sfär, där den äldsta släpps och slås upp igen nästa gång den behövs."
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "GNAP-signaturer"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "Varje godtagen signerad GNAP-begäran (HTTP-meddelandesignaturer och bifogad eller fristående JWS), så att en uppfångad begäran inte kan skickas igen."
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "Upprätthållen: gnap.replayCacheSize levande signaturer per sfär. En full historik NEKAR nästa signerade begäran (STS-GNAP-0718) i stället för att glömma en levande, vilket skulle öppna för återuppspelning av den igen."
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "Två gånger gnap.signatureMaxAgeS efter att den sågs."
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "en signatur som redan setts, så begäran nekades"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "Nyckelidentifierare enligt RFC 9278"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "Den JWK Thumbprint URI som publiceras som kid under keys.kidFormat=jwk-thumbprint-uri, med den interna kid som nyckel, så att en tokensignatur inte läser om nyckeln ur dess certifikat."
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "Upprätthållen: 512 nyckel-ID:n, där det äldsta släpps och härleds igen nästa gång det efterfrågas."
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "Ingen utgång: en intern kid härleds från nyckeln, så dess svar ändras aldrig. Det äldsta går först när det är fullt."
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "Certifikatkedjor som slutar under Root"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "Huruvida en registerrads lagrade kedja slutar under tjänstens nuvarande Root, vilket avgör om Root läggs till i ett x5c-huvud. Nyckeln är radens tumavtryck och Roots."
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Upprätthållen: 512 svar, där det äldsta släpps och räknas ut igen nästa gång det efterfrågas."
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Ingen utgång: nyckeln är certifikatets tumavtryck och kid, vars svar aldrig ändras. Det äldsta går först när det är fullt."
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "Matchningar mellan certifikat och signeringsnyckel"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "Huruvida en rad i certifikatregistret innehåller signeringsnyckeln, något som frågas innan ett x5c- eller x5t#S256-huvud sätts på en token. Nyckeln är radens tumavtryck och nyckelns kid."
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Upprätthållen: 512 svar, där det äldsta släpps och räknas ut igen nästa gång det efterfrågas."
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Ingen utgång: nyckeln är certifikatets tumavtryck och kid, vars svar aldrig ändras. Det äldsta går först när det är fullt."
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "Certifikatutfärdare"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "Varje omfångs hierarki av certifikatutfärdare — tjänstens Root, en sfärs Intermediate och dess Issuing CA:er — som hålls dekrypterad för signering, läst från lagret vid start eller övertagen från en annan process."
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "Strukturell: en hierarki per omfång (tjänstens Root, processgrenen och en per sfär), som ersätts snarare än utökas."
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "Ingen utgång: ersätts när hierarkin ändras här eller på en annan nod, och släpps tillsammans med sin sfär."
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "Dekrypterade signeringsnycklar"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "En sfärs signeringsnyckelmaterial, dekrypterat från beständighetslagret under nyckelkrypteringsnyckeln och hållet under ett vilofönster så att jämn signering inte betalar för en dekryptering varje gång. Endast produktläge; utvecklingsnycklar lagras aldrig krypterade."
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "Strukturell: en sfärs nyckelmaterial per sfär, oavsett kvarhållandepolicy; policyn avgör bara hur länge det hålls."
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "Postkvantnyckeluppsättningar"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "Varje sfärs ML-DSA- och SLH-DSA-nycklar, genererade (eller lästa från den lagrade uppsättningen) första gången något behöver dem, och därefter hållna tillsammans med sfärens nyckeluppsättning."
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "Strukturell: en postkvantuppsättning per sfär, hållen tillsammans med sfärens nyckeluppsättning."
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "Som för sfärens nyckeluppsättning: ingen utgång, släpps när sfären tas bort eller dess nycklar ersätts."
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "Signeringsnyckeluppsättningar"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "Varje förtroendesfärs signeringsnycklar (RSA, EC och postkvantuppsättningen när den efterfrågats), byggda eller lästa från nyckellagret vid första användning och hållna för varje signatur därefter."
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "Strukturell: en nyckeluppsättning per sfär, som släpps tillsammans med sfären eller ersätts när dess nycklar roteras eller övertas."
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "Ingen utgång: släpps när sfären tas bort, dess nycklar roteras eller en annan process lagrade nycklar övertas. En post per sfär som har signerat."
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Kerberos-autentiserare"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "Varje autentiserare som den skyddade tjänsten godtog, så att en uppfångad AP-REQ inte kan visas upp två gånger. Per förtroendesfär: den sfär vars Kerberos-realm utfärdade biljetten."
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "Upprätthållen: krb5.replayCacheMaxEntries per sfär. Ett fullt cacheminne NEKAR nästa autentiserare i stället för att glömma en levande, vilket skulle öppna för återuppspelning av den igen."
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "en autentiserare som redan setts, så begäran nekades"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Långtidsnycklar för Kerberos"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "Varje registrerad principals långtidsnycklar, härledda från dess lösenord med string-to-key (eller lästa från nyckelkällan) en gång per krypteringstyp och hållna för varje biljett därefter."
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "Upprätthållen: högst 4096 principaler håller nycklar samtidigt, en rad per krypteringstyp; den minst nyligen använda får sina nycklar rensade, och härleder eller läser dem igen vid sin nästa biljett."
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "Ingen utgång: släpps tillsammans med principalen, när dess post ersätts (ett lösenordsbyte eller en återställning), eller när den är den minst nyligen använda över gränsen; skrivs aldrig ner beständigt."
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "Katalogens enhetsindex"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "Varje enhetsposts id, nyckeltumavtryck och Native SSO-hemlighetshash, till dess post under ou=devices, så att igenkänning av en enhet vid tokenslutpunkten inte kopierar registret (#164)."
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "Tills något skrivs under ou=devices och en uppslagning missar; en träff på en aktuell post väntar inte på en ombyggnad. Ett index per sfär."
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "Katalogens entryUUID-index"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "Varje posts entryUUID (och dess alias) till dess DN, vilket är hur en subjektsidentifierare och ett SCIM-id hittar en person."
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "Tills katalogen ändras och en uppslagning missar; en träff på en aktuell post väntar inte på en ombyggnad. Ett index per sfär."
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "Katalogens gruppindex"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "Gruppmedlemskap per medlem och per grupp-DN, så att groups-anspråket och varje rollkontroll inte går igenom ou=groups."
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Tills katalogen skrivs på ett sätt som indexet inte kan ta in; nästa uppslagning bygger då om det. Ett index per sfär."
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "memberOf-anspråk, per grupp"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "För varje grupp, de poster vars egen memberOf anger den, så att grupp- och förteckningssidorna inte går igenom sfären en gång per grupp (#352)."
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "Strukturell: ett index per sfär, en rad per memberOf-värde."
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "Tills katalogen nästa gång skrivs, var som helst."
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "Personer, som sorterade nycklar"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "Varje persons normaliserade DN och användarnamn, i den ordning allPersons() listar dem, så att en sida med personer inte går igenom, normaliserar och sorterar sfären per begäran (#352)."
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "Strukturell: en lista per sfär, lika stor som ou=users."
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "Tills något under sfärens ou=users skrivs."
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "Listningar av katalogbehållare"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "Posterna under en behållare (applikationer, federationer, policyer och liknande), sparade tills något skrivs under den."
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "Upprätthållen: 64 behållarlistningar per sfär, där den äldsta släpps och gås igenom igen nästa gång den efterfrågas."
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "Tills en post under behållaren läggs till, tas bort eller skrivs utan att det anges var; en post per listad behållare."
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "Katalogens användarnamnsindex"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "Varje namn som en person svarar på (uid och RDN), till dess post under ou=users, så att en inloggning inte går igenom katalogen."
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Tills katalogen skrivs på ett sätt som indexet inte kan ta in; nästa uppslagning bygger då om det. Ett index per sfär."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "Utkorg för e-post"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "En rad per meddelande som den här tjänsten skickar: dess mottagare, dess tillstånd, dess försök, när det nästa gång ska skickas — och dess innehåll medan det väntar, är dött eller fångat, aldrig när det väl har skickats. Den beständiga kö som jobbet mail.deliver går igenom."
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "Upprätthållen: mail.maxRows per sfär, där det äldsta AVSLUTADE meddelandet släpps först; ett väntande släpps aldrig för att ge plats."
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "Tills mail.retentionS efter att det köades, där det äldsta avslutade går först när mail.maxRows per sfär passeras."
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "ett meddelande som undertrycktes som dubblett av ett som redan köats för samma handling inom mail.dedupWindowS"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "Statusposter för åtkomsttoken"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "Varje levande åtkomsttokens index i den här sfärens statuslista för åtkomsttoken — OAuth-token enligt RFC 9068 och GNAP:s två JWT-format — med dess jti, så att biten kan beräknas från återkallelseregistret."
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "04bb104bc7ab1ff8",
+    "text": "Upprätthållen: listan rymmer 1048576 index per sfär; en lista utan ledigt index NEKAR att skapa åtkomsttoken (STS-OAUTH-0817) i stället för att återanvända ett levande."
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "så länge som åtkomsttoken den beskriver; därefter är dess index ledigt igen."
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "en tokens status hittades här"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "Signerade statuslistor för åtkomsttoken"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "Den senaste Status List Token för åtkomsttoken som den här processen signerade för varje sfär, återanvänd så länge listan inte har ändrats."
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "Upprätthållen: 1024 signerade listor för processen, där den äldsta släpps och signeras igen nästa gång den efterfrågas."
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "tills listan ändras, eller hälften av oauth2.accessTokenStatusListTtlS."
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "en lista levererades utan att signeras igen"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "Utmaningar för klientattestering"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "Utmaningar som delas ut för OAuth 2.0 Attestation-Based Client Authentication (draft-ietf-oauth-attestation-based-client-auth-11 avsnitt 6), så att en Client Attestation PoP som bär en kan kontrolleras mot det som utfärdades."
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "Upprätthållen: oauth2.clientAttestationChallengeCacheSize per sfär; den äldsta utmaningen släpps, och en klient som visar upp den får en ny med use_attestation_challenge."
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "en utmaning som befanns aktuell, så PoP godtogs"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "oauth2.clientAttestationChallengeTtlS ({{seconds}} s) efter att den utfärdades."
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "Tolkade authorization_details-typer"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "Typdefinitioner enligt RFC 9396 som deklarerats på resursapplikationer, tolkade och med sina JSON Schemas kompilerade en gång per distinkt definitionstext. Delas av alla sfärer, eftersom texten är nyckeln."
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "Upprätthållen: 512 tolkade definitioner, där den äldsta släpps och tolkas igen nästa gång den används."
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "Ingen utgång: nyckeln är definitionstexten, så en redigerad definition är en ny post. Den äldsta går först när det är fullt."
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "Leveranser av Back-channel Logout"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "En rad per förlitande part som fått veta att en session upphört (OpenID Connect Back-Channel Logout 1.0): dess tillstånd, dess försök, när den nästa gång ska skickas och den signerade Logout Token. Den beständiga kö som varje process går igenom; ett dött brev ligger kvar tills det försöks igen eller kvarhållandet tar bort det."
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "Upprätthållen: oauth2.backchannelLogoutMaxRows per sfär, där den äldsta AVSLUTADE leveransen släpps först; en väntande släpps aldrig för att ge plats."
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "Tills oauth2.backchannelLogoutRetentionS efter att den köades (avslutad eller inte), där den äldsta avslutade går först när oauth2.backchannelLogoutMaxRows per sfär passeras."
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "en leverans som redan köats för den sessionen och klienten, så en andra process som avslutade samma session köade ingenting"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "Hämtade nyckeluppsättningar för klienter"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "Den JSON Web Key Set som en klients registrerade jwks_uri svarade med, så att dess klientintyganden, begäransobjekt och krypterade svar hittar dess nycklar utan en hämtning per begäran (#120)."
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "Upprätthållen: 256 nyckeluppsättningar per sfär, där den äldsta släpps och hämtas igen nästa gång den behövs."
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "Inlösta auktoriseringskoder"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "Varje auktoriseringskod som redan har växlats in vid tokenslutpunkten, så att en andra inväxling känns igen som en återuppspelning (RFC 9700 avsnitt 4.5, RFC 6749 avsnitt 4.1.2)."
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "Upprätthållen: oauth2.redeemedCodeCacheSize per sfär; den äldsta inlösen glöms. Själva koden försvann vid inlösen, så en upprepning av en glömd kod nekas ändå, som en okänd kod."
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "En kodlivslängd efter att koden skulle ha gått ut."
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "en kod som redan lösts in, uppvisad igen"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "Hämtade begäransobjekt"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "Innehållet i en registrerad request_uri enligt RFC 9101, sparat så att en klient som skickar samma URI igen inte hämtas igen (OpenID Connect Core avsnitt 6.2). Av om inte oauth2.requestUriCacheS är satt."
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "Upprätthållen: 256 hämtade begäransobjekt per sfär, där det äldsta släpps och hämtas igen nästa gång det används."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "oauth2.requestUriCacheS ({{seconds}} s) efter hämtningen, per sfär; det äldsta går först när det är fullt."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "Av: oauth2.requestUriCacheS är 0, så ingenting sparas."
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "Signerad metadata för auktoriseringsservern"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "signed_metadata-JWT:er enligt RFC 8414, återanvända så länge den metadata och de signeringsinställningar de byggdes från är oförändrade, så att en belastad discovery-slutpunkt inte signerar vid varje hämtning."
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "Upprätthållen: oauth2.maxSignedMetadataEntries per sfär, där den äldsta släpps och signeras igen nästa gång den efterfrågas."
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "Använda intyg"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "Varje godtagen JWT enligt RFC 7523 och SAML-intyg enligt RFC 7522, för ett beviljande eller för klientautentisering, så att vart och ett godtas en gång någonsin."
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "Upprätthållen: oauth2.assertionReplayCacheSize per sfär. En full historik NEKAR nästa intyg i stället för att glömma ett levande, vilket skulle öppna för återuppspelning av det igen."
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "Tills själva intyget går ut. Nekar nya intyg när det är fullt i stället för att glömma ett. I ett databaslager ligger raderna i databasen och ingen listas här."
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "ett intyg som redan använts, så begäran nekades"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "OID4VCI-nonces"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "De c_nonce-värden som lämnats till plånböcker, så att beviset i en begäran om verifierbara intyg anger en som den här utfärdaren utfärdade, och använder den en gång."
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "Upprätthållen: oid4vci.cNonceCacheSize per sfär; den äldsta noncen släpps, och ett bevis som citerar den besvaras med invalid_nonce."
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "oid4vci.cNonceTtlS efter att den utfärdades, eller när den används."
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "en nonce som den här utfärdaren delade ut, så beviset kontrollerades"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "Statusposter för verifierbara intyg"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "Varje utfärdat verifierbart intygs index i den här sfärens statuslistor och den status som en administratör eller en utloggning satte för det."
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "Upprätthållen: statuslistan rymmer 131072 index per sfär; en lista utan ledigt index NEKAR att utfärda det verifierbara intyget (STS-VC-0075) i stället för att återanvända ett levande."
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "så länge som det verifierbara intyg den beskriver; därefter är dess index ledigt igen."
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "ett verifierbart intygs status hittades här"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "Signerade statuslistor"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "Den senaste Status List Token och det senaste Bitstring Status List-intyget som den här processen signerade för varje sfär, återanvända så länge listan inte har ändrats."
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "Upprätthållen: 1024 signerade dokument för processen, där det äldsta släpps och signeras igen nästa gång det efterfrågas."
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "tills listan ändras, eller hälften av oid4vci.statusListTtlS."
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "en lista levererades utan att signeras igen"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "Register för plånboksinloggning"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "De verifierbara intyg som den här sfären utfärdade för en person på en åtkomsttoken som den verifierade, vilka är de enda en plånbok får logga in med — med en sammanfattning av den utfärdarsignerade JWT:n som nyckel, eller för ldp_vc innehavarnyckeln och personen."
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "Upprätthållen: oid4vp.signInRegisterMaxEntries per sfär; den rad som utfärdades först släpps. Det misslyckas STÄNGT — ett verifierbart intyg utan rad loggar inte in någon."
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "tills det sista verifierbara intyget på raden går ut; en frånkänd rad behålls också fram till dess, så att den fortsätter att neka."
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "ett uppvisat verifierbart intyg som den här sfären registrerade som ett som får logga in sin person"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "Hämtade statuslistor"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "Status List Tokens och Bitstring Status List-intyg som en betrodd utländsk utfärdare publicerade, hämtade när ett av dess verifierbara intyg visades upp för Verifier."
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "Upprätthållen: 256 hämtade listor för processen, där den äldsta släpps och hämtas igen nästa gång den behövs."
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "listans egen ttl (och aldrig efter dess exp), högst oid4vp.statusListMaxCacheS; en misslyckad hämtning 30 sekunder."
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "ett uppvisat verifierbart intygs status besvarades utan en hämtning"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "OpenID4VP-transaktioner"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "Varje presentationsbegäran som den här Verifier väntar på — barens dörrs och en plånboksinloggnings, där den senare bär Digital Credentials API-begäran, dess svarsläge och nyckeln som dess svar krypteras till."
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "Upprätthållen: oid4vp.maxTransactions per sfär; den äldsta väntande begäran släpps (samma regel som för federation.maxContexts), eftersom ett nekande skulle låta vem som helst stoppa begäransslutpunkten för alla."
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS, eller oid4vp.signInTtlS för en inloggning; rensas när nästa begäran byggs."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "en plånboks svar hittade den begäran det gjordes för"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "OpenID Federation-samlingar, skapade i processen"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "Entity Collection såsom den här processen skapar den utan att hämta något — tjänstens egna sfärer, och underordnade som redan lösts upp — används där ingen genomsökning har sparats, så att anonyma begäranden inte var och en signerar utlåtanden för varje sfär (#136)."
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "Upprätthållen: 8 per sfär (en per värd som sfären nås via), där den äldsta trängs ut först."
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "OpenID Federation-upplösningar"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "Trust Chains som den här sfären löste upp — genom en administratörs handling, eller i processen för sina egna sfärer — med den upplösta metadatan och de verifierade Trust Marks, så att resolve-slutpunkten kan svara utan att gå igenom federationen för en oautentiserad anropare (18.1)."
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "Upprätthållen: oidfed.resolveCacheMax per sfär, där den äldsta trängs ut först."
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "Tills kedjan går ut (dess minsta exp, 10.4), och högst oidfed.resolveCacheS."
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "Intervall av läckta lösenord"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Intervallsvar från Pwned Passwords, per det femteckens SHA-1-prefix som efterfrågades (#62 P6): vilka lösenordssammanfattningar under det som är kända som läckta, och hur ofta."
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "Upprätthållen: risk.breachCacheSize prefix; när det är fullt släpps det äldsta och efterfrågas igen nästa gång det behövs."
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "risk.breachCacheMinutes efter att det hämtades."
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "ett prefix som redan efterfrågats, så ingen begäran gjordes"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "Utlåtanden om läckta lösenord"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "Huruvida ett lösenord som en dörr just kontrollerat är läckt, så att de synkrona lösenordsreglerna kan läsa det i samma begäran (#62 P6). Nyckeln är en sammanfattning av lösenordet, aldrig lösenordet."
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "Upprätthållen: 1000 utlåtanden; när det är fullt släpps det äldsta."
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "fem minuter efter att lösenordet kontrollerades."
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "ett utlåtande som hittades för ett lösenord som håller på att sättas"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "Deklarationer av observationslager"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "Huruvida varje beständigt lager deklarerades som en observation (en räkning som läsbarriären inte väntar på), läst en gång per lagerhandtag eftersom kontrollen ligger på vägen för varje skrivning till lagret."
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "Strukturell: en flagga per beständigt lager som det här bygget deklarerar."
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "Under processens livstid: en deklaration kan inte ändras medan den körs."
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "Skugga för oförändrade skrivningar"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "Den senaste kopian av varje katalogpost och sfärpost som den här processen skrev till beständighetslagret, så att en tömning bara skriver det som ändrats."
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "Strukturell: en rad per skriven katalogpost och en för sfärposten, alltså högst ldap.maxEntries + 1 i en sfär."
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "Ingen utgång: förnyas vid varje tömning, en post per skriven katalogpost och sfär. Tom i minnesläge."
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "Hämtade utfärdarcertifikat"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "Certifikat som hämtats från en caIssuers-URL i Authority Information Access eller ett LDAP-attribut cACertificate, för att bygga en sökväg för en återkallelsekontroll. Betros aldrig för att de hämtats."
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Upprätthållen: pki.revocationCrlCacheEntries, där den äldsta skrivningen släpps och hämtas igen nästa gång den behövs."
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "Listor över återkallade certifikat"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "CRL:er som hämtats för att kontrollera ett uppvisat certifikat, tolkade och verifierade, med distributionspunktens URL och fingeravtrycken för de signerare de verifierades mot som nyckel."
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Upprätthållen: pki.revocationCrlCacheEntries, där den äldsta skrivningen släpps och hämtas igen nästa gång den behövs."
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "Misslyckade återkallelsehämtningar"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "Ett negativt cacheminne: en CRL-, OCSP- eller certifikathämtning som misslyckades försöks inte igen förrän dess fönster för nytt försök har passerat, och det ihågkomna misslyckandet är svaret under tiden. En träff är ett återanvänt misslyckande."
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "Upprätthållen: pki.revocationCrlCacheEntries, där det äldsta släpps; ett släppt misslyckande betyder bara att adressen kan tillfrågas igen tidigare."
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "OCSP-svar"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "OCSP-svar om ett certifikat vardera, med responderns URL, utfärdarens fingeravtryck och serienummer som nyckel."
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "Upprätthållen: pki.revocationCrlCacheEntries, där den äldsta skrivningen släpps och tillfrågas igen nästa gång den behövs."
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "Tolkade förtroendeankarcertifikat"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "Den här tjänstens egna CA-certifikat, tolkade en gång per PEM för genomgången av återkallelseregistret. Nyckeln är själva PEM:en; en ersatt CA har en annan PEM och en ny post."
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "Upprätthållen: 8192 tolkningar; när det är fullt töms hela minnet och byggs upp igen allteftersom det används."
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "Ingen utgång: nyckeln är innehållet. När det är fullt töms hela minnet på en gång."
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "Förtroendefiler lästa från disk"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "De PEM-filer som återkallelseinställningar anger, lästa en gång och sparade tills filens ändringstid ändras."
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "Strukturell: en post per inställning som anger en fil (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)."
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "Tills den angivna filen ändras på disk, eller inställningen anger en annan fil. En post per inställning."
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "Klientcertifikatkedjor, för återupptagna sessioner"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "Den sökväg som ett verifierat klientcertifikat byggde vid ett fullständigt TLS-handslag, med lövcertifikatet som nyckel, som lämnas tillbaka när den sessionen ÅTERUPPTAS — node ger en återupptagen session enbart lövcertifikatet, och utan detta nekar återkallelsegenomgången ett certifikat som verifierades."
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "Upprätthållen: 1024 lövcertifikat; det äldsta glöms först."
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "Delas av alla noder och replikeras (#406): en timme, eller huvudportens sessionslivslängd plus en minut när den är längre, förnyad vid lövcertifikatets nästa fullständiga handslag; det äldsta släpps när det är fullt."
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "Uppslagningar i riskdatamängder"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "Vad de aktiva datamängderna för geolokalisering, ASN och IP-listor sa om en adress, per sfär. Rensas när en version av en datamängd aktiveras på någon nod."
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "Upprätthållen: 10000 uppslagningar, där den äldsta släpps först."
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "Tills en version av en datamängd aktiveras, eller gränsen släpper den."
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "Riskställningar"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "Varje persons senast bedömda risk (nivå, poäng, signaler), för ett utfärdande utan någon session att läsa den från — en Kerberos-biljett, en WS-Trust-token (#62 P3)."
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "Upprätthållen: risk.standingCacheSize personer per process; när det är fullt släpps den äldsta, vilket gör att den personens nästa sessionslösa utfärdande avgörs enbart på roller."
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "risk.standingValidMinutes efter den bedömning den registrerar."
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "en ställning som hölls och fortfarande var giltig, så utfärdandet avgjordes med den"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "SAML 1.1-intyg"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "Utfärdade SAML 1.1-intyg, sparade så att en begäran till attributauktoriteten som anger ett genom AssertionIDReference kan besvaras."
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "Upprätthållen: saml11.assertionCacheMax per sfär, där det äldsta släpps; en artefakt som anger ett släppt intyg besvaras som okänd."
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "4397e5b8b411e7a8",
+    "text": "Ingen utgång: det äldsta släpps när saml11.assertionCacheMax passeras."
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "en AssertionIDReference besvarades"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "Nonce-räknare för SCIM Digest"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "De nonce-count-värden (nc) som redan godtagits under varje Digest-nonce, så att ett svar inte kan skickas två gånger."
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "Upprätthållen: scim.maxDigestNonces nonces per sfär, där den äldsta släpps (noncen är då inaktuell, och klienten får en ny); och 1024 räknare per nonce, varefter noncen pensioneras på samma sätt."
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "Glöms tillsammans med sin nonce. Sparas beständigt, så en omstartad process nekar fortfarande en räknare den har godtagit; det anspråk som en förbrukning gör är det som avgör en återuppspelning mellan levande noder."
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "en nonce-räknare som redan använts, så begäran nekades"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "SCIM Digest-nonces"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "De HTTP Digest-utmaningar som /scim/v2 har delat ut (RFC 7616), så att ett svar anger en som den här tjänsten utfärdade."
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "Upprätthållen: scim.maxDigestNonces per sfär, där den äldsta släpps; en klient som använder den besvaras med stale=true och en ny."
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "en nonce som den här tjänsten utfärdade, så svaret kontrollerades"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "SCIM HOBA-utmaningar"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "De HOBA-utmaningar som /scim/v2 har delat ut (RFC 7486), så att en signatur anger en som den här tjänsten utfärdade."
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "Upprätthållen: scim.maxHobaChallenges per sfär, där den äldsta släpps; en klient som använder den får en ny utmaning."
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "en utmaning som den här tjänsten utfärdade, så signaturen kontrollerades"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "SCIM HOBA-signaturer"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "Varje (kid, utmaning, nonce) som en HOBA-signatur anlände med, så att en kopierad autentiseringsuppgift nekas."
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "Upprätthållen: scim.maxHobaSeen per sfär, där den äldsta släpps tillsammans med utmaningen den gjordes för, så att den inte kan spelas upp igen mot en levande."
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "Tills dess utmaning går ut; över gränsen går de äldsta tillsammans med sin utmaning."
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "en signatur som redan setts, så begäran nekades"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "Uppackade SPIFFE X.509-auktoriteter"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "Varje sfärs lagrade X.509-auktoriteter, omvandlade från sin lagrade form till certifikat en gång, för varje signerat SVID och varje levererat paket."
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "Strukturell: en uppackad auktoritetslista per sfär, som ersätts när den lagrade listan ändras."
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "Tills sfärens auktoriteter roteras eller återställs, vilket ersätter den lagrade lista som posten packades upp från."
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Antal döda brev för Shared Signals"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "En uppskattning av varje ströms döda brev, sparad så att ett nytt kan kontrolleras mot taket per ström utan att räkna kön. Brev som en annan process skrev finns inte med förrän vid nästa genomgång."
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "Strukturell: ett antal per ström, och en sfär har högst ssf.maxStreams strömmar."
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "Ingen utgång: räknas om vid varje genomgång av döda brev, en post per ström."
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "Identiteter för klientcertifikat"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "Vad ett verifierat TLS-klientcertifikat mappades till — en person eller applikation i en sfär, eller ett nekande — med lövcertifikatets sammanfattning och de auktoriteter som fanns när det gicks igenom som nyckel."
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "Upprätthållen: 256 svar; när det är fullt töms hela minnet och byggs upp igen allteftersom det används."
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "Ingen utgång: en ersatt Issuing CA ändrar nyckeln. När det är fullt töms hela minnet på en gång."
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "VC-API-intyg med en status"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "a8b5945c11b02533",
+    "text": "Varje intyg som VC-API-testadaptern utfärdade med en statuspost, och det statuslisteindex det tog, så att en statusändring kan hitta det."
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "Upprätthållen: 4096 intyg per sfär, där det äldsta glöms först (dess status kan då inte längre ändras här; själva listposten tillhör vc_status.ts och ligger kvar)."
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "intygets validUntil, eller ett år."
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "en statusändring hittade intyget"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "Versionsstämpel"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "Byggposten (M.N.O, commit, byggögonblicket) läst från version.json en gång, som varje yta som visar en version läser."
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "Strukturell: en post."
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "Under processens livstid: bygget kan inte ändras medan den körs."
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js körs även i den fjärranslutna PEP-containern och får inte kräva registret"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "Affinitet för request-workers"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "Vilken request-worker en webbläsarsession, en autentiseringsuppgift eller ett flöde är fäst vid, en mappning per pool (protokoll och ytor), så att ett flöde i flera steg stannar på den worker som håller det."
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "Upprätthållen: 5000 per pool, där den äldsta släpps; en släppt fästning dirigeras helt enkelt på nytt."
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "Ingen utgång: glöms när dess worker avslutas; den äldsta går först när en pool håller {{max}}. Endast frontprocessen."
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "Tolkade XACML-policyer"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "Policyer och policyuppsättningar från ou=policies, tolkade och statiskt validerade en gång per dokumenttext, med SHA-256 av den texten som nyckel så att en ändring genom vilken dörr som helst blir en ny post."
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "Upprätthållen: 1024 tolkningar, där den minst nyligen använda släpps; en släppt policy tolkas igen nästa gång den efterfrågas."
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "Ingen utgång: nyckeln är innehållet, så en redigerad policy är en ny post och dess gamla tolkning försvinner när den är den minst nyligen använda."
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "Ett begränsat cacheminne i ordningen minst nyligen använd."
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "Upprätthållen: en infogning över gränsen tränger ut de minst nyligen använda ofästa posterna."
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "en läsning som besvarades ur cacheminnet utan att gå till lagret"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "Tills den trängs ut av gränsen eller släpps av sin ägare."
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "Metadata för SAML-tjänsteleverantörer"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "lagras på applikationsposten såsom den togs emot, hålls inte i minnet; uppdateras från applikationens sida"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "En fjärransluten PEP:s policy"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "hålls av den fjärranslutna PEP-containern, inte av den här processen"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "En inloggning i ett hemlighetslager"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "en lokal variabel i en enda /admin/secrets-rapport, så att ett lager loggas in i en gång per rapport; den är borta när rapporten har ritats, och ingenting håller den mellan begäranden"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "gick ut för {{span}} sedan"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "ingen utgång (nyckeln är innehållet)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "inaktuell"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "tills {{basis}} ändras"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "inaktuell: {{basis}} har ändrats"
+  }
+}

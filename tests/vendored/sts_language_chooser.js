@@ -204,9 +204,12 @@ async function test() {
   });
   r = await send(base + R + "/", { headers: { Cookie:
     cookie.split(";")[0] } });
+  // The front door is a static surface since #579: its shell hands the
+  // chooser's choice to the browser, which draws the page in it.
   check("a page with no ui_locales reads the chooser's Swedish", function () {
     assert.strictEqual(r.status, 200);
-    assert.ok(/<html lang="sv-SE"/.test(r.raw), r.raw.slice(0, 200));
+    assert.ok(/<html lang="en"[^>]* data-sts-lang="sv-SE"/.test(r.raw),
+              r.raw.slice(0, 300));
   });
 
   log.info("=== d. the return is held to a local path ===");

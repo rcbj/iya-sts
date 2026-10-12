@@ -254,6 +254,16 @@ const MAX_CACHED_REQUEST_URIS = 256;
 // Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
 // cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
 // a miss, because nothing was asked of the cache.
+// The lifetime sentences below, as templates and a sentence (#543):
+// `lifetime()` picks and fills one and `cache_registry.js`'s `prose()` reads
+// them from the descriptor, so an answer to `GET /admin-api/caches` can be
+// refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.requestUriCacheS ({{seconds}} s) after the fetch, per ' +
+    'realm; the oldest goes first when full.',
+  lifetimeOff: 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.'
+});
+
 const requestUriCount = cacheRegistry.register({
   name: 'oauth2.request-uri',
   title: 'Fetched request objects',
@@ -268,12 +278,14 @@ const requestUriCount = cacheRegistry.register({
   },
   bound: 'Enforced: ' + MAX_CACHED_REQUEST_URIS + ' fetched request objects ' +
     'per realm, the oldest dropped and fetched again when next used.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
     const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
     return seconds > 0
-      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
-        'realm; the oldest goes first when full.'
-      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+      ? serverProse.fill(CACHE_SENTENCES.lifetime, { seconds: seconds })
+      : CACHE_SENTENCES.lifetimeOff;
   },
   // A fetched Request Object past `until`, which `contentOf()` would fetch
   // again (#49 P5).

@@ -167,6 +167,8 @@
   "monitorHtml.leadBefore": "本領域登記簿目前的計數，以及它發生過的事件：每次註冊、移除，以及人員達到 <code>devices.maxPerPerson</code> 時的逐出，最多保留 <code>devices.eventsKept</code> 筆，以及依操作者區分的每次合規性變更——admin、mdm、test-control、caep",
   "monitorHtml.since": "（最早的一筆來自 {since}）",
   "monitorHtml.leadAfter": "。透過通訊端上的 <code>ldapdelete</code> 移除的裝置不會在此記為事件——登記簿從未看到它。",
+  "monitorHtml.tabRegister": "註冊表（目前計數）",
+  "monitorHtml.tabActivity": "本程序中的活動",
   "monitorHtml.byOwner": "依擁有者",
   "monitorHtml.byCompliance": "依合規性",
   "monitorHtml.byRisk": "依風險等級",

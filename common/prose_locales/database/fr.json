@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "le pilote ouvert ne fournit aucune fonction de métriques, ce qui signifie une version de persistence_postgres.js antérieure au 2026-09-11."
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Les processus utilisant ce magasin se COORDONNENT : chaque modification est écrite dans un journal monotone au sein de la transaction qui l’a effectuée, et chaque processus applique ce que les autres ont validé. Le signal LISTEN/NOTIFY ne fait que rendre cela rapide — le journal est le contrat, donc une notification manquée coûte de la latence et jamais une modification. Ce qui n’est PAS partagé, ce sont les sockets : le KDC, les écouteurs LDAP, les ports TLS et les quatre de SPIFFE sont propres à chaque processus, et les caches anti-rejeu convergent plutôt que de se synchroniser. Ce que ce service CRÉE — sessions, jetons, codes, artefacts, tickets Kerberos, les compteurs et le journal d’audit — est persisté en mode PRODUIT sur un magasin postgres, chiffré sous la même clé de chiffrement de clé que les clés de signature, et dans aucune autre configuration : le mode développement régénère la clé de signature à chaque démarrage, de sorte qu’un jeton restauré ne serait vérifié par rien."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "Dans cette configuration, la persistance n’est pas la coordination. Deux processus pointant vers un même magasin détiennent chacun leur propre copie en mémoire et ne verront pas les écritures de l’autre avant leur redémarrage. Activez persistence.coordinate sur un magasin postgres pour changer cela. Ce que ce service CRÉE — sessions, jetons, codes, artefacts, tickets Kerberos, les compteurs et le journal d’audit — est persisté en mode PRODUIT sur un magasin postgres, chiffré sous la même clé de chiffrement de clé que les clés de signature, et dans aucune autre configuration : le mode développement régénère la clé de signature à chaque démarrage, de sorte qu’un jeton restauré ne serait vérifié par rien."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}} ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS, sslmode={{sslmode}} ; le certificat du serveur n’est PAS vérifié (persistence.databaseTlsRejectUnauthorized est désactivé), ce qui est le réglage honnête pour la paire autosignée que génère la pile compose. La connexion est chiffrée dans les deux cas."
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "PAS de TLS — la chaîne de connexion ne le demande pas. La base de données de la pile compose REFUSE une connexion en clair, car chaque règle d’hôte de son pg_hba.conf est hostssl ; cette configuration ne s’y connectera donc pas."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "inconnu — la chaîne de connexion n’est pas une URL, le sslmode ne peut donc pas en être extrait."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "la chaîne de connexion n’est pas une URL ; rien n’en est affiché, car elle contient un mot de passe."
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "De quel PostgreSQL il s’agit, EN TANT QUE qui ce service est connecté, et depuis combien de temps le serveur fonctionne."

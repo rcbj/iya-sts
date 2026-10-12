@@ -710,9 +710,12 @@ class DevicesPage {
     const t = kitEscaping((ctx || kit.context()).t);
     const esc = kit.esc.bind(kit);
     const c = json.counts;
-    // A table's title arrives translated, as text the kit escapes.
+    // A table's title arrives translated, as text the kit escapes. An `<h3>`
+    // since 2026-10-12: the tables are grouped under three tabs
+    // (`WebPages.protocolTabs()`), each opened by a marked `<h2>`, and an
+    // unmarked `<h3>` stays in the tab its `<h2>` opened, title and all.
     const table = function (title: string, counts: Json): string {
-      return '<h2>' + esc(title) + '</h2><table class="grid"><tbody>' +
+      return '<h3>' + esc(title) + '</h3><table class="grid"><tbody>' +
         Object.keys(counts).map(function (k) {
           return '<tr><th>' + esc(k) + '</th><td>' + esc(String(counts[k])) +
             '</td></tr>';
@@ -737,6 +740,8 @@ class DevicesPage {
                            { since: tl.since }) : '') +
         t.html('consoleDevices.monitorHtml.leadAfter'),
         t.text('consoleDevices.listHtml.whatThisIs')) +
+      '<h2 data-tab="register">' +
+      t.html('consoleDevices.monitorHtml.tabRegister') + '</h2>' +
       table(t.text('consoleDevices.monitorHtml.byOwner'), c.byOwnerKind) +
       table(t.text('consoleDevices.monitorHtml.byCompliance'),
             c.byCompliance) +
@@ -752,6 +757,8 @@ class DevicesPage {
       table(t.text('consoleDevices.monitorHtml.nativeSso'), c.nativeSso) +
       table(t.text('consoleDevices.monitorHtml.keysByFormat'),
             c.byKeyAttestationFormat || {}) +
+      '<h2 data-tab="activity">' +
+      t.html('consoleDevices.monitorHtml.tabActivity') + '</h2>' +
       kit.note(t.html('consoleDevices.monitorHtml.countersNote',
                       { scope: json.activity.scope }),
                t.text('consoleDevices.monitorHtml.countersLabel')) +
@@ -765,8 +772,9 @@ class DevicesPage {
             json.activity.attestationFormats) +
       table(t.text('consoleDevices.monitorHtml.refused'),
             json.activity.attestationRefusals) +
-      '<h2>' + t.html('consoleDevices.monitorHtml.lastDays',
-                      { days: String(tl.days) }) + '</h2>' +
+      '<h2 data-tab="days">' +
+      t.html('consoleDevices.monitorHtml.lastDays',
+             { days: String(tl.days) }) + '</h2>' +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleDevices.monitorHtml.thDay') + '</th><th>' +
       t.html('consoleDevices.monitorHtml.thRegistered') +

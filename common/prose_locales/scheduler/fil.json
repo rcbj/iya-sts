@@ -1,0 +1,546 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "Mga attribute source: nakaiskedyul na refresh"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "Binabasa ang susunod na page ng mga tao ng realm mula sa bawat attribute source na dapat nang i-refresh ayon sa nakaiskedyul na interval nito, papunta sa kanilang mga entry (#94). attributeSources.refreshBatch na tao bawat source bawat run."
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "Pag-expire ng session"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "ca99d997bdb0c403",
+    "text": "Tinatapos ang bawat sign-on session na lumampas na sa lifetime o idle timeout nito, sa bawat realm: isang audit row, CAEP session-revoked at ang mga back-channel Logout Token, nang isang beses para sa buong cluster."
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "Pag-alis ng mga expired na cache entry"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "Binubura, sa process na ito, ang bawat cache at replay-store entry na lumampas na sa lifetime nito — housekeeping lang: tinatanggihan pa rin ng bawat store ang expired na entry kung saan ito binabasa."
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "Pagwalis ng mga expired na claim"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "Binubura ang mga single-use claim na lumampas na sa lifetime nila mula sa table na pinagsasaluhan ng bawat node."
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "Node snapshot"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "Isinusulat ang mga view ng node na ito sa Monitoring → Worker Pools at → Node Health sa shared store, isang row bawat pangalan ng node, kaya iginuguhit ng bawat node ang bawat node sa mga page na iyon (#332)."
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "Pag-purge ng node snapshot"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "Binubura ang Worker Pools at Node Health snapshot ng node na hindi na live na miyembro ng cluster kapag mas matanda na ito kaysa sa cluster.nodeSnapshotRetentionHours; hindi kailanman ang sa live na miyembro, at wala habang hindi mabasa ang membership (#332)."
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "Pagwalis ng mga tapos nang rate-limit window"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "Binubura ang mga lumipas nang rate-limit window mula sa table na pinagsasaluhan ng bawat node."
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Muling pagsusuri ng Android attestation"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "f918ea71421d9df1",
+    "text": "Tinatanong ang aktibong Android attestation status list tungkol sa bawat nakatagong Android chain — mga device key at WebAuthn credential, sa bawat realm — at ibinababa ang mga nire-revoke o sinu-suspend nito: self-asserted, na-audit, CAEP credential-change. Pinapatakbo kapag na-activate ang isang list, at araw-araw."
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Pag-download ng Android attestation status list"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "Dina-download ang Android key attestation status list ng Google mula sa devices.androidStatusUrl at nilo-load ito bilang risk dataset na android.attestation-status: kung aling mga attestation certificate ang revoked o suspended. Araw-araw (devices.androidStatusRefreshS); walang nilo-load ang list na kapareho ng aktibo."
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "Pag-retire ng federation encryption key"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "Inaalis sa bawat federation relationship ang encryption key na pinalitan ng isang rotation, kapag lumipas na ang federation.encryptionKeyGraceS. Tumigil na itong mag-decrypt sa sandaling iyon; inaalis lang ito nito sa entry."
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP: mga expired na grant"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "d5ae13ff9e6e4b50",
+    "text": "Tinatapos ang bawat GNAP grant na natapos na ang interaction o grant lifetime (gnap.grantLifetimeS) at hindi na nagalaw ng anumang request mula noon, at nire-record kung bakit (#432)."
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP: mga limit ng mga natapos na grant"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "84f932ae29b1dfb3",
+    "text": "Binubura ang mga running total na itinatago ng demonstration resource server para sa mga limit ng bawat GNAP grant kapag natapos na ang grant, kapag wala nang token nito ang maaaring ipakita (#432)."
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "Mga bilang ng value ng data encryption key"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "Binibilang ang mga value na naka-seal sa ilalim ng bawat data encryption key, sa isang pasada ng store, at itinatago ang bawat bilang sa key nito para sa /admin/encryption."
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "Data re-encryption at pagsira ng key"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "Muling sine-seal sa ilalim ng kasalukuyang key ang bawat value na naka-seal pa sa ilalim ng napalitang data encryption key, at sinisira ang napalitang key kapag wala nang naka-seal sa ilalim nito at napalitan na ito nang keys.dataKeyRetireAfterDays."
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "Rotation ng data encryption key"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "Binibigyan ng kahalili ang bawat data encryption key na nag-seal ng mga bagong value nang keys.dataKeyRotationDays, na inilalathala nang keys.dataKeyActivationLeadSeconds bago may ma-seal sa ilalim nito; pagkatapos ay muling sine-seal ng re-encryption job ang na-seal ng lumang key."
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "Rotation ng data encryption key, mano-mano"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "Nire-rotate ngayon ang bawat nakatagong data encryption key — o ang sa isang realm, o ang sa isang class; patuloy na binubuksan ng mga key na pinalitan nila ang na-seal nila hanggang ito ay muling ma-seal."
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "Rotation ng key-encryption key, mano-mano"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "Gumagawa ng bagong bersyon ng key-encryption key sa key management service nito at muling winawrap ang bawat data encryption key sa ilalim nito. Para lang sa key na nasa KMS."
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "Rotation ng krbtgt key"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "Pinapalitan ang krbtgt key ng bawat realm — ang key na pinagse-seal-an ng bawat TGT — ng bagong random na key sa susunod na kvno kapag krb5.krbtgtRotationIntervalDays na ang tanda nito, at itinatago ang pinalitan nito nang kasinghaba ng pinakamatagal na maaaring mabuhay ang isang TGT sa ilalim nito, at hindi kailanman habang nasa window pa nito ang bersyong itinago ng huling rotation. Binibigyan ng unang key ang product realm na wala pa nito. Pinapangalanan ng resulta ng bawat run ang kvno, ang huling rotation at kung kailan ang susunod."
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "Rotation ng krbtgt key, mano-mano"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "Nire-rotate ngayon ang krbtgt key ng realm. Kapag may invalidate, walang itinatagong naunang bersyon: tinatanggihan ang bawat TGT na na-issue bago nito at may Shared Signals event na nagsasabi nito."
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "Paghahatid ng mail outbox"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "Ipinapadala ang bawat naka-queue na mensaheng dapat nang ipadala — retry na lumipas na ang backoff, lease na nag-lapse, row na naibalik matapos ang restart — dina-dead-letter ang anumang pending pa lampas sa mail.retentionS, at inaalis ang mga tapos nang row na lampas dito."
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "Pagwalis ng back-channel logout"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "Ipinapadala ang bawat Logout Token delivery na dapat nang ipadala — retry na lumipas na ang backoff, lease na nag-lapse, row na naibalik matapos ang restart — at dina-dead-letter ang anumang pending pa lampas sa oauth2.backchannelLogoutRetentionS."
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "Pagwalis ng CIBA"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "Sinusubukan ang bawat CIBA ping at push na dapat nang gawin, dina-dead-letter ang pending pa lampas sa oauth2.cibaNotifyRetentionS, pinapa-expire ang mga backchannel authentication request na walang sumagot sa oras, at itinatapon ang natapos nang mahigit isang oras na ang nakalipas."
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "Mga Claims Provider: refresh ng mga naka-link na token"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "Nire-refresh ang token ng bawat tao sa Claims Provider na na-link nila bago ito mag-expire, at itinatapon ang mga link request na walang tumapos (#147)."
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "Pag-expire ng client secret"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "Sinusuri ang bawat client secret ng bawat application: isang audit row para sa application na may hawak na secret na mag-e-expire sa loob ng oauth2.clientSecretExpiryWarningDays, at para sa application na expired na ang lahat ng secret; at inaalis ang mga expired na secret na hawak ng application kasabay ng isang hindi pa expired — hindi kailanman ang huli nito, na nananatili at tinatanggihan sa product."
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "Pagwalis ng OpenID Provider Commands"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "Ipinapadala ang bawat Command Token delivery na dapat nang ipadala — retry na lumipas na ang backoff, lease na nag-lapse, row na naibalik matapos ang restart — dina-dead-letter ang anumang pending pa lampas sa oauth2.commandRetentionS, at itinatapon ang mga expired na callback token at mga tapos nang tenant run."
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "Device authorization: mga expired na code"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "Pinapa-expire ang mga RFC 8628 device code na walang nag-approve sa oras, at inaalis ang mga natapos nang mahigit isang oras na ang nakalipas (#150)."
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "Mga ephemeral subject: mga expired na mapping"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "Inaalis ang bawat ephemeral subject identifier na hindi na maaaring ginagamit ang mga token at session nito (#149)."
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "Pag-purge ng mga expired na sinusubaybayang token"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "Binubura ang mga token record na lampas na sa expiry nila at sa oauth2.expiredTokenRetentionS, at ang mga revocation ng mga token na nag-expire na."
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management: mga expired na grant"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "Inaalis ang bawat OAuth grant na nag-expire na ang huling token, at ang record ng bawat token na na-mint sa ilalim ng isang grant kapag nag-expire ito (#142)."
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "Pagwalis ng mga expired na nagamit na assertion"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "Binubura ang mga RFC 7523 at RFC 7522 assertion na lumampas na sa lifetime nila mula sa once-ever history na pinagsasaluhan ng bawat node."
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "Crawl ng OpenID Federation Entity Collection"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "Dinadaanan ang bawat entity sa ilalim ng realm — bawat isa ay nire-resolve sa realm bago kunin ang sarili nitong listahan — at itinatago ang nahanap nito para sa collection endpoint (#136)."
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "Rotation ng OpenID Federation key"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "Pinananatiling isang rotation ang abante ng mga Federation Entity Key ng bawat realm — isang susunod na key na inilalathala bago ito mag-sign — at nagro-rotate kapag mas matanda na ang kasalukuyang key kaysa sa oidfed.keyRotationDays at nailathala na ang susunod sa buong oidfed.keyOverlapDays."
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "Rotation ng OpenID Federation key, mano-mano"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "Nire-rotate ngayon ang Federation Entity Key ng realm — o, bilang emergency, nire-revoke ang kasalukuyan at susunod na key bilang compromised at pinapalitan ang mga ito."
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "Mga natapos na OpenID Federation registration"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "Inaalis ang bawat client na nakarehistro sa pamamagitan ng OpenID Federation Trust Chain na natapos na ang registration (12.3). Sinasagot na ng bawat endpoint ang ganitong client bilang hindi kilala; pinipigilan lang nito na manatili ang entry."
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "Pag-purge ng mga expired na minted row"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51010ce2ada820cd",
+    "text": "Binubura mula sa shared store, nang tig-5000 bawat batch at hanggang 20 batch ng bawat uri bawat run, ang mga minted row na hindi na babasahin ng anumang start: lampas na sa sarili nilang expiry, ng realm na hindi na naka-define (isinulat mahigit isang oras na ang nakalipas), at ang mga row ng short-lived na store na walang expiry na mas matanda kaysa sa persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "Pagwalis ng mga expired na tombstone"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "d5b8faad6c0c24c4",
+    "text": "Binubura mula sa shared store ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention."
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "Ulat ng memory"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "4f2c054a1405a843",
+    "text": "Nagla-log, sa process na ito, ng isang linya na may role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers (#341)."
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "Mga RISC opt-out na nagiging epektibo"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "Nagpapadala ng RISC opt-out-effective para sa bawat account na nag-opt out ang may-hawak sa /portal/signals nang hindi bababa sa risc.optOutDelayHours ang nakalipas at hindi nagkansela (RISC 1.0 section 2.8), na naglilipat sa account sa opt-out state."
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "Pag-import ng risk dataset directory"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "Ini-import ang bawat dataset na inilagay ng operator sa risk.datasetsDirectory, ayon sa manifest nito, vine-verify at ina-activate ito; hindi na muling nilo-load ang bersyong naka-record na."
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "Pag-download ng FIDO metadata"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "Dina-download ang FIDO MDS3 BLOB mula sa risk.mdsUrl at ini-import ito kapag mas bago ang serial nito kaysa sa aktibo — vine-verify hanggang sa FIDO root, sinusuri ang revocation ng chain nito, sa ilalim ng naka-record na pagtanggap sa mga tuntunin ng fido-mds3. Araw-araw (risk.mdsRefreshS), bawat oras kapag lampas na ang aktibong BLOB sa sarili nitong nextUpdate."
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "Muling pagsusuri ng risk ng mga live na session"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "Muling sinusuri ang bawat live na sign-on session laban sa mga aktibong dataset at sa failure history, at itinataas ang risk ng session na naging mas mapanganib — address na nasa Tor o deny list na ngayon, password na hinuhulaan — kaya bawat token dito ay pinagpapasyahan batay sa bagong risk, at ang taong pumasok sa HIGH ay sinasagot ng risk-response policy."
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "Retention ng risk"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "Binubura ang mga row ng mga dataset version na napalitan mahigit risk.supersededRetentionDays na ang nakalipas at ng mga tinanggihang bersyon, ang mga failure na mas matanda kaysa sa risk.failureRetentionDays, at ang mga assessment at history ng model na lampas sa risk.assessmentRetentionDays at risk.historyRetentionDays."
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "Mga natigil na risk import"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "Minamarkahang tinanggihan (STS-RISK-0035) ang bawat dataset version na naiwang naglo-load nang walang progreso sa loob ng risk.importStallMinutes — import na tumigil ang process sa kalagitnaan — at itinatapon ang anumang row na naisulat nito."
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "Paglilinis ng risk upload"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "Sa bawat process: pinananatiling sariwa ang mga dataset upload na ini-import ng process na ito, at binubura mula sa risk.uploadDirectory ang upload na hindi nagalaw ng anumang live na process sa loob ng risk.importStallMinutes — ang iniwan ng process na tumigil sa kalagitnaan ng import."
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "History ng mga run ng scheduler"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "Itinatago, bawat job, ang huling scheduler.runHistoryCount na run nito o ang huling scheduler.runHistoryHours nito, alinman ang mas marami, at palaging ang pinakabagong run nito; binubura ang iba — at bawat row na nagpapangalan ng realm na inalis na — nang tig-2000 bawat batch, hanggang 25 bawat run."
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "Mga outbound SCIM delivery"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "Ipinapadala ang mga dapat nang ipadalang delivery ng bawat outbound SCIM client — mga bagong pagbabago at mga retry — sa service provider nito, scimClient.concurrency nang sabay-sabay, nilalaktawan ang client habang naka-pause ito dahil sa backoff nito, at pinananatili ang mga queue sa retention nila (#552)."
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "Mga outbound SCIM reconciliation"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "Nire-reconcile ang bawat outbound SCIM client na sumapit na ang scimClientReconcileMinutes nito: pinu-push ang bawat tao at group sa scope nito, at dine-deprovision ang hawak ng service provider nito sa ilalim ng externalId ng realm na ito na wala na sa scope (#552)."
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "Paglilinis ng naunang password ng service account"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "Binubura ang naunang password ng na-rotate na service account kapag natapos na ang overlap nito. Sinusuri ang overlap kung saan binabasa ang password, kaya housekeeping lang ito."
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "Rotation ng password ng service account"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "Binibigyan ng bagong password ang bawat service account na nagpapangalan ng push destination kapag lumipas na ang interval nito (ang service-account policy): pinu-push muna sa destination, kino-commit lang matapos magtagumpay ang push, at tinatanggap ang naunang password sa panahon ng overlap. Walang binabago ang nabigong push."
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "Rotation ng password ng service account, mano-mano"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "Nire-rotate ngayon ang password ng isang service account, gaya ng gagawin ng hourly job: push muna, saka commit."
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "Paglilinis ng mga retired na signing key"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "Itinatapon ang bawat retired na signing key na lumipas na ang grace nito at sine-supersede ang certificate nito sa listahan ng Issuing CA nito."
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "Rotation ng signing key"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "Binibigyan ng susunod na key ang bawat signing unit ng realm, na inilalathala bago ito mag-sign ng anuman, at itinataas ang bawat susunod na key kapag nailathala na ito sa buong interval (signing.rotationIntervalDays); patuloy na nagve-verify ang key na pinalitan nito sa panahon ng grace nito."
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "Rotation ng signing key, mano-mano"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "Nire-rotate ngayon ang mga pinangalanang signing unit ng realm — o lahat: nagiging kasalukuyan ang bawat susunod na key at nire-retire ang key na pinalitan nito, na patuloy na nagve-verify sa panahon ng grace nito."
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "Rotation ng SPIFFE authority"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "Nire-rotate ang SPIFFE X.509 authority ng realm kapag lampas na ito sa kalahati ng lifetime nito at ang JWT authority nito kapag mas matanda na ito kaysa sa kalahati ng spiffe.caTtl; nananatiling nakalathala ang mga luma (spiffe.retainedAuthorities)."
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "Refresh ng sigstore TUF"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "Kinukuha ang sigstore trust root (mga Fulcio CA, mga key ng Rekor at CT log) sa pamamagitan ng TUF para sa mga image-signature check ng docker workload attestor; itinatago ng nabigong refresh ang huling na-verify na set."
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Pagwalis ng Shared Signals dead letter"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "Binubura ang mga expired na dead letter ng process na ito, pinu-probe ang mga patay na stream na dapat nang i-probe (sa isang node lang) at nila-log ang buod ng na-dead-letter mula sa huling pagwalis."
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "Poll ng Shared Signals ng mga federation partner"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "Pino-poll ang bawat federation relationship na poll stream (RFC 8936) ang Shared Signals stream ng partner: vine-verify, inaaksyunan at ina-acknowledge ang mga Security Event Token na hawak nito."
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Maintenance ng Shared Signals stream"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "Pina-pause, dini-disable o binubura ang stream na hindi aktibo ang receiver sa loob ng ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), na inaanunsyo muna ang pause o disable gamit ang stream-updated event, at nagpapadala ng verification event sa bawat naka-enable na stream na walang natanggap mula sa transmitter na ito sa loob ng ssf.verificationEveryS (section 8.1.4)."
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "Rotation ng TLS session-ticket key"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "Pinapalitan ang session-ticket key na pinagsasaluhan ng mga TLS listener ng bawat node sa isang active-active cluster, kaya ang ticket na in-issue ng isang node ay maipagpapatuloy sa iba. Binubura ang key na pinalitan nito, na naglilimita kung gaano katagal mababawi mula sa ticket ang mga lihim ng ipinagpatuloy na session."
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "kapag hiniling lang"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}} (UTC)"
+  },
+  "sched.sentence.every": {
+    "en": "05f22fb4833ac391",
+    "text": "bawat {{span}}"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "3893802ebe2b3ab1",
+    "text": "bawat {{span}}, mula sa {{setting}}"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "walang interval (0)"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "walang interval (0), mula sa {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "nagti-tick ang leader; maaaring tumatakbo pa ang naunang run, o hindi pa nag-lapse ang claim nito"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "walang leader na nag-tick mula nang {{since}}"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "naka-off ang scheduler.enabled"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "nakapangalan sa scheduler.disabledJobs"
+  },
+  "sched.sentence.offZero": {
+    "en": "e9453e79cc9c7d92",
+    "text": "0 ang {{setting}}"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "ang process na ito"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "ang database"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "nagsimula ang serbisyong ito"
+  },
+  "sched.param.interval": {
+    "en": "668b489f6de0a264",
+    "text": "ang interval nito"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "Hiniling sa leader ng scheduler na bumaba. Gagawin niya ito sa susunod niyang tick, at isa pang node ang mangunguna sa susunod nitong heartbeat."
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "Naka-queue ang isang run ng {{job}}. Sisimulan ito ng leader ng scheduler sa susunod nitong tick."
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "Naka-queue ang isang run ng {{job}} (may naka-queue na; ito iyon). Sisimulan ito ng leader ng scheduler sa susunod nitong tick."
+  }
+}

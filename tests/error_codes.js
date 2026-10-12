@@ -116,9 +116,11 @@ const VENDORED_FILES = ['kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
 // of its lines holds a code literal beside a call that writes the page, and
 // the response-line check read that as a code reaching a client.
 // tests/jose_certificate_header.js skips the same two for the same reason.
-// The portal's two (#568) are the same kind of file.
+// The portal's two (#568) and the front door's (#579) are the same kind of
+// file.
 const GENERATED_FILES = ['admin-ui/console.bundle.js', 'admin-ui/console.js',
-                         'portal/portal.bundle.js', 'portal/portal-spa.js'];
+                         'portal/portal.bundle.js', 'portal/portal-spa.js',
+                         'home/home.bundle.js', 'home/home-spa.js'];
 
 function sourceFiles() {
   log.debug("Entering sourceFiles().");

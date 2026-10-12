@@ -141,6 +141,69 @@ const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 // never less than this, and never less than three ticks.
 const OVERDUE_FLOOR_MS = 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// THE SENTENCES THE REPORT MAKES (#543 phase 2c), as templates, so that
+// `common/server_prose.ts` can match one in an answer to `GET
+// /admin-api/scheduler` and refill it in the reader's language. Each is
+// filled where it is made, and the English that comes out is the English
+// that was concatenated there before — byte for byte, since tests and the
+// run rows compare it. A `{{span}}` is `WebKit.span()`'s figure, a
+// `{{setting}}` a setting's name and a `{{cron}}` an expression: data, so
+// carried over as they are. `since` is an ISO time, or `PARAMS.sinceStart`.
+//
+// NOT HERE, ON PURPOSE: a run's `why` (an abandoned attempt, a time limit, a
+// job's own error) is failure text beside an STS-SCHED code, and errors stay
+// English (#539); `requestRun()`'s and `requestStepDown()`'s refusals for
+// the same reason; and a job's own `off()` reason, which each owner writes.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  // `scheduleText()`.
+  onDemand: 'on demand only',
+  cron: 'cron {{cron}} (UTC)',
+  every: 'every {{span}}',
+  everyFrom: 'every {{span}}, from {{setting}}',
+  noInterval: 'no interval (0)',
+  noIntervalFrom: 'no interval (0), from {{setting}}',
+  // `nextRunOf()`'s `overdueWhy`.
+  overdueTicking: 'the leader is ticking; a previous run may still be ' +
+    'going, or its claim has not lapsed',
+  overdueSilent: 'no leader has ticked since {{since}}',
+  // `serviceOffReason()`: the scheduler's own three reasons a job is off.
+  offScheduler: 'scheduler.enabled is off',
+  offListed: 'named in scheduler.disabledJobs',
+  offZero: '{{setting}} is 0',
+  // `clockSource()`: whose clock the report's figures are on.
+  clockProcess: 'this process',
+  clockDatabase: 'the database'
+});
+
+// The phrases that only ever appear INSIDE one of the sentences above.
+const PARAMS = Object.freeze({
+  sinceStart: 'this service started',
+  interval: 'its interval'
+});
+
+// The routes whose answers carry the scheduler namespace's prose (#543):
+// the report, and a queued run's view in an action's answer.
+const PROSE_ROUTES = ['/admin-api/scheduler', '/admin-api/scheduler/:action'];
+
+/**
+ * Fills one of the report's templates (#543).
+ *
+ * @param template - one of `SENTENCES`
+ * @param params - name → value
+ * @returns the sentence, in English
+ */
+function sentence(template: string, params?: Record<string, unknown>): string {
+  helpers.log.debug("Entering sentence().");
+  // Lazily: `server_prose` requires `config`, `crypto` and `i18n`, and this
+  // module is reached from modules those load early.
+  const serverProse = require('../common/server_prose');
+  const out = serverProse.fill(template, params || {});
+  helpers.log.debug("Leaving sentence().");
+  return out;
+}
+
 // The shape of a registered job. `cluster/CLAUDE.md` describes each member.
 interface JobSpec {
   id: string;
@@ -340,6 +403,52 @@ class Scheduler {
    * Orders two copies of a run row by rank; the higher one wins a merge.
    */
   static readonly compareRows = compareRows;
+  /**
+   * The report's sentences, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the scheduler namespace (#543 phase 2c): every registered
+   * job's `title` and `describe`, read from the REGISTRY of the process's
+   * scheduler, and the report's templates.
+   *
+   * - The extractor loads the whole protocol stack first, whose build and
+   *   wire steps register every job they own; a job registered only once
+   *   the process STARTS (a change-log pull, the event-loop report, the SAML
+   *   metadata refresher, the LDAP mirror's maintenance, the CRL directory
+   *   refresh) is not in the registry then, so it is not in the catalog and
+   *   is drawn in English.
+   * - Each job's members are the literals its owner registered — a few of
+   *   them concatenated with a module constant (a batch size, a lifetime),
+   *   which is the same in every process. The change-log jobs' titles carry
+   *   the tier the process was configured with, fixed for its life.
+   * - A job's `owner` is a path and its `id` an identifier: neither is
+   *   prose.
+   *
+   * @param registry - the scheduler to read; the process's when omitted
+   * @returns key → English
+   */
+  static prose(registry?: Scheduler): Record<string, string> {
+    helpers.log.debug("Entering Scheduler.prose().");
+    const harvest = require('../common/server_prose').harvest;
+    const from = registry || scheduler;
+    const jobs = from.jobIds().map(function (id: string): Json {
+      const job = from.job(id);
+      return { id: id, title: job.title, describe: job.describe };
+    });
+    const out: Record<string, string> = Object.assign({},
+      harvest('sched.jobs', jobs, ['title', 'describe']),
+      harvest('sched.sentence', SENTENCES, Object.keys(SENTENCES)),
+      harvest('sched.param', PARAMS, Object.keys(PARAMS)));
+    helpers.log.debug("Leaving Scheduler.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   private readonly jobs = new Map<string, JobSpec>();
   private started = '';            // '' | 'front' | 'per-process'
@@ -826,15 +935,20 @@ class Scheduler {
     log.debug("Entering Scheduler.scheduleText().");
     let text: string;
     if (job.manualOnly) {
-      text = 'on demand only';
+      text = sentence(SENTENCES.onDemand);
     } else if (job.cron) {
-      text = 'cron ' + job.cron + ' (UTC)';
+      text = sentence(SENTENCES.cron, { cron: job.cron });
     } else {
+      // Four templates rather than a sentence and a suffix: a translation
+      // may not put the setting at the end.
       const every = this.intervalMs(job);
-      text = every > 0 ? 'every ' + Scheduler.span(every) : 'no interval (0)';
-      if (job.everySetting) {
-        text += ', from ' + job.everySetting;
-      }
+      const from = !!job.everySetting;
+      text = every > 0
+        ? sentence(from ? SENTENCES.everyFrom : SENTENCES.every,
+                   { span: Scheduler.span(every),
+                     setting: job.everySetting })
+        : sentence(from ? SENTENCES.noIntervalFrom : SENTENCES.noInterval,
+                   { setting: job.everySetting });
     }
     log.debug("Leaving Scheduler.scheduleText().");
     return text;
@@ -896,15 +1010,16 @@ class Scheduler {
     log.debug("Entering Scheduler.serviceOffReason(). " + job.id);
     if (!config.value('scheduler.enabled')) {
       log.debug("Leaving Scheduler.serviceOffReason(). The scheduler is off.");
-      return 'scheduler.enabled is off';
+      return sentence(SENTENCES.offScheduler);
     }
     if (this.disabledIds().indexOf(job.id) >= 0) {
       log.debug("Leaving Scheduler.serviceOffReason(). Listed.");
-      return 'named in scheduler.disabledJobs';
+      return sentence(SENTENCES.offListed);
     }
     if (!job.manualOnly && !job.cron && !(this.intervalMs(job) > 0)) {
       log.debug("Leaving Scheduler.serviceOffReason(). No interval.");
-      return (job.everySetting || 'its interval') + ' is 0';
+      return sentence(SENTENCES.offZero,
+                      { setting: job.everySetting || PARAMS.interval });
     }
     log.debug("Leaving Scheduler.serviceOffReason(). None.");
     return '';
@@ -2284,12 +2399,12 @@ class Scheduler {
   private clockSource(): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.clockSource().");
-    let source = 'this process';
+    let source = sentence(SENTENCES.clockProcess);
     try {
       const persistence = require('../persistence/persistence');
       const store = persistence.clusterStore && persistence.clusterStore();
       if (store && typeof store.clusterClock === 'function') {
-        source = 'the database';
+        source = sentence(SENTENCES.clockDatabase);
       }
     } catch (e) {
       log.debug("Caught in Scheduler.clockSource(): " + ((e && e.message) ||
@@ -2467,10 +2582,10 @@ class Scheduler {
       view.nextRunState = 'overdue';
       view.overdueSince = new Date(slot.startsAt).toISOString();
       view.overdueWhy = leader && leader.live
-        ? 'the leader is ticking; a previous run may still be going, or ' +
-          'its claim has not lapsed'
-        : 'no leader has ticked since ' + (leader && leader.lastTickAt ||
-                                           'this service started');
+        ? sentence(SENTENCES.overdueTicking)
+        : sentence(SENTENCES.overdueSilent,
+                   { since: leader && leader.lastTickAt ||
+                            PARAMS.sinceStart });
     } else {
       view.nextRunState = 'due';
     }
@@ -2736,6 +2851,15 @@ export = {
   LEADER_LEASE: LEADER_LEASE,
   RUN_SCOPE: RUN_SCOPE,
   runStore: runStore,
+  /**
+   * The routes whose answers carry the scheduler namespace's prose (#543).
+   */
+  PROSE_ROUTES: PROSE_ROUTES,
+  /**
+   * The scheduler namespace's English, by key (#543): every registered
+   * job's title and description, and the report's templates.
+   */
+  prose: (): Record<string, string> => Scheduler.prose(),
   register: scheduler.register.bind(scheduler) as Scheduler['register'],
   start: scheduler.start.bind(scheduler) as Scheduler['start'],
   stop: scheduler.stop.bind(scheduler) as Scheduler['stop'],

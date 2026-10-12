@@ -176,6 +176,22 @@ const SEP = '|';
 const PLACEHOLDER = /\{\{([A-Za-z0-9]+)\}\}/g;
 
 /**
+ * The members whose strings are identifiers or values a caller acts on —
+ * never translated, whatever namespace has their words (#543 phase 3, where
+ * the probe found a setting's `group` translated because "Admin console" is
+ * also an endpoint name). The console joins on several of them.
+ */
+const NEVER_TRANSLATED = new Set([
+  'group', 'key', 'id', 'path', 'route', 'routes', 'action',
+  'actions', 'value', 'values', 'default', 'env', 'legacyEnv',
+  'appconfigPath', 'enumValues', 'csvValues', 'source', 'dn', 'href', 'url',
+  'container', 'attribute', 'method', 'methods', 'operationId', 'page',
+  'pages', 'setWith', 'mirrors', 'realm', 'kind', 'type', 'state', 'status',
+  'by', 'cards', 'specs', 'mode', 'category', 'protocol', 'family', 'tag',
+  'locale', 'lang'
+]);
+
+/**
  * The separator a list of phrases is joined with, inside a filled template.
  */
 const LIST_SEP = ', ';
@@ -191,8 +207,8 @@ const LIST_SEP = ', ';
  *   namespace, a filled template, or a list of those joined with ', ';
  *   anything else (a number, a name, a DN) is carried over as it was.
  * - A key holding `.param.` names a phrase used only as a parameter.
- * - Only on the source's routes, so a value elsewhere that happens to read
- *   like a sentence of it is never touched.
+ * - Only on the source's routes (`*` naming every route), so a value
+ *   elsewhere that happens to read like a sentence of it is never touched.
  *
  * @param given - the routes and the English, or a function answering them
  * @returns the source
@@ -316,7 +332,11 @@ function phraseSource(given: PhraseSpec | (() => PhraseSpec)): ProseSource {
       return specOf().extract();
     },
     translateString: function (route, text, lookup) {
-      if (specOf().routes.indexOf(route) < 0) {
+      // `*` is EVERY route: a namespace whose phrases every page may carry
+      // — the endpoint names each Protocols page lists — and which is kept
+      // to names short and specific enough to be matched anywhere.
+      const routes = specOf().routes;
+      if (routes.indexOf('*') < 0 && routes.indexOf(route) < 0) {
         return null;
       }
       return translate(text, lookup, 0);
@@ -446,7 +466,31 @@ const PHRASE_MODULES: Record<string, string[]> = {
   // A person's GNAP grants, where this service runs several cells.
   gnap: ['../gnap/gnap_console'],
   // Protocols → Kerberos → Principals: the page's notes.
-  kerberos: ['../admin-core/admin_views']
+  kerberos: ['../admin-core/admin_views'],
+  // Monitoring → Scheduler: every registered job's title and description,
+  // read from the registry, and the schedule, overdue and clock sentences.
+  scheduler: ['../cluster/scheduler', '../admin-ui/scheduler_admin'],
+  // Monitoring → Caches: every registered cache's title, description,
+  // bound, lifetime and meaning of a hit, and the page's own sentences.
+  caches: ['./cache_registry', './bounded_lru', '../admin-ui/caches_admin'],
+  // Server configuration → Cryptography: the families, the standards,
+  // hashing, post-quantum and key establishment.
+  crypto: ['../admin-ui/crypto_metadata'],
+  // Monitoring → Node Health and → Worker Pools: the computed sentences
+  // about limits, usage, processes and pools, each a template.
+  nodehealth: ['../admin-ui/node_health_admin'],
+  workerpools: ['../admin-ui/worker_pools_admin'],
+  // The SCIM page's attribute mapping notes.
+  scimmap: ['../scim/scim_map'],
+  // The secret store's providers, probes and sources, wherever a page
+  // describes where a secret or the database password comes from.
+  secretstore: ['./secrets'],
+  // Service → Protocol metadata: every specification's coverage, every
+  // endpoint's description and effect, and every protocol card's prose.
+  stsmetadata: ['../sts_metadata'],
+  // The endpoint names every Protocols page lists — on EVERY route (`*`),
+  // so only names that are phrases, never a bare product or protocol name.
+  endpoints: ['../admin-core/protocol_endpoints']
 };
 
 /**
@@ -887,8 +931,15 @@ class ServerProse {
     const phrases = names.filter(function (ns) {
       return typeof sources[ns].translateString === 'function';
     });
-    const walk = function (value: unknown): unknown {
+    const walk = function (value: unknown, member?: string): unknown {
       if (typeof value === 'string') {
+        // A string under an IDENTIFIER member is never translated, whatever
+        // namespace has its words: a setting's `group` "Admin console" is
+        // also an endpoint name and an audit label, and the console joins
+        // settings to their pages on it.
+        if (member && NEVER_TRANSLATED.has(member)) {
+          return value;
+        }
         for (const ns of phrases) {
           const found = sources[ns].translateString(translator.route, value,
             function (key, english) {
@@ -905,7 +956,10 @@ class ServerProse {
       }
       if (Array.isArray(value)) {
         seen.add(value);
-        const out = value.map(walk);
+        // An array's strings are its member's: `enumValues` are values.
+        const out = value.map(function (one) {
+          return walk(one, member);
+        });
         seen.delete(value);
         return out;
       }
@@ -930,7 +984,7 @@ class ServerProse {
       });
       const out: Record<string, unknown> = {};
       Object.keys(obj).forEach(function (key) {
-        out[key] = walk(obj[key]);
+        out[key] = walk(obj[key], key);
       });
       seen.delete(value);
       return out;

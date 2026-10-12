@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "開啟的驅動程式未提供任何指標函式，這表示 persistence_postgres.js 的組建早於 2026-09-11。"
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "連接此儲存區的各程序會「協調」：每一項變更都會在產生它的交易中寫入一個單調遞增的記錄，而每個程序會套用其他程序已提交的內容。LISTEN/NOTIFY 提示只是讓這件事更即時——記錄才是約定，因此錯過通知只會增加延遲，絕不會遺失變更。「不」共用的是通訊端：KDC、LDAP 接聽程式、TLS 連接埠與 SPIFFE 的四個都是各程序獨有，而重放快取是趨於一致而非同步。本服務「產生」的內容——工作階段、權杖、代碼、成品、Kerberos 票證、計數器與稽核記錄——在產品模式下且使用 postgres 儲存區時才會持久保存，並以與簽署金鑰相同的金鑰加密金鑰加密，其他任何組態都不會：開發模式每次啟動都會重新產生簽署金鑰，因此還原的權杖將無從驗證。"
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "在此組態中，持久保存並不等於協調。指向同一個儲存區的兩個程序各自在記憶體中保有自己的副本，直到重新啟動前都看不到彼此的寫入。在 postgres 儲存區上設定 persistence.coordinate 即可改變這一點。本服務「產生」的內容——工作階段、權杖、代碼、成品、Kerberos 票證、計數器與稽核記錄——在產品模式下且使用 postgres 儲存區時才會持久保存，並以與簽署金鑰相同的金鑰加密金鑰加密，其他任何組態都不會：開發模式每次啟動都會重新產生簽署金鑰，因此還原的權杖將無從驗證。"
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS，sslmode={{sslmode}}；伺服器憑證會以此程序的信任錨點驗證。"
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS，sslmode={{sslmode}}；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉），對於 compose 堆疊所產生的自我簽署憑證組而言，這是如實的設定。無論如何連線都是加密的。"
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "非 TLS——連線字串沒有要求它。compose 堆疊的資料庫會「拒絕」明文連線，因為其 pg_hba.conf 中的每一條主機規則都是 hostssl，因此此組態在那裡將無法連線。"
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "未知——連線字串不是 URL，因此無法從中讀出 sslmode。"
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "連線字串不是 URL；由於其中含有密碼，因此不顯示其任何內容。"
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "這是哪一個 PostgreSQL、本服務以「誰」的身分連線，以及伺服器已運作多久。"

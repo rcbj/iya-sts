@@ -30,11 +30,15 @@
 // so a new route family cannot arrive unmapped and quietly answer on every
 // listener.
 //
-// **ONE PATH IS EVERYWHERE**: `/healthcheck`, which a load balancer in front
-// of ANY listener asks. It is no application's, and `classify()` answers
-// `EVERYWHERE` for it. A path nothing claims (an unrouted one) answers null,
-// and is admitted everywhere, so Express's own `Cannot GET` body — what the
-// metadata test tells an unrouted path from a 404 by — is unchanged.
+// **TWO PATHS ARE EVERYWHERE**: `/healthcheck`, which a load balancer in
+// front of ANY listener asks, and since #570 everything under `/web` — the
+// card stylesheet and the locale catalogs every static public surface draws
+// with (`common/public_assets.ts`), which a listener answering any of those
+// surfaces must answer. Neither is an application's, and `classify()`
+// answers `EVERYWHERE` for them. A path nothing claims (an unrouted one)
+// answers null, and is admitted everywhere, so Express's own `Cannot GET`
+// body — what the metadata test tells an unrouted path from a 404 by — is
+// unchanged.
 //
 // **NAMED AUTHORIZATION SERVERS** (`/<as>/oauth2/...`, `/<as>/gnap`, and
 // `/<as>/.well-known/openid-configuration`) have a first segment the
@@ -75,8 +79,11 @@ const APPLICATIONS = [
   { id: 'home', label: 'Front door',
     what: 'GET /, its image, the documentation, terms and policy pages and ' +
           'the realm list.',
-    prefixes: [],
-    exact: ['/', '/logo.png', '/docs', '/tos', '/policy', '/realms'] },
+    // `/home-api`, `/home.js` and `/home.css` are the static front door's
+    // API, script and stylesheet (#579), beside the shell they serve.
+    prefixes: ['/home-api'],
+    exact: ['/', '/home.js', '/home.css', '/logo.png', '/docs', '/tos',
+            '/policy', '/realms'] },
   { id: 'authn', label: 'Authentication service', session: true,
     what: 'The sign-in service and its second factors, the wallet, ' +
           'SPNEGO and certificate sign-ins, and the sign-out.',
@@ -214,12 +221,12 @@ function underPrefix(path) {
  * table lookup on every request.
  *
  * @param path - the path, without the realm prefix and without a query
- * @returns the application's id, `EVERYWHERE` for `/healthcheck`, or null
- *   for a path no application claims
+ * @returns the application's id, `EVERYWHERE` for `/healthcheck` and
+ *   `/web`, or null for a path no application claims
  */
 function classify(path) {
   const p = String(path || '').split('?')[0].split('#')[0] || '/';
-  if (p === '/healthcheck') {
+  if (p === '/healthcheck' || p === '/web' || p.indexOf('/web/') === 0) {
     return EVERYWHERE;
   }
   if (Object.prototype.hasOwnProperty.call(EXACT, p)) {

@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "el controlador abierto no informa ninguna función de métricas, lo que significa una compilación de persistence_postgres.js anterior al 2026-09-11."
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Los procesos que usan este almacén se COORDINAN: cada cambio se escribe en un log monótono dentro de la transacción que lo hizo, y cada proceso aplica lo que los demás confirmaron. El aviso de LISTEN/NOTIFY solo lo hace inmediato — el log es el contrato, así que una notificación perdida cuesta latencia y nunca un cambio. Lo que NO se comparte son los sockets: el KDC, los listeners LDAP, los puertos TLS y los cuatro de SPIFFE son por proceso, y las cachés de repetición convergen en lugar de sincronizarse. Lo que este servicio GENERA — sesiones, tokens, códigos, artefactos, tickets de Kerberos, los contadores y el registro de auditoría — se persiste en modo PRODUCTO en un almacén postgres, cifrado bajo la misma clave de cifrado de claves que las claves de firma, y en ninguna otra configuración: el modo desarrollo regenera la clave de firma en cada arranque, así que un token restaurado no se verificaría contra nada."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "En esta configuración la persistencia no es coordinación. Dos procesos que apuntan a un mismo almacén mantienen cada uno su propia copia en memoria y no verán las escrituras del otro hasta que se reinicien. Active persistence.coordinate en un almacén postgres para cambiarlo. Lo que este servicio GENERA — sesiones, tokens, códigos, artefactos, tickets de Kerberos, los contadores y el registro de auditoría — se persiste en modo PRODUCTO en un almacén postgres, cifrado bajo la misma clave de cifrado de claves que las claves de firma, y en ninguna otra configuración: el modo desarrollo regenera la clave de firma en cada arranque, así que un token restaurado no se verificaría contra nada."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}}; el certificado del servidor se verifica contra los anclajes de confianza de este proceso."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS, sslmode={{sslmode}}; el certificado del servidor NO se verifica (persistence.databaseTlsRejectUnauthorized está desactivado), que es el ajuste honesto para el par autofirmado que genera el stack de compose. La conexión está cifrada en cualquier caso."
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "SIN TLS — la cadena de conexión no lo pide. La base de datos del stack de compose RECHAZA una conexión en texto plano, porque todas las reglas de host de su pg_hba.conf son hostssl, así que esta configuración no se conectará allí."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "desconocido — la cadena de conexión no es una URL, así que no se puede leer el sslmode de ella."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "la cadena de conexión no es una URL; no se muestra nada de ella, porque lleva una contraseña."
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "Qué PostgreSQL es este, COMO quién está conectado este servicio y cuánto tiempo lleva activo el servidor."

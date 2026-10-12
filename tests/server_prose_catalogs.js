@@ -22,7 +22,8 @@
 //      that does not exist), every `{{placeholder}}` of a template (#543
 //      phase 2; a dropped one loses a value, an invented one draws braces),
 //      every HTML tag and entity (some prose is drawn as markup), and every
-//      `**` (a renderer strips them in pairs).
+//      `**` (a renderer strips them in pairs) — and a coverage note's
+//      leading `full`, `partial` or `mock`, which a consumer parses.
 //   C. Every catalog is CURRENT (rcbj, 2026-10-12): a base catalog holds a
 //      translation of every English message, made from the English the
 //      source says NOW; an overlay holds only current translations; and no
@@ -56,6 +57,16 @@ const DIRECTORY = path.join(ROOT, 'common', 'prose_locales');
 // The MARKS of a text a translation must keep — its `code spans`, its
 // {{placeholders}}, its HTML tags and entities, and its ** — sorted, as one
 // string.
+// A COVERAGE NOTE's first word — `full`, `partial` or `mock` — which
+// `tests/vendored/sts_metadata.js` reads from the answer and a consumer may
+// parse: a translation keeps it verbatim, first (phase 3).
+function coverageOf(text) {
+  log.debug("Entering coverageOf().");
+  const m = /^(full|partial|mock)\b/.exec(String(text));
+  log.debug("Leaving coverageOf().");
+  return m ? m[1] : '';
+}
+
 // The HTML elements prose may carry, drawn as markup by a raw renderer.
 const TAGS = 'a|b|br|code|em|i|kbd|li|ol|p|pre|small|span|strong|sub|sup|' +
              'ul';
@@ -143,7 +154,8 @@ async function run(t) {
           malformed.push(key);
         } else if (key in english &&
                    one.en === prose.hashOf(english[key]) &&
-                   spansOf(one.text) !== spansOf(english[key])) {
+                   (spansOf(one.text) !== spansOf(english[key]) ||
+                    coverageOf(one.text) !== coverageOf(english[key]))) {
           altered.push(key);
         }
       });

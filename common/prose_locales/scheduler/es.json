@@ -1,0 +1,546 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "Fuentes de atributos: actualización programada"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "Lee la siguiente página de personas del dominio desde cada fuente de atributos cuyo intervalo programado haya vencido, sobre sus entradas (#94). attributeSources.refreshBatch personas por fuente y por ejecución."
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "Caducidad de sesiones"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "ca99d997bdb0c403",
+    "text": "Termina cada sesión de inicio de sesión cuya vida útil o tiempo de inactividad haya vencido, en todos los dominios: una fila de auditoría, CAEP session-revoked y los Logout Tokens de back-channel, una sola vez para todo el clúster."
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "Expulsión de entradas de caché caducadas"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "Elimina, en este proceso, cada entrada de caché y de almacén de repeticiones cuya vida útil haya vencido — solo limpieza: cada almacén sigue rechazando una entrada caducada allí donde la lee."
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "Barrido de reclamaciones caducadas"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "Elimina las reclamaciones de un solo uso cuya vida útil haya vencido de la tabla que comparten todos los nodos."
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "Instantánea del nodo"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "Escribe las vistas Monitorización → Pools de workers y → Salud del nodo de este nodo en el almacén compartido, una fila por nombre de nodo, para que cada nodo muestre todos los nodos en esas páginas (#332)."
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "Purga de instantáneas de nodos"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "Elimina la instantánea de Pools de workers y Salud del nodo de un nodo que ya no es un miembro activo del clúster una vez que tiene más de cluster.nodeSnapshotRetentionHours; nunca la de un miembro activo, y nada mientras no pueda leerse la pertenencia (#332)."
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "Barrido de ventanas de límite de tasa terminadas"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "Elimina las ventanas de límite de tasa ya transcurridas de la tabla que comparten todos los nodos."
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Nueva comprobación de atestación de Android"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "f918ea71421d9df1",
+    "text": "Consulta a la lista de estado de atestación de Android activa sobre cada cadena de Android almacenada — claves de dispositivo y credenciales WebAuthn, en todos los dominios — y degrada las que revoca o suspende: autodeclarada, auditada, CAEP credential-change. Se ejecuta cuando se activa una lista, y a diario."
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Descarga de la lista de estado de atestación de Android"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "Descarga la lista de estado de atestación de claves de Android de Google desde devices.androidStatusUrl y la carga como el conjunto de datos de riesgo android.attestation-status: qué certificados de atestación están revocados o suspendidos. A diario (devices.androidStatusRefreshS); una lista idéntica a la activa no carga nada."
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "Retirada de claves de cifrado de federación"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "Quita de cada relación de federación la clave de cifrado que reemplazó una rotación, una vez transcurrido federation.encryptionKeyGraceS. La clave ya dejó de descifrar en ese instante; esto la retira de la entrada."
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP: concesiones caducadas"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "d5ae13ff9e6e4b50",
+    "text": "Finaliza cada concesión GNAP cuya vida útil de interacción o de concesión (gnap.grantLifetimeS) haya terminado y que ninguna solicitud haya tocado desde entonces, registrando el motivo (#432)."
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP: límites de concesiones terminadas"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "84f932ae29b1dfb3",
+    "text": "Elimina los totales acumulados que el servidor de recursos de demostración lleva para los límites de cada concesión GNAP una vez que la concesión ha terminado, cuando ya no puede presentarse ningún token suyo (#432)."
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "Recuento de valores por clave de cifrado de datos"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "Cuenta los valores sellados con cada clave de cifrado de datos, en una sola pasada por el almacén, y guarda cada recuento en su clave para /admin/encryption."
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "Recifrado de datos y destrucción de claves"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "Vuelve a sellar con la clave actual cada valor que siga sellado con una clave de cifrado de datos reemplazada, y destruye una clave reemplazada una vez que no queda nada sellado con ella y lleva reemplazada keys.dataKeyRetireAfterDays."
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "Rotación de claves de cifrado de datos"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "Da un sucesor a cada clave de cifrado de datos que haya sellado valores nuevos durante keys.dataKeyRotationDays, publicado keys.dataKeyActivationLeadSeconds antes de que se selle nada con él; el trabajo de recifrado vuelve a sellar después lo que selló la clave antigua."
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "Rotación de claves de cifrado de datos, manual"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "Rota ahora cada clave de cifrado de datos almacenada — o las de un dominio, o las de una clase; las claves que reemplazan siguen abriendo lo que sellaron hasta que se vuelva a sellar."
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "Rotación de la clave de cifrado de claves, manual"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "Crea una nueva versión de la clave de cifrado de claves en su servicio de gestión de claves y vuelve a envolver con ella cada clave de cifrado de datos. Solo para una clave en un KMS."
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "Rotación de la clave krbtgt"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "Reemplaza la clave krbtgt de cada dominio — la clave con la que se sella cada TGT — por una nueva aleatoria en el siguiente kvno una vez que tiene krb5.krbtgtRotationIntervalDays de antigüedad, conservando la que reemplaza durante el máximo tiempo que puede vivir un TGT sellado con ella, y nunca mientras la versión que conservó la última rotación siga dentro de su ventana. Da su primera clave a un dominio en producto que no tenga ninguna. El resultado de cada ejecución indica el kvno, la última rotación y cuándo vence la siguiente."
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "Rotación de la clave krbtgt, manual"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "Rota ahora la clave krbtgt del dominio. Con invalidate, no conserva ninguna versión anterior: se rechaza cada TGT emitido antes y un evento de Shared Signals lo comunica."
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "Entrega de la bandeja de salida de correo"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "Envía cada mensaje en cola que haya vencido — un reintento cuyo tiempo de espera haya transcurrido, una concesión que haya caducado, una fila restaurada tras un reinicio — pasa a mensajes fallidos cualquiera que siga pendiente más allá de mail.retentionS, y quita las filas terminadas más allá de ese plazo."
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "Barrido de cierre de sesión back-channel"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "Envía cada entrega de Logout Token que haya vencido — un reintento cuyo tiempo de espera haya transcurrido, una concesión que haya caducado, una fila restaurada tras un reinicio — y pasa a mensajes fallidos cualquiera que siga pendiente más allá de oauth2.backchannelLogoutRetentionS."
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "Barrido de CIBA"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "Intenta cada ping y push de CIBA que haya vencido, pasa a mensajes fallidos uno que siga pendiente más allá de oauth2.cibaNotifyRetentionS, hace caducar las solicitudes de autenticación backchannel que nadie respondió a tiempo, y descarta lo que terminó hace más de una hora."
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "Claims Providers: actualizar tokens vinculados"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "Actualiza el token de cada persona en un Claims Provider que haya vinculado antes de que caduque, y descarta las solicitudes de vinculación que nadie terminó (#147)."
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "Caducidad de secretos de cliente"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "Comprueba cada secreto de cliente de cada aplicación: una fila de auditoría para una aplicación que tenga uno que caduque dentro de oauth2.clientSecretExpiryWarningDays, y para una cuyos secretos hayan caducado todos; y quita los secretos caducados de una aplicación que tenga al lado uno sin caducar — nunca el último, que permanece y se rechaza en producto."
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "Barrido de OpenID Provider Commands"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "Envía cada entrega de Command Token que haya vencido — un reintento cuyo tiempo de espera haya transcurrido, una concesión que haya caducado, una fila restaurada tras un reinicio — pasa a mensajes fallidos cualquiera que siga pendiente más allá de oauth2.commandRetentionS, y descarta los tokens de callback caducados y las ejecuciones de tenant terminadas."
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "Autorización de dispositivos: códigos caducados"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "Hace caducar los códigos de dispositivo RFC 8628 que nadie aprobó a tiempo, y quita los que terminaron hace más de una hora (#150)."
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "Sujetos efímeros: asignaciones caducadas"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "Quita cada identificador de sujeto efímero cuyos tokens y sesión ya no puedan estar en uso (#149)."
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "Purga de tokens rastreados caducados"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "Elimina los registros de tokens que hayan superado su caducidad y oauth2.expiredTokenRetentionS, y las revocaciones de tokens que hayan caducado."
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management: concesiones caducadas"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "Quita cada concesión OAuth cuyo último token haya caducado, y el registro de cada token acuñado bajo una concesión una vez que caduca (#142)."
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "Barrido de aserciones usadas caducadas"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "Elimina las aserciones RFC 7523 y RFC 7522 cuya vida útil haya vencido del historial de uso único que comparten todos los nodos."
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "Rastreo de la Entity Collection de OpenID Federation"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "Recorre cada entidad por debajo del dominio — cada una resuelta hasta el dominio antes de descargar su propia lista — y conserva lo que encuentra para el endpoint de la colección (#136)."
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "Rotación de claves de OpenID Federation"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "Mantiene las Federation Entity Keys de cada dominio una rotación por delante — una clave siguiente publicada antes de que firme — y rota una vez que la clave actual tiene más de oidfed.keyRotationDays y la siguiente lleva publicada todo oidfed.keyOverlapDays."
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "Rotación de claves de OpenID Federation, manual"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "Rota ahora la Federation Entity Key del dominio — o, como emergencia, revoca la clave actual y la siguiente como comprometidas y las reemplaza."
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "Registros de OpenID Federation terminados"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "Quita cada cliente registrado mediante una Trust Chain de OpenID Federation cuyo registro haya terminado (12.3). Cada endpoint ya responde a ese cliente como desconocido; esto solo evita que la entrada permanezca."
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "Purga de filas acuñadas caducadas"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51010ce2ada820cd",
+    "text": "Elimina del almacén compartido, en lotes de 5000 y como máximo 20 lotes de cada tipo por ejecución, las filas acuñadas que ningún inicio volverá a leer: las que superaron su propia caducidad, las de un dominio que ya no está definido (escritas hace más de una hora), y las filas sin caducidad de un almacén de corta duración con más antigüedad que persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "Barrido de lápidas caducadas"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "d5b8faad6c0c24c4",
+    "text": "Elimina del almacén compartido las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention."
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "Informe de memoria"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "4f2c054a1405a843",
+    "text": "Registra, en este proceso, una línea con su rol y su memoria: tamaño residente, heap usado y total, el límite del heap, la memoria externa y los array buffers (#341)."
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "Exclusiones voluntarias de RISC que entran en vigor"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "Envía RISC opt-out-effective para cada cuenta cuyo titular se excluyó en /portal/signals hace al menos risc.optOutDelayHours y no lo canceló (RISC 1.0 sección 2.8), lo que pasa la cuenta al estado de exclusión."
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "Importación del directorio de conjuntos de datos de riesgo"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "Importa cada conjunto de datos que un operador haya puesto en risk.datasetsDirectory, según su manifiesto, verificándolo y activándolo; una versión ya registrada no se vuelve a cargar."
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "Descarga de metadatos FIDO"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "Descarga el BLOB FIDO MDS3 desde risk.mdsUrl y lo importa cuando su número de serie es más reciente que el del activo — verificado hasta la raíz FIDO, con la revocación de su cadena comprobada, bajo una aceptación registrada de los términos fido-mds3. A diario (risk.mdsRefreshS), cada hora una vez que el BLOB activo ha superado su propio nextUpdate."
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "Nueva comprobación del riesgo de las sesiones activas"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "Vuelve a comprobar cada sesión de inicio de sesión activa contra los conjuntos de datos activos y el historial de fallos, y eleva el riesgo de una que se haya vuelto más arriesgada — una dirección que ahora está en una lista de Tor o de denegación, una contraseña que se está intentando adivinar — de modo que cada token de ella se decida con el nuevo riesgo, y a una persona que pase a HIGH le responda la política de respuesta al riesgo."
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "Retención de riesgo"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "Elimina las filas de las versiones de conjuntos de datos reemplazadas hace más de risk.supersededRetentionDays y de las versiones rechazadas, los fallos con más antigüedad que risk.failureRetentionDays, y las evaluaciones y el historial del modelo más allá de risk.assessmentRetentionDays y risk.historyRetentionDays."
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "Importaciones de riesgo estancadas"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "Marca como rechazada (STS-RISK-0035) cada versión de conjunto de datos que haya quedado cargándose sin progreso durante risk.importStallMinutes — una importación cuyo proceso se detuvo a medias — y descarta las filas que hubiera escrito."
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "Limpieza de cargas de riesgo"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "En cada proceso: mantiene actualizadas las cargas de conjuntos de datos que este proceso está importando, y elimina de risk.uploadDirectory una carga que ningún proceso activo haya tocado durante risk.importStallMinutes — lo que dejó atrás un proceso que se detuvo a mitad de una importación."
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "Historial de ejecuciones del programador"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "Conserva, por trabajo, sus últimas scheduler.runHistoryCount ejecuciones o sus últimas scheduler.runHistoryHours, lo que sea mayor, y siempre su ejecución más reciente; elimina el resto — y cada fila que nombre un dominio que se haya quitado — en lotes de 2000, como máximo 25 por ejecución."
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "Entregas SCIM salientes"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "Envía las entregas vencidas de cada cliente SCIM saliente — cambios nuevos y reintentos por igual — a su proveedor de servicio, scimClient.concurrency a la vez, omitiendo un cliente mientras esté en pausa por su espera de reintento, y mantiene las colas dentro de su retención (#552)."
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "Reconciliaciones SCIM salientes"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "Reconcilia cada cliente SCIM saliente cuyo scimClientReconcileMinutes haya llegado: se envía cada persona y grupo de su ámbito, y lo que su proveedor de servicio tenga bajo un externalId de este dominio y ya no esté en el ámbito se desaprovisiona (#552)."
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "Limpieza de la contraseña anterior de cuentas de servicio"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "Borra la contraseña anterior de una cuenta de servicio rotada una vez que ha terminado su periodo de solapamiento. El solapamiento se comprueba donde se lee la contraseña, así que esto es limpieza."
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "Rotación de contraseñas de cuentas de servicio"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "Da una contraseña nueva a cada cuenta de servicio que nombre un destino de envío una vez transcurrido su intervalo (la política de cuentas de servicio): enviada primero al destino, confirmada solo después de que el envío tuvo éxito, y la contraseña anterior aceptada durante el solapamiento. Un envío fallido no cambia nada."
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "Rotación de contraseñas de cuentas de servicio, manual"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "Rota ahora la contraseña de una cuenta de servicio, como lo haría el trabajo horario: primero el envío, luego la confirmación."
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "Limpieza de claves de firma retiradas"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "Descarta cada clave de firma retirada cuyo periodo de gracia haya transcurrido y marca su certificado como reemplazado en la lista de su CA emisora."
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "Rotación de claves de firma"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "Da a cada unidad de firma del dominio una clave siguiente, publicada antes de que firme nada, y promueve cada clave siguiente una vez que lleva publicada un intervalo completo (signing.rotationIntervalDays); la clave que reemplaza sigue verificando durante su periodo de gracia."
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "Rotación de claves de firma, manual"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "Rota ahora las unidades de firma nombradas del dominio — o todas: cada clave siguiente pasa a ser la actual y la clave que reemplaza se retira, y sigue verificando durante su periodo de gracia."
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "Rotación de autoridades SPIFFE"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "Rota la autoridad X.509 SPIFFE del dominio una vez superada la mitad de su vida útil y su autoridad JWT una vez que tiene más de la mitad de spiffe.caTtl; las antiguas siguen publicadas (spiffe.retainedAuthorities)."
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "Actualización TUF de sigstore"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "Obtiene la raíz de confianza de sigstore (las CA de Fulcio, las claves de Rekor y del registro CT) mediante TUF para las comprobaciones de firma de imagen del atestador de workloads docker; una actualización que falla conserva el último conjunto verificado."
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Barrido de mensajes fallidos de Shared Signals"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "Elimina los mensajes fallidos caducados de este proceso, sondea los flujos muertos que hayan vencido (solo un nodo) y registra el resumen de lo que pasó a mensajes fallidos desde el último barrido."
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "Sondeo de Shared Signals de socios de federación"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "Sondea cada relación de federación cuyo flujo de Shared Signals del socio sea un flujo de sondeo (RFC 8936): los Security Event Tokens que contiene se verifican, se procesan y se confirman."
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Mantenimiento de flujos de Shared Signals"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "Pausa, deshabilita o elimina un flujo cuyo receptor haya estado inactivo durante ssf.inactivityTimeoutS (SSF 1.0 sección 8.1.1), anunciando primero una pausa o deshabilitación con un evento stream-updated, y envía un evento de verificación a cada flujo habilitado que no haya recibido ninguno de este transmisor durante ssf.verificationEveryS (sección 8.1.4)."
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "Rotación de la clave de tickets de sesión TLS"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "Reemplaza la clave de tickets de sesión que comparten las escuchas TLS de todos los nodos en un clúster activo-activo, para que un ticket emitido por un nodo se reanude en otro. La clave que reemplaza se elimina, lo que limita durante cuánto tiempo pueden recuperarse a partir de un ticket los secretos de una sesión reanudada."
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "solo a petición"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}} (UTC)"
+  },
+  "sched.sentence.every": {
+    "en": "05f22fb4833ac391",
+    "text": "cada {{span}}"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "3893802ebe2b3ab1",
+    "text": "cada {{span}}, según {{setting}}"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "sin intervalo (0)"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "sin intervalo (0), según {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "el líder está haciendo ticks; puede que una ejecución anterior siga en curso, o que su reclamación no haya caducado"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "ningún líder ha hecho un tick desde {{since}}"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled está desactivado"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "nombrado en scheduler.disabledJobs"
+  },
+  "sched.sentence.offZero": {
+    "en": "e9453e79cc9c7d92",
+    "text": "{{setting}} es 0"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "este proceso"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "la base de datos"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "el inicio de este servicio"
+  },
+  "sched.param.interval": {
+    "en": "668b489f6de0a264",
+    "text": "su intervalo"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "Se pidió al líder del programador que se retirara. Lo hace en su siguiente tick, y otro nodo asume el liderazgo en su siguiente latido."
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "Hay una ejecución de {{job}} en cola. El líder del programador la inicia en su siguiente tick."
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "Hay una ejecución de {{job}} en cola (ya había una; es esta). El líder del programador la inicia en su siguiente tick."
+  }
+}

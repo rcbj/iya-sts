@@ -96,7 +96,7 @@ sequence of phases, each of which leaves a service that passes the suite
   with PKCE, every token DPoP-bound to a key the browser cannot export, held
   in memory and dying with the sign-on session it was issued on, and exempt
   from FAPI's confidential-client rule as the console is. The portal and the
-  console share that client half (`admin-ui/web_spa_client.ts`).
+  console share that client half (`common/web_spa_client.ts`).
 * **The SPAs run script, and nothing else here does (decision D10).** Every
   page of this service works without JavaScript today (`script-src 'none'`,
   thirteen argued exceptions). A single-page application cannot, so `/admin/`
@@ -104,8 +104,14 @@ sequence of phases, each of which leaves a service that passes the suite
   `'unsafe-inline'` and never another origin — and `frame-ancestors` and
   `base-uri` stay as everywhere. This is a deliberate REVERSAL of the
   works-without-script rule for those two surfaces, written down in the root
-  `CLAUDE.md` when the SPAs land; every other surface keeps `script-src
-  'none'`.
+  `CLAUDE.md` when the SPAs land. **#569 extends it to every human-facing
+  page** (rcbj, 2026-10-12): each public surface becomes a static
+  application with a bundle of its own over `common/web_*.ts` (#570), script
+  required, the browser translating from catalogs served as static JSON
+  under `/web`, while a specification's endpoint — the auto-POST documents,
+  the OP iframe — keeps its server-drawn answer. So the runtime serves a
+  family of static surfaces, not two SPAs: each one's shell, bundle and
+  `/web` files, the policy through the one CSP builder.
 * **The runtime re-checks `frame-ancestors` on every response**, as `app.js`
   does today when a response is flushed.
 * **The server-drawn pictures** (delegation map, federation diagram,

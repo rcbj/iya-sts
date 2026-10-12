@@ -579,7 +579,7 @@ const fileProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'file');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no path configured)',
+    return { from: at.where || SOURCE_PROSE.noPath,
              shared: at.borrowed || undefined };
   },
   read: function (spec) {
@@ -640,9 +640,10 @@ const awsProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no secret id configured)',
+    return { from: at.where || SOURCE_PROSE.noSecretId,
              shared: at.borrowed || undefined,
-             region: reachOf(spec || KEK, 'region') || '(the SDK default)' };
+             region: reachOf(spec || KEK, 'region') ||
+                     SOURCE_PROSE.sdkDefault };
   },
   read: async function (spec) {
     log.debug('Entering awsProvider.read().');
@@ -695,7 +696,7 @@ const gcpProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no resource name configured)',
+    return { from: at.where || SOURCE_PROSE.noResourceName,
              shared: at.borrowed || undefined };
   },
   read: async function (spec) {
@@ -751,10 +752,10 @@ const azureProvider = {
     log.debug("Entering describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving describe().");
-    return { from: at.where || '(no secret name configured)',
+    return { from: at.where || SOURCE_PROSE.noSecretName,
              shared: at.borrowed || undefined,
              vault: reachOf(spec || KEK, 'vault') ||
-                    '(no vault url configured)' };
+                    SOURCE_PROSE.noVaultUrl };
   },
   read: async function (spec) {
     log.debug('Entering azureProvider.read().');
@@ -928,7 +929,8 @@ async function vaultConnect(spec) {
               'the SDK\'s own VAULT_TOKEN handling, is the identity.');
     return { client: client, login: null, tls: tls, role: role,
              endpoint: endpoint || '(VAULT_ADDR)',
-             how: token ? 'a configured token' : 'the SDK\'s VAULT_TOKEN' };
+             how: token ? SOURCE_PROSE.byConfiguredToken
+                        : SOURCE_PROSE.bySdkToken };
   }
   // **`client.request()` RATHER THAN `client.certLogin()`, AND THAT IS A
   // BUG IN THE SDK RATHER THAN A PREFERENCE.** node-vault 0.10.2 declares
@@ -966,7 +968,7 @@ async function vaultConnect(spec) {
   log.debug('Leaving vaultConnect(). Authenticated with a certificate.');
   return { client: client, login: login, tls: tls, role: role,
            endpoint: endpoint || '(VAULT_ADDR)',
-           how: 'a client certificate' };
+           how: SOURCE_PROSE.byCertificate };
 }
 
 // ---------------------------------------------------------------------------
@@ -987,16 +989,17 @@ const vaultProvider = {
     const at = locationOf(spec || KEK, 'ref');
     const cert = String(config.value('keys.vaultClientCert') || '').trim();
     log.debug("Leaving describe().");
-    return { from: at.where || '(no path configured)',
+    return { from: at.where || SOURCE_PROSE.noPath,
              shared: at.borrowed || undefined,
              endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
              field: fieldOf(spec || KEK) || 'value',
              // HOW, and never WITH WHAT: the path to a certificate is a fact
              // about the deployment and the certificate is public anyway; a
              // token would be neither and is reported as its presence only.
-             authenticates: cert ? 'a client certificate (' + cert + ')'
-                                 : (reachOf(spec || KEK, 'token')
-                                     ? 'a token' : 'the SDK\'s VAULT_TOKEN') };
+             authenticates: cert
+               ? sourceText('byCertificateAt', { cert: cert })
+               : (reachOf(spec || KEK, 'token') ? SOURCE_PROSE.byToken
+                                                : SOURCE_PROSE.bySdkToken) };
   },
   read: async function (spec) {
     log.debug('Entering vaultProvider.read().');
@@ -1136,9 +1139,9 @@ const transitProvider = {
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving transitProvider.describe().");
     return { from: at.where ? transitMount() + '/keys/' + at.where
-                            : '(no key configured)',
+                            : SOURCE_PROSE.noKey,
              endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
-             wraps: 'each data encryption key, in the KMS' };
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering transitProvider.read().');
@@ -1278,9 +1281,9 @@ const awsKmsProvider = {
     log.debug("Entering awsKmsProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving awsKmsProvider.describe().");
-    return { from: at.where || '(no key configured)',
-             region: reachOf(spec || KEK, 'region') || '(the SDK default)',
-             wraps: 'each data encryption key, in the KMS' };
+    return { from: at.where || SOURCE_PROSE.noKey,
+             region: reachOf(spec || KEK, 'region') || SOURCE_PROSE.sdkDefault,
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering awsKmsProvider.read().');
@@ -1412,8 +1415,8 @@ const gcpKmsProvider = {
     log.debug("Entering gcpKmsProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving gcpKmsProvider.describe().");
-    return { from: at.where || '(no key configured)',
-             wraps: 'each data encryption key, in the KMS' };
+    return { from: at.where || SOURCE_PROSE.noKey,
+             wraps: SOURCE_PROSE.wrapsInKms };
   },
   read: async function (spec) {
     log.debug('Entering gcpKmsProvider.read().');
@@ -1567,10 +1570,10 @@ const azureKeysProvider = {
     log.debug("Entering azureKeysProvider.describe().");
     const at = locationOf(spec || KEK, 'ref');
     log.debug("Leaving azureKeysProvider.describe().");
-    return { from: at.where || '(no key name configured)',
+    return { from: at.where || SOURCE_PROSE.noKeyName,
              vault: reachOf(spec || KEK, 'vault') ||
-                    '(no vault url configured)',
-             wraps: 'each data encryption key, in the vault' };
+                    SOURCE_PROSE.noVaultUrl,
+             wraps: SOURCE_PROSE.wrapsInVault };
   },
   read: async function (spec) {
     log.debug('Entering azureKeysProvider.read().');
@@ -2165,7 +2168,7 @@ function describeSecret(spec) {
     configured: configured,
     provider: configured ? (provider ? provider.id : named) : 'none',
     label: configured ? (provider ? provider.label : 'unknown')
-                      : 'not configured',
+                      : SOURCE_PROSE.notConfigured,
     known: configured ? !!provider : true,
     where: (configured && provider) ? provider.describe(spec) : {},
     // WHETHER IT IS SHARING THE KEK'S LOCATION, which is the one fact an
@@ -2486,6 +2489,243 @@ function certificateFacts(pemPath) {
 // connection for the life of one report, so a render costs ONE login, which is
 // also the one the startup read makes.
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// WHAT THIS MODULE SAYS IN WORDS, as tables (#543 phase 2c), so that the
+// secretstore namespace can carry them and `common/server_prose.ts` refill an
+// answer to `GET /admin-api/secrets`, `GET /admin-api/encryption` and the
+// three answers that describe the database password (`/admin-api/database`,
+// `/admin-api/persistence`, `/admin-api/ldap/service`) in a console reader's
+// language. Each is what the code wrote inline until #543, byte for byte; a
+// `{{name}}` is a value filled with `ServerProse.fill()` — a path, a region, a
+// setting's name (carried over as data) — or another phrase of this table.
+//
+// `SOURCE_PROSE` is what a secret's description, a store's label and a
+// probe's answer say; `PROBE_WHAT` is what each probe asks, by provider and
+// probe id. A provider's `label` is on the provider itself. What is NOT
+// here: an error's text (errors stay English, rcbj's rule from #539), a
+// failed read's reason, and a key handle's label ("Transit key <mount>/<name>",
+// a name with a word in front of it).
+// ---------------------------------------------------------------------------
+const SOURCE_PROSE = Object.freeze({
+  reportWhat:
+    'Where this service reads its primordial secrets from — the ' +
+    'key-encryption key everything it seals is sealed under, and the ' +
+    'database password — whether it actually read them, and what the store ' +
+    'at the other end is doing.',
+  notConfigured: 'not configured',
+  noPath: '(no path configured)',
+  noSecretId: '(no secret id configured)',
+  noResourceName: '(no resource name configured)',
+  noSecretName: '(no secret name configured)',
+  noVaultUrl: '(no vault url configured)',
+  noKey: '(no key configured)',
+  noKeyName: '(no key name configured)',
+  sdkDefault: '(the SDK default)',
+  sdkDefaultEndpoint: '(the SDK default endpoint)',
+  wrapsInKms: 'each data encryption key, in the KMS',
+  wrapsInVault: 'each data encryption key, in the vault',
+  byCertificateAt: 'a client certificate ({{cert}})',
+  byCertificate: 'a client certificate',
+  byToken: 'a token',
+  byConfiguredToken: 'a configured token',
+  bySdkToken: 'the SDK\'s VAULT_TOKEN',
+  noRole: '(none named)',
+  fileNotObject:
+    'The file is not a JSON object, so whatever is in it is taken whole. ' +
+    'That is what a raw key file is.',
+  memberNames:
+    'Member NAMES only. Which one a secret takes is its own field setting.',
+  noField: 'No field is configured, so the whole file is this secret.',
+  sharesKekFile:
+    'This secret shares the key-encryption key\'s file and that file is not ' +
+    'a JSON object — so what is in it is the KEY, and reading this secret ' +
+    'is REFUSED rather than handing that key to a database.',
+  fileNotJson:
+    'The file is not JSON, so the whole of it is this secret and the field ' +
+    'is not used.',
+  noLogin:
+    'No client certificate is configured, so no login was made: the token ' +
+    'is whatever {{token}} or the SDK\'s VAULT_TOKEN supplies.',
+  canWrite:
+    'THIS IDENTITY CAN WRITE. It could replace the key-encryption key, and ' +
+    'everything sealed under the old one would be unreadable.',
+  readOnly:
+    'Read-only on every path it was asked about, which is what the policy ' +
+    'is supposed to say.',
+  reachesNothing:
+    'This identity may not reach any of the paths it is configured to read. ' +
+    'A read at startup would be refused.',
+  // `{{label}}` is a provider's label, and these three are never matched
+  // as written: `passwordTemplates()` fills each with every provider that
+  // can hold a password, so that a matched phrase begins with a label and an
+  // operator's own "Name (detail)" is never taken for one.
+  passwordFrom: '{{label}} ({{from}})',
+  passwordShared: '{{label}}, shared with the key-encryption key',
+  passwordFromShared:
+    '{{label}} ({{from}}), shared with the key-encryption key',
+  connectionString: 'the connection string'
+});
+
+const PROBE_WHAT = Object.freeze({
+  'file/file':
+    'The file itself: whether it is there, who can read it, and when it ' +
+    'last changed.',
+  'file/members':
+    'Whether the file holds a JSON object, and which members are in it — ' +
+    'the NAMES and never the values.',
+  'file/field':
+    'Whether the member this secret is configured to take is actually in ' +
+    'the file.',
+  'vault/client-certificate':
+    'The certificate this service presents to the store, and when it ' +
+    'expires.',
+  'vault/store-ca':
+    'The anchor this service verifies the store\'s own listener against.',
+  'vault/seal-status':
+    'Whether the store is initialised, whether it is sealed, what kind of ' +
+    'seal it has, and which build it is.',
+  'vault/health':
+    'The store\'s own health summary: its clock, its cluster, and whether ' +
+    'this node is the active one.',
+  'vault/leader':
+    'High availability: whether this node is the leader, and where the ' +
+    'leader is.',
+  'vault/authentication':
+    'Logging in the way a startup read does, and what the store handed back.',
+  'vault/token':
+    'What the store says about the token that login produced, asked of the ' +
+    'store rather than read off the login reply.',
+  'vault/capabilities':
+    'What this identity may actually do, asked of the store: the paths it ' +
+    'reads, and a write it must not be able to make.',
+  'vault/mounts':
+    'The secret engines this identity can see — which is fewer than the ' +
+    'store has, and should be.',
+  'vault/versions':
+    'The KV metadata for this secret: when it was written, how many ' +
+    'versions there are, and which one a read gets.',
+  'aws/describe':
+    'Everything AWS Secrets Manager knows about this secret EXCEPT its ' +
+    'value: rotation, the KMS key, the versions and their staging labels.',
+  'vault-transit/transit-key':
+    'What Transit says about the key that wraps the data keys: its type, ' +
+    'its versions, and whether it may ever leave the KMS.',
+  'aws-kms/kms-key':
+    'What AWS KMS says about the key that wraps the data keys: its state ' +
+    'and whether AWS rotates it.',
+  'gcp-kms/kms-key':
+    'What Cloud KMS says about the key that wraps the data keys: its ' +
+    'purpose, its primary version and its rotation schedule.',
+  'azure-keys/vault-key':
+    'What the vault says about the key that wraps the data keys: its type, ' +
+    'size, operations, version and rotation.',
+  'gcp/secret':
+    'The secret\'s own metadata: replication, labels, rotation and expiry.',
+  'gcp/version':
+    'The version a read would get: whether it is enabled, disabled or ' +
+    'destroyed.',
+  'azure/versions':
+    'Every version of this secret and its properties — enabled, created, ' +
+    'updated, expiry — and never the value.'
+});
+
+// The routes whose answers carry the secretstore namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/secrets', '/admin-api/encryption',
+                      '/admin-api/database', '/admin-api/persistence',
+                      '/admin-api/ldap/service'];
+
+// A phrase of `SOURCE_PROSE`, filled. LAZILY required: this module is read
+// by `keystore.js` long before `server_prose.ts` and its neighbours are
+// loaded, and `server_prose.ts` requires config.js.
+function sourceText(key, params) {
+  log.debug("Entering sourceText(). " + key);
+  const out = require('./server_prose').fill(SOURCE_PROSE[key],
+                                             params || {});
+  log.debug("Leaving sourceText().");
+  return out;
+}
+
+// The three password phrases with a provider's label filled in, by key:
+// what `passwordFromText()` fills and what the namespace matches against.
+// The key-management providers are left out: they hold keys, not passwords.
+function passwordTemplates() {
+  log.debug("Entering passwordTemplates().");
+  const fill = require('./server_prose').fill;
+  const out = {};
+  PROVIDERS.filter(function (one) {
+    return !one.remote;
+  }).forEach(function (one) {
+    ['passwordFrom', 'passwordShared', 'passwordFromShared']
+      .forEach(function (key) {
+        out[key + '.' + one.id] = fill(SOURCE_PROSE[key],
+                                       { label: one.label });
+      });
+  });
+  log.debug("Leaving passwordTemplates().");
+  return out;
+}
+
+/**
+ * Says where the database password comes from in one phrase — the
+ * provider's label, the location, and whether it is the key-encryption
+ * key's — for `persistence.js`'s description of the database (#543 phase
+ * 2c: the templates are this namespace's, beside the labels they hold).
+ *
+ * @param password - `describeDatabasePassword()`'s answer
+ * @returns the phrase
+ */
+function passwordFromText(password) {
+  log.debug("Entering passwordFromText().");
+  if (!password || !password.configured) {
+    log.debug("Leaving passwordFromText(). The connection string.");
+    return SOURCE_PROSE.connectionString;
+  }
+  const from = password.where && password.where.from
+    ? password.where.from : '';
+  let out = password.label;
+  if (from && password.shared) {
+    out = sourceText('passwordFromShared', { label: password.label,
+                                             from: from });
+  } else if (from) {
+    out = sourceText('passwordFrom', { label: password.label, from: from });
+  } else if (password.shared) {
+    out = sourceText('passwordShared', { label: password.label });
+  }
+  log.debug("Leaving passwordFromText().");
+  return out;
+}
+
+/**
+ * Extracts the secretstore namespace (#543 phase 2c): every provider's
+ * label, what each probe asks, the phrases a description, a store's label
+ * and a probe's answer carry, and the password phrases once per provider.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const serverProse = require('./server_prose');
+  // The three password templates go in once per provider, below, and never
+  // with `{{label}}` unfilled.
+  const phrases = {};
+  Object.keys(SOURCE_PROSE).filter(function (key) {
+    return !/^password/.test(key);
+  }).forEach(function (key) {
+    phrases[key] = SOURCE_PROSE[key];
+  });
+  const passwords = passwordTemplates();
+  const out = Object.assign({},
+    serverProse.harvest('secretstore.providers', PROVIDERS, ['label']),
+    serverProse.harvest('secretstore.source', phrases,
+                        Object.keys(phrases)),
+    serverProse.harvest('secretstore.password', passwords,
+                        Object.keys(passwords)),
+    serverProse.harvest('secretstore.probe', PROBE_WHAT,
+                        Object.keys(PROBE_WHAT)));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The probes the secret-store report runs, by id: asked once per store or
  * once per secret location, each handed a session that memoizes the
@@ -2512,8 +2752,7 @@ PROBES.file = {
     const at = locationOf(spec, 'file');
     log.debug("Leaving store().");
     return [
-      runProbe('file', 'The file itself: whether it is there, who can read ' +
-               'it, and when it last changed.', function () {
+      runProbe('file', PROBE_WHAT['file/file'], function () {
         const path = at.where;
         if (!path) {
           throw new Error('no path is configured');
@@ -2541,8 +2780,7 @@ PROBES.file = {
         }
         return out;
       }),
-      runProbe('members', 'Whether the file holds a JSON object, and which ' +
-               'members are in it — the NAMES and never the values.',
+      runProbe('members', PROBE_WHAT['file/members'],
                function () {
         const path = at.where;
         if (!path) {
@@ -2562,12 +2800,10 @@ PROBES.file = {
         }
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           return { json: false,
-                   note: 'The file is not a JSON object, so whatever is in ' +
-                         'it is taken whole. That is what a raw key file is.' };
+                   note: SOURCE_PROSE.fileNotObject };
         }
         return { json: true, members: Object.keys(parsed),
-                 note: 'Member NAMES only. Which one a secret takes is its ' +
-                       'own field setting.' };
+                 note: SOURCE_PROSE.memberNames };
       })
     ];
   },
@@ -2577,12 +2813,10 @@ PROBES.file = {
     const field = fieldOf(spec);
     log.debug("Leaving secret().");
     return [
-      runProbe('field', 'Whether the member this secret is configured to ' +
-               'take is actually in the file.', function () {
+      runProbe('field', PROBE_WHAT['file/field'], function () {
         if (!field) {
           return { field: null,
-                   note: 'No field is configured, so the whole file is this ' +
-                         'secret.' };
+                   note: SOURCE_PROSE.noField };
         }
         const text = fs.readFileSync(at.where).toString('utf8');
         let parsed = null;
@@ -2598,15 +2832,10 @@ PROBES.file = {
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           if (at.borrowed) {
             return { field: field, present: false, wouldRefuse: true,
-                     note: 'This secret shares the key-encryption key\'s ' +
-                           'file and that file is not a JSON object — so ' +
-                           'what is in it is the KEY, and reading this ' +
-                           'secret is REFUSED rather than handing that key ' +
-                           'to a database.' };
+                     note: SOURCE_PROSE.sharesKekFile };
           }
           return { field: field, present: false,
-                   note: 'The file is not JSON, so the whole of it is this ' +
-                         'secret and the field is not used.' };
+                   note: SOURCE_PROSE.fileNotJson };
         }
         return { field: field,
                  present: Object.keys(parsed).indexOf(field) >= 0,
@@ -2646,15 +2875,13 @@ PROBES.vault = {
     // certificate is why the store is "down".
     if (certPath) {
       rows.push(runProbe('client-certificate',
-                         'The certificate this service presents to the ' +
-                         'store, and when it expires.', function () {
+                         PROBE_WHAT['vault/client-certificate'], function () {
         return certificateFacts(certPath);
       }));
     }
     if (caPath) {
       rows.push(runProbe('store-ca',
-                         'The anchor this service verifies the store\'s own ' +
-                         'listener against.', function () {
+                         PROBE_WHAT['vault/store-ca'], function () {
         return certificateFacts(caPath);
       }));
     }
@@ -2664,9 +2891,7 @@ PROBES.vault = {
     // established, so a store that is up and SEALED is reported as exactly
     // that rather than as a login failure.
     rows.push(runProbe('seal-status',
-                       'Whether the store is initialised, whether it is ' +
-                       'sealed, what kind of seal it has, and which build ' +
-                       'it is.', async function () {
+                       PROBE_WHAT['vault/seal-status'], async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       const answer = await client.request({ path: '/sys/seal-status',
                                             method: 'GET' });
@@ -2679,8 +2904,7 @@ PROBES.vault = {
     // which is why node-vault special-cases this one path and resolves it
     // anyway. Forcing them makes the reply unambiguous either way.
     rows.push(runProbe('health',
-                       'The store\'s own health summary: its clock, its ' +
-                       'cluster, and whether this node is the active one.',
+                       PROBE_WHAT['vault/health'],
                        async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       const answer = await client.request({
@@ -2705,8 +2929,7 @@ PROBES.vault = {
     }));
 
     rows.push(runProbe('leader',
-                       'High availability: whether this node is the leader, ' +
-                       'and where the leader is.', async function () {
+                       PROBE_WHAT['vault/leader'], async function () {
       const client = (await connectUnauthenticated(session, spec)).client;
       return client.request({ path: '/sys/leader', method: 'GET' });
     }));
@@ -2717,21 +2940,18 @@ PROBES.vault = {
     // saying it could not prove who it is to the store it keeps its master
     // key in.
     rows.push(runProbe('authentication',
-                       'Logging in the way a startup read does, and what ' +
-                       'the store handed back.', async function () {
+                       PROBE_WHAT['vault/authentication'], async function () {
       const connected = await connect(session, spec);
       if (!connected.login) {
         return { how: connected.how, endpoint: connected.endpoint,
-                 note: 'No client certificate is configured, so no login was ' +
-                       'made: the token is whatever ' +
-                       ((spec && spec.token) || 'keys.kekToken') +
-                       ' or the SDK\'s VAULT_TOKEN supplies.' };
+                 note: sourceText('noLogin', {
+                   token: (spec && spec.token) || 'keys.kekToken' }) };
       }
       const auth = connected.login.auth || {};
       return {
         how: connected.how,
         endpoint: connected.endpoint,
-        role: connected.role || '(none named)',
+        role: connected.role || SOURCE_PROSE.noRole,
         policies: auth.policies || [],
         tokenPolicies: auth.token_policies || [],
         leaseDurationS: auth.lease_duration,
@@ -2744,9 +2964,7 @@ PROBES.vault = {
     }));
 
     rows.push(runProbe('token',
-                       'What the store says about the token that login ' +
-                       'produced, asked of the store rather than read off ' +
-                       'the login reply.', async function () {
+                       PROBE_WHAT['vault/token'], async function () {
       const client = (await connect(session, spec)).client;
       const answer = await client.request({ path: '/auth/token/lookup-self',
                                             method: 'GET' });
@@ -2777,9 +2995,7 @@ PROBES.vault = {
     // store by the RUNNING service: capabilities on the two paths it reads,
     // and on a path it must never be able to write.
     rows.push(runProbe('capabilities',
-                       'What this identity may actually do, asked of the ' +
-                       'store: the paths it reads, and a write it must not ' +
-                       'be able to make.', async function () {
+                       PROBE_WHAT['vault/capabilities'], async function () {
       const client = (await connect(session, spec)).client;
       const paths = [];
       [KEK, DATABASE_PASSWORD].filter(function (one) {
@@ -2836,13 +3052,9 @@ PROBES.vault = {
         return has(one, ['deny']);
       });
       out.verdict = out.canWrite.length
-        ? 'THIS IDENTITY CAN WRITE. It could replace the key-encryption key, ' +
-          'and everything sealed under the old one would be unreadable.'
-        : (out.canRead.length
-            ? 'Read-only on every path it was asked about, which is what the ' +
-              'policy is supposed to say.'
-            : 'This identity may not reach any of the paths it is configured ' +
-              'to read. A read at startup would be refused.');
+        ? SOURCE_PROSE.canWrite
+        : (out.canRead.length ? SOURCE_PROSE.readOnly
+                              : SOURCE_PROSE.reachesNothing);
       return out;
     }));
 
@@ -2851,8 +3063,7 @@ PROBES.vault = {
     // Vault's own `default` policy and answers only what this token may
     // reach, which is the honest list for an identity that holds two paths.
     rows.push(runProbe('mounts',
-                       'The secret engines this identity can see — which is ' +
-                       'fewer than the store has, and should be.',
+                       PROBE_WHAT['vault/mounts'],
                        async function () {
       const client = (await connect(session, spec)).client;
       const answer = await client.request({ path: '/sys/internal/ui/mounts',
@@ -2878,8 +3089,7 @@ PROBES.vault = {
     log.debug("Leaving secret().");
     return [
       runProbe('versions',
-               'The KV metadata for this secret: when it was written, how ' +
-               'many versions there are, and which one a read gets.',
+               PROBE_WHAT['vault/versions'],
                async function () {
         const meta = metadataPathFor(at.where);
         if (!meta) {
@@ -3024,9 +3234,7 @@ PROBES.aws = {
     log.debug("Leaving secret().");
     return [
       runProbe('describe',
-               'Everything AWS Secrets Manager knows about this secret ' +
-               'EXCEPT its value: rotation, the KMS key, the versions and ' +
-               'their staging labels.', async function () {
+               PROBE_WHAT['aws/describe'], async function () {
         let sdk;
         try {
           sdk = require('@aws-sdk/client-secrets-manager');
@@ -3092,9 +3300,8 @@ PROBES['vault-transit'] = {
     const name = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('transit-key', 'What Transit says about the key that wraps ' +
-               'the data keys: its type, its versions, and whether it may ' +
-               'ever leave the KMS.', async function () {
+      runProbe('transit-key', PROBE_WHAT['vault-transit/transit-key'],
+               async function () {
         if (!name) {
           throw new Error('no Transit key is configured');
         }
@@ -3132,8 +3339,7 @@ PROBES['aws-kms'] = {
     const keyId = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('kms-key', 'What AWS KMS says about the key that wraps the ' +
-               'data keys: its state and whether AWS rotates it.',
+      runProbe('kms-key', PROBE_WHAT['aws-kms/kms-key'],
                async function () {
         let sdk;
         try {
@@ -3186,9 +3392,7 @@ PROBES['gcp-kms'] = {
     const name = locationOf(spec, 'ref').where;
     log.debug("Leaving secret().");
     return [
-      runProbe('kms-key', 'What Cloud KMS says about the key that wraps the ' +
-               'data keys: its purpose, its primary version and its ' +
-               'rotation schedule.', async function () {
+      runProbe('kms-key', PROBE_WHAT['gcp-kms/kms-key'], async function () {
         let sdk;
         try {
           sdk = loadSdk('@google-cloud/kms');
@@ -3232,9 +3436,8 @@ PROBES['azure-keys'] = {
     const vault = String(reachOf(spec, 'vault') || '').replace(/\/+$/, '');
     log.debug("Leaving secret().");
     return [
-      runProbe('vault-key', 'What the vault says about the key that wraps ' +
-               'the data keys: its type, size, operations, version and ' +
-               'rotation.', async function () {
+      runProbe('vault-key', PROBE_WHAT['azure-keys/vault-key'],
+               async function () {
         let keysSdk;
         let identitySdk;
         try {
@@ -3303,8 +3506,7 @@ PROBES.gcp = {
     log.debug("Leaving secret().");
     return [
       runProbe('secret',
-               'The secret\'s own metadata: replication, labels, rotation ' +
-               'and expiry.', async function () {
+               PROBE_WHAT['gcp/secret'], async function () {
         const client = gcpClient();
         const name = String(at.where || '').replace(/\/versions\/.*$/, '');
         if (!name) {
@@ -3324,8 +3526,7 @@ PROBES.gcp = {
         };
       }),
       runProbe('version',
-               'The version a read would get: whether it is enabled, ' +
-               'disabled or destroyed.', async function () {
+               PROBE_WHAT['gcp/version'], async function () {
         const client = gcpClient();
         let name = String(at.where || '');
         if (!name) {
@@ -3388,8 +3589,7 @@ PROBES.azure = {
     log.debug("Leaving secret().");
     return [
       runProbe('versions',
-               'Every version of this secret and its properties — enabled, ' +
-               'created, updated, expiry — and never the value.',
+               PROBE_WHAT['azure/versions'],
                async function () {
         let secretsSdk;
         let identitySdk;
@@ -3493,14 +3693,17 @@ function storeLabelFor(spec, provider) {
   log.debug("Entering storeLabelFor().");
   if (provider.id === 'file') {
     log.debug("Leaving storeLabelFor().");
-    return locationOf(spec, 'file').where || '(no path configured)';
+    return locationOf(spec, 'file').where || SOURCE_PROSE.noPath;
   }
   if (provider.id === 'vault' || provider.id === 'azure') {
     log.debug("Leaving storeLabelFor().");
-    return reachOf(spec, 'vault') || '(the SDK default endpoint)';
+    return reachOf(spec, 'vault') || SOURCE_PROSE.sdkDefaultEndpoint;
   }
   if (provider.id === 'aws') {
     log.debug("Leaving storeLabelFor().");
+    // A word and a region's name: data with a word in front of it, left as
+    // written (#543), since a template would match any "region …" an
+    // answer on these routes carried.
     return 'region ' + (reachOf(spec, 'region') || '(the SDK default)');
   }
   log.debug("Leaving storeLabelFor().");
@@ -3517,10 +3720,7 @@ function storeLabelFor(spec, provider) {
 async function storeReport() {
   log.debug('Entering storeReport().');
   const out = {
-    what: 'Where this service reads its primordial secrets from — the ' +
-          'key-encryption key everything it seals is sealed under, and the ' +
-          'database password — whether it actually read them, and what the ' +
-          'store at the other end is doing.',
+    what: SOURCE_PROSE.reportWhat,
     timeoutMs: probeTimeoutMs(),
     providers: PROVIDERS.map(function (one) {
       return { id: one.id, label: one.label };
@@ -4199,6 +4399,11 @@ async function pushSecret(target) {
 }
 
 module.exports = {
+  // The secretstore namespace's routes and English (#543 phase 2c), and the
+  // phrase persistence.js says where the database password comes from in.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
+  passwordFromText: passwordFromText,
   PROVIDER_IDS: PROVIDER_IDS,
   // The write path (#221 P3): a service account's rotated password pushed
   // to a secrets manager, and the two closed sets a destination names.

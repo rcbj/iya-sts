@@ -1,0 +1,546 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "屬性來源：排程重新整理"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "從每個已到排程間隔的屬性來源讀取此領域人員的下一頁資料，寫入其項目（#94）。每次執行每個來源處理 attributeSources.refreshBatch 位人員。"
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "工作階段到期"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "ca99d997bdb0c403",
+    "text": "在每個領域中結束所有已超過存留期或閒置逾時的登入工作階段：一筆稽核記錄、CAEP session-revoked 與後端通道 Logout Token，整個叢集只執行一次。"
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "逐出過期快取項目"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "在此程序中刪除每個已超過存留期的快取與重放儲存區項目——僅屬例行清理：每個儲存區在讀取時仍會拒絕過期的項目。"
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "過期宣告清理"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "從所有節點共用的資料表中刪除已超過存留期的單次使用宣告。"
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "節點快照"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "將此節點的「監控 → 背景工作集區」與「→ 節點健康狀態」檢視寫入共用儲存區，每個節點名稱一列，讓每個節點都能在那些頁面上繪製所有節點（#332）。"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "節點快照清除"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "刪除已不再是存活叢集成員之節點的背景工作集區與節點健康狀態快照，條件是其存在時間超過 cluster.nodeSnapshotRetentionHours；絕不刪除存活成員的快照，且在無法讀取成員資格時什麼都不刪（#332）。"
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "已結束速率限制時間窗清理"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "從所有節點共用的資料表中刪除已過去的速率限制時間窗。"
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Android 證明重新檢查"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "f918ea71421d9df1",
+    "text": "向使用中的 Android 證明狀態清單查詢每一條已儲存的 Android 憑證鏈——裝置金鑰與 WebAuthn 認證，涵蓋每個領域——並將其撤銷或暫停者降級：改為自我宣告、記錄稽核、發出 CAEP credential-change。在清單啟用時以及每日執行。"
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Android 證明狀態清單下載"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "從 devices.androidStatusUrl 下載 Google 的 Android 金鑰證明狀態清單，並載入為風險資料集 android.attestation-status：哪些證明憑證已撤銷或暫停。每日執行（devices.androidStatusRefreshS）；與使用中清單完全相同的清單不會載入任何內容。"
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "聯盟加密金鑰淘汰"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "在 federation.encryptionKeyGraceS 過後，從每個聯盟關係中移除被輪替取代的加密金鑰。該金鑰在那一刻就已停止解密；此作業只是將它從項目上移除。"
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP：過期授與"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "d5ae13ff9e6e4b50",
+    "text": "將互動或授與存留期（gnap.grantLifetimeS）已結束、且此後沒有任何請求觸及的每個 GNAP 授與終結，並記錄原因（#432）。"
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP：已結束授與的限額"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "84f932ae29b1dfb3",
+    "text": "在 GNAP 授與結束、已無其權杖可被出示時，刪除示範資源伺服器為該授與限額所保留的累計值（#432）。"
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "資料加密金鑰的值計數"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "以一次走訪儲存區的方式，計算每把資料加密金鑰下所密封的值的數量，並將各計數保存在其金鑰上，供 /admin/encryption 使用。"
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "資料重新加密與金鑰銷毀"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "將仍以已被取代的資料加密金鑰密封的每個值，改以目前的金鑰重新密封；並在已被取代的金鑰下不再密封任何內容、且被取代已達 keys.dataKeyRetireAfterDays 時將其銷毀。"
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "資料加密金鑰輪替"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "為每把已持續密封新值達 keys.dataKeyRotationDays 的資料加密金鑰產生後繼金鑰，在以它密封任何內容之前 keys.dataKeyActivationLeadSeconds 發布；接著由重新加密作業重新密封舊金鑰所密封的內容。"
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "手動資料加密金鑰輪替"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "立即輪替每把已儲存的資料加密金鑰——或某個領域的、或某個類別的；被取代的金鑰會繼續開啟它們所密封的內容，直到重新密封為止。"
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "手動金鑰加密金鑰輪替"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "在金鑰加密金鑰所在的金鑰管理服務中建立新版本，並以它重新包裝每把資料加密金鑰。僅適用於位於 KMS 中的金鑰。"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "krbtgt 金鑰輪替"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "當每個領域的 krbtgt 金鑰——所有 TGT 都以它密封——已達 krb5.krbtgtRotationIntervalDays 時，以下一個 kvno 的新隨機金鑰取代它，並將被取代的金鑰保留到以它密封的 TGT 可能存活的最長時間；若上次輪替所保留的版本仍在其時間窗內，則絕不輪替。為尚無金鑰的產品領域產生第一把金鑰。每次執行的結果會列出 kvno、上次輪替以及下次預定時間。"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "手動 krbtgt 金鑰輪替"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "立即輪替此領域的 krbtgt 金鑰。若使用 invalidate，則不保留先前版本：在此之前核發的每個 TGT 都會被拒絕，並由一個 Shared Signals 事件通告。"
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "郵件寄件匣遞送"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "寄出每封已到期的佇列郵件——退避時間已過的重試、已失效的租約、重新啟動後還原的資料列——將超過 mail.retentionS 仍待處理者移入無法遞送佇列，並移除超過該期限的已完成資料列。"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "後端通道登出清理"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "送出每個已到期的 Logout Token 遞送——退避時間已過的重試、已失效的租約、重新啟動後還原的資料列——並將超過 oauth2.backchannelLogoutRetentionS 仍待處理者移入無法遞送佇列。"
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "CIBA 清理"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "嘗試每個已到期的 CIBA ping 與 push，將超過 oauth2.cibaNotifyRetentionS 仍待處理者移入無法遞送佇列，讓無人及時回應的後端通道驗證請求過期，並捨棄完成超過一小時的項目。"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "Claims Provider：重新整理已連結的權杖"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "在每個人於其連結的 Claims Provider 上的權杖到期前加以重新整理，並捨棄無人完成的連結請求（#147）。"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "用戶端密碼到期"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "檢查每個應用程式的每個用戶端密碼：對持有將在 oauth2.clientSecretExpiryWarningDays 內到期之密碼的應用程式，以及所有密碼都已到期的應用程式，各寫一筆稽核記錄；並移除應用程式在另持有未到期密碼時的已到期密碼——絕不移除其最後一個，該密碼會保留，且在產品模式下被拒絕。"
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "OpenID Provider Commands 清理"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "送出每個已到期的 Command Token 遞送——退避時間已過的重試、已失效的租約、重新啟動後還原的資料列——將超過 oauth2.commandRetentionS 仍待處理者移入無法遞送佇列，並捨棄過期的回呼權杖與已完成的租用戶執行。"
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "裝置授權：過期代碼"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "讓無人及時核准的 RFC 8628 裝置代碼過期，並移除完成超過一小時者（#150）。"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "暫時性主體：過期對應"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "移除其權杖與工作階段已不可能再被使用的每個暫時性主體識別碼（#149）。"
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "已追蹤之過期權杖清除"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "刪除已超過到期時間及 oauth2.expiredTokenRetentionS 的權杖記錄，以及已到期權杖的撤銷記錄。"
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management：過期授與"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "移除最後一個權杖已到期的每個 OAuth 授與，以及在某授與下產生之每個權杖到期後的記錄（#142）。"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "過期已使用斷言清理"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "從所有節點共用的一次性歷程中，刪除已超過存留期的 RFC 7523 與 RFC 7522 斷言。"
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "OpenID Federation Entity Collection 爬梳"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "走訪此領域之下的每個實體——每個實體在擷取其自身清單之前都會先解析到此領域——並保存所找到的內容供 collection 端點使用（#136）。"
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "OpenID Federation 金鑰輪替"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "讓每個領域的 Federation Entity Key 保持領先一次輪替——下一把金鑰在簽署前就已發布——並在目前金鑰超過 oidfed.keyRotationDays、且下一把金鑰已發布滿 oidfed.keyOverlapDays 時進行輪替。"
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "手動 OpenID Federation 金鑰輪替"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "立即輪替此領域的 Federation Entity Key——或在緊急情況下，將目前與下一把金鑰以遭洩漏為由撤銷並加以取代。"
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "已結束的 OpenID Federation 註冊"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "移除透過 OpenID Federation Trust Chain 註冊、且註冊已結束的每個用戶端（12.3）。每個端點都已將此類用戶端視為未知；此作業只是讓其項目不再殘留。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "過期產生資料列清除"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51010ce2ada820cd",
+    "text": "從共用儲存區中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生資料列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的資料列。"
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "過期墓碑清理"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "d5b8faad6c0c24c4",
+    "text": "從共用儲存區刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑。"
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "記憶體報告"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "4f2c054a1405a843",
+    "text": "在此程序中記錄一行，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區（#341）。"
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "RISC 選擇退出生效"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "對持有人至少在 risc.optOutDelayHours 前於 /portal/signals 選擇退出且未取消的每個帳戶送出 RISC opt-out-effective（RISC 1.0 section 2.8），使帳戶進入選擇退出狀態。"
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "風險資料集目錄匯入"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "依清單檔匯入操作員放在 risk.datasetsDirectory 中的每個資料集，加以驗證並啟用；已記錄的版本不會再次載入。"
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "FIDO 中繼資料下載"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "從 risk.mdsUrl 下載 FIDO MDS3 BLOB，並在其序號比使用中的更新時匯入——驗證到 FIDO 根憑證、檢查其憑證鏈的撤銷狀態，且需有已記錄的 fido-mds3 條款接受紀錄。每日執行（risk.mdsRefreshS），使用中的 BLOB 超過其自身的 nextUpdate 後改為每小時執行。"
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "存活工作階段的風險重新檢查"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "依使用中的資料集與失敗歷程重新檢查每個存活的登入工作階段，並提高變得更具風險者的風險——位址現已列於 Tor 或拒絕清單上、密碼正遭猜測——讓其上的每個權杖都依新的風險決定，而跨入 HIGH 的人員則由風險回應原則處理。"
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "風險資料保留"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "刪除被取代超過 risk.supersededRetentionDays 的資料集版本及被拒絕版本的資料列、早於 risk.failureRetentionDays 的失敗記錄，以及超過 risk.assessmentRetentionDays 與 risk.historyRetentionDays 的評估與模型歷程。"
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "停滯的風險匯入"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "將持續載入中卻已有 risk.importStallMinutes 毫無進度的每個資料集版本——程序中途停止的匯入——標示為已拒絕（STS-RISK-0035），並捨棄它已寫入的所有資料列。"
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "風險上傳清理"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "在每個程序中：讓此程序正在匯入的資料集上傳保持新鮮，並從 risk.uploadDirectory 刪除已有 risk.importStallMinutes 沒有任何存活程序觸及的上傳——即中途停止匯入的程序所遺留的檔案。"
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "排程器執行歷程"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "每個作業保留其最近 scheduler.runHistoryCount 次執行或最近 scheduler.runHistoryHours 內的執行，取較多者，且一律保留最新一次執行；其餘的——以及指名已移除領域的每一列——以每批 2000 筆、每次執行最多 25 批的方式刪除。"
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "外送 SCIM 遞送"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "將每個外送 SCIM 用戶端已到期的遞送——無論是新變更或重試——送到其服務提供者，每次同時處理 scimClient.concurrency 個，略過因退避而暫停的用戶端，並讓佇列維持在其保留期限內（#552）。"
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "外送 SCIM 調節"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "調節 scimClientReconcileMinutes 已到的每個外送 SCIM 用戶端：推送其範圍內的每個人員與群組，並將其服務提供者以此領域的 externalId 所保存、但已不在範圍內的對象取消佈建（#552）。"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "服務帳戶先前密碼清理"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "在重疊期結束後，清除已輪替之服務帳戶的先前密碼。重疊期會在讀取密碼時檢查，因此這只是例行清理。"
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "服務帳戶密碼輪替"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "在間隔（服務帳戶原則）過後，為每個指定了推送目的地的服務帳戶產生新密碼：先推送到目的地，推送成功後才提交，重疊期內仍接受先前的密碼。推送失敗則不做任何變更。"
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "手動服務帳戶密碼輪替"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "立即輪替某個服務帳戶的密碼，做法與每小時作業相同：先推送，再提交。"
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "已淘汰簽署金鑰清理"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "捨棄寬限期已過的每把已淘汰簽署金鑰，並在其簽發 CA 的清單上將其憑證標示為已被取代。"
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "簽署金鑰輪替"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "為此領域的每個簽署單元產生下一把金鑰，在它簽署任何內容之前發布，並在每把下一把金鑰已發布滿一個完整間隔（signing.rotationIntervalDays）後將其升級；被取代的金鑰在寬限期內仍繼續用於驗證。"
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "手動簽署金鑰輪替"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "立即輪替此領域指定的簽署單元——或全部：每把下一把金鑰成為目前金鑰，被取代的金鑰則淘汰，在寬限期內仍用於驗證。"
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "SPIFFE 授權單位輪替"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "在此領域的 SPIFFE X.509 授權單位超過其存留期一半時加以輪替，JWT 授權單位則在超過 spiffe.caTtl 的一半時輪替；舊的授權單位仍保持發布（spiffe.retainedAuthorities）。"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "sigstore TUF 重新整理"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "透過 TUF 擷取 sigstore 信任根（Fulcio CA、Rekor 與 CT 記錄金鑰），供 docker 工作負載證明者檢查映像檔簽章；重新整理失敗時保留上次驗證的集合。"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Shared Signals 無法遞送佇列清理"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "刪除此程序中已過期的無法遞送項目，探測已到期的失效串流（僅限一個節點），並記錄自上次清理以來移入無法遞送佇列的摘要。"
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "聯盟夥伴的 Shared Signals 輪詢"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "輪詢夥伴的 Shared Signals 串流為輪詢串流（RFC 8936）的每個聯盟關係：其所持有的 Security Event Token 會經過驗證、處理並確認。"
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Shared Signals 串流維護"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "暫停、停用或刪除接收者已閒置 ssf.inactivityTimeoutS 的串流（SSF 1.0 section 8.1.1），暫停或停用前會先以 stream-updated 事件通告；並對已有 ssf.verificationEveryS 未從此傳送者收到驗證事件的每個已啟用串流送出驗證事件（section 8.1.4）。"
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "TLS 工作階段票證金鑰輪替"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "在主動-主動叢集中，取代所有節點 TLS 接聽程式共用的工作階段票證金鑰，讓某個節點核發的票證能在另一個節點上恢復。被取代的金鑰會被刪除，藉此限制能從票證中復原已恢復工作階段之秘密的時間長度。"
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "僅限隨選"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}}（UTC）"
+  },
+  "sched.sentence.every": {
+    "en": "05f22fb4833ac391",
+    "text": "每 {{span}}"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "3893802ebe2b3ab1",
+    "text": "每 {{span}}，取自 {{setting}}"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "無間隔（0）"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "無間隔（0），取自 {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "領導者正在運作；先前的執行可能仍在進行，或其宣告尚未失效"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "自 {{since}} 以來沒有任何領導者運作"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled 已關閉"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "列於 scheduler.disabledJobs 中"
+  },
+  "sched.sentence.offZero": {
+    "en": "e9453e79cc9c7d92",
+    "text": "{{setting}} 為 0"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "此程序"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "資料庫"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "此服務啟動"
+  },
+  "sched.param.interval": {
+    "en": "668b489f6de0a264",
+    "text": "其間隔"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "已要求排程器的領導者卸任。它會在下一次運作時卸任，由另一個節點在其下一次心跳時接任領導者。"
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "{{job}} 的一次執行已排入佇列。排程器的領導者會在下一次運作時啟動它。"
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "{{job}} 的一次執行已排入佇列（先前已有一次排入，就是這一次）。排程器的領導者會在下一次運作時啟動它。"
+  }
+}

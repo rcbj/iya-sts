@@ -167,6 +167,8 @@
   "monitorHtml.leadBefore": "Ce que contient le registre de ce domaine, compté maintenant, et ce qui lui est arrivé : chaque enregistrement, suppression et éviction au plafond <code>devices.maxPerPerson</code> d’une personne, conservés jusqu’à <code>devices.eventsKept</code>, et chaque changement de conformité selon son auteur — admin, mdm, test-control, caep",
   "monitorHtml.since": " (le plus ancien date du {since})",
   "monitorHtml.leadAfter": ". Un appareil supprimé par un <code>ldapdelete</code> sur le socket n’est pas un événement ici — le registre ne le voit jamais.",
+  "monitorHtml.tabRegister": "Le registre, compté maintenant",
+  "monitorHtml.tabActivity": "Activité dans ce processus",
   "monitorHtml.byOwner": "Par propriétaire",
   "monitorHtml.byCompliance": "Par conformité",
   "monitorHtml.byRisk": "Par niveau de risque",

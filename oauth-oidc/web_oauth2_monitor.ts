@@ -293,7 +293,10 @@ class OAuth2MonitorPage {
   static parSectionHtml(ctx: Json, section: Json) {
     const self = this;
     const t = ctx.t;
-    return '<h2 id="section-' + esc(section.id) + '">' + esc(section.title) +
+    // A tab of the page (2026-10-12, `WebPages.protocolTabs()`), named by
+    // the section's id; the heading's id stays, so the links above reach it.
+    return '<h2 id="section-' + esc(section.id) + '" data-tab="' +
+      esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
       kit.note(t.html('consoleOauth2Monitor.parNote')) +
       self.tilesHtml(section, t) +
@@ -348,7 +351,10 @@ class OAuth2MonitorPage {
     // The step-up note's last sentence lists the acr values, and the own
     // resource server paragraph runs into a link and a path holding braces;
     // each is split where markup or a brace would have to go (#539).
-    return '<h2 id="section-' + esc(section.id) + '">' + esc(section.title) +
+    // A tab of the page (2026-10-12, `WebPages.protocolTabs()`), named by
+    // the section's id; the heading's id stays, so the links above reach it.
+    return '<h2 id="section-' + esc(section.id) + '" data-tab="' +
+      esc(section.id) + '">' + esc(section.title) +
       '</h2>' +
       kit.note(t.html('consoleOauth2Monitor.stepUpNote') +
         section.acrValuesSupported.map(function (one) {
@@ -401,11 +407,13 @@ class OAuth2MonitorPage {
                esc(section.title) + '</a>';
       }).join(' · ') + '</p>' +
       sections +
+      '<div data-metadata>' +
       kit.note(t.html('consoleOauth2Monitor.noReset') +
                  '<a href="/admin/audit">' +
                  t.html('consoleOauth2Monitor.auditLog') + '</a>' +
-                 t.html('consoleOauth2Monitor.noResetEnd')) +
-      '<p class="links"><a href="' + esc(PAGE) + '?format=json">JSON</a> · ' +
+                 t.html('consoleOauth2Monitor.noResetEnd')) + '</div>' +
+      '<p class="links" data-metadata><a href="' + esc(PAGE) +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/oauth2/monitor</code> · <a ' +
       'href="/admin/oauth2">' + t.html('consoleOauth2Monitor.settingsLink') +
       '</a> · <a ' +

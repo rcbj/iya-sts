@@ -12111,6 +12111,22 @@ const CODES = [
       '88 with no reply bytes; the client is told the KDC is unavailable ' +
       '(2026-10-07).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0206',
+    summary: 'The message router a service deployed as cells installs on ' +
+      'TCP and UDP 88 failed on a message; it is answered by this cell\'s ' +
+      'KDC as it was before the router (#588, 2026-10-12).',
+    spec: 'none — #98, RFC 4120 7.2' },
+  { code: 'STS-KRB-0207',
+    summary: 'A Kerberos message on TCP or UDP 88 whose client is homed in ' +
+      'another cell could not be answered there (the cell unreachable, or ' +
+      'no reply); the client is told the KDC is unavailable, fail-closed ' +
+      '(#588, 2026-10-12).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6' },
+  { code: 'STS-KRB-0208',
+    summary: 'Another cell relayed a Kerberos message here with no message ' +
+      'in it; the inter-cell operation kdc-message failed (#588, ' +
+      '2026-10-12).',
+    spec: 'none — #98' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -15577,6 +15593,12 @@ const CODES = [
       'setting\'s description — could not be read or parsed; that prose ' +
       'falls back along its chain to English (#543).',
     spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0012',
+    summary: 'GET /web/locales/<namespace>/<catalog>.json named a namespace ' +
+      'or a catalog this service does not have, or a file name that is not ' +
+      '<catalog>.json; nothing is read from disk by a requested name ' +
+      '(#570).',
+    spec: 'HTTP 404' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

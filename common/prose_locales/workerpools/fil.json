@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "Naka-off: 0 ang {{setting}}, kaya pumupunta ang /admin at /portal saanman pumupunta ang natitirang bahagi ng workers.dispatch — sa request pool, o sinasagot dito ng front process."
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "Naka-off: nasa default nitong {{value}} ang {{setting}}, na nangangahulugang wala kung saan hindi kayang mag-coordinate ng store (hindi postgres ang persistence.mode, o naka-off ang persistence.coordinate), kaya ang front process mismo ang sumasagot sa bawat request, sa iisang thread."
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "Naka-off: 0 ang {{setting}}, kaya ang front process mismo ang sumasagot sa bawat request, sa iisang thread."
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "c712d788359b5516",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito (STS-WORKER-0023). Pumupunta ang mga hosted surface sa request pool."
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "a8108cb6c9b9ecb5",
+    "text": "Sumuko na: {{failed}} worker thread ang hindi nakapagsimula at tumigil ang pool sa pagsisimula ng mga ito (STS-WORKER-0023). Ang front process ang sumasagot sa bawat request."
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "Hindi nagsimula: {{configured}} ang {{setting}}, at walang sinimulang worker thread ang process na ito — hindi ito sinimulan bilang front process ng isang serbisyo, o pinahinto ang pool sa start."
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "Hindi nagsimula: {{configured}} ang {{setting}}, at walang sinimulang worker thread ang process na ito — hindi ito sinimulan bilang front process ng isang serbisyo, o pinahinto ang pool sa start. {{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "Tumatakbo, at idle dahil sa configuration: walang pinangangalanan ang workers.dispatch, kaya walang request na ipinapadala sa mga worker thread na ito."
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{ready}} sa {{configured}} na worker thread ang nagse-serve."
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "Hosted-surface pool (/admin at /portal)"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "Request pool"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "Ito ang mga pool ng node na {{node}}, hawak ng front process nito, pid {{pid}}. Bawat worker ay isang thread ng process na iyon (#364), pinangalanan ayon sa thread id nito, na may sariling V8 heap at ang memory at CPU ng process. Bawat node ng isang cluster ay may sariling mga pool. Wala nang pool ng mga process ang post-quantum signing at scrypt mula #363: tumatakbo sila sa thread pool ng libuv, sa loob ng alinmang process na humiling."
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "Sa {{count}} node na hindi pa nawawala at may snapshot, kasama ang mga stale na may marka."
+  }
+}

@@ -167,6 +167,8 @@
   "monitorHtml.leadBefore": "Ang hawak ng register ng realm na ito, binilang ngayon, at kung ano ang nangyari rito: bawat pagrerehistro, pag-alis, at pagpapaalis sa <code>devices.maxPerPerson</code> ng isang tao, na itinatago hanggang <code>devices.eventsKept</code>, at bawat pagbabago sa compliance ayon sa gumawa — admin, mdm, test-control, caep",
   "monitorHtml.since": " (ang pinakaluma ay mula {since})",
   "monitorHtml.leadAfter": ". Hindi event dito ang device na inalis ng <code>ldapdelete</code> sa socket — hindi ito kailanman nakikita ng register.",
+  "monitorHtml.tabRegister": "Ang register, binilang ngayon",
+  "monitorHtml.tabActivity": "Aktibidad sa prosesong ito",
   "monitorHtml.byOwner": "Ayon sa may-ari",
   "monitorHtml.byCompliance": "Ayon sa compliance",
   "monitorHtml.byRisk": "Ayon sa antas ng panganib",
