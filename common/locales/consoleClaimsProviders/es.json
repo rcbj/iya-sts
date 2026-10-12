@@ -44,5 +44,6 @@
   "colPerson": "Persona",
   "colTheirSub": "Su sub allí",
   "colLinked": "Vinculado",
-  "colToken": "Token"
+  "colToken": "Token",
+  "providersHeading": "Proveedores de claims"
 }

@@ -171,8 +171,9 @@ The navigation is a grouped list down the left. Its five sections:
   agents and brokers) and TLS.
   [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
-  SCIM's realm endpoint inventory is on its own Endpoints tab, separate from
-  the Server tab's descriptions of each SCIM operation.
+  Every page under Protocols is drawn as tabs, and the first tab is
+  **Metadata**: the realm's endpoints for that protocol and what explains it
+  or reports its state. The other tabs are the registers, forms and settings.
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
