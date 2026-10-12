@@ -277,8 +277,8 @@ class SpaClient {
   // and a realm may require it on its own (`oauth2.requirePar`). The server-
   // rendered surfaces pushed through `oidc_rp.ts`; a static one pushes from
   // the browser: its parameters POSTed to the PAR endpoint the metadata names
-  // — a public client authenticates with nothing, as section 2 allows — with a
-  // DPoP proof, and the browser sent to the authorization endpoint with the
+  // — a public client authenticates with nothing, as section 2 allows — and
+  // the browser sent to the authorization endpoint with the
   // `request_uri` it answered and the client id alone. Where the metadata
   // requires nothing, the request is the ordinary query, as it always was.
   // ---------------------------------------------------------------------------
@@ -330,26 +330,22 @@ class SpaClient {
     }
     const endpoint = String(meta.pushed_authorization_request_endpoint ||
                             this.url('/oauth2/par'));
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.env.fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-                   'DPoP': await this.proof('POST', endpoint, '') },
-        body: new URLSearchParams(params).toString() });
-      this.keepNonce(res);
-      const json = await res.json().catch(function () {
-        return {};
-      });
-      if (res.status === 400 && json.error === 'use_dpop_nonce' &&
-          attempt === 0) {
-        continue;
-      }
-      if (res.status === 201 && json.request_uri) {
-        return authorize + '?' + new URLSearchParams({
-          client_id: String(params.client_id || this.clientId),
-          request_uri: String(json.request_uri) }).toString();
-      }
-      break;
+    // NO DPoP PROOF ON THE PUSH: a proof there binds the authorization code
+    // to its key (RFC 9449 section 10), and the key is this page load's —
+    // the callback is another page load, with another key that cannot
+    // redeem it. The tokens are bound where they are issued, at the token
+    // request, by the key that will use them.
+    const res = await this.env.fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(params).toString() });
+    const json = await res.json().catch(function () {
+      return {};
+    });
+    if (res.status === 201 && json.request_uri) {
+      return authorize + '?' + new URLSearchParams({
+        client_id: String(params.client_id || this.clientId),
+        request_uri: String(json.request_uri) }).toString();
     }
     // A REFUSED PUSH: the ordinary request, which the authorization endpoint
     // then refuses with the reason, drawn where the person can read it.
