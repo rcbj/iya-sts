@@ -593,7 +593,10 @@ class ProtocolEndpoints {
     const { log } = this.deps;
     log.debug("Entering ProtocolEndpoints.templated().");
     log.debug("Leaving ProtocolEndpoints.templated().");
-    return expressPath.replace(/:([A-Za-z_]+)/g, '{$1}')
+    // A parameter name may hold a digit, as Express allows and
+    // `sts_metadata.ts`'s `linkabilityOf()` reads it; `[A-Za-z_]` alone cut a
+    // `:p1` at the digit and drew `{p}1`.
+    return expressPath.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
                       .replace(/\*$/, '{path}');
   }
 
