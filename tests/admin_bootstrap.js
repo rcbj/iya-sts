@@ -440,17 +440,9 @@ function childMain() {
     r = await changeAt(changeLocation, 'Chosen-Pass-42!', 'Chosen-Pass-42!');
     // The resumed sign-in OFFERS the administrator a second factor (#246,
     // the authentication policy's `offer`), as its next step; ignored, as
-    // rcbj asked of the tests for the time being. Its page is server-drawn.
-    if (r.next === 'mfa' && r.step === 'enrol') {
-      const page = await request(port, 'GET', r.location);
-      const offered = /id="mfa-setup-ignore"/.test(page.text)
-        ? (page.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || ''
-        : '';
-      if (offered) {
-        r = await request(port, 'POST', '/authn/mfa-setup',
-          { mfa_id: offered, action: 'ignore' });
-      }
-    }
+    // rcbj asked of the tests for the time being. The set-up step is a page
+    // of the sign-in surface since #572, its Ignore an act on `/authn-api`.
+    r = await screen.ignoreOffer({ port: port, jar: {} }, r);
     note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
          /\/oauth2\/authorize/.test(String(r.headers.location || '')) &&
          !inDefault(function () {

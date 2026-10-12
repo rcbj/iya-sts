@@ -375,7 +375,7 @@ function childMain() {
                                 .digest('base64url'),
                               code_challenge_method: 'S256' }).toString());
       // OVER `/authn-api` (#571): the act, and the ceremony's page it
-      // names opened with a GET, as the screen's page sends the browser.
+      // names opened as the sign-in surface opens it (#572): its view.
       return authnScreen.follow({ port: port, jar: b.jar,
         at: String(start.headers.location || ''),
         fields: { action: 'login', username: ALICE, password: '',
@@ -434,8 +434,8 @@ function childMain() {
          'A4. (a control: the issuance gate allows an assertion for them)',
          JSON.stringify(gateAnswer(ALICE)));
     const passwordlessBefore = await passwordlessAttempt();
-    note(passwordlessBefore.status === 200 &&
-         /wa-credential/.test(passwordlessBefore.text),
+    note(passwordlessBefore.status === 200 && passwordlessBefore.view &&
+         passwordlessBefore.view.page === 'webauthn',
          'A5. (a control: a passwordless sign-in draws the security-key ' +
          'ceremony for them)', passwordlessBefore.status + ' ' +
          pageText(passwordlessBefore));
@@ -519,7 +519,7 @@ function childMain() {
     const passwordless = await passwordlessAttempt();
     note(passwordless.next === 'refused' &&
          /Authentication failed/.test(passwordless.text) &&
-         !/wa-credential/.test(passwordless.text),
+         !(passwordless.view && passwordless.view.page === 'webauthn'),
          'C5. a PASSWORDLESS security-key sign-in is refused BEFORE the ' +
          'ceremony — no key is enrolled for a disabled account',
          passwordless.status + ' ' + pageText(passwordless));

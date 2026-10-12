@@ -412,19 +412,37 @@ function childMain() {
         return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
       };
       const cookieOf = function (res) {
-        return [].concat(res.headers['set-cookie'] || []).map(function (one) {
+        // A step's opened page (#572) carries no headers of its own.
+        const lines = [].concat((res.headers || {})['set-cookie'] || []);
+        return lines.map(function (one) {
           return String(one).split(';')[0];
         }).filter(function (one) { return /^sts_session=./.test(one); })[0] ||
           '';
       };
       // THE SIGN-IN SCREEN IS A STATIC SURFACE OVER `/authn-api` SINCE
-      // #571: the act answers its next step, and a step's page — still
-      // server-drawn — is opened with a GET (`authn_screen.follow()`).
+      // #571: the act answers its next step, and a step's page — a page
+      // of the same surface since #572 — is opened as the surface opens it
+      // (`authn_screen.follow()`), in the jar the answer keeps (`jar`).
       const screen = require(ROOT + '/tests/tools/authn_screen');
-      const signInAt = function (authnId, fields) {
-        return screen.follow({ port: port, jar: {},
+      const signInAt = async function (authnId, fields) {
+        const jar = {};
+        const got = await screen.follow({ port: port, jar: jar,
           at: '/authn/login?authn=' + authnId,
           fields: Object.assign({ action: 'login' }, fields) });
+        got.jar = jar;
+        return got;
+      };
+      // An act on the step `page` opened (#572), in its jar.
+      const stepAct = function (page, op, body) {
+        return screen.stepAct({ port: port, jar: page.jar, opened: page,
+                                op: op, body: body || {} });
+      };
+      // The step an act's answer names, opened again in `page`'s jar.
+      const reopen = async function (page, answer) {
+        const got = await screen.openStep({ port: port, jar: page.jar,
+          at: answer.location || page.at });
+        got.jar = page.jar;
+        return got;
       };
       const noSession = function (res) {
         return !cookieOf(res) && !(res.answer && cookieOf(res.answer));
@@ -432,40 +450,44 @@ function childMain() {
       let authnId = await startSignIn();
       r = await signInAt(authnId, { username: 'ctl-carol',
                                     password: 'anything' });
-      const setupId = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1];
-      note(r.status === 200 && /Set up a second factor/.test(r.text) &&
-           setupId && noSession(r),
+      const setupPage = r;
+      note(r.status === 200 && r.view && r.view.page === 'setup' &&
+           r.view.setup.state === 'choose' && !!r.id && noSession(r),
            '7a. the sign-in draws the set-up step and starts no session',
-           r.status + ' ' + r.text.slice(0, 120));
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'totp' });
-      const shown = (r.text.match(/Or type it in: <code>([^<]+)<\/code>/) ||
-                     [])[1] || '';
+           r.status + ' ' + String(r.text).slice(0, 120));
+      r = await stepAct(setupPage, 'setup/totp');
+      const secretPage = r.next === 'mfa' ? await reopen(setupPage, r) : r;
+      const shown = (secretPage.view && secretPage.view.setup &&
+                     secretPage.view.setup.totp &&
+                     secretPage.view.setup.totp.secret) || '';
       const secret = shown.replace(/\s+/g, '');
-      note(r.status === 200 && secret.length >= 16,
-           '7b. choosing an app shows its secret', r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp', code: '000000' });
-      note(r.status === 400 && /Scan this/.test(r.text) && !cookieOf(r),
-           '7c. a wrong code keeps the step and the same secret', r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp',
-          code: totp.codeAt(secret) });
-      note((r.status === 302 || r.status === 303) && !!cookieOf(r) &&
+      note(r.next === 'mfa' && r.step === 'enrol-totp' &&
+           secretPage.view.setup.state === 'totp' && secret.length >= 16 &&
+           /^otpauth:\/\/totp\//.test(secretPage.view.setup.totp.uri),
+           '7b. choosing an app shows its secret, and the otpauth: URI the ' +
+           'browser draws as a QR code (#572)', r.apiStatus);
+      r = await stepAct(setupPage, 'setup/confirm', { code: '000000' });
+      const again = await reopen(setupPage, {});
+      note(r.apiStatus === 400 && r.next === 'refused' && !cookieOf(r) &&
+           again.view && again.view.setup.state === 'totp' &&
+           String(again.view.setup.totp.secret).replace(/\s+/g, '') ===
+             secret,
+           '7c. a wrong code keeps the step and the same secret',
+           r.apiStatus);
+      r = await stepAct(setupPage, 'setup/confirm',
+                        { code: totp.codeAt(secret) });
+      note(r.next === 'redirect' && r.status === 303 && !!cookieOf(r) &&
            credentials.mechanismsFor('ctl-carol').totp,
            '7d. the right code enrols the app and signs them in',
-           r.status + ' ' + String(r.headers.location));
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: setupId, action: 'confirm-totp',
-          code: totp.codeAt(secret) });
-      note(r.status === 400, '7e. the step is spent', r.status);
+           r.apiStatus + ' ' + String(r.location));
+      r = await stepAct(setupPage, 'setup/confirm',
+                        { code: totp.codeAt(secret) });
+      note(r.apiStatus === 400, '7e. the step is spent', r.apiStatus);
 
       authnId = await startSignIn();
       r = await signInAt(authnId, { username: 'ctl-carol',
                                     password: 'anything' });
-      note(r.status === 200 && /one-time code/i.test(r.text) &&
-           !/Set up a second factor/.test(r.text),
+      note(r.status === 200 && r.view && r.view.page === 'totp',
            '7f. once enrolled, the sign-in asks for the code, not a set-up',
            r.status);
 
@@ -475,8 +497,8 @@ function childMain() {
         publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
         label: 'carol key' }, 'primary');
       // Usernameless sign-in OFF for this one check: it is on by default
-      // since 2026-10-10, and then the screen carries /authn/webauthn.js for
-      // its own passkey button, which says nothing about this refusal.
+      // since 2026-10-10, and then the screen offers its own passkey
+      // button, which says nothing about this refusal.
       const passkeyPolicy = require(ROOT + '/common/passkey_policy');
       passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
                                                   { allowUsernameless: false }));
@@ -496,16 +518,16 @@ function childMain() {
       authnId = await startSignIn();
       r = await signInAt(authnId, { username: 'ctl-dave',
                                     password: 'anything' });
-      const daveSetup = (r.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                         [])[1];
-      note(r.status === 200 && /Set up a second factor/.test(r.text) &&
-           daveSetup,
+      const davePage = r;
+      note(r.status === 200 && r.view && r.view.page === 'setup' && !!r.id,
            '7h. the realm requirement reaches somebody with no flag',
            r.status);
-      r = await request(port, 'POST', '/authn/mfa-setup',
-        { mfa_id: daveSetup, action: 'webauthn' });
-      note(r.status === 200 && /\/authn\/webauthn\.js/.test(r.text),
-           '7i. choosing a security key draws the ceremony', r.status);
+      r = await stepAct(davePage, 'setup/webauthn');
+      const ceremony = r.next === 'mfa' ? await reopen(davePage, r) : r;
+      note(r.step === 'webauthn' && ceremony.status === 200 &&
+           ceremony.view && ceremony.view.webauthn &&
+           ceremony.view.webauthn.mode === 'create',
+           '7i. choosing a security key draws the ceremony', r.apiStatus);
 
       policyWith({ requireSecondFactor: 'always', totpSecondFactor: false });
       config.setOverride('webauthn.enabled', 'false');

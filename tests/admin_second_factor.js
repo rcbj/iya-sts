@@ -150,8 +150,14 @@ function childMain() {
       const u = new URL(String(location || ''), 'http://127.0.0.1');
       return u.pathname + u.search;
     };
+    // THE SIGN-IN SCREEN AND ITS STEPS ARE A STATIC SURFACE OVER
+    // `/authn-api` (#571, #572): `tests/tools/authn_screen.js` drives them as
+    // the page does, in this browser's jar.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     // The password step of a sign-in to `start` (a path answering with a
-    // redirect toward the sign-in screen), answered as `username`.
+    // redirect toward the sign-in screen), answered as `username`: a
+    // redirect's answer (status 303, `headers.location`), or the step's
+    // page it names, opened (`view`).
     const passwordStep = async function (b, start, username) {
       let at = await b.go('GET', start);
       for (let i = 0; i < 4 && at.status >= 300 && at.status < 400 &&
@@ -159,16 +165,21 @@ function childMain() {
            i++) {
         at = await b.go('GET', pathOf(at.headers.location));
       }
-      const screen = pathOf(at.headers.location);
-      const page = await b.go('GET', screen);
-      return b.go('POST', screen.split('?')[0], {
-        form: Object.assign(hiddenFields(page.text), {
-          username: username, password: 'anything', action: 'login' }) });
+      return authnScreen.follow({ port: port, jar: b.jar, userAgent: CHROME,
+        at: pathOf(at.headers.location),
+        fields: { username: username, password: 'anything',
+                  action: 'login' } });
+    };
+    // An act on the set-up step `page` opened (#572).
+    const setupAct = function (b, page, op) {
+      return authnScreen.stepAct({ port: port, jar: b.jar,
+                                   userAgent: CHROME, opened: page, op: op,
+                                   body: {} });
     };
     const followTo = async function (b, first, pattern) {
       let at = first;
       for (let i = 0; i < 5 && at.status >= 300 && at.status < 400 &&
-           !pattern.test(String(at.headers.location || '')); i++) {
+           !pattern.test(String((at.headers || {}).location || '')); i++) {
         at = await b.go('GET', pathOf(at.headers.location));
       }
       return at;
@@ -176,10 +187,11 @@ function childMain() {
     const authorizeAt = '/oauth2/authorize?' + new URLSearchParams({
       client_id: CLIENT, response_type: 'code', redirect_uri: REDIRECT,
       scope: 'openid', state: 's', nonce: 'n' }).toString();
-    const ignoreOf = function (html) {
-      return /id="mfa-setup-ignore"/.test(html)
-        ? (String(html).match(/name="mfa_id" value="([^"]+)"/) || [])[1] ||
-          '' : '';
+    // The set-up step's id where the view offers Ignore (#246), or ''.
+    const ignoreOf = function (page) {
+      const v = (page && page.view) || {};
+      return v.page === 'setup' && v.setup && v.setup.optional
+        ? String(page.id || '') : '';
     };
 
     // --- A. the field -----------------------------------------------------
@@ -243,15 +255,14 @@ function childMain() {
     // --- C. the offer, over HTTP ------------------------------------------
     const b1 = browser(port, CHROME);
     const offeredPage = await passwordStep(b1, authorizeAt, 'asf-alice');
-    const offerId = ignoreOf(offeredPage.text);
+    const offerId = ignoreOf(offeredPage);
     note(offeredPage.status === 200 && !!offerId &&
-         /Setting one up now is recommended/.test(offeredPage.text),
+         offeredPage.view.setup.state === 'choose' &&
+         !offeredPage.view.setup.proved,
          'C1. an administrator with no second factor is shown the set-up ' +
          'step with an Ignore button', offeredPage.status + ' ' +
-         offeredPage.text.slice(0, 160));
-    const ignored = await b1.go('POST', '/authn/mfa-setup',
-                                { form: { mfa_id: offerId,
-                                          action: 'ignore' } });
+         String(offeredPage.text).slice(0, 160));
+    const ignored = await setupAct(b1, offeredPage, 'skip');
     const landed = await followTo(b1, ignored,
                                   new RegExp('^' + REDIRECT.replace(
                                     /[.*+?^${}()|[\]\\/]/g, '\\$&')));
@@ -266,14 +277,12 @@ function childMain() {
     policyWith({ requireSecondFactorForAdministrators: 'always' });
     const b2 = browser(port, CHROME);
     const requiredPage = await passwordStep(b2, authorizeAt, 'asf-alice');
-    const requiredId = (requiredPage.text.match(
-      /name="mfa_id" value="([^"]+)"/) || [])[1] || '';
-    const pushed = await b2.go('POST', '/authn/mfa-setup',
-                               { form: { mfa_id: requiredId,
-                                         action: 'ignore' } });
+    const requiredId = requiredPage.view &&
+      requiredPage.view.page === 'setup' ? String(requiredPage.id) : '';
+    const pushed = await setupAct(b2, requiredPage, 'skip');
     note(requiredPage.status === 200 && !!requiredId &&
-         !ignoreOf(requiredPage.text) && pushed.status === 400 &&
-         /cannot be ignored/.test(pushed.text),
+         !ignoreOf(requiredPage) && pushed.apiStatus === 400 &&
+         /cannot be ignored/.test(pushed.errors.join(' ')),
          'D1. always: the set-up step has no Ignore button, and an Ignore ' +
          'posted anyway is refused (STS-AUTHN-0270)',
          requiredPage.status + ' ' + pushed.status);
@@ -307,22 +316,22 @@ function childMain() {
       code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
       code_challenge_method: 'S256' }).toString();
     const riskyPage = await passwordStep(b4, consoleAuthorize, 'asf-carl');
-    const riskyId = ignoreOf(riskyPage.text);
+    const riskyId = ignoreOf(riskyPage);
     const atRisk = auditOf('authn.mfa.enrolment.at-risk', 'asf-carl');
-    let riskyDone = riskyId ? await b4.go('POST', '/authn/mfa-setup',
-      { form: { mfa_id: riskyId, action: 'ignore' } }) : riskyPage;
+    let riskyDone = riskyId ? await setupAct(b4, riskyPage, 'skip')
+                            : riskyPage;
     riskyDone = await followTo(b4, riskyDone, /\/admin\/callback\?/);
     note(denied && denied.ok && !!riskyId && atRisk.length === 1 &&
          atRisk[0].errorCode === 'STS-RISK-0039' &&
-         /\/admin\/callback\?.*code=/.test(String(riskyDone.headers.location ||
-                                                  '')),
+         /\/admin\/callback\?.*code=/.test(
+           String((riskyDone.headers || {}).location || '')),
          'F1. at HIGH the console still offers the second factor, the ' +
          'offer is recorded as made at elevated risk (STS-RISK-0039), and ' +
          'Ignore reaches the console',
          JSON.stringify({ deny: denied && denied.ok, offered: !!riskyId,
            atRisk: atRisk.length,
-           at: String(riskyDone.headers.location || '').slice(0, 80),
-           page: riskyPage.text.slice(0, 120) }));
+           at: String((riskyDone.headers || {}).location || '').slice(0, 80),
+           page: String(riskyPage.text).slice(0, 120) }));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
