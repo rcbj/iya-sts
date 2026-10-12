@@ -2754,17 +2754,29 @@ async function actionsByConsolePath() {
 async function actionsKnownAt(apiPath) {
   log.debug("Entering actionsKnownAt(). apiPath=" + apiPath);
   const resource = String(apiPath).replace(/\/[^/]*$/, "");
-  const probe = await common.httpJson(base + resource + "/__no_such_action__", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // Enough to get past the validation the three claim-set doors and the two
-    // SAML ones do BEFORE they look at the action; a probe that never reaches
-    // the switch comes back naming something else in a sentence of the same
-    // shape, which admin_api.js already learnt the hard way.
-    body: JSON.stringify({ set: "access_token", sp: "x", rp: "x",
-                           id: "x", user: "x", entry: "x", agent: "x" })
-  });
-  const errors = ((probe.body && probe.body.errors) || []).join(" ");
+  const ask = function (set) {
+    return common.httpJson(base + resource + "/__no_such_action__", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Enough to get past the validation the claim-set doors and the two
+      // SAML ones do BEFORE they look at the action; a probe that never
+      // reaches the switch comes back naming something else in a sentence of
+      // the same shape, which admin_api.js already learnt the hard way.
+      body: JSON.stringify({ set: set, sp: "x", rp: "x",
+                             id: "x", user: "x", entry: "x", agent: "x" })
+    });
+  };
+  let probe = await ask("access_token");
+  let errors = ((probe.body && probe.body.errors) || []).join(" ");
+  // A claim-set door that does not carry `access_token` (the SAML attribute
+  // sets, the Kerberos PAC set) refuses the SET before the action, naming the
+  // sets it does carry. Ask again with the first of them, or the combined
+  // page's tab is reported as posting actions nobody knows.
+  const carried = errors.match(/The ones this door carries are:\s*([^,.\s]+)/);
+  if (carried) {
+    probe = await ask(carried[1]);
+    errors = ((probe.body && probe.body.errors) || []).join(" ");
+  }
   const sentence =
       errors.match(/Unknown action "[^"]*"\.\s*[^:]*:\s*([^.]+)\./);
   const out = sentence ?
