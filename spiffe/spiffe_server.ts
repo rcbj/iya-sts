@@ -110,6 +110,8 @@ import sigstore = require('./spiffe_sigstore');
 // for the `broker` surface and binds nothing; the listener is this module's.
 import broker = require('./spiffe_broker');
 import mode = require('../common/mode');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
 // #50's R1 the require would have pulled the bundle endpoint and /spiffe into
@@ -754,335 +756,6 @@ class SpiffeServer {
     const parts = String(methodPath || '').split('/');
     log.debug("Leaving SpiffeServer.protoNameOf().");
     return parts[parts.length - 1] || '';
-  }
-
-  /**
-   * Escapes a value for HTML.
-   *
-   * @param value - the value
-   * @returns the escaped text
-   */
-  esc(value) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering SpiffeServer.esc().");
-    log.debug("Leaving SpiffeServer.esc().");
-    return xmlEscape(value == null ? '' : String(value));
-  }
-
-  // A listener, and WHAT A CALLER HAS TO PRESENT ON IT. The third column is not
-  // decoration: the four sockets have three different postures — plain, plain
-  // and trusted as `local`, and mutual TLS — and a reader who cannot see which
-  // is which meets the difference as a handshake failure. Same reason
-  // `tls_server.js` says on the page which port needs verification turned off.
-  /**
-   * Draws the listener table's rows, each with what a caller has to present on
-   * it.
-   *
-   * @param bindings - the bindings
-   * @returns the rows' HTML
-   */
-  listenerRows(bindings) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug('Entering SpiffeServer.listenerRows().');
-    if (!bindings.length) {
-      log.debug('Leaving SpiffeServer.listenerRows().');
-      return '<tr><td colspan="4">Nothing bound. Either this listener is ' +
-             'turned off in configuration, or <code>listen()</code> has not ' +
-             'run yet.</td></tr>';
-    }
-    log.debug('Leaving SpiffeServer.listenerRows().');
-    return bindings.map(function (binding) {
-      return '<tr><td>' + self.esc(binding.realm || 'default') +
-             '</td><td><code>' +
-        self.esc(binding.address) + '</code>' +
-        (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
-        '</td><td>' +
-        (binding.listening
-          ? 'listening'
-          : '<strong>did not bind</strong>: ' + self.esc(binding.error)) +
-        '</td><td>' + self.esc(binding.authentication || '') + '</td></tr>';
-    }).join('');
-  }
-
-  /**
-   * Draws the method table's rows.
-   *
-   * @param methods - the methods
-   * @returns the rows' HTML
-   */
-  methodRows(methods) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering SpiffeServer.methodRows().");
-    log.debug("Leaving SpiffeServer.methodRows().");
-    return methods.map(function (method) {
-      return '<tr><td><code>' + self.esc(method.name) + '</code>' +
-        (method.streaming ? ' <span class="note">(stream)</span>' : '') +
-        '</td><td>' + (method.implemented ? 'yes' : '<strong>no</strong>') +
-        '</td><td>' + self.esc(method.what) + '</td></tr>';
-    }).join('');
-  }
-
-  /**
-   * Draws the `/spiffe` page from the description document.
-   *
-   * @param document - what `description()` returned
-   * @returns the page's HTML
-   */
-  page(document) {
-    const { log, ca, config } = this.deps;
-    const self = this;
-    log.debug('Entering SpiffeServer.page().');
-    const state = ca.state();
-    log.debug('Leaving SpiffeServer.page().');
-    return '<!doctype html><html><head><meta charset="utf-8"><title>SPIFFE — ' +
-      'IYA STS</title><style>body{font-family:system-ui,sans-serif;' +
-      'margin:2rem;max-width:60rem;line-height:1.5}' +
-      'table{border-collapse:collapse;margin:1rem ' +
-      '0;width:100%}th,td{border:1px solid #ccc;padding:.4rem .6rem;' +
-      'text-align:left;vertical-align:top}th{background:#f4f4f4}' +
-      'code{background:#f4f4f4;padding:.1rem ' +
-      '.3rem}.note{color:#666}.warn{background:#fff6e5;border-left:4px solid ' +
-      '#e69500;padding:.6rem ' +
-      '1rem}</style></head><body><h1>SPIFFE</h1><p>This service ' +
-      'is the issuing authority for the trust domain <code>' +
-      this.esc(document.trustDomainId) +
-      '</code>. Three server-side surfaces: the ' +
-      'bundle endpoint below (plain HTTPS), the <strong>Workload ' +
-      'API</strong> and the <strong>SPIRE Server API</strong> (both gRPC, on ' +
-      'their own sockets — this page cannot see a socket, so it reports ' +
-      'whether each one actually bound).</p>' +
-      (document.enabled ? '' :
-        '<p class="warn">SPIFFE is turned OFF on this service ' +
-        '(<code>spiffe.enabled</code>). The bundle endpoint answers 404 and ' +
-        'every gRPC call is refused with <code>Unavailable</code>. Turning ' +
-        'it back on needs no restart.</p>') +
-      (state.ready ? '' :
-        '<p class="warn">' + (state.error
-          ? 'The issuing authority could not be built, so nothing here will ' +
-            'issue an SVID: ' + this.esc(state.error)
-          : 'The issuing authority is still being generated. An RSA-4096 key ' +
-            'takes a few seconds; reload.') + '</p>') +
-      // **THIS SAID *NOTHING HERE IS ATTESTED. No workload and no node* UNTIL
-      // 2026-09-22**, which #40 had made false in both halves a day earlier —
-      // every one of SPIRE's node attestors verifies or refuses, and the
-      // Workload API's Unix socket attests its caller. A page that
-      // OVERSTATES what a service checks is the worse of the two errors, so
-      // what is left here is the narrow, true version, READ from the state
-      // rather than asserted; the `notChecked` list below has the detail.
-      '<p class="' +
-      (document.workloadAttestation &&
-       document.workloadAttestation.nativeModule ? 'note' : 'warn') + '">' +
-      '<strong>WHAT IS ATTESTED HERE, AND WHAT IS NOT.</strong> A node ' +
-      'attesting through the SPIRE Server API is VERIFIED (#40, ' +
-      '2026-09-21) — an agent\'s payload used to be written down as claimed ' +
-      'and is checked now — and a workload on the Workload API\'s ' +
-      '<strong>Unix socket</strong> is attested from the kernel\'s own ' +
-      'account of the connecting process. ' +
-      (document.workloadAttestation &&
-       document.workloadAttestation.nativeModule
-        ? 'This build attests it.'
-        : '<strong>THIS BUILD DOES NOT</strong>: it holds no ' +
-          'peer-credentials module (' +
-          this.esc(String((document.workloadAttestation &&
-                           document.workloadAttestation.problem) ||
-                          'not built')) +
-          '), so the socket is served unattested here and any caller on it ' +
-          'obtains an identity in this trust domain. Product mode does not ' +
-          'serve it at all.') +
-      ' <strong>A caller over TCP is not attested</strong> — there is no ' +
-      'peer process to ask — so its source address is the only identity it ' +
-      'carries. Here the TCP port is <strong>' +
-      this.esc(String((document.workloadAttestation &&
-                       document.workloadAttestation.tcp &&
-                       document.workloadAttestation.tcp.state) || 'unknown')) +
-      '</strong>: product mode serves it only where ' +
-      '<code>spiffe.workloadTcpSourceAuthenticated</code> declares that the ' +
-      'network authenticates source addresses, on a named address, and ' +
-      'refuses an entry that selects nothing but the transport and ' +
-      'endpoint; development serves it to anybody who can reach it. It ' +
-      'matters more here than anywhere else in this service, because what ' +
-      'comes out is a credential another service will believe.</p>' +
-      '<p class="' + (document.authentication.enforced ? 'note' : 'warn') +
-      '">' +
-      (document.authentication.enforced
-        ? '<strong>The SPIRE Server API is the exception, and it is ' +
-          'on.</strong> Its TCP port is mutual TLS, a caller presents an ' +
-          'X509-SVID from this trust domain, and every method is authorized ' +
-          'against SPIRE\'s own table — the whole of which is below. Its ' +
-          'Unix socket is the <code>local</code> entity and needs no ' +
-          'credential. The Workload API is ' +
-          'deliberately untouched by this: its ' +
-          'specification says a client MUST NOT be required to authenticate.'
-        : '<strong>And the SPIRE Server API is not authenticating anybody ' +
-          'either.</strong> That port is plain gRPC and anybody who can ' +
-          'reach it can create a registration entry granting any identity ' +
-          'here and then collect an SVID for it. Restart with it on — the ' +
-          'socket is bound once, because it decides how the socket is bound ' +
-          '— to get the behaviour of a real spire-server.') +
-      '</p>' +
-
-      '<h2>The bundle endpoint</h2>' +
-      '<p><a href="' + this.esc(document.bundle.url) + '"><code>' +
-      this.esc(document.bundle.url) + '</code></a> — a JWK Set with ' +
-      '<code>spiffe_sequence</code> (' + this.esc(document.bundle.sequence) +
-      ') ' +
-      'and <code>spiffe_refresh_hint</code> ' +
-      '(' + this.esc(document.bundle.refreshHint) +
-      ' seconds). Each key carries <code>use</code> of ' +
-      '<code>x509-svid</code> or <code>jwt-svid</code>; a consumer MUST ' +
-      'IGNORE a key whose <code>use</code> it does not recognise, which is ' +
-      'why a bundle with the member missing ' +
-      'verifies nothing and reports no error.</p><p ' +
-      'class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
-      this.esc(document.bundle.schemeNote) + '</p>' +
-
-      '<h2>The trust domain\'s authorities</h2>' +
-      // **THE TABLE ANSWERS "WHAT SIGNS" AND THE ONE BELOW IT ANSWERS "WHAT DO
-      // I TRUST".** They were one table until 2026-09-11, because a self-signed
-      // authority is both. Merging them again would be the single most
-      // misleading thing this page could do about key material: a reader who
-      // installed the SPIFFE Issuing CA as an anchor would have something that
-      // works until the first rotation and then stops, with no error naming it.
-      '<table><tr><th>Kind</th><th>Id</th><th>Key</th><th>State</th></tr>' +
-      document.authorities.x509.map(function (a) {
-        return '<tr><td>X.509</td><td><code>' + self.esc(a.id) +
-               '</code></td><td>' +
-          self.esc(a.keyType) + '</td><td>' +
-          (a.active ? 'active' : 'retired, ' +
-          'still published') + ', until ' + self.esc(a.notAfter) + '</td></tr>';
-      }).join('') +
-      document.authorities.jwt.map(function (a) {
-        return '<tr><td>JWT</td><td><code>' + self.esc(a.kid) +
-               '</code></td><td>' +
-          self.esc(a.keyType) + ' / ' + self.esc(a.alg) + '</td><td>' +
-          (a.active ? 'active' : 'retired, still published') + '</td></tr>';
-      }).join('') +
-      '</table>' +
-      (document.authorities.chainSubjects.length
-        ? '<p>An X509-SVID travels with its chain: ' +
-          document.authorities.chainSubjects.map(function (subject) {
-            return '<code>' + self.esc(subject) + '</code>';
-          }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it ' +
-          'is what the bundle publishes.</p>'
-        : '') +
-      '<h3>What a consumer trusts</h3>' +
-      '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
-      document.authorities.trustAnchors.map(function (a) {
-        return '<tr><td><code>' + self.esc(a.id) + '</code></td><td>' +
-          self.esc(a.subject) + '</td><td>' + self.esc(a.notAfter) +
-          '</td></tr>';
-      }).join('') +
-      '</table>' +
-      '<p class="' + (document.authorities.source === 'pki' ? 'note' : 'warn') +
-      '">' + this.esc(document.authorities.note) + '</p>' +
-
-      '<h2>The Workload API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.workloadApi.listeners) + '</table>' +
-      '<p>Every call must carry the metadata header <code>' +
-      this.esc(document.workloadApi.securityHeader) + '</code>' +
-      (document.workloadApi.securityHeaderRequired
-        ? '. This service enforces that, which is the one conformance check ' +
-          'it makes: a client that omits it has a bug that nothing else will ' +
-          'ever report.'
-        : ', and this service is NOT enforcing it at the moment ' +
-          '(<code>spiffe.requireSecurityHeader</code> is off).') + '</p>' +
-      '<table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
-      this.methodRows(document.workloadApi.methods) + '</table>' +
-
-      '<h2>The SPIRE Server API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.serverApi.listeners) + '</table>' +
-      document.serverApi.services.map(function (service) {
-        return '<h3>' + self.esc(service.name) + '</h3><p>' +
-               self.esc(service.what) +
-          '</p><table><tr><th>Method</th><th>Implemented</th>' +
-          '<th>What</th></tr>' +
-          self.methodRows(service.methods) + '</table>';
-      }).join('') +
-
-      '<h2>The SPIFFE Broker API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.brokerApi.listeners) + '</table>' +
-      '<p>A broker authenticates with its X509-SVID over mutual TLS, sends ' +
-      '<code>' + this.esc(document.brokerApi.securityHeader) + '</code>, and ' +
-      'names a workload by reference — a process id or a Kubernetes pod — ' +
-      'which this service attests itself before answering with that ' +
-      'workload\'s SVIDs. Brokers (<code>spiffe.brokers</code>): ' +
-      (document.brokerApi.brokers.length
-        ? document.brokerApi.brokers.map(function (one) {
-            return '<code>' + self.esc(one.id) + '</code> (' +
-              self.esc(one.problem || one.types.join(', ')) + ')';
-          }).join(', ')
-        : 'none, so every call is refused PERMISSION_DENIED') + '.</p>' +
-
-      '<h2>Who may call the SPIRE Server API</h2>' +
-      '<p>' + this.esc(document.authentication.what) + '</p>' +
-      '<p class="note">' + this.esc(document.authentication.bootstrapping) +
-      '</p><p class="note">' + this.esc(document.authentication.identityNote) +
-      '</p><p class="note">' +
-      this.esc(document.authentication.credentialStatusNote || '') + '</p>' +
-      (document.authentication.adminIds.length
-        ? '<p>Administrators by configuration ' +
-          '(<code>spiffe.adminIds</code>): ' +
-          document.authentication.adminIds.map(function (id) {
-            return '<code>' + self.esc(id) + '</code>';
-          }).join(', ') +
-            '. A registration entry marked <code>admin</code> is ' +
-          'the other way, and both are read on every call.</p>'
-        : '<p>No SPIFFE ID is an administrator by configuration ' +
-          '(<code>spiffe.adminIds</code> is empty). The other way in is a ' +
-          'registration entry marked <code>admin</code>, which the form on ' +
-          '<a href="/admin/spiffe/entries">/admin/spiffe/entries</a> sets, ' +
-          'and the <code>local</code> Unix socket, which needs no credential ' +
-          'at all.</p>') +
-      '<table><tr><th>Entity</th><th>What it means</th></tr>' +
-      document.authentication.entities.map(function (entity) {
-        return '<tr><td><code>' + self.esc(entity.id) + '</code></td><td>' +
-          self.esc(entity.what) + '</td></tr>';
-      }).join('') + '</table>' +
-      '<h3>The per-method table</h3>' +
-      '<p>Copied from SPIRE\'s own <code>policy_data.json</code> rather than ' +
-      'reasoned out, because a table somebody derived from what each method ' +
-      '"obviously" needs is one that disagrees with SPIRE in two or three ' +
-      'places — and the client author who meets the disagreement has no way ' +
-      'to tell which end is wrong. <code>any</code> means the method is open ' +
-      'here and in a real server too.</p>' +
-      '<table><tr><th>Method</th><th>Allowed to</th></tr>' +
-      document.authentication.policy.map(function (row) {
-        return '<tr><td><code>' + self.esc(row.method) + '</code></td><td>' +
-          self.esc(row.allow.join(', ')) + '</td></tr>';
-      }).join('') + '</table>' +
-
-      '<h2>What is not checked</h2><ul>' +
-      document.notChecked.map(function (line) {
-        return '<li>' + self.esc(line) + '</li>';
-      }).join('') + '</ul><h2>What is refused</h2><p>A short list, and it is ' +
-      'here because a page that only said "nothing is checked" would be ' +
-      'wrong.</p><ul>' +
-      document.refused.map(function (line) {
-        return '<li>' + self.esc(line) + '</li>';
-      }).join('') + '</ul>' +
-
-      '<h2>The registry</h2><p>' + this.esc(document.registry.entries) +
-      ' registration entry/entries and ' +
-      this.esc(document.registry.agents) + ' agent(s). ' +
-      this.esc(document.registry.note) + '</p>' +
-
-      '<h2>Elsewhere</h2><ul>' +
-      Object.keys(document.links).map(function (key) {
-        return '<li><a href="' + self.esc(document.links[key]) + '">' +
-               self.esc(key) +
-          '</a> — <code>' + self.esc(document.links[key]) + '</code></li>';
-      }).join('') + '</ul>' +
-      '<p class="note">Add <code>?format=json</code> to this page for the ' +
-      'machine-readable form.</p>' +
-      '</body></html>';
   }
 
   // ---------------------------------------------------------------------------
@@ -2162,7 +1835,7 @@ class SpiffeServer {
    * @param app - the express app
    */
   registerRoutes(app: RouteApp): void {
-    const { log, errorCodes, ca, audit } = this.deps;
+    const { log, errorCodes, ca, audit, config } = this.deps;
     const self = this;
     log.debug("Entering SpiffeServer.registerRoutes().");
     // -------------------------------------------------------------------------
@@ -2248,19 +1921,37 @@ class SpiffeServer {
       log.debug('Leaving the federated bundle view. trustDomain=' + name);
     });
 
+    // THE DESCRIPTION PAGE (#584): this service's own, for a person, and
+    // so a static surface's shell since #584, drawn in the browser
+    // (`web_spiffe_description.ts`) from the document `?format=json`
+    // answers — to the byte as before — beside the two facts the page read
+    // that the document does not hold: the issuing authority's readiness
+    // and whether the main port is HTTPS. The bundle endpoints are
+    // SPIFFE's and are unchanged.
     app.get('/spiffe', function (req, res) {
       log.debug('Entering the /spiffe view.');
       const document = self.description(req);
-      if (String(req.query.format || '') === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '') === 'json')) {
         res.status(200).type('application/json')
           .set('Cache-Control', 'no-store')
            .send(JSON.stringify(document, null, 2));
         log.debug('Leaving the /spiffe view. JSON.');
         return;
       }
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(self.page(document));
-      log.debug('Leaving the /spiffe view. HTML.');
+      const state = ca.state();
+      DescriptionPages.send(req, res, { base: '/spiffe', title: 'SPIFFE',
+        view: { kind: 'spiffe', document: document,
+                authority: { ready: !!state.ready,
+                             error: String(state.error || '') },
+                https: !!config.value('global.https') } });
+      log.debug('Leaving the /spiffe view. The shell.');
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/spiffe'), function (req, res) {
+      log.debug('Entering GET /spiffe/description.js.');
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /spiffe/description.js.');
     });
     log.debug("Leaving SpiffeServer.registerRoutes().");
   }

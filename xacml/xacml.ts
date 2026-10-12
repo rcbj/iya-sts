@@ -194,6 +194,8 @@ import accessGate = require('../common/access_gate');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // THE CONSOLE PAGES. Required from here rather than from
 // `common/protocol_stack.ts` so that the require order has ONE line for this
 // family: this module is 23c and the pages are part of it. Requiring them
@@ -2674,130 +2676,40 @@ class XacmlSurface {
         return res.status(400).type('text/plain')
                   .send(askedFormat.detail + '\n');
       }
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      // THE JSON FORM, to the byte as before — `?format=json` — or by an
+      // Accept preferring JSON where the query names no format (#584).
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug('Leaving GET /xacml. JSON.');
         return;
       }
-      const rows = info.endpoints.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td><td><code>' + xmlEscape(row.requires) + '</code></td></tr>';
-      }).join('');
-      const later = info.notYetHere.map(function (one) {
-        return '<li>' + xmlEscape(one) + '</li>';
-      }).join('');
-      res.status(200).type('text/html').set('Cache-Control', 'no-store').send(
-        '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
-        '<title>XACML 3.0</title><style>' +
-        'body{font-family:system-ui,sans-serif;' +
-        'margin:2rem;max-width:52rem;line-height:1.5}table{border-collapse:' +
-        'collapse;margin:1rem 0}td,th{border:1px solid #ccc;' +
-        'padding:.35rem .6rem;' +
-        'text-align:left}code{font-size:.9em}</style></head><body>' +
-        '<h1>XACML 3.0</h1>' +
-        '<p>This service is a Policy Decision Point. Policies live in ' +
-        '<code>ou=policies</code> in the embedded directory — that ' +
-        'container <strong>is</strong> the repository rather than a copy of ' +
-        'one — and the Policy Information Point reads attributes off the ' +
-        'subject&rsquo;s own directory entry.</p>' +
-        '<p>' + (info.enabled ? 'XACML is <strong>on</strong>.'
-                              : 'XACML is <strong>off</strong> ' +
-                                '(<code>xacml.enabled</code>); these ' +
-                                'endpoints answer 501.') + '</p>' +
-        '<p>The repository holds ' + info.repository.policies +
-        ' policy(ies), ' +
-        info.repository.enabledPolicies + ' enabled, and the root is ' +
-        (info.repository.root
-          ? '<code>' + xmlEscape(info.repository.root) + '</code>.'
-          : '<strong>not set</strong>, so every decision is NotApplicable.') +
-        '</p>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th><th>Requires' +
-        '</th></tr>' + rows + '</table>' +
-        '<h2>Getting in</h2>' +
-        '<p>' + (info.access.enforced
-          ? 'Every endpoint above requires a <strong>client ' +
-            'certificate</strong> this service verifies against an anchor ' +
-            'in its own truststore (<code>' +
-            xmlEscape(trustAnchorDoor()) + '</code>). The ' +
-            'subject DN is resolved to a directory entry, and that ' +
-            'entry&rsquo;s group membership is what grants the role in the ' +
-            'last column: <code>' +
-            xmlEscape(info.access.xacmlUserGroup ||
-                      '(none — nobody holds it)') +
-            '</code> grants <code>XACML_USER</code> and <code>' +
-            xmlEscape(info.access.remotePepGroup ||
-                      '(none — nobody holds it)') +
-            '</code> grants <code>REMOTE_PEPS</code>. <strong>The ' +
-            'certificate says who and the group says whether</strong> ' +
-            '&mdash; a perfectly valid certificate for a common name in ' +
-            'neither group is fully authenticated and still refused.'
-          : 'Access enforcement is <strong>off</strong> ' +
-            '(<code>xacml.enforceAccess</code>), so every endpoint above ' +
-            'answers without a credential. The roles in the last column ' +
-            'are what would be required with it on.') + '</p>' +
-        // The demonstration only where this realm is served it (#585).
-        (info.pep ? '<h2>The embedded PEP</h2>' +
-        '<p><code>GET /xacml/protected?subject=&hellip;&amp;resource=&hellip;' +
-        '&amp;action=&hellip;</code> asks this PDP and then ' +
-        '<em>enforces</em> the answer. It is <code>' +
-        xmlEscape(info.pep.bias) + '</code>: the ' +
-        'two biases agree on every Permit and every Deny and differ on ' +
-        'Indeterminate and NotApplicable, which is the case worth looking ' +
-        'at. An obligation it cannot discharge turns a Permit into a ' +
-        'refusal, which is section 7.2 and is the part implementations ' +
-        'skip.</p>' : '') +
-        '<h2>Remote enforcement points</h2>' +
-        '<p>' + (info.remotePeps.enabled
-          ? 'A Policy Enforcement Point in another process registers at ' +
-            '<code>/xacml/pep/register</code>, <strong>pulls</strong> the ' +
-            'enabled policies from <code>/xacml/pep/policies</code> and ' +
-            'evaluates them itself with its own copy of this engine. ' +
-            info.remotePeps.registered +
-            ' registered. The repository&rsquo;s ' +
-            'sync token is <code>' + xmlEscape(info.remotePeps.syncToken) +
-            '</code>; pass it as <code>?since=</code> and an unchanged ' +
-            'repository answers 304.'
-          : 'Remote Policy Enforcement Points are <strong>off</strong> ' +
-            '(<code>xacml.remotePeps</code>); those three endpoints ' +
-            'answer 501.') +
-        '</p><h2>The Policy Information Point, over HTTP</h2><p>A remote ' +
-        'PEP holds the engine but <strong>not the directory</strong>, so a ' +
-        'designator the request did not carry resolves to an empty bag out ' +
-        'there and to a real value here &mdash; the same policy deciding ' +
-        'two ways in two enforcement points. <code>POST /xacml/pip</code> ' +
-        'closes that.</p><p>XACML defines no PIP protocol, so this invents ' +
-        'as little as possible: both directions are <strong>XACML&rsquo;s ' +
-        'own XML</strong>. ' +
-        'Send a <code>&lt;PIPRequest&gt;</code> carrying the ' +
-        '<code>&lt;Request&gt;</code> you are deciding &mdash; which is what ' +
-        'names the subject &mdash; and one ' +
-        '<code>&lt;AttributeDesignator&gt;</code> per attribute wanted. What ' +
-        'comes back is <code>&lt;Attributes&gt;</code> <em>in the shape a ' +
-        '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it ' +
-        'into its own request and evaluates &mdash; after which its engine ' +
-        'finds the values where a designator looks for them, which is ' +
-        'exactly what happens in this process when the embedded PDP asks ' +
-        'the embedded PIP.</p><p>An unresolved designator comes back as an ' +
-        '<strong>absent</strong> <code>&lt;Attribute&gt;</code> rather than ' +
-        'an empty one: that is what a request that never carried it looks ' +
-        'like, so a PEP needs no branch for it. <code>MustBePresent</code> ' +
-        'is read and deliberately <em>not</em> applied &mdash; what an ' +
-        'empty bag means is settled by the designator and the function it ' +
-        'is handed to, both in your engine. The five reasons a bag can be ' +
-        'empty come back in <code>&lt;Unresolved&gt;</code>, in this ' +
-        'service&rsquo;s own namespace so that a PEP reading only the XACML ' +
-        'core namespace never sees it.</p><p>The pull <em>is</em> the ' +
-        'contract. When the repository changes this service also POSTs a ' +
-        'few bytes to each registered PEP that gave a notify URL, saying ' +
-        'only that something changed &mdash; an optimisation over the ' +
-        'polling interval and never a replacement for it, so a PEP that is ' +
-        'never nudged still converges.</p><h2>Not here ' +
-        'yet</h2><ul>' + later + '</ul>' +
-        '<p><a href="?format=json">This document as JSON</a></p>' +
-        '</body></html>');
-      log.debug('Leaving GET /xacml. HTML.');
+      // THE PAGE IS A STATIC SURFACE'S SHELL SINCE #584, drawn in the
+      // browser (`web_xacml_description.ts`) from the document above and
+      // the truststore door — behind the gate above, as its script is
+      // below. `/xacml/pdp`, `/xacml/policies`, `/xacml/pep/*` and
+      // `/xacml/pip` are unchanged.
+      DescriptionPages.send(req, res, { base: '/xacml', title: 'XACML 3.0',
+        view: { kind: 'xacml', document: info,
+                trustAnchorDoor: trustAnchorDoor() } });
+      log.debug('Leaving GET /xacml. The shell.');
+    });
+
+    // THE PAGE'S SCRIPT (#584), on this application's own path (#472) and
+    // BEHIND THE SAME GATE AS THE PAGE: the description pages' bundle is no
+    // secret, but a part of this surface answered to a caller the page
+    // refuses is a part outside the gate, and the gate is what this family
+    // is held to (`xacml/CLAUDE.md`). Its refusal is the page's.
+    app.get(DescriptionPages.scriptPath('/xacml'), function (req, res) {
+      log.debug('Entering GET /xacml/description.js.');
+      if (!self.xacmlAccess(req, res, accessGate.ACTION.READ,
+                            'the XACML surface description').allowed) {
+        log.debug('Leaving GET /xacml/description.js. The access policy ' +
+                  'refused.');
+        return;
+      }
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /xacml/description.js.');
     });
 
     log.debug("Leaving XacmlSurface.registerRoutes().");

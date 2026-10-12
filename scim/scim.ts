@@ -272,6 +272,8 @@ import cells = require('../common/cells');
 // module's tables for the scim namespace. Safe at the top: it requires only
 // libraries that never require this module back.
 import serverProse = require('../common/server_prose');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 
 // A function the directory, `scim_auth`, `scim_map` and the others offer, as
 // this module calls it. Their own modules are the authority on the shapes.
@@ -2853,35 +2855,9 @@ class Scim {
   // protocol surface is, what it will and will not do, and where to point a
   // client — plus ?format=json so a test can read the same facts. It is NOT a
   // SCIM endpoint and says so; a real SCIM server publishes none of this.
+  // Since #584 the page is drawn in the browser (`web_scim_description.ts`)
+  // from the document below, which its shell carries.
   // ---------------------------------------------------------------------------
-  private pageShell(title: string, inner: string): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Scim.pageShell().");
-    log.debug("Leaving Scim.pageShell().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>' + xmlEscape(title) +
-      '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-      'Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem;color:#222;' +
-      'line-height:1.45}.card{background:#fff;border:1px solid ' +
-      '#d5d5dd;border-radius:10px;padding:24px 28px;max-width:60rem;margin:0 ' +
-      'auto;box-shadow:0 6px 24px ' +
-      'rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 ' +
-      '0 4px;color:#12107c}h2{font-size:1em;margin:1.4em 0 ' +
-      '.4em}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-      '18px}.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px ' +
-      '12px;border-radius:5px;font-size:.82em;margin:0 0 ' +
-      '16px}table{border-collapse:collapse;width:100%;margin:.5rem 0 ' +
-      '1rem;font-size:.85em}th,td{border:1px solid #ddd;padding:.35rem ' +
-      '.55rem;' +
-      'text-align:left;vertical-align:top}th{background:#f0f0f5}' +
-      'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-      'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}a{color:#12107c}ul{margin:.3em ' +
-      '0;padding-left:1.2em}li{margin:.2em 0}</style></head><body><div ' +
-      'class="card">' + inner + '</div></body></html>\n';
-  }
-
   // What this surface is, as data. Shared by the page and by ?format=json so
   // the two cannot disagree — the same reason /admin/sts-metadata reads the
   // router.
@@ -3485,145 +3461,32 @@ class Scim {
     app.patch(BASE + '/*', unknown);
     app.delete(BASE + '/*', unknown);
 
+    // THE DESCRIPTION PAGE (#584): not a SCIM endpoint, as it says, and so
+    // a static surface's shell since #584 (`common/description_pages.ts`).
+    // `/scim/v2/*` is SCIM's and is unchanged.
     app.get('/scim', (req, res) => {
       log.debug("Entering GET /scim.");
       const info = this.description(req);
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug("Leaving GET /scim. JSON.");
         return;
       }
-      const endpoints = info.endpoints.map((row) => {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-      const negatives = info.reachableNegatives.map((row) => {
-        return '<tr><td>' + xmlEscape(row.what) + '</td><td>' +
-          xmlEscape(row.answer) +
-          '</td></tr>';
-      }).join('');
-      const auth = info.authentication;
-      const schemeRows = auth.schemes.map((row) => {
-        return '<tr><td>' + xmlEscape(row.name) +
-          (row.primary ? ' <em>(primary)</em>' : '') + '</td>' +
-          '<td><code>' + xmlEscape(row.type) + '</code>' +
-          (row.canonical ? '' : ' <em>(no canonical value in RFC 7643)</em>') +
-          '</td><td>' + (row.enabled ? 'offered' : 'off') +
-          ' <span class="sub">(<code>' + xmlEscape(row.setting) +
-          '</code>)</span></td><td>' + (row.scoped ? 'scopes' : 'everything') +
-          '</td><td>' + xmlEscape(row.spec) + '</td></tr><tr><td ' +
-          'colspan="5" class="sub">' + xmlEscape(row.description) +
-          '</td></tr>';
-      }).join('');
-      const policyRows = auth.policy.map((text) => {
-        return '<li>' + xmlEscape(text) + '</li>';
-      }).join('');
-      const mapping = info.mapping.user.map((row) => {
-        return '<tr><td><code>' + xmlEscape(row.scim) +
-          '</code></td><td><code>' +
-          xmlEscape(row.ldap) + '</code></td><td>' + xmlEscape(row.kind) +
-          (row.readOnly ? ', read-only' : '') + '</td></tr>';
-      }).join('');
-      const inner = '<h1>SCIM 2.0 — provisioning into the directory</h1>' +
-        '<p class="sub">RFC 7642, 7643 and 7644, at <code>' +
-        xmlEscape(info.baseUrl) +
-        '</code>. ' + (info.enabled ? '' : '<strong>Turned off</strong> ' +
-          '(<code>scim.enabled</code>) — every endpoint answers 501. ') +
-        'This page is not a SCIM endpoint; a real server publishes none of ' +
-        'it.</p><div class="warn"><strong>These endpoints require a ' +
-        'credential' +
-        (auth.required ? '' : ' — except that it is currently ' +
-          'turned off here, so right now they do not') +
-        // PER MODE (#543 round 2): the development sentence below was drawn
-        // in product too, where Basic is verified, Digest is not offered and
-        // HOBA registration is confined to an account's signed-in owner.
-        (mode.verifiesCredentials()
-          ? ', and it is verified.</strong> They create and DELETE ' +
-            'accounts. An access token carries a SCIM scope only when <a ' +
-            'href="/oauth2/token">the token endpoint</a> issued it to a ' +
-            'client whose <code>oauthAllowedScope</code> declares it, and ' +
-            'only while the client still does; a Basic password is ' +
-            'verified against the person\'s directory entry; Digest is not ' +
-            'offered; and only the signed-in owner of an existing account ' +
-            'may register a HOBA key for it. '
-          : ', and almost nothing is checked about it.</strong> They ' +
-            'create and DELETE accounts, which is why this is the one ' +
-            'surface in this service that asks at all. This realm is in ' +
-            'development mode, and the schemes below are permissive, bar ' +
-            'one: an access token carries a SCIM scope only when <a ' +
-            'href="/oauth2/token">the token endpoint</a> issued it to a ' +
-            'client whose <code>oauthAllowedScope</code> declares it, and ' +
-            'only while the client still does. Beside that, any ' +
-            'username with any password but <code>invalid</code> passes ' +
-            'Basic, any username passes Digest with one shared password, ' +
-            'and anybody can register a HOBA key for any name. A ' +
-            'turnstile, not a lock — what it buys is that a client\'s 401, ' +
-            '403 and challenge-response paths can be run at all. ') +
-        '<strong>And <code>active: false</code> ' +
-        'disables the account</strong> — it writes the password-policy lock ' +
-        '<code>pwdAccountLockedTime</code>, every door then refuses the ' +
-        'person, and everything they held is ended, exactly as the Disable ' +
-        'button on their <code>/admin/users</code> page does.</div><h2>What ' +
-        'it provisions ' +
-        'into</h2><p>' + xmlEscape(info.store.what) + '</p>' +
-        '<ul><li>People: <code>' + xmlEscape(info.store.users) + '</code> — ' +
-        info.store.userCount + ' entry/entries</li>' +
-        '<li>Groups: <code>' + xmlEscape(info.store.groups) + '</code> — ' +
-        info.store.groupCount + ' group(s), by placement or by ' +
-                                'objectClass</li>' +
-        '<li>The whole directory holds ' + info.store.entryCount +
-        ' of a maximum ' +
-        info.store.maxEntries + ' entries</li></ul>' +
-        '<h2>The <code>id</code> is the DN</h2>' +
-        '<p>' + xmlEscape(info.identifiers.why) + '</p>' +
-        '<p>For example: <code>' + xmlEscape(info.identifiers.example) +
-        '</code></p><h2>Authentication</h2><p>RFC 7644 section 2 defines no ' +
-        'credential of its own — it delegates to TLS and to RFC 7235 and ' +
-        'NAMES six schemes. All six are here. Its one <em>SHALL</em> is that ' +
-        'a provider indicate its schemes in <code>WWW-Authenticate</code>, ' +
-        'which every 401 from these endpoints does; its one <em>MUST</em> is ' +
-        'that a provider be able to map an authenticated client to an access ' +
-        'control policy, which is the list under the table. The realm is ' +
-        '<code>' + xmlEscape(auth.realm) + '</code>. Discovery ' +
-        '(<code>/ServiceProviderConfig</code>, <code>/ResourceTypes</code>, ' +
-        '<code>/Schemas</code>) is ' +
-        (auth.discoveryOpen ? 'OPEN — a client ' +
-          'has to be able to read which schemes exist before it can use one' :
-          'closed too (<code>scim.authDiscovery</code>)') + '.</p>' +
-        '<table><tr><th>Scheme</th><th>type</th><th>State</th><th>May do</th>' +
-        '<th>Defined by</th></tr>' + schemeRows + '</table>' +
-        '<p>The two OAuth scopes are <code>' + xmlEscape(auth.scopes.read) +
-        '</code> and <code>' + xmlEscape(auth.scopes.write) + '</code>, ' +
-        'published in <code>scopes_supported</code> in both discovery ' +
-        'documents. Digest ' +
-        'offers ' + xmlEscape(auth.digestAlgorithms.join(', ')) +
-        '. HOBA keys are registered at ' +
-        '<code>' + xmlEscape(auth.hobaRegistration) + '</code>.</p>' +
-        '<h3>The access control policy</h3><ul>' + policyRows + '</ul>' +
-
-        '<h2>Endpoints</h2>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th></tr>' +
-        endpoints +
-        '</table><h2>What ' +
-        'it deliberately does not do</h2><ul>' +
-        info.doesNotDo.map((text) => {
-          return '<li>' + xmlEscape(text) + '</li>';
-        }).join('') + '</ul>' +
-        '<h2>Things you can make fail</h2>' +
-        '<table><tr><th>Do this</th><th>Get this</th></tr>' + negatives +
-        '</table><h2>The User ' +
-        'mapping</h2><table><tr><th>SCIM</th><th>LDAP</th><th>How</th></tr>' +
-        mapping + '</table><p ' +
-        'class="sub"><a href="/scim?format=json">This page as JSON</a> ' +
-        '&middot; <a href="' + xmlEscape(BASE) +
-        '/ServiceProviderConfig">ServiceProviderConfig</a> ' +
-        '&middot; <a href="/admin/scim">the console page</a> &middot; <a ' +
-        'href="/admin/ldap/service">the directory this writes into</a></p>';
-      res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.pageShell('SCIM 2.0', inner));
-      log.debug("Leaving GET /scim. HTML.");
+      // Beside the document, the two facts the page drew that it does not
+      // hold: whether this realm VERIFIES a credential (per mode, #543
+      // round 2), and the SCIM base path.
+      DescriptionPages.send(req, res, { base: '/scim', title: 'SCIM 2.0',
+        view: { kind: 'scim', document: info,
+                verifiesCredentials: mode.verifiesCredentials(),
+                base: BASE } });
+      log.debug("Leaving GET /scim. The shell.");
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/scim'), (req, res) => {
+      log.debug("Entering GET /scim/description.js.");
+      DescriptionPages.script(req, res);
+      log.debug("Leaving GET /scim/description.js.");
     });
     log.debug("Leaving Scim.registerRoutes().");
   }

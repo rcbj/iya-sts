@@ -267,6 +267,8 @@ import personAttributes = require('./person_attributes');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Only the Browser/POST hand-off page uses it.
 import PageLocale = require('../common/page_locale');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
 // two nodes against one store cannot both resolve it — the same arrangement as
 // saml2_sso.ts's spendArtifact(), whose comment argues it. A library that
@@ -3033,64 +3035,29 @@ class Saml11Sso {
       'authorization decisions.</div></div>';
   }
 
-  private describeProfilePage(base) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Saml11Sso.describeProfilePage().");
+  // THE DESCRIPTION PAGE'S VIEW (#584). `GET /saml11` was drawn here until
+  // #584; it is drawn in the browser now (`web_saml_description.ts`), from
+  // this — which is also its JSON form, new with #584.
+  /**
+   * The SAML 1.1 description page's view: the endpoints' paths — the mock
+   * relying party's only where this realm is served it (#585), null
+   * otherwise — and the metadata at the base this request reached.
+   *
+   * @param base - the base URL the request reached
+   * @returns the view
+   */
+  descriptionView(base) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.descriptionView().");
     const where = this.endpointsFor(base, '');
-    log.debug("Leaving Saml11Sso.describeProfilePage().");
-    return '<h1>SAML 1.1</h1><p class="sub">The two browser profiles, and ' +
-      'the ' +
-      'SAML responder behind one of them</p><p>This service issues SAML 1.1 ' +
-      'assertions through three doors, and this is the newest of them: the ' +
-      '<strong>browser profiles</strong>, where a person signs in and an ' +
-      'assertion reaches a relying party. The other two are <a ' +
-      'href="/wsfed">WS-Federation</a>, which wraps the same assertion in a ' +
-      '<code>wresult</code>, and <a href="/sts">WS-Trust</a>, which returns ' +
-      'one in an <code>RSTR</code>. All three call one builder, so an ' +
-      'attribute configured on <code>/admin/saml-attributes</code> appears ' +
-      'in ' +
-      'all three.</p><h2>The ' +
-      'endpoints</h2><table><thead><tr><th>Endpoint</th><th>What it ' +
-      'is</th></tr></thead><tbody><tr><td><a ' +
-      'href="' + SSO_PATH + '">' + SSO_PATH + '</a></td><td>the ' +
-      'inter-site transfer service — SAML 1.1\'s name for what SAML 2.0 ' +
-      'calls ' +
-      'the Single Sign-On ' +
-      'service</td></tr><tr><td><code>' + RESPONDER_PATH +
-      '</code></td><td>the ' +
-      'SAML responder, over SOAP. Resolves artifacts, returns assertions by ' +
-      'AssertionID, and answers AttributeQuery and AuthenticationQuery — the ' +
-      'attribute authority half of SAML 1.1</td></tr><tr><td><a ' +
-      'href="' + METADATA_PATH + '">' + METADATA_PATH + '</a></td><td>signed ' +
-      'metadata. A SAML 2.0 metadata document describing a SAML 1.1 identity ' +
-      'provider, which is what every relying party actually ' +
-      'consumes</td></tr>' +
-      (demoOnly.serves() ? '<tr><td><a ' +
-      'href="' + RP_PATH + '">' + RP_PATH + '</a></td><td>a mock ' +
-      'relying party, to exercise both profiles and see the ' +
-      'checks</td></tr>' : '') +
-      '</tbody></table><h2>What makes it different from SAML ' +
-      '2.0</h2><ul><li><strong>No request message.</strong> No AuthnRequest, ' +
-      'so the relying party never identifies itself, never asks for a ' +
-      'binding, ' +
-      'a NameID format or an authentication context, and never receives an ' +
-      'error — there is nothing to answer.</li><li><strong>No Single ' +
-      'Logout.</strong> It arrived with SAML 2.0.</li><li><strong>Different ' +
-      'spellings throughout.</strong> <code>AssertionID</code> not ' +
-      '<code>ID</code>, an <code>Issuer</code> attribute not an element, a ' +
-      'status code that is a QName not a URI, ' +
-      '<code>AudienceRestrictionCondition</code> not ' +
-      '<code>AudienceRestriction</code>, and a signature that goes LAST in ' +
-      'an ' +
-      'assertion and FIRST in a response.</li><li><strong>A 42-byte ' +
-      'artifact</strong>, type 0x0001, where SAML 2.0\'s is 44 bytes and ' +
-      'type ' +
-      '0x0004.</li></ul><div class="row">' +
-      (demoOnly.serves() ? '<a ' +
-      'href="' + RP_PATH + '"><button>Try it at the mock ' +
-      'relying party</button></a> ' : '') + '<a ' +
-      'href="' + xmlEscape(where.metadata) + '"><button class="alt">The ' +
-                                                'metadata</button></a></div>';
+    log.debug("Leaving Saml11Sso.descriptionView().");
+    return {
+      kind: 'saml11',
+      paths: { sso: SSO_PATH, responder: RESPONDER_PATH,
+               metadata: METADATA_PATH,
+               rp: demoOnly.serves() ? RP_PATH : null },
+      metadata: where.metadata
+    };
   }
 
   // ===========================================================================
@@ -3615,11 +3582,30 @@ class Saml11Sso {
     // one is what the per-relying-party metadata document tells a service
     // provider to use.
     // -------------------------------------------------------------------------
+    // THE DESCRIPTION PAGE (#584): a path no specification defines, drawn
+    // in the browser from the view its shell carries
+    // (`common/description_pages.ts`); `?format=json`, or an Accept
+    // preferring JSON, answers that view. `GET /saml11/sso` and
+    // `GET /saml11/responder` are a specification's endpoints and are not
+    // converted.
     app.get(BASE_PATH, (req, res) => {
       log.debug("Entering the SAML 1.1 landing page.");
-      this.sendPage(res, 200, 'SAML 1.1',
-                    this.describeProfilePage(baseUrlOf(req)));
+      const view = this.descriptionView(baseUrlOf(req));
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
+        res.status(200).set('Cache-Control', 'no-store').json(view);
+        log.debug("Leaving the SAML 1.1 landing page. JSON.");
+        return;
+      }
+      DescriptionPages.send(req, res, { base: BASE_PATH, title: 'SAML 1.1',
+                                        view: view });
       log.debug("Leaving the SAML 1.1 landing page.");
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath(BASE_PATH), (req, res) => {
+      log.debug("Entering the SAML 1.1 description page's script.");
+      DescriptionPages.script(req, res);
+      log.debug("Leaving the SAML 1.1 description page's script.");
     });
 
     app.get(METADATA_PATH, this.serveMetadata.bind(this));

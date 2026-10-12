@@ -233,6 +233,8 @@ import personAttributes = require('./person_attributes');
 // no route and closes no cycle. Only the pages a PERSON passes through use it
 // — the hand-off pages and the sign-out pages; refusals stay English.
 import PageLocale = require('../common/page_locale');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
 // through, so that two nodes against one store cannot both resolve it. A
 // LIBRARY that registers no route and requires persistence lazily, so it
@@ -641,79 +643,31 @@ class Saml2Sso {
          .send(AUTOPOST_SCRIPT);
     });
 
+    // THE DESCRIPTION PAGE (#584): a path no specification defines, this
+    // service's own documentation for a person, drawn in the browser from
+    // the view its shell carries (`common/description_pages.ts`). Its JSON
+    // form is new with #584 — `?format=json`, or an Accept preferring
+    // JSON — and is that view. `GET /saml2/sso` and `GET /saml2/ars` below
+    // are a specification's endpoints and are not converted.
     app.get(BASE_PATH, function (req, res) {
       log.debug("Entering the SAML 2.0 description page.");
-      const base = baseUrlOf(req);
-      const where = self.endpointsFor(base, '');
-      self.sendPage(res, 200, 'SAML 2.0 — Web Browser SSO',
-             '<h1>SAML 2.0 — Web Browser SSO, all four bindings</h1>' +
-             '<p class="sub">Identity provider <code>' +
-               xmlEscape(self.idpEntityId()) +
-             '</code> ' +
-             'at <code>' + xmlEscape(base) + '</code></p><p>A full SAML 2.0 ' +
-             'identity provider: HTTP Redirect, HTTP POST and HTTP POST ' +
-             'SimpleSign for the request, and HTTP POST, HTTP Redirect, HTTP ' +
-             'POST SimpleSign or HTTP Artifact for the response, with a SOAP ' +
-             'artifact resolution service behind the last. In development ' +
-             'mode it accepts ANY entityID — a service provider does not ' +
-             'have to be provisioned here before it can be pointed at this ' +
-             'service, and the first valid AuthnRequest from an entityID ' +
-             'creates its application entry in the embedded directory. In ' +
-             'product mode only a REGISTERED service provider is served ' +
-             '(#496).</p><h2>The ' +
-             'endpoints</h2><table><thead><tr><th>Endpoint</th><th>What it ' +
-             'is</th></tr></thead><tbody><tr><td><a href="' + SSO_PATH + '">' +
-               SSO_PATH + '</a></td><td>Single ' +
-               'Sign-On. ' +
-               '<code>' + SSO_PATH + '/{sp}</code> is the same service ' +
-               'scoped to one service ' +
-               'provider.</td></tr><tr><td><code>' + ARS_PATH +
-             '</code></td><td>Artifact ' +
-               'Resolution, SOAP over HTTP. A browser never touches it — the ' +
-               'service provider calls it directly, which is the whole point ' +
-               'of the artifact profile.</td></tr><tr><td><a ' +
-               'href="' + SLO_PATH + '">' + SLO_PATH + '</a></td><td>Single ' +
-               'Logout, both directions.</td></tr><tr><td><code>' +
-               UNSOLICITED_PATH + '</code></td><td>Identity-provider-' +
-               'initiated sign-in: an unsolicited Response to the service ' +
-               'provider <code>providerId</code> names ' +
-               '(<code>saml2.unsolicitedSso</code>).</td></tr><tr><td><code>' +
-               AA_PATH + '</code></td><td>The attribute authority: a SOAP ' +
-               '<code>&lt;samlp:AttributeQuery&gt;</code>, the Assertion ' +
-               'Query and Request profile.</td></tr><tr><td><a ' +
-               'href="' + METADATA_PATH + '">' + METADATA_PATH +
-                 '</a></td><td>The ' +
-               'signed identity provider metadata. ' +
-               '<code>' + METADATA_PATH + '/{sp}</code> ' +
-               'is a document of its OWN for that service provider — a ' +
-               'different entityID and different endpoints — and it is ' +
-               'minted for any {sp} asked for.</td></tr>' +
-               // The mock SP only where this realm is served it (#585).
-               (demoOnly.serves() ? '<tr><td><a ' +
-               'href="' + SP_PATH + '">' + SP_PATH + '</a></td><td>A mock ' +
-               'service provider. NON-SPEC, the default assertion consumer ' +
-               'service, and where a response can be verified check by check ' +
-               'without a second ' +
-               'service.</td></tr>' : '') +
-               '</tbody></table><h2>Per-service-provider ' +
-               'metadata</h2><p>Every service provider gets its own ' +
-               'endpoints under its own path, with this identity provider\'s ' +
-               'one entityID, the realm\'s OAuth issuer. Ask for <code>' +
-                 METADATA_PATH + '/{anything}</code> and ' +
-             'it is minted — the entityID may be a percent-encoded URL or a ' +
-             'plain name:</p><ul><li><a ' +
-             'href="' + METADATA_PATH + '/example-sp">' + METADATA_PATH +
-             '/example-sp</a></li><li><code>' + METADATA_PATH + '/' +
-             encodeURIComponent('https://sp.example.com/saml') +
-             '</code></li></ul><div class="meta"><div>The generic ' +
-             'endpoints are <code>' + xmlEscape(where.sso) +
-             '</code>, <code>' + xmlEscape(where.slo) + '</code> and <code>' +
-             xmlEscape(where.ars) +
-             '</code>. They behave identically — the scope in the path ' +
-             'decides which identity provider names itself in the answer, ' +
-             'and the AuthnRequest\'s own Issuer decides who the assertion ' +
-             'is for either way.</div></div>');
+      const view = self.descriptionView(req);
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
+        res.status(200).set('Cache-Control', 'no-store').json(view);
+        log.debug("Leaving the SAML 2.0 description page. JSON.");
+        return;
+      }
+      DescriptionPages.send(req, res, { base: BASE_PATH,
+        title: 'SAML 2.0 — Web Browser SSO', view: view });
       log.debug("Leaving the SAML 2.0 description page.");
+    });
+    // Its script (#584): the description pages' one bundle, on this
+    // application's own path so a listener of its own serves it (#472).
+    app.get(DescriptionPages.scriptPath(BASE_PATH), function (req, res) {
+      log.debug("Entering the SAML 2.0 description page's script.");
+      DescriptionPages.script(req, res);
+      log.debug("Leaving the SAML 2.0 description page's script.");
     });
 
     app.get(METADATA_PATH, serveMetadata);
@@ -1037,6 +991,33 @@ class Saml2Sso {
   // as `<entityId>:<sp>` with `saml2.perApplicationEntityId` (#494, decision
   // 1), both retired with no override (rcbj). There is always a name, so
   // nothing here refuses for want of one (STS-SAML-0004 is retired).
+  /**
+   * The SAML 2.0 description page's view (#584): the identity provider,
+   * its endpoints' paths — the mock service provider's only where this
+   * realm is served it (#585), null otherwise — and the generic endpoints
+   * at the base this request reached. It is the page's JSON form too.
+   *
+   * @param req - the request
+   * @returns the view
+   */
+  descriptionView(req) {
+    const { baseUrlOf, log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.descriptionView().");
+    const base = baseUrlOf(req);
+    const where = this.endpointsFor(base, '');
+    log.debug("Leaving Saml2Sso.descriptionView().");
+    return {
+      kind: 'saml2',
+      idpEntityId: this.idpEntityId(),
+      base: base,
+      paths: { sso: SSO_PATH, ars: ARS_PATH, slo: SLO_PATH,
+               unsolicited: UNSOLICITED_PATH, aa: AA_PATH,
+               metadata: METADATA_PATH,
+               sp: demoOnly.serves() ? SP_PATH : null },
+      generic: { sso: where.sso, slo: where.slo, ars: where.ars }
+    };
+  }
+
   /**
    * Answers this identity provider's entityID: the realm's OAuth issuer at
    * the ambient request's base (#523).

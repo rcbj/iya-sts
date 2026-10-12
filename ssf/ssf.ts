@@ -216,6 +216,8 @@ import errorCodes = require('../common/error_codes');
 // For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
 // requires only config.
 import mode = require('../common/mode');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 
 // A loose JSON-shaped object: the reports, stream records and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -3023,137 +3025,36 @@ class SharedSignals {
       log.debug('Leaving GET /ssf/received.');
     });
 
+    // THE DESCRIPTION PAGE (#584): not an SSF endpoint, as it says, and so
+    // a static surface's shell since #584, drawn in the browser
+    // (`web_ssf_description.ts`) from the document `?format=json` answers.
+    // `/.well-known/ssf-configuration` and the stream endpoints are SSF's
+    // and unchanged.
     app.get('/ssf', (req, res) => {
       log.debug('Entering GET /ssf.');
       const info = this.description(req);
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug('Leaving GET /ssf. JSON.');
         return;
       }
-      const endpointRows = info.endpoints.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-      const eventRows = info.eventTypes.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.name) + '</td><td><code>' +
-          xmlEscape(row.uri) + '</code></td><td>' +
-          (row.offered ? 'offered' : 'NOT offered') + '</td><td>' +
-          xmlEscape(row.what) + '</td></tr>';
-      }).join('');
-      const formatRows = info.subjectFormats.map(function (row) {
-        return '<tr><td><code>' + xmlEscape(row.format) +
-          '</code></td><td><code>' +
-          xmlEscape(row.members.join(', ')) + '</code></td><td>' +
-          xmlEscape(row.what) + '</td></tr>';
-      }).join('');
-      const streamRows = info.streams.length
-        ? info.streams.map(function (row) {
-            return '<tr><td><code>' + xmlEscape(row.stream_id) +
-              '</code></td><td>' + xmlEscape(row.status) + '</td><td>' +
-              xmlEscape(streams.deliveryName(row.delivery)) + '</td><td>' +
-              row.subjects + '</td><td>' + row.queued + '</td><td>' +
-              row.counters.delivered + ' delivered, ' + row.counters.failed +
-              ' failed</td></tr>';
-          }).join('')
-        : '<tr><td colspan="6">No streams. A receiver creates one by ' +
-          'POSTing a Stream Configuration to the configuration endpoint ' +
-          'above.</td></tr>';
-      const negativeRows = info.reachableNegatives.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.what) + '</td><td>' +
-          xmlEscape(row.answer) + '</td></tr>';
-      }).join('');
-      const schemeRows = info.authentication.schemes.map(function (row) {
-        return '<tr><td>' + xmlEscape(row.name) + '</td><td><code>' +
-          xmlEscape(row.spec_urn) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-
-      const inner = '<h1>Shared Signals — a transmitter lives here</h1>' +
-        '<p class="sub">OpenID SSF 1.0 (final, 2 September 2025) over RFC ' +
-        '8417 Security Event Tokens, RFC 9493 subject identifiers, and RFC ' +
-        '8935 / 8936 delivery. The issuer is <code>' +
-        xmlEscape(info.issuer) +
-        '</code>. ' + (info.enabled ? '' : '<strong>Turned off</strong> ' +
-          '(<code>ssf.enabled</code>) — every endpoint but the metadata ' +
-          'answers 501. ') + 'This page is not an SSF endpoint; a real ' +
-        'transmitter publishes nothing like it.</p>' +
-        '<div class="warn"><strong>SSF is the PIPE and not the ' +
-        'vocabulary.</strong> ' +
-        'It defines how two parties agree a stream, who the events are ' +
-        'about, what they travel in and how they get there &mdash; and ' +
-        'exactly TWO events of its own, both about the pipe. The ' +
-        'vocabularies are CAEP (what happened to a session) and RISC (what ' +
-        'happened to an account), and neither is here yet. <strong>Nothing ' +
-        'generates an event on its own</strong>: every SET this service ' +
-        'transmits was asked for, at the verification endpoint, on ' +
-        '<a href="/admin/ssf">the console page</a> or through the ' +
-        'management API.</div>' +
-        '<h2>Discovery</h2>' +
-        '<p>Everything below is published at <code>' +
-        xmlEscape(info.metadataUrl) + '</code>, which is <strong>never ' +
-        'gated</strong> &mdash; a receiver has to be able to read what the ' +
-        'endpoints are before it can authenticate to one.</p>' +
-        '<h2>Endpoints</h2>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th></tr>' +
-        endpointRows + '</table>' +
-        '<h2>Event types</h2>' +
-        '<table><tr><th>Name</th><th>URI</th><th>State</th><th>What</th>' +
-        '</tr>' +
-        eventRows + '</table>' +
-        '<p>Every SET is signed with <code>' +
-        xmlEscape(info.signingAlgorithm) + '</code> (<code>' +
-        'ssf.signingAlgorithm</code>), through the same signer every other ' +
-        'JWT here goes through &mdash; so the post-quantum algorithms are ' +
-        'available: ML-DSA at three sizes, SLH-DSA at two, and the six ' +
-        'composite ML-DSA + traditional ones. This is the document most ' +
-        'worth signing that way: a SET records that something happened and ' +
-        'RFC 8417 section 4.1.4 forbids it to expire, so it is read long ' +
-        'after it was written.</p>' +
-        '<h2>Subject identifier formats (RFC 9493)</h2>' +
-        '<table><tr><th>format</th><th>Members</th><th>What</th></tr>' +
-        formatRows + '</table>' +
-        '<p>A <strong>complex</strong> subject has no <code>format</code> ' +
-        'and carries any of <code>' +
-        xmlEscape(info.complexSubjectMembers.map(function (row) {
-          return row.name;
-        }).join('</code>, <code>')) + '</code>, each itself a subject ' +
-        'identifier. That is what makes &ldquo;this session was ' +
-        'revoked&rdquo; expressible: the person is not revoked, one session ' +
-        'of theirs is. Critical members here: <code>' +
-        xmlEscape(info.criticalSubjectMembers.join(', ') || '(none)') +
-        '</code>.</p>' +
-        '<h2>Authentication</h2>' +
-        '<p>SSF 1.0 section 8 requires these endpoints to be protected and ' +
-        'has the transmitter PUBLISH what it accepts, in ' +
-        '<code>authorization_schemes</code> &mdash; so a receiver discovers ' +
-        'how to authenticate rather than guessing. It is ' +
-        (info.authentication.required ? 'ON' : 'OFF (<code>unreachable ' +
-          'since 2026-09-06</code>)') + '. ' +
-        xmlEscape(info.authentication.note) +
-        '</p><table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
-        schemeRows + '</table>' +
-        '<h2>Streams right now</h2>' +
-        '<table><tr><th>stream_id</th><th>Status</th><th>Delivery</th>' +
-        '<th>Subjects</th><th>Queued</th><th>Events</th></tr>' + streamRows +
-        '</table>' +
-        '<h2>What it deliberately does not do</h2><ul>' +
-        info.doesNotDo.map(function (text) {
-          return '<li>' + xmlEscape(text) + '</li>';
-        }).join('') + '</ul>' +
-        '<h2>Things you can make fail</h2>' +
-        '<table><tr><th>Do this</th><th>Get this</th></tr>' + negativeRows +
-        '</table>' +
-        '<p class="sub"><a href="/ssf?format=json">This page as JSON</a> ' +
-        '&middot; <a href="' + xmlEscape(info.metadataUrl) + '">the ' +
-        'transmitter metadata</a> &middot; <a href="/admin/ssf">the console ' +
-        'page</a> &middot; <a href="/oauth2/jwks">the key every SET is ' +
-        'signed with</a></p>';
-      res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.pageShell('Shared Signals Framework', inner));
+      // Each stream's delivery method by its name, which the page drew and
+      // the document does not carry.
+      const deliveryNames: Json = {};
+      info.streams.forEach(function (row: Json): void {
+        deliveryNames[row.delivery] = streams.deliveryName(row.delivery);
+      });
+      DescriptionPages.send(req, res, { base: '/ssf',
+        title: 'Shared Signals Framework',
+        view: { kind: 'ssf', document: info, deliveryNames: deliveryNames } });
       log.debug('Leaving GET /ssf.');
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/ssf'), (req, res) => {
+      log.debug('Entering GET /ssf/description.js.');
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /ssf/description.js.');
     });
 
     log.debug('Leaving SharedSignals.registerRoutes().');
@@ -3330,36 +3231,6 @@ class SharedSignals {
     };
     log.debug('Leaving SharedSignals.description().');
     return out;
-  }
-
-  private pageShell(title: string, inner: string): string {
-    const { log } = this.deps;
-    const { xmlEscape } = this.deps.helpers;
-    log.debug('Entering SharedSignals.pageShell().');
-    log.debug('Leaving SharedSignals.pageShell().');
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>' + xmlEscape(title) + '</title><style>' +
-      'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-      'background:#f4f4f7;margin:0;padding:2rem;color:#222;line-height:1.45}' +
-      '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-      'padding:24px 28px;max-width:60rem;margin:0 auto;' +
-      'box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
-      'h1{font-size:1.3em;margin:0 0 4px;color:#12107c}' +
-      'h2{font-size:1em;margin:1.4em 0 .4em}' +
-      'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
-      'border-radius:5px;font-size:.82em;margin:0 0 16px}' +
-      'table{border-collapse:collapse;width:100%;margin:.5rem 0 1rem;' +
-      'font-size:.85em}' +
-      'th,td{border:1px solid #ddd;padding:.35rem .55rem;text-align:left;' +
-      'vertical-align:top}th{background:#f0f0f5}' +
-      'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-      'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}a{color:#12107c}' +
-      'ul{margin:.3em 0;padding-left:1.2em}li{margin:.2em 0}' +
-      '</style></head><body><div class="card">' + inner +
-      '</div></body></html>\n';
   }
 
   // ---------------------------------------------------------------------------
