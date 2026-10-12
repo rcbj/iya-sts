@@ -80,6 +80,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -582,6 +584,24 @@ async function browse(cookies, startUrl, username, stopAt) {
         return { captured: captured, last: r, stop: { method: "GET",
                  url: next }, trail: trail };
       }
+      // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper, its answer read as the form's 303.
+      if (username && /\/authn\/login\?authn=/.test(next)) {
+        const at = new URL(next);
+        const answer = await authnSignin.submit(at.origin +
+          at.pathname.replace(/\/authn\/login$/, ""), next,
+          { action: "login", username: username, password: PASSWORD },
+          { cookie: cookies && cookies.has() ? cookies.header() : "" });
+        if (cookies) {
+          cookies.take({ headers: answer.headers });
+        }
+        r = { status: answer.next === "redirect" ? 303 : answer.status,
+              headers: answer.headers,
+              body: answer.next === "redirect" ? ""
+                : JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -589,9 +609,6 @@ async function browse(cookies, startUrl, username, stopAt) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -600,12 +617,6 @@ async function browse(cookies, startUrl, username, stopAt) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "wresult" in f.fields);
     });
-    if (signIn) {
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: username, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       r = await postForm(cookies, to, Object.assign({}, consent.fields, {
