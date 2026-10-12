@@ -31,6 +31,7 @@
   "result.lookAgain": "Vérifier à nouveau",
   "result.lookAgainEnd": ".",
   "result.nothingLeft": "Rien. Ce service ne détient plus aucune session ni aucun justificatif actif pour {key} qu’il puisse encore voir.",
+  "result.toPortal": "Aller à votre compte dans le portail utilisateur",
   "tab.signOut": "Se déconnecter",
   "tab.details": "Détails",
   "list.colProtocol": "Protocole",
