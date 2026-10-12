@@ -612,8 +612,8 @@
     "text": "partial：每個領域的撤銷與暫停清單，以 JWT 保護的 BitstringStatusListCredential 提供，或依 Accept 以附有 eddsa-rdfc-2022 證明的 JSON-LD 提供（#197），並在每個 jwt_vc_json 與 ldp_vc 憑證中為每種用途提供一個 BitstringStatusListEntry；Verifier 會讀取它們。僅支援 statusSize 1；不支援 statusMessage。"
   },
   "stsmetadata.specs.dc-api.coverage": {
-    "en": "2fc60ff95cc7a863",
-    "text": "partial：錢包登入頁面以一個已簽署的 OpenID4VP 請求呼叫 navigator.credentials.get({ digital }) 並張貼回應；此處沒有其他地方使用它。"
+    "en": "8baebcd0c7dfde66",
+    "text": "partial：錢包登入的等待頁面以一個已簽署的 OpenID4VP 請求呼叫 navigator.credentials.get({ digital })，並將回應傳送至 /authn-api/wallet/{state}/dc-api；此處沒有其他地方使用它。"
   },
   "stsmetadata.specs.di-bbs.coverage": {
     "en": "5532c9619b858aae",
@@ -2368,32 +2368,20 @@
     "text": "以 \"WWW-Authenticate: Negotiate\" 回應 401，並對帶有有效服務票證的請求建立瀏覽器工作階段，返回被中斷的流程"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "「以經過驗證的出示作為登入」（2026-09-17）。與 Kerberos 按鈕一樣，在 /authn/login 上為每個進行中的流程提供：它接受 ?authn=（或 ?mfa=，即在密碼之後以錢包作為第二要素），「絕不」接受 returnTo。請求一律簽署，以 oid4vp.signInFormats 所指名的每種格式要求此簽發者的認證（每種一個認證查詢，加上一個認證集），並同時透過 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有「此領域」簽發的認證——在它驗證過且無人否認的存取權杖上、簽發給某個人、此後未被否認、狀態為 VALID，並附上新的持有者證明出示——才能讓人登入，身分為該認證簽發對象的目錄項目。amr [\"pop\"] 與 acr \"1\"，或在經過驗證的金鑰證明如此表示時為 hwk 與 acr \"mfa\"；要求兩個要素的請求會在錢包之後要求第二要素。appAuthnMechanism: wallet 會將應用程式的使用者直接送來這裡。oid4vp.signIn 可將其關閉，此時它會回應 403 並說明。"
+    "en": "595ee670036d604e",
+    "text": "「以經過驗證的出示作為登入」（2026-09-17）。與 Kerberos 按鈕一樣，在 /authn/login 上為每個進行中的流程提供：它接受 ?authn=（或 ?mfa=，即在密碼之後以錢包作為第二要素），「絕不」接受 returnTo。自 #574 起，這是靜態登入介面的一條路由：請求由 POST /authn-api/wallet 發出，絕不由此 GET 發出。請求一律簽署，以 oid4vp.signInFormats 所指名的每種格式要求此簽發者的認證（每種一個認證查詢，加上一個認證集），並同時透過 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有「此領域」簽發的認證——在它驗證過且無人否認的存取權杖上、簽發給某個人、此後未被否認、狀態為 VALID，並附上新的持有者證明出示——才能讓人登入，身分為該認證簽發對象的目錄項目。amr [\"pop\"] 與 acr \"1\"，或在經過驗證的金鑰證明如此表示時為 hwk 與 acr \"mfa\"；要求兩個要素的請求會在錢包之後要求第二要素。appAuthnMechanism: wallet 會將應用程式的使用者直接送來這裡。oid4vp.signIn 可將其關閉，此時它會回應 403 並說明。"
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
-    "en": "10896d747624c10a",
-    "text": "建構一個繫結至待處理登入（或第二要素步驟）的 OpenID4VP 請求，設定瀏覽器繫結 Cookie，並重新導向至等待頁面"
+    "en": "79a0035468001881",
+    "text": "回應登入介面的外殼；其指令碼在 /authn-api/wallet 發起一個繫結至待處理登入（或第二要素步驟）的 OpenID4VP 請求，並前往等待頁面"
   },
   "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "瀏覽器等待的頁面：一個 Digital Credentials API 按鈕——此路徑上唯一帶有指令碼的例外，/authn/wallet.js——同裝置錢包連結，以及僅在 oid4vp.signInCrossDevice 開啟時（預設關閉）出現的、連往由伺服器繪製之 QR code 頁面（?qr=1）的連結，該頁面以 <meta> 重新整理進行輪詢。錢包回應後，它要嘛讓瀏覽器登入，要嘛說明為何沒有人登入：出示未通過驗證、認證屬於受信任的外部簽發者、此領域沒有在它驗證過的權杖上將其簽發給某人的記錄、它已被否認或其狀態不是 VALID，或項目已不存在。它「只」在開始登入的瀏覽器中完成（雜湊後的繫結 Cookie），「只」在帶有正確 response_code 時完成（若有攜帶，OpenID4VP section 8.2），且「只有一次」——在叢集中亦然；交易存續 oid4vp.signInTtlS。"
+    "en": "202ad1e33a120a27",
+    "text": "瀏覽器所等待的頁面，自 #574 起由登入介面根據 GET /authn-api/wallet/{state} 繪製：一個 Digital Credentials API 按鈕、同裝置錢包連結，以及僅在 oid4vp.signInCrossDevice 開啟（預設關閉）時的 QR 碼 (?qr=1)，QR 碼在瀏覽器中繪製，並每 oid4vp.signInPollS 秒輪詢一次。錢包的同裝置回應會附帶其 response_code 將此人送回這裡，頁面隨後收取登入結果。錢包回應後，它要麼讓瀏覽器登入，要麼說明為何無人登入：出示未通過驗證、認證來自受信任的外部簽發者、本領域沒有紀錄顯示曾基於其驗證過的權杖向某個人簽發過它、它已被否認或狀態不是 VALID，或者項目已不存在。它「只」會在發起該登入的瀏覽器中完成（雜湊後的繫結 Cookie），「只」會在有攜帶時使用正確的 response_code（OpenID4VP 第 8.2 節），並且「只」完成一次——叢集中也是如此；該交易的存活時間為 oid4vp.signInTtlS。"
   },
   "stsmetadata.endpoints./authn/wallet/wait.effect": {
-    "en": "bd1af71e0b16fffe",
-    "text": "錢包回應後，建立瀏覽器工作階段（或要求第二要素），並返回被中斷的流程"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "等待頁面的指令碼所張貼的內容：navigator.credentials.get() 傳回的 DigitalCredential（OpenID4VP Appendix A.4），在請求要求 dc_api.jwt 時解密，以 origin:<origin> 作為對象進行驗證，並只回應一次。只接受來自開始登入之瀏覽器及本服務自身來源的請求（STS-VC-0074）。空白表單——即指令碼未執行——會以同裝置連結回應（STS-VC-0081）。"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.effect": {
-    "en": "f04802283b57225d",
-    "text": "驗證錢包的回應，並讓張貼的瀏覽器登入"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "非規範。等待頁面在 script-src 'self' 下載入的唯一靜態指令碼：它以頁面上的請求呼叫 Digital Credentials API，並以真正的表單提交回應。"
+    "en": "c86e75db89e317a1",
+    "text": "回應登入介面的外殼；其指令碼在錢包回應後於 /authn-api/wallet 完成登入"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "2cc72f6d88f75a44",
@@ -2514,6 +2502,30 @@
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
     "en": "e992662e8638f8c3",
     "text": "NON-SPEC（#571）。儀式的結果，在要求使用者驗證的條件下進行驗證。"
+  },
+  "stsmetadata.endpoints./authn-api/wallet.what": {
+    "en": "99c4ba1db29bff8e",
+    "text": "NON-SPEC (#574)。GET 回傳起始頁所需的內容與 CSRF 權杖，不建立任何東西；POST——JSON、本服務的 Origin 以及瀏覽器工作階段的 X-CSRF-Token——產生已簽署的 OpenID4VP 請求，透過其設定的 sts_wallet_binding Cookie 繫結至待處理的登入（或步驟，或註冊）與此瀏覽器，並指明等待頁面。"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state.what": {
+    "en": "2bb53bccad452c02",
+    "text": "NON-SPEC (#574)。僅供發起該交易的瀏覽器使用：Digital Credentials API 請求、同裝置連結、提供時的 QR 碼文字，以及剩餘時間。state 是持有者即可使用的能力，絕不寫入日誌。"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.what": {
+    "en": "35446f54582a609d",
+    "text": "NON-SPEC (#574)。等待頁面的輪詢：等到錢包回應，然後在本次請求中完成登入，僅一次；若有攜帶，則附上同裝置錢包將此人送回時所用的 response_code。"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.effect": {
+    "en": "9264793fca0d1248",
+    "text": "錢包回應後，建立瀏覽器工作階段（或指明第二要素），並指明被中斷的內容"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.what": {
+    "en": "9f4b6afb2e1fecdc",
+    "text": "等待頁面的指令碼所傳送的內容：navigator.credentials.get() 回傳的 DigitalCredential（OpenID4VP 附錄 A.4），請求要求 dc_api.jwt 時先解密，以 origin:<origin> 作為受眾進行驗證，並且僅回應一次。僅接受來自發起該登入的瀏覽器以及本服務自身來源的請求 (STS-VC-0074)；自 #574 起還要求必須是附帶瀏覽器工作階段 X-CSRF-Token 的 JSON。"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
+    "en": "f04802283b57225d",
+    "text": "驗證錢包的回應，並讓送出該回應的瀏覽器登入"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

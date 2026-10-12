@@ -195,10 +195,6 @@
     "en": "846fc2797e4d73f5",
     "text": "授權伺服器元數據（簽發者帶有路徑）"
   },
-  "endpoints.route./authn/wallet.js.name": {
-    "en": "61ec0700cb9645d2",
-    "text": "錢包登入腳本"
-  },
   "endpoints.route./authn/email-code.name": {
     "en": "f889f4695b9ab9f3",
     "text": "電郵代碼步驟"

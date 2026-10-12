@@ -87,9 +87,11 @@ class WebVcSignin {
     if (v.wallet === 'refused') {
       return String(v.heading || 'Nobody was signed in');
     }
-    const kind = ['enrol', 'selfIssued'].indexOf(String(v.kind)) >= 0
-      ? String(v.kind) : 'wallet';
-    return t.text('wallet.heading.' + kind);
+    if (v.kind === 'enrol') {
+      return t.text('wallet.heading.enrol');
+    }
+    return v.kind === 'selfIssued' ? t.text('wallet.heading.selfIssued')
+                                   : t.text('wallet.heading.wallet');
   }
 
   /**

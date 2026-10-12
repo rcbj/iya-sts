@@ -612,8 +612,8 @@
     "text": "partial: återkallelse- och suspensionslistor per sfär, serverade som ett BitstringStatusListCredential skyddat som ett JWT eller, enligt Accept, som JSON-LD med ett eddsa-rdfc-2022-bevis (#197), och ett BitstringStatusListEntry för varje syfte i varje jwt_vc_json- och ldp_vc-intyg; verifieraren läser dem. Endast statusSize 1; ingen statusMessage."
   },
   "stsmetadata.specs.dc-api.coverage": {
-    "en": "2fc60ff95cc7a863",
-    "text": "partial: plånboksinloggningssidan anropar navigator.credentials.get({ digital }) med en signerad OpenID4VP-begäran och postar svaret; inget annat här använder det."
+    "en": "8baebcd0c7dfde66",
+    "text": "partial: plånboksinloggningens väntesida anropar navigator.credentials.get({ digital }) med en signerad OpenID4VP-begäran och skickar svaret till /authn-api/wallet/{state}/dc-api; inget annat här använder det."
   },
   "stsmetadata.specs.di-bbs.coverage": {
     "en": "5532c9619b858aae",
@@ -2368,32 +2368,20 @@
     "text": "svarar 401 med \"WWW-Authenticate: Negotiate\" och, på en begäran som bär en giltig tjänstebiljett, etablerar webbläsarsessionen och återvänder till det som avbröts"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "EN VERIFIERAD PRESENTATION SOM INLOGGNING (2026-09-17). Erbjuds på /authn/login till varje pågående flöde, som Kerberos-knappen: den tar ?authn= (eller ?mfa=, en plånbok som andra faktor efter ett lösenord) och ALDRIG en returnTo. Begäran är alltid signerad, ber om den här utfärdarens credential i varje format som oid4vp.signInFormats namnger (en credential-fråga för vart och ett och en credential-uppsättning), och erbjuds även via Digital Credentials API (openid4vp-v1-signed, expected_origins). Endast ett credential som DEN HÄR SFÄREN utfärdade, på en åtkomsttoken den verifierade och som ingen frånsagt, för en person, inte frånsagt sedan dess, med statusen VALID, och uppvisat med ett färskt innehavarbevis loggar in någon — som den katalogpost det utfärdades för. amr [\"pop\"] och acr \"1\", eller hwk och acr \"mfa\" där ett verifierat nyckelintyg säger det; en begäran som kräver två faktorer ombeds om en andra efter plånboken. appAuthnMechanism: wallet skickar en applikations personer direkt hit. oid4vp.signIn stänger av den, och den svarar då 403 med det angivet."
+    "en": "595ee670036d604e",
+    "text": "EN VERIFIERAD PRESENTATION SOM INLOGGNING (2026-09-17). Erbjuds på /authn/login till varje pågående flöde, som Kerberos-knappen: den tar ?authn= (eller ?mfa=, en plånbok som andra faktor efter ett lösenord) och ALDRIG en returnTo. En route i den statiska inloggningsytan sedan #574: begäran görs med POST /authn-api/wallet, aldrig med denna GET. Begäran är alltid signerad, ber om den här utfärdarens credential i varje format som oid4vp.signInFormats namnger (en credential-fråga för vart och ett och en credential-uppsättning), och erbjuds även via Digital Credentials API (openid4vp-v1-signed, expected_origins). Endast ett credential som DEN HÄR SFÄREN utfärdade, på en åtkomsttoken den verifierade och som ingen frånsagt, för en person, inte frånsagt sedan dess, med statusen VALID, och uppvisat med ett färskt innehavarbevis loggar in någon — som den katalogpost det utfärdades för. amr [\"pop\"] och acr \"1\", eller hwk och acr \"mfa\" där ett verifierat nyckelintyg säger det; en begäran som kräver två faktorer får en andra efter plånboken. appAuthnMechanism: wallet skickar en applikations personer direkt hit. oid4vp.signIn stänger av det, och det svarar då 403 och säger det."
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
-    "en": "10896d747624c10a",
-    "text": "bygger en OpenID4VP-begäran bunden till den väntande inloggningen (eller till ett andrafaktorsteg), sätter webbläsarbindningscookien och omdirigerar till väntesidan"
+    "en": "79a0035468001881",
+    "text": "svarar med inloggningsytans skal; dess skript startar en OpenID4VP-begäran bunden till den väntande inloggningen (eller till ett andrafaktorsteg) på /authn-api/wallet och går till väntesidan"
   },
   "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "Sidan som webbläsaren väntar på: en knapp för Digital Credentials API — det enda skriptade undantaget på den här sökvägen, /authn/wallet.js — länken till plånboken på samma enhet, och, endast där oid4vp.signInCrossDevice är på (av som standard), en länk till en QR-kodsida som ritas av servern (?qr=1) och som pollar med en <meta>-uppdatering. När plånboken har svarat loggar den antingen in webbläsaren eller säger varför ingen loggades in: presentationen verifierades inte, credentialet var en betrodd utomstående utfärdares, den här sfären har ingen post om att ha utfärdat det till en person på en token den verifierade, det var frånsagt eller dess status är inte VALID, eller posten är borta. Den slutförs ENDAST i webbläsaren som startade inloggningen (en hashad bindningscookie), ENDAST med rätt response_code där en sådan bärs (OpenID4VP avsnitt 8.2), och EN GÅNG — även över ett kluster; transaktionen lever i oid4vp.signInTtlS."
+    "en": "202ad1e33a120a27",
+    "text": "Sidan webbläsaren väntar på, ritad av inloggningsytan sedan #574 från GET /authn-api/wallet/{state}: en Digital Credentials API-knapp, plånbokslänken för samma enhet och, endast där oid4vp.signInCrossDevice är på (av som standard), en QR-kod (?qr=1) som ritas i webbläsaren och pollas var oid4vp.signInPollS:e sekund. En plånboks svar på samma enhet skickar tillbaka personen hit med dess response_code, och sidan hämtar inloggningen. När plånboken har svarat loggar den antingen in webbläsaren eller säger varför ingen loggades in: presentationen verifierades inte, credentialet kom från en betrodd främmande utfärdare, den här sfären har ingen uppgift om att ha utfärdat det till en person på en token den verifierade, det frånsades eller dess status inte är VALID, eller posten är borta. Den slutförs ENDAST i webbläsaren som startade inloggningen (en hashad bindningscookie), ENDAST med rätt response_code där en medföljer (OpenID4VP avsnitt 8.2), och EN ENDA GÅNG — även över ett kluster; transaktionen lever oid4vp.signInTtlS."
   },
   "stsmetadata.endpoints./authn/wallet/wait.effect": {
-    "en": "bd1af71e0b16fffe",
-    "text": "när plånboken har svarat, etablerar webbläsarsessionen (eller ber om en andra faktor) och återvänder till det som avbröts"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "Det som väntesidans skript postar: den DigitalCredential som navigator.credentials.get() returnerade (OpenID4VP bilaga A.4), dekrypterad där begäran bad om dc_api.jwt, verifierad med origin:<origin> som målgrupp, och besvarad en gång. Godtas endast från webbläsaren som startade inloggningen och från den här tjänstens eget ursprung (STS-VC-0074). Ett tomt formulär — skriptet kördes inte — besvaras med länken för samma enhet (STS-VC-0081)."
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.effect": {
-    "en": "f04802283b57225d",
-    "text": "verifierar plånbokens svar och loggar in den postande webbläsaren"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "NON-SPEC. Det enda statiska skript som väntesidan läser in under script-src 'self': det anropar Digital Credentials API med begäran på sidan och skickar svaret i ett riktigt formulär."
+    "en": "c86e75db89e317a1",
+    "text": "svarar med inloggningsytans skal; dess skript slutför inloggningen på /authn-api/wallet när plånboken har svarat"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "2cc72f6d88f75a44",
@@ -2514,6 +2502,30 @@
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
     "en": "e992662e8638f8c3",
     "text": "NON-SPEC (#571). Ceremonins resultat, verifierat med användarverifiering krävd."
+  },
+  "stsmetadata.endpoints./authn-api/wallet.what": {
+    "en": "99c4ba1db29bff8e",
+    "text": "NON-SPEC (#574). GET svarar med det startsidan behöver och CSRF-token, och skapar ingenting; POST — JSON, en Origin för den här tjänsten och webbläsarsessionens X-CSRF-Token — gör den signerade OpenID4VP-begäran, bunden till den väntande inloggningen (eller steget, eller registreringen) och till den här webbläsaren genom cookien sts_wallet_binding som den sätter, och namnger väntesidan."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state.what": {
+    "en": "2bb53bccad452c02",
+    "text": "NON-SPEC (#574). Endast för webbläsaren som startade transaktionen: Digital Credentials API-begäran, länken för samma enhet, QR-kodens text där den erbjuds, och återstående tid. State är en innehavarbehörighet och loggas aldrig."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.what": {
+    "en": "35446f54582a609d",
+    "text": "NON-SPEC (#574). Väntesidans polling: vänta tills plånboken har svarat, sedan inloggningen avslutad i den här begäran, en gång, med den response_code som en plånbok på samma enhet skickade tillbaka personen med där en sådan medföljer."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.effect": {
+    "en": "9264793fca0d1248",
+    "text": "när plånboken har svarat etableras webbläsarsessionen (eller en andra faktor namnges) och det som avbröts namnges"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.what": {
+    "en": "9f4b6afb2e1fecdc",
+    "text": "Vad väntesidans skript skickar: det DigitalCredential som navigator.credentials.get() returnerade (OpenID4VP bilaga A.4), dekrypterat där begäran bad om dc_api.jwt, verifierat med origin:<origin> som målgrupp, och besvarat en gång. Accepteras endast från webbläsaren som startade inloggningen och från den här tjänstens egen origin (STS-VC-0074); sedan #574 också endast som JSON med webbläsarsessionens X-CSRF-Token."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
+    "en": "f04802283b57225d",
+    "text": "verifierar plånbokens svar och loggar in webbläsaren som postade det"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

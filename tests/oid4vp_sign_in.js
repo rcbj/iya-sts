@@ -316,20 +316,64 @@ function childMain() {
       });
     }
 
+    // THE WALLET'S PAGES ARE ROUTES OF THE SIGN-IN SURFACE SINCE #574, and
+    // this drives them as the page does: the shells (the arrival cookie),
+    // the views (the CSRF token), and the acts at `/authn-api/wallet` —
+    // JSON, this service's Origin, the X-CSRF-Token. An act's answer is
+    // read as the page it replaced was (`formLike()`): one naming an
+    // address is the 303 it was.
+    function formLike(r) {
+      const j = r.json || {};
+      const where = j.location || (j.ok && j.go) || '';
+      if (j.ok && where) {
+        return Object.assign({}, r, { status: 303,
+          headers: Object.assign({}, r.headers, { location: where }) });
+      }
+      return r;
+    }
+
+    function act(who, urlPath, body) {
+      const headers = { accept: 'application/json', origin: base };
+      if (who && who.csrf) {
+        headers['x-csrf-token'] = who.csrf;
+      }
+      return request(port, 'POST', urlPath, { browser: who,
+                                              headers: headers, json: body });
+    }
+
+    // The start page's view and act: `{ opened, started }`, each read as a
+    // page.
+    async function startOnly(who, authnId, prefix) {
+      const p = prefix || '';
+      const q = 'authn=' + encodeURIComponent(authnId);
+      await request(port, 'GET', p + '/authn/wallet?' + q, { browser: who });
+      const opened = await request(port, 'GET', p + '/authn-api/wallet?' + q,
+                                   { browser: who });
+      if (opened.status !== 200) {
+        return { opened: opened, started: opened };
+      }
+      who.csrf = opened.json.csrf;
+      const started = await act(who, p + '/authn-api/wallet',
+                                { authn: authnId });
+      return { opened: opened, started: formLike(started), raw: started };
+    }
+
     // Start a wallet sign-in in `who`; answer with the request the wallet is
     // handed. `prefix` is a realm's path.
     async function start(who, authnId, prefix) {
       const p = prefix || '';
-      const started = await request(port, 'GET', p + '/authn/wallet?authn=' +
-                                    encodeURIComponent(authnId),
-                                    { browser: who });
+      const begun = await startOnly(who, authnId, p);
+      const started = begun.started;
       if (started.status !== 303) {
         return { started: started };
       }
       const waitPath = started.headers.location;
-      const waiting = await request(port, 'GET', waitPath, { browser: who });
-      const link = /id="wallet-open" href="([^"]+)"/.exec(waiting.text);
-      const walletUrl = link ? new URL(unescapeHtml(link[1])) : null;
+      const state = begun.raw.json.state;
+      const waiting = await request(port, 'GET', p + '/authn-api/wallet/' +
+                                    encodeURIComponent(state),
+                                    { browser: who });
+      const view = (waiting.json && waiting.json.view) || {};
+      const walletUrl = view.sameDevice ? new URL(view.sameDevice) : null;
       let requestObject = null;
       if (walletUrl) {
         const ro = await request(port, 'GET',
@@ -337,8 +381,37 @@ function childMain() {
         requestObject = decode(ro.text);
       }
       return { started: started, waitPath: waitPath, waiting: waiting,
-               walletUrl: walletUrl, requestObject: requestObject, who: who,
-               state: new URL(waitPath, 'http://x').searchParams.get('state') };
+               view: view, walletUrl: walletUrl,
+               requestObject: requestObject, who: who, prefix: p,
+               authn: authnId, state: state };
+    }
+
+    // THE COLLECTION, as the wait page asks for it (`POST …/status`), with
+    // the `response_code` a same-device wallet sent the browser back with
+    // where `redirect` names one.
+    async function collect(who, s, redirect, code) {
+      const body = { authn: s.authn };
+      const m = /[?&]response_code=([^&#]+)/.exec(String(redirect || ''));
+      if (code !== undefined) {
+        body.response_code = code;
+      } else if (m) {
+        body.response_code = decodeURIComponent(m[1]);
+      }
+      return formLike(await act(who, (s.prefix || '') + '/authn-api/wallet/' +
+                                encodeURIComponent(s.state) + '/status',
+                                body));
+    }
+
+    // A SIGNED-IN session in a browser's jar — not the arrival session the
+    // sign-in surface's shells mint for a browser without one (#571).
+    function signedInSession(who) {
+      return realms.run(DEFAULT, function () {
+        const found = who.cookies.sts_session && authn.cookieSession(
+          { headers: { cookie: 'sts_session=' + who.cookies.sts_session } },
+          authn.SESSION_COOKIE);
+        return (found && found.session && found.session.chosen !== false)
+          ? found.session : null;
+      });
     }
 
     async function respond(req, presentation, prefix) {
@@ -393,11 +466,15 @@ function childMain() {
     note(view.id && !view.wallet,
          '1b. with oid4vp.signIn off the button is gone',
          JSON.stringify(view.wallet));
-    r = await request(port, 'GET', '/authn/wallet?authn=' + authnId,
-                      { browser: browser() });
+    let closedWho = browser();
+    r = (await startOnly(closedWho, authnId)).started;
     note(r.status === 403 && r.code === 'STS-VC-0052' &&
-         !r.setCookie.length,
-         '1c. and the door refuses, STS-VC-0052', r.status + ' ' + r.code);
+         !closedWho.cookies.sts_wallet_binding &&
+         r.json && r.json.next === 'refused' &&
+         r.json.view && r.json.view.wallet === 'refused',
+         '1c. and the door refuses, STS-VC-0052, starting nothing: no ' +
+         'binding cookie, a refusal and its view', r.status + ' ' + r.code);
+    closedWho = null;
     await realms.run(DEFAULT, function () {
       config.clearOverride('oid4vp.signIn');
     });
@@ -407,14 +484,12 @@ function childMain() {
          view.wallet.mfaNote === true,
          '1d. a request demanding two factors IS offered the wallet since ' +
          '#38\'s follow-ups, and is told a second factor follows');
-    r = await request(port, 'GET', '/authn/wallet?authn=' + mfaId,
-                      { browser: browser() });
+    r = (await startOnly(browser(), mfaId)).started;
     note(r.status === 303,
          '1e. and the door takes it: the second factor comes after the ' +
          'presentation (tests/oid4vp_wallet_mfa.js drives it)',
          r.status + ' ' + r.code);
-    r = await request(port, 'GET', '/authn/wallet?authn=nothing-pending',
-                      { browser: browser() });
+    r = (await startOnly(browser(), 'nothing-pending')).started;
     note(r.status === 400 && r.code === 'STS-VC-0053',
          '1f. a door with no pending authentication refuses, STS-VC-0053',
          r.status + ' ' + r.code);
@@ -445,25 +520,30 @@ function childMain() {
     const bindingLine = s.started.setCookie.join(' ');
     note(/HttpOnly/.test(bindingLine) && /SameSite=Lax/.test(bindingLine),
          '2e. the binding cookie is HttpOnly and SameSite=Lax', bindingLine);
-    const scripts = s.waiting.text.match(/<script[^>]*>/g) || [];
-    note(s.waiting.status === 200 && scripts.length === 1 &&
-         /<script src="\/authn\/wallet\.js"><\/script>/.test(s.waiting.text) &&
-         !/<meta http-equiv="refresh"/.test(s.waiting.text),
-         '2f. the wait page loads exactly ONE script, /authn/wallet.js, and ' +
-         'does not reload itself (a reload would close the wallet dialog)',
+    // THE WAIT PAGE IS A ROUTE OF THE SIGN-IN SURFACE SINCE #574: its
+    // shell is the surface's (one script, the surface's bundle), and its
+    // view is what the page draws.
+    const waitShell = await request(port, 'GET', s.waitPath,
+                                    { browser: browser1 });
+    const scripts = waitShell.text.match(/<script[^>]*>/g) || [];
+    note(waitShell.status === 200 && scripts.length === 1 &&
+         /<script src="\/authn\/signin\.js"/.test(waitShell.text) &&
+         !/<meta http-equiv="refresh"/.test(waitShell.text),
+         '2f. the wait page is the sign-in surface\'s shell: ONE script, ' +
+         '/authn/signin.js, and no <meta> refresh',
          JSON.stringify(scripts));
-    note(/<form method="post"[^>]*id="wallet-dcapi-form"[^>]*action="\/authn\/wallet\/dc-api"/
-           .test(s.waiting.text) &&
-         /<button type="submit"[^>]*id="wallet-dcapi"/.test(s.waiting.text) &&
-         /id="wallet-noscript"/.test(s.waiting.text) && !!s.walletUrl,
-         '2f-ii. the button is a REAL submit button in a form posting to ' +
-         '/authn/wallet/dc-api, with a no-script sentence and the ' +
-         'same-device link beside it');
-    note(s.waiting.text.indexOf('wallet-qr-link') < 0 &&
-         s.waiting.text.indexOf('wallet-qr') < 0,
-         '2g. the plain QR code is OFF by default, so there is no link to ' +
-         'it and no code on the page');
-    const waitCsp = s.waiting.headers['content-security-policy'];
+    note(s.waiting.status === 200 && s.view.wallet === 'wait' &&
+         s.view.dcRequest &&
+         s.view.dcRequest.protocol === 'openid4vp-v1-signed' &&
+         !!s.walletUrl && s.view.kind === 'wallet' &&
+         s.view.secondFactor === false && s.view.expiresIn > 0,
+         '2f-ii. its view carries the Digital Credentials API request and ' +
+         'the same-device link the page draws',
+         JSON.stringify(Object.keys(s.view)));
+    note(s.view.qr === '',
+         '2g. the plain QR code is OFF by default, so the view carries no ' +
+         'QR text and the page draws no link to it', s.view.qr);
+    const waitCsp = waitShell.headers['content-security-policy'];
     note(/script-src 'self'/.test(waitCsp) &&
          !/script-src[^;]*unsafe-inline/.test(waitCsp) &&
          /frame-ancestors 'none'/.test(waitCsp) &&
@@ -472,12 +552,17 @@ function childMain() {
          '2h. its CSP relaxes script-src to \'self\' and nothing else, and ' +
          'keeps frame-ancestors and base-uri', waitCsp);
     const scriptRes = await request(port, 'GET', '/authn/wallet.js');
-    note(scriptRes.status === 200 &&
-         /javascript/.test(String(scriptRes.headers['content-type'])) &&
-         scriptRes.text.indexOf('navigator.credentials.get') > 0 &&
-         scriptRes.text.indexOf('digital') > 0,
-         '2h-ii. and that one resource is served here, calling the Digital ' +
-         'Credentials API', scriptRes.status);
+    note(scriptRes.status === 404,
+         '2h-ii. and /authn/wallet.js is not served: the Digital ' +
+         'Credentials API call is the sign-in surface\'s runtime\'s (#574)',
+         scriptRes.status);
+    const otherView = await request(port, 'GET', '/authn-api/wallet/' +
+      encodeURIComponent(s.state), { browser: browser() });
+    note(otherView.status === 403 && otherView.code === 'STS-VC-0055' &&
+         !(otherView.json && otherView.json.csrf),
+         '2h-iii. and the view is answered to the browser that started ' +
+         'the sign-in only, STS-VC-0055', otherView.status + ' ' +
+         otherView.code);
     const ro = s.requestObject || {};
     const queries = (ro.dcql_query || {}).credentials || [];
     const cq = queries[0] || {};
@@ -502,8 +587,7 @@ function childMain() {
       config.setOverride('global.mode', 'product');
     });
     const inProduct = await start(browser(), pendingSignIn());
-    note(inProduct.waiting.status === 200 &&
-         inProduct.waiting.text.indexOf('wallet-qr') < 0,
+    note(inProduct.waiting.status === 200 && inProduct.view.qr === '',
          '2j. in product mode it is off too — the default is the same in ' +
          'both modes, and no mode predicate decides it');
     await realms.run(DEFAULT, function () {
@@ -512,19 +596,20 @@ function childMain() {
     });
     const withQr = await start(browser(), pendingSignIn());
     note(withQr.waiting.status === 200 &&
-         /id="wallet-qr-link"/.test(withQr.waiting.text),
-         '2j-ii. oid4vp.signInCrossDevice on adds a link to the QR page');
-    const qrPage = await request(port, 'GET', withQr.waitPath + '&qr=1',
-                                 { browser: withQr.who });
-    note(qrPage.status === 200 &&
-         /id="wallet-qr"[^>]*src="data:image\/svg\+xml;base64,/
-           .test(qrPage.text) &&
-         !/<script/i.test(qrPage.text) &&
-         /<meta http-equiv="refresh" content="\d+;url=[^"]*\/authn\/wallet\/wait\?/
-           .test(qrPage.text) &&
-         qrPage.headers['content-security-policy'] === screenCsp,
-         '2j-iii. and that page has the server-drawn code, NO script, the ' +
-         '<meta> refresh and the base policy', qrPage.status);
+         /^openid4vp:\/\/\?/.test(withQr.view.qr) &&
+         /request_uri=/.test(withQr.view.qr),
+         '2j-ii. oid4vp.signInCrossDevice on puts the QR code\'s text in ' +
+         'the view, which the page draws as a link to ?qr=1 and the code',
+         withQr.view.qr.slice(0, 40));
+    const qrShell = await request(port, 'GET', withQr.waitPath + '&qr=1',
+                                  { browser: withQr.who });
+    note(qrShell.status === 200 &&
+         /<script src="\/authn\/signin\.js"/.test(qrShell.text) &&
+         !/<meta http-equiv="refresh"/.test(qrShell.text) &&
+         withQr.view.pollSeconds > 0,
+         '2j-iii. and that page is the same shell: the code is drawn in the ' +
+         'browser and the runtime polls every pollSeconds, where a <meta> ' +
+         'refresh did', qrShell.status + ' ' + withQr.view.pollSeconds);
     await realms.run(DEFAULT, function () {
       config.clearOverride('oid4vp.signInCrossDevice');
     });
@@ -533,7 +618,8 @@ function childMain() {
     // 3 AND 4. THE SIGN-IN, AND THE BROWSER IT BELONGS TO
     // ====================================================================
     const browser2 = browser();
-    r = await request(port, 'GET', s.waitPath, { browser: browser2 });
+    await start(browser2, pendingSignIn());
+    r = await collect(browser2, s);
     note(r.status === 403 && r.code === 'STS-VC-0055' && !sessionCookie(r),
          '4a. another browser asking about the sign-in is refused, ' +
          'STS-VC-0055', r.status + ' ' + r.code);
@@ -549,17 +635,17 @@ function childMain() {
     note(r.status === 400 && r.code === 'STS-VC-0057',
          '4b. a second response to a sign-in is refused, STS-VC-0057',
          r.status + ' ' + r.code);
-    r = await request(port, 'GET', pathOf(redirect), { browser: browser2 });
+    r = await collect(browser2, s, redirect);
     note(r.status === 403 && r.code === 'STS-VC-0055' && !sessionCookie(r),
          '4c. the response_code does not let another browser finish it',
          r.status + ' ' + r.code);
-    r = await request(port, 'GET', pathOf(redirect).replace(
-      /response_code=[^&]+/, 'response_code=wrong'), { browser: browser1 });
+    r = await collect(browser1, s, redirect, 'wrong');
     note(r.status === 403 && r.code === 'STS-VC-0065' && !sessionCookie(r),
          '4d. a wrong response_code is refused, STS-VC-0065',
          r.status + ' ' + r.code);
-    r = await request(port, 'GET', pathOf(redirect), { browser: browser1 });
-    note(r.status === 303 && r.headers.location === '/wsi/after' &&
+    const wallets = /\/authn\/wallet\/wait\?/.test(redirect || '');
+    r = await collect(browser1, s, redirect);
+    note(wallets && r.status === 303 && r.headers.location === '/wsi/after' &&
          sessionCookie(r),
          '3b. the browser that started it is signed in and sent back to the ' +
          'request that was waiting', r.status + ' ' + r.headers.location);
@@ -584,7 +670,10 @@ function childMain() {
     note(session && live.some(function (row) {
       return row.id === 'session:' + session.id;
     }), '3f. /logout\'s model lists it as a live session like any other');
-    r = await request(port, 'GET', pathOf(redirect), { browser: browser1 });
+    // The sign-in replaced the arrival session; the page's token is the new
+    // session's (a fresh view answers it).
+    await startOnly(browser1, pendingSignIn());
+    r = await collect(browser1, s, redirect);
     note(r.status === 400 && r.code === 'STS-VC-0062' && !sessionCookie(r),
          '4e. the sign-in is finished once, STS-VC-0062',
          r.status + ' ' + r.code);
@@ -616,8 +705,7 @@ function childMain() {
         return row.id;
       }));
     });
-    r = await request(port, 'GET', withdrawn.waitPath,
-                      { browser: outBrowser });
+    r = await collect(outBrowser, withdrawn);
     note(r.status === 403 && r.code === 'STS-VC-0070' && !sessionCookie(r),
          '3h. ending it withdraws the sign-in: the browser is told so and ' +
          'nobody is signed in, STS-VC-0070', r.status + ' ' + r.code + ' ' +
@@ -635,9 +723,9 @@ function childMain() {
                                     late.requestObject.nonce, aud));
     note(r.status === 400,
          '4f. a wallet answering an expired sign-in is refused', r.status);
-    r = await request(port, 'GET', late.waitPath, { browser: browser1 });
+    r = await collect(browser1, late);
     note(r.status === 400 && r.code === 'STS-VC-0056',
-         '4g. and the wait page says it has expired, STS-VC-0056',
+         '4g. and the wait page\'s poll says it has expired, STS-VC-0056',
          r.status + ' ' + r.code);
 
     // ====================================================================
@@ -661,7 +749,7 @@ function childMain() {
     const againTx = await realms.run(DEFAULT, function () {
       return verifier.transactionFor(again.state);
     });
-    r = await request(port, 'GET', again.waitPath, { browser: browser3 });
+    r = await collect(browser3, again);
     const aliceThere = await realms.run(DEFAULT, function () {
       const found = authn.cookieSession({ headers: { cookie: 'sts_session=' +
         browser3.cookies.sts_session } }, authn.SESSION_COOKIE);
@@ -689,12 +777,15 @@ function childMain() {
                                     encodeURIComponent(one.state));
       const verified = !!(verdict.json && verdict.json.verdict &&
                           verdict.json.verdict.ok);
-      const page = await request(port, 'GET', one.waitPath, { browser: b });
+      const page = await collect(b, one);
       note(verified === expectVerified &&
            answered.status === (expectVerified ? 200 : 400) &&
            page.status === 403 && page.code === code &&
-           !sessionCookie(page) && !b.cookies.sts_session &&
-           page.text.indexOf('wallet-reason') >= 0,
+           !sessionCookie(page) && !signedInSession(b) &&
+           page.json && page.json.next === 'refused' &&
+           page.json.view && page.json.view.verdict ===
+             (expectVerified ? 'presentation.verified'
+                             : 'presentation.notVerified'),
            label, 'verified=' + verified + ' response=' + answered.status +
            ' page=' + page.status + ' ' + page.code);
     }
@@ -847,8 +938,7 @@ function childMain() {
         { begin: { application: 'wsi-wallet' } }));
       await respond(daveOne, present(dave.credential, daveKey,
                                      daveOne.requestObject.nonce, aud));
-      r = await request(port, 'GET', daveOne.waitPath,
-                        { browser: daveBrowser });
+      r = await collect(daveBrowser, daveOne);
       note(r.status === 403 && r.code === 'STS-VC-0064' &&
            !sessionCookie(r),
            '6k. a person the issuance policy refuses verifies and is not ' +
@@ -905,13 +995,8 @@ function childMain() {
       const one = await start(who, pendingSignIn());
       await respond(one, present(credential, holder, one.requestObject.nonce,
                                  aud));
-      const page = await request(port, 'GET', one.waitPath, { browser: who });
-      const session = await realms.run(DEFAULT, function () {
-        const found = who.cookies.sts_session && authn.cookieSession(
-          { headers: { cookie: 'sts_session=' + who.cookies.sts_session } },
-          authn.SESSION_COOKIE);
-        return (found && found.session) || null;
-      });
+      const page = await collect(who, one);
+      const session = await signedInSession(who);
       if (session && !o.keep) {
         await realms.run(DEFAULT, function () {
           authn.endSessionById(session.id, 'the test, tidying up');
@@ -1115,7 +1200,7 @@ function childMain() {
       const done = await request(port, 'GET',
         pathOf(r.json.redirect_uri), { browser: barBrowser });
       note(done.status === 200 && !sessionCookie(done) &&
-           !barBrowser.cookies.sts_session,
+           !signedInSession(barBrowser),
            '7b. and its thank-you page signs nobody in either', done.status);
     }
 

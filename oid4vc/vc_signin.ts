@@ -1037,6 +1037,7 @@ class VcSignin {
       origin);
     if (!answered.ok) {
       errorCodes.mark(res, answered.errorCode);
+      // error-code: none — marked on the line above with the Verifier's code
       this.refuse(res, answered.status, String(answered.why),
         this.refusedView('Nobody was signed in', ctx));
       log.debug("Leaving VcSignin.dcApi(). " + answered.errorCode);

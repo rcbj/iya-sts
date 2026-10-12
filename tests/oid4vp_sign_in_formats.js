@@ -84,7 +84,7 @@ function childMain() {
         o.nonce === undefined ? one.requestObject.nonce : o.nonce,
         o.aud === undefined ? aud : o.aud, o);
       const answered = await w.respond(one, presentation, { format: format });
-      const page = await w.request('GET', one.waitPath, { browser: who });
+      const page = await w.collect(who, one);
       const session = w.sessionOf(who);
       if (session) {
         await w.inRealm(function () {
@@ -302,8 +302,7 @@ function childMain() {
     });
     await w.respond(parentOne, prefix + kb.serialized,
                     { format: 'dc+sd-jwt' });
-    const parentPage = await w.request('GET', parentOne.waitPath,
-                                       { browser: parentWho });
+    const parentPage = await w.collect(parentWho, parentOne);
     note(parentPage.status === 303 && w.sessionOf(parentWho) &&
          w.sessionOf(parentWho).user.username === 'fmt-alice',
          '5a. the parent wallet\'s SD-JWT+KB shape, signed with its own ' +
@@ -328,8 +327,7 @@ function childMain() {
       backend: 'js'
     });
     await w.respond(jwtOne, vp.serialized, { format: 'jwt_vc_json' });
-    const jwtPage = await w.request('GET', jwtOne.waitPath,
-                                    { browser: jwtWho });
+    const jwtPage = await w.collect(jwtWho, jwtOne);
     note(jwtPage.status === 303 && w.sessionOf(jwtWho) &&
          w.sessionOf(jwtWho).user.username === 'fmt-alice',
          '5b. and its VP JWT shape — iss, aud, nonce, iat and vp — signs in ' +

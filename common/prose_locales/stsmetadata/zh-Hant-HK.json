@@ -1175,22 +1175,6 @@
     "en": "ee45f81a1c65f8ae",
     "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的用戶名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過 /spnego/protected 使用的同一個接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何用戶名稱、一個共用密碼、首次出現時建立帳戶），這讓模擬仍是模擬——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的用戶直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回地址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的客戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
   },
-  "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "「以經過驗證的出示作為登入」（2026-09-17）。與 Kerberos 按鈕一樣，在 /authn/login 上為每個進行中的流程提供：它接受 ?authn=（或 ?mfa=，即在密碼之後以錢包作為第二要素），「絕不」接受 returnTo。請求一律簽署，以 oid4vp.signInFormats 所指名的每種格式要求此簽發者的認證（每種一個認證查詢，加上一個認證集），並同時透過 Digital Credentials API 提供（openid4vp-v1-signed、expected_origins）。只有「此領域」簽發的認證——在它驗證過且無人否認的存取權杖上、簽發給某個人、此後未被否認、狀態為 VALID，並附上新的持有者證明出示——才能讓人登入，身分為該認證簽發對象的目錄項目。amr [\"pop\"] 與 acr \"1\"，或在經過驗證的金鑰證明如此表示時為 hwk 與 acr \"mfa\"；要求兩個要素的請求會在錢包之後要求第二要素。appAuthnMechanism: wallet 會將應用程式的用戶直接送來這裡。oid4vp.signIn 可將其關閉，此時它會回應 403 並說明。"
-  },
-  "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "瀏覽器等待的頁面：一個 Digital Credentials API 按鈕——此路徑上唯一帶有腳本的例外，/authn/wallet.js——同裝置錢包連結，以及僅在 oid4vp.signInCrossDevice 開啟時（預設關閉）出現的、連往由伺服器繪製之 QR code 頁面（?qr=1）的連結，該頁面以 <meta> 重新整理進行輪詢。錢包回應後，它要嘛讓瀏覽器登入，要嘛說明為何沒有人登入：出示未通過驗證、認證屬於受信任的外部簽發者、此領域沒有在它驗證過的權杖上將其簽發給某人的記錄、它已被否認或其狀態不是 VALID，或項目已不存在。它「只」在開始登入的瀏覽器中完成（雜湊後的繫結 Cookie），「只」在帶有正確 response_code 時完成（若有攜帶，OpenID4VP section 8.2），且「只有一次」——在叢集中亦然；交易存續 oid4vp.signInTtlS。"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "等待頁面的腳本所張貼的內容：navigator.credentials.get() 傳回的 DigitalCredential（OpenID4VP Appendix A.4），在請求要求 dc_api.jwt 時解密，以 origin:<origin> 作為對象進行驗證，並只回應一次。只接受來自開始登入之瀏覽器及本服務自身來源的請求（STS-VC-0074）。空白表單——即腳本未執行——會以同裝置連結回應（STS-VC-0081）。"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "非規範。等待頁面在 script-src 'self' 下載入的唯一靜態腳本：它以頁面上的請求呼叫 Digital Credentials API，並以真正的表單提交回應。"
-  },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "2cc72f6d88f75a44",
     "text": "在要求兩個要素的請求上完成錢包登入之後，對於沒有驗證器應用程式或安全金鑰的人：其密碼，檢查方式與登入畫面相同，並使用相同的速率限制桶。工作階段記錄 amr [\"pop\",\"pwd\"] 與 acr \"mfa\"。沒有腳本。"

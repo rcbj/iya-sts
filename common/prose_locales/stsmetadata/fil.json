@@ -612,8 +612,8 @@
     "text": "partial: mga revocation at suspension list bawat realm, inihahain bilang BitstringStatusListCredential na naka-secure bilang JWT o, ayon sa Accept, bilang JSON-LD na may eddsa-rdfc-2022 proof (#197), at isang BitstringStatusListEntry para sa bawat layunin sa bawat jwt_vc_json at ldp_vc credential; binabasa ng Verifier ang mga ito. statusSize 1 lang; walang statusMessage."
   },
   "stsmetadata.specs.dc-api.coverage": {
-    "en": "2fc60ff95cc7a863",
-    "text": "partial: tinatawag ng wallet sign-in page ang navigator.credentials.get({ digital }) gamit ang isang signed na OpenID4VP request at ipino-post ang sagot; wala nang iba rito ang gumagamit nito."
+    "en": "8baebcd0c7dfde66",
+    "text": "partial: tinatawag ng wait page ng wallet sign-in ang navigator.credentials.get({ digital }) gamit ang isang signed na OpenID4VP request at ipinapadala ang sagot sa /authn-api/wallet/{state}/dc-api; walang ibang gumagamit nito rito."
   },
   "stsmetadata.specs.di-bbs.coverage": {
     "en": "5532c9619b858aae",
@@ -2368,32 +2368,20 @@
     "text": "sumasagot ng 401 na may \"WWW-Authenticate: Negotiate\" at, sa request na may dalang valid na service ticket, itinatatag ang browser session at bumabalik sa anumang naantala"
   },
   "stsmetadata.endpoints./authn/wallet.what": {
-    "en": "8c7f374573936a84",
-    "text": "ISANG VERIFIED NA PRESENTATION BILANG SIGN-IN (2026-09-17). Inaalok sa /authn/login sa bawat flow na nagaganap, tulad ng Kerberos button: tumatanggap ito ng ?authn= (o ?mfa=, wallet bilang second factor pagkatapos ng password) at HINDI KAILANMAN returnTo. Laging signed ang request, hinihingi ang credential ng issuer na ito sa bawat format na pinangangalanan ng oid4vp.signInFormats (tig-isang credential query at isang credential set), at inaalok din sa pamamagitan ng Digital Credentials API (openid4vp-v1-signed, expected_origins). Tanging ang credential na ibinigay ng REALM NA ITO, sa access token na vine-verify nito at walang nag-disown, para sa isang tao, hindi na-disown mula noon, may status na VALID, at ipinakita kasama ang sariwang holder proof ang nagsa-sign in ng sinuman — bilang directory entry na pinagbigyan nito. amr [\"pop\"] at acr \"1\", o hwk at acr \"mfa\" kung sinasabi iyon ng verified na key attestation; ang request na humihingi ng dalawang factor ay hinihingan ng ikalawa pagkatapos ng wallet. Ipinapadala ng appAuthnMechanism: wallet ang mga tao ng application nang diretso rito. Ino-off ito ng oid4vp.signIn, at sumasagot ito pagkatapos ng 403 na sinasabi iyon."
+    "en": "595ee670036d604e",
+    "text": "ISANG VERIFIED NA PRESENTATION BILANG SIGN-IN (2026-09-17). Inaalok sa /authn/login sa bawat flow na nagaganap, tulad ng Kerberos button: tumatanggap ito ng ?authn= (o ?mfa=, wallet bilang second factor pagkatapos ng password) at HINDI KAILANMAN returnTo. Isang route ng static na sign-in surface mula #574: ang request ay ginagawa ng POST /authn-api/wallet, hindi kailanman ng GET na ito. Laging signed ang request, hinihingi ang credential ng issuer na ito sa bawat format na pinangangalanan ng oid4vp.signInFormats (tig-isang credential query at isang credential set), at inaalok din sa pamamagitan ng Digital Credentials API (openid4vp-v1-signed, expected_origins). Tanging ang credential na ibinigay ng REALM NA ITO, sa access token na vine-verify nito at walang nag-disown, para sa isang tao, hindi na-disown mula noon, may status na VALID, at ipinakita kasama ang sariwang holder proof ang nagsa-sign in ng sinuman — bilang directory entry na pinagbigyan nito. amr [\"pop\"] at acr \"1\", o hwk at acr \"mfa\" kung sinasabi iyon ng verified na key attestation; ang request na humihingi ng dalawang factor ay hihingan ng pangalawa pagkatapos ng wallet. appAuthnMechanism: wallet ang direktang nagpapadala rito sa mga tao ng isang application. Pinapatay ito ng oid4vp.signIn, at sasagot ito ng 403 na sinasabi iyon."
   },
   "stsmetadata.endpoints./authn/wallet.effect": {
-    "en": "10896d747624c10a",
-    "text": "bumubuo ng OpenID4VP request na nakatali sa nakabinbing sign-in (o sa second-factor step), itinatakda ang browser-binding cookie at nagre-redirect sa wait page"
+    "en": "79a0035468001881",
+    "text": "sinasagot ang shell ng sign-in surface; sinisimulan ng script nito ang OpenID4VP request na nakatali sa nakabinbing sign-in (o sa second-factor step) sa /authn-api/wallet at pumupunta sa wait page"
   },
   "stsmetadata.endpoints./authn/wallet/wait.what": {
-    "en": "5d52897c0ca76f50",
-    "text": "Ang page na hinihintayan ng browser: isang Digital Credentials API button — ang nag-iisang scripted na eksepsyon sa path na ito, /authn/wallet.js — ang same-device wallet link, at, kung naka-on lamang ang oid4vp.signInCrossDevice (naka-off bilang default), isang link sa server-drawn QR code page (?qr=1) na nagpo-poll gamit ang <meta> refresh. Kapag sumagot na ang wallet, isina-sign in nito ang browser o sinasabi kung bakit walang na-sign in: hindi na-verify ang presentation, galing ang credential sa pinagkakatiwalaang banyagang issuer, walang record ang realm na ito na ibinigay ito sa isang tao sa token na vine-verify nito, na-disown ito o hindi VALID ang status nito, o wala na ang entry. Natatapos lamang ito SA BROWSER na nagsimula ng sign-in (isang hashed binding cookie), LAMANG kasama ang tamang response_code kung may dala (OpenID4VP section 8.2), at MINSAN — kahit sa buong cluster; ang transaction ay nabubuhay nang oid4vp.signInTtlS."
+    "en": "202ad1e33a120a27",
+    "text": "Ang pahinang hinihintayan ng browser, iginuguhit ng sign-in surface mula #574 mula sa GET /authn-api/wallet/{state}: isang Digital Credentials API button, ang same-device wallet link, at, kung naka-on lamang ang oid4vp.signInCrossDevice (naka-off bilang default), isang QR code (?qr=1) na iginuguhit sa browser at pina-poll tuwing oid4vp.signInPollS segundo. Ibinabalik ng same-device na sagot ng wallet ang tao rito kasama ang response_code nito, at kinokolekta ng page ang sign-in. Kapag sumagot na ang wallet, sina-sign in nito ang browser o sinasabi kung bakit walang na-sign in: hindi nag-verify ang presentation, ang credential ay mula sa pinagkakatiwalaang dayuhang issuer, walang talaan ang realm na ito na ibinigay ito sa isang tao sa token na vine-verify nito, na-disown ito o hindi VALID ang status nito, o wala na ang entry. Natatapos ito TANGING sa browser na nagsimula ng sign-in (isang hashed na binding cookie), TANGING sa tamang response_code kung dala ito (OpenID4VP seksyon 8.2), at ISANG BESES LAMANG — kahit sa cluster; nabubuhay ang transaksyon nang oid4vp.signInTtlS."
   },
   "stsmetadata.endpoints./authn/wallet/wait.effect": {
-    "en": "bd1af71e0b16fffe",
-    "text": "kapag sumagot na ang wallet, itinatatag ang browser session (o humihingi ng second factor) at bumabalik sa anumang naantala"
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.what": {
-    "en": "ef8e88eee4254876",
-    "text": "Ang ipinopost ng script ng wait page: ang DigitalCredential na ibinalik ng navigator.credentials.get() (OpenID4VP Appendix A.4), dine-decrypt kung humingi ang request ng dc_api.jwt, vine-verify na may origin:<origin> bilang audience, at sinasagot nang minsan. Tinatanggap lamang mula sa browser na nagsimula ng sign-in at mula sa sariling origin ng serbisyong ito (STS-VC-0074). Ang walang lamang form — hindi tumakbo ang script — ay sinasagot ng same-device link (STS-VC-0081)."
-  },
-  "stsmetadata.endpoints./authn/wallet/dc-api.effect": {
-    "en": "f04802283b57225d",
-    "text": "vine-verify ang sagot ng wallet at isina-sign in ang nagpo-post na browser"
-  },
-  "stsmetadata.endpoints./authn/wallet.js.what": {
-    "en": "6640fb18da81216b",
-    "text": "NON-SPEC. Ang nag-iisang static script na nilo-load ng wait page sa ilalim ng script-src 'self': tinatawag nito ang Digital Credentials API gamit ang request sa page at isinusumite ang sagot sa isang tunay na form."
+    "en": "c86e75db89e317a1",
+    "text": "sinasagot ang shell ng sign-in surface; tinatapos ng script nito ang sign-in sa /authn-api/wallet kapag sumagot na ang wallet"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "2cc72f6d88f75a44",
@@ -2514,6 +2502,30 @@
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": {
     "en": "e992662e8638f8c3",
     "text": "NON-SPEC (#571). Ang resulta ng ceremony, vine-verify nang kinakailangan ang user verification."
+  },
+  "stsmetadata.endpoints./authn-api/wallet.what": {
+    "en": "99c4ba1db29bff8e",
+    "text": "NON-SPEC (#574). Sinasagot ng GET ang kailangan ng start page at ang CSRF token, at walang nililikha; ang POST — JSON, isang Origin ng serbisyong ito at ang X-CSRF-Token ng session ng browser — ay gumagawa ng signed na OpenID4VP request, nakatali sa nakabinbing sign-in (o step, o enrolment) at sa browser na ito sa pamamagitan ng sts_wallet_binding cookie na itinatakda nito, at pinangangalanan ang wait page."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state.what": {
+    "en": "2bb53bccad452c02",
+    "text": "NON-SPEC (#574). Para lamang sa browser na nagsimula ng transaksyon: ang Digital Credentials API request, ang same-device link, ang text ng QR code kung inaalok, at ang natitirang oras. Ang state ay isang bearer capability at hindi kailanman nilolog."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.what": {
+    "en": "35446f54582a609d",
+    "text": "NON-SPEC (#574). Ang poll ng wait page: maghintay hanggang sumagot ang wallet, pagkatapos ay ang sign-in na natapos sa request na ito, nang isang beses, kasama ang response_code na ibinalik ng same-device na wallet sa tao kung saan ito dala."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/status.effect": {
+    "en": "9264793fca0d1248",
+    "text": "kapag sumagot na ang wallet, itinatatag ang browser session (o pinangangalanan ang second factor) at pinangangalanan ang anumang naantala"
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.what": {
+    "en": "9f4b6afb2e1fecdc",
+    "text": "Ang ipinapadala ng script ng wait page: ang DigitalCredential na ibinalik ng navigator.credentials.get() (OpenID4VP Appendix A.4), dine-decrypt kung hiniling ng request ang dc_api.jwt, vine-verify na may origin:<origin> bilang audience, at sinasagot nang isang beses. Tinatanggap lamang mula sa browser na nagsimula ng sign-in at mula sa sariling origin ng serbisyong ito (STS-VC-0074); mula #574 ay JSON lamang din na may X-CSRF-Token ng session ng browser."
+  },
+  "stsmetadata.endpoints./authn-api/wallet/:state/dc-api.effect": {
+    "en": "f04802283b57225d",
+    "text": "vine-verify ang sagot ng wallet at sina-sign in ang browser na nag-post"
   },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",

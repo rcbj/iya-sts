@@ -163,7 +163,7 @@ function childMain() {
                                            one.requestObject.nonce, aud);
       const answered = await w.respond(one, presentation,
                                        { format: 'dc+sd-jwt' });
-      const page = await w.request('GET', one.waitPath, { browser: who });
+      const page = await w.collect(who, one);
       return { ok: page.status === 303, code: page.code, page: page,
                answered: answered, session: w.sessionOf(who) };
     };

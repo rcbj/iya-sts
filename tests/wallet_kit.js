@@ -505,36 +505,132 @@ async function boot() {
     });
   }
 
+  // ---------------------------------------------------------------------
+  // THE SIGN-IN SURFACE'S WALLET PAGES (#574): the shells, the views and
+  // the acts at `/authn-api/wallet`, bound as the page binds them — JSON,
+  // this service's Origin, and the X-CSRF-Token of the browser's
+  // `sts_session` cookie, which the shell mints where the browser has none.
+  //
+  // `formLike()` reads an act's JSON answer as the page it replaced was
+  // read: an answer naming an address (`redirect`, `mfa`) is the 303 it
+  // was, `headers.location` that address; anything else keeps its status.
+  // `code` is the code the response was marked with, as before.
+  // ---------------------------------------------------------------------
+  function formLike(r) {
+    const j = r.json || {};
+    const where = j.location || (j.ok && j.go) || '';
+    if (j.ok && where) {
+      return Object.assign({}, r, { status: 303, answer: r,
+        headers: Object.assign({}, r.headers, { location: where }) });
+    }
+    return Object.assign({}, r, { answer: r });
+  }
+
+  function act(who, urlPath, body, opts) {
+    const o = opts || {};
+    const headers = { accept: 'application/json' };
+    if (o.origin !== null) {
+      headers.origin = o.origin === undefined ? origin : o.origin;
+    }
+    const csrf = o.csrf !== undefined ? o.csrf : (who && who.csrf) || '';
+    if (csrf) {
+      headers['x-csrf-token'] = csrf;
+    }
+    return request('POST', urlPath, { browser: who, headers: headers,
+                                      json: body });
+  }
+
+  // The start, as the start page runs it: its shell (the arrival cookie),
+  // its view (the CSRF token), and `POST /authn-api/wallet`; then the wait
+  // page's view. `o.mfa` starts it as a second factor; `o.query` adds
+  // `siop`, `enrol` or `wallet`.
   async function start(who, authnId, opts) {
     const o = opts || {};
     const p = o.prefix || '';
-    const q = o.mfa ? 'mfa=' + encodeURIComponent(o.mfa)
-                    : 'authn=' + encodeURIComponent(authnId);
-    const started = await request('GET', p + '/authn/wallet?' + q,
-                                  { browser: who });
-    if (started.status !== 303) {
-      return { started: started };
+    const fields = Object.assign(o.mfa ? { mfa: o.mfa } : { authn: authnId },
+                                 o.query || {});
+    const q = new URLSearchParams(fields).toString();
+    const shell = await request('GET', p + '/authn/wallet?' + q,
+                                { browser: who });
+    const opened = await request('GET', p + '/authn-api/wallet?' + q,
+                                 { browser: who });
+    if (opened.status !== 200 || !opened.json || !opened.json.ok) {
+      return { started: formLike(opened), shell: shell, opened: opened };
     }
-    const waitPath = started.headers.location;
-    const waiting = await request('GET', waitPath, { browser: who });
-    const link = /id="wallet-open" href="([^"]+)"/.exec(waiting.text);
-    const walletUrl = link ? new URL(unescapeHtml(link[1])) : null;
+    who.csrf = opened.json.csrf;
+    const startedRaw = await act(who, p + '/authn-api/wallet', fields);
+    const started = formLike(startedRaw);
+    if (started.status !== 303) {
+      return { started: started, shell: shell, opened: opened };
+    }
+    const state = startedRaw.json.state;
+    const waitPath = p + startedRaw.json.go;
+    const waiting = await request('GET', p + '/authn-api/wallet/' +
+                                  encodeURIComponent(state), { browser: who });
+    const view = (waiting.json && waiting.json.view) || null;
+    const walletUrl = view && view.sameDevice ? new URL(view.sameDevice)
+                                              : null;
     let requestObject = null;
     if (walletUrl) {
       const ro = await request('GET',
         pathOf(walletUrl.searchParams.get('request_uri')));
       requestObject = decode(ro.text);
     }
-    const dc = /data-request="([^"]+)"/.exec(waiting.text);
-    const dcRequest = dc ? JSON.parse(unescapeHtml(dc[1])) : null;
+    const dcRequest = view ? view.dcRequest : null;
     const u = new URL(waitPath, 'http://x');
-    return { started: started, waitPath: waitPath, waiting: waiting,
+    return { started: started, shell: shell, opened: opened,
+             waitPath: waitPath, waiting: waiting, view: view,
              walletUrl: walletUrl, requestObject: requestObject,
              dcRequest: dcRequest,
              dcPayload: dcRequest ? decode(dcRequest.data.request) : null,
              authn: u.searchParams.get('authn'),
              mfa: u.searchParams.get('mfa') || '',
-             state: u.searchParams.get('state') };
+             enrol: u.searchParams.get('enrol') || '',
+             state: state, prefix: p };
+  }
+
+  // A FRESH CSRF TOKEN for a browser whose session changed under it — a
+  // sign-in replaces the arrival session, and the token is derived from the
+  // session the cookie names: the start view of a new pending sign-in
+  // answers the token of the cookie the browser holds now.
+  async function refreshCsrf(who, opts) {
+    const o = opts || {};
+    const id = await pendingSignIn({ realm: o.realm });
+    const opened = await request('GET', (o.prefix || '') +
+      '/authn-api/wallet?authn=' + encodeURIComponent(id), { browser: who });
+    who.csrf = (opened.json && opened.json.csrf) || '';
+    return who.csrf;
+  }
+
+  // The ids an act on the transaction names beside it.
+  function idsOf(s) {
+    const out = { authn: s.authn };
+    if (s.mfa) {
+      out.mfa = s.mfa;
+    }
+    if (s.enrol) {
+      out.enrol = '1';
+    }
+    return out;
+  }
+
+  // THE COLLECTION, as the wait page's poll (and a same-device return)
+  // asks for it: `POST …/status`. `o.responseCode` is the code a
+  // same-device wallet sent the person back with.
+  async function collect(who, s, opts) {
+    const o = opts || {};
+    const body = idsOf(s);
+    if (o.responseCode !== undefined) {
+      body.response_code = o.responseCode;
+    }
+    return formLike(await act(who, s.prefix + '/authn-api/wallet/' +
+      encodeURIComponent(s.state) + '/status', body, o));
+  }
+
+  // The `response_code` in a wallet's redirect back to the wait page.
+  function responseCodeOf(redirect) {
+    const m = /[?&]response_code=([^&#]+)/.exec(String(redirect || ''));
+    return m ? decodeURIComponent(m[1]) : undefined;
   }
 
   function vpToken(format, presentation) {
@@ -576,12 +672,10 @@ async function boot() {
     }
     const response = o.noResponse ? '' : JSON.stringify({
       protocol: o.protocol || s.dcRequest.protocol, data: data });
-    return request('POST', (o.prefix || '') + '/authn/wallet/dc-api', {
-      browser: who,
-      headers: { origin: o.origin === undefined ? origin : o.origin },
-      form: Object.assign({ authn: s.authn, state: s.state,
-                            response: response },
-                          s.mfa ? { mfa: s.mfa } : {}) });
+    // The wait page's runtime sends it to `POST …/dc-api` (#574).
+    return formLike(await act(who, s.prefix + '/authn-api/wallet/' +
+      encodeURIComponent(s.state) + '/dc-api',
+      Object.assign(idsOf(s), { response: response }), o));
   }
 
   function sessionCookie(r) {
@@ -621,7 +715,10 @@ async function boot() {
     jws: jws, accessTokenFor: accessTokenFor, fakeReq: fakeReq,
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
     presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
-    start: start, vpToken: vpToken, respond: respond,
+    start: start, collect: collect, act: act, formLike: formLike,
+    refreshCsrf: refreshCsrf,
+    responseCodeOf: responseCodeOf, idsOf: idsOf,
+    vpToken: vpToken, respond: respond,
     answerDcApi: answerDcApi, sessionCookie: sessionCookie,
     sessionOf: sessionOf, inRealm: inRealm, finish: finish,
     QUERY_IDS: QUERY_IDS, CONFIG_FOR: CONFIG_FOR, client: client
