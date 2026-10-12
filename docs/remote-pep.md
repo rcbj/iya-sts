@@ -5,8 +5,6 @@ nav_order: 15
 
 # The remote Policy Enforcement Point
 
-> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 `xacml-pep/` is a **second container**. It holds its own copy of this service's
 XACML engine, **pulls** the policy repository from the mock's Policy Decision
 Point, and decides in its own process. The mock never sees the requests it
@@ -31,16 +29,21 @@ is opt-in: a plain `docker compose up` does not start it.
                                POST /notify  ◀────────────────────── the nudge (optional)
 ```
 
-## Why not just use `/xacml/protected`
+## The demonstration PEP is this one
 
-The mock already has a Policy Enforcement Point at `GET /xacml/protected`, and
-for learning what a PEP *is* it is the better one to read. What it cannot
-demonstrate is anything that makes a **distributed** deployment hard, because it
-shares a process with the PDP: it can never be stale, can never hold a policy the
-PDP no longer has, and can never go on enforcing while the PDP is down.
+Until #596 the service had a Policy Enforcement Point of its own at
+`GET /xacml/protected`, with its bias in the `xacml.pepBias` setting. Both are
+gone: the service ships no demonstration code, and this container's
+`GET /protected` is the same thing — the same request built from `subject`,
+`resource` and `action`, the same section 7.2 rule (an obligation it cannot
+discharge turns a Permit into a 403), and the bias as this PEP's own option,
+`PEP_BIAS` (`deny-biased` by default, or `permit-biased`).
 
-Every one of those is a state a real deployment lives in, and this container
-makes all of them reachable — and reports them rather than hiding them.
+It is also the more honest demonstration. A PEP sharing a process with the PDP
+can never be stale, can never hold a policy the PDP no longer has, and can
+never go on enforcing while the PDP is down. Every one of those is a state a
+real deployment lives in, and this container makes all of them reachable — and
+reports them rather than hiding them.
 
 ## Its four endpoints
 

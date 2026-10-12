@@ -6347,14 +6347,6 @@
     "en": "eae9db3ed7f2d788",
     "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
   },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "Ang ginagawa ng embedded PEP sa hindi Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "DESISYON ITO NG PEP AT HINDI NG PDP, na siyang buong dahilan kung bakit ito setting. Pinapayagan ng XACML section 7.2 ang PEP na maging deny-biased (anumang hindi Permit ay pagtanggi) o permit-biased (anumang hindi Deny ay pinapayagan), at nagkakaiba ang mga tunay na deployment. Deny-biased ang default dahil iyon ang dapat na PEP na nagpoprotekta ng anuman; umiiral ang permit-biased para makita ng client kung ano ang ginagawa ng ibang pagpipilian sa isang Indeterminate, na siyang kaso kung saan nagkakaiba ang dalawa at ang walang sinumang sumusubok. Sa development mode lamang: ang nag-iisang bumabasa nito, ang /xacml/protected, ay isang demonstration endpoint (#585)."
-  },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
     "text": "Laging ibalik ang mga identifier ng naaangkop na policy"
@@ -7516,8 +7508,8 @@
     "text": "Group na nagbibigay ng XACML_USER role"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na XACML_USER role, na siyang hinihingi ng apat na tunay na XACML endpoint — GET /xacml, POST /xacml/pdp, GET /xacml/policies at GET /xacml/protected. Ang caller na nagpapakita ng client certificate na VINE-VERIFY ng serbisyong ito ay isang mapapangalanan nito; ang membership sa group na ito ang gumagawa sa kanila na isang pinapapasok nito, at pinaghihiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: pinapatunayan ng certificate ang identity at nagbibigay ng pahintulot ang group. PANGALAWANG GROUP ITO AT HINDI ANG PAREHO: umaabot ang REMOTE_PEPS sa tatlong /xacml/pep endpoint, na namamahagi ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang group na nagbibigay ng pareho ay gagawing ang pagpapapasok ng caller sa demonstration surface ay tahimik na pagpapapasok din dito sa mga iyon. Ang pagtatakda nito sa walang lamang string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa apat na endpoint na iyon sa bawat caller; iyon ang paraan para alisin ang XACML surface nang hindi ino-off ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+    "en": "6256e6a60d3799e6",
+    "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa demonstration surface. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

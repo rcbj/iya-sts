@@ -145,7 +145,6 @@ var config = {
     accessPolicy: "access-control",          // Access policy name
     enabled: true,                           // XACML enabled
     maxPolicies: 200,                        // Policies the repository may hold
-    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate

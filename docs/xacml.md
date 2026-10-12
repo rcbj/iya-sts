@@ -4,8 +4,6 @@ title: XACML
 
 # XACML 3.0 and ALFA
 
-> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts contains a **XACML 3.0 Policy Decision Point**
 ([OASIS XACML 3.0 core](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html)).
 It accepts requests in the
@@ -13,10 +11,12 @@ It accepts requests in the
 and it reads and writes policies as XACML XML and as
 [ALFA](https://docs.oasis-open.org/xacml/alfa-for-xacml/v1.0/alfa-for-xacml-v1.0.html).
 Around the PDP it has a policy repository (the PAP), a Policy Information
-Point backed by the embedded directory, a guided policy editor, and three
-**embedded** enforcement points. Two of those embedded PEPs decide this
-service's own token issuance and its own access control. It also supplies
-policy to **remote** PEPs that run in other processes. Every trust realm has
+Point backed by the embedded directory, a guided policy editor, and
+**embedded** enforcement points that decide this service's own token
+issuance, its own access control and its reactions to risk and signals. It
+also supplies policy to **remote** PEPs that run in other processes; the
+[remote PEP](remote-pep.md) container is the one to point a client at to
+watch a decision enforced. Every trust realm has
 its own repository, its own register of remote PEPs and its own counters.
 
 Every other protocol family here authenticates or provisions someone. This one
@@ -53,7 +53,10 @@ licensed, unlike this repository.
 | `GET /xacml` | describes the surface, including which role each endpoint requires. `?format=json` returns the same as data |
 | `POST /xacml/pdp` | a decision: a JSON Profile request in, a JSON Profile response out |
 | `GET /xacml/policies` | the repository as the PDP sees it, with the policy documents |
-| `GET /xacml/protected` | the demonstration PEP: 200 or 403 for the `?subject=` you name |
+
+A demonstration resource that a PEP guards — 200 or 403 for the `?subject=`
+you name — is the [remote PEP](remote-pep.md)'s `GET /protected` (it was
+`GET /xacml/protected` on this service until #596).
 
 In a trust realm every path is under `/realm/{id}`. A malformed request gets a
 400, never an Indeterminate. `xacml.returnPolicyIdList` returns the list of
@@ -164,7 +167,7 @@ cached, so each decision makes a fresh query.
 
 ### The embedded PEPs: this service's own issuance and access
 
-Five PEPs are built into the process:
+Four PEPs are built into the process:
 
 | PEP | Decides | Policy |
 |---|---|---|
@@ -172,7 +175,6 @@ Five PEPs are built into the process:
 | **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
 | **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
 | **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
-| **demonstration** | `GET /xacml/protected` | the repository root |
 
 **The issuance policy also decides which OAuth scopes are issued** (#304,
 #305). For each requested scope, the issuance PEP asks one more question: the
@@ -307,8 +309,8 @@ application:
   for that restriction, and silently allowing it would be the worst failure
   this feature could have.
 
-A Deny, NotApplicable or Indeterminate always refuses an issuance.
-`xacml.pepBias` does not apply to the issuance PEP.
+A Deny, NotApplicable or Indeterminate always refuses an issuance: the
+issuance PEP is deny-biased, and nothing makes it otherwise.
 
 ### The gated surfaces: two roles, two groups
 
@@ -322,7 +324,7 @@ caller is admitted through a chain of four checks:
 
 | Endpoints | Role | Group |
 |---|---|---|
-| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | `XACML_USER` | `roles.xacmlUserGroup` (`xacml-users`) |
+| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | `XACML_USER` | `roles.xacmlUserGroup` (`xacml-users`) |
 | `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat`, `POST /xacml/pip` | `REMOTE_PEPS` | `roles.remotePepGroup` (`remote-peps`) |
 
 **The certificate says who the caller is, and the group says whether they get
@@ -400,7 +402,6 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
-| `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. Development mode only (#585): its one reader, `/xacml/protected`, is a demonstration. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |
@@ -515,15 +516,17 @@ enforcing, and each disabled row says so.
 ### `/admin/xacml/decide` — Try a decision
 
 Ask the PDP about a subject. You see the decision, which policies applied,
-what the PIP found on the subject's directory entry, and, separately, what
-the embedded PEP would do with that decision. When a policy seems not to work,
-it is nearly always because only one of those two answers was being looked
-at. What the embedded PEP *would* do here is not counted as an enforcement.
+what the PIP found on the subject's directory entry, and, separately, what a
+deny-biased PEP would do with that decision (the API answer,
+`GET /admin-api/xacml/decide`, carries the permit-biased outcome beside it).
+When a policy seems not to work, it is nearly always because only one of those
+two answers was being looked at. What a PEP *would* do here is not counted as
+an enforcement.
 
 ### Elsewhere
 
 * **Monitoring → XACML decisions** (`/admin/xacml/monitor`) shows decisions
-  and enforcements per PEP: the three embedded PEPs, every remote PEP, and
+  and enforcements per PEP: the issuance and access PEPs, every remote PEP, and
   `POST /xacml/pdp`. Totals are given for this service, for the remote PEPs
   and combined. The counters start with the process and have no reset. The
   lasting record of a refusal is the audit log (`/admin/audit`), under

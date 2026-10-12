@@ -14,8 +14,6 @@
   "nobody": "（無——沒有人擁有它）",
   "enforced": "上述每個端點都需要一張<strong>用戶端憑證</strong>，由本服務依據其自身信任存放區中的信任錨點驗證（<code>{door}</code>）。主體 DN 會解析為一個目錄項目，而該項目的群組成員資格決定是否授予最後一欄中的角色：<code>{userGroup}</code> 授予 <code>XACML_USER</code>，<code>{pepGroup}</code> 授予 <code>REMOTE_PEPS</code>。<strong>憑證說明是誰，群組說明能否</strong>——一個不屬於任一群組之通用名稱的完全有效憑證，已完全通過驗證，仍會被拒絕。",
   "notEnforced": "存取強制執行已<strong>關閉</strong>（<code>xacml.enforceAccess</code>），因此上述每個端點都無須認證即會回應。最後一欄中的角色是開啟時所需的角色。",
-  "embedded": "內嵌 PEP",
-  "embeddedText": "<code>{probe}</code> 詢問此 PDP，然後<em>強制執行</em>答案。它是 <code>{bias}</code>：兩種偏向在每個 Permit 與每個 Deny 上一致，在 Indeterminate 與 NotApplicable 上不同，這才是值得觀察的情況。無法履行的義務會將 Permit 變為拒絕，這是第 7.2 節的規定，也是各實作常略過的部分。",
   "remote": "遠端強制執行點",
   "remoteOn": "另一個程序中的原則強制執行點（PEP）會在 <code>/xacml/pep/register</code> 註冊，從 <code>/xacml/pep/policies</code> <strong>拉取</strong>已啟用的原則，並以自己的此引擎副本自行評估。已註冊 {registered} 個。儲存庫的同步權杖為 <code>{syncToken}</code>；將其作為 <code>?since=</code> 傳入，若儲存庫未變更則回應 304。",
   "remoteOff": "遠端原則強制執行點已<strong>關閉</strong>（<code>xacml.remotePeps</code>）；這三個端點會回應 501。",

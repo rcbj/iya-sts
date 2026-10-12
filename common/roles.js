@@ -338,7 +338,7 @@ const BUILT_IN = [
   // the party holding it is a certificate DN that does not exist until a
   // launcher mints one — there is no name to write into a role definition in
   // advance. That reason does NOT apply here: the parties reaching
-  // `/xacml/pdp`, `/xacml/policies` and `/xacml/protected` are ordinary
+  // `/xacml/pdp` and `/xacml/policies` are ordinary
   // callers and some of them are people who already have directory entries.
   //
   // What decides it is the other half of REMOTE_PEPS's argument, and that one
@@ -368,8 +368,8 @@ const BUILT_IN = [
   { name: 'XACML_USER',
     what: 'A caller of the XACML surface proper: whoever is a member of the ' +
           'group named by `roles.xacmlUserGroup` (default "xacml-users"). ' +
-          'It is what `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` ' +
-          'and `GET /xacml/protected` require, and the party that holds it ' +
+          'It is what `GET /xacml`, `POST /xacml/pdp` and ' +
+          '`GET /xacml/policies` require, and the party that holds it ' +
           'is normally a client-certificate DN — the certificate says WHO, ' +
           'and this group says whether they may. It is deliberately NOT ' +
           'REMOTE_PEPS: that role reaches the three /xacml/pep endpoints, ' +

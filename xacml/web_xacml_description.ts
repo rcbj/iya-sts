@@ -88,15 +88,8 @@ class WebXacmlDescription {
                    userGroup: access.xacmlUserGroup || nobody,
                    pepGroup: access.remotePepGroup || nobody })
         : t.html('describeXacml.notEnforced')) +
-      // The demonstration only where this realm is served it (#585): the
-      // document's `pep` is null where it is not.
-      (info.pep
-        ? D.h2(t.html('describeXacml.embedded')) +
-          D.p(t.html('describeXacml.embeddedText',
-                     { probe: 'GET /xacml/protected?subject=…&resource=…' +
-                              '&action=…',
-                       bias: info.pep.bias }))
-        : '') +
+      // The embedded demonstration PEP's section went with it to the
+      // remote PEP (#596); the remote section below is where a PEP is.
       D.h2(t.html('describeXacml.remote')) +
       D.p(remote.enabled
         ? t.html('describeXacml.remoteOn',
