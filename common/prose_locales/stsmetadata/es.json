@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "El PDP, el repositorio y el PEP integrado, descritos, con una columna Requiere que indica qué rol pide cada endpoint de esta familia. ?format=json para lo mismo como datos. Responde mientras xacml.enabled está DESACTIVADO, para que un cliente pueda descubrir que este servicio habla XACML y que no lo está haciendo en este momento; pero REQUIERE XACML_USER como los tres siguientes, así que el descubrimiento es para un llamador que este servicio admite. Uno no admitido recibe un 403 que nombra el grupo y el ajuste, que es la parte de esta página que necesita."
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /xacml a partir de la vista que lleva su shell. REQUIERE XACML_USER, igual que la página."
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "Envíe por POST una solicitud JSON Profile y reciba una respuesta JSON Profile. INTERVIENEN DOS IDENTIDADES Y NO SON LA MISMA. El LLAMADOR se autentica con un certificado de cliente que este servicio verifica, resuelto a una entrada de directorio que tiene XACML_USER: eso decide quién puede usar el motor. El SUJETO SOBRE EL QUE trata la decisión está en la solicitud y nada de la conexión llega a él: un PDP no es un límite de autorización, responde a una pregunta sobre el de otro, y uno que decidiera sobre quien tuviera el certificado sería un componente distinto. Una solicitud mal formada es un 400 en lugar de un Indeterminate: un Indeterminate es una respuesta SOBRE una solicitud y un 400 dice que no había ninguna solicitud sobre la cual responder."
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "NO es un endpoint de SSF: un transmisor real no publica nada de esto. Para QUÉ sirve el marco (SAML y OpenID Connect autentican en UN INSTANTE, y la parte que confía mantiene después una sesión durante horas pase lo que pase), los endpoints, ambos tipos de evento con cada miembro, los ocho formatos de sujeto de RFC 9493 con un ejemplo de cada uno, los seis miembros de sujeto complejo, los esquemas de autenticación, los flujos que existen en este momento, las diez cosas que puede hacer para que falle y las cinco cosas que deliberadamente no hace. Lo primero que conviene leer: SSF ES LA TUBERÍA Y NO EL VOCABULARIO; define dos eventos propios, ambos sobre la tubería, y CAEP y RISC son los vocabularios que se hablan sobre ella. Agregue ?format=json."
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /ssf a partir de la vista que lleva su shell."
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "Una ruta y cinco métodos, que es la forma que da la propia especificación: el endpoint de configuración ES el recurso. POST crea un flujo: este servicio genera el stream_id, establece el iss y responde con events_delivered, la INTERSECCIÓN de lo que solicitó el receptor y lo que admite este transmisor, que es el miembro que más a menudo se confunde con events_requested. GET lee uno (?stream_id=) o los enumera todos. PUT REEMPLAZA y PATCH FUSIONA, y la diferencia es real: un PUT que se comportara como un PATCH permitiría a un receptor creer que había vaciado events_requested cuando no lo había hecho. DELETE lo elimina. Necesita ssf:write para todo menos el GET."
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "NO es un endpoint de SCIM: un servidor real no publica nada de esto. Qué es la superficie de aprovisionamiento, dónde escribe (el directorio integrado, entrada por entrada), qué es aquí un id de SCIM (el DN de la entrada, y lo que eso cuesta en un cambio de nombre), cada esquema de autenticación que ofrece con la política de control de acceso que hay detrás, las cosas que deliberadamente no hace y la docena de cosas que puede hacer para que falle. Dos merecen leerse antes de apuntar nada hacia aquí: ESTOS ENDPOINTS CREAN Y ELIMINAN CUENTAS Y SON LA ÚNICA SUPERFICIE AQUÍ QUE REQUIERE UNA CREDENCIAL, aunque en modo desarrollo no comprueban casi nada de ella, ya que cualquiera puede obtener un token con cualquiera de los dos ámbitos, cualquier contraseña excepto \"invalid\" pasa Basic y cualquiera puede registrar una clave HOBA (el modo producto verifica Basic, no ofrece Digest y solo permite registrar una clave a un propietario con sesión iniciada); y active:false DESHABILITA LA CUENTA: el bloqueo de la política de contraseñas que rechaza toda puerta. Agregue ?format=json."
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /scim a partir de la vista que lleva su shell."
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "LA ÚNICA PÁGINA QUE DESCRIBE LAS TRES SUPERFICIES SPIFFE DEL LADO DEL SERVIDOR, y la única que puede informar de las dos invisibles. Este servicio es la autoridad emisora de un dominio de confianza SPIFFE por cada dominio de confianza (spiffe.trustDomain, `example.org` de forma predeterminada; un dominio creado en tiempo de ejecución se inicializa con su propio dominio DNS y solo enlaza sockets propios cuando su spiffe.enabled está activado; lo que sigue describe el del dominio predeterminado): el ENDPOINT DE BUNDLE de abajo es HTTPS simple; la SPIFFE WORKLOAD API (el servicio gRPC SpiffeWorkloadAPI, cinco de siete métodos) está en un SOCKET UNIX en spiffe.workloadSocket (`/tmp/spire-agent/public/api.sock`, que es la ruta propia de SPIRE y lo que SPIFFE_ENDPOINT_SOCKET significa para todo cliente real) y en TCP spiffe.workloadPort (8092); la SPIRE SERVER API (Entry, Agent, Bundle, SVID, TrustDomain y Debug, 36 de 42 métodos) está en TCP spiffe.serverPort (8181, porque el 8081 propio de SPIRE es el puerto HTTP de este servicio) y opcionalmente en un socket propio; la SPIFFE BROKER API (spiffe.broker.API, #170) está en TCP spiffe.brokerPort, con TLS mutuo, desactivada de forma predeterminada. SOCKETS SIN PROCESAR, todos: esta página se construye recorriendo el enrutador de Express y no puede ver ninguno, así que su estado lo informan GET /spiffe y /admin/spiffe en lugar de esta. LA MAYOR PARTE DE ESA PÁGINA ES LO QUE SE COMPRUEBA Y LO QUE NO: la atestación de nodos verificada o rechazada y la carga de trabajo del socket Unix atestada (#40), un llamador TCP identificado solo por su transporte, su endpoint y su dirección de origen, y por tanto servido en modo producto solo en una red declarada como autenticadora de direcciones de origen (#166), sin revocación en ningún lugar (el directorio sí registra un `spiffeCredentialStatus` en una identidad cuya última entrada de registro se eliminó o cuyo agente fue vetado o eliminado, y eso no es revocación: nada lo vuelve a leer y ningún certificado se rechaza por ello) y, del otro lado, TODA la tabla de autorización por método de la SPIRE Server API, cuyo puerto TCP es TLS MUTUO con un X509-SVID, sin condiciones, porque lo que sale de estas superficies es una credencial que otro servicio creerá. Agregue ?format=json."
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /spiffe a partir de la vista que lleva su shell."
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "acuña un wctx y ofrece una solicitud de inicio de sesión completa para cada forma que puede emitir el endpoint"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "Una página de descripción: los endpoints, los cuatro bindings y cómo funcionan los metadatos por proveedor de servicios. GET /sts y GET /wsfed responden de la misma manera por la misma razón: un endpoint que devuelve 400 a quien solo quería saber qué era da una mala primera impresión."
+    "en": "525652beb87f8922",
+    "text": "Una página de descripción: los endpoints, los cuatro bindings y cómo funcionan los metadatos por proveedor de servicios. GET /sts y GET /wsfed responden de la misma manera por la misma razón: un endpoint que devuelve 400 a quien solo quería saber qué era da una mala primera impresión. Se dibuja en el navegador desde #584; ?format=json, o un Accept que prefiera JSON, devuelve su vista como datos."
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /saml2 a partir de la vista que lleva su shell."
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "acuña un RelayState y ofrece una AuthnRequest completa que pide la respuesta por HTTP POST, HTTP Redirect y HTTP Artifact"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "Una página de descripción: los endpoints, los dos perfiles de navegador, y la lista de lo que SAML 1.1 escribe de forma distinta que 2.0, que es la mayor parte de lo que hace de esto una implementación separada y no un indicador. GET /saml2, GET /sts y GET /wsfed responden de la misma manera."
+    "en": "0958618bfca15378",
+    "text": "Una página de descripción: los endpoints, los dos perfiles de navegador, y la lista de lo que SAML 1.1 escribe de forma distinta que 2.0, que es la mayor parte de lo que hace de esto una implementación separada y no un indicador. GET /saml2, GET /sts y GET /wsfed responden de la misma manera. Se dibuja en el navegador desde #584; ?format=json, o un Accept que prefiera JSON, devuelve su vista como datos."
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584). El entorno de ejecución y los renderizadores de las páginas de descripción de las seis familias de protocolos, en un solo archivo construido por build-typescript.sh (common/description-pages-spa.js) y servido precomprimido en la ruta propia de cada familia: aquí dibuja GET /saml11 a partir de la vista que lleva su shell."
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",

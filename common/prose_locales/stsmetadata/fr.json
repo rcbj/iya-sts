@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "Le PDP, le référentiel et le PEP intégré, décrits, avec une colonne Requires indiquant quel rôle exige chaque point de terminaison de cette famille. ?format=json pour la même chose sous forme de données. Répond lorsque xacml.enabled est DÉSACTIVÉ, de sorte qu’un client peut découvrir que ce service parle XACML et ne le fait pas actuellement — mais il EXIGE XACML_USER comme les trois points de terminaison suivants ; la découverte s’adresse donc à un appelant que ce service admet. Un appelant non admis reçoit une 403 qui nomme le groupe et le paramètre, ce qui est la partie de cette page dont il a besoin."
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /xacml à partir de la vue que porte son shell. Il EXIGE XACML_USER, comme la page."
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "Envoyez en POST une requête JSON Profile, recevez une réponse JSON Profile. DEUX IDENTITÉS SONT EN JEU ET CE NE SONT PAS LES MÊMES. L’APPELANT est authentifié par un certificat client que ce service vérifie, résolu en une entrée d’annuaire détenant XACML_USER — cela décide qui peut piloter le moteur. Le SUJET SUR LEQUEL porte la décision figure dans la requête et rien de la connexion ne l’atteint : un PDP n’est pas une frontière d’autorisation, il répond à une question portant sur celle de quelqu’un d’autre, et un PDP qui déciderait au sujet de quiconque détient le certificat serait un autre composant. Une requête mal formée donne une 400 plutôt qu’un Indeterminate — un Indeterminate est une réponse AU SUJET d’une requête, et une 400 dit qu’il n’y avait aucune requête à laquelle répondre."
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "PAS un point de terminaison SSF — un véritable transmetteur ne publie rien de tout cela. Ce à QUOI SERT le cadre (SAML et OpenID Connect authentifient à UN INSTANT, et la partie de confiance détient ensuite une session pendant des heures quoi qu’il arrive), les points de terminaison, les deux types d’événements avec chaque membre, les huit formats de sujet de la RFC 9493 avec un exemple de chacun, les six membres de sujet complexe, les schémas d’authentification, les flux qui existent en ce moment, les dix choses que vous pouvez faire pour le faire échouer, et les cinq choses qu’il ne fait délibérément pas. Celle à lire en premier : SSF EST LE TUYAU ET NON LE VOCABULAIRE — il définit deux événements propres, tous deux portant sur le tuyau, et CAEP et RISC sont les vocabulaires parlés par-dessus. Ajoutez ?format=json."
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /ssf à partir de la vue que porte son shell."
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "Un chemin et cinq méthodes, ce qui est la forme même de la spécification : le point de terminaison de configuration EST la ressource. POST crée un flux — ce service produit le stream_id et définit iss, et répond avec events_delivered, l’INTERSECTION de ce que le récepteur a demandé et de ce que ce transmetteur prend en charge, le membre le plus souvent confondu avec events_requested. GET en lit un (?stream_id=) ou les liste tous. PUT REMPLACE et PATCH FUSIONNE, et la différence est réelle : un PUT qui se comporterait comme un PATCH laisserait un récepteur croire qu’il a vidé events_requested alors que ce n’est pas le cas. DELETE le supprime. Nécessite ssf:write pour tout sauf le GET."
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "PAS un point de terminaison SCIM — un véritable serveur ne publie rien de tout cela. Ce qu’est la surface de provisionnement, ce dans quoi elle écrit (l’annuaire intégré, entrée pour entrée), ce qu’est un identifiant SCIM ici (le DN de l’entrée, et ce que cela coûte lors d’un renommage), chaque schéma d’authentification qu’elle propose avec la politique de contrôle d’accès qui les sous-tend, les choses qu’elle ne fait délibérément pas, et la douzaine de choses que vous pouvez faire pour la faire échouer. Deux méritent d’être lues avant de diriger quoi que ce soit vers elle : CES POINTS DE TERMINAISON CRÉENT ET SUPPRIMENT DES COMPTES ET SONT LA SEULE SURFACE ICI QUI EXIGE UN JUSTIFICATIF — tout en ne vérifiant presque rien de celui-ci en mode développement, puisque n’importe qui peut obtenir un jeton avec l’une ou l’autre portée, que tout mot de passe sauf \"invalid\" passe Basic et que n’importe qui peut enregistrer une clé HOBA (le mode produit vérifie Basic, ne propose pas Digest et ne laisse qu’un propriétaire connecté enregistrer une clé) ; et active:false DÉSACTIVE LE COMPTE — le verrouillage de la politique de mots de passe que refuse chaque porte. Ajoutez ?format=json."
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /scim à partir de la vue que porte son shell."
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "LA SEULE PAGE QUI DÉCRIT LES TROIS SURFACES SPIFFE CÔTÉ SERVEUR, et la seule qui puisse rendre compte des deux invisibles. Ce service est l’autorité émettrice d’un domaine d’approbation (trust domain) par domaine de confiance (spiffe.trustDomain, `example.org` par défaut ; un domaine créé à l’exécution reçoit son propre domaine DNS et ne lie ses propres sockets que lorsque son spiffe.enabled est activé — ce qui suit décrit le domaine par défaut) : le POINT DE TERMINAISON DE BUNDLE ci-dessous est en HTTPS simple ; la SPIFFE WORKLOAD API (le service gRPC SpiffeWorkloadAPI, cinq méthodes sur sept) est sur un SOCKET UNIX à spiffe.workloadSocket — `/tmp/spire-agent/public/api.sock`, le chemin propre à SPIRE et ce que SPIFFE_ENDPOINT_SOCKET signifie pour tout véritable client — et sur le TCP spiffe.workloadPort (8092) ; la SPIRE SERVER API (Entry, Agent, Bundle, SVID, TrustDomain et Debug, 36 méthodes sur 42) est sur le TCP spiffe.serverPort (8181, car le 8081 propre à SPIRE est le port HTTP de ce service) et éventuellement sur un socket propre ; la SPIFFE BROKER API (spiffe.broker.API, #170) est sur le TCP spiffe.brokerPort, en TLS mutuel, désactivée par défaut. DES SOCKETS BRUTS, tous : cette page est construite en parcourant le routeur Express et ne peut en voir aucun ; leur état est donc rapporté par GET /spiffe et sur /admin/spiffe plutôt qu’ici. L’ESSENTIEL DE CETTE PAGE PORTE SUR CE QUI EST VÉRIFIÉ ET CE QUI NE L’EST PAS — l’attestation de nœud vérifiée ou refusée et la charge de travail du socket Unix attestée (#40), un appelant TCP identifié uniquement par son transport, son point de terminaison et son adresse source, et donc servi en mode produit uniquement sur un réseau déclaré authentifier les adresses source (#166), aucune révocation nulle part — l’annuaire enregistre bien un `spiffeCredentialStatus` sur une identité dont la dernière entrée d’enregistrement a été supprimée ou dont l’agent a été banni ou supprimé, et ce n’en est pas une : rien ne le relit et aucun certificat n’est refusé à cause de lui — et, de l’autre côté, la table COMPLÈTE d’autorisation par méthode de la SPIRE Server API, dont le port TCP est en TLS MUTUEL avec un X509-SVID, sans condition — car ce qui sort de ces surfaces est un justificatif qu’un autre service croira. Ajoutez ?format=json."
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /spiffe à partir de la vue que porte son shell."
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "émet un wctx et propose une requête de connexion complète pour chaque forme que le point de terminaison peut émettre"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "Une page de description : les points de terminaison, les quatre liaisons, et le fonctionnement des métadonnées par fournisseur de services. GET /sts et GET /wsfed répondent de la même manière pour la même raison — un point de terminaison qui renvoie une 400 à quelqu’un qui voulait savoir ce qu’il était fait mauvaise impression."
+    "en": "525652beb87f8922",
+    "text": "Une page de description : les points de terminaison, les quatre liaisons, et le fonctionnement des métadonnées par fournisseur de services. GET /sts et GET /wsfed répondent de la même manière pour la même raison — un point de terminaison qui renvoie une 400 à quelqu’un qui voulait savoir ce qu’il était fait mauvaise impression. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /saml2 à partir de la vue que porte son shell."
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "émet un RelayState et propose une AuthnRequest complète demandant la réponse en HTTP POST, HTTP Redirect et HTTP Artifact"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "Une page de description : les points de terminaison, les deux profils de navigateur, et la liste de ce que SAML 1.1 écrit différemment de 2.0 — ce qui explique en grande partie qu’il s’agisse d’une implémentation distincte plutôt que d’un indicateur. GET /saml2, GET /sts et GET /wsfed répondent de la même manière."
+    "en": "0958618bfca15378",
+    "text": "Une page de description : les points de terminaison, les deux profils de navigateur, et la liste de ce que SAML 1.1 écrit différemment de 2.0 — ce qui explique en grande partie qu’il s’agisse d’une implémentation distincte plutôt que d’un indicateur. GET /saml2, GET /sts et GET /wsfed répondent de la même manière. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584). L’environnement d’exécution et les moteurs de rendu des pages de description des six familles de protocoles, en un seul fichier construit par build-typescript.sh (common/description-pages-spa.js) et servi précompressé sur le chemin propre à chaque famille : ici il dessine GET /saml11 à partir de la vue que porte son shell."
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",

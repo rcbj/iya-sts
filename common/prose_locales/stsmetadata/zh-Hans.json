@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "对 PDP、存储库和嵌入式 PEP 的说明，其中“需要”一栏说明此系列中每个端点需要哪个角色。?format=json 以数据形式提供相同内容。在 xacml.enabled 关闭时也会应答，因此客户端可以发现本服务支持 XACML 但当前未启用——但它与下面三个端点一样需要 XACML_USER，因此这种发现只面向本服务允许的调用方。未被允许的调用方会收到一个指明该组和该设置的 403，而这正是他们需要的那部分信息。"
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /xacml。它与页面一样要求 XACML_USER。"
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "POST 一个 JSON Profile 请求，得到一个 JSON Profile 响应。这里涉及两个身份，而且它们不是同一个。调用方通过本服务验证的客户端证书进行身份验证，并解析为持有 XACML_USER 的目录条目——这决定了谁可以驱动引擎。决策所针对的主体在请求中，连接上的任何内容都不会影响它：PDP 不是授权边界，它回答的是关于他人边界的问题，而一个针对证书持有者作出决策的 PDP 将是另一种组件。格式错误的请求返回 400，而不是 Indeterminate——Indeterminate 是针对某个请求的应答，而 400 表示根本没有可以应答的请求。"
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "不是 SSF 端点——真正的发送方不会发布其中任何内容。该框架的用途（SAML 和 OpenID Connect 在某一瞬间完成身份验证，之后依赖方无论发生什么都会持有数小时的会话）、端点、两种事件类型及其每个成员、全部八种 RFC 9493 主体格式及各自示例、六个复合主体成员、身份验证方案、当前存在的流、可以让它失败的十种做法，以及它刻意不做的五件事。首先要读的是：SSF 是管道而不是词汇——它定义了两个自己的事件，都与管道有关，而 CAEP 和 RISC 是在其上使用的词汇。添加 ?format=json。"
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /ssf。"
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "一个路径和五种方法，这是规范自身的形态：配置端点就是资源。POST 创建一个流——本服务生成 stream_id 并设置 iss，并以 events_delivered 应答，即接收方请求的内容与此发送方支持的内容的交集，这是最常与 events_requested 混淆的成员。GET 读取一个流（?stream_id=）或列出全部流。PUT 是替换，PATCH 是合并，二者的区别是实实在在的：表现得像 PATCH 的 PUT 会让接收方以为自己已清空 events_requested，而实际上并没有。DELETE 删除它。除 GET 外都需要 ssf:write。"
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "不是 SCIM 端点——真正的服务器不会发布其中任何内容。预配接口是什么、它写入到哪里（嵌入式目录，逐条目对应）、SCIM id 在这里是什么（条目的 DN，以及重命名时的代价）、它提供的每种身份验证方案及其背后的访问控制策略、它刻意不做的事情，以及可以让它失败的十几种做法。在把任何东西指向它之前，有两点值得一读：这些端点会创建和删除账户，是此处唯一要求凭据的接口——而在开发模式下几乎不检查该凭据，因为任何人都能获得带有任一范围的令牌，除 “invalid” 外的任何密码都能通过 Basic，任何人都能注册 HOBA 密钥（产品模式会验证 Basic，不提供 Digest，并且只允许已登录的所有者注册密钥）；以及 active:false 会禁用账户——即每个入口都会拒绝的密码策略锁定。添加 ?format=json。"
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /scim。"
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "描述全部三个服务器端 SPIFFE 接口的唯一页面，也是唯一能报告其中两个不可见接口的页面。本服务是每个信任领域一个信任域的签发机构（spiffe.trustDomain，默认 `example.org`；运行时创建的领域以其自己的 DNS 域为初始值，并且只有在其 spiffe.enabled 打开时才绑定自己的套接字——以下描述的是默认领域）：下面的捆绑包端点是普通 HTTPS；SPIFFE Workload API（gRPC 服务 SpiffeWorkloadAPI，七个方法中的五个）位于 spiffe.workloadSocket 处的 Unix 套接字上——`/tmp/spire-agent/public/api.sock`，这是 SPIRE 自己的路径，也是 SPIFFE_ENDPOINT_SOCKET 对每个真实客户端的含义——以及 TCP spiffe.workloadPort（8092）上；SPIRE Server API（Entry、Agent、Bundle、SVID、TrustDomain 和 Debug，42 个方法中的 36 个）位于 TCP spiffe.serverPort（8181，因为 SPIRE 自己的 8081 是本服务的 HTTP 端口）上，并可选地位于其自己的套接字上；SPIFFE Broker API（spiffe.broker.API，#170）位于 TCP spiffe.brokerPort 上，使用双向 TLS，默认关闭。全部都是原始套接字：本页面通过遍历 Express 路由器构建，无法看到它们，因此它们的状态由 GET /spiffe 和 /admin/spiffe 报告，而不是在这里。那个页面的大部分内容是哪些被检查、哪些没有——节点证明会被验证或拒绝，Unix 套接字的工作负载会被证明（#40），TCP 调用方仅凭其传输方式、端点和源地址识别，因此在产品模式下只在声明会对源地址进行身份验证的网络上提供服务（#166），任何地方都没有吊销——目录确实会在某个身份的最后一个注册条目被删除、或其代理被封禁或删除时记录 `spiffeCredentialStatus`，但那并不是吊销：没有任何东西会读回它，也没有任何证书会因此被拒绝——而另一方面，是 SPIRE Server API 完整的按方法授权表，其 TCP 端口无条件地使用带 X509-SVID 的双向 TLS——因为从这些接口出来的是另一个服务会相信的凭据。添加 ?format=json。"
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /spiffe。"
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "签发一个 wctx，并为该端点能颁发的每种形式提供完整的登录请求"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "说明页面：各端点、四种绑定，以及按服务提供方划分的元数据如何运作。GET /sts 和 GET /wsfed 出于同样的原因以同样的方式应答——对一个只想知道它是什么的人返回 400 的端点，会给人留下糟糕的第一印象。"
+    "en": "525652beb87f8922",
+    "text": "说明页面：各端点、四种绑定，以及按服务提供方划分的元数据如何运作。GET /sts 和 GET /wsfed 出于同样的原因以同样的方式应答——对一个只想知道它是什么的人返回 400 的端点，会给人留下糟糕的第一印象。自 #584 起在浏览器中绘制；?format=json，或偏好 JSON 的 Accept，以数据形式返回其视图。"
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /saml2。"
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "签发一个 RelayState，并提供完整的 AuthnRequest，分别要求以 HTTP POST、HTTP Redirect 和 HTTP Artifact 返回响应"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "说明页面：各端点、两种浏览器配置文件，以及 SAML 1.1 与 2.0 拼写不同之处的列表——正是这些使它成为一个独立的实现而不是一个标志。GET /saml2、GET /sts 和 GET /wsfed 以同样的方式应答。"
+    "en": "0958618bfca15378",
+    "text": "说明页面：各端点、两种浏览器配置文件，以及 SAML 1.1 与 2.0 拼写不同之处的列表——正是这些使它成为一个独立的实现而不是一个标志。GET /saml2、GET /sts 和 GET /wsfed 以同样的方式应答。自 #584 起在浏览器中绘制；?format=json，或偏好 JSON 的 Accept，以数据形式返回其视图。"
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584)。六个协议族说明页面的运行时和渲染器，合为一个文件，由 build-typescript.sh 构建（common/description-pages-spa.js），并以预压缩形式在每个协议族自己的路径上提供：在这里，它根据外壳携带的视图绘制 GET /saml11。"
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",

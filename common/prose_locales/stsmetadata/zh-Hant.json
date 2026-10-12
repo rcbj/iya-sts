@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "說明 PDP、存放庫與內嵌 PEP，並以「需要」欄位說明此系列中每個端點需要哪個角色。?format=json 以資料形式提供相同內容。在 xacml.enabled 為關閉時也會回應，讓用戶端能發現本服務支援 XACML 但目前並未啟用——但它與下方三個端點一樣需要 XACML_USER，因此只有本服務允許的呼叫端才能進行此探索。未獲允許者會得到一個指名該群組與該設定的 403，而這正是他們需要的那部分頁面。"
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /xacml。它與頁面一樣要求 XACML_USER。"
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "POST 一個 JSON Profile 請求，取得一個 JSON Profile 回應。這裡涉及兩個身分，而且它們不是同一個。呼叫端由本服務驗證的用戶端憑證進行驗證，並解析為持有 XACML_USER 的目錄項目——這決定誰可以驅動引擎。決策所「針對」的主體則在請求中，連線上的任何資訊都不會影響它：PDP 並非授權邊界，它回答的是關於他人授權的問題，若針對持有憑證者做決策，那就是另一種元件了。格式錯誤的請求會得到 400 而不是 Indeterminate——Indeterminate 是「關於」某個請求的回答，而 400 表示根本沒有可供回答的請求。"
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "這「不是」SSF 端點——真正的傳輸器不會發布任何這些內容。說明這個框架的「用途」（SAML 與 OpenID Connect 只在「某一瞬間」進行驗證，之後無論發生什麼，依賴方都會持有工作階段數小時）、端點、兩種事件類型及其每個成員、全部八種 RFC 9493 主體格式並各附一例、六個複合主體成員、驗證機制、目前存在的串流、十種讓它失敗的做法，以及五件它刻意不做的事。最先該讀的一點：SSF 是管道而不是詞彙——它定義了兩個自己的事件，都與管道有關，而 CAEP 與 RISC 則是在其上使用的詞彙。加上 ?format=json。"
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /ssf。"
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "一個路徑與五個方法，這是規格本身的形狀：設定端點「就是」資源。POST 建立串流——本服務產生 stream_id 並設定 iss，並以 events_delivered 回應，即接收者所要求的與此傳輸器所支援的「交集」，這是最常與 events_requested 混淆的成員。GET 讀取一個（?stream_id=）或列出全部。PUT 為「取代」而 PATCH 為「合併」，兩者的差異是真實的：行為像 PATCH 的 PUT 會讓接收者以為自己已清除 events_requested，實際上卻沒有。DELETE 將其移除。除 GET 外皆需要 ssf:write。"
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "這「不是」SCIM 端點——真正的伺服器不會發布任何這些內容。說明佈建介面是什麼、它寫入哪裡（內嵌目錄，逐項對應）、SCIM id 在此是什麼（項目的 DN，以及重新命名時的代價）、它提供的每種驗證機制及其背後的存取控制原則、它刻意不做的事，以及十幾種讓它失敗的做法。在將任何東西指向它之前，有兩點值得先讀：這些端點會建立與刪除帳戶，而且是此處唯一需要認證資訊的介面——但在開發模式下幾乎不檢查這些認證資訊，因為任何人都能取得具有任一範圍的權杖，除了「invalid」之外任何密碼都能通過 Basic，任何人都能註冊 HOBA 金鑰（產品模式會驗證 Basic、不提供 Digest，且只允許已登入的擁有者註冊金鑰）；以及 active:false 會「停用帳戶」——即每道門都會拒絕的密碼原則鎖定。加上 ?format=json。"
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /scim。"
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "這是描述全部三個伺服器端 SPIFFE 介面的唯一頁面，也是唯一能回報其中兩個不可見介面的頁面。本服務是每個信任領域一個信任網域的簽發授權單位（spiffe.trustDomain，預設為 `example.org`；執行階段建立的領域會以自己的 DNS 網域初始化，且只有在其 spiffe.enabled 開啟時才繫結自己的通訊端——以下描述的是預設領域）：下方的「套件端點」是純 HTTPS；「SPIFFE WORKLOAD API」（gRPC 服務 SpiffeWorkloadAPI，七個方法中的五個）位於 spiffe.workloadSocket 的「UNIX 通訊端」——`/tmp/spire-agent/public/api.sock`，這是 SPIRE 自己的路徑，也是 SPIFFE_ENDPOINT_SOCKET 對每個真實用戶端的意義——以及 TCP spiffe.workloadPort（8092）；「SPIRE SERVER API」（Entry、Agent、Bundle、SVID、TrustDomain 與 Debug，42 個方法中的 36 個）位於 TCP spiffe.serverPort（8181，因為 SPIRE 自己的 8081 是本服務的 HTTP 連接埠），並可選擇另設自己的通訊端；「SPIFFE BROKER API」（spiffe.broker.API，#170）位於 TCP spiffe.brokerPort，相互 TLS，預設關閉。全部都是原始通訊端：此頁面是走訪 Express 路由器建立的，看不到它們，因此它們的狀態由 GET /spiffe 與 /admin/spiffe 回報，而不是在這裡。那個頁面的大部分內容都在說明哪些有檢查、哪些沒有——節點證明會被驗證或拒絕，Unix 通訊端的工作負載會被證明（#40），TCP 呼叫端僅以其傳輸、端點與來源位址識別，因此在產品模式下只在宣告會驗證來源位址的網路上提供服務（#166），任何地方都沒有撤銷——目錄確實會在最後一個註冊項目被刪除、或其代理程式被封鎖或刪除的身分上記錄 `spiffeCredentialStatus`，但那並不是撤銷：沒有任何東西會讀回它，也沒有任何憑證因此被拒絕——而在另一方面，則是 SPIRE Server API 的「完整」逐方法授權表，其 TCP 連接埠無條件地使用搭配 X509-SVID 的「相互 TLS」——因為從這些介面產出的是另一個服務會信任的認證資訊。加上 ?format=json。"
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /spiffe。"
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "產生一個 wctx，並針對端點能簽發的每種形式提供完整的登入請求"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "說明頁面：端點、四種繫結，以及各服務提供者中繼資料的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。"
+    "en": "525652beb87f8922",
+    "text": "說明頁面：端點、四種繫結，以及各服務提供者中繼資料的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /saml2。"
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "產生一個 RelayState，並提供一個完整的 AuthnRequest，要求以 HTTP POST、HTTP Redirect 與 HTTP Artifact 傳回回應"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "說明頁面：端點、兩種瀏覽器設定檔，以及 SAML 1.1 與 2.0 拼寫不同之處的清單——這正是使它成為獨立實作而非一個旗標的主要原因。GET /saml2、GET /sts 與 GET /wsfed 以相同方式回應。"
+    "en": "0958618bfca15378",
+    "text": "說明頁面：端點、兩種瀏覽器設定檔，以及 SAML 1.1 與 2.0 拼寫不同之處的清單——這正是使它成為獨立實作而非一個旗標的主要原因。GET /saml2、GET /sts 與 GET /wsfed 以相同方式回應。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584)。六個協定族說明頁面的執行環境和轉譯器，合為一個檔案，由 build-typescript.sh 建置（common/description-pages-spa.js），並以預先壓縮的形式在每個協定族自己的路徑上提供：在這裡，它根據外殼攜帶的檢視繪製 GET /saml11。"
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",

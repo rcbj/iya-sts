@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "PDP:n, förrådet och den inbäddade PEP:n, beskrivna, med en Kräver-kolumn som anger vilken roll varje slutpunkt i den här familjen vill ha. ?format=json för samma sak som data. Svarar medan xacml.enabled är AV, så att en klient kan upptäcka att den här tjänsten talar XACML och inte gör det just nu — men den KRÄVER XACML_USER liksom de tre nedanför, så upptäckten är till för en anropare som den här tjänsten släpper in. En som inte släpps in får ett 403 som namnger gruppen och inställningen, vilket är den del av sidan de behöver."
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /xacml utifrån vyn som dess skal bär. Den KRÄVER XACML_USER, liksom sidan."
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "POSTa en begäran i JSON Profile, få ett svar i JSON Profile. TVÅ IDENTITETER ÄR INBLANDADE OCH DE ÄR INTE SAMMA. ANROPAREN autentiseras med ett klientcertifikat som den här tjänsten verifierar, upplöst till en katalogpost som innehar XACML_USER — det avgör vem som får driva motorn. SUBJEKTET som beslutet GÄLLER finns i begäran och ingenting på anslutningen når det: en PDP är ingen auktoriseringsgräns, den besvarar en fråga om någon annans, och en som beslutade om den som innehade certifikatet vore en annan komponent. En felformad begäran ger 400 snarare än Indeterminate — ett Indeterminate är ett svar OM en begäran och ett 400 säger att det inte fanns någon begäran att svara om."
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "INTE en SSF-slutpunkt — en riktig sändare publicerar inget av detta. Vad ramverket är TILL FÖR (SAML och OpenID Connect autentiserar vid ETT ÖGONBLICK, och den förlitande parten håller sedan en session i timmar vad som än händer därefter), slutpunkterna, båda händelsetyperna med varje medlem, alla åtta subjektformat i RFC 9493 med ett exempel på vart och ett, de sex komplexa subjektmedlemmarna, autentiseringsschemana, de strömmar som finns just nu, de tio saker du kan göra för att få den att misslyckas och de fem saker den avsiktligt inte gör. Den att läsa först: SSF ÄR RÖRET OCH INTE VOKABULÄREN — det definierar två egna händelser, båda om röret, och CAEP och RISC är de vokabulärer som talas över det. Lägg till ?format=json."
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /ssf utifrån vyn som dess skal bär."
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "En sökväg och fem metoder, vilket är specifikationens egen form: konfigurationsslutpunkten ÄR resursen. POST skapar en ström — den här tjänsten präglar stream_id och sätter iss, och svarar med events_delivered, SNITTET mellan vad mottagaren begärde och vad den här sändaren stöder, vilket är den medlem som oftast förväxlas med events_requested. GET läser en (?stream_id=) eller listar alla. PUT ERSÄTTER och PATCH SLÅR SAMMAN, och skillnaden är verklig: en PUT som betedde sig som en PATCH skulle låta en mottagare tro att den hade tömt events_requested när den inte hade det. DELETE tar bort den. Kräver ssf:write för allt utom GET."
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "INTE en SCIM-slutpunkt — en riktig server publicerar inget av detta. Vad provisioneringsytan är, vad den skriver till (den inbäddade katalogen, post för post), vad ett SCIM-id är här (postens DN, och vad det kostar vid ett namnbyte), varje autentiseringsschema den erbjuder med åtkomstkontrollpolicyn bakom dem, de saker den avsiktligt inte gör och det dussintal saker du kan göra för att få den att misslyckas. Två är värda att läsa innan du riktar något mot den: DESSA SLUTPUNKTER SKAPAR OCH TAR BORT KONTON OCH ÄR DEN ENDA YTAN HÄR SOM KRÄVER EN INLOGGNINGSUPPGIFT — samtidigt som nästan ingenting om den kontrolleras i utvecklingsläge, eftersom vem som helst kan få en token med vilket omfång som helst, vilket lösenord som helst utom \"invalid\" godtas av Basic och vem som helst kan registrera en HOBA-nyckel (produktläge verifierar Basic, erbjuder ingen Digest och låter endast en inloggad ägare registrera en nyckel); och active:false INAKTIVERAR KONTOT — det lösenordspolicylås som varje dörr nekar. Lägg till ?format=json."
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /scim utifrån vyn som dess skal bär."
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "DEN ENDA SIDAN SOM BESKRIVER ALLA TRE SPIFFE-YTORNA PÅ SERVERSIDAN, och den enda som kan rapportera de två osynliga. Den här tjänsten är den utfärdande myndigheten för en förtroendedomän per förtroendesfär (spiffe.trustDomain, `example.org` som standard; en sfär som skapas vid körning seedas med sin egen DNS-domän och binder egna socketar endast när dess spiffe.enabled är på — det som följer beskriver standardsfärens): BUNDLE-SLUTPUNKTEN nedan är vanlig HTTPS; SPIFFE WORKLOAD API (gRPC-tjänsten SpiffeWorkloadAPI, fem av sju metoder) finns på en UNIX-SOCKET på spiffe.workloadSocket — `/tmp/spire-agent/public/api.sock`, som är SPIRE:s egen sökväg och vad SPIFFE_ENDPOINT_SOCKET betyder för varje riktig klient — och på TCP spiffe.workloadPort (8092); SPIRE SERVER API (Entry, Agent, Bundle, SVID, TrustDomain och Debug, 36 av 42 metoder) finns på TCP spiffe.serverPort (8181, eftersom SPIRE:s egen 8081 är den här tjänstens HTTP-port) och valfritt på en egen socket; SPIFFE BROKER API (spiffe.broker.API, #170) finns på TCP spiffe.brokerPort, ömsesidig TLS, avstängt som standard. RÅA SOCKETAR, allihop: den här sidan byggs genom att gå igenom Express-routern och kan inte se en, så deras tillstånd rapporteras av GET /spiffe och på /admin/spiffe snarare än här. DET MESTA AV DEN SIDAN HANDLAR OM VAD SOM KONTROLLERAS OCH INTE — nodattestering verifierad eller nekad och Unix-socketens arbetslast attesterad (#40), en TCP-anropare identifierad enbart av sin transport, slutpunkt och källadress och därför betjänad i produktläge endast på ett nätverk som deklarerats autentisera källadresser (#166), ingen återkallelse någonstans — katalogen registrerar visserligen en `spiffeCredentialStatus` på en identitet vars sista registreringspost raderats eller vars agent bannlysts eller raderats, och det är ingen återkallelse: ingenting läser tillbaka den och inget certifikat nekas på grund av den — och, på andra sidan, HELA auktoriseringstabellen per metod för SPIRE Server API, vars TCP-port är ÖMSESIDIG TLS med ett X509-SVID, villkorslöst — eftersom det som kommer ut ur dessa ytor är en inloggningsuppgift som en annan tjänst kommer att tro på. Lägg till ?format=json."
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /spiffe utifrån vyn som dess skal bär."
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "skapar en wctx och erbjuder en fullständig inloggningsbegäran för varje form som slutpunkten kan utfärda"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "En beskrivningssida: slutpunkterna, de fyra bindningarna och hur metadata per tjänsteleverantör fungerar. GET /sts och GET /wsfed svarar på samma sätt av samma skäl — en slutpunkt som svarar 400 till någon som ville veta vad den var ger ett dåligt första intryck."
+    "en": "525652beb87f8922",
+    "text": "En beskrivningssida: slutpunkterna, de fyra bindningarna och hur metadata per tjänsteleverantör fungerar. GET /sts och GET /wsfed svarar på samma sätt av samma skäl — en slutpunkt som svarar 400 till någon som ville veta vad den var ger ett dåligt första intryck. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /saml2 utifrån vyn som dess skal bär."
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "skapar en RelayState och erbjuder en fullständig AuthnRequest som ber om svaret på HTTP POST, HTTP Redirect och HTTP Artifact"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "En beskrivningssida: slutpunkterna, de två webbläsarprofilerna och listan över vad SAML 1.1 stavar annorlunda än 2.0 — vilket är det mesta av det som gör detta till en separat implementation snarare än en flagga. GET /saml2, GET /sts och GET /wsfed svarar på samma sätt."
+    "en": "0958618bfca15378",
+    "text": "En beskrivningssida: slutpunkterna, de två webbläsarprofilerna och listan över vad SAML 1.1 stavar annorlunda än 2.0 — vilket är det mesta av det som gör detta till en separat implementation snarare än en flagga. GET /saml2, GET /sts och GET /wsfed svarar på samma sätt. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584). Körmiljön och renderarna för de sex protokollfamiljernas beskrivningssidor i en fil, byggd av build-typescript.sh (common/description-pages-spa.js) och serverad förkomprimerad på varje familjs egen sökväg: här ritar den GET /saml11 utifrån vyn som dess skal bär."
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",

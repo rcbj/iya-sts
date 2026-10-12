@@ -19,6 +19,10 @@
     "en": "1184e17250970dab",
     "text": "Kung ano ang XACML surface"
   },
+  "endpoints.route./xacml/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
+  },
   "endpoints.route./xacml/pdp.name": {
     "en": "a372155e5808a3ef",
     "text": "Isang desisyon"
@@ -231,6 +235,10 @@
     "en": "29eb248f16235183",
     "text": "Kung ano ang Shared Signals surface"
   },
+  "endpoints.route./ssf/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
+  },
   "endpoints.route./ssf/stream.name": {
     "en": "b0a8d86b9e533735",
     "text": "Ang stream management API"
@@ -270,6 +278,10 @@
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
     "text": "Kung ano ang SCIM surface"
+  },
+  "endpoints.route./scim/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
   },
   "endpoints.route./scim/v2/ServiceProviderConfig.name": {
     "en": "e7267904e2f73e0c",
@@ -418,6 +430,10 @@
   "endpoints.route./spiffe.name": {
     "en": "04302eb70b6b3d39",
     "text": "Kung ano ang mga SPIFFE surface"
+  },
+  "endpoints.route./spiffe/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
   },
   "endpoints.route./spiffe/bundle.name": {
     "en": "dfc63f78fe42ef9e",
@@ -1179,6 +1195,10 @@
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
   },
+  "endpoints.route./saml2/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
+  },
   "endpoints.route./saml2/metadata.name": {
     "en": "99a0d84a3683fb71",
     "text": "Identity provider metadata"
@@ -1238,6 +1258,10 @@
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Kung ano ang profile"
+  },
+  "endpoints.route./saml11/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Ang script ng description page"
   },
   "endpoints.route./saml11/metadata.name": {
     "en": "99a0d84a3683fb71",

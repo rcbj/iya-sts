@@ -731,6 +731,10 @@
     "en": "c6327138add686ae",
     "text": "Inilalarawan ang PDP, ang repository at ang embedded PEP, na may column na Requires na nagsasabi kung aling role ang hinihingi ng bawat endpoint sa family na ito. ?format=json para sa parehong bagay bilang data. Sumasagot habang naka-OFF ang xacml.enabled, para matuklasan ng client na nagsasalita ng XACML ang serbisyong ito at hindi ito ginagawa sa ngayon — pero NANGANGAILANGAN ito ng XACML_USER gaya ng tatlo sa ibaba nito, kaya ang pagtuklas ay para sa caller na tinatanggap ng serbisyong ito. Ang hindi tinatanggap ay nakakakuha ng 403 na nagpapangalan sa group at sa setting, na siyang bahagi ng page na ito na kailangan nila."
   },
+  "stsmetadata.endpoints./xacml/description.js.what": {
+    "en": "a807903524b2006e",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /xacml mula sa view na dala ng shell nito. NANGANGAILANGAN ito ng XACML_USER, gaya ng page."
+  },
   "stsmetadata.endpoints./xacml/pdp.what": {
     "en": "db9b88a22acf9b28",
     "text": "Mag-POST ng JSON Profile request, makakuha ng JSON Profile response. DALAWANG IDENTITY ANG KASANGKOT AT HINDI SILA IISA. Ang CALLER ay ina-authenticate ng client certificate na vine-verify ng serbisyong ito, nire-resolve sa isang directory entry na may hawak na XACML_USER — iyon ang nagpapasya kung sino ang puwedeng magpatakbo ng engine. Ang SUBJECT na PINAG-UUSAPAN ng desisyon ay nasa request at walang anuman sa connection ang umaabot dito: hindi authorization boundary ang PDP, sumasagot ito ng tanong tungkol sa boundary ng iba, at ang PDP na nagpapasya tungkol sa sinumang may hawak ng certificate ay ibang component na. Ang malformed na request ay 400 sa halip na Indeterminate — ang Indeterminate ay sagot TUNGKOL sa isang request at ang 400 ay nagsasabing walang request na masasagot."
@@ -943,6 +947,10 @@
     "en": "4ab9b96a8fb6f78b",
     "text": "HINDI SSF endpoint — walang inilalathalang ganito ang tunay na transmitter. Kung PARA SAAN ang framework (nag-a-authenticate ang SAML at OpenID Connect sa ISANG SANDALI, at pagkatapos ay may hawak na session ang relying party nang ilang oras anuman ang mangyari), ang mga endpoint, ang parehong event type kasama ang bawat member, lahat ng walong RFC 9493 subject format na may halimbawa ng bawat isa, ang anim na complex-subject member, ang mga authentication scheme, ang mga stream na umiiral ngayon, ang sampung bagay na magagawa mo para mabigo ito, at ang limang bagay na sadyang hindi nito ginagawa. Ang dapat basahin muna: ANG SSF AY ANG TUBO AT HINDI ANG BOKABULARYO — tinutukoy nito ang dalawang sariling event, parehong tungkol sa tubo, at ang CAEP at RISC ang mga bokabularyong sinasalita rito. Idagdag ang ?format=json."
   },
+  "stsmetadata.endpoints./ssf/description.js.what": {
+    "en": "5ed7b41865d7a5d5",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /ssf mula sa view na dala ng shell nito."
+  },
   "stsmetadata.endpoints./ssf/stream.what": {
     "en": "2d90440012723310",
     "text": "Isang path at limang method, na siyang sariling hugis ng specification: ANG configuration endpoint ANG resource. Gumagawa ng stream ang POST — ginagawa ng serbisyong ito ang stream_id at itinatakda ang iss, at sumasagot ng events_delivered, ang INTERSECTION ng hiniling ng receiver at ng sinusuportahan ng transmitter na ito, na siyang member na madalas mapagkamalang events_requested. Binabasa ng GET ang isa (?stream_id=) o inililista silang lahat. Ang PUT ay NAGPAPALIT at ang PATCH ay NAGSASAMA, at totoo ang pagkakaiba: ang PUT na kumilos na parang PATCH ay magpapaniwala sa receiver na na-clear nito ang events_requested gayong hindi. Binubura ito ng DELETE. Kailangan ng ssf:write para sa lahat maliban sa GET."
@@ -982,6 +990,10 @@
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "HINDI SCIM endpoint — walang inilalathalang ganito ang tunay na server. Kung ano ang provisioning surface, kung saan ito nagsusulat (ang embedded directory, entry sa entry), kung ano ang SCIM id dito (ang DN ng entry, at kung ano ang kapalit nito sa pag-rename), bawat authentication scheme na iniaalok nito kasama ang access control policy sa likod ng mga ito, ang mga bagay na sadyang hindi nito ginagawa, at ang dosenang bagay na magagawa mo para mabigo ito. Dalawa ang dapat basahin bago ituro ang anuman dito: ANG MGA ENDPOINT NA ITO AY GUMAGAWA AT NAGBUBURA NG MGA ACCOUNT AT SILA ANG NAG-IISANG SURFACE DITO NA NANGANGAILANGAN NG CREDENTIAL — habang halos walang sinusuri tungkol dito sa development mode, dahil kahit sino ay makakakuha ng token na may alinmang scope, anumang password maliban sa \"invalid\" ay pumapasa sa Basic at kahit sino ay makakapagrehistro ng HOBA key (vine-verify ng product mode ang Basic, walang iniaalok na Digest at tanging ang naka-sign-in na may-ari lang ang makakapagrehistro ng key); at ang active:false ay NAGDI-DISABLE NG ACCOUNT — ang password-policy lock na tinatanggihan ng bawat pinto. Idagdag ang ?format=json."
+  },
+  "stsmetadata.endpoints./scim/description.js.what": {
+    "en": "b54944bbf42b2fdd",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /scim mula sa view na dala ng shell nito."
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -1154,6 +1166,10 @@
   "stsmetadata.endpoints./spiffe.what": {
     "en": "9a86a750959145c2",
     "text": "ANG NAG-IISANG PAGE NA NAGLALARAWAN SA LAHAT NG TATLONG SERVER-SIDE SPIFFE SURFACE, at ang nag-iisang kayang mag-ulat sa dalawang hindi nakikita. Ang serbisyong ito ang issuing authority para sa isang trust domain bawat trust realm (spiffe.trustDomain, `example.org` bilang default; ang realm na ginawa sa runtime ay sini-seed ng sarili nitong DNS domain at nagba-bind ng sariling mga socket lang kapag naka-on ang spiffe.enabled nito — ang sumusunod ay naglalarawan sa default realm): ang BUNDLE ENDPOINT sa ibaba ay plain HTTPS; ang SPIFFE WORKLOAD API (ang gRPC service na SpiffeWorkloadAPI, lima sa pitong method) ay nasa UNIX SOCKET sa spiffe.workloadSocket — `/tmp/spire-agent/public/api.sock`, na siyang sariling path ng SPIRE at siyang ibig sabihin ng SPIFFE_ENDPOINT_SOCKET sa bawat tunay na client — at sa TCP spiffe.workloadPort (8092); ang SPIRE SERVER API (Entry, Agent, Bundle, SVID, TrustDomain at Debug, 36 sa 42 method) ay nasa TCP spiffe.serverPort (8181, dahil ang sariling 8081 ng SPIRE ay ang HTTP port ng serbisyong ito) at opsyonal sa sarili nitong socket; ang SPIFFE BROKER API (spiffe.broker.API, #170) ay nasa TCP spiffe.brokerPort, mutual TLS, naka-off bilang default. RAW SOCKET, bawat isa: binubuo ang page na ito sa paglalakad sa Express router at hindi nito makikita ang isa, kaya iniuulat ang estado nila ng GET /spiffe at sa /admin/spiffe sa halip na dito. KARAMIHAN NG PAGE NA IYON AY KUNG ANO ANG SINUSURI AT HINDI — vine-verify o tinatanggihan ang node attestation at ina-attest ang workload ng Unix socket (#40), ang TCP caller ay kinikilala lang ayon sa transport, endpoint at source address nito at kaya inihahain sa product lang sa network na idineklarang nag-a-authenticate ng mga source address (#166), walang revocation saanman — itinatala nga ng directory ang `spiffeCredentialStatus` sa identity na binura ang huling registration entry o na-ban o binura ang agent, at hindi iyon revocation: walang bumabasa nito pabalik at walang certificate na tinatanggihan dahil dito — at, sa kabilang panig, ang BUONG per-method authorization table para sa SPIRE Server API, na ang TCP port ay MUTUAL TLS na may X509-SVID, nang walang kondisyon — dahil ang lumalabas sa mga surface na ito ay credential na paniniwalaan ng ibang serbisyo. Idagdag ang ?format=json."
+  },
+  "stsmetadata.endpoints./spiffe/description.js.what": {
+    "en": "11c9feeec0916232",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /spiffe mula sa view na dala ng shell nito."
   },
   "stsmetadata.endpoints./spiffe/bundle.what": {
     "en": "58e1f4f938fb8ca0",
@@ -2124,8 +2140,12 @@
     "text": "nagmi-mint ng wctx at nag-aalok ng kumpletong sign-in request para sa bawat hugis na kayang ibigay ng endpoint"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "Isang description page: ang mga endpoint, ang apat na binding, at kung paano gumagana ang per-service-provider na metadata. Ganito rin sumasagot ang GET /sts at GET /wsfed sa parehong dahilan — ang endpoint na nagbabalik ng 400 sa taong gusto lang malaman kung ano ito ay masamang unang impresyon."
+    "en": "525652beb87f8922",
+    "text": "Isang description page: ang mga endpoint, ang apat na binding, at kung paano gumagana ang per-service-provider na metadata. Ganito rin sumasagot ang GET /sts at GET /wsfed sa parehong dahilan — ang endpoint na nagbabalik ng 400 sa taong gusto lang malaman kung ano ito ay masamang unang impresyon. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
+  },
+  "stsmetadata.endpoints./saml2/description.js.what": {
+    "en": "01deba474b564069",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /saml2 mula sa view na dala ng shell nito."
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
@@ -2212,8 +2232,12 @@
     "text": "nagmi-mint ng RelayState at nag-aalok ng kumpletong AuthnRequest na humihingi ng response sa HTTP POST, HTTP Redirect at HTTP Artifact"
   },
   "stsmetadata.endpoints./saml11.what": {
-    "en": "f780240aad5a76cd",
-    "text": "Isang description page: ang mga endpoint, ang dalawang browser profile, at ang listahan ng mga bagay na iba ang baybay sa SAML 1.1 kumpara sa 2.0 — na siyang karamihan sa dahilan kung bakit hiwalay itong implementasyon sa halip na flag. Ganito rin sumasagot ang GET /saml2, GET /sts at GET /wsfed."
+    "en": "0958618bfca15378",
+    "text": "Isang description page: ang mga endpoint, ang dalawang browser profile, at ang listahan ng mga bagay na iba ang baybay sa SAML 1.1 kumpara sa 2.0 — na siyang karamihan sa dahilan kung bakit hiwalay itong implementasyon sa halip na flag. Ganito rin sumasagot ang GET /saml2, GET /sts at GET /wsfed. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
+  },
+  "stsmetadata.endpoints./saml11/description.js.what": {
+    "en": "3ffc0f098b2d5b13",
+    "text": "NON-SPEC (#584). Ang runtime at mga renderer ng mga description page ng anim na protocol family, sa iisang file na binuo ng build-typescript.sh (common/description-pages-spa.js) at inihahain nang naka-precompress sa sariling path ng bawat family: dito iginuguhit nito ang GET /saml11 mula sa view na dala ng shell nito."
   },
   "stsmetadata.endpoints./saml11/metadata.what": {
     "en": "c19357910bac07cf",
