@@ -123,7 +123,7 @@ class VcDemoSurface extends WebSurface {
     super(env, { base: '/issuer', api: '/vc-demo-api',
                  pages: WebVcDemoPages.PAGES as Json,
                  namespaces: ['vcDemo'],
-                 frame: WebVcDemoPages.frame });
+                 frame: WebVcDemoPages.frame, brand: '' });
     this.poll = new DemoPoll(this);
     this.mayAct = false;
   }
