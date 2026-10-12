@@ -128,7 +128,10 @@ after a submission that Chrome would hold to `form-action`.
 Every POST is bound: the form's `csrf` must be the session's token
 (constant-time), a fresh session is refused, and an `Origin`, when sent, must
 be the companion's own. The session cookie is `HttpOnly; SameSite=Lax`, and
-`Secure` when `COMPANION_PUBLIC_URL` is https.
+`Secure` when `COMPANION_PUBLIC_URL` is https. **`Referrer-Policy: same-origin`, not
+`no-referrer`**: under `no-referrer` Chrome posts a form with `Origin: null`,
+and the Origin check refused the companion's own start — found driving the
+pages over CDP, which is why that drive is part of the change.
 
 ## Rules it keeps, and does not
 
