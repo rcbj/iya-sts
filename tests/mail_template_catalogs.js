@@ -242,8 +242,15 @@ async function run(t) {
           'D. de, with no catalog, falls through to English');
   t.check(walk('password-reset', 'de, sv;q=0.5', 'en') === 'sv',
           'D. and a later preference a catalog answers is read');
-  t.check(walk('password-reset', 'de', 'es') === 'es',
+  // A bare `es` is maximised to es-Latn-ES (CLDR's likely subtags,
+  // `common/i18n.ts`), so the Spain overlay answers first where it has the
+  // message and the base where it does not; either is the realm's default
+  // before English. address-verification is one es-ES leaves to the base.
+  t.check(walk('address-verification', 'de', 'es') === 'es',
           'D. the realm\'s default language before English');
+  t.check(walk('password-reset', 'de', 'es') === 'es-ES',
+          'D. and a bare es reads the Spain overlay where it has the ' +
+          'message, as a bare fr reads France');
   t.check(walk('password-reset', 'tl', 'en') === 'fil',
           'D. tl is Filipino');
   t.check(MailTemplates.builtInFor('password-reset', 'en') === null,
