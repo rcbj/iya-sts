@@ -4,7 +4,7 @@
   "tileRequirements": "requisitos que cambia",
   "tileDevOnly": "ajustes solo de desarrollo",
   "tileIgnored": "guardados e ignorados aquí",
-  "about1": "<code>global.mode</code> dice lo que ES este dominio: <strong>development</strong>, una simulación que pone a prueba a un cliente diciendo que sí, o <strong>product</strong>, las mismas implementaciones de protocolos sin la permisividad.",
+  "about1": "<code>global.mode</code> dice lo que ES este dominio: <strong>development</strong>, que pone a prueba a un cliente diciendo que sí, o <strong>product</strong>, las mismas implementaciones de protocolos sin la permisividad.",
   "about2": "Se establece por dominio de confianza en ",
   "aboutConfigLink": "Configuración",
   "about3": " (el grupo Global); esta página no cambia nada.",

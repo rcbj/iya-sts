@@ -1,6 +1,6 @@
 {
   "logoAlt": "IYA STS — Security Token Service",
-  "sub": "A permissive mock identity service that speaks sixteen protocol families. It exists to exercise CLIENTS.",
+  "sub": "An identity service that speaks sixteen protocol families. It exists to exercise CLIENTS.",
   "version": "version {version}",
   "warn": "It checks no password, validates no access token and attests no workload. Do not put this port on a public address.",
   "repoLabel": "The project on GitHub",

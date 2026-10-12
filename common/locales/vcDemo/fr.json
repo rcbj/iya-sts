@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — diplôme numérique",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — diplôme numérique",
+  "issuer.heading": "Example University",
   "issuer.intro": "Félicitations pour l’obtention de votre diplôme. Votre diplôme est disponible sous forme d’attestation numérique (<code>{configuration}</code>) que vous pouvez conserver dans votre portefeuille.",
   "issuer.request": "Demander votre diplôme numérique",
   "issuer.requestByReference": "Le demander (offre par référence)",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "Afficher un code QR (l’émission prend un peu de temps)",
   "issuer.meta": "Ceci est la page web de l’émetteur d’attestations de l’annexe H d’OID4VCI. Les deux premiers liens construisent une offre d’attestation et vous envoient vers votre portefeuille à <code>{wallet}</code> (H.1, même appareil). Les deux autres transmettent l’offre par code QR et un code de transaction — H.2, et H.3 lorsque l’émetteur a besoin de temps pour produire l’attestation. L’émetteur est <code>{issuer}</code>.",
   "offer.starting": "Préparation de votre offre d’attestation…",
-  "offer.title": "Mock University — scannez pour recevoir votre attestation",
+  "offer.title": "Example University — scannez pour recevoir votre attestation",
   "offer.heading": "Scannez ceci avec votre portefeuille",
   "offer.ready": "Votre diplôme numérique est prêt à être réclamé.",
   "offer.readyDeferred": "Votre diplôme numérique est prêt à être réclamé, mais il nous faudra un peu de temps pour l’émettre une fois que vous l’aurez demandé.",

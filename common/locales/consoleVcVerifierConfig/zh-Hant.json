@@ -1,6 +1,6 @@
 {
   "intro1": "位於 ",
-  "intro2": " 的模擬驗證方（頁面稱之為 <em>The Bar Door</em>）向錢包索取什麼，以及採用哪種憑證格式。它作為下一個 OID4VP Authorization Request 的 <code>dcql_query</code> 傳送出去，驗證方隨後也據此檢查出示內容：被索取但未出示的宣告會在 <em>Requested claims</em> 檢查中依名稱判為失敗。",
+  "intro2": " 的示範驗證方（頁面稱之為 <em>The Bar Door</em>）向錢包索取什麼，以及採用哪種憑證格式。它作為下一個 OID4VP Authorization Request 的 <code>dcql_query</code> 傳送出去，驗證方隨後也據此檢查出示內容：被索取但未出示的宣告會在 <em>Requested claims</em> 檢查中依名稱判為失敗。",
   "catalogue1": "這些宣告與 ",
   "catalogue2": " 填入憑證所用的目錄相同，但依<strong>宣告</strong>分組，而不是依屬性類型列出。憑證中每個頂層宣告對應一個 Disclosure，因此無論有多少 LDAP 屬性為其提供資料，<code>address</code> 都是一個揭露單位——索取它會同時得到街道、地區、省份、郵遞區號和國家；一個提供六個地址核取方塊的頁面，提供的是線路上並不存在的選擇。",
   "asks1": "<strong>這裡只是索取，不會放任何人進入。</strong>向這扇門出示憑證不會啟動工作階段、不會簽發權杖，也不會授予存取權——門只會說「是」，僅此而已。用錢包登入是另一扇門 <code>/authn/wallet</code>，它用自己的請求索取本領域簽發的憑證，不在這裡設定（",

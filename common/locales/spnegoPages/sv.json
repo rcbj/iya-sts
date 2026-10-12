@@ -17,7 +17,7 @@
   "advert.mechanisms": "Godkända mekanismer",
   "advert.notInExchange": "Notera vad som <em>inte</em> finns i utbytet: realmen, KDC:n och SPN:en. Klienten härleder SPN:en från URL:ens värdnamn och hittar KDC:n i sin egen konfiguration, så ett SPNEGO-fel är oftast ett DNS- eller SPN-problem som inte lämnar några spår alls på nätverket. SPN:en som den här tjänsten har en nyckel för står ovan; en biljett för något annat namn avvisas med <code>KRB_AP_ERR_NOT_US</code>.",
   "advert.misconfig": "Avsiktliga felkonfigurationer",
-  "advert.misconfigLead": "Lägg till dessa på <code>/spnego/protected</code> för att få förhandlingen att gå fel på ett specifikt sätt — vilket är vad den här simulatorn är till för:",
+  "advert.misconfigLead": "Lägg till dessa på <code>/spnego/protected</code> för att få förhandlingen att gå fel på ett specifikt sätt — vilket är vad den här demonstrationen är till för:",
   "advert.mic": "— svara med <code>request-mic</code>, så att mechListMIC-utbytet blir obligatoriskt och handskakningen kräver en andra rundresa.",
   "advert.mech": "— stödja inget av det klienten erbjuder, så att förhandlingen slutar i <code>reject</code> utan förklaring, precis som protokollet kräver.",
   "advert.mutual": "— godta biljetten och inte skicka någon AP-REP, så att klienten är autentiserad men inte har bevisat något om servern.",

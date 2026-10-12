@@ -17,7 +17,7 @@
   "advert.mechanisms": "接受的机制",
   "advert.notInExchange": "注意交换中<em>没有</em>什么：领域、KDC 和 SPN。客户端从 URL 的主机名推导出 SPN，并从自己的配置中找到 KDC，因此 SPNEGO 失败通常是 DNS 或 SPN 问题，在线路上不留任何证据。本服务持有密钥的 SPN 见上文；任何其他名称的票据都会以 <code>KRB_AP_ERR_NOT_US</code> 被拒绝。",
   "advert.misconfig": "故意的错误配置",
-  "advert.misconfigLead": "把这些加到 <code>/spnego/protected</code> 上，让协商以某种特定方式出错 — 这正是这个模拟服务的用途：",
+  "advert.misconfigLead": "把这些加到 <code>/spnego/protected</code> 上，让协商以某种特定方式出错 — 这正是这个演示的用途：",
   "advert.mic": "— 用 <code>request-mic</code> 回应，使 mechListMIC 交换成为必需，握手需要第二次往返。",
   "advert.mech": "— 不支持客户端提供的任何机制，使协商以 <code>reject</code> 结束且不作任何解释，完全符合协议要求。",
   "advert.mutual": "— 接受票据但不发回 AP-REP，使客户端通过了认证，却对服务器一无所证。",

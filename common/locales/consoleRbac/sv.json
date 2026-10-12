@@ -27,7 +27,7 @@
   "body.typedHeading": "Tilldela till ett namn som inte finns i listan",
   "body.name": "Namn",
   "body.typedPlaceholder": "namnet personen kommer att logga in som",
-  "body.typedNote": "Medlemskapet HÄNGER LÖST tills personen finns — det pekar på ett DN som katalogen ännu inte har — och rollen gäller från deras första inloggning. Det är det intressanta fallet för en attrapp och därför finns formuläret: inget i en tilldelning kräver att personen har setts. Ett namn med ett tecken som RFC 4514 reserverar i ett DN nekas, samma nekande som när en person skapas.",
+  "body.typedNote": "Medlemskapet HÄNGER LÖST tills personen finns — det pekar på ett DN som katalogen ännu inte har — och rollen gäller från deras första inloggning. Det är det intressanta fallet för testning och därför finns formuläret: inget i en tilldelning kräver att personen har setts. Ett namn med ett tecken som RFC 4514 reserverar i ett DN nekas, samma nekande som när en person skapas.",
   "body.readOnlyNote": "Att tilldela och återkalla kräver <strong>Admin Write</strong>. Tabellen ovan är det du kan se med <strong>Admin Read</strong>.",
   "body.person": "Person",
   "body.filterPlaceholder": "del av ett namn",

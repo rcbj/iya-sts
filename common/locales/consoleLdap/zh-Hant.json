@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} 次登入<br>{people} 人",
   "fed.intro": "<code>{container}</code> 下共 {count} 個，最多 {max} 個：本服務接受其判斷提示的外部身分識別提供者，以及本服務向其發出判斷提示的外部服務提供者。一個關係對應一個方向，因此雙向的合作夥伴是兩個項目。",
   "fed.tileRelationships": "關係",
-  "fed.warn": "<strong>在這裡執行 ldapmodify 是一項安全性變更，這一點對此目錄中的其他任何容器都不成立。</strong><code>fedSigningCertificate</code> 決定本服務相信誰的判斷提示；<code>fedEnabled</code> 用於啟用合作夥伴。在這裡的其他地方，編輯只會改變本服務發出的內容，而且對此目錄的每次繫結都會成功——所以這個容器和其他部分一樣毫無保護。這是模擬服務的真實狀態，也是為什麼同盟是這裡唯一預設拒絕的功能。",
+  "fed.warn": "<strong>在這裡執行 ldapmodify 是一項安全性變更，這一點對此目錄中的其他任何容器都不成立。</strong><code>fedSigningCertificate</code> 決定本服務相信誰的判斷提示；<code>fedEnabled</code> 用於啟用合作夥伴。在這裡的其他地方，編輯只會改變本服務發出的內容，而且對此目錄的每次繫結都會成功——所以這個容器和其他部分一樣毫無保護。這是開發模式的真實狀態，也是為什麼同盟是這裡唯一預設拒絕的功能。",
   "fed.thRelationship": "關係",
   "fed.placeholder": "ID、DN、通訊協定或方向",
   "fed.thDirection": "方向",

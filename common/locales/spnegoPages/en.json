@@ -17,7 +17,7 @@
   "advert.mechanisms": "Mechanisms accepted",
   "advert.notInExchange": "Note what is <em>not</em> in the exchange: the realm, the KDC, and the SPN. The client derives the SPN from the URL’s host name and finds the KDC from its own configuration, so a SPNEGO failure is usually a DNS or SPN problem that leaves no evidence on the wire at all. The SPN this service holds a key for is above; a ticket for any other name is refused with <code>KRB_AP_ERR_NOT_US</code>.",
   "advert.misconfig": "Deliberate misconfigurations",
-  "advert.misconfigLead": "Add these to <code>/spnego/protected</code> to make the negotiation go wrong in one specific way — which is what this mock is for:",
+  "advert.misconfigLead": "Add these to <code>/spnego/protected</code> to make the negotiation go wrong in one specific way — which is what this demonstration is for:",
   "advert.mic": "— answer with <code>request-mic</code>, so the mechListMIC exchange becomes mandatory and the handshake takes a second round trip.",
   "advert.mech": "— support nothing the client offers, so the negotiation ends in <code>reject</code> with no explanation, exactly as the protocol requires.",
   "advert.mutual": "— accept the ticket and send no AP-REP, so the client is authenticated and has proved nothing about the server.",

@@ -15,7 +15,7 @@
   "whyEnoent": "Filen finns inte. För en tjänst i UTVECKLINGSläge är det normalt: inget sparas, så nyckelkrypteringsnyckeln läses aldrig och filen den pekar på behöver inte finnas. I produktläge är det en tjänst som inte skulle starta.",
   "whyEacces": "Filen finns och den här processen får inte läsa den. Kontrollera ägarskapet för monteringen snarare än sökvägen.",
   "whyTimeout": "Lagringen svarade inte inom <code>keys.storeProbeTimeoutMs</code>. Det begränsar en sond och inte sidan, så de andra nedan tillfrågades ändå.",
-  "whySdk": "SDK:t för den här leverantören är inte installerat. Det är medvetet inget beroende för tjänsten — den är i första hand en attrapp, och fem moln-SDK:er som ingen använder skulle följa med varje installation — så meddelandet ovan anger vilket paket som ska installeras.",
+  "whySdk": "SDK:t för den här leverantören är inte installerat. Det är medvetet inget beroende för tjänsten — fem moln-SDK:er som ingen använder skulle följa med varje installation — så meddelandet ovan anger vilket paket som ska installeras.",
   "tookMs": "{ms} ms",
   "unavailableTookMs": "ej tillgänglig, {ms} ms",
   "didNotAnswer": "Den svarade inte",

@@ -17,7 +17,7 @@
   "advert.mechanisms": "Mecanismos aceptados",
   "advert.notInExchange": "Fíjese en lo que <em>no</em> está en el intercambio: el reino, el KDC y el SPN. El cliente deriva el SPN del nombre de host de la URL y encuentra el KDC en su propia configuración, así que un fallo de SPNEGO suele ser un problema de DNS o de SPN que no deja ninguna evidencia en la red. El SPN para el que este servicio tiene una clave está arriba; un ticket para cualquier otro nombre se rechaza con <code>KRB_AP_ERR_NOT_US</code>.",
   "advert.misconfig": "Configuraciones erróneas deliberadas",
-  "advert.misconfigLead": "Añada estos a <code>/spnego/protected</code> para que la negociación falle de una forma concreta, que es para lo que sirve este simulador:",
+  "advert.misconfigLead": "Añada estos a <code>/spnego/protected</code> para que la negociación falle de una forma concreta, que es para lo que sirve esta demostración:",
   "advert.mic": "— responder con <code>request-mic</code>, de modo que el intercambio del mechListMIC pasa a ser obligatorio y el handshake requiere un segundo viaje de ida y vuelta.",
   "advert.mech": "— no admitir nada de lo que ofrece el cliente, de modo que la negociación termina en <code>reject</code> sin explicación, exactamente como exige el protocolo.",
   "advert.mutual": "— aceptar el ticket y no enviar ningún AP-REP, de modo que el cliente queda autenticado sin haber demostrado nada sobre el servidor.",

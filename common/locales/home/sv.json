@@ -1,6 +1,6 @@
 {
   "logoAlt": "IYA STS — säkerhetstokentjänst",
-  "sub": "En tillåtande låtsastjänst för identitet som talar sexton protokollfamiljer. Den finns för att pröva KLIENTER.",
+  "sub": "En identitetstjänst som talar sexton protokollfamiljer. Den finns för att pröva KLIENTER.",
   "version": "version {version}",
   "warn": "Den kontrollerar inga lösenord, validerar inga åtkomsttoken och intygar inga arbetslaster. Lägg inte den här porten på en offentlig adress.",
   "repoLabel": "Projektet på GitHub",

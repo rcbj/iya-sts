@@ -177,7 +177,7 @@
   "essentialA": "<strong>Marcado como esencial y aun así ausente:</strong> ",
   "essentialB": ". Sigue sin ser un error — <code>essential</code> es una declaración sobre lo que hará el CLIENTE sin el claim, no una instrucción a este servidor. Se registra en nivel warn para que pueda encontrarse.",
   "mismatchA": "<strong>Se pidió un valor y se tiene otro distinto:</strong> ",
-  "mismatchB": ". Se devuelve el valor QUE SE TIENE. Este servicio podría devolver como eco lo que una solicitud le pidiera afirmar y deliberadamente no lo hace: todo lo que dice de una persona viene del directorio o del personaje inventado, y una simulación que diera la razón a la solicitud no serviría para probar nada.",
+  "mismatchB": ". Se devuelve el valor QUE SE TIENE. Este servicio podría devolver como eco lo que una solicitud le pidiera afirmar y deliberadamente no lo hace: todo lo que dice de una persona viene del directorio o del personaje inventado, y un servicio que diera la razón a la solicitud no serviría para probar nada.",
   "requestEntryFound": "{user} tiene una entrada bajo <code>ou=users</code>, así que un valor marcado como <em>directory</em> es lo que lee un <code>ldapsearch</code>.",
   "requestNoEntry": "{user} no tiene entrada en el directorio, así que cada valor de arriba se inventa a partir del nombre de usuario — la misma persona inventada cada vez, entre reinicios.",
   "colClaimId": "Id de claim",

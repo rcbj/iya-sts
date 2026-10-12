@@ -15,7 +15,7 @@
   "whyEnoent": "Walang ganoong file. Sa isang serbisyong nasa DEVELOPMENT mode, karaniwan iyon: walang naka-persist, kaya hindi kailanman binabasa ang key-encryption key at hindi kailangang umiral ang file na tinutukoy nito. Sa product mode, ito ay serbisyong hindi magsisimula.",
   "whyEacces": "Nandoon ang file at hindi ito puwedeng basahin ng prosesong ito. Suriin ang may-ari ng mount sa halip na ang path.",
   "whyTimeout": "Hindi sumagot ang store sa loob ng <code>keys.storeProbeTimeoutMs</code>. Isang probe lang ang nililimitahan nito at hindi ang pahina, kaya tinanong pa rin ang iba sa ibaba.",
-  "whySdk": "Hindi naka-install ang SDK ng provider na ito. Sadya itong hindi dependency ng serbisyong ito — mock muna ito, at limang cloud SDK na walang gumagamit ang dadalhin ng bawat install — kaya pinapangalanan ng mensahe sa itaas ang package na dapat i-install.",
+  "whySdk": "Hindi naka-install ang SDK ng provider na ito. Sadya itong hindi dependency ng serbisyong ito — limang cloud SDK na walang gumagamit ang dadalhin ng bawat install — kaya pinapangalanan ng mensahe sa itaas ang package na dapat i-install.",
   "tookMs": "{ms}ms",
   "unavailableTookMs": "hindi available, {ms}ms",
   "didNotAnswer": "Hindi ito sumagot",

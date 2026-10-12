@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — 數位學位證書",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — 數位學位證書",
+  "issuer.heading": "Example University",
   "issuer.intro": "恭喜您畢業。您的學位證書可作為數位憑證（<code>{configuration}</code>）保存在您的錢包中。",
   "issuer.request": "申請您的數位學位證書",
   "issuer.requestByReference": "申請（以參照傳遞要約）",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "顯示 QR 碼（簽發需要一些時間）",
   "issuer.meta": "這是 OID4VCI 附錄 H 中憑證簽發者的網頁。前兩個連結會建立憑證要約，並將您送往位於 <code>{wallet}</code> 的錢包（H.1，同一裝置）。另外兩個連結改以 QR 碼和交易碼傳遞要約——H.2，以及簽發者需要時間產生憑證時的 H.3。簽發者為 <code>{issuer}</code>。",
   "offer.starting": "正在準備您的憑證要約…",
-  "offer.title": "Mock University — 掃描以接收您的憑證",
+  "offer.title": "Example University — 掃描以接收您的憑證",
   "offer.heading": "用您的錢包掃描此碼",
   "offer.ready": "您的數位學位證書已可領取。",
   "offer.readyDeferred": "您的數位學位證書已可領取，不過在您申請後，我們需要一點時間來簽發。",

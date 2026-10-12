@@ -27,7 +27,7 @@
   "body.typedHeading": "Grant to a name that is not listed",
   "body.name": "Name",
   "body.typedPlaceholder": "the name they will sign in as",
-  "body.typedNote": "The membership will DANGLE until that person exists — it names a DN this directory does not hold yet — and the role counts from the moment they first sign in. That is the interesting case for a mock and is why this form is here: nothing about a grant requires the person to have been seen. A name carrying a character RFC 4514 reserves in a DN is refused, the same refusal creating a person gets.",
+  "body.typedNote": "The membership will DANGLE until that person exists — it names a DN this directory does not hold yet — and the role counts from the moment they first sign in. That is the interesting case for testing and is why this form is here: nothing about a grant requires the person to have been seen. A name carrying a character RFC 4514 reserves in a DN is refused, the same refusal creating a person gets.",
   "body.readOnlyNote": "Granting and revoking need <strong>Admin Write</strong>. The table above is what you can see with <strong>Admin Read</strong>.",
   "body.person": "Person",
   "body.filterPlaceholder": "part of a name",
