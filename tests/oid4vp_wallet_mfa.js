@@ -98,19 +98,22 @@ function childMain() {
       const presentation = w.presentSdJwt(credential, holder,
                                           one.requestObject.nonce, aud);
       await w.respond(one, presentation, { format: 'dc+sd-jwt' });
-      // The poll's answer (#574); a second factor it names is that step's
-      // page, fetched as a browser follows the address it was given.
+      // The poll's answer (#574); a second factor it names is read as the
+      // 303 to that step's page a browser follows (#572: `stepAt()` opens
+      // it as the sign-in surface does).
       let page = await w.collect(who, one);
       if (page.json && page.json.next === 'mfa' && page.json.location) {
-        page = await w.request('GET', w.pathOf(page.json.location),
-                               { browser: who });
+        page = { status: 303, json: page.json,
+                 text: JSON.stringify(page.json),
+                 headers: { location: String(page.json.location) } };
       }
       return { who: who, page: page, one: one,
                session: w.sessionOf(who) };
     }
 
-    // THE STEP A WALLET SIGN-IN NAMES (#572): the wallet door answers a
-    // 303 to the second-factor step's page, a page of the sign-in surface,
+    // THE STEP A WALLET SIGN-IN NAMES (#572): the wallet's poll names the
+    // second-factor step's page (read as a 303 above), a page of the
+    // sign-in surface,
     // which is opened as the browser opens it — its shell, then its view.
     async function stepAt(who, page) {
       const at = String((page.headers && page.headers.location) || '');
