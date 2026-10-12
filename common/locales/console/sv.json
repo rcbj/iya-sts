@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "Registreringsposter",
   "nav.spiffe-agents": "Agenter",
   "nav.spiffe-brokers": "Mäklare",
+  "nav.cert-issuance": "Certifikatutfärdande",
+  "nav.spiffe-trust-domain": "Förtroendedomän",
   "nav.tls": "TLS / ömsesidig TLS",
   "nav.tls-trust": "Förtroendelager för klientcertifikat",
   "nav.users": "Användare",

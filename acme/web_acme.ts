@@ -437,7 +437,9 @@ class AcmePage {
         'class="sub">' + t.html('consoleAcme.product') + ' ' +
         esc(json.mode.product) + '</div>') +
       '<h2>' + t.html('consoleAcme.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings, '/admin/acme', undefined, t) +
+      SettingsForms.forms(json.settings,
+                          '/admin/cert-issuance#cert-tab-acme', undefined,
+                          t) +
       '<p class="links"><a href="/admin/acme?format=json">JSON</a> · ' +
       '<code>GET /admin-api/acme</code> · <a ' +
       'href="/admin/acme/monitor">' + t.html('consoleAcme.linkMonitor') +

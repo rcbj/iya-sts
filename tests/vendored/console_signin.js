@@ -646,32 +646,21 @@ async function signInToTheConsole(base, user, log2, options) {
       // members their page row names, fetched beside the main operation and
       // merged in under each member's name — what the runtime's draw does.
       // Without them the renderer throws "missing a tab view".
+      // Each member is asked as the runtime asks it (`composeRequests()`,
+      // 2026-10-12): under the names its own operation reads, which on
+      // Protocols → Cert issuance are not the page's.
       if (known && known.compose && answer.status === 200 && answer.json) {
-        const members = Object.keys(known.compose).filter(function (member) {
-          const when = (known.composeWhen || {})[member];
-          return !when ||
-            (known.composeAlways || []).indexOf(member) >= 0 ||
-            when.some(function (name) {
-              return Object.prototype.hasOwnProperty.call(asked, name);
-            });
-        });
-        const answers = await Promise.all(members.map(function (member) {
-          const params = {};
-          ((known.composeWhen || {})[member] || []).forEach(function (name) {
-            if (Object.prototype.hasOwnProperty.call(asked, name)) {
-              params[name] = asked[name];
-            }
-          });
-          const search = new URLSearchParams(params).toString();
-          return api("GET", known.compose[member] +
-                            (search ? "?" + search : ""));
+        const members = table.composeRequests(known, asked);
+        const answers = await Promise.all(members.map(function (one) {
+          const search = new URLSearchParams(one.params).toString();
+          return api("GET", one.operation + (search ? "?" + search : ""));
         }));
         const json = Object.assign({}, answer.json);
         answers.forEach(function (one, index) {
           assert.ok(one.status === 200 && one.json,
-                    known.compose[members[index]] + " answered " +
+                    members[index].operation + " answered " +
                     one.status + " composing " + path);
-          json[members[index]] = one.json;
+          json[members[index].member] = one.json;
         });
         return Object.assign({}, answer, { json: json });
       }

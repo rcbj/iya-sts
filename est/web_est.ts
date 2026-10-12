@@ -326,7 +326,9 @@ class EstPage {
       '</th></tr></thead><tbody>' + certificateRows + '</tbody></table>' +
       nav.foot +
       '<h2>' + t.html('consoleEst.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings, '/admin/est', undefined, t) +
+      SettingsForms.forms(json.settings,
+                          '/admin/cert-issuance#cert-tab-est', undefined,
+                          t) +
       '<p class="links"><a href="/admin/est?format=json">JSON</a> · ' +
       '<code>GET /admin-api/est</code> · <a href="/admin/est/monitor">' +
       t.html('consoleEst.linkMonitor') +

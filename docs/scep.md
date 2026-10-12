@@ -56,7 +56,7 @@ profile. It is shown once and cannot be shown again.
 * **A person** makes one for themselves on the user portal, at
   `/portal/certificates`.
 * **An administrator** makes one for any person or application in the realm on
-  Protocols → Cert issuance → SCEP (`/admin/scep`), or through the management API:
+  Protocols → Cert issuance → SCEP (`/admin/cert-issuance#cert-tab-scep`), or through the management API:
 
 ```bash
 curl -s -X POST https://host:8081/admin-api/scep/create-challenge \
@@ -74,7 +74,7 @@ entry it names**: a request naming anybody else in its subjectAltName is refused
 
 ### For the realm: Protocols → Cert issuance → SCEP
 
-The SCEP page of the console (`/admin/scep`) holds the realm's server: the
+The SCEP tab of the console (`/admin/cert-issuance#cert-tab-scep`) holds the realm's server: the
 endpoints (main port and plain-HTTP), the SCEP Issuing CA and the RA
 certificate, the profiles, the **challenge passwords** (make one for a person
 or an application, delete one), the **registered host names**, and the
@@ -298,7 +298,7 @@ Monitoring → Cert issuance → SCEP enrollments (`/admin/scep/monitor`) as an
 ## Configuration
 
 Every `scep.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → SCEP**
-(`/admin/scep`).
+(`/admin/cert-issuance#cert-tab-scep`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|

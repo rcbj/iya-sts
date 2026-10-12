@@ -417,7 +417,9 @@ class ScepPage {
       this.sectionProfiles(json, t) +
       this.sectionChallenges(ctx, json) + this.sectionHostNames(json, t) +
       this.sectionCertificates(ctx, json) + this.sectionExceptions(json, t) +
-      SettingsForms.forms(json.settings, '/admin/scep', undefined, t) +
+      SettingsForms.forms(json.settings,
+                          '/admin/cert-issuance#cert-tab-scep', undefined,
+                          t) +
       '<p class="links"><a href="/admin/scep?format=json">JSON</a> · ' +
       '<code>GET /admin-api/scep</code> · <a href="/admin/scep/monitor">' +
       t.html('consoleScep.linkMonitor') + '</a> · ' +

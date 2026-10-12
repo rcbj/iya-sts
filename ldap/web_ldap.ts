@@ -396,7 +396,8 @@ class LdapPage {
                agents: json.agentsContainer }) + ' ' +
       '<a href="/spiffe">' + t.html('consoleLdap.spiffe.introWhat') +
       '</a> &middot; ' +
-      '<a href="/admin/spiffe">' + t.html('consoleLdap.spiffe.introConsole') +
+      '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
+      t.html('consoleLdap.spiffe.introConsole') +
       '</a>' + t.html('consoleLdap.common.period') + '</p>' +
       '<div class="tiles">' +
       kit.tile(json.entries, t.text('consoleLdap.spiffe.tileEntries')) +
@@ -479,7 +480,7 @@ class LdapPage {
       '</table>' +
       '<p class="sub"><a href="/admin/ldap/spiffe?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
-      '<a href="/admin/spiffe/entries">' +
+      '<a href="/admin/cert-issuance#cert-spiffe-entries">' +
       t.html('consoleLdap.spiffe.footEntries') + '</a> &middot; ' +
       '<a href="/admin/ldap/directory">' +
       t.html('consoleLdap.common.footEveryEntry') + '</a> &middot; <a ' +

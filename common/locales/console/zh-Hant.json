@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "註冊項目",
   "nav.spiffe-agents": "代理程式",
   "nav.spiffe-brokers": "代理商",
+  "nav.cert-issuance": "憑證簽發",
+  "nav.spiffe-trust-domain": "信任網域",
   "nav.tls": "TLS / 雙向 TLS",
   "nav.tls-trust": "用戶端憑證信任存放區",
   "nav.users": "使用者",

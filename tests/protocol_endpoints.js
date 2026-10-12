@@ -115,8 +115,8 @@ function childMain() {
     table.pages().forEach(function (page) {
       const rows = table.forPage(fakeReq(page), page);
       const http = rows.filter(function (row) { return row.route; });
-      if (!rows.length && ['/admin/authorization-servers',
-                           '/admin/spiffe/entries'].indexOf(page) < 0) {
+      if (!rows.length &&
+          ['/admin/authorization-servers'].indexOf(page) < 0) {
         empty.push(page);
       }
       http.forEach(function (row) {
@@ -254,6 +254,28 @@ function childMain() {
            'the combined Kerberos page owns its protocol endpoints',
            'pages=' + kerberosPages.join(', ') + '; routes=' +
            kerberos.join(', '));
+
+      // PROTOCOLS → CERT ISSUANCE (2026-10-12): one page lists ACME's,
+      // EST's, SCEP's and SPIFFE's endpoints (the sockets too, where SPIFFE
+      // is on, which it is not here); its seven former pages list none.
+      const certFormer = ['/admin/acme', '/admin/est', '/admin/scep',
+                          '/admin/spiffe', '/admin/spiffe/entries',
+                          '/admin/spiffe/agents', '/admin/spiffe/brokers'];
+      const cert = table.forPage(
+        fakeReq('/admin/cert-issuance'), '/admin/cert-issuance');
+      const certRoutes = cert.filter(function (row) { return row.route; })
+        .map(function (row) { return row.route; });
+      note(table.pages().indexOf('/admin/cert-issuance') >= 0 &&
+           certFormer.every(function (page) {
+             return table.pages().indexOf(page) < 0;
+           }) &&
+           ['/enroll/acme/directory', '/.well-known/est/cacerts',
+            '/enroll/scep', '/spiffe', '/spiffe/bundle']
+             .every(function (route) {
+               return certRoutes.indexOf(route) >= 0;
+             }),
+           'the combined Cert issuance page owns its protocol endpoints',
+           'routes=' + certRoutes.join(', '));
 
       const ldap = table.forPage(fakeReq('/admin/ldap'), '/admin/ldap');
       note(ldap.length > 0 && ldap.every(function (row) {

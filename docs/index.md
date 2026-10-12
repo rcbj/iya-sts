@@ -106,8 +106,7 @@ documents it.
 | WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) |
 | WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) |
 | PKI | `/admin/pki` | [PKI](pki.md) |
-| Certificate enrollment | `/admin/acme`, `/admin/est`, `/admin/scep` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md) |
-| SPIFFE | `/admin/spiffe`, `/admin/spiffe/entries`, `/admin/spiffe/agents` | [SPIFFE](spiffe.md) |
+| Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) |
 | TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) |
 
 ## Start here

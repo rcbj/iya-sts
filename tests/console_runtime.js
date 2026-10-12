@@ -37,6 +37,9 @@
 //      family, and an empty paste field through the mirrored API operation.
 //   9. The Verifiable Credentials page composes all six tabs, and forwards
 //      status paging to its operation.
+//  10. Protocols → Cert issuance asks each tab's operation with that
+//      operation's own names (`estCertificatesPage` is EST's
+//      `certificatesPage`), and every tab and SPIFFE sub-tab is drawn.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -428,6 +431,39 @@ function childMain() {
     note(pagedStatus.indexOf('/admin-api/vc-status?page=2&per=5') >= 0,
          '9b. VC status paging parameters reach the composed status operation',
          pagedStatus);
+
+    // --- 10. Cert issuance: each tab asked by its own names; old addresses -
+    const certCalls = [];
+    const certEnv = makeEnv('/admin/cert-issuance',
+      '?per=5&estCertificatesPage=2&entriesQ=web',
+      async function (url, init) {
+        certCalls.push(String(url));
+        return fetch(url, init);
+      });
+    runtime = new ConsoleRuntime(certEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const certHtml = certEnv.env.document.body.innerHTML;
+    const certAsked = function (operation) {
+      return certCalls.filter(function (url) {
+        return url.split('?')[0].slice(-operation.length) === operation;
+      })[0] || '';
+    };
+    note(certAsked('/admin-api/est').indexOf('certificatesPage=2') >= 0 &&
+         certAsked('/admin-api/est').indexOf('estCertificatesPage') < 0 &&
+         certAsked('/admin-api/scep').indexOf('certificatesPage') < 0 &&
+         certAsked('/admin-api/spiffe/entries').indexOf('q=web') >= 0 &&
+         certAsked('/admin-api/spiffe/agents').indexOf('q=') < 0 &&
+         ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+          'cert-tab-scep', 'cert-tab-spiffe', 'cert-spiffe-overview',
+          'cert-spiffe-entries', 'cert-spiffe-agents',
+          'cert-spiffe-brokers'].every(function (id) {
+           return certHtml.indexOf('id="' + id + '"') >= 0;
+         }),
+         '10a. each Cert issuance tab\'s operation is asked with its own ' +
+         'names, and every tab and SPIFFE sub-tab is drawn',
+         certCalls.join(' '));
+
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

@@ -158,30 +158,19 @@ function consolePage(root) {
       let json = answer.status === 200 && answer.json
         ? JSON.parse(JSON.stringify(answer.json)) : null;
       if (json && page.compose) {
-        const members = Object.keys(page.compose).filter(function (member) {
-          const when = (page.composeWhen || {})[member];
-          return !when ||
-            (page.composeAlways || []).indexOf(member) >= 0 ||
-            when.some(function (name) {
-              return Object.prototype.hasOwnProperty.call(q, name);
-            });
-        });
-        const answers = await Promise.all(members.map(function (member) {
-          const params = {};
-          ((page.composeWhen || {})[member] || []).forEach(function (name) {
-            if (Object.prototype.hasOwnProperty.call(q, name)) {
-              params[name] = q[name];
-            }
-          });
-          return call('GET', page.compose[member], params);
+        // The members as the runtime asks them (`composeRequests()`), each
+        // under the names its own operation reads.
+        const asked = WebPages.composeRequests(page, q);
+        const answers = await Promise.all(asked.map(function (one) {
+          return call('GET', one.operation, one.params);
         }));
         answers.forEach(function (one, index) {
           if (one.status !== 200 || !one.json ||
               typeof one.json !== 'object') {
-            throw new Error(page.compose[members[index]] + ' answered ' +
+            throw new Error(asked[index].operation + ' answered ' +
                             one.status);
           }
-          json[members[index]] = JSON.parse(JSON.stringify(one.json));
+          json[asked[index].member] = JSON.parse(JSON.stringify(one.json));
         });
       }
       const html = json

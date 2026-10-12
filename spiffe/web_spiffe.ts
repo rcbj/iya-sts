@@ -839,8 +839,9 @@ class SpiffePage {
       // them — the registration entries and the agents — are a STORE and are
       // edited on their own pages; these are the settings that decide what an
       // SVID minted against any entry looks like.
-      SettingsForms.forms(json.settingsForms, '/admin/spiffe',
-                         undefined, t);
+      SettingsForms.forms(json.settingsForms,
+                          '/admin/cert-issuance#cert-spiffe-overview',
+                          undefined, t);
     return inner;
   }
 

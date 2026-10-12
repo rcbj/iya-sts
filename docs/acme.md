@@ -59,7 +59,7 @@ An EAB key is issued for ONE entry:
 
 * **by the person themselves**, on the user portal;
 * **by an administrator, for any person or application in the realm** — on
-  **Protocols → Cert issuance → ACME** (`/admin/acme`), or through the management API:
+  **Protocols → Cert issuance → ACME** (`/admin/cert-issuance#cert-tab-acme`), or through the management API:
 
 ```bash
 curl -s -H "Authorization: Bearer $ADMIN_API_TOKEN" \
@@ -90,7 +90,7 @@ to that entry.
 ## Host names
 
 A `dns` or `ip` identifier is authorized only when it is registered on the entry
-the account is bound to. An administrator registers one on `/admin/acme`, or:
+the account is bound to. An administrator registers one on `/admin/cert-issuance#cert-tab-acme`, or:
 
 ```bash
 curl -s -H "Authorization: Bearer $ADMIN_API_TOKEN" \
@@ -106,7 +106,7 @@ The same registration serves EST and SCEP.
 
 ### For the realm: Protocols → Cert issuance → ACME
 
-The ACME page of the console (`/admin/acme`) holds everything about the
+The ACME tab of the console (`/admin/cert-issuance#cert-tab-acme`) holds everything about the
 realm's server: the directory URL, the endpoints, the ACME Issuing CA, the
 profiles, the **External Account Binding keys** (create one for a person or an
 application, delete one), the accounts, the certificates issued (each with a
@@ -305,7 +305,7 @@ realm's KDC).
 the certificate's own key (a `jwk` request). The reasons accepted are 0, 1, 3, 4,
 5 and 9 of RFC 5280; the serial goes on the ACME Issuing CA's CRL at
 `/pki/crl/<realm>/acme.crl` and its OCSP responder at `/pki/ocsp/<realm>/acme`
-answers `revoked`. An administrator can revoke any of them on `/admin/acme`.
+answers `revoked`. An administrator can revoke any of them on `/admin/cert-issuance#cert-tab-acme`.
 
 `GET /enroll/acme/renewal-info/<certID>` answers a window in the last third of
 the certificate's validity, or — for a revoked certificate — a window in the
@@ -314,7 +314,7 @@ past, which tells a client to renew now.
 ## Configuration
 
 Every `acme.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → ACME**
-(`/admin/acme`). **Monitoring → Cert issuance → ACME enrollments** shows what the server has
+(`/admin/cert-issuance#cert-tab-acme`). **Monitoring → Cert issuance → ACME enrollments** shows what the server has
 done.
 
 | Setting | Environment variable | Default | Runtime? | What it does |

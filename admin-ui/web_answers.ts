@@ -657,12 +657,12 @@ class WebAnswers {
     }
     if (answer.hmacKey) {
       return { title: t.text('consoleAnswers.once.eabKey'),
-               active: '/admin/acme',
+               active: '/admin/cert-issuance',
                html: WebAnswers.eabKey(answer, back, t) };
     }
     if (answer.challenge && page === '/admin/scep') {
       return { title: t.text('consoleAnswers.once.scep'),
-               active: '/admin/scep',
+               active: '/admin/cert-issuance',
                html: WebAnswers.scepChallenge(answer, back, t) };
     }
     if (page === '/admin/applications' && action === 'generate-did-key' &&
@@ -993,7 +993,8 @@ class WebAnswers {
       '<h2>certbot</h2><pre>' + kit.esc(result.certbot) + '</pre>' +
       '<p class="links"><a href="' + kit.esc(back) + '">' +
       t.html('consoleAnswers.back') + '</a> · ' +
-      '<a href="/admin/acme#eab">' + t.html('consoleAnswers.eab.backToAcme') +
+      '<a href="/admin/cert-issuance#eab">' +
+      t.html('consoleAnswers.eab.backToAcme') +
       '</a></p>';
   }
 

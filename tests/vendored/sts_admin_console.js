@@ -3830,7 +3830,7 @@ function writeForms(stamp) {
     // accepts, and a refusal means the page and the handler disagree. Reading
     // the domain off the page would make that assertion vacuous in the one
     // case it exists to catch.
-    { path: "/admin/spiffe/entries", button: "Create",
+    { path: "/admin/cert-issuance#cert-spiffe-entries", button: "Create",
       values: { spiffeId: "spiffe://" + REALM_DOMAIN + "/console/" +
                           stamp.slice(0, 8),
                 parentId: "spiffe://" + REALM_DOMAIN +
@@ -4014,6 +4014,10 @@ async function theHandlersNothingEverPressed(driver) {
 // TAB OF /admin/saml2, SINCE THE PROTOCOL PAGES WERE CONSOLIDATED INTO TABS
 // (2026-10-11); the fragment opens the tab.
 const PRINCIPALS_TAB = "/admin/kerberos#kerberos-tab-principals";
+// AND SPIFFE'S FOUR PAGES SUB-TABS OF PROTOCOLS → CERT ISSUANCE SINCE
+// 2026-10-12; the fragment opens the sub-tab.
+const SPIFFE_TAB = "/admin/cert-issuance#cert-spiffe-overview";
+const SPIFFE_ENTRIES_TAB = "/admin/cert-issuance#cert-spiffe-entries";
 const SAML_ASSERTIONS_TAB = "/admin/saml2#saml-tab-assertions";
 
 async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
@@ -5788,11 +5792,11 @@ async function theSpiffePageRotatesAndFederates(driver) {
   // 1. ROTATE. What it must do is change the authority's key — so the thing to
   //    read afterwards is the bundle, not the notice.
   const before = await apiJson("/realm/" + REALM + "/admin-api/spiffe");
-  await open(driver, realm("/admin/spiffe"));
+  await open(driver, realm(SPIFFE_TAB));
   const rotate = await formIndexPosting(driver, "rotate");
-  check("/admin/spiffe draws a rotate control", function () {
+  check(SPIFFE_TAB + " draws a rotate control", function () {
     assert.ok(rotate >= 0,
-      "/admin/spiffe should draw a control that rotates the signing " +
+      SPIFFE_TAB + " should draw a control that rotates the signing " +
       "authority; it draws none.");
   });
   await fillAndPress(driver, rotate, { which: "x509" });
@@ -5819,11 +5823,11 @@ async function theSpiffePageRotatesAndFederates(driver) {
   //    bundle is pushed in, never pulled (spiffe/CLAUDE.md) — so a domain
   //    that does not exist is the honest thing to set.
   const domain = "console-" + names.runStamp().slice(0, 8) + ".example";
-  await open(driver, realm("/admin/spiffe"));
+  await open(driver, realm(SPIFFE_TAB));
   const federate = await formIndexPosting(driver, "federation-set");
-  check("/admin/spiffe draws a federation control", function () {
+  check(SPIFFE_TAB + " draws a federation control", function () {
     assert.ok(federate >= 0,
-      "/admin/spiffe should draw a control that sets a foreign trust " +
+      SPIFFE_TAB + " should draw a control that sets a foreign trust " +
       "domain's bundle; it draws none.");
   });
   await fillAndPress(driver, federate, {
@@ -5847,10 +5851,10 @@ async function theSpiffePageRotatesAndFederates(driver) {
       JSON.stringify(status.body.federated).slice(0, 300));
   });
 
-  const redrawn = await open(driver, realm("/admin/spiffe"));
+  const redrawn = await open(driver, realm(SPIFFE_TAB));
   check("and the page draws it back", function () {
     assert.ok(redrawn.text.indexOf(domain) >= 0,
-      "/admin/spiffe must draw the federated trust domain " + domain +
+      SPIFFE_TAB + " must draw the federated trust domain " + domain +
       " after its own form set it; the service holds it and the page does " +
       "not mention it, which is the reader being told their change did not " +
       "happen.");
@@ -6430,7 +6434,7 @@ async function theConsoleRefusesWhatItShould(driver) {
       "this service already serves, and a realm by that name would shadow " +
       "the console itself the moment realms.pathSegment were cleared");
 
-  await pressAndBeRefused(driver, "/admin/spiffe/entries",
+  await pressAndBeRefused(driver, SPIFFE_ENTRIES_TAB,
       ["spiffeId", "parentId", "selectors"],
       { spiffeId: "not-a-spiffe-id", parentId: "spiffe://example.org/x",
         selectors: "unix:uid:1000" },

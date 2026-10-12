@@ -303,7 +303,7 @@ Three things follow:
   SPIFFE's four shared sockets — those answer in the default realm, and what a
   realm's own Issuing CA adds is a line in the chain saying who issued the SVID.
 * **A realm with no certificate authority still works.** It falls back to the
-  self-signed authority this service always had, and `/admin/spiffe` and `GET
+  self-signed authority this service always had, and `/admin/cert-issuance#cert-spiffe-overview` and `GET
   /spiffe` both say which one is in use. `pki.autoBuild: false` reaches that
   state deliberately.
 

@@ -63,7 +63,7 @@ certificates. The rules:
   `/.well-known/est/a/b/cacerts` — is refused 404 (`STS-EST-0022`), never
   read as a second realm or as a profile.
 * An unknown name in the label position is an unknown label: 404.
-* `/admin/est` in a realm, and `GET /realms` for every realm (`estLabelUrl`),
+* `/admin/cert-issuance#cert-tab-est` in a realm, and `GET /realms` for every realm (`estLabelUrl`),
   show the label-form address.
 
 | Profile (label) | Needs |
@@ -81,14 +81,14 @@ certificates. The rules:
 
 **Never issued over EST** (403): `root-ca`, `intermediate-ca`, `issuing-ca`,
 `ocsp-responder` and `kdc`. Each makes its holder an authority over everybody
-else in the realm; `/admin/est` gives the reason for each. An unknown label is
+else in the realm; `/admin/cert-issuance#cert-tab-est` gives the reason for each. An unknown label is
 404. `est.allowedProfiles` narrows the nine further per realm.
 
 ## Configuring EST
 
 ### For the realm: Protocols → Cert issuance → EST
 
-The EST page of the console (`/admin/est`) holds the realm's server: the
+The EST tab of the console (`/admin/cert-issuance#cert-tab-est`) holds the realm's server: the
 endpoints and every profile's labelled URLs, the EST Issuing CA, the
 profiles, the credentials EST accepts, **Issue a certificate with a
 server-generated key**, the **certificate host names**, the enrolled
@@ -195,7 +195,7 @@ base64 alice.csr.der | curl -s --cacert sts-root.pem \
 ```
 
 A **server certificate** needs its host name registered on the entry first
-(on `/admin/est`, or `POST /admin-api/est/add-host-name`), and the request must
+(on `/admin/cert-issuance#cert-tab-est`, or `POST /admin-api/est/add-host-name`), and the request must
 ask for it:
 
 ```sh
@@ -369,7 +369,7 @@ request asked for. The lifetime is `est.certificateLifetimeDays`.
 ## Configuration
 
 Every `est.*` setting is runtime and per trust realm, on **Protocols → Cert issuance → EST**
-(`/admin/est`).
+(`/admin/cert-issuance#cert-tab-est`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
@@ -432,7 +432,7 @@ value resolves and where it is changed — the console page, or
 
 ## Console and management API
 
-* **Protocols → Cert issuance → EST** (`/admin/est`): the endpoints and every profile's
+* **Protocols → Cert issuance → EST** (`/admin/cert-issuance#cert-tab-est`): the endpoints and every profile's
   labelled URLs, the EST Issuing CA, the credentials EST accepts, issuing with a
   server-generated key, certificate host names, the enrolled certificates with a
   Revoke on each, and the `est.*` settings.

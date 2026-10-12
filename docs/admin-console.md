@@ -166,8 +166,9 @@ The navigation is a grouped list down the left. Its five sections:
   (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
   PAC claims and Principals tabs), Federation, OpenID
   Federation, GNAP, the second factors, Kerberos, LDAP, WS-Trust,
-  WS-Federation, PKI, certificate
-  issuance (ACME, EST, SCEP and SPIFFE) and TLS.
+  WS-Federation, PKI, Cert issuance (Metadata, ACME, EST, SCEP and SPIFFE
+  tabs, the SPIFFE tab's sub-tabs the trust domain, registration entries,
+  agents and brokers) and TLS.
   [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
   SCIM's realm endpoint inventory is on its own Endpoints tab, separate from
