@@ -232,8 +232,8 @@
     "text": "可驗證憑證"
   },
   "listeners.applications.oid4vc.what": {
-    "en": "a1d8ad40056dfc8f",
-    "text": "OpenID4VCI、OpenID4VP、DID、狀態清單以及 VC-API 測試端點。"
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI、OpenID4VP、DID 以及狀態清單。"
   },
   "listeners.applications.scim.label": {
     "en": "98fe74b2a48a690f",
@@ -304,8 +304,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "ce095930c49505f7",
-    "text": "MS-KKDCP、SPNEGO 協商頁面以及主體。"
+    "en": "49ef797d2558967c",
+    "text": "MS-KKDCP 以及 Kerberos HTTP 檢視。"
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",

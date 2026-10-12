@@ -383,9 +383,10 @@ async function checkUnavailable(t) {
                                       'timeout'));
     } }).instance.nodeHealthView();
   t.check(view.ecs.available === false &&
-          view.ecs.errorCode === 'STS-CORE-0125' &&
+          view.ecs.errorCode === undefined &&
           /did not answer/.test(view.ecs.unavailableText),
-          'an ECS endpoint that does not answer is said, with its code',
+          'an ECS endpoint that does not answer is said, and its code ' +
+          '(STS-CORE-0125, logged) is not in the answer',
           JSON.stringify(view.ecs));
   t.check(view.machine && /NOT the container/.test(view.machine.text),
           'the machine\'s own figures are labelled as not the container\'s',

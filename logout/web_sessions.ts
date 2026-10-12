@@ -59,10 +59,22 @@ class SessionsPage {
     // What every paging link carries with it. The page number is not in here
     // — kit.pageNavPair() supplies that per link — and neither is `format`,
     // because JSON has no links in it.
+    // The unauthenticated section's page rides along too (#313), so paging
+    // one list leaves the other where the reader left it.
+    const anonPaging = json.unauthenticatedPaging;
     const filterParams = { q: (json.filter.q || ''),
       protocol: (json.filter.protocol || ''),
-                           per: ctx.query.per ? paging.perPage : '' };
-    const nav = kit.pageNavPair('/admin/sessions', filterParams, paging);
+                           per: ctx.query.per ? paging.perPage : '',
+                           anonymousPage: anonPaging && anonPaging.page > 1
+                             ? anonPaging.page : '' };
+    const nav = kit.pageNavPair('/admin/sessions', filterParams, paging, t);
+    const anonNav = anonPaging
+      ? kit.pageNavPair('/admin/sessions',
+                        Object.assign({}, filterParams,
+                                      { page: paging.page > 1
+                                          ? paging.page : '' }),
+                        anonPaging, t)
+      : { head: '', foot: '' };
     // Where a Revoke sends the reader back to: THIS page of THIS filter,
     // because the row above and below the one they ended is what they were
     // reading.
@@ -197,10 +209,10 @@ class SessionsPage {
           '</a>' + t.html('consoleSessions.offAfter'))) +
 
       (json.unauthenticatedHeld
-        ? '<table>' + thead +
+        ? anonNav.head + '<table>' + thead +
           json.unauthenticatedSessions.map(function (row) {
             return SessionsPage.sessionRow(t, row, nowMs, ctx.write, back);
-          }).join('') + '</table>' +
+          }).join('') + '</table>' + anonNav.foot +
           kit.note(t.html('consoleSessions.unauthCount', {
             n: json.unauthenticatedHeld, held: json.held }))
         : kit.note(t.html('consoleSessions.unauthNone'))) +

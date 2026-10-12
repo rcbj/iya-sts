@@ -3629,8 +3629,8 @@ function coordinate() {
 // console reader's language. Each is what `status()` and `describeDatabase()`
 // wrote inline until #543, byte for byte: the two notes are each the whole
 // sentence the concatenation made, the shared tail about what this service
-// mints included; the two TLS templates fill the connection string's own
-// `sslmode`, carried over.
+// mints included. The TLS sentences were rewritten after it (see below);
+// those with a placeholder fill the connection string's own `sslmode`.
 // ---------------------------------------------------------------------------
 const MINTED_TAIL = 'What this service MINTS — sessions, tokens, codes, ' +
   'artifacts, Kerberos tickets, the counters and the audit log — is ' +
@@ -3652,18 +3652,55 @@ const STATUS_PROSE = Object.freeze({
     'and will not see each other\'s writes until they restart. Set ' +
     'persistence.coordinate on a postgres store to change that. ' +
     MINTED_TAIL,
+  // WHAT THE CONNECTION IS, SAID THE WAY `persistence_postgres.dialOptions()`
+  // DIALS IT (#543 follow-up). Until then this table described libpq's
+  // reading of `sslmode` rather than this service's: a string with no
+  // `sslmode` was "NOT TLS", and `prefer` was TLS with nothing said about
+  // libpq's fallback to plaintext. Since #273 the `sslmode` parameter is
+  // STRIPPED and every string that is dialled at all is dialled over TLS, so
+  // no sslmode, `prefer` and `require` are the same connection, and
+  // `verify-ca` / `verify-full` verify nothing by themselves — whether the
+  // certificate is believed is `persistence.databaseTlsRejectUnauthorized`
+  // alone. Each sentence says which of those it is, because an operator who
+  // wrote `verify-full` and reads only "TLS, sslmode=verify-full" would
+  // believe the server authenticated when it is not.
   tlsVerified: 'TLS, sslmode={{sslmode}}; the server certificate is ' +
     'verified against this process\'s trust anchors.',
   tlsUnverified: 'TLS, sslmode={{sslmode}}; the server certificate is NOT ' +
     'verified (persistence.databaseTlsRejectUnauthorized is off), which is ' +
     'the honest setting for the self-signed pair the compose stack ' +
     'generates. The connection is encrypted either way.',
-  noTls: 'NOT TLS — the connection string does not ask for it. The compose ' +
-    'stack\'s database REFUSES a plaintext connection, because every host ' +
-    'rule in its pg_hba.conf is hostssl, so this configuration will not ' +
-    'connect there.',
-  tlsUnknown: 'unknown — the connection string is not a URL, so the sslmode ' +
-    'cannot be read out of it.',
+  tlsDefaultVerified: 'TLS — the connection string sets no sslmode, and ' +
+    'this service dials every database over TLS; the server certificate ' +
+    'is verified against this process\'s trust anchors.',
+  tlsDefaultUnverified: 'TLS — the connection string sets no sslmode, and ' +
+    'this service dials every database over TLS; the server certificate ' +
+    'is NOT verified (persistence.databaseTlsRejectUnauthorized is off). ' +
+    'The connection is encrypted either way.',
+  tlsPreferVerified: 'TLS, sslmode=prefer — dialled over TLS only: libpq ' +
+    'would fall back to a connection in the clear for prefer, and this ' +
+    'service never does; the server certificate is verified against this ' +
+    'process\'s trust anchors.',
+  tlsPreferUnverified: 'TLS, sslmode=prefer — dialled over TLS only: libpq ' +
+    'would fall back to a connection in the clear for prefer, and this ' +
+    'service never does; the server certificate is NOT verified ' +
+    '(persistence.databaseTlsRejectUnauthorized is off). The connection is ' +
+    'encrypted either way.',
+  tlsVerifyModeVerified: 'TLS, sslmode={{sslmode}}; the server ' +
+    'certificate is verified against this process\'s trust anchors, ' +
+    'because persistence.databaseTlsRejectUnauthorized is on — that ' +
+    'setting decides it here, not the sslmode.',
+  tlsVerifyModeUnverified: 'TLS, sslmode={{sslmode}} — but the server ' +
+    'certificate is NOT verified: this service takes verification from ' +
+    'persistence.databaseTlsRejectUnauthorized, which is off, and not from ' +
+    'the sslmode. The connection is encrypted and the server is not ' +
+    'authenticated.',
+  refusedClear: 'NOT DIALLED — sslmode={{sslmode}} asks for a connection ' +
+    'in the clear, which this service never opens, so it does not start ' +
+    'on this connection string.',
+  tlsUnknown: 'NOT DIALLED — the connection string is not a postgres:// ' +
+    'URL, so whether it would be dialled in the clear cannot be told, and ' +
+    'this service does not start on it.',
   notAUrl: 'the connection string is not a URL; nothing about it is shown, ' +
     'because it carries a password.'
 });
@@ -3789,8 +3826,35 @@ function describeDatabase() {
     // number for them would be the misleading half of a true sentence.
     const sslmode = String(parsed.searchParams.get('sslmode') || '')
       .toLowerCase();
-    const encrypted = ['require', 'verify-ca', 'verify-full', 'prefer']
-      .indexOf(sslmode) >= 0;
+    // WHETHER IT IS ENCRYPTED is whether the driver would DIAL it, asked of
+    // the one function that decides (#273) rather than of a second list of
+    // sslmodes here: everything it dials is TLS, and everything it refuses
+    // is never dialled at all. Lazily, like the driver's other requires in
+    // this file; dialOptions() is pure and opens nothing.
+    const verify = verifiesDatabaseTls();
+    const dial = require('./persistence_postgres').dialOptions(raw, verify);
+    const encrypted = !dial.refused;
+    const fill = require('../common/server_prose').fill;
+    let tls;
+    if (!encrypted) {
+      tls = sslmode === 'disable' || sslmode === 'allow'
+        ? fill(STATUS_PROSE.refusedClear, { sslmode: sslmode })
+        : STATUS_PROSE.tlsUnknown;
+    } else if (!sslmode) {
+      tls = verify ? STATUS_PROSE.tlsDefaultVerified
+                   : STATUS_PROSE.tlsDefaultUnverified;
+    } else if (sslmode === 'prefer') {
+      tls = verify ? STATUS_PROSE.tlsPreferVerified
+                   : STATUS_PROSE.tlsPreferUnverified;
+    } else if (sslmode === 'verify-ca' || sslmode === 'verify-full') {
+      tls = fill(verify ? STATUS_PROSE.tlsVerifyModeVerified
+                        : STATUS_PROSE.tlsVerifyModeUnverified,
+                 { sslmode: sslmode });
+    } else {
+      tls = fill(verify ? STATUS_PROSE.tlsVerified
+                        : STATUS_PROSE.tlsUnverified,
+                 { sslmode: sslmode });
+    }
     // WHERE THE PASSWORD COMES FROM (2026-09-12) — never what it is. A
     // deployment that moved the password into a secret store has no other way
     // to see that this process agreed: the connection string on the page
@@ -3809,12 +3873,8 @@ function describeDatabase() {
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
-      verifyCertificate: verifiesDatabaseTls(),
-      tls: encrypted
-        ? require('../common/server_prose').fill(verifiesDatabaseTls()
-          ? STATUS_PROSE.tlsVerified : STATUS_PROSE.tlsUnverified,
-          { sslmode: sslmode })
-        : STATUS_PROSE.noTls
+      verifyCertificate: encrypted && verify,
+      tls: tls
     };
   } catch (err) {
     log.debug("Caught in describeDatabase(): " + ((err && err.message) || err));

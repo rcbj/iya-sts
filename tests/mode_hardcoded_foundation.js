@@ -62,7 +62,8 @@ function run(t) {
 
   // --- 1. the predicates -------------------------------------------------
   const predicates = ['seedsDemoData', 'inventsClaimValues',
-                      'acceptsUnregisteredAddresses', 'opensTestControls'];
+                      'acceptsUnregisteredAddresses', 'opensTestControls',
+                      'describesItselfAsTestDouble'];
   try {
     config.setOverride('global.mode', 'development');
     predicates.forEach(function (name) {
@@ -73,7 +74,8 @@ function run(t) {
       t.equal(mode[name](), false, name + '() answers false in product');
     });
     const ids = mode.report().requirements.map(function (r) { return r.id; });
-    ['demo-data', 'claim-values', 'return-addresses', 'test-controls']
+    ['demo-data', 'claim-values', 'return-addresses', 'test-controls',
+     'test-double']
       .forEach(function (id) {
         t.check(ids.indexOf(id) >= 0,
                 'mode.report() names the "' + id + '" requirement, so ' +

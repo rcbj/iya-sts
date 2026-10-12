@@ -120,7 +120,7 @@ half.
 A mock identity service — and, in `product` mode, a deployable one — that speaks
 these protocol families:
 
-- **Kerberos v5**: a KDC on TCP/UDP 88 and MS-KKDCP, a protected service, and SPNEGO (RFC 4559/4178).
+- **Kerberos v5**: a KDC on TCP/UDP 88 and MS-KKDCP, a protected service (a development demonstration, #585), and SPNEGO (RFC 4559/4178).
 - **WS-Trust** 1.0–1.4.
 - **SAML 2.0**: assertions, and Web Browser SSO over four bindings (Redirect, POST, POST-SimpleSign, Artifact) with Single Logout.
 - **SAML 1.1**: assertions, Browser/POST and Browser/Artifact, and an attribute-authority responder.
@@ -156,7 +156,7 @@ the exceptions, and each is argued where it lives.
 | `/authn/spnego` | a Kerberos ticket verified against a real long-term key — **not a refusal at all** | `kerberos/CLAUDE.md` |
 | the SPIFFE Broker API (`spiffe.brokerPort`) | an X509-SVID over mutual TLS naming a broker in `spiffe.brokers`, and a reference type that broker may use; the workload it references is attested here (#170) | `spiffe/CLAUDE.md` |
 | `/xacml/pep/*`, `POST /xacml/pip` | a verified client certificate whose subject DN resolves to an entry holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
-| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | the same chain, holding `XACML_USER` | `xacml/CLAUDE.md` |
+| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` (the last a demonstration, development only — #585) | the same chain, holding `XACML_USER` | `xacml/CLAUDE.md` |
 | `/account-api` (#568) | an OAuth 2.0 access token from THIS realm's authorization server, audienced to this realm's `/account-api`, DPoP-bound, carrying `account:manage`, issued to a client that declares it, on a sign-on session still live — the person is its subject and never a parameter. The operations behind an activation, reset or verification link take none and spend the link | `account-api/CLAUDE.md` |
 | `/admin-api` | an OAuth 2.0 access token audienced to it, with `admin:read` / `admin:write`, issued to a client that declares them (#110) — and `admin:console` for the console's own operations under `/admin-api/console` (#454); `adminApi.authRequired` restores the open API, in development mode only (#446) | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication — for an RFC 9701 JWT response in every mode, for RFC 7662 JSON in product mode only | `oauth-oidc/CLAUDE.md` (3ai) |
@@ -1017,6 +1017,7 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   the request — so product mode had shipped every one. The predicates are named
   for the QUESTION (`seedsDemoData()`, `inventsClaimValues()`,
   `acceptsUnregisteredAddresses()`, `opensTestControls()`,
+  `servesDemoEndpoints()`,
   `sendsWeakerThanAsked()` beside the older four), and `mode.js`'s
   `REQUIREMENTS` is where each is described to `/admin/mode` and the API. A new
   tunable is a `config.js` row whose default is the old literal, read where it
@@ -1206,6 +1207,7 @@ the file the row names.
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
+| Serve or list a demonstration, mock or test-control ENDPOINT, **in a product realm** (#585) — each carries `common/app.js`'s `demoOnly` mark and answers as an unrouted path (Express's own 404); the truststore door and the protected Kerberos service's socket are the process's | `common/CLAUDE.md` (`mode.js`, `app.js`), `tests/demo_endpoints.js` |
 | Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273; it does not authenticate that server by default either | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |

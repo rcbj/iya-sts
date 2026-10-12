@@ -458,9 +458,10 @@ function roleRow(id) {
  */
 const MECHANISMS = [
   { mechanism: 'password', label: 'Username and password',
-    what: 'This service\'s own sign-in screen, which checks no password. The ' +
-          'ordinary case, and what an unset mechanism falls through to once ' +
-          'nothing else has an opinion.' },
+    what: 'This service\'s own sign-in screen: a username and a password, ' +
+          'the password verified in product mode and not in development ' +
+          'mode. The ordinary case, and what an unset mechanism falls ' +
+          'through to once nothing else has an opinion.' },
   { mechanism: 'password-mfa', label: 'Username and password, with MFA',
     what: 'The same screen with the second-factor box ticked and locked, so ' +
           'the WebAuthn ceremony runs after the password step and the ' +
@@ -492,9 +493,10 @@ const MECHANISMS = [
           'which answers 401 with WWW-Authenticate: Negotiate and signs them ' +
           'in on the service ticket their client sends back (RFC 4559 over ' +
           'RFC 4178 over RFC 4121). Nothing is typed and no screen is drawn. ' +
-          'It is the one mechanism here that rests on a credential this ' +
-          'service genuinely verifies — every other sign-in takes the name ' +
-          'it is given — and what the session then claims is read off the ' +
+          'Like a security key or a wallet, it rests on a credential this ' +
+          'service verifies in every mode — the sign-in screen\'s password ' +
+          'is verified only in product mode — and what the session then ' +
+          'claims is read off the ' +
           'TICKET\'s own flags: amr ["pwd"] for pre-authent, ["hwk"] for ' +
           'hw-authent, both for both, and NOTHING at all for a ticket that ' +
           'claims neither. A client that cannot get a ticket meets a page ' +
@@ -929,7 +931,9 @@ const SCHEMA = {
             'identity-provider (it asserts). One relationship is one ' +
             'direction — see the header.' },
     { name: 'fedProtocol', kind: 'single', role: 'both', from: 'this register',
-      what: 'One of saml2, saml11, wsfed, oidc, oauth2.' },
+      what: 'One of saml2, saml11, wsfed, oidc, oauth2 — the five ' +
+            'sign-in protocols — or ssf, a partner that only sends Shared ' +
+            'Signals and signs nobody in.' },
     { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
       what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
             'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +

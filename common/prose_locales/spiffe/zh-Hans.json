@@ -156,12 +156,12 @@
     "text": "当工作负载获得多个 SVID 时运维人员给出的指引——`internal`、`external`。原样传递给 Workload API；这里没有任何东西读取它。"
   },
   "spiffe.registry.schema.attributes.spiffeAdmin.what": {
-    "en": "8a9a63bc0fea2453",
-    "text": "当持有人可以调用 SPIRE Server API 的管理方法时为 TRUE。与本服务中其他所有授权事实一样，只记录而不强制执行：这里没有任何调用会因缺少它而被拒绝。"
+    "en": "fefc555630e7c657",
+    "text": "当持有人可以通过双向 TLS 调用 SPIRE Server API 的管理方法——条目、代理、信任包、联合关系、铸造 SVID——时为 TRUE。在两种模式下都“强制执行”：当调用方身份的某个未过期条目带有此标志，或 spiffe.adminIds 列出它时，服务器 API 会将该调用方视为 `admin`，并对两者都不是的远程调用方拒绝这些方法（私有 Unix 套接字的 `local` 调用方是另一条途径）。每次调用时都会读取，因此更改会应用于下一次调用。"
   },
   "spiffe.registry.schema.attributes.spiffeDownstream.what": {
-    "en": "093ab596c5763625",
-    "text": "当持有人是可以请求中间 CA（NewDownstreamX509CA）的下游 SPIRE 服务器时为 TRUE。只记录，不强制执行。"
+    "en": "16aab8ec2a97d549",
+    "text": "当持有人是可以请求中间 CA（NewDownstreamX509CA）并发布 JWT 或 WIT 颁发机构的下游 SPIRE 服务器时为 TRUE。在两种模式下都“强制执行”：没有任何未过期条目将其标记为下游的调用方会被拒绝这些方法，且此标志不授予其他任何权限。"
   },
   "spiffe.registry.schema.attributes.spiffeStoreSvid.what": {
     "en": "ed0325e0f3750709",

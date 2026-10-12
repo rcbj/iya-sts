@@ -22,9 +22,10 @@
 //   T2. the definition, in product: a registered application by each of its
 //       four names is a registered target; this service's own resource
 //       servers (the default resource indicator, a named authorization
-//       server's, the realm's /admin-api, the GNAP demonstration resource
-//       server) are; an address nobody registered and one only SEEN are
-//       not; in development nothing is unregistered;
+//       server's, the realm's /admin-api) are, and the GNAP demonstration
+//       resource server only in development, where it is served (#585); an
+//       address nobody registered and one only SEEN are not; in development
+//       nothing is unregistered;
 //   T3. the authorization endpoint's request check (shared with PAR): in
 //       product an unregistered resource is a REDIRECTED invalid_target
 //       (STS-OAUTH-0950), a seen-only one too; a registered application's
@@ -39,9 +40,9 @@
 //       registered resource server, or a seen-only one, is refused
 //       invalid_request (STS-GNAP-0903); a location at or under a
 //       registered GNAP resource server's gnapResourceServerUri, a
-//       registered application's audience and the demonstration resource
-//       server pass; a reference string is not asked; development refuses
-//       none.
+//       registered application's audience pass (and the demonstration
+//       resource server, in development); a reference string is not asked;
+//       development refuses none.
 //
 // IN PROCESS, in a throwaway realm, because the cases are product's and
 // development's both and a job over HTTP runs in one mode.
@@ -217,7 +218,13 @@ function definition(t, f) {
   const registered = [API, 'rt-api-client', 'rt-api', BASE_URI,
                       BASE_URI.slice(0, -1)];
   const own = [base + '/resource', base + '/as1/resource',
-               base + '/admin-api', base + '/gnap/rs/resource'];
+               base + '/admin-api'];
+  // THE GNAP DEMONSTRATION RESOURCE SERVER is a target only where it is
+  // served (#585): development, and never product.
+  const demoRs = base + '/gnap/rs/resource';
+  const demoInDevelopment = inMode('development', function () {
+    return RegisteredTargets.ownResourceServer(demoRs, req);
+  });
   const product = inMode('product', function () {
     return { registered: RegisteredTargets.unregistered(registered, req),
              own: RegisteredTargets.unregistered(own, req),
@@ -225,7 +232,8 @@ function definition(t, f) {
                return RegisteredTargets.ownResourceServer(one, req);
              }),
              strangers: RegisteredTargets.unregistered(
-               [NOBODY, f.seen, base + '/other', base + '/resource/x'], req)
+               [NOBODY, f.seen, base + '/other', base + '/resource/x'], req),
+             demoRs: RegisteredTargets.unregistered([demoRs], req)
            };
   });
   t.check(product.registered.length === 0,
@@ -235,8 +243,11 @@ function definition(t, f) {
   t.check(product.own.length === 0 && product.owners.every(Boolean),
           'T2b. product: this service\'s own resource servers — the default ' +
           'resource indicator, a named authorization server\'s, the realm\'s ' +
-          '/admin-api and the GNAP demonstration resource server — are ' +
-          'registered targets', JSON.stringify(product));
+          '/admin-api — are registered targets', JSON.stringify(product));
+  t.check(product.demoRs.length === 1 && !!demoInDevelopment,
+          'T2d. the GNAP demonstration resource server is one in ' +
+          'development and not in product, where it is not served (#585)',
+          JSON.stringify([product.demoRs, demoInDevelopment]));
   t.check(product.strangers.length === 4,
           'T2c. product: an address nobody registered, one only seen, and ' +
           'paths of this service that are no resource server are not',
@@ -373,7 +384,7 @@ async function gnap(t, f, base) {
   const passed = [await judge('product', [right([GNAP_RS])]),
                   await judge('product', [right([GNAP_RS + '/photos/1'])]),
                   await judge('product', [right([API])]),
-                  await judge('product',
+                  await judge('development',
                               [right([base + '/gnap/rs/resource'])]),
                   await judge('product', ['rt-some-reference']),
                   await judge('development', [right([NOBODY])]),
@@ -381,9 +392,10 @@ async function gnap(t, f, base) {
   t.check(passed.every(function (r) {
     return r.code !== 'STS-GNAP-0903';
   }), 'T5b. a location at or under a registered GNAP resource server, a ' +
-          'registered application\'s audience and the demonstration ' +
-          'resource server pass in product, a reference is not asked, and ' +
-          'development refuses none', JSON.stringify(passed));
+          'registered application\'s audience pass in product (the ' +
+          'demonstration resource server in development, where it is ' +
+          'served, #585), a reference is not asked, and development ' +
+          'refuses none', JSON.stringify(passed));
   log.debug("Leaving gnap().");
 }
 

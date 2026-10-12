@@ -132,14 +132,18 @@ const LIST_PARAMS = {
   // asked once, not a view, so carrying them through a Remove button would
   // re-ask it on every write and put a stale answer above the table. The same
   // reasoning NOT_A_VIEW applies to `notice` and `error`.
-  '/admin/roles': ['q', 'per', 'page'],
+  '/admin/roles': ['q', 'per', 'page', 'rolesPage',
+                   // The narrowed applications' page (#313).
+                   'requiringPage'],
   '/admin/policies': ['per', 'page'],
   '/admin/applications': ['q', 'kind', 'per', 'page'],
   '/admin/saml2': ['q', 'per', 'page'],
   '/admin/saml11': ['q', 'per', 'page'],
   '/admin/authorization-servers': ['per', 'page'],
   // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
-  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
+  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage',
+                   // The named authorization servers' page (#313).
+                   'serversPage'],
   '/admin/gnap/monitor': ['per', 'page'],
   // ===== certificate enrollment list params (2026-09-13) =====
   '/admin/acme': ['per', 'certificatesPage', 'credentialsPage',
@@ -219,7 +223,9 @@ const LIST_PARAMS = {
   // when /admin/sessions started linking to it: every row there links to the
   // credentials issued on that session, and there was no way to ask for them.
   '/admin/tokens': ['family', 'kind', 'state', 'session', 'per', 'page'],
-  '/admin/sessions': ['q', 'protocol', 'per', 'page'],
+  '/admin/sessions': ['q', 'protocol', 'per', 'page',
+                      // The unauthenticated section's page (#313).
+                      'anonymousPage'],
   // The Shared Signals inbox's own search and paging (2026-09-10). It has no
   // drill-down, so the only thing that spends these is the Clear button's
   // `back` — which is enough on its own: a reader who searched for a username,
@@ -230,8 +236,9 @@ const LIST_PARAMS = {
   // (2026-09-14). No control on that page posts, so what spends these is the
   // links between its own tables — a stream row's letters, a cause's letters
   // — each of which keeps the rest of the view as the reader left it.
+  // `streamsPage` is the streams table's (#313), narrowed by the same two.
   '/admin/ssf/dead-letters': ['dlq', 'dlstream', 'dlcause', 'per',
-                              'lettersPage'],
+                              'lettersPage', 'streamsPage'],
   // The truststore's one list (2026-09-12). Spent by the Remove button's
   // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
   // last page there is — rather than on page 1.
@@ -245,7 +252,9 @@ const LIST_PARAMS = {
                     'backchannelDeliveriesPage'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
-  '/admin/oidfed': [],
+  // The seven lists the page pages (#313's sweep), sharing one `per`.
+  '/admin/oidfed': ['per', 'keysPage', 'subordinatesPage', 'formerPage',
+                    'anchorsPage', 'issuedPage', 'heldPage', 'policiesPage'],
   // TWO lists on one page — the global overrides and the recorded answers —
   // so each gets a page parameter of its own and they share one `per`, which
   // is the arrangement /admin/delegation already has and pagingOf()'s
@@ -278,14 +287,18 @@ const LIST_PARAMS = {
   // named apart from the CAEP page's `appq` for the same reason.
   '/admin/risc': ['acctq2', 'acctfrom'],
   '/admin/risc-accounts': ['acctq', 'per', 'accountsPage',
-                           'rappq', 'rapplicationsPage'],
+                           'rappq', 'rapplicationsPage',
+                           // The streams table's page (#313).
+                           'streamsPage'],
   '/admin/caep-sessions': ['sessq', 'per', 'sessionsPage',
                           // The per-receiver section's own search and page
                           // (2026-09-04). Carried for the reason every other
                           // list's are: a reader who narrowed that table and
                           // then opened a session should come back to what
                           // they were reading.
-                          'appq', 'applicationsPage']
+                          'appq', 'applicationsPage',
+                          // The streams table's page (#313), the third list.
+                          'streamsPage']
 };
 
 /**

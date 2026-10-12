@@ -1,7 +1,7 @@
 {
   "pki.tiers.root.what": {
     "en": "d3b9a79ec853e6d9",
-    "text": "El ancla de confianza. Autofirmado, el de vida más larga de los tres, y el único certificado de la jerarquía que hay que entregar a una parte de confianza por otro canal — todo lo que está por debajo viaja en la cadena."
+    "text": "El ancla de confianza. Autofirmado, el de vida más larga de los tres, y el único certificado de la jerarquía que hay que entregar a una parte que confía por otro canal — todo lo que está por debajo viaja en la cadena."
   },
   "pki.tiers.intermediate.what": {
     "en": "064ff6bd043cbe53",
@@ -17,7 +17,7 @@
   },
   "pki.useCases.xml.what": {
     "en": "465884d059de6f91",
-    "text": "Lo que firma un documento XML: aserciones y respuestas SAML 2.0 y 1.1, WS-Federation, WS-Trust y los metadatos por proveedor de servicios. Es una autoridad SEPARADA de la anterior aunque hoy una sola clave RSA haga ambos trabajos — una parte de confianza que confía en este servicio para SAML no ha dicho con ello nada sobre sus tokens OAuth, y dos CA emisoras son la forma de poder decirlo."
+    "text": "Lo que firma un documento XML: aserciones y respuestas SAML 2.0 y 1.1, WS-Federation, WS-Trust y los metadatos por proveedor de servicios. Es una autoridad SEPARADA de la anterior aunque hoy una sola clave RSA haga ambos trabajos — una parte que confía en este servicio para SAML no ha dicho con ello nada sobre sus tokens OAuth, y dos CA emisoras son la forma de poder decirlo."
   },
   "pki.useCases.assertions.what": {
     "en": "d6943f0dbaa03982",
@@ -65,7 +65,7 @@
   },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",
-    "text": "Un cliente OAuth o parte de confianza registrado. Su par de claves se escribe en su propia entrada en ou=applications."
+    "text": "Un cliente OAuth o parte que confía registrado. Su par de claves se escribe en su propia entrada en ou=applications."
   },
   "pki.subjectKinds.person.what": {
     "en": "1f2cc5cf53e071de",

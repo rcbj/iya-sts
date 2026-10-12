@@ -13,5 +13,8 @@
   "colGeneration": "Henerasyon",
   "colCreated": "Nilikha / in-update",
   "colExpires": "Mag-e-expire",
-  "colTokens": "Mga token na hawak"
+  "colTokens": "Mga token na hawak",
+  "noMatch": "Walang grant na tumutugma sa <code>{wanted}</code>.",
+  "searchLabel": "Paliitin ang mga grant",
+  "searchPlaceholder": "isang grant_id, isang client o isang subject"
 }

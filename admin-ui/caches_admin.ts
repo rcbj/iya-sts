@@ -131,13 +131,65 @@ const NOT_LISTED = [
 //     which is the owner's text and passed through as it came.
 // The `basis` in the last two is the owner's word ("directory version") and
 // is carried over as it is.
+//
+// **NOT EVERY `basis` IS A NOUN THAT "until the … changes" CAN TAKE**
+// (#543 follow-up): the fallback read "until the least recently used
+// changes" for every bounded LRU, "until the until-activation changes" and
+// "until the none changes". So a basis the owners use that is not the name
+// of a thing whose change ends an entry has its own sentence, chosen in
+// `remainingText()` through `BASIS_SENTENCES` and `TIME_BASES` below; the
+// fallback is left to the nouns ("directory version", "setting text",
+// "file modification time", "stored authority list", "worker pool").
 const REMAINING = Object.freeze({
   expiredAgo: 'expired {{span}} ago',
   noExpiryByContent: 'no expiry (keyed by content)',
   stale: 'stale',
   untilChanges: 'until the {{basis}} changes',
-  staleChanged: 'stale: the {{basis}} has changed'
+  staleChanged: 'stale: the {{basis}} has changed',
+  untilEvicted: 'until the bound drops it as the least recently used',
+  untilBound: 'until the bound drops it',
+  untilActivation: 'until a dataset version is activated',
+  untilIdle: 'until it goes unused for the idle timeout',
+  nonceExpired: 'stale: its nonce has expired',
+  challengeExpired: 'stale: its challenge has expired',
+  disowned: 'stale: the credential was disowned'
 });
+
+// A basis with a sentence of its own: the sentence while the entry is
+// valid, and while its owner calls it stale ('' for the plain `stale`).
+// `bounded_lru.ts`'s 'least recently used', `devices.ts`'s 'none' (an event
+// kept until newer ones push it out), `risk_datasets.ts`'s
+// 'until-activation', `keystore.js`'s 'idle timeout' when no purge is
+// scheduled, `scim_auth.ts`'s two replay rows whose record has gone, and
+// `vc_issued.ts`'s disowned credential.
+const BASIS_SENTENCES: Record<string, [string, string]> = {
+  'least recently used': [REMAINING.untilEvicted, ''],
+  'none': [REMAINING.untilBound, ''],
+  'until-activation': [REMAINING.untilActivation, ''],
+  'idle timeout': [REMAINING.untilIdle, ''],
+  'its nonce': [REMAINING.stale, REMAINING.nonceExpired],
+  'its challenge': [REMAINING.stale, REMAINING.challengeExpired],
+  'disowned': [REMAINING.stale, REMAINING.disowned]
+};
+
+// A basis whose owner names the entry's deadline or what it recorded, not
+// a thing whose change ends it — so an entry with such a basis and no
+// deadline has no expiry: 'time' (the registry's own default), `vc_status`'s
+// 'ttl' and 'failure', `breached_passwords.ts`'s verdicts and suffix counts,
+// `vc_verifier.ts`'s transaction states and `risk_engine.ts`'s
+// 'the assessment <id>'. Each normally carries a deadline and is said as a
+// span; this is the row whose deadline was missing.
+const TIME_BASES = ['time', 'ttl', 'failure', 'breached', 'not found',
+                    'sign-in', 'finished'];
+const TIME_BASIS_SHAPES = [/^\d+ suffix\(es\)$/, /^the assessment /];
+
+// A basis that names WHY a value was cached rather than what its validity
+// rests on: `credentials.ts`'s TOTP verdicts ('opens', 'will not open') are
+// good until the key-encryption key changes.
+const BASIS_NOUNS: Record<string, string> = {
+  'opens': 'key-encryption key',
+  'will not open': 'key-encryption key'
+};
 
 // The routes whose answers carry this module's prose (#543).
 const PROSE_ROUTES = ['/admin-api/caches'];
@@ -313,13 +365,26 @@ class CachesAdmin {
       // 'no expiry' stays English: it is also the row's `basis` value.
       text = row.basis === 'content-keyed'
         ? REMAINING.noExpiryByContent : 'no expiry';
+    } else if (Object.prototype.hasOwnProperty.call(BASIS_SENTENCES,
+                                                    row.basis)) {
+      const pair = BASIS_SENTENCES[row.basis];
+      text = row.valid ? pair[0] : (pair[1] || REMAINING.stale);
+    } else if (TIME_BASES.indexOf(row.basis) >= 0 ||
+               TIME_BASIS_SHAPES.some(function (re): boolean {
+                 return re.test(row.basis);
+               })) {
+      // A deadline-shaped basis with no deadline: see `TIME_BASES`.
+      text = row.valid ? 'no expiry' : REMAINING.stale;
     } else if (/^(until|held) /.test(row.basis)) {
       // A basis that is already a sentence ("until rotated or adopted").
       text = row.valid ? row.basis : REMAINING.stale;
     } else {
+      const noun = Object.prototype.hasOwnProperty.call(BASIS_NOUNS,
+                                                        row.basis)
+        ? BASIS_NOUNS[row.basis] : row.basis;
       text = row.valid
-        ? fill(REMAINING.untilChanges, { basis: row.basis })
-        : fill(REMAINING.staleChanged, { basis: row.basis });
+        ? fill(REMAINING.untilChanges, { basis: noun })
+        : fill(REMAINING.staleChanged, { basis: noun });
     }
     log.debug("Leaving CachesAdmin.remainingText().");
     return text;

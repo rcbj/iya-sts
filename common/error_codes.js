@@ -6840,8 +6840,10 @@ const CODES = [
     spec: 'server_error (HTTP 500)' },
   { code: 'STS-OAUTH-0178',
     summary: 'POST /dpop/nonce-mode was refused because the realm is in ' +
-      'product mode, where test controls are closed.',
-    spec: 'access_denied (HTTP 403)' },
+      'product mode, where test controls are closed. Retired by #585: ' +
+      'a product realm has no /dpop/nonce-mode, and answers as for a path ' +
+      'nothing is registered on.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0179',
     summary: 'POST /dpop/nonce-mode carried something other than ' +
       'required=true or required=false.',
@@ -9123,7 +9125,7 @@ const CODES = [
     summary: 'The mock relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
       'would (#151).',
-    spec: 'HTTP 400, 401, 409 or 404 {error}' },
+    spec: 'HTTP 400, 401 or 409 {error}' },
   { code: 'STS-OAUTH-0783',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
@@ -13875,8 +13877,9 @@ const CODES = [
   { code: 'STS-TLS-0024',
     summary: 'POST /tls/trust or /tls/trust/clear was refused because ' +
       'product mode does not open the truststore to anybody who can ' +
-      'reach the port.',
-    spec: 'HTTP 403' },
+      'reach the port. Retired by #585: a product process has neither ' +
+      'route, and answers as for a path nothing is registered on.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0025',
     summary: 'A TLS listener could not bind its port. Retired 2026-09-16: ' +
       'this module owns no listener to bind',
@@ -14468,8 +14471,9 @@ const CODES = [
     summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
       'List publish hook) was called in a realm whose test controls are ' +
       'closed — a product realm — and answered as though it did not exist ' +
-      '(#194).',
-    spec: 'HTTP 404' },
+      '(#194). Retired by #585: a product realm\'s request is passed on ' +
+      'past the route to Express\'s own 404, which records no code.',
+    spec: '', retired: true },
   { code: 'STS-VC-0101',
     summary: 'A VC-API test endpoint was presented an access token it ' +
       'refused: not issued by this realm, not an access token, revoked, ' +
@@ -17527,8 +17531,10 @@ const CODES = [
   { code: 'STS-DEVICE-0035',
     summary: 'The compliance test control, POST /devices/test/compliance, ' +
       'was refused because the realm is in product mode, where test ' +
-      'controls are closed (#164 phase 3).',
-    spec: 'HTTP 403' },
+      'controls are closed (#164 phase 3). Retired by #585: a product ' +
+      'realm has no such route, and answers as for a path nothing is ' +
+      'registered on.',
+    spec: '', retired: true },
   { code: 'STS-DEVICE-0036',
     summary: 'Risk scoring could not set the risk level of the registered ' +
       'device that proved a sign-in: the device register refused or did ' +
@@ -20101,8 +20107,8 @@ const CODES = [
       'is a static application since #568 and nothing is posted to it.',
     spec: 'HTTP 404' },
   { code: 'STS-PORTAL-0300',
-    summary: 'A Claims Provider\'s callback arrived in a browser whose ' +
-      'sign-on session is not the one the link was started from, so it was ' +
+    summary: 'A Claims Provider\'s callback arrived in a browser that does ' +
+      'not hold the binding cookie the link was started with, so it was ' +
       'refused (#568: the account-linking CSRF the portal session closed).',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0301',
@@ -20113,6 +20119,11 @@ const CODES = [
   { code: 'STS-PORTAL-0302',
     summary: 'The access policy refused a Claims Provider\'s callback ' +
       '(user-portal, manage-own).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0303',
+    summary: 'A Claims Provider\'s callback was refused because the sign-on ' +
+      'session the link was started from has ended, or is no longer the ' +
+      'person\'s.',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0310',
     summary: 'A device challenge or link could not be bound: the account ' +

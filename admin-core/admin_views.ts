@@ -788,10 +788,18 @@ const FEDERATION_NOTE_FOLD = '<details class="note fold"><summary>' +
 
 // ---------------------------------------------------------------------------
 // WHAT `kerberosPrincipalsJson()` SAYS UNDER `notes` (#543 phase 2b): the
-// kerberos namespace, and this module's `prose()`. Two sentences are
-// templates: the realm's own Kerberos realm, and why a realm has no KDC —
-// which is `krb5_principals.js`'s sentence when it gives one, carried over
-// in English where it is not a message here.
+// kerberos namespace, and this module's `prose()`. Three sentences are
+// templates: the realm's own Kerberos realm, why a realm has no KDC, and why
+// a realm whose KDC is on cannot use it — the last two
+// `krb5_principals.js`'s sentence when it gives one, carried over in English
+// where it is not a message here.
+//
+// **ON IS NOT THE SAME AS SERVING** (#543 follow-up): the note branched on
+// `kerberos.enabled` alone, so a realm with krb5.enabled on whose context is
+// inactive (no usable enctype), or whose product krbtgt key is not stored
+// yet, was told its KDC served it, and the reason — which
+// `kerberosRealmOf()` fills only for an inactive realm — was never shown.
+// `realmInactive` is that case.
 // ---------------------------------------------------------------------------
 /**
  * The notes of `/admin-api/kerberos/principals` (#543), `{{name}}` a value.
@@ -815,6 +823,8 @@ const KERBEROS_NOTES = Object.freeze({
   realmNone: 'THIS TRUST REALM HAS NO KDC: {{reason}}. Set krb5.realm on ' +
     'the realm and turn krb5.enabled on to give it one; port 88 routes a ' +
     'request by the Kerberos realm name inside it.',
+  realmInactive: 'THIS TRUST REALM\'S KDC IS ON BUT CANNOT BE USED: ' +
+    '{{reason}}. Its Kerberos realm is {{kerberosRealm}}.',
   window: 'Keys are derived AFTER a password is set or verified and take a ' +
     'few tens of milliseconds to land; until they do, the KDC refuses the ' +
     'person rather than accepting an older key.',
@@ -2163,7 +2173,15 @@ class AdminViews {
       : register.roles;
     const rolePage = this.pagedRows(q0, matched,
       { name: 'roles', noun: 'roles', defaultPer: 25 });
+    // THE APPLICATIONS THAT NARROWED WHAT THEY REQUIRE, PAGED (#313) on
+    // `requiringPage`: a row per such application, which only
+    // `applications.max` bounds. `counts.requiring` and
+    // `counts.unsatisfiable` stay the register's whole counts.
+    const requiringPage = this.pagedRows(q0, register.requiring,
+      { name: 'requiring', noun: 'applications' });
     const json = Object.assign({}, register, {
+      requiring: requiringPage.shown,
+      requiringPaging: this.pagingJson(requiringPage.paging),
       matched: matched.length,
       shown: rolePage.shown.length,
       paging: this.pagingJson(rolePage.paging),
@@ -3014,7 +3032,10 @@ class AdminViews {
         VERIFICATIONS_SHOWN),
       // What the Start a verification form may name, read off the Verifier
       // (#587) so the form's menus are the lists the start checks against.
-      startChoices: this.deps.vcVerifier.START_VOCABULARY
+      startChoices: this.deps.vcVerifier.START_VOCABULARY,
+      // The demonstration verifier page, where this realm is served it
+      // (#585); the tab links it, and each format's Present one, only then.
+      verifierPage: mode.servesDemoEndpoints() ? '/oid4vp/verifier' : null
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
@@ -4153,13 +4174,20 @@ class AdminViews {
     });
     // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
     //
-    // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
-    // both. The two lists answer different questions: the main one is *what is
-    // live*, which is long and needs narrowing, and this one is *is anybody in
-    // here without having signed in*, which is a question about the whole
-    // service and would be answered wrongly by a filter somebody had left set.
-    // A search box that could hide one of these rows would make the section
-    // worse than not having it.
+    // NOT FILTERED, deliberately, where the table above it is. The two lists
+    // answer different questions: the main one is *what is live*, which is
+    // long and needs narrowing, and this one is *is anybody in here without
+    // having signed in*, which is a question about the whole service and
+    // would be answered wrongly by a filter somebody had left set. A search
+    // box that could hide one of these rows would make the section worse
+    // than not having it.
+    //
+    // BUT PAGED (#313), on `anonymousPage` with the shared `per`. It was
+    // drawn whole, and while `authn.unauthenticatedSessions` is on it holds a
+    // row per anonymous visit until each expires — a list nothing bounds but
+    // time, which is what the console's paging rule is about. Paging hides no
+    // row from the count: `unauthenticatedHeld` is the whole list, and the
+    // tile reads it.
     //
     // It is a SECTION rather than a column on the table above because the
     // answer is almost always "none", and a column that is the same on every
@@ -4168,6 +4196,8 @@ class AdminViews {
     const unauthenticated = all.filter(function (row) {
       return row.authenticated === false;
     });
+    const anonymousPage = this.pagedRows(query, unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
@@ -4185,7 +4215,7 @@ class AdminViews {
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
         unauthenticatedHeld: unauthenticated.length,
-        unauthenticatedSessions: unauthenticated.map(function (row) {
+        unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
                    sessionId: row.sessionId,
@@ -4215,7 +4245,9 @@ class AdminViews {
         // Whether sessions that authenticated nobody are kept, which the
         // page says beside them.
         unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
-        paging: this.pagingJson(paging)
+        paging: this.pagingJson(paging),
+        // The unauthenticated section's page (#313), on `anonymousPage`.
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
       }
     };
   }
@@ -5714,7 +5746,6 @@ class AdminViews {
    */
   federationMapKey() {
     const { log, federationDiagram } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.federationMapKey().");
     const shapes = [
       { kind: 'sts', label: 'This service',
@@ -6702,15 +6733,20 @@ class AdminViews {
   truststoreJson(req) {
     const { log, mode, realms, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
-    const openToAnybody = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () {
-      return mode.opensTestControls();
-    });
+    // THE TWO OPEN DOORS ARE A DEMONSTRATION OF THE PROCESS'S (#585):
+    // named only where the default realm and this one both serve them, as
+    // `common/app.js`'s `processDemoOnly` decides — null, not a door marked
+    // closed, where they are not there.
+    const openToAnybody = mode.servesDemoEndpoints() &&
+      realms.run(realms.get(realms.DEFAULT_ID), function () {
+        return mode.servesDemoEndpoints();
+      });
     const doors = {
       console: '/admin/tls/trust',
       api: '/admin-api/tls/trust',
-      testControls: { add: '/tls/trust', clear: '/tls/trust/clear',
-                      open: openToAnybody }
+      testControls: openToAnybody
+        ? { add: '/tls/trust', clear: '/tls/trust/clear', open: true }
+        : null
     };
     const notes = {
       persisted: 'A RUNTIME ANCHOR IS WRITTEN TO ou=trustAnchors in the ' +
@@ -6837,7 +6873,22 @@ class AdminViews {
         "person(s), " +
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
+    // Why an enabled realm's KDC cannot be used, '' when it can: an
+    // inactive context's own reason, else `krbtgtUnavailableReason()` (in
+    // product, no random krbtgt key stored yet). See `KERBEROS_NOTES`.
+    const unusable = !kerberos.enabled ? ''
+      : !kerberos.active
+        // An inactive context always carries its reason (no usable
+        // enctype, or a realm this process does not hold yet); the krbtgt
+        // reason is the same sentence for it, asked only if it were empty.
+        ? String(kerberos.reason ||
+                 krb5Principals.krbtgtUnavailableReason() || '')
+        : String(krb5Principals.krbtgtUnavailableReason() || '');
     return {
+      // The KDC's own demonstration document, where this realm is served it
+      // (#585): the tab links it only then.
+      principalsDocument: mode.servesDemoEndpoints() ? '/krb5/principals'
+                                                      : null,
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
       trustRealm: realms.currentId(),
@@ -6890,12 +6941,18 @@ class AdminViews {
         keys: KERBEROS_NOTES.keys,
         mode: krb5PersonKeys.productKdc() ? KERBEROS_NOTES.modeProduct
                                           : KERBEROS_NOTES.modeDevelopment,
-        realm: kerberos.enabled
-          ? serverProse.fill(KERBEROS_NOTES.realmServed,
-                             { kerberosRealm: kerberos.kerberosRealm || '' })
-          : serverProse.fill(KERBEROS_NOTES.realmNone,
+        realm: !kerberos.enabled
+          ? serverProse.fill(KERBEROS_NOTES.realmNone,
                              { reason: kerberos.reason ||
-                                       KERBEROS_NO_KDC_REASON }),
+                                       KERBEROS_NO_KDC_REASON })
+          : unusable
+            ? serverProse.fill(KERBEROS_NOTES.realmInactive,
+                               { reason: unusable,
+                                 kerberosRealm:
+                                   kerberos.kerberosRealm || '' })
+            : serverProse.fill(KERBEROS_NOTES.realmServed,
+                               { kerberosRealm:
+                                   kerberos.kerberosRealm || '' }),
         window: KERBEROS_NOTES.window,
         previous: KERBEROS_NOTES.previous
       }
@@ -6917,6 +6974,11 @@ class AdminViews {
     if (!signalsReporter) {
       log.debug("Leaving AdminViews.ssfJson(). Not installed.");
       return { installed: false, enabled: false, streamDetail: [],
+               streamTotals: { streams: 0, enabled: 0, delivered: 0,
+                               failed: 0, waiting: 0, dead: 0,
+                               deadLetters: 0 },
+               paging: { streams: this.pagingJson(this.pagingOf(
+                 req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
                receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
                statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
@@ -6929,8 +6991,48 @@ class AdminViews {
     // may be set to and the event types this transmitter can send.
     report.statuses = signalsReporter.statuses.slice();
     report.eventTypes = signalsReporter.eventTypes();
+    // THE STREAM CARDS ARE PAGED (#313's sweep, 2026-10-12). One card per
+    // stream in the realm, and `ssf.maxStreams` bounds each receiver rather
+    // than how many receivers there are, so the cards are a page moved by
+    // `streamsPage`. `stream` narrows them to one, EXACT, which is what the
+    // dead letters' stream links carry so a card is found whatever page it
+    // would be on. The tiles above the cards count the WHOLE transmitter,
+    // so `streamTotals` is taken here, before the narrowing and the slice.
+    const all = report.streamDetail || [];
+    report.streamTotals = {
+      streams: all.length,
+      enabled: all.filter(function (row) {
+        return row.status === 'enabled';
+      }).length,
+      delivered: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.delivered) || 0);
+      }, 0),
+      failed: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.failed) || 0);
+      }, 0),
+      waiting: all.reduce(function (n, row) {
+        return n + (row.queue || []).length;
+      }, 0),
+      dead: all.filter(function (row) {
+        return row.dead;
+      }).length,
+      deadLetters: all.reduce(function (n, row) {
+        return n + (row.deadLetters || []).length;
+      }, 0)
+    };
+    const wanted = this.queryOne(req.query || {}, 'stream').trim();
+    const matched = wanted
+      ? all.filter(function (row) {
+          return String(row.stream_id) === wanted;
+        })
+      : all;
+    const page = this.pagedRows(req.query || {}, matched,
+      { name: 'streams', noun: 'streams' });
+    report.streamDetail = page.shown;
+    report.streamFilter = wanted || null;
+    report.paging = { streams: this.pagingJson(page.paging) };
     log.debug("Leaving AdminViews.ssfJson(). " + report.streamDetail.length +
-              " stream(s).");
+              " of " + all.length + " stream(s).");
     return report;
   }
 
@@ -6985,10 +7087,26 @@ class AdminViews {
     });
     const page = this.pagedRows(req.query, rows,
       { name: 'letters', noun: 'dead letters' });
+    // THE STREAMS TABLE, NARROWED BY THE SAME TWO EXACT FILTERS AND PAGED
+    // (#313): a row per stream holding a letter or not delivering, however
+    // many receivers there are. `dlstream` keeps its one row and `dlcause`
+    // the streams holding a letter of that cause; `dlq` is over the letters
+    // and leaves this table whole. Filter first, then page.
+    const streamRows = (report.streams || []).filter(function (row) {
+      if (stream && row.stream_id !== stream) {
+        return false;
+      }
+      if (cause && !(row.causes && row.causes[cause] > 0)) {
+        return false;
+      }
+      return true;
+    });
+    const streamPage = this.pagedRows(req.query, streamRows,
+      { name: 'streams', noun: 'streams' });
     log.debug("Leaving AdminViews.ssfDeadLettersState(). " + rows.length +
               " match(es).");
     return { wanted: wanted, stream: stream, cause: cause, rows: rows,
-             page: page };
+             page: page, streamPage: streamPage };
   }
 
   /**
@@ -7007,7 +7125,9 @@ class AdminViews {
                totals: { held: 0 }, matched: 0,
                filter: { q: null, stream: null, cause: null },
                paging: { letters: this.pagingJson(this.pagingOf(req.query, 0,
-                 { name: 'letters', noun: 'dead letters' })) },
+                 { name: 'letters', noun: 'dead letters' })),
+                 streams: this.pagingJson(this.pagingOf(req.query, 0,
+                 { name: 'streams', noun: 'streams' })) },
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals dead-letter ' +
                      'queues.' };
@@ -7023,7 +7143,9 @@ class AdminViews {
                 cause: state.cause || null },
       matched: state.rows.length,
       letters: state.page.shown,
-      paging: { letters: this.pagingJson(state.page.paging) }
+      streams: state.streamPage.shown,
+      paging: { letters: this.pagingJson(state.page.paging),
+                streams: this.pagingJson(state.streamPage.paging) }
     });
   }
 
@@ -7137,6 +7259,42 @@ class AdminViews {
     return { wanted: wanted, matched: matched, page: page };
   }
 
+  // ---------------------------------------------------------------------------
+  // WHERE AN EVENT COULD GO, PAGED (#313).
+  //
+  // `/admin/caep-sessions` and `/admin/risc-accounts` each list every Shared
+  // Signals stream in the realm with the event types it takes, and
+  // `ssf.maxStreams` limits each receiver, not the number of receivers — so
+  // the list grows with the realm. It is the third list on each page and
+  // moves on `streamsPage`, so paging it keeps the other two where they are.
+  // The tile above the tables counts the streams that take any event of the
+  // page's family, which is a count over the WHOLE list: it is taken here,
+  // before the slice, and published as `streamCounts`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Pages the streams a CAEP or RISC report lists.
+   *
+   * @param req - the request
+   * @param report - the CAEP or RISC report
+   * @returns the counts over the whole list, and the page
+   */
+  signalStreamsState(req, report) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signalStreamsState().");
+    const all = report.streams || [];
+    const counts = {
+      total: all.length,
+      taking: all.filter(function (row) {
+        return (row.takes || []).length > 0;
+      }).length
+    };
+    const page = this.pagedRows(req.query, all,
+      { name: 'streams', noun: 'streams' });
+    log.debug("Leaving AdminViews.signalStreamsState(). " +
+              page.shown.length + " of " + all.length + ".");
+    return { counts: counts, page: page };
+  }
+
   // The reply BOTH doors answer with. `/admin/caep-sessions?format=json` and
   // GET /admin-api/caep/sessions are the same document — rule 7 — and the
   // drill- down is `?session=`, which is one operation answering two shapes for
@@ -7167,18 +7325,26 @@ class AdminViews {
     }
     const state = this.caepSessionsState(req, json);
     const appState = this.caepApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.caepSessionsJson(). The list.");
     return Object.assign({}, json, {
       filter: { sessions: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { sessions: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
       // The rows each table's page shows and how many each filter matched
-      // (#446): the page draws its two tables from this answer.
+      // (#446): the page draws its three tables from this answer.
       shown: { sessions: state.page.shown,
-               applications: appState.page.shown },
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
       matched: { sessions: state.matched.length,
-                 applications: appState.matched.length }
+                 applications: appState.matched.length,
+                 streams: streamState.page.paging.total },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -7317,16 +7483,23 @@ class AdminViews {
     }
     const state = this.riscAccountsState(req, json);
     const appState = this.riscApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.riscAccountsJson(). The list.");
     return Object.assign({}, json, {
       filter: { accounts: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { accounts: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
-      // The rows each table's page shows (#446): the page draws its two
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
+      // The rows each table's page shows (#446): the page draws its three
       // tables from this answer.
       shown: { accounts: state.page.shown,
-               applications: appState.page.shown }
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -8396,7 +8569,10 @@ class AdminViews {
           mdqRefusedPaging: refused.paging,
           // The kind the applications page files these entries under, for
           // the page's link to them (#446).
-          kind: SAML2_SP_KIND
+          kind: SAML2_SP_KIND,
+          // The mock service provider, where this realm is served it
+          // (#585): the page links it only then.
+          mockServiceProvider: mode.servesDemoEndpoints() ? '/saml2/sp' : null
       };
       }())
     };
@@ -8740,7 +8916,9 @@ class AdminViews {
           authentications: row ? row.authentications : 0,
           assertionConsumerServices: acs,
           nameIdFormats: self.valuesFor(fields.samlNameIdFormat),
-          profiles: profiles
+          profiles: profiles,
+          // The mock relying party, where this realm is served it (#585).
+          mockRelyingParty: mode.servesDemoEndpoints() ? '/saml11/rp' : null
       });
       }())
     };
@@ -13370,6 +13548,7 @@ export = {
   caepSessionsState: slot.forward('caepSessionsState'),
   caepApplicationsState: slot.forward('caepApplicationsState'),
   caepSessionsJson: slot.forward('caepSessionsJson'),
+  signalStreamsState: slot.forward('signalStreamsState'),
   riscJson: slot.forward('riscJson'),
   riscAccountsState: slot.forward('riscAccountsState'),
   riscApplicationsState: slot.forward('riscApplicationsState'),

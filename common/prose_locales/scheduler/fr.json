@@ -480,12 +480,12 @@
     "text": "cron {{cron}} (UTC)"
   },
   "sched.sentence.every": {
-    "en": "05f22fb4833ac391",
-    "text": "toutes les {{span}}"
+    "en": "cad7aff2b61c1a2d",
+    "text": "toutes les {{span}} (un intervalle fixe)"
   },
   "sched.sentence.everyFrom": {
-    "en": "3893802ebe2b3ab1",
-    "text": "toutes les {{span}}, d’après {{setting}}"
+    "en": "e3f70e78d2f74d9a",
+    "text": "toutes les {{span}} (d’après {{setting}})"
   },
   "sched.sentence.noInterval": {
     "en": "ea9235468f83c6bf",
@@ -512,8 +512,12 @@
     "text": "nommée dans scheduler.disabledJobs"
   },
   "sched.sentence.offZero": {
-    "en": "e9453e79cc9c7d92",
-    "text": "{{setting}} vaut 0"
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} vaut 0, la tâche est donc désactivée"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "son intervalle est 0, la tâche est donc désactivée"
   },
   "sched.sentence.clockProcess": {
     "en": "bd7af0544bafb825",
@@ -526,10 +530,6 @@
   "sched.param.sinceStart": {
     "en": "0712f841eae1cd73",
     "text": "ce service a démarré"
-  },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "son intervalle"
   },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",

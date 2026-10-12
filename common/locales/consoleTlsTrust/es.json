@@ -36,7 +36,7 @@
   "trustThese": "Confiar en estos",
   "needsWrite": "Cambiar esta lista requiere <strong>Admin Write</strong>.",
   "noButton": "Para qué no hay botón, deliberadamente",
-  "noClear": "<strong>Vaciar el almacén de confianza.</strong> Un borrado masivo por esta vía sería el único control cuyo alcance abarca cada certificado de cliente del que dependen todos los demás llamadores — un PEP remoto que se autentica como nadie durante el resto de una ejecución es lo que un solo borrado sin protección ya ha costado. Quita las filas que quieras, una a una; las que no pusiste tú son las que tienes que nombrar. Quitar un ancla <code>file</code> está permitido y dura hasta el próximo inicio.",
+  "noClear": "<strong>Vaciar el almacén de confianza.</strong> Un borrado masivo por esta vía sería el único control cuyo alcance abarca cada certificado de cliente del que dependen todos los demás llamadores — un PEP remoto que se autentica como nadie durante el resto de una ejecución es lo que un solo borrado sin protección ya ha costado. Quite las filas que quiera, una a una; las que no puso usted son las que tiene que nombrar. Quitar un ancla <code>file</code> está permitido y dura hasta el próximo inicio.",
   "linkJson": "esta página en JSON",
   "linkApi": "lo mismo por la API de administración",
   "linkSettings": "la configuración de los puertos de escucha TLS",

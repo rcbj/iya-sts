@@ -334,5 +334,12 @@
   "caches.remaining.noExpiryByContent": "no expiry (keyed by content)",
   "caches.remaining.stale": "stale",
   "caches.remaining.untilChanges": "until the {{basis}} changes",
-  "caches.remaining.staleChanged": "stale: the {{basis}} has changed"
+  "caches.remaining.staleChanged": "stale: the {{basis}} has changed",
+  "caches.remaining.untilEvicted": "until the bound drops it as the least recently used",
+  "caches.remaining.untilBound": "until the bound drops it",
+  "caches.remaining.untilActivation": "until a dataset version is activated",
+  "caches.remaining.untilIdle": "until it goes unused for the idle timeout",
+  "caches.remaining.nonceExpired": "stale: its nonce has expired",
+  "caches.remaining.challengeExpired": "stale: its challenge has expired",
+  "caches.remaining.disowned": "stale: the credential was disowned"
 }

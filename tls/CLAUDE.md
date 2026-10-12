@@ -1783,3 +1783,7 @@ listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
 in a header it strips from the client first. Which application is where, and
 where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
 listeners they are on*); `docs/listeners.md` is the operator's half.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/tls` and `/tls/forwarded` (per realm), and `/tls/trust` and `/tls/trust/clear` — **the process's**, marked `processDemoOnly`, which asks the default realm too, because the truststore is one array for every listener: a development realm inside a product process is not a way to add an anchor. Their 403 `STS-TLS-0024` is retired; the gated doors are `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}`, and `tests/tools/pep-credential.js` tries the gated one first. The `/tls` page draws the two buttons only where the process serves them. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

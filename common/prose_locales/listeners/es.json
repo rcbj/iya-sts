@@ -232,8 +232,8 @@
     "text": "Credenciales verificables"
   },
   "listeners.applications.oid4vc.what": {
-    "en": "a1d8ad40056dfc8f",
-    "text": "OpenID4VCI, OpenID4VP, los DID, las listas de estado y los endpoints de prueba de VC-API."
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, los DID y las listas de estado."
   },
   "listeners.applications.scim.label": {
     "en": "98fe74b2a48a690f",
@@ -304,8 +304,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "ce095930c49505f7",
-    "text": "MS-KKDCP, la página de negociación SPNEGO y los principales."
+    "en": "49ef797d2558967c",
+    "text": "MS-KKDCP y las vistas HTTP de Kerberos."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",
@@ -333,10 +333,10 @@
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",
-    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId ({{rpId}}) no es un dominio bajo el que estén todas: una passkey registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
+    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId ({{rpId}}) no es un dominio bajo el que estén todas: una llave de acceso registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
   },
   "listeners.map.sentences.rpIdEmpty": {
     "en": "d82c2e645f3ef21a",
-    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId está vacío, así que cada una es su propia parte de confianza: una passkey registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
+    "text": "Las aplicaciones que leen la sesión de inicio de sesión están en los nombres de host {{hosts}}, y webauthn.rpId está vacío, así que cada una es su propia parte que confía: una llave de acceso registrada en una no se puede usar en otra. Defina webauthn.rpId con el dominio que nombra authn.cookieDomain."
   }
 }

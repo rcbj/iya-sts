@@ -1342,5 +1342,33 @@
   "caches.remaining.staleChanged": {
     "en": "1134a1cffa605ffb",
     "text": "已失效：{{basis}} 已變更"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "直到上限將其作為最久未使用的項目捨棄"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "直到上限將其捨棄"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "直到資料集版本被啟用"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "直到它在閒置逾時期間內未被使用"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "已失效：其 nonce 已過期"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "已失效：其挑戰已過期"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "已失效：該認證資料已被否認"
   }
 }

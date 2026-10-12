@@ -1,0 +1,14 @@
+{
+  "postureNotAttested": "<strong>這裡沒有任何東西經過證明。</strong>真正的 SPIFFE 代理程式會讀取其通訊端對端的憑證 — pid、uid、gid，並由此得出執行檔、容器和 pod — 只把這些選擇器所符合的身分交給工作負載。Node 完全無法讀取這些資訊，因此本服務僅憑 Workload API 呼叫端到達的傳輸方式、所存取的端點及其對端地址來識別呼叫端，別無其他。這些資訊現在確實決定由哪些項目回應（<code>spiffe.attestWorkloads</code>），但它們無法證明呼叫端是誰：任何能存取該通訊端的人仍然可以取得身分。節點證明則不同：下方的代理程式要麼使用其領域接受、且經本服務證明器驗證的類型完成了證明，要麼被拒絕。",
+  "postureServerApiMtls": "<strong>SPIRE Server API 是例外。</strong>它的 TCP 連接埠使用雙向 TLS：呼叫端需出示本信任網域的 X509-SVID，每個方法都依 SPIRE 自己的表格授權 — 因此下方標記為 <code>admin</code> 或 <code>downstream</code> 的項目現在決定其持有者可以做什麼。它的 Unix 通訊端是 <code>local</code> 實體，不需要憑證。Workload API 刻意保持不變：其規格規定絕不能要求客戶端進行身分驗證。",
+  "itsDirectoryEntryText": "本信任網域為其簽發 X509-SVID 的每個身分都在 <code>ou=users</code> 下有一個項目，以經過驗證的 TLS 客戶端憑證所寫入的同樣六個 <code>x509*</code> 屬性保存目前的憑證。封鎖或刪除此代理程式會將該項目標記為 <code>spiffeCredentialStatus: revoked</code>，但絕不會移除它；解除封鎖會將其重新標記為使用中。",
+  "notACertStatus": "這不是證書狀態。SPIFFE 沒有撤銷機制，沒有任何東西會回讀該旗標，此代理程式持有的任何 SVID 都會繼續有效，直到過期。",
+  "pkiBuildLink": "建立此領域的核證機關",
+  "trustDomainNote": "本服務是 <code>{trustDomainId}</code> 的簽發機構。它作為 SPIFFE 伺服器的自身身分是 <code>{serverId}</code>，預設情況下每個註冊項目都掛在其下。信任網域僅在重新啟動後才會改變（<code>spiffe.trustDomain</code>）：每張機構證書都會寫明它。",
+  "authorityPki": "X.509 簽發機構是此領域的 <strong>SPIFFE Issuing CA</strong>，位於本服務自己的 Root 之下 — {pkiLink}，它是此領域分支中的 Issuing CA 之一。因此使用端安裝的信任錨是 <strong>Root</strong>，所有領域共用它，它還涵蓋 LDAPS 636、主要連接埠以及本服務簽署的每個權杖：一個錨，只需安裝一次。X509-SVID 在其自身的證書鏈中攜帶 Issuing CA 和此領域的 Intermediate{chain}。<strong>輪替它會重新簽發該 Issuing CA，而信任錨保持不變</strong>，因此 bundle 不會改變，不需要重新取得任何內容，在舊機構下簽發的 SVID 也會繼續通過驗證 — 這正是它與被取代的自簽方案的全部差別。JWT 簽發機構沒有證書，也沒有可以掛靠的階層：它在每次啟動時產生，輪替時仍然是前置新機構，最多保留 {maxRetained} 個。",
+  "authoritySelfSigned": "此領域<strong>沒有核證機關</strong>，因此其 X.509 簽發機構是<strong>自簽</strong>的，並且本身就是信任錨 — 每次啟動時產生並保存在記憶體中，與 STS 簽署金鑰和 TLS 證書完全一樣，因此持有重新啟動前 bundle 的工作負載將無法驗證重新啟動後簽發的任何 SVID。輪替會前置一個新的簽發機構，並繼續發布舊的：一分鐘前簽發的 SVID 必須繼續通過驗證，這正是 bundle 的用途。最多保留 {maxRetained} 個，超過後會捨棄最舊的 — 它簽署的所有內容在那一刻就無法再通過驗證。{buildLink}，即可改為將 SPIFFE 簽發機構置於本服務的 Root 之下。",
+  "grpcListenersNote": "<code>/admin/sts-metadata</code> 和本頁面都看不到通訊端，因此這張表是唯一回報每個接聽程式是否真正繫結成功的地方。預設領域的四個接聽程式在處理程序啟動時繫結，即使 <code>spiffe.enabled</code> 關閉也保持繫結 — 它們會回應 <code>Unavailable</code>，因為通訊端消失會被誤認為服務已停止。其他所有領域的接聽程式在為該領域開啟 <code>spiffe.enabled</code> 時，於 <code>spiffe.grpcHost</code> 為該領域指定的地址上繫結 — 端點地址是 SPIFFE 客戶端用來指明租用戶的唯一方式，因為 gRPC 方法名稱由規格固定。",
+  "address": "地址",
+  "perMethodNote": "直接複製自 SPIRE 自己的 <code>policy_data.json</code>，而非推論得出：根據每個方法「顯然」需要什麼推導出的表格會在兩三處與 SPIRE 不一致，而遇到這種不一致的客戶端作者無法判斷是哪一端出錯。<code>any</code> 表示該方法在這裡和在真正的伺服器中一樣是開放的 — <code>AttestAgent</code> 是因為代理程式在該呼叫給它 SVID 之前沒有 SVID，<code>GetBundle</code> 是因為信任 bundle 是公開的。",
+  "federatedNote": "<strong>外部 bundle 是交給本服務的，本服務從不自行擷取。</strong>聯合規格在關係中包含 bundle 端點 URL，真正的實作會輪詢它；本實作記錄該 URL 但拒絕存取，因為為取得憑證驗證金鑰而去存取別人註冊的 URL，就是一次附帶出處的伺服器端請求偽造 — 與本服務對 WS-Federation 的 <code>wreqptr</code> 和客戶端的 <code>jwks_uri</code> 給出的拒絕相同。請在下方貼上 bundle，或使用 <code>BatchSetFederatedBundle</code> 推送。"
+}

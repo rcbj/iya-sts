@@ -1,0 +1,7 @@
+{
+  "filterNoteHead": "「類別」和「動作」會共同縮小範圍，就像任意兩個篩選條件一樣，因此其他類別的動作不會符合任何內容——這時下方的空白表格就是這個意思。「執行者」比對名稱兩種寫法中任一種的子字串，因為目錄列上的執行者是繫結 DN，而 Kerberos 列上的是 <code>alice@REALM</code>；只有在身分被正規化的地方才能將其合併為單一鍵。「錯誤代碼」比對代碼的開頭，因此 <code>STS-OAUTH</code> 表示所有 OAuth 失敗，而完整代碼表示單一情況；每個被拒絕或失敗的請求都帶有一個代碼，列在文件的 <em>Error codes</em> 頁面上。代碼記錄在這裡和服務記錄中，從不傳送給客戶端；",
+  "seqNote": "<strong>#</strong> 欄是序號，在本服務的所有處理程序中唯一且從不重複使用——即使經過捨棄和重新啟動也是如此——並在每個處理程序內遞增。正因如此它才是事件的穩定名稱，而列號會在有內容被捨棄時悄悄指向另一個事件。它並非跨處理程序的統一順序：多個工作線程或叢集節點各自從自己的號段中編號。要讀取新內容，請依時間（<code>at</code>）繼續，並以 <code>seq</code> 作為次要排序。<code>?format=json</code> 包含 <code>oldestSeq</code> 和 <code>newestSeq</code>，即所保留之最舊和最新事件的序號。",
+  "fromNote": "<strong>每一列都說明其來源</strong>（自 2026-09-18 起）：<em>來源</em>是引起該事件之請求、LDAP 作業、Kerberos 訊息或 SPIRE Server API 呼叫的客戶端 IP 地址——驗證、被拒絕的登入、同意、登出——對於本服務自行完成的動作則為空白。它是 <code>global.trustProxy</code> 和 <code>global.trustedProxies</code> 解析出的地址：<code>X-Forwarded-For</code> 中最右側、不是您指定之代理的那一個躍點，或 PROXY 協定標頭中的客戶端。<strong>如果在代理之後兩者都未設定，那麼它就是代理</strong>——在手提電腦上就是 compose 橋接器——因為那是沒有說明為誰轉送的最近躍點。通道仍顯示在目標下方：<code>http</code>、<code>ldap</code>、<code>ldaps</code>、<code>kerberos</code>、<code>grpc</code>、<code>tls</code>、<code>console</code>（在本主控台或 <code>/admin-api</code> 上的動作）、<code>internal</code>（本服務自行完成的動作）或 <code>none</code>（已過期的工作階段）。",
+  "protocolCallsHead": "<code>audit.protocolCalls</code>（目前{state, select, on {已開啟} other {<strong>已關閉</strong>}}）是最嘈雜的一項——每次 JWKS 輪詢和元數據擷取都是一個事件——因此關閉它可以讓關注目錄或主控台的人得到一個可讀的頁面。它從不影響其他五個類別，而且",
+  "noAddressTitle": "沒有客戶端地址：這是服務自行完成的動作（計時器、到期、背景傳送、啟動），或經由 Unix 通訊端抵達，或是在記錄開始包含地址之前記錄的。"
+}

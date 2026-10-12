@@ -1,0 +1,6 @@
+{
+  "proof.intro": "您裝置上的應用程式會使用將用來識別它的金鑰，對本頁面提供的挑戰進行簽署——在 iPhone 上則透過 Apple App Attest 證明該金鑰——再由您貼上它產生的內容。經手機安全硬件證明的 Android 金鑰或 App Attest 金鑰會被記錄為<strong>已證明</strong>；其他任何金鑰皆為自行聲明，正式部署不會註冊此類金鑰。",
+  "proof.appAttestIntro": "或者，從 iPhone 應用程式提供 App Attest 金鑰 ID 和證明物件（base64），以挑戰的 SHA-256 作為客戶端數據雜湊產生：",
+  "link.howAfter": "頁面（<strong>在此裝置上</strong>），選擇<em>建立密碼金鑰</em>並將其儲存到此裝置——Touch ID、Face ID、Windows Hello 或手機的屏幕鎖定。然後在同一部裝置上回到這裡進行連結。或者透過上方的方式證明裝置金鑰來註冊裝置。",
+  "devices.intro": "屬於您的手機和電腦：您在這裡註冊的裝置、您用某個應用程式登入過且該應用程式會與裝置上其他應用程式共用登入狀態的裝置（OpenID Connect Native SSO）、獲發證書的裝置，以及管理員為您註冊的任何裝置。移除您已不再擁有的裝置：其上的應用程式將無法再共用登入狀態，並會要求您重新登入。"
+}

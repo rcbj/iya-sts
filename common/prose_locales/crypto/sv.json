@@ -272,8 +272,8 @@
     "text": "En kanonisering, en SHA-256, ett ställe — det fanns två implementationer av den här före 2026-08-27."
   },
   "crypto.standards.dpop.coverage": {
-    "en": "da82595d1a834c49",
-    "text": "full: alla tolv kontroller i avsnitt 4.3, `cnf.jkt`-bindningen på åtkomst- OCH uppdateringstoken, `dpop_jkt`, upptäckt av återuppspelning via `jti` och nonce-handskakningen i båda formerna. INTE obligatoriskt — nonce-läget gör bevisen färskare, inte obligatoriska."
+    "en": "97405f66eaffc812",
+    "text": "full: alla tolv kontroller i avsnitt 4.3, `cnf.jkt`-bindningen på åtkomst- OCH uppdateringstoken, `dpop_jkt`, upptäckt av återuppspelning via `jti` och nonce-handskakningen i båda formerna. Inte obligatoriskt som standard — nonce-läget gör bevisen färskare, inte obligatoriska — men en sfär kan kräva det: `oauth2.accessTokenRequireDpop` vid varje resurs och `oauth2.refreshTokenRequireDpop` vid tokenslutpunkten, båda av som standard. En FAPI-profil kräver en avsändarbegränsning, DPoP eller ömsesidig TLS, och administratörskonsolens och användarportalens publika klienter är alltid DPoP-bundna."
   },
   "crypto.standards.dpop.what": {
     "en": "fd2e6cef9f5dc069",
@@ -467,6 +467,90 @@
     "en": "fed52b623a3769f0",
     "text": "SHA-256 som standard för certifikatsignaturen, och SHA-384 eller SHA-512 där hierarkin byggdes med dem. SHA-256 igen för certifikatens tumavtryck och för det RFC 7638-JWK-tumavtryck som den utfärdade `kid` härleds från — ett kid härleds från nyckelmaterialet överallt i den här tjänsten, så två instanser kan inte publicera ett namn över två nycklar. **SHA-1 ERBJUDS OCH ÄR MARKERAD SOM SVAG**: \"avvisar min stack ett SHA-1-certifikat?\" är en fråga som en debugger ska kunna ställa, och ingenting har den som standard."
   },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "ETT ROTNYCKELPAR FÖR TJÄNSTEN, en Intermediate för varje förtroendesfär och en för processen, en Issuing CA per användningsfall under var och en, plus ett per utfärdat nyckelpar. CA:ernas privata nycklar lämnar aldrig den här processen. En applikations GÖR DET: den lämnas ut en gång, vid utfärdandet, och skrivs in i applikationens katalogpost under `oauthAssertionPrivateKey` — **FÖRSEGLAD med AES-256-GCM under samma nyckelkrypteringsnyckel som hierarkin ovanför den, överallt där den nyckeln överlever processen**, så att en katalogdump, en ldif-fil, en databasrad eller en säkerhetskopia innehåller chiffertext. Konsolen och hanterings-API:t öppnar den för en anropare som har en autentiseringsuppgift, eftersom ett utfärdat nyckelpar som en operatör inte kan hämta är ett utfärdat nyckelpar som ingen kan använda. I UTVECKLINGSLÄGE skrivs den i klartext, där nyckelkrypteringsnyckeln är tillfällig och inte skulle överleva den omstart som posten överlever. Den här tjänsten behåller INGEN andra kopia i något av fallen. OCH SEDAN 2026-09-11 KAN ÄVEN EN PERSON HA ETT, under `stsAssertionPrivateKey` i sin egen `ou=users`-post, förseglat under samma nyckel och med samma mekanism. Skillnaden är vägen UT: en applikations nyckel öppnas för en läsare med autentiseringsuppgift av `applications.js`, och en persons lämnas ut en gång vid utfärdandet och aldrig igen, eftersom inget här ritar en persons post genom en modul som skulle öppna den."
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "Certifikatkodning"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "d40c79caa059f986",
+    "text": "X.509 v3, DER, via pkijs och asn1js — common/vendored/x509.js, moderprojektets egen PKI-kod, byte för byte identisk. En kodare för den här tjänsten och för det projektets sida PKI / X.509."
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "Erbjudna CA-nyckelalgoritmer"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "Erbjudna algoritmer för certifikatsignatur"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "Av dessa, medvetet erbjudna och markerade som svaga"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "De tre nivåerna"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "Certifikatets tumavtryck"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "SHA-256 över DER"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "Den utfärdade nyckelns `kid`"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "JWK-tumavtryck enligt RFC 7638, SHA-256, avkortat till 16 tecken"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "Publicerad återkallelse"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "CRL:er enligt RFC 5280 och OCSP enligt RFC 6960, EN AV VARDERA PER CERTIFIKATUTFÄRDARE — en lista signeras av en utfärdare, så en lista per sfär skulle inte ha någon giltig utfärdare. Signerade med själva CA:n i stället för med ett delegerat svararcertifikat (RFC 6960 avsnitt 4.2.2.2), så att en klient verifierar med det förtroendeankare den redan har. Varje certifikat som den här tjänsten utfärdar anger sin egen CRL över vanlig http och ldap och sin svarare i en Authority Information Access — aldrig https eller ldaps, som en CA enligt RFC 5280 avsnitt 8 SHOULD NOT skriva in i ett tillägg."
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "Kontrollerad återkallelse"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "Återkallelsekontroll — hur en främmande CRL betros"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "Dess signatur verifieras mot UTFÄRDARENS certifikat (nästa certifikat uppåt i den uppvisade kedjan), dess utfärdarnamn måste stämma, ett kritiskt tillägg som den här tjänsten inte implementerar gör den oanvändbar (RFC 5280 avsnitt 6.3.3), och den används till sin nextUpdate eller pki.revocationCrlMaxAgeS, beroende på vilket som inträffar först. Transporten kontrolleras inte med certifikat: signaturen är autentiseringen, och en CRL-servers eget certifikat kedjar ofta till just den CA som kontrolleras. En INDIREKT CRL verifieras mot certifikatet för den cRLIssuer som det uppvisade certifikatet anger, vilket måste bära cRLSign och kedja till den uppvisade vägen — hämtat från kedjan, den här tjänstens utfärdare, pki.revocationCrlIssuersFile eller caIssuers-adressen i CRL:ens egen Authority Information Access; en DELTA mot samma signerare som dess bas. Listor hämtas över http, https eller ldaps (vanlig ldap endast när pki.revocationLdap tillåter det); en ldaps-katalogs certifikat måste kedja till nodes lager eller pki.revocationLdapCaFile. En lista på en adress som inte rings upp är en status som inte kunde fastställas, nekad under hard-fail (STS-PKI-0188); ett certifikat som inte anger någon lista och ingen svarare nekas i produktläge (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190), och ett som bär noRevAvail enligt RFC 9608 kontrolleras inte."
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "Återkallelsekontroll — hur ett främmande OCSP-svar betros"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "Begäran bär ett SHA-1-CertID (identifieraren i profilen enligt RFC 5019, inte en signatur) och en nonce på 32 oktetter. Svaret måste vara signerat av certifikatets utfärdare, eller av en delegerad svarare vars certifikat utfärdaren signerade med id-kp-OCSPSigning (RFC 6960 avsnitt 4.2.2.2); en annan nonce som ekas tillbaka nekas som en återuppspelning; thisUpdate och nextUpdate måste vara färska inom pki.revocationClockSkewS. En delegerad svarares EGEN status slås upp i den CRL som dess certifikat anger (aldrig över OCSP) om den inte bär id-pkix-ocsp-nocheck; en återkallad svarares svar används inte, och en okänd svarares svar används inte under hard-fail."
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "Återkallelsekontroll — ett REGISTRERAT certifikat"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "Ett certifikat som registrerats snarare än visats upp — x5c för en RFC 7523-nyckel, ett RFC 7522-certifikat, fedSigningCertificate eller x5c för en federationspartners nyckel, ett certifikat i oid4vp.trustedIssuerCertificates — kontrolleras på samma sätt när det verifierar en signatur, och dess utfärdare hämtas från dess egen caIssuers-adress. En ensam nyckel utan certifikat har inget att kontrollera och rapporteras som sådan."
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "Var CA:ernas privata nycklar finns"
+  },
   "crypto.families.user-portal.signs": {
     "en": "504f3616f5efd7b5",
     "text": "Ingenting. Portalen utfärdar ingen token, inget intygande och inget certifikat — den byter autentiseringsuppgifter snarare än skapar dem."
@@ -486,6 +570,34 @@
   "crypto.families.user-portal.hashes": {
     "en": "54242a9694c34ec7",
     "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) för både lösenordet och aktiveringstoken, var och en med 16 slumpmässiga byte salt, lagrad som `$scrypt$N$r$p$salt$hash` så att kostnaden kan höjas senare utan att ogiltigförklara det som redan är lagrat. **INTE en sammanfattning**: ett lösenord har låg entropi och en snabb hash över ett ligger en ordlista ifrån att vara lösenordet. SHA-256 under en HMAC för CSRF-token, vilket är ett annat jobb — äkthet hos ett formulär, inte skydd av en hemlighet i vila."
+  },
+  "crypto.families.user-portal.keys": {
+    "en": "b1cf1ce0bb050d19",
+    "text": "Inga egna. CSRF-token är en HMAC-SHA256 under en nyckel som genereras per process och medvetet INTE görs beständig — en CSRF-token är bara meningsfull under en sessions livstid, en session överlever inte en omstart, så en nyckel som gjorde det skulle inte skydda något och vara ytterligare en hemlighet i vila."
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "20e9dc8c3361fe3e",
+    "text": "Lösenord och aktiveringstoken i vila"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "7e9dc006d728159d",
+    "text": "scrypt, N=32768, r=8, p=1, 32 byte lång nyckel, 16 byte slumpmässigt salt"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "Jämförelse av någondera"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "likhetsjämförelse i konstant tid"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "03f3221c7fc527a5",
+    "text": "CSRF-token"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "3829178c0011f20f",
+    "text": "HMAC-SHA256 över sessions-id:t under en nyckel per process"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -507,9 +619,17 @@
     "en": "a478d2fd912623b6",
     "text": "SHA-256 och SHA-512 för Content-Digest; interaktionshashen i avsnitt 4.2.3 i vilken Named Information-hashmetod som helst som node beräknar (SHA-2 och SHA-3, trunkerade former inräknade); SHA-256 för ett JWK-tumavtryck, ett certifikattumavtryck och sammanfattningen av ett ihågkommet godkännande; SHA-256 av åtkomsttoken för `ath` i ett JWS-bevis."
   },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "Klientinstansens nyckel är klientens identitet — en JWK, ett certifikat, ett certifikattumavtryck eller en referens till en nyckel i applikationsposten. En delad symmetrisk nyckel (gnapSymmetricKey) och en rotnyckel för macaroons (gnapMacaroonKey) förseglas i vila under processens nyckelkrypteringsnyckel. Macaroon- och dir-nycklarna är HKDF-SHA256-härledningar av sfärens hemlighet med var sin domänseparator."
+  },
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "DEN ACCEPTERAR INTE EN BEGÄRAN UTAN BEVIS FÖR EN BUNDEN TOKEN, och det finns ingen inställning som får den att göra det: ett GNAP-nyckelbevis är protokollet snarare än ett härdningsalternativ. Det som är valfritt är en INNEHAVARTOKEN (bearer), som gnap.bearerTokens stänger av. Macaroon-tredjepartsvillkor, Biscuit-tredjepartsblock och ZCAP-anropsbevis är inte implementerade."
+  },
+  "crypto.families.gnap.verifiesWithoutDemos": {
+    "en": "0128ae60345397de",
+    "text": "VARJE BEGÄRAN SOM EN KLIENTINSTANS GÖR, med den nyckel den uppvisade: en RFC 9421-HTTP-meddelandesignatur (med bodyn täckt av en RFC 9530-Content-Digest), ett ömsesidigt TLS-certifikat (återkallelse kontrolleras; en kedja till klientens förtroendelager och en bindning till applikationsposten under gnap.mtlsTrust=pki, produktlägets standard), en frikopplad JWS över bodyn eller en bifogad JWS som bär den. En nyckelrotation verifieras under BÅDA nycklarna. En resursserver som anropar introspektion eller registrering bevisas på samma sätt, och varje tokenformat verifieras vid introspektion."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -555,6 +675,10 @@
     "en": "de5f85f4b8049f51",
     "text": "SHA-256 för det RFC 7638-tumavtryck som varje nyckels kid är, och för att namnge en registerpost efter den entitet eller det märke den handlar om."
   },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "En tabell med Federation Entity Keys per sfär (oidfed.signingAlg, ES256 som standard, ML-DSA erbjuds), i sfärens ou=oidfed-post med de privata halvorna förseglade under nyckelkrypteringsnyckeln överallt där nycklar är beständiga; en nästa nyckel publiceras i förväg, pensionerade nycklar publiceras under oidfed.keyOverlapDays och behålls för alltid för slutpunkten Historical Keys, med sina privata halvor kasserade vid pensioneringen. De fästa nycklarna för varje Trust Anchor och underordnad är publika nycklar i registret."
+  },
   "crypto.families.openid-federation.whatItDoesNot": {
     "en": "bb73b0a66ac9741b",
     "text": "Den autentiserar inte en klient vid en federationsslutpunkt (8.8 — \"none\" är standard och den enda metoden här), och den signerar inget federationsutlåtande med en protokollnyckel eller tvärtom."
@@ -590,6 +714,10 @@
   "crypto.families.xacml.hashes": {
     "en": "cb519e6f900e9b51",
     "text": "EN, OCH DEN ÄR INTE SÄKERHET. Den fjärranslutna PEP:ens synktoken är en SHA-256 över dokumenten för varje aktiverad policy plus vilken som är roten — ett billigt sätt för en PEP att fråga \"har något ändrats\" och få en 304, och inget mer. Den autentiserar ingenting och jämförs inte mot något som en anropare tillhandahåller som autentiseringsuppgift, så den skulle fortfarande vara korrekt som en CRC."
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "Inga. Ingen nyckel av något slag deltar i att nå ett beslut."
   },
   "crypto.families.xacml.whatItDoesNot": {
     "en": "6d7c9938306101b5",
@@ -684,20 +812,28 @@
     "text": "Kryptering av uppdateringstoken (till den här sfärens egna nycklar)"
   },
   "crypto.families.federation.signs": {
-    "en": "4db5ac4dfde3c53a",
-    "text": "Den SAML 2.0-`<AuthnRequest>` som den skickar till en främmande identitetsleverantör, omsluten, RSA-SHA256 över exklusiv c14n — samma signerare som varje annat dokument här går igenom."
+    "en": "4f58817f19139f26",
+    "text": "Den SAML 2.0-`<AuthnRequest>` som den skickar till en främmande identitetsleverantör, omsluten, RSA-SHA256 över exklusiv c14n — samma signerare som varje annat dokument här går igenom — och den `<LogoutRequest>` som meddelar en partner om en utloggning här, omsluten eller som Redirect-bindningens fristående frågesignatur."
   },
   "crypto.families.federation.verifies": {
-    "en": "d99d0a0b18dab6e8",
-    "text": "HELA POÄNGEN MED FUNKTIONEN. En partners SAML Response och Assertion inuti den, var och en kontrollerad SEPARAT och var och en mot certifikatet som är konfigurerat på relationen — aldrig mot ett certifikat som dokumentet bär i sin egen `ds:KeyInfo`, vilket är den kontroll som en naiv implementation hoppar över. En partners ID Token som en vanlig JWS mot partnerns publicerade nycklar."
+    "en": "b986e6fffdabc6e3",
+    "text": "HELA POÄNGEN MED FUNKTIONEN. En partners SAML Response och Assertion inuti den, var och en kontrollerad SEPARAT och var och en mot certifikatet som är konfigurerat på relationen — aldrig mot ett certifikat som dokumentet bär i sin egen `ds:KeyInfo`, vilket är den kontroll som en naiv implementation hoppar över. En partners ID Token som en vanlig JWS mot partnerns publicerade nycklar. En partners UTLOGGNING — en SAML-`<LogoutRequest>` eller en Back-Channel Logout Token — mot samma konfigurerade nycklar, och nekad osignerad om inte relationen stänger av `fedRequireSignedLogout`, vilket bara utvecklingsläge tillåter."
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "Det som en partner krypterar till relationens egen nyckel: en `<EncryptedAssertion>`, en `<EncryptedID>` eller `<EncryptedAttribute>` inuti ett verifierat intygande eller en `<LogoutRequest>`, en WS-Federation-token och en JWE-ID Token eller Logout Token — under exakt den enda nyckelhanteringsalgoritm och den enda innehållskrypteringsalgoritm som relationen godtar. Intygandets signatur verifieras på dess klartext och Responsens på chiffertexten så som den anlände; en JWE måste innehålla en signerad JWT. Varje dekrypteringsfel ger ett och samma svar, så ACS:en är inget orakel."
   },
   "crypto.families.federation.hashes": {
     "en": "2d3c2fd5b62d8002",
     "text": "Vad partnerns `DigestMethod` än namnger, ur den vendorerade tabellen nedan."
   },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "Ett krypteringsnyckelpar per SAML 2.0-, WS-Federation- eller OpenID Connect-relation, skapat när relationen skapas: RSA 3072 eller EC P-256 under sfärens Intermediate, eller för OpenID Connect X-Wing eller ML-KEM-768, som inte bär något certifikat. Dess privata halva förseglas under nyckelkrypteringsnyckeln överallt där nycklar är beständiga; en rotation behåller den nyckel den ersatte under `federation.encryptionKeyGraceS`, och bara den aktuella nyckeln publiceras. Det den signerar, signerar den med sfärens signeringsnyckel."
+  },
   "crypto.families.federation.whatItDoesNot": {
-    "en": "b16bd8c2a0b0e24a",
-    "text": "Den dekrypterar inte ett intygande som en partner krypterat, och den tar inte emot en federerad utloggning. SPÄRREN SITTER PÅ SIGNERAREN OCH PÅ SUBJEKTET (#109): förbi en verifierad signatur loggas bara den person in som partnerns subjekt är länkat till. Detta är den enda yta här där en saknad kontroll är en autentiseringsförbigång för varje protokoll i processen — se federation/CLAUDE.md."
+    "en": "76366a6354696014",
+    "text": "Den krypterar inget som den skickar, och den frågar inte någon partner om en session: det som når en session efter inloggningen är partnerns utloggning, som avslutar den, och den SAML-`SessionNotOnOrAfter` som den skickade vid inloggningen, som begränsar den. I produktläge nekar den ett intygande i klartext som passerar webbläsaren om inte relationen sätter `fedAllowUnencrypted`; AES-CBC och RSA PKCS #1 v1.5 nekas i varje läge. SPÄRREN SITTER PÅ SIGNERAREN OCH PÅ SUBJEKTET (#109): förbi en verifierad signatur loggas bara den person in som partnerns subjekt är länkat till. Detta är den enda yta här där en saknad kontroll är en autentiseringsförbigång för varje protokoll i processen — se federation/CLAUDE.md."
   },
   "crypto.families.federation.algorithms.0.what": {
     "en": "7c3206a1a259cf99",
@@ -710,6 +846,30 @@
   "crypto.families.federation.algorithms.2.what": {
     "en": "1a25a971a5ba739e",
     "text": "Inkommande ID Token"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "Typer av krypteringsnycklar"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "Nyckelhantering för XML Encryption, en av"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "Innehållskryptering för XML Encryption, en av"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "Nyckelhantering för JWE, en av"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "Innehållskryptering för JWE, en av"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "Nekas i varje läge"
   },
   "crypto.families.saml-2-0.signs": {
     "en": "cae50b198b378a2b",
@@ -775,6 +935,10 @@
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 har ingen kryptering alls — `<EncryptedAssertion>` kom med 2.0 — och inget begäranmeddelande att verifiera en signatur på. Referens-URI:n namnger `AssertionID` eller `ResponseID`, vilket är hela skälet till att den delade signeraren löser upp ett id genom att SÖKA efter ett snarare än att få veta dess namn."
   },
+  "crypto.families.saml-1-1.verifiesWithoutDemos": {
+    "en": "f11251a4b826b873",
+    "text": "Ingenting: SAML 1.1 har inget begärandemeddelande att verifiera en signatur på."
+  },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "Signatur"
@@ -795,6 +959,10 @@
     "en": "c0aea7549def7066",
     "text": "Den förfalskar ingen `wauth` — ett krav som sessionen inte kan uppfylla är en stegvis höjning, och en AuthenticationMethod är vad sessionen gjorde — och den följer ingen `wreqptr` — att hämta en URL som någon registrerat är en server-side request forgery med en källhänvisning bifogad."
   },
+  "crypto.families.ws-federation.verifiesWithoutDemos": {
+    "en": "02c1a08782ac0629",
+    "text": "Ingenting: en inloggningsbegäran bär ingen signatur."
+  },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "Signatur"
@@ -804,8 +972,8 @@
     "text": "SAML-intygandet i RequestSecurityTokenResponse, 1.1 eller 2.0, genom den delade signeraren."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "74c8911543a69c43",
-    "text": "Den LÄSER en begärares `<wsse:Security>`-autentiseringsuppgift och `<ds:X509Certificate>` i en signerad begäran — det senare för att ta reda på vem den ska KRYPTERA till. Den kontrollerar inget lösenord bakom det."
+    "en": "e1450965d276d357",
+    "text": "Den LÄSER en begärares `<wsse:Security>`-autentiseringsuppgift och `<ds:X509Certificate>` i en signerad begäran — det senare för att ta reda på vem den ska KRYPTERA till. I produktläge verifieras en UsernameTokens lösenord mot personens `userPassword`, eller mot en applikations klienthemligheter; utvecklingsläget tror på det, utom det reserverade `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
     "en": "fa359afa3450379c",
@@ -816,8 +984,8 @@
     "text": "SHA-256 för Reference-sammanfattningen."
   },
   "crypto.families.ws-trust.whatItDoesNot": {
-    "en": "37c796f7428c337a",
-    "text": "Den övervakar ingen delegering: en RST som ber om en token för någon annan besvaras. Och den producerar inget eget signerat SOAP-kuvert — se WS-Security nedan, som är raden som säger vad den här tjänsten gör och inte gör med den specifikationen."
+    "en": "a65f60d0f2191130",
+    "text": "Den besvarar inte varje begäran om en token för någon annan: `OnBehalfOf` (personifiering) och `ActAs` (delegering) avgörs av utfärdandepolicyn utifrån delegeringskontrollerna i begärarens och subjektets poster — nekade i produktläge, registrerade som det som skulle ha nekats i utvecklingsläge. Och den producerar inget eget signerat SOAP-kuvert — se WS-Security nedan, som är raden som säger vad den här tjänsten gör och inte gör med den specifikationen."
   },
   "crypto.families.ws-trust.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -966,6 +1134,10 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "DEN SIGNERAR DÅLIGT MED AVSIKT NÄR DEN OMBEDS. `ssf.breakSetSignature` ändrar ETT TECKEN i signaturen efter signeringen, så en mottagare som inte verifierar accepterar en händelse som ingenting signerat. Det är ett tecken snarare än en trunkering med avsikt: en trunkerad signatur misslyckas vid base64url-avkodningen och rapporteras som en MISSBILDAD token, vilket är ett annat fel än en felaktig för den som testas. Enbart utvecklingsläge: en produktsfär ignorerar den och vägrar att den sätts (#104)."
+  },
+  "crypto.families.shared-signals.verifiesWithoutDemos": {
+    "en": "09b792e4c0821046",
+    "text": "Åtkomsttoken vid varje anrop för strömhantering, genom samma kontroll som varje annan skyddad slutpunkt här använder, och en SET som skickats till konsolens eller portalens egen mottagare mot den här tjänstens JWKS. /ssf/receive är en utvecklingsslutpunkt (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",
@@ -1227,6 +1399,10 @@
     "en": "6817583ce52ea878",
     "text": "SHA-256 för kontonyckelns tumavtryck (RFC 7638), för Replay-Nonce-MAC:en och för varje certifikats tumavtryck i postens register."
   },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "En ACME Issuing CA-nyckel per förtroendesfär under sfärens Intermediate; varje kontos publika nyckel (RSA på minst 2048 bitar, P-256/P-384/P-521 eller Ed25519), sparad som en publik JWK och hittad via sitt tumavtryck enligt RFC 7638; klientens egen nyckel för varje certifikat; och en hemlighet per körning som Replay-Nonce-MAC:en härleds under, delad med forkade begärandearbetare och aldrig nedskriven."
+  },
   "crypto.families.acme.whatItDoesNot": {
     "en": "61718f6daa70f201",
     "text": "Ingen privat nyckel syns någonsin: ACME är endast CSR. En postkvantkontonyckel avvisas, eftersom dess nyckeltyp saknar tumavtryck enligt RFC 7638 och ett konto hittas via sin nyckel. En KEM-nyckel kan inte certifieras, eftersom den inte kan signera innehavsbeviset. JWS:en är den TILLPLATTADE JSON-serialisering som RFC 8555 kräver, och som den här tjänsten bara läser här."
@@ -1267,6 +1443,10 @@
     "en": "78ff84df2eb09c64",
     "text": "SHA-256 för varje certifikats tumavtryck i postens register."
   },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "En EST Issuing CA-nyckel per förtroendesfär, under sfärens Intermediate; klientens egen nyckel för allt den registrerar; och för /serverkeygen ett nyckelpar som genereras här i mallens algoritm (ML-KEM inräknad, för key-encipherment), returnerat en gång."
+  },
   "crypto.families.est.whatItDoesNot": {
     "en": "0fbae781db5fb46b",
     "text": "Fullständig CMC, tls-unique-kanalbindning (TLS 1.3 har ingen) och en krypterad servergenererad nyckel. En KEM-nyckel kan inte registreras med /simpleenroll, eftersom den inte kan signera innehavsbeviset."
@@ -1306,6 +1486,10 @@
   "crypto.families.scep.hashes": {
     "en": "47b332491bb2a39b",
     "text": "SHA-256 av en utmaningshemlighet, av en CSR och av en signerarnyckel för transaktionsidempotens; algoritmerna för meddelandesammandrag ovan."
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "En SCEP Issuing CA-nyckel per förtroendesfär, och ett RA-nyckelpar per sfär — RSA enligt scep.raKeyAlgorithm, ett löv under den CA:n, sparat i sfärens PKI-rad (förseglat med hierarkin i produktläge) och utfärdat på nytt inom trettio dagar före utgång. Begärarens nyckel syns aldrig."
   },
   "crypto.families.scep.whatItDoesNot": {
     "en": "4a19c5629d38be11",

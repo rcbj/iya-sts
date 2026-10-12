@@ -1342,5 +1342,33 @@
   "caches.remaining.staleChanged": {
     "en": "1134a1cffa605ffb",
     "text": "已过时：{{basis}}已发生变化"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "直到因达到上限而作为最近最少使用的条目被丢弃"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "直到因达到上限而被丢弃"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "直到某个数据集版本被激活"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "直到它在空闲超时期间内未被使用"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "已过时：其 nonce 已过期"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "已过时：其质询已过期"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "已过时：该凭据已被否认"
   }
 }

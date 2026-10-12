@@ -264,8 +264,8 @@ class RiskAdmin {
    * both answer: the store, the dataset registry, the failure history, and the
    * assessments and standings, each paged in the store.
    *
-   * @param query - `address` for a lookup, `offset` for the failures, and the
-   * paging parameters
+   * @param query - `address` for a lookup, and the paging parameters
+   * (`failuresPage`, `assessmentsPage`, `subjectsPage`, `per`)
    * @param realmOnly - true for a realm administrator, who sees the realm's own
    * and nothing of the service's
    * @returns the view
@@ -276,10 +276,28 @@ class RiskAdmin {
     const q = query || {};
     const realm = this.realmOf();
     const registry = await datasets.registry(realm);
-    const offset = Math.max(0, Number(q.offset) || 0);
-    const history = await failures.list(realm, {
-      since: now() - FAILURE_WINDOW_MS, limit: FAILURES_PER_PAGE,
-      offset: offset });
+    // THE FAILURES, PAGED ON `failuresPage` (#313). The store pages them
+    // itself, so the page asked for is fetched and its total read off the
+    // answer; a page past the end is fetched again at the clamped page,
+    // the arrangement the assessments below already have. It read a raw
+    // `?offset` until then, which nothing on the page could move.
+    const failuresOpts = { name: 'failures', noun: 'failures',
+                           defaultPer: FAILURES_PER_PAGE };
+    const since = now() - FAILURE_WINDOW_MS;
+    const fetchFailures = function (pg: Json): Promise<Json> {
+      log.debug("Entering fetchFailures().");
+      log.debug("Leaving fetchFailures().");
+      return failures.list(realm, { since: since, limit: pg.perPage,
+                                    offset: pg.offset });
+    };
+    let failuresPaging = adminViews.pagingOf(q, Number.MAX_SAFE_INTEGER,
+                                             failuresOpts);
+    let history = await fetchFailures(failuresPaging);
+    const askedFailures = failuresPaging;
+    failuresPaging = adminViews.pagingOf(q, history.total, failuresOpts);
+    if (failuresPaging.offset !== askedFailures.offset) {
+      history = await fetchFailures(failuresPaging);
+    }
     const address = String(q.address || '').trim();
     const lookup = address ? await datasets.lookup(address, realm) : null;
     // `subject` narrows the assessments to one person — the link under the
@@ -337,9 +355,10 @@ class RiskAdmin {
       assessmentsInDatabase: assessed.inDatabase,
       failures: {
         store: failures.describe(), windowDays: FAILURE_WINDOW_MS / 86400000,
-        total: history.total, offset: offset, limit: FAILURES_PER_PAGE,
-        rows: history.rows
-      }
+        total: history.total, offset: failuresPaging.offset,
+        limit: failuresPaging.perPage, rows: history.rows
+      },
+      failuresPaging: adminViews.pagingJson(failuresPaging)
     };
     // THE SETTINGS, as every page that owns settings answers them (#446).
     // A realm's own administrator is shown none: the `risk.` settings are

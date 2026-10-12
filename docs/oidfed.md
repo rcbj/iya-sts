@@ -255,7 +255,15 @@ deleted, and after deletion it is answered under the identifier it had.
 
 The console lists each subordinate's history under **History**, and the
 revoked ones under **Former subordinates**. `GET /admin-api/oidfed` returns
-both.
+both. A row carries a subordinate's latest 25 events and `eventsTotal`; the
+whole history is at `/oidfed/subordinate-events`.
+
+Every list on `/admin/oidfed` that grows is paged, on the console and in
+`GET /admin-api/oidfed` alike: the keys (`keysPage`), the subordinates
+(`subordinatesPage`), the revoked ones (`formerPage`), the Trust Anchors
+(`anchorsPage`), the marks issued (`issuedPage`) and carried (`heldPage`), and
+the mark policies (`policiesPage`), with `per` shared. `counts` holds each
+list's whole length.
 
 ## The Extended Subordinate Listing
 

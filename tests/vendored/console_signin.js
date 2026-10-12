@@ -386,7 +386,11 @@ async function signInToTheConsole(base, user, log2, options) {
     scope: "openid admin:read admin:write admin:console",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
-    code_challenge_method: "S256", resource: resource }).toString();
+    code_challenge_method: "S256", resource: resource,
+    // OpenID Connect's nonce, derived from the verifier as the runtime
+    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+      .digest("base64url") }).toString();
   const toScreen = await fetchKeeping(authorize);
   const where = toScreen.headers.get("location") || "";
   const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];

@@ -343,10 +343,13 @@ class KerberosPrincipalsPage {
       kit.note('<a href="/admin-api/kerberos/principals">' +
                 t.html('consoleKerberosPrincipals.linkApi') +
                 '</a> &middot; <a href="/admin/kerberos">' +
-                t.html('consoleKerberosPrincipals.linkSettings') +
-                '</a> &middot; <a ' +
-                'href="/krb5/principals">' +
-                t.html('consoleKerberosPrincipals.linkDb') + '</a>');
+                t.html('consoleKerberosPrincipals.linkSettings') + '</a>' +
+                // The KDC's document only where this realm is served it
+                // (#585).
+                (json.principalsDocument
+                  ? ' &middot; <a href="' + kit.esc(json.principalsDocument) +
+                    '">' + t.html('consoleKerberosPrincipals.linkDb') + '</a>'
+                  : ''));
 
     return inner;
   }

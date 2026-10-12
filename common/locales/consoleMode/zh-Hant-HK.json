@@ -1,0 +1,3 @@
+{
+  "about1": "<code>global.mode</code> 說明此領域的性質：<strong>development</strong>，即透過一律應允來測試客戶端的模擬服務；或 <strong>product</strong>，即去除寬鬆處理後的同一套協定實作。"
+}

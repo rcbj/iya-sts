@@ -552,8 +552,8 @@
     "text": "Kör demonstrationsresursservern"
   },
   "gnap.demoResourceServer|description": {
-    "en": "447206adf29b67b8",
-    "text": "GET/POST /gnap/rs/resource: bedömer en uppvisad token i vilket som helst av de fem formaten och besvarar den RS-först-utmaning som beskrivs i avsnitt 9.1."
+    "en": "f449d29bef46a299",
+    "text": "GET/POST /gnap/rs/resource: bedömer en uppvisad token i vilket som helst av de fem formaten och besvarar den RS-först-utmaning som beskrivs i avsnitt 9.1. Endast utvecklingsläge: en produktrealm har ingen demonstrationsresursserver (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -5564,8 +5564,8 @@
     "text": "Port för testtjänsten"
   },
   "krb5.servicePort|description": {
-    "en": "bcfc656f7bfa6a4f",
-    "text": "Den Kerberos-aktiverade testtjänsten som tar emot en AP-REQ."
+    "en": "f520a63e9c191a86",
+    "text": "Den Kerberos-aktiverade testtjänsten som tar emot en AP-REQ. En demonstration: en produktprocess startar den inte (#585)."
   },
   "krb5.servicePort|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6376,8 +6376,8 @@
     "text": "Vad den inbäddade PEP:en gör med ett icke-Permit"
   },
   "xacml.pepBias|description": {
-    "en": "cdf7ffde654d4319",
-    "text": "DET HÄR ÄR PEP:ENS BESLUT OCH INTE PDP:NS, vilket är hela skälet till att det är en inställning. XACML avsnitt 7.2 låter en PEP vara deny-biased (allt som inte är Permit är ett avslag) eller permit-biased (allt som inte är Deny tillåts), och verkliga driftsättningar skiljer sig åt. Deny-biased är standard eftersom det är vad en PEP som skyddar något bör vara; permit-biased finns så att en klient kan se vad det andra valet gör med ett Indeterminate, vilket är fallet där de två är oense och det som ingen testar."
+    "en": "ad0594c9ac4f34c1",
+    "text": "DET HÄR ÄR PEP:ENS BESLUT OCH INTE PDP:NS, vilket är hela skälet till att det är en inställning. XACML avsnitt 7.2 låter en PEP vara deny-biased (allt som inte är Permit är ett avslag) eller permit-biased (allt som inte är Deny tillåts), och verkliga driftsättningar skiljer sig åt. Deny-biased är standard eftersom det är vad en PEP som skyddar något bör vara; permit-biased finns så att en klient kan se vad det andra valet gör med ett Indeterminate, vilket är fallet där de två är oense och det som ingen testar. Endast utvecklingsläge: dess enda läsare, /xacml/protected, är en demonstrationsslutpunkt (#585)."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6820,8 +6820,8 @@
     "text": "Ta emot pushade händelser"
   },
   "ssf.receiveEnabled|description": {
-    "en": "009081399f67bac5",
-    "text": "Om POST /ssf/receive tar emot en Security Event Token som pushas TILL den här tjänsten — rollerna omvända, med debuggern som sändare. Den verifierar signaturen när den kan hitta en nyckel och rapporterar vad den läste i båda fallen, eftersom en mottagare som vägrade en overifierbar händelse inte skulle kunna visa en person VARFÖR den var overifierbar. Av svarar 501."
+    "en": "f031c3db7a13549d",
+    "text": "Om POST /ssf/receive tar emot en Security Event Token som pushas TILL den här tjänsten — rollerna omvända, med debuggern som sändare. Den verifierar signaturen när den kan hitta en nyckel och rapporterar vad den läste i båda fallen, eftersom en mottagare som vägrade en overifierbar händelse inte skulle kunna visa en person VARFÖR den var overifierbar. Av svarar 501. Endast utvecklingsläge: en produktrealm har ingen /ssf/receive (#585)."
   },
   "ssf.receiveAudiences|label": {
     "en": "26d54185c0e2e81a",

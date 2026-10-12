@@ -25,7 +25,8 @@
 // `oid4vci.walletUrl` is the suite's offer endpoint, so the offer's wallet
 // link IS the delivery — and, for a pre-authorized one, reads the
 // transaction code the person would read. A same-device offer comes from
-// the issuer's own offer page; a pre-authorized one is the person's own,
+// the issuer's own offer page, in a development realm (#585); a
+// pre-authorized one is the person's own,
 // made on the user portal (`POST /account-api/credentials/offers`, #589),
 // signed in as the static portal signs in.
 //
@@ -180,6 +181,14 @@ async function prepare(plan) {
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
     ["federation.outboundCaFile", oidf.suiteCaFile()]];
+  // THE SAME-DEVICE OFFER COMES FROM THE ISSUER'S OWN OFFER PAGE, which is a
+  // demonstration a product realm is not served (#585); a pre-authorized
+  // offer is the portal's in every mode. So that plan's realm is a
+  // development realm whatever the mode — set first, so every setting after
+  // it is judged in the mode the realm will run in.
+  if (plan.offer === "same-device") {
+    settings.unshift(["global.mode", "development"]);
+  }
   // HAIP: every wallet authenticates with OAuth 2.0 Attestation-Based
   // Client Authentication (#229). The CLIENT attester is a leaf a CA made
   // here issued — HAIP 4.4.1 refuses a self-signed one — and the realm

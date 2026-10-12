@@ -181,10 +181,35 @@ class OidfedApi {
                      'whether it is suspended and its event history, the ' +
                      'subordinates it has revoked with theirs (#137), and ' +
                      'the Entity Collection crawl it keeps (#136). The ' +
+                     'keys, subordinates, revoked subordinates, Trust ' +
+                     'Anchors, issued and carried marks and mark policies ' +
+                     'are each one page, moved by a parameter of its own ' +
+                     'with `per` shared; `counts` holds each list\'s whole ' +
+                     'length and `paging` where each page is. A ' +
+                     'subordinate\'s `events` are its latest 25, with ' +
+                     '`eventsTotal`; the whole history is at ' +
+                     '/oidfed/subordinate-events. The ' +
                      'oidfed.* settings are written through ' +
                      'POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/oidfed',
-        parameters: [],
+        parameters: [
+          ['keysPage', 'the Federation Entity Keys'],
+          ['subordinatesPage', 'the subordinates'],
+          ['formerPage', 'the revoked subordinates'],
+          ['anchorsPage', 'the Trust Anchors'],
+          ['issuedPage', 'the Trust Marks this realm issued'],
+          ['heldPage', 'the Trust Marks this realm carries'],
+          ['policiesPage', 'the Trust Mark policies']
+        ].map(function (one: string[]): Json {
+          return { name: one[0], in: 'query', required: false,
+                   schema: { type: 'integer', minimum: 1 },
+                   description: 'Which page of ' + one[1] + '. Clamped, ' +
+                                'like every page parameter here.' };
+        }).concat([
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, shared by the seven lists.' }
+        ]),
         responseDescription: 'The realm as a federation entity.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: 'This realm as /admin/oidfed draws ' +

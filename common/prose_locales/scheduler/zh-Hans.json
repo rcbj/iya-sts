@@ -480,12 +480,12 @@
     "text": "cron {{cron}}（UTC）"
   },
   "sched.sentence.every": {
-    "en": "05f22fb4833ac391",
-    "text": "每 {{span}}"
+    "en": "cad7aff2b61c1a2d",
+    "text": "每 {{span}}（固定间隔）"
   },
   "sched.sentence.everyFrom": {
-    "en": "3893802ebe2b3ab1",
-    "text": "每 {{span}}，来自 {{setting}}"
+    "en": "e3f70e78d2f74d9a",
+    "text": "每 {{span}}（来自 {{setting}}）"
   },
   "sched.sentence.noInterval": {
     "en": "ea9235468f83c6bf",
@@ -512,8 +512,12 @@
     "text": "列于 scheduler.disabledJobs 中"
   },
   "sched.sentence.offZero": {
-    "en": "e9453e79cc9c7d92",
-    "text": "{{setting}} 为 0"
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} 为 0，因此该作业已关闭"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "其间隔为 0，因此该作业已关闭"
   },
   "sched.sentence.clockProcess": {
     "en": "bd7af0544bafb825",
@@ -526,10 +530,6 @@
   "sched.param.sinceStart": {
     "en": "0712f841eae1cd73",
     "text": "本服务启动"
-  },
-  "sched.param.interval": {
-    "en": "668b489f6de0a264",
-    "text": "其间隔"
   },
   "schedAdmin.message.steppedDown": {
     "en": "26017997a3d259cf",

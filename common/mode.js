@@ -604,6 +604,25 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service DESCRIBE ITSELF as a test double? (#543's review.) The
+// service metadata document (`GET /admin-api/sts-metadata`) carries a
+// `testDouble` member so that a reader of an endpoint list cannot take it for
+// a claim that every one of those endpoints checks what it is handed. It was
+// the literal `true` and said so in product mode too, where passwords are
+// verified and access tokens validated — the one place the document was
+// wrong about the service that served it.
+/**
+ * Tells whether the service metadata document describes this service as a
+ * test double: one that checks no password and validates no access token.
+ *
+ * @returns true in development mode
+ */
+function describesItselfAsTestDouble() {
+  log.debug("Entering describesItselfAsTestDouble().");
+  log.debug("Leaving describesItselfAsTestDouble().");
+  return !isProduct();
+}
+
 // Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
 // Product keeps a key set for as long as the store does, so a key that is
 // never replaced is a key whose compromise never ends; each unit gets a
@@ -753,6 +772,37 @@ function acceptsUnregisteredAddresses() {
 function opensTestControls() {
   log.debug("Entering opensTestControls().");
   log.debug("Leaving opensTestControls().");
+  return !isProduct();
+}
+
+// Are the DEMONSTRATION, MOCK AND TEST-CONTROL ENDPOINTS here at all (#585,
+// rcbj 2026-10-12)? The mock relying parties and service provider, the demo
+// issuer and verifier pages, the protected Kerberos service and SPNEGO page,
+// the embedded PEP's demonstration, the step-up stand-in, the GNAP
+// demonstration resource server, the VC-API test endpoints, the OpenID4VCI
+// readbacks, the TLS diagnostics and truststore door, the SSF receiver and
+// the rest of `demo-endpoints`' list below. Development serves and lists
+// them. Product neither serves nor lists one: each answers EXACTLY as an
+// unrouted path does — Express's own `Cannot GET …` 404, because the route
+// calls `next('route')` (`common/app.js`, `demoOnly`) — and no page,
+// document or log line names it.
+//
+// Not `opensTestControls()`, which asks whether a test control on a REAL
+// endpoint is open (`?username=` on /logout, open registration); this asks
+// whether an endpoint that exists only to be exercised exists. Asked per
+// realm, like every predicate here, so a development realm in a product
+// process keeps them — except where the thing is the PROCESS's (the
+// truststore, the protected service's socket), whose callers ask it in the
+// default realm.
+/**
+ * Tells whether the demonstration, mock and test-control endpoints are
+ * served and listed; in product each answers as an unrouted path does.
+ *
+ * @returns true in development mode
+ */
+function servesDemoEndpoints() {
+  log.debug("Entering servesDemoEndpoints().");
+  log.debug("Leaving servesDemoEndpoints().");
   return !isProduct();
 }
 
@@ -2126,11 +2176,14 @@ const REQUIREMENTS = [
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
                  'ssf.receiveRequireSignature is on. Nothing acts on it.',
-    product: 'Every receiver answers 400 invalid_key, whatever ' +
-             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
-             'authenticates nobody, records nothing; the console\'s and ' +
-             'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+    product: 'The console\'s and portal\'s receivers answer 400 ' +
+             'invalid_key, whatever ssf.receiveRequireSignature says ' +
+             '(#117), and keep it on their inbox marked refused. ' +
+             '/ssf/receive is a development endpoint and is not there ' +
+             '(#585).',
+    // ssf_transmitters.ts asks the same predicate of a federation partner's
+    // Shared Signals (#373, #374), which the sentences above do not name.
+    where: 'ssf/ssf.ts, ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2142,7 +2195,11 @@ const REQUIREMENTS = [
              'session-revoked, credential-change, a RISC account or ' +
              'credential event, a risk-level-change to HIGH, by default — ' +
              'ends the receiving surface\'s own sessions for the person it ' +
-             'names. An unverified event is never acted on in either mode.' },
+             'names. An unverified event is never acted on in either mode.',
+    // The policy is xacml_signal_pep.ts's; ssf_transmitters.ts asks the
+    // same predicate before a federation partner's signal is acted on.
+    where: 'ssf/ssf_receivers.ts, xacml/xacml_signal_pep.ts, ' +
+           'ssf/ssf_transmitters.ts' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
@@ -2798,6 +2855,15 @@ const REQUIREMENTS = [
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
+  { id: 'test-double',
+    what: 'The service metadata document says this service is a test double',
+    development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
+                 'service checks no password and validates no access ' +
+                 'token, and an endpoint list must not read as a claim that ' +
+                 'it does.',
+    product: '`testDouble` is false: passwords are verified and access ' +
+             'tokens validated, and the document says so.',
+    where: 'sts_metadata.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -2947,7 +3013,8 @@ const REQUIREMENTS = [
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; the GNAP demonstration resource server) ' +
+             'accept; /admin-api; the GNAP demonstration resource server ' +
+             'where it is served) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +
@@ -2982,13 +3049,38 @@ const REQUIREMENTS = [
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, ws-federation/wsfed.ts, ' +
            'oid4vc/vc_offers.ts, oid4vc/vc_verifier.ts, ' +
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
+  // #585 (2026-10-12): an ENDPOINT that exists only to be exercised is
+  // `demo-endpoints`' below; what is left here is a test control on a real
+  // endpoint.
+  { id: 'demo-endpoints',
+    what: 'The demonstration, mock and test-control endpoints exist',
+    development: 'Served and listed: the mock relying parties and service ' +
+                 'provider (/wsfed/rp, /saml2/sp, /saml11/rp, ' +
+                 '/oauth2/commands/mock-rp), the demonstration issuer and ' +
+                 'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
+                 '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
+                 'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
+                 'endpoints, the protected Kerberos service (/krb5/service ' +
+                 'and its TCP socket), /krb5/principals, /spnego and ' +
+                 '/spnego/protected, /xacml/protected, the step-up ' +
+                 'stand-in resource, the GNAP demonstration resource server, ' +
+                 '/dpop/nonce-mode, /devices/test/compliance, /tls, ' +
+                 '/tls/forwarded, /tls/trust and /tls/trust/clear, and ' +
+                 '/ssf/receive and /ssf/received.',
+    product: 'None of them is served or listed. Each answers exactly as a ' +
+             'path nothing is registered on does — Express\'s own 404 ' +
+             '"Cannot GET" — and no metadata page, console page, document ' +
+             'or log line names one. A development realm in a product ' +
+             'process keeps them, except the truststore door and the ' +
+             'protected service\'s socket, which belong to the process. The ' +
+             'administrative doors stay: /admin-api starts a verification, ' +
+             'reads the principals and changes the truststore, and the ' +
+             'user portal makes a credential offer.',
+    where: 'common/app.js, sts_metadata.ts, ' +
+           'admin-core/protocol_endpoints.ts, server.js' },
   { id: 'test-controls',
     what: 'Test controls are open',
-    development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
-                 'device\'s compliance, without the device:compliance ' +
-                 'scope, #164), the passwords on ' +
-                 '/krb5/principals, signing another person out with ' +
+    development: 'Signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
                  'answer anybody, a refused SCIM Digest challenge prints ' +
@@ -3007,9 +3099,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
+    where: 'oauth-oidc/oauth2.ts, logout/logout.ts, saml/saml11_sso.ts, ' +
+           'scim/scim_auth.ts, admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -3743,6 +3834,10 @@ const WRITE_REFUSALS = {
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.',
+  // #585: the one row is xacml.pepBias, read only by /xacml/protected.
+  servesDemoEndpoints:
+    'it configures a demonstration endpoint, and product serves none of ' +
+    'them. Try it in a development realm.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
     'on the directory, so no password is read for it.',
@@ -3888,6 +3983,7 @@ module.exports = {
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
+  describesItselfAsTestDouble: describesItselfAsTestDouble,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
@@ -3897,6 +3993,7 @@ module.exports = {
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
+  servesDemoEndpoints: servesDemoEndpoints,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
   authorizesDirectoryReads: authorizesDirectoryReads,

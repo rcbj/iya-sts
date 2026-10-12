@@ -5,6 +5,8 @@ nav_order: 11
 
 # The eight CAEP events, and what makes each one fire
 
+> **Development mode only (#585):** `/issuer/offer` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This service is a **CAEP transmitter**. The Continuous Access Evaluation Profile
 1.0 (final, 2 September 2025) is a vocabulary about **sessions** spoken over
 [Shared Signals](https://openid.net/specs/openid-sharedsignals-framework-1_0.html);
@@ -843,7 +845,9 @@ do*.
   means no stream asked for that type.
 - **`GET /admin-api/caep`** and **`GET /admin-api/caep/sessions`** — the same,
   without a browser; the per-receiver rows are the `applications` member of
-  both, searched with `appq` and paged with `applicationsPage`.
+  both, searched with `appq` and paged with `applicationsPage`. On
+  `/admin/caep-sessions` and `GET /admin-api/caep/sessions` the streams table
+  is paged as well, with `streamsPage`; `streamCounts` counts the whole list.
 
 ## The settings
 

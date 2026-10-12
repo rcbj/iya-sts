@@ -12,12 +12,12 @@
     "text": "Av: {{setting}} är 0, så varje begäran besvaras av frontprocessen själv, på en tråd."
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem (STS-WORKER-0023). De värdade ytorna går till begärandepoolen."
+    "en": "db7b7ee1f099024a",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. De värdade ytorna går till begärandepoolen."
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem (STS-WORKER-0023). Varje begäran besvaras av frontprocessen."
+    "en": "ced50089d8744adc",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. Varje begäran besvaras av frontprocessen."
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

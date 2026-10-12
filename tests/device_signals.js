@@ -572,9 +572,12 @@ function childMain() {
            'H6. an empty batch is refused whole');
 
       // --- I. the test control -----------------------------------------------
+      // The route's HANDLERS, the demonstration mark first (#585): a
+      // request is run through each as express would, so the mark's
+      // `next('route')` in product is seen as the route being passed.
       const routes = {};
-      const fakeApp = { get: function () {}, post: function (p, fn) {
-        routes[p] = fn;
+      const fakeApp = { get: function () {}, post: function (p) {
+        routes[p] = Array.prototype.slice.call(arguments, 1);
       } };
       new devicesAdmin.DevicesAdmin(devicesAdmin.DevicesAdmin.defaultDeps
         ? devicesAdmin.DevicesAdmin.defaultDeps() : {})
@@ -585,9 +588,20 @@ function childMain() {
           status: function (c) { this.statusCode = c; return this; },
           json: function (b) { this.body = b; return this; },
           locals: {} };
-        routes['/devices/test/compliance']({ body: JSON.stringify(body),
+        const req = { body: JSON.stringify(body),
           headers: { 'content-type': 'application/json' }, method: 'POST',
-          query: {} }, res);
+          query: {} };
+        const chain = routes['/devices/test/compliance'];
+        let at = 0;
+        const next = function (skip) {
+          if (skip === 'route') {
+            res.passed = true;
+            return;
+          }
+          at += 1;
+          chain[at](req, res, next);
+        };
+        chain[0](req, res, next);
         return res;
       }
       const dev = call({ id: id, status: 'compliant' });
@@ -598,10 +612,10 @@ function childMain() {
       config.setOverride('global.mode', 'product');
       const prod = call({ id: id, status: 'not-compliant' });
       config.clearOverride('global.mode');
-      note(prod.statusCode === 403 &&
+      note(prod.passed === true && prod.body === null &&
            devices.byId(id).compliance === 'compliant',
-           'I2. in product it is refused 403 and nothing changes',
-           JSON.stringify(prod.body));
+           'I2. in product the route is passed on to Express\'s own 404 ' +
+           '(#585) and nothing changes', JSON.stringify(prod.body));
     });
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "Ang test control",
   "registrationHtml.testOpen": "bukas (development)",
   "registrationHtml.testRefused": "tinatanggihan (product)",
-  "registrationHtml.testHow": "<code>{path}</code>, walang credential, sa development lang (<code>mode.opensTestControls()</code>). Source na <code>test-control</code>.",
+  "registrationHtml.testHow": "<code>{path}</code>, walang credential, sa development lang (<code>mode.servesDemoEndpoints()</code>). Source na <code>test-control</code>.",
   "registrationHtml.doorCaep": "Isang natanggap na CAEP device-compliance-change",
   "registrationHtml.caepBefore": "Mula sa federation partner na ang Shared Signals ay tinatanggap ng realm na ito — ang device manager ay isang <code>ssf</code> relationship sa ",
   "registrationHtml.federation": "Federation",

@@ -393,7 +393,7 @@
   },
   "caches.store.krb5.authenticator-replay.description": {
     "en": "bd92a375c1ba17cd",
-    "text": "Cada autenticador que aceptó el servicio protegido, para que un AP-REQ capturado no pueda presentarse dos veces. Por dominio de confianza: el dominio cuyo reino Kerberos emitió el ticket."
+    "text": "Cada autenticador que aceptó el servicio protegido, para que un AP-REQ capturado no pueda presentarse dos veces. Por dominio de confianza: el dominio cuyo dominio Kerberos emitió el ticket."
   },
   "caches.store.krb5.authenticator-replay.bound": {
     "en": "f80dfee6019f5638",
@@ -1342,5 +1342,33 @@
   "caches.remaining.staleChanged": {
     "en": "1134a1cffa605ffb",
     "text": "obsoleta: {{basis}} ha cambiado"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "hasta que el límite la descarte por ser la usada menos recientemente"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "hasta que el límite la descarte"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "hasta que se active una versión del conjunto de datos"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "hasta que pase sin usarse el tiempo de inactividad"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "obsoleta: su nonce ha caducado"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "obsoleta: su desafío ha caducado"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "obsoleta: la credencial fue desautorizada"
   }
 }

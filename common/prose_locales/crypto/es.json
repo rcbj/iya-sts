@@ -272,8 +272,8 @@
     "text": "Una canonicalización, un SHA-256, un lugar — antes del 2026-08-27 había aquí dos implementaciones."
   },
   "crypto.standards.dpop.coverage": {
-    "en": "da82595d1a834c49",
-    "text": "full: las doce comprobaciones de la sección 4.3, la vinculación `cnf.jkt` en los tokens de acceso Y de actualización, `dpop_jkt`, la detección de repeticiones por `jti` y el intercambio de nonce en ambas formas. NO es obligatorio — el modo nonce hace las pruebas más frescas, no obligatorias."
+    "en": "97405f66eaffc812",
+    "text": "full: las doce comprobaciones de la sección 4.3, la vinculación `cnf.jkt` en los tokens de acceso Y de actualización, `dpop_jkt`, la detección de repeticiones por `jti` y el intercambio de nonce en ambas formas. No es obligatorio de forma predeterminada — el modo nonce hace las pruebas más frescas, no obligatorias — pero un dominio puede exigirlo: `oauth2.accessTokenRequireDpop` en cada recurso y `oauth2.refreshTokenRequireDpop` en el endpoint de token, ambos desactivados de forma predeterminada. Un perfil FAPI exige una restricción al remitente, DPoP o TLS mutuo, y los clientes públicos de la consola de administración y del portal de usuario están siempre vinculados a DPoP."
   },
   "crypto.standards.dpop.what": {
     "en": "fd2e6cef9f5dc069",
@@ -317,7 +317,7 @@
   },
   "crypto.standards.c14n.what": {
     "en": "ca991439b4559070",
-    "text": "LA EXCLUSIVA ES ESENCIAL Y ES LA PREDETERMINADA EN TODAS PARTES AQUÍ. Una aserción se firma de forma independiente y luego se incrusta dentro de un RSTR, una Response o un `wresult` que declara prefijos propios, así que la c14n INCLUSIVA arrastraría esas declaraciones de los ancestros al digest en el momento de la verificación — la firma falla entonces para cada usuario de confianza mientras verifica perfectamente aquí, que es la peor forma de error que perseguir."
+    "text": "LA EXCLUSIVA ES ESENCIAL Y ES LA PREDETERMINADA EN TODAS PARTES AQUÍ. Una aserción se firma de forma independiente y luego se incrusta dentro de un RSTR, una Response o un `wresult` que declara prefijos propios, así que la c14n INCLUSIVA arrastraría esas declaraciones de los ancestros al digest en el momento de la verificación — la firma falla entonces para cada parte que confía mientras verifica perfectamente aquí, que es la peor forma de error que perseguir."
   },
   "crypto.standards.wss.coverage": {
     "en": "08017a57e61d5832",
@@ -369,7 +369,7 @@
   },
   "crypto.standards.webauthn.coverage": {
     "en": "4610e926ac80ab7d",
-    "text": "partial: la mitad del usuario de confianza. Las firmas de registro y de aserción se verifican realmente, y también las DECLARACIONES de atestación (#105) — los ocho formatos, sus cadenas y el FIDO Metadata Service — según webauthn.attestationPolicy."
+    "text": "partial: la mitad de la parte que confía. Las firmas de registro y de aserción se verifican realmente, y también las DECLARACIONES de atestación (#105) — los ocho formatos, sus cadenas y el FIDO Metadata Service — según webauthn.attestationPolicy."
   },
   "crypto.standards.webauthn.what": {
     "en": "ea84aed02de27496",
@@ -467,6 +467,90 @@
     "en": "fed52b623a3769f0",
     "text": "SHA-256 de forma predeterminada para la firma del certificado, y SHA-384 o SHA-512 donde la jerarquía se construyó con ellos. SHA-256 de nuevo para las huellas digitales de los certificados y para la huella JWK de RFC 7638 de la que se deriva el `kid` emitido — en todo este servicio un kid se deriva del material de clave, así que dos instancias no pueden publicar un mismo nombre sobre dos claves. **SHA-1 SE OFRECE Y ESTÁ MARCADO COMO DÉBIL**: \"¿rechaza mi pila un certificado SHA-1?\" es una pregunta que un depurador debería poder hacer, y nada lo usa de forma predeterminada."
   },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "UN PAR DE CLAVES RAÍZ PARA EL SERVICIO, una Intermediate por cada dominio de confianza y una para el proceso, una CA emisora bajo cada una por caso de uso, más una por cada par de claves emitido. Las claves privadas de las CA nunca salen de este proceso. La de una aplicación SÍ: se entrega una vez, en la emisión, y se escribe en la entrada de directorio de esa aplicación bajo `oauthAssertionPrivateKey` — **sellada con AES-256-GCM bajo la misma clave de cifrado de claves que la jerarquía que está por encima de ella dondequiera que esa clave sobreviva al proceso**, de modo que un volcado del directorio, un archivo ldif, una fila de la base de datos o una copia de seguridad contienen texto cifrado. La consola y la API de gestión la abren para un llamante que tiene una credencial, porque un par de claves emitido que un operador no puede recoger es un par de claves emitido que nadie puede usar. En modo DESARROLLO se escribe en claro, porque allí la clave de cifrado de claves es efímera y no sobreviviría al reinicio al que sí sobrevive la entrada. Este servicio NO guarda una segunda copia en ningún caso. Y DESDE EL 2026-09-11 UNA PERSONA TAMBIÉN PUEDE TENER UNO, bajo `stsAssertionPrivateKey` en su propia entrada de `ou=users`, sellado bajo la misma clave y con el mismo mecanismo. La diferencia es la vía de SALIDA: la de una aplicación la abre `applications.js` para un lector con credencial, y la de una persona se entrega una vez en la emisión y nunca más, porque nada aquí dibuja la entrada de una persona mediante un módulo que la abriría."
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "Codificación de certificados"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "d40c79caa059f986",
+    "text": "X.509 v3, DER, mediante pkijs y asn1js — common/vendored/x509.js, el propio código PKI del proyecto principal, idéntico byte a byte. Un único codificador para este servicio y para la página PKI / X.509 de ese proyecto."
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "Algoritmos de clave de CA ofrecidos"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "Algoritmos de firma de certificados ofrecidos"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "De ellos, ofrecidos a propósito y marcados como débiles"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "Los tres niveles"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "Huella digital del certificado"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "SHA-256 sobre el DER"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "El `kid` de la clave emitida"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "Huella JWK de RFC 7638, SHA-256, truncada a 16 caracteres"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "Revocación publicada"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "CRL de RFC 5280 y OCSP de RFC 6960, UNA DE CADA POR AUTORIDAD DE CERTIFICACIÓN — una lista la firma un emisor, así que una lista por dominio no tendría un emisor válido. Se firman con la propia CA en lugar de con un certificado de respondedor delegado (RFC 6960 sección 4.2.2.2), de modo que un cliente verifica con el ancla que ya tiene. Cada certificado que emite este servicio nombra su propia CRL por http y ldap sin cifrar y su respondedor en un Authority Information Access — nunca https ni ldaps, que según la sección 8 de RFC 5280 una CA NO DEBERÍA escribir en una extensión."
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "Revocación comprobada"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "Comprobación de revocación — cómo se confía en una CRL ajena"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "Su firma se verifica contra el certificado del EMISOR (el siguiente certificado hacia arriba en la cadena presentada), su nombre de emisor debe coincidir, una extensión crítica que este servicio no implementa la vuelve inutilizable (RFC 5280 sección 6.3.3), y se usa hasta su nextUpdate o pki.revocationCrlMaxAgeS, lo que ocurra antes. El transporte no se comprueba por certificado: la firma es la autenticación, y el propio certificado de un servidor de CRL suele encadenar hasta la CA que se comprueba. Una CRL INDIRECTA se verifica contra el certificado del cRLIssuer que nombra el certificado presentado, que debe llevar cRLSign y encadenar hasta la ruta presentada — tomado de la cadena, de las autoridades de este servicio, de pki.revocationCrlIssuersFile o de la dirección caIssuers del propio Authority Information Access de la CRL; una DELTA, contra el mismo firmante que su base. Las listas se obtienen por http, https o ldaps (ldap sin cifrar solo cuando pki.revocationLdap lo permite); el certificado de un directorio ldaps debe encadenar hasta el almacén de node o pki.revocationLdapCaFile. Una lista en una dirección a la que no se conecta es un estado que no se pudo establecer, rechazado con hard-fail (STS-PKI-0188); un certificado que no nombra ninguna lista ni ningún respondedor se rechaza en producto (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190), y uno que lleva noRevAvail de RFC 9608 no se comprueba."
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "Comprobación de revocación — cómo se confía en una respuesta OCSP ajena"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "La solicitud lleva un CertID SHA-1 (el identificador del perfil de RFC 5019, no una firma) y un nonce de 32 octetos. La respuesta debe estar firmada por el emisor del certificado, o por un respondedor delegado cuyo certificado firmó el emisor con id-kp-OCSPSigning (RFC 6960 sección 4.2.2.2); un nonce distinto devuelto se rechaza como repetición; thisUpdate y nextUpdate deben ser recientes dentro de pki.revocationClockSkewS. El estado PROPIO de un respondedor delegado se consulta en la CRL que nombra su certificado (nunca por OCSP) salvo que lleve id-pkix-ocsp-nocheck; las respuestas de uno revocado no se usan, y las de uno desconocido no se usan con hard-fail."
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "Comprobación de revocación — un certificado REGISTRADO"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "Un certificado registrado en lugar de presentado — el x5c de una clave RFC 7523, un certificado RFC 7522, fedSigningCertificate o el x5c de una clave de un socio de federación, un certificado de oid4vp.trustedIssuerCertificates — se comprueba de la misma manera cuando verifica una firma, y sus emisores se obtienen de su propia dirección caIssuers. Una clave suelta sin certificado no tiene nada que comprobar y se informa como tal."
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "Dónde residen las claves privadas de las CA"
+  },
   "crypto.families.user-portal.signs": {
     "en": "504f3616f5efd7b5",
     "text": "Nada. El portal no emite ningún token, ninguna aserción ni ningún certificado — cambia credenciales en lugar de acuñarlas."
@@ -486,6 +570,34 @@
   "crypto.families.user-portal.hashes": {
     "en": "54242a9694c34ec7",
     "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) tanto para la contraseña como para el token de activación, cada uno con 16 bytes aleatorios de sal, almacenado como `$scrypt$N$r$p$salt$hash` para que el coste pueda elevarse más adelante sin invalidar lo que ya está almacenado. **NO es un digest**: una contraseña tiene poca entropía y un hash rápido sobre ella está a una lista de palabras de ser la contraseña. SHA-256 bajo un HMAC para el token CSRF, que es otro trabajo — la autenticidad de un formulario, no la protección de un secreto en reposo."
+  },
+  "crypto.families.user-portal.keys": {
+    "en": "b1cf1ce0bb050d19",
+    "text": "Ninguna propia. El token CSRF es un HMAC-SHA256 bajo una clave generada por proceso y deliberadamente NO persistida — un token CSRF solo tiene sentido durante la vida de una sesión, una sesión no sobrevive a un reinicio, así que una clave que sí sobreviviera no protegería nada y sería un secreto más en reposo."
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "20e9dc8c3361fe3e",
+    "text": "Contraseña y token de activación en reposo"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "7e9dc006d728159d",
+    "text": "scrypt, N=32768, r=8, p=1, clave de 32 bytes, sal aleatoria de 16 bytes"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "Comparación de cualquiera de los dos"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "igualdad en tiempo constante"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "03f3221c7fc527a5",
+    "text": "Token CSRF"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "3829178c0011f20f",
+    "text": "HMAC-SHA256 sobre el id de sesión bajo una clave por proceso"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -507,9 +619,17 @@
     "en": "a478d2fd912623b6",
     "text": "SHA-256 y SHA-512 para Content-Digest; el hash de interacción de la sección 4.2.3 en cualquier método de hash Named Information que calcule node (SHA-2 y SHA-3, formas truncadas incluidas); SHA-256 para una huella JWK, una huella de certificado y el digest de una aprobación recordada; SHA-256 del token de acceso para `ath` en una prueba JWS."
   },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "La clave de la instancia cliente es la identidad del cliente — un JWK, un certificado, una huella de certificado o una referencia a una clave en la entrada de aplicación. Una clave simétrica compartida (gnapSymmetricKey) y una clave raíz de macaroon (gnapMacaroonKey) se sellan en reposo bajo la clave de cifrado de claves del proceso. Las claves de macaroon y de dir son derivaciones HKDF-SHA256 del secreto del dominio, cada una con su propio separador de dominio."
+  },
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "NO ACEPTA UNA SOLICITUD SIN PRUEBA PARA UN TOKEN VINCULADO, y no hay ningún ajuste que lo haga: una prueba de clave GNAP es el protocolo y no una opción de endurecimiento. Lo opcional es un token AL PORTADOR, que gnap.bearerTokens desactiva. Los caveats de terceros de macaroon, los bloques de terceros de Biscuit y las pruebas de invocación ZCAP no están implementados."
+  },
+  "crypto.families.gnap.verifiesWithoutDemos": {
+    "en": "0128ae60345397de",
+    "text": "CADA SOLICITUD QUE HACE UNA INSTANCIA CLIENTE, con la clave que presentó: una firma de mensaje HTTP RFC 9421 (con el cuerpo cubierto por un Content-Digest RFC 9530), un certificado de TLS mutuo (con revocación consultada; una cadena hasta el almacén de confianza de clientes y una vinculación a la entrada de aplicación con gnap.mtlsTrust=pki, el valor predeterminado en producto), un JWS separado sobre el cuerpo o un JWS adjunto que lo transporta. Una rotación de clave se verifica con AMBAS claves. Un servidor de recursos que llama a la introspección o al registro se prueba de la misma manera, y cada formato de token se verifica en la introspección."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -555,6 +675,10 @@
     "en": "de5f85f4b8049f51",
     "text": "SHA-256 para la huella RFC 7638 que es el kid de cada clave, y para nombrar una entrada del registro a partir de la entidad o la marca de la que trata."
   },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "Una tabla de Federation Entity Keys por dominio (oidfed.signingAlg, ES256 de forma predeterminada, ML-DSA ofrecido), en la entrada ou=oidfed del dominio con las mitades privadas selladas bajo la clave de cifrado de claves dondequiera que las claves persistan; una clave siguiente publicada por adelantado, las claves retiradas publicadas durante oidfed.keyOverlapDays y conservadas para siempre para el endpoint Historical Keys, con sus mitades privadas descartadas al retirarse. Las claves fijadas de cada Trust Anchor y de cada subordinado son claves públicas del registro."
+  },
   "crypto.families.openid-federation.whatItDoesNot": {
     "en": "bb73b0a66ac9741b",
     "text": "No autentica a un cliente en un endpoint de federación (8.8 — \"none\" es el predeterminado y el único método aquí), y no firma ninguna declaración de federación con una clave de protocolo ni a la inversa."
@@ -590,6 +714,10 @@
   "crypto.families.xacml.hashes": {
     "en": "cb519e6f900e9b51",
     "text": "UNO, Y NO ES DE SEGURIDAD. El token de sincronización del PEP remoto es un SHA-256 sobre los documentos de cada política habilitada más cuál es la raíz — una forma barata de que un PEP pregunte \"¿ha cambiado algo?\" y reciba un 304, y nada más. No autentica nada y no se compara con nada que un llamador aporte como credencial, así que seguiría siendo correcto como un CRC."
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "Ninguna. Ninguna clave de ningún tipo interviene para llegar a una decisión."
   },
   "crypto.families.xacml.whatItDoesNot": {
     "en": "6d7c9938306101b5",
@@ -684,20 +812,28 @@
     "text": "Cifrado de tokens de actualización (para las propias claves de este dominio)"
   },
   "crypto.families.federation.signs": {
-    "en": "4db5ac4dfde3c53a",
-    "text": "El `<AuthnRequest>` de SAML 2.0 que envía a un proveedor de identidad externo, envuelto, RSA-SHA256 sobre c14n exclusiva — el mismo firmante por el que pasa cualquier otro documento aquí."
+    "en": "4f58817f19139f26",
+    "text": "El `<AuthnRequest>` de SAML 2.0 que envía a un proveedor de identidad externo, envuelto, RSA-SHA256 sobre c14n exclusiva — el mismo firmante por el que pasa cualquier otro documento aquí — y el `<LogoutRequest>` que comunica a un socio un cierre de sesión hecho aquí, envuelto o como la firma de consulta separada del binding Redirect."
   },
   "crypto.families.federation.verifies": {
-    "en": "d99d0a0b18dab6e8",
-    "text": "EL SENTIDO MISMO DE LA FUNCIONALIDAD. La SAML Response de un socio y la Assertion que contiene, cada una comprobada POR SEPARADO y cada una contra el certificado configurado en la relación — nunca contra un certificado que el documento lleve en su propio `ds:KeyInfo`, que es la comprobación que una implementación ingenua omite. El ID Token de un socio como un JWS ordinario contra las claves publicadas del socio."
+    "en": "b986e6fffdabc6e3",
+    "text": "EL SENTIDO MISMO DE LA FUNCIONALIDAD. La SAML Response de un socio y la Assertion que contiene, cada una comprobada POR SEPARADO y cada una contra el certificado configurado en la relación — nunca contra un certificado que el documento lleve en su propio `ds:KeyInfo`, que es la comprobación que una implementación ingenua omite. El ID Token de un socio como un JWS ordinario contra las claves publicadas del socio. El CIERRE DE SESIÓN de un socio — un `<LogoutRequest>` de SAML o un Logout Token de Back-Channel — contra las mismas claves configuradas, y rechazado si no está firmado salvo que la relación desactive `fedRequireSignedLogout`, cosa que solo permite el modo de desarrollo."
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "Lo que un socio cifra para la propia clave de la relación: un `<EncryptedAssertion>`, un `<EncryptedID>` o un `<EncryptedAttribute>` dentro de una aserción verificada o de un `<LogoutRequest>`, un token de WS-Federation, y un ID Token o Logout Token JWE — exactamente con el único algoritmo de gestión de claves y el único algoritmo de cifrado de contenido que acepta la relación. La firma de la aserción se verifica sobre su texto en claro y la de la Response sobre el texto cifrado tal como llegó; un JWE debe contener un JWT firmado. Todo fallo de descifrado da una misma respuesta, así que el ACS no es ningún oráculo."
   },
   "crypto.families.federation.hashes": {
     "en": "2d3c2fd5b62d8002",
     "text": "Lo que nombre el `DigestMethod` del socio, de la tabla incorporada de abajo."
   },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "Un par de claves de cifrado por relación SAML 2.0, WS-Federation u OpenID Connect, creado al crear la relación: RSA 3072 o EC P-256 bajo la Intermediate del dominio o, para OpenID Connect, X-Wing o ML-KEM-768, que no llevan certificado. Su mitad privada se sella bajo la clave de cifrado de claves dondequiera que las claves persistan; una rotación conserva la que reemplazó durante `federation.encryptionKeyGraceS`, y solo se publica la clave actual. Lo que firma, lo firma con la clave de firma del dominio."
+  },
   "crypto.families.federation.whatItDoesNot": {
-    "en": "b16bd8c2a0b0e24a",
-    "text": "No descifra una aserción que un socio cifró, y no consume un cierre de sesión federado. LA BARRERA ESTÁ EN EL FIRMANTE Y EN EL SUJETO (#109): tras una firma verificada solo inicia sesión la persona a la que está vinculado el sujeto del socio. Esta es la única superficie aquí donde una comprobación ausente es una omisión de autenticación para todos los protocolos del proceso — véase federation/CLAUDE.md."
+    "en": "76366a6354696014",
+    "text": "No cifra nada de lo que envía, y no consulta a ningún socio sobre una sesión: lo que llega a una sesión después del inicio de sesión es el cierre de sesión del socio, que la termina, y el `SessionNotOnOrAfter` de SAML que envió al iniciar la sesión, que la limita. En modo producto rechaza una aserción en claro que pasa por el navegador salvo que la relación establezca `fedAllowUnencrypted`; AES-CBC y RSA PKCS #1 v1.5 se rechazan en todos los modos. LA BARRERA ESTÁ EN EL FIRMANTE Y EN EL SUJETO (#109): tras una firma verificada solo inicia sesión la persona a la que está vinculado el sujeto del socio. Esta es la única superficie aquí donde una comprobación ausente es una omisión de autenticación para todos los protocolos del proceso — véase federation/CLAUDE.md."
   },
   "crypto.families.federation.algorithms.0.what": {
     "en": "7c3206a1a259cf99",
@@ -710,6 +846,30 @@
   "crypto.families.federation.algorithms.2.what": {
     "en": "1a25a971a5ba739e",
     "text": "ID Token entrante"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "Tipos de clave de cifrado"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "Gestión de claves de XML Encryption, uno de"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "Cifrado de contenido de XML Encryption, uno de"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "Gestión de claves JWE, uno de"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "Cifrado de contenido JWE, uno de"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "Rechazados en todos los modos"
   },
   "crypto.families.saml-2-0.signs": {
     "en": "cae50b198b378a2b",
@@ -765,7 +925,7 @@
   },
   "crypto.families.saml-1-1.verifies": {
     "en": "8398fc2b7e6fdb17",
-    "text": "Sus propios artefactos, para el usuario de confianza simulado."
+    "text": "Sus propios artefactos, para la parte que confía simulada."
   },
   "crypto.families.saml-1-1.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -775,17 +935,21 @@
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 no tiene ningún cifrado — `<EncryptedAssertion>` llegó con 2.0 — ni ningún mensaje de solicitud sobre el que verificar una firma. El URI de referencia nombra `AssertionID` o `ResponseID`, que es el único motivo por el que el firmante compartido resuelve un id BUSCANDO uno en lugar de que le digan su nombre."
   },
+  "crypto.families.saml-1-1.verifiesWithoutDemos": {
+    "en": "f11251a4b826b873",
+    "text": "Nada: SAML 1.1 no tiene mensaje de solicitud en el que verificar una firma."
+  },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "Firma"
   },
   "crypto.families.ws-federation.signs": {
     "en": "038da0701eacf8e7",
-    "text": "La aserción SAML dentro del `wresult`, en la versión que haya pedido el usuario de confianza, mediante el firmante compartido."
+    "text": "La aserción SAML dentro del `wresult`, en la versión que haya pedido la parte que confía, mediante el firmante compartido."
   },
   "crypto.families.ws-federation.verifies": {
     "en": "35faf906b09d64d8",
-    "text": "El usuario de confianza simulado en `/wsfed/rp` verifica esa aserción comprobación por comprobación, y se le dice QUÉ elemento verificar en lugar de tomar el primer `<ds:Signature>` del documento — el defecto que tenían cuatro verificadores distintos de aquí."
+    "text": "La parte que confía simulada en `/wsfed/rp` verifica esa aserción comprobación por comprobación, y se le dice QUÉ elemento verificar en lugar de tomar el primer `<ds:Signature>` del documento — el defecto que tenían cuatro verificadores distintos de aquí."
   },
   "crypto.families.ws-federation.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -794,6 +958,10 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "No falsea ningún `wauth` — una exigencia que la sesión no puede cumplir es una elevación, y un AuthenticationMethod es lo que hizo la sesión — y no desreferencia ningún `wreqptr` — descargar una URL que alguien registró es una falsificación de solicitudes del lado del servidor con una cita adjunta."
+  },
+  "crypto.families.ws-federation.verifiesWithoutDemos": {
+    "en": "02c1a08782ac0629",
+    "text": "Nada: una solicitud de inicio de sesión no lleva firma."
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -804,8 +972,8 @@
     "text": "La aserción SAML de la RequestSecurityTokenResponse, 1.1 o 2.0, mediante el firmante compartido."
   },
   "crypto.families.ws-trust.verifies": {
-    "en": "74c8911543a69c43",
-    "text": "LEE la credencial `<wsse:Security>` de un solicitante y el `<ds:X509Certificate>` de una solicitud firmada — esto último para saber para quién CIFRAR. No comprueba ninguna contraseña detrás."
+    "en": "e1450965d276d357",
+    "text": "LEE la credencial `<wsse:Security>` de un solicitante y el `<ds:X509Certificate>` de una solicitud firmada — esto último para saber para quién CIFRAR. En modo producto la contraseña de un UsernameToken se verifica contra el `userPassword` de la persona, o contra los secretos de cliente de una aplicación; el modo de desarrollo la da por buena, salvo la reservada `invalid`."
   },
   "crypto.families.ws-trust.encrypts": {
     "en": "fa359afa3450379c",
@@ -816,8 +984,8 @@
     "text": "SHA-256 para el digest de Reference."
   },
   "crypto.families.ws-trust.whatItDoesNot": {
-    "en": "37c796f7428c337a",
-    "text": "No vigila ninguna delegación: se responde a un RST que pide un token para otra persona. Y no produce ningún sobre SOAP firmado propio — véase WS-Security más abajo, que es la fila que dice qué hace y qué no hace este servicio con esa especificación."
+    "en": "a65f60d0f2191130",
+    "text": "No responde a toda solicitud de un token para otra persona: `OnBehalfOf` (suplantación) y `ActAs` (delegación) los decide la política de emisión según los controles de delegación de las entradas del solicitante y del sujeto — rechazados en producto, registrados en desarrollo como lo que se habría rechazado. Y no produce ningún sobre SOAP firmado propio — véase WS-Security más abajo, que es la fila que dice qué hace y qué no hace este servicio con esa especificación."
   },
   "crypto.families.ws-trust.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -967,6 +1135,10 @@
     "en": "66fb8f17d972a92b",
     "text": "FIRMA MAL A PROPÓSITO CUANDO SE LE PIDE. `ssf.breakSetSignature` cambia UN CARÁCTER de la firma tras firmar, así que un receptor que no verifica acepta un evento que nada firmó. Es un carácter y no un truncamiento de forma deliberada: una firma truncada falla la decodificación base64url y se informa como un token MAL FORMADO, que es un error distinto de uno incorrecto para quien se esté probando. Solo en modo desarrollo: un dominio en producto lo ignora y rechaza que se establezca (#104)."
   },
+  "crypto.families.shared-signals.verifiesWithoutDemos": {
+    "en": "09b792e4c0821046",
+    "text": "El token de acceso en cada llamada de gestión del flujo, mediante la misma comprobación que usa cualquier otro endpoint protegido aquí, y un SET enviado al receptor propio de la consola o del portal, con el JWKS de este servicio. /ssf/receive es un endpoint de desarrollo (#585)."
+  },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",
     "text": "Security Event Tokens, ahora mismo"
@@ -1041,7 +1213,7 @@
   },
   "crypto.families.webauthn-ctap.signs": {
     "en": "4da1e2515e736e7d",
-    "text": "Nada. Firma el AUTENTICADOR; este servicio es el usuario de confianza, que es la mitad que solo comprueba."
+    "text": "Nada. Firma el AUTENTICADOR; este servicio es la parte que confía, que es la mitad que solo comprueba."
   },
   "crypto.families.webauthn-ctap.verifies": {
     "en": "d8daa1e1b9b11704",
@@ -1227,6 +1399,10 @@
     "en": "6817583ce52ea878",
     "text": "SHA-256 para la huella digital de la clave de cuenta (RFC 7638), para el MAC del Replay-Nonce y para la huella digital de cada certificado en el registro de la entrada."
   },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "Una clave de CA emisora ACME por dominio de confianza bajo la Intermediate del dominio; la clave pública de cada cuenta (RSA de al menos 2048 bits, P-256/P-384/P-521 o Ed25519), guardada como JWK público y localizada por su huella RFC 7638; la propia clave del cliente para cada certificado; y un secreto por ejecución del que se deriva el MAC del Replay-Nonce, compartido con los workers de solicitudes bifurcados y nunca escrito."
+  },
   "crypto.families.acme.whatItDoesNot": {
     "en": "61718f6daa70f201",
     "text": "Nunca se ve ninguna clave privada: ACME es solo CSR. Se rechaza una clave de cuenta poscuántica, porque su tipo de clave no tiene huella digital RFC 7638 y una cuenta se encuentra por su clave. Una clave KEM no se puede certificar, porque no puede firmar la prueba de posesión. El JWS es la serialización JSON APLANADA que exige RFC 8555, que este servicio solo lee aquí."
@@ -1267,6 +1443,10 @@
     "en": "78ff84df2eb09c64",
     "text": "SHA-256 para la huella digital de cada certificado en el registro de la entrada."
   },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "Una clave de CA emisora EST por dominio de confianza, bajo la Intermediate del dominio; la propia clave del cliente para todo lo que inscribe; y para /serverkeygen un par de claves generado aquí con el algoritmo de la plantilla (incluido ML-KEM, para key-encipherment), devuelto una sola vez."
+  },
   "crypto.families.est.whatItDoesNot": {
     "en": "0fbae781db5fb46b",
     "text": "CMC completo, la vinculación de canal tls-unique (TLS 1.3 no tiene ninguna) y una clave generada por el servidor cifrada. Una clave KEM no se puede inscribir con /simpleenroll, porque no puede firmar la prueba de posesión."
@@ -1306,6 +1486,10 @@
   "crypto.families.scep.hashes": {
     "en": "47b332491bb2a39b",
     "text": "SHA-256 de un secreto de desafío, de un CSR y de una clave de firmante para la idempotencia de las transacciones; los algoritmos de digest de mensajes indicados arriba."
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "Una clave de CA emisora SCEP por dominio de confianza, y un par de claves de RA por dominio — RSA de scep.raKeyAlgorithm, una hoja de esa CA, guardada en la fila PKI del dominio (sellada con la jerarquía en modo producto) y reemitida dentro de los treinta días anteriores a su caducidad. La clave del solicitante nunca se ve."
   },
   "crypto.families.scep.whatItDoesNot": {
     "en": "4a19c5629d38be11",

@@ -1342,5 +1342,33 @@
   "caches.remaining.staleChanged": {
     "en": "1134a1cffa605ffb",
     "text": "inaktuell: {{basis}} har ändrats"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "tills gränsen släpper den som den minst nyligen använda"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "tills gränsen släpper den"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "tills en datamängdsversion aktiveras"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "tills den varit oanvänd under hela vilotidsgränsen"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "inaktuell: dess nonce har gått ut"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "inaktuell: dess utmaning har gått ut"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "inaktuell: credentialet har frånsagts"
   }
 }

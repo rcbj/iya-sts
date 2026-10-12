@@ -119,12 +119,21 @@ async function theDocumentIsServed(consoleClient) {
     (doc && doc.endpoints ? doc.endpoints.length : "none"));
   assert.ok(Array.isArray(doc.specifications) && doc.specifications.length > 10,
     "and the specifications it implements.");
-  assert.strictEqual(doc.testDouble, true,
-    "it must say it is a test double. A page describing this service as an " +
-        "implementation of " +
-    "twenty specifications, without saying it checks no passwords and " +
-        "validates no access tokens, " +
-    "would be the most misleading thing in the repository.");
+  // `testDouble` FOLLOWS THE MODE (#543's review): it was the literal `true`
+  // and said so in product mode too, where passwords are verified. So the
+  // mode is asked of the service (`GET /admin-api/mode`, the console's
+  // Server mode page) rather than assumed.
+  const modeAnswer = await consoleClient.get("/admin/mode");
+  assert.ok(modeAnswer.status === 200 && modeAnswer.body &&
+            typeof modeAnswer.body.isProduct === "boolean",
+            "GET /admin-api/mode should answer 200 with isProduct; got " +
+            modeAnswer.status);
+  assert.strictEqual(doc.testDouble, !modeAnswer.body.isProduct,
+    "in development mode it must say it is a test double: a page " +
+    "describing this service as an implementation of twenty " +
+    "specifications, without saying it checks no passwords and validates " +
+    "no access tokens, would be the most misleading thing in the " +
+    "repository. In product mode, which checks both, it must not.");
 
   // THE ADDRESS ANSWERS THE CONSOLE'S DOCUMENT, as HTML: the static console
   // (#446) — a whole document that loads its one script from this origin.
@@ -377,6 +386,11 @@ function theIndexMatchesTheRouter(doc) {
     assert.ok(Array.isArray(e.methods) && e.methods.length,
       e.path + " should name at least one HTTP method.");
   });
+  assert.deepStrictEqual(doc.demoMarkMismatches || [], [],
+    "these paths carry the demonstration mark on one half and not the " +
+    "other (#585) — a route marked demoOnly whose ENDPOINTS row is not " +
+    "flagged demo, or the reverse — so one mode would list an endpoint the " +
+    "other does not serve: " + JSON.stringify(doc.demoMarkMismatches));
   log.info("[drift] OK — every registered route is described and every " +
            "description is registered.");
   log.debug("Leaving theIndexMatchesTheRouter().");
@@ -539,6 +553,47 @@ async function theMethodsShownActuallyAnswer(doc) {
 // The index must not omit the endpoints this service's OTHER documents
 // advertise. Those are discovered by clients, so an index that missed one would
 // be missing exactly the endpoints that matter most.
+// THE DEMONSTRATIONS (#585): served and listed only in development. In a
+// product realm none is listed — and one that is not listed must not answer
+// either, which is asked of a known few directly, since a path the page does
+// not list is a path the method check above never calls.
+async function theDemonstrationsFollowTheMode(doc, consoleClient) {
+  log.debug("Entering theDemonstrationsFollowTheMode().");
+  log.info("=== The demonstration endpoints ===");
+  const modeAnswer = await consoleClient.api("GET", "/admin-api/mode");
+  assert.strictEqual(modeAnswer.status, 200,
+    "GET /admin-api/mode should answer 200; got " + modeAnswer.status);
+  const product = !!(modeAnswer.json || {}).isProduct;
+  const listed = doc.endpoints.filter(function (e) { return e.demo; });
+  if (!product) {
+    assert.ok(listed.length > 20,
+      "a development realm should list its demonstration endpoints, marked " +
+      "demo; only " + listed.length + " were.");
+    log.info("[demos] OK — development: " + listed.length +
+             " demonstration endpoints listed and marked.");
+    log.debug("Leaving theDemonstrationsFollowTheMode().");
+    return;
+  }
+  assert.deepStrictEqual(listed.map(function (e) { return e.path; }), [],
+    "a product realm must list no demonstration endpoint (#585).");
+  const probes = [["GET", "/saml2/sp"], ["GET", "/issuer"],
+                  ["GET", "/oid4vp/verifier"], ["GET", "/tls"],
+                  ["POST", "/ssf/receive"], ["GET", "/krb5/principals"]];
+  for (const probe of probes) {
+    const r = await common.httpJson(issuerBase + probe[1],
+                                    { method: probe[0], redirect: "manual" });
+    const unrouted = r.status === 404 &&
+      new RegExp("Cannot " + probe[0] + " ").test(String(r.raw || "")
+        .replace(/<[^>]*>/g, ""));
+    assert.ok(unrouted, probe[0] + " " + probe[1] + " should answer as an " +
+              "unrouted path in a product realm (Express's own 404, #585); " +
+              "got " + r.status + " " + String(r.raw || "").slice(0, 80));
+  }
+  log.info("[demos] OK — product: none listed, and " + probes.length +
+           " probed answer as unrouted paths.");
+  log.debug("Leaving theDemonstrationsFollowTheMode().");
+}
+
 async function theAdvertisedEndpointsAreAllListed(doc) {
   log.debug("Entering theAdvertisedEndpointsAreAllListed().");
   log.info("=== Against the service's own discovery documents ===");
@@ -658,6 +713,7 @@ async function test() {
   await theMethodsShownActuallyAnswer(doc);
   await pathsAreFollowableLinks(doc, served.page);
   await theAdvertisedEndpointsAreAllListed(doc);
+  await theDemonstrationsFollowTheMode(doc, consoleClient);
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
 }

@@ -4,6 +4,8 @@ title: Kerberos
 
 # Kerberos, KKDCP and SPNEGO
 
+> **Development mode only (#585):** `/spnego`, `/spnego/protected`, `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts runs a **Kerberos v5 KDC**
 ([RFC 4120](https://www.rfc-editor.org/rfc/rfc4120)) on raw TCP and UDP port
 88 and over [MS-KKDCP](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/),
@@ -638,7 +640,7 @@ modes**, and a replay is refused in both. See
 | `krb5.enabled` | `KRB5_ENABLED` | `true` | yes | Whether this realm's KDC answers; on a trust realm, whether the realm has a Kerberos realm at all (created off). |
 | `krb5.realm` | `KRB5_REALM` | `EXAMPLE.COM` | no | The Kerberos realm; its lower-cased form is the domain, and port 88 routes by it. |
 | `krb5.kdcPort` | `KRB5_KDC_PORT` | `88` | no | The KDC's TCP and UDP port; `0` asks for any free port. A failure to bind is recorded, not fatal. |
-| `krb5.servicePort` | `KRB5_SERVICE_PORT` | `8888` | no | The Kerberized test service that accepts an AP-REQ. |
+| `krb5.servicePort` | `KRB5_SERVICE_PORT` | `8888` | no | The Kerberized test service that accepts an AP-REQ. A demonstration: a product process does not start it (#585). |
 | `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. |
 | `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | no | The string-to-key salt for that account; set it to accept tickets from a real Active Directory KDC. |

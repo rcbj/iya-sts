@@ -76,8 +76,8 @@
     "text": "Nom d’utilisateur et mot de passe"
   },
   "fed.mechanisms.password.what": {
-    "en": "018076ae0914736c",
-    "text": "L’écran de connexion propre à ce service, qui ne vérifie aucun mot de passe. Le cas ordinaire, et ce vers quoi se rabat un mécanisme non défini dès que rien d’autre n’a d’avis."
+    "en": "3c7b942fed61a172",
+    "text": "L’écran de connexion propre à ce service : un nom d’utilisateur et un mot de passe, le mot de passe étant vérifié en mode produit et non en mode développement. Le cas ordinaire, et ce vers quoi se rabat un mécanisme non défini dès que rien d’autre n’a d’avis."
   },
   "fed.mechanisms.password-mfa.label": {
     "en": "4e8e68a717825941",
@@ -108,8 +108,8 @@
     "text": "Ticket Kerberos (SPNEGO)"
   },
   "fed.mechanisms.spnego.what": {
-    "en": "fed207183fe87922",
-    "text": "AUTHENTIFICATION INTÉGRÉE. La personne est envoyée vers /authn/spnego, qui répond 401 avec WWW-Authenticate: Negotiate et la connecte sur la base du ticket de service que son client renvoie (RFC 4559 sur RFC 4178 sur RFC 4121). Rien n’est saisi et aucun écran n’est affiché. C’est le seul mécanisme ici qui repose sur un identifiant que ce service vérifie réellement — toute autre connexion prend le nom qu’on lui donne — et ce que la session revendique ensuite est lu à partir des propres indicateurs du TICKET : amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et RIEN du tout pour un ticket qui ne revendique ni l’un ni l’autre. Un client qui ne peut pas obtenir de ticket arrive sur une page qui renvoie vers l’écran de connexion, car un simple 401 Negotiate est une impasse dans tout navigateur qui n’est pas configuré pour cet hôte."
+    "en": "0f52a102d4c01229",
+    "text": "AUTHENTIFICATION INTÉGRÉE. La personne est envoyée vers /authn/spnego, qui répond 401 avec WWW-Authenticate: Negotiate et la connecte sur la base du ticket de service que son client renvoie (RFC 4559 sur RFC 4178 sur RFC 4121). Rien n’est saisi et aucun écran n’est affiché. Comme une clé de sécurité ou un portefeuille, il repose sur un identifiant que ce service vérifie dans tous les modes — le mot de passe de l’écran de connexion n’est vérifié qu’en mode produit — et ce que la session revendique ensuite est lu à partir des propres indicateurs du TICKET : amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et RIEN du tout pour un ticket qui ne revendique ni l’un ni l’autre. Un client qui ne peut pas obtenir de ticket arrive sur une page qui renvoie vers l’écran de connexion, car un simple 401 Negotiate est une impasse dans tout navigateur qui n’est pas configuré pour cet hôte."
   },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
@@ -180,8 +180,8 @@
     "text": "QUELLE EXTRÉMITÉ EST CE SERVICE : service-provider (il consomme) ou identity-provider (il fait des assertions). Une relation correspond à un seul sens — voir l’en-tête."
   },
   "fed.schema.attributes.fedProtocol.what": {
-    "en": "a1a61c375e951599",
-    "text": "L’un de saml2, saml11, wsfed, oidc, oauth2."
+    "en": "06ec8c6d5bce784c",
+    "text": "L’un de saml2, saml11, wsfed, oidc, oauth2 — les cinq protocoles de connexion — ou ssf, un partenaire qui envoie uniquement des Shared Signals et ne connecte personne."
   },
   "fed.schema.attributes.fedPeer.what": {
     "en": "267dac8cafddfb60",
@@ -436,8 +436,8 @@
     "text": "Ce service"
   },
   "fedgraph.sentences.noMechanism": {
-    "en": "467b4c978776f257",
-    "text": "L’écran de connexion, qui ne vérifie aucun mot de passe"
+    "en": "85a969d1a113b8c5",
+    "text": "L’écran de connexion (nom d’utilisateur et mot de passe)"
   },
   "fedgraph.sentences.unknownMechanism": {
     "en": "f76c6d8079660f9f",

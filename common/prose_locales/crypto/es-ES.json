@@ -1,0 +1,22 @@
+{
+  "crypto.keyEstablishment.vpOffered": {
+    "en": "849d86b5d19e6d58",
+    "text": "Cada solicitud ofrece {{algs}} (una clave creada para esa única transacción) antes o junto a la clave P-256 ECDH-ES que exige HAIP, para que una cartera que pueda usarla lo haga (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.standards.sdjwt.coverage": {
+    "en": "2d231e5864c82088",
+    "text": "partial: digests `_sd` con `_sd_alg: sha-256`, divulgaciones y el tipo `dc+sd-jwt`. La vinculación de clave se hace mediante la prueba de posesión de la cartera en la emisión."
+  },
+  "crypto.standards.did.what": {
+    "en": "40ddc5fd877325e6",
+    "text": "Cómo encuentra una cartera la clave que verifica una credencial cuyo `iss` es un DID. La clave BBS se publica como `publicKeyMultibase` porque no tiene representación JWK en la que forzarla."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.verifies": {
+    "en": "c0036a45ed2b60bc",
+    "text": "La prueba de posesión de una cartera en el endpoint de credenciales, que debe ser un JWS ASIMÉTRICO — nunca un MAC y nunca `none` — y una presentación en el verificador, incluida una prueba bbs-2023 DERIVADA, que es el aspecto que tiene la divulgación selectiva cuando no es un SD-JWT."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.1.what": {
+    "en": "5c9c19ca8b4d7044",
+    "text": "Prueba de posesión de la cartera"
+  }
+}

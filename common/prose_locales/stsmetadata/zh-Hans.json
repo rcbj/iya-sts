@@ -428,8 +428,8 @@
     "text": "full——自 2026-09-11 起两个部分都覆盖，并且它是独立于 RFC 7523 的实现，而不是在其上加一个格式标志。两者是同一框架的两个配置文件，不共享任何代码：JWT 是三段 base64url 和一个声明集，而这是一个带封装 XML 签名、<Conditions> 元素和 Recipient 属性的 XML 文档，后者在 JWT 中根本没有对应物。第 2.1 节是 SAML 2.0 授权许可（grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer），第 2.2 节是通过同一文档进行的客户端身份验证（client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer），其在此处的 token_endpoint_auth_method 为 `saml2_bearer`——这是本服务自己的名称，因为该 RFC 没有注册任何名称，IANA 注册表中也没有对应的值；它在 token_endpoint_auth_methods_supported 中公布，以便客户端通过发现得知而不是从这里读到，线上传输的内容没有任何是虚构的。第 3 节全部十一项都会检查：<Issuer> 按简单字符串比较（第 1 项，不做大小写折叠，不容忍末尾斜杠）；<AudienceRestriction>，未指明本服务器时会被拒绝，且没有关闭开关（第 2 项）；<Subject>，用于客户端身份验证时必须是 client_id（第 3 项）；来自任一 NotOnOrAfter 的过期时间，任一个都能满足要求（第 4 项）；至少一个 bearer <SubjectConfirmation>，其 Recipient 针对令牌端点检查，其 Address 读取但不执行（第 5 项）；两个 NotOnOrAfter 时刻都带可配置的偏差，过期的 <SubjectConfirmation> 被丢弃而不是视为致命错误，以及基于 Issuer 和 ID 的已使用断言历史，由两个部分共用并持久化（第 6 项）；<AuthnStatement>，携带并报告但从不要求（第 7 项）；每个 <AttributeStatement> 属性都会带到所签发的令牌上（第 8 项）；签名是必需的，未签名的断言会被按名称拒绝（第 9 项）；<EncryptedAssertion> 和 <EncryptedID> 用本领域自己的密钥解密（第 10 项）；以及完整的 <Conditions>，未识别的 <Condition> 类型会按 SAML core 第 2.5.1 节使断言无效，而不是被忽略（第 11 项）。不宽松之处，而且有两项而不是一项：Issuer 必须在应用条目上声明（oauthSamlAssertionIssuer），理由与 RFC 7523 的颁发者必须声明相同——并且断言只针对按 RFC 7522 属性为该方注册的证书进行验证。**<ds:KeyInfo> 中仅仅能链接到本领域根证书的证书不会被接受**，这是本服务在此处比 RFC 7523 更严格的唯一一点：证书链证明的是领域签发了某个密钥，但没有说明是哪个应用持有它，因此接受它会让某个应用自己的 RFC 7523 叶证书能够签署 SAML 断言。两种配置文件为每个应用保存各自独立的密钥对，存放在两组没有任何验证方会交叉使用的属性中。"
   },
   "stsmetadata.specs.rfc9700.coverage": {
-    "en": "94fe7ee8d6cbb365",
-    "text": "partial，并且默认关闭——它是一种模式（oauth2.rfc9700），而不是本服务的行为方式，因为客户端需要在两种应答下都得到测试，而本模拟的每个现有调用方都使用未注册的 redirect_uri、不用 PKCE、使用 implicit 授权或 password 授权。开启后它覆盖整个第 2 节。2.1：重定向 URI 的精确字符串匹配，带 RFC 8252 的环回端口例外；授权端点和 end_session_endpoint 上都没有开放重定向器；环回以外不允许 http 重定向 URI；主端口以 HTTPS 绑定，以免授权响应通过未加密的连接发送。2.1.1：每个未注册为机密客户端的客户端都必须使用 PKCE，仅限 S256，第 4.8.2 节的降级拒绝，任何 id_token 都需 nonce，以及令牌端点上 RFC 6749 第 4.1.3 节的客户端和 redirect_uri 检查。2.1.2：没有从授权端点签发访问令牌的响应类型。2.2.2：刷新令牌轮换，检测到重放时吊销整条链，以及此授权类型此前从未检查过的客户端绑定。2.3：刷新可以收窄范围但绝不能扩大；访问令牌本来就已受众限定到一个资源服务器。2.4：拒绝 password 授权。2.5：在此注册为机密客户端的客户端必须进行身份验证，可使用六种令牌端点方法中的任意一种——client_secret_basic 和 _post、client_secret_jwt、针对已注册 JWKS 的 private_key_jwt，以及 RFC 8705 第 2 节的 tls_client_auth 和 self_signed_tls_client_auth——全部都会验证，这是本服务在任何地方检查的唯一凭据。2.6：授权端点不提供 CORS。两份发现文档都不再公布该模式会拒绝的任何内容。有三项是检测而不是执行，因为它们是客户端应自行遵守的：跨事务重复使用 code_challenge 或 nonce（真实服务器通常看不到，而会记忆的模拟实现能看到）、未绑定的访问令牌（第 2.2 节是 SHOULD，并且刻意没有“要求 DPoP”的模式），以及在 2.5 建议使用非对称方式时使用对称的客户端身份验证——这种偏好会被检测，但全部六种方法现在都会被真正验证，包括三种非对称方法。第 4.5 节 第 2.2 节和第 2.3 节在授权服务器能覆盖的范围内都已覆盖：两种发送方约束机制都已实现（DPoP，以及在主端口为 TLS 时的 RFC 8705 证书绑定），资源服务器会校验证明并防止其重放，RFC 8707 资源指示符使受众可以被限定到一个或少量资源服务器，为其他受众签发的令牌会在受保护端点被拒绝。第 4.5 节同样已覆盖：授权码只能使用一次，且重放宽限已关闭，第二次出示会吊销它换取的访问令牌、刷新令牌和 ID 令牌，授权码绑定到兑换它的客户端。有两项要求被明确说明为无法执行而不是被省略——客户端必须校验 ID 令牌的 nonce，并且在校验成功之前不得使用令牌，本服务器对这两点都无法观察；oauth2.breakIdTokenNonce 会故意破坏 nonce，以便客户端开发者确认自己的代码是否进行了检查（仅限开发模式；产品领域会忽略它）。推送授权请求（RFC 9126）和资源指示符（RFC 8707）是独立的功能，在每种模式下都可用，而不是本模式所执行的约束。GET /oauth2/rfc9700 列出每项要求，并注明其属于上述哪一类。"
+    "en": "fd15ca6a56b1def0",
+    "text": "partial，“并且默认关闭”——它是一种“模式”（oauth2.rfc9700），而不是本服务的行为方式，因为客户端需要在两种应答下都得到测试，而本模拟的每个现有调用方都使用未注册的 redirect_uri、不用 PKCE、使用 implicit 授权或 password 授权。开启后它覆盖整个第 2 节。2.1：重定向 URI 的精确字符串匹配，带 RFC 8252 的环回端口例外；授权端点和 end_session_endpoint 上都没有开放重定向器；环回以外不允许 http 重定向 URI；主端口以 HTTPS 绑定，以免授权响应通过未加密的连接发送。2.1.1：每个未注册为机密客户端的客户端都必须使用 PKCE，仅限 S256，第 4.8.2 节的降级拒绝，任何 id_token 都需 nonce，以及令牌端点上 RFC 6749 第 4.1.3 节的客户端和 redirect_uri 检查。2.1.2：没有从授权端点签发访问令牌的响应类型。2.2.2：刷新令牌轮换，检测到重放时吊销整条链，以及此授权类型此前从未检查过的客户端绑定。2.3：刷新可以收窄范围但绝不能扩大；访问令牌本来就已受众限定到一个资源服务器。2.4：拒绝 password 授权。2.5：在此注册为机密客户端的客户端必须进行身份验证，可使用六种令牌端点方法中的任意一种——client_secret_basic 和 _post、client_secret_jwt、针对已注册 JWKS 的 private_key_jwt，以及 RFC 8705 第 2 节的 tls_client_auth 和 self_signed_tls_client_auth——全部都会验证，这是本服务在任何地方检查的唯一凭据。2.6：授权端点不提供 CORS。两份发现文档都不再公布该模式会拒绝的任何内容。有三项是检测而不是执行，因为它们是客户端应自行遵守的：跨事务重复使用 code_challenge 或 nonce（真实服务器通常看不到，而会记忆的模拟实现能看到）、未绑定的访问令牌（第 2.2 节是 SHOULD，因此没有任何模式要求绑定的令牌；领域可以通过 oauth2.accessTokenRequireDpop 或 oauth2.accessTokenRequireMtls 来要求），以及在 2.5 建议使用非对称方式时使用对称的客户端身份验证——这种偏好会被检测，但全部六种方法现在都会被真正验证，包括三种非对称方法。第 2.2 节和第 2.3 节在授权服务器能覆盖的范围内都已覆盖：两种发送方约束机制都已实现（DPoP，以及在主端口为 TLS 时的 RFC 8705 证书绑定），资源服务器会校验证明并防止其重放，RFC 8707 资源指示符使受众可以被限定到一个或少量资源服务器，为其他受众签发的令牌会在受保护端点被拒绝。第 4.5 节同样已覆盖：授权码只能使用一次，且重放宽限已关闭，第二次出示会吊销它换取的访问令牌、刷新令牌和 ID 令牌，授权码绑定到兑换它的客户端。有两项要求被明确说明为无法执行而不是被省略——客户端必须校验 ID 令牌的 nonce，并且在校验成功之前不得使用令牌，本服务器对这两点都无法观察；oauth2.breakIdTokenNonce 会故意破坏 nonce，以便客户端开发者确认自己的代码是否进行了检查（仅限开发模式；产品领域会忽略它）。推送授权请求（RFC 9126）和资源指示符（RFC 8707）是独立的功能，在每种模式下都可用，而不是本模式所执行的约束。GET /oauth2/rfc9700 列出每项要求，并注明其属于上述哪一类。"
   },
   "stsmetadata.specs.oauth-attestation.coverage": {
     "en": "e7e2cb581eae4f3f",
@@ -3199,6 +3199,10 @@
     "en": "707fbb63d49a43b8",
     "text": "1.2 Web（被动）请求方配置文件：按 wa 分派的 /wsfed、登录界面、AD FS 路径下的已签名联合元数据、wsignout1.0，以及一个显示发送给它的内容的模拟依赖方。"
   },
+  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
+    "en": "7ddf36d0c593e38b",
+    "text": "1.2 Web（被动）请求方配置文件：按 wa 分派的 /wsfed、登录页面、位于 AD FS 路径的已签名联合元数据，以及 wsignout1.0。"
+  },
   "stsmetadata.protocols.WS-Trust.what": {
     "en": "32437a522ad16a77",
     "text": "在 /sts 上基于 SOAP 的 RST / RSTR，支持全部四个版本（1.0 至 1.4），颁发任一种 SAML 方言，断言已签名，并可选加密给请求方的证书。"
@@ -3211,6 +3215,10 @@
     "en": "4505d4e4ca3cd818",
     "text": "KDC 本身使用 TCP 和 UDP 端口 88，此页面看不到它。"
   },
+  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
+    "en": "3048c833f899933d",
+    "text": "一个 KDC：AS-REQ / TGS-REQ、预身份验证、四种加密类型、票据中的 Microsoft PAC、跨领域引用以及受约束委派。本页上的这一行是它的 MS-KKDCP 代理，之所以存在，是因为浏览器无法打开套接字。"
+  },
   "stsmetadata.protocols.SPNEGO.what": {
     "en": "17e95091fc9d97ee",
     "text": "基于 HTTP 的 Kerberos：/spnego/protected 以 401 WWW-Authenticate: Negotiate 应答，读取浏览器或客户端发回的 NegTokenInit，并针对服务主体的密钥接受其中的 AP-REQ。"
@@ -3218,6 +3226,10 @@
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "它接受的票据来自端口 88 上的 KDC。"
+  },
+  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
+    "en": "dcf9bfda53ee9570",
+    "text": "基于 HTTP 的 Kerberos：/authn/spnego 应答 401 WWW-Authenticate: Negotiate，读取浏览器发回的 NegTokenInit，用服务主体的密钥接受其中的 AP-REQ，并让其客户端登录（Authentication 组）。"
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

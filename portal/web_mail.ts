@@ -145,6 +145,8 @@ class MailPages {
             '</td></tr>';
         }).join('') + '</table>'
       : '<p class="sub">' + t.html('portalMail.sent.nothing') + '</p>') +
+      // A page at a time, on `sentPage` (#313's sweep).
+      kit.pageNav(EMAIL, ctx.query, view.sentPaging, 'sentPage', t) +
       '</div>');
     return cards.join('');
   }

@@ -364,7 +364,11 @@ const ADVANCED_REQUIREMENTS = [
     note: 'A token request that would mint an unconstrained access token is ' +
           'refused (STS-OAUTH-0583). DPoP counts unless ' +
           'oauth2.fapiRequireMtls is on (rcbj\'s decision on #139); ' +
-          'mtls_endpoint_aliases is published where the port is TLS.' },
+          'mtls_endpoint_aliases is published where the port is TLS. TWO ' +
+          'EXCEPTIONS (#446, #568): the public clients sts-admin-console ' +
+          'and sts-user-portal hold no certificate to present, and their ' +
+          'DPoP-bound tokens are accepted with oauth2.fapiRequireMtls on; ' +
+          'they do not conform there.' },
   { id: 'parameters-from-object', section: '5.2.2 item 10', level: 'SHALL',
     enforced: 'already',
     title: 'Only parameters inside the signed request object are used',
@@ -1550,14 +1554,23 @@ function requiresMtls() {
   return advanced() && !!config.value('oauth2.fapiRequireMtls');
 }
 
+// THE TWO PUBLIC CLIENTS (#446, #568) ARE BOUND BY DPoP AND NOTHING ELSE:
+// a page in a browser holds no client certificate to present. Under
+// `oauth2.fapiRequireMtls` a DPoP-bound token from either is still accepted,
+// for PUBLIC_CLIENT_EXEMPT's reason — a realm that required mutual TLS would
+// otherwise have no console and no portal — and the requirement rows say they
+// do not conform there. An UNBOUND token from them is refused as from anybody.
 /**
  * Refuses, under FAPI 1.0 Advanced or 2.0, an access token about to be issued
  * that is not sender-constrained enough.
  *
  * @param binding - `dpop` and `mtls`, what binds the token
+ * @param clientId - optional; the client, for the two public clients whose
+ *   only binding is DPoP
+ * @param method - optional; the method the client's entry declares
  * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
  */
-function senderConstraintRefusal(binding) {
+function senderConstraintRefusal(binding, clientId, method) {
   log.debug("Entering senderConstraintRefusal().");
   if (!advanced() && !fapi2()) {
     log.debug("Leaving senderConstraintRefusal(). Not Advanced.");
@@ -1566,6 +1579,11 @@ function senderConstraintRefusal(binding) {
   const b = binding || {};
   if (b.mtls || (b.dpop && !requiresMtls())) {
     log.debug("Leaving senderConstraintRefusal(). Bound.");
+    return null;
+  }
+  if (b.dpop && publicClientExempt(clientId, method)) {
+    log.debug("Leaving senderConstraintRefusal(). A DPoP-bound public " +
+              "client, which holds no certificate to present.");
     return null;
   }
   log.debug("Leaving senderConstraintRefusal(). Unbound.");
@@ -1698,6 +1716,18 @@ function applyToMetadata(metadata) {
       metadata.response_modes_supported = metadata.response_modes_supported
         .filter(function (one) {
           return JARM_MODES.indexOf(one) >= 0;
+        });
+    }
+    // FAPI 1.0 ADVANCED ANSWERS NOTHING IN A PLAIN QUERY (Part 2 section
+    // 5.2.2 item 2): `code` is allowed only with JARM (STS-OAUTH-0783), and
+    // `code id_token` carries an ID Token, which never travels in a query
+    // (OAuth 2.0 Multiple Response Type Encoding Practices section 5). So
+    // `query` is not advertised, and a client reading the document — the
+    // static console's and portal's runtimes among them — asks for JARM.
+    if (advanced() && Array.isArray(metadata.response_modes_supported)) {
+      metadata.response_modes_supported = metadata.response_modes_supported
+        .filter(function (one) {
+          return one !== 'query';
         });
     }
     if (fapi2()) {

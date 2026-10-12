@@ -1,0 +1,106 @@
+{
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "由本服務驗證人員身分，「外部」服務提供者使用它所簽發的內容。此處的每個協定端點本來就會為任何呼叫者這麼做——關係所增加的，是將夥伴標記為聯盟夥伴而非測試客戶端，以及一份要釋出給它的屬性清單。"
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "用戶名稱與密碼"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "3c7b942fed61a172",
+    "text": "本服務自己的登入畫面：用戶名稱與密碼，密碼在產品模式下會驗證，在開發模式下則不會。這是一般情況，也是未設定機制在沒有其他任何意見時所採用的方式。"
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "用戶名稱與密碼，加上 MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "同一個畫面，但第二因素方塊已剔選並鎖定，因此 WebAuthn 儀式會在密碼步驟之後執行，工作階段記錄 amr [\"pwd\",\"hwk\"] 與 acr \"mfa\"。這與 RequestedAuthnContext 可提出的要求相同；協定要求它與關係設定它所產生的是同一個畫面，而不是兩個。"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "「整合式驗證」。人員被送往 /authn/spnego，它以 401 及 WWW-Authenticate: Negotiate 回應，並依其客戶端送回的服務票證讓他們登入（RFC 4559 建立在 RFC 4178 之上，再建立在 RFC 4121 之上）。不必輸入任何內容，也不繪製任何畫面。如同安全金鑰或錢包，它建立在本服務於每種模式下都會驗證的認證資料上——登入畫面的密碼只在產品模式下驗證——而工作階段接著主張的內容是從「票證」自身的旗標讀取：pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未主張的票證則「什麼都沒有」。無法取得票證的客戶端會看到一個連結到登入畫面的頁面，因為在每個未針對此主機設定的瀏覽器中，單純的 401 Negotiate 都是死路。"
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "本服務對此夥伴的稱呼，在它不是本服務自行衍生的名稱時使用。空白——預設值——會從瀏覽器到達本服務所用的基礎 URL 衍生（<base>/federation/acs/<id>，由 global.publicBaseUrl 固定）。請將它設為夥伴所設定的 entityID：它會成為外送 AuthnRequest 的 Issuer、WS-Federation wtrealm、SAML 1.1 providerId、此關係的 SP 元數據 entityID，以及傳入斷言必須指名的對象——自 2026-09-12 起這會導致「拒絕」，因此以其他名稱認識本服務的夥伴需要設定此值。斷言取用 URL 仍為衍生值，因為它是瀏覽器必須能到達的地址。"
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "「僅限 OPENID CONNECT」。此領域其中一個 Trust Anchor 的 Entity Identifier（/admin/oidfed）。設定後，fedPeer 所指名的 OP 會透過其 Trust Chain 解析到該錨點，其端點與金鑰即為該鏈所背書的 openid_provider 元數據，而本服務會以自己的 Entity Identifier「自動」向它註冊，並以其 ES256 金鑰簽署其請求與權杖端點驗證——因此不會讀取 fedSsoUrl、fedTokenUrl、fedJwks、fedJwksUri、fedClientId 與 fedClientSecret。空白時，關係如往常一樣以手動設定。"
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "「夥伴的簽署證書」，base64 DER——與 ds:X509Certificate 攜帶的拼寫相同，也與應用程式項目上 samlSigningCertificate 所用的相同，因此一張證書在本服務中只有一種拼寫。每個 SAML 與 WS-Federation 斷言都以它驗證，它是阻隔本服務成為任何人都能隨意斷言之端點的唯一屬性。"
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "35f9f1eab89afb31",
+    "text": "「本服務在夥伴處的 client_id」。屬於我們、由他們簽發——不要與應用程式項目上的 oauthClientId 混淆，後者是此處模擬客戶端的 ID。"
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "b2682d37a527ee98",
+    "text": "code（預設）或 id_token。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、客戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。"
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "以「本」服務的金鑰簽署外送 AuthnRequest。預設為「關閉」：大多數身分提供者不要求它，而要求它的夥伴會以指明問題的方式拒絕請求。開啟時，要在夥伴處設定的證書就是本服務自己 SAML 元數據上的那一張。"
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "61e8ef6f6cf4a99d",
+    "text": "「哪個傳入值成為本機用戶名稱」——OIDC/OAuth 2.0 為宣告名稱，其他則為 SAML Attribute Name。空白表示使用主體本身：NameID 或 `sub`。這是唯一一個不可能悄悄弄錯的對應決策，因為它決定了人員會落在哪個目錄項目上。"
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "「原則之上的規則」：夥伴「傳送」的郵件網域（對應後的 mail，或對應後的用戶名稱若為地址時）必須是這些之一，本機項目若有 mail 也必須如此。以不區分大小寫的方式完全比對：example.com 不接受 sub.example.com。空白：沒有網域規則。"
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "「允許此夥伴的 Shared Signals 以郵件指名人員」。預設為「關閉」：來自具有此夥伴簽發者之傳送端的 Security Event Token，透過人員的 federationLink 以 `iss_sub` 指名人員。開啟時，`email` 主體也會比對到具有該電郵地址的那一個人——地址不是識別碼（OpenID Connect Core section 5.7），因此只適用於此領域信任其地址的夥伴。"
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "「此領域以客戶端認證取得夥伴串流管理存取權杖的位置」。空白則使用 fedTokenUrl——登入關係已在撥接的同一個授權伺服器。"
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "a496c6a310b8c156",
+    "text": "以客戶端認證要求的範圍。空白則要求 `ssf:read ssf:write`。"
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "「夥伴簽發的持有人權杖」，用以取代客戶端認證。與 fedSignalsClientSecret 一樣密封，只要設定就會使用。"
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "「夥伴的 SAML 2.0 SingleLogoutService」——當人員在「此處」登出（/logout）時，本服務傳送已簽署 <LogoutRequest> 的位置，也是回應夥伴自身 LogoutRequest 的 <LogoutResponse> 送往的位置。取自夥伴的元數據。空白：夥伴永遠不會被告知此處的登出，而來自它的 LogoutRequest 仍會被遵循，但不予回應，因為無處可送回應。僅限 SAML 2.0：SAML 1.1 完全沒有定義登出。"
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "本服務傳送給夥伴的 LogoutRequest 或 LogoutResponse 使用哪種繫結：HTTP-Redirect（預設；簽章涵蓋查詢字串）或 HTTP-POST（封裝簽章，以真正的表單與真正的按鈕送出——不用腳本）。來自夥伴的訊息兩者皆接受。"
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "「夥伴加密所用的金鑰種類」：rsa-3072（SAML 2.0 與 WS-Federation 的預設值）或 ec-p256（OpenID Connect 的預設值）——或者僅限 OpenID Connect 的後量子金鑰（#82）：x-wing（HPKE-10-KE、ML-KEM-768 + X25519）或 ml-kem-768（ML-KEM-768），這是發布在關係 JWKS 中、沒有證書的 AKP 金鑰，源自目前少有夥伴實作的 Internet-Draft。變更它會立即簽發該種類的新金鑰，並如同輪替一樣將舊金鑰保留 federation.encryptionKeyGraceS。"
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "「金鑰表」：此關係用來解密的每把金鑰各一列 JSON——其 kid、金鑰類型、`current` 或 `previous`、其在此領域 Intermediate 之下的證書與鏈結，以及私密金鑰，只要金鑰持久保存就以金鑰加密金鑰「密封」。`previous` 列會保留到其 retiresAt，然後由排程工作 federation.encryption-key-retire 移除。只由建立、輪替與該工作寫入；在產品模式下對每次 LDAP 搜尋「隱藏」，也對每個頁面與 /admin-api 回覆隱藏，它們只發布公開的那一半。金鑰類型是一個欄位，因此一旦註冊了混合後量子金鑰，它就能作為一列與傳統金鑰並列。"
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "「指標」，也是這一端關於夥伴所儲存的全部內容：它在 ou=applications 中的項目識別碼。其 entityID、斷言取用服務、重新導向 URI 與證書都存放在「那裡」，每個協定模組本來就從那裡讀取。把其中任何一項複製到這裡，就是本儲存庫刻意避免的雙存放區失敗。"
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "有多少不同的身分穿越了它。以 fedLastUser 為基準計數，因此計算的是用戶的「變更」而不是集合：對一般情況是正確的，對於在兩個夥伴之間交替的人則會少算。之所以在此說明，是因為它是頁面上的一個數字。"
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "「上次嘗試失敗的原因」，以本服務自己的話說明。它是此處最有用的屬性，也是拒絕會被記錄而不只是寫入日誌的原因：無法運作的聯盟會在別人的服務上失敗，而「簽章無法以設定的證書驗證」正是終結到底是哪一端出問題之爭論的那句話。"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "85a969d1a113b8c5",
+    "text": "登入畫面（用戶名稱與密碼）"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "whySdk": "Le SDK de ce fournisseur n’est pas installé. Il n’est délibérément pas une dépendance de ce service — c’est d’abord une maquette, et cinq SDK infonuagiques que personne n’utilise seraient embarqués dans chaque installation — donc le message ci-dessus nomme le paquet à installer.",
+  "sharedLocation": "Ce secret ne nomme aucun emplacement, il est donc lu <strong>là où se trouve la clé de chiffrement de clés</strong>, et le champ ci-dessus est ce qui distingue les deux dans une même valeur. C’est la disposition d’un déploiement qui a un seul fichier monté ou un seul secret infonuagique. Si ce qui s’y trouve n’est PAS un objet JSON, la lecture de ce secret est REFUSÉE plutôt que de remettre cette clé à une base de données.",
+  "nothingPublished": "Ce fournisseur ne publie rien sur le stockage lui-même au-delà de ce qui figure déjà sur le secret ci-dessus &mdash; un gestionnaire de secrets infonuagique est un point de terminaison et une politique d’accès, et tout ce qu’il dira concerne le secret.",
+  "tab.mail": "Secrets de courriel"
+}

@@ -8142,7 +8142,12 @@ class AdminConsole {
       title: row.title,
       what: this.plainTextOf(row.lead),
       notes: (row.also || []).map(this.plainTextOf.bind(this)),
-      links: (row.links || []).map(function (link) {
+      // A link to a demonstration this realm is not served is not drawn
+      // (#585): a product realm's page must not send anybody to a path that
+      // answers as though nothing were registered on it.
+      links: (row.links || []).filter(function (link) {
+        return !app.demoPathHidden(link[0]);
+      }).map(function (link) {
         return { href: link[0], what: link[1] };
       }),
       settings: this.configSettingsJson(

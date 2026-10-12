@@ -316,6 +316,6 @@ who has an address is told as well (`mail.notifyAdministrators`).
 |---|---|
 | Server configuration → Mail (`/admin/mail`) | The transport, whether it could be built, where links point, a test message, a verification link, each message's wording, and the settings |
 | Monitoring → Mail outbox (`/admin/mail/outbox`) | Every message, its state and attempts, the dead letters and their Retry. In development, the captured bodies. |
-| `/portal/email` | A person's own address, its verification, what they decline, and what was sent to them |
+| `/portal/email` | A person's own address, its verification, what they decline, and what was sent to them, twenty a page (`sentPage`) |
 | `GET /admin-api/mail`, `/admin-api/mail/outbox` | The same, over JSON ([Management API](management-api.md)) |
 | [Error codes](error-codes.md) | `STS-MAIL-0001` to `STS-MAIL-0034` |

@@ -119,6 +119,10 @@ import cellPlacement = require('../common/cell_placement');
 // library.
 import cellSessions = require('../common/cell_sessions');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
@@ -14129,9 +14133,11 @@ class OAuth2Server {
     // FAPI 1.0 Advanced section 5.2.2 items 5-6 (#139): every access token is
     // sender-constrained — by the client certificate this connection
     // presented, or (unless oauth2.fapiRequireMtls) by the DPoP proof checked
-    // above. Refused before any grant is spent.
+    // above. Refused before any grant is spent. The console and the portal,
+    // public clients whose one binding is DPoP, are told apart by `fapi.js`.
     const fapiBound = fapi.senderConstraintRefusal({
-      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) });
+      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) },
+      client.client_id, clientObservation.method);
     if (fapiBound) {
       log.debug("Leaving the token endpoint. FAPI: the token would be " +
                 "unconstrained.");
@@ -20782,10 +20788,10 @@ class OAuth2Server {
 
     app.post('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
-    app.get('/oauth2/step-up/resource/:application',
+    app.get('/oauth2/step-up/resource/:application', demoOnly,
             self.stepUpResource.bind(self));
 
-    app.post('/oauth2/step-up/resource/:application',
+    app.post('/oauth2/step-up/resource/:application', demoOnly,
              self.stepUpResource.bind(self));
 
     // --- token endpoint
@@ -20806,7 +20812,7 @@ class OAuth2Server {
     // setting `oauth2.dpopNonceRequired` since 2026-09-12 (below). Listed on
     // /admin/sts-metadata as non-spec, because it is.
     // -------------------------------------------------------------------------
-    app.get('/dpop/nonce-mode', function (req, res) {
+    app.get('/dpop/nonce-mode', demoOnly, function (req, res) {
       log.debug("Entering the DPoP nonce-mode endpoint (read).");
       res.status(200).type('application/json').set('Cache-Control', 'no-store')
         .send(JSON.stringify(dpop.state(), null, 2));
@@ -20822,29 +20828,24 @@ class OAuth2Server {
     // now, which lands on the realm it is reached in — see
     // `dpop.setNonceMode()`.
     //
-    // **IT IS A TEST CONTROL AND PRODUCT MODE REFUSES IT.** Anybody who can
-    // reach the port could change a security policy of the authorization server
-    // and empty its replay cache in the same call. In product the setting is
-    // still changeable, through the two doors that already require a credential
-    // — /admin/oauth2 and POST /admin-api/config/set — and this endpoint says
-    // so. The READ above stays open in both modes: it reports a policy a client
-    // needs to know to talk to this server at all.
+    // **IT IS A TEST CONTROL AND PRODUCT MODE DOES NOT HAVE IT.** Anybody who
+    // can reach the port could change a security policy of the authorization
+    // server and empty its replay cache in the same call. In product the
+    // setting is still changeable, through the two doors that already
+    // require a credential — /admin/oauth2 and POST /admin-api/config/set.
+    //
+    // **AND SINCE #585 (2026-10-12) NEITHER HALF IS THERE IN PRODUCT**: both
+    // routes carry `common/app.js`'s `demoOnly` mark and a product realm
+    // answers as for a path nothing is registered on. The write answered 403
+    // `STS-OAUTH-0178` (retired) until then, and the READ stayed open on the
+    // argument that a client needs the policy to talk to this server — which
+    // RFC 9449 section 8 already gives it: a server demanding a nonce says so
+    // with `use_dpop_nonce` and the nonce itself, on the request that lacked
+    // one. A read nobody can act on except by retrying was a convenience for a
+    // test, so it went with the write.
     // -------------------------------------------------------------------------
-    app.post('/dpop/nonce-mode', function (req, res) {
+    app.post('/dpop/nonce-mode', demoOnly, function (req, res) {
       log.debug("Entering the DPoP nonce-mode endpoint (write).");
-      if (!mode.opensTestControls()) {
-        log.warn('oauth2: POST /dpop/nonce-mode was refused — product mode ' +
-                 'does not open test controls.');
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused in product " +
-                  "mode.");
-        errorCodes.mark(res, 'STS-OAUTH-0178');
-        return self.oauthError(res, 403, 'access_denied',
-          'POST /dpop/nonce-mode is a test control and this realm is in ' +
-          'product mode, where test controls are closed. Set ' +
-          'oauth2.dpopNonceRequired instead — on /admin/oauth2 or with POST ' +
-          '/admin-api/config/set, both ' +
-          'of which require a credential.');
-      }
       const body = parseBody(req);
       // Only an explicit boolean, so a typo cannot silently leave the switch in
       // a state nobody chose: a test that means to turn nonces OFF and leaves

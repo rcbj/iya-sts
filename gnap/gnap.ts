@@ -87,6 +87,10 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import config = require('../common/config');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -965,13 +969,13 @@ class GnapRoutes {
                 ids.length + ".");
     });
 
-    app.get('/gnap/rs/resource', function (req, res) {
+    app.get('/gnap/rs/resource', demoOnly, function (req, res) {
       return self.demoResource(req, res);
     });
-    app.post('/gnap/rs/resource', function (req, res) {
+    app.post('/gnap/rs/resource', demoOnly, function (req, res) {
       return self.demoResource(req, res);
     });
-    app.post('/gnap/rs/spend', function (req, res) {
+    app.post('/gnap/rs/spend', demoOnly, function (req, res) {
       return self.demoSpend(req, res);
     });
 

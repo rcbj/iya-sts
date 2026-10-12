@@ -31,13 +31,37 @@
     "en": "6e2726560995b06c",
     "text": "TLS, sslmode={{sslmode}}; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized), na siyang tapat na setting para sa self-signed na pares na ginagawa ng compose stack. Naka-encrypt ang connection alinman ang mangyari."
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "HINDI TLS — hindi ito hinihingi ng connection string. TINATANGGIHAN ng database ng compose stack ang plaintext na connection, dahil hostssl ang bawat host rule sa pg_hba.conf nito, kaya hindi makakakonekta roon ang configuration na ito."
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS — walang itinatakdang sslmode ang connection string, at dina-dial ng serbisyong ito ang bawat database sa TLS; vine-verify ang server certificate laban sa mga trust anchor ng process na ito."
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "72c099a645436b71",
+    "text": "TLS — walang itinatakdang sslmode ang connection string, at dina-dial ng serbisyong ito ang bawat database sa TLS; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized). Naka-encrypt ang connection sa alinmang kaso."
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS, sslmode=prefer — sa TLS lang dina-dial: babagsak ang libpq sa connection na plaintext para sa prefer, at hindi iyon kailanman ginagawa ng serbisyong ito; vine-verify ang server certificate laban sa mga trust anchor ng process na ito."
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "8c3bb76819b4a57f",
+    "text": "TLS, sslmode=prefer — sa TLS lang dina-dial: babagsak ang libpq sa connection na plaintext para sa prefer, at hindi iyon kailanman ginagawa ng serbisyong ito; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized). Naka-encrypt ang connection sa alinmang kaso."
+  },
+  "persistence.status.tlsVerifyModeVerified": {
+    "en": "d0f0103a58a0771c",
+    "text": "TLS, sslmode={{sslmode}}; vine-verify ang server certificate laban sa mga trust anchor ng process na ito, dahil naka-on ang persistence.databaseTlsRejectUnauthorized — ang setting na iyon ang nagpapasya rito, hindi ang sslmode."
+  },
+  "persistence.status.tlsVerifyModeUnverified": {
+    "en": "7e1c0146c2ab82ec",
+    "text": "TLS, sslmode={{sslmode}} — pero HINDI vine-verify ang server certificate: kinukuha ng serbisyong ito ang verification mula sa persistence.databaseTlsRejectUnauthorized, na naka-off, at hindi mula sa sslmode. Naka-encrypt ang connection at hindi authenticated ang server."
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "HINDI DINA-DIAL — humihingi ang sslmode={{sslmode}} ng connection na plaintext, na hindi kailanman binubuksan ng serbisyong ito, kaya hindi ito nagsisimula sa connection string na ito."
   },
   "persistence.status.tlsUnknown": {
-    "en": "7638b0543b0b19a9",
-    "text": "hindi alam — hindi URL ang connection string, kaya hindi mabasa mula rito ang sslmode."
+    "en": "7c0ce538219125e3",
+    "text": "HINDI DINA-DIAL — hindi postgres:// URL ang connection string, kaya hindi matukoy kung dina-dial ba ito nang plaintext, at hindi nagsisimula ang serbisyong ito rito."
   },
   "persistence.status.notAUrl": {
     "en": "1d1d46012eed0b29",

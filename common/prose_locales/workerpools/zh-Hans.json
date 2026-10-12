@@ -12,12 +12,12 @@
     "text": "关闭：{{setting}} 为 0，因此每个请求都由前端进程自己在单个线程上应答。"
   },
   "workerpools.s.givenUpSurface": {
-    "en": "c712d788359b5516",
-    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们（STS-WORKER-0023）。托管界面改发往请求池。"
+    "en": "db7b7ee1f099024a",
+    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们。托管界面改发往请求池。"
   },
   "workerpools.s.givenUpRequest": {
-    "en": "a8108cb6c9b9ecb5",
-    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们（STS-WORKER-0023）。每个请求都由前端进程应答。"
+    "en": "ced50089d8744adc",
+    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们。每个请求都由前端进程应答。"
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",

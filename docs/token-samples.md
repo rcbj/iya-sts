@@ -5,6 +5,8 @@ nav_order: 16
 
 # Token samples
 
+> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/spnego/protected` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 One real example of every kind of token, assertion and certificate this
 service issues, decoded. They were captured from a running
 development-mode container reached at `https://127.0.0.1:38081`, so

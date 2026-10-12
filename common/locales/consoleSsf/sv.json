@@ -25,6 +25,7 @@
   "discovery.algorithm": "Den algoritmen är <code>ssf.signingAlgorithm</code> och den omfattar hela tabellen, <strong>postkvant inräknat</strong> &mdash; ML-DSA i tre storlekar, SLH-DSA i två och de sex sammansatta ML-DSA + traditionella &mdash; eftersom en SET signeras av samma signerare som alla andra JWT här. Det är det dokument som mest förtjänar att signeras så: det registrerar att något HAR HÄNT, RFC 8417 avsnitt 4.1.4 förbjuder det att löpa ut, och det läses därför långt efter att det skrevs.",
   "streams.heading": "Strömmar",
   "streams.none": "Inga strömmar. En mottagare skapar en genom att skicka en Stream Configuration med POST till <code>{endpoint}</code>. Det finns med avsikt inget formulär för att &rdquo;skapa en ström&rdquo; här: en ström har en leveransslutpunkt SOM DEN HÄR TJÄNSTEN KOMMER ATT ANROPA, och det enda ställe den URL:en får komma ifrån är en mottagare som har autentiserat sig och bett om det &mdash; se <code>ssf/ssf_http.ts</code>.",
+  "streams.all": "alla strömmar",
   "pushed.heading": "Skickat till den här tjänsten",
   "pushed.note": "Rollerna ombytta. <code>POST /ssf/receive</code> tar emot en Security Event Token som skickas TILL den här tjänsten, dit en klient som agerar SÄNDARE skickar. Den tar emot en vars signatur inte kan verifieras och talar om varför &mdash; en mottagare som avvisade den kunde inte visa någon vad som kom fram, vilket är just frågan. <code>ssf.receiveRequireSignature</code> slår på 400.",
   "th.when": "När",

@@ -104,6 +104,8 @@
   "roleRow.none": "aucun",
   "roleRow.setOn": "défini dans ",
   "roleRow.remove": "Retirer",
+  "roleRow.more": "et {n} de plus",
+  "roleRow.removeOther": "Retirer un autre :",
   "roleRow.consoleRole": "rôle de console",
   "roleRow.nativeRole": "rôle natif",
   "roleRow.roleOf": "rôle de <code>{application}</code>, porté sous le nom <code>{local}</code>",

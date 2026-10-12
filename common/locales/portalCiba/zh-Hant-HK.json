@@ -1,3 +1,8 @@
 {
-  "gnap.expires": "到期時間：{when}。請取消剔選您不想允許的任何項目。"
+  "gnap.expires": "到期時間：{when}。請取消剔選您不想允許的任何項目。",
+  "code.heading": "您的用戶代碼",
+  "code.new": "新用戶代碼",
+  "gnap.asks": "<strong>{display}</strong>{declared, select, yes {（依其自述）} other {}} — 客戶端實例 <code>{client}</code> — 要求代表您進行存取{using, select, yes {，當時 <code>{by}</code> 正在使用它} other {}}。",
+  "done.codeSet": "您的用戶代碼已設定。",
+  "done.codeCleared": "您的用戶代碼已清除。"
 }

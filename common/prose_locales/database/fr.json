@@ -31,13 +31,37 @@
     "en": "6e2726560995b06c",
     "text": "TLS, sslmode={{sslmode}} ; le certificat du serveur n’est PAS vérifié (persistence.databaseTlsRejectUnauthorized est désactivé), ce qui est le réglage honnête pour la paire autosignée que génère la pile compose. La connexion est chiffrée dans les deux cas."
   },
-  "persistence.status.noTls": {
-    "en": "0988b4be0ef4d8b2",
-    "text": "PAS de TLS — la chaîne de connexion ne le demande pas. La base de données de la pile compose REFUSE une connexion en clair, car chaque règle d’hôte de son pg_hba.conf est hostssl ; cette configuration ne s’y connectera donc pas."
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS — la chaîne de connexion ne définit aucun sslmode, et ce service contacte toute base de données via TLS ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "72c099a645436b71",
+    "text": "TLS — la chaîne de connexion ne définit aucun sslmode, et ce service contacte toute base de données via TLS ; le certificat du serveur n’est PAS vérifié (persistence.databaseTlsRejectUnauthorized est désactivé). La connexion est chiffrée dans les deux cas."
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS, sslmode=prefer — contactée via TLS uniquement : avec prefer, libpq se rabattrait sur une connexion en clair, ce que ce service ne fait jamais ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "8c3bb76819b4a57f",
+    "text": "TLS, sslmode=prefer — contactée via TLS uniquement : avec prefer, libpq se rabattrait sur une connexion en clair, ce que ce service ne fait jamais ; le certificat du serveur n’est PAS vérifié (persistence.databaseTlsRejectUnauthorized est désactivé). La connexion est chiffrée dans les deux cas."
+  },
+  "persistence.status.tlsVerifyModeVerified": {
+    "en": "d0f0103a58a0771c",
+    "text": "TLS, sslmode={{sslmode}} ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus, parce que persistence.databaseTlsRejectUnauthorized est activé — c’est ce réglage qui en décide ici, et non le sslmode."
+  },
+  "persistence.status.tlsVerifyModeUnverified": {
+    "en": "7e1c0146c2ab82ec",
+    "text": "TLS, sslmode={{sslmode}} — mais le certificat du serveur n’est PAS vérifié : ce service tient la vérification de persistence.databaseTlsRejectUnauthorized, qui est désactivé, et non du sslmode. La connexion est chiffrée et le serveur n’est pas authentifié."
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "NON CONTACTÉE — sslmode={{sslmode}} demande une connexion en clair, que ce service n’ouvre jamais ; il ne démarre donc pas avec cette chaîne de connexion."
   },
   "persistence.status.tlsUnknown": {
-    "en": "7638b0543b0b19a9",
-    "text": "inconnu — la chaîne de connexion n’est pas une URL, le sslmode ne peut donc pas en être extrait."
+    "en": "7c0ce538219125e3",
+    "text": "NON CONTACTÉE — la chaîne de connexion n’est pas une URL postgres://, on ne peut donc pas savoir si elle serait contactée en clair, et ce service ne démarre pas avec elle."
   },
   "persistence.status.notAUrl": {
     "en": "1d1d46012eed0b29",

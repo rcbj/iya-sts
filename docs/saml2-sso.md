@@ -4,6 +4,8 @@ title: SAML 2.0 Web Browser SSO
 
 # SAML 2.0 Web Browser SSO
 
+> **Development mode only (#585):** `/saml2/sp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **SAML 2.0 identity provider**: the Web Browser SSO profile and
 Single Logout of
 [saml-profiles-2.0-os](https://docs.oasis-open.org/security/saml/v2.0/saml-profiles-2.0-os.pdf),

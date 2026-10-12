@@ -98,7 +98,9 @@ can be answered by two processes.
 The page changes nothing. To revive a dead stream or drop its letters, follow
 the stream's link to its card at `/admin/ssf`. `GET
 /admin-api/ssf/dead-letters` answers the same thing as JSON, narrowed by `dlq`,
-`dlstream` and `dlcause` and paged by `lettersPage`.
+`dlstream` and `dlcause` and paged by `lettersPage`. The streams table is paged
+too, by `streamsPage`; `dlstream` and `dlcause` narrow it as they narrow the
+letters.
 
 ## What a person sees, and what they do not
 

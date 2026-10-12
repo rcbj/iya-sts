@@ -32,6 +32,8 @@ interface SecretDestinationsApiDeps {
   // The register, lazily: this module is built with the other API modules,
   // and the register is only asked inside a handler.
   loadDestinations(): Json;
+  // The console's paging, lazily, for the register's one list (#313).
+  loadAdminViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -120,6 +122,9 @@ class SecretDestinationsApi {
       errorCodes: errorCodes,
       loadDestinations: function (): Json {
         return require('../common/secret_destinations');
+      },
+      loadAdminViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -158,7 +163,8 @@ class SecretDestinationsApi {
    * @returns the route rows
    */
   buildRoutes(): Json[] {
-    const { log, parseBody, errorCodes, loadDestinations } = this.deps;
+    const { log, parseBody, errorCodes, loadDestinations,
+            loadAdminViews } = this.deps;
     const self = this;
     log.debug("Entering SecretDestinationsApi.buildRoutes().");
     const PROPS = destinationProperties();
@@ -174,15 +180,34 @@ class SecretDestinationsApi {
           'usable and why not; the providers and payloads offered, and ' +
           'what each provider\'s credential is. NEVER a credential.',
         mirrors: 'GET /admin/secret-destinations',
+        parameters: [
+          { name: 'destinationsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `destinations` to return, ' +
+                         'answered by `destinationsPaging` (#313).' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page. Capped, like every list here.' }
+        ],
         responseDescription: 'The register.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`destinations`, `providers`, ' +
+                          description: '`destinations` (one page, with ' +
+                                       '`destinationsPaging`), `providers`, ' +
                                        '`payloads`, `credentialShapes`, ' +
                                        '`fileAllowed`, `family`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API secret destinations " +
                     "endpoint.");
-          self.sendJson(res, 200, loadDestinations().view());
+          // THE REGISTER IS PAGED (#313), on `destinationsPage`: an
+          // administrator can declare destinations without a bound.
+          const view = loadDestinations().view();
+          const views = loadAdminViews();
+          const page = views.pagedRows(req.query || {},
+            view.destinations || [],
+            { name: 'destinations', noun: 'destinations' });
+          view.destinations = page.shown;
+          view.destinationsPaging = views.pagingJson(page.paging);
+          self.sendJson(res, 200, view);
           log.debug("Leaving the management API secret destinations " +
                     "endpoint.");
         } },

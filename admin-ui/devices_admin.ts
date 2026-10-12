@@ -55,6 +55,9 @@ import deviceRecognition = require('../common/device_recognition');
 import pki = require('../common/pki');
 import config = require('../common/config');
 import mode = require('../common/mode');
+// The demonstration mark (#585): a cache hit, `common/app.js` being 2 of the
+// require order.
+import sharedApp = require('../common/app');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The SPKI thumbprint of a certificate an MDM names a device by (#164).
 import stsCrypto = require('../common/crypto');
@@ -87,10 +90,13 @@ const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
 // DEVELOPMENT'S COMPLIANCE TEST CONTROL (#164 decision 9, phase 3): a public
 // path, not under /admin, that sets a device's compliance with no credential
 // at all — what a client under test drives to see its session and tokens
-// react — refused in product by `mode.opensTestControls()`.
+// react. A demonstration endpoint (#585): `common/app.js`'s `demoOnly` mark
+// passes a product realm's request on to Express's own 404, as for a path
+// nothing is registered on. It answered 403 `STS-DEVICE-0035` (retired)
+// until then.
 /**
  * Development's compliance test control: a public path that sets a device's
- * compliance with no credential, refused in product mode.
+ * compliance with no credential; in product it is not there.
  */
 const TEST_CONTROL = '/devices/test/compliance';
 
@@ -740,12 +746,14 @@ class DevicesAdmin {
         identifiedBy: ['id', 'thumbprint (with keyKind)', 'certificate'],
         source: 'mdm'
       },
-      testControl: {
+      // Only where this realm is served it (#585): null in a product realm,
+      // which has no such door.
+      testControl: mode.servesDemoEndpoints() ? {
         path: 'POST ' + TEST_CONTROL,
-        open: mode.opensTestControls(),
-        predicate: 'opensTestControls',
+        open: true,
+        predicate: 'servesDemoEndpoints',
         source: 'test-control'
-      },
+      } : null,
       // A federation partner's device-compliance-change, through
       // setCompliance() as the signal-response policy permits (#153, #373,
       // #374 — an MDM being an `ssf` relationship).
@@ -872,25 +880,13 @@ class DevicesAdmin {
     const self = this;
     log.debug("Entering DevicesAdmin.registerRoutes().");
     // THE COMPLIANCE TEST CONTROL (#164 decision 9): development answers
-    // anybody, as every test control there does; product refuses it, and
-    // the MDM feed under `device:compliance` is the door that remains.
-    app.post(TEST_CONTROL, function (req: Req, res: Res): void {
+    // anybody, as every test control there does; in product it is not there
+    // (#585, the `demoOnly` mark), and the MDM feed under `device:compliance`
+    // is the door that remains.
+    app.post(TEST_CONTROL, sharedApp.demoOnly,
+             function (req: Req, res: Res): void {
       log.debug('Entering POST ' + TEST_CONTROL + '.');
       res.set('Cache-Control', 'no-store');
-      if (!mode.opensTestControls()) {
-        log.warn('devices: POST ' + TEST_CONTROL + ' was refused — product ' +
-                 'mode does not open test controls.');
-        errorCodes.mark(res, 'STS-DEVICE-0035');
-        res.status(403).json({ ok: false, errors: [
-          'POST ' + TEST_CONTROL + ' is a test control and this realm is ' +
-          'in product mode, where test controls are closed. Report ' +
-          'compliance through POST /admin-api/device-compliance with an ' +
-          'access token carrying device:compliance (its client in the ' +
-          'DEVICE_COMPLIANCE role), or set it on the ' +
-          'device\'s page under /admin/devices.'] });
-        log.debug('Leaving POST ' + TEST_CONTROL + '. Product.');
-        return;
-      }
       const result = self.mdmFeed(parseBody(req), '', 'test-control');
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-DEVICE-0007');

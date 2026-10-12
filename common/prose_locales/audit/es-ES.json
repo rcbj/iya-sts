@@ -1,0 +1,50 @@
+{
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "El Shared Signals Framework: un flujo acordado, modificado o eliminado, un sujeto añadido o quitado, un cambio de estado, y cada Security Event Token que este servicio TRANSMITIÓ o RECIBIÓ — incluidos los que un receptor rechazó, que es la fila que más importa, porque un envío rechazado es invisible desde el extremo receptor por definición."
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "Fallos de algo que este servicio hace por sí mismo y no en respuesta a una solicitud: persistencia, coordinación entre procesos, los grupos de workers, la gestión de claves y secretos, las tareas en segundo plano y las solicitudes salientes. Cada fila lleva un código de error."
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "Se añadió a la Entity Configuration del dominio una Trust Mark emitida para él"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "Se añadió una clave a un dispositivo"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "Se añadió o quitó un ancla de confianza para certificados de cliente"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "Se añadió o quitó un sujeto de un flujo"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "Un administrador estableció, añadió o quitó un atributo de una persona"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "Se añadió un sujeto al flujo de un socio de federación"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "Se añadió un miembro a un grupo"
+  },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "Una persona creó una oferta de credencial para su propia cartera"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "Se añadió una fuente de atributos"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "Se añadió, modificó o quitó un cliente SCIM saliente"
+  }
+}

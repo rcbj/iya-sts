@@ -5,7 +5,7 @@
   "retry": "Reintentar",
   "audSubRequired": "aud_sub obligatorio",
   "learned": "obtenido el {when}",
-  "notAsked": "aún no se ha preguntado — envía <code>metadata</code>",
+  "notAsked": "aún no se ha preguntado — envíe <code>metadata</code>",
   "sendMetadata": "Enviar metadata",
   "noClients": "Ningún cliente registró un <code>command_endpoint</code>. Es un miembro del registro (RFC 7591, <code>POST /oauth2/register</code>) y un campo en <code>/admin/applications</code>.",
   "sendHeading": "Enviar un comando",

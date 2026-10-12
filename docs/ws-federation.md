@@ -4,6 +4,8 @@ title: WS-Federation
 
 # WS-Federation
 
+> **Development mode only (#585):** `/wsfed/rp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **WS-Federation identity provider**: the Web (Passive) Requestor
 Profile of
 [WS-Federation 1.2](https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html)

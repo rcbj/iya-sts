@@ -8648,9 +8648,56 @@ SPIRE Server API and the admin console are a turnstile rather than a lock, and
 demonstration data, invent a claim value, or open a test control to anybody.**
 No seeded people, groups, Kerberos fixture accounts or SPIFFE entries; no
 persona surname, `@sts.example` address or `email_verified: true`;
-`POST /tls/trust`, `POST /dpop/nonce-mode`, open client registration, the SAML
-1.1 attribute authority and a sign-out naming somebody else are refused.
-Development keeps all of it, which is what the test suite drives.
+open client registration, the SAML 1.1 attribute authority and a sign-out
+naming somebody else are refused. Development keeps all of it, which is what
+the test suite drives.
+
+**AND SINCE #585 (rcbj, 2026-10-12) A PRODUCT REALM HAS NO DEMONSTRATION,
+MOCK OR TEST-CONTROL ENDPOINT AT ALL** (`servesDemoEndpoints()`, the
+`demo-endpoints` row). `POST /tls/trust` and `POST /dpop/nonce-mode` were on
+the list above as refusals; they are not refused now, they are not there. The
+decisions, and where each half lives:
+
+* **One mark on the route.** `common/app.js`'s `demoOnly` is placed FIRST in
+  the route's handler list and calls `next('route')` where the ambient realm
+  does not serve demonstrations, so the request falls through to Express's
+  own `Cannot GET …` 404 — EXACTLY what a path nothing is registered on
+  answers, body, headers and audit row (rcbj's decision). Not a 404 of our
+  own: the per-handler product refusals (`STS-OAUTH-0178`, `STS-TLS-0024`,
+  `STS-VC-0100`, `STS-DEVICE-0035`) are RETIRED, kept in the table, never
+  reused. `processDemoOnly` is the same mark asking the DEFAULT realm as well,
+  for a door to something every realm shares — `/tls/trust` and
+  `/tls/trust/clear`, the process's one truststore — so a development realm
+  inside a product process is not a way in. The protected Kerberos service's
+  TCP socket is the process's too: `server.js` does not bind it when the
+  default realm is product.
+* **Per realm**, like every predicate here: a development realm in a product
+  process keeps its demonstrations, which is how the suite's throwaway
+  `{"global.mode":"development"}` realms reach them.
+* **The lists read the same mark off the router**, so a route cannot be
+  served and listed nowhere, or listed and not served: the mark carries
+  `serves()`, `app.demoMarkOf(route)` finds it, and `app.demoPathHidden(path)`
+  answers a link. `sts_metadata.ts` flags each demonstration's row `demo` and
+  drops both halves together in a product realm (reporting a mark on one half
+  only as `demoMarkMismatches`), with a group, a card's specification and
+  three cards' prose following; `admin-core/protocol_endpoints.ts`, the
+  protocol settings pages' links, the console views (SAML, verifier request,
+  Kerberos principals, device registration, step-up, GNAP), the description
+  pages, `/admin/crypto-metadata`'s families, the hosted-applications
+  catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
+  banner all drop what the realm, or the process, is not served.
+* **Defaults that pointed at one** follow it: the GNAP demonstration resource
+  server is a token's default audience, a registered target and the catalogue
+  type `urn:iya-sts:gnap:demo` only where it is served; `xacml.pepBias`, read
+  only by `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`;
+  `ssf.receiveEnabled` governs a development endpoint.
+* **What a product operator uses instead**: `/admin-api` (verifications #587,
+  the principals, the truststore), the user portal (a credential offer, #589),
+  and in the suite the test peer (#586). Spec-defined endpoints a real feature
+  uses — `/oid4vp/request/:id`, `/oid4vp/response`,
+  `/oid4vp/verifier-certificate` — are not demonstrations and did not change
+  (#569's rule). `tests/demo_endpoints.js` holds the inventory, both modes and
+  the lists.
 
 **NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
 FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is

@@ -114,13 +114,80 @@ class OidfedAdmin {
    * @returns the view
    */
   async oidfedView(req: Json): Promise<Json> {
-    const { log, admin, oidfed } = this.deps;
+    const { log, admin, oidfed, adminViews } = this.deps;
     log.debug("Entering OidfedAdmin.oidfedView().");
     const view = await oidfed.view(req);
     view.settings = admin.configSettingsJson('/admin/oidfed');
+    this.pageLists(view, (req && req.query) || {}, adminViews());
     log.debug("Leaving OidfedAdmin.oidfedView().");
     return view;
   }
+
+  // ---------------------------------------------------------------------------
+  // EVERY LIST ON THE PAGE THAT GROWS IS PAGED (#313's sweep, 2026-10-12).
+  //
+  // The Federation Entity Keys are kept for good, one row per rotation, the
+  // shape `/admin/keys/history` pages for the realm's signing keys; the
+  // subordinates and the revoked ones grow with registration and with every
+  // realm created; the issued and carried marks with every issuance; the
+  // Trust Anchors and the mark policies with what an administrator adds. So
+  // each is one page on a parameter named for it — `keysPage`,
+  // `subordinatesPage`, `formerPage`, `anchorsPage`, `issuedPage`,
+  // `heldPage`, `policiesPage` — with `per` shared, the arrangement every
+  // page holding several lists has. `counts` keeps each list's whole length.
+  //
+  // A SUBORDINATE'S HISTORY IS CUT TO ITS LATEST EVENTS, not paged: it is a
+  // fold inside one row, a pager per row would be a page of pagers, and the
+  // whole history is published at `/oidfed/subordinate-events` (#137) for
+  // anybody who wants it. `eventsTotal` says how many there are.
+  //
+  // This is the console's view, not `oidfed.view()`, which the module's own
+  // callers read whole.
+  // ---------------------------------------------------------------------------
+  /**
+   * Pages the view's growing lists in place and cuts each subordinate's
+   * history to its latest events.
+   *
+   * @param view - `oidfed.view()`'s answer, changed in place
+   * @param query - the request's query
+   * @param views - `admin-core/admin_views`, for `pagedRows()`
+   */
+  pageLists(view: Json, query: Json, views: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering OidfedAdmin.pageLists().");
+    const lists: Array<[string, string, string]> = [
+      ['keys', 'keys', 'keys'],
+      ['subordinates', 'subordinates', 'subordinates'],
+      ['formerSubordinates', 'former', 'revoked subordinates'],
+      ['trustAnchors', 'anchors', 'Trust Anchors'],
+      ['issuedMarks', 'issued', 'Trust Marks'],
+      ['heldMarks', 'held', 'Trust Marks'],
+      ['markPolicies', 'policies', 'policies']
+    ];
+    view.counts = {};
+    view.paging = {};
+    lists.forEach(function (list) {
+      const member = list[0];
+      const page = views.pagedRows(query, view[member] || [],
+        { name: list[1], noun: list[2] });
+      view[member] = page.shown;
+      view.counts[member] = page.paging.total;
+      view.paging[member] = views.pagingJson(page.paging);
+    });
+    const cut = function (row: Json): void {
+      const events: Json[] = Array.isArray(row.events) ? row.events : [];
+      row.eventsTotal = events.length;
+      row.events = events.slice(-OidfedAdmin.HISTORY_SHOWN);
+    };
+    view.subordinates.forEach(cut);
+    view.formerSubordinates.forEach(cut);
+    log.debug("Leaving OidfedAdmin.pageLists().");
+  }
+
+  /**
+   * How many of a subordinate's latest events its row carries.
+   */
+  static readonly HISTORY_SHOWN = 25;
 
   /**
    * Registers `GET` and `POST /admin/oidfed`.
