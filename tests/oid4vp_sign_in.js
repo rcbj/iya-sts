@@ -1140,14 +1140,16 @@ function childMain() {
          '8l. INVALID is final: the revoked entry above refuses to be ' +
          'reinstated', JSON.stringify(cannotReinstate));
 
-    // AND THROUGH THE ENDPOINT, not only the function: POST /logout with the
-    // browser's own cookie, which selects nothing and therefore ends
-    // everything.
+    // AND THROUGH THE ENDPOINT, not only the function: the sign-out page
+    // with the browser's own cookie, its act selecting nothing and
+    // therefore ending everything — over /authn-api/logout since #577,
+    // as the page sends it (`authn_screen.signOut()`).
     const g1 = holderKey();
     const gCred = await issue('wsi-alice', g1);
     const globalIn = await signInWith(gCred.credential, g1, { keep: true });
-    const posted = await request(port, 'POST', '/logout',
-                                 { browser: globalIn.who, form: {} });
+    const posted = await authnScreen.signOut({ port: port,
+                                              jar: globalIn.who.cookies,
+                                              fields: {} });
     const afterPost = await signInWith(gCred.credential, g1);
     note(posted.status < 400 && !afterPost.ok &&
          afterPost.code === 'STS-VC-0071',
