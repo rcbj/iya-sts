@@ -15548,6 +15548,12 @@ const CODES = [
       'is not a person — an application\'s token — which has no ' +
       'preferredLanguage of its own to set (#539 phase 5).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0011',
+    summary: 'A prose catalog under common/prose_locales — the translations ' +
+      'of the sentences the server writes into a console view, such as a ' +
+      'setting\'s description — could not be read or parsed; that prose ' +
+      'falls back along its chain to English (#543).',
+    spec: 'none — an error in the log' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
