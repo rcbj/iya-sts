@@ -449,15 +449,32 @@ async function signIn(base, where, fields, options) {
   log.debug("Entering signIn().");
   const opts = options || {};
   const answer = await submit(base, where, fields, opts);
+  const out = await ignoreOffer(base, answer);
+  log.debug("Leaving signIn(). " + out.next);
+  return out;
+}
+
+/**
+ * Where an answer is an administrator's OFFERED second factor (#246's
+ * `requireSecondFactorForAdministrators: offer`), presses its Ignore button
+ * and answers the set-up step's 303; any other answer as it is. For a walk
+ * that reaches the offer after another step (the forced password change).
+ *
+ * @param {string} base - the service's base
+ * @param {object} answer - an act's answer
+ * @returns {Promise<object>} `signIn()`'s answer
+ */
+async function ignoreOffer(base, answer) {
+  log.debug("Entering ignoreOffer().");
   if (!(answer.next === "mfa" && answer.step === "enrol")) {
-    log.debug("Leaving signIn(). " + answer.next);
+    log.debug("Leaving ignoreOffer(). " + answer.next);
     return answer;
   }
   const page = await fetch(answer.location, { redirect: "manual",
     headers: { cookie: answer.cookie } });
   const html = await page.text();
   if (!/id="mfa-setup-ignore"/.test(html)) {
-    log.debug("Leaving signIn(). A required set-up step.");
+    log.debug("Leaving ignoreOffer(). A required set-up step.");
     answer.text = html;
     return answer;
   }
@@ -473,7 +490,7 @@ async function signIn(base, where, fields, options) {
   const all = answer.setCookies.concat(own);
   const location = ignored.headers.get("location")
     ? new URL(ignored.headers.get("location"), b.origin).toString() : "";
-  log.debug("Leaving signIn(). The offer was ignored.");
+  log.debug("Leaving ignoreOffer(). The offer was ignored.");
   return { status: ignored.status, ok: ignored.status === 303,
     next: ignored.status === 303 ? "redirect" : "refused",
     location: location, ignored: true, json: null, errors: [],
@@ -616,6 +633,7 @@ module.exports = {
   act: act,
   submit: submit,
   signIn: signIn,
+  ignoreOffer: ignoreOffer,
   responseLike: responseLike,
   asFormAnswer: asFormAnswer,
   signInWithJar: signInWithJar,
