@@ -1157,11 +1157,86 @@ it is converted.
 So what #580 converts is all in this directory: three pages of
 `federation_sp.ts`'s own flows. The rest of the section says how.
 
+### Each is the shell, carrying its view (`federation_pages.ts`)
+
+**A page that only SAYS something has nothing to fetch**: the landing page's
+facts, a refusal and a sign-in's outcome exist only on the response that
+carries them. So each of the three answers the federation pages' shell
+(`common/shell_document.ts`) with its view in `data-sts-state` —
+`kerberos/spnego_authn.ts`'s arrangement (#575), which GNAP's refusals follow
+(#578) — and `/federation/pages.js` draws it. There is no API and no act: the
+one form on these pages is the language chooser, which posts to
+`/authn/language` and draws the page again from the same view.
+
+**What does not change**: each page's STATUS (404, 400, 403, 409, 500, 502,
+200), the error code marked on the response and the audit row, `fedLastError`
+on the relationship, and that nothing redirects. The one header that changes
+is the policy (`script-src 'self'`, `connect-src 'self'` plus the sign-in
+service's origin where it is on another listener, `style-src 'self'`), through
+`app.contentSecurityPolicy()`. `Cache-Control: no-store` is on every one,
+where the two 404s had none.
+
+**WHICH RESPONSE IS A PAGE OF THIS SURFACE IS DECIDED BY THE ENDPOINT, not by
+the helper that draws it.** `refuse()`, `refuseSubject()` and
+`startFederatedSession()`'s signed-in page are shared by the login and linking
+endpoints and the assertion consumer service, whose answers are a
+specification endpoint's and stay server-drawn. So `loginEndpoint()`,
+`linkEndpoint()` and `indexEndpoint()` call `FederationPages.mark(res)` first,
+and the shared helpers ask `FederationPages.onSurface(res)`. A new caller of
+`refuse()` from the ACS needs nothing; a new endpoint of this service's own
+marks its response.
+
+**`what` AND `why` ARE TEXT NOW.** A refusal's sentence is escaped by the
+browser's renderer, so the three that carried markup or escaped their own
+values (`<code>fedEnabled</code>`, the OpenID Federation resolution's reason,
+a thrown message) carry plain text — which is also what `fedLastError` always
+should have held. The ACS's refusal page escapes them as it always did.
+
+### The views, and who draws their words
+
+| `kind` | Page | Words |
+|---|---|---|
+| `index` | `GET /federation` | the `federationPages` catalogs, in seven languages |
+| `signedIn` | `/federation/link/{handle}`'s outcome where nothing asked to be returned to | the `handoff` catalogs' `federation.signedIn.*` — the same keys `signedInPage()` still draws for the ACS |
+| `refused` | every refusal of the two endpoints: `what`, `why`, the relationship | English, every word (#539's decision 6) |
+| `off`, `noRelationship` | the two 404s | English |
+
+The renderers are `web_federation_views.ts`, the table
+`web_federation_pages.ts` (every row `embedded`) and the runtime
+`web_federation_surface.ts`, which leaves every link to the browser — each of
+these paths is answered by the server, never drawn in place. **The refusals
+and the 404s go through `common/web_outcome.ts`, the one renderer of an error
+or outcome page** (#580's second step), which the emailed factor's `end` page
+(`authn/web_authn_email.ts`, #573) now uses too, to the same bytes.
+
+**NOT `web_federation.ts`**, which is the console's federation page (#446).
+The bundle is `federation/federation-pages-spa.js` and never
+`federation_pages.js`, which is `federation_pages.ts` compiled.
+
+### Tests
+
+`tests/federation_pages.js` asks each page for its status and headers and
+then its shell and state, the ACS's refusal of the same relationship for the
+page it always drew under `script-src 'none'`, the script, each renderer, and
+the runtime drawing the landing page from its shell in French while asking
+for catalogs and nothing else. `tests/web_surfaces.js` holds the renderers'
+bundle to this process's drawing for every kind of view (the row in
+`tests/tools/web_surfaces.js`). `tests/federation_subject_policy.js` and the
+`local: true` jobs `sts_federation_subject_policy.js` and
+`sts_federation_realms.js` read the linking step's and the login endpoint's
+pages from the state.
+
 ## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
 `app.js` sets `script-src 'none'` for the whole service, and seven pages relax
-it by naming one resource (the root `CLAUDE.md` lists them). **This feature adds
-none.** The one policy change it makes is on the front-channel logout page
+it by naming one resource (the root `CLAUDE.md` lists them). **This feature
+adds no such page.** Since #580 three of its pages are a STATIC SURFACE
+instead — the landing page and what the login and linking endpoints say —
+which run `/federation/pages.js` under `script-src 'self'` by the
+static-surface rule, not by an argument of their own (*THE ERROR AND OUTCOME
+PAGES OF THIS SERVICE'S OWN FLOWS*, above); the assertion consumer service
+and every protocol document stay under `script-src 'none'`. The one policy
+change it makes is on the front-channel logout page
 (#167), which is loaded in the PARTNER's iframe: `frame-ancestors` names the
 partner's origin there, through `app.framedContentSecurityPolicy()` —
 narrowed, never dropped — and that page carries no script either.
