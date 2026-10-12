@@ -1391,6 +1391,54 @@
     "en": "a89de574ee2c21ab",
     "text": "一次性代码第二因素步骤"
   },
+  "endpoints.route./authn/signin.js.name": {
+    "en": "9eb3a8726ead14bf",
+    "text": "登录屏幕的脚本"
+  },
+  "endpoints.route./authn-api.name": {
+    "en": "37f607930889c3f0",
+    "text": "登录 API 索引"
+  },
+  "endpoints.route./authn-api/openapi.json.name": {
+    "en": "95a08b95fbad641e",
+    "text": "登录 API 的 OpenAPI 文档"
+  },
+  "endpoints.route./authn-api/pending/:id.name": {
+    "en": "25b5fd300153bbe4",
+    "text": "登录屏幕提供的内容"
+  },
+  "endpoints.route./authn-api/pending/:id/partners.name": {
+    "en": "cb0f4ae92fef3ded",
+    "text": "可供选择的联合身份合作方"
+  },
+  "endpoints.route./authn-api/pending/:id/password.name": {
+    "en": "673a50377a1ff20b",
+    "text": "使用密码登录"
+  },
+  "endpoints.route./authn-api/pending/:id/cancel.name": {
+    "en": "117e271d03b64b31",
+    "text": "拒绝登录"
+  },
+  "endpoints.route./authn-api/pending/:id/anonymous.name": {
+    "en": "5468076a514d8abf",
+    "text": "不登录继续"
+  },
+  "endpoints.route./authn-api/pending/:id/email.name": {
+    "en": "108905ece8873211",
+    "text": "使用电子邮件发送的验证码或链接登录"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey/options.name": {
+    "en": "9f5f54d890bd7637",
+    "text": "准备通行密钥仪式"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey.name": {
+    "en": "d358470d455e8a4f",
+    "text": "使用通行密钥登录，无需用户名"
+  },
+  "endpoints.route./authn-api/password-change/:id.name": {
+    "en": "f2d18b738357010b",
+    "text": "强制更改密码"
+  },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
     "text": "浏览器指纹脚本（可选）"

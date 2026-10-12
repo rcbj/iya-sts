@@ -1391,6 +1391,54 @@
     "en": "a89de574ee2c21ab",
     "text": "Hakbang ng one-time code bilang second factor"
   },
+  "endpoints.route./authn/signin.js.name": {
+    "en": "9eb3a8726ead14bf",
+    "text": "Ang script ng screen ng pag-sign in"
+  },
+  "endpoints.route./authn-api.name": {
+    "en": "37f607930889c3f0",
+    "text": "Ang index ng sign-in API"
+  },
+  "endpoints.route./authn-api/openapi.json.name": {
+    "en": "95a08b95fbad641e",
+    "text": "Ang dokumentong OpenAPI ng sign-in API"
+  },
+  "endpoints.route./authn-api/pending/:id.name": {
+    "en": "25b5fd300153bbe4",
+    "text": "Ang iniaalok ng screen ng pag-sign in"
+  },
+  "endpoints.route./authn-api/pending/:id/partners.name": {
+    "en": "cb0f4ae92fef3ded",
+    "text": "Ang mga federation partner na mapagpipilian"
+  },
+  "endpoints.route./authn-api/pending/:id/password.name": {
+    "en": "673a50377a1ff20b",
+    "text": "Mag-sign in gamit ang password"
+  },
+  "endpoints.route./authn-api/pending/:id/cancel.name": {
+    "en": "117e271d03b64b31",
+    "text": "Tanggihan ang pag-sign in"
+  },
+  "endpoints.route./authn-api/pending/:id/anonymous.name": {
+    "en": "5468076a514d8abf",
+    "text": "Magpatuloy nang hindi nagsa-sign in"
+  },
+  "endpoints.route./authn-api/pending/:id/email.name": {
+    "en": "108905ece8873211",
+    "text": "Mag-sign in gamit ang code o link na ipinadala sa email"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey/options.name": {
+    "en": "9f5f54d890bd7637",
+    "text": "Ihanda ang seremonya ng passkey"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey.name": {
+    "en": "d358470d455e8a4f",
+    "text": "Mag-sign in gamit ang passkey nang walang username"
+  },
+  "endpoints.route./authn-api/password-change/:id.name": {
+    "en": "f2d18b738357010b",
+    "text": "Isang sapilitang pagpapalit ng password"
+  },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
     "text": "Script ng browser fingerprint (opsyonal)"
