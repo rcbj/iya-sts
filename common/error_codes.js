@@ -6890,11 +6890,13 @@ const CODES = [
     spec: '', retired: true },
   { code: 'STS-OAUTH-0179',
     summary: 'POST /dpop/nonce-mode carried something other than ' +
-      'required=true or required=false.',
-    spec: 'invalid_request (HTTP 400)' },
+      'required=true or required=false. Retired by #597: the endpoint is ' +
+      'gone, and oauth2.dpopNonceRequired is set like any other setting.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0180',
-    summary: 'The DPoP nonce setting could not be written.',
-    spec: 'server_error (HTTP 500)' },
+    summary: 'The DPoP nonce setting could not be written through POST ' +
+      '/dpop/nonce-mode. Retired by #597, with the endpoint.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0181',
     summary: 'The directory threw while a person\'s profile claims were ' +
       'being read; the claims were omitted from what was issued.',
@@ -13932,8 +13934,9 @@ const CODES = [
     spec: 'TLS handshake failure', retired: true },
   { code: 'STS-TLS-0023',
     summary: 'A /tls or /tls/forwarded request carried a format parameter ' +
-      'other than json or html.',
-    spec: 'HTTP 400' },
+      'other than json or html. Retired by #597: both pages are gone, and ' +
+      'Monitoring → TLS connection takes no parameter.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0024',
     summary: 'POST /tls/trust or /tls/trust/clear was refused because ' +
       'product mode does not open the truststore to anybody who can ' +
@@ -14086,18 +14089,20 @@ const CODES = [
   { code: 'STS-TLS-0049',
     summary: 'A browser\'s POST /tls/trust or /tls/trust/clear (one carrying ' +
       'an Origin) was not JSON: the /tls page sends its two acts as JSON ' +
-      '(#583). A request with no Origin is a script\'s and is not asked.',
-    spec: 'HTTP 415, { error }' },
+      '(#583). A request with no Origin is a script\'s and is not asked. ' +
+      'Retired by #597, with both routes.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0050',
     summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried an ' +
       'Origin this service does not answer on: it was not sent by the /tls ' +
-      'page (#583).',
-    spec: 'HTTP 403, { error }' },
+      'page (#583). Retired by #597, with both routes.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0051',
     summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried no ' +
       'X-CSRF-Token, or not the token of the /tls page\'s own cookie ' +
-      '(sts_tls_page), which the page\'s shell carries (#583).',
-    spec: 'HTTP 403, { error }' },
+      '(sts_tls_page), which the page\'s shell carries (#583). Retired by ' +
+      '#597, with both routes.',
+    spec: '', retired: true },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

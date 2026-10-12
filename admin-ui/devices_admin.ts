@@ -55,9 +55,6 @@ import deviceRecognition = require('../common/device_recognition');
 import pki = require('../common/pki');
 import config = require('../common/config');
 import mode = require('../common/mode');
-// The demonstration mark (#585): a cache hit, `common/app.js` being 2 of the
-// require order.
-import sharedApp = require('../common/app');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The SPKI thumbprint of a certificate an MDM names a device by (#164).
 import stsCrypto = require('../common/crypto');
@@ -87,22 +84,11 @@ const MONITOR = '/admin/devices/monitor';
 const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
                  'set-compliance', 'set-status'];
 
-// DEVELOPMENT'S COMPLIANCE TEST CONTROL (#164 decision 9, phase 3): a public
-// path, not under /admin, that sets a device's compliance with no credential
-// at all — what a client under test drives to see its session and tokens
-// react. A demonstration endpoint (#585): `common/app.js`'s `demoOnly` mark
-// passes a product realm's request on to Express's own 404, as for a path
-// nothing is registered on. It answered 403 `STS-DEVICE-0035` (retired)
-// until then.
-/**
- * Development's compliance test control: a public path that sets a device's
- * compliance with no credential; in product it is not there.
- */
-const TEST_CONTROL = '/devices/test/compliance';
-
 // The compliance states a DOOR may set. `unknown` is what a device starts
-// as; an administrator may put it back (withdrawing a vouch), and a feed or
-// the test control reports one of the two CAEP knows.
+// as; an administrator may put it back (withdrawing a vouch), and a feed
+// reports one of the two CAEP knows. (Development's compliance test control,
+// `POST /devices/test/compliance`, was deleted by #597: the MDM feed under
+// `device:compliance` is the door, in both modes.)
 const FEED_STATES = ['compliant', 'not-compliant'];
 
 // The filters a list takes, each a query parameter of the same name.
@@ -439,7 +425,7 @@ class DevicesAdmin {
   // -------------------------------------------------------------------------
   /**
    * Applies an MDM or posture feed's compliance reports, each on its own and in
-   * order: `POST /admin-api/device-compliance`, and the test control.
+   * order: `POST /admin-api/device-compliance`.
    *
    * Each report names its device by `id`, a key `thumbprint` or a
    * `certificate`, and sets compliance only. A report that names no device or
@@ -447,14 +433,13 @@ class DevicesAdmin {
    * `devices.complianceFeedMaxReports` is refused whole.
    * @param body - one report, or `{ reports: [...] }`
    * @param clientId - the feed's client, recorded as the actor
-   * @param source - `test-control` for the test control; otherwise `mdm`
    * @returns how many were applied and refused, and each report's result
    */
-  mdmFeed(body: Json, clientId: string, source?: string): Json {
+  mdmFeed(body: Json, clientId: string): Json {
     const { log } = this.deps;
     log.debug("Entering DevicesAdmin.mdmFeed().");
     const b = body || {};
-    const from = source === 'test-control' ? 'test-control' : 'mdm';
+    const from = 'mdm';
     const reports: Json[] = Array.isArray(b.reports) ? b.reports : [b];
     const max = Number(config.value('devices.complianceFeedMaxReports'));
     if (!reports.length || reports.length > max) {
@@ -746,14 +731,6 @@ class DevicesAdmin {
         identifiedBy: ['id', 'thumbprint (with keyKind)', 'certificate'],
         source: 'mdm'
       },
-      // Only where this realm is served it (#585): null in a product realm,
-      // which has no such door.
-      testControl: mode.servesDemoEndpoints() ? {
-        path: 'POST ' + TEST_CONTROL,
-        open: true,
-        predicate: 'servesDemoEndpoints',
-        source: 'test-control'
-      } : null,
       // A federation partner's device-compliance-change, through
       // setCompliance() as the signal-response policy permits (#153, #373,
       // #374 — an MDM being an `ssf` relationship).
@@ -868,34 +845,6 @@ class DevicesAdmin {
     return id && !(result.ok && action === 'remove')
       ? LIST + '?device=' + encodeURIComponent(id) : LIST;
   }
-
-  /**
-   * Registers the three pages, the list page's actions and the compliance test
-   * control.
-   *
-   * @param app - the shared express app
-   */
-  registerRoutes(app: { get: Function; post: Function }): void {
-    const { log, admin, errorCodes, parseBody } = this.deps;
-    const self = this;
-    log.debug("Entering DevicesAdmin.registerRoutes().");
-    // THE COMPLIANCE TEST CONTROL (#164 decision 9): development answers
-    // anybody, as every test control there does; in product it is not there
-    // (#585, the `demoOnly` mark), and the MDM feed under `device:compliance`
-    // is the door that remains.
-    app.post(TEST_CONTROL, sharedApp.demoOnly,
-             function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + TEST_CONTROL + '.');
-      res.set('Cache-Control', 'no-store');
-      const result = self.mdmFeed(parseBody(req), '', 'test-control');
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-DEVICE-0007');
-      }
-      res.status(result.ok ? 200 : 400).json(result);
-      log.debug('Leaving POST ' + TEST_CONTROL + '.');
-    });
-    log.debug("Leaving DevicesAdmin.registerRoutes().");
-  }
 }
 
 const slot = new InstanceSlot<DevicesAdmin>(
@@ -913,7 +862,6 @@ slot.buildNowUnlessDeferred();
  * @namespace
  */
 export = {
-  registerRoutes: slot.forward('registerRoutes'),
   DevicesAdmin: DevicesAdmin,
   /**
    * Installs the instance the composition root built and runs its
@@ -929,7 +877,6 @@ export = {
   REGISTRATION: REGISTRATION,
   MONITOR: MONITOR,
   ACTIONS: ACTIONS,
-  TEST_CONTROL: TEST_CONTROL,
   // #543: the devices namespace's routes and English.
   PROSE_ROUTES: DevicesAdmin.PROSE_ROUTES,
   prose: DevicesAdmin.prose,

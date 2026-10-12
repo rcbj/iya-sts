@@ -79,10 +79,6 @@
     "en": "b558e5c68d9956f1",
     "text": "本服務已有的瀏覽器登入工作階段——由 /authn/login 建立、WS-Federation 共用的那一個——之所以在此提供，是因為第 2 節指名了它：「客戶端可以透過 TLS 出示含有 SCIM 服務提供者所理解之驗證狀態的 HTTP cookie」。它使得從本服務頁面發出的 SCIM 呼叫無需第二組認證資訊即可運作。它沒有挑戰：伺服器無法在 WWW-Authenticate 中要求 cookie，因此有 cookie 時就使用，但絕不要求。"
   },
-  "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "相互 TLS，RFC 7644 第 2 節所指名的第一種配置。僅在此請求透過 TLS 抵達、且帶有依某人 POST 到 /tls/trust 之錨點「驗證通過」的證書時可用——因此在主連接埠上，只有在其以 HTTPS 繫結時才可用（global.https，oauth2.rfc9700 會將其開啟）。身分是 RFC 4514 形式的主體，與 /admin/users 和目錄已用來歸檔證書的字串相同。此處不會再次記錄：tls_server.js 刻意對每個「連線」只記錄證書一次，若依請求計數，就會從另一端抵銷這一點。"
-  },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "OAuth 認證資訊——Bearer 或 DPoP 存取權杖——可以做其範圍所允許的事：\"{{read}}\" 用於讀取，\"{{write}}\" 用於寫入。兩者互不隱含，因此客戶端對唯讀認證資訊的處理是本服務實際上能夠產生的情境。"

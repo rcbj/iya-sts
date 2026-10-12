@@ -5,7 +5,7 @@ nav_order: 7
 
 # A certificate authority, at `/admin/pki`
 
-> **Development mode only (#585):** `/krb5/principals`, `/did/generate`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/principals`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
 the trust realm it is reached in, and issues **signing key pairs** from the
@@ -767,8 +767,8 @@ dialled only when allowed, and a relative distribution point needs
 `pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
 when nothing else answers; a certificate naming nothing is accepted in
 development; LDAPS 636 asks for no client certificate. The verdict for a
-certificate you present is in `GET /tls/sign-in`'s answer; the policy is on `GET /tls` and
-`/admin/crypto-metadata`.
+certificate you present is in `GET /tls/sign-in`'s answer and on Monitoring →
+TLS connection; the policy is on `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:

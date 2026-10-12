@@ -8668,8 +8668,9 @@ decisions, and where each half lives:
   `STS-VC-0100`, `STS-DEVICE-0035`) are RETIRED, kept in the table, never
   reused. `processDemoOnly` is the same mark asking the DEFAULT realm as well,
   for a door to something every realm shares — `/tls/trust` and
-  `/tls/trust/clear`, the process's one truststore — so a development realm
-  inside a product process is not a way in. The protected Kerberos service's
+  `/tls/trust/clear`, the process's one truststore, until #597 deleted both
+  (no route carries it now) — so a development realm inside a product
+  process is not a way in. The protected Kerberos service's
   TCP socket is the process's too: `server.js` does not bind it when the
   default realm is product.
 * **Per realm**, like every predicate here: a development realm in a product

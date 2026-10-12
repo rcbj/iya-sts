@@ -284,8 +284,8 @@
     "text": "La session d’authentification unique du navigateur dont ce service dispose déjà — celle qu’établit /authn/login et que partage WS-Federation —, proposée ici parce que la section 2 la nomme : « clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider ». C’est ce qui permet à un appel SCIM depuis une page de ce service de fonctionner sans second identifiant. Il n’y a pas de défi pour elle : un serveur ne peut pas demander un cookie dans WWW-Authenticate ; elle est donc utilisée lorsqu’elle est présente et jamais exigée."
   },
   "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre que quelqu’un a envoyée en POST à /tls/trust — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). L’identité est le sujet sous forme RFC 4514, qui est la même chaîne sous laquelle /admin/users et l’annuaire classent déjà un certificat. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout."
+    "en": "2d55447d0d4792ee",
+    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre du magasin de confiance client (/admin/tls/trust) — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). L’identité est le sujet sous forme RFC 4514, qui est la même chaîne sous laquelle /admin/users et l’annuaire classent déjà un certificat. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",

@@ -422,7 +422,8 @@ async function mintTheCredentials() {
     subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=iya-sts tests" });
   for (const one of [trusted, rogue, xacmlUser]) {
     const posted = await credentials.trustAnchor(base, one.anchorPem);
-    assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this " +
+    assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+      "Root CA this " +
       "file just built; it answered " + posted.status + " " +
       String(posted.why || posted.body).slice(0, 200) + ". Without the " +
       "anchor every assertion below is about an unverified certificate.");

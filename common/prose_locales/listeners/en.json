@@ -78,10 +78,8 @@
   "listeners.applications.kerberos.what": "MS-KKDCP and the Kerberos HTTP views.",
   "listeners.applications.spiffe.label": "SPIFFE",
   "listeners.applications.spiffe.what": "The SPIFFE bundle endpoint.",
-  "listeners.applications.tls.label": "TLS diagnostics",
-  "listeners.applications.tls.what": "The TLS views and the client truststore's door.",
-  "listeners.applications.devices.label": "Device registration",
-  "listeners.applications.devices.what": "The device register's test controls.",
+  "listeners.applications.tls.label": "TLS",
+  "listeners.applications.tls.what": "The server certificate this service presents.",
   "listeners.map.sentences.rpIdNotCommon": "The applications that read the sign-on session are on host names {{hosts}}, and webauthn.rpId ({{rpId}}) is not a domain all of them are under: a passkey registered on one is not usable on another. Set webauthn.rpId to the domain authn.cookieDomain names.",
   "listeners.map.sentences.rpIdEmpty": "The applications that read the sign-on session are on host names {{hosts}}, and webauthn.rpId is empty, so each is its own relying party: a passkey registered on one is not usable on another. Set webauthn.rpId to the domain authn.cookieDomain names."
 }

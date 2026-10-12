@@ -32,6 +32,8 @@
   "result.lookAgainEnd": "。",
   "result.nothingLeft": "没有了。本服务已不再为 {key} 保留任何它仍能看到的有效会话或凭据。",
   "result.toPortal": "前往用户门户中的您的账户",
+  "result.brief": "您已退出登录。",
+  "result.seeDetails": "已结束的、未结束的以及仍然有效的内容见“详细信息”选项卡。",
   "tab.signOut": "登出",
   "tab.details": "详细信息",
   "list.colProtocol": "协议",

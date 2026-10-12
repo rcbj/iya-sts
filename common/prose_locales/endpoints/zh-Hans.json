@@ -331,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "注册 HOBA 公钥"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "TLS 端点是什么"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "TLS 页面的脚本"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "使用客户端证书登录"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "代理告诉本服务的内容"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "服务器证书（PEM）"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "信任客户端证书颁发者"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "清空客户端信任库"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1051,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "添加或移除客户端证书信任锚"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "本服务所见的请求 TLS 连接"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Kerberos PAC 声明"
@@ -1562,14 +1546,6 @@
   "endpoints.route./oauth2/token.name": {
     "en": "f60f44154acbc444",
     "text": "令牌端点"
-  },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "设备合规性测试控件（非规范端点）"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "DPoP nonce 开关（非规范端点）"
   },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",

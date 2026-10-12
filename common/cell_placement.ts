@@ -144,8 +144,6 @@ const ROWS: Row[] = [
     why: 'OpenID Federation statements and registers are the global tier\'s' },
   { prefix: '/realms', strategy: 'local',
     why: 'the realm registry is the global tier\'s' },
-  { prefix: '/dpop', strategy: 'local',
-    why: 'a nonce is valid where it was issued, and asked for there' },
   { prefix: '/spiffe', strategy: 'local',
     why: 'a workload attests to the cell it runs beside' },
   { prefix: '/vc-api', strategy: 'local',
@@ -223,8 +221,6 @@ const ROWS: Row[] = [
   { prefix: '/admin-api', strategy: 'selector',
     why: 'the management API acts on the global tier and on the serving ' +
          'cell\'s residents; ?cell= names another cell (D11)' },
-  { prefix: '/devices', strategy: 'bearer',
-    why: 'a device registration is for the token\'s subject' },
   // --- OAuth 2.0 and OpenID Connect ---
   { prefix: '/oauth2', strategy: 'affinity', browser: true,
     why: 'a browser endpoint of the authorization server' },
@@ -345,7 +341,7 @@ const ROWS: Row[] = [
     why: 'a subject\'s attributes are answered at home' },
   // --- TLS ---
   { prefix: '/tls', strategy: 'local',
-    why: 'certificate views and test controls over global configuration' },
+    why: 'the server certificate is global configuration' },
   { prefix: '/tls/sign-in', strategy: 'handler', browser: true,
     handler: 'tls/tls_server.js',
     why: 'a client certificate names its person, signed in at home; a ' +

@@ -1361,8 +1361,8 @@ class ProtocolStack {
     require('../admin-ui/devices_admin');
     this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
                'DevicesAdmin');
-    this.register(app, require('../admin-ui/devices_admin'),
-                  'admin-ui/devices_admin');
+    // NO register(): its one route, development's compliance test control,
+    // was deleted by #597, and its three pages are the static console's.
     // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
     // library first — a register whose wire step puts the
     // `attribute-sources.refresh` job on the scheduler (built at 18i), and

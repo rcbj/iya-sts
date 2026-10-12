@@ -724,12 +724,12 @@
     "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "95c0a71b7859de3e",
-    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust y /tls/trust/clear."
+    "en": "f576a305a27eb0c9",
+    "text": "Se sirven y se listan: la parte que confía simulada de los comandos (/oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, y /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un dominio de desarrollo dentro de un proceso de producto los conserva, salvo la puerta del almacén de confianza y el socket del servicio protegido, que pertenecen al proceso. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
+    "en": "b82d8439b897527e",
+    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un dominio de desarrollo dentro de un proceso de producto los conserva, salvo el socket del servicio protegido, que pertenece al proceso. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

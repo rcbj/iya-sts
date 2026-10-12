@@ -709,8 +709,8 @@ async function x509(username) {
   // The anchor goes in through `tests/tools/pep-credential.js`'s
   // `trustAnchor()` (2026-09-18): the GATED door, POST
   // /admin-api/tls/trust/add, first — the only one a product-mode service
-  // opens, persisted so every node of a cluster applies it — and the open
-  // `/tls/trust` only where that fails.
+  // opens, persisted so every node of a cluster applies it, and since #597
+  // the only one.
   const installed = await anchors.trustAnchor(base, pki.caPem);
   assert.ok(installed.ok,
     "the test CA should be accepted as a trust anchor; it answered " +

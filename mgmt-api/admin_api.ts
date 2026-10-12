@@ -4482,7 +4482,7 @@ class AdminApi {
           // The feed's client, which the gate verified and left on the
           // response; '' where the gate is off.
           const result = devicesAdmin.mdmFeed(parseBody(req),
-            String(res.locals.apiClientId || ''), 'mdm');
+            String(res.locals.apiClientId || ''));
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) ||
                                  'STS-DEVICE-0007');
@@ -18822,7 +18822,7 @@ class AdminApi {
                          'SERVICE DOES NOT CONSULT ITS OWN LISTS.** A client ' +
                          'certificate revoked here still authenticates on ' +
                          'the main port and LDAPS 636, because those check ' +
-                         'the anchors on `/tls/trust` and fetch nothing. ' +
+                         'the truststore\'s anchors and fetch nothing. ' +
                          'What this operation buys is that a relying party ' +
                          'which DOES check can now find out.',
             requestBodyRequired: true,
@@ -19102,11 +19102,12 @@ class AdminApi {
       // nowhere else, and carry no realm: the array is the process's, so every
       // realm prefix reads and writes the same one.
       //
-      // **THIS IS THE RUNTIME DOOR PRODUCT MODE HAD NONE OF.** `POST
-      // /tls/trust` needs no credential and product mode refuses it; this API's
-      // own access token is the credential here, `admin:read` to list and
-      // `admin:write` to change — the gate below every operation, by method, so
-      // nothing in these two rows re-checks it.
+      // **THIS IS THE RUNTIME DOOR, AND SINCE #597 THE ONLY ONE BESIDE THE
+      // CONSOLE'S.** The open `POST /tls/trust` needed no credential, and
+      // #597 deleted it; this API's own access token is the credential here,
+      // `admin:read` to list and `admin:write` to change — the gate below
+      // every operation, by method, so nothing in these two rows re-checks
+      // it.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/tls/trust', tag: 'TLS',
         operationId: 'getTruststore',
@@ -19190,9 +19191,9 @@ class AdminApi {
                          '`ou=trustAnchors` wherever the directory is; ' +
                          '`persisted` in the reply says whether every anchor ' +
                          'this call added was written down.\n\n**THIS IS THE ' +
-                         'GATED TWIN OF `POST /tls/trust`**, which needs no ' +
-                         'credential and is refused in product mode. This ' +
-                         'operation answers in both modes. The ' +
+                         'ONE WAY TO ADD AN ANCHOR AT RUNTIME**, beside the ' +
+                         'console page that mirrors it, in both modes: the ' +
+                         'open `POST /tls/trust` was deleted. The ' +
                          'reply names what was added and carries ' +
                          'no private key, because none is involved.',
             requestBodyRequired: true,
@@ -19223,10 +19224,9 @@ class AdminApi {
                          'to every listener.\n\n**THERE IS NO BULK CLEAR ON ' +
                          'THIS API, AND THAT IS DELIBERATE.** A clear is the ' +
                          'one change whose reach is every client certificate ' +
-                         'every other caller relies on; `POST ' +
-                         '/tls/trust/clear` exists as a development test ' +
-                         'control and is refused in product mode. Remove the ' +
-                         'rows you mean.\n\n**A `file` ANCHOR MAY BE REMOVED ' +
+                         'every other caller relies on, and the open `POST ' +
+                         '/tls/trust/clear` that did it was deleted. Remove ' +
+                         'the rows you mean.\n\n**A `file` ANCHOR MAY BE REMOVED ' +
                          'AND COMES BACK AT THE NEXT START**, when ' +
                          '`tls.trustAnchorsFile` is read again; the reply ' +
                          'says so. A fingerprint this truststore does not ' +
@@ -19250,6 +19250,73 @@ class AdminApi {
             responseDescription: 'The anchor that was removed, where it came ' +
                                  'from, and the new total.' }
         ] },
+
+      // -----------------------------------------------------------------------
+      // MONITORING → TLS CONNECTION (#597, rcbj's decision 3 on #591): what
+      // `GET /tls` and `GET /tls/forwarded` showed anybody in development,
+      // as a read behind this API's gate, in both modes. The view is
+      // `tls/tls_server.js`'s `connectionView()`, reached LAZILY: that module
+      // is required at 20, after this one, and requiring it here would
+      // register its routes ahead of everything between (rule 1).
+      //
+      // **PINNED TO THE FRONT PROCESS** with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED): the socket a worker sees is
+      // the unix socket from its front process, which is not a fact about
+      // the caller.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/tls-connection', tag: 'TLS',
+        operationId: 'getTlsConnection',
+        summary: 'What this service saw of THIS request: its TLS ' +
+                 'connection, its client certificate and its forwarding ' +
+                 'headers',
+        description: 'Describes the request that asked — and only that ' +
+                     'one — as this service saw and believed it. ' +
+                     '`connection`: `https`, `encrypted`, the TLS ' +
+                     '`protocol` and `cipher` negotiated, the socket\'s ' +
+                     '`peerAddress` and the `clientAddress` this service ' +
+                     'believes. `clientCertificate`: whether one was ' +
+                     '`presented` on the connection, whether it `verified` ' +
+                     'against the client truststore (`GET ' +
+                     '/admin-api/tls/trust`) or the `authorizationError` ' +
+                     'OpenSSL gave, the `certificate` (subject, issuer, ' +
+                     'serial, validity, subjectAltName, key, SHA-256 ' +
+                     'fingerprint and PEM), its RFC 8705 `thumbprint`, ' +
+                     'what the identity gate made of it (`identity`: ' +
+                     'issued here, accepted, kind, username, realm, why ' +
+                     'not) and the `revocation` verdict `GET ' +
+                     '/tls/sign-in` would act on. `forwarded`: ' +
+                     '`global.trustProxy` and `global.trustedProxies`, ' +
+                     'whether the peer is a trusted proxy and whether the ' +
+                     'forwarding headers were `believed`, the ' +
+                     '`effectiveBaseUrl` every issuer and endpoint is ' +
+                     'built from, each forwarding header with its value, ' +
+                     'and the client-certificate headers a proxy might set ' +
+                     '— which this service READS NONE OF, in either ' +
+                     'mode.\n\n**IT CHANGES NOTHING**: no session is ' +
+                     'started (that is `GET /tls/sign-in`), no sighting ' +
+                     'recorded, no setting written.\n\n**THE CONSOLE\'S ' +
+                     'PAGE DESCRIBES ITS OWN CALL TO THIS OPERATION**, not ' +
+                     'the request that loaded the page: the console is a ' +
+                     'static application, so the view is a second request, ' +
+                     'on whatever connection the browser chose for it. ' +
+                     'Answered by the front process, which holds the ' +
+                     'client\'s socket. Development only as `GET /tls` and ' +
+                     '`GET /tls/forwarded` until #597.',
+        mirrors: 'GET /admin/tls-connection',
+        responseDescription: 'The request\'s connection, client ' +
+                             'certificate and forwarding headers.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `connection`, `clientCertificate` ' +
+                       'and `forwarded`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API TLS connection endpoint.");
+          require('../tls/tls_server').connectionView(req)
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API TLS connection " +
+                        "endpoint.");
+            });
+        } },
 
       // -----------------------------------------------------------------------
       // THE STORED KERBEROS KEYS (2026-09-12).

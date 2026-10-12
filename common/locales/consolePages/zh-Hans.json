@@ -104,6 +104,7 @@
   "title.ssf": "共享信号",
   "title.ssf-dead-letters": "死信",
   "title.ssf-transmitters": "来自合作方的信号",
+  "title.tls-connection": "TLS 连接",
   "title.tls-trust": "客户端证书信任库",
   "title.token-lifetimes": "令牌有效期",
   "title.tokens-credential": "令牌——单个凭证",

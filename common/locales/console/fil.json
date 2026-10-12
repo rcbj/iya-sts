@@ -121,6 +121,7 @@
   "nav.cert-issuance": "Pag-issue ng certificate",
   "nav.spiffe-trust-domain": "Trust domain",
   "nav.tls": "TLS / mutual TLS",
+  "nav.tls-connection": "TLS connection",
   "nav.tls-trust": "Truststore ng client certificate",
   "nav.users": "Mga user",
   "nav.groups": "Mga group",

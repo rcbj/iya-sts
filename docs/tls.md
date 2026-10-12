@@ -4,8 +4,6 @@ title: TLS and mutual TLS
 
 # TLS and mutual TLS
 
-> **Development mode only (#585):** `/tls`, `/tls/forwarded`, `/tls/trust`, `/tls/trust/clear` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts serves its **main port over TLS**
 ([RFC 8446](https://www.rfc-editor.org/rfc/rfc8446), TLS 1.2 and 1.3) with a
 certificate issued by its own certificate authority, and **asks every connection
@@ -115,8 +113,8 @@ For example, `listenerLdaps.disableTls12` or `listenerMain.tls13CipherSuites`.
 - **Inheritance:** each row inherits the service-wide value until it is set.
   `inherit` in a list of choices, or an empty box, means inherit.
 - **Truststore:** a listener's own `trustAnchorsFile` replaces the service's
-  file anchors for that listener alone. The runtime anchors from `/tls/trust`
-  are shared by every listener.
+  file anchors for that listener alone. The runtime anchors from
+  `/admin/tls/trust` are shared by every listener.
 - **Where they are edited:** Server configuration → Listeners has a tab per
   listener. Each tab shows what is in force there first, then its own rows.
   The *Service-wide defaults* tab holds what every listener inherits.
@@ -282,7 +280,8 @@ also a leaf of the TLS Issuing CA.
   gets.
 * LDAPS on 636 serves the first certificate only.
 * Nothing reports the post-quantum posture of a connection's key exchange any
-  more; `GET /tls` and `/admin/crypto-metadata` list the certificates.
+  more; `GET /tls/server-certificate` and `/admin/crypto-metadata` list the
+  certificates.
 
 ### Client certificates on the main port
 
@@ -299,17 +298,22 @@ arrives. What a certificate is worth is decided where it is used:
 | `/scim/v2` | RFC 7644 section 2's client-certificate scheme |
 
 Presenting a certificate anywhere else signs nobody in, and does nothing at all
-at a route that reads no certificate. `GET /tls` describes all of it — what this
-service presents, what it trusts, the protocol floor, the revocation policy —
-and takes `?format=json`.
+at a route that reads no certificate.
 
-**`GET /tls` and `GET /tls/forwarded` run as a script in your browser (#583).**
-Each answers a short page that loads `/tls/pages.js`, which draws it in the
-browser's language from what the page carries — the very object
-`?format=json` answers, built on the request that asked for the page, so
-`/tls/forwarded` still shows the headers *your* request arrived with. A browser
-with scripts blocked sees only a notice saying so; `?format=json` needs no
-script. Both pages are development-only (#585), and so is the script.
+**Monitoring → TLS connection** (`/admin/tls-connection`, Admin Read, in both
+modes) shows what this service saw of a request: the TLS version and cipher,
+the client certificate the connection presented — whether it verified against
+the truststore and OpenSSL's reason if not, what the identity gate makes of
+it, its revocation verdict — and every forwarding header with what was
+believed of it. Its data is `GET /admin-api/tls-connection`, which describes
+the request that called it. **The request the console page describes is its
+own call to that operation**, made after the page loaded, not the page load
+itself: the console is a static application, so the view is a second request
+on whatever connection the browser chose (usually the same one, and for these
+facts the same answer — a client certificate belongs to the connection, and a
+proxy writes the same headers on every request it relays). It starts no
+session and changes nothing. It replaced the development pages `GET /tls` and
+`GET /tls/forwarded` (#597).
 
 What happens to a certificate that is presented:
 
@@ -342,8 +346,7 @@ So when a handshake completes with a certificate that verified, its subject is
 filed through the same authentication record every other family uses, under
 protocol `TLS`, and the embedded directory seeds an entry for it. It is a
 **record** of what happened, not a credential: nothing consults the record or
-the entry to decide anything (`/tls/sign-in` is what signs somebody in), and
-`GET /tls` says so.
+the entry to decide anything (`/tls/sign-in` is what signs somebody in).
 
 * It is recorded **at the handshake**, not per request. The handshake is where
   the credential was accepted, so a connection carrying six requests is one
@@ -378,13 +381,12 @@ and fingerprint are **appended**, so the entry shows the history.
 ### The client truststore
 
 The anchors client certificates are verified against. It **starts empty** and
-is filled from four places:
+is filled from three places:
 
 | Source | When | Survives a restart? |
 |---|---|---|
 | `tls.trustAnchorsFile` | read at startup; the product-mode way to fill it | yes — the file brings it back |
 | `/admin/tls/trust`, `POST /admin-api/tls/trust/{add,remove}` | at runtime, in both modes, gated by the console / an admin token | yes — written to the directory (`ou=trustAnchors` in the default realm) and restored before any listener binds |
-| `POST /tls/trust` (a PEM body, or a `certificates` form field) and `POST /tls/trust/clear` | at runtime, **development mode only** | added anchors, yes |
 | this service's own Root CA | always, while `tls.trustIssuedClientCertificates` is on | — |
 
 The gated doors are strict: a bundle with one block that cannot be read is
@@ -398,20 +400,15 @@ answered by the front process, which is the one that holds the listener.
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could
-bake it in. `POST /tls/trust` takes one or more PEM certificates (raw, or as the
-`certificates` field of a form or JSON body) and applies them to the listener;
-existing connections keep the truststore they were made under, and the next
-handshake is judged against the new one. `POST /tls/trust/clear` empties it.
-Both answer JSON, and only JSON since #583. **A request that carries an
-`Origin` — every browser's does — is held to the `/tls` page**: it must be JSON,
-from an origin this service answers on, with the `X-CSRF-Token` the page
-carries (the token of the page's own `sts_tls_page` cookie); otherwise it is
-refused (415 or 403). A script that sends no `Origin`, such as `curl`, is
-answered exactly as before.
+bake it in. `POST /admin-api/tls/trust/add` takes one or more PEM certificates
+and applies them to the listener; existing connections keep the truststore
+they were made under, and the next handshake is judged against the new one.
+The open `POST /tls/trust` and `POST /tls/trust/clear` that did this without a
+credential in development were deleted (#597).
 "Empty" is meant literally: node's bundled public root store is **not** used,
 since a public root has no business verifying a client certificate from a
 private CA, so the starting state is "nothing verifies". With HTTPS on, the
-first POST of an anchor is made with verification off, as the first fetch of
+first call to `/admin-api` is made with verification off, as the first fetch of
 the server certificate is.
 
 **The service Root in the truststore** lets a person present the TLS client
@@ -470,8 +467,8 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 * **L7 (TLS-terminating) proxy**: `global.trustProxy` believes
   `X-Forwarded-Proto` and `X-Forwarded-Host`, and `global.trustedProxies`
-  narrows that to the proxy's own addresses. `GET /tls/forwarded` shows what a
-  request carried and what was believed. A client certificate cannot cross such
+  narrows that to the proxy's own addresses. Monitoring → TLS connection
+  shows what a request carried and what was believed. A client certificate cannot cross such
   a proxy.
 * **L4 load balancer with TLS passthrough** — the supported front for client
   certificates: `global.proxyProtocol=v2` reads a HAProxy PROXY protocol v2
@@ -508,7 +505,6 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 | | Development | Product |
 |---|---|---|
-| `POST /tls/trust`, `POST /tls/trust/clear` | answer anybody | **not there** (#585): a product process answers them as unregistered paths; use `tls.trustAnchorsFile` or the gated doors |
 | Revocation (`pki.revocationCheck=auto`) | **soft-fail**: revoked is refused, an undeterminable status is accepted and reported | **hard-fail**: an undeterminable status is refused too |
 | Which realm's mode decides the truststore | the **default** realm's, because the anchors are one list for the whole process | the same |
 
@@ -636,16 +632,16 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
 * **Protocols → Client-certificate truststore** (`/admin/tls/trust`): every
   anchor with subject, issuer, serial, validity, SHA-256 fingerprint and source
   (`file` or `runtime`), an add form, and a Remove per row, in either mode. The
-  service Root added by `tls.trustIssuedClientCertificates` is not listed there;
-  `GET /tls` reports it.
-* **Live descriptions**: `GET /tls` (what is presented, trusted and done with a
-  client certificate), `GET /tls/server-certificate`, `GET /tls/forwarded`,
-  `GET /tls/sign-in`.
+  service Root added by `tls.trustIssuedClientCertificates` is not listed there.
+* **Monitoring → TLS connection** (`/admin/tls-connection`): what this
+  service saw of the console's own request — its connection, its client
+  certificate and its forwarding headers.
+* **Live descriptions**: `GET /tls/server-certificate`, `GET /tls/sign-in`.
 * **Related pages**: `/admin/crypto-metadata` lists every certificate
   configured; `/admin/pki` issues and revokes; `/admin/users` shows TLS
   authentications.
-* **Management API**: `GET /admin-api/tls`, `GET /admin-api/tls/trust` and
-  `POST /admin-api/tls/trust/{add,remove}` — see `/admin-api/openapi.json`.
+* **Management API**: `GET /admin-api/tls`, `GET /admin-api/tls/trust`,
+  `POST /admin-api/tls/trust/{add,remove}` and `GET /admin-api/tls-connection` — see `/admin-api/openapi.json`.
 * Failures are recorded under `STS-TLS-NNNN`, `STS-PKI-NNNN` and
   `STS-PROXY-NNNN` codes — see [Error codes](error-codes.md).
 

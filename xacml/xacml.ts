@@ -118,19 +118,18 @@
 
 import app = require('../common/app');
 
-// THE DOOR A TRUST ANCHOR GOES IN BY, as this surface's prose names it
-// (#585): the open `POST /tls/trust` only where the process serves that
-// demonstration, and the management API's gated operation otherwise.
+// THE DOOR A TRUST ANCHOR GOES IN BY, as this surface's prose names it: the
+// management API's gated operation, in every mode since #597 deleted the
+// open `POST /tls/trust` (#585 had made it a development demonstration).
 /**
  * Names the door a client certificate's issuing CA is added by.
  *
- * @returns `POST /tls/trust` where it is served, else the API operation
+ * @returns the management API operation
  */
 function trustAnchorDoor(): string {
   helpers.log.debug("Entering trustAnchorDoor().");
   helpers.log.debug("Leaving trustAnchorDoor().");
-  return app.processDemoOnly.serves() ? 'POST /tls/trust'
-    : 'POST /admin-api/tls/trust/add';
+  return 'POST /admin-api/tls/trust/add';
 }
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');

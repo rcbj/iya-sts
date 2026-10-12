@@ -331,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "Registrar una clave pública HOBA"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "Qué es el endpoint TLS"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "El script de las páginas TLS"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "Iniciar sesión con un certificado de cliente"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "Lo que un proxy le indicó a este servicio"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "El certificado del servidor (PEM)"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "Confiar en un emisor de certificados de cliente"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "Vaciar el almacén de confianza de clientes"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1051,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "Agregar o quitar un ancla de confianza de certificados de cliente"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "Lo que este servicio vio de la conexión TLS de una solicitud"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Claims de PAC de Kerberos"
@@ -1562,14 +1546,6 @@
   "endpoints.route./oauth2/token.name": {
     "en": "f60f44154acbc444",
     "text": "Endpoint de token"
-  },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "Control de prueba de cumplimiento de dispositivos (no es un endpoint de la especificación)"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "Interruptor de nonce de DPoP (no es un endpoint de la especificación)"
   },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",

@@ -22,8 +22,9 @@
 //   B. In a PRODUCT realm every marked path, by every method it has,
 //      answers Express's own 404; in the DEVELOPMENT default realm none
 //      does (each reaches its handler).
-//   C. The process's doors: with the PROCESS in product, a development realm
-//      keeps `demoOnly`'s routes and not `processDemoOnly`'s.
+//   C. With the PROCESS in product, a development realm keeps `demoOnly`'s
+//      routes (no route carries `processDemoOnly` since #597, which deleted
+//      the truststore's two open doors).
 //   D. The lists in a product realm: `/admin/sts-metadata` has no demo row,
 //      no drift and no mismatch; the Protocols pages list no demonstration;
 //      the hosted-applications catalogue offers no demo prefix or
@@ -60,7 +61,11 @@ function childMain() {
   }
   // THE INVENTORY (#585's table, and what its build found beside it): every
   // path a demonstration mark is on, with which mark.
-  const PROCESS_MARKED = ['/tls/trust', '/tls/trust/clear'];
+  // The two that carried `processDemoOnly`, `POST /tls/trust` and `POST
+  // /tls/trust/clear`, were deleted by #597; the mark stays for the
+  // process's sockets (the protected Kerberos service's), which no route
+  // carries.
+  const PROCESS_MARKED = [];
   const REALM_MARKED = [
     // The SAML and WS-Federation mock relying parties were deleted (#592),
     // and the commands mock relying party moved to the test peer (#596).
@@ -80,10 +85,12 @@ function childMain() {
     '/issuer/demo.js', '/vc-demo-api', '/vc-demo-api/issuer',
     '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
     '/vc-demo-api/done',
-    '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
-    // The two diagnostic surfaces' scripts (#583), demonstrations like the
-    // pages they draw.
-    '/tls/pages.js', '/spnego/pages.js'];
+    // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
+    // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
+    // (Monitoring → TLS connection) left with #597.
+    // The SPNEGO diagnostic surface's script (#583), a demonstration like
+    // the pages it draws.
+    '/spnego/pages.js'];
   // A concrete path for a pattern.
   function concrete(p) {
     return p.replace(/:([A-Za-z_]+)/g, 'probe');
@@ -211,8 +218,6 @@ function childMain() {
         if (!unrouted(inProduct, m)) {
           answeredInProduct.push(m + ' ' + p + ' ' + inProduct.status);
         }
-        // `/tls/trust/clear` empties THIS CHILD's truststore, which nothing
-        // after it reads; it is asked like the rest.
         const inDevelopment = await ask(port, m, concrete(p));
         if (unrouted(inDevelopment, m) || inDevelopment.status === 0) {
           missingInDevelopment.push(m + ' ' + p + ' ' + inDevelopment.status +
@@ -243,21 +248,19 @@ function childMain() {
     try {
       const realmDemo = await ask(port, 'GET', '/realm/' + DEVELOPMENT +
                                   '/spnego');
-      const processDoor = await ask(port, 'POST', '/realm/' + DEVELOPMENT +
-                                    '/tls/trust');
       const defaultRealm = await ask(port, 'GET', '/spnego');
-      note(!unrouted(realmDemo, 'GET') && unrouted(processDoor, 'POST') &&
-           unrouted(defaultRealm, 'GET'),
+      note(!unrouted(realmDemo, 'GET') && unrouted(defaultRealm, 'GET'),
            'C1. with the process in product, a development realm keeps ' +
-           'demoOnly\'s routes and not processDemoOnly\'s, and the default ' +
-           'realm keeps neither',
-           realmDemo.status + ' ' + processDoor.status + ' ' +
-           defaultRealm.status);
+           'demoOnly\'s routes and the default realm does not (no route ' +
+           'carries processDemoOnly since #597)',
+           realmDemo.status + ' ' + defaultRealm.status);
     } finally {
       config.clearOverride('global.mode');
     }
 
     // --- D. the lists in a product realm ------------------------------------
+    // How many prefixes the catalogue offers a product realm, for D6.
+    let productPrefixes = 0;
     realms.run(realms.get(PRODUCT), function () {
       note(mode.servesDemoEndpoints() === false,
            'D0. the product realm says it serves no demonstration');
@@ -323,14 +326,13 @@ function childMain() {
       note(shown.length === 0, 'D3. no Protocols page lists a ' +
            'demonstration in a product realm', shown.join(', ') || 'none');
       const catalogue = hosted.list();
+      productPrefixes = catalogue.reduce(function (n, one) {
+        return n + one.prefixes.length;
+      }, 0);
       const offered = [];
       catalogue.forEach(function (one) {
-        if (one.id === 'devices') {
-          offered.push('devices');
-        }
         one.prefixes.forEach(function (prefix) {
-          if (['/vc-api', '/issuer', '/did', '/dpop', '/spnego',
-               '/vc-demo-api']
+          if (['/vc-api', '/issuer', '/did', '/spnego', '/vc-demo-api']
               .indexOf(prefix) >= 0) {
             offered.push(prefix);
           }
@@ -345,9 +347,9 @@ function childMain() {
            'D5. a link to a demonstration is hidden, and to anything else ' +
            'not');
     });
-    note(hosted.list().some(function (one) {
-      return one.id === 'devices';
-    }) && !app.demoPathHidden('/spnego'),
+    note(hosted.list().reduce(function (n, one) {
+      return n + one.prefixes.length;
+    }, 0) > productPrefixes && !app.demoPathHidden('/spnego'),
          'D6. and in development the catalogue and the links keep them');
 
     server.close();

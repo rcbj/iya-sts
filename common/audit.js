@@ -819,8 +819,8 @@ const ACTIONS = [
   // `claims.change`'s reason: the `admin.change` / `api.change` row says a form
   // or an operation was used, and this says whose certificates this service
   // believes from then on — the subject and the fingerprint, which are public.
-  // `POST /tls/trust` writes no row, deliberately: it is a development test
-  // control that answers anybody, and product mode refuses it.
+  // (The open `POST /tls/trust`, which wrote no row, was deleted by #597:
+  // every truststore change is one of these.)
   { action: 'admin.truststore.change', category: 'admin',
     label: 'A client-certificate trust anchor was added or removed' },
 

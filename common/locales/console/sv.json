@@ -121,6 +121,7 @@
   "nav.cert-issuance": "Certifikatutfärdande",
   "nav.spiffe-trust-domain": "Förtroendedomän",
   "nav.tls": "TLS / ömsesidig TLS",
+  "nav.tls-connection": "TLS-anslutning",
   "nav.tls-trust": "Förtroendelager för klientcertifikat",
   "nav.users": "Användare",
   "nav.groups": "Grupper",

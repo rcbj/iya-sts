@@ -239,6 +239,15 @@ touched** (#569's rule), and nothing they answer changed.
   /logout/signed-out`: the act answers a `form` the runtime POSTS AS A
   NAVIGATION, carrying the result. Where there is nothing to fan out the
   act answers the result's `view` and the page draws it in place.
+* **BOTH KINDS OF RESULT ARE TWO TABS (rcbj, 2026-10-12)**, with the
+  inventory's ids and rules. **Sign out** says only that the person is
+  signed out (or that nothing was ended), then a button to the user portal
+  (`/portal`, root-relative so the realm prefix is added); the signed-out
+  document also keeps the partner sign-outs (#167) there, because each is a
+  step the person has to take. **Details** holds the rest: the model's
+  message, what was ended and what was not, the fan-out (its iframes and
+  cleanup images load from a hidden panel all the same), and what is still
+  live.
 * **THE RESULT TRAVELS WITH THE BROWSER, MACed, and nothing here stores
   it** — rule 3m is that this module holds no state, and the document may
   be drawn by another node or request worker than the one that ended the

@@ -5061,8 +5061,9 @@ function codeOf(verdict) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT EVERY SURFACE SAYS. One sentence, so /tls, /admin/pki, the crypto report
-// and the mode page cannot describe the policy four ways.
+// WHAT EVERY SURFACE SAYS. One sentence, so /admin/pki, the crypto report and
+// the mode page cannot describe the policy three ways (`/tls` said it too,
+// until #597).
 // ---------------------------------------------------------------------------
 // THE ADDRESSES THIS SERVICE WILL NOT DIAL UNDER THE SETTINGS IN FORCE, as
 // sentences naming the setting that would change each (#174).

@@ -59,10 +59,10 @@ var config = {
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
-    // and `POST /tls/trust` are the two endpoints a caller reaches BEFORE it
-    // trusts anything — so the first fetch of the certificate has to be made
-    // with verification off (`curl -k`). That is the ordinary bootstrap for a
-    // service that regenerates its key every start, and /tls says so.
+    // is the endpoint a caller reaches BEFORE it trusts anything — so the
+    // first fetch of the certificate has to be made with verification off
+    // (`curl -k`). That is the ordinary bootstrap for a service that
+    // regenerates its key every start, and docs/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
@@ -74,7 +74,8 @@ var config = {
     // front of this service they are headers any client can set, and believing
     // them lets a caller choose what this service thinks its own issuer,
     // endpoints and DPoP htu are. Turn it ON behind a reverse proxy — see
-    // GET /tls/forwarded, which shows what arrived and what was believed.
+    // Monitoring → TLS connection, which shows what arrived and what was
+    // believed.
     trustProxy: false
   },
 

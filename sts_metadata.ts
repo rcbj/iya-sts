@@ -1248,9 +1248,9 @@ const SPECS: Spec[] = [
     url: 'https://www.rfc-editor.org/rfc/rfc5280',
     coverage: 'partial, and the path validation is OpenSSL\'s rather than ' +
               'this service\'s: client certificates are verified against ' +
-              'anchors POSTed to /tls/trust at runtime (development mode; ' +
-              'product mode refuses that and reads tls.trustAnchorsFile at ' +
-              'startup), beside the service Root while ' +
+              'anchors added at runtime through /admin-api/tls/trust (in ' +
+              'either mode) and read from tls.trustAnchorsFile at ' +
+              'startup, beside the service Root while ' +
               'tls.trustIssuedClientCertificates is on, and the server ' +
               'certificate is issued under that Root with a subjectAltName ' +
               'carrying every name this stack is reached by. THIS SERVICE ' +
@@ -1823,8 +1823,8 @@ const SPECS: Spec[] = [
               'detection, and the server-supplied nonce handshake in both ' +
               'shapes — 400 use_dpop_nonce at the token endpoint, 401 with ' +
               'WWW-Authenticate at a protected one. Nonces are off until ' +
-              'oauth2.dpopNonceRequired (per realm; /dpop/nonce-mode writes ' +
-              'it in development) turns them on. Not implemented: the ' +
+              'oauth2.dpopNonceRequired (per realm, through ' +
+              '/admin-api/config/set) turns them on. Not implemented: the ' +
               'mTLS-bound tokens (RFC 8705), which are the other way to ' +
               'sender-constrain; a proof sent to /oauth2/par binds the ' +
               'authorization code to its key (section 10.1). Note ' +
@@ -4312,7 +4312,7 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'RFC 7486 section 7. A form-encoded POST carrying pub=<PEM public ' +
           'key> and (this service\'s own parameter) username=<who it is ' +
           'for>, answered with 201 and the Hobareg: regok header. ' +
-          'UNAUTHENTICATED on purpose, for the reason POST /tls/trust is: it ' +
+          'UNAUTHENTICATED on purpose: it ' +
           'is how a caller GETS a credential, so requiring one to reach it ' +
           'would make the scheme unusable by anybody who did not already ' +
           'have another. Anybody may register any key for any name — the ' +
@@ -4338,29 +4338,6 @@ const ENDPOINTS: EndpointEntry[] = [
   // the directory's LDAPS listener on 636, which serves the certificate below.
   // It is under LDAP because that is the protocol it speaks, and the only
   // reason to know it is here is the certificate — one anchor covers both.
-  { path: '/tls', group: 'TLS', name: 'What the TLS endpoint is',
-    specs: ['rfc8446', 'rfc5280'],
-    what: 'The certificate this service presents, the client truststore it ' +
-          'verifies against, and what this deployment does with a client ' +
-          'certificate. THE MAIN PORT ASKS EVERY CONNECTION FOR ONE AND ' +
-          'REQUIRES NONE, so presenting it is the client\'s own decision. ' +
-          'Two listeners of this family\'s own — 8443, which asked, and ' +
-          '9443, which required — were deleted on 2026-09-16 along with the ' +
-          'connection report they served. What a certificate is worth is ' +
-          'decided where it is USED: GET /tls/sign-in for a session, the ' +
-          'token endpoint for RFC 8705, /xacml and /scim/v2 for theirs. Add ' +
-          '?format=json.',
-    demo: true },
-  { path: '/tls/pages.js', group: 'TLS',
-    name: 'The TLS pages\' script', specs: [],
-    what: 'NON-SPEC (#583). The runtime and renderers of the two TLS ' +
-          'diagnostic pages, in one file built by build-typescript.sh ' +
-          '(tls/tls-pages-spa.js) and served precompressed: it draws /tls ' +
-          'and /tls/forwarded from the state each shell carries — the ' +
-          'object each one\'s ?format=json answers, built on the request ' +
-          'that asked for the page — and sends the /tls page\'s two acts ' +
-          'to POST /tls/trust and POST /tls/trust/clear as JSON.',
-    demo: true },
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
     specs: ['rfc8446', 'rfc5280'],
@@ -4375,24 +4352,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'identity, and an application\'s certificate (an RFC 8705 ' +
           'credential, not a person) are each answered 200 with no session ' +
           'and the reason.' },
-  { path: '/tls/forwarded', group: 'TLS',
-    name: 'What a proxy told this service',
-    specs: ['rfc9700', 'rfc8446'],
-    what: 'NON-SPEC. The request as it ARRIVED and what was believed of it: ' +
-          'every forwarding header, every client-certificate header a proxy ' +
-          'might inject, whether global.trustProxy made this service believe ' +
-          'any of it, and what the effective base URL came out as — which ' +
-          'every issuer and every endpoint in both discovery documents is ' +
-          'built from, so if that is wrong everything a client reads is ' +
-          'wrong with it. RFC 9700 section 2.6 has two halves here: a proxy ' +
-          'MUST strip inbound security-sensitive headers before setting its ' +
-          'own, which this service cannot do for it, and an application must ' +
-          'not BELIEVE them unless a proxy is really there, which is what ' +
-          'the setting is. NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER ' +
-          'in either mode — a certificate in a header is one anybody can ' +
-          'forge — and the ones a request carried are listed so that ' +
-          'ignoring them is visible rather than silent. Add ?format=json.',
-    demo: true },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -4419,33 +4378,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'copy of it stays valid — hence Cache-Control: no-store. It ' +
           'publishes no private key. Fetch it into your own truststore ' +
           'rather than switching verification off.' },
-  { path: '/tls/trust', group: 'TLS', name: 'Trust a client certificate issuer',
-    specs: ['rfc5280'],
-    what: 'POST one or more PEM certificates — raw, or as the `certificates` ' +
-          'field of a form or JSON body — and client certificates chaining ' +
-          'to them verify from the next handshake onward ' +
-          '(tls.Server.setSecureContext; existing connections keep the ' +
-          'truststore they were made under). It holds no runtime anchor at ' +
-          'start (the service Root is trusted beside it, behind ' +
-          'tls.trustIssuedClientCertificates): the CA a test verifies is ' +
-          'usually generated in a browser minutes before the connection and ' +
-          'exists nowhere else, so no file could hold it. It is on the main ' +
-          'port, which asks for a client certificate and requires none, so it ' +
-          'is reachable before anything is trusted. POST only. A ' +
-          'DEVELOPMENT TEST CONTROL: it ' +
-          'needs no credential, so product mode refuses it and names the ' +
-          'gated doors — /admin/tls/trust and POST /admin-api/tls/trust/add.',
-    demo: true },
-  { path: '/tls/trust/clear', group: 'TLS', name: 'Empty the client truststore',
-    specs: ['rfc5280'],
-    what: 'Removes every anchor — a tls.trustAnchorsFile one until the ' +
-          'next start — so only a certificate chaining to the service Root ' +
-          '(trusted beside the truststore while ' +
-          'tls.trustIssuedClientCertificates is on) still verifies. POST ' +
-          'only. A development test ' +
-          'control that product mode refuses; the gated doors remove one ' +
-          'anchor at a time and have no clear.',
-    demo: true },
 
   // --- service ---
   { path: '/', group: 'Service', name: 'The front page',
@@ -6571,8 +6503,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'takes `certificates` (one or more PEM blocks, refused whole if ' +
           'OpenSSL cannot read one); remove takes one `fingerprint`. NO BULK ' +
           'CLEAR, deliberately. Needs admin:write, works in both modes, and ' +
-          'is the gated twin of POST /tls/trust, which product mode refuses. ' +
+          'is the one runtime door (the open POST /tls/trust is gone). ' +
           'Written to ou=trustAnchors, so a change survives a restart.' },
+  { path: '/admin-api/tls-connection', group: 'Management API',
+    name: 'What this service saw of a request\'s TLS connection',
+    specs: ['rfc8446', 'rfc5280', 'rfc9700', 'openapi'],
+    what: 'NON-SPEC (#597). GET /admin/tls-connection over JSON: the ' +
+          'request that asked, as this service saw and believed it — its ' +
+          'TLS version and cipher, the client certificate the connection ' +
+          'presented (whether it verified against the truststore, what the ' +
+          'identity gate made of it, its revocation verdict), and every ' +
+          'forwarding header with what global.trustProxy and ' +
+          'global.trustedProxies let this service believe of it, the ' +
+          'effective base URL among them. No client certificate is ever ' +
+          'read from a header. Admin Read, in both modes; it changes ' +
+          'nothing. It replaced the development pages /tls and ' +
+          '/tls/forwarded.' },
   { path: '/admin-api/kerberos/claims', group: 'Management API',
     name: 'Kerberos PAC claims',
     specs: ['ms-pac', 'openapi'],
@@ -8149,32 +8095,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'code presented a second time is refused rather than answered with ' +
           'the tokens it already bought, and those tokens are revoked ' +
           '(section 4.5, and RFC 6749 section 10.5 for the revocation).' },
-  { path: '/devices/test/compliance', group: 'Shared Signals',
-    name: 'Device compliance test control (not a spec endpoint)',
-    specs: ['caep'],
-    effect: 'sets a device\'s compliance, with no credential',
-    what: 'NON-SPEC (#164 decision 9), for tests: the MDM feed\'s body — a ' +
-          'report naming a device by id, thumbprint or certificate, or ' +
-          'reports: [...] — WITHOUT the device:compliance scope, recorded ' +
-          'with source test-control, so a client under test can drive the ' +
-          'CAEP device-compliance-change it reacts to. PRODUCT MODE REFUSES ' +
-          'IT with 403 (mode.opensTestControls(), STS-DEVICE-0035): there ' +
-          'the feed at /admin-api/device-compliance, under its scope, is ' +
-          'the door.',
-    demo: true },
-  { path: '/dpop/nonce-mode', group: 'OAuth 2.0 / OIDC',
-    name: 'DPoP nonce switch (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests and for trying the handshake by hand: turns ' +
-          'the RFC 9449 section 8/9 server-supplied nonce requirement on and ' +
-          'off at runtime, so the 401/retry exchange can be exercised ' +
-          'without restarting the service. GET reports the current state; ' +
-          'POST {"required": true|false} sets it — for the TRUST REALM it is ' +
-          'reached in, by writing oauth2.dpopNonceRequired (it was one ' +
-          'switch for the whole process until 2026-09-12). PRODUCT MODE ' +
-          'REFUSES THE POST with 403, because it is a test control: there ' +
-          'the setting is changed through /admin/oauth2 or POST ' +
-          '/admin-api/config/set.',
-    demo: true },
   { path: '/oauth2/consent', group: 'OAuth 2.0 / OIDC', name: 'Consent screen',
     specs: ['oidc', 'rfc6749'],
     effect: 'needs a pending consent id — answers 400 when followed bare',

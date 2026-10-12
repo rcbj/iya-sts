@@ -42,9 +42,5 @@
   "listeners.applications.pki.what": {
     "en": "8b280b2baedbdfe6",
     "text": "CRL、OCSP、CA 證書與證書鏈，以及密碼學元數據文件。"
-  },
-  "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "TLS 檢視以及客戶端信任存放區的入口。"
   }
 }
