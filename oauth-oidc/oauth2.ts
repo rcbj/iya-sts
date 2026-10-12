@@ -32,7 +32,6 @@
 //                            is on, and every requirement it does and does not
 //                            enforce (oauth2_bcp.js)
 //   GET  /oauth2/oauth21     NON-SPEC: the same for OAuth 2.1 mode (oauth21.js)
-//   *    /dpop/nonce-mode    NON-SPEC: a development test control
 //   *    /{id}/oauth2/...    every OAuth endpoint again, per named
 //                            authorization server (authorization_servers.ts)
 //   GET  /oauth2/jwks        the signing key (above, with the metadata)
@@ -20747,10 +20746,10 @@ class OAuth2Server {
     // oauth2.rfc9700 — so it is turned on at /admin/config or through POST
     // /admin-api/config like every other setting, which is what gives it a
     // console control, a management API operation and an audit row without a
-    // line being written for any of the three. /dpop/nonce-mode is a switch as
-    // well, and a test control: it writes the setting
-    // `oauth2.dpopNonceRequired` for the realm it is reached in (see its header
-    // below).
+    // line being written for any of the three. Whether DPoP proofs must carry
+    // a server nonce is the same kind of thing — the per-realm setting
+    // `oauth2.dpopNonceRequired` — and since #597 there is no other switch
+    // for it.
     //
     // Read-only, so there is no console control here and therefore nothing for
     // rule 7 in CLAUDE.md to require of the management API.
@@ -20796,91 +20795,6 @@ class OAuth2Server {
 
     // --- token endpoint
     // ---------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // NON-SPEC: the DPoP nonce switch.
-    //
-    // RFC 9449 sections 8 and 9 let a server demand a server-supplied nonce in
-    // every proof, which turns the first request of a session into a 401/retry
-    // handshake. Whether to do that is a deployment's choice, and both answers
-    // are worth being able to try — a wallet that handles the happy path but
-    // not the handshake is a wallet that works until it meets a server that
-    // asks.
-    //
-    // So it is a runtime switch: a test, or somebody reading the page, can turn
-    // it on, watch the retry, and turn it off again without restarting the
-    // service. GET reports; POST {"required": true|false} sets — the runtime
-    // setting `oauth2.dpopNonceRequired` since 2026-09-12 (below). Listed on
-    // /admin/sts-metadata as non-spec, because it is.
-    // -------------------------------------------------------------------------
-    app.get('/dpop/nonce-mode', demoOnly, function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (read).");
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (read).");
-    });
-
-    // -------------------------------------------------------------------------
-    // TWO THINGS CHANGED ABOUT THE WRITE ON 2026-09-12.
-    //
-    // **IT IS PER TRUST REALM.** It set one switch for the whole process, so a
-    // test turning nonces on at /realm/acme/dpop/nonce-mode demanded them of
-    // every client of every other realm. It writes `oauth2.dpopNonceRequired`
-    // now, which lands on the realm it is reached in — see
-    // `dpop.setNonceMode()`.
-    //
-    // **IT IS A TEST CONTROL AND PRODUCT MODE DOES NOT HAVE IT.** Anybody who
-    // can reach the port could change a security policy of the authorization
-    // server and empty its replay cache in the same call. In product the
-    // setting is still changeable, through the two doors that already
-    // require a credential — /admin/oauth2 and POST /admin-api/config/set.
-    //
-    // **AND SINCE #585 (2026-10-12) NEITHER HALF IS THERE IN PRODUCT**: both
-    // routes carry `common/app.js`'s `demoOnly` mark and a product realm
-    // answers as for a path nothing is registered on. The write answered 403
-    // `STS-OAUTH-0178` (retired) until then, and the READ stayed open on the
-    // argument that a client needs the policy to talk to this server — which
-    // RFC 9449 section 8 already gives it: a server demanding a nonce says so
-    // with `use_dpop_nonce` and the nonce itself, on the request that lacked
-    // one. A read nobody can act on except by retrying was a convenience for a
-    // test, so it went with the write.
-    // -------------------------------------------------------------------------
-    app.post('/dpop/nonce-mode', demoOnly, function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (write).");
-      const body = parseBody(req);
-      // Only an explicit boolean, so a typo cannot silently leave the switch in
-      // a state nobody chose: a test that means to turn nonces OFF and leaves
-      // them on makes every later section in the run fail for an invisible
-      // reason.
-      const wanted = body.required;
-      if (wanted !== true && wanted !== false && wanted !== 'true' &&
-          wanted !== 'false') {
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused.");
-        errorCodes.mark(res, 'STS-OAUTH-0179');
-        return self.oauthError(res, 400, 'invalid_request',
-          'Send {"required": true} or {"required": false}.');
-      }
-      try {
-        dpop.setNonceMode(wanted === true || wanted === 'true');
-      } catch (e) {
-        log.error(errorCodes.tag('STS-OAUTH-0180') + 'oauth2: the DPoP nonce ' +
-                                                     'switch could not be ' +
-                                                     'written: ' +
-                  e.message);
-        log.debug("Leaving the DPoP nonce-mode endpoint. The setting " +
-                  "refused it.");
-        errorCodes.mark(res, 'STS-OAUTH-0180');
-        return self.oauthError(res, 500, 'server_error', e.message);
-      }
-      // A change of policy invalidates nothing already issued, but the replay
-      // cache holds this realm's proofs and a test that has just been refusing
-      // proofs on purpose wants a clean slate for the next section.
-      dpop.forgetProofs();
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (write). required=" +
-                dpop.nonceModeOn());
-    });
-
     // -------------------------------------------------------------------------
     // THE WRAPPER, AND IT IS NOT CEREMONY.
     //

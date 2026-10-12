@@ -668,8 +668,8 @@ const REQUIREMENTS = [
           'window a proof is accepted in, and a repeat is refused — so a ' +
           'proof captured off the wire cannot be used a second time even ' +
           'within its own freshness window. Turning on the server-supplied ' +
-          'nonce (/dpop/nonce-mode) narrows that window to one this server ' +
-          'chose. A certificate binding needs no replay defence of its own: ' +
+          'nonce (the per-realm setting oauth2.dpopNonceRequired) narrows ' +
+          'that window to one this server chose. A certificate binding needs no replay defence of its own: ' +
           'the proof is the TLS handshake, which cannot be replayed without ' +
           'the private key.' },
 

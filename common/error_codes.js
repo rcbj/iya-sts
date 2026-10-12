@@ -6890,11 +6890,13 @@ const CODES = [
     spec: '', retired: true },
   { code: 'STS-OAUTH-0179',
     summary: 'POST /dpop/nonce-mode carried something other than ' +
-      'required=true or required=false.',
-    spec: 'invalid_request (HTTP 400)' },
+      'required=true or required=false. Retired by #597: the endpoint is ' +
+      'gone, and oauth2.dpopNonceRequired is set like any other setting.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0180',
-    summary: 'The DPoP nonce setting could not be written.',
-    spec: 'server_error (HTTP 500)' },
+    summary: 'The DPoP nonce setting could not be written through POST ' +
+      '/dpop/nonce-mode. Retired by #597, with the endpoint.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0181',
     summary: 'The directory threw while a person\'s profile claims were ' +
       'being read; the claims were omitted from what was issued.',

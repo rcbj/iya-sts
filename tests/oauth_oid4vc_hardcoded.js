@@ -25,9 +25,9 @@
 // reset, never by writing the old value back).
 //
 // The ENDPOINT half cannot be: the password grant, the ID Token and UserInfo
-// claims, `/dpop/nonce-mode`, `/oauth2/register`, the Transaction Code attempt
-// limit, `/issuer/offer` sending a pre-authorized offer to the portal and
-// `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
+// claims, `/admin-api/config/set`'s DPoP nonce setting, `/oauth2/register`,
+// the Transaction Code attempt limit, `/issuer/offer` sending a
+// pre-authorized offer to the portal and `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
 // whole protocol stack into `run.js`'s one process would register every route
 // on the shared app ahead of every later file — a test whose side effects land on somebody else's file,
 // which tests/CLAUDE.md records happening twice. So a child loads
@@ -227,10 +227,12 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
 
     // ======================================================================
-    // 3. POST /dpop/nonce-mode — NOT IN PRODUCT, DEVELOPMENT IS PER REALM
+    // 3. THE DPoP NONCE IS A PER-REALM SETTING, AND ONLY THAT (#597)
     // ======================================================================
-    // A demonstration since #585: a product realm answers as for a path
-    // nothing is registered on, both halves of it.
+    // `/dpop/nonce-mode` was a test control (a demonstration since #585, so
+    // a product realm answered it as an unrouted path). #597 deleted it:
+    // `oauth2.dpopNonceRequired` is written through POST
+    // /admin-api/config/set, behind a credential, in either mode.
     r = await request(port, 'POST', '/dpop/nonce-mode',
                       { json: { required: true } });
     const productRead = await request(port, 'GET', '/dpop/nonce-mode');
@@ -240,23 +242,40 @@ function childMain() {
          '3a. PRODUCT: /dpop/nonce-mode is not there, by either method',
          r.status + ' ' + productRead.status + ' ' + r.text.slice(0, 160));
     config.clearOverride('global.mode');
-
     r = await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
                       { json: { required: true } });
-    const inRealm = await request(port, 'GET',
-                                  '/realm/hcrealm/dpop/nonce-mode');
-    const inDefault = await request(port, 'GET', '/dpop/nonce-mode');
-    note(r.status === 200 && inRealm.json &&
-         inRealm.json.nonces_required === true,
-         '3b. development: the switch turns nonces on in the realm it was ' +
-         'reached in',
-         inRealm.text.slice(0, 120));
-    note(inDefault.json && inDefault.json.nonces_required === false,
-         '3c. and NOT in the default realm — it was one switch for the whole ' +
-         'process',
-         inDefault.text.slice(0, 120));
-    await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
-                  { json: { required: false } });
+    note(r.status === 404 &&
+         /Cannot POST \/dpop\/nonce-mode/.test(r.text),
+         '3b. development: nor in a development realm — the endpoint is ' +
+         'deleted, not hidden',
+         r.status + ' ' + r.text.slice(0, 160));
+
+    // The setting, through the management API's own door. The open API
+    // (`adminApi.authRequired` off, development only) stands in for the
+    // access token the suite's jobs carry; what is asserted is where the
+    // write lands, not the gate.
+    const dpop = require(ROOT + '/oauth-oidc/dpop');
+    const inRealmNow = function () {
+      return realms.run(realms.get('hcrealm'), function () {
+        return dpop.state().nonces_required;
+      });
+    };
+    config.setOverride('adminApi.authRequired', false);
+    r = await request(port, 'POST', '/realm/hcrealm/admin-api/config/set',
+                      { json: { key: 'oauth2.dpopNonceRequired',
+                                value: 'true' } });
+    note(r.status === 200 && inRealmNow() === true,
+         '3c. POST /admin-api/config/set turns nonces on in the realm it ' +
+         'was reached in',
+         r.status + ' ' + r.text.slice(0, 160));
+    note(dpop.state().nonces_required === false,
+         '3d. and NOT in the default realm — it was one switch for the ' +
+         'whole process until 2026-09-12',
+         JSON.stringify(dpop.state().nonces_required));
+    realms.run(realms.get('hcrealm'), function () {
+      config.clearOverride('oauth2.dpopNonceRequired');
+    });
+    config.clearOverride('adminApi.authRequired');
 
     // ======================================================================
     // 4. RFC 7591 REGISTRATION

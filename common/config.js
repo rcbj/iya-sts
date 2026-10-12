@@ -4736,11 +4736,10 @@ const SETTINGS = [
                  'Require DPoP rows below are what make them mandatory). PER ' +
                  'TRUST REALM since 2026-09-12 — it was one switch for the ' +
                  'whole process, so a realm turning it on turned it on for ' +
-                 'every other. In development POST /dpop/nonce-mode writes ' +
-                 'this setting for the realm it is reached in; in product ' +
-                 'that endpoint refuses and this row — through /admin/oauth2 ' +
-                 'or POST /admin-api/config/set, both behind a credential — ' +
-                 'is the only way to change it.' },
+                 'every other. This row — on the OAuth 2.0 page\'s DPoP ' +
+                 'settings or through POST /admin-api/config/set, both ' +
+                 'behind a credential — is the only way to change it, in ' +
+                 'either mode.' },
 
   { key: 'oauth2.dpopIatSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof iat window (s)',
