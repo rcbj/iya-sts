@@ -265,6 +265,28 @@ function childMain() {
          '5i. the sign-in rate limit answers 429', last.text);
     config.clearOverride('security.rateLimitPerIdentity');
 
+    // Arming the usernameless passkey ceremony is counted per address
+    // (2026-10-12): it names nobody, and every arm mints a challenge.
+    config.setOverride('security.rateLimitPerAddress', 2);
+    at = begin();
+    const pk = {};
+    opened = await screen.open({ port: port, jar: pk, at: at });
+    const arms = [];
+    for (let i = 0; i < 4; i++) {
+      arms.push(await screen.passkeyOptions({ port: port, jar: pk,
+                                              opened: opened }));
+    }
+    const lastArm = arms[arms.length - 1];
+    note(arms[0].apiStatus === 200 && lastArm.apiStatus === 429 &&
+         lastArm.next === 'refused' && codeFree(lastArm.text) &&
+         /^\d+$/.test(String(lastArm.headers &&
+                              lastArm.headers['retry-after'] || '')),
+         '5i-ii. arming the passkey ceremony is rate limited per address: ' +
+         '429 with Retry-After', arms.map(function (a) {
+           return a.apiStatus;
+         }).join(',') + ' ' + lastArm.text);
+    config.clearOverride('security.rateLimitPerAddress');
+
     // A second factor: an authenticator app.
     ldap.createUser('aa-tom', { invent: false });
     const begun = credentials.beginTotpEnrolment('aa-tom', {});

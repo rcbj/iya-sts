@@ -1060,8 +1060,8 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  passkeyOptions(req: Json, res: Json, op: Operation): void {
-    const { log, authn, errorCodes } = this.deps;
+  async passkeyOptions(req: Json, res: Json, op: Operation): Promise<void> {
+    const { log, authn, errorCodes, websecurity } = this.deps;
     log.debug("Entering AuthnApi.passkeyOptions().");
     if (this.idOf(req, res) === null || !this.bound(req, res) ||
         !this.bodyOf(req, res, op)) {
@@ -1071,6 +1071,22 @@ class AuthnApi {
     const record = this.pendingOf(req, res);
     if (!record) {
       log.debug("Leaving AuthnApi.passkeyOptions(). Nothing pending.");
+      return;
+    }
+    // EVERY CHALLENGE MINTED IS COUNTED, PER ADDRESS (2026-10-12): a
+    // usernameless ceremony names nobody, so there is no identity bucket,
+    // and each mint writes a challenge into the pending record. A door of
+    // its own (`passkey-options`), so arming ceremonies spends nothing of
+    // the password's budget and the reverse; `security.rateLimitPerAddress`
+    // in `security.rateLimitWindowS`, counted across the cluster.
+    const allowed = await websecurity.attemptShared('passkey-options', req,
+                                                    '');
+    if (!allowed.ok) {
+      errorCodes.mark(res, 'STS-AUTHN-0331');
+      res.set('Retry-After', String(allowed.retryAfterS || 60));
+      authn.answerJson(res, 429, { ok: false, next: 'refused',
+                                   errors: [String(allowed.detail)] });
+      log.debug("Leaving AuthnApi.passkeyOptions(). Rate limited.");
       return;
     }
     const armed = authn.passkeyOptions(req, record);
