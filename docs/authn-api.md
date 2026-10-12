@@ -27,6 +27,7 @@ holds it may act on that sign-in, so it is a bearer value, like the
 | `POST /authn-api/pending/{id}/cancel` | Decline: the application is told `access_denied` |
 | `GET /authn-api/pending/{id}/partners` | The partners an application lets a person choose between |
 | `GET`, `POST /authn-api/password-change/{id}` | A password that must be changed before the sign-in continues |
+| `POST /authn-api/password-change/{id}/start-over` | **Start over**: leave the forced password change without changing anything; answers `next: redirect` to the sign-in screen for the same request |
 
 ## The steps after the screen
 
@@ -49,6 +50,7 @@ bearer value like the pending sign-in's.
 | `POST /authn-api/mfa/{id}/email/send` | Mail a code or link (`kind`); answers `next: stay` |
 | `POST /authn-api/mfa/{id}/email/code` | An emailed code |
 | `POST /authn-api/mfa/{id}/email-link/open` | The mailed link's token (`t`), only in the browser that asked for it |
+| `POST /authn-api/mfa/{id}/start-over` | **Start over**, on every step's page: the step ends with whatever it held (a mailed code, a link, an enrolment in progress), no session is started, and the pending sign-in is put back, so the answer is `next: redirect` to the sign-in screen for the same request. A step that has already ended is refused (400) |
 
 A wrong code, a passkey that does not verify or a rate limit is shown on the
 step's own page, and the step is kept. When the account cannot be signed in
