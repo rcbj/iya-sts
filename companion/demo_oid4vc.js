@@ -124,7 +124,7 @@ class Oid4vcDemo {
     log.debug("Entering Oid4vcDemo.describe().");
     log.debug("Leaving Oid4vcDemo.describe().");
     return { id: "oid4vc", title: "OpenID for Verifiable Credentials",
-             links: [{ href: "/issuer", text: "Mock University — get a " +
+             links: [{ href: "/issuer", text: "Example University — get a " +
                        "digital diploma (OpenID4VCI)" },
                      { href: "/verifier", text: "The Bar Door — present a " +
                        "credential (OpenID4VP)" }] };
@@ -179,8 +179,8 @@ class Oid4vcDemo {
         "\">Offer it</a></td></tr>";
     }).join("");
     const portal = this.sts.publicBase + "/portal/wallet";
-    util.sendHtml(res, 200, util.page("Mock University — digital diploma",
-      "<div class=\"card\"><h1>Mock University</h1><p class=\"sub\">Your " +
+    util.sendHtml(res, 200, util.page("Example University — digital diploma",
+      "<div class=\"card\"><h1>Example University</h1><p class=\"sub\">Your " +
       "diploma, as a verifiable credential, from <code>" +
       esc(meta.credential_issuer || this.sts.publicBase) + "</code>.</p>" +
       "<h2>Into a wallet, through the sign-in</h2><p>An offer that " +
@@ -222,7 +222,7 @@ class Oid4vcDemo {
                   encodeURIComponent(JSON.stringify(offer));
     const offerUri = "openid-credential-offer://?" + query;
     const walletLink = this.walletUrl ? this.walletUrl + "?" + query : "";
-    util.sendHtml(res, 200, util.page("Mock University — your diploma",
+    util.sendHtml(res, 200, util.page("Example University — your diploma",
       "<div class=\"card\"><h1>" + esc(displayName(id, supported[id])) +
       "</h1><p class=\"sub\">A Credential Offer (OpenID4VCI section 4.1) " +
       "with the authorization code grant: your wallet signs you in at the " +

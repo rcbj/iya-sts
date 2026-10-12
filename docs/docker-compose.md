@@ -76,7 +76,7 @@ To check which build a running container is, see
 | `openbao-seed` | this repository's | One-shot, idempotent. Initialises the store, writes the secrets, creates the Transit key `sts-kek`, issues the service its client certificate, and hands each node a single-use start-up token. |
 | `sts` | this repository's (`iyasec/iya-sts`) | The service. It waits until the database is healthy and the seeder has finished. |
 | `xacml-pep` | `iyasec/iya-sts-xacml-pep`, built from `xacml-pep/Dockerfile` | The [remote XACML PEP](remote-pep.md). It is only started with `--profile xacml`. |
-| `companion` | `iya-sts-companion`, built from `companion/` | **Development only.** The click-through demonstrations, played by a separate party in front of the service: a Mock University issuer and a bar-door verifier for OpenID4VC (see [The companion](#the-companion-development-only)). It is only started with `--profile companion`. |
+| `companion` | `iya-sts-companion`, built from `companion/` | **Development only.** The click-through demonstrations, played by a separate party in front of the service: a Example University issuer and a bar-door verifier for OpenID4VC (see [The companion](#the-companion-development-only)). It is only started with `--profile companion`. |
 
 The `sts` container starts as root for three steps:
 

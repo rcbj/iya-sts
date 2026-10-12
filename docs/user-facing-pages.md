@@ -178,7 +178,7 @@ translated too. A reason somebody typed is sent as written. See
 ## The demonstration issuer and verifier (development only)
 
 The service draws no sample issuer or verifier page. A sample credential
-issuer ("Mock University") and a sample verifier ("The Bar Door"), for trying
+issuer ("Example University") and a sample verifier ("The Bar Door"), for trying
 a wallet against this service, are the development
 [companion](docker-compose.md#the-companion-development-only), a separate
 container in front of the service. Until #594 the service drew them itself at
@@ -249,7 +249,7 @@ translation:
 
 - **The embedded protocol debugger**, on its own listener (`debugger.port`). It
   is a separate application from the parent project.
-- **Demonstration pages**: the sample credential issuer ("Mock University")
+- **Demonstration pages**: the sample credential issuer ("Example University")
   and the sample verifier ("The Bar Door") are the development companion's,
   not the service's — see *The demonstration issuer and verifier* above.
 - **Operator and diagnostic views**: the XACML,
