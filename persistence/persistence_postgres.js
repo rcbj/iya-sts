@@ -1497,6 +1497,35 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // socket has no TLS; postgres answers the TLS request on one with "N", and
 // the connection fails, which is the same refusal said by the server.
 //
+// **`verify-ca` AND `verify-full` VERIFY, WHATEVER THE SETTING SAYS (rcbj,
+// #543 round 2, 2026-10-12).** Until then the parameter was stripped and
+// `persistence.databaseTlsRejectUnauthorized` alone decided whether the
+// server's certificate was believed, so a string that said `verify-full`
+// and a setting left at its default (off) dialled an UNAUTHENTICATED
+// server while the string an operator wrote said the opposite — the very
+// "connection string says one thing, the client does another" shape #273
+// removed for encryption, left standing for authentication. Now the two
+// verify modes mean what libpq means by them:
+//
+//   * `verify-ca`   — the chain is verified against this process's trust
+//     anchors and the host name is NOT checked (libpq's verify-ca checks
+//     only that the certificate was issued by a trusted CA);
+//   * `verify-full` — the chain AND the host name are verified.
+//
+// For no sslmode, `require` and `prefer` the setting still decides, both
+// halves together, as it always did. The setting can only ADD verification
+// to those; it can never take it away from a verify mode. A verify mode
+// whose certificate does not verify is a connection `pg` refuses, and at
+// start that is `persistence.start()`'s fatal open, STS-STORE-0006, with
+// node's own reason ("self-signed certificate", "Hostname/IP does not match
+// certificate's altnames") in the message.
+//
+// `verify-ca` needs a `checkServerIdentity` that checks nothing, because
+// node verifies the host name whenever it verifies the chain. A function
+// cannot cross to a thread, so the directory bridge's options carry
+// `hostnameUnchecked` instead and `common/sync_query_thread.ts` puts the
+// function back (`bridgeConnection()`, below).
+//
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
 // logger arrives with create(). `refused` carries why a string cannot be
 // dialled, and each caller throws it, tagged, on its own logger.
@@ -1506,9 +1535,12 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * does.
  *
  * @param url - the connection string
- * @param verifyTls - whether the server's certificate is verified
- * @returns `{ connectionString, ssl, refused }`; `refused` is '' or why the
- * string is not dialled (it would be in the clear, or cannot be told)
+ * @param verifyTls - whether the server's certificate is verified where the
+ * string's `sslmode` does not decide it (none, `require`, `prefer`)
+ * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
+ * `refused` is '' or why the string is not dialled (it would be in the
+ * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
+ * checked of the server's certificate
  */
 function dialOptions(url, verifyTls) {
   const raw = String(url || '');
@@ -1516,7 +1548,8 @@ function dialOptions(url, verifyTls) {
     return { connectionString: '', ssl: undefined,
              refused: 'its sslmode asks for a connection in the clear, ' +
                       'which this service never opens; use ' +
-                      'sslmode=require, or leave sslmode out' };
+                      'sslmode=require, or leave sslmode out',
+             verifyChain: false, verifyHostname: false };
   }
   let parsed = null;
   try {
@@ -1528,19 +1561,43 @@ function dialOptions(url, verifyTls) {
              refused: 'it is not a postgres:// URL (' +
                       (String((e && e.message) || e) || 'not a URL') +
                       '), so whether it would be dialled in the clear ' +
-                      'cannot be told; write it as a URL' };
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
   }
   if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
     return { connectionString: '', ssl: undefined,
              refused: 'it is not a postgres:// URL (' + parsed.protocol +
                       '), so whether it would be dialled in the clear ' +
-                      'cannot be told; write it as a URL' };
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
   }
+  // Read before it is stripped: the verify modes decide verification
+  // themselves (the header). Lower-cased as the refusal above matches.
+  const sslmode = String(parsed.searchParams.get('sslmode') || '')
+    .toLowerCase();
   parsed.searchParams.delete('sslmode');
+  const verifyChain = sslmode === 'verify-ca' || sslmode === 'verify-full' ||
+    !!verifyTls;
+  const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
+  /**
+   * @type {{ rejectUnauthorized: boolean,
+   *          checkServerIdentity?: Function }}
+   */
+  const ssl = { rejectUnauthorized: verifyChain };
+  if (verifyChain && !verifyHostname) {
+    // libpq's verify-ca: the chain, and no host name. Node checks the host
+    // name through this hook whenever it verifies the chain, so answering
+    // "no error" is how the check is left out — and only that check.
+    ssl.checkServerIdentity = function () {
+      return undefined;
+    };
+  }
   return {
     connectionString: parsed.toString(),
-    ssl: { rejectUnauthorized: !!verifyTls },
-    refused: ''
+    ssl: ssl,
+    refused: '',
+    verifyChain: verifyChain,
+    verifyHostname: verifyHostname
   };
 }
 
@@ -2059,15 +2116,25 @@ function create(options) {
                     'persistence: the database connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
   }
+  // The SETTING, passed on to the read pool's own dialOptions() below; what
+  // is actually checked is the dial's, because a verify-mode sslmode
+  // verifies whatever the setting says (the header above dialOptions()).
   const verify = !!options.verifyTls;
   log.info('persistence: the database connection is TLS, and the server ' +
            'certificate is ' +
-           (verify ? 'VERIFIED against this process\'s trust anchors.'
-                   : 'NOT verified — ' +
-                     'persistence.databaseTlsRejectUnauthorized is off, ' +
-                     'which is the honest setting for the self-signed pair ' +
-                     'the compose stack generates. The connection is ' +
-                     'encrypted either way.'));
+           (dial.verifyHostname
+             ? 'VERIFIED, chain and host name, against this process\'s ' +
+               'trust anchors.'
+             : dial.verifyChain
+               ? 'VERIFIED against this process\'s trust anchors, and its ' +
+                 'host name is not checked (sslmode=verify-ca, as libpq ' +
+                 'reads it).'
+               : 'NOT verified — ' +
+                 'persistence.databaseTlsRejectUnauthorized is off and the ' +
+                 'connection string asks for no verify mode, which is the ' +
+                 'honest setting for the self-signed pair the compose ' +
+                 'stack generates. The connection is encrypted either ' +
+                 'way.'));
 
   // ONE DECIDER, AND A FAILED CONNECTION IS WHY.
   //
@@ -4372,8 +4439,19 @@ function create(options) {
 
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
+      const options = readClientOptions();
+      // A function cannot be posted to a thread, and verify-ca's ssl option
+      // carries one (dialOptions()). Said as data instead, and put back by
+      // `common/sync_query_thread.ts`, so the thread checks exactly what
+      // this side's pools check rather than failing to start — or, with the
+      // hook merely dropped, checking a host name verify-ca does not.
+      const ssl = options.ssl;
+      if (ssl && typeof ssl.checkServerIdentity === 'function') {
+        options.ssl = { rejectUnauthorized: ssl.rejectUnauthorized,
+                        hostnameUnchecked: true };
+      }
       log.debug("Leaving bridgeConnection().");
-      return readClientOptions();
+      return options;
     },
 
     // One minted row, same reason.

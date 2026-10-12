@@ -15675,7 +15675,12 @@ const SETTINGS = [
                  'decides only whether the ' +
                  'server is AUTHENTICATED. Turn it on when you point this at ' +
                  'a real database whose certificate chains to something ' +
-                 'NODE_EXTRA_CA_CERTS names.' },
+                 'NODE_EXTRA_CA_CERTS names; it then checks the chain and ' +
+                 'the host name. It decides only for a connection string ' +
+                 'whose sslmode is unset, require or prefer: ' +
+                 'sslmode=verify-full verifies the chain and the host name, ' +
+                 'and sslmode=verify-ca the chain alone (as libpq reads ' +
+                 'them), whatever this says.' },
 
   // -------------------------------------------------------------------------
   // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the

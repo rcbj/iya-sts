@@ -3658,12 +3658,18 @@ const STATUS_PROSE = Object.freeze({
   // `sslmode` was "NOT TLS", and `prefer` was TLS with nothing said about
   // libpq's fallback to plaintext. Since #273 the `sslmode` parameter is
   // STRIPPED and every string that is dialled at all is dialled over TLS, so
-  // no sslmode, `prefer` and `require` are the same connection, and
-  // `verify-ca` / `verify-full` verify nothing by themselves — whether the
-  // certificate is believed is `persistence.databaseTlsRejectUnauthorized`
-  // alone. Each sentence says which of those it is, because an operator who
-  // wrote `verify-full` and reads only "TLS, sslmode=verify-full" would
-  // believe the server authenticated when it is not.
+  // no sslmode, `prefer` and `require` are the same connection, and whether
+  // its certificate is believed is `persistence.databaseTlsRejectUnauthorized`.
+  // Each sentence says which of those it is, because "encrypted" and
+  // "authenticated" are two answers.
+  //
+  // `verify-ca` AND `verify-full` VERIFY, WHATEVER THE SETTING SAYS (rcbj,
+  // #543 round 2): libpq's meaning, the chain for both and the host name
+  // for `verify-full` only. Until then they verified nothing by themselves
+  // and two sentences here said so, one of them that the server was not
+  // authenticated though the string asked for it; that case no longer
+  // exists, and `verify-ca`'s sentence says the host name is not checked,
+  // because an operator who reads only "verified" would believe it was.
   tlsVerified: 'TLS, sslmode={{sslmode}}; the server certificate is ' +
     'verified against this process\'s trust anchors.',
   tlsUnverified: 'TLS, sslmode={{sslmode}}; the server certificate is NOT ' +
@@ -3686,15 +3692,16 @@ const STATUS_PROSE = Object.freeze({
     'service never does; the server certificate is NOT verified ' +
     '(persistence.databaseTlsRejectUnauthorized is off). The connection is ' +
     'encrypted either way.',
-  tlsVerifyModeVerified: 'TLS, sslmode={{sslmode}}; the server ' +
-    'certificate is verified against this process\'s trust anchors, ' +
-    'because persistence.databaseTlsRejectUnauthorized is on — that ' +
-    'setting decides it here, not the sslmode.',
-  tlsVerifyModeUnverified: 'TLS, sslmode={{sslmode}} — but the server ' +
-    'certificate is NOT verified: this service takes verification from ' +
-    'persistence.databaseTlsRejectUnauthorized, which is off, and not from ' +
-    'the sslmode. The connection is encrypted and the server is not ' +
-    'authenticated.',
+  tlsVerifyFull: 'TLS, sslmode=verify-full; the server certificate is ' +
+    'verified against this process\'s trust anchors and its host name is ' +
+    'checked, as the sslmode asks, whatever ' +
+    'persistence.databaseTlsRejectUnauthorized says.',
+  tlsVerifyCa: 'TLS, sslmode=verify-ca; the server certificate is ' +
+    'verified against this process\'s trust anchors, as the sslmode asks, ' +
+    'whatever persistence.databaseTlsRejectUnauthorized says — but its ' +
+    'host name is NOT checked: verify-ca, as libpq reads it, trusts any ' +
+    'certificate a trusted authority issued. Use verify-full to check the ' +
+    'name as well.',
   refusedClear: 'NOT DIALLED — sslmode={{sslmode}} asks for a connection ' +
     'in the clear, which this service never opens, so it does not start ' +
     'on this connection string.',
@@ -3820,10 +3827,11 @@ function describeDatabase() {
     const parsed = new URL(raw);
     // THE TLS STATE, out of the two places it actually lives. `sslmode` is
     // postgres's own spelling and rides in the connection string; whether the
-    // certificate is BELIEVED is a setting, because `pg` takes that as a TLS
-    // option and not as a URL parameter. Both are reported, because "encrypted"
-    // and "authenticated" are two different answers and a page that gave one
-    // number for them would be the misleading half of a true sentence.
+    // certificate is BELIEVED is the setting, unless the sslmode is a verify
+    // mode, which verifies whatever the setting says (dialOptions()). Both
+    // are reported, because "encrypted" and "authenticated" are two
+    // different answers and a page that gave one number for them would be
+    // the misleading half of a true sentence.
     const sslmode = String(parsed.searchParams.get('sslmode') || '')
       .toLowerCase();
     // WHETHER IT IS ENCRYPTED is whether the driver would DIAL it, asked of
@@ -3846,10 +3854,10 @@ function describeDatabase() {
     } else if (sslmode === 'prefer') {
       tls = verify ? STATUS_PROSE.tlsPreferVerified
                    : STATUS_PROSE.tlsPreferUnverified;
-    } else if (sslmode === 'verify-ca' || sslmode === 'verify-full') {
-      tls = fill(verify ? STATUS_PROSE.tlsVerifyModeVerified
-                        : STATUS_PROSE.tlsVerifyModeUnverified,
-                 { sslmode: sslmode });
+    } else if (sslmode === 'verify-full') {
+      tls = STATUS_PROSE.tlsVerifyFull;
+    } else if (sslmode === 'verify-ca') {
+      tls = STATUS_PROSE.tlsVerifyCa;
     } else {
       tls = fill(verify ? STATUS_PROSE.tlsVerified
                         : STATUS_PROSE.tlsUnverified,
@@ -3873,7 +3881,9 @@ function describeDatabase() {
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
-      verifyCertificate: encrypted && verify,
+      // What the driver checks, out of the same dialOptions() it dials
+      // with, so a verify-mode sslmode counts whatever the setting says.
+      verifyCertificate: encrypted && dial.verifyChain,
       tls: tls
     };
   } catch (err) {

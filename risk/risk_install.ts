@@ -81,7 +81,10 @@
 // which reads the settings through `config.js`
 // and so through the same `CONFIG_FILE` the image names: the URL from
 // `STS_DATABASE_URL` or else `persistence.databaseUrl`, the password through
-// `persistence.databasePasswordProvider`, and `verifyTls`. A password
+// `persistence.databasePasswordProvider`, and `verifyTls`, which
+// `persistence_postgres.create()` reads beside the URL's own `sslmode` — so
+// a `verify-ca` or `verify-full` string verifies here exactly as it does in
+// the service, whatever the setting says (#543 round 2). A password
 // written into `STS_DATABASE_URL` still works where no provider is
 // configured, for a throwaway database. A provider that is configured and
 // cannot be read is STS-RISK-0040, with the provider's own reason.

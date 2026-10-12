@@ -642,9 +642,10 @@ the same settings: the connection string from `STS_DATABASE_URL` or
 `persistence.databaseUrl`, and the password from
 `persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
 another secret store). It also verifies the database server's certificate
-when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
-the service's image it needs nothing else: no password on the command line
-and no `PGPASSWORD`. For a throwaway database with no secret store, a
+when `persistence.databaseTlsRejectUnauthorized` is on, or when the
+connection string says `sslmode=verify-ca` or `verify-full`. So in a
+container of the service's image it needs nothing else: no password on the
+command line and no `PGPASSWORD`. For a throwaway database with no secret store, a
 password written into `STS_DATABASE_URL` still works. If the secret store is
 configured but cannot be read, the loader stops with `STS-RISK-0040` and the
 store's own reason, and imports nothing.

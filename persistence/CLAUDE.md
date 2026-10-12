@@ -1494,6 +1494,26 @@ way.** `/admin/persistence` draws them as one *Transport* row saying both,
 because "encrypted" and "authenticated" are different facts and a single tick
 would have to round one of them.
 
+**`sslmode=verify-ca` AND `verify-full` VERIFY, WHATEVER THE FLAG SAYS (rcbj,
+#543 round 2, 2026-10-12).** Until then `dialOptions()` stripped the
+parameter and the flag alone decided, so a string that said `verify-full`
+beside the default flag dialled an unauthenticated server — the string saying
+one thing and the client doing another, the shape #273 removed for
+encryption and had left standing for authentication. Now the verify modes
+mean what libpq means: `verify-full` checks the chain and the host name,
+`verify-ca` the chain only (a `checkServerIdentity` that checks nothing,
+because node checks the name whenever it checks the chain). The flag decides
+only for no sslmode, `require` and `prefer`, both halves together; it can add
+verification there and never take it from a verify mode. A certificate that
+fails is a connection `pg` refuses, and at start that is the fatal open,
+`STS-STORE-0006`, with node's reason. **A function cannot be posted to a
+thread**, so the directory bridge's options (`bridgeConnection()`) say
+verify-ca as `hostnameUnchecked` and `common/sync_query_thread.ts` puts the
+hook back — dropping it instead would make the thread check a name the pools
+do not, and refuse a server they accept. `dialOptions()` answers
+`verifyChain` and `verifyHostname`, and `describeDatabase()` reports from
+those, so the *Transport* row says what the driver checks.
+
 The flag is READ in `persistence.js` and PASSED IN to the driver, rather than
 read there: that module takes its url and its logger as options and reaches for
 nothing, which is what lets a test construct one against any database without

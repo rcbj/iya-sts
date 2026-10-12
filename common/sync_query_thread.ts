@@ -61,6 +61,21 @@ const port = data.port;
 function pgBackend(connection: Record<string, unknown>): Backend {
   const queries = require('../persistence/directory_queries');
   const pg = require('pg');
+  // sslmode=verify-ca verifies the chain and not the host name, which takes
+  // a `checkServerIdentity` that checks nothing — a function, which cannot
+  // be posted here, so the driver's `bridgeConnection()` says it as
+  // `hostnameUnchecked` and it is put back now (#543 round 2). Without it
+  // node would check the host name, and this thread would refuse a server
+  // the driver's own pools accept.
+  const ssl = connection.ssl as Record<string, unknown> | undefined;
+  if (ssl && ssl.hostnameUnchecked === true) {
+    connection = Object.assign({}, connection, {
+      ssl: { rejectUnauthorized: ssl.rejectUnauthorized,
+             checkServerIdentity: function () {
+               return undefined;
+             } }
+    });
+  }
   let client: any = null;
   let connecting: Promise<any> | null = null;
   function connected(): Promise<any> {
