@@ -177,9 +177,9 @@ function childMain() {
          '1c. a redirect_uri that is not an absolute http(s) URL is ' +
          'refused (STS-VC-0120)', r.status + ' ' + r.text.slice(0, 200));
     const prodCheck = await inDefault(function () {
-      realms.create({ id: 'avprod', name: 'avprod',
-                      overrides: { 'global.mode': 'product' } });
-      return realms.run('avprod', function () {
+      const made = realms.create({ id: 'avprod', name: 'avprod',
+        overrides: { 'global.mode': 'product' } });
+      return realms.run(made.realm, function () {
         const apps = require(ROOT_DIR + '/common/applications');
         const registered = (apps.clientConfigOf('sts-admin-console')
           .redirect_uris || [])[0] || '';

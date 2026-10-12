@@ -383,8 +383,8 @@ class Oid4vcDemo {
       util.sendHtml(res, 200, util.page("The Bar Door — present your " +
         "credential", "<div class=\"card\"><h1>Present your credential" +
         "</h1><p class=\"sub\" id=\"waiting\">Scan this with your wallet. " +
-        "This page looks again every few seconds.</p>" + qr + "</div>"),
-        { refresh: 3 });
+        "This page looks again every few seconds.</p>" + qr + "</div>",
+        { refresh: 3 }));
       log.debug("Leaving Oid4vcDemo.outcome(). Not yet.");
       return;
     }
