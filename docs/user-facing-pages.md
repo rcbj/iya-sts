@@ -51,8 +51,13 @@ forced password change are static pages**: the browser draws them, in its
 own language, from [`/authn-api`](authn-api.md) and sends what was typed
 there, so they need JavaScript; with scripts blocked the page says so. A
 passkey with no username, and the browser fingerprint where a realm turns
-it on, run in the same script. The second-factor pages below them are still
-drawn by the server.
+it on, run in the same script. **Since #572 and #573 the pages after them —
+the second-factor set-up, the passkey, one-time code, recovery code and
+password steps, and the emailed code and link pages — are the same kind of
+page**, drawn from `/authn-api/mfa/{id}`: the passkey ceremony and the
+set-up step's QR code run in the browser, and the link's waiting page checks
+every few seconds. The mailed link still opens `/authn/email-link/open`, and
+opening it spends nothing until Continue is pressed.
 
 ## Consent, hand-offs and signing out
 
