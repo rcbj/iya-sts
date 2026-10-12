@@ -3784,13 +3784,13 @@ function writeForms(stamp) {
       values: { name: "console_ui_claim_" + stamp, value: "yes",
                 set: "userinfo" },
       expect: { text: "console_ui_claim_" + stamp } },
-    { path: "/admin/saml-attributes", button: "Add",
+    { path: "/admin/saml2#saml-tab-attributes", button: "Add",
       values: { name: "console_saml_" + stamp, value: "yes", set: "saml2" },
       expect: { text: "console_saml_" + stamp } },
     { path: "/admin/saml2", button: "Register",
       values: { sp: "urn:console:" + stamp + ":sp" },
       expect: { text: "urn:console:" + stamp + ":sp" } },
-    { path: "/admin/saml11", button: "Register",
+    { path: "/admin/saml2#saml-tab-saml11", button: "Register",
       values: { rp: "urn:console:" + stamp + ":rp",
                 shire: "https://console-" + stamp + ".example.test/acs" },
       expect: { text: "urn:console:" + stamp + ":rp" } },
@@ -3809,7 +3809,7 @@ function writeForms(stamp) {
                 peer: "https://partner.example/" + stamp.slice(0, 8) },
       expect: { text: "fed" + stamp.slice(0, 8),
                 api: "/admin-api/federation" } },
-    { path: "/admin/vc-verifier-config", button: "Add",
+    { path: "/admin/vc#vc-tab-verifier-request", button: "Add",
       values: { claim: "given_name" },
       expect: {} },
     // **THE TRUST DOMAIN IS THE REALM'S, AND HARDCODING `example.org` HERE
@@ -4006,6 +4006,12 @@ async function theHandlersNothingEverPressed(driver) {
 // `data:` link a browser saves with no script — and the page the reader goes
 // back to afterwards must carry no part of it.
 // ---------------------------------------------------------------------------
+// THE PRINCIPALS ARE A TAB OF /admin/kerberos, AND THE ASSERTION SETTINGS A
+// TAB OF /admin/saml2, SINCE THE PROTOCOL PAGES WERE CONSOLIDATED INTO TABS
+// (2026-10-11); the fragment opens the tab.
+const PRINCIPALS_TAB = "/admin/kerberos#kerberos-tab-principals";
+const SAML_ASSERTIONS_TAB = "/admin/saml2#saml-tab-assertions";
+
 async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
   log.debug("Entering theKerberosPrincipalsPageCreatesAndDeletes().");
   log.info("=== /admin/kerberos/principals: create a service key, delete it " +
@@ -4025,13 +4031,12 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
   };
 
   try {
-    const page = await open(driver, root("/admin/kerberos/principals"));
-    check("the Kerberos principals page draws, with no key on it", function () {
+    const page = await open(driver, root(PRINCIPALS_TAB));
+    check("the Kerberos principals tab draws, with no key on it", function () {
       assert.strictEqual(page.status, 200,
-        "/admin/kerberos/principals should answer 200; it answered " +
-        page.status);
-      assert.ok(page.text.indexOf("Kerberos principals") >= 0,
-        "the page should be titled Kerberos principals");
+        PRINCIPALS_TAB + " should answer 200; it answered " + page.status);
+      assert.ok(page.text.indexOf("Kerberos") >= 0,
+        "the page should be the Kerberos page");
       assert.ok(page.text.indexOf("$aesgcm$") < 0,
         "no sealed value may be drawn on the page");
     });
@@ -4039,7 +4044,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     const form = await formIndexFilling(driver, ["spn"]);
     check("the create form is on the page", function () {
       assert.ok(form >= 0,
-        "no form on /admin/kerberos/principals draws an `spn` box, so the " +
+        "no form on " + PRINCIPALS_TAB + " draws an `spn` box, so the " +
         "create control this suite presses has been renamed or has gone");
     });
     await fillAndPress(driver, form, { spn: spn },
@@ -4064,7 +4069,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     });
 
     const listed = await held();
-    const redrawn = await open(driver, root("/admin/kerberos/principals"));
+    const redrawn = await open(driver, root(PRINCIPALS_TAB));
     check("the principal is listed on the page AND through the API, with no " +
           "keytab", function () {
       assert.ok(listed && listed.held === true,
@@ -4099,7 +4104,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
         "GET /admin-api/kerberos/principals must list the previous kvno as " +
         "kept after the rotate: " + JSON.stringify(afterRotate));
     });
-    await open(driver, root("/admin/kerberos/principals"));
+    await open(driver, root(PRINCIPALS_TAB));
     const dropPressed = await pressTheRowButton(driver, spn, ["Drop previous " +
         "versions"]);
     const droppedAt = await driver.getCurrentUrl();
@@ -5560,7 +5565,7 @@ async function theAssertionSettingsPageSaves(driver) {
   log.debug("Entering theAssertionSettingsPageSaves().");
   const KEY = "saml2.assertionLifetimeMin";
 
-  const page = await open(driver, realm("/admin/saml-assertions"));
+  const page = await open(driver, realm(SAML_ASSERTIONS_TAB));
   const form = await formIndexFilling(driver, [KEY]);
   check("/admin/saml-assertions draws the assertion settings", function () {
     assert.ok(form >= 0,
@@ -5579,7 +5584,7 @@ async function theAssertionSettingsPageSaves(driver) {
       "refused: " + outcomeOf(landed, "error"));
   });
 
-  const redrawn = await open(driver, realm("/admin/saml-assertions"));
+  const redrawn = await open(driver, realm(SAML_ASSERTIONS_TAB));
   check("and it redraws the value it was given", function () {
     assert.strictEqual(String(valueOfControl(redrawn, KEY)), wanted,
       "/admin/saml-assertions must redraw " + KEY + " as " + wanted +

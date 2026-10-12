@@ -194,8 +194,11 @@ function api(path) {
 function editorUrl(policy) {
   log.debug("Entering editorUrl().");
   log.debug("Leaving editorUrl().");
-  return realmUrl("/admin/xacml/editor" +
-                  (policy ? "?policy=" + encodeURIComponent(policy) : ""));
+  // THE EDITOR IS A TAB OF /admin/xacml SINCE 2026-10-11 (the protocol
+  // pages were consolidated into tabs); the fragment opens it.
+  return realmUrl("/admin/xacml" +
+                  (policy ? "?policy=" + encodeURIComponent(policy) : "") +
+                  "#xacml-tab-editor");
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +527,11 @@ async function replaced(driver, element, what) {
 // browser will actually POST to — which is the difference a missing realm
 // prefix would show up in.
 const SURVEY = `
+  // THE EDITOR'S OWN PANEL (2026-10-11): /admin/xacml draws its six tabs in
+  // one document, so a form, a notice or a table belongs to the editor only
+  // when it is inside its panel. A form keeps its index among ALL the
+  // document's forms, which is what submitForm() counts by.
+  const root = document.getElementById("xacml-tab-editor") || document.body;
   const forms = Array.from(document.forms).map(function (f, i) {
     const controls = Array.from(f.elements).map(function (e) {
       return {
@@ -551,7 +559,8 @@ const SURVEY = `
     // actually POST to, which is the difference a missing realm prefix shows
     // up in.
     const written = f.getAttribute("action") || "";
-    return { index: i, method: (f.getAttribute("method") || "get").toLowerCase(),
+    return { index: i, inEditor: root.contains(f),
+             method: (f.getAttribute("method") || "get").toLowerCase(),
              resolvedAction: new URL(written, location.href).href,
              nested: !!f.querySelector("form"),
              controls: controls, named: named };
@@ -563,8 +572,8 @@ const SURVEY = `
   return {
     url: location.href,
     title: (document.querySelector("h1") ? document.querySelector("h1").textContent : "").trim(),
-    forms: forms,
-    warnings: Array.from(document.querySelectorAll("details, div"))
+    forms: forms.filter(function (f) { return f.inEditor; }),
+    warnings: Array.from(root.querySelectorAll("details, div"))
       .map(function (e) { return (e.textContent || "").trim(); })
       .filter(function (t) { return t.indexOf("Editing is live") === 0 ||
                                     t.indexOf("This policy does not type-check") === 0 ||
@@ -573,17 +582,17 @@ const SURVEY = `
     // Protocols page now draws an Endpoints table as well
     // (admin-core/protocol_endpoints.ts), and "every tr on the page" counted
     // its rows as elements of a policy — so the empty repository drew "1 row".
-    rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
+    rows: Array.from(root.querySelectorAll("table")).filter(function (t) {
         const th = t.querySelector("tr th");
         return !!th && (th.textContent || "").trim() === "Element";
       }).reduce(function (all, t) {
         return all.concat(Array.from(t.querySelectorAll("tr")).slice(1));
       }, [])
       .map(function (r) { return { element: cell(r, 0), kind: cell(r, 1) }; }),
-    pres: Array.from(document.querySelectorAll("pre")).map(function (p) {
+    pres: Array.from(root.querySelectorAll("pre")).map(function (p) {
       return p.textContent;
     }),
-    bodyText: document.body.textContent
+    bodyText: root.textContent
   };
 `;
 
@@ -931,7 +940,8 @@ async function theTreeIsDrawn(driver) {
     const wrong = page.forms.filter(function (f) {
       return f.method === "post" &&
              f.resolvedAction.indexOf("/admin/signout") < 0 &&
-             f.resolvedAction.indexOf("/realm/" + REALM + "/admin/xacml/") < 0;
+             !new RegExp("/realm/" + REALM + "/admin/xacml(?:[/?#]|$)")
+               .test(f.resolvedAction);
     });
     assert.deepStrictEqual(wrong.map(function (f) {
       return f.resolvedAction;

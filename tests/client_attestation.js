@@ -297,7 +297,8 @@ async function trust(t, world) {
     ['OAuth-Client-Attestation-PoP', popFor(world.instance)]]));
   t.check(byPath.ok, 'an attestation whose x5c leaf the configured anchor ' +
           'issued authenticates the client (section 10.8, HAIP 4.4.1)',
-          byPath);
+          byPath.ok ? '' : (byPath.errorCode + ' ' + byPath.error + ': ' +
+                            byPath.description));
   const selfSigned = await ask(request([
     ['OAuth-Client-Attestation', attestationFor(world, world.instance,
       { x5c: [world.pki.caDer], signWith: world.pki.caKey })],

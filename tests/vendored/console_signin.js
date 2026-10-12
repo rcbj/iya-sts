@@ -640,7 +640,42 @@ async function signInToTheConsole(base, user, log2, options) {
         q = asked;
       }
       const qs = new URLSearchParams(q).toString();
-      return api("GET", operation + (qs ? "?" + qs : ""));
+      const answer = await api("GET", operation + (qs ? "?" + qs : ""));
+      // A COMBINED PAGE IS SEVERAL ANSWERS (2026-10-11): the SAML, Kerberos,
+      // XACML, VC, OAuth and SSF pages draw their tabs from the `compose`
+      // members their page row names, fetched beside the main operation and
+      // merged in under each member's name — what the runtime's draw does.
+      // Without them the renderer throws "missing a tab view".
+      if (known && known.compose && answer.status === 200 && answer.json) {
+        const members = Object.keys(known.compose).filter(function (member) {
+          const when = (known.composeWhen || {})[member];
+          return !when ||
+            (known.composeAlways || []).indexOf(member) >= 0 ||
+            when.some(function (name) {
+              return Object.prototype.hasOwnProperty.call(asked, name);
+            });
+        });
+        const answers = await Promise.all(members.map(function (member) {
+          const params = {};
+          ((known.composeWhen || {})[member] || []).forEach(function (name) {
+            if (Object.prototype.hasOwnProperty.call(asked, name)) {
+              params[name] = asked[name];
+            }
+          });
+          const search = new URLSearchParams(params).toString();
+          return api("GET", known.compose[member] +
+                            (search ? "?" + search : ""));
+        }));
+        const json = Object.assign({}, answer.json);
+        answers.forEach(function (one, index) {
+          assert.ok(one.status === 200 && one.json,
+                    known.compose[members[index]] + " answered " +
+                    one.status + " composing " + path);
+          json[members[index]] = one.json;
+        });
+        return Object.assign({}, answer, { json: json });
+      }
+      return answer;
     },
     // THE READER'S LANGUAGE FOR A BUNDLE A JOB LOADED ITSELF (#539): the
     // shell's `locale` member, asked once, built into that bundle's

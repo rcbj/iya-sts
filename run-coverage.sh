@@ -520,6 +520,13 @@ else
     # sts_credential_signals' EAB key was refused "could not be sealed". The
     # `memory` mode sets this for the same service (tests/tools/modes.sh).
     -e STS_KEYS_SOURCE=generated
+    # THE UID OF PID 1 (2026-10-12): sts_spiffe_broker attests "pid 1, the
+    # service" and selects it by uid, 10001 by default — the service image's
+    # `sts` since #254. Here the service is a child of THIS container, which
+    # runs as root, so pid 1 is root's and the job's default named a uid it
+    # does not have: "the referenced pid 1 is not entitled to an SVID" in the
+    # 2026-10-11 coverage run.
+    -e STS_SPIFFE_BROKER_PID_UID=0
     # The bulk loads' sizes, set above; the compose file's own are 5000.
     -e "BULK_USERS=${BULK_USERS}"
     -e "BULK_GROUPS=${BULK_GROUPS}"
