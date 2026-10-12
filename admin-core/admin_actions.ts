@@ -6459,13 +6459,13 @@ class AdminActions {
       }
       if (!member) {
         log.debug("Leaving AdminActions.rolesAction(). No member named.");
+        // A kind's label carries its article ("a person", "an
+        // application"), so the sentence takes it as it is.
         return this.refused('STS-ADMIN-0545', { ok: false,
-                                                errors: ['`member` ' +
-            'names the ' + kindRow.label +
-                                          ' being ' + (action === 'add-member'
-                                            ? 'added to' : 'removed from') +
-                                     ' the role, and it is required. `role` ' +
-                                          'is the role\'s own name.'] });
+          errors: ['`member` names ' + kindRow.label + ' being ' +
+                   (action === 'add-member' ? 'added to' : 'removed from') +
+                   ' the role, and it is required. `role` is the role\'s ' +
+                   'own name.'] });
       }
       const row = roles.read(name);
       if (!row) {
