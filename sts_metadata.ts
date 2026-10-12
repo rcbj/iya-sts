@@ -4421,10 +4421,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
-    what: 'The only image this service serves: the parent project\'s logo, ' +
-          'resized and reduced to 31 kB, read from disk once at startup. If ' +
-          'it could not be read this answers 404 in its own words rather ' +
-          'than Express\'s, and the front page is drawn without it.' },
+    what: 'The front page\'s logo, `home/assets/logo.png`, read from ' +
+          'disk once at startup. The front page has been a static page ' +
+          'since #579 and names it in `GET /home-api/front` (`logo`), ' +
+          'with `null` when it could not be read; this route then answers ' +
+          '404 in its own words rather than Express\'s.' },
   { path: '/realms', group: 'Service', name: 'The trust realm directory',
     specs: [],
     what: 'NON-SPEC, and deliberately UNGATED. Every trust realm this ' +
