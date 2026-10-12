@@ -9,9 +9,9 @@
 //
 // `/portal/devices` links a security key BUILT INTO a device to that device
 // with a fresh assertion (`link-begin`, then `link-finish`), and it is the one
-// step on that page that runs a script: `/authn/webauthn.js`, the resource the
-// sign-in screen and `/portal/keys` run, sent only while a ceremony is armed
-// (`portal/portal_devices.ts` argues it; the root CLAUDE.md lists the page).
+// step on that page that runs a ceremony — the portal's own since #568, as
+// the sign-in screen's passkey step runs its own in the sign-in surface's
+// bundle since #572 (`/authn/webauthn.js`, which both ran, is gone).
 // `tests/device_enrolment.js` drives the SERVER half of that path in process
 // and `sts_devices.js` drives the JWK proof over HTTP — **and nothing drove
 // the script.** A broken script, a policy that lost `script-src 'self'`, or a

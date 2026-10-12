@@ -458,6 +458,18 @@ async function visitOne(o, id, moduleName, one, jars, action) {
         await moved(driver, here, 15000);
         continue;
       }
+      // AN ADMINISTRATOR'S OFFERED SECOND FACTOR (#246), a page of the
+      // sign-in surface since #572: Ignore, as a person who only wants to
+      // sign in does. A REQUIRED set-up step has no Ignore, and is where
+      // the flow stops (photographed below, as any page that stays).
+      if (/\/authn\/mfa-setup$/.test(path)) {
+        const ignore = await present(driver, "mfa-setup-ignore", 10000);
+        if (ignore) {
+          await ignore.click();
+          await moved(driver, here, 15000);
+          continue;
+        }
+      }
       if (/\/oauth2\/consent$/.test(path)) {
         const allow = await present(driver, "consent-allow", 10000);
         if (allow) {
