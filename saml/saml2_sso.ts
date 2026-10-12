@@ -166,6 +166,7 @@ import xmldom = require('@xmldom/xmldom');
 // project's own signer, so a Response minted here canonicalizes with the same
 // code the debugger uses to check it.
 import stsCrypto = require('../common/crypto');
+import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
