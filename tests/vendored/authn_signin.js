@@ -527,6 +527,53 @@ function responseLike(answer) {
   };
 }
 
+/**
+ * Signs in for a job whose browser keeps its cookies in a PLAIN OBJECT,
+ * name to value (most jobs' own `browser()`): the jar's cookies are sent,
+ * every cookie the walk sets is written back into it (an emptied one
+ * removed), and the answer comes back in the shape such a browser's `go()`
+ * answered — `{ status, location, text }` — read as the form's 303 where
+ * the act names where to go (`responseLike()`'s reading), with the API's
+ * `answer` beside it for what a job asserts about the screen.
+ *
+ * @param {string} base - the service's base, a realm's prefix included
+ * @param {string} where - the screen's address or the pending id
+ * @param {object} fields - the form's fields, `action` among them
+ * @param {object} jar - the cookie jar, name to value; written in place
+ * @param {object} [options] - `ignoreOffer`: ignore an administrator's
+ *   offered second factor (`signIn()`); `headers`
+ * @returns {Promise<object>} `{ status, location, text, answer }`
+ */
+async function signInWithJar(base, where, fields, jar, options) {
+  log.debug("Entering signInWithJar().");
+  const opts = options || {};
+  const cookie = Object.keys(jar).map(function (k) {
+    return k + "=" + jar[k];
+  }).join("; ");
+  const run = opts.ignoreOffer ? signIn : submit;
+  const answer = await run(base, where, fields,
+                           { cookie: cookie, headers: opts.headers });
+  (answer.setCookies || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at <= 0) {
+      return;
+    }
+    const value = pair.slice(at + 1);
+    if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(line))) {
+      delete jar[pair.slice(0, at)];
+    } else {
+      jar[pair.slice(0, at)] = value;
+    }
+  });
+  const like = responseLike(answer);
+  log.debug("Leaving signInWithJar(). " + answer.next);
+  return { status: like.status, location: answer.location || "",
+           text: typeof answer.text === "string" ? answer.text
+                                                 : JSON.stringify(answer.json),
+           answer: answer };
+}
+
 module.exports = {
   pendingIdOf: pendingIdOf,
   foldCookies: foldCookies,
@@ -535,6 +582,7 @@ module.exports = {
   submit: submit,
   signIn: signIn,
   responseLike: responseLike,
+  signInWithJar: signInWithJar,
   passkeyOptions: passkeyOptions,
   changePassword: changePassword,
   bodyFor: bodyFor
