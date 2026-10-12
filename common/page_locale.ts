@@ -34,22 +34,33 @@
 // /authn/language`), since the entry outranks the cookie and a choice that
 // changed nothing would mislead; so 2 and 3 never disagree for long.
 //
-// THE CHOOSER is drawn here, once, for every surface: a real form, a real
-// select and a real submit button, so it works with script blocked — every
-// page it sits on is `script-src 'none'` or names one resource. It posts the
-// language and a RETURN PATH, which `safeReturn()` holds to a local path:
-// anything else becomes `/`, so the endpoint cannot be made an open redirect.
+// THE CHOOSER is drawn here, once, for every server-drawn surface: a real
+// form, a real select and a real submit button, so it works with script
+// blocked — every page it sits on is `script-src 'none'` or names one
+// resource. It posts the language and a RETURN PATH, which `safeReturn()`
+// holds to a local path: anything else becomes `/`, so the endpoint cannot
+// be made an open redirect.
 //
-// A LIBRARY (rule 3): `i18n` and `locale_policy` (leaves), `helpers` and
-// `config`. It reads the request it is handed and requires no route module;
-// the caller passes who the page is for and which application, because only
-// the caller knows.
+// SINCE #570 THE ORDER, THE CHOOSER'S MARKUP AND THE RETURN-PATH RULE ARE
+// `common/web_locale.ts`'s, a `web_` module a static surface's runtime runs
+// in the browser (rcbj's decision 3 on #570: the browser translates). This
+// module reads the inputs off a request and hands them over, so a page drawn
+// here and one drawn by a runtime choose the same language and the same
+// chooser. `shellAttributes()` is what a static surface's shell carries for
+// its runtime: the chooser's cookie is HttpOnly, so the browser is told it.
+//
+// A LIBRARY (rule 3): `i18n` and `locale_policy` (leaves), `helpers`,
+// `config`, `version` and `web_locale`. It reads the request it is handed
+// and requires no route module; the caller passes who the page is for and
+// which application, because only the caller knows.
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
 import config = require('./config');
 import i18n = require('./i18n');
 import localePolicy = require('./locale_policy');
+import version = require('./version');
+import WebLocale = require('./web_locale');
 
 const { log } = helpers;
 
@@ -72,11 +83,6 @@ type Translator = InstanceType<typeof i18n.Translator>;
  * The chooser's cookie.
  */
 const COOKIE = 'sts_lang';
-
-/**
- * The longest return path the chooser keeps.
- */
-const MAX_RETURN = 2048;
 
 /**
  * Which language a page is drawn in, and the language chooser.
@@ -122,30 +128,15 @@ class PageLocale {
   static preferences(req: any, page?: PageFor): string[] {
     log.debug("Entering PageLocale.preferences().");
     const asked = page || {};
-    const out: string[] = [];
-    const add = function (tags: string[]): void {
-      tags.forEach(function (tag) {
-        if (tag && out.indexOf(tag) < 0) {
-          out.push(tag);
-        }
-      });
-    };
-    add(i18n.uiLocales(asked.uiLocales || ''));
-    // THE PERSON'S OWN LANGUAGE — but one the locale policy POPULATED when
-    // their entry was made, and nobody has changed since, is the policy's
-    // choice rather than theirs (rcbj on #539), so it ranks after the
-    // browser's, just ahead of the policy's own default.
-    const own = asked.username ? localePolicy.languageOf(asked.username)
-      : { value: '', populated: false };
-    if (own.value && !own.populated) {
-      add(i18n.acceptLanguage(own.value));
-    }
-    add([i18n.canonical(PageLocale.cookieOf(req, COOKIE))]);
-    add(i18n.acceptLanguage(req && req.headers &&
-                            req.headers['accept-language']));
-    if (own.value && own.populated) {
-      add(i18n.acceptLanguage(own.value));
-    }
+    // The ORDER is `web_locale.ts`'s (#570), which a static surface's runtime
+    // asks in the browser; this reads its inputs off the request.
+    const out = WebLocale.preferences({
+      uiLocales: asked.uiLocales || '',
+      own: asked.username ? localePolicy.languageOf(asked.username)
+                          : { value: '', populated: false },
+      chooser: PageLocale.cookieOf(req, COOKIE),
+      acceptLanguage: req && req.headers && req.headers['accept-language']
+    });
     log.debug("Leaving PageLocale.preferences(). " + out.join(' '));
     return out;
   }
@@ -290,13 +281,10 @@ class PageLocale {
    */
   static safeReturn(value: unknown): string {
     log.debug("Entering PageLocale.safeReturn().");
-    const text = String(value == null ? '' : value);
-    const ok = text.length > 0 && text.length <= MAX_RETURN &&
-      text.charAt(0) === '/' && text.charAt(1) !== '/' &&
-      !/[\\\u0000-\u001f\u007f]/.test(text) &&
-      !/^\/[^/?#]*:/.test(text);
-    log.debug("Leaving PageLocale.safeReturn(). " + (ok ? 'kept' : '/'));
-    return ok ? text : '/';
+    const out = WebLocale.safeReturn(value);
+    log.debug("Leaving PageLocale.safeReturn(). " +
+              (out === '/' && value !== '/' ? '/' : 'kept'));
+    return out;
   }
 
   /**
@@ -343,33 +331,46 @@ class PageLocale {
    */
   static chooser(t: Translator, base: string, returnTo: string): string {
     log.debug("Entering PageLocale.chooser().");
-    const here = PageLocale.safeReturn(returnTo);
-    const current = t.locale.toLowerCase();
-    const offered = i18n.offered();
-    // The current locale is selected; where it is not one of the offered
-    // ones (`es-AR`, read from a browser), the offered locale it is read in
-    // is, by its catalog's language.
-    const exact = offered.filter(function (one) {
-      return one.tag.toLowerCase() === current;
-    })[0];
-    const sameCatalog = offered.filter(function (one) {
-      return i18n.negotiate([one.tag]).catalog === t.negotiated.catalog;
-    })[0];
-    const selected = (exact || sameCatalog || offered[0] || { tag: '' }).tag;
-    const drawn = offered.map(function (one) {
-      return '<option value="' + PageLocale.esc(one.tag) + '" lang="' +
-        PageLocale.esc(one.tag) + '"' +
-        (one.tag === selected ? ' selected' : '') + '>' +
-        PageLocale.esc(one.name) + '</option>';
-    }).join('');
-    const out = '<form class="language-chooser" method="post" action="' +
-      PageLocale.esc('/authn/language') + '">' +
-      '<input type="hidden" name="return" value="' + PageLocale.esc(here) +
-      '"><label for="sts-language">' + t.html('chooser.label') +
-      '</label> <select id="sts-language" name="lang">' + drawn +
-      '</select> <button type="submit">' + t.html('chooser.change') +
-      '</button></form>';
+    // The markup is `web_locale.ts`'s (#570): a static surface's runtime
+    // draws the same form from the same catalogs.
+    const out = WebLocale.chooserHtml(t, i18n.offered(), i18n.parts(),
+                                      returnTo);
     log.debug("Leaving PageLocale.chooser().");
+    return out;
+  }
+
+  /**
+   * The language attributes a static surface's shell carries on its
+   * `<html>` (#570), for its runtime to choose the page's language in the
+   * browser: the build the catalogs are versioned by, the chooser's choice
+   * (the cookie is HttpOnly, so the browser cannot read it), and the locale
+   * policy's default for the surface's application. Each value is
+   * canonical or the build number, so nothing a request sent is drawn back
+   * as it arrived.
+   *
+   * @param req - the request for the shell
+   * @param application - the surface's application, for the policy
+   * @returns `[[name, value], ...]`, for `ShellDocument.document()`
+   */
+  static shellAttributes(req: any,
+                         application: string): Array<[string, string]> {
+    log.debug("Entering PageLocale.shellAttributes().");
+    let lastResort = 'en';
+    try {
+      lastResort = localePolicy.defaultLocaleFor(application || '');
+    } catch (e) {
+      // A policy that cannot be read leaves English as the last resort, as
+      // `translatorFor()` does.
+      log.debug("Caught in PageLocale.shellAttributes(): " +
+                ((e && e.message) || e));
+      lastResort = 'en';
+    }
+    const out: Array<[string, string]> = [
+      ['data-sts-version', String(version.load().version || '')],
+      ['data-sts-lang', i18n.canonical(PageLocale.cookieOf(req, COOKIE))],
+      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en']
+    ];
+    log.debug("Leaving PageLocale.shellAttributes().");
     return out;
   }
 

@@ -114,6 +114,9 @@ const ROWS: Row[] = [
   { prefix: '/crypto', strategy: 'local',
     why: 'the signer generations are the global tier\'s' },
   { prefix: '/docs', strategy: 'local', why: 'static documentation' },
+  { prefix: '/web', strategy: 'local',
+    why: 'the public surfaces\' card and locale catalogs, the same files ' +
+         'in every cell (#570)' },
   { prefix: '/logo.png', strategy: 'local', why: 'a static image' },
   { prefix: '/tos', strategy: 'local', why: 'a static page' },
   { prefix: '/policy', strategy: 'local', why: 'a static page' },

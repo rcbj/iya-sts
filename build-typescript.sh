@@ -108,113 +108,107 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# THE ADMIN CONSOLE'S BROWSER BUNDLE (#446, 2026-10-05).
+# THE STATIC SURFACES' BROWSER BUNDLES: ONE FUNCTION, ONE CALL PER SURFACE
+# (#446, #568; a function since #570).
 #
-# The console is being converted into a static application that draws its
-# pages in the browser from /admin-api's JSON. Its page renderers are the
-# `admin-ui/web_*.ts` modules — the same functions this service draws those
-# pages with until the cutover — and this is where they are bundled into the
-# ONE file a browser loads: `admin-ui/console.bundle.js`, an IIFE whose value
-# is the global `StsConsole` (`admin-ui/web_pages.ts`, the entry).
+# A static surface — the admin console (#446), the user portal (#568), and
+# every public page #569 converts, one bundle per surface (rcbj's decision 2
+# on #570) — draws its pages in the browser with renderers that are `web_*.ts`
+# modules, and `bundle_surface` is where they become files a browser loads:
+#
+#   1. THE RENDERERS ALONE, an IIFE whose value is a global (`StsConsole`,
+#      `StsPortal`), from the surface's page table. No browser loads it; the
+#      tests do (`tests/console_web_bundle.js`, `tests/web_surfaces.js` and
+#      the jobs that draw a page from its answer) — it is what they compare
+#      this process's pages with. NOT minified: a failure is easier to read
+#      out of it in its own shape.
+#   2. THE SURFACE ITSELF: its runtime with every renderer, MINIFIED (rcbj,
+#      2026-10-05), because it is the one generated file a browser downloads
+#      — 1.89 MB to 1.47 MB for the console (461 KB to 420 KB gzipped) on
+#      2026-10-05, most of it prose minifying cannot shorten. The renderers
+#      are string-building functions and nothing reads a function's or a
+#      class's name, so shortening them changes nothing a page does. No
+#      source map: one would carry the sources' comments, which the shipped
+#      image strips (#365).
+#   3. QUEUED FOR PRECOMPRESSION (the last step of this script), so the
+#      surface's server sends it as brotli or gzip without compressing it per
+#      request (`common/shell_document.ts`'s `readFile()` and `sendFile()`).
+#
+# EACH OUTPUT NAME IS EXPLICIT, never derived from the entry: the portal's
+# runtime is `portal/portal-spa.js` and not `portal/portal.js`, which is the
+# server module `portal.ts` compiles to — the bundle once overwrote it.
 #
 # esbuild, as a BUNDLER and nothing else (rcbj's choice on #446): no
-# framework, no transform of what the pages are. It is run FOR A BROWSER, and
-# that is the check: a `web_` module that reaches a server module, or one of
-# node's, does not resolve and the image does not build.
+# framework, no transform of what the pages are. It is run FOR A BROWSER,
+# and that is the check: a `web_` module that reaches a server module, or one
+# of node's, does not resolve and the image does not build. Bundled from the
+# .ts sources, which tsc has just type-checked, and BEFORE the strip below
+# removes them. Like every compiled file it is written inside an image build
+# only, and the strip takes its comments with the rest. esbuild is
+# `tests/package.json`'s, as the compiler is: a build tool the typescript
+# stage installs and the service image never carries.
 #
-# Bundled from the .ts sources, which tsc has just type-checked, and BEFORE
-# the strip below removes them. Like every compiled file it is written inside
-# an image build only, and the strip takes its comments with the rest.
+# A stylesheet needs no step: each surface's is a string a `web_` module
+# holds (`admin-ui/admin.ts`'s `stylesheet()`, `web_portal_kit.ts`'s STYLE,
+# `common/web_card_css.ts` for the public surfaces), served as one line with
+# nothing to remove.
 #
-# esbuild is `tests/package.json`'s, as the compiler is: a build tool the
-# typescript stage installs and the service image never carries.
+# Usage: bundle_surface <label> <pages entry> <global> <pages out>
+#                       <runtime entry> <runtime out>
 # ---------------------------------------------------------------------------
-BUNDLE_ENTRY=admin-ui/web_pages.ts
-BUNDLE_OUT=admin-ui/console.bundle.js
-if [ -f "$BUNDLE_ENTRY" ]; then
-  ESBUILD=tests/node_modules/.bin/esbuild
+ESBUILD=tests/node_modules/.bin/esbuild
+# The bundles are this repository's own source in another shape, so each
+# opens with the two SPDX lines every source file here carries
+# (tests/copyright_notices.js reads them in the tests image).
+BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
+BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
+// SPDX-License-Identifier: BUSL-1.1"
+PACKED_FILES=()
+
+bundle_surface() {
+  local label="$1" pages="$2" global="$3" pages_out="$4" entry="$5" out="$6"
+  if [ ! -f "$pages" ] || [ ! -f "$entry" ]; then
+    echo "build-typescript.sh: no $pages or $entry; $label is not bundled"
+    return 0
+  fi
   if [ ! -x "$ESBUILD" ]; then
     echo "build-typescript.sh: $ESBUILD is missing; install" \
          "tests/package.json first (npm install --prefix tests)." >&2
     exit 1
   fi
-  echo "build-typescript.sh: bundling the admin console for a browser" \
-       "(esbuild $BUNDLE_ENTRY)"
-  # The bundle is this repository's own source in another shape, so it opens
-  # with the two SPDX lines every source file here carries
-  # (tests/copyright_notices.js reads them in the tests image).
-  BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
-  BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
-// SPDX-License-Identifier: BUSL-1.1"
-  "$ESBUILD" "$BUNDLE_ENTRY" --bundle --platform=browser --format=iife \
-    --global-name=StsConsole --target=es2022 --charset=ascii \
+  echo "build-typescript.sh: bundling $label for a browser (esbuild $entry)"
+  "$ESBUILD" "$pages" --bundle --platform=browser --format=iife \
+    --global-name="$global" --target=es2022 --charset=ascii \
     --legal-comments=none --log-level=warning \
-    --banner:js="$BUNDLE_BANNER" --outfile="$BUNDLE_OUT"
-  if [ ! -s "$BUNDLE_OUT" ]; then
-    echo "build-typescript.sh: esbuild wrote no $BUNDLE_OUT" >&2
-    exit 1
-  fi
-  # AND THE CONSOLE ITSELF (#446, step 5): `admin-ui/console.js`, the
-  # runtime (`web_runtime.ts`, started by `web_console.ts`) with every
-  # renderer, the shell and the form table in one file. `console.bundle.js`
-  # above stays, the renderers alone under a global, because that is what
-  # `tests/console_web_bundle.js` compares this process's pages with.
-  #
-  # **MINIFIED (rcbj, 2026-10-05)**, because it is the one generated file a
-  # browser downloads: whitespace and syntax compacted and local names
-  # shortened (`--minify`): 1.89 MB to 1.47 MB (461 KB to 420 KB gzipped)
-  # on 2026-10-05 — most of it is the pages' own prose, which minifying
-  # cannot shorten. The renderers are string-building functions and nothing
-  # reads a function's or a class's name, so shortening them changes nothing
-  # a page does. No source map: one would carry the sources' comments, which
-  # the shipped image strips (#365).
-  # `console.bundle.js` above is NOT minified: no browser loads it, and the
-  # tests that do are easier to read a failure out of in its own shape.
-  # The stylesheet (`/admin/console.css`) needs no step: `stylesheet()`
-  # writes it as one line with no whitespace or comments to remove.
-  CONSOLE_ENTRY=admin-ui/web_console.ts
-  CONSOLE_OUT=admin-ui/console.js
-  "$ESBUILD" "$CONSOLE_ENTRY" --bundle --platform=browser --format=iife \
+    --banner:js="$BUNDLE_BANNER" --outfile="$pages_out"
+  "$ESBUILD" "$entry" --bundle --platform=browser --format=iife \
     --target=es2022 --charset=ascii --legal-comments=none --minify \
-    --log-level=warning --banner:js="$BUNDLE_BANNER" --outfile="$CONSOLE_OUT"
-  if [ ! -s "$CONSOLE_OUT" ]; then
-    echo "build-typescript.sh: esbuild wrote no $CONSOLE_OUT" >&2
-    exit 1
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# AND THE USER PORTAL (#568), on the console's pattern and for its reasons:
-# `portal/portal.bundle.js`, the renderers alone under the global
-# `StsPortal` (`web_portal_pages.ts`), which `tests/portal_web_bundle.js`
-# draws every page with; and `portal/portal-spa.js`, the runtime with every
-# renderer, MINIFIED, which is what a browser loads at `/portal/portal.js`.
-# On disk it is NOT `portal/portal.js`: that is the server module `portal.ts`
-# compiles to, and the bundle once overwrote it.
-# ---------------------------------------------------------------------------
-PORTAL_PAGES=portal/web_portal_pages.ts
-if [ -f "$PORTAL_PAGES" ]; then
-  ESBUILD=tests/node_modules/.bin/esbuild
-  BUNDLE_OWNER="2026 Iya CyberSecurity Solutions, LLC"
-  BUNDLE_BANNER="// SPDX-FileCopyrightText: ${BUNDLE_OWNER}
-// SPDX-License-Identifier: BUSL-1.1"
-  echo "build-typescript.sh: bundling the user portal for a browser" \
-       "(esbuild portal/web_portal.ts)"
-  "$ESBUILD" "$PORTAL_PAGES" --bundle --platform=browser --format=iife \
-    --global-name=StsPortal --target=es2022 --charset=ascii \
-    --legal-comments=none --log-level=warning \
-    --banner:js="$BUNDLE_BANNER" --outfile=portal/portal.bundle.js
-  "$ESBUILD" portal/web_portal.ts --bundle --platform=browser --format=iife \
-    --target=es2022 --charset=ascii --legal-comments=none --minify \
-    --log-level=warning --banner:js="$BUNDLE_BANNER" \
-    --outfile=portal/portal-spa.js
-  for out in portal/portal.bundle.js portal/portal-spa.js; do
-    if [ ! -s "$out" ]; then
-      echo "build-typescript.sh: esbuild wrote no $out" >&2
+    --log-level=warning --banner:js="$BUNDLE_BANNER" --outfile="$out"
+  local one
+  for one in "$pages_out" "$out"; do
+    if [ ! -s "$one" ]; then
+      echo "build-typescript.sh: esbuild wrote no $one" >&2
       exit 1
     fi
   done
-fi
+  PACKED_FILES+=("$out")
+}
+
+# THE ADMIN CONSOLE (#446): `admin-ui/console.bundle.js` (`StsConsole`, the
+# entry `web_pages.ts`) and `admin-ui/console.js` (`web_runtime.ts`, started
+# by `web_console.ts`), served at `/admin/console.js`.
+bundle_surface "the admin console" admin-ui/web_pages.ts StsConsole \
+  admin-ui/console.bundle.js admin-ui/web_console.ts admin-ui/console.js
+
+# THE USER PORTAL (#568): `portal/portal.bundle.js` (`StsPortal`,
+# `web_portal_pages.ts`) and `portal/portal-spa.js` (`web_portal.ts`), served
+# at `/portal/portal.js`.
+bundle_surface "the user portal" portal/web_portal_pages.ts StsPortal \
+  portal/portal.bundle.js portal/web_portal.ts portal/portal-spa.js
+
+# A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
+# row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
+# surfaces*).
 
 if [ "$STRIP" = true ]; then
   # The list is taken BEFORE anything is deleted, so the count is honest.
@@ -229,7 +223,7 @@ if [ "$STRIP" = true ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# THE CONSOLE'S SCRIPT, PRECOMPRESSED (rcbj, 2026-10-05). `admin-ui/
+# EVERY SURFACE'S SCRIPT, PRECOMPRESSED (rcbj, 2026-10-05). `admin-ui/
 # console.js.br` (brotli, quality 11) and `console.js.gz` (gzip, level 9) are
 # written beside it, LAST — after the comment strip above, which rewrites the
 # script, so each is the script exactly as it is served. `AdminConsole`
@@ -237,12 +231,12 @@ fi
 # Accept-Encoding`; nothing is compressed per request for this file, which is
 # the one large thing a browser downloads (1.47 MB; 322 KB as brotli and
 # 419 KB as gzip on 2026-10-05).
-# Only the console's and the portal's own scripts (#568, the same step) are
-# compressed: an /admin-api, /account-api or protocol
+# Every surface's runtime `bundle_surface` queued is compressed (#568, #570),
+# and nothing else: an /admin-api, /account-api or protocol
 # answer often carries a secret beside text the caller chose, which is what
 # BREACH reads through compression.
 # ---------------------------------------------------------------------------
-for PACKED in admin-ui/console.js portal/portal-spa.js; do
+for PACKED in ${PACKED_FILES[@]+"${PACKED_FILES[@]}"}; do
 if [ -f "$PACKED" ]; then
   PACKED="$PACKED" node -e '
     const fs = require("fs");
