@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "每次繫結都會成功——任何 DN、任何密碼，包括匿名繫結——除了字面密碼 \"invalid\"，它會以 LDAP_INVALID_CREDENTIALS (49) 回應，讓負面測試有東西可以失敗"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "只有人員可以繫結，且只能在 LDAPS 636 上繫結，密碼會對照其項目上經雜湊的 userPassword 驗證。匿名繫結 (48)、389 上的任何繫結 (13)、空白密碼 (53)、不是人員的 DN (49)，以及超過失敗繫結次數上限的 DN 或位址 (53)，都會在讀取密碼之前遭到拒絕；錯誤的密碼以及字面密碼 \"invalid\" 則為 LDAP_INVALID_CREDENTIALS (49)"
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "無。不強制任何 objectClass，也不依語法檢查任何屬性，因此項目可攜帶用戶端送來的任何屬性。真正的目錄會拒絕其中大部分。"
@@ -1212,8 +1216,8 @@
     "text": "聯合夥伴對自己的稱呼——外部身分識別提供者的 entityID，或在關係使用 OpenID Connect 時其簽發者識別碼。「關係不在這裡」：端點、憑證與屬性對應位於 ou=federations 之下，那才是 /federation/acs/{id} 實際驗證所依據的（請參閱 federation/CLAUDE.md）。此項目是作為「當事方」的夥伴，此屬性是它使用的名稱——因此此處的值不會與任何人建立聯合，這是本服務中這句話真正具有約束力的唯一地方。"
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "目錄用戶端在 389 或 LDAPS 636 上繫結所用的 DN。「此處每次繫結都會成功」——任何 DN、任何密碼、匿名皆然——因此沒有任何東西會寫入它，也沒有任何東西會讀取它；它是營運者記錄應用程式預期使用哪個認證的地方，與該應用程式的其他資訊放在一起。"
+    "en": "f1e68cbe5820e3d4",
+    "text": "「目錄用戶端在 389 或 LDAPS 636 上繫結所用的 DN」。沒有任何東西會寫入它，也沒有任何東西會讀取它：在開發模式下「每次繫結都會成功」——任何 DN、任何密碼、匿名皆然——而在產品模式下只有人員可以繫結，因此應用程式改為透過 SCIM 讀取目錄。它是營運者記錄應用程式預期使用哪個認證的地方，與該應用程式的其他資訊放在一起。"
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",

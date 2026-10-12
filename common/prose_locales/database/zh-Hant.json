@@ -47,6 +47,14 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS，sslmode=prefer——僅透過 TLS 連線：對於 prefer，libpq 會退回為明文連線，而本服務絕不這麼做；伺服器憑證「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉）。無論如何連線都是加密的。"
   },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS，sslmode=verify-full；依該 sslmode 的要求，伺服器憑證會以此程序的信任錨點驗證，並檢查其主機名稱，不論 persistence.databaseTlsRejectUnauthorized 如何設定。"
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS，sslmode=verify-ca；依該 sslmode 的要求，伺服器憑證會以此程序的信任錨點驗證，不論 persistence.databaseTlsRejectUnauthorized 如何設定——但「不」檢查其主機名稱：依 libpq 的解讀，verify-ca 信任受信任機構所簽發的任何憑證。若也要檢查名稱，請使用 verify-full。"
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "「不連線」——sslmode={{sslmode}} 要求明文連線，而本服務絕不開啟這種連線，因此不會以此連線字串啟動。"

@@ -159,6 +159,10 @@
     "en": "066dcdbbf97f711a",
     "text": "已註冊而非出示的證書——RFC 7523 金鑰的 x5c、RFC 7522 證書、fedSigningCertificate 或聯盟夥伴金鑰的 x5c、oid4vp.trustedIssuerCertificates 中的證書——在用來驗證簽章時會以相同方式檢查，其簽發者從其自身的 caIssuers 地址擷取。沒有證書的裸金鑰沒有可檢查的內容，並會如此回報。"
   },
+  "crypto.families.user-portal.signs": {
+    "en": "9febb36f585ca159",
+    "text": "不簽發任何東西。入口網站不產生權杖、斷言或證書——它變更認證資料，而非產生認證資料。它在瀏覽器中的執行階段只簽署一樣東西：每次呼叫 `/account-api` 以及在權杖端點時附上的 RFC 9449 DPoP 證明（ES256），使用 WebCrypto 為該次頁面載入產生的不可匯出 P-256 金鑰。"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "五種存取權杖格式，其中三種不是 JWT。jwt-signed 經過與此處所有其他 JWT 相同的簽署器，其標頭 `typ` 為 gnap-at+jwt（#157）；biscuit 以領域的 Ed25519 金鑰簽署（Biscuit 本身的區塊簽章）；ZCAP-LD 能力攜帶 gnap.zcapCryptosuite 所指名套件的 Data Integrity 證明——預設為 eddsa-jcs-2022，搭配領域的後量子金鑰時為 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或為相容性而使用 Ed25519Signature2020；macaroon 是以每個資源伺服器衍生的金鑰建立的 HMAC-SHA256 鏈。當客戶端實例要求時，它也會以 RFC 9421 簽署 HTTP 回應。"
@@ -260,8 +264,8 @@
     "text": "凡記錄 SVID 之處，皆對其 DER 計算 SHA-256；以及證書簽章本身的摘要，它隨金鑰類型而定。"
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "RFC 7644 section 2 所列六種方案中任一種的認證資料，而六種中有兩種是真正驗證的：HTTP Digest 以設定的密碼計算回應，HOBA 簽章則對照客戶端註冊的公開金鑰檢查。其他四種只是閘門——除了某一個密碼之外，任何密碼都能通過 Basic，而 OAuth 方案只需要本服務簽發、帶有 `scim:read` 或 `scim:write` 的權杖。"
+    "en": "90704e4d59344987",
+    "text": "RFC 7644 section 2 所列六種方案中任一種的認證資料。OAuth 方案需要本服務簽發、帶有 `scim:read` 或 `scim:write` 的權杖，HOBA 簽章則對照客戶端註冊的公開金鑰檢查。在「開發」模式下，HTTP Digest 以唯一設定的密碼計算回應，而除了某一個密碼之外，任何密碼都能通過 Basic；在「產品」模式下，Basic 對照該人員經雜湊的 `userPassword` 驗證密碼，且不提供 Digest。"
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

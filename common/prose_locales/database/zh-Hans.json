@@ -47,6 +47,14 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS，sslmode=prefer——仅通过 TLS 连接：对于 prefer，libpq 会回退为明文连接，而本服务从不这样做；服务器证书“未经验证”（persistence.databaseTlsRejectUnauthorized 已关闭）。无论哪种情况，连接都是加密的。"
   },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS，sslmode=verify-full；按照该 sslmode 的要求，服务器证书依据此进程的信任锚进行验证，并检查其主机名，无论 persistence.databaseTlsRejectUnauthorized 如何设置。"
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS，sslmode=verify-ca；按照该 sslmode 的要求，服务器证书依据此进程的信任锚进行验证，无论 persistence.databaseTlsRejectUnauthorized 如何设置——但“不”检查其主机名：按照 libpq 的理解，verify-ca 信任受信任机构签发的任何证书。若要同时检查名称，请使用 verify-full。"
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "“不连接”——sslmode={{sslmode}} 要求明文连接，而本服务从不打开这种连接，因此不会使用此连接字符串启动。"

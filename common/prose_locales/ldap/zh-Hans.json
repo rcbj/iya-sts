@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "每次绑定都会成功——任何 DN、任何密码，包括匿名绑定——除了字面密码 \"invalid\"，它会以 LDAP_INVALID_CREDENTIALS (49) 应答，以便负面测试有可以失败的东西"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "只有人员可以绑定，只能在 LDAPS 636 上绑定，并且密码对照其条目上经过哈希的 userPassword 验证。匿名绑定 (48)、389 上的任何绑定 (13)、空密码 (53)、不是人员的 DN (49) 以及超过失败绑定次数上限的 DN 或地址 (53) 都会在读取密码之前被拒绝；错误的密码以及字面密码 \"invalid\" 返回 LDAP_INVALID_CREDENTIALS (49)"
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "无。不强制任何 objectClass，也不按语法检查任何属性，因此条目可以携带客户端发送的任何属性。真正的目录会拒绝其中的大部分。"
@@ -1212,8 +1216,8 @@
     "text": "联合伙伴对自己的称呼——外部身份提供方的 entityID，或者在关系使用 OpenID Connect 时为其颁发者标识符。关系本身不在这里：端点、证书和属性映射位于 ou=federations 之下，/federation/acs/{id} 实际上是针对它们进行验证的（参见 federation/CLAUDE.md）。此条目是作为一方的伙伴，而此属性是它使用的名称——因此这里的值不会与任何人建立联合，而这是本服务中这句话真正有分量的唯一地方。"
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "目录客户端在 389 或 LDAPS 636 上绑定所用的 DN。这里的每次绑定都会成功——任何 DN、任何密码、匿名——因此永远不会有东西写入它，也永远不会有东西读取它；这是操作员记录某个应用预期使用哪个凭据的地方，与该应用的其他信息放在一起。"
+    "en": "f1e68cbe5820e3d4",
+    "text": "“目录客户端在 389 或 LDAPS 636 上绑定所用的 DN”。永远不会有东西写入它，也永远不会有东西读取它：在开发模式下“每次绑定都会成功”——任何 DN、任何密码、匿名——而在产品模式下只有人员可以绑定，因此应用改为通过 SCIM 读取目录。这是操作员记录某个应用预期使用哪个凭据的地方，与该应用的其他信息放在一起。"
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",

@@ -552,12 +552,12 @@
     "text": "CA 私钥存放位置"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "无。门户不签发任何令牌、断言或证书——它更改凭据，而不是铸造凭据。"
+    "en": "9febb36f585ca159",
+    "text": "不签发任何东西。门户不铸造任何令牌、断言或证书——它更改凭据，而不是铸造凭据。它在浏览器中的运行时只签名一样东西：每次调用 `/account-api` 以及在令牌端点时附带的 RFC 9449 DPoP 证明（ES256），使用 WebCrypto 为该次页面加载生成的不可导出 P-256 密钥。"
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "所出示的密码，对照此人自己条目上的 scrypt 哈希；以及激活令牌，对照已签发令牌的 scrypt 哈希。两种比较都通过 common/crypto.js 以恒定时间进行——任何一方逐字节提前返回都会构成计时预言机。WebAuthn 断言也会被验证，但由 authn/webauthn.js 负责，那里是该仪式所在之处。"
+    "en": "8a095d27cbed0ab1",
+    "text": "“每一次 `/account-api` 调用”，都在其关卡处验证（account-api/account_api.ts）：访问令牌是 RFC 9068 `at+jwt`，依据“本”领域的签名密钥（任一代）验证，检查其颁发者和受众，并以关卡验证的证明匹配其 DPoP 绑定——绝不作为 Bearer 接受。它所指名的那个人是它唯一操作的账户。此外，“所出示的密码”（更改密码时会重新证明当前密码）对照此人自己条目上的 scrypt 哈希验证；“激活链接或密码重置链接”的令牌对照已签发令牌的 scrypt 哈希验证，两者都通过 common/crypto.js 以恒定时间比较。当领域发送 JARM 授权响应时，运行时依据领域的 JWKS 对其进行验证。WebAuthn 断言由 authn/webauthn.js 验证；运行时只负责执行该仪式。"
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "无。"
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "密码和激活令牌都使用 scrypt（RFC 7914，N=2^15，r=8，p=1），各带 16 个随机字节的盐，存储为 `$scrypt$N$r$p$salt$hash`，这样日后可以提高成本而不会使已存储的内容失效。**不是摘要**：密码熵很低，对其进行快速哈希，离被字典还原出密码只有一步之遥。CSRF 令牌使用 HMAC 下的 SHA-256，这是另一项工作——确保表单的真实性，而不是保护静态存储的机密。"
+    "en": "2955567f83fe0eee",
+    "text": "密码以及激活或重置链接的令牌使用 SCRYPT（RFC 7914），各带 16 个随机字节的盐，成本由 security.passwordHashLogN、passwordHashR 和 passwordHashP 指定（默认 N=2^15，r=8，p=1），存储为 `$scrypt$N$r$p$salt$hash`，这样日后可以提高成本而不会使已存储的内容失效。**不是摘要**：密码熵很低，对其进行快速哈希，离被字典还原出密码只有一步之遥。浏览器中使用 SHA-256 计算 PKCE S256 质询和 DPoP 证明的 `ath`，这是另一项工作——把请求绑定到一次登录、把证明绑定到一个令牌，而不是保护静态存储的机密。"
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "没有自己的密钥。CSRF 令牌是在每个进程生成、且刻意“不”持久化的密钥下计算的 HMAC-SHA256——CSRF 令牌只在会话的生存期内有意义，而会话不会在重启后存续，因此能存续的密钥什么也保护不了，只会多一个静态存储的机密。"
+    "en": "7a356445be1d2a7b",
+    "text": "服务器上没有。DPoP 密钥对位于浏览器中：P-256，由 WebCrypto 生成，其私钥部分不可导出，保存在内存中，随页面关闭而消失，门户获得的每个令牌都绑定到它的指纹。令牌本身由领域的授权服务器签名（见 OAuth2 / OIDC 一行）。不再有 CSRF 密钥：每进程的 HMAC 密钥已随 CSRF 令牌及其所保护的会话 Cookie 一同移除（#568）。"
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "静态存储的密码和激活令牌"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "静态存储的密码和链接令牌"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt，N=32768，r=8，p=1，32 字节密钥，16 字节随机盐"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt，默认 N=32768，r=8，p=1（security.passwordHash*），32 字节密钥，16 字节随机盐"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "常量时间相等比较"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "CSRF 令牌"
+    "en": "e9ec660a650f5513",
+    "text": "/account-api 处的访问令牌"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "以每进程密钥对会话 ID 计算 HMAC-SHA256"
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt，依据本领域的签名密钥验证，绑定 DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP 证明（浏览器）"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256，使用每次页面加载生成的不可导出 WebCrypto P-256 密钥"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "无。它不铸造任何凭据——它是这里唯一一个只检查凭据的协议族。"
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "RFC 7644 第 2 节所列六种方案中任一种的凭据，其中有两种是真正验证的：HTTP Digest 基于配置的密码计算响应，HOBA 签名则对照客户端注册的公钥检查。另外四种只是闸门——除一个密码外任何密码都能通过 Basic，而 OAuth 方案只需要一个由本服务签发且带有 `scim:read` 或 `scim:write` 的令牌。"
+    "en": "90704e4d59344987",
+    "text": "RFC 7644 第 2 节所列六种方案中任一种的凭据。OAuth 方案需要一个由本服务签发且带有 `scim:read` 或 `scim:write` 的令牌，HOBA 签名则对照客户端注册的公钥检查。在“开发”模式下，HTTP Digest 基于唯一配置的密码计算响应，Basic 除一个密码外任何密码都能通过；在“产品”模式下，Basic 对照此人经过哈希的 `userPassword` 验证密码，并且不提供 Digest。"
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

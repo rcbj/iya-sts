@@ -552,12 +552,12 @@
     "text": "CA 私密金鑰存放之處"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "無。入口網站不簽發權杖、斷言或憑證——它變更認證資料，而非產生認證資料。"
+    "en": "9febb36f585ca159",
+    "text": "不簽發任何東西。入口網站不產生權杖、斷言或憑證——它變更認證資料，而非產生認證資料。它在瀏覽器中的執行階段只簽署一樣東西：每次呼叫 `/account-api` 以及在權杖端點時附上的 RFC 9449 DPoP 證明（ES256），使用 WebCrypto 為該次頁面載入產生的不可匯出 P-256 金鑰。"
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "出示的密碼，對照該人員自己項目上的 scrypt 雜湊；以及啟用權杖，對照所簽發權杖的 scrypt 雜湊。兩項比較都透過 common/crypto.js 以常數時間進行——任一項若逐位元組比較並提早返回，就是一個時序預言機。WebAuthn 斷言也會驗證，但由 authn/webauthn.js 負責，因為該儀式在那裡進行。"
+    "en": "8a095d27cbed0ab1",
+    "text": "「每一次 `/account-api` 呼叫」，都在其閘道處驗證（account-api/account_api.ts）：存取權杖是 RFC 9068 `at+jwt`，以「此」領域的簽署金鑰（任一世代）驗證，檢查其簽發者與對象，並以閘道驗證的證明比對其 DPoP 繫結——絕不以 Bearer 接受。它所指名的人是它唯一作用的帳戶。此外，「出示的密碼」（變更密碼時會重新證明目前的密碼）對照該人員自己項目上的 scrypt 雜湊驗證；「啟用連結或密碼重設連結」的權杖對照所簽發權杖的 scrypt 雜湊驗證，兩者都透過 common/crypto.js 以常數時間比較。當領域傳送 JARM 授權回應時，執行階段會以領域的 JWKS 驗證它。WebAuthn 斷言由 authn/webauthn.js 驗證；執行階段只負責執行該儀式。"
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "無。"
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "密碼與啟用權杖都使用 SCRYPT（RFC 7914，N=2^15、r=8、p=1），各搭配 16 個隨機位元組的鹽，以 `$scrypt$N$r$p$salt$hash` 儲存，日後可以提高成本而不使既有儲存的內容失效。**這「不是」摘要**：密碼的熵很低，對其套用快速雜湊，只差一份字詞清單就能還原出密碼。CSRF 權杖使用 HMAC 下的 SHA-256，這是另一項工作——確保表單的真實性，而非保護靜態儲存的秘密。"
+    "en": "2955567f83fe0eee",
+    "text": "密碼以及啟用或重設連結的權杖使用 SCRYPT（RFC 7914），各搭配 16 個隨機位元組的鹽，成本由 security.passwordHashLogN、passwordHashR 與 passwordHashP 指定（預設 N=2^15、r=8、p=1），以 `$scrypt$N$r$p$salt$hash` 儲存，日後可以提高成本而不使既有儲存的內容失效。**這「不是」摘要**：密碼的熵很低，對其套用快速雜湊，只差一份字詞清單就能還原出密碼。瀏覽器中以 SHA-256 計算 PKCE S256 挑戰與 DPoP 證明的 `ath`，這是另一項工作——將請求繫結到一次登入、將證明繫結到一個權杖，而非保護靜態儲存的秘密。"
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "沒有自己的金鑰。CSRF 權杖是以每個程序產生、且刻意「不」持久保存之金鑰計算的 HMAC-SHA256——CSRF 權杖只在工作階段的存續期間內有意義，而工作階段不會在重新啟動後存續，因此能存續的金鑰什麼也保護不了，只會多一個靜態儲存的秘密。"
+    "en": "7a356445be1d2a7b",
+    "text": "伺服器上沒有。DPoP 金鑰組位於瀏覽器中：P-256，由 WebCrypto 產生，其私密部分不可匯出，保存在記憶體中，隨頁面關閉而消失，入口網站取得的每個權杖都繫結到它的指紋。權杖本身由領域的授權伺服器簽署（見 OAuth2 / OIDC 一列）。不再有 CSRF 金鑰：每個程序的 HMAC 金鑰已隨 CSRF 權杖及其所保護的工作階段 Cookie 一併移除（#568）。"
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "靜態儲存的密碼與啟用權杖"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "靜態儲存的密碼與連結權杖"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt，N=32768，r=8，p=1，32 位元組金鑰，16 位元組隨機 salt"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt，預設 N=32768，r=8，p=1（security.passwordHash*），32 位元組金鑰，16 位元組隨機 salt"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "常數時間相等比較"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "CSRF 權杖"
+    "en": "e9ec660a650f5513",
+    "text": "/account-api 處的存取權杖"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "以每個程序的金鑰對工作階段 ID 計算 HMAC-SHA256"
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt，以此領域的簽署金鑰驗證，DPoP 繫結"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP 證明（瀏覽器）"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256，使用每次頁面載入產生的不可匯出 WebCrypto P-256 金鑰"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "無。它不「產生」任何認證資料——它是此處唯一只負責檢查認證資料的系列。"
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "RFC 7644 section 2 所列六種方案中任一種的認證資料，而六種中有兩種是真正驗證的：HTTP Digest 以設定的密碼計算回應，HOBA 簽章則對照用戶端註冊的公開金鑰檢查。其他四種只是閘門——除了某一個密碼之外，任何密碼都能通過 Basic，而 OAuth 方案只需要本服務簽發、帶有 `scim:read` 或 `scim:write` 的權杖。"
+    "en": "90704e4d59344987",
+    "text": "RFC 7644 section 2 所列六種方案中任一種的認證資料。OAuth 方案需要本服務簽發、帶有 `scim:read` 或 `scim:write` 的權杖，HOBA 簽章則對照用戶端註冊的公開金鑰檢查。在「開發」模式下，HTTP Digest 以唯一設定的密碼計算回應，而除了某一個密碼之外，任何密碼都能通過 Basic；在「產品」模式下，Basic 對照該人員經雜湊的 `userPassword` 驗證密碼，且不提供 Digest。"
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",
