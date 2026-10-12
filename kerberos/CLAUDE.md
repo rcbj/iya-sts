@@ -46,6 +46,19 @@ because they belong to the codec they sit beside and moving them would put the
 whole Kerberos wire format in a directory that has nothing else Kerberos in it.
 **Do not edit any of them here.**
 
+**"LOCKED" DOES NOT MEAN "THE PARENT'S".** Where this file, the root
+`CLAUDE.md` and the source comments call `krb5_kdc.js`, `krb5_service.js` and
+`spnego.js` *locked*, the word means one thing: the parent project's
+`tests/Dockerfile` COPYs them (and everything they require) and runs them as
+JavaScript in its in-process Kerberos jobs. So each stays JavaScript (#50
+cannot convert it), and a new `require` reachable from one owes the parent a
+COPY line in the commit that bumps its `sts/` pin (root `CLAUDE.md`, *The parent project's paths
+into this repository*, below). **None of the three is a vendored copy**, and
+they are edited here — `spnego.js` by rcbj's ruling of 2026-10-12 on #585,
+after the root file's "the parent project's locked Kerberos files" had been
+read as making `/spnego` and `/spnego/protected` unchangeable here. The eight
+codec files above are the ones that may not be edited.
+
 **`spnego.js` must stay after `krb5_service.js` in the require order**, and that is a
 dependency rather than a preference: it calls that module's `accept()` for every
 Kerberos check and adds none of its own. It is also the one Kerberos module that

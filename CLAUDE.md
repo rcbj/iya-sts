@@ -253,8 +253,10 @@ holds is the table above; what each module is for is that directory's
    that module used to register the routes. That is the owner's decision on
    issue #50 — `registerRoutes(app)` plus a composition root, rather than a
    `register()` at each module's top level. **The modules still written in
-   JavaScript still register when they are required** — the parent project's
-   locked Kerberos files (`krb5_kdc`, `krb5_service`, `spnego`),
+   JavaScript still register when they are required** — the three Kerberos
+   files in the parent project's test-image COPY closure (`krb5_kdc`,
+   `krb5_service`, `spnego`; this repository's own, kept JavaScript, and
+   what "locked" means is in `kerberos/CLAUDE.md`),
    `tls/tls_server.js` and `ldap/ldap_server.js` — and
    `protocol_stack.ts` requires them at their old places, so the two kinds
    interleave exactly as they did (Express's layer list, 603 layers with their
@@ -530,7 +532,7 @@ is and the named file says why.
 | 14b | `oidfed/federation_keys`, `oidfed/oidfed` | After `oauth2` and `vc_verifier`, whose metadata the Entity Configuration carries (read lazily). `federation_keys` is a library whose wire step registers its two scheduler jobs; `oidfed` registers `/.well-known/openid-federation` (the verifier's until #132) and `/oidfed/*`, the three extensions' routes among them — `extended_listing` and `entity_collection` (#135, #136) are built beside it, reached lazily, and register no route; the collection's wire step registers `oidfed.collection-crawl`. | `oidfed/CLAUDE.md` |
 | 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first, relaying a request whose client is homed in another cell and calling `next()` otherwise, because the KDC is locked and cannot place its own. Requires only the vendored codec at load and the principal database lazily; outside the parent project's COPY closure. | `kerberos/CLAUDE.md` |
 | 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, locked: their routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
-| 17 | `kerberos/spnego` | JavaScript, locked: registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
+| 17 | `kerberos/spnego` | JavaScript, in the parent's COPY closure (this repository's own and edited here; a new require owes the parent a COPY line): registers at this require. After `krb5_service`: it calls that module's `accept()`. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
 | 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
 | 17c | `pki/crypto_metadata_document` | 17b's reason (#42): libraries only, `pki.js`, `oauth2.ts`'s signer and the revocation module each LAZILY, so it may sit beside the revocation endpoints. | `common/protocol_stack.ts` (17c) |
