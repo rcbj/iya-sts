@@ -246,7 +246,9 @@ const LIST_PARAMS = {
                     'backchannelDeliveriesPage'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
-  '/admin/oidfed': [],
+  // The seven lists the page pages (#313's sweep), sharing one `per`.
+  '/admin/oidfed': ['per', 'keysPage', 'subordinatesPage', 'formerPage',
+                    'anchorsPage', 'issuedPage', 'heldPage', 'policiesPage'],
   // TWO lists on one page — the global overrides and the recorded answers —
   // so each gets a page parameter of its own and they share one `per`, which
   // is the arrangement /admin/delegation already has and pagingOf()'s

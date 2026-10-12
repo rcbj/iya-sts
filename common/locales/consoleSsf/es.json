@@ -25,6 +25,7 @@
   "discovery.algorithm": "Ese algoritmo es <code>ssf.signingAlgorithm</code> y abarca toda la tabla, <strong>poscuántico incluido</strong> &mdash; ML-DSA en tres tamaños, SLH-DSA en dos y los seis compuestos ML-DSA + tradicional &mdash; porque un SET se firma con el mismo firmante que cualquier otro JWT de aquí. Es el documento que más vale la pena firmar así: registra que algo OCURRIÓ, la sección 4.1.4 de RFC 8417 le prohíbe caducar y, por tanto, se lee mucho después de escribirse.",
   "streams.heading": "Flujos",
   "streams.none": "No hay flujos. Un receptor crea uno enviando por POST una Stream Configuration a <code>{endpoint}</code>. Aquí no hay a propósito ningún formulario &ldquo;crear un flujo&rdquo;: un flujo lleva un endpoint de entrega AL QUE ESTE SERVICIO LLAMARÁ, y el único lugar del que puede venir esa URL es un receptor que se autenticó y lo pidió &mdash; consulta <code>ssf/ssf_http.ts</code>.",
+  "streams.all": "todos los flujos",
   "pushed.heading": "Enviado a este servicio",
   "pushed.note": "Los papeles invertidos. <code>POST /ssf/receive</code> acepta un Security Event Token enviado A este servicio, que es adonde envía un cliente que actúa como TRANSMISOR. Acepta uno cuya firma no se verifica e informa del motivo &mdash; un receptor que lo rechazara no podría mostrar a nadie lo que llegó, que es justo lo que se pregunta. <code>ssf.receiveRequireSignature</code> activa el 400.",
   "th.when": "Cuándo",

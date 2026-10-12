@@ -251,7 +251,11 @@ class SsfDeadLettersPage {
             '');
       return '<tr><td class="who">' + (row.state === 'unknown'
           ? '<code>' + kit.esc(row.stream_id) + '</code>'
-          : '<a href="/admin/ssf#stream-' + kit.esc(row.stream_id) +
+          // `stream` narrows /admin/ssf's paged cards to this one (#313's
+          // sweep), so the fragment lands whatever page it would be on.
+          : '<a href="/admin/ssf?stream=' +
+            kit.esc(encodeURIComponent(row.stream_id)) + '#stream-' +
+            kit.esc(row.stream_id) +
             '" title="' +
             kit.esc(t.text('consoleSsfDeadLetters.streams.cardTip')) +
                      '"><code>' +

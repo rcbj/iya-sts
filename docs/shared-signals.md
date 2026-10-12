@@ -502,7 +502,10 @@ trusted that far, and prefer narrowing `partnerRevokeGrantEvents` in the
 An administrator can lift a block with *Unblock* on the relationship's page
 (`POST /admin-api/federation/signals-unblock`). Every arrival from every
 partner, and every block, is on Monitoring → Signals from partners
-(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`).
+(`/admin/ssf/transmitters`, `GET /admin-api/ssf/transmitters`). What arrived,
+the blocks and the account locks are each paged there — `receivedPage`,
+`blocksPage` and `locksPage`, sharing `per` — and `relationship` narrows what
+arrived before it is paged.
 
 Development records what it would do and does nothing unless
 `ssf.actOnSignalsInDevelopment` is on.

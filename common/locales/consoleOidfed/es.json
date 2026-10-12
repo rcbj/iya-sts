@@ -48,6 +48,7 @@
   "registerSubordinate": "Registrar el subordinado",
   "information": "información",
   "historyCount": "Historial ({n})",
+  "historyLatest": "Los {shown} más recientes; el historial completo se publica en /oidfed/subordinate-events.",
   "realmDeleted": "dominio <code>{realm}</code>, eliminado",
   "revoked": "revocado",
   "formerHeading": "Antiguos subordinados",

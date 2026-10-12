@@ -25,6 +25,7 @@
   "discovery.algorithm": "Cet algorithme est <code>ssf.signingAlgorithm</code> et il couvre tout le tableau, <strong>post-quantique compris</strong> &mdash; ML-DSA en trois tailles, SLH-DSA en deux, et les six composites ML-DSA + traditionnel &mdash; car un SET est signé par le même signataire que tous les autres JWT d’ici. C’est le document qui mérite le plus d’être signé ainsi : il atteste que quelque chose S’EST PRODUIT, la section 4.1.4 de la RFC 8417 lui interdit d’expirer, et il est donc lu longtemps après avoir été écrit.",
   "streams.heading": "Flux",
   "streams.none": "Aucun flux. Un récepteur en crée un en envoyant par POST une Stream Configuration à <code>{endpoint}</code>. Il n’y a volontairement pas de formulaire &laquo;&nbsp;créer un flux&nbsp;&raquo; ici : un flux porte un point de remise QUE CE SERVICE APPELLERA, et le seul endroit d’où cette URL peut venir est un récepteur qui s’est authentifié et l’a demandé &mdash; voir <code>ssf/ssf_http.ts</code>.",
+  "streams.all": "tous les flux",
   "pushed.heading": "Envoyés à ce service",
   "pushed.note": "Les rôles inversés. <code>POST /ssf/receive</code> accepte un Security Event Token envoyé À ce service, c’est-à-dire là où envoie un client agissant comme ÉMETTEUR. Il accepte celui dont la signature ne se vérifie pas et indique pourquoi &mdash; un récepteur qui refuserait ne pourrait montrer à personne ce qui est arrivé, ce qui est justement la question posée. <code>ssf.receiveRequireSignature</code> active le 400.",
   "th.when": "Quand",

@@ -25,6 +25,7 @@
   "discovery.algorithm": "该算法是 <code>ssf.signingAlgorithm</code>，它覆盖整个表格，<strong>包括后量子算法</strong>&mdash;&mdash;三种规格的 ML-DSA、两种规格的 SLH-DSA，以及六种 ML-DSA + 传统算法的组合&mdash;&mdash;因为 SET 与这里的其他所有 JWT 使用同一个签名器签名。这是最值得以这种方式签名的文档：它记录某件事已经发生，RFC 8417 第 4.1.4 节禁止它过期，因此它会在写成很久之后才被阅读。",
   "streams.heading": "流",
   "streams.none": "没有流。接收方通过向 <code>{endpoint}</code> POST 一个 Stream Configuration 来创建流。这里特意没有“创建流”表单：流带有一个此服务将会主动拨打的投递端点，而该 URL 唯一可以来自的地方，是一个已经认证并提出请求的接收方&mdash;&mdash;参见 <code>ssf/ssf_http.ts</code>。",
+  "streams.all": "所有流",
   "pushed.heading": "推送到此服务的内容",
   "pushed.note": "角色互换。<code>POST /ssf/receive</code> 接受推送到此服务的安全事件令牌（Security Event Token），也就是作为发送方的客户端所发送到的地方。它会接受签名无法验证的令牌并报告原因&mdash;&mdash;拒绝的接收方无法向任何人展示到达了什么，而这正是要问的问题。<code>ssf.receiveRequireSignature</code> 会开启 400。",
   "th.when": "时间",
