@@ -642,8 +642,9 @@ the same settings: the connection string from `STS_DATABASE_URL` or
 `persistence.databaseUrl`, and the password from
 `persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
 another secret store). It also verifies the database server's certificate
-when `persistence.databaseTlsRejectUnauthorized` is on, or when the
-connection string says `sslmode=verify-ca` or `verify-full`. So in a
+as the service does: when `persistence.databaseTlsRejectUnauthorized` is on
+(the default), or when the connection string says `sslmode=verify-ca` or
+`verify-full`, against `persistence.databaseTlsCaFile` when it is set. So in a
 container of the service's image it needs nothing else: no password on the
 command line and no `PGPASSWORD`. For a throwaway database with no secret store, a
 password written into `STS_DATABASE_URL` still works. If the secret store is

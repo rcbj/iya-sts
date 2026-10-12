@@ -129,6 +129,7 @@ Every named volume survives `docker compose down` and is deleted by
 | Volume | Mounted at | Holds |
 |---|---|---|
 | `sts-db` | `/var/lib/postgresql` (postgres) | The database and its TLS pair: the directory, the trust realms, the setting changes made in the console, and in product mode the sealed signing keys and everything the service has minted |
+| `sts-db-ca` | `/run/sts-db-ca` (postgres), `/run/secrets/database-ca`, read-only (sts) | The database's certificate, `postgres.crt`, copied there by the postgres container on every start — never its key. The service trusts it for its database connection. |
 | `sts-bao-file` | `/openbao/file` (OpenBao and both one-shots) | OpenBao's storage, its listener's TLS pair, and the seeder's state |
 | `sts-bao-client` | `/run/secrets/openbao`, read-only (sts) | The client certificate and key the service authenticates to OpenBao with, and OpenBao's CA |
 | `sts-bao-startup` | `/run/secrets/openbao-startup` (sts, seeder) | One single-use start-up token per node. Readable only by root; the start command takes and deletes it. |
@@ -178,7 +179,8 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 |---|---|---|
 | `STS_MODE` | `product` | `development` gives the permissive mock: no password checks, keys regenerated per start |
 | `STS_PERSISTENCE_MODE` | `postgres` | `ldif` writes one RFC 2849 file per realm to `sts-data` and needs no database; `memory` keeps nothing |
-| `STS_DATABASE_URL` | `postgres://sts_app@postgres:5432/sts?sslmode=require` | Replaces the whole connection string, to use your own database. The password is read from OpenBao and added to it at start. |
+| `STS_DATABASE_URL` | `postgres://sts_app@postgres:5432/sts?sslmode=verify-full` | Replaces the whole connection string, to use your own database. The password is read from OpenBao and added to it at start. |
+| `STS_DATABASE_TLS_CA_FILE` | `/run/secrets/database-ca/postgres.crt` | The CA certificate (or a directory of them) the service trusts for its database connection, and for nothing else. Point it at your database's CA when you replace `STS_DATABASE_URL`, or at a directory; a file that cannot be read stops the service (`STS-STORE-0079`). |
 | `STS_HTTPS` | `true` | `false` serves the main port as plain HTTP, for a client that cannot be made to trust the certificate |
 | `STS_LOG_LEVEL` | unset (the appconfig's `info`) | `debug` logs every request, every artifact before and after signing, and every function's entry and exit |
 | `CONFIG_FILE` | `./env/local.js` | The appconfig file |
@@ -213,10 +215,13 @@ variable.
   replace the `seal` stanza in `openbao/bao.hcl` with `transit`, `awskms`,
   `gcpckms` or `azurekeyvault`. With the static seal, anyone who can read the
   stack's configuration can unseal the store.
-* **The database connection is encrypted, not authenticated.** Its certificate
-  is self-signed, so the service uses `sslmode=require` rather than
-  `verify-full`. `/admin/persistence` shows this as two separate facts. See
-  [Persistence](persistence.md#the-compose-database-is-tls-and-requires-it).
+* **The database connection is encrypted and authenticated.** Its certificate
+  is self-signed, so the postgres container shares the certificate (not the
+  key) in `sts-db-ca`, and the service trusts that file for the database alone
+  and dials `sslmode=verify-full`. Verification is on by default; turning
+  `STS_DATABASE_TLS_REJECT_UNAUTHORIZED` off leaves the database
+  unauthenticated and is not something to do outside a throwaway stack. See
+  [Persistence](persistence.md#the-compose-database-is-tls-and-the-service-verifies-it).
 * **The connection string carries no password.** `docker compose config` and
   `/admin/config` show none.
 * **Older volumes need `docker compose down -v`**: a `sts-db` volume written by
