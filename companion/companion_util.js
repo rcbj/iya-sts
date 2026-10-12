@@ -128,7 +128,11 @@ function sendHtml(res, status, html) {
     "Content-Security-Policy": POLICY,
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer"
+    // same-origin, not no-referrer: under no-referrer a browser sends a
+    // form's Origin as "null", and the start's Origin check then refuses
+    // the companion's own form (found driving the pages in Chrome). Nothing
+    // leaves for another site either way.
+    "Referrer-Policy": "same-origin"
   });
   res.end(html);
   log.debug("Leaving sendHtml().");

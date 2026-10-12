@@ -182,6 +182,9 @@ async function run(t) {
             /default-src 'none'/.test(policy) &&
             /frame-ancestors 'none'/.test(policy) &&
             !/script-src/.test(policy) && !/<script/i.test(r.text) &&
+            // not no-referrer, under which a browser posts Origin: null and
+            // the start refuses the companion's own form
+            r.headers['referrer-policy'] === 'same-origin' &&
             /companion_sid=[^;]+; Path=\/; HttpOnly; SameSite=Lax/.test(set),
             '1. the start page lists the demonstration, carries no script ' +
             'and the companion\'s policy, and sets one session cookie',
