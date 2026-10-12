@@ -220,6 +220,10 @@ audience, validity window, the confirmation method against the profile, the
 `DoNotCacheCondition` against the profile, the authentication statement, the
 subject and the attributes.
 
+Its page is drawn in your browser (#581) and needs script: the start page
+from `GET /saml11/rp/api/start`, and the verdict from the page the response was
+posted to. What it sends and how it receives a response are unchanged.
+
 ### Not implemented
 
 * **Single Logout** — SAML 1.1 has none; it arrived with SAML 2.0. A signed-in

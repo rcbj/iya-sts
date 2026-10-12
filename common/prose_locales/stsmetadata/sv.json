@@ -2139,6 +2139,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "skapar en wctx och erbjuder en fullständig inloggningsbegäran för varje form som slutpunkten kan utfärda"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /wsfed/rp/api/start och utfallet som det mottagande svarets skal bär."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en wctx och svarar, som fakta, med de inloggningsbegäranden den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "En beskrivningssida: slutpunkterna, de fyra bindningarna och hur metadata per tjänsteleverantör fungerar. GET /sts och GET /wsfed svarar på samma sätt av samma skäl — en slutpunkt som svarar 400 till någon som ville veta vad den var ger ett dåligt första intryck. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
@@ -2231,6 +2239,14 @@
     "en": "36f5856187bd32d6",
     "text": "skapar en RelayState och erbjuder en fullständig AuthnRequest som ber om svaret på HTTP POST, HTTP Redirect och HTTP Artifact"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml2/sp/api/start och utfallet som det mottagande svarets skal bär."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en RelayState för var och en av de fyra AuthnRequest-begäranden den låtsade tjänsteleverantören erbjuder, signerar tre med tjänstens nyckel och svarar med dem som fakta — startsidans vy. Språkoberoende; no-store."
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "En beskrivningssida: slutpunkterna, de två webbläsarprofilerna och listan över vad SAML 1.1 stavar annorlunda än 2.0 — vilket är det mesta av det som gör detta till en separat implementation snarare än en flagga. GET /saml2, GET /sts och GET /wsfed svarar på samma sätt. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
@@ -2282,6 +2298,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "startar ett fullständigt flöde på någon av webbläsarprofilerna och verifierar det som kommer tillbaka"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml11/rp/api/start och utfallet som det mottagande svarets skal bär."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "UTANFÖR SPECIFIKATIONEN (#581). Svarar, som fakta, med de två webbläsarprofilernas starter vid överföringstjänsten mellan webbplatser som den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

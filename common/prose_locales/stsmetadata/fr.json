@@ -2139,6 +2139,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "émet un wctx et propose une requête de connexion complète pour chaque forme que le point de terminaison peut émettre"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /wsfed/rp/api/start et le verdict que porte la coquille de la réponse de réception."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "HORS SPÉCIFICATION (#581). Génère un wctx et répond, sous forme de faits, avec les demandes de connexion que propose la partie de confiance fictive — la vue de la page de départ. Indépendante de la langue ; no-store."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Une page de description : les points de terminaison, les quatre liaisons, et le fonctionnement des métadonnées par fournisseur de services. GET /sts et GET /wsfed répondent de la même manière pour la même raison — un point de terminaison qui renvoie une 400 à quelqu’un qui voulait savoir ce qu’il était fait mauvaise impression. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
@@ -2231,6 +2239,14 @@
     "en": "36f5856187bd32d6",
     "text": "émet un RelayState et propose une AuthnRequest complète demandant la réponse en HTTP POST, HTTP Redirect et HTTP Artifact"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /saml2/sp/api/start et le verdict que porte la coquille de la réponse de réception."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "HORS SPÉCIFICATION (#581). Génère un RelayState pour chacune des quatre AuthnRequest que propose le fournisseur de services fictif, en signe trois avec la clé de ce service, et y répond sous forme de faits — la vue de la page de départ. Indépendante de la langue ; no-store."
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "Une page de description : les points de terminaison, les deux profils de navigateur, et la liste de ce que SAML 1.1 écrit différemment de 2.0 — ce qui explique en grande partie qu’il s’agisse d’une implémentation distincte plutôt que d’un indicateur. GET /saml2, GET /sts et GET /wsfed répondent de la même manière. Dessinée dans le navigateur depuis #584 ; ?format=json, ou un Accept qui préfère JSON, renvoie sa vue sous forme de données."
@@ -2282,6 +2298,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "démarre un flux complet sur l’un ou l’autre profil de navigateur et vérifie ce qui revient"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "HORS SPÉCIFICATION (#581). L’environnement d’exécution et les moteurs de rendu des pages des trois parties de confiance fictives en un seul fichier, construit par build-typescript.sh (common/mock-rp-spa.js) et servi précompressé sous le chemin propre à chaque famille : il dessine la page de départ à partir de /saml11/rp/api/start et le verdict que porte la coquille de la réponse de réception."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "HORS SPÉCIFICATION (#581). Répond, sous forme de faits, avec les départs des deux profils de navigateur au service de transfert inter-sites que propose la partie de confiance fictive — la vue de la page de départ. Indépendante de la langue ; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

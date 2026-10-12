@@ -2139,6 +2139,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "acuña un wctx y ofrece una solicitud de inicio de sesión completa para cada forma que puede emitir el endpoint"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). El entorno de ejecución y los renderizadores de las páginas de las tres partes que confían simuladas en un solo archivo, generado por build-typescript.sh (common/mock-rp-spa.js) y servido precomprimido bajo la ruta propia de cada familia: dibuja la página de inicio a partir de /wsfed/rp/api/start y el veredicto que lleva el armazón de la respuesta receptora."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). Genera un wctx y responde, como hechos, las solicitudes de inicio de sesión que ofrece la parte que confía simulada: la vista de la página de inicio. Independiente del idioma; no-store."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Una página de descripción: los endpoints, los cuatro bindings y cómo funcionan los metadatos por proveedor de servicios. GET /sts y GET /wsfed responden de la misma manera por la misma razón: un endpoint que devuelve 400 a quien solo quería saber qué era da una mala primera impresión. Se dibuja en el navegador desde #584; ?format=json, o un Accept que prefiera JSON, devuelve su vista como datos."
@@ -2231,6 +2239,14 @@
     "en": "36f5856187bd32d6",
     "text": "acuña un RelayState y ofrece una AuthnRequest completa que pide la respuesta por HTTP POST, HTTP Redirect y HTTP Artifact"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). El entorno de ejecución y los renderizadores de las páginas de las tres partes que confían simuladas en un solo archivo, generado por build-typescript.sh (common/mock-rp-spa.js) y servido precomprimido bajo la ruta propia de cada familia: dibuja la página de inicio a partir de /saml2/sp/api/start y el veredicto que lleva el armazón de la respuesta receptora."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). Genera un RelayState para cada una de las cuatro AuthnRequest que ofrece el proveedor de servicios simulado, firma tres con la clave de este servicio y las responde como hechos: la vista de la página de inicio. Independiente del idioma; no-store."
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "Una página de descripción: los endpoints, los dos perfiles de navegador, y la lista de lo que SAML 1.1 escribe de forma distinta que 2.0, que es la mayor parte de lo que hace de esto una implementación separada y no un indicador. GET /saml2, GET /sts y GET /wsfed responden de la misma manera. Se dibuja en el navegador desde #584; ?format=json, o un Accept que prefiera JSON, devuelve su vista como datos."
@@ -2282,6 +2298,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "inicia un flujo completo en cualquiera de los dos perfiles de navegador y verifica lo que vuelve"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). El entorno de ejecución y los renderizadores de las páginas de las tres partes que confían simuladas en un solo archivo, generado por build-typescript.sh (common/mock-rp-spa.js) y servido precomprimido bajo la ruta propia de cada familia: dibuja la página de inicio a partir de /saml11/rp/api/start y el veredicto que lleva el armazón de la respuesta receptora."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "FUERA DE LA ESPECIFICACIÓN (#581). Responde, como hechos, los inicios de los dos perfiles de navegador en el servicio de transferencia entre sitios que ofrece la parte que confía simulada: la vista de la página de inicio. Independiente del idioma; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

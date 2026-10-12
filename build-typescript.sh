@@ -232,6 +232,14 @@ bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
 # server module beside it is called `signout`.
 bundle_surface "the sign-out" logout/web_signout_pages.ts StsSignout \
   logout/signout.bundle.js logout/web_signout.ts logout/signout-spa.js
+# THE MOCK RELYING PARTIES (#581): `common/mock-rp.bundle.js` (`StsMockRp`,
+# `web_mock_rp_pages.ts`) and `common/mock-rp-spa.js` (`web_mock_rp.ts`),
+# served at `/wsfed/rp/mock-rp.js`, `/saml2/sp/mock-rp.js` and
+# `/saml11/rp/mock-rp.js` — one file under each family's own path, never
+# `mock_rp_surface.js`, which is `mock_rp_surface.ts`.
+bundle_surface "the mock relying parties" common/web_mock_rp_pages.ts \
+  StsMockRp common/mock-rp.bundle.js common/web_mock_rp.ts \
+  common/mock-rp-spa.js
 
 # THE OPENID4VC DEMONSTRATION (#582): `oid4vc/vc-demo.bundle.js`
 # (`StsVcDemo`, `web_vc_demo_pages.ts`) and `oid4vc/vc-demo-spa.js`

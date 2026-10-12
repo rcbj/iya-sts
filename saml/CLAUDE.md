@@ -1558,3 +1558,17 @@ by `tests/cell_saml_federation.js`.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /saml2` and `GET /saml11` are this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `saml/web_saml_description.ts` from the `describeSaml2` and `describeSaml11` catalogs, with `/saml2/description.js` and `/saml11/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. Neither page had a JSON form before; it is the view, which names the mock service provider and the mock relying party only where the realm is served them (#585). The bare `GET /saml2/sso`, `/saml2/ars`, `/saml11/sso` and `/saml11/responder` descriptions are a specification's endpoints answering a parameterless GET and stay server-drawn. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## The mock relying parties' pages are a static surface (#581, 2026-10-12)
+
+`/saml2/sp`'s and `/saml11/rp`'s start pages and verdicts are drawn in the
+browser, one surface with WS-Federation's mock: `common/CLAUDE.md` 3cm holds
+the inventory, the modules and the reasons. What stays here is each relying
+party itself: `mockSpStartView()` mints the four RelayStates and signs three
+AuthnRequests, `mockRpStartView()` builds SAML 1.1's two starts, and the
+receiving doors resolve, verify, spend and mark as they did —
+`STS-SAML-0021` and `0022` at `200`, a spent SAML 1.1 artifact's `400` and
+`STS-SAML-0042`, `STS-SAML-0043` — and answer the shell carrying the
+verdict. SAML 1.1's Reload link is the request it arrived on, rebuilt from
+`SAMLart` and `TARGET` rather than `req.originalUrl`, whose realm prefix the
+browser adds itself.

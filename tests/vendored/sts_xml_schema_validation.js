@@ -1130,11 +1130,21 @@ async function saml2(w) {
     log.debug("Leaving saml2(). No mock in " + w.mode + ".");
     return;
   }
-  const mock = await hop(null, w.rb + "/saml2/sp");
-  const requests = [...mock.body.matchAll(/href="([^"]*SAMLRequest=[^"]*)"/g)]
-    .map(function (x) {
-      return htmlDecode(x[1]);
-    });
+  // Its page is a static surface since #581: the requests are the start
+  // view's, asked of /saml2/sp/api/start as the page asks it.
+  const mock = await hop(null, w.rb + "/saml2/sp/api/start");
+  let started = {};
+  try {
+    started = JSON.parse(mock.body).view || {};
+  } catch (e) {
+    log.debug("Caught in saml2(): " + ((e && e.message) || e));
+    started = {};
+  }
+  const requests = (started.requests || []).map(function (one) {
+    return String(one.href || "");
+  }).filter(function (href) {
+    return /SAMLRequest=/.test(href);
+  });
   await check(w.mode + " the mock service provider offers its " +
               "AuthnRequests", async function () {
     if (requests.length < 3) {

@@ -2139,6 +2139,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "nagmi-mint ng wctx at nag-aalok ng kumpletong sign-in request para sa bawat hugis na kayang ibigay ng endpoint"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /wsfed/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng wctx at sumasagot, bilang mga katotohanan, ng mga hiling na mag-sign in na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "Isang description page: ang mga endpoint, ang apat na binding, at kung paano gumagana ang per-service-provider na metadata. Ganito rin sumasagot ang GET /sts at GET /wsfed sa parehong dahilan — ang endpoint na nagbabalik ng 400 sa taong gusto lang malaman kung ano ito ay masamang unang impresyon. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
@@ -2231,6 +2239,14 @@
     "en": "36f5856187bd32d6",
     "text": "nagmi-mint ng RelayState at nag-aalok ng kumpletong AuthnRequest na humihingi ng response sa HTTP POST, HTTP Redirect at HTTP Artifact"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml2/sp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng RelayState para sa bawat isa sa apat na AuthnRequest na iniaalok ng mock service provider, nilalagdaan ang tatlo gamit ang key ng serbisyong ito, at sinasagot ang mga ito bilang mga katotohanan — ang view ng panimulang pahina. Walang wika; no-store."
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "Isang description page: ang mga endpoint, ang dalawang browser profile, at ang listahan ng mga bagay na iba ang baybay sa SAML 1.1 kumpara sa 2.0 — na siyang karamihan sa dahilan kung bakit hiwalay itong implementasyon sa halip na flag. Ganito rin sumasagot ang GET /saml2, GET /sts at GET /wsfed. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
@@ -2282,6 +2298,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "nagsisimula ng kumpletong flow sa alinmang browser profile at vine-verify ang bumabalik"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml11/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Sumasagot, bilang mga katotohanan, ng mga simula ng dalawang browser profile sa inter-site transfer service na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

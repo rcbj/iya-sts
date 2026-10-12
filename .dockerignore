@@ -202,3 +202,6 @@ oid4vc/vc-demo-spa.js*
 # And the federation pages' (#580), for the same reason.
 federation/federation-pages.bundle.js
 federation/federation-pages-spa.js*
+# And the mock relying parties' (#581), for the same reason.
+common/mock-rp.bundle.js
+common/mock-rp-spa.js*

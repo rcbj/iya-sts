@@ -2139,6 +2139,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "產生一個 wctx，並針對端點能簽發的每種形式提供完整的登入請求"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /wsfed/rp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "非規格內容（#581）。產生一個 wctx，並以事實形式答覆模擬依賴方提供的登入請求——即起始頁面的檢視。與語言無關；no-store。"
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
     "text": "說明頁面：端點、四種繫結，以及各服務提供者中繼資料的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
@@ -2231,6 +2239,14 @@
     "en": "36f5856187bd32d6",
     "text": "產生一個 RelayState，並提供一個完整的 AuthnRequest，要求以 HTTP POST、HTTP Redirect 與 HTTP Artifact 傳回回應"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /saml2/sp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "非規格內容（#581）。為模擬服務提供者提供的四個 AuthnRequest 各產生一個 RelayState，以本服務的金鑰簽章其中三個，並以事實形式答覆——即起始頁面的檢視。與語言無關；no-store。"
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "說明頁面：端點、兩種瀏覽器設定檔，以及 SAML 1.1 與 2.0 拼寫不同之處的清單——這正是使它成為獨立實作而非一個旗標的主要原因。GET /saml2、GET /sts 與 GET /wsfed 以相同方式回應。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
@@ -2282,6 +2298,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "以任一瀏覽器設定檔啟動完整流程，並驗證傳回的內容"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "非規格內容（#581）。三個模擬依賴方頁面的執行階段和轉譯器合為一個檔案，由 build-typescript.sh 建置（common/mock-rp-spa.js），並以預先壓縮的形式在每個協定系列自己的路徑下提供：它根據 /saml11/rp/api/start 繪製起始頁面，並繪製接收端回應的外殼所攜帶的結論。"
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "非規格內容（#581）。以事實形式答覆模擬依賴方提供的、在站台間傳輸服務處啟動兩種瀏覽器設定檔的入口——即起始頁面的檢視。與語言無關；no-store。"
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",

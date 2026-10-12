@@ -110,3 +110,8 @@ federation/federation-pages.bundle.js
 federation/federation-pages-spa.js
 federation/federation-pages-spa.js.br
 federation/federation-pages-spa.js.gz
+# The mock relying parties' (#581), the same kind of file.
+common/mock-rp.bundle.js
+common/mock-rp-spa.js
+common/mock-rp-spa.js.br
+common/mock-rp-spa.js.gz
