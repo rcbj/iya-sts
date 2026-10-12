@@ -14,7 +14,8 @@
 //   1. THE REGISTER: the provider registered by discovery on /admin-api, the
 //      redirect URI to register at it, discovery's claim_types_supported.
 //   2. THE SETUP PHASE: the person links the provider on
-//      /portal/claim-sources — to the provider realm, signed in and agreed
+//      /portal/claim-sources — through this service's start address, which
+//      binds the browser, to the provider realm, signed in and agreed
 //      there, back to the callback — and the link is listed, never a token.
 //   3. AGGREGATED: a relying party's claims request for credit_score gets
 //      `_claim_names` / `_claim_sources` in the ID Token and in UserInfo, the
@@ -456,8 +457,16 @@ async function test() {
   const started = await portal.act("/portal/claim-sources",
                                    { action: "link", id: "cp" });
   const away = String((started.json && started.json.location) || "");
-  const back = away ? await follow(browser, await hop(browser, "GET", away))
-                    : { status: 0, text: "" };
+  // Link answers THIS service's start address (2026-10-12), which binds the
+  // browser to the link — it must hold the sign-on session the link began
+  // from — and only then sends it to the provider. The provider realm is
+  // another realm of this same service, so signing in there replaces the
+  // one sign-on cookie; the callback asks for the binding instead.
+  const startHop = away ? await hop(browser, "GET", away)
+                        : { status: 0, location: "", text: "" };
+  const toProvider = startHop.location;
+  const back = toProvider ? await follow(browser, startHop)
+                          : { status: 0, text: "" };
   const linked = await portal.draw("/portal/claim-sources");
   const links = (await hop(null, "GET", opBase + "/admin-api/claim-providers"))
     .json.links;
@@ -466,8 +475,13 @@ async function test() {
         function () {
     assert.strictEqual(unknown.status, 400, unknown.text.slice(0, 300));
     assert.strictEqual(started.status, 200, started.text.slice(0, 300));
-    assert.ok(away.indexOf(cpBase + "/oauth2/authorize?") === 0, away);
-    assert.ok(/code_challenge_method=S256/.test(away));
+    assert.ok(away.indexOf(opBase + "/portal/claim-sources/start?") === 0,
+              away);
+    assert.strictEqual(startHop.status, 303, startHop.status + " " +
+                       String(startHop.text).slice(0, 300));
+    assert.ok(toProvider.indexOf(cpBase + "/oauth2/authorize?") === 0,
+              toProvider);
+    assert.ok(/code_challenge_method=S256/.test(toProvider));
     // Back at the portal's page: the shell, which the portal draws from
     // its operation — and the page, drawn, says the provider is linked.
     assert.strictEqual(back.status, 200, back.status + " " +
@@ -486,6 +500,23 @@ async function test() {
   const theirSub = links.filter(function (l) {
     return l.username === PERSON;
   })[0].sub;
+
+  // THE BINDING IS THE PERSON'S BROWSER'S: a link started on the person's
+  // token, whose start address is opened by a browser that holds no sign-on
+  // session of theirs — the account-linking CSRF — goes back to the page
+  // with a problem and never reaches the provider.
+  const second = await portal.act("/portal/claim-sources",
+                                  { action: "link", id: "cp" });
+  const strangerHop = await hop(jar(), "GET",
+    String((second.json && second.json.location) || ""));
+  check("a browser that is not the person's is refused before it leaves",
+        function () {
+    assert.strictEqual(second.status, 200, second.text.slice(0, 300));
+    assert.strictEqual(strangerHop.status, 303,
+                       strangerHop.text.slice(0, 300));
+    assert.ok(strangerHop.location.indexOf(opBase +
+              "/portal/claim-sources?problem=") === 0, strangerHop.location);
+  });
 
   log.info("=== 3. aggregated claims in the ID Token and UserInfo ===");
   const rp = await register(opBase, {

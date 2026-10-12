@@ -179,6 +179,10 @@ const ROWS: Row[] = [
   { prefix: '/portal/signals/receive', strategy: 'local',
     why: 'the portal\'s Shared Signals stream is received where it is ' +
          'delivered' },
+  { prefix: '/portal/claim-sources/start', strategy: 'affinity',
+    browser: true,
+    why: 'a claim-source link binds its browser where the link began, ' +
+         'whose cell holds the link request' },
   { prefix: '/portal/claim-sources/callback', strategy: 'affinity',
     browser: true,
     why: 'a Claims Provider sends the browser back where the link began' },

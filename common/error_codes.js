@@ -20076,15 +20076,22 @@ const CODES = [
       'is a static application since #568 and nothing is posted to it.',
     spec: 'HTTP 404' },
   { code: 'STS-PORTAL-0300',
-    summary: 'A Claims Provider\'s callback arrived in a browser whose ' +
-      'sign-on session is not the one the link was started from, so it was ' +
-      'refused (#568: the account-linking CSRF the portal session closed).',
+    summary: 'A claim-source link was refused at /portal/claim-sources/' +
+      'start: the browser\'s sign-on session is not the one the link was ' +
+      'started from, or the link was already bound to a browser (#568: the ' +
+      'account-linking CSRF the portal session closed).',
     spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0301',
     summary: 'A claim-source link was not started: the account API token is ' +
       'placed on no sign-on session the registry still holds, so the ' +
       'callback could never be bound to it.',
     spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0303',
+    summary: 'A Claims Provider\'s callback arrived in a browser that was ' +
+      'not bound to the link at /portal/claim-sources/start — no binding ' +
+      'cookie, or not that link\'s — so it was refused (the ' +
+      'account-linking CSRF).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
   { code: 'STS-PORTAL-0302',
     summary: 'The access policy refused a Claims Provider\'s callback ' +
       '(user-portal, manage-own).',
