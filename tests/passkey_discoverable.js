@@ -14,7 +14,8 @@
 //
 //   * THE USER HANDLE is 64 random bytes per person (WebAuthn Level 3
 //     section 5.4.3), never the username: minted on the entry, given to the
-//     browser as `data-userid`, recorded on the key row;
+//     browser as the ceremony's `user.id` (`…/webauthn/options` since
+//     #572), recorded on the key row;
 //   * SECTION 7.2 STEP 6: a returned `userHandle` must be the one the key
 //     was created under, at the passkey step after a typed username too;
 //   * A SIGN-IN WITH NO USERNAME (the passkey policy's `allowUsernameless`,
@@ -219,16 +220,6 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name, within) {
-    let text = html;
-    if (within) {
-      const at = html.indexOf('id="' + within + '"');
-      text = at < 0 ? '' : html.slice(at, html.indexOf('>', at));
-    }
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(text);
-    return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-      : '';
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -353,25 +344,29 @@ function childMain() {
     // created under a minted handle.
     const alice = makeAuthenticator(RPID, ORIGIN);
     s = await screenFor();
-    // The step's page, `GET /authn/webauthn?mfa=…`, which the act names.
+    // The step's page, `/authn/webauthn?mfa=…`, which the act names — a
+    // page of the sign-in surface since #572, whose ceremony is armed by
+    // `POST /authn-api/mfa/{id}/webauthn/options`.
     const step = await authnScreen.follow({ port: port, jar: s.b.jar,
       opened: s.opened, fields: { action: 'login', username: 'pkd-alice',
                                   password: '', webauthn_only: '1' } });
-    const givenHandle = dataAttribute(step.text, 'userid');
-    note(dataAttribute(step.text, 'mode') === 'create' &&
+    const stepArmed = await authnScreen.stepAct({ port: port, jar: s.b.jar,
+      opened: step, op: 'webauthn/options', body: {} });
+    const enrol = stepArmed.json || {};
+    const givenHandle = String((enrol.user || {}).id || '');
+    note(enrol.mode === 'create' &&
          credentials.isUserHandle(givenHandle) &&
          givenHandle !== Buffer.from('pkd-alice').toString('base64url') &&
          givenHandle === credentials.userHandleOf('pkd-alice'),
          '2a. the enrol ceremony names a minted 64-byte user handle — the ' +
          'person\'s own, on their entry — and not the username\'s bytes',
          givenHandle);
-    const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-    const registered = await s.b.go('POST', '/authn/webauthn', { form: {
-      mfa_id: mfaId, mode: 'create',
-      credential: JSON.stringify(alice.register(
-        dataAttribute(step.text, 'challenge'), givenHandle)) } });
+    const registered = await authnScreen.stepAct({ port: port,
+      jar: s.b.jar, opened: step, op: 'webauthn', body: {
+        credential: JSON.stringify(alice.register(enrol.challenge,
+                                                  givenHandle)) } });
     const aliceKey = credentials.keysOf('pkd-alice')[0] || {};
-    note((registered.status === 302 || registered.status === 303) &&
+    note(registered.next === 'redirect' &&
          aliceKey.userHandle === givenHandle && aliceKey.role === 'primary' &&
          aliceKey.discoverable === true,
          '2b. and the key row records the handle it was created under',
@@ -474,19 +469,21 @@ function childMain() {
       const st = await authnScreen.follow({ port: port, jar: t.b.jar,
         opened: t.opened, fields: { action: 'login', username: 'pkd-legacy',
                                     password: '', webauthn_only: '1' } });
-      const id = (st.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-      return t.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: id, mode: 'get',
-        credential: JSON.stringify(legacy.assert(
-          dataAttribute(st.text, 'challenge', 'wa-data'),
-          handle === undefined ? {} : { handle: handle })) } });
+      // The passkey step's ceremony, over `/authn-api` (#572).
+      const done = await authnScreen.passkeyStep({ port: port,
+        jar: t.b.jar, opened: st }, function (c) {
+        return legacy.assert(c.challenge,
+                             handle === undefined ? {} : { handle: handle });
+      });
+      return done.answer;
     };
     posted = await typed();
-    note(posted.status === 302 || posted.status === 303,
+    note(posted.next === 'redirect',
          '8b. where the username is typed it still signs in', posted.status +
          ' ' + posted.text.slice(0, 200));
     posted = await typed(credentials.newUserHandle());
-    note(posted.status === 200 && codeRecorded('STS-AUTHN-0303'),
+    note(posted.apiStatus === 400 && posted.next === 'refused' &&
+         codeRecorded('STS-AUTHN-0303'),
          '8c. and a handle that is not the key\'s is refused there, ' +
          'STS-AUTHN-0303 (section 7.2 step 6)', posted.status);
 
