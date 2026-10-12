@@ -281,6 +281,7 @@
   "audit.actions.oauth.device-secret.revoke.label": "A Native SSO device secret was revoked",
   "audit.actions.oauth2.ciba.notify.label": "A CIBA ping or push notification was delivered or failed",
   "audit.actions.oauth2.claim-source-linked.label": "A person linked a Claims Provider",
+  "audit.actions.oauth2.claim-source-link-refused.label": "A Claims Provider's callback was refused: the link was unknown, or arrived in another sign-on session (#568)",
   "audit.actions.oauth2.claims-providers.add-provider.label": "A Claims Provider was registered",
   "audit.actions.oauth2.claims-providers.update-provider.label": "A Claims Provider was changed",
   "audit.actions.oauth2.claims-providers.remove-provider.label": "A Claims Provider was removed",

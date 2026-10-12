@@ -1127,6 +1127,10 @@
     "en": "378743408d814c69",
     "text": "某人关联了声明提供方"
   },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "声明提供方的回调被拒绝：该链接未知，或出现在另一个单点登录会话中（#568）"
+  },
   "audit.actions.oauth2.claims-providers.add-provider.label": {
     "en": "32689eddc489b284",
     "text": "注册了声明提供方"

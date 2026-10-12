@@ -1127,6 +1127,10 @@
     "en": "378743408d814c69",
     "text": "En person länkade en Claims Provider"
   },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "Ett anrop tillbaka från en anspråksleverantör avvisades: länken var okänd eller kom i en annan inloggningssession (#568)"
+  },
   "audit.actions.oauth2.claims-providers.add-provider.label": {
     "en": "32689eddc489b284",
     "text": "En Claims Provider registrerades"

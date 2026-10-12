@@ -1127,6 +1127,10 @@
     "en": "378743408d814c69",
     "text": "Une personne a lié un Claims Provider"
   },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "Le rappel d’un fournisseur de revendications a été refusé : le lien était inconnu ou est arrivé dans une autre session d’authentification unique (#568)"
+  },
   "audit.actions.oauth2.claims-providers.add-provider.label": {
     "en": "32689eddc489b284",
     "text": "Un Claims Provider a été enregistré"

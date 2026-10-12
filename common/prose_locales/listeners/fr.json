@@ -152,8 +152,8 @@
     "text": "Portail utilisateur"
   },
   "listeners.applications.portal.what": {
-    "en": "97eca00d9167facb",
-    "text": "Les pages qui appartiennent à la personne qui les consulte."
+    "en": "ae78f5077c808641",
+    "text": "Les pages qui appartiennent à la personne qui les consulte, et l’API de compte à partir de laquelle elles sont construites."
   },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",

@@ -1580,8 +1580,8 @@
     "text": "Rutas despachadas sin afinidad de sesión"
   },
   "workers.fanout|description": {
-    "en": "4ad4fd7faeebad00",
-    "text": "Una lista separada por comas de prefijos de ruta que van al worker de solicitudes menos cargado en lugar de quedar ligados a la sesión o al flujo al que pertenecen. Estos tres llevan su propia credencial en cada solicitud y nombran su propio destino, así que no hay que recordar nada de una solicitud para responder a la siguiente. TODO LO DEMÁS QUE SE DESPACHA MANTIENE AFINIDAD — cada familia de protocolos, la consola de administración y el portal de usuario — porque un flujo de navegador abarca varias solicitudes cuyo estado vive en el worker que lo creó. LDAP no está aquí y no puede estarlo: su protocolo es un socket sin procesar que tiene el proceso principal, y sus únicas vistas HTTP son páginas de la consola bajo /admin/ldap, que son la consola. La afinidad es una medida de LOCALIDAD y nunca de corrección — lo que hace correcta una ruta despachada es que cada almacén que tocan sus controladores sea accesible desde un worker."
+    "en": "ace37db547eaaf05",
+    "text": "Una lista separada por comas de prefijos de ruta que van al worker de solicitudes menos cargado en lugar de quedar ligados a la sesión o al flujo al que pertenecen. Estos cuatro llevan su propia credencial en cada solicitud y nombran su propio destino, así que no hay que recordar nada de una solicitud para responder a la siguiente. TODO LO DEMÁS QUE SE DESPACHA MANTIENE AFINIDAD — cada familia de protocolos, la consola de administración y el portal de usuario — porque un flujo de navegador abarca varias solicitudes cuyo estado vive en el worker que lo creó. LDAP no está aquí y no puede estarlo: su protocolo es un socket sin procesar que tiene el proceso principal, y sus únicas vistas HTTP son páginas de la consola bajo /admin/ldap, que son la consola. La afinidad es una medida de LOCALIDAD y nunca de corrección — lo que hace correcta una ruta despachada es que cada almacén que tocan sus controladores sea accesible desde un worker."
   },
   "workers.fanout|restartReason": {
     "en": "adf291fc1ed8c030",

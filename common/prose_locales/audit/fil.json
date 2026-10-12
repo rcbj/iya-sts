@@ -1127,6 +1127,10 @@
     "en": "378743408d814c69",
     "text": "May taong nag-link ng isang Claims Provider"
   },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "Tinanggihan ang callback ng isang Claims Provider: hindi kilala ang link, o dumating ito sa ibang sign-on session (#568)"
+  },
   "audit.actions.oauth2.claims-providers.add-provider.label": {
     "en": "32689eddc489b284",
     "text": "May Claims Provider na nairehistro"

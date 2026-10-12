@@ -152,8 +152,8 @@
     "text": "用户门户"
   },
   "listeners.applications.portal.what": {
-    "en": "97eca00d9167facb",
-    "text": "属于正在查看它们的那个人的页面。"
+    "en": "ae78f5077c808641",
+    "text": "属于正在查看它们的那个人的页面，以及这些页面所依据的账户 API。"
   },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",

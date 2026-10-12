@@ -152,8 +152,8 @@
     "text": "Användarportal"
   },
   "listeners.applications.portal.what": {
-    "en": "97eca00d9167facb",
-    "text": "De sidor som tillhör den person som tittar på dem."
+    "en": "ae78f5077c808641",
+    "text": "De sidor som tillhör den person som tittar på dem, och det konto-API som de ritas från."
   },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",

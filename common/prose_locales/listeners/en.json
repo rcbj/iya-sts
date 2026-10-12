@@ -37,7 +37,7 @@
   "listeners.applications.authn.label": "Authentication service",
   "listeners.applications.authn.what": "The sign-in service and its second factors, the wallet, SPNEGO and certificate sign-ins, and the sign-out.",
   "listeners.applications.portal.label": "User portal",
-  "listeners.applications.portal.what": "The pages that belong to the person looking at them.",
+  "listeners.applications.portal.what": "The pages that belong to the person looking at them, and the account API they are drawn from.",
   "listeners.applications.admin-console.label": "Admin console",
   "listeners.applications.admin-console.what": "The console at /admin, its script and its pages.",
   "listeners.applications.management-api.label": "Management API",

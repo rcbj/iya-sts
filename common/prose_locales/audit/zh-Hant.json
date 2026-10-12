@@ -1127,6 +1127,10 @@
     "en": "378743408d814c69",
     "text": "某人連結了 Claims Provider"
   },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "宣告提供者的回呼遭到拒絕：該連結不明，或出現在另一個單一登入工作階段中（#568）"
+  },
   "audit.actions.oauth2.claims-providers.add-provider.label": {
     "en": "32689eddc489b284",
     "text": "註冊了 Claims Provider"
