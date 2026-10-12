@@ -79,11 +79,13 @@
 //      /admin-api/verifications/start` (#587) and answered with the
 //      Disclosures it asks for — accepted, reported on `GET
 //      /admin-api/verifications?state=`, and no session — and the same answer
-//      for another nonce, refused. IN DEVELOPMENT the demonstration's own
-//      `/oid4vp/start` and `/oid4vp/result/:state` are driven once more, the
-//      same way: they become development-only (#585), and the operations
-//      call the same two functions, so the demonstration is held here rather
-//      than left untested.
+//      for another nonce, refused. The Response Endpoint names the page the
+//      START named as `redirect_uri` (#594) — any absolute URL in
+//      development, and in product only the calling client's registered
+//      redirect URIs, so an unregistered one is refused there — and names
+//      none for a start that named none. The demonstration's own
+//      `/oid4vp/start`, `/oid4vp/result/:state` and `/oid4vp/done` left for
+//      the development companion on #594.
 //
 // THE WALLET IS INDEPENDENT. Every key, signature, hash and Disclosure below
 // is made with node's own `crypto`, and nothing is borrowed from the
@@ -104,8 +106,6 @@ const consentScreen = require("./consent_screen.js");
 // THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
 // page's view, the collection — bound as the pages bind them.
 const walletSignin = require("./wallet_signin.js");
-// The demonstration Verifier's pages over `/vc-demo-api` (#582).
-const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -583,15 +583,11 @@ async function respond(requestObject, format, presentation) {
 }
 
 // What the Verifier decided: `GET /admin-api/verifications?state=` (#587),
-// the administrator's read, or — `viaPage`, development only — the
-// demonstration's `/oid4vp/result/:state`, which answers the same object.
-async function verdictOf(state, viaPage) {
-  log.debug("Entering verdictOf(). viaPage=" + !!viaPage);
-  const r = viaPage
-    ? await hop(null, "GET", base + "/oid4vp/result/" +
-                encodeURIComponent(state))
-    : await hop(null, "GET", api + "/verifications?state=" +
-                encodeURIComponent(state));
+// the administrator's read.
+async function verdictOf(state) {
+  log.debug("Entering verdictOf().");
+  const r = await hop(null, "GET", api + "/verifications?state=" +
+                      encodeURIComponent(state));
   log.debug("Leaving verdictOf(). " + r.status);
   return (r.json && r.json.verdict) || null;
 }
@@ -1219,21 +1215,17 @@ function sdPayloadVct(sd) {
 async function barDoor(sd, sdKey, product) {
   log.debug("Entering barDoor(). product=" + !!product);
   log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
-  const visitor = jar();
-  // `viaPage` starts it at the demonstration's `/oid4vp/start` — since
-  // #582 a static surface's page, whose act at `POST /vc-demo-api/start`
-  // answers the wallet URL the page's redirect named (`vc_demo.js`, read
-  // as that 302); otherwise the operation answers the wallet URL as
-  // `walletUrl`, which is the same address.
-  async function begin(viaPage) {
-    log.debug("Entering begin(). viaPage=" + !!viaPage);
-    const started = viaPage
-      ? await vcDemo.start(visitor.cookies, base,
-                           { by: "reference", format: "dc+sd-jwt" })
-      : await hop(null, "POST", api + "/verifications/start",
-                  { json: { by: "reference", format: "dc+sd-jwt" } });
-    const address = viaPage ? started.location
-                            : ((started.json || {}).walletUrl || "");
+  // A start at the operation, naming `completion` as the page the wallet is
+  // sent to afterwards (#594) when one is given.
+  async function begin(completion) {
+    log.debug("Entering begin().");
+    const body = { by: "reference", format: "dc+sd-jwt" };
+    if (completion) {
+      body.redirect_uri = completion;
+    }
+    const started = await hop(null, "POST", api + "/verifications/start",
+                              { json: body });
+    const address = (started.json || {}).walletUrl || "";
     const walletUrl = address ? new URL(address) : null;
     const requestUri = walletUrl ? walletUrl.searchParams.get("request_uri") :
       "";
@@ -1242,7 +1234,19 @@ async function barDoor(sd, sdKey, product) {
     return { started: started, jwt: got ? got.text : "",
              ro: got ? payloadOf(got.text) : null };
   }
-  const one = await begin();
+  // THE STARTER'S PAGE (#594): development accepts any absolute URL; a
+  // product realm only the calling client's registered redirect URIs, and
+  // this job's token is the management client's, which registers none.
+  const COMPLETION = "https://verifier.example/verified";
+  const refusedStart = product ? await begin(COMPLETION) : null;
+  if (product) {
+    check("in product, a start naming a page the calling client has not " +
+          "registered is refused (STS-VC-0120)", function () {
+            assert.strictEqual(refusedStart.started.status, 400,
+                               refusedStart.started.text.slice(0, 200));
+          });
+  }
+  const one = await begin(product ? "" : COMPLETION);
   const key = one.jwt ? await realmKeyFor(one.jwt) : null;
   const claimQuery = ((((one.ro || {}).dcql_query || {}).credentials ||
                        [])[0] || {});
@@ -1266,11 +1270,16 @@ async function barDoor(sd, sdKey, product) {
                                      one.ro.client_id, { disclose: asked }));
   const verdict = await verdictOf(one.ro.state);
   check("the holder's credential, disclosing exactly the claims asked for (" +
-        asked.join(", ") + "), is accepted and sent to the thank-you page, " +
-        "and no session is started", function () {
+        asked.join(", ") + "), is accepted, the wallet is sent to the " +
+        "page the start named (or to none), and no session is started",
+        function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 500));
-          assert.ok(/\/oid4vp\/done\?/.test((r.json || {}).redirect_uri),
-                    r.text);
+          if (product) {
+            assert.deepStrictEqual(r.json, {}, r.text);
+          } else {
+            assert.strictEqual((r.json || {}).redirect_uri, COMPLETION,
+                               r.text);
+          }
           assert.ok(verdict && verdict.ok, JSON.stringify(verdict));
           asked.forEach(function (name) {
             assert.ok(verdict.claims && name in verdict.claims,
@@ -1279,28 +1288,6 @@ async function barDoor(sd, sdKey, product) {
           });
           assert.ok(!setsSession(r));
         });
-  r = await hop(visitor, "GET", r.json.redirect_uri);
-  // The thank-you page is a static surface's since #582: the shell, and
-  // the verdict in the view it is drawn from (`/vc-demo-api/done`). It is
-  // the demonstration's own page, so a product realm does not serve it
-  // (#585): there it answers as an unrouted path, and signs nobody in
-  // either.
-  const thanks = r.status === 200 && !product
-    ? await vcDemo.done(visitor.cookies, base, one.ro.state) : null;
-  check("and its thank-you page signs nobody in either" +
-        (product ? " (a product realm serves no demonstration page: 404)"
-                 : ""), function () {
-    if (product) {
-      assert.strictEqual(r.status, 404, r.text.slice(0, 200));
-    } else {
-      assert.strictEqual(r.status, 200);
-      assert.ok(thanks && thanks.status === 200 && thanks.view &&
-                thanks.view.received === true &&
-                thanks.view.accepted === true, JSON.stringify(thanks &&
-                                                              thanks.view));
-    }
-    assert.ok(!setsSession(r) && !visitor.cookies.sts_session);
-  });
   const two = await begin();
   r = await respond(two.ro, "dc+sd-jwt",
                     presentSdJwt(sd.credential, sdKey, "not-" + two.ro.nonce,
@@ -1312,28 +1299,6 @@ async function barDoor(sd, sdKey, product) {
           assert.strictEqual(r.json && r.json.error, "invalid_request");
           assert.ok(refusedVerdict && refusedVerdict.ok === false,
                     JSON.stringify(refusedVerdict));
-        });
-  if (product) {
-    log.info("product mode: the demonstration's /oid4vp/start is not " +
-             "driven (#585)");
-    log.debug("Leaving barDoor().");
-    return;
-  }
-  // THE DEMONSTRATION, IN DEVELOPMENT (#585, #587): its own start and its
-  // own result page, answered the same way.
-  const three = await begin(true);
-  r = await respond(three.ro, "dc+sd-jwt",
-                    presentSdJwt(sd.credential, sdKey, three.ro.nonce,
-                                 three.ro.client_id, { disclose: asked }));
-  const pageVerdict = await verdictOf(three.ro.state, true);
-  check("in development the demonstration's /oid4vp/start still redirects " +
-        "the wallet with a request by reference, and /oid4vp/result reports " +
-        "the answer accepted", function () {
-          assert.strictEqual(three.started.status, 302,
-                             three.started.text.slice(0, 200));
-          assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-          assert.ok(pageVerdict && pageVerdict.ok,
-                    JSON.stringify(pageVerdict));
         });
   log.debug("Leaving barDoor().");
 }

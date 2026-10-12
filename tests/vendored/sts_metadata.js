@@ -98,9 +98,8 @@ async function signInToTheConsole() {
 // mock's own inventions for the benefit of tests and the debugger's panes. A
 // reader who mistook one for a standard endpoint would go looking for it in a
 // specification that does not mention it.
-const NON_SPEC_PATHS = ["/oid4vci/last_request", "/oid4vci/notification/:id",
-                        "/oid4vp/result/:state", "/admin/sts-metadata",
-                            "/healthcheck"];
+// (The issuer's two readbacks and `/oid4vp/result/:state` left on #594.)
+const NON_SPEC_PATHS = ["/admin/sts-metadata", "/healthcheck"];
 
 async function theDocumentIsServed(consoleClient) {
   log.debug("Entering theDocumentIsServed().");
@@ -512,8 +511,8 @@ async function theMethodsShownActuallyAnswer(doc) {
       // than a tidying one. This check asks whether THIS service's router has
       // a handler at the path its own index advertises, and a 3xx IS that
       // handler answering; following it asks the same question of whoever the
-      // Location names, which is a different service. `/issuer/offer` is the
-      // case that showed it — it 302s to the wallet at `oid4vp.walletUrl` — so
+      // Location names, which is a different service. `/issuer/offer` (gone
+      // with #594) was the case that showed it — it 302'd to the wallet — so
       // with fetch's default redirect handling this probe left the mock
       // altogether and the verdict came to rest on the debugger's client being
       // up on port 3000. Against the mock repository's own stack, which is one

@@ -24,8 +24,10 @@
 // operator (`onWaiting`): it asks this realm for an offer — the realm's
 // `oid4vci.walletUrl` is the suite's offer endpoint, so the offer's wallet
 // link IS the delivery — and, for a pre-authorized one, reads the
-// transaction code the person would read. A same-device offer comes from
-// the issuer's own offer page, in a development realm (#585); a
+// transaction code the person would read. A same-device offer is made HERE,
+// as the issuer's web site would make it (#594: the demo issuer's page that
+// made it left the service) — the authorization code grant, no
+// issuer_state, which OpenID4VCI 1.0 section 4.1.1 allows; a
 // pre-authorized one is the person's own,
 // made on the user portal (`POST /account-api/credentials/offers`, #589),
 // signed in as the static portal signs in.
@@ -41,8 +43,6 @@ const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
 const conformanceBrowser = require("./conformance_browser.js");
 const portal = require("./portal_signin.js");
-// The demonstration issuer's offer page over `/vc-demo-api` (#582).
-const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -184,14 +184,9 @@ async function prepare(plan) {
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
     ["federation.outboundCaFile", oidf.suiteCaFile()]];
-  // THE SAME-DEVICE OFFER COMES FROM THE ISSUER'S OWN OFFER PAGE, which is a
-  // demonstration a product realm is not served (#585); a pre-authorized
-  // offer is the portal's in every mode. So that plan's realm is a
-  // development realm whatever the mode — set first, so every setting after
-  // it is judged in the mode the realm will run in.
-  if (plan.offer === "same-device") {
-    settings.unshift(["global.mode", "development"]);
-  }
+  // THE SAME-DEVICE OFFER IS THIS JOB'S OWN since #594 (the operator), so
+  // that plan's realm runs in whatever mode the stack does; it was a
+  // development realm while the offer came from the demo issuer's page.
   // HAIP: every wallet authenticates with OAuth 2.0 Attestation-Based
   // Client Authentication (#229). The CLIENT attester is a leaf a CA made
   // here issued — HAIP 4.4.1 refuses a self-signed one — and the realm
@@ -286,7 +281,8 @@ async function prepare(plan) {
                         : undefined
   };
   log.debug("Leaving prepare().");
-  return { realm: realm, person: person, configuration: configuration };
+  return { realm: realm, person: person, configuration: configuration,
+           offerEndpoint: offerEndpoint };
 }
 
 // THE PERSON (#571): the plan carries no `browser` commands, because the
@@ -368,14 +364,20 @@ function operatorFor(plan, prepared) {
     let link = "";
     let said = "";
     if (plan.offer === "same-device") {
-      // The demonstration issuer's offer page, whose act is `POST
-      // /vc-demo-api/offer` since #582: its `location` is the wallet
-      // address the page's 302 named (`vc_demo.js`).
-      const page = await vcDemo.offer({}, prepared.realm.base,
-        { mode: plan.offer, by: "reference",
-          credential_configuration_ids: CONFIGURATION_ID });
-      link = page.location || "";
-      said = page.status + " " + String(page.text || "").slice(0, 300);
+      // THE ISSUER'S WEB SITE'S OFFER (#594): the issuer named as its
+      // metadata names itself, one configuration, the authorization code
+      // grant and no issuer_state — delivered by value to the wallet, which
+      // is the realm's oid4vci.walletUrl, the suite's offer endpoint.
+      const meta = await fetch(prepared.realm.base +
+                               "/.well-known/openid-credential-issuer");
+      const issuer = String(((await meta.json()) || {}).credential_issuer ||
+                            prepared.realm.base);
+      const offerObject = { credential_issuer: issuer,
+                            credential_configuration_ids: [CONFIGURATION_ID],
+                            grants: { authorization_code: {} } };
+      link = prepared.offerEndpoint + "?credential_offer=" +
+             encodeURIComponent(JSON.stringify(offerObject));
+      said = meta.status + " " + JSON.stringify(offerObject).slice(0, 300);
     } else {
       // The person's own offer (#589): by reference, as the page asked for
       // it, and the transaction code they would read off the portal.
