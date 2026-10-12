@@ -1,0 +1,20 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "The two browser profiles, and the SAML responder behind one of them",
+  "lead": "This service issues SAML 1.1 assertions through three doors, and this is the newest of them: the <strong>browser profiles</strong>, where a person signs in and an assertion reaches a relying party. The other two are {wsfed}, which wraps the same assertion in a <code>wresult</code>, and {wstrust}, which returns one in an <code>RSTR</code>. All three call one builder, so an attribute configured on <code>/admin/saml-attributes</code> appears in all three.",
+  "endpoints": "The endpoints",
+  "endpoint": "Endpoint",
+  "what": "What it is",
+  "sso": "the inter-site transfer service — SAML 1.1's name for what SAML 2.0 calls the Single Sign-On service",
+  "responder": "the SAML responder, over SOAP. Resolves artifacts, returns assertions by AssertionID, and answers AttributeQuery and AuthenticationQuery — the attribute authority half of SAML 1.1",
+  "metadata": "signed metadata. A SAML 2.0 metadata document describing a SAML 1.1 identity provider, which is what every relying party actually consumes",
+  "rp": "a mock relying party, to exercise both profiles and see the checks",
+  "different": "What makes it different from SAML 2.0",
+  "noRequest": "<strong>No request message.</strong> No AuthnRequest, so the relying party never identifies itself, never asks for a binding, a NameID format or an authentication context, and never receives an error — there is nothing to answer.",
+  "noSlo": "<strong>No Single Logout.</strong> It arrived with SAML 2.0.",
+  "spellings": "<strong>Different spellings throughout.</strong> <code>AssertionID</code> not <code>ID</code>, an <code>Issuer</code> attribute not an element, a status code that is a QName not a URI, <code>AudienceRestrictionCondition</code> not <code>AudienceRestriction</code>, and a signature that goes LAST in an assertion and FIRST in a response.",
+  "artifact": "<strong>A 42-byte artifact</strong>, type 0x0001, where SAML 2.0's is 44 bytes and type 0x0004.",
+  "tryIt": "Try it at the mock relying party",
+  "theMetadata": "The metadata"
+}

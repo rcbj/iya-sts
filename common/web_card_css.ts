@@ -149,6 +149,20 @@ class WebCardCss {
     'd32}.vcdemo p.verdict.bad{color:#b00020}.vcdemo ul{line-height:1.5}';
 
   /**
+   * The protocol families' description pages (#584): `/saml2`, `/saml11`,
+   * `/xacml`, `/ssf`, `/scim` and `/spiffe`, each a long page of tables
+   * that the server drew in a stylesheet of its own until then — a wider
+   * card, a note, the lists, a third-level heading. Scoped to `.describe`,
+   * the class the surface's card carries, so no other page of the card
+   * changes.
+   */
+  static readonly DESCRIBE_CSS =
+    '.card.wide.describe{max-width:60rem}.describe .note{color:#666}.descr' +
+    'ibe ul{margin:.3em 0;padding-left:1.2em}.describe li{margin:.2em 0}.d' +
+    'escribe h3{font-size:.95em;margin:1.2em 0 .3em}.describe p{line-heigh' +
+    't:1.5}.describe .row a{text-decoration:none}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -189,8 +203,10 @@ class WebCardCss {
     // GNAP's (#578): scoped to its own card, and after the steps'
     // code field, which its own replaces.
     WebCardCss.GNAP_CSS +
-    // The OpenID4VC demonstration's last (#582), scoped to its own card.
-    WebCardCss.VC_DEMO_CSS;
+    // The OpenID4VC demonstration's (#582), scoped to its own card.
+    WebCardCss.VC_DEMO_CSS +
+    // The description pages' last (#584), scoped to their own card.
+    WebCardCss.DESCRIBE_CSS;
 }
 
 export = WebCardCss;
