@@ -294,11 +294,15 @@ class OverviewPages {
 
       OverviewPages.languageCard(view.language, t) +
 
-      // THE WIDER SIGN-OUT, `POST /logout`: every session and credential
-      // this identity holds in every protocol. Not a portal form, so the
-      // runtime leaves it to the browser, which carries the sign-on cookie.
+      // THE WIDER SIGN-OUT, `/logout`: every session and credential this
+      // identity holds in every protocol. Not a portal form, so the runtime
+      // leaves it to the browser, which carries the sign-on cookie. A GET
+      // since #577: the sign-out page is a static surface whose act is
+      // bound to that cookie by a CSRF token no other page holds, so this
+      // button opens it, and its Global logout — first on the page — is
+      // the press that ends everything.
       '<div class="card"><h2>' + t.html('portal.overview.signOutAll') +
-      '</h2><form method="post" action="/logout">' +
+      '</h2><form method="get" action="/logout">' +
       '<button class="secondary">' + t.html('portal.overview.signOutAll') +
       '</button></form><p class="note">' +
       t.html('portal.overview.signOutAllNote') + '</p></div>';
