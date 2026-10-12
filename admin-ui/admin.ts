@@ -2240,6 +2240,26 @@ const SECTIONS = [
                'one. A source that is not there says so. <strong>The ' +
                'figures are this node\'s</strong>, drawn by its front ' +
                'process; no control.' },
+      // TLS CONNECTION (#597, rcbj's decision 3 on #591), beside the node's
+      // own pages: what this service saw of a request — its TLS connection,
+      // the client certificate on it, and what a proxy in front told it.
+      // Under Monitoring because it REPORTS what arrived; the settings it
+      // reads are on TLS / mutual TLS and Configuration. Drawn by
+      // `tls/web_tls_connection.ts` from `GET /admin-api/tls-connection`.
+      // NOT under `/admin/tls`, whose prefix `admin_scope.ts` refuses to a
+      // realm's own administrator: a realm administrator may ask what their
+      // own connection carried.
+      { path: '/admin/tls-connection', label: 'TLS connection',
+        blurb: 'What this service saw of the console\'s own request: the ' +
+               'TLS version and cipher, the client certificate the ' +
+               'connection presented &mdash; whether it verified against ' +
+               'the truststore, what the identity gate makes of it and its ' +
+               'revocation status &mdash; and every forwarding header with ' +
+               'what was believed of it under <code>global.trustProxy</code> ' +
+               'and <code>global.trustedProxies</code>, including the base ' +
+               'URL every issuer is built from. It replaces the development ' +
+               'pages <code>/tls</code> and <code>/tls/forwarded</code>, and ' +
+               'answers in product mode. No control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by

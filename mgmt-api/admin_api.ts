@@ -19275,6 +19275,73 @@ class AdminApi {
         ] },
 
       // -----------------------------------------------------------------------
+      // MONITORING → TLS CONNECTION (#597, rcbj's decision 3 on #591): what
+      // `GET /tls` and `GET /tls/forwarded` showed anybody in development,
+      // as a read behind this API's gate, in both modes. The view is
+      // `tls/tls_server.js`'s `connectionView()`, reached LAZILY: that module
+      // is required at 20, after this one, and requiring it here would
+      // register its routes ahead of everything between (rule 1).
+      //
+      // **PINNED TO THE FRONT PROCESS** with the page
+      // (`request_pool.js`'s NEVER_DISPATCHED): the socket a worker sees is
+      // the unix socket from its front process, which is not a fact about
+      // the caller.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/tls-connection', tag: 'TLS',
+        operationId: 'getTlsConnection',
+        summary: 'What this service saw of THIS request: its TLS ' +
+                 'connection, its client certificate and its forwarding ' +
+                 'headers',
+        description: 'Describes the request that asked — and only that ' +
+                     'one — as this service saw and believed it. ' +
+                     '`connection`: `https`, `encrypted`, the TLS ' +
+                     '`protocol` and `cipher` negotiated, the socket\'s ' +
+                     '`peerAddress` and the `clientAddress` this service ' +
+                     'believes. `clientCertificate`: whether one was ' +
+                     '`presented` on the connection, whether it `verified` ' +
+                     'against the client truststore (`GET ' +
+                     '/admin-api/tls/trust`) or the `authorizationError` ' +
+                     'OpenSSL gave, the `certificate` (subject, issuer, ' +
+                     'serial, validity, subjectAltName, key, SHA-256 ' +
+                     'fingerprint and PEM), its RFC 8705 `thumbprint`, ' +
+                     'what the identity gate made of it (`identity`: ' +
+                     'issued here, accepted, kind, username, realm, why ' +
+                     'not) and the `revocation` verdict `GET ' +
+                     '/tls/sign-in` would act on. `forwarded`: ' +
+                     '`global.trustProxy` and `global.trustedProxies`, ' +
+                     'whether the peer is a trusted proxy and whether the ' +
+                     'forwarding headers were `believed`, the ' +
+                     '`effectiveBaseUrl` every issuer and endpoint is ' +
+                     'built from, each forwarding header with its value, ' +
+                     'and the client-certificate headers a proxy might set ' +
+                     '— which this service READS NONE OF, in either ' +
+                     'mode.\n\n**IT CHANGES NOTHING**: no session is ' +
+                     'started (that is `GET /tls/sign-in`), no sighting ' +
+                     'recorded, no setting written.\n\n**THE CONSOLE\'S ' +
+                     'PAGE DESCRIBES ITS OWN CALL TO THIS OPERATION**, not ' +
+                     'the request that loaded the page: the console is a ' +
+                     'static application, so the view is a second request, ' +
+                     'on whatever connection the browser chose for it. ' +
+                     'Answered by the front process, which holds the ' +
+                     'client\'s socket. Development only as `GET /tls` and ' +
+                     '`GET /tls/forwarded` until #597.',
+        mirrors: 'GET /admin/tls-connection',
+        responseDescription: 'The request\'s connection, client ' +
+                             'certificate and forwarding headers.',
+        responseSchema: { type: 'object',
+          description: '`generatedAt`, `connection`, `clientCertificate` ' +
+                       'and `forwarded`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API TLS connection endpoint.");
+          require('../tls/tls_server').connectionView(req)
+            .then(function (view) {
+              self.sendJson(res, 200, view);
+              log.debug("Leaving the management API TLS connection " +
+                        "endpoint.");
+            });
+        } },
+
+      // -----------------------------------------------------------------------
       // THE STORED KERBEROS KEYS (2026-09-12).
       //
       // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop

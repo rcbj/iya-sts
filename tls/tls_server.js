@@ -12,7 +12,9 @@
 //
 // This file owned two HTTPS listeners of its own until 2026-09-16 and owns
 // none now — the block below says what happened to them. What is left is a
-// LIBRARY plus six ordinary routes on the main app: the server certificate
+// LIBRARY plus two ordinary routes on the main app (#597 deleted the other
+// four, and `/tls` and `/tls/forwarded` became Monitoring → TLS connection's
+// view, `connectionView()`): the server certificate
 // and the hierarchy it is certified under, the client truststore a caller
 // fills at runtime, the record of every client certificate presented to this
 // process, and `GET /tls/sign-in`, which turns a verified one into a session.
@@ -96,7 +98,8 @@
 //     by a private CA. So the empty case is passed explicitly, and with it
 //     every client certificate presented to this service is UNVERIFIED — it
 //     still arrives, and everything that reads one refuses it. That is the
-//     correct starting state and the `/tls` page says so.
+//     correct starting state and the truststore page (/admin/tls/trust)
+//     says so.
 //   * the anchors go in over the main port, which is where everything else
 //     goes now too. Without `global.https` it is plain HTTP, which is the one
 //     thing reachable before anything is trusted, and this is a mock: an
@@ -110,10 +113,9 @@
 //     /tls/server-certificate and the first call to /admin-api have to be made
 //     without verifying the certificate (`curl -k`). That is the ordinary
 //     bootstrap for a certificate regenerated on every start — it is the same
-//     act as trusting the PEM this endpoint hands back, done a step earlier —
-//     and the `/tls` page says which port it is on from that setting (the
-//     view's `https`, #583), so it never claims a plain port that is not
-//     there.
+//     act as trusting the PEM this endpoint hands back, done a step earlier.
+//     Monitoring → TLS connection says whether the request it describes
+//     arrived over HTTPS (the view's `connection.https`, #597).
 //
 // ---------------------------------------------------------------------------
 // AND IT AUTHENTICATES PEOPLE THE WAY THE REST OF THIS SERVICE DOES, WHICH IS
@@ -165,10 +167,15 @@ const helpers = require('../common/helpers');
 // session has committed. A library; app.js has already loaded it.
 const clusterBarrier = require('../cluster/cluster_barrier');
 
-// The input validator. A LEAF (rule 3): it registers no route and closes no
-// cycle. Both `/tls` pages take exactly one parameter and it is a closed set.
-const validation = require('../common/validation');
-const { log, parseBody, baseUrlOf } = helpers;
+// The input validator was required here for the two `/tls` pages' one
+// parameter; both pages were deleted by #597, and nothing else here takes a
+// parameter it has to check.
+const { log, baseUrlOf } = helpers;
+// WHAT A FORWARDED HEADER IS BELIEVED FROM (#597): Monitoring → TLS
+// connection reports what `client_address.js` made of this request's
+// forwarding headers. A leaf (config and the cache registry); it registers
+// nothing.
+const clientAddress = require('../common/client_address');
 // The single funnel every authentication in this service passes through at the
 // moment a credential is ACCEPTED. A verified client certificate is one, and
 // going through here rather than writing to the console and the directory
@@ -248,12 +255,6 @@ const listenerMap = require('../common/listener_map');
 // the channel and the routing index are lazy.
 const cells = require('../common/cells');
 const cellPlacement = require('../common/cell_placement');
-// THE DIAGNOSTIC PAGES' SHELL AND THE BINDING OF THEIR ACTS (#583): `/tls`
-// and `/tls/forwarded` answer a static surface's shell carrying their view,
-// and a browser's `POST /tls/trust` is bound to the `/tls` page. A
-// TypeScript module that registers nothing; the routes below are this
-// file's.
-const TlsPages = require('./tls_pages');
 
 // ---------------------------------------------------------------------------
 // THE PROTOCOL FLOOR AND THE CIPHER LIST, FOR EVERY TLS SOCKET THIS PROCESS
@@ -5220,211 +5221,6 @@ function observeConnectionsOn(server, label) {
 }
 
 // ---------------------------------------------------------------------------
-// The views on the main port.
-//
-// Every surface of this module is a route since 2026-09-16, so
-// /admin/sts-metadata, which walks the Express router, sees all of them. The
-// ungated truststore controls are on the MAIN port on purpose — see the
-// header, including what global.https changes about that — and the gated
-// doors are the console's and the management API's (`truststore` below).
-// ---------------------------------------------------------------------------
-
-function description(req) {
-  log.debug('Entering description().');
-  const host = String(req.get('host') || 'localhost').split(':')[0];
-  const out = {
-    // What this service presents, and — when there is more than one — the
-    // fact that WHICH one arrives is decided by the client's own signature
-    // algorithms rather than by this service.
-    serverCertificates: SERVER_CERTIFICATES.map(function (one) {
-      return { algorithm: one.algorithm, subject: one.subject,
-              names: one.names, fingerprint256: one.fingerprint256,
-              notAfter: one.notAfter,
-              // Whether this one is a leaf of the TLS Issuing CA or still the
-              // self-signed certificate it was born with — per certificate,
-              // since the ML-DSA ones joined the tree (2026-09-13).
-              certified: !!(one.chainPem && one.chainPem.length) };
-    }),
-    serverCertificateNote: SERVER_CERTIFICATES.length > 1
-      ? 'Several certificates are configured (tls.certificateAlgorithms). ' +
-        'OpenSSL serves whichever one matches the signature algorithms the ' +
-        'CLIENT offered, so an ordinary client and a post-quantum one get ' +
-        'different certificates from the same port — which is what a ' +
-        'migration looks like. GET /tls/server-certificate returns all of ' +
-        'them, and a truststore needs all of them.'
-      : 'One certificate, self-signed and regenerated at every start. GET ' +
-        '/tls/server-certificate for it. Add an ML-DSA one beside it with ' +
-        'tls.certificateAlgorithms=rsa,ml-dsa-65.',
-    // ONE LISTENER SINCE 2026-09-16. This was two entries — 8443 asking for a
-    // client certificate and 9443 requiring one — and both sockets were
-    // deleted: the main port already had the first posture, and the second
-    // cannot be had on a port every other protocol answers on. What a client
-    // certificate is worth is now decided where it is USED.
-    listeners: [
-      { mode: 'optional',
-        url: 'https://' + host + ':' + MAIN_PORT + '/',
-        port: MAIN_PORT,
-        listening: true,
-        requestsClientCertificate: !!config.value('global.https'),
-        requiresClientCertificate: false,
-        what: 'The main port asks every connection for a client certificate ' +
-          'and requires none, so presenting one is the CLIENT\'s decision. ' +
-          'What arrives is recorded, and is judged where it is used: at the ' +
-          'token endpoint (RFC 8705), at /xacml, at /scim/v2, and at ' +
-          'GET /tls/sign-in, which starts a session for a verified one.' }
-    ],
-    listenError: listenError,
-    // `report: '/tls/whoami'` and `page: '/'` were here until 2026-09-16,
-    // and both were routes on the deleted listeners. What a caller can be
-    // pointed at now is the sign-in — which reports what the connection
-    // carried as well as signing its holder in — and the two documents.
-    paths: {
-      signIn: '/tls/sign-in',
-      // Only where the process serves it (#585).
-      trust: app.processDemoOnly.serves() ? '/tls/trust' : null,
-      serverCertificate: '/tls/server-certificate'
-    },
-    serverCertificate: {
-      subject: SERVER_CERTIFICATE.subject,
-      names: SERVER_CERTIFICATE.names,
-      fingerprint256: SERVER_CERTIFICATE.fingerprint256,
-      notAfter: SERVER_CERTIFICATE.notAfter,
-      selfSigned: true,
-      pemUrl: '/tls/server-certificate'
-    },
-    truststore: {
-      anchors: anchors.length,
-      maxAnchors: MAX_ANCHORS,
-      subjects: anchors.map(function (anchor) { return anchor.subject; }),
-      fingerprints: anchors.map(function (anchor) {
-        return anchor.fingerprint256;
-      }),
-      // The two open doors, where they are served (#585): a test control
-      // the PROCESS must be in development for, `app.processDemoOnly`.
-      addUrl: app.processDemoOnly.serves() ? '/tls/trust' : null,
-      clearUrl: app.processDemoOnly.serves() ? '/tls/trust/clear' : null,
-      // The GATED doors, which answer in both modes (2026-09-12): the console
-      // page lists every anchor with where it came from, and the management
-      // API adds and removes one at a time.
-      consoleUrl: '/admin/tls/trust',
-      apiUrl: '/admin-api/tls/trust',
-      // Whether those two are there at all (development) or not (product),
-      // and the file product mode reads instead.
-      changeableOverHttp: app.processDemoOnly.serves(),
-      anchorsFile: anchorsFileReport.file || null,
-      anchorsFromFile: anchorsFileReport.loaded
-    },
-    // `tls.minVersion`, `tls.ciphers`, `tls.groups` and
-    // `tls.signatureAlgorithms`, as every TLS socket applies them.
-    protocol: { minVersion: protocolOptions().minVersion,
-                ciphers: protocolOptions().ciphers || '(node default)',
-                groups: protocolOptions().ecdhCurve || '(node default)',
-                signatureAlgorithms: protocolOptions().sigalgs ||
-                  '(node default)' },
-    // WHAT A PRESENTED CERTIFICATE IS HELD TO BEYOND ITS CHAIN (2026-09-12):
-    // the policy in force, how it was decided, where it is and is not
-    // consulted, and the one sentence every surface repeats. The verdict for
-    // a particular connection is on /tls/sign-in.
-    revocation: Object.assign(revocationStatus.describePolicy(),
-                              { cache: revocationStatus.cacheReport() }),
-    // FALSE SINCE 2026-09-05 AND KEPT UNDER ITS OLD NAME, because a client
-    // reading this document by that key is entitled to a truthful answer
-    // rather than a missing one. A verified client certificate now starts a
-    // sign-on session at GET /tls/sign-in, after the revocation check that
-    // `revocation` above describes.
-    authenticatesNobody: false,
-    signsInVerifiedCertificates: {
-      started: true,
-      what: 'GET /tls/sign-in on a connection carrying a client certificate ' +
-        'that VERIFIED starts a sign-on session for its common name (or its ' +
-        'RFC 4514 subject, where it has no common name), and the response ' +
-        'carries the session cookie',
-      when: 'when that route is asked, and not again while the ' +
-        'browser sends the cookie back',
-      note: 'REVOCATION IS CONSULTED BEFORE THE SESSION STARTS (see ' +
-        '`revocation` above — it said NO REVOCATION IS CHECKED until ' +
-        '2026-09-12), and a certificate the policy refuses gets no session; ' +
-        'the route still answers 200, saying so. The session is this service ' +
-        'tracking that the holder got in — which is what lets /admin/logout ' +
-        'end it.',
-      endUrl: '/admin/logout'
-    },
-    // Beside the sign-in rather than instead of it, and the two are next to
-    // each other so that neither can be read alone: what is RECORDED is the
-    // certificate's own identity, and who is SIGNED IN is its common name.
-    recordsVerifiedCertificates: {
-      recorded: true,
-      what: 'when a handshake completes with a client certificate that ' +
-        'verified, the subject DN is filed as an authentication (protocol ' +
-        '"TLS") and the embedded LDAP directory seeds an entry for it',
-      when: 'once per handshake, not once per request',
-      consoleUrl: '/admin/users?protocol=TLS',
-      directoryUrl: '/admin/ldap/directory',
-      note: 'a record of what happened. A session IS started beside it since ' +
-        '2026-09-05 (see signsInVerifiedCertificates above) and no token is ' +
-        'issued; a certificate refused on revocation is not recorded, and ' +
-        'nothing in this service consults the record itself.'
-    }
-  };
-  log.debug('Leaving description().');
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// The one parameter these two pages take.
-//
-// **CASE-INSENSITIVE ON PURPOSE**, because the call sites below compare after
-// `.toLowerCase()` — a closed set written case-sensitively here would refuse
-// `?format=JSON`, which those lines accept today. A validator that changes what
-// an endpoint accepts is not validating it.
-//
-// `html` is in the set although nothing compares against it: anything that is
-// not `json` renders HTML, so it is the other real answer and a caller naming
-// it should not be refused for being explicit.
-// ---------------------------------------------------------------------------
-const TLS_QUERY = validation.z.looseObject({
-  format: validation.types.opt(validation.z.string().regex(/^(json|html)$/i,
-    'must be "json" or "html"'))
-});
-
-app.get('/tls', app.demoOnly, function (req, res) {
-  log.debug('Entering GET /tls.');
-  const info = description(req);
-  const askedFormat = validation.check(req, 'query', TLS_QUERY);
-  if (!askedFormat.ok) {
-    log.debug('Leaving the TLS page. ' + askedFormat.detail);
-    errorCodes.mark(res, 'STS-TLS-0023');
-    return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
-  }
-  if (String(req.query.format || '').toLowerCase() === 'json') {
-    log.debug('Leaving GET /tls. JSON.');
-    return res.status(200).set('Cache-Control', 'no-store').json(info);
-  }
-  // THE PAGE IS A STATIC SURFACE'S SHELL (#583), carrying the very object
-  // `?format=json` answers above, built on THIS request, and whether the
-  // port it arrived on is HTTPS (the page's first paragraph says which, as
-  // `mainPortPhrase()` did). Its two buttons are drawn only where the
-  // process serves the acts (`info.truststore.addUrl`, #585), and only
-  // then does the shell carry their token.
-  TlsPages.send(req, res, { kind: 'tls',
-                            https: !!config.value('global.https'),
-                            info: info },
-                { acts: !!info.truststore.addUrl });
-  log.debug('Leaving GET /tls.');
-});
-
-// THE DIAGNOSTIC PAGES' SCRIPT (#583): the runtime and renderers that draw
-// `/tls` and `/tls/forwarded` from the state their shells carry. A path of
-// the `tls` hosted application, so a shell on that application's own
-// listener (#472) loads it from there; and a demonstration's, like the two
-// pages, so a product realm answers it as a path nothing is registered on.
-app.get(TlsPages.SCRIPT_PATH, app.demoOnly, function (req, res) {
-  log.debug('Entering GET /tls/pages.js.');
-  TlsPages.script(req, res);
-  log.debug('Leaving GET /tls/pages.js.');
-});
-
-// ---------------------------------------------------------------------------
 // A VERIFIED CLIENT CERTIFICATE IS A SIGN-IN, ON THE MAIN PORT (2026-09-16).
 //
 // It was a side effect of reaching 8443 or 9443 at all: the deleted handler
@@ -5732,8 +5528,9 @@ const truststore = {
 };
 
 // ---------------------------------------------------------------------------
-// GET /tls/forwarded — what a reverse proxy told this service, and what was
-// believed of it.
+// WHAT A REVERSE PROXY TOLD THIS SERVICE, AND WHAT WAS BELIEVED OF IT — the
+// second half of Monitoring → TLS connection (`connectionView()` below). It
+// was `GET /tls/forwarded`, a development page, until #597.
 //
 // RFC 9700 section 2.6 has a paragraph about reverse proxies with two halves.
 // The proxy's half is that it MUST sanitize inbound security-sensitive headers
@@ -5742,7 +5539,7 @@ const truststore = {
 // is the one this service can do something about, is that it must not BELIEVE
 // those headers unless it knows a proxy set them.
 //
-// So this page reports the request as it arrived: every forwarding header,
+// So the view reports the request as it arrived: every forwarding header,
 // every security-sensitive header a proxy might inject, whether this service
 // believed any of it, and what the effective base URL — the thing every issuer
 // and every endpoint in both discovery documents is built from — came out as.
@@ -5757,7 +5554,7 @@ const truststore = {
 // X-Forwarded-Client-Cert, X-SSL-Client-Cert, and a dozen vendor spellings —
 // and an application that believed one would be accepting a certificate anybody
 // can forge, since a header costs nothing to write. THIS SERVICE READS NONE OF
-// THEM, in either mode, and the page says so with the ones it saw listed: a
+// THEM, in either mode, and the view says so with the ones it saw listed: a
 // mock that silently ignored a header somebody was relying on would be as bad
 // as one that silently trusted it.
 // ---------------------------------------------------------------------------
@@ -5798,78 +5595,204 @@ const SENSITIVE_HEADERS = [
                                           'balancer spells it.' }
 ];
 
-app.get('/tls/forwarded', app.demoOnly, function (req, res) {
-  log.debug('Entering GET /tls/forwarded.');
-  const trusted = !!config.value('global.trustProxy');
+// ---------------------------------------------------------------------------
+// MONITORING → TLS CONNECTION: WHAT THIS SERVICE SAW OF A REQUEST (#597,
+// 2026-10-12; rcbj's decision 3 on #591).
+//
+// `GET /tls` and `GET /tls/forwarded` described the connection a page was
+// loaded on and the headers it arrived with, to anybody, development only
+// (#585). #591 moved every demonstration out of the runtime, and rcbj kept
+// this one as a CONSOLE PAGE — Admin Read, and answered in product mode,
+// because "what did the server make of my connection, and of the proxy in
+// front of it" is a question an operator of a product deployment has. So
+// the two pages are one view, `GET /admin-api/tls-connection`, drawn at
+// `/admin/tls-connection` by `tls/web_tls_connection.ts`.
+//
+// **THE REQUEST DESCRIBED IS THE API CALL, NOT THE PAGE LOAD**, and the
+// page says so. The console is a static application (#446): the browser
+// loads its shell and then asks the management API, with a DPoP-bound
+// token, for the view — a second request, on whatever connection the
+// browser chose for it (HTTP keep-alive usually makes it the same one).
+// For a console page that is fine: the client certificate a browser
+// presents is per connection, and the forwarded headers a proxy writes are
+// the same on every request it relays. A caller of the API reads the same
+// view about ITS OWN request.
+//
+// **ANSWERED BY THE FRONT PROCESS**: both paths are in
+// `common/request_pool.js`'s NEVER_DISPATCHED, beside `/tls`, because a
+// request worker sees a unix socket where the front process sees the
+// client's — the argument `/tls` was pinned on.
+//
+// What it reads: the socket's own TLS facts (version, cipher), the client
+// certificate as `describeCertificate()` describes the sightings, whether
+// it VERIFIED against the truststore and why not, what the identity gate
+// (`tls_client_certificates.js`) makes of it, the revocation verdict
+// `GET /tls/sign-in` would act on — and the forwarding headers with what
+// `common/client_address.js` believed of them under `global.trustProxy` and
+// `global.trustedProxies`. It changes nothing: no session is started, no
+// sighting is recorded, no setting is written. The English sentences in it
+// are data, as every view's are (#539).
+// ---------------------------------------------------------------------------
+/**
+ * Describes the connection and the forwarding headers of the request it is
+ * given, as this service saw and believed them: what `GET
+ * /admin-api/tls-connection` answers and `/admin/tls-connection` draws.
+ *
+ * @param req - the request to describe
+ * @returns a promise of the view; it never rejects
+ */
+function connectionView(req) {
+  log.debug('Entering connectionView().');
+  const socket = (req && (req.socket || req.connection)) || {};
+  const headers = (req && req.headers) || {};
+  let peer = null;
+  try {
+    peer = typeof socket.getPeerCertificate === 'function'
+      ? socket.getPeerCertificate(true) : null;
+  } catch (e) {
+    // A socket that went away between the handshake and this line: nothing
+    // presented to describe.
+    log.debug('Caught in connectionView(): ' + ((e && e.message) || e));
+    peer = null;
+  }
+  const presented = !!(peer && peer.raw && peer.raw.length);
+  const tlsFact = function (name) {
+    log.debug('Entering tlsFact(). ' + name);
+    let out = null;
+    try {
+      if (name === 'protocol' && typeof socket.getProtocol === 'function') {
+        out = socket.getProtocol() || null;
+      } else if (name === 'cipher' &&
+                 typeof socket.getCipher === 'function') {
+        const cipher = socket.getCipher();
+        out = cipher && cipher.name ? String(cipher.name) : null;
+      }
+    } catch (e) {
+      log.debug('Caught in tlsFact(): ' + ((e && e.message) || e));
+      out = null;
+    }
+    log.debug('Leaving tlsFact().');
+    return out;
+  };
   const seen = function (rows) {
-    log.debug("Entering seen().");
-    log.debug("Leaving seen().");
+    log.debug('Entering seen().');
+    log.debug('Leaving seen().');
     return rows.map(function (row) {
-      const value = req.headers[row.name];
+      const value = headers[row.name];
       return { header: row.name, present: value !== undefined,
                value: value === undefined ? null : String(value),
                what: row.what };
     });
   };
-  const forwarding = seen(FORWARDING_HEADERS);
+  const trusted = !!config.value('global.trustProxy');
+  const ranges = clientAddress.trustedProxyRanges();
   const sensitive = seen(SENSITIVE_HEADERS);
-  const presentSensitive = sensitive.filter(function (
-      row) { return row.present; });
-  const payload = {
-    trustProxy: trusted,
-    socket: { scheme: req.protocol, host: req.get('host') || '',
-              encrypted: !!req.secure },
-    effectiveBaseUrl: baseUrlOf(req),
-    what_it_means: trusted
-      ? 'global.trustProxy is ON, so X-Forwarded-Proto and X-Forwarded-Host ' +
-        'decide what this service thinks its own URLs are. That is correct ' +
-        'behind a reverse proxy and unsafe without one, because those are ' +
-        'headers any client can set.'
-      : 'global.trustProxy is OFF, so the forwarding headers below are ' +
-        'IGNORED and this service describes the connection it can see. If a ' +
-        'proxy is terminating TLS in front of it, the metadata is publishing ' +
-        'the wrong URLs and every DPoP proof is being refused for naming the ' +
-        'real endpoint — turn the setting on.',
-    forwarding: forwarding,
-    clientCertificateHeaders: {
-      readByThisService: false,
-      seen: presentSensitive.map(function (row) { return row.header; }),
-      note: 'THIS SERVICE READS NONE OF THESE, in either mode. A certificate ' +
-            'in a header is a certificate anybody can write, so believing ' +
-            'one would let any client claim any identity — and RFC 8705 ' +
-            'binding here reads the certificate off the TLS handshake itself ' +
-            '(see /tls/sign-in and mtls.js). A proxy that terminates mTLS in ' +
-            'front of this service therefore cannot pass the certificate ' +
-            'through, which is a real limitation rather than an oversight: ' +
-            'the alternative is trusting a header.' +
-            (presentSensitive.length
-              ? ' This request carried ' + presentSensitive.length + ' of ' +
-                'them and they were ignored.'
-              : ''),
-      headers: sensitive
+  const presentSensitive = sensitive.filter(function (row) {
+    return row.present;
+  });
+  const identity = presented ? issuedIdentityOf(socket) : null;
+  const view = {
+    generatedAt: new Date().toISOString(),
+    connection: {
+      https: !!req.secure,
+      encrypted: !!socket.encrypted,
+      protocol: tlsFact('protocol'),
+      cipher: tlsFact('cipher'),
+      peerAddress: clientAddress.normalise(socket.remoteAddress) || null,
+      clientAddress: clientAddress.clientAddressOf(req)
     },
-    proxyMustSanitize: 'RFC 9700 section 2.6: a reverse proxy MUST strip ' +
-      'these headers from what a CLIENT sent before setting its own, or a ' +
-      'client can reach past it by setting them itself. That is the proxy\'s ' +
-      'job and this service cannot do it — what it can do is not believe ' +
-      'them unless told to, which is what the setting above is.'
+    clientCertificate: {
+      presented: presented,
+      verified: presented && socket.authorized === true,
+      authorizationError: presented && socket.authorizationError
+        ? String(socket.authorizationError) : null,
+      certificate: presented ? describeCertificate(peer, 0) : null,
+      thumbprint: presented ? stsCrypto.certificateThumbprint(peer.raw) : '',
+      identity: identity ? {
+        issuedHere: !!identity.issuedHere,
+        accepted: !!identity.accepted,
+        kind: identity.kind || null,
+        username: identity.username || null,
+        realm: identity.realm === undefined ? null : identity.realm,
+        why: identity.why || null
+      } : null,
+      revocation: null,
+      signIn: '/tls/sign-in',
+      note: presented
+        ? 'What this connection carried. Verified means a chain to an anchor ' +
+          'in the client truststore (/admin/tls/trust); what a verified ' +
+          'certificate is worth is decided where it is used — a sign-on ' +
+          'session at GET /tls/sign-in, RFC 8705 at the token endpoint, ' +
+          '/xacml, /scim/v2. Nothing here started a session.'
+        : 'No client certificate arrived on this connection. The main port ' +
+          'asks every connection for one and requires none, so presenting ' +
+          'one is the client\'s own doing.'
+    },
+    forwarded: {
+      trustProxy: trusted,
+      trustedProxies: config.value('global.trustedProxies') || [],
+      rangesConfigured: ranges.configured,
+      rangesUsable: ranges.count,
+      peerIsTrustedProxy: clientAddress.peerIsTrustedProxy(req),
+      believed: clientAddress.forwardedBelieved(req),
+      socket: { scheme: req.protocol, host: req.get ? req.get('host') || ''
+                                                    : '',
+                encrypted: !!req.secure },
+      effectiveBaseUrl: baseUrlOf(req),
+      whatItMeans: !trusted
+        ? 'global.trustProxy is OFF, so the forwarding headers below are ' +
+          'IGNORED and this service describes the connection it can see. If ' +
+          'a proxy is terminating TLS in front of it, the metadata is ' +
+          'publishing the wrong URLs and every DPoP proof is being refused ' +
+          'for naming the real endpoint — turn the setting on.'
+        : (clientAddress.forwardedBelieved(req)
+          ? 'global.trustProxy is ON and this request came from a peer it ' +
+            'believes (' + (ranges.configured
+              ? 'one of global.trustedProxies'
+              : 'global.trustedProxies is empty, so ANY peer') + '), so ' +
+            'X-Forwarded-Proto and X-Forwarded-Host decide what this ' +
+            'service thinks its own URLs are, and X-Forwarded-For its ' +
+            'idea of the client\'s address. That is correct behind a ' +
+            'reverse proxy and unsafe without one.'
+          : 'global.trustProxy is ON, but this request\'s peer is not in ' +
+            'global.trustedProxies, so its forwarding headers were IGNORED: ' +
+            'a caller that reached the node directly cannot choose this ' +
+            'service\'s URL or its own address.'),
+      forwarding: seen(FORWARDING_HEADERS),
+      clientCertificateHeaders: {
+        readByThisService: false,
+        seen: presentSensitive.map(function (row) { return row.header; }),
+        note: 'THIS SERVICE READS NONE OF THESE, in either mode. A ' +
+              'certificate in a header is a certificate anybody can write, ' +
+              'so believing one would let any client claim any identity — ' +
+              'and RFC 8705 binding here reads the certificate off the TLS ' +
+              'handshake itself. A proxy that terminates mTLS in front of ' +
+              'this service therefore cannot pass the certificate through, ' +
+              'which is a real limitation rather than an oversight: the ' +
+              'alternative is trusting a header.' +
+              (presentSensitive.length
+                ? ' This request carried ' + presentSensitive.length + ' of ' +
+                  'them and they were ignored.'
+                : ''),
+        headers: sensitive
+      },
+      proxyMustSanitize: 'RFC 9700 section 2.6: a reverse proxy MUST strip ' +
+        'these headers from what a CLIENT sent before setting its own, or a ' +
+        'client can reach past it by setting them itself. That is the ' +
+        'proxy\'s job and this service cannot do it — what it can do is not ' +
+        'believe them unless told to, which is what the settings above are.'
+    }
   };
-  const askedFormat = validation.check(req, 'query', TLS_QUERY);
-  if (!askedFormat.ok) {
-    log.debug('Leaving the TLS page. ' + askedFormat.detail);
-    errorCodes.mark(res, 'STS-TLS-0023');
-    return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
+  if (!presented) {
+    log.debug('Leaving connectionView(). No client certificate.');
+    return Promise.resolve(view);
   }
-  if (String(req.query.format || '').toLowerCase() === 'json') {
-    log.debug('Leaving GET /tls/forwarded. JSON.');
-    return res.status(200).json(payload);
-  }
-  // THE PAGE IS A STATIC SURFACE'S SHELL (#583), carrying the object
-  // `?format=json` answers above — built on THIS request, whose headers are
-  // what the page is about, so it is carried rather than fetched.
-  TlsPages.send(req, res, Object.assign({ kind: 'forwarded' }, payload));
-  log.debug('Leaving GET /tls/forwarded. trustProxy=' + trusted);
-});
+  log.debug('Leaving connectionView(). The revocation verdict follows.');
+  return checkedSocket(socket).then(function (verdict) {
+    view.clientCertificate.revocation = verdict || null;
+    return view;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // THIS MODULE BINDS NOTHING SINCE 2026-09-16.
@@ -5878,7 +5801,7 @@ app.get('/tls/forwarded', app.demoOnly, function (req, res) {
 // socket owner in this service does: a bind can fail, and a `require` that
 // throws takes the whole process down where a route cannot. Both are gone —
 // see the block above `observeConnectionsOn()` — and what is left is a
-// LIBRARY: the certificate, the truststore, the sightings and six routes on
+// LIBRARY: the certificate, the truststore, the sightings and two routes on
 // the main app.
 //
 // `listen()` and `close()` are kept rather than deleted, because `server.js`
@@ -6148,6 +6071,9 @@ module.exports = {
   // Installed by `server.js` on the main HTTPS listener: the sighting, and the
   // failed-handshake log that is otherwise invisible.
   observeConnectionsOn: observeConnectionsOn,
+  // Monitoring → TLS connection's view (#597), for `GET
+  // /admin-api/tls-connection`, which reaches this module lazily.
+  connectionView: connectionView,
   // Exported for tests/tls_handshake_alerts.js (#225).
   handshakeFailureOf: handshakeFailureOf,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
