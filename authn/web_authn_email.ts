@@ -28,6 +28,7 @@
 
 import WebAuthnLogin = require('./web_authn_login');
 import WebOutcome = require('../common/web_outcome');
+import WebAuthnMfa = require('./web_authn_mfa');
 
 type Json = any;
 
@@ -126,7 +127,8 @@ class WebAuthnEmail {
                                             : '/authn/email-link') + '">' +
       '<div class="row"><button type="submit" id="email-send" name="action" ' +
       'value="send">' + t.html('emailFactor.ask.send') + '</button></div>' +
-      '</form><div class="meta">' + WebAuthnEmail.others(v, t) + '</div>';
+      '</form>' + WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      WebAuthnEmail.others(v, t) + '</div>';
   }
 
   /**
@@ -161,7 +163,8 @@ class WebAuthnEmail {
       '<form method="post" action="/authn/email-code"><div class="row">' +
       '<button type="submit" id="email-code-resend" class="secondary" ' +
       'name="action" value="send">' + t.html('emailFactor.code.resend') +
-      '</button></div></form><div class="meta"><div>' +
+      '</button></div></form>' + WebAuthnMfa.startOver(t) +
+      '<div class="meta"><div>' +
       t.html('emailFactor.code.note') + '</div>' +
       WebAuthnEmail.others(v, t) + '</div>';
   }
@@ -187,7 +190,8 @@ class WebAuthnEmail {
       '</p><form method="post" action="/authn/email-link"><div class="row">' +
       '<button type="submit" id="email-link-resend" class="secondary" ' +
       'name="action" value="send">' + t.html('emailFactor.wait.resend') +
-      '</button></div></form><div class="meta"><div>' +
+      '</button></div></form>' + WebAuthnMfa.startOver(t) +
+      '<div class="meta"><div>' +
       t.html('emailFactor.wait.note', { seconds: v.seconds }) + '</div>' +
       WebAuthnEmail.others(v, t) + '</div>';
   }
@@ -218,8 +222,8 @@ class WebAuthnEmail {
         '<form method="post" action="/authn/email-link/open">' +
         '<div class="row"><button type="submit" id="email-link-continue" ' +
         'name="action" value="open">' + t.html('emailFactor.open.continue') +
-        '</button></div></form><div class="meta"><div>' +
-        t.html('emailFactor.open.note') + '</div></div>';
+        '</button></div></form>' + WebAuthnMfa.startOver(t) +
+        '<div class="meta"><div>' + t.html('emailFactor.open.note') + '</div></div>';
     }
     if (v.state === 'code') {
       return WebAuthnEmail.code(v, ctx);

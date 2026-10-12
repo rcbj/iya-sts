@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "Une étape de mot de passe a déjà réussi. En cas de succès, la session enregistre amr [\"pwd\",\"hwk\"] et acr \"mfa\", et l’entrée d’annuaire de {name} est marquée comme s’étant authentifiée avec plus d’un facteur.",
   "webauthn.backup": "Je n’ai pas ma clé d’accès — utiliser un code de récupération",
   "totp.title": "Code à usage unique — service d’authentification fictif",
+  "startOver.button": "Recommencer",
+  "startOver.note": "Retour à l’écran de connexion pour la même demande. Rien de cette étape n’est conservé.",
   "totp.heading": "Votre code à usage unique",
   "totp.sub": "Deuxième facteur pour <code>{name}</code>",
   "totp.label": "Le code à {digits} chiffres de votre application d’authentification",

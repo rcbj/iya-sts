@@ -58,6 +58,24 @@ class WebAuthnMfa {
   }
 
   /**
+   * The Start over control every step's page carries (rcbj, 2026-10-12):
+   * a real button the runtime sends as the step's `start-over` act, which
+   * ends the step and returns to the sign-in screen for the same request.
+   * A form of its own, never inside another, so the button posts nothing
+   * of the page's code or password boxes.
+   *
+   * @param t - the translator
+   * @returns the markup
+   */
+  static startOver(t: Json): string {
+    return '<form method="post" class="start-over"><div class="row">' +
+      '<button type="submit" class="secondary" id="start-over" ' +
+      'name="action" value="start-over">' +
+      t.html('authn.startOver.button') + '</button></div>' +
+      '<p class="sub">' + t.html('authn.startOver.note') + '</p></form>';
+  }
+
+  /**
    * A step's address on another of its pages.
    *
    * @param path - the page's path
@@ -136,7 +154,7 @@ class WebAuthnMfa {
       '0'.repeat(digits) + '">' +
       '<div class="row"><button type="submit" id="totp-submit" name="action" ' +
       'value="totp">' + t.html('authn.totp.signIn') + '</button></div>' +
-      '</form><div class="meta"><div>' +
+      '</form>' + WebAuthnMfa.startOver(t) + '<div class="meta"><div>' +
       t.html('authn.totp.meta', { period: period }) + '</div>' +
       WebAuthnMfa.links(v, t, 'authn.totp.backup') + '</div>';
   }
@@ -161,7 +179,7 @@ class WebAuthnMfa {
       '<div class="row"><button type="submit" id="password-factor-submit" ' +
       'name="action" value="password">' +
       t.html('authn.passwordFactor.signIn') + '</button></div></form>' +
-      '<div class="meta"><div>' + t.html('authn.passwordFactor.meta',
+      WebAuthnMfa.startOver(t) + '<div class="meta"><div>' + t.html('authn.passwordFactor.meta',
         { amr: JSON.stringify(v.amr || []) }) + '</div>' +
       WebAuthnMfa.links(v, t, '') + '</div>';
   }
@@ -195,7 +213,7 @@ class WebAuthnMfa {
       '<div class="row"><button type="submit" id="backup-submit" ' +
       'name="action" value="backup-code">' +
       t.html('authn.backupCode.signIn') + '</button></div></form>' +
-      '<div class="meta"><div>' + t.html('authn.backupCode.once') +
+      WebAuthnMfa.startOver(t) + '<div class="meta"><div>' + t.html('authn.backupCode.once') +
       '</div>' +
       (b.total ? '<div>' + t.html('authn.backupCode.count', {
                    remaining: String(b.remaining),
@@ -251,6 +269,7 @@ class WebAuthnMfa {
           'value="webauthn">' + (create ? t.html('authn.webauthn.create')
                                         : t.html('authn.webauthn.use')) +
           '</button></div></form>') +
+      WebAuthnMfa.startOver(t) +
       // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
       // heading, the button and the ways out; somebody debugging opens it.
       '<details class="meta"><summary>' + t.html('authn.webauthn.details') +
@@ -317,7 +336,8 @@ class WebAuthnMfa {
         Number(k.digits) + '" autofocus>' +
         '<div class="row"><button type="submit" id="mfa-setup-confirm" ' +
         'name="action" value="confirm-totp">' +
-        t.html('authn.mfaSetup.finish') + '</button></div></form>';
+        t.html('authn.mfaSetup.finish') + '</button></div></form>' +
+        WebAuthnMfa.startOver(t);
     }
     const offered = s.offered || {};
     return '<h1>' + t.html('authn.mfaSetup.heading') + '</h1><p class="sub">' +
@@ -337,7 +357,7 @@ class WebAuthnMfa {
         ? '<h2>' + t.html('authn.mfaSetup.ignoreHeading') + '</h2><p>' +
           t.html('authn.mfaSetup.ignoreText') + '</p>' +
           button('ignore', t.html('authn.mfaSetup.ignoreButton')) : '') +
-      '<div class="meta">' + t.html('authn.mfaSetup.meta') + '</div>';
+      WebAuthnMfa.startOver(t) + '<div class="meta">' + t.html('authn.mfaSetup.meta') + '</div>';
   }
 
   /**

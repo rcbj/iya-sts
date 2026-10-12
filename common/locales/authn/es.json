@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "Un paso con contraseña ya se completó. Si todo va bien, la sesión registra amr [\"pwd\",\"hwk\"] y acr \"mfa\", y la entrada del directorio de {name} se marca como autenticada con más de un factor.",
   "webauthn.backup": "No tengo mi llave de acceso: usar un código de recuperación",
   "totp.title": "Código de un solo uso — servicio de autenticación de prueba",
+  "startOver.button": "Empezar de nuevo",
+  "startOver.note": "Vuelve a la pantalla de inicio de sesión para la misma solicitud. No se conserva nada de este paso.",
   "totp.heading": "Su código de un solo uso",
   "totp.sub": "Segundo factor para <code>{name}</code>",
   "totp.label": "El código de {digits} dígitos de su aplicación de autenticación",

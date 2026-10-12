@@ -6147,6 +6147,12 @@ const CODES = [
       'sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the ' +
       'operation does not take, or a page that is not one.',
     spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0331',
+    summary: 'A Start over at a sign-in step (/authn-api/mfa/{id}/start-over ' +
+      'or /authn-api/password-change/{id}/start-over) named a step that ' +
+      'has already ended: spent, expired or never minted. Nothing is put ' +
+      'back.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
