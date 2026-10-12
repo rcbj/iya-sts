@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4297** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4298** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 230
 * [Management API (`STS-API`)](#sts-api) — 81
-* [User portal (`STS-PORTAL`)](#sts-portal) — 89
+* [User portal (`STS-PORTAL`)](#sts-portal) — 91
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 170
@@ -3314,7 +3314,7 @@ Raised from: oid4vc/.
 | `STS-VC-0024` | The non-spec notification inspection endpoint was asked for a notification_id that does not exist. | invalid_notification_id (HTTP 404) |
 | `STS-VC-0025` | The Credential Offer page's query parameters failed input validation. | HTTP 400 plain text |
 | `STS-VC-0026` | Where only registered addresses are accepted, the Credential Offer's wallet parameter named a URL that is neither oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. | HTTP 400 plain text |
-| `STS-VC-0027` | A pre-authorized (cross-device or deferred) Credential Offer was requested from a session that continued without signing in, where test controls are closed. | HTTP 403 plain text |
+| `STS-VC-0027` *(retired)* | A pre-authorized (cross-device or deferred) Credential Offer was requested from a session that continued without signing in, where test controls are closed. Retired by #589: where the test controls are closed /issuer/offer makes no pre-authorized offer and sends the browser to /portal/wallet. | — |
 | `STS-VC-0028` | The QR code for a cross-device Credential Offer could not be rendered. | HTTP 500 plain text |
 | `STS-VC-0029` | A Credential Offer fetched by reference (credential_offer_uri) does not exist or has expired. | invalid_request (HTTP 404) |
 | `STS-VC-0030` | Product mode: a pre-authorized code was spent after reaching oid4vci.txCodeMaxAttempts wrong Transaction Codes. | — |
@@ -4681,6 +4681,8 @@ Raised from: portal/.
 | `STS-PORTAL-0301` | A claim-source link was not started: the account API token is placed on no sign-on session the registry still holds, so the callback could never be bound to it. | HTTP 400 |
 | `STS-PORTAL-0302` | The access policy refused a Claims Provider's callback (user-portal, manage-own). | HTTP 303 to /portal/claim-sources?problem= |
 | `STS-PORTAL-0310` | A device challenge or link could not be bound: the account API token's sign-on session is not known (the token registry dropped it), so the person is asked to sign in again. | HTTP 400 |
+| `STS-PORTAL-0589` | A Credential Offer asked for on /portal/wallet (POST /account-api/credentials/offers) named a credential configuration this realm's OpenID4VCI issuer does not offer (#589). | HTTP 400 JSON |
+| `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
 
 ## STS-ACCOUNT
 

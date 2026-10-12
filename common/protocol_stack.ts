@@ -437,6 +437,11 @@ class ProtocolStack {
     this.build('portal/portal_self_issued',
                require('../portal/portal_self_issued'),
                'PortalSelfIssued');
+    // #589: /portal/wallet, a pre-authorized Credential Offer for the
+    // person's own wallet. It reaches the OpenID4VCI family (11-14) only
+    // when asked, so building it here loads none of it.
+    this.build('portal/portal_wallet', require('../portal/portal_wallet'),
+               'PortalWallet');
     // #130: /portal/devices, the person's own ou=devices entries.
     this.build('portal/portal_devices', require('../portal/portal_devices'),
                'PortalDevices');

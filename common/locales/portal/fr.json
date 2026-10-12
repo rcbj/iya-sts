@@ -35,6 +35,8 @@
   "nav.delegate.heading": "Qui peut agir pour vous",
   "nav.self-issued.label": "Identifiants auto-émis",
   "nav.self-issued.heading": "Vos identifiants auto-émis",
+  "nav.wallet.label": "Ajouter à votre portefeuille",
+  "nav.wallet.heading": "Ajouter une attestation à votre portefeuille",
   "nav.devices.label": "Appareils",
   "nav.devices.heading": "Vos appareils",
   "nav.ciba.label": "Demandes de connexion",

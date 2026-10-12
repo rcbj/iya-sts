@@ -130,6 +130,10 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_self_issued');
   },
+  // #589: /portal/wallet, a credential about the person into their wallet.
+  function () {
+    return require('../portal/portal_wallet');
+  },
   function () {
     return require('../portal/portal_devices');
   },

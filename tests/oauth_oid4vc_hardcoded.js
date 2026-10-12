@@ -26,10 +26,10 @@
 //
 // The ENDPOINT half cannot be: the password grant, the ID Token and UserInfo
 // claims, `/dpop/nonce-mode`, `/oauth2/register`, the Transaction Code attempt
-// limit, `/issuer/offer`'s sign-in requirement and `/realm/<id>/did.json` are
-// all behaviour of ROUTES, and requiring the whole protocol stack into
-// `run.js`'s one process would register every route on the shared app ahead of
-// every later file — a test whose side effects land on somebody else's file,
+// limit, `/issuer/offer` sending a pre-authorized offer to the portal and
+// `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
+// whole protocol stack into `run.js`'s one process would register every route
+// on the shared app ahead of every later file — a test whose side effects land on somebody else's file,
 // which tests/CLAUDE.md records happening twice. So a child loads
 // `common/protocol_stack.ts`, serves it on an ephemeral loopback port, drives
 // it over real HTTP, and hands back a list of findings this file asserts. That
@@ -368,10 +368,13 @@ function childMain() {
     // ======================================================================
     // 6. /issuer/offer
     // ======================================================================
+    // #589: a pre-authorized offer is the person's own, made on the user
+    // portal; where the test controls are closed this page mints nothing.
     r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 302 && /\/authn\//.test(String(r.headers.location || '')),
-         '6a. PRODUCT: a pre-authorized offer page with no session sends the ' +
-         'browser to sign in',
+    note(r.status === 303 &&
+         /\/portal\/wallet$/.test(String(r.headers.location || '')),
+         '6a. PRODUCT: a pre-authorized offer page sends the browser to ' +
+         '/portal/wallet and mints nothing',
          r.status + ' ' + r.headers.location);
     r = await request(port, 'GET',
                       '/issuer/offer?wallet=' +

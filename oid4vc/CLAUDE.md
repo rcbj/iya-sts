@@ -774,21 +774,41 @@ second catalogue. What is more than a number, and what
   product mode** a wrong code is counted — in cluster claims since 2026-09-14,
   see the section below — and the one that reaches `oid4vci.txCodeMaxAttempts`
   SPENDS it.
-* **`GET /issuer/offer` MINTS FOR THE SIGNED-IN PERSON WHERE TEST CONTROLS ARE
-  CLOSED.** A cross-device or deferred offer carries a pre-authorized code, which
-  IS an authorization: minting one for `oid4vci.offerUsername` for anybody who
-  loads the page is H.2's demo, and a test control. In product the page sends an
-  unsigned-in browser through the sign-in screen and refuses a "continue without
-  signing in" session. `authn.js` is required inside the handler, because this
-  file is a store module `oauth2.js` requires. A same-device offer grants
-  nothing and is not gated. **An offer minted this way is CAEP's
-  `session-presented`** (#240, 2026-09-26): it is made on the session's
-  authority, since the pre-authorized code authorizes a credential about the
-  person and nobody authenticated for it. The page calls
-  `authn.notePresented(session, 'OpenID4VCI', req)`. Development's offer for
-  the fixed test person reads no session and sends nothing, and neither does a
-  same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
-  never a session event.
+* **A PERSON'S OWN PRE-AUTHORIZED OFFER IS THE PORTAL'S (#589, 2026-10-12)**,
+  and `GET /issuer/offer` MINTS NONE WHERE THE TEST CONTROLS ARE CLOSED. A
+  cross-device or deferred offer carries a pre-authorized code, which IS an
+  authorization: minting one for `oid4vci.offerUsername` for anybody who loads
+  the page is H.2's demo, and a test control, which development keeps. From
+  2026-09-12 product made the page mint for the person SIGNED IN instead;
+  rcbj decided on 2026-10-12 that this is a real self-service feature — a
+  person putting a credential about themselves into their own wallet — and it
+  moved to the user portal: `/portal/wallet`, over
+  `GET /account-api/credentials/offerable` and
+  `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
+  `portal/web_wallet.ts`, the QR code by `portal/web_qr.ts`). In product
+  `/issuer/offer?mode=cross-device|deferred` now answers 303 to
+  `/portal/wallet`, and `STS-VC-0027` (a "continue without signing in"
+  session refused there) is retired; the demo pages become development-only
+  in #585. A same-device offer grants nothing and is not gated.
+  **ONE FUNCTION MAKES EVERY OFFER**: `VcOffers.makeOffer()` — the
+  CAEP presentation, `buildCredentialOffer()`, the sweep of expired state, the
+  reference stored and cell-stamped, the `openid-credential-offer://` URI and
+  the wallet link — called by `/issuer/offer` and by the portal's operation,
+  so the two cannot come to differ. **The portal's offer is CAEP's
+  `session-presented`** (#240, 2026-09-26): it is made on the authority of the
+  sign-on session the portal's token was issued on (`caller.signOn`, #568),
+  since the pre-authorized code authorizes a credential about the person and
+  nobody authenticated for it; `makeOffer()` calls
+  `authn.notePresented(session, 'OpenID4VCI', req)`, requiring `authn.js`
+  inside the call because this file is a store module `oauth2.js` requires. A
+  token whose sign-on session is no longer known, or a session that continued
+  without signing in, is refused (`STS-PORTAL-0590`) rather than offered on
+  nothing. Development's `/issuer/offer` for the fixed test person reads no
+  session and sends nothing, and neither does a same-device offer.
+  `tests/portal_wallet.js` holds the operations and the page;
+  `sts_caep_oauth_grants.js`, `sts_oid4vci_preauth_subject.js` (product) and
+  `sts_oid4vci_conformance.js` (the pre-authorized plan) make their offers
+  there.
 * **THE PERSON IS RESOLVED WHEN THE CODE IS REDEEMED, NOT TAKEN FROM THE OFFER
   (#158, 2026-10-05).** The offer records `userFor()` when it is MINTED. In
   development that person is `oid4vci.offerUsername`, who may have no entry

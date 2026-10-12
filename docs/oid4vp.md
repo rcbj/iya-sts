@@ -390,7 +390,7 @@ wallet is configured with.
 | The `wallet` parameter on the bar door's start page | Any URL | Only `oid4vp.walletUrl` or one in `oid4vp.allowedWalletUrls`; anything else is an open redirect and refused |
 | The `x509_san_dns` name, when neither `oid4vp.x509DnsName` nor `global.publicBaseUrl` names one | The host the request arrived at, one certificate per host, sixteen at most per realm | Refused |
 | The password offered as a second factor after a wallet | Not checked, like every password in development | Verified |
-| Which credentials can sign in | Only those in the register, so only ones issued on a token this realm verified | The same; and since `/issuer/offer` needs a sign-in in product, the token belongs to someone who already signed in |
+| Which credentials can sign in | Only those in the register, so only ones issued on a token this realm verified | The same; and since a pre-authorized offer in product is made only on `/portal/wallet`, for the person signed in, the token belongs to someone who already signed in |
 
 The Verifier's checks, the sign-in rules, the browser binding and the status
 check are the same in both modes. See

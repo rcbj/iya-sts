@@ -14095,8 +14095,10 @@ const CODES = [
   { code: 'STS-VC-0027',
     summary: 'A pre-authorized (cross-device or deferred) Credential Offer ' +
       'was requested from a session that continued without signing ' +
-      'in, where test controls are closed.',
-    spec: 'HTTP 403 plain text' },
+      'in, where test controls are closed. Retired by #589: where the ' +
+      'test controls are closed /issuer/offer makes no pre-authorized ' +
+      'offer and sends the browser to /portal/wallet.',
+    spec: '', retired: true },
   { code: 'STS-VC-0028',
     summary: 'The QR code for a cross-device Credential Offer could not be ' +
       'rendered.',
@@ -20062,6 +20064,17 @@ const CODES = [
       'API token\'s sign-on session is not known (the token registry ' +
       'dropped it), so the person is asked to sign in again.',
     spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0589',
+    summary: 'A Credential Offer asked for on /portal/wallet (POST ' +
+      '/account-api/credentials/offers) named a credential configuration ' +
+      'this realm\'s OpenID4VCI issuer does not offer (#589).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0590',
+    summary: 'A Credential Offer asked for on /portal/wallet was refused ' +
+      'because the sign-on session the portal\'s token was issued on is ' +
+      'no longer known, or continued without signing in: a pre-authorized ' +
+      'offer is made on that session\'s authority (#589, #240).',
+    spec: 'HTTP 403 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

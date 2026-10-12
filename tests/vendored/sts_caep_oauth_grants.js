@@ -25,10 +25,11 @@
 //      signed in by single sign-on) is a session-presented naming CIBA,
 //      and its tokens are issued ON the approving sign-on session — listed
 //      under it, and their refresh token inactive once that session ends;
-//   e. in product mode, a pre-authorized (cross-device) OpenID4VCI offer
-//      made for the signed-in person is a session-presented naming
-//      OpenID4VCI (development mints that offer for a fixed test person and
-//      reads no session, so there is nothing to present).
+//   e. a pre-authorized (cross-device) OpenID4VCI offer the person makes
+//      for their own wallet on /portal/wallet (`POST
+//      /account-api/credentials/offers`, #589) is a session-presented naming
+//      OpenID4VCI, in both modes — it is made on the sign-on session the
+//      portal's token was issued on.
 //
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
@@ -561,23 +562,27 @@ async function test() {
     assert.ok(/ciba/i.test(under.raw), under.raw.slice(0, 1200));
   });
 
-  if (product) {
-    log.info("=== e. a pre-authorized OpenID4VCI offer (product) ===");
-    mark = SEEN.length;
-    const offered = await b.go("GET", R + "/issuer/offer?mode=cross-device");
-    check("the cross-device offer is made for the signed-in person",
-          function () {
-      assert.strictEqual(offered.status, 200, offered.text.slice(0, 300));
-    });
-    hits = await waitFor(token, streamId, "the offer's presentation",
-                         [presentedVia("OpenID4VCI")], mark);
-    check("the offer is session-presented, naming OpenID4VCI", function () {
-      assert.ok(hits[0], JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
-    });
-  } else {
-    log.info("=== e. skipped: development mints the pre-authorized offer " +
-             "for a fixed test person and reads no session ===");
-  }
+  // THE PRE-AUTHORIZED OFFER IS THE PORTAL'S SINCE #589, in both modes: a
+  // person asks `POST /account-api/credentials/offers` for a credential
+  // about themselves, and the offer is made on the sign-on session the
+  // portal's token was issued on — `b`'s — which CAEP reports as presented,
+  // naming OpenID4VCI. (`/issuer/offer` made it until then, in product only:
+  // development's mints for a fixed test person and reads no session.)
+  log.info("=== e. a pre-authorized OpenID4VCI offer, on /portal/wallet ===");
+  mark = SEEN.length;
+  const offered = await portalClient.act("/portal/wallet",
+    { configuration: "IdentityCredential", mode: "cross-device" });
+  check("the cross-device offer is made for the signed-in person",
+        function () {
+    assert.ok(offered.status === 200 && offered.json && offered.json.ok &&
+              offered.json.offer && offered.json.offer.txCode,
+              offered.status + " " + offered.text.slice(0, 300));
+  });
+  hits = await waitFor(token, streamId, "the offer's presentation",
+                       [presentedVia("OpenID4VCI")], mark);
+  check("the offer is session-presented, naming OpenID4VCI", function () {
+    assert.ok(hits[0], JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+  });
 
   log.info("=== d, continued. the approving session ends ===");
   await ok(api + "/sessions/revoke", { key: rows[0].key,

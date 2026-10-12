@@ -35,6 +35,8 @@
   "nav.delegate.heading": "Quién puede actuar por ti",
   "nav.self-issued.label": "ID autoemitidos",
   "nav.self-issued.heading": "Tus ID autoemitidos",
+  "nav.wallet.label": "Añadir a tu billetera",
+  "nav.wallet.heading": "Añade una credencial a tu billetera",
   "nav.devices.label": "Dispositivos",
   "nav.devices.heading": "Tus dispositivos",
   "nav.ciba.label": "Solicitudes de inicio de sesión",
