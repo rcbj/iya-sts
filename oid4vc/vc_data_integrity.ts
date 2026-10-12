@@ -770,8 +770,9 @@ class VcDataIntegrity {
   // the did:key of its public half. What the JSON-LD form of its Bitstring
   // Status List credentials is signed with. NOT what the VC API signs with
   // since #598: that is `vcApiKeyFor()` below, keys of its own, because the
-  // VC API signs a document its caller wrote and these keys sign tokens. A did:key rather than the realm's did:web because it resolves from
-  // the identifier itself: nobody has to fetch anything to check it, which
+  // VC API signs a document its caller wrote and these keys sign tokens.
+  // A did:key rather than the realm's did:web because it resolves from the
+  // identifier itself: nobody has to fetch anything to check it, which
   // is the property this file's own verifier holds every holder to.
   // Answers `{ privateKey, publicJwk, did, verificationMethod }`; throws
   // when the realm holds no such key, which is a defect in the key set.

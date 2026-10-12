@@ -163,7 +163,8 @@ async function setEnabled(value) {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("=== 0. a throwaway product realm " + REALM + ", the VC API off ===");
+  log.info("=== 0. a throwaway product realm " + REALM +
+           ", the VC API off ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "VC API " + STAMP,
     overrides: { "global.mode": "product" } }, "created the realm");
