@@ -3207,6 +3207,10 @@
     "en": "707fbb63d49a43b8",
     "text": "Le Web (Passive) Requestor Profile 1.2 : /wsfed aiguillé selon wa, l’écran de connexion, des métadonnées de fédération signées au chemin d’AD FS, wsignout1.0, et une partie de confiance simulée qui montre ce qui lui a été envoyé."
   },
+  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
+    "en": "7ddf36d0c593e38b",
+    "text": "Le Web (Passive) Requestor Profile 1.2 : /wsfed qui aiguille selon wa, l’écran de connexion, des métadonnées de fédération signées au chemin AD FS, et wsignout1.0."
+  },
   "stsmetadata.protocols.WS-Trust.what": {
     "en": "32437a522ad16a77",
     "text": "RST / RSTR sur SOAP à /sts, dans les quatre versions (1.0 à 1.4), émettant l’un ou l’autre dialecte SAML avec l’assertion signée et éventuellement chiffrée pour le certificat du demandeur."
@@ -3219,6 +3223,10 @@
     "en": "4505d4e4ca3cd818",
     "text": "Le KDC lui-même est sur le port TCP et UDP 88, que cette page ne peut pas voir."
   },
+  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
+    "en": "3048c833f899933d",
+    "text": "Un KDC : AS-REQ / TGS-REQ, pré-authentification, quatre types de chiffrement, un PAC Microsoft dans le ticket, des renvois inter-realms et la délégation contrainte. La ligne de cette page est son proxy MS-KKDCP, qui existe parce qu’un navigateur ne peut pas ouvrir de socket."
+  },
   "stsmetadata.protocols.SPNEGO.what": {
     "en": "17e95091fc9d97ee",
     "text": "Kerberos sur HTTP : /spnego/protected répond 401 WWW-Authenticate: Negotiate, lit le NegTokenInit que renvoie un navigateur ou un client, et accepte l’AP-REQ qu’il contient au regard de la clé du principal de service."
@@ -3226,6 +3234,10 @@
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "Le ticket qu’il accepte provient du KDC sur le port 88."
+  },
+  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
+    "en": "dcf9bfda53ee9570",
+    "text": "Kerberos sur HTTP : /authn/spnego répond 401 WWW-Authenticate: Negotiate, lit le NegTokenInit qu’un navigateur renvoie, accepte l’AP-REQ qu’il contient avec la clé du principal de service, et connecte son client (le groupe Authentication)."
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

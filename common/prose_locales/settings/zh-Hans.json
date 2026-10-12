@@ -552,8 +552,8 @@
     "text": "运行演示资源服务器"
   },
   "gnap.demoResourceServer|description": {
-    "en": "447206adf29b67b8",
-    "text": "GET/POST /gnap/rs/resource：判断以五种格式中任一种出示的令牌，并应答第 9.1 节的资源服务器优先质询。"
+    "en": "f449d29bef46a299",
+    "text": "GET/POST /gnap/rs/resource：判断以五种格式中任一种出示的令牌，并应答第 9.1 节的资源服务器优先质询。仅限开发模式：产品领域没有演示资源服务器（#585）。"
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -5564,8 +5564,8 @@
     "text": "测试服务端口"
   },
   "krb5.servicePort|description": {
-    "en": "bcfc656f7bfa6a4f",
-    "text": "接受 AP-REQ 的 Kerberos 化测试服务。"
+    "en": "f520a63e9c191a86",
+    "text": "接受 AP-REQ 的 Kerberos 化测试服务。这是演示：产品进程不会启动它（#585）。"
   },
   "krb5.servicePort|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6376,8 +6376,8 @@
     "text": "嵌入式 PEP 如何处理非 Permit 结果"
   },
   "xacml.pepBias|description": {
-    "en": "cdf7ffde654d4319",
-    "text": "这是 PEP 的决定而不是 PDP 的决定，这正是它成为一项设置的全部原因。XACML 第 7.2 节允许 PEP 采用拒绝偏向（凡不是 Permit 都拒绝）或允许偏向（凡不是 Deny 都允许），实际部署各有不同。默认采用拒绝偏向，因为保护任何东西的 PEP 都应如此；允许偏向的存在是为了让客户端能看到另一种选择如何处理 Indeterminate——这正是两者存在分歧、而又无人测试的情况。"
+    "en": "ad0594c9ac4f34c1",
+    "text": "这是 PEP 的决定而不是 PDP 的决定，这正是它成为一项设置的全部原因。XACML 第 7.2 节允许 PEP 采用拒绝偏向（凡不是 Permit 都拒绝）或允许偏向（凡不是 Deny 都允许），实际部署各有不同。默认采用拒绝偏向，因为保护任何东西的 PEP 都应如此；允许偏向的存在是为了让客户端能看到另一种选择如何处理 Indeterminate——这正是两者存在分歧、而又无人测试的情况。仅限开发模式：它唯一的读取方 /xacml/protected 是演示端点（#585）。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6820,8 +6820,8 @@
     "text": "接受推送的事件"
   },
   "ssf.receiveEnabled|description": {
-    "en": "009081399f67bac5",
-    "text": "POST /ssf/receive 是否接受推送给本服务的安全事件令牌——角色互换，由调试器充当发送方。能找到密钥时它会验证签名，无论如何都会报告它读到的内容，因为拒绝无法验证事件的接收方将无法向人展示它为何无法验证。关闭时应答 501。"
+    "en": "f031c3db7a13549d",
+    "text": "POST /ssf/receive 是否接受推送给本服务的安全事件令牌——角色互换，由调试器充当发送方。能找到密钥时它会验证签名，无论如何都会报告它读到的内容，因为拒绝无法验证事件的接收方将无法向人展示它为何无法验证。关闭时应答 501。仅限开发模式：产品领域没有 /ssf/receive（#585）。"
   },
   "ssf.receiveAudiences|label": {
     "en": "26d54185c0e2e81a",

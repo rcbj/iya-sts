@@ -90,10 +90,12 @@ class SsfDeadLettersPage {
     });
     const listView = kit.listViewOf('/admin/ssf/dead-letters', ctx.query);
     // A link to the letters narrowed, keeping the rest of the view and going
-    // back to the first page of what it narrows to.
+    // back to the first page of what it narrows to — of the letters and of
+    // the streams, which the same two filters narrow (#313).
     const lettersOf = function (overrides) {
       return kit.esc('/admin/ssf/dead-letters' + kit.queryWith(listView,
-        Object.assign({ lettersPage: '' }, overrides))) + '#find-dlq';
+        Object.assign({ lettersPage: '', streamsPage: '' }, overrides))) +
+        '#find-dlq';
     };
     const share = function (count) {
       return totals.held
@@ -249,7 +251,11 @@ class SsfDeadLettersPage {
             '');
       return '<tr><td class="who">' + (row.state === 'unknown'
           ? '<code>' + kit.esc(row.stream_id) + '</code>'
-          : '<a href="/admin/ssf#stream-' + kit.esc(row.stream_id) +
+          // `stream` narrows /admin/ssf's paged cards to this one (#313's
+          // sweep), so the fragment lands whatever page it would be on.
+          : '<a href="/admin/ssf?stream=' +
+            kit.esc(encodeURIComponent(row.stream_id)) + '#stream-' +
+            kit.esc(row.stream_id) +
             '" title="' +
             kit.esc(t.text('consoleSsfDeadLetters.streams.cardTip')) +
                      '"><code>' +
@@ -274,6 +280,12 @@ class SsfDeadLettersPage {
     }).join('') ||
       '<tr><td colspan="6">' +
       t.html('consoleSsfDeadLetters.streams.none') + '</td></tr>';
+    // ONE ROW PER STREAM HOLDING A LETTER OR NOT DELIVERING, however many
+    // receivers there are, so the table is paged on `streamsPage` (#313),
+    // after the page's stream and cause filters have narrowed it.
+    const streamNav = kit.pageNavPair('/admin/ssf/dead-letters',
+                                       kit.pageParamsOf(ctx.query),
+                                       json.paging.streams, t);
 
     // THE LETTERS.
     const search = kit.sectionSearchForm({
@@ -401,6 +413,7 @@ class SsfDeadLettersPage {
       '<h2 data-tab="streams">' +
       t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
+      streamNav.head +
       kit.wideTable(t.text('consoleSsfDeadLetters.streams.tableLabel'),
                      '<table><tr><th>' +
       t.html('consoleSsfDeadLetters.th.stream') + '</th>' +
@@ -412,6 +425,7 @@ class SsfDeadLettersPage {
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.ever') +
       '</th></tr>' +
       streamRows + '</table>') +
+      streamNav.foot +
 
       '<h2 id="letters" data-tab="letters">' +
       t.html('consoleSsfDeadLetters.letters.heading') + '</h2>' +
@@ -519,7 +533,7 @@ class SsfDeadLettersPage {
         '</td>' +
         '<td class="who"><a href="' + kit.esc('/admin/ssf/dead-letters' +
           kit.queryWith(listView, { dlstream: row.stream_id,
-            lettersPage: '' })) +
+            lettersPage: '', streamsPage: '' })) +
         '#find-dlq"><code>' + kit.esc(row.stream_id) + '</code></a>' +
         (row.streamKnown
           ? ''

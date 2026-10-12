@@ -627,6 +627,10 @@
     "en": "a0a7f11d9b8bed02",
     "text": "DEN ACCEPTERAR INTE EN BEGÄRAN UTAN BEVIS FÖR EN BUNDEN TOKEN, och det finns ingen inställning som får den att göra det: ett GNAP-nyckelbevis är protokollet snarare än ett härdningsalternativ. Det som är valfritt är en INNEHAVARTOKEN (bearer), som gnap.bearerTokens stänger av. Macaroon-tredjepartsvillkor, Biscuit-tredjepartsblock och ZCAP-anropsbevis är inte implementerade."
   },
+  "crypto.families.gnap.verifiesWithoutDemos": {
+    "en": "0128ae60345397de",
+    "text": "VARJE BEGÄRAN SOM EN KLIENTINSTANS GÖR, med den nyckel den uppvisade: en RFC 9421-HTTP-meddelandesignatur (med bodyn täckt av en RFC 9530-Content-Digest), ett ömsesidigt TLS-certifikat (återkallelse kontrolleras; en kedja till klientens förtroendelager och en bindning till applikationsposten under gnap.mtlsTrust=pki, produktlägets standard), en frikopplad JWS över bodyn eller en bifogad JWS som bär den. En nyckelrotation verifieras under BÅDA nycklarna. En resursserver som anropar introspektion eller registrering bevisas på samma sätt, och varje tokenformat verifieras vid introspektion."
+  },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
     "text": "Format för åtkomsttoken"
@@ -931,6 +935,10 @@
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 har ingen kryptering alls — `<EncryptedAssertion>` kom med 2.0 — och inget begäranmeddelande att verifiera en signatur på. Referens-URI:n namnger `AssertionID` eller `ResponseID`, vilket är hela skälet till att den delade signeraren löser upp ett id genom att SÖKA efter ett snarare än att få veta dess namn."
   },
+  "crypto.families.saml-1-1.verifiesWithoutDemos": {
+    "en": "f11251a4b826b873",
+    "text": "Ingenting: SAML 1.1 har inget begärandemeddelande att verifiera en signatur på."
+  },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "Signatur"
@@ -950,6 +958,10 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "Den förfalskar ingen `wauth` — ett krav som sessionen inte kan uppfylla är en stegvis höjning, och en AuthenticationMethod är vad sessionen gjorde — och den följer ingen `wreqptr` — att hämta en URL som någon registrerat är en server-side request forgery med en källhänvisning bifogad."
+  },
+  "crypto.families.ws-federation.verifiesWithoutDemos": {
+    "en": "02c1a08782ac0629",
+    "text": "Ingenting: en inloggningsbegäran bär ingen signatur."
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -1122,6 +1134,10 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "DEN SIGNERAR DÅLIGT MED AVSIKT NÄR DEN OMBEDS. `ssf.breakSetSignature` ändrar ETT TECKEN i signaturen efter signeringen, så en mottagare som inte verifierar accepterar en händelse som ingenting signerat. Det är ett tecken snarare än en trunkering med avsikt: en trunkerad signatur misslyckas vid base64url-avkodningen och rapporteras som en MISSBILDAD token, vilket är ett annat fel än en felaktig för den som testas. Enbart utvecklingsläge: en produktsfär ignorerar den och vägrar att den sätts (#104)."
+  },
+  "crypto.families.shared-signals.verifiesWithoutDemos": {
+    "en": "09b792e4c0821046",
+    "text": "Åtkomsttoken vid varje anrop för strömhantering, genom samma kontroll som varje annan skyddad slutpunkt här använder, och en SET som skickats till konsolens eller portalens egen mottagare mot den här tjänstens JWKS. /ssf/receive är en utvecklingsslutpunkt (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

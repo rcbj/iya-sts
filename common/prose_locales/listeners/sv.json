@@ -232,8 +232,8 @@
     "text": "Verifierbara intyg"
   },
   "listeners.applications.oid4vc.what": {
-    "en": "a1d8ad40056dfc8f",
-    "text": "OpenID4VCI, OpenID4VP, DID:er, statuslistorna och VC-API:ts testslutpunkter."
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, DID:er och statuslistorna."
   },
   "listeners.applications.scim.label": {
     "en": "98fe74b2a48a690f",
@@ -304,8 +304,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "ce095930c49505f7",
-    "text": "MS-KKDCP, SPNEGO-förhandlingssidan och principalerna."
+    "en": "49ef797d2558967c",
+    "text": "MS-KKDCP och Kerberos HTTP-vyer."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",

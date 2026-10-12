@@ -189,9 +189,20 @@ class AttributeSourcesApi {
           'with its status, and the rules a definition is held to. Never a ' +
           'password.',
         mirrors: 'GET /admin/attribute-sources',
+        parameters: [
+          { name: 'sourcesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `sources` to return, answered by ' +
+                         '`sourcesPaging` (#313).' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page. Capped, like every list here.' }
+        ],
         responseDescription: 'The register.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`sources`, `dialects`, `modes`, ' +
+                          description: '`sources` (one page, with ' +
+                                       '`sourcesPaging`), `dialects`, ' +
+                                       '`modes`, ' +
                                        '`hostPatterns`, `refused`, and ' +
                                        '`settings` — the page\'s settings ' +
                                        'block, as every page that owns ' +
@@ -199,7 +210,8 @@ class AttributeSourcesApi {
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API attribute sources " +
                     "endpoint.");
-          self.sendJson(res, 200, loadPage().attributeSourcesView());
+          self.sendJson(res, 200,
+                        loadPage().attributeSourcesView(req.query));
           log.debug("Leaving the management API attribute sources " +
                     "endpoint.");
         } },

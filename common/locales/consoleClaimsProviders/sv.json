@@ -45,5 +45,8 @@
   "colTheirSub": "Deras sub där",
   "colLinked": "Länkad",
   "colToken": "Token",
-  "providersHeading": "Anspråksleverantörer"
+  "providersHeading": "Anspråksleverantörer",
+  "noLinkMatch": "Ingen länk matchar <code>{wanted}</code>.",
+  "linkSearchLabel": "Begränsa länkarna",
+  "linkSearchPlaceholder": "en person, en leverantör eller deras subjekt där"
 }

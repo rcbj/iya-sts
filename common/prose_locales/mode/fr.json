@@ -44,8 +44,8 @@
     "text": "POST /ssf/receive et les récepteurs propres à la console et au portail l’acceptent, l’enregistrent et indiquent pourquoi il ne s’est pas vérifié — la posture du débogueur — sauf si ssf.receiveRequireSignature est activé. Rien n’agit en conséquence."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "550da4b67dda6fd9",
-    "text": "Chaque récepteur répond 400 invalid_key, quoi qu’indique ssf.receiveRequireSignature (#117) : /ssf/receive, qui n’authentifie personne, n’enregistre rien ; les récepteurs de la console et du portail, protégés par le secret propre à leur flux, le conservent dans leur boîte de réception marqué comme refusé."
+    "en": "4f092f14fe13b4a7",
+    "text": "Les récepteurs de la console et du portail répondent 400 invalid_key, quoi qu’indique ssf.receiveRequireSignature (#117), et le conservent dans leur boîte de réception marqué comme refusé. /ssf/receive est un point de terminaison de développement et n’existe pas ici (#585)."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -704,8 +704,8 @@
     "text": "N’importe quelle URI absolue est acceptée comme ressource aux points de terminaison d’autorisation, PAR et de jeton, et devient l’aud du jeton ; un emplacement GNAP qui ne nomme aucun serveur de ressources est exclu de l’audience du jeton et le droit est accordé."
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "b69c19d5b722a369",
-    "text": "Une ressource (hors d’un échange de jetons, dont les cibles relèvent de la règle unregistered-target de la politique) et chaque emplacement d’un droit d’accès GNAP doivent nommer une cible enregistrée : l’un des serveurs de ressources propres à ce service (l’indicateur de ressource par défaut qu’acceptent UserInfo, SCIM, Shared Signals et OpenID4VCI ; /admin-api ; le serveur de ressources de démonstration GNAP) ou une application enregistrée à l’avance (appRegisteredBy défini — une observation n’est pas un enregistrement), par son oauthAudience, son URI de base de permissions, son client_id ou son identifiant — l’api du débogueur intégré en est une, amorcée comme enregistrée. Un emplacement GNAP situé à ou sous la gnapResourceServerUri d’un serveur de ressources enregistré le nomme aussi. Sinon invalid_target : redirigé depuis le point de terminaison d’autorisation et 400 au PAR (STS-OAUTH-0950), 400 au point de terminaison de jeton avant que quoi que ce soit ne soit consommé (STS-OAUTH-0951) ; pour GNAP, la requête est refusée avec invalid_request (STS-GNAP-0903), au lieu que le droit soit abandonné."
+    "en": "a5fd26a9d49203a6",
+    "text": "Une ressource (hors d’un échange de jetons, dont les cibles relèvent de la règle unregistered-target de la politique) et chaque emplacement d’un droit d’accès GNAP doivent nommer une cible enregistrée : l’un des serveurs de ressources propres à ce service (l’indicateur de ressource par défaut qu’acceptent UserInfo, SCIM, Shared Signals et OpenID4VCI ; /admin-api ; le serveur de ressources de démonstration GNAP là où il est servi) ou une application enregistrée à l’avance (appRegisteredBy défini — une observation n’est pas un enregistrement), par son oauthAudience, son URI de base de permissions, son client_id ou son identifiant — l’api du débogueur intégré en est une, amorcée comme enregistrée. Un emplacement GNAP situé à ou sous la gnapResourceServerUri d’un serveur de ressources enregistré le nomme aussi. Sinon invalid_target : redirigé depuis le point de terminaison d’autorisation et 400 au PAR (STS-OAUTH-0950), 400 au point de terminaison de jeton avant que quoi que ce soit ne soit consommé (STS-OAUTH-0951) ; pour GNAP, la requête est refusée avec invalid_request (STS-GNAP-0903), au lieu que le droit soit abandonné."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -719,13 +719,25 @@
     "en": "c9aeb6e9c45812da",
     "text": "Uniquement une adresse enregistrée sur l’entrée propre de l’application — et une observation n’en ajoute jamais. Une adresse encore marquée comme observée N’EST PAS enregistrée : le mode développement l’y a placée, et elle est refusée tant qu’un opérateur ne l’a pas confirmée sur la page de l’application ou avec POST /admin-api/applications/confirm-address (STS-REG-0049). Les adresses consignées avant que les observations ne soient marquées ne portent aucune marque et doivent encore être examinées avant le basculement d’un domaine. Les rappels propres à la console et au portail ne sont pas appris de l’en-tête Host d’une requête (définissez global.publicBaseUrl), et un RP ID WebAuthn qui ne correspond pas à l’hôte fait échouer la cérémonie au lieu de se rabattre sur celui-ci."
   },
+  "mode.requirements.demo-endpoints.what": {
+    "en": "b3d5164c887fa785",
+    "text": "Les points de terminaison de démonstration, simulés et de contrôle de test existent"
+  },
+  "mode.requirements.demo-endpoints.development": {
+    "en": "fedcc0409581e879",
+    "text": "Servis et listés : les parties de confiance et le fournisseur de services simulés (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, /xacml/protected, la ressource de substitution de step-up, le serveur de ressources de démonstration GNAP, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust et /tls/trust/clear, ainsi que /ssf/receive et /ssf/received."
+  },
+  "mode.requirements.demo-endpoints.product": {
+    "en": "0ca09045a89e11d0",
+    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve, sauf la porte du magasin de confiance et le socket du service protégé, qui appartiennent au processus. Les portes d’administration restent : /admin-api démarre une vérification, lit les principaux et modifie le magasin de confiance, et le portail utilisateur fait une offre de justificatif."
+  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Les contrôles de test sont ouverts"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "POST /tls/trust et /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (la conformité d’un appareil, sans le scope device:compliance, #164), les mots de passe sur /krb5/principals, la déconnexion d’une autre personne avec ?username=, l’enregistrement dynamique de clients ouvert, l’autorité d’attributs SAML 1.1 et l’enregistrement de clés HOBA répondent tous à n’importe qui, un défi SCIM Digest refusé affiche le mot de passe partagé, et l’action restore-kerberos de la console efface l’instant de déconnexion Kerberos."
+    "en": "fd65d2d3c735e23e",
+    "text": "La déconnexion d’une autre personne avec ?username=, l’enregistrement dynamique de clients ouvert, l’autorité d’attributs SAML 1.1 et l’enregistrement de clés HOBA répondent tous à n’importe qui, un défi SCIM Digest refusé affiche le mot de passe partagé, et l’action restore-kerberos de la console efface l’instant de déconnexion Kerberos."
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",
@@ -1022,6 +1034,10 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "la spécification SPIFFE Workload Endpoint (section 3) indique qu’un appel sans l’en-tête workload.spiffe.io MUST être refusé."
+  },
+  "mode.why.servesDemoEndpoints": {
+    "en": "ea60854b2569441d",
+    "text": "il configure un point de terminaison de démonstration, et le mode produit n’en sert aucun. Essayez-le dans un realm de développement."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

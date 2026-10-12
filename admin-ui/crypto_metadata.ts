@@ -875,6 +875,10 @@ interface Family {
   whatItDoesNot?: string;
   envelopes: string[];
   algorithms: () => any[];
+  // What a verb says where the demonstration endpoints are NOT served
+  // (#585), for a row whose prose names one: a product realm's page must not
+  // describe what an endpoint that is not there does.
+  withoutDemos?: { verifies?: string };
 }
 
 // One row of a family's algorithm table as the report carries it: a label
@@ -1075,6 +1079,9 @@ class CryptoMetadata {
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
         decrypts: row.decrypts, hashes: row.hashes, keys: row.keys || '',
         whatItDoesNot: row.whatItDoesNot || '',
+        // What a product realm reads instead (#585), translated like the
+        // rest.
+        verifiesWithoutDemos: (row.withoutDemos || {}).verifies || '',
         algorithms: tables[i].map(function (one) {
           return {
             what: chips.has(one.row.what) ? '' : one.row.what,
@@ -1095,7 +1102,8 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'keys', 'whatItDoesNot', 'what', 'how']),
+               'keys', 'whatItDoesNot', 'verifiesWithoutDemos', 'what',
+               'how']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),
@@ -1629,6 +1637,18 @@ class CryptoMetadata {
                   'registration is proofed the same way, and every token ' +
                   'format is verified at introspection and at the ' +
                   'demonstration resource server.',
+        withoutDemos: { verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, ' +
+                  'by the key it presented: an RFC 9421 HTTP message ' +
+                  'signature (with the body covered by an RFC 9530 ' +
+                  'Content-Digest), a mutual TLS certificate (revocation ' +
+                  'consulted; a chain to the client truststore and a ' +
+                  'binding to the application entry under ' +
+                  'gnap.mtlsTrust=pki, product\'s default), a detached JWS ' +
+                  'over the body or an attached JWS carrying it. A key ' +
+                  'rotation is verified under BOTH keys. A resource server ' +
+                  'calling introspection or registration is proofed the ' +
+                  'same way, and every token format is verified at ' +
+                  'introspection.' },
         encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the ' +
                   'resource server\'s own key (RSA-OAEP-256 or ' +
                   'ECDH-ES+A256KW, with `gnap.jweEnc`) when its application ' +
@@ -2064,6 +2084,8 @@ class CryptoMetadata {
                'position that exists and the signature goes LAST. A Response ' +
                'signs FIRST, ahead of the assertion it carries.',
         verifies: 'Its own artifacts, for the mock relying party.',
+        withoutDemos: { verifies: 'Nothing: SAML 1.1 has no request ' +
+                  'message to verify a signature on.' },
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
@@ -2093,6 +2115,8 @@ class CryptoMetadata {
                   'verify rather than taking the first `<ds:Signature>` in ' +
                   'the document — the defect four separate verifiers here ' +
                   'used to have.',
+        withoutDemos: { verifies: 'Nothing: a sign-in request carries no ' +
+                  'signature.' },
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
@@ -2352,6 +2376,12 @@ class CryptoMetadata {
                   'verifies the access token on every stream management ' +
                   'call, through the same check every other protected ' +
                   'endpoint here uses.',
+        withoutDemos: { verifies: 'The access token on every stream ' +
+                  'management call, through the same check every other ' +
+                  'protected endpoint here uses, and a SET pushed to the ' +
+                  'console\'s or the portal\'s own receiver against this ' +
+                  'service\'s JWKS. /ssf/receive is a development endpoint ' +
+                  '(#585).' },
         encrypts: 'Nothing. SSF has no encrypted-SET profile — RFC 8417 ' +
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +
@@ -3940,9 +3970,12 @@ class CryptoMetadata {
       drift: self.driftReport(),
       keys: self.keyMaterial(),
       families: self.families.map(function (row) {
+        // A product realm reads a row's `withoutDemos` (#585).
+        const plain = (!mode.servesDemoEndpoints() && row.withoutDemos) ||
+                      {};
         return {
           name: row.name,
-          signs: row.signs, verifies: row.verifies,
+          signs: row.signs, verifies: plain.verifies || row.verifies,
           encrypts: row.encrypts, decrypts: row.decrypts,
           hashes: row.hashes,
           // The keys the family holds OF ITS OWN, beside the realm's signing

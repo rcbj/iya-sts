@@ -46,8 +46,8 @@ class GrantsPage {
    * @returns the body as HTML
    */
   static render(view: Json, ctx?: Json): string {
-    const t = (ctx || kit.context()).t;
-    return GrantsPage.body(view, t);
+    const c = ctx || kit.context();
+    return GrantsPage.body(view, c.t, c.query || {});
   }
 
   // The page body for `json`, the view `GET /admin-api/grants` answers.
@@ -56,9 +56,18 @@ class GrantsPage {
    *
    * @param json - the view `GET /admin-api/grants` answers
    * @param t - the page's translator (#539)
+   * @param query - the page's own query, which the search box and the
+   *   paging carry
    * @returns the HTML
    */
-  static body(json: Json, t: Json): string {
+  static body(json: Json, t: Json, query?: Json): string {
+    const q = query || {};
+    // ONE PAGE OF THE MATCHED GRANTS (#313's sweep): the register grows with
+    // every (person, client) authorization, so the answer is a page on
+    // `grantsPage`, narrowed first by `grantq`.
+    const nav = json.paging && json.paging.grants
+      ? kit.pageNavPair(PAGE, kit.pageParamsOf(q), json.paging.grants, t)
+      : { head: '', foot: '' };
     const when = function (sec: Json): string {
       return Number(sec) > 0 ? new Date(Number(sec) * 1000).toISOString()
                              : '—';
@@ -88,13 +97,21 @@ class GrantsPage {
         esc(g.grantId) + '"> <button type="submit" class="danger">' +
         t.html('consoleGrants.revoke') + '</button></form></td></tr>';
     }).join('') : '<tr><td colspan="9" class="sub">' +
-      t.html('consoleGrants.none') + '</td></tr>';
+      (json.filter && json.filter.q && json.total
+        ? t.html('consoleGrants.noMatch', { wanted: json.filter.q })
+        : t.html('consoleGrants.none')) + '</td></tr>';
     // The grant endpoint's path carries `{grant_id}`, braces a catalog
     // message may not hold, so it goes in as a parameter (#539).
     return kit.note(t.html('consoleGrants.note',
                            { path: '/oauth2/grants/{grant_id}' }) +
         '<a href="/admin/consent">' + t.html('consoleGrants.consentLink') +
         '</a>' + t.html('consoleGrants.noteEnd')) +
+      kit.sectionSearchForm({
+        path: PAGE, query: q, param: 'grantq', pageParam: 'grantsPage',
+        label: t.text('consoleGrants.searchLabel'),
+        placeholder: t.text('consoleGrants.searchPlaceholder')
+      }, t) +
+      nav.head +
       '<table><thead><tr><th>grant_id</th><th>' +
       t.html('consoleGrants.colClient') + '</th><th>' +
       t.html('consoleGrants.colSubject') + '</th>' +
@@ -105,6 +122,7 @@ class GrantsPage {
       t.html('consoleGrants.colTokens') + '</th><th></th></tr></thead>' +
       '<tbody>' +
       rows + '</tbody></table>' +
+      nav.foot +
       '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/grants</code></p>';
   }

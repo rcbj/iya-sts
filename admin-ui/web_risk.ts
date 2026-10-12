@@ -666,13 +666,20 @@ class RiskPage {
         (f.asn ? '<br><small>AS' + f.asn + '</small>' : '') + '</td><td>' +
         '<code>' + esc(f.errorCode) + '</code></td></tr>';
     }).join('');
+    // THE FAILURES' PAGER (#313), on `failuresPage`, carrying every other
+    // parameter so the assessments and the people keep their pages.
+    const failuresNav = view.failuresPaging
+      ? kit.pageNavPair(PAGE, kit.pageParamsOf(ctx.query),
+                        view.failuresPaging, t)
+      : { head: '', foot: '' };
     const failures = '<h3 data-tab="failures">' +
       t.html('consoleRisk.failures.heading', {
         realm: view.realm }) +
       ' <small>' + t.html('consoleRisk.failures.lastDays',
                           { days: view.failures.windowDays }) +
       '</small></h3><p>' +
-      esc(view.failures.store.why) + '</p><table class="grid"><thead><tr>' +
+      esc(view.failures.store.why) + '</p>' + failuresNav.head +
+      '<table class="grid"><thead><tr>' +
       '<th>' + t.html('consoleRisk.th.when') + '</th><th>' +
       t.html('consoleRisk.th.who') + '</th><th>' +
       t.html('consoleRisk.th.door') + '</th><th>' +
@@ -681,7 +688,7 @@ class RiskPage {
       '</tr></thead><tbody>' +
       (failureRows || '<tr><td colspan="5">' +
        t.html('consoleRisk.failures.none') + '</td></tr>') +
-      '</tbody></table>';
+      '</tbody></table>' + failuresNav.foot;
     const providers = '<h3 data-tab="providers">' +
       t.html('consoleRisk.providers.heading') +
       '</h3><p><strong>' +

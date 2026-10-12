@@ -5370,3 +5370,7 @@ request-stage `permission-not-granted` no longer applies to
 as a person's at mint (the subject kind is read off the grant), and the
 #549 exchange rule still asks the caller's delegated grant.
 
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/oauth2/step-up/resource/:application` (the RFC 9470 stand-in; Monitoring → OAuth's step-up section names it only where served), `/oauth2/commands/mock-rp` (both methods; its product 404 of its own is gone) and `/dpop/nonce-mode` — **both halves**: the write's 403 `STS-OAUTH-0178` is retired, and the read went with it, because RFC 9449 section 8's `use_dpop_nonce` already tells a client the policy. In product `oauth2.dpopNonceRequired` is set on `/admin/oauth2` or with `POST /admin-api/config/set`. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

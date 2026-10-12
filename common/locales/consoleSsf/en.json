@@ -25,6 +25,7 @@
   "discovery.algorithm": "That algorithm is <code>ssf.signingAlgorithm</code> and it reaches the whole table, <strong>post-quantum included</strong> &mdash; ML-DSA at three sizes, SLH-DSA at two, and the six composite ML-DSA + traditional ones &mdash; because a SET is signed through the same signer every other JWT here goes through. This is the document most worth signing that way: it records that something HAPPENED, RFC 8417 section 4.1.4 forbids it to expire, and it is therefore read long after it was written.",
   "streams.heading": "Streams",
   "streams.none": "No streams. A receiver creates one by POSTing a Stream Configuration to <code>{endpoint}</code>. There is deliberately no &ldquo;create a stream&rdquo; form here: a stream carries a delivery endpoint THIS SERVICE WILL DIAL, and the one place that URL may come from is a receiver that authenticated and asked &mdash; see <code>ssf/ssf_http.ts</code>.",
+  "streams.all": "every stream",
   "pushed.heading": "Pushed at this service",
   "pushed.note": "The roles reversed. <code>POST /ssf/receive</code> accepts a Security Event Token pushed AT this service, which is what a client acting as the TRANSMITTER sends to. It accepts one whose signature does not verify and reports why &mdash; a receiver that refused could not show anybody what arrived, which is the question being asked. <code>ssf.receiveRequireSignature</code> turns the 400 on.",
   "th.when": "When",

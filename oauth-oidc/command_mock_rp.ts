@@ -38,7 +38,9 @@
 // first N requests (a retry test), `?drop=K` closes a stream after K events
 // once (a resumption test), `?audsub=1` says `aud_sub_required`.
 //
-// **OFF IN PRODUCT** (`mode.opensTestControls()`): a 404.
+// **OFF IN PRODUCT** (`mode.servesDemoEndpoints()`, #585): both routes carry
+// `common/app.js`'s `demoOnly` mark, so a product realm answers as for a
+// path nothing is registered on — Express's own 404.
 // ===========================================================================
 
 import stsCrypto = require('../common/crypto');
@@ -47,6 +49,9 @@ import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
+// The demonstration mark (#585). `common/app.js` is required at 2 of the
+// require order, so this is a cache hit that moves nothing.
+import sharedApp = require('../common/app');
 
 type Json = any;
 type Req = import('express').Request;
@@ -215,14 +220,9 @@ class CommandMockRp {
   // THE COMMAND ENDPOINT.
   // -------------------------------------------------------------------------
   private handle(req: Req, res: Res): unknown {
-    const { log, mode, now } = this.deps;
+    const { log, now } = this.deps;
     const self = this;
     log.debug("Entering CommandMockRp.handle().");
-    if (!mode.opensTestControls()) {
-      log.debug("Leaving CommandMockRp.handle(). Product.");
-      return this.error(res, 404, 'invalid_request', 'The mock relying ' +
-                        'party is a development test control.');
-    }
     if (this.knob(req, 'fail')) {
       this.spendKnob(req, 'fail');
       log.debug("Leaving CommandMockRp.handle(). A 503, as asked.");
@@ -465,15 +465,11 @@ class CommandMockRp {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering CommandMockRp.registerRoutes().");
-    app.post(MOCK_PATH, function (req: Req, res: Res) {
+    app.post(MOCK_PATH, sharedApp.demoOnly, function (req: Req, res: Res) {
       return self.handle(req, res);
     });
     // What the mock holds, for a test (development only, as the endpoint).
-    app.get(MOCK_PATH, function (req: Req, res: Res) {
-      if (!self.deps.mode.opensTestControls()) {
-        return self.error(res, 404, 'invalid_request', 'The mock relying ' +
-                          'party is a development test control.');
-      }
+    app.get(MOCK_PATH, sharedApp.demoOnly, function (req: Req, res: Res) {
       res.set('Cache-Control', 'no-store');
       return res.json({ accounts: self.accountsOf(
         String((req.query as Json).client_id || '')) });

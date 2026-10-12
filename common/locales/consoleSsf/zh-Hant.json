@@ -25,6 +25,7 @@
   "discovery.algorithm": "該演算法是 <code>ssf.signingAlgorithm</code>，它涵蓋整個表格，<strong>包括後量子演算法</strong>&mdash;&mdash;三種規格的 ML-DSA、兩種規格的 SLH-DSA，以及六種 ML-DSA + 傳統演算法的組合&mdash;&mdash;因為 SET 與這裡的其他所有 JWT 使用同一個簽署器簽署。這是最值得以這種方式簽署的文件：它記錄某件事已經發生，RFC 8417 第 4.1.4 節禁止它過期，因此它會在寫成很久之後才被閱讀。",
   "streams.heading": "串流",
   "streams.none": "沒有串流。接收方透過向 <code>{endpoint}</code> POST 一個 Stream Configuration 來建立串流。這裡刻意沒有「建立串流」表單：串流帶有一個此服務將會主動撥打的傳遞端點，而該 URL 唯一可以來自的地方，是一個已經驗證並提出請求的接收方&mdash;&mdash;請參閱 <code>ssf/ssf_http.ts</code>。",
+  "streams.all": "所有串流",
   "pushed.heading": "推送到此服務的內容",
   "pushed.note": "角色互換。<code>POST /ssf/receive</code> 接受推送到此服務的安全事件權杖（Security Event Token），也就是作為傳送方的用戶端所傳送到的地方。它會接受簽章無法驗證的權杖並報告原因&mdash;&mdash;拒絕的接收方無法向任何人展示到達了什麼，而這正是要問的問題。<code>ssf.receiveRequireSignature</code> 會開啟 400。",
   "th.when": "時間",

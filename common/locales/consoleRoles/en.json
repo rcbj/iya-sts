@@ -104,6 +104,8 @@
   "roleRow.none": "none",
   "roleRow.setOn": "set on ",
   "roleRow.remove": "Remove",
+  "roleRow.more": "and {n} more",
+  "roleRow.removeOther": "Remove another:",
   "roleRow.consoleRole": "console role",
   "roleRow.nativeRole": "native role",
   "roleRow.roleOf": "role of <code>{application}</code>, carried as <code>{local}</code>",

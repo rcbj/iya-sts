@@ -4,6 +4,8 @@ title: XACML
 
 # XACML 3.0 and ALFA
 
+> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts contains a **XACML 3.0 Policy Decision Point**
 ([OASIS XACML 3.0 core](https://docs.oasis-open.org/xacml/3.0/xacml-3.0-core-spec-os-en.html)).
 It accepts requests in the
@@ -398,7 +400,7 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
-| `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. |
+| `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. Development mode only (#585): its one reader, `/xacml/protected`, is a demonstration. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |

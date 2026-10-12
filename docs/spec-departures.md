@@ -4,6 +4,8 @@ title: Departures from the specifications
 
 # Departures from the specifications
 
+> **Development mode only (#585):** `/issuer/offer`, `/xacml/protected`, `/tls/trust`, `/tls/trust/clear`, `/ssf/receive` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This page lists every place where iya-sts's **default** behaviour departs from
 what a specification requires (MUST, SHALL, REQUIRED) or recommends (SHOULD,
 RECOMMENDED). Each row cites the clause and says three things: what the
@@ -230,7 +232,7 @@ This applies to every TLS listener: the main port, LDAPS 636 and the embedded de
 |---|---|---|---|
 | **Stricter.** TLS 1.2 offers only four ECDHE AES-GCM suites. There is no RSA key exchange, CBC, finite-field DHE or CCM, so a TLS 1.2 peer that offers only `TLS_RSA_WITH_AES_128_CBC_SHA` fails the handshake. | [RFC 5246 section 9](https://www.rfc-editor.org/rfc/rfc5246#section-9): unless an application profile says otherwise, a TLS 1.2 application MUST implement `TLS_RSA_WITH_AES_128_CBC_SHA`. | Same. | `tls.ciphers`, default the [RFC 9325](https://www.rfc-editor.org/rfc/rfc9325) (BCP 195) list. See [TLS](tls.md). |
 
-In development, `POST /tls/trust` and `POST /tls/trust/clear` let anybody add or clear client-certificate trust anchors. No specification covers this, but it decides whose certificates count; product answers 403 (see [TLS](tls.md)).
+In development, `POST /tls/trust` and `POST /tls/trust/clear` let anybody add or clear client-certificate trust anchors. No specification covers this, but it decides whose certificates count; a product process does not have either route (#585; see [TLS](tls.md)).
 
 ## OpenID4VCI, OpenID4VP and verifiable credentials
 
@@ -238,7 +240,7 @@ In development, `POST /tls/trust` and `POST /tls/trust/clear` let anybody add or
 |---|---|---|---|
 | **Weaker.** The Credential, Deferred Credential and Notification endpoints read an access token's claims without verifying it and issue a credential. A revoked token or another issuer's token is accepted. A credential issued this way can never sign anybody in. | [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) section 8: the Credential Request carries an access token. [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749) section 7: the resource server MUST validate it. | Refused, 401 `invalid_token` | `global.mode`. See [OpenID4VCI](oid4vci.md#development-and-product-mode). |
 | **Weaker.** Wrong Transaction Codes (`tx_code`, five digits) are not counted, so a code can be guessed within the offer's 600-second lifetime. | OpenID4VCI 1.0, security considerations for the Pre-Authorized Code Flow: the Transaction Code protects against guessing, and attempts are to be limited. | The fifth wrong code (`oid4vci.txCodeMaxAttempts`) spends the pre-authorized code | `global.mode` |
-| **Weaker.** `/issuer/offer` mints a pre-authorized code for `oid4vci.offerUsername` (`diploma.student`) for anyone who loads the page. | OpenID4VCI 1.0, Pre-Authorized Code Flow: the code stands for an End-User the Credential Issuer has already authenticated and authorized. | Not minted: the page sends the browser to `/portal/wallet`, where a signed-in person makes an offer for their own wallet (#589) | `global.mode`. By design: a test control. |
+| **Weaker.** `/issuer/offer` mints a pre-authorized code for `oid4vci.offerUsername` (`diploma.student`) for anyone who loads the page. | OpenID4VCI 1.0, Pre-Authorized Code Flow: the code stands for an End-User the Credential Issuer has already authenticated and authorized. | Not there: the page is development only (#585), and a signed-in person makes an offer for their own wallet on `/portal/wallet` (#589) | `global.mode`. By design: a test control. |
 
 Development fills attributes a person's entry lacks with invented values before
 signing them into a credential; product omits them. Credentials are signed RS256

@@ -108,13 +108,22 @@ class AttributeSourcesAdmin {
    * Returns the view the page is drawn from and the API operation answers:
    * the register's own view, with the page's settings added.
    *
+   * @param query - the request's query, whose `per` and `sourcesPage`
+   *   page the register (#313)
    * @returns the view
    */
-  attributeSourcesView(): Json {
-    const { log, admin, sources } = this.deps;
+  attributeSourcesView(query?: Json): Json {
+    const { log, admin, sources, adminViews } = this.deps;
     log.debug("Entering AttributeSourcesAdmin.attributeSourcesView().");
     const json = Object.assign(sources.view(),
                                { settings: admin.configSettingsJson(PAGE) });
+    // THE REGISTER IS PAGED (#313), on `sourcesPage`: an operator can add
+    // sources without a bound, so the list is one page of them with
+    // `sourcesPaging` beside it, the console's rule for any such list.
+    const page = adminViews().pagedRows(query || {}, json.sources,
+      { name: 'sources', noun: 'sources' });
+    json.sources = page.shown;
+    json.sourcesPaging = adminViews().pagingJson(page.paging);
     log.debug("Leaving AttributeSourcesAdmin.attributeSourcesView().");
     return json;
   }

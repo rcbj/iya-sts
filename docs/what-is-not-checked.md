@@ -5,6 +5,8 @@ nav_order: 16
 
 # What is not checked
 
+> **Development mode only (#585):** `/dpop/nonce-mode` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This service runs in one of two modes, set by `global.mode`, and what it checks
 depends almost entirely on which.
 

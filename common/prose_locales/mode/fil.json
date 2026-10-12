@@ -44,8 +44,8 @@
     "text": "Tinatanggap ito ng POST /ssf/receive at ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "550da4b67dda6fd9",
-    "text": "Sumasagot ang bawat receiver ng 400 invalid_key, anuman ang sabihin ng ssf.receiveRequireSignature (#117): ang /ssf/receive, na walang ina-authenticate, ay walang itinatala; ang mga receiver ng console at portal, sa likod ng sariling secret ng kanilang stream, ay iniingatan ito sa kanilang inbox na may markang tinanggihan."
+    "en": "4f092f14fe13b4a7",
+    "text": "Sumasagot ng 400 invalid_key ang mga receiver ng console at portal, anuman ang sabihin ng ssf.receiveRequireSignature (#117), at iniingatan ito sa kanilang inbox na may markang tinanggihan. Ang /ssf/receive ay isang development endpoint at wala ito (#585)."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -704,8 +704,8 @@
     "text": "Tinatanggap ang anumang absolute URI bilang resource sa authorization, PAR at token endpoint at nagiging aud ito ng token; ang GNAP location na walang pinangangalanang resource server ay iniiwan sa labas ng audience ng token at ibinibigay ang right."
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "b69c19d5b722a369",
-    "text": "Ang resource (labas sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat location ng GNAP access right ay dapat magpangalan ng naka-register na target: isa sa sariling mga resource server ng serbisyong ito (ang default resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; ang GNAP demonstration resource server) o isang application na naka-register nang maaga (nakatakda ang appRegisteredBy — hindi registration ang pagkakita), ayon sa oauthAudience, permission base URI, client_id o identifier nito — isa rito ang api ng embedded debugger, na naka-seed bilang registered. Pinangangalanan din ito ng GNAP location na nasa o nasa ilalim ng gnapResourceServerUri ng naka-register na resource server. Kung hindi, invalid_target: nire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi tinatanggal ang right."
+    "en": "a5fd26a9d49203a6",
+    "text": "Ang resource (labas sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat location ng GNAP access right ay dapat magpangalan ng naka-register na target: isa sa sariling mga resource server ng serbisyong ito (ang default resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; ang GNAP demonstration resource server kung saan ito inihahain) o isang application na naka-register nang maaga (nakatakda ang appRegisteredBy — hindi registration ang pagkakita), ayon sa oauthAudience, permission base URI, client_id o identifier nito — isa rito ang api ng embedded debugger, na naka-seed bilang registered. Pinangangalanan din ito ng GNAP location na nasa o nasa ilalim ng gnapResourceServerUri ng naka-register na resource server. Kung hindi, invalid_target: nire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi tinatanggal ang right."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -719,13 +719,25 @@
     "en": "c9aeb6e9c45812da",
     "text": "Ang address lang na naka-register sa sariling entry ng application — at hindi kailanman nagdaragdag ng isa ang pagkakita. HINDI naka-register ang address na naka-marka pa ring observed: inilagay ito roon ng development at tinatanggihan ito hangga't hindi kinukumpirma ng operator sa pahina ng application o sa POST /admin-api/applications/confirm-address (STS-REG-0049). Ang mga address na naitala bago minarkahan ang mga pagkakita ay walang marka at kailangan pa ring suriin bago ilipat ang isang realm. Hindi natututunan mula sa Host header ng request ang sariling mga callback ng console at portal (itakda ang global.publicBaseUrl), at ang WebAuthn RP ID na hindi tugma sa host ay tumatanggi sa ceremony sa halip na bumalik dito."
   },
+  "mode.requirements.demo-endpoints.what": {
+    "en": "b3d5164c887fa785",
+    "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
+  },
+  "mode.requirements.demo-endpoints.development": {
+    "en": "fedcc0409581e879",
+    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear, at /ssf/receive at /ssf/received."
+  },
+  "mode.requirements.demo-endpoints.product": {
+    "en": "0ca09045a89e11d0",
+    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process, maliban sa pinto ng truststore at sa socket ng protektadong service, na pag-aari ng process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
+  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Bukas ang mga test control"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "Ang POST /tls/trust at /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (ang compliance ng isang device, nang walang device:compliance scope, #164), ang mga password sa /krb5/principals, ang pag-sign out ng ibang tao gamit ang ?username=, ang bukas na dynamic client registration, ang SAML 1.1 attribute authority at ang HOBA key registration ay sumasagot lahat sa kahit sino, ipinapakita ng tinanggihang SCIM Digest challenge ang shared password, at binubura ng restore-kerberos ng console ang Kerberos sign-out instant."
+    "en": "fd65d2d3c735e23e",
+    "text": "Ang pag-sign out ng ibang tao gamit ang ?username=, ang bukas na dynamic client registration, ang SAML 1.1 attribute authority at ang HOBA key registration ay sumasagot lahat sa kahit sino, ipinapakita ng tinanggihang SCIM Digest challenge ang shared password, at binubura ng restore-kerberos ng console ang Kerberos sign-out instant."
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",
@@ -1022,6 +1034,10 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "sinasabi ng SPIFFE Workload Endpoint specification (section 3) na DAPAT tanggihan ang tawag na walang workload.spiffe.io header."
+  },
+  "mode.why.servesDemoEndpoints": {
+    "en": "ea60854b2569441d",
+    "text": "nagko-configure ito ng isang demonstration endpoint, at walang inihahain ang product sa mga ito. Subukan ito sa isang development realm."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

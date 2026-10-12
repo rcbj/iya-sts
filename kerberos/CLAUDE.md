@@ -2080,3 +2080,7 @@ Tests: `tests/kdc_broker_operations.js` sections 1 to 5 (the real pool with a
 stub worker thread, the two fallbacks, a dying worker, the table, a whole AS
 exchange through the table function with the address on the authentication
 row, and no catch-up in a worker); seven mutants, all caught.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/krb5/principals` (product reads `GET /admin-api/kerberos/principals`, #587; the KDC exports `clockOffsetSeconds()` for an in-process reader), `/krb5/service`, `/spnego` and `/spnego/protected`. **The protected service's TCP socket (`krb5.servicePort`) is the PROCESS's**: `server.js` does not bind it when the default realm is product, and the Listeners and Kerberos pages do not list it there. SPNEGO sign-in keeps the acceptor module (`/authn/spnego`). The mark is a member of `common/app.js`, which these three files already require, and `app.js` reaches `mode.js` through a cache hit, so **the parent's COPY closure gained no file**. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

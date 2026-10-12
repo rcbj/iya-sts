@@ -44,8 +44,8 @@
     "text": "POST /ssf/receive och konsolens och portalens egna mottagare godtar den, registrerar den och säger varför den inte verifierades — debuggerns hållning — om inte ssf.receiveRequireSignature är påslaget. Ingenting agerar på den."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "550da4b67dda6fd9",
-    "text": "Varje mottagare svarar 400 invalid_key, oavsett vad ssf.receiveRequireSignature säger (#117): /ssf/receive, som inte autentiserar någon, registrerar ingenting; konsolens och portalens mottagare, bakom sin ströms egen hemlighet, behåller den i sin inkorg markerad som avvisad."
+    "en": "4f092f14fe13b4a7",
+    "text": "Konsolens och portalens mottagare svarar 400 invalid_key, oavsett vad ssf.receiveRequireSignature säger (#117), och behåller den i sin inkorg markerad som avvisad. /ssf/receive är en utvecklingsslutpunkt och finns inte här (#585)."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -704,8 +704,8 @@
     "text": "Vilken absolut URI som helst accepteras som resurs vid auktoriserings-, PAR- och tokenslutpunkterna och blir tokens aud; en GNAP-plats som inte namnger någon resursserver utelämnas ur tokens målgrupp och rättigheten beviljas."
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "b69c19d5b722a369",
-    "text": "En resurs (utanför en tokenutväxling, vars mål är policyns unregistered-target) och varje plats för en GNAP-åtkomsträttighet måste namnge ett registrerat mål: en av den här tjänstens egna resursservrar (standardresursindikatorn som UserInfo, SCIM, Shared Signals och OpenID4VCI accepterar; /admin-api; GNAP-demonstrationsresursservern) eller en applikation registrerad i förväg (appRegisteredBy satt — en observation är ingen registrering), genom dess oauthAudience, behörighetsbas-URI, client_id eller identifierare — den inbäddade felsökarens api är en sådan, insådd som registrerad. En GNAP-plats på eller under en registrerad resursservers gnapResourceServerUri namnger den också. Annars invalid_target: omdirigerad från auktoriseringsslutpunkten och 400 vid PAR (STS-OAUTH-0950), 400 vid tokenslutpunkten innan något förbrukas (STS-OAUTH-0951); för GNAP vägras begäran med invalid_request (STS-GNAP-0903), i stället för att rättigheten tas bort."
+    "en": "a5fd26a9d49203a6",
+    "text": "En resurs (utanför en tokenutväxling, vars mål är policyns unregistered-target) och varje plats för en GNAP-åtkomsträttighet måste namnge ett registrerat mål: en av den här tjänstens egna resursservrar (standardresursindikatorn som UserInfo, SCIM, Shared Signals och OpenID4VCI accepterar; /admin-api; GNAP-demonstrationsresursservern där den serveras) eller en applikation registrerad i förväg (appRegisteredBy satt — en observation är ingen registrering), genom dess oauthAudience, behörighetsbas-URI, client_id eller identifierare — den inbäddade felsökarens api är en sådan, insådd som registrerad. En GNAP-plats på eller under en registrerad resursservers gnapResourceServerUri namnger den också. Annars invalid_target: omdirigerad från auktoriseringsslutpunkten och 400 vid PAR (STS-OAUTH-0950), 400 vid tokenslutpunkten innan något förbrukas (STS-OAUTH-0951); för GNAP vägras begäran med invalid_request (STS-GNAP-0903), i stället för att rättigheten tas bort."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -719,13 +719,25 @@
     "en": "c9aeb6e9c45812da",
     "text": "Endast en adress registrerad på applikationens egen post — och en observation lägger aldrig till någon. En adress som fortfarande är markerad som observerad är INTE registrerad: utvecklingsläget satte den där och den vägras tills en operatör bekräftar den på applikationens sida eller med POST /admin-api/applications/confirm-address (STS-REG-0049). Adresser som registrerades innan observationer markerades saknar markering och behöver ändå granskas innan en sfär växlas. Konsolens och portalens egna callbacks lärs inte från en begärans Host-huvud (sätt global.publicBaseUrl), och ett WebAuthn RP ID som inte passar värden vägrar ceremonin i stället för att falla tillbaka på den."
   },
+  "mode.requirements.demo-endpoints.what": {
+    "en": "b3d5164c887fa785",
+    "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
+  },
+  "mode.requirements.demo-endpoints.development": {
+    "en": "fedcc0409581e879",
+    "text": "Serveras och listas: de simulerade förlitande parterna och tjänsteleverantören (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ts testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-uttag), /krb5/principals, /spnego och /spnego/protected, /xacml/protected, step-up-ersättningsresursen, GNAP-demonstrationsresursservern, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust och /tls/trust/clear, samt /ssf/receive och /ssf/received."
+  },
+  "mode.requirements.demo-endpoints.product": {
+    "en": "0ca09045a89e11d0",
+    "text": "Ingen av dem serveras eller listas. Var och en svarar exakt som en sökväg där ingenting är registrerat — Express egen 404, \"Cannot GET\" — och ingen metadatasida, konsolsida, dokumentation eller loggrad namnger någon av dem. En utvecklingsrealm i en produktprocess behåller dem, utom truststore-dörren och den skyddade tjänstens uttag, som tillhör processen. De administrativa dörrarna finns kvar: /admin-api startar en verifiering, läser principalerna och ändrar truststore, och användarportalen gör ett erbjudande om en legitimation."
+  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Testkontroller är öppna"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "POST /tls/trust och /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (en enhets efterlevnad, utan omfånget device:compliance, #164), lösenorden på /krb5/principals, utloggning av en annan person med ?username=, öppen dynamisk klientregistrering, SAML 1.1-attributauktoriteten och HOBA-nyckelregistrering svarar alla vem som helst, en vägrad SCIM Digest-utmaning skriver ut det delade lösenordet, och konsolens restore-kerberos rensar en Kerberos-utloggningstidpunkt."
+    "en": "fd65d2d3c735e23e",
+    "text": "Utloggning av en annan person med ?username=, öppen dynamisk klientregistrering, SAML 1.1-attributauktoriteten och HOBA-nyckelregistrering svarar alla vem som helst, en vägrad SCIM Digest-utmaning skriver ut det delade lösenordet, och konsolens restore-kerberos rensar en Kerberos-utloggningstidpunkt."
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",
@@ -1022,6 +1034,10 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "specifikationen SPIFFE Workload Endpoint (avsnitt 3) säger att ett anrop utan huvudet workload.spiffe.io MUST vägras."
+  },
+  "mode.why.servesDemoEndpoints": {
+    "en": "ea60854b2569441d",
+    "text": "den konfigurerar en demonstrationsslutpunkt, och produkt serverar ingen av dem. Prova den i en utvecklingsrealm."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

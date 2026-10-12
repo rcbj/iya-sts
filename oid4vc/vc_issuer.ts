@@ -72,6 +72,10 @@ import jwt = require('jsonwebtoken');
 // One signer, one verifier and one JWE for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import config = require('../common/config');
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
@@ -3400,7 +3404,7 @@ class VcIssuer {
     // JWE and then posted the plaintext, because with encryption_required false
     // the issuer accepts that JSON and issues from it. This is the only place
     // the truth lives.
-    app.get('/oid4vci/last_request', (req, res) => {
+    app.get('/oid4vci/last_request', demoOnly, (req, res) => {
       log.debug("Entering the (non-spec) last credential request endpoint.");
       res.set('Cache-Control', 'no-store');
       const last = this.lastCredentialRequestRecord();
@@ -3414,7 +3418,7 @@ class VcIssuer {
     // What this issuer was told about a credential. Not part of OID4VCI — it
     // exists so a test can check that a notification actually arrived and was
     // understood, rather than trusting a 204.
-    app.get('/oid4vci/notification/:id', (req, res) => {
+    app.get('/oid4vci/notification/:id', demoOnly, (req, res) => {
       log.debug("Entering the notification inspection endpoint. id=" +
                 req.params.id);
       const record = notificationIds.get(String(req.params.id));

@@ -5,6 +5,8 @@ nav_order: 2
 
 # Architecture
 
+> **Development mode only (#585):** `/wsfed/rp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 [![iya-sts architecture: the leader process and its listeners, the request dispatcher, three worker pools and the caches, the protocol subsystems and hosted surfaces, the shared layer of tokens and sessions, the shared services, and the embedded directory and key material above their stores](iya-sts-architecture.jpeg)](iya-sts-architecture.jpeg)
 
 *Select the diagram for full size.* It shows one node. The layers below go

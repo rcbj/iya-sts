@@ -64,6 +64,8 @@
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
+// Whether this realm is served the demonstration resource server (#585).
+import mode = require('../common/mode');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -432,10 +434,18 @@ class GnapConsole {
                                                { name: 'resources',
                                                  noun: 'resource ' +
                                                    'sets' });
-    const profiles = authorizationServers.list().map(function (profile) {
-      return { id: profile.id, label: profile.label || '',
-               capabilities: grants.capabilities(req, profile.id) };
-    });
+    // THE NAMED AUTHORIZATION SERVERS, PAGED (#313) on `serversPage`, as
+    // they are on /admin/authorization-servers: an operator can name them
+    // without a bound. Each one's capabilities are worked out only for the
+    // rows shown — pagedRows()'s page-then-decorate order.
+    const serverPage = adminViews.pagedRows(query,
+      authorizationServers.list(),
+      { name: 'servers', noun: 'authorization servers',
+        decorate: function (profile) {
+          return { id: profile.id, label: profile.label || '',
+                   capabilities: grants.capabilities(req, profile.id) };
+        } });
+    const profiles = serverPage.shown;
     let material: any = {};
     try {
       material = tokens.publicMaterial(base);
@@ -477,9 +487,10 @@ class GnapConsole {
         // #432 phase 5: the demonstration operation that spends a right's
         // limits, the reference for a resource server keeping the totals.
         demonstrationSpend: helpers.rebaseTo(base, 'gnap') + '/gnap/rs/spend'
-      },
+      } as Record<string, string>,
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,
+      authorizationServersPaging: adminViews.pagingJson(serverPage.paging),
       tokenFormats: tokens.FORMATS,
       verificationMaterial: material,
       grants: {
@@ -500,6 +511,13 @@ class GnapConsole {
       actions: GNAP_ACTIONS,
       settings: this.settingsJson()
     };
+    // THE DEMONSTRATION RESOURCE SERVER, only where this realm is served it
+    // (#585): a product realm's page lists no endpoint that is not there.
+    if (!mode.servesDemoEndpoints() ||
+        config.value('gnap.demoResourceServer') === false) {
+      delete json.endpoints.demonstrationResourceServer;
+      delete json.endpoints.demonstrationSpend;
+    }
     log.debug("Leaving GnapConsole.gnapView(). " + allGrants.length +
               " grant(s).");
     return json;

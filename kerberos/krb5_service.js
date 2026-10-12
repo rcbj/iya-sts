@@ -1024,7 +1024,10 @@ function startTcp(port) {
 // silent no-op that makes a diagnostic page lie about what happened.
 let lastExchange = null;
 
-app.get('/krb5/service', function (req, res) {
+// A DEMONSTRATION (#585): `demoOnly`, so a product realm answers as for a
+// path nothing is registered on — and the socket is not started in a product
+// process at all (`server.js`).
+app.get('/krb5/service', app.demoOnly, function (req, res) {
   log.debug('Entering GET /krb5/service.');
   res.status(200).json({
     principal: servicePrincipal().join('/') + '@' + principals.REALM,

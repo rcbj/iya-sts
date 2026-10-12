@@ -1782,7 +1782,12 @@ async function createTheRealm() {
       name: "XACML endpoint test realm",
       description: "Created by tests/vendored/sts_xacml_endpoints.js; LEFT " +
                    "IN PLACE on purpose, so that a failed run can be read " +
-                   "afterwards. Remove it by hand when you are done with it."
+                   "afterwards. Remove it by hand when you are done with it.",
+      // A DEVELOPMENT REALM IN EVERY MODE (#585): the embedded PEP at
+      // /xacml/protected, which most sections enforce through, is a
+      // demonstration a product realm is not served. The gate, the PDP, the
+      // repository and the remote PEPs' doors are the same in both modes.
+      overrides: { "global.mode": "development" }
     })
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,

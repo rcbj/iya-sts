@@ -1149,7 +1149,7 @@ const KINDS = [
 
 /**
  * Reports every kind's counts and rows, newest first, for `/admin/deliveries`
- * and `GET /admin-api/deliveries`.
+ * and `GET /admin-api/deliveries` — every row, or the first `limit`.
  *
  * @param options - `kind`, `state`, `q` and `limit`
  * @returns `{ kinds, states }`
@@ -1157,7 +1157,10 @@ const KINDS = [
 function kindReport(options?: Json): Json {
   helpers.log.debug("Entering kindReport().");
   const o = options || {};
-  const limit = Number(o.limit) > 0 ? Number(o.limit) : 200;
+  // WHOLE unless a caller asks for a `limit` (#313's sweep): every kind was
+  // cut at 200 rows, silently, so a delivery past the cut could not be
+  // reached. `GET /admin-api/deliveries` pages each kind instead.
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : undefined;
   const out = KINDS.filter(function (k) {
     return !o.kind || k.id === String(o.kind);
   }).map(function (k) {

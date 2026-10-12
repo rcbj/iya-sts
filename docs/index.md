@@ -5,6 +5,8 @@ nav_order: 1
 
 # iya-sts
 
+> **Development mode only (#585):** `/wsfed/rp`, `/saml2/sp`, `/saml11/rp`, `/oid4vp/verifier`, `/spnego`, `/vc-api/*`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
 

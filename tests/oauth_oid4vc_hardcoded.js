@@ -227,14 +227,18 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
 
     // ======================================================================
-    // 3. POST /dpop/nonce-mode — PRODUCT REFUSES, DEVELOPMENT IS PER REALM
+    // 3. POST /dpop/nonce-mode — NOT IN PRODUCT, DEVELOPMENT IS PER REALM
     // ======================================================================
+    // A demonstration since #585: a product realm answers as for a path
+    // nothing is registered on, both halves of it.
     r = await request(port, 'POST', '/dpop/nonce-mode',
                       { json: { required: true } });
-    note(r.status === 403 && /oauth2\.dpopNonceRequired/.test(r.text),
-         '3a. PRODUCT: POST /dpop/nonce-mode is refused and names the ' +
-         'setting to use instead',
-         r.status + ' ' + r.text.slice(0, 160));
+    const productRead = await request(port, 'GET', '/dpop/nonce-mode');
+    note(r.status === 404 && /Cannot POST \/dpop\/nonce-mode/.test(r.text) &&
+         productRead.status === 404 &&
+         /Cannot GET \/dpop\/nonce-mode/.test(productRead.text),
+         '3a. PRODUCT: /dpop/nonce-mode is not there, by either method',
+         r.status + ' ' + productRead.status + ' ' + r.text.slice(0, 160));
     config.clearOverride('global.mode');
 
     r = await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
@@ -369,35 +373,33 @@ function childMain() {
     // 6. /issuer/offer
     // ======================================================================
     // #589: a pre-authorized offer is the person's own, made on the user
-    // portal; where the test controls are closed this page mints nothing.
+    // portal; and since #585 the issuer's offer page is a demonstration a
+    // product realm is not served at all, so it answers as an unrouted path.
     r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 303 &&
-         /\/portal\/wallet$/.test(String(r.headers.location || '')),
-         '6a. PRODUCT: a pre-authorized offer page sends the browser to ' +
-         '/portal/wallet and mints nothing',
-         r.status + ' ' + r.headers.location);
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    note(r.status === 400 && /oid4vci\.allowedWalletUrls/.test(r.text),
+    note(r.status === 404 && /Cannot GET \/issuer\/offer/.test(r.text),
+         '6a. PRODUCT: the offer page is not there (#585), and mints nothing',
+         r.status + ' ' + r.text.slice(0, 120));
+    // THE WALLET ALLOWLIST is still product's, for the doors that remain
+    // (the portal's offer, `/admin-api/verifications/start`), so it is asked
+    // of the function those doors call.
+    const evil = { query: { wallet: 'https://evil.hc.example' } };
+    let chosen = offers.walletFor(evil);
+    note(!!chosen.error && /oid4vci\.allowedWalletUrls/.test(chosen.error),
          '6b. PRODUCT: an unregistered wallet URL is refused as an open ' +
-         'redirect', r.status + ' ' + r.text.slice(0, 160));
+         'redirect', JSON.stringify(chosen).slice(0, 160));
     config.setOverride('oid4vci.allowedWalletUrls', 'https://evil.hc.example');
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
+    chosen = offers.walletFor(evil);
     config.clearOverride('oid4vci.allowedWalletUrls');
-    note(r.status === 302 &&
-         /^https:\/\/evil\.hc\.example\/vc-issuance-1\.html\?/.test(
-             String(r.headers.location)),
+    note(!chosen.error &&
+         /^https:\/\/evil\.hc\.example\/vc-issuance-1\.html$/.test(
+             String(chosen.url)),
          '6c. PRODUCT: a wallet URL listed in oid4vci.allowedWalletUrls is ' +
-         'accepted', r.headers.location);
-    r = await request(port, 'GET',
-                      '/oid4vp/start?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    note(r.status === 400 && /oid4vp\.allowedWalletUrls/.test(r.text),
+         'accepted', JSON.stringify(chosen));
+    const vpChosen = require(ROOT + '/oid4vc/vc_verifier').vpWalletFor(evil);
+    note(!!(vpChosen && vpChosen.error) &&
+         /oid4vp\.allowedWalletUrls/.test(vpChosen.error),
          '6d. PRODUCT: the Verifier refuses an unregistered wallet URL too',
-         r.status + ' ' + r.text.slice(0, 160));
+         JSON.stringify(vpChosen).slice(0, 160));
     config.clearOverride('global.mode');
     r = await request(port, 'GET',
                       '/issuer/offer?wallet=' +

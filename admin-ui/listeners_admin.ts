@@ -62,6 +62,9 @@ import ListenersPage = require('./web_listeners');
 // `prose()` extracts (#543). Safe at the top: nothing `server_prose` loads
 // requires this file, which `protocol_stack.ts` reaches at 18k-iii.
 import serverProse = require('../common/server_prose');
+// Whether the process binds its demonstration socket (#585): the PROCESS's
+// mark's question. A cache hit — `common/app.js` is 2 of the require order.
+import sharedApp = require('../common/app');
 
 type Req = any;
 type Res = any;
@@ -92,8 +95,10 @@ const LISTENERS = [
     what: 'The embedded protocol debugger, where one is embedded.' },
   { id: 'kdc', name: 'Kerberos KDC', setting: 'krb5.kdcPort', kind: null,
     what: 'TCP and UDP 88; Kerberos messages, not TLS.' },
+  // A DEMONSTRATION (#585): a product process does not bind it, so it is
+  // listed only where the process and the realm serve demonstrations.
   { id: 'krb5-service', name: 'Kerberos test service',
-    setting: 'krb5.servicePort', kind: null,
+    setting: 'krb5.servicePort', kind: null, demo: true,
     what: 'The SPNEGO-protected test service.' },
   { id: 'revocation', name: 'Revocation (plain HTTP)',
     setting: 'pki.httpPort', kind: null, http: 'revocation',
@@ -290,7 +295,10 @@ class ListenersAdmin {
     const realmId = realm ? realm.id : realms.DEFAULT_ID;
     const isDefault = realmId === realms.DEFAULT_ID;
     const https = config.value('global.https') === true;
-    const listeners = LISTENERS.map(function (row: Json): Json {
+    const demos = sharedApp.processDemoOnly.serves();
+    const listeners = LISTENERS.filter(function (row: Json): boolean {
+      return demos || !row.demo;
+    }).map(function (row: Json): Json {
       let port: unknown = null;
       try {
         port = (config as any).processValue(row.setting);

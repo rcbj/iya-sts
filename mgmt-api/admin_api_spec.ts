@@ -1687,7 +1687,16 @@ const SCHEMAS = {
         'ticket by the KDC and cannot be moved, and an LDAP connection has ' +
         'no expiry at all.', {}),
       sessions: { type: 'array',
-                  items: { $ref: '#/components/schemas/SessionRow' } }
+                  items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedHeld: { type: 'integer',
+        description: 'Live sessions that authenticated nobody, all of ' +
+                     'them: never filtered and counted before paging.' },
+      unauthenticatedSessions: { type: 'array',
+        description: 'One page of those sessions, moved by ' +
+                     '`anonymousPage` (#313).',
+        items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedPaging: openObject(
+        'Where in the unauthenticated sessions that page is.', {})
     }, PAGING_PROPERTIES)),
 
   SessionRow: openObject(
@@ -3981,8 +3990,13 @@ const SCHEMAS = {
       endpoints: openObject('Every GNAP endpoint of this realm, absolute.', {}),
       capabilities: openObject('The default authorization server\'s RFC 9635 ' +
                                'section 9 document.', {}),
-      authorizationServers: { type: 'array', items: openObject('A named ' +
+      authorizationServers: { type: 'array',
+        description: 'One page of the named authorization servers, moved ' +
+                     'by `serversPage` (#313).',
+        items: openObject('A named ' +
           'authorization server and its GNAP capabilities.', {}) },
+      authorizationServersPaging: openObject(
+        'Where in the named authorization servers that page is.', {}),
       tokenFormats: { type: 'array', items: { type: 'string' } },
       verificationMaterial: openObject('The public material that verifies ' +
                                        'the self-contained formats (absent ' +
@@ -4295,9 +4309,15 @@ const SCHEMAS = {
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
-                     'back through.',
+                     'back through. One page of the streams, moved by ' +
+                     '`streamsPage` and described by `paging.streams`; ' +
+                     '`stream` narrows it to one.',
         items: { type: 'object' }
       },
+      streamTotals: openObject(
+        'Counted over every stream, before `streamDetail` is narrowed and ' +
+        'paged: `streams`, `enabled`, `delivered`, `failed`, `waiting`, ' +
+        '`dead` and `deadLetters`.', {}),
       deadLetters: {
         type: 'object',
         description: 'The dead-letter and push-cap settings in force, and ' +
@@ -4491,9 +4511,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because a ' +
                      'session with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the sessions list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the sessions list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any CAEP event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `CAEP` setting group as /admin/caep draws it. ' +
@@ -4679,9 +4705,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because an ' +
                      'account with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the accounts list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the accounts list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any RISC event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `RISC` setting group as /admin/risc draws it. ' +
@@ -5018,7 +5050,9 @@ const SCHEMAS = {
                      'first: `state` is `dead`, `half-open`, `failing`, ' +
                      '`healthy`, `poll` or `unknown` (letters for a stream ' +
                      'this process does not hold), with its letters by ' +
-                     'cause and its dead or failing times.',
+                     'cause and its dead or failing times. Narrowed by ' +
+                     '`dlstream` and `dlcause` (a stream holding a letter ' +
+                     'of that cause) and paged by `streamsPage`.',
         items: openObject('One stream.', {}) },
       letters: { type: 'array',
         description: 'Held letters, newest first, narrowed by `dlq`, ' +
@@ -5029,8 +5063,8 @@ const SCHEMAS = {
         description: 'How many letters the narrowing matched, before paging.' },
       filter: openObject('`q`, `stream` and `cause`, each null when not ' +
                          'narrowed.', {}),
-      paging: openObject('`letters`: where in the matched list this page is.',
-                         {}),
+      paging: openObject('`letters` and `streams`: where in each narrowed ' +
+                         'list its page is.', {}),
       settings: openObject('The seven `ssf.*` settings that decide what is ' +
                            'dead-lettered and for how long.', {}),
       process: openObject(

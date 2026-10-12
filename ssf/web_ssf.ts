@@ -41,33 +41,23 @@ class SsfPage {
    */
   static body(ctx, json, settingsGroups) {
     const t = ctx.t;
+    const params = kit.pageParamsOf(ctx.query || {});
+    const streamNav = json.paging && json.paging.streams
+      ? kit.pageNavPair('/admin/ssf', params, json.paging.streams, t)
+      : { head: '', foot: '' };
 
+    // THE TILES COUNT THE WHOLE TRANSMITTER (#313's sweep): the cards below
+    // are one page of the streams, so the counts come from `streamTotals`,
+    // which the view model took before the slice.
+    const totals = json.streamTotals || {};
     const tiles = '<div class="tiles">' +
-      kit.tile(json.streamDetail ? json.streamDetail.length : 0,
-        t.text('consoleSsf.tile.stream')) +
-      kit.tile((json.streamDetail || []).filter(function (row) {
-        return row.status === 'enabled';
-      }).length,
-        t.text('consoleSsf.tile.enabled')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.counters.delivered;
-      }, 0),
-        t.text('consoleSsf.tile.delivered')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.counters.failed;
-      }, 0),
-        t.text('consoleSsf.tile.refused')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.queue.length;
-      }, 0),
-        t.text('consoleSsf.tile.waiting')) +
-      kit.tile((json.streamDetail || []).filter(function (row) {
-        return row.dead;
-      }).length,
-        t.text('consoleSsf.tile.deadStreams')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + (row.deadLetters || []).length;
-      }, 0),
+      kit.tile(totals.streams || 0, t.text('consoleSsf.tile.stream')) +
+      kit.tile(totals.enabled || 0, t.text('consoleSsf.tile.enabled')) +
+      kit.tile(totals.delivered || 0, t.text('consoleSsf.tile.delivered')) +
+      kit.tile(totals.failed || 0, t.text('consoleSsf.tile.refused')) +
+      kit.tile(totals.waiting || 0, t.text('consoleSsf.tile.waiting')) +
+      kit.tile(totals.dead || 0, t.text('consoleSsf.tile.deadStreams')) +
+      kit.tile(totals.deadLetters || 0,
         t.text('consoleSsf.tile.deadLetters')) +
       kit.tile((json.receivedDetail || []).length,
         t.text('consoleSsf.tile.received')) +
@@ -123,6 +113,16 @@ class SsfPage {
 
       (json.installed
         ? '<h2>' + t.html('consoleSsf.streams.heading') + '</h2>' +
+          // A PAGE OF CARDS, on `streamsPage`; `stream` (a dead letters'
+          // link) narrows them to one, and the way back is the unnarrowed
+          // list.
+          (json.streamFilter
+            ? '<p class="sub"><code>' + kit.esc(json.streamFilter) +
+              '</code> (<a href="' + kit.esc('/admin/ssf' +
+                kit.queryWith(params, { stream: '', streamsPage: '' })) +
+              '">' + t.html('consoleSsf.streams.all') + '</a>)</p>'
+            : '') +
+          streamNav.head +
           ((json.streamDetail || []).length
             ? json.streamDetail.map(function (row) {
               return SsfPage.ssfStreamCard(row, json, t);
@@ -130,7 +130,8 @@ class SsfPage {
             : kit.note(t.html('consoleSsf.streams.none', {
               endpoint: (json.metadata &&
                          json.metadata.configuration_endpoint) ||
-                        '/ssf/stream' })))
+                        '/ssf/stream' }))) +
+          streamNav.foot
         : '') +
 
       (json.installed

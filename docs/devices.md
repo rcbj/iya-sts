@@ -4,6 +4,8 @@ title: Devices
 
 # Devices
 
+> **Development mode only (#585):** `/devices/test/compliance` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This service keeps a **device register**: every phone, computer and host a
 trust realm knows, each an entry under `ou=devices` in the realm's directory
 ([LDAP schema](ldap-schema.md)), owned by **one** person or **one**
@@ -557,8 +559,9 @@ an attestation that verified and chained to a trusted root** (a portal key
 proof, a linked WebAuthn credential, an EST or SCEP device certificate);
 development registers it as self-asserted. An administrator's key entered by
 value is accepted in both, recorded as self-asserted. **The compliance test
-control is open in development only**; product refuses it
-(`STS-DEVICE-0035`), and the MDM feed under `device:compliance` is the door.
+control, `POST /devices/test/compliance`, is development mode only**: a
+product realm has no such endpoint and answers it as an unregistered path
+(#585), and the MDM feed under `device:compliance` is the door.
 
 ### Attestation trust
 

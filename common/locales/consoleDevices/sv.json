@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "Testkontrollen",
   "registrationHtml.testOpen": "öppen (utveckling)",
   "registrationHtml.testRefused": "nekad (produkt)",
-  "registrationHtml.testHow": "<code>{path}</code>, ingen behörighetsuppgift, endast utveckling (<code>mode.opensTestControls()</code>). Källa <code>test-control</code>.",
+  "registrationHtml.testHow": "<code>{path}</code>, ingen behörighetsuppgift, endast utveckling (<code>mode.servesDemoEndpoints()</code>). Källa <code>test-control</code>.",
   "registrationHtml.doorCaep": "En mottagen CAEP device-compliance-change",
   "registrationHtml.caepBefore": "Från en federationspartner vars Shared Signals den här sfären tar emot — en enhetshanterare är en <code>ssf</code>-relation på ",
   "registrationHtml.federation": "Federation",

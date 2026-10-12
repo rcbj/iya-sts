@@ -3207,6 +3207,10 @@
     "en": "707fbb63d49a43b8",
     "text": "1.2 Web (Passive) Requestor Profile：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署聯盟中繼資料、wsignout1.0，以及一個顯示送給它之內容的模擬信賴方。"
   },
+  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
+    "en": "7ddf36d0c593e38b",
+    "text": "1.2 Web（被動）請求者設定檔：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署同盟中繼資料，以及 wsignout1.0。"
+  },
   "stsmetadata.protocols.WS-Trust.what": {
     "en": "32437a522ad16a77",
     "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的憑證。"
@@ -3219,6 +3223,10 @@
     "en": "4505d4e4ca3cd818",
     "text": "KDC 本身位於 TCP 與 UDP 連接埠 88，此頁面看不到。"
   },
+  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
+    "en": "3048c833f899933d",
+    "text": "一個 KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介以及受限委派。本頁上的這一列是它的 MS-KKDCP 代理，之所以存在，是因為瀏覽器無法開啟通訊端。"
+  },
   "stsmetadata.protocols.SPNEGO.what": {
     "en": "17e95091fc9d97ee",
     "text": "透過 HTTP 的 Kerberos：/spnego/protected 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器或用戶端送回的 NegTokenInit，並依服務主體的金鑰接受其中的 AP-REQ。"
@@ -3226,6 +3234,10 @@
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "它接受的票證來自連接埠 88 上的 KDC。"
+  },
+  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
+    "en": "dcf9bfda53ee9570",
+    "text": "透過 HTTP 的 Kerberos：/authn/spnego 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器傳回的 NegTokenInit，以服務主體的金鑰接受其中的 AP-REQ，並讓其用戶端登入（Authentication 群組）。"
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

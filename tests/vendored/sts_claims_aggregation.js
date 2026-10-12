@@ -16,6 +16,10 @@
 //   2. THE SETUP PHASE: the person links the provider on
 //      /portal/claim-sources — to the provider realm, signed in and agreed
 //      there, back to the callback — and the link is listed, never a token.
+//      The callback is bound to the browser by the cookie Link's answer sets,
+//      not by the sign-on cookie, which the provider realm's sign-in on this
+//      same origin replaces; a callback without it is refused, and the page
+//      the callback sends the browser back to says what happened.
 //   3. AGGREGATED: a relying party's claims request for credit_score gets
 //      `_claim_names` / `_claim_sources` in the ID Token and in UserInfo, the
 //      source a JWT the provider realm signed (verified here against its
@@ -248,7 +252,22 @@ async function follow(who, first) {
     r = await hop(who, "GET", at);
   }
   log.debug("Leaving follow(). " + r.status);
-  return r;
+  // Where it ended: the page a callback's 303 sent the browser to, whose
+  // query (`done`, `problem`) the static page draws from its operation.
+  return Object.assign({ at: at }, r);
+}
+
+// The query of a URL as an object.
+function queryOf(url) {
+  log.debug("Entering queryOf().");
+  const out = {};
+  if (url) {
+    new URL(url).searchParams.forEach(function (value, name) {
+      out[name] = value;
+    });
+  }
+  log.debug("Leaving queryOf().");
+  return out;
 }
 
 // A JWT the provider realm signed, verified against its published keys.
@@ -438,16 +457,25 @@ async function test() {
   log.info("=== 2. the person links the provider on the portal ===");
   // THE STATIC PORTAL (#568): the person signs in to it as its public client
   // (PKCE, a DPoP-bound token for /account-api), and the browser that will
-  // follow the provider's redirect holds the SAME sign-on session — the
-  // callback is honoured only in the browser whose session started the link.
+  // follow the provider's redirect holds the SAME sign-on session, at
+  // `Path=/` as the service writes it — so the provider realm's sign-in on
+  // this same origin replaces it, as it does in a browser. What binds the
+  // callback to this browser is the cookie Link's answer sets, which the
+  // portal's fetch stores and this jar takes from that answer.
   const portal = await portalSignin.signInToThePortal(opBase, PERSON, null,
     { password: PASSWORD });
   const browser = jar();
-  String(portal.cookie).split(/;\s*/).filter(Boolean).forEach(function (pair) {
-    browser.take({ headers: { getSetCookie: function () {
-      return [pair];
-    } } }, opBase + "/portal");
-  });
+  const sessionCookies = String(portal.cookie).split(/;\s*/)
+    .filter(Boolean);
+  const withSession = function (who) {
+    sessionCookies.forEach(function (pair) {
+      who.take({ headers: { getSetCookie: function () {
+        return [pair + "; Path=/"];
+      } } }, opBase + "/portal");
+    });
+    return who;
+  };
+  withSession(browser);
   const page = await portal.draw("/portal/claim-sources");
   assert.strictEqual(page.status, 200, "the portal page: " +
                      JSON.stringify(page.json).slice(0, 300));
@@ -456,9 +484,26 @@ async function test() {
   const started = await portal.act("/portal/claim-sources",
                                    { action: "link", id: "cp" });
   const away = String((started.json && started.json.location) || "");
+  browser.take(started, opBase + "/account-api/claim-sources");
+  // A SECOND LINK, whose callback arrives in a browser holding the person's
+  // own sign-on session but not the binding cookie: refused, and the page
+  // says why.
+  const other = await portal.act("/portal/claim-sources",
+                                 { action: "link", id: "cp" });
+  const otherState = queryOf(String((other.json &&
+                                     other.json.location) || "")).state;
+  const stranger = await hop(withSession(jar()), "GET", opBase +
+    "/portal/claim-sources/callback?code=x&state=" +
+    encodeURIComponent(otherState || ""));
+  const strangerPage = await portal.draw("/portal/claim-sources",
+                                         queryOf(stranger.location));
   const back = away ? await follow(browser, await hop(browser, "GET", away))
-                    : { status: 0, text: "" };
-  const linked = await portal.draw("/portal/claim-sources");
+                    : { status: 0, text: "", at: "" };
+  // THE PAGE THE CALLBACK SENT THE BROWSER BACK TO, drawn as the portal
+  // draws it: its `done` or `problem` comes back from the operation.
+  const linked = await portal.draw("/portal/claim-sources",
+                                   queryOf(back.at));
+  const said = (linked.json && (linked.json.view || linked.json)) || {};
   const links = (await hop(null, "GET", opBase + "/admin-api/claim-providers"))
     .json.links;
   check("an unknown provider is refused; Link goes to the provider realm, " +
@@ -468,6 +513,13 @@ async function test() {
     assert.strictEqual(started.status, 200, started.text.slice(0, 300));
     assert.ok(away.indexOf(cpBase + "/oauth2/authorize?") === 0, away);
     assert.ok(/code_challenge_method=S256/.test(away));
+    // The callback's own words: a failure names its cause.
+    assert.ok(!said.problem, "the callback refused the link: " +
+              said.problem + " (" + back.at + ")");
+    assert.ok(said.notice, "the callback said nothing: " + back.at);
+    assert.ok(/sts_claim_link=[^;]+;.*Path=\/realm\/[^;]+\/portal\/claim-sources\/callback/i
+      .test(String(started.headers.get("set-cookie"))),
+      "Link's answer binds the browser: " + started.headers.get("set-cookie"));
     // Back at the portal's page: the shell, which the portal draws from
     // its operation — and the page, drawn, says the provider is linked.
     assert.strictEqual(back.status, 200, back.status + " " +
@@ -482,6 +534,15 @@ async function test() {
     assert.strictEqual(mine.length, 1, JSON.stringify(links).slice(0, 300));
     assert.ok(mine[0].sub, "the person's subject at the provider");
     assert.ok(JSON.stringify(links).indexOf("access_token") < 0);
+  });
+  check("a callback in a browser without the link's binding cookie is " +
+        "refused, though it holds the person's own sign-on session, and " +
+        "the page says why", function () {
+    assert.strictEqual(stranger.status, 303, stranger.text.slice(0, 200));
+    assert.ok(/[?&]problem=/.test(stranger.location), stranger.location);
+    assert.ok(/started in another browser/.test(strangerPage.html),
+              strangerPage.html.replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ").slice(0, 400));
   });
   const theirSub = links.filter(function (l) {
     return l.username === PERSON;
@@ -556,7 +617,7 @@ async function test() {
     assert.strictEqual(unlink.status, 400, unlink.text.slice(0, 200));
   });
 
-  assert.ok(checks >= 6, "only " + checks + " checks ran");
+  assert.ok(checks >= 7, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
