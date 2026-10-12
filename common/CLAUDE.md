@@ -8689,7 +8689,8 @@ decisions, and where each half lives:
   catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
   banner all drop what the realm, or the process, is not served.
 * **Defaults that pointed at one** follow it: `xacml.pepBias`, read only by
-  `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`. The GNAP
+  `/xacml/protected`, was `onlyWhile: 'servesDemoEndpoints'` until both went
+  to the remote PEP in #596. The GNAP
   demonstration resource server (a token's default audience, a registered
   target and the catalogue type `urn:iya-sts:gnap:demo` where it was served)
   and `ssf.receiveEnabled` went with their endpoints in #593.
