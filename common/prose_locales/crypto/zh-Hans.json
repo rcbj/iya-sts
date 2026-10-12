@@ -620,8 +620,8 @@
     "text": "五种访问令牌格式，其中三种不是 JWT。jwt-signed 与这里的其他所有 JWT 经过同一个签名器，其头部 `typ` 为 gnap-at+jwt（#157）；biscuit 用领域的 Ed25519 密钥签名（Biscuit 自己的块签名）；ZCAP-LD 能力携带一个使用 gnap.zcapCryptosuite 所指定套件的 Data Integrity 证明——默认 eddsa-jcs-2022，使用领域的后量子密钥时为 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或者为了兼容使用 Ed25519Signature2020；macaroon 是在按资源服务器派生的密钥下的 HMAC-SHA256 链。当客户端实例请求时，它还会用 RFC 9421 为 HTTP 响应签名。"
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "客户端实例发出的每个请求，依据其出示的密钥：RFC 9421 HTTP 消息签名（正文由 RFC 9530 Content-Digest 覆盖）、双向 TLS 证书（会查询撤销状态；在 gnap.mtlsTrust=pki——产品模式的默认值——下，需要一条通往客户端信任库的链以及与应用条目的绑定）、对正文的分离 JWS 或携带正文的附加 JWS。密钥轮换会在新旧两个密钥下都进行验证。调用内省或注册的资源服务器以同样方式证明，每种令牌格式都会在内省和演示资源服务器处被验证。"
+    "en": "0128ae60345397de",
+    "text": "客户端实例发出的每个请求，依据其出示的密钥：RFC 9421 HTTP 消息签名（正文由 RFC 9530 Content-Digest 覆盖）、双向 TLS 证书（会查询撤销状态；在 gnap.mtlsTrust=pki——产品模式的默认值——下，需要一条通往客户端信任库的链以及与应用条目的绑定）、对正文的分离 JWS 或携带正文的附加 JWS。密钥轮换会在新旧两个密钥下都进行验证。调用内省或注册的资源服务器以同样方式证明，每种令牌格式都会在内省时被验证。"
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "它不接受为绑定令牌发出的未经证明的请求，也没有任何设置可以让它接受：GNAP 密钥证明是协议本身，而不是一个加固选项。可选的是持有者令牌，可通过 gnap.bearerTokens 关闭。未实现 Macaroon 第三方附加条件、Biscuit 第三方块和 ZCAP 调用证明。"
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "客户端实例发出的每个请求，依据其出示的密钥：RFC 9421 HTTP 消息签名（正文由 RFC 9530 Content-Digest 覆盖）、双向 TLS 证书（会查询撤销状态；在 gnap.mtlsTrust=pki——产品模式的默认值——下，需要一条通往客户端信任库的链以及与应用条目的绑定）、对正文的分离 JWS 或携带正文的附加 JWS。密钥轮换会在新旧两个密钥下都进行验证。调用内省或注册的资源服务器以同样方式证明，每种令牌格式都会在内省时被验证。"
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1132,8 +1128,8 @@
     "text": "每一个安全事件令牌，而它是本服务中最值得斟酌算法的文档。SET 记录的是某件事已经发生，RFC 8417 第 4.1.4 节禁止它过期，因此它会在写下很久之后仍被读取——这正是“先收集、后解密”论点真正针对的情形。签名经过与这里其他每个 JWT 相同的签名器，因此 `ssf.signingAlgorithm` 可选用整张表：默认 RS256，PS 和 ES 系列，EdDSA，以及后量子算法——三种规格的 ML-DSA、两种规格的 SLH-DSA，以及六种 ML-DSA + 传统算法的复合算法。一个 SLH-DSA 签名最多需要一秒，在 libuv 的线程池上运行，因此本服务始终保持响应，而接收方需要等待。"
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "推送到本服务 `POST /ssf/receive` 的安全事件令牌——角色互换——对照本服务自己的 JWKS 验证，这是它唯一拥有的密钥。由他人签名的 SET 会被报告为“无法在此验证”而非无效，并且除非开启 `ssf.receiveRequireSignature`，否则仍会被接受：拒绝接收的接收方就无法向任何人展示收到了什么、为何未能验证，而这正是要回答的问题。它还会验证每次流管理调用中的访问令牌，所用检查与这里其他每个受保护端点相同。"
+    "en": "eb64e2686979148b",
+    "text": "每次流管理调用中的访问令牌（通过此处所有其他受保护端点使用的同一检查），以及推送到控制台或门户自身接收方的 SET（对照本服务的 JWKS）。"
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1150,10 +1146,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "被要求时，它会故意签出错误的签名。`ssf.breakSetSignature` 在签名后改动签名中的一个字符，使不进行验证的接收方接受一个无人签名的事件。特意改动一个字符而非截断：截断的签名无法通过 base64url 解码，会被报告为格式错误的令牌，对于被测试的一方而言，这与签名错误是不同的缺陷。仅限开发模式：产品领域会忽略它并拒绝设置它（#104）。"
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "每次流管理调用中的访问令牌（通过此处所有其他受保护端点使用的同一检查），以及推送到控制台或门户自身接收方的 SET（对照本服务的 JWKS）。/ssf/receive 是开发端点（#585）。"
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

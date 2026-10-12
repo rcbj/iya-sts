@@ -112,8 +112,8 @@
     "text": "full：全部八种格式，使用其注册名称——account、email、iss_sub、opaque、phone_number、did、uri 和 aliases——并执行每种格式封闭的成员集合，这正是各实现容易出错的那一半：携带额外成员的主体是符合规范的接收方必须拒绝的，因此本服务会拒绝它并指明该成员。第 3.2.8 节禁止在一个 aliases 标识符中嵌套另一个，这一点得到执行而不是被展平。"
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial：本服务以 application/secevent+jwt 形式 POST 每个 SET，带上接收方配置的 Authorization 标头，将 202 视为已传递，并将 400 {err, description} 读作接收方拒绝——这与网络故障是不同的结果，也会这样记录。它也在 POST /ssf/receive 上按该配置文件接收（角色互换），因此客户端可以作为传输方，并检查到达内容的 typ、iss 和 aud。推送失败会重试 ssf.pushRetries 次——默认为 0，这是刻意的，见 ssf/ssf_http.ts——然后进入该流的死信队列。"
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial：本服务以 application/secevent+jwt 形式 POST 每个 SET，带上接收方配置的 Authorization 标头，将 202 视为已传递，并将 400 {err, description} 读作接收方拒绝——这与网络故障是不同的结果，也会这样记录。控制台和门户自己的接收方按该配置文件接收，并检查到达内容的 typ、iss 和 aud。推送失败会重试 ssf.pushRetries 次——默认为 0，这是刻意的，见 ssf/ssf_http.ts——然后进入该流的死信队列。"
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -344,8 +344,8 @@
     "text": "full：每个授权服务器上的 POST /oauth2/par，对客户端进行身份验证的方式与令牌端点完全相同（因此在 RFC 9700、OAuth 2.1 和产品模式下执行，在开发模式下只做观察），接受颁发者、令牌端点和 PAR 端点作为客户端断言的受众；推送中的 request_uri 会被拒绝；推送的请求按授权端点自己的检查进行校验；`request` 对象按 RFC 9101 的要求验证并绑定到已通过身份验证的客户端，在要求签名对象的地方普通推送会被拒绝；返回 201，带一个绑定到客户端和授权服务器的 256 位 urn:ietf:params:oauth:request_uri: 引用，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 和 429；第 2.4 节针对已通过身份验证的客户端的未注册 redirect_uri 受一个设置控制（关闭）；request_uri 可在登录和同意的各个环节中使用，并在签发授权响应时被消耗，过期和重放的会以 invalid_request_uri 拒绝；全局、按客户端（注册时、控制台上和 /admin-api 上的 require_pushed_authorization_requests）以及按授权服务器的强制策略；两个元数据成员；使用 request_uri 时会再次询问客户端策略；以及推送时的 DPoP 证明会绑定授权码（RFC 9449 第 10.1 节）。在 /admin/oauth2/monitor 上计数并列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送，并由 /oauth2/step-up/resource/{application} 根据资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 发送。模拟之处：本服务的登录只产生三种上下文类别；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
+    "en": "56808a8c0f6588d3",
+    "text": "full：授权端点在每种模式下、无论是否带 openid，都认可 acr_values 和 max_age——不满足它们的会话会让此人重新登录一次（要求两个因素会强制进入第二因素步骤），prompt=none 应答 login_required，登录后仍不满足的要求会以 unmet_authentication_requirements 拒绝（第 5 节）；acr 值按 0 < 1 < mfa 排序，授权码、ID 令牌和访问令牌携带所满足的最优先的请求值；两份发现文档中都有 acr_values_supported；JWT 访问令牌（第 6.1 节）和内省（第 6.2 节）中有 acr 和 auth_time；以及第 3 节带 acr_values 和 max_age 的 401 insufficient_user_authentication 质询，由本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、SSF）根据 oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS 发送；资源应用的 oauthStepUpAcrValues / oauthStepUpMaxAge 会被记录下来，由作为该应用的资源服务器执行。模拟之处：本服务的登录只产生三种上下文类别；其他任何 acr 值只有在联合登录恰好报告该 acr 时才能满足。在 /admin/oauth2/monitor 上计数。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "不是 GNAP 端点：zcap 访问令牌的根能力所指向的控制器文档，携带用于检查其签名的验证方法——在 JCS 套件下是 Controlled Identifiers v1.0 文档中的 Multikey，在 Ed25519Signature2020 下是 Ed25519VerificationKey2020。以 no-store 提供。"
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "本服务上的一个受保护资源，供客户端实例使用令牌访问：没有令牌时，它以 401 应答，并附带指明授权端点的第 9.1 节 WWW-Authenticate 质询；有令牌时，它会像资源服务器那样检查格式、受众、密钥绑定和访问权限。gnap.demoResourceServer 可将其关闭。"
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "一个在某项权限的限额内进行支出的操作（#432 第 5 阶段）：POST 金额、币种和收款方，所用令牌须授予对演示类型的 spend 权限。资源服务器按授权保存累计总额——在整个集群中原子地维护，在限额的重复周期每个边界处重置，并在操作失败时退回——并以 403 insufficient_scope 拒绝超出限额的操作。这是资源服务器如何处理限额的参考实现。gnap.demoResourceServer 可将其关闭。"
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "GET /admin/gnap 所绘制的内容，出自同一个视图函数。"
@@ -982,14 +974,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "接收方来到这里，因此无需拨号——这就是浏览器可以通过这种方式成为接收方、却无法通过推送方式成为接收方的原因。应答为 {sets, moreAvailable}。`ack` 指明接收方已存储的内容，`setErrs` 指明它拒绝的内容，二者都会从队列中移除：无法处理某个事件的接收方下次同样无法处理它，因此重新投递将导致无休止的轮询循环。拒绝会改为记录在流上，以便人们查看。RFC 8936 没有 stream_id 成员，因为真正的轮询端点是按流划分的；此发送方只发布一个 URL，因此 id 放在主体中。"
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "角色互换，而且不是 SSF 端点：发送方必须有地方可以推送，因此本服务在这里为了客户端的方便充当接收方。它会接受签名无法验证的 SET 并报告原因，这对调试器来说恰恰是正确的——拒绝的接收方无法向任何人展示收到了什么或为什么无法验证，而这正是要问的问题。ssf.receiveRequireSignature 会打开 400 invalid_key，这是真正的接收方的做法。验证所用的是本服务自己的密钥，也是它唯一拥有的密钥，因此由他人签名的 SET 是 “在此处无法验证”，而不是无效。"
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "同样不是 SSF 端点。POST /ssf/receive 收到的所有内容，以及每项解码后的结果、其签名是否通过验证，以及它是否携带了 RFC 8417 第 2.3 节规定的 application/secevent+jwt 媒体类型——按类型分派的接收方（有好几个是这样）会丢弃以普通 JWT 发送的 SET，而且不会有任何人看到错误。"
   },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
@@ -1712,8 +1696,8 @@
     "text": "emit、reset-session 和 clear——与控制台表单提交的相同三个操作，通过同一个操作函数执行，操作取自 URL 而不是隐藏输入。`emit` 根据指定的会话构造 SSF 的复合主体，并在每个既投递该类型又覆盖该主体的流上发送；没有任何流接收的类型不算错误，因为 “事件发生了，但没有人要求获知它” 是与失败不同的事实，而且通常正是实际情况。这里刻意没有办法结束会话：发出 session-revoked 表示某个会话已被吊销，但并不会吊销会话，而同时做这两件事的 API 会把 CAEP 本来要区分的两个行为合二为一。与旁边的 Shared Signals 操作一样，它需要 await，因为发出事件需要先签署一个 JWS 再 POST 它。"
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status、transmit、delete 和 clear-received——与控制台表单提交的相同四个操作，通过同一个操作函数执行，操作取自 URL 而不是隐藏输入。这里刻意没有 `create`：流携带一个本服务会去拨号的投递端点，而该 URL 唯一可以来自的地方是在 POST /ssf/stream 请求它的接收方——能够生成流的 API 将成为通往出站请求的第二个、不设关卡的入口。它也是此 API 中唯一需要 await 的操作处理程序：发送需要签署一个 JWS（可能在 libuv 的线程池上进行），然后 POST 它，而在这两件事发生之前就应答，等于对一件根本没发生的事报告 “已发送”。"
+    "en": "64dd45c6ceafaf73",
+    "text": "status、transmit、delete、revive、clear-dead-letters 和 verify——控制台表单提交的操作，通过同一个操作函数执行，操作取自 URL 而不是隐藏输入。这里刻意没有 `create`：流携带一个本服务会去拨号的投递端点，而该 URL 唯一可以来自的地方是在 POST /ssf/stream 请求它的接收方——能够生成流的 API 将成为通往出站请求的第二个、不设关卡的入口。它也是此 API 中唯一需要 await 的操作处理程序：发送需要签署一个 JWS（可能在 libuv 的线程池上进行），然后 POST 它，而在这两件事发生之前就应答，等于对一件根本没发生的事报告 “已发送”。"
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -2830,14 +2814,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "POST 授权请求的参数，按令牌端点的方式认证，得到 201 { request_uri, expires_in }，用它将浏览器送往 /oauth2/authorize。推送会像授权请求一样被验证，并以 JSON 形式拒绝；`request` 对象可以携带这些参数；DPoP 证明会绑定授权码。其他所有方法均返回 405。"
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "NON-SPEC：代表已注册应用应答的受保护资源，支持 GET 和 POST，因此无需部署 API 即可驱动客户端走完 RFC 9470。访问令牌必须通过验证，必须是本服务所公布的授权服务器颁发的 at+jwt，并在其 aud 中指明该应用；然后用应用的 oauthStepUpAcrValues 和 oauthStepUpMaxAge 检查其 acr 和 auth_time，不满足要求的令牌以 401 insufficient_user_authentication 应答，并在质询中附带 acr_values 和 max_age。满足要求的令牌得到 200，以及该要求和它所满足的认证。不保存任何数据。"
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "不带参数访问时以 WWW-Authenticate 质询应答 401，对本领域没有条目的应用应答 404"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

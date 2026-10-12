@@ -547,14 +547,6 @@
     "en": "092878a48c170524",
     "text": "Om en GNAP-åtkomsttoken i formatet jwt-signed eller jwt-encrypted namnger certifikatkedjan för nyckeln som signerade den — på JWS:en i båda, aldrig på JWE:n runt jwt-encrypted, som krypteras till en resursservers nyckel eller en hemlighet. Macaroons, biscuits och ZCAP-LD-kapabiliteter är inte JWS:er och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inline, lövcertifikatet först och tjänstens rotcertifikat sist, base64-kodad DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-responder och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen via `x5u` använder TLS: med global.https av är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan sättas per sfär."
   },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Kör demonstrationsresursservern"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: bedömer en uppvisad token i vilket som helst av de fem formaten och besvarar den RS-först-utmaning som beskrivs i avsnitt 9.1. Endast utvecklingsläge: en produktrealm har ingen demonstrationsresursserver (#585)."
-  },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
     "text": "Cache för ägaruppslag (sekunder)"
@@ -6788,8 +6780,8 @@
     "text": "Behållna mottagna händelser"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Hur många SET:er som POST /ssf/receive behåller för /admin/ssf att visa. Den slutpunkten är den här tjänsten i rollen som MOTTAGARE, vilket är dit debuggern pushar när rollerna är omvända; de äldsta tas bort därutöver."
+    "en": "2c503bd8b26764ea",
+    "text": "Hur många levererade SET:er var och en av den här tjänstens egna mottagare (konsolens och portalens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6814,30 +6806,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "Omfånget som krävs för att skapa, uppdatera eller ta bort en ström, för att lägga till eller ta bort ett subjekt, för att ändra en status eller för att be om en verifieringshändelse. Ett läsomfång räcker inte för något av dessa, vilket är den första platsen i den här tjänsten förutom SCIM där två omfång skiljer sig åt i vad de tillåter."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Ta emot pushade händelser"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Om POST /ssf/receive tar emot en Security Event Token som pushas TILL den här tjänsten — rollerna omvända, med debuggern som sändare. Den verifierar signaturen när den kan hitta en nyckel och rapporterar vad den läste i båda fallen, eftersom en mottagare som vägrade en overifierbar händelse inte skulle kunna visa en person VARFÖR den var overifierbar. Av svarar 501. Endast utvecklingsläge: en produktrealm har ingen /ssf/receive (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Mottagare (aud) som POST /ssf/receive svarar på"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "De `aud`-värden som den debuggervända mottagaren på POST /ssf/receive accepterar. En SET som inte är adresserad till något av dem registreras och avvisas med invalid_audience, som en verklig mottagare avvisar den. TOMT betyder slutpunktens egen URL i den här sfären, vilket är det namn som en sändare kan upptäcka utan att få veta något."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Utfärdare som POST /ssf/receive accepterar"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "De `iss`-värden som POST /ssf/receive accepterar (SSF 1.0 avsnitt 4.1.6: en mottagare MÅSTE kontrollera utfärdaren). En SET från någon annan utfärdare registreras och avvisas med invalid_issuer. TOMT betyder den här sfärens egen sändarutfärdare — den enda utfärdare vars SET:er den här mottagaren kan verifiera, eftersom den inte har någon annan nyckel."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

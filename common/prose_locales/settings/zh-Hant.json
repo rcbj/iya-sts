@@ -547,14 +547,6 @@
     "en": "092878a48c170524",
     "text": "jwt-signed 或 jwt-encrypted 格式的 GNAP 存取權杖是否指名簽署它之金鑰的憑證鏈——兩者都放在 JWS 上，絕不放在包住 jwt-encrypted 的 JWE 上，後者是以資源伺服器的金鑰或秘密加密的。Macaroon、biscuit 與 ZCAP-LD 能力不是 JWS，不受影響。`x5u`——預設值——是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務根憑證在最後，base64 DER，數 KB；`both` 是兩者皆有，`none` 則皆無。無論哪種方式，這都是只持有權杖的依賴方用來取得每張憑證之 CRL 發佈點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域 JOSE 簽發 CA 下獲得認證的金鑰，以及 HMAC 簽章，兩者皆不會取得。RFC 7515 第 4.1.5 節要求 `x5u` 的擷取使用 TLS：global.https 關閉時位址為 `http://`，嚴格的驗證者會拒絕跟隨。JWE 標頭從不會帶有它——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
   },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "執行示範資源伺服器"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource：判斷以五種格式之任一出示的權杖，並回應第 9.1 節以 RS 為先的挑戰。僅限開發模式：產品領域沒有示範資源伺服器（#585）。"
-  },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
     "text": "擁有者查詢快取（秒）"
@@ -6788,8 +6780,8 @@
     "text": "保留的已接收事件數"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "POST /ssf/receive 保留多少個 SET 供 /admin/ssf 顯示。該端點是此服務作為「接收端」，也就是角色反轉時偵錯工具推送的目標；超過此數時會捨棄最舊的。"
+    "en": "2c503bd8b26764ea",
+    "text": "本服務自己的每個接收者（主控台的與入口網站的）在其收件匣中保留多少個已傳遞的 SET，依領域計；超過此數時會捨棄最舊的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6814,30 +6806,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件所需的範圍。讀取範圍不足以執行其中任何一項，這是此服務中除 SCIM 之外第一個兩個範圍所允許內容不同的地方。"
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "接受推送的事件"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "POST /ssf/receive 是否接受推送「至」此服務的 Security Event Token——角色反轉，由偵錯工具作為傳送端。它在找得到金鑰時會驗證簽章，並且無論如何都會回報所讀到的內容，因為拒絕無法驗證之事件的接收端，將無法向人說明它「為何」無法驗證。關閉時回應 501。僅限開發模式：產品領域沒有 /ssf/receive（#585）。"
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "POST /ssf/receive 回應的對象"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "POST /ssf/receive 上面向偵錯工具的接收端所接受的 `aud` 值。不屬於其中任何一個的 SET 會被記錄，並以 invalid_audience 拒絕，如同真正的接收端所做的。「留空」表示該端點在此領域中自己的 URL，這是傳送端無須被告知即可發現的名稱。"
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "POST /ssf/receive 接受的簽發者"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "POST /ssf/receive 接受的 `iss` 值（SSF 1.0 section 4.1.6：接收端 MUST 檢查簽發者）。來自其他任何簽發者的 SET 會被記錄，並以 invalid_issuer 拒絕。「留空」表示此領域自己的傳送端簽發者——這是此接收端唯一能驗證其 SET 的簽發者，因為它不持有其他任何金鑰。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

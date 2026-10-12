@@ -22,7 +22,7 @@
   "sched.jobs.gnap.grant-expiry.title": "GNAP: expired grants",
   "sched.jobs.gnap.grant-expiry.describe": "Finalizes each GNAP grant whose interaction or grant lifetime (gnap.grantLifetimeS) has ended and that no request has touched since, recording why (#432).",
   "sched.jobs.gnap.spend-purge.title": "GNAP: limits of ended grants",
-  "sched.jobs.gnap.spend-purge.describe": "Deletes the running totals the demonstration resource server keeps for each GNAP grant's limits once the grant has ended, when no token of it can be presented (#432).",
+  "sched.jobs.gnap.spend-purge.describe": "Deletes the running totals kept for each GNAP grant's limits once the grant has ended, when no token of it can be presented (#432).",
   "sched.jobs.keys.data-key-count.title": "Data encryption key value counts",
   "sched.jobs.keys.data-key-count.describe": "Counts the values sealed under every data encryption key, in one pass of the store, and keeps each count on its key for /admin/encryption.",
   "sched.jobs.keys.data-key-reencrypt.title": "Data re-encryption and key destruction",

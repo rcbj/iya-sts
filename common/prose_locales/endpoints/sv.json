@@ -131,14 +131,6 @@
     "en": "6757bf6175282a42",
     "text": "ZCAP-kontrollantdokumentet"
   },
-  "endpoints.route./gnap/rs/resource.name": {
-    "en": "f4816b24c4f7295e",
-    "text": "Demonstrationsresursservern"
-  },
-  "endpoints.route./gnap/rs/spend.name": {
-    "en": "70a2444f2afabc4c",
-    "text": "Demonstrationsresursserverns förbrukning"
-  },
   "endpoints.route./admin-api/gnap.name": {
     "en": "c34c3f89f048c143",
     "text": "GNAP-konsolsidan som JSON"
@@ -270,14 +262,6 @@
   "endpoints.route./ssf/poll.name": {
     "en": "ac4ccca804188b23",
     "text": "Leverans via pollning (RFC 8936)"
-  },
-  "endpoints.route./ssf/receive.name": {
-    "en": "115adfc135af6faf",
-    "text": "En Security Event Token som skickats TILL den här tjänsten"
-  },
-  "endpoints.route./ssf/received.name": {
-    "en": "7ba22ad915534fad",
-    "text": "Vad som har skickats hit"
   },
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
@@ -1714,10 +1698,6 @@
   "endpoints.route./oauth2/par.name": {
     "en": "59993176c4a0e4a5",
     "text": "Slutpunkt för pushade auktoriseringsbegäranden"
-  },
-  "endpoints.route./oauth2/step-up/resource/:application.name": {
-    "en": "2d9263a1f29be372",
-    "text": "Ställföreträdande resurs för step-up"
   },
   "endpoints.route./admin-api/oauth2/monitor.name": {
     "en": "21eb6990b9a90996",

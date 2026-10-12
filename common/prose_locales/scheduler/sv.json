@@ -92,8 +92,8 @@
     "text": "GNAP: gränser för avslutade beviljanden"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "Tar bort de löpande summor som demonstrationsresursservern håller för varje GNAP-beviljandes gränser när beviljandet har tagit slut, då ingen av dess token längre kan visas upp (#432)."
+    "en": "71471822b228b1b8",
+    "text": "Tar bort de löpande summor som hålls för varje GNAP-beviljandes gränser när beviljandet har tagit slut, då ingen av dess token längre kan visas upp (#432)."
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

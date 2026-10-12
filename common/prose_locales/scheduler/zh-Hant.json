@@ -92,8 +92,8 @@
     "text": "GNAP：已結束授與的限額"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "在 GNAP 授與結束、已無其權杖可被出示時，刪除示範資源伺服器為該授與限額所保留的累計值（#432）。"
+    "en": "71471822b228b1b8",
+    "text": "在 GNAP 授與結束、已無其權杖可被出示時，刪除為該授與限額所保留的累計值（#432）。"
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

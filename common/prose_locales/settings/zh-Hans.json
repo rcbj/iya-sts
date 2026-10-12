@@ -547,14 +547,6 @@
     "en": "092878a48c170524",
     "text": "jwt-signed 或 jwt-encrypted 格式的 GNAP 访问令牌是否指明签名密钥的证书链——在两种格式中都放在 JWS 上，绝不放在 jwt-encrypted 外层的 JWE 上，后者是加密给资源服务器的密钥或某个秘密的。Macaroon、biscuit 和 ZCAP-LD 能力不是 JWS，不受影响。`x5u`（默认）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，数千字节；`both` 表示两者都有，`none` 表示都没有。无论哪种方式，这都是只持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应方和 caIssuers 地址所需的内容。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥以及 HMAC 签名，两者都不会获得。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时该地址为 `http://`，严格的验证器会拒绝跟随。JWE 标头从不会带有此项——本服务的任何已认证密钥都不加密任何内容。可按领域设置。"
   },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "运行演示资源服务器"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource：判断以五种格式中任一种出示的令牌，并应答第 9.1 节的资源服务器优先质询。仅限开发模式：产品领域没有演示资源服务器（#585）。"
-  },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
     "text": "所有者查询缓存（秒）"
@@ -6788,8 +6780,8 @@
     "text": "保留的已接收事件数"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "POST /ssf/receive 保留多少个 SET 供 /admin/ssf 显示。该端点是本服务充当接收方，即角色互换时调试器推送的目标；超过此数量时丢弃最旧的。"
+    "en": "2c503bd8b26764ea",
+    "text": "本服务自己的每个接收方（控制台的和门户的）在其收件箱中保留多少个已投递的 SET，按领域计；超过此数量时丢弃最旧的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6814,30 +6806,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "创建、更新或删除流，添加或删除主体，更改状态或请求验证事件所需的范围。读取范围不足以执行其中任何操作，这是本服务中除 SCIM 之外第一个两个范围所允许内容不同的地方。"
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "接受推送的事件"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "POST /ssf/receive 是否接受推送给本服务的安全事件令牌——角色互换，由调试器充当发送方。能找到密钥时它会验证签名，无论如何都会报告它读到的内容，因为拒绝无法验证事件的接收方将无法向人展示它为何无法验证。关闭时应答 501。仅限开发模式：产品领域没有 /ssf/receive（#585）。"
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "POST /ssf/receive 应答的受众"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "面向调试器的接收方 POST /ssf/receive 接受的 `aud` 值。不针对其中任何一个的 SET 会被记录，并以 invalid_audience 被拒绝，与真实接收方的拒绝方式相同。为空表示此领域中该端点自身的 URL，这是发送方无需被告知即可发现的名称。"
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "POST /ssf/receive 接受的颁发者"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "POST /ssf/receive 接受的 `iss` 值（SSF 1.0 第 4.1.6 节：接收方必须检查颁发者）。来自其他任何颁发者的 SET 会被记录，并以 invalid_issuer 被拒绝。为空表示此领域自身的发送方颁发者——这是此接收方唯一能验证其 SET 的颁发者，因为它不持有其他任何密钥。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

@@ -92,8 +92,8 @@
     "text": "GNAP : limites des autorisations terminées"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "Supprime les totaux cumulés que le serveur de ressources de démonstration conserve pour les limites de chaque autorisation GNAP une fois l’autorisation terminée, lorsqu’aucun de ses jetons ne peut plus être présenté (#432)."
+    "en": "71471822b228b1b8",
+    "text": "Supprime les totaux cumulés conservés pour les limites de chaque autorisation GNAP une fois l’autorisation terminée, lorsqu’aucun de ses jetons ne peut plus être présenté (#432)."
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

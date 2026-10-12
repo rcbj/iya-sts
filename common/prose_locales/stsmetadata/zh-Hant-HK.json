@@ -67,10 +67,6 @@
     "en": "8641e83cb922bdcc",
     "text": "full——就本服務發出的內容而言：每個事件都以帶有 typ=secevent+jwt 的已簽署 JWT 傳送，附以事件類型 URI 為鍵的 events 對應、iss/jti/iat/aud、位於 sub_id 的 RFC 9493 主體，以及選用的 txn 與 toe。「沒有 exp，而這是依照第 4.1.4 節，並非遺漏」——SET 記錄的是某件事「已經發生」，而事實不會停止為真。第 2.2 節不鼓勵的 `sub` 宣告不會出現，除非開啟 ssf.legacySubClaim——這是一個刻意的缺陷，用來測試依照出錯的傳送端所撰寫的客戶端——僅限開發模式；產品模式的領域會忽略它。"
   },
-  "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial：本服務以 application/secevent+jwt POST 每個 SET，附上接收端所設定的 Authorization 標頭，將 202 視為已傳遞，並將 400 {err, description} 解讀為接收端「拒絕」——這與網絡失敗是不同的結果，也會如此記錄。它也在 POST /ssf/receive 以該設定檔「接收」，角色對調，讓客戶端可以擔任傳送端，並檢查抵達內容的 typ、iss 與 aud。推送失敗會重試 ssf.pushRetries 次——預設刻意為 0，見 ssf/ssf_http.ts——之後進入串流的無法投遞隊列。"
-  },
   "stsmetadata.specs.rfc8936.coverage": {
     "en": "4061de5a6411b93e",
     "text": "partial：輪詢端點回應 {sets, moreAvailable}，依設定的上限遵循 maxEvents，並接受 ack（接收端已儲存的內容）與 setErrs（它「拒絕」的內容）——後者也會清除隊列，因為無法處理某事件的接收端下次也不會處理它，重新傳遞只會造成輪詢迴圈。「未」涵蓋：長輪詢。returnImmediately 一律視為「是」，這是規格所允許的，也讓模擬服務不必為了展示空無一物而保持 socket 開啟。"
@@ -487,10 +483,6 @@
     "en": "f31555286ca321d5",
     "text": "RFC 9767 第 3.4 節：資源伺服器註冊一組存取權利，並取得一個客戶端實例可依名稱要求的參照。權杖衍生（第 3.5 節）則以 existing_access_token 送往授權端點。"
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "本服務上的受保護資源，供客戶端實例使用權杖存取：沒有權杖時回應 401 並附上指名授權端點的第 9.1 節 WWW-Authenticate 挑戰；有權杖時則像資源伺服器一樣檢查格式、對象、金鑰繫結與存取權利。gnap.demoResourceServer 可將其關閉。"
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "GET /admin/gnap 所繪製的內容，來自同一個檢視函數。"
@@ -562,10 +554,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "接收者會來到「這裡」，因此不會對外連線——這就是為什麼瀏覽器可以透過此方法成為接收者，而透過推送則不行。回應 {sets, moreAvailable}。`ack` 指名接收者已儲存的，`setErrs` 指名它「拒絕」的，兩者都會從隊列移除：無法處理某事件的接收者下次也不會處理它，因此重新傳遞會造成永遠的輪詢迴圈。拒絕會改記錄在串流上，讓人可以看到。RFC 8936 沒有 stream_id 成員，因為真正的輪詢端點是每個串流各一個；此傳輸器只發布一個 URL，因此 id 放在本文中。"
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "角色互換，而且不是 SSF 端點：傳輸器必須有地方可以推送，因此本服務在這裡為了客戶端的需要而擔任「接收者」。它會「接受」簽章無法驗證的 SET 並回報原因，這對偵錯工具而言完全正確——拒絕的接收者無法向任何人展示收到了什麼或為何無法驗證，而這正是被問的問題。ssf.receiveRequireSignature 會開啟 400 invalid_key，這是真正的接收者會做的。驗證依據的是「本服務」自己的金鑰，也是它唯一擁有的金鑰，因此由他人簽署的 SET 是「在此無法驗證」而非無效。"
   },
   "stsmetadata.endpoints./scim/v2/ServiceProviderConfig.what": {
     "en": "c454f0b9582501c4",
@@ -878,10 +866,6 @@
   "stsmetadata.endpoints./admin-api/caep/:action.what": {
     "en": "1aa033d3d96cc74a",
     "text": "emit、reset-session 與 clear——與主控台表單 POST 的三者相同，透過同一個動作函數，動作取自 URL 而非隱藏欄位。`emit` 從所指名的工作階段組成 SSF 的「複合」主體，並在每個既傳遞該類型又涵蓋該主體的串流上送出；沒有任何串流接受的類型「不是」錯誤，因為「事件發生了，但沒有人要求被告知」是與失敗不同的事實，而且通常是實際情況。刻意沒有任何方式能從這裡結束工作階段：送出 session-revoked 是「告知」某個工作階段已被撤銷，而不會撤銷任何工作階段，同時做這兩件事的 API 會把 CAEP 存在的目的所要區分的兩個行為合而為一。它會 await，與旁邊的 Shared Signals 動作一樣，因為送出時要先簽署 JWS 再 POST 出去。"
-  },
-  "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status、transmit、delete 與 clear-received——與主控台表單 POST 的四者相同，透過同一個動作函數，動作取自 URL 而非隱藏欄位。刻意沒有 `create`：串流攜帶一個本服務會「連線」的傳遞端點，而該 URL 唯一可以來自的地方，是在 POST /ssf/stream 要求它的接收者——能夠產生串流的 API 會成為通往對外請求的第二道、沒有閘門的入口。它也是此 API 中「唯一」需要 await 的動作處理常式：傳輸時要簽署 JWS（可能在 libuv 的線程池上），然後 POST 出去，在這兩者發生之前就回應，等於對什麼都沒發生的事回報「已送出」。"
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -1274,10 +1258,6 @@
   "stsmetadata.endpoints./oauth2/challenge.what": {
     "en": "859a1b98366a1ab4",
     "text": "POST 以取得 { attestation_challenge }：Client Attestation PoP 所承載的一次性挑戰（draft-ietf-oauth-attestation-based-client-auth-11 section 6.3），不可快取，在此領域要求 DPoP nonce 時旁邊會附上新的 DPoP-Nonce。屬於領域，無論詢問的是哪個授權伺服器；在不信任任何客戶端證明者的領域中回傳 400，該領域也不會公告 challenge_endpoint。"
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "非規範：一個「代表」已註冊應用程式回應的受保護資源，支援 GET 與 POST，讓客戶端無需部署 API 即可走過 RFC 9470。存取權杖必須通過驗證、是本服務公布之授權伺服器所簽發的 at+jwt，且在其 aud 中指名該應用程式；接著以應用程式的 oauthStepUpAcrValues 與 oauthStepUpMaxAge 檢查其 acr 與 auth_time，不符合的權杖會以 401 insufficient_user_authentication 回應，並在挑戰中附上 acr_values 與 max_age。符合的權杖會得到 200，以及它所滿足的要求與驗證。不保存任何數據。"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

@@ -92,8 +92,8 @@
     "text": "GNAP: límites de concesiones terminadas"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "Elimina los totales acumulados que el servidor de recursos de demostración lleva para los límites de cada concesión GNAP una vez que la concesión ha terminado, cuando ya no puede presentarse ningún token suyo (#432)."
+    "en": "71471822b228b1b8",
+    "text": "Elimina los totales acumulados que se llevan para los límites de cada concesión GNAP una vez que la concesión ha terminado, cuando ya no puede presentarse ningún token suyo (#432)."
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

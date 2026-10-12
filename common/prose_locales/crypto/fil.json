@@ -620,8 +620,8 @@
     "text": "ANG LIMANG ACCESS TOKEN FORMAT, tatlo sa mga ito ay hindi JWT. Dumadaan ang jwt-signed sa parehong signer ng bawat iba pang JWT dito, ang header nitong `typ` ay gnap-at+jwt (#157); ang biscuit ay pinipirmahan gamit ang Ed25519 key ng realm (ang sariling block signature ng Biscuit); ang isang ZCAP-LD capability ay may dalang Data Integrity proof sa suite na pinangangalanan ng gnap.zcapCryptosuite — eddsa-jcs-2022 bilang default, mldsa44-jcs-2024 o slhdsa128-jcs-2024 gamit ang post-quantum key ng realm, o Ed25519Signature2020 para sa compatibility; ang macaroon ay isang HMAC-SHA256 chain sa ilalim ng key na hinango bawat resource server. Pumipirma rin ito ng HTTP response gamit ang RFC 9421 kapag humingi ang isang client instance."
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "BAWAT REQUEST NA GINAGAWA NG ISANG CLIENT INSTANCE, sa pamamagitan ng key na ipinakita nito: isang RFC 9421 HTTP message signature (na sakop ang body ng isang RFC 9530 Content-Digest), isang mutual TLS certificate (kinokonsulta ang revocation; isang chain sa client truststore at isang binding sa application entry sa ilalim ng gnap.mtlsTrust=pki, ang default ng product), isang detached na JWS sa body o isang attached na JWS na nagdadala nito. Vine-verify ang key rotation sa ilalim ng PAREHONG key. Ang resource server na tumatawag sa introspection o registration ay pinapa-proof sa parehong paraan, at bawat token format ay vine-verify sa introspection at sa demonstration resource server."
+    "en": "0128ae60345397de",
+    "text": "BAWAT REQUEST NA GINAGAWA NG ISANG CLIENT INSTANCE, sa pamamagitan ng key na ipinakita nito: isang RFC 9421 HTTP message signature (na sakop ang body ng isang RFC 9530 Content-Digest), isang mutual TLS certificate (kinokonsulta ang revocation; isang chain sa client truststore at isang binding sa application entry sa ilalim ng gnap.mtlsTrust=pki, ang default ng product), isang detached na JWS sa body o isang attached na JWS na nagdadala nito. Vine-verify ang key rotation sa ilalim ng PAREHONG key. Ang resource server na tumatawag sa introspection o registration ay pinapa-proof sa parehong paraan, at bawat token format ay vine-verify sa introspection."
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "HINDI ITO TUMATANGGAP NG REQUEST NA WALANG PROOF PARA SA ISANG BOUND TOKEN, at walang setting na gumagawa nito: ang GNAP key proof ay ang protocol mismo sa halip na isang hardening option. Ang opsyonal ay ang BEARER token, na pinapatay ng gnap.bearerTokens. Hindi ini-implement ang mga third-party caveat ng Macaroon, ang mga third-party block ng Biscuit at ang mga ZCAP invocation proof."
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "BAWAT REQUEST NA GINAGAWA NG ISANG CLIENT INSTANCE, sa pamamagitan ng key na ipinakita nito: isang RFC 9421 HTTP message signature (na sakop ang body ng isang RFC 9530 Content-Digest), isang mutual TLS certificate (kinokonsulta ang revocation; isang chain sa client truststore at isang binding sa application entry sa ilalim ng gnap.mtlsTrust=pki, ang default ng product), isang detached na JWS sa body o isang attached na JWS na nagdadala nito. Vine-verify ang key rotation sa ilalim ng PAREHONG key. Ang resource server na tumatawag sa introspection o registration ay pinapa-proof sa parehong paraan, at bawat token format ay vine-verify sa introspection."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1132,8 +1128,8 @@
     "text": "BAWAT SECURITY EVENT TOKEN, at ito ang dokumento sa serbisyong ito na pinakasulit pag-isipan pagdating sa algorithm. Itinatala ng isang SET na may NANGYARI at ipinagbabawal ng RFC 8417 section 4.1.4 na mag-expire ito, kaya binabasa ito nang matagal pagkatapos itong isulat — na siyang kaso na talagang tinutukoy ng argumentong harvest-now-decrypt-later. Dumadaan ang signature sa PAREHONG signer na dinadaanan ng bawat iba pang JWT dito, kaya naaabot ng `ssf.signingAlgorithm` ang buong table: RS256 bilang default, ang mga PS at ES family, EdDSA, at ang mga post-quantum — ML-DSA sa tatlong laki, SLH-DSA sa dalawa, at ang anim na composite na ML-DSA + traditional na algorithm. Ang isang SLH-DSA signature ay inaabot nang hanggang isang segundo at tumatakbo sa thread pool ng libuv, kaya patuloy na sumasagot ang serbisyong ito at naghihintay ang receiver."
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "Isang Security Event Token na ipinush PAPUNTA sa serbisyong ito sa `POST /ssf/receive` — baligtad ang mga role — laban sa sarili nitong JWKS, na siyang tanging key na mayroon ito. Ang SET na pinirmahan ng iba ay iniuulat bilang HINDI MAVE-VERIFY DITO sa halip na invalid, at TINATANGGAP pa rin maliban kung naka-on ang `ssf.receiveRequireSignature`: ang receiver na tumatanggi ay hindi makapagpapakita sa sinuman kung ano ang dumating o kung bakit hindi ito nag-verify, na siyang tanong na itinatanong. Vine-verify din nito ang access token sa bawat stream management call, sa pamamagitan ng parehong check na ginagamit ng bawat iba pang protected endpoint dito."
+    "en": "eb64e2686979148b",
+    "text": "Ang access token sa bawat stream management call, sa parehong check na ginagamit ng bawat ibang protektadong endpoint dito, at ang SET na ipinadala sa sariling receiver ng console o ng portal laban sa JWKS ng serbisyong ito."
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1150,10 +1146,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "SADYA ITONG PUMIPIRMA NANG MALI KAPAG HINILING. Binabago ng `ssf.breakSetSignature` ang ISANG CHARACTER ng signature pagkatapos pumirma, kaya ang receiver na hindi nagve-verify ay tumatanggap ng event na walang pumirma. Sadyang character sa halip na truncation: ang pinutol na signature ay bumabagsak sa base64url decode at iniuulat bilang MALFORMED na token, na ibang bug mula sa masamang signature para sa sinumang tine-test. Development mode lang: binabalewala ito ng product realm at tinatanggihan ang pag-set dito (#104)."
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "Ang access token sa bawat stream management call, sa parehong check na ginagamit ng bawat ibang protektadong endpoint dito, at ang SET na ipinadala sa sariling receiver ng console o ng portal laban sa JWKS ng serbisyong ito. Ang /ssf/receive ay isang development endpoint (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

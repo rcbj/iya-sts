@@ -112,8 +112,8 @@
     "text": "full : les huit formats sous leurs noms enregistrés — account, email, iss_sub, opaque, phone_number, did, uri et aliases — l’ensemble FERMÉ des membres de chaque format étant appliqué, ce qui est la moitié que les implémentations ratent : un sujet portant un membre supplémentaire est un sujet qu’un récepteur conforme MUST rejeter ; ce service le refuse donc et nomme le membre. L’interdiction, par la section 3.2.8, d’imbriquer un identifiant aliases dans un autre est appliquée plutôt qu’aplatie."
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial : ce service envoie par POST chaque SET en application/secevent+jwt avec l’en-tête Authorization configuré du récepteur, traite 202 comme une remise, et lit un 400 {err, description} comme un REFUS du récepteur — ce qui est un résultat différent d’une panne réseau et est consigné comme tel. Il REÇOIT aussi selon ce profil sur POST /ssf/receive, les rôles inversés, de sorte qu’un client peut être l’émetteur, en vérifiant le typ, l’iss et l’aud de ce qui arrive. Un push en échec est retenté ssf.pushRetries fois — 0 par défaut, délibérément, voir ssf/ssf_http.ts — puis va dans la file de lettres mortes du flux."
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial : ce service envoie par POST chaque SET en application/secevent+jwt avec l’en-tête Authorization configuré du récepteur, traite 202 comme une remise, et lit un 400 {err, description} comme un REFUS du récepteur — ce qui est un résultat différent d’une panne réseau et est consigné comme tel. Les récepteurs propres à la console et au portail REÇOIVENT selon ce profil, en vérifiant le typ, l’iss et l’aud de ce qui arrive. Un push en échec est retenté ssf.pushRetries fois — 0 par défaut, délibérément, voir ssf/ssf_http.ts — puis va dans la file de lettres mortes du flux."
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -344,8 +344,8 @@
     "text": "full : POST /oauth2/par sur chaque serveur d’autorisation, authentifiant le client exactement comme le fait le point de terminaison de jeton (donc appliqué en mode RFC 9700, OAuth 2.1 et produit, et observé en développement), acceptant l’émetteur, le point de terminaison de jeton et le point de terminaison PAR comme audience d’une assertion client ; request_uri refusé dans un push ; la requête poussée validée par les contrôles propres au point de terminaison d’autorisation ; un objet `request` vérifié comme l’exige RFC 9101, lié au client authentifié, et un push simple refusé là où un objet signé est exigé ; 201 avec une référence urn:ietf:params:oauth:request_uri: de 256 bits liée au client et au serveur d’autorisation, expires_in tiré de oauth2.parRequestUriLifetimeS ; 405, 413 et 429 ; le redirect_uri non enregistré de la section 2.4 pour un client AUTHENTIFIÉ, derrière un paramètre (désactivé) ; un request_uri utilisable pendant les passages de connexion et de consentement et consommé lorsqu’une réponse d’autorisation est émise, ceux expirés ou rejoués étant refusés avec invalid_request_uri ; la politique d’exigence globalement, par client (require_pushed_authorization_requests à l’enregistrement, dans la console et sur /admin-api) et par serveur d’autorisation ; les deux membres de métadonnées ; la politique client interrogée à nouveau lorsque le request_uri est utilisé ; et une preuve DPoP lors du push liant le code (RFC 9449 section 10.1). Comptabilisé et listé sur /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full : le point de terminaison d’autorisation honore acr_values et max_age dans tous les modes, avec ou sans openid — une session qui ne les satisfait pas renvoie la personne se connecter à nouveau une fois (une exigence de deux facteurs imposant l’étape du second facteur), prompt=none répond login_required, et une exigence toujours non satisfaite après cette connexion est refusée avec unmet_authentication_requirements (section 5) ; les valeurs acr sont ordonnées 0 < 1 < mfa et le code, l’ID Token et le jeton d’accès portent la valeur DEMANDÉE préférée qui est satisfaite ; acr_values_supported dans les deux documents de découverte ; acr et auth_time dans le jeton d’accès JWT (section 6.1) et dans l’introspection (section 6.2) ; et le défi 401 insufficient_user_authentication de la section 3 avec acr_values et max_age, envoyé par le serveur de ressources propre à ce service (UserInfo, les points de terminaison OpenID4VCI, SCIM, SSF) selon oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS, et par /oauth2/step-up/resource/{application} selon les oauthStepUpAcrValues / oauthStepUpMaxAge d’une application de ressource. Simulé : la connexion de ce service produit trois classes de contexte ; toute autre valeur acr n’est satisfaite que par une connexion fédérée signalant exactement cet acr. Comptabilisé sur /admin/oauth2/monitor."
+    "en": "56808a8c0f6588d3",
+    "text": "full : le point de terminaison d’autorisation honore acr_values et max_age dans tous les modes, avec ou sans openid — une session qui ne les satisfait pas renvoie la personne se connecter à nouveau une fois (une exigence de deux facteurs imposant l’étape du second facteur), prompt=none répond login_required, et une exigence toujours non satisfaite après cette connexion est refusée avec unmet_authentication_requirements (section 5) ; les valeurs acr sont ordonnées 0 < 1 < mfa et le code, l’ID Token et le jeton d’accès portent la valeur DEMANDÉE préférée qui est satisfaite ; acr_values_supported dans les deux documents de découverte ; acr et auth_time dans le jeton d’accès JWT (section 6.1) et dans l’introspection (section 6.2) ; et le défi 401 insufficient_user_authentication de la section 3 avec acr_values et max_age, envoyé par le serveur de ressources propre à ce service (UserInfo, les points de terminaison OpenID4VCI, SCIM, SSF) selon oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS ; les oauthStepUpAcrValues / oauthStepUpMaxAge d’une application de ressource sont enregistrés pour que le serveur de ressources qu’est l’application les applique. Simulé : la connexion de ce service produit trois classes de contexte ; toute autre valeur acr n’est satisfaite que par une connexion fédérée signalant exactement cet acr. Comptabilisé sur /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "PAS UN POINT DE TERMINAISON GNAP : le document de contrôleur que nomme la capacité racine d’un jeton d’accès zcap, portant la méthode de vérification par rapport à laquelle sa signature est vérifiée — un Multikey dans un document Controlled Identifiers v1.0 avec les suites JCS, un Ed25519VerificationKey2020 avec Ed25519Signature2020. Servi en no-store."
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "Une ressource protégée de ce service, contre laquelle une instance cliente dépense un jeton : sans jeton, elle répond 401 avec le challenge WWW-Authenticate de la section 9.1 qui nomme le point de terminaison d’octroi ; avec un jeton, elle vérifie le format, l’audience, la liaison de clé et les droits d’accès comme le ferait un serveur de ressources. gnap.demoResourceServer la désactive."
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "Une opération qui DÉPENSE sur les limites d’un droit (#432 phase 5) : POST avec un montant, une devise et un destinataire, sous un jeton accordant spend sur le type de démonstration. Le serveur de ressources tient les totaux cumulés par octroi — de façon atomique sur l’ensemble de la grappe, remis à zéro à chaque borne de l’intervalle récurrent des limites, remboursés lorsque l’opération échoue — et refuse une opération dépassant la limite avec 403 insufficient_scope. La référence de ce qu’un serveur de ressources fait d’une limite. gnap.demoResourceServer la désactive."
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "Ce qu’affiche GET /admin/gnap, issu de la même fonction de vue."
@@ -982,14 +974,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "C’est le récepteur qui vient ICI ; rien n’est donc contacté — c’est pourquoi un navigateur peut être récepteur avec cette méthode et ne le peut pas en push. Répond {sets, moreAvailable}. `ack` nomme ce que le récepteur a stocké et `setErrs` ce qu’il a REFUSÉ, et les deux sont retirés de la file : un récepteur qui n’a pas pu traiter un événement ne le traitera pas davantage la fois suivante ; le remettre ferait donc boucler l’interrogation indéfiniment. Le refus est plutôt enregistré sur le flux, où une personne peut le voir. La RFC 8936 n’a pas de membre stream_id, car un véritable point de terminaison d’interrogation est propre à un flux ; ce transmetteur publie une seule URL, l’identifiant va donc dans le corps."
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "LES RÔLES INVERSÉS, et pas un point de terminaison SSF : un transmetteur doit avoir un endroit où pousser ; ce service est donc ici un RÉCEPTEUR au bénéfice d’un client. Il ACCEPTE un SET dont la signature ne se vérifie pas et indique pourquoi, ce qui est exactement ce qu’il faut pour un débogueur — un récepteur qui refuserait ne pourrait montrer à personne ce qui est arrivé ni pourquoi la vérification a échoué, ce qui est précisément la question posée. ssf.receiveRequireSignature active la 400 invalid_key, ce que fait un véritable récepteur. La vérification se fait avec la clé PROPRE à ce service, la seule dont il dispose ; un SET signé par quelqu’un d’autre est donc « non vérifiable ici » plutôt qu’invalide."
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "Pas non plus un point de terminaison SSF. Tout ce qu’a reçu POST /ssf/receive, avec ce que chacun a donné une fois décodé, si sa signature a été vérifiée et s’il portait le type de média application/secevent+jwt que spécifie la section 2.3 de la RFC 8417 — un récepteur qui distribue selon le type, et plusieurs le font, abandonne un SET envoyé comme simple JWT sans aucune erreur visible."
   },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
@@ -1712,8 +1696,8 @@
     "text": "emit, reset-session et clear — les trois mêmes que publient les formulaires de la console, via la même fonction d’action, l’action étant tirée de l’URL plutôt que d’un champ masqué. `emit` compose le sujet COMPLEXE de SSF à partir de la session nommée et l’envoie sur chaque flux qui à la fois remet ce type et couvre ce sujet ; un type qu’aucun flux n’accepte n’est PAS une erreur, car « l’événement s’est produit et personne n’avait demandé à en être informé » est un fait différent d’un échec, et c’est celui qui est généralement vrai. IL N’Y A DÉLIBÉRÉMENT AUCUN MOYEN DE METTRE FIN À UNE SESSION D’ICI : émettre un session-revoked AFFIRME qu’une session a été révoquée et n’en révoque aucune, et une API qui ferait les deux fusionnerait les deux actes que CAEP existe pour séparer. Il attend (await), comme l’action Shared Signals voisine, car émettre signe un JWS puis l’envoie en POST."
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status, transmit, delete et clear-received — les quatre mêmes que publient les formulaires de la console, via la même fonction d’action, l’action étant tirée de l’URL plutôt que d’un champ masqué. IL N’Y A DÉLIBÉRÉMENT PAS DE `create` : un flux porte un point de terminaison de remise que ce service CONTACTERA, et le seul endroit d’où cette URL peut provenir est un récepteur qui l’a demandée à POST /ssf/stream — une API capable d’en produire une serait une seconde porte, sans contrôle d’accès, vers la requête sortante. C’est aussi le SEUL gestionnaire d’action de cette API qui attend (await) : transmettre signe un JWS, éventuellement sur le pool de threads de libuv, puis l’envoie en POST, et répondre avant que l’un ou l’autre ne se soit produit reviendrait à annoncer « envoyé » au sujet de rien."
+    "en": "64dd45c6ceafaf73",
+    "text": "status, transmit, delete, revive, clear-dead-letters et verify — les actions que publient les formulaires de la console, via la même fonction d’action, l’action étant tirée de l’URL plutôt que d’un champ masqué. IL N’Y A DÉLIBÉRÉMENT PAS DE `create` : un flux porte un point de terminaison de remise que ce service CONTACTERA, et le seul endroit d’où cette URL peut provenir est un récepteur qui l’a demandée à POST /ssf/stream — une API capable d’en produire une serait une seconde porte, sans contrôle d’accès, vers la requête sortante. C’est aussi le SEUL gestionnaire d’action de cette API qui attend (await) : transmettre signe un JWS, éventuellement sur le pool de threads de libuv, puis l’envoie en POST, et répondre avant que l’un ou l’autre ne se soit produit reviendrait à annoncer « envoyé » au sujet de rien."
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -2830,14 +2814,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "POST des paramètres d’une requête d’autorisation, authentifié comme au point de terminaison de jeton, en retour une 201 { request_uri, expires_in } avec laquelle envoyer le navigateur vers /oauth2/authorize. La requête poussée est validée comme le serait une requête d’autorisation et refusée en JSON ; un objet `request` peut porter les paramètres ; une preuve DPoP lie le code. Toute autre méthode donne une 405."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "NON-SPEC : une ressource protégée répondant POUR une application enregistrée, en GET et POST, afin qu’un client puisse être conduit à travers la RFC 9470 sans déployer l’API. Le jeton d’accès doit se vérifier, être un at+jwt d’un serveur d’autorisation que publie ce service, et nommer l’application dans son aud ; les oauthStepUpAcrValues et oauthStepUpMaxAge de l’application sont alors confrontés à son acr et à son auth_time, et un jeton qui ne les satisfait pas reçoit une 401 insufficient_user_authentication avec acr_values et max_age dans le défi. Un jeton qui les satisfait reçoit une 200 ainsi que l’exigence et l’authentification qu’il a satisfaites. Ne contient aucune donnée."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "répond 401 avec un défi WWW-Authenticate lorsqu’il est suivi sans paramètres, et 404 pour une application dont le domaine n’a pas d’entrée"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",
