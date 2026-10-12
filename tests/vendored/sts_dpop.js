@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 // File: sts_dpop.js
 //
 // DPoP end to end against the mock authorization server and the OID4VCI issuer
