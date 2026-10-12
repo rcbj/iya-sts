@@ -1404,8 +1404,10 @@ class NodeHealthAdmin {
     }
     self.ecsFailing = failed.length > 0;
     if (!container && !task && !allStats) {
+      // STS-CORE-0125 is recorded on the warning above, where the silence
+      // was detected; a code is never sent, so it is not in the answer.
       log.debug("Leaving NodeHealthAdmin.ecsView(). Nothing answered.");
-      return { available: false, errorCode: 'STS-CORE-0125',
+      return { available: false,
                unavailableText: say('ecsSilent', { ms: ECS_TIMEOUT_MS,
                                                    why: got[0].why }) };
     }
