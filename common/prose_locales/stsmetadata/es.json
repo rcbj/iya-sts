@@ -3225,7 +3225,7 @@
   },
   "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
     "en": "3048c833f899933d",
-    "text": "Un KDC: AS-REQ / TGS-REQ, preautenticación, cuatro tipos de cifrado, un PAC de Microsoft en el ticket, referencias entre reinos y delegación restringida. La fila de esta página es su proxy MS-KKDCP, que existe porque un navegador no puede abrir un socket."
+    "text": "Un KDC: AS-REQ / TGS-REQ, preautenticación, cuatro tipos de cifrado, un PAC de Microsoft en el ticket, referencias entre dominios y delegación restringida. La fila de esta página es su proxy MS-KKDCP, que existe porque un navegador no puede abrir un socket."
   },
   "stsmetadata.protocols.SPNEGO.what": {
     "en": "17e95091fc9d97ee",

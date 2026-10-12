@@ -553,7 +553,7 @@
   },
   "gnap.demoResourceServer|description": {
     "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: evalúa un token presentado en cualquiera de los cinco formatos y responde al desafío RS-first de la sección 9.1. Solo en modo de desarrollo: un reino de producto no tiene servidor de recursos de demostración (#585)."
+    "text": "GET/POST /gnap/rs/resource: evalúa un token presentado en cualquiera de los cinco formatos y responde al desafío RS-first de la sección 9.1. Solo en modo de desarrollo: un dominio de producto no tiene servidor de recursos de demostración (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -6821,7 +6821,7 @@
   },
   "ssf.receiveEnabled|description": {
     "en": "f031c3db7a13549d",
-    "text": "Si POST /ssf/receive acepta un Security Event Token enviado por push HACIA este servicio — con los papeles invertidos, siendo el depurador el transmisor. Verifica la firma cuando puede encontrar una clave e informa de lo que leyó en cualquier caso, porque un receptor que rechazara un evento no verificable no podría mostrar a una persona POR QUÉ no era verificable. Desactivado responde 501. Solo en modo de desarrollo: un reino de producto no tiene /ssf/receive (#585)."
+    "text": "Si POST /ssf/receive acepta un Security Event Token enviado por push HACIA este servicio — con los papeles invertidos, siendo el depurador el transmisor. Verifica la firma cuando puede encontrar una clave e informa de lo que leyó en cualquier caso, porque un receptor que rechazara un evento no verificable no podría mostrar a una persona POR QUÉ no era verificable. Desactivado responde 501. Solo en modo de desarrollo: un dominio de producto no tiene /ssf/receive (#585)."
   },
   "ssf.receiveAudiences|label": {
     "en": "26d54185c0e2e81a",
