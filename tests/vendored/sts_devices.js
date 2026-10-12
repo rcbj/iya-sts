@@ -53,7 +53,8 @@
 //      device-compliance-change arrives on a POLL stream (every SET drained
 //      is pooled, because a poll acknowledges what it reads), its subject
 //      the device and its owner.
-//  12. The test control: it answers in development and product refuses it.
+//  12. The feed is the one door: the compliance test control was deleted
+//      (#597), so its path is unrouted even in development.
 //  13. A device marked compromised: its EST certificate appears on the
 //      realm's EST CRL, RISC credential-compromise and sessions-revoked
 //      arrive naming the account and the device, and CAEP risk-level-change
@@ -896,32 +897,24 @@ async function test() {
     assert.strictEqual(shown.device.complianceChange.actor, MDM);
   });
 
-  log.info("=== 12. the test control ===");
+  log.info("=== 12. the feed is the one door (#597) ===");
+  // Development's compliance test control, POST /devices/test/compliance,
+  // was deleted by #597: nothing is registered on the path in any realm, and
+  // the MDM feed under device:compliance is the door in both modes.
   const control = await hop("POST", base + "/devices/test/compliance", {
     id: laptop.device.id, status: "not-compliant" });
-  check("development's test control sets compliance with no credential",
-        function () {
-    assert.strictEqual(control.status, 200, control.text.slice(0, 300));
-    assert.strictEqual(control.json.applied, 1);
-  });
-  await ok(api + "/config/set", { key: "global.mode", value: "product" },
-           "put this realm in product mode");
-  let productControl = null;
-  try {
-    productControl = await hop("POST", base + "/devices/test/compliance", {
-      id: laptop.device.id, status: "compliant" });
-  } finally {
-    await ok(api + "/config/set", { key: "global.mode",
-                                     value: "development" },
-             "put this realm back in development mode");
-  }
-  // NOT A REFUSAL SINCE #585: a product realm has no such route, and
-  // answers as for a path nothing is registered on — Express's own 404.
-  check("a product realm has no test control", function () {
-    assert.strictEqual(productControl.status, 404,
-                       productControl.text.slice(0, 300));
-    assert.ok(/Cannot POST /.test(productControl.text),
-              productControl.text.slice(0, 300));
+  const fed = await feed(feedGrant.json.access_token, {
+    id: laptop.device.id, status: "not-compliant",
+    reason: "sts_devices one door" });
+  const fedShown = await read("/devices?device=" + laptop.device.id);
+  check("there is no test control, even in development: the feed under " +
+        "its scope sets compliance", function () {
+    assert.strictEqual(control.status, 404, control.text.slice(0, 300));
+    assert.ok(/Cannot POST /.test(control.text), control.text.slice(0, 300));
+    assert.strictEqual(fed.status, 200, fed.text.slice(0, 300));
+    assert.strictEqual(fed.json.applied, 1);
+    assert.strictEqual(fedShown.device.compliance, "not-compliant");
+    assert.strictEqual(fedShown.device.complianceChange.source, "mdm");
   });
 
   log.info("=== 13. a compromised device ===");
@@ -1168,7 +1161,7 @@ new Command()
     "bounds, the monitoring counts and the directory's view; and #164 " +
     "phase 2's enrolment (the portal's key proof, EST's device profile) " +
     "and recognition at the token endpoint (DPoP, mutual TLS); and phases " +
-    "3 and 4: the MDM feed under device:compliance, the test control, and " +
+    "3 and 4: the MDM feed under device:compliance as the one door, and " +
     "the CAEP and RISC events a compliance change and a compromise send; " +
     "and phases 5 and 6: device_id and cnf, the compliant-device rule, " +
     "the compliant-device acr and the device risk signals.")

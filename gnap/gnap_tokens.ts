@@ -216,7 +216,7 @@ class GnapTokens {
 
   // The macaroon root key a resource server verifies with. `rsIdentity` is the
   // RS application's identifier; '' is the key for tokens with no RS audience,
-  // which only this AS (introspection, the demonstration RS) can verify.
+  // which only this AS (introspection) can verify.
   /**
    * Returns the macaroon root key a resource server verifies with; '' is the
    * key for tokens with no resource server audience, which only this AS can
@@ -626,9 +626,9 @@ class GnapTokens {
                     '".');
   }
 
-  // Which format a presented value is, read off its shape. Used by the
-  // demonstration RS, which is handed a value and no format — as a real RS
-  // that accepts several formats is.
+  // Which format a presented value is, read off its shape. For a resource
+  // server handed a value and no format — as a real RS that accepts several
+  // formats is (`gnap_rs.ts`'s `authenticate()`).
   /**
    * Reads which format a presented value is from its shape, for a resource
    * server handed a value and no format.

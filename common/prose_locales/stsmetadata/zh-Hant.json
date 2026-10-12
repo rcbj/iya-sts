@@ -112,8 +112,8 @@
     "text": "full：全部八種格式皆使用其註冊名稱——account、email、iss_sub、opaque、phone_number、did、uri 與 aliases——並強制執行每種格式「封閉」的成員集合，這正是各實作容易出錯的那一半：攜帶額外成員的主體是符合規範的接收端「必須」拒絕的，因此本服務會拒絕它並指出該成員。第 3.2.8 節禁止將 aliases 識別碼巢狀放入另一個 aliases 中的規定會被強制執行，而不是將其扁平化。"
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial：本服務以 application/secevent+jwt POST 每個 SET，附上接收端所設定的 Authorization 標頭，將 202 視為已傳遞，並將 400 {err, description} 解讀為接收端「拒絕」——這與網路失敗是不同的結果，也會如此記錄。它也在 POST /ssf/receive 以該設定檔「接收」，角色對調，讓用戶端可以擔任傳送端，並檢查抵達內容的 typ、iss 與 aud。推送失敗會重試 ssf.pushRetries 次——預設刻意為 0，見 ssf/ssf_http.ts——之後進入串流的無法投遞佇列。"
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial：本服務以 application/secevent+jwt POST 每個 SET，附上接收端所設定的 Authorization 標頭，將 202 視為已傳遞，並將 400 {err, description} 解讀為接收端「拒絕」——這與網路失敗是不同的結果，也會如此記錄。主控台與入口網站自己的接收者以該設定檔「接收」，並檢查抵達內容的 typ、iss 與 aud。推送失敗會重試 ssf.pushRetries 次——預設刻意為 0，見 ssf/ssf_http.ts——之後進入串流的無法投遞佇列。"
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -220,8 +220,8 @@
     "text": "full，而其中沒有任何部分是本服務的程式碼——主連接埠（global.https 開啟時）與目錄在 636 上的 LDAPS 接聽程式，都是 node 自己建立在 OpenSSL 之上的 TLS 堆疊。協定下限與加密套件清單為 tls.minVersion（TLSv1.2，node 的預設值）與 tls.ciphers（node 的預設清單）。此處撰寫的是「原則」與「報告」：主連接埠會向每個連線索取用戶端憑證但不強制要求，GET /tls/sign-in 則傳回伺服器所看到的內容（此系列專屬的兩個接聽程式——一個索取、一個強制要求——已於 2026-09-16 刪除）。閱讀該報告之前，有兩件關於用戶端驗證的事值得知道。在 TLS 1.3 下，用戶端「最後」才送出其 Certificate 與 Finished，因此從它的角度看，交握在伺服器對憑證表示任何意見之前就已完成——在 secureConnect 時回報成功的用戶端，會向一個在一毫秒後就拒絕它的伺服器回報一次愉快的相互 TLS 連線。而 node 拒絕未經驗證的用戶端憑證的方式是「不發送警示就關閉 socket」，這就是為什麼只有索取而不強制要求的連接埠，才能告訴你原因。"
   },
   "stsmetadata.specs.rfc5280.coverage": {
-    "en": "5243305b4fd8c9b6",
-    "text": "partial，而路徑驗證是 OpenSSL 的而非本服務的：用戶端憑證依執行階段 POST 至 /tls/trust 的信任錨點驗證（開發模式；產品模式會拒絕這種做法，改在啟動時讀取 tls.trustAnchorsFile），在 tls.trustIssuedClientCertificates 開啟期間還包括服務 Root；伺服器憑證在該 Root 下簽發，其 subjectAltName 攜帶此堆疊可被到達的每個名稱。「本服務會發布撤銷資訊，且自 2026-09-12 起也會查詢它」。第 5 節已實作：/admin/pki 中的每個授權單位都會簽署 CRL，提供於 /pki/crl/{scope}/{ca} 並發布到目錄的 ou=crl 下，而本服務簽發的每張憑證都會透過 http 與 ldap 指名其自己的 CRL。在「驗證」端，本服務簽發的出示憑證會依其自己的登錄檢查，其他任何人的則依其指名的 OCSP 回應程式與 CRL 檢查（common/revocation_status.js，原則 pki.revocationCheck）。第 6.3 節的無法判定狀態包括位於本服務被設定為不連線之位址的清單（pki.revocationLdap=ldaps 下的純 ldap:、沒有目錄的相對名稱），在 hard-fail 下會被拒絕；未指名任何清單與回應程式的外部 CA 簽發憑證在產品模式下會被拒絕（pki.revocationRequireDistributionPoint=auto）；並遵循 RFC 9608 noRevAvail——第 4 節略過檢查，第 3 節的矛盾情形為無效。名稱限制、原則與路徑長度只在 OpenSSL 強制執行的範圍內被強制執行——也就是說執行得很正確——而不是由此處撰寫的任何東西執行。"
+    "en": "c1a15b711c82c40c",
+    "text": "partial，而路徑驗證是 OpenSSL 的而非本服務的：用戶端憑證依執行階段透過 /admin-api/tls/trust 新增的信任錨點驗證（兩種模式皆可），並於啟動時讀取 tls.trustAnchorsFile，在 tls.trustIssuedClientCertificates 開啟期間還包括服務 Root；伺服器憑證在該 Root 下簽發，其 subjectAltName 攜帶此堆疊可被到達的每個名稱。「本服務會發布撤銷資訊，且自 2026-09-12 起也會查詢它」。第 5 節已實作：/admin/pki 中的每個授權單位都會簽署 CRL，提供於 /pki/crl/{scope}/{ca} 並發布到目錄的 ou=crl 下，而本服務簽發的每張憑證都會透過 http 與 ldap 指名其自己的 CRL。在「驗證」端，本服務簽發的出示憑證會依其自己的登錄檢查，其他任何人的則依其指名的 OCSP 回應程式與 CRL 檢查（common/revocation_status.js，原則 pki.revocationCheck）。第 6.3 節的無法判定狀態包括位於本服務被設定為不連線之位址的清單（pki.revocationLdap=ldaps 下的純 ldap:、沒有目錄的相對名稱），在 hard-fail 下會被拒絕；未指名任何清單與回應程式的外部 CA 簽發憑證在產品模式下會被拒絕（pki.revocationRequireDistributionPoint=auto）；並遵循 RFC 9608 noRevAvail——第 4 節略過檢查，第 3 節的矛盾情形為無效。名稱限制、原則與路徑長度只在 OpenSSL 強制執行的範圍內被強制執行——也就是說執行得很正確——而不是由此處撰寫的任何東西執行。"
   },
   "stsmetadata.specs.rfc6960.coverage": {
     "en": "edce74c655cea522",
@@ -344,8 +344,8 @@
     "text": "full：在每個授權伺服器上提供 POST /oauth2/par，完全以權杖端點的方式驗證用戶端（因此在 RFC 9700、OAuth 2.1 與產品模式下強制執行，在開發模式下僅觀察記錄），接受簽發者、權杖端點與 PAR 端點作為用戶端斷言的對象；推送中的 request_uri 會被拒絕；推送的請求以授權端點自己的檢查加以驗證；`request` 物件依 RFC 9101 的要求驗證，繫結至已驗證的用戶端，在要求已簽署物件時純推送會被拒絕；以 201 回應一個繫結至用戶端與授權伺服器的 256 位元 urn:ietf:params:oauth:request_uri: 參照，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 與 429；第 2.4 節針對「已驗證」用戶端的未註冊 redirect_uri，受一項設定控制（關閉）；request_uri 可在登入與同意的各個階段使用，並在簽發授權回應時用盡，過期與重放者以 invalid_request_uri 拒絕；要求原則可全域設定、依用戶端設定（註冊時、主控台上與 /admin-api 上的 require_pushed_authorization_requests）以及依授權伺服器設定；兩個中繼資料成員；使用 request_uri 時會再次詢問用戶端原則；推送時的 DPoP 證明會繫結授權碼（RFC 9449 第 10.1 節）。在 /admin/oauth2/monitor 上計數並列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出，並由 /oauth2/step-up/resource/{application} 依資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 送出。模擬部分：本服務的登入會產生三種內容類別；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
+    "en": "56808a8c0f6588d3",
+    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出；資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 會被記錄下來，由身為該應用程式的資源伺服器強制執行。模擬部分：本服務的登入會產生三種內容類別；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -356,8 +356,8 @@
     "text": "full——就其用途而言：cnf.jwk 將簽發的認證繫結至已證明持有的持有者金鑰。"
   },
   "stsmetadata.specs.rfc9449.coverage": {
-    "en": "159486391c5beada",
-    "text": "full——以模擬服務而言：第 4.3 節全部十二項證明檢查、存取權杖「與」重新整理權杖上的 cnf.jkt、token_type DPoP、dpop_jkt 授權請求參數（第 10 節）、jti 重放偵測，以及兩種形式的伺服器提供 nonce 交握——權杖端點的 400 use_dpop_nonce、受保護端點附 WWW-Authenticate 的 401。nonce 預設關閉，直到 oauth2.dpopNonceRequired（依領域設定；開發模式下由 /dpop/nonce-mode 寫入）將其開啟。未實作：mTLS 繫結權杖（RFC 8705），這是另一種發送者約束方式；送到 /oauth2/par 的證明會將授權碼繫結至其金鑰（第 10.1 節）。請注意，外部存取權杖的 cnf 在此處不可信，因為此簽發者不驗證由另一個授權伺服器簽署的權杖——這項檢查只對本服務簽發的權杖是真實的。"
+    "en": "6f8983e239a2958e",
+    "text": "full——以模擬服務而言：第 4.3 節全部十二項證明檢查、存取權杖「與」重新整理權杖上的 cnf.jkt、token_type DPoP、dpop_jkt 授權請求參數（第 10 節）、jti 重放偵測，以及兩種形式的伺服器提供 nonce 交握——權杖端點的 400 use_dpop_nonce、受保護端點附 WWW-Authenticate 的 401。nonce 預設關閉，直到 oauth2.dpopNonceRequired（依領域，透過 /admin-api/config/set 設定）將其開啟。未實作：mTLS 繫結權杖（RFC 8705），這是另一種發送者約束方式；送到 /oauth2/par 的證明會將授權碼繫結至其金鑰（第 10.1 節）。請注意，外部存取權杖的 cnf 在此處不可信，因為此簽發者不驗證由另一個授權伺服器簽署的權杖——這項檢查只對本服務簽發的權杖是真實的。"
   },
   "stsmetadata.specs.rfc7033.coverage": {
     "en": "87458015f3e55b0e",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "這不是 GNAP 端點：zcap 存取權杖之根能力所指名的控制者文件，攜帶用來檢查其簽章的驗證方法——JCS 套件下為 Controlled Identifiers v1.0 文件中的 Multikey，Ed25519Signature2020 下則為 Ed25519VerificationKey2020。以 no-store 提供。"
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "本服務上的受保護資源，供用戶端執行個體使用權杖存取：沒有權杖時回應 401 並附上指名授權端點的第 9.1 節 WWW-Authenticate 挑戰；有權杖時則像資源伺服器一樣檢查格式、對象、金鑰繫結與存取權利。gnap.demoResourceServer 可將其關閉。"
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "一個會依權利的限額進行「消費」的操作（#432 第 5 階段）：在授予示範類型 spend 權利的權杖下，以金額、幣別與收款人 POST。資源伺服器依授權保存累計總額——在整個叢集中以不可分割方式進行、在限額重複間隔的每個邊界重設、操作失敗時退還——並以 403 insufficient_scope 拒絕超出限額的操作。這是資源伺服器如何處理限額的參考實作。gnap.demoResourceServer 可將其關閉。"
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "GET /admin/gnap 所繪製的內容，來自同一個檢視函式。"
@@ -983,14 +975,6 @@
     "en": "24403b87bfb6de2b",
     "text": "接收者會來到「這裡」，因此不會對外連線——這就是為什麼瀏覽器可以透過此方法成為接收者，而透過推送則不行。回應 {sets, moreAvailable}。`ack` 指名接收者已儲存的，`setErrs` 指名它「拒絕」的，兩者都會從佇列移除：無法處理某事件的接收者下次也不會處理它，因此重新傳遞會造成永遠的輪詢迴圈。拒絕會改記錄在串流上，讓人可以看到。RFC 8936 沒有 stream_id 成員，因為真正的輪詢端點是每個串流各一個；此傳輸器只發布一個 URL，因此 id 放在本文中。"
   },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "角色互換，而且不是 SSF 端點：傳輸器必須有地方可以推送，因此本服務在這裡為了用戶端的需要而擔任「接收者」。它會「接受」簽章無法驗證的 SET 並回報原因，這對偵錯工具而言完全正確——拒絕的接收者無法向任何人展示收到了什麼或為何無法驗證，而這正是被問的問題。ssf.receiveRequireSignature 會開啟 400 invalid_key，這是真正的接收者會做的。驗證依據的是「本服務」自己的金鑰，也是它唯一擁有的金鑰，因此由他人簽署的 SET 是「在此無法驗證」而非無效。"
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "這也不是 SSF 端點。列出 POST /ssf/receive 收到的一切，以及每一項解碼後的內容、其簽章是否驗證通過，以及是否攜帶 RFC 8417 第 2.3 節規定的 application/secevent+jwt 媒體類型——依類型分派的接收者（有好幾個是這樣）會丟棄以一般 JWT 傳送的 SET，而且沒有任何人看得到錯誤。"
-  },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
     "text": "這「不是」SCIM 端點——真正的伺服器不會發布任何這些內容。說明佈建介面是什麼、它寫入哪裡（內嵌目錄，逐項對應）、SCIM id 在此是什麼（項目的 DN，以及重新命名時的代價）、它提供的每種驗證機制及其背後的存取控制原則、它刻意不做的事，以及十幾種讓它失敗的做法。在將任何東西指向它之前，有兩點值得先讀：這些端點會建立與刪除帳戶，而且是此處唯一需要認證資訊的介面——但在開發模式下幾乎不檢查這些認證資訊，因為任何人都能取得具有任一範圍的權杖，除了「invalid」之外任何密碼都能通過 Basic，任何人都能註冊 HOBA 金鑰（產品模式會驗證 Basic、不提供 Digest，且只允許已登入的擁有者註冊金鑰）；以及 active:false 會「停用帳戶」——即每道門都會拒絕的密碼原則鎖定。加上 ?format=json。"
@@ -1080,36 +1064,16 @@
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、用戶端憑證——則改為得到 404。"
   },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
-    "en": "e6903dbe469abb7c",
-    "text": "RFC 7486 第 7 節。以表單編碼的 POST 攜帶 pub=<PEM public key> 以及（本服務自己的參數）username=<who it is for>，以 201 與 Hobareg: regok 標頭回應。刻意「不需驗證」，理由與 POST /tls/trust 相同：這是呼叫端「取得」認證資訊的方式，若要求先有認證資訊才能存取，則沒有其他認證資訊的人將無法使用此機制。任何人都可以為任何名稱註冊任何金鑰——之後「簽章」會被真正驗證，這正是讓此機制值得實作的那一半。金鑰會以 hobaPublicKey 存放在該人位於 ou=users 下自己的項目上，因此 ldapsearch 與 /admin/users 都看得到。GET 會描述此端點，因為對瀏覽器回應 404 的 well-known 路徑，與沒有人實作的路徑無從區分。"
-  },
-  "stsmetadata.endpoints./tls.what": {
-    "en": "c2dad05c1712e862",
-    "text": "本服務出示的憑證、它據以驗證的用戶端信任存放區，以及此部署如何處理用戶端憑證。主連接埠會向每個連線索取用戶端憑證但不強制要求，因此是否出示由用戶端自行決定。此系列自有的兩個接聽程式——會索取的 8443 與強制要求的 9443——已於 2026-09-16 連同它們提供的連線報告一併刪除。憑證的價值取決於它被「使用」的地方：GET /tls/sign-in 用於工作階段、權杖端點用於 RFC 8705，/xacml 與 /scim/v2 則各有其用途。加上 ?format=json。"
-  },
-  "stsmetadata.endpoints./tls/pages.js.what": {
-    "en": "013c43e6b2bb4303",
-    "text": "NON-SPEC (#583)。兩個 TLS 診斷頁面的執行環境和轉譯器，打包為由 build-typescript.sh 建構的單一檔案（tls/tls-pages-spa.js），並以預先壓縮的形式提供：它根據每個外殼攜帶的狀態繪製 /tls 和 /tls/forwarded — 即各自 ?format=json 所傳回、基於請求該頁面的那次請求建構的物件 — 並把 /tls 頁面的兩個動作以 JSON 傳送到 POST /tls/trust 和 POST /tls/trust/clear。"
+    "en": "ea46481cdbde5a44",
+    "text": "RFC 7486 第 7 節。以表單編碼的 POST 攜帶 pub=<PEM public key> 以及（本服務自己的參數）username=<who it is for>，以 201 與 Hobareg: regok 標頭回應。刻意「不需驗證」：這是呼叫端「取得」認證資訊的方式，若要求先有認證資訊才能存取，則沒有其他認證資訊的人將無法使用此機制。任何人都可以為任何名稱註冊任何金鑰——之後「簽章」會被真正驗證，這正是讓此機制值得實作的那一半。金鑰會以 hobaPublicKey 存放在該人位於 ou=users 下自己的項目上，因此 ldapsearch 與 /admin/users 都看得到。GET 會描述此端點，因為對瀏覽器回應 404 的 well-known 路徑，與沒有人實作的路徑無從區分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",
     "text": "經驗證的用戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 用戶端身分的憑證，以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。"
   },
-  "stsmetadata.endpoints./tls/forwarded.what": {
-    "en": "d02cbc2b5ed9d75e",
-    "text": "非規格端點。顯示請求「抵達時」的樣子以及其中哪些被採信：每個轉送標頭、代理可能注入的每個用戶端憑證標頭、global.trustProxy 是否讓本服務採信其中任何一項，以及最終得出的有效基礎 URL——兩份探索文件中的每個簽發者與每個端點都是以它建立的，因此若它錯了，用戶端讀到的一切也都跟著錯。RFC 9700 第 2.6 節在此有兩半：代理必須（MUST）在設定自己的標頭之前去除傳入的安全敏感標頭，本服務無法代勞；而應用程式除非真的有代理存在，否則不得「採信」它們，這正是該設定的作用。無論哪種模式，都「絕不」從標頭讀取用戶端憑證——標頭中的憑證是任何人都能偽造的——而請求所攜帶的這類標頭會被列出，讓忽略它們這件事可見而非悄然無聲。加上 ?format=json。"
-  },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
     "text": "呼叫端「驗證」本服務所需的一切，以 PEM 提供：此程序中每個 TLS 通訊端出示的憑證——主連接埠以及目錄位於 636 的 LDAPS 接聽程式，後者提供同一張憑證與金鑰，而非第二組——接著是它與本服務自己的 Root CA 之間的鏈，以及該 Root。這是關於「呼叫端」必須做什麼的決定，而不是為了省一組金鑰：涵蓋主連接埠與 636 的單一信任錨點只需擷取「一次」，若有兩個，則針對 HTTPS 連接埠建立的信任存放區會讓 ldapsearch 以「unable to get local issuer certificate」失敗——這個錯誤沒有指出任何東西，看起來就像目錄壞了。自 2026-09-11 起，鏈與 Root 都包含在此文件中，因為那天起憑證不再是自我簽署的：OpenSSL 會把信任存放區中的自我簽署葉憑證當作信任錨點，卻拒絕經認證的葉憑證，因此只釘選葉憑證的呼叫端，會針對一個從未拿到的 Root 得到同樣的錯誤。「葉憑證在最前面」，供只想要它的呼叫端使用。無論哪種模式，它都會「在每次啟動時重新產生」（除非由 tls.certificateFile 提供），就像開發用的簽署金鑰一樣，因此沒有人能將它內建為信任錨點，任何快取複本也都不會保持有效——因此為 Cache-Control: no-store。它不發布任何私密金鑰。請將它擷取到你自己的信任存放區，而不是關閉驗證。"
-  },
-  "stsmetadata.endpoints./tls/trust.what": {
-    "en": "18257f1e5114fc0f",
-    "text": "POST 一張或多張 PEM 憑證——原始格式，或作為表單或 JSON 本文的 `certificates` 欄位——鏈結至它們的用戶端憑證自下一次交握起即可通過驗證（tls.Server.setSecureContext；既有連線保留建立時的信任存放區）。啟動時它不持有任何執行階段信任錨點（服務 Root 在 tls.trustIssuedClientCertificates 之後與其並列受信任）：測試所驗證的 CA 通常是在連線前幾分鐘於瀏覽器中產生，不存在於其他任何地方，因此沒有檔案能保存它。它位於主連接埠，該連接埠會索取用戶端憑證但不強制要求，因此在任何東西受信任之前就能存取。僅限 POST。這是開發用的測試控制項：它不需要認證資訊，因此產品模式會拒絕它，並指出設有閘門的入口——/admin/tls/trust 與 POST /admin-api/tls/trust/add。"
-  },
-  "stsmetadata.endpoints./tls/trust/clear.what": {
-    "en": "4a32d332c1dc7bd6",
-    "text": "移除所有信任錨點——tls.trustAnchorsFile 中的信任錨點則移除至下次啟動為止——因此只有鏈結至服務 Root 的憑證（在 tls.trustIssuedClientCertificates 開啟時與信任存放區並列受信任）仍能通過驗證。僅限 POST。這是產品模式會拒絕的開發用測試控制項；設有閘門的入口一次移除一個信任錨點，沒有清除功能。"
   },
   "stsmetadata.endpoints./.what": {
     "en": "4c29594ca1759528",
@@ -1712,8 +1676,8 @@
     "text": "emit、reset-session 與 clear——與主控台表單 POST 的三者相同，透過同一個動作函式，動作取自 URL 而非隱藏欄位。`emit` 從所指名的工作階段組成 SSF 的「複合」主體，並在每個既傳遞該類型又涵蓋該主體的串流上送出；沒有任何串流接受的類型「不是」錯誤，因為「事件發生了，但沒有人要求被告知」是與失敗不同的事實，而且通常是實際情況。刻意沒有任何方式能從這裡結束工作階段：送出 session-revoked 是「告知」某個工作階段已被撤銷，而不會撤銷任何工作階段，同時做這兩件事的 API 會把 CAEP 存在的目的所要區分的兩個行為合而為一。它會 await，與旁邊的 Shared Signals 動作一樣，因為送出時要先簽署 JWS 再 POST 出去。"
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status、transmit、delete 與 clear-received——與主控台表單 POST 的四者相同，透過同一個動作函式，動作取自 URL 而非隱藏欄位。刻意沒有 `create`：串流攜帶一個本服務會「連線」的傳遞端點，而該 URL 唯一可以來自的地方，是在 POST /ssf/stream 要求它的接收者——能夠產生串流的 API 會成為通往對外請求的第二道、沒有閘門的入口。它也是此 API 中「唯一」需要 await 的動作處理常式：傳輸時要簽署 JWS（可能在 libuv 的執行緒集區上），然後 POST 出去，在這兩者發生之前就回應，等於對什麼都沒發生的事回報「已送出」。"
+    "en": "64dd45c6ceafaf73",
+    "text": "status、transmit、delete、revive、clear-dead-letters 與 verify——主控台表單 POST 的動作，透過同一個動作函式，動作取自 URL 而非隱藏欄位。刻意沒有 `create`：串流攜帶一個本服務會「連線」的傳遞端點，而該 URL 唯一可以來自的地方，是在 POST /ssf/stream 要求它的接收者——能夠產生串流的 API 會成為通往對外請求的第二道、沒有閘門的入口。它也是此 API 中「唯一」需要 await 的動作處理常式：傳輸時要簽署 JWS（可能在 libuv 的執行緒集區上），然後 POST 出去，在這兩者發生之前就回應，等於對什麼都沒發生的事回報「已送出」。"
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -1960,8 +1924,12 @@
     "text": "以 JSON 提供的 GET /admin/tls/trust：每個用戶端憑證信任錨點，附上其主體、簽發者、序號、有效期間、指紋、PEM 與來源（`file` 或 `runtime`），以 ?page= 與 ?per= 分頁。整個「程序」只有一個信任存放區，因此在每個領域前置路徑下的回答都相同。其中沒有私密金鑰——信任存放區只保存憑證。執行階段錨點會持久保存在目錄中；`file` 錨點則不會。"
   },
   "stsmetadata.endpoints./admin-api/tls/trust/:action.what": {
-    "en": "7c6af554c52a3f33",
-    "text": "add | remove——/admin/tls/trust 上的兩個控制項，透過同一個動作函式執行，動作取自 URL。add 接受 `certificates`（一個或多個 PEM 區塊，若 OpenSSL 無法讀取其中一個則整批拒絕）；remove 接受一個 `fingerprint`。刻意「沒有」批次清除。需要 admin:write，在兩種模式下都可用，是 POST /tls/trust 的受管控對應版本，而後者在產品模式下會被拒絕。寫入 ou=trustAnchors，因此變更在重新啟動後仍然保留。"
+    "en": "cfa6d74a25e8ebe3",
+    "text": "add | remove——/admin/tls/trust 上的兩個控制項，透過同一個動作函式執行，動作取自 URL。add 接受 `certificates`（一個或多個 PEM 區塊，若 OpenSSL 無法讀取其中一個則整批拒絕）；remove 接受一個 `fingerprint`。刻意「沒有」批次清除。需要 admin:write，在兩種模式下都可用，是唯一的執行階段入口（開放的 POST /tls/trust 已不存在）。寫入 ou=trustAnchors，因此變更在重新啟動後仍然保留。"
+  },
+  "stsmetadata.endpoints./admin-api/tls-connection.what": {
+    "en": "f7b9e050b43d3812",
+    "text": "非規範（#597）。以 JSON 呈現的 GET /admin/tls-connection：提出請求的那個請求，依本服務所見與所信——其 TLS 版本與加密套件、該連線所出示的用戶端憑證（是否依信任存放區驗證通過、身分閘道如何看待它、其撤銷判定），以及每個轉送標頭，連同 global.trustProxy 與 global.trustedProxies 讓本服務對它採信的內容，其中包括有效的基底 URL。絕不從標頭讀取用戶端憑證。需要 Admin Read，兩種模式皆可；它不會變更任何東西。它取代了開發用頁面 /tls 與 /tls/forwarded。"
   },
   "stsmetadata.endpoints./admin-api/kerberos/claims.what": {
     "en": "3d9dd72c23d5bd3d",
@@ -2667,18 +2635,6 @@
     "en": "f6e6df9ad2f28350",
     "text": "authorization_code、refresh_token、client_credentials、password、token-exchange、RFC 8628 的 device_code（#150），以及強制 tx_code 的 OID4VCI pre-authorized_code。RFC 8693 交換可以在交換後的存取權杖旁一併傳回「重新整理權杖」——本服務的一般重新整理權杖，可在 refresh 授權類型兌換，並與其他權杖一樣繫結與輪替（section 2.2.1 的離線情況）。oauth2.tokenExchangeRefreshToken 以三個值決定：`when-requested`（預設——依字面解讀 section 2.1，因此用戶端以 `requested_token_type=urn:ietf:params:oauth:token-type:refresh_token` 要求，只有要求了才會取得）、`never`（要求會成功但不附重新整理權杖，這是實作該參數之前此端點的行為）以及 `always`（每次交換都會取得，無論是否要求）。「用戶端」應用程式項目上的 oauthTokenExchangeRefreshToken 僅針對該用戶端覆寫此設定，而 issued_token_type 始終描述 access_token 成員。請求上的 DPoP 證明會將簽發的存取與重新整理權杖繫結至其金鑰（cnf.jkt），並使 token_type 為 DPoP；沒有證明時回應為一般的 Bearer 權杖。透過帶有「用戶端憑證」之連線發出的 Token Request 也會將存取與重新整理權杖繫結至該憑證（RFC 8705 cnf[\"x5t#S256\"]），這需要主連接埠使用 TLS。RFC 8707 `resource` 會縮限對象，且只能縮限授權請求所要求的範圍。在 RFC 9700 模式下，項目標示為「機密」的用戶端必須在這裡驗證，可使用六種方法中的任何一種——兩種密鑰方法、兩種判斷提示方法（RFC 7523，依已註冊的 JWKS 或密鑰驗證，並拒絕 jti 重放），以及 RFC 8705 section 2 的兩種憑證方法。在 RFC 9700 模式下，authorization_code 授權類型另外會拒絕：對未附挑戰而簽發之授權碼所提供的 code_verifier（section 4.8.2 的降級）、由非其簽發對象之用戶端兌換的授權碼，以及未帶 redirect_uri 的 Token Request。該模式也會完全拒絕「密碼」授權類型（section 2.4），「輪替」重新整理權杖並在已淘汰者再次出示時撤銷整條鏈（section 2.2.2），拒絕來自其他用戶端、範圍大於所授予範圍，或針對授權未涵蓋之「資源伺服器」的重新整理——重新整理權杖承載其授權所具有的 RFC 8707 資源，因此續期無法擴大自身的對象——讓閒置的重新整理「鏈」過期（oauth2.refreshIdleSeconds，自上次兌換而非簽發起計算），並要求項目標示為機密的用戶端以六種方法中的任何一種驗證（section 2.5）。它也會關閉上述的「重放放寬」：第二次出示的授權碼會被拒絕，而不是以它已換得的權杖回應，且那些權杖會被撤銷（section 4.5，撤銷部分見 RFC 6749 section 10.5）。"
   },
-  "stsmetadata.endpoints./devices/test/compliance.what": {
-    "en": "c01c491d1cedbb03",
-    "text": "非規範（#164 決策 9），供測試使用：MDM 饋送的主體——依 id、指紋或憑證指名裝置的報告，或 reports: [...]——「不需要」device:compliance 範圍，以來源 test-control 記錄，讓受測用戶端能觸發其所回應的 CAEP device-compliance-change。「產品模式會以 403 拒絕」（mode.opensTestControls()，STS-DEVICE-0035）：在那裡，入口是位於其範圍之下的 /admin-api/device-compliance 饋送。"
-  },
-  "stsmetadata.endpoints./devices/test/compliance.effect": {
-    "en": "3487237cfab72d79",
-    "text": "設定裝置的合規狀態，不需任何認證"
-  },
-  "stsmetadata.endpoints./dpop/nonce-mode.what": {
-    "en": "150ba808fb3c821e",
-    "text": "非規範，供測試及手動嘗試交握使用：在執行階段開啟或關閉 RFC 9449 section 8/9 的伺服器提供 nonce 要求，讓 401/重試交換無需重新啟動服務即可測試。GET 回報目前狀態；POST {\"required\": true|false} 設定它——針對所到達的「信任領域」，透過寫入 oauth2.dpopNonceRequired（在 2026-09-12 之前它是整個程序的單一開關）。「產品模式會以 403 拒絕 POST」，因為這是測試控制項：在那裡此設定透過 /admin/oauth2 或 POST /admin-api/config/set 變更。"
-  },
   "stsmetadata.endpoints./oauth2/consent.what": {
     "en": "a03a6663434a737e",
     "text": "「為規範行為而設的非規範畫面」。OAuth 2.0 與 OpenID Connect 都假設授權伺服器會取得資源擁有者的同意，但都沒有說明那看起來是什麼樣子；這就是它在這裡的樣子。當請求指名了已登入者尚未對該 client_id 同意過的範圍時，授權端點會將其送來這裡，在其回答之前不會簽發任何東西。「允許」會在其位於 ou=users 下的自身項目上，為每個範圍寫入一個 oauthConsent 值——<when> <scope> <client_id>，每個（人、應用程式、範圍）一個值——因此第二次登入會靜默完成，而 ldapsearch 可以讀取某人同意了什麼。「拒絕」會透過授權端點將 access_denied 傳回用戶端，由授權端點決定其傳遞方式：form_post 回應是表單而非重新導向，而此畫面不得知道這一點。委派權限以其「完整」識別碼記錄，絕不以單純的權限名稱記錄，因為兩個資源可能都公開 `read`。「記錄存於伺服器端」，URL 中唯一的東西是一個無法猜測的 id，因此沒有任何人能改寫的返回位址；回答是 POST，因為記錄同意的 GET 會成為任何預先擷取連結的東西都能給出的同意；工作階段也會與被詢問的那個人核對，這是此處唯一會將不實內容寫入目錄的失敗情況。自 #576 起是登入介面的一個頁面：這些檢查通過後，此 GET 回應外殼頁面，由 /oauth2/consent.js 根據 /authn-api/consent/{id} 繪製頁面，並將「允許」或「拒絕」以 JSON 送往該處；必須啟用指令碼。oauth2.consentRequired 可將其關閉，預設為「開啟」；/admin/consent 是其登錄，而應用程式項目上的 oauthGlobalConsent 會為所有人略過提示，且不寫入任何關於任何人的內容。"
@@ -2782,14 +2738,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "POST 授權請求的參數，驗證方式與權杖端點相同，並取得 201 { request_uri, expires_in }，用以將瀏覽器送往 /oauth2/authorize。推送會如授權請求一樣驗證，並以 JSON 拒絕；`request` 物件可以承載參數；DPoP 證明會繫結授權碼。其他所有方法都回傳 405。"
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "非規範：一個「代表」已註冊應用程式回應的受保護資源，支援 GET 與 POST，讓用戶端無需部署 API 即可走過 RFC 9470。存取權杖必須通過驗證、是本服務公布之授權伺服器所簽發的 at+jwt，且在其 aud 中指名該應用程式；接著以應用程式的 oauthStepUpAcrValues 與 oauthStepUpMaxAge 檢查其 acr 與 auth_time，不符合的權杖會以 401 insufficient_user_authentication 回應，並在挑戰中附上 acr_values 與 max_age。符合的權杖會得到 200，以及它所滿足的要求與驗證。不保存任何資料。"
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "直接開啟時以 WWW-Authenticate 挑戰回應 401，對領域沒有項目的應用程式回應 404"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

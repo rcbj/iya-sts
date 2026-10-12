@@ -131,14 +131,6 @@
     "en": "6757bf6175282a42",
     "text": "Le document de contrôleur ZCAP"
   },
-  "endpoints.route./gnap/rs/resource.name": {
-    "en": "f4816b24c4f7295e",
-    "text": "Le serveur de ressources de démonstration"
-  },
-  "endpoints.route./gnap/rs/spend.name": {
-    "en": "70a2444f2afabc4c",
-    "text": "La dépense du serveur de ressources de démonstration"
-  },
   "endpoints.route./admin-api/gnap.name": {
     "en": "c34c3f89f048c143",
     "text": "La page GNAP de la console, en JSON"
@@ -271,14 +263,6 @@
     "en": "ac4ccca804188b23",
     "text": "Remise par interrogation (RFC 8936)"
   },
-  "endpoints.route./ssf/receive.name": {
-    "en": "115adfc135af6faf",
-    "text": "Un Security Event Token poussé VERS ce service"
-  },
-  "endpoints.route./ssf/received.name": {
-    "en": "7ba22ad915534fad",
-    "text": "Ce qui a été poussé ici"
-  },
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
     "text": "Ce qu’est la surface SCIM"
@@ -347,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "Enregistrer une clé publique HOBA"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "Ce qu’est le point de terminaison TLS"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "Le script des pages TLS"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "Se connecter avec un certificat client"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "Ce qu’un proxy a indiqué à ce service"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "Le certificat du serveur (PEM)"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "Faire confiance à un émetteur de certificats clients"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "Vider le magasin de confiance des clients"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1067,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "Ajouter ou retirer une ancre de confiance de certificats clients"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "Ce que ce service a vu de la connexion TLS d’une requête"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Revendications PAC Kerberos"
@@ -1579,14 +1547,6 @@
     "en": "f60f44154acbc444",
     "text": "Point de terminaison de jeton"
   },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "Contrôle de test de la conformité des appareils (pas un point de terminaison de la spécification)"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "Commutateur du mode nonce DPoP (pas un point de terminaison de la spécification)"
-  },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Écran de consentement"
@@ -1678,10 +1638,6 @@
   "endpoints.route./oauth2/par.name": {
     "en": "59993176c4a0e4a5",
     "text": "Point de terminaison des requêtes d’autorisation poussées"
-  },
-  "endpoints.route./oauth2/step-up/resource/:application.name": {
-    "en": "2d9263a1f29be372",
-    "text": "Ressource de substitution pour l’authentification renforcée (step-up)"
   },
   "endpoints.route./admin-api/oauth2/monitor.name": {
     "en": "21eb6990b9a90996",

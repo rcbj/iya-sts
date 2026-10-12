@@ -249,7 +249,7 @@ const seenJtis = realms.map({
 //
 // **WHY THE CLAIM IS NOT IN `verifyProof()`.** An atomic "once" in a shared
 // store is a round trip, and `verifyProof()` is synchronous with synchronous
-// callers: `presentedAccessToken()` answers UserInfo, the step-up stand-in
+// callers: `presentedAccessToken()` answers UserInfo, Grant Management
 // and three more families (the credential endpoints, SCIM, Shared Signals),
 // each of which reads its return value on the next line. Making it async
 // would be a change to every one of those files, and a caller that forgot the
@@ -310,8 +310,11 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // to every request worker by the same change log a setting already rides, and
 // reachable through /admin/oauth2 and POST /admin-api/config/set behind a
 // credential. That last property is the one product mode needed: the
-// endpoint that used to be the ONLY way to set it is an unauthenticated test
-// control, and in product it refuses.
+// endpoint that used to be the ONLY way to set it was an unauthenticated test
+// control. **SINCE #597 (2026-10-12) THAT ENDPOINT IS GONE** — `GET` and
+// `POST /dpop/nonce-mode` were deleted with `setNonceMode()` and
+// `forgetProofs()`, which only it called — and the setting is the one door
+// in both modes.
 //
 // The replication property the 2026-09-08 fix bought is kept rather than
 // traded: a setting written through one worker is read by the others exactly
@@ -598,46 +601,6 @@ class Dpop {
     log.debug("Leaving Dpop.nonceTtlSeconds().");
     return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) :
            NONCE_TTL_SECONDS;
-  }
-
-  // WRITES THE SETTING, IN THE REALM IT IS CALLED IN. Returns what is now in
-  // force, or throws with the setting's own refusal — which cannot happen for
-  // a boolean on a runtime row, and is surfaced rather than swallowed because
-  // a switch that silently did not switch is the invisible failure the
-  // endpoint's own comment warns about.
-  //
-  // **TURNING IT BACK TO WHAT IT WOULD BE ANYWAY CLEARS THE OVERRIDE rather
-  // than writing one**, which is tests/CLAUDE.md's "restore with reset" rule
-  // applied inside the control: a test that turns nonces on and then off
-  // would otherwise leave the row reading `source: override` with the
-  // default's value, and the management API's own job asserts that a row
-  // nobody meant to override does not say that — so the failure would land on
-  // a different file.
-  /**
-   * Turns DPoP nonces on or off in the realm it is called in, clearing the
-   * override when the value is the default.
-   *
-   * @param on - true to require nonces
-   * @returns what is now in force
-   * @throws the setting's own refusal
-   */
-  setNonceMode(on: unknown): boolean {
-    const { log, config } = this.deps;
-    log.debug('Entering Dpop.setNonceMode(). on=' + on);
-    const wanted = on === true;
-    config.clearOverride('oauth2.dpopNonceRequired');
-    if (config.value('oauth2.dpopNonceRequired') !== wanted) {
-      const written: Json = config.setOverride('oauth2.dpopNonceRequired',
-                                               wanted);
-      if (written && written.ok === false) {
-        log.debug('Leaving Dpop.setNonceMode(). The setting refused the ' +
-                  'value.');
-        throw new Error((written.errors || []).join(' '));
-      }
-    }
-    log.debug('Leaving Dpop.setNonceMode(). DPoP nonces are ' +
-              (this.nonceModeOn() ? 'REQUIRED' : 'not required'));
-    return this.nonceModeOn();
   }
 
   /**
@@ -1244,21 +1207,6 @@ class Dpop {
     };
   }
 
-  // Only for tests that need a clean slate: the replay cache is per realm (it
-  // said process-wide here long after it stopped being), so a test asserting
-  // "a fresh proof is accepted" after asserting "a replayed one is refused"
-  // needs a way to forget.
-  /**
-   * Forgets every remembered proof in the realm. For tests.
-   */
-  forgetProofs(): void {
-    const { log } = this.deps;
-    log.debug('Entering Dpop.forgetProofs(). ' + seenJtis.size +
-              ' remembered proof(s) discarded.');
-    seenJtis.clear();
-    log.debug('Leaving Dpop.forgetProofs().');
-  }
-
   // -------------------------------------------------------------------------
   // The access token on a protected endpoint — Bearer (RFC 6750) or DPoP (RFC
   // 9449 section 7).
@@ -1310,7 +1258,13 @@ class Dpop {
   // anyway. The requirement is `oauth2.stepUpAcrValues` /
   // `oauth2.stepUpMaxAgeS` unless the caller names one.
   //
-  // `options`, which only RFC 9470's stand-in resource passes:
+  // `options`. `audience` and `stepUp` are for a resource server answering
+  // for a REGISTERED application: RFC 9470's stand-in resource passed them
+  // until #593 (2026-10-12) deleted it — the test peer plays that resource
+  // server now — and no route of this service passes them since; they stay
+  // because they are the library half of such a resource server, and
+  // `tests/rfc9470_step_up.js` serves one on them. `requireVerified` is the
+  // OpenID4VCI endpoints' in product mode, and the VC-API's:
   //   audience        `{ names(audiences), label }` — RFC 9068 section 4 step
   //                   4 asked of a registered application instead of this
   //                   service (`jwt_access_token.resourceServerRefusal()`)
@@ -1325,8 +1279,9 @@ class Dpop {
    * @param req - the request
    * @param res - the response, which a refusal is sent on
    * @param where - the endpoint, named in the log and refusals
-   * @param options - `audience`, `requireVerified` and `stepUp`, which only RFC
-   *   9470's stand-in resource passes
+   * @param options - `audience`, `requireVerified` and `stepUp`, for a
+   *   resource server answering for a registered application, and
+   *   `formBody`, which UserInfo passes
    * @returns `{ accessToken, claims, scheme, jkt, verified, dpop }`, or null
    *   once a refusal has been sent
    */
@@ -1775,11 +1730,9 @@ export = {
   // #46: the middleware that reserves a proof's jti across the cluster.
   proofClaims: slot.forward('proofClaims'),
   jktOf: slot.forward('jktOf'),
-  setNonceMode: slot.forward('setNonceMode'),
   nonceModeOn: slot.forward('nonceModeOn'),
   issueNonce: slot.forward('issueNonce'),
   nonceIsCurrent: slot.forward('nonceIsCurrent'),
   state: slot.forward('state'),
-  forgetProofs: slot.forward('forgetProofs'),
   presentedAccessToken: slot.forward('presentedAccessToken')
 };

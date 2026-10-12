@@ -5,7 +5,7 @@ nav_order: 1
 
 # iya-sts
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/spnego`, `/vc-api/*`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/spnego`, `/vc-api/*` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
@@ -188,7 +188,7 @@ the diagram and a walk through each layer.
 | SPNEGO (RFC 4559/4178) | `/spnego` | [kerberos](kerberos.md) |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 | [ldap](ldap.md) |
 | SCIM 2.0 provisioning | `/scim/v2` | [scim](scim.md) |
-| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls`, `/tls/sign-in` | [tls](tls.md) |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls/sign-in`, `/admin/tls-connection` | [tls](tls.md) |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
 | OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |

@@ -27,8 +27,8 @@
 // 1.2 client on 8443; it is now asserted on LDAPS 636, which `ldap_server.js`
 // builds from the same `tlsServer.protocolOptions()`. The argument is beside
 // the assertion. Nothing else here was about those two sockets: `POST
-// /tls/trust` is a route on the main port and always was, and the bind-address
-// section now asks the four raw sockets that are left.
+// /tls/trust` was a route on the main port (deleted by #597), and the
+// bind-address section now asks the four raw sockets that are left.
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, and why most of it in a CHILD process.
@@ -377,9 +377,10 @@ function theTruststoreIsNotATestControlInProduct(t) {
   const pem = require('../tls/tls_server.js').serverCertificatePem();
   const refused = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust', pem);
   const rr = refused.report || {};
-  // NOT THERE AT ALL SINCE #585: a product process has no such route, and
-  // answers as for a path nothing is registered on — Express's own 404. The
-  // doors that remain are /admin-api/tls/trust and tls.trustAnchorsFile.
+  // NOT THERE AT ALL: a product process had no such route since #585, and no
+  // process has since #597 — it answers as for a path nothing is registered
+  // on, Express's own 404. The doors are /admin-api/tls/trust and
+  // tls.trustAnchorsFile.
   t.check(rr.status === 404 && /Cannot POST \/tls\/trust/.test(rr.body),
           'a product service has no open door for a trust anchor: POST ' +
           '/tls/trust answers as an unrouted path', JSON.stringify(rr)
@@ -389,10 +390,13 @@ function theTruststoreIsNotATestControlInProduct(t) {
   const cr = cleared.report || {};
   t.check(cr.status === 404 && /Cannot POST/.test(cr.body),
           'and none to EMPTY it either', JSON.stringify(cr).slice(0, 200));
+  // AND NOR DOES DEVELOPMENT SINCE #597: both routes were deleted, and
+  // /admin-api/tls/trust (which the launchers use) is the door in either mode.
   const accepted = httpProbe({}, 'POST', '/tls/trust', pem);
-  t.equal((accepted.report || {}).status, 200,
-          'while development mode still takes the anchor, which is what the ' +
-          'launchers use');
+  const ar = accepted.report || {};
+  t.check(ar.status === 404 && /Cannot POST \/tls\/trust/.test(ar.body),
+          'nor has a development service: POST /tls/trust was deleted',
+          JSON.stringify(ar).slice(0, 200));
 
   const file = path.join(os.tmpdir(), 'anchors-' + process.pid + '.pem');
   fs.writeFileSync(file, pem);

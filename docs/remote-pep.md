@@ -5,7 +5,7 @@ nav_order: 15
 
 # The remote Policy Enforcement Point
 
-> **Development mode only (#585):** `/xacml/protected`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/xacml/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 `xacml-pep/` is a **second container**. It holds its own copy of this service's
 XACML engine, **pulls** the policy repository from the mock's Policy Decision
@@ -87,8 +87,7 @@ name is refused while being fully authenticated, because **the certificate says
 who and the group says whether**:
 
 1. **A client certificate this service verifies.** The issuing CA goes into the
-   truststore with `POST /tls/trust`, which starts empty — in development mode.
-   In product mode that endpoint is refused; add the CA at runtime on the admin
+   truststore, which starts empty: add it at runtime on the admin
    console's `/admin/tls/trust` page (Admin Write) or with
    `POST /admin-api/tls/trust/add` (a token carrying `admin:write`), or put it
    in a PEM file named by `tls.trustAnchorsFile`, read at startup. Only the file

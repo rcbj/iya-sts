@@ -131,14 +131,6 @@
     "en": "6757bf6175282a42",
     "text": "Ang ZCAP controller document"
   },
-  "endpoints.route./gnap/rs/resource.name": {
-    "en": "f4816b24c4f7295e",
-    "text": "Ang demonstration resource server"
-  },
-  "endpoints.route./gnap/rs/spend.name": {
-    "en": "70a2444f2afabc4c",
-    "text": "Ang spend ng demonstration resource server"
-  },
   "endpoints.route./admin-api/gnap.name": {
     "en": "c34c3f89f048c143",
     "text": "Ang GNAP console page sa JSON"
@@ -271,14 +263,6 @@
     "en": "ac4ccca804188b23",
     "text": "Poll delivery (RFC 8936)"
   },
-  "endpoints.route./ssf/receive.name": {
-    "en": "115adfc135af6faf",
-    "text": "Isang Security Event Token na ipinush SA serbisyong ito"
-  },
-  "endpoints.route./ssf/received.name": {
-    "en": "7ba22ad915534fad",
-    "text": "Ang mga naipush dito"
-  },
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
     "text": "Kung ano ang SCIM surface"
@@ -347,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "Magparehistro ng HOBA public key"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "Kung ano ang TLS endpoint"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "Ang script ng mga pahina ng TLS"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "Mag-sign in gamit ang client certificate"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "Ang sinabi ng isang proxy sa serbisyong ito"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "Ang server certificate (PEM)"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "Pagkatiwalaan ang isang issuer ng client certificate"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "Alisan ng laman ang client truststore"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1067,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "Magdagdag o mag-alis ng client-certificate trust anchor"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "Ang nakita ng serbisyong ito sa TLS connection ng isang request"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Mga Kerberos PAC claim"
@@ -1579,14 +1547,6 @@
     "en": "f60f44154acbc444",
     "text": "Token endpoint"
   },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "Test control ng device compliance (hindi spec endpoint)"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "Switch ng DPoP nonce (hindi spec endpoint)"
-  },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Screen ng consent"
@@ -1678,10 +1638,6 @@
   "endpoints.route./oauth2/par.name": {
     "en": "59993176c4a0e4a5",
     "text": "Pushed authorization request endpoint"
-  },
-  "endpoints.route./oauth2/step-up/resource/:application.name": {
-    "en": "2d9263a1f29be372",
-    "text": "Pansamantalang resource para sa step-up"
   },
   "endpoints.route./admin-api/oauth2/monitor.name": {
     "en": "21eb6990b9a90996",

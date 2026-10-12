@@ -1282,7 +1282,7 @@ services:
       # CI runs and works in the one a developer runs.
       #
       # What it is for: the truststore is a Map in the service's process and
-      # `POST /tls/trust/clear` needs no credential, so any job may empty it.
+      # any job holding an admin:write token may remove an anchor from it.
       # The job that DEPENDS on this anchor re-establishes it, and it travels
       # as text because the runner container cannot see the directory the PEP
       # mounts its certificate from.

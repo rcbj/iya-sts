@@ -297,7 +297,10 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   '.spec{color:#555;font-size:.82rem}button{font:inherit;padding:.45rem ' +
   '.9rem;border-radius:4px;border:1px solid #999;background:#f6f6f6;' +
   'cursor:pointer}button.global{background:#b00020;border-color:#8a0018;' +
-  'color:#fff;font-weight:600}.actions{margin:1.2rem 0;display:flex;' +
+  'color:#fff;font-weight:600}a.btn{display:inline-block;padding:' +
+  '.45rem .9rem;border-radius:4px;border:1px solid #999;background:' +
+  '#f6f6f6;color:#111;text-decoration:none}' +
+  '.actions{margin:1.2rem 0;display:flex;' +
   'gap:.8rem;flex-wrap:wrap;align-items:center}' +
   // The console's fold, restyled for this page's palette: a `<details>`
   // whose summary is the prose's opening sentence (`WebKit.note()`), so
@@ -3144,11 +3147,25 @@ class Logout {
       }).join('') + '</tbody></table>';
     };
     const fan = this.fanOutOf([result]);
-    const inner =
-      '<h1>' + (result.scope === 'global'
-        ? t.html('logout.result.headingGlobal')
-        : t.html('logout.result.headingSelected')) +
-      '</h1>' +
+    // TWO TABS (rcbj, 2026-10-12): Sign out says only that the person is
+    // signed out and offers the way on to the portal; everything else is
+    // on Details. The fan-out's iframes and cleanup images are on Details
+    // too, and still load: a browser fetches an iframe or an image inside
+    // a hidden element. The partner sign-outs (#167) stay on the first tab,
+    // because each is a link or form the PERSON has to follow, and a step
+    // left behind a tab is a step not taken.
+    const signOut =
+      (result.terminated.length
+        ? '<div class="ok">' + t.html('logout.result.brief') + '</div>'
+        : '<div class="warn">' + t.html('logout.result.nothingEnded') +
+          '</div>') +
+      federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
+      '<p class="sub">' + t.html('logout.result.seeDetails') + '</p>' +
+      // The way on (rcbj, 2026-10-12): root-relative, so app.js puts it
+      // under the realm on the way out.
+      '<p><a class="btn" href="/portal">' +
+      t.html('logout.result.toPortal') + '</a></p>';
+    const details =
       '<p class="sub">' + xmlEscape(result.message) + '</p>' +
       (result.terminated.length
         ? '<h2>' + t.html('logout.result.ended') + '</h2>' +
@@ -3161,9 +3178,6 @@ class Logout {
           kit.note(t.html('logout.result.notEndedNote'))
         : '') +
       fan.html +
-      // The federation partners the sessions were signed in THROUGH (#167):
-      // links and forms this browser follows, never an automatic redirect.
-      federationSlo.renderPartnerLogouts(result.partnerLogouts || []) +
       '<h2>' + t.html('logout.result.stillLive') + '</h2>' +
       (inventory.total
         // The link is markup, so it is not in the message: the sentence and
@@ -3177,6 +3191,17 @@ class Logout {
           t.html('logout.result.lookAgainEnd') + '</p>'
         : '<div class="ok">' + t.html('logout.result.nothingLeft',
                                       { key: result.key }) + '</div>');
+    const inner =
+      '<h1>' + (result.scope === 'global'
+        ? t.html('logout.result.headingGlobal')
+        : t.html('logout.result.headingSelected')) +
+      '</h1>' +
+      kit.tabbedPanels('logout-tabs', [
+        { id: 'logout-signout', label: t.text('logout.tab.signOut'),
+          html: signOut },
+        { id: 'logout-details', label: t.text('logout.tab.details'),
+          html: details }
+      ]);
     log.debug("Leaving Logout.resultPage().");
     // Drawn by the POST; the GET that draws the sign-out again is /logout.
     return this.page(t, realms.currentPrefix() + LOGOUT_PATH,

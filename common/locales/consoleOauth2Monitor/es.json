@@ -57,7 +57,7 @@
   "stepUpNoteEnd": ".",
   "ownRequires": "El propio servidor de recursos de este servicio (UserInfo, los endpoints de OpenID4VCI, SCIM, Shared Signals) requiere ",
   "ownLink": "oauth2.stepUpAcrValues y oauth2.stepUpMaxAgeS",
-  "ownApi": ". El requisito de una API registrada está en su entrada de aplicación (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), aplicado por <code>{path}</code>.",
+  "ownApi": ". El requisito de una API registrada está en su entrada de aplicación (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), y la propia API lo aplica.",
   "stepUpNoClients": "Ninguna solicitud de autorización en este dominio ha llevado acr_values o max_age, y ningún servidor de recursos de aquí ha desafiado un token, desde que se inició el proceso.",
   "lead": "<strong>Lo que ha hecho el servidor de autorización</strong> en este dominio desde {since}, una sección por mecanismo. Los contadores se combinan entre todos los procesos que atienden este dominio.",
   "noReset": "No hay reinicio: una consola que pudiera poner a cero su propia supervisión haría de cada número en ella uno que alguien podría haber puesto a cero. El registro duradero de cada retirada es el ",

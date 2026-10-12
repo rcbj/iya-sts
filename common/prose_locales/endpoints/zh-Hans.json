@@ -131,14 +131,6 @@
     "en": "6757bf6175282a42",
     "text": "ZCAP 控制器文档"
   },
-  "endpoints.route./gnap/rs/resource.name": {
-    "en": "f4816b24c4f7295e",
-    "text": "演示资源服务器"
-  },
-  "endpoints.route./gnap/rs/spend.name": {
-    "en": "70a2444f2afabc4c",
-    "text": "演示资源服务器的消费"
-  },
   "endpoints.route./admin-api/gnap.name": {
     "en": "c34c3f89f048c143",
     "text": "以 JSON 形式提供的 GNAP 控制台页面"
@@ -271,14 +263,6 @@
     "en": "ac4ccca804188b23",
     "text": "轮询传递（RFC 8936）"
   },
-  "endpoints.route./ssf/receive.name": {
-    "en": "115adfc135af6faf",
-    "text": "推送到本服务的安全事件令牌"
-  },
-  "endpoints.route./ssf/received.name": {
-    "en": "7ba22ad915534fad",
-    "text": "已推送到此处的内容"
-  },
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
     "text": "SCIM 接口是什么"
@@ -347,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "注册 HOBA 公钥"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "TLS 端点是什么"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "TLS 页面的脚本"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "使用客户端证书登录"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "代理告诉本服务的内容"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "服务器证书（PEM）"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "信任客户端证书颁发者"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "清空客户端信任库"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1067,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "添加或移除客户端证书信任锚"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "本服务所见的请求 TLS 连接"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Kerberos PAC 声明"
@@ -1579,14 +1547,6 @@
     "en": "f60f44154acbc444",
     "text": "令牌端点"
   },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "设备合规性测试控件（非规范端点）"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "DPoP nonce 开关（非规范端点）"
-  },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "同意界面"
@@ -1678,10 +1638,6 @@
   "endpoints.route./oauth2/par.name": {
     "en": "59993176c4a0e4a5",
     "text": "推送授权请求端点"
-  },
-  "endpoints.route./oauth2/step-up/resource/:application.name": {
-    "en": "2d9263a1f29be372",
-    "text": "升级认证替身资源"
   },
   "endpoints.route./admin-api/oauth2/monitor.name": {
     "en": "21eb6990b9a90996",

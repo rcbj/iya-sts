@@ -40,12 +40,12 @@
     "text": "簽章無法驗證的已接收 Security Event Token 會被拒絕"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "298534c9f2c4f318",
-    "text": "POST /ssf/receive 以及主控台與入口網站自己的接收者會接受它、記錄它並說明它為何未通過驗證——即偵錯工具的立場——除非 ssf.receiveRequireSignature 開啟。不會據此採取任何行動。聯盟夥伴的 Shared Signals——無論是推送至 /federation/signals/{id} 或以輪詢取得——也比照辦理：未經驗證的 SET 會以「未經驗證」記錄在該關係的收件匣中，不會據此採取任何行動，除非 ssf.receiveRequireSignature 開啟。"
+    "en": "d0b1b34847fe54b1",
+    "text": "主控台與入口網站自己的接收者會接受它、記錄它並說明它為何未通過驗證——即偵錯工具的立場——除非 ssf.receiveRequireSignature 開啟。不會據此採取任何行動。聯盟夥伴的 Shared Signals——無論是推送至 /federation/signals/{id} 或以輪詢取得——也比照辦理：未經驗證的 SET 會以「未經驗證」記錄在該關係的收件匣中，不會據此採取任何行動，除非 ssf.receiveRequireSignature 開啟。"
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "7823c19f4b2f69fb",
-    "text": "無論 ssf.receiveRequireSignature 如何設定，主控台與入口網站的接收者都回應 400 invalid_key（#117），並將它保留在收件匣中、標記為已拒絕。/ssf/receive 是開發端點，在此不存在（#585）。聯盟夥伴未經驗證的 SET 同樣以 invalid_key 拒絕——推送至 /federation/signals/{id} 時回應 HTTP 400；以輪詢取得者，則在下一次輪詢請求的 setErrs 中回報——並保留在該關係的收件匣中、標記為已拒絕，且絕不據此採取任何行動。"
+    "en": "369551d9ee637c3c",
+    "text": "無論 ssf.receiveRequireSignature 如何設定，主控台與入口網站的接收者都回應 400 invalid_key（#117），並將它保留在收件匣中、標記為已拒絕。聯盟夥伴未經驗證的 SET 同樣以 invalid_key 拒絕——推送至 /federation/signals/{id} 時回應 HTTP 400；以輪詢取得者，則在下一次輪詢請求的 setErrs 中回報——並保留在該關係的收件匣中、標記為已拒絕，且絕不據此採取任何行動。"
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -700,12 +700,12 @@
     "text": "RFC 8707 資源與 GNAP 權限的位置須指名已註冊的目標（#505）"
   },
   "mode.requirements.unregistered-resource-targets.development": {
-    "en": "09b7259e14c7de50",
-    "text": "任何絕對 URI 都會在授權、PAR 與權杖端點被接受為資源，並成為權杖的 aud；未指名任何資源伺服器的 GNAP 位置會被排除在權杖的對象之外，而該權限仍會授予。"
+    "en": "fd6dc100e791e280",
+    "text": "任何絕對 URI 都會在授權、PAR 與權杖端點被接受為資源，並成為權杖的 aud；未指名任何資源伺服器的 GNAP 位置會被排除在權杖的對象之外，而只要權杖中另有內容指名了資源伺服器，該權限仍會授予——存取未指名任何資源伺服器的權杖在每種模式下都以 invalid_request 拒絕（STS-GNAP-0904）。"
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "a5fd26a9d49203a6",
-    "text": "資源（權杖交換之外；權杖交換的目標屬於原則的 unregistered-target）以及 GNAP 存取權限的每個位置，都必須指名已註冊的目標：本服務自己的資源伺服器之一（UserInfo、SCIM、Shared Signals 與 OpenID4VCI 所接受的預設資源指標；/admin-api；GNAP 示範資源伺服器（在提供它之處）），或事先註冊的應用程式（appRegisteredBy 已設定——觀察不等於註冊），依其 oauthAudience、權限基底 URI、client_id 或識別碼指名——內嵌偵錯工具的 api 即為其一，植入時即為已註冊。位於已註冊資源伺服器之 gnapResourceServerUri 或其下的 GNAP 位置也算指名了它。否則為 invalid_target：從授權端點重新導向，在 PAR 回應 400（STS-OAUTH-0950），在權杖端點於花費任何東西之前回應 400（STS-OAUTH-0951）；對於 GNAP，請求以 invalid_request 拒絕（STS-GNAP-0903），而不是捨棄該權限。"
+    "en": "f943835ab2da2836",
+    "text": "資源（權杖交換之外；權杖交換的目標屬於原則的 unregistered-target）以及 GNAP 存取權限的每個位置，都必須指名已註冊的目標：本服務自己的資源伺服器之一（UserInfo、SCIM、Shared Signals 與 OpenID4VCI 所接受的預設資源指標；/admin-api；/account-api），或事先註冊的應用程式（appRegisteredBy 已設定——觀察不等於註冊），依其 oauthAudience、權限基底 URI、client_id 或識別碼指名——內嵌偵錯工具的 api 即為其一，植入時即為已註冊。位於已註冊資源伺服器之 gnapResourceServerUri 或其下的 GNAP 位置也算指名了它。否則為 invalid_target：從授權端點重新導向，在 PAR 回應 400（STS-OAUTH-0950），在權杖端點於花費任何東西之前回應 400（STS-OAUTH-0951）；對於 GNAP，請求以 invalid_request 拒絕（STS-GNAP-0903），而不是捨棄該權限。"
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -724,12 +724,12 @@
     "text": "示範、模擬與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "d0550f46d30b1f3f",
-    "text": "提供並列出：命令模擬依賴方（/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，/xacml/protected，升級驗證替身資源，GNAP 示範資源伺服器，/dpop/nonce-mode，/devices/test/compliance，/tls、/tls/forwarded、/tls/trust 與 /tls/trust/clear，以及 /ssf/receive 與 /ssf/received。"
+    "en": "f576a305a27eb0c9",
+    "text": "提供並列出：命令模擬依賴方（/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，以及 /xacml/protected。"
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們，但信任存放區的入口與受保護服務的通訊端除外，兩者屬於處理程序。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
+    "en": "b82d8439b897527e",
+    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們，但受保護服務的通訊端除外，它屬於處理程序。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

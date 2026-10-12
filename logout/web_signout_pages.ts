@@ -258,10 +258,19 @@ class SignoutPages {
     };
     const terminated = view.terminated || [];
     const skipped = view.skipped || [];
-    return '<h1>' + (view.scope === 'global'
-        ? t.html('logout.result.headingGlobal')
-        : t.html('logout.result.headingSelected')) + '</h1>' +
-      '<p class="sub">' + esc(view.message) + '</p>' +
+    // TWO TABS, as the server-drawn signed-out document (rcbj, 2026-10-12):
+    // Sign out says only that the person is signed out and offers the way
+    // on; what was ended and what is still live are on Details.
+    const signOut =
+      (terminated.length
+        ? '<div class="ok">' + t.html('logout.result.brief') + '</div>'
+        : '<div class="warn">' + t.html('logout.result.nothingEnded') +
+          '</div>') +
+      '<p class="sub">' + t.html('logout.result.seeDetails') + '</p>' +
+      // A root-relative link, which the runtime puts under the realm.
+      '<p><a class="btn" href="/portal">' +
+      t.html('logout.result.toPortal') + '</a></p>';
+    const details = '<p class="sub">' + esc(view.message) + '</p>' +
       (terminated.length
         ? '<h2>' + t.html('logout.result.ended') + '</h2>' +
           listOf(terminated, 'sub')
@@ -282,6 +291,15 @@ class SignoutPages {
           t.html('logout.result.lookAgainEnd') + '</p>'
         : '<div class="ok">' + t.html('logout.result.nothingLeft',
                                       { key: view.key }) + '</div>');
+    return '<h1>' + (view.scope === 'global'
+        ? t.html('logout.result.headingGlobal')
+        : t.html('logout.result.headingSelected')) + '</h1>' +
+      kit.tabbedPanels('logout-tabs', [
+        { id: 'logout-signout', label: t.text('logout.tab.signOut'),
+          html: signOut },
+        { id: 'logout-details', label: t.text('logout.tab.details'),
+          html: details }
+      ]);
   }
 
   /**

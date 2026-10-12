@@ -838,7 +838,8 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 // slot — and what it adds is the vocabulary, the audit row and the sentences.
 //
 // **THERE IS NO `clear`, AND THAT IS A REFUSAL RATHER THAN AN OMISSION.**
-// `POST /tls/trust/clear` exists and is a development test control; a bulk
+// `POST /tls/trust/clear` was a development test control until #597 deleted
+// it; a bulk
 // clear on a GATED door is the one operation here whose blast radius is every
 // client certificate every other caller relies on — `tests/CLAUDE.md` records
 // a single unguarded clear costing a remote PEP its identity for the rest of a

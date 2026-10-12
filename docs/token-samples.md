@@ -2739,6 +2739,14 @@ resource server), the client, the `access` array, the lifetime and the key
 binding: the thumbprint of the client's key, so the token is useless without
 that key's signature.
 
+**These were captured before [#593](https://github.com/rcbj/iya-sts/issues/593).**
+Their audience, `https://127.0.0.1:38081/gnap/rs/resource`, is a
+demonstration resource server that was a token's default audience when its
+rights named no resource server. Both are gone: the request above is now
+refused `invalid_request` (`STS-GNAP-0904`) unless
+`https://server.example.net/` is at or under a registered resource server's
+`gnapResourceServerUri`, and the audience is then that resource server.
+
 ### `jwt-signed`
 
 The header's `typ` is `gnap-at+jwt`, a private media type

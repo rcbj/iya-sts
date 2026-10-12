@@ -34,10 +34,9 @@
 //          `adminApi.audience`, or while that is at its default the
 //          configured base and `/admin-api` under this host, and a realm's
 //          own `/admin-api`;
-//        * the GNAP demonstration resource server, `/gnap/rs/resource`,
-//          while `gnap.demoResourceServer` is on — the audience `gnap.ts`
-//          judges a token against (`selfUri`), and the one `gnap_grants.ts`
-//          gives a token for nobody in particular.
+//        * the account API, `/account-api` (#568).
+//      The GNAP demonstration resource server, `/gnap/rs/resource`, was the
+//      fourth until #593 deleted it.
 //      The embedded debugger's api is not in this list because it needs no
 //      place in it: it is an APPLICATION, `sts-debugger-api`, seeded and
 //      registered at startup (`appRegisteredBy: startup`) while the debugger
@@ -75,7 +74,6 @@
 // root's own install would then refuse (`issuer_names.ts` tells that story).
 // ---------------------------------------------------------------------------
 
-import config = require('./config');
 import helpers = require('./helpers');
 import mode = require('./mode');
 
@@ -83,18 +81,11 @@ const log = helpers.log;
 
 type Json = any;
 
-// The demonstration resource server's address under a realm's base
-// (`gnap.ts`'s `/gnap/rs/resource`).
-const GNAP_DEMO_RESOURCE_PATH = '/gnap/rs/resource';
-
 /**
  * The one definition of a registered target for an RFC 8707 resource and a
  * GNAP access right's location (#505).
  */
 export = class RegisteredTargets {
-  /** The GNAP demonstration resource server's path under a base. */
-  static readonly GNAP_DEMO_RESOURCE_PATH = GNAP_DEMO_RESOURCE_PATH;
-
   // A converted module, required lazily, or null while the composition root
   // has not installed its instance (ASKED, NEVER BUILT — the header).
   private static installed(what: string, load: () => Json): Json {
@@ -201,15 +192,6 @@ export = class RegisteredTargets {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
                 "account API.");
       return 'the account API (/account-api)';
-    }
-    // Only where it is SERVED (#585): a product realm has no demonstration
-    // RS, so naming it there is naming nothing.
-    if (mode.servesDemoEndpoints() &&
-        config.value('gnap.demoResourceServer') !== false &&
-        wanted === base + GNAP_DEMO_RESOURCE_PATH) {
-      log.debug("Leaving RegisteredTargets.ownResourceServer(). The GNAP " +
-                "demonstration resource server.");
-      return 'the GNAP demonstration resource server';
     }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';

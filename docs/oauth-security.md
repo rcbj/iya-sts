@@ -4,8 +4,6 @@ title: OAuth security
 
 # OAuth security
 
-> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/dpop/nonce-mode`, `/tls`, `/tls/forwarded`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 This page covers what makes iya-sts's [authorization server](oauth-oidc.md)
 **strict**. There are two compliance modes:
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) (the OAuth 2.0 Security
@@ -395,8 +393,8 @@ It has no setting of its own.
   when the proof is accepted. On a cluster it is claimed once across all nodes.
 * The **nonce handshake** (sections 8 and 9), when `oauth2.dpopNonceRequired`
   is on. It makes proofs fresher and never makes them mandatory: a request
-  with no `DPoP` header is still a Bearer request. In development,
-  `POST /dpop/nonce-mode` flips the setting for the realm it is reached in.
+  with no `DPoP` header is still a Bearer request. It is set per realm, on
+  `/admin/oauth2` or through `POST /admin-api/config/set`.
 * **A bound token presented as `Bearer` is refused** at every protected
   endpoint: UserInfo, the OpenID4VCI endpoints, SCIM, Shared Signals,
   `/admin-api` and the embedded debugger.
@@ -526,8 +524,9 @@ default**:
   protected endpoints require `oauth2.stepUpAcrValues` and
   `oauth2.stepUpMaxAgeS`, which require nothing by default. A registered API
   declares its own requirement as `oauthStepUpAcrValues` / `oauthStepUpMaxAge`,
-  and `/oauth2/step-up/resource/{application}` stands in for it. A token that
-  falls short is answered 401 with
+  and the API itself sends the challenge (the stand-in resource that answered
+  for it here was removed in #593). A token that falls short is answered 401
+  with
   `WWW-Authenticate: Bearer error="insufficient_user_authentication"`, plus the
   `acr_values` and `max_age` it needs.
 
@@ -646,10 +645,9 @@ for the process (`STS_HTTPS=true`) and leave `oauth2.rfc9700` to the realm for a
 compliant pass over HTTPS.
 
 **With the port on TLS there is no plain listener**, so the first fetch of
-`GET /tls/server-certificate` or `POST /tls/trust` is made without verifying the
-certificate (`curl -k`). That is the same act as trusting the PEM the endpoint
-hands back, one step earlier. `/tls`, `/admin/sts-metadata` and the startup line
-say so, and the compose healthcheck picks its scheme from the environment.
+`GET /tls/server-certificate` is made without verifying the certificate
+(`curl -k`). That is the same act as trusting the PEM the endpoint hands back,
+one step earlier. `/admin/sts-metadata` and the startup line say so, and the compose healthcheck picks its scheme from the environment.
 
 The session cookie is `Secure` when, and only when, the port is TLS: a browser
 drops a `Secure` cookie that arrives over plain HTTP, so an unconditional flag
@@ -1046,8 +1044,8 @@ setting.
 costs nothing to forge. The cost, stated rather than hidden, is that a proxy
 terminating mutual TLS cannot pass the certificate through.
 
-`GET /tls/forwarded` reports every forwarding and certificate header a request
-carried, whether any was believed, and the effective base URL. Certificate
+Monitoring → TLS connection (`GET /admin-api/tls-connection`, Admin Read)
+reports every forwarding and certificate header a request carried, whether any was believed, and the effective base URL. Certificate
 headers are listed even though they are ignored. Stripping inbound headers at
 the proxy and protecting the proxy-to-application hop are rows with
 `enforced: no`: they are decisions about a link this process cannot see.
@@ -1269,9 +1267,9 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
   refresh tokens, and the authorization code and refresh grants only.
 * OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
   implied by product mode. Turn them on explicitly.
-* `/dpop/nonce-mode` is a development test control, and a realm in product
-  mode does not have it (#585); `oauth2.dpopNonceRequired` is then changed only
-  through `/admin/oauth2` or `POST /admin-api/config/set`.
+* `oauth2.dpopNonceRequired` is changed only through `/admin/oauth2` or
+  `POST /admin-api/config/set`, in either mode (the test control
+  `/dpop/nonce-mode` was deleted by #597).
 * RFC 8705's declared refusals, RFC 9068 and RFC 9470 apply **in every mode**.
 * Certificate revocation is **soft-fail** in development and **hard-fail** in
   product (`pki.revocationCheck=auto`). This decides whether a certificate from
@@ -1398,9 +1396,9 @@ client may override `oauth2.refreshIdleSeconds` and
   parameters, TLS client certificates and step-up requirement.
 * **Monitoring → OAuth 2.0 / OIDC activity** (`/admin/oauth2/monitor`) counts
   step-up outcomes and challenges per client.
-* `GET /tls` and `/tls/forwarded` show what a connection presented and which
-  forwarded headers were believed.
-* `GET /dpop/nonce-mode` reports whether nonces are required in this realm.
+* **Monitoring → TLS connection** (`/admin/tls-connection`) shows what a
+  connection presented and which forwarded headers were believed.
+* `/admin/oauth2` shows whether DPoP nonces are required in this realm.
 * `/admin/authorization-servers` holds the named authorization servers, their
   members and their drift; `/admin/sts-metadata` lists the ones this process
   has served.

@@ -40,12 +40,12 @@
     "text": "Tinatanggihan ang natanggap na Security Event Token na ang signature ay hindi nagve-verify"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "298534c9f2c4f318",
-    "text": "Tinatanggap ito ng POST /ssf/receive at ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito. Ganoon din ang pagtrato sa Shared Signals ng isang federation partner, ipinush man sa /federation/signals/{id} o pino-poll: itinatala ang hindi na-verify na SET sa inbox ng relationship bilang hindi na-verify at hindi kinikilusan sa anumang paraan, maliban kung naka-on ang ssf.receiveRequireSignature."
+    "en": "d0b1b34847fe54b1",
+    "text": "Tinatanggap ito ng sariling mga receiver ng console at portal, itinatala ito at sinasabi kung bakit hindi ito nag-verify — ang tindig ng debugger — maliban kung naka-on ang ssf.receiveRequireSignature. Walang kumikilos batay dito. Ganoon din ang pagtrato sa Shared Signals ng isang federation partner, ipinush man sa /federation/signals/{id} o pino-poll: itinatala ang hindi na-verify na SET sa inbox ng relationship bilang hindi na-verify at hindi kinikilusan sa anumang paraan, maliban kung naka-on ang ssf.receiveRequireSignature."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "7823c19f4b2f69fb",
-    "text": "Sumasagot ng 400 invalid_key ang mga receiver ng console at portal, anuman ang sabihin ng ssf.receiveRequireSignature (#117), at iniingatan ito sa kanilang inbox na may markang tinanggihan. Ang /ssf/receive ay isang development endpoint at wala ito (#585). Tinatanggihan din nang invalid_key ang hindi na-verify na SET ng isang federation partner — HTTP 400 sa isang push sa /federation/signals/{id}, at sa setErrs ng susunod na poll request para sa isang pino-poll — iniingatan sa inbox ng relationship na may markang tinanggihan, at hindi kailanman kinikilusan."
+    "en": "369551d9ee637c3c",
+    "text": "Sumasagot ng 400 invalid_key ang mga receiver ng console at portal, anuman ang sabihin ng ssf.receiveRequireSignature (#117), at iniingatan ito sa kanilang inbox na may markang tinanggihan. Tinatanggihan din nang invalid_key ang hindi na-verify na SET ng isang federation partner — HTTP 400 sa isang push sa /federation/signals/{id}, at sa setErrs ng susunod na poll request para sa isang pino-poll — iniingatan sa inbox ng relationship na may markang tinanggihan, at hindi kailanman kinikilusan."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -700,12 +700,12 @@
     "text": "Pinangangalanan ng RFC 8707 resource at ng mga location ng GNAP right ang isang naka-register na target (#505)"
   },
   "mode.requirements.unregistered-resource-targets.development": {
-    "en": "09b7259e14c7de50",
-    "text": "Tinatanggap ang anumang absolute URI bilang resource sa authorization, PAR at token endpoint at nagiging aud ito ng token; ang GNAP location na walang pinangangalanang resource server ay iniiwan sa labas ng audience ng token at ibinibigay ang right."
+    "en": "fd6dc100e791e280",
+    "text": "Tinatanggap ang anumang absolute URI bilang resource sa authorization, PAR at token endpoint at nagiging aud ito ng token; ang GNAP location na walang pinangangalanang resource server ay iniiwan sa labas ng audience ng token at ibinibigay ang right, basta may ibang bahagi ng token na nagpapangalan ng isa — ang token na walang pinangangalanan ang access ay tinatanggihan ng invalid_request sa bawat mode (STS-GNAP-0904)."
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "a5fd26a9d49203a6",
-    "text": "Ang resource (labas sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat location ng GNAP access right ay dapat magpangalan ng naka-register na target: isa sa sariling mga resource server ng serbisyong ito (ang default resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; ang GNAP demonstration resource server kung saan ito inihahain) o isang application na naka-register nang maaga (nakatakda ang appRegisteredBy — hindi registration ang pagkakita), ayon sa oauthAudience, permission base URI, client_id o identifier nito — isa rito ang api ng embedded debugger, na naka-seed bilang registered. Pinangangalanan din ito ng GNAP location na nasa o nasa ilalim ng gnapResourceServerUri ng naka-register na resource server. Kung hindi, invalid_target: nire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi tinatanggal ang right."
+    "en": "f943835ab2da2836",
+    "text": "Ang resource (labas sa token exchange, na ang mga target ay ang unregistered-target ng policy) at bawat location ng GNAP access right ay dapat magpangalan ng naka-register na target: isa sa sariling mga resource server ng serbisyong ito (ang default resource indicator na tinatanggap ng UserInfo, SCIM, Shared Signals at OpenID4VCI; /admin-api; /account-api) o isang application na naka-register nang maaga (nakatakda ang appRegisteredBy — hindi registration ang pagkakita), ayon sa oauthAudience, permission base URI, client_id o identifier nito — isa rito ang api ng embedded debugger, na naka-seed bilang registered. Pinangangalanan din ito ng GNAP location na nasa o nasa ilalim ng gnapResourceServerUri ng naka-register na resource server. Kung hindi, invalid_target: nire-redirect mula sa authorization endpoint at 400 sa PAR (STS-OAUTH-0950), 400 sa token endpoint bago may magastos (STS-OAUTH-0951); para sa GNAP, tinatanggihan ang request ng invalid_request (STS-GNAP-0903), hindi tinatanggal ang right."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -724,12 +724,12 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "d0550f46d30b1f3f",
-    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear, at /ssf/receive at /ssf/received."
+    "en": "f576a305a27eb0c9",
+    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, at /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process, maliban sa pinto ng truststore at sa socket ng protektadong service, na pag-aari ng process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
+    "en": "b82d8439b897527e",
+    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process, maliban sa socket ng protektadong service, na pag-aari ng process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

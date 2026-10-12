@@ -6733,22 +6733,14 @@ class AdminViews {
    * @returns the JSON
    */
   truststoreJson(req) {
-    const { log, mode, realms, adminActions } = this.deps;
+    const { log, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
-    // THE TWO OPEN DOORS ARE A DEMONSTRATION OF THE PROCESS'S (#585):
-    // named only where the default realm and this one both serve them, as
-    // `common/app.js`'s `processDemoOnly` decides — null, not a door marked
-    // closed, where they are not there.
-    const openToAnybody = mode.servesDemoEndpoints() &&
-      realms.run(realms.get(realms.DEFAULT_ID), function () {
-        return mode.servesDemoEndpoints();
-      });
+    // THE TWO GATED DOORS, AND THE ONLY ONES: the open test controls
+    // `POST /tls/trust` and `POST /tls/trust/clear` (`testControls`, a
+    // demonstration of the process's since #585) were deleted by #597.
     const doors = {
       console: '/admin/tls/trust',
-      api: '/admin-api/tls/trust',
-      testControls: openToAnybody
-        ? { add: '/tls/trust', clear: '/tls/trust/clear', open: true }
-        : null
+      api: '/admin-api/tls/trust'
     };
     const notes = {
       persisted: 'A RUNTIME ANCHOR IS WRITTEN TO ou=trustAnchors in the ' +
@@ -6981,7 +6973,7 @@ class AdminViews {
                                deadLetters: 0 },
                paging: { streams: this.pagingJson(this.pagingOf(
                  req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
-               receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
+               settings: configSettingsJson('/admin/ssf'),
                statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals Framework.' };

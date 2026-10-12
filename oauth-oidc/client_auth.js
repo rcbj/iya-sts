@@ -988,7 +988,7 @@ function verifyCertificate(opts) {
                           'did not verify' +
                           (peer.error ? ' (' + peer.error + ')' : '') + '. ' +
                           'Install the issuing authority\'s root at ' +
-                          '/tls/trust, send the intermediates with the ' +
+                          '/admin/tls/trust, send the intermediates with the ' +
                           'certificate, or register the client for ' +
                           'self_signed_tls_client_auth instead.' };
   }

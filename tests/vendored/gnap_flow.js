@@ -19,19 +19,22 @@
 // its status alone, and every response a refusal arrives in must be `no-store`.
 //
 // THE RESOURCE SERVER, WITH `peer: true` (#586). The service's
-// demonstration resource server (`/gnap/rs/resource`, `/gnap/rs/spend`) is
-// development only since #585, so a job that presents its tokens at a
-// resource server in every mode asks for the TEST PEER's instead
+// demonstration resource server (`/gnap/rs/resource`, `/gnap/rs/spend`) was
+// development only since #585 and was deleted by #593, so a job that
+// presents its tokens at a resource server asks for the TEST PEER's
 // (tests/peer/peer_gnap.js): `h.RS`, `h.SPEND` and `h.DEMO` then name the
 // peer's resource, spend operation and access type, and `h.usePeer()`, once
 // the realm exists, configures a peer tenant for it and REGISTERS the peer
 // there as an ordinary GNAP resource server — its key, its address, and the
-// type declared with the demonstration type's limits — so a right of that
-// type naming no location is audienced to the peer. `h.RS_TLS` is the same
-// resource on the peer's TLS listener — the one a mutual-TLS proof is made
-// on — and `h.peerCaPem`, once `usePeer()` has run, the anchor to verify
-// that listener with. Without the option `h.RS` is the demonstration
-// resource server, which is development only since #585; no job uses it.
+// type declared with the spend limits — so a right of that type naming no
+// location is audienced to the peer. `h.RS_TLS` is the same resource on the
+// peer's TLS listener — the one a mutual-TLS proof is made on — and
+// `h.peerCaPem`, once `usePeer()` has run, the anchor to verify that
+// listener with. Without the option, or with no peer, `h.RS`, `h.SPEND`
+// and `h.RS_TLS` are null: there is no resource server of the service's own
+// to fall back to (#593), and `h.DEMO` is the peer's type, which no
+// resource server in the realm declares until `usePeer()` — a grant for it
+// is refused `invalid_request` (STS-GNAP-0904).
 //
 // It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its
 // requires are `assert`, node's crypto, `gnap_client.js` and `test_peer.js`.
@@ -64,12 +67,10 @@ function harness(options) {
   const realmApi = realmBase + "/admin-api";
   const GRANT = realmBase + "/gnap";
   const FINISH = "https://client.gnap.test/callback";
-  const DEMO = "urn:iya-sts:gnap:demo";
   const self = { base: base, api: api, realm: REALM, realmBase: realmBase,
                  realmApi: realmApi,
-                 GRANT: GRANT, FINISH: FINISH, DEMO: DEMO, RS: realmBase +
-                     "/gnap/rs/resource",
-                 SPEND: realmBase + "/gnap/rs/spend",
+                 GRANT: GRANT, FINISH: FINISH, DEMO: PEER_TYPE, RS: null,
+                 SPEND: null,
                  RS_TLS: null,
                  peerCaPem: null,
                  peer: null,
@@ -82,7 +83,6 @@ function harness(options) {
     ? testPeer.tenantId("gnap-" + (REALM || "default")) : null;
   if (peerTenant) {
     const at = testPeer.url() + "/t/" + encodeURIComponent(peerTenant);
-    self.DEMO = PEER_TYPE;
     self.RS = at + "/gnap/resource";
     self.SPEND = at + "/gnap/spend";
     self.RS_TLS = self.RS.replace(/^http:/, "https:");
@@ -609,7 +609,7 @@ function harness(options) {
   // THE PEER, REGISTERED IN A REALM (#586): a tenant configured for
   // `realmBaseOf`, and a GNAP resource-server application in that realm
   // with the tenant's key and address, declaring the peer's type with the
-  // demonstration type's limits. Answers the tenant's view. `usePeer()` is
+  // spend limits. Answers the tenant's view. `usePeer()` is
   // this harness's realm, under the names fixed above; `peerFor(base, api)`
   // is any other — the default realm, to show it is another authorization
   // server.

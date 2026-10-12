@@ -92,8 +92,8 @@
     "text": "Lita på vidarebefordrade huvuden"
   },
   "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "Tro på X-Forwarded-Proto och X-Forwarded-Host — det som en TLS-terminerande omvänd proxy sätter för att ange vad KLIENTEN använde. Slå PÅ den när något står framför tjänsten, annars publicerar metadata http://-URL:er till klienter som nådde den över https, och varje DPoP-bevis vägras för att det namnger den verkliga slutpunkten. Låt den vara AV när inget står framför: utan proxy är det vanliga huvuden som vilken klient som helst kan sätta, och att tro på dem låter en anropare välja vad tjänsten tror att dess egen utfärdare och slutpunkter är. GET /tls/forwarded visar vad en begäran faktiskt bar och vad som trotts om den. OBSERVERA att tjänsten aldrig läser ett klientcertifikat ur ett huvud (X-Client-Cert och dess släktingar) i något läge — ett vidarebefordrat certifikat är ett certifikat som vem som helst kan förfalska."
+    "en": "4369282d9208f4aa",
+    "text": "Tro på X-Forwarded-Proto och X-Forwarded-Host — det som en TLS-terminerande omvänd proxy sätter för att ange vad KLIENTEN använde. Slå PÅ den när något står framför tjänsten, annars publicerar metadata http://-URL:er till klienter som nådde den över https, och varje DPoP-bevis vägras för att det namnger den verkliga slutpunkten. Låt den vara AV när inget står framför: utan proxy är det vanliga huvuden som vilken klient som helst kan sätta, och att tro på dem låter en anropare välja vad tjänsten tror att dess egen utfärdare och slutpunkter är. Övervakning → TLS-anslutning visar vad en begäran faktiskt bar och vad som trotts om den. OBSERVERA att tjänsten aldrig läser ett klientcertifikat ur ett huvud (X-Client-Cert och dess släktingar) i något läge — ett vidarebefordrat certifikat är ett certifikat som vem som helst kan förfalska."
   },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
@@ -312,8 +312,8 @@
     "text": "Förtroende för nyckelbevis via ömsesidig TLS"
   },
   "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "Hur en GNAP-nyckel som bevisats med ömsesidig TLS (RFC 9635 avsnitt 7.3.2) betros. `pki` (avsnitt 11.4) kräver att TLS-klientcertifikatet kedjar till klientens förtroendelager — den här sfärens TLS-klientutfärdare, eller ett ankare installerat på /tls/trust — och är bundet till klientens applikationspost: utfärdat till den av den här sfären, eller bärande den enda RFC 8705-subjektparameter som posten registrerar (oauthTlsClientAuthSubjectDn eller ett oauthTlsClientAuthSan*-attribut). Ett certifikat som utfärdaren utfärdar på nytt godtas då utan ny registrering. `pinned` godtar certifikatet som nyckeln namnger, självsignerade inräknade, utan kedja. Ett återkallat certifikat vägras i båda (pki.revocationCheck). **`auto` är pki i produktionsläge och pinned i utvecklingsläge.** VARNING: `pinned` ger upp kedjevalidering och rotation hos certifikatutfärdaren — en stulen självsignerad nyckel förblir giltig tills posten som låser den redigeras. En applikation kan göra detta striktare för sig själv (gnapMtlsTrust=pki), aldrig svagare."
+    "en": "7f26fe14380ed8fe",
+    "text": "Hur en GNAP-nyckel som bevisats med ömsesidig TLS (RFC 9635 avsnitt 7.3.2) betros. `pki` (avsnitt 11.4) kräver att TLS-klientcertifikatet kedjar till klientens förtroendelager — den här sfärens TLS-klientutfärdare, eller ett ankare installerat via /admin-api/tls/trust — och är bundet till klientens applikationspost: utfärdat till den av den här sfären, eller bärande den enda RFC 8705-subjektparameter som posten registrerar (oauthTlsClientAuthSubjectDn eller ett oauthTlsClientAuthSan*-attribut). Ett certifikat som utfärdaren utfärdar på nytt godtas då utan ny registrering. `pinned` godtar certifikatet som nyckeln namnger, självsignerade inräknade, utan kedja. Ett återkallat certifikat vägras i båda (pki.revocationCheck). **`auto` är pki i produktionsläge och pinned i utvecklingsläge.** VARNING: `pinned` ger upp kedjevalidering och rotation hos certifikatutfärdaren — en stulen självsignerad nyckel förblir giltig tills posten som låser den redigeras. En applikation kan göra detta striktare för sig själv (gnapMtlsTrust=pki), aldrig svagare."
   },
   "gnap.subIdFormats|label": {
     "en": "43051e9545cde37a",
@@ -546,14 +546,6 @@
   "gnap.accessTokenCertificateHeader|description": {
     "en": "092878a48c170524",
     "text": "Om en GNAP-åtkomsttoken i formatet jwt-signed eller jwt-encrypted namnger certifikatkedjan för nyckeln som signerade den — på JWS:en i båda, aldrig på JWE:n runt jwt-encrypted, som krypteras till en resursservers nyckel eller en hemlighet. Macaroons, biscuits och ZCAP-LD-kapabiliteter är inte JWS:er och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inline, lövcertifikatet först och tjänstens rotcertifikat sist, base64-kodad DER, flera kilobyte; `both` är båda och `none` ingen. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-responder och caIssuers-adress. En nyckel som ännu inte certifierats under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingetdera. RFC 7515 avsnitt 4.1.5 kräver att hämtningen via `x5u` använder TLS: med global.https av är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan sättas per sfär."
-  },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Kör demonstrationsresursservern"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: bedömer en uppvisad token i vilket som helst av de fem formaten och besvarar den RS-först-utmaning som beskrivs i avsnitt 9.1. Endast utvecklingsläge: en produktrealm har ingen demonstrationsresursserver (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -1568,8 +1560,8 @@
     "text": "Hanteras i en begärandearbetare"
   },
   "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "En kommaseparerad lista över vad som går till en begärandearbetare i stället för att hanteras i processen som äger socketarna. En post är en av tre saker och anger vilken genom sin form:\n\n- ett **sökvägsprefix**, som börjar med ett snedstreck — \"/scim/v2,/admin-api\". Matchas efter att sfärsegmentet tagits bort, så /scim/v2 täcker varje sfär.\n- en **operationstyp**, som inte gör det — \"ldap\" för varje katalogoperation, eller \"ldap.search\" för en av dem. Det är arbetet bakom de socketar som inte talar HTTP: frontprocessen behåller socketen och inramningen (den tar emot anslutningen, avkodar BER och skriver svaret) och arbetaren gör jobbet. Familjerna är \"ldap\" (katalogen på 389 och 636), \"spiffe\" (de unära metoderna i Workload och SPIRE Server API, och Broker API:ts FetchJWTSVID när dess referens har attesterats) och \"krb5\" (varje meddelande på KDC:ns TCP och UDP 88).\n- **\"*\"**, som är ALLT av båda slagen — så säger man ”kör tjänsten i poolen”, och den enda stavning som inte kan bli inaktuell nästa gång en familj läggs till.\n\n\"*\" ÄR STANDARDVÄRDET (#364): med ett koordinerande lager går varje begäran till begärandearbetaren. Med lagret memory eller ldif och workers.requestCount på standardvärdet finns ingen arbetare, och ingenting skickas vidare. Tomt betyder att ingenting skickas vidare någonstans. /tls skickas aldrig vidare, vad detta än säger, eftersom hela dess innehåll är vad servern såg av anslutningen som begäran kom på.\n\n**Ingenting skickas vidare om inte den här processen koordinerar**: en post här med ett lager som saknar ändringslogg stoppar tjänsten vid start, med namn på den här inställningen, i stället för att låta varje arbetare hålla en privat kopia av katalogen, sessionerna och inställningarna. En SÖKVÄG som namnges här när ingen arbetare betjänar VÄGRAS med 503 i stället för att hanteras här, eftersom att samma sökväg besvaras av den av två processer som råkade vara tillgänglig är just det fel som poolen finns för att undvika; en OPERATION utförs i stället av anroparen, eftersom att låta en misslyckas skulle ta ned en protokollyssnare för något som är en prestandaåtgärd."
+    "en": "4b32567593c41988",
+    "text": "En kommaseparerad lista över vad som går till en begärandearbetare i stället för att hanteras i processen som äger socketarna. En post är en av tre saker och anger vilken genom sin form:\n\n- ett **sökvägsprefix**, som börjar med ett snedstreck — \"/scim/v2,/admin-api\". Matchas efter att sfärsegmentet tagits bort, så /scim/v2 täcker varje sfär.\n- en **operationstyp**, som inte gör det — \"ldap\" för varje katalogoperation, eller \"ldap.search\" för en av dem. Det är arbetet bakom de socketar som inte talar HTTP: frontprocessen behåller socketen och inramningen (den tar emot anslutningen, avkodar BER och skriver svaret) och arbetaren gör jobbet. Familjerna är \"ldap\" (katalogen på 389 och 636), \"spiffe\" (de unära metoderna i Workload och SPIRE Server API, och Broker API:ts FetchJWTSVID när dess referens har attesterats) och \"krb5\" (varje meddelande på KDC:ns TCP och UDP 88).\n- **\"*\"**, som är ALLT av båda slagen — så säger man ”kör tjänsten i poolen”, och den enda stavning som inte kan bli inaktuell nästa gång en familj läggs till.\n\n\"*\" ÄR STANDARDVÄRDET (#364): med ett koordinerande lager går varje begäran till begärandearbetaren. Med lagret memory eller ldif och workers.requestCount på standardvärdet finns ingen arbetare, och ingenting skickas vidare. Tomt betyder att ingenting skickas vidare någonstans. /tls och /admin-api/tls-connection skickas aldrig vidare, vad detta än säger, eftersom vad de svarar är vad servern såg av anslutningen som begäran kom på.\n\n**Ingenting skickas vidare om inte den här processen koordinerar**: en post här med ett lager som saknar ändringslogg stoppar tjänsten vid start, med namn på den här inställningen, i stället för att låta varje arbetare hålla en privat kopia av katalogen, sessionerna och inställningarna. En SÖKVÄG som namnges här när ingen arbetare betjänar VÄGRAS med 503 i stället för att hanteras här, eftersom att samma sökväg besvaras av den av två processer som råkade vara tillgänglig är just det fel som poolen finns för att undvika; en OPERATION utförs i stället av anroparen, eftersom att låta en misslyckas skulle ta ned en protokollyssnare för något som är en prestandaåtgärd."
   },
   "workers.dispatch|restartReason": {
     "en": "aff662049479560d",
@@ -1980,8 +1972,8 @@
     "text": "Kräv en DPoP-servernonce"
   },
   "oauth2.dpopNonceRequired|description": {
-    "en": "407ed41bf850f8d6",
-    "text": "Kräv att varje DPoP-bevis bär en nonce som den här servern tillhandahållit (RFC 9449 avsnitt 8 och 9), vilket gör den första begäran i en session till en 401 eller 400 och ett nytt försök. Det gör bevisen FÄRSKARE och gör dem aldrig obligatoriska: en begäran utan DPoP-huvud är fortfarande en Bearer-begäran (raderna Kräv DPoP nedan är det som gör dem obligatoriska). PER FÖRTROENDESFÄR sedan 2026-09-12 — det var en enda brytare för hela processen, så en sfär som slog på den slog på den för alla andra. I utvecklingsläge skriver POST /dpop/nonce-mode den här inställningen för den sfär där den nås; i produktionsläge vägrar den slutpunkten och den här raden — via /admin/oauth2 eller POST /admin-api/config/set, båda bakom en autentiseringsuppgift — är det enda sättet att ändra den."
+    "en": "4742a4c9d71043fa",
+    "text": "Kräv att varje DPoP-bevis bär en nonce som den här servern tillhandahållit (RFC 9449 avsnitt 8 och 9), vilket gör den första begäran i en session till en 401 eller 400 och ett nytt försök. Det gör bevisen FÄRSKARE och gör dem aldrig obligatoriska: en begäran utan DPoP-huvud är fortfarande en Bearer-begäran (raderna Kräv DPoP nedan är det som gör dem obligatoriska). PER FÖRTROENDESFÄR sedan 2026-09-12 — det var en enda brytare för hela processen, så en sfär som slog på den slog på den för alla andra. Den här raden — på OAuth 2.0-sidans DPoP-inställningar eller via POST /admin-api/config/set, båda bakom en autentiseringsuppgift — är det enda sättet att ändra den, i båda lägena."
   },
   "oauth2.dpopIatSkewS|label": {
     "en": "a0b12e9cd8d594ec",
@@ -4492,8 +4484,8 @@
     "text": "Lita på TLS-klientcertifikat utfärdade i användarportalen"
   },
   "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "Påslaget läggs den här tjänstens egen rot-CA till i huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar till sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars utfärdande CA för TLS-klienter signerade det. En kedja genom den roten är en IDENTITET endast när lövet kom från en utfärdande CA för TLS-klienter med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma rot och avvisas som identitet (se common/tls_client_certificates.js). Avstängt lämnas förtroendelagret till /tls/trust och tls.trustAnchorsFile, som tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
+    "en": "953c8172d6c3e3e6",
+    "text": "Påslaget läggs den här tjänstens egen rot-CA till i huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar till sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars utfärdande CA för TLS-klienter signerade det. En kedja genom den roten är en IDENTITET endast när lövet kom från en utfärdande CA för TLS-klienter med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma rot och avvisas som identitet (se common/tls_client_certificates.js). Avstängt lämnas förtroendelagret till /admin/tls/trust och tls.trustAnchorsFile, som tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
   },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -4748,8 +4740,8 @@
     "text": "Fil med förtroendeankare för klientcertifikat"
   },
   "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är PRODUKTLÄGETS sätt att fylla förtroendelagret: POST /tls/trust och /tls/trust/clear svarar vem som helst i utvecklingsläge och avvisas i produktläge, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
+    "en": "ed7685645c8ebaaa",
+    "text": "En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet att fylla förtroendelagret innan något lyssnar; under körning gör /admin/tls/trust och POST /admin-api/tls/trust/add det bakom en autentiseringsuppgift, i båda lägena — det finns ingen öppen dörr, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
   },
   "tls.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -6208,8 +6200,8 @@
     "text": "Erbjud TLS-klientcertifikat"
   },
   "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (se /tls), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation; här autentiserar det någon som sedan får skriva till katalogen."
+    "en": "be5e7d5ccffce8c1",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (/admin/tls/trust), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation; här autentiserar det någon som sedan får skriva till katalogen."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -6772,8 +6764,8 @@
     "text": "Behållna mottagna händelser"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Hur många SET:er som POST /ssf/receive behåller för /admin/ssf att visa. Den slutpunkten är den här tjänsten i rollen som MOTTAGARE, vilket är dit debuggern pushar när rollerna är omvända; de äldsta tas bort därutöver."
+    "en": "2c503bd8b26764ea",
+    "text": "Hur många levererade SET:er var och en av den här tjänstens egna mottagare (konsolens och portalens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "Omfånget som krävs för att skapa, uppdatera eller ta bort en ström, för att lägga till eller ta bort ett subjekt, för att ändra en status eller för att be om en verifieringshändelse. Ett läsomfång räcker inte för något av dessa, vilket är den första platsen i den här tjänsten förutom SCIM där två omfång skiljer sig åt i vad de tillåter."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Ta emot pushade händelser"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Om POST /ssf/receive tar emot en Security Event Token som pushas TILL den här tjänsten — rollerna omvända, med debuggern som sändare. Den verifierar signaturen när den kan hitta en nyckel och rapporterar vad den läste i båda fallen, eftersom en mottagare som vägrade en overifierbar händelse inte skulle kunna visa en person VARFÖR den var overifierbar. Av svarar 501. Endast utvecklingsläge: en produktrealm har ingen /ssf/receive (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Mottagare (aud) som POST /ssf/receive svarar på"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "De `aud`-värden som den debuggervända mottagaren på POST /ssf/receive accepterar. En SET som inte är adresserad till något av dem registreras och avvisas med invalid_audience, som en verklig mottagare avvisar den. TOMT betyder slutpunktens egen URL i den här sfären, vilket är det namn som en sändare kan upptäcka utan att få veta något."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Utfärdare som POST /ssf/receive accepterar"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "De `iss`-värden som POST /ssf/receive accepterar (SSF 1.0 avsnitt 4.1.6: en mottagare MÅSTE kontrollera utfärdaren). En SET från någon annan utfärdare registreras och avvisas med invalid_issuer. TOMT betyder den här sfärens egen sändarutfärdare — den enda utfärdare vars SET:er den här mottagaren kan verifiera, eftersom den inte har någon annan nyckel."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -10244,8 +10212,8 @@
     "text": "Huvudport: fil med förtroendeankare för klientcertifikat"
   },
   "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "Gäller bara huvudportens lyssnare: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet i PRODUKTIONSLÄGE att fylla förtroendelagret: POST /tls/trust och /tls/trust/clear svarar vem som helst i utveckling och nekas i produktionsläge, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
+    "en": "be47c3bb57175ce2",
+    "text": "Gäller bara huvudportens lyssnare: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet att fylla förtroendelagret innan något lyssnar; under körning gör /admin/tls/trust och POST /admin-api/tls/trust/add det bakom en autentiseringsuppgift, i båda lägena — det finns ingen öppen dörr, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
   },
   "listenerMain.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10256,8 +10224,8 @@
     "text": "LDAPS: fil med förtroendeankare för klientcertifikat"
   },
   "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "Gäller bara LDAPS-lyssnaren: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet i PRODUKTIONSLÄGE att fylla förtroendelagret: POST /tls/trust och /tls/trust/clear svarar vem som helst i utveckling och nekas i produktionsläge, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
+    "en": "c15d167a0e065170",
+    "text": "Gäller bara LDAPS-lyssnaren: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet att fylla förtroendelagret innan något lyssnar; under körning gör /admin/tls/trust och POST /admin-api/tls/trust/add det bakom en autentiseringsuppgift, i båda lägena — det finns ingen öppen dörr, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
   },
   "listenerLdaps.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10268,8 +10236,8 @@
     "text": "Protokollfelsökare: fil med förtroendeankare för klientcertifikat"
   },
   "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "Gäller bara protokollfelsökarens lyssnare: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet i PRODUKTIONSLÄGE att fylla förtroendelagret: POST /tls/trust och /tls/trust/clear svarar vem som helst i utveckling och nekas i produktionsläge, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
+    "en": "111555560d2f6041",
+    "text": "Gäller bara protokollfelsökarens lyssnare: tls.trustAnchorsFile. Tomt, standardvärdet, följer tls.trustAnchorsFile; allt annat avgör bara för den här lyssnaren. En PEM-fil med CA-certifikat som klientcertifikat på huvudporten verifieras mot, inläst vid start. Det är sättet att fylla förtroendelagret innan något lyssnar; under körning gör /admin/tls/trust och POST /admin-api/tls/trust/add det bakom en autentiseringsuppgift, i båda lägena — det finns ingen öppen dörr, eftersom ett ankare som vem som helst kan lägga till är ett klientcertifikat som vem som helst kan få att verifieras. Tomt betyder att förtroendelagret startar tomt, vilket det alltid har gjort."
   },
   "listenerDebugger.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10280,8 +10248,8 @@
     "text": "Huvudport: lita på TLS-klientcertifikat utfärdade i användarportalen"
   },
   "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "Gäller bara huvudportens lyssnare: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
+    "en": "d36e02de3705d807",
+    "text": "Gäller bara huvudportens lyssnare: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /admin/tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10292,8 +10260,8 @@
     "text": "LDAPS: lita på TLS-klientcertifikat utfärdade i användarportalen"
   },
   "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "Gäller bara LDAPS-lyssnaren: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
+    "en": "8771bad384fa372a",
+    "text": "Gäller bara LDAPS-lyssnaren: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /admin/tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
   },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10304,8 +10272,8 @@
     "text": "Protokollfelsökare: lita på TLS-klientcertifikat utfärdade i användarportalen"
   },
   "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "Gäller bara protokollfelsökarens lyssnare: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
+    "en": "7d2a9613dbaa95cc",
+    "text": "Gäller bara protokollfelsökarens lyssnare: tls.trustIssuedClientCertificates. inherit, standardvärdet, följer tls.trustIssuedClientCertificates; allt annat avgör bara för den här lyssnaren. Påslaget lägger den här tjänstens egen Root CA till huvudportens förtroendelager för klienter, så att ett TLS-klientcertifikat som en person utfärdar åt sig själv på /portal/signing-key verifieras och loggar in personen — i den sfär vars TLS client Issuing CA signerade det. En kedja genom den Root är en IDENTITET bara när lövcertifikatet kom från en TLS client Issuing CA med clientAuth: varje annat nyckelpar som den här tjänsten utfärdar kedjar till samma Root och nekas som identitet (se common/tls_client_certificates.js). Avstängt lämnar förtroendelagret till /admin/tls/trust och tls.trustAnchorsFile, som det var tidigare; portalen utfärdar fortfarande, och säger att lyssnarna inte kommer att godta det den utfärdar."
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",

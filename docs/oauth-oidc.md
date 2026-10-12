@@ -4,8 +4,6 @@ title: OAuth 2.0 & OpenID Connect
 
 # OAuth 2.0 and OpenID Connect
 
-> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/gnap/rs/spend`, `/dpop/nonce-mode` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a full **OAuth 2.0 authorization server**
 ([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749)) and **OpenID Connect
 provider** ([OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)),
@@ -217,7 +215,7 @@ every grant but the token exchange (whose targets are RFC 8693's, below). A
 registered target is one of this service's own resource servers — the
 default resource indicator `<base>/resource` (or a named authorization
 server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
-`<base>/admin-api`; the GNAP demonstration resource server — or an
+`<base>/admin-api`; `<base>/account-api` — or an
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
@@ -1504,9 +1502,8 @@ the Grant Management `grant_id` where the grant is managed, otherwise an
 identifier fixed for the authorization — that stays the same across every
 refresh, and `/oauth2/introspect` returns it. **A resource server keeps its
 running totals under that `grant_id`**, so a client cannot renew its budget
-by refreshing its token. (The demonstration resource server's
-`/gnap/rs/spend` takes GNAP tokens only; it shows what a resource server
-does with the totals.)
+by refreshing its token. ([GNAP](gnap.md#limits) describes what a resource
+server does with the totals.)
 
 `derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
 `consentActions` and `acr` are recorded and enforced by a later phase of #432.
@@ -1934,9 +1931,10 @@ endpoints on this page:
   works unchanged for every credential format.
 * **The nonce request has two shapes**: the authorization server asks with a
   400 JSON body, a resource server with a 401 `WWW-Authenticate` challenge.
-  `POST /dpop/nonce-mode`, a non-spec switch listed as such on
-  `/admin/sts-metadata`, writes `oauth2.dpopNonceRequired` for the realm it is
-  reached in; product mode refuses it.
+  Whether nonces are demanded is the per-realm setting
+  `oauth2.dpopNonceRequired`, on the OAuth 2.0 / OIDC page or through
+  `POST /admin-api/config/set`, in either mode (the test control
+  `/dpop/nonce-mode` was deleted by #597).
 * **A foreign token's `cnf.jkt` is only a claim.** For a token this service
   did not issue (accepted by the OpenID4VCI endpoints in development), anyone
   could have written it; the binding is real only for tokens issued here,
@@ -1947,16 +1945,19 @@ endpoints on this page:
   `acr_values=1` is issued `acr: "1"` — the most preferred requested value that
   was met.
   ```
-  GET /oauth2/step-up/resource/api1          Authorization: Bearer <acr "1">
+  GET https://api1.example/photos            Authorization: Bearer <acr "1">
   401 WWW-Authenticate: Bearer error="insufficient_user_authentication",
         error_description="…", acr_values="mfa", max_age="600"
 
   GET /oauth2/authorize?client_id=app1&…&acr_values=mfa&max_age=600
   ```
-  At `/oauth2/step-up/resource/{application}` the token must verify, be this
-  service's `at+jwt` and name the application in its `aud`; then the answer is
-  the challenge or a 200 describing the authentication it met. A token with no
-  `auth_time` does not meet a `max_age`. `/admin/oauth2/monitor` counts
+  The challenge is the API's to send, from the requirement it declares on its
+  application entry (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`); this
+  service's own endpoints send it for `oauth2.stepUpAcrValues` and
+  `oauth2.stepUpMaxAgeS`. A token with no `auth_time` does not meet a
+  `max_age`. (A stand-in resource that answered for a registered API,
+  `/oauth2/step-up/resource/{application}`, was removed in #593.)
+  `/admin/oauth2/monitor` counts
   requirements met by the session or by a sign-in, people sent to sign in
   again, both refusals and resource-server challenges, per client.
 

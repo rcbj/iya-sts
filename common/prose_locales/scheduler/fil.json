@@ -92,8 +92,8 @@
     "text": "GNAP: mga limit ng mga natapos na grant"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "Binubura ang mga running total na itinatago ng demonstration resource server para sa mga limit ng bawat GNAP grant kapag natapos na ang grant, kapag wala nang token nito ang maaaring ipakita (#432)."
+    "en": "71471822b228b1b8",
+    "text": "Binubura ang mga running total na itinatago para sa mga limit ng bawat GNAP grant kapag natapos na ang grant, kapag wala nang token nito ang maaaring ipakita (#432)."
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

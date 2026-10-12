@@ -92,8 +92,8 @@
     "text": "信任轉送標頭"
   },
   "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "相信 X-Forwarded-Proto 與 X-Forwarded-Host——這是終止 TLS 的反向代理用來說明「用戶端」所用協定的標頭。當本服務前方有其他元件時請「開啟」，否則中繼資料會向透過 https 抵達的用戶端公告 http:// URL，而且每個 DPoP 證明都會因指名真正的端點而被拒絕。前方沒有任何元件時請保持「關閉」：沒有代理時，那些只是任何用戶端都能設定的一般標頭，相信它們等於讓呼叫端決定本服務認為自己的簽發者與端點是什麼。GET /tls/forwarded 會顯示請求實際攜帶的內容以及被採信的內容。「注意」：無論哪種模式，本服務都絕不從標頭（X-Client-Cert 及其同類）讀取用戶端憑證——轉送的憑證是任何人都能偽造的憑證。"
+    "en": "4369282d9208f4aa",
+    "text": "相信 X-Forwarded-Proto 與 X-Forwarded-Host——這是終止 TLS 的反向代理用來說明「用戶端」所用協定的標頭。當本服務前方有其他元件時請「開啟」，否則中繼資料會向透過 https 抵達的用戶端公告 http:// URL，而且每個 DPoP 證明都會因指名真正的端點而被拒絕。前方沒有任何元件時請保持「關閉」：沒有代理時，那些只是任何用戶端都能設定的一般標頭，相信它們等於讓呼叫端決定本服務認為自己的簽發者與端點是什麼。監控 → TLS 連線會顯示請求實際攜帶的內容以及被採信的內容。「注意」：無論哪種模式，本服務都絕不從標頭（X-Client-Cert 及其同類）讀取用戶端憑證——轉送的憑證是任何人都能偽造的憑證。"
   },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
@@ -312,8 +312,8 @@
     "text": "相互 TLS 金鑰證明信任"
   },
   "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "如何信任以相互 TLS 證明的 GNAP 金鑰（RFC 9635 第 7.3.2 節）。`pki`（第 11.4 節）要求 TLS 用戶端憑證鏈結至用戶端信任存放區——此領域的 TLS 用戶端授權單位，或安裝於 /tls/trust 的信任錨點——並繫結至用戶端的應用程式項目：由此領域簽發給它，或帶有該項目所註冊的那一個 RFC 8705 主體參數（oauthTlsClientAuthSubjectDn 或某個 oauthTlsClientAuthSan* 屬性）。如此一來，授權單位重新簽發的憑證無須重新註冊即被接受。`pinned` 接受金鑰所指名的憑證，包括自我簽署的憑證，不需鏈結。兩者都會拒絕已撤銷的憑證（pki.revocationCheck）。**`auto` 在產品模式下為 pki，在開發模式下為 pinned。**警告：`pinned` 放棄了鏈結驗證以及在憑證授權單位進行的輪替——被竊的自我簽署金鑰會一直有效，直到釘選它的項目被編輯為止。應用程式可為自己設定更嚴格的值（gnapMtlsTrust=pki），但絕不能更寬鬆。"
+    "en": "7f26fe14380ed8fe",
+    "text": "如何信任以相互 TLS 證明的 GNAP 金鑰（RFC 9635 第 7.3.2 節）。`pki`（第 11.4 節）要求 TLS 用戶端憑證鏈結至用戶端信任存放區——此領域的 TLS 用戶端授權單位，或透過 /admin-api/tls/trust 安裝的信任錨——並繫結至用戶端的應用程式項目：由此領域簽發給它，或帶有該項目所註冊的那一個 RFC 8705 主體參數（oauthTlsClientAuthSubjectDn 或某個 oauthTlsClientAuthSan* 屬性）。如此一來，授權單位重新簽發的憑證無須重新註冊即被接受。`pinned` 接受金鑰所指名的憑證，包括自我簽署的憑證，不需鏈結。兩者都會拒絕已撤銷的憑證（pki.revocationCheck）。**`auto` 在產品模式下為 pki，在開發模式下為 pinned。**警告：`pinned` 放棄了鏈結驗證以及在憑證授權單位進行的輪替——被竊的自我簽署金鑰會一直有效，直到釘選它的項目被編輯為止。應用程式可為自己設定更嚴格的值（gnapMtlsTrust=pki），但絕不能更寬鬆。"
   },
   "gnap.subIdFormats|label": {
     "en": "43051e9545cde37a",
@@ -546,14 +546,6 @@
   "gnap.accessTokenCertificateHeader|description": {
     "en": "092878a48c170524",
     "text": "jwt-signed 或 jwt-encrypted 格式的 GNAP 存取權杖是否指名簽署它之金鑰的憑證鏈——兩者都放在 JWS 上，絕不放在包住 jwt-encrypted 的 JWE 上，後者是以資源伺服器的金鑰或秘密加密的。Macaroon、biscuit 與 ZCAP-LD 能力不是 JWS，不受影響。`x5u`——預設值——是憑證鏈在本服務上的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務根憑證在最後，base64 DER，數 KB；`both` 是兩者皆有，`none` 則皆無。無論哪種方式，這都是只持有權杖的依賴方用來取得每張憑證之 CRL 發佈點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域 JOSE 簽發 CA 下獲得認證的金鑰，以及 HMAC 簽章，兩者皆不會取得。RFC 7515 第 4.1.5 節要求 `x5u` 的擷取使用 TLS：global.https 關閉時位址為 `http://`，嚴格的驗證者會拒絕跟隨。JWE 標頭從不會帶有它——本服務沒有任何經認證的金鑰用於加密。可依領域設定。"
-  },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "執行示範資源伺服器"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource：判斷以五種格式之任一出示的權杖，並回應第 9.1 節以 RS 為先的挑戰。僅限開發模式：產品領域沒有示範資源伺服器（#585）。"
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -1568,8 +1560,8 @@
     "text": "在請求背景工作中處理"
   },
   "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "以逗號分隔的清單，列出要送往請求背景工作、而不在擁有通訊端之程序中處理的項目。每個項目是以下三種之一，並由其形式表明是哪一種：\n\n- **路徑前置詞**，以斜線開頭——「/scim/v2,/admin-api」。在移除領域區段後比對，因此指名 /scim/v2 即涵蓋每個領域。\n- **操作類型**，不以斜線開頭——「ldap」表示每個目錄操作，「ldap.search」則表示其中之一。這些是不使用 HTTP 之通訊端背後的工作：前端程序保留通訊端與訊框處理（接受連線、解碼 BER 並寫出回覆），由背景工作執行實際工作。這些協定族為「ldap」（389 與 636 上的目錄）、「spiffe」（Workload 與 SPIRE Server API 的一元方法，以及參照經證明後的 Broker API 之 FetchJWTSVID）與「krb5」（KDC 在 TCP 與 UDP 88 上的每則訊息）。\n- **「*」**，表示兩種類型的「全部」——這是「在集區中執行服務」的表達方式，也是下次新增協定族時唯一不會過時的寫法。\n\n「*」是預設值（#364）：有協調儲存區時，每個請求都會送往請求背景工作。使用 memory 或 ldif 儲存區且 workers.requestCount 維持預設時，沒有背景工作，也不派送任何東西。空白表示任何地方都不派送。無論此處如何設定，/tls 都絕不派送，因為其全部內容就是伺服器對請求所抵達之連線的觀察。\n\n**除非此程序正在協調，否則不派送任何東西**：在沒有變更日誌的儲存區下於此列出項目，會使服務在啟動時停止並指名此設定，而不是讓每個背景工作各自持有目錄、工作階段與設定的私人副本。在沒有背景工作服務時，此處指名的「路徑」會以 503「拒絕」而不在此處理，因為同一路徑由兩個程序中剛好可用的那一個回應，正是此集區存在所要避免的失敗；「操作」則改由呼叫端執行，因為讓它失敗會為了一項效能措施而讓協定接聽程式停擺。"
+    "en": "4b32567593c41988",
+    "text": "以逗號分隔的清單，列出要送往請求背景工作、而不在擁有通訊端之程序中處理的項目。每個項目是以下三種之一，並由其形式表明是哪一種：\n\n- **路徑前置詞**，以斜線開頭——「/scim/v2,/admin-api」。在移除領域區段後比對，因此指名 /scim/v2 即涵蓋每個領域。\n- **操作類型**，不以斜線開頭——「ldap」表示每個目錄操作，「ldap.search」則表示其中之一。這些是不使用 HTTP 之通訊端背後的工作：前端程序保留通訊端與訊框處理（接受連線、解碼 BER 並寫出回覆），由背景工作執行實際工作。這些協定族為「ldap」（389 與 636 上的目錄）、「spiffe」（Workload 與 SPIRE Server API 的一元方法，以及參照經證明後的 Broker API 之 FetchJWTSVID）與「krb5」（KDC 在 TCP 與 UDP 88 上的每則訊息）。\n- **「*」**，表示兩種類型的「全部」——這是「在集區中執行服務」的表達方式，也是下次新增協定族時唯一不會過時的寫法。\n\n「*」是預設值（#364）：有協調儲存區時，每個請求都會送往請求背景工作。使用 memory 或 ldif 儲存區且 workers.requestCount 維持預設時，沒有背景工作，也不派送任何東西。空白表示任何地方都不派送。無論此處如何設定，/tls 與 /admin-api/tls-connection 都絕不派送，因為其全部內容就是伺服器對請求所抵達之連線的觀察。\n\n**除非此程序正在協調，否則不派送任何東西**：在沒有變更日誌的儲存區下於此列出項目，會使服務在啟動時停止並指名此設定，而不是讓每個背景工作各自持有目錄、工作階段與設定的私人副本。在沒有背景工作服務時，此處指名的「路徑」會以 503「拒絕」而不在此處理，因為同一路徑由兩個程序中剛好可用的那一個回應，正是此集區存在所要避免的失敗；「操作」則改由呼叫端執行，因為讓它失敗會為了一項效能措施而讓協定接聽程式停擺。"
   },
   "workers.dispatch|restartReason": {
     "en": "aff662049479560d",
@@ -1980,8 +1972,8 @@
     "text": "要求 DPoP 伺服器 nonce"
   },
   "oauth2.dpopNonceRequired|description": {
-    "en": "407ed41bf850f8d6",
-    "text": "要求每個 DPoP 證明都帶有此伺服器提供的 nonce（RFC 9449 第 8 與 9 節），這會讓工作階段的第一個請求變成一次 401 或 400 再加一次重試。它讓證明「更新鮮」，但從不使其成為必要：沒有 DPoP 標頭的請求仍是 Bearer 請求（下方的「要求 DPoP」各列才會使其成為必要）。自 2026-09-12 起「依信任領域」設定——先前它是整個程序共用的單一開關，因此一個領域開啟它就等於為其他每個領域開啟。在開發模式下，POST /dpop/nonce-mode 會為其所在的領域寫入此設定；在產品模式下該端點會拒絕，而此列——透過 /admin/oauth2 或 POST /admin-api/config/set，兩者都需要認證——是變更它的唯一途徑。"
+    "en": "4742a4c9d71043fa",
+    "text": "要求每個 DPoP 證明都帶有此伺服器提供的 nonce（RFC 9449 第 8 與 9 節），這會讓工作階段的第一個請求變成一次 401 或 400 再加一次重試。它讓證明「更新鮮」，但從不使其成為必要：沒有 DPoP 標頭的請求仍是 Bearer 請求（下方的「要求 DPoP」各列才會使其成為必要）。自 2026-09-12 起「依信任領域」設定——先前它是整個程序共用的單一開關，因此一個領域開啟它就等於為其他每個領域開啟。此列——位於 OAuth 2.0 頁面的 DPoP 設定，或透過 POST /admin-api/config/set，兩者都需要認證——是變更它的唯一途徑，無論哪種模式皆然。"
   },
   "oauth2.dpopIatSkewS|label": {
     "en": "a0b12e9cd8d594ec",
@@ -4492,8 +4484,8 @@
     "text": "信任在使用者入口網站上簽發的 TLS 用戶端憑證"
   },
   "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "開啟時，會將此服務自己的 Root CA 加入主連接埠的用戶端信任儲存區，讓某人在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證能通過驗證並讓其登入——登入簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。經由該 Root 的憑證鏈只有在葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時才是「身分」：此服務簽發的其他每個金鑰組都鏈結到同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任儲存區交由 /tls/trust 與 tls.trustAnchorsFile 管理，與之前相同；入口網站仍會簽發，並說明接聽程式不會接受它所簽發的憑證。"
+    "en": "953c8172d6c3e3e6",
+    "text": "開啟時，會將此服務自己的 Root CA 加入主連接埠的用戶端信任儲存區，讓某人在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證能通過驗證並讓其登入——登入簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。經由該 Root 的憑證鏈只有在葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時才是「身分」：此服務簽發的其他每個金鑰組都鏈結到同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任儲存區交由 /admin/tls/trust 與 tls.trustAnchorsFile 管理，與之前相同；入口網站仍會簽發，並說明接聽程式不會接受它所簽發的憑證。"
   },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -4748,8 +4740,8 @@
     "text": "用戶端憑證信任錨檔案"
   },
   "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "一個 PEM 檔案，內含主連接埠上的用戶端憑證據以驗證的 CA 憑證，在啟動時載入。這是在產品模式下填入信任儲存區的方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下回應任何人，在產品模式下則被拒絕，因為任何人都能新增的信任錨，等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任儲存區一開始是空的，這是它一直以來的做法。"
+    "en": "ed7685645c8ebaaa",
+    "text": "一個 PEM 檔案，內含主連接埠上的用戶端憑證據以驗證的 CA 憑證，在啟動時載入。這是在任何接聽程式啟動前填入信任存放區的方式；在執行階段，/admin/tls/trust 與 POST /admin-api/tls/trust/add 可在憑證保護下於兩種模式中完成此事——沒有開放的入口，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
   },
   "tls.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -6208,8 +6200,8 @@
     "text": "提供 TLS 用戶端憑證"
   },
   "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "相互 TLS，RFC 7644 section 2 指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區「驗證」的要求（請參閱 /tls），因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方；在這裡，它驗證的人隨後便可寫入目錄。"
+    "en": "be5e7d5ccffce8c1",
+    "text": "相互 TLS，RFC 7644 第 2 節指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區（/admin/tls/trust）「驗證」的要求，因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方；在這裡，它驗證的人隨後便可寫入目錄。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -6772,8 +6764,8 @@
     "text": "保留的已接收事件數"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "POST /ssf/receive 保留多少個 SET 供 /admin/ssf 顯示。該端點是此服務作為「接收端」，也就是角色反轉時偵錯工具推送的目標；超過此數時會捨棄最舊的。"
+    "en": "2c503bd8b26764ea",
+    "text": "本服務自己的每個接收者（主控台的與入口網站的）在其收件匣中保留多少個已傳遞的 SET，依領域計；超過此數時會捨棄最舊的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "建立、更新或刪除串流、新增或移除主體、變更狀態或要求驗證事件所需的範圍。讀取範圍不足以執行其中任何一項，這是此服務中除 SCIM 之外第一個兩個範圍所允許內容不同的地方。"
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "接受推送的事件"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "POST /ssf/receive 是否接受推送「至」此服務的 Security Event Token——角色反轉，由偵錯工具作為傳送端。它在找得到金鑰時會驗證簽章，並且無論如何都會回報所讀到的內容，因為拒絕無法驗證之事件的接收端，將無法向人說明它「為何」無法驗證。關閉時回應 501。僅限開發模式：產品領域沒有 /ssf/receive（#585）。"
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "POST /ssf/receive 回應的對象"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "POST /ssf/receive 上面向偵錯工具的接收端所接受的 `aud` 值。不屬於其中任何一個的 SET 會被記錄，並以 invalid_audience 拒絕，如同真正的接收端所做的。「留空」表示該端點在此領域中自己的 URL，這是傳送端無須被告知即可發現的名稱。"
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "POST /ssf/receive 接受的簽發者"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "POST /ssf/receive 接受的 `iss` 值（SSF 1.0 section 4.1.6：接收端 MUST 檢查簽發者）。來自其他任何簽發者的 SET 會被記錄，並以 invalid_issuer 拒絕。「留空」表示此領域自己的傳送端簽發者——這是此接收端唯一能驗證其 SET 的簽發者，因為它不持有其他任何金鑰。"
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -10244,8 +10212,8 @@
     "text": "主連接埠：用戶端憑證信任錨點檔案"
   },
   "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "僅適用於主連接埠監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
+    "en": "be47c3bb57175ce2",
+    "text": "僅適用於主連接埠監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是在任何接聽程式啟動前填入信任存放區的方式；在執行階段，/admin/tls/trust 與 POST /admin-api/tls/trust/add 可在憑證保護下於兩種模式中完成此事——沒有開放的入口，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
   },
   "listenerMain.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10256,8 +10224,8 @@
     "text": "LDAPS：用戶端憑證信任錨點檔案"
   },
   "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "僅適用於LDAPS監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
+    "en": "c15d167a0e065170",
+    "text": "僅適用於LDAPS監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是在任何接聽程式啟動前填入信任存放區的方式；在執行階段，/admin/tls/trust 與 POST /admin-api/tls/trust/add 可在憑證保護下於兩種模式中完成此事——沒有開放的入口，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
   },
   "listenerLdaps.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10268,8 +10236,8 @@
     "text": "協定偵錯工具：用戶端憑證信任錨點檔案"
   },
   "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "僅適用於協定偵錯工具監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是填入信任存放區的「產品模式」方式：POST /tls/trust 與 /tls/trust/clear 在開發模式下對任何人回應，在產品模式下則被拒絕，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
+    "en": "111555560d2f6041",
+    "text": "僅適用於協定偵錯工具監聽器：tls.trustAnchorsFile。預設值為空白時依循 tls.trustAnchorsFile；其他任何值只對此監聽器生效。用來驗證主連接埠上用戶端憑證的 CA 憑證 PEM 檔案，於啟動時載入。這是在任何接聽程式啟動前填入信任存放區的方式；在執行階段，/admin/tls/trust 與 POST /admin-api/tls/trust/add 可在憑證保護下於兩種模式中完成此事——沒有開放的入口，因為任何人都能新增的信任錨點，就等於任何人都能讓其通過驗證的用戶端憑證。空白表示信任存放區一開始為空，這一向如此。"
   },
   "listenerDebugger.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10280,8 +10248,8 @@
     "text": "主連接埠：信任在使用者入口網站簽發的 TLS 用戶端憑證"
   },
   "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "僅適用於主連接埠監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
+    "en": "d36e02de3705d807",
+    "text": "僅適用於主連接埠監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /admin/tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10292,8 +10260,8 @@
     "text": "LDAPS：信任在使用者入口網站簽發的 TLS 用戶端憑證"
   },
   "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "僅適用於LDAPS監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
+    "en": "8771bad384fa372a",
+    "text": "僅適用於LDAPS監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /admin/tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
   },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10304,8 +10272,8 @@
     "text": "協定偵錯工具：信任在使用者入口網站簽發的 TLS 用戶端憑證"
   },
   "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "僅適用於協定偵錯工具監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
+    "en": "7d2a9613dbaa95cc",
+    "text": "僅適用於協定偵錯工具監聽器：tls.trustIssuedClientCertificates。預設值 inherit 依循 tls.trustIssuedClientCertificates；其他任何值只對此監聽器生效。開啟時會將此服務自己的 Root CA 加入主連接埠的用戶端信任存放區，讓人員在 /portal/signing-key 上自行簽發的 TLS 用戶端憑證通過驗證並讓其登入——登入至簽署該憑證之 TLS 用戶端 Issuing CA 所屬的領域。只有當葉憑證來自具有 clientAuth 的 TLS 用戶端 Issuing CA 時，經由該 Root 的鏈結才是「身分」：此服務簽發的其他每組金鑰對都鏈結至同一個 Root，並會被拒絕作為身分（請參閱 common/tls_client_certificates.js）。關閉時，信任存放區交由 /admin/tls/trust 與 tls.trustAnchorsFile 決定，與先前相同；入口網站仍會簽發，並說明監聽器不會接受其所簽發的憑證。"
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",

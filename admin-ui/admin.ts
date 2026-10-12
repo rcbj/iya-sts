@@ -2246,6 +2246,26 @@ const SECTIONS = [
                'one. A source that is not there says so. <strong>The ' +
                'figures are this node\'s</strong>, drawn by its front ' +
                'process; no control.' },
+      // TLS CONNECTION (#597, rcbj's decision 3 on #591), beside the node's
+      // own pages: what this service saw of a request — its TLS connection,
+      // the client certificate on it, and what a proxy in front told it.
+      // Under Monitoring because it REPORTS what arrived; the settings it
+      // reads are on TLS / mutual TLS and Configuration. Drawn by
+      // `tls/web_tls_connection.ts` from `GET /admin-api/tls-connection`.
+      // NOT under `/admin/tls`, whose prefix `admin_scope.ts` refuses to a
+      // realm's own administrator: a realm administrator may ask what their
+      // own connection carried.
+      { path: '/admin/tls-connection', label: 'TLS connection',
+        blurb: 'What this service saw of the console\'s own request: the ' +
+               'TLS version and cipher, the client certificate the ' +
+               'connection presented &mdash; whether it verified against ' +
+               'the truststore, what the identity gate makes of it and its ' +
+               'revocation status &mdash; and every forwarding header with ' +
+               'what was believed of it under <code>global.trustProxy</code> ' +
+               'and <code>global.trustedProxies</code>, including the base ' +
+               'URL every issuer is built from. It replaces the development ' +
+               'pages <code>/tls</code> and <code>/tls/forwarded</code>, and ' +
+               'answers in product mode. No control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -9651,8 +9671,9 @@ let signalsReporter = null;
 // passes rule 3e's test both ways round like the eighth above it.
 //
 //   * a require from THIS file to `../tls/tls_server.js` would MOVE ROUTES on
-//     the order this repository documents — `/tls`, `/tls/server-certificate`
-//     and `/tls/trust` belong at 20, after the management API — and would make
+//     the order this repository documents — `/tls/sign-in` and
+//     `/tls/server-certificate` belong at 20, after the management API — and
+//     would make
 //     the console the reason they are where they are.
 //   * a require the other way round, from `tls_server.js` to this file at its
 //     own top level, would CLOSE A CYCLE — and not a theoretical one: that
@@ -10432,7 +10453,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'one and requires none — and the route signs in whoever presented ' +
            'a verified one, for its common name, with the response carrying ' +
            'the cookie. What verification proved is unchanged: a chain to an ' +
-           'anchor somebody POSTed to <code>/tls/trust</code>. No token is ' +
+           'anchor in the <a href="/admin/tls/trust">client-certificate ' +
+           'truststore</a>. No token is ' +
            'issued. The session is on <a ' +
            'href="/admin/sessions">Sessions</a> and ends like any other.',
            '<strong>The handshake refusal 9443 performed has no successor, ' +
@@ -10456,10 +10478,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>oauth2.rfc9700</code> is — RFC 9700 section 2.1 says an ' +
            'authorization response must not travel over an unencrypted ' +
            'connection, and the authorization endpoint is on that port.'],
-    links: [['/tls', 'the certificate, the truststore and the main port\'s ' +
-                'posture'],
-            ['/tls/trust', 'the certificate, to trust it'],
-            ['/tls/forwarded', 'what a proxy said about the connection'],
+    links: [['/tls/server-certificate', 'the certificate, to trust it'],
+            ['/admin/tls-connection', 'what this service saw of your ' +
+             'connection, and what a proxy said about it'],
             ['/admin/cert-issuance#cert-spiffe-overview',
              'the one place a certificate authenticates']] }
 ];

@@ -57,7 +57,7 @@
   "stepUpNoteEnd": ".",
   "ownRequires": "Tjänstens egen resursserver (UserInfo, OpenID4VCI-slutpunkterna, SCIM, Shared Signals) kräver ",
   "ownLink": "oauth2.stepUpAcrValues och oauth2.stepUpMaxAgeS",
-  "ownApi": ". Ett registrerat API:s krav finns på dess applikationspost (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), och upprätthålls av <code>{path}</code>.",
+  "ownApi": ". Ett registrerat API:s krav finns på dess applikationspost (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), och API:et upprätthåller det självt.",
   "stepUpNoClients": "Ingen auktoriseringsbegäran i den här sfären har burit acr_values eller max_age, och ingen resursserver här har utmanat en token, sedan processen startade.",
   "lead": "<strong>Vad auktoriseringsservern har gjort</strong> i den här sfären sedan {since}, ett avsnitt per mekanism. Räknarna slås samman över alla processer som svarar för sfären.",
   "noReset": "Det finns ingen nollställning: en konsol som kunde nollställa sin egen övervakning skulle göra varje siffra på den till en som någon kan ha nollställt. Den beständiga förteckningen över varje tillbakadragande är ",

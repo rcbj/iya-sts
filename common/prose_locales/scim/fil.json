@@ -284,8 +284,8 @@
     "text": "Ang browser sign-on session na mayroon na ang serbisyong ito — ang itinatatag ng /authn/login at ibinabahagi ng WS-Federation — iniaalok dito dahil pinangangalanan ito ng section 2: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Ito ang nagpapagana sa SCIM call mula sa pahina ng serbisyong ito nang walang ikalawang credential. Walang challenge para dito: hindi makakahingi ng cookie ang server sa WWW-Authenticate, kaya ginagamit ito kapag naroon at hindi kailanman hinihingi."
   },
   "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "Mutual TLS, ang unang scheme na pinangangalanan ng RFC 7644 section 2. Available lang kung saan dumating ang request na ito sa TLS na may certificate na NA-VERIFY laban sa anchor na may nag-POST sa /tls/trust — kaya sa main port lang kapag naka-bind ito bilang HTTPS (global.https, na ino-on ng oauth2.rfc9700). Ang identity ay ang subject sa anyong RFC 4514, na siyang parehong string na pinag-file-an na ng /admin/users at ng directory ng certificate. Hindi ito itinatala ulit dito: sinasadyang itinatala ng tls_server.js ang certificate nang isang beses bawat CONNECTION, at ang pagbilang nito bawat request ay magpapawalang-bisa niyon mula sa kabilang dulo."
+    "en": "2d55447d0d4792ee",
+    "text": "Mutual TLS, ang unang scheme na pinangangalanan ng RFC 7644 section 2. Available lang kung saan dumating ang request na ito sa TLS na may certificate na NA-VERIFY laban sa anchor sa client truststore (/admin/tls/trust) — kaya sa main port lang kapag naka-bind ito bilang HTTPS (global.https, na ino-on ng oauth2.rfc9700). Ang identity ay ang subject sa anyong RFC 4514, na siyang parehong string na pinag-file-an na ng /admin/users at ng directory ng certificate. Hindi ito itinatala ulit dito: sinasadyang itinatala ng tls_server.js ang certificate nang isang beses bawat CONNECTION, at ang pagbilang nito bawat request ay magpapawalang-bisa niyon mula sa kabilang dulo."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",

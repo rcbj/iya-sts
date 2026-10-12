@@ -8,7 +8,7 @@
 // ===========================================================================
 // A GNAP RESOURCE SERVER (RFC 9635 section 7, RFC 9767) (#586), in place of
 // the service's demonstration resource server at `/gnap/rs/resource` and
-// `/gnap/rs/spend`, which is development only (#585).
+// `/gnap/rs/spend`, which #593 deleted.
 //
 //   GET  /t/{tenant}/gnap/resource   needs `read` on the tenant's type
 //   POST /t/{tenant}/gnap/resource   needs `write`

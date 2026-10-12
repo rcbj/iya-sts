@@ -697,7 +697,7 @@ const SCHEMA_OBJECTS = [
   'sts_cluster_windows (window_ends_at)' },
   // `sts_cluster_budgets` — A BUDGET SPENT AGAINST A LIMIT (#432 phase 5,
   // schema version 15): the running totals of a GNAP right's limits, kept per
-  // grant by the demonstration resource server. One `INSERT … ON CONFLICT DO
+  // grant by `gnap/gnap_spend.ts`. One `INSERT … ON CONFLICT DO
   // UPDATE … WHERE the new totals are within the limits` under the primary
   // key's row lock, so two nodes spending one budget at once cannot both pass
   // it. `amount` is millionths; `key` a digest; `expires_at` the end of the

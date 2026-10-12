@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4312** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4296** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 354
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
@@ -1638,8 +1638,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0176` | A claims request sent directly to UserInfo is malformed. | invalid_request (HTTP 400, WWW-Authenticate challenge) |
 | `STS-OAUTH-0177` | The client's registered UserInfo signing or encryption could not be applied (unusable algorithm, or no usable recipient key). | server_error (HTTP 500) |
 | `STS-OAUTH-0178` *(retired)* | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. Retired by #585: a product realm has no /dpop/nonce-mode, and answers as for a path nothing is registered on. | — |
-| `STS-OAUTH-0179` | POST /dpop/nonce-mode carried something other than required=true or required=false. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0180` | The DPoP nonce setting could not be written. | server_error (HTTP 500) |
+| `STS-OAUTH-0179` *(retired)* | POST /dpop/nonce-mode carried something other than required=true or required=false. Retired by #597: the endpoint is gone, and oauth2.dpopNonceRequired is set like any other setting. | — |
+| `STS-OAUTH-0180` *(retired)* | The DPoP nonce setting could not be written through POST /dpop/nonce-mode. Retired by #597, with the endpoint. | — |
 | `STS-OAUTH-0181` | The directory threw while a person's profile claims were being read; the claims were omitted from what was issued. | — |
 | `STS-OAUTH-0182` | A token this service had just issued could not be re-read for its jti, so the delegation register records no identifier for it. | — |
 | `STS-OAUTH-0183` | The RFC 8414 signed_metadata document could not be signed; the metadata was published without it. | — |
@@ -1844,9 +1844,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0502` | The session did not meet an authorization request's acr_values or max_age, and prompt=none forbids sending the person to sign in again. | login_required (redirected error) |
 | `STS-OAUTH-0503` | A resource server here challenged an access token whose acr meets none of the acr values the resource requires (RFC 9470 section 3). | insufficient_user_authentication (HTTP 401, WWW-Authenticate challenge with acr_values) |
 | `STS-OAUTH-0504` | A resource server here challenged an access token whose auth_time is older than the max_age the resource requires, or absent (RFC 9470 section 3). | insufficient_user_authentication (HTTP 401, WWW-Authenticate challenge with max_age) |
-| `STS-OAUTH-0505` | The step-up stand-in resource was asked for an application this realm has no entry for. | invalid_request (HTTP 404) |
-| `STS-OAUTH-0506` | An access token presented at the step-up stand-in resource does not name that application in its aud (RFC 9068 section 4 step 4). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
-| `STS-OAUTH-0507` | An access token presented where only a token this realm can verify is accepted — the step-up stand-in resource, or an OpenID4VCI endpoint in product mode — did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-OAUTH-0505` *(retired)* | The step-up stand-in resource was asked for an application this realm has no entry for. Retired 2026-10-12 (#593): the stand-in resource was deleted; the test peer plays that resource server | invalid_request (HTTP 404) |
+| `STS-OAUTH-0506` | An access token presented to a resource answering for a registered application does not name that application in its aud (RFC 9068 section 4 step 4). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-OAUTH-0507` | An access token presented where only a token this realm can verify is accepted — an OpenID4VCI endpoint in product mode, or the VC-API — did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0508` | A configured step-up requirement (oauth2.stepUpAcrValues, or an application's oauthStepUpAcrValues or oauthStepUpMaxAge written by hand) holds a value that cannot be one, and it was ignored. | none — logged only |
 | `STS-OAUTH-0509` | An authorization request's acr_values carries a value that cannot be an acr value (a double quote, a backslash or a control character). | invalid_request (redirected error) |
 | `STS-OAUTH-0510` | A password or assertion grant was refused because the directory holds no entry for the person, so there is no subject to issue a token about. | invalid_grant (HTTP 400) |
@@ -3264,7 +3264,7 @@ Raised from: tls/.
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
 | `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
-| `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
+| `STS-TLS-0023` *(retired)* | A /tls or /tls/forwarded request carried a format parameter other than json or html. Retired by #597: both pages are gone, and Monitoring → TLS connection takes no parameter. | — |
 | `STS-TLS-0024` *(retired)* | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. Retired by #585: a product process has neither route, and answers as for a path nothing is registered on. | — |
 | `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
@@ -3290,9 +3290,9 @@ Raised from: tls/.
 | `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
 | `STS-TLS-0047` | A request asked a listener for a path of a hosted application that is not mapped to it (listeners.applications, #472): the console on a listener it was moved off, the management API on one that answers only the sign-in service. The answer names where the application is. | 404 |
 | `STS-TLS-0048` | The listener key stored for this node and algorithm unit (tls.listenerKeys) cannot be used: another algorithm, an RSA modulus other than tls.selfSignedKeyBits, or a key that will not parse. The key made at this start replaces it. | logged; a new certificate is issued over the new key, and the restart is announced (tls-certificate-changed, restarted) |
-| `STS-TLS-0049` | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. | HTTP 415, { error } |
-| `STS-TLS-0050` | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). | HTTP 403, { error } |
-| `STS-TLS-0051` | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). | HTTP 403, { error } |
+| `STS-TLS-0049` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. Retired by #597, with both routes. | — |
+| `STS-TLS-0050` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). Retired by #597, with both routes. | — |
+| `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
 
 ## STS-VC
 
@@ -3448,10 +3448,10 @@ Raised from: ssf/.
 | `STS-SSF-0019` | A verification request came sooner than the stream's min_verification_interval while ssf.verificationRateLimit is on. | HTTP 429 {err: invalid_request} with Retry-After |
 | `STS-SSF-0020` | A verification request was refused because its stream is disabled. (Until #144 it also meant a push that failed; delivery is asynchronous now and a failed one is a dead letter.) | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
-| `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
-| `STS-SSF-0025` | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0022` *(retired)* | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). Retired 2026-10-12 (#593): POST /ssf/receive was deleted; the test peer is that push receiver | HTTP 501 {err: invalid_request} |
+| `STS-SSF-0023` *(retired)* | A push at /ssf/receive carried an empty body. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0024` *(retired)* | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0025` *(retired)* | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0026` | An event was not transmitted on a stream because the stream does not deliver that event type. | — |
 | `STS-SSF-0027` | An event was not transmitted because its payload fails the event type's member rules. | — |
 | `STS-SSF-0028` | An event whose type requires a subject was not transmitted because it carried none. | — |
@@ -3523,8 +3523,8 @@ Raised from: ssf/.
 | `STS-SSF-0102` | A transmitter-initiated verification event (the console's Verify, or POST /admin-api/ssf/verify) could not be sent on the stream. | HTTP 400 on /admin-api/ssf/verify |
 | `STS-SSF-0103` | The inserted-path form of the transmitter configuration document was asked for a path no transmitter's issuer has (SSF 1.0 section 7.2). | HTTP 404 {err: invalid_request} |
 | `STS-SSF-0104` | A Security Event Token delivered to one of this service's receivers is not explicitly typed secevent+jwt (SSF 1.0 section 4.1.1); it was recorded and refused. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
-| `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
+| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
+| `STS-SSF-0106` *(retired)* | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
 | `STS-SSF-0108` | A push delivery endpoint was refused because it is plain http and the realm is in product mode, where RFC 8935 push goes over TLS whatever ssf.pushAllowHttp says (#171). | at stream creation HTTP 400 {err: invalid_request}; at push time none — a dead letter |
 | `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
@@ -3933,10 +3933,10 @@ Raised from: gnap/.
 | `STS-GNAP-0544` | The key of a presented key-bound GNAP access token, or the request content, could not be read. | HTTP 401 invalid_request (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0545` | The key proof with a presented GNAP access token did not verify and the verifier named no more specific code. | HTTP 401 invalid_token (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0546` | A presented GNAP access token failed its format's verification and the format named no more specific code. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0550` | The GNAP demonstration resource server was reached while it is turned off (gnap.demoResourceServer). | HTTP 404 GNAP invalid_request |
-| `STS-GNAP-0551` | The GNAP demonstration resource server was called with no access token; it answered with the RS-first challenge of RFC 9635 section 9.1. | HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, access, referrer |
-| `STS-GNAP-0552` | The GNAP demonstration resource server refused a presented token whose refusal carried no more specific code. | HTTP 401 invalid_token (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0553` | A GNAP access token presented at the demonstration resource server does not grant the action (read or write) on its resource type. | HTTP 403 insufficient_scope (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0550` *(retired)* | The GNAP demonstration resource server was reached while it is turned off (gnap.demoResourceServer). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 404 GNAP invalid_request |
+| `STS-GNAP-0551` *(retired)* | The GNAP demonstration resource server was called with no access token; it answered with the RS-first challenge of RFC 9635 section 9.1. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, access, referrer |
+| `STS-GNAP-0552` *(retired)* | The GNAP demonstration resource server refused a presented token whose refusal carried no more specific code. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0553` *(retired)* | A GNAP access token presented at the demonstration resource server does not grant the action (read or write) on its resource type. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 403 insufficient_scope (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0600` | A GNAP push interaction finish was not sent because gnap.pushFinish is off; the client learns the outcome when it continues. | — |
 | `STS-GNAP-0601` | A GNAP push interaction finish URI is not one this service will dial; nothing was sent. | — |
 | `STS-GNAP-0602` | A client answered a GNAP push interaction finish with a redirect, which is not followed. | — |
@@ -4020,7 +4020,7 @@ Raised from: gnap/.
 | `STS-GNAP-0873` | A demonstration spend states no amount, or one in another currency, where the token's limits count an amount (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
 | `STS-GNAP-0874` | A demonstration spend's body is not readable (#432 phase 5). | RFC 6750 section 3.1 (invalid_request, HTTP 400) |
 | `STS-GNAP-0875` | The running totals of a token's limits could not be read from the store every node shares; the demonstration spend was refused (#432 phase 5). | HTTP 503 |
-| `STS-GNAP-0876` | The demonstration operation failed after its spend was counted (asked to, with simulateFailure); the spend was refunded (#432 phase 5). | HTTP 502 |
+| `STS-GNAP-0876` *(retired)* | The demonstration operation failed after its spend was counted (asked to, with simulateFailure); the spend was refunded (#432 phase 5). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 502 |
 | `STS-GNAP-0877` | A demonstration spend could not be refunded: a new period had begun, or the store could not be asked (#432 phase 5). | — |
 | `STS-GNAP-0890` | A GNAP access right whose type requires its resource owner on the approval page (interaction: always, or a consent action) was approved by skipping the page or by a remembered approval, and was left out of its token at issuance (#432 phase 6). | audit only; the token is issued without the right |
 | `STS-GNAP-0891` | A GNAP access right whose type requires an authentication level the approving session did not meet was left out of its token at issuance (#432 phase 6, RFC 9470). | audit only; the token is issued without the right |
@@ -4036,6 +4036,7 @@ Raised from: gnap/.
 | `STS-GNAP-0901` | A GNAP grant could not wait for its resource owner: the user the request names is not a person the directory holds (#432 phase 6). | RFC 9635 section 2.4 (unknown_user, HTTP 400) |
 | `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
 | `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
+| `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 
 ## STS-DEVICE
 

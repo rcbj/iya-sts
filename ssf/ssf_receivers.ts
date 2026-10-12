@@ -711,8 +711,9 @@ class SsfReceivers {
   // by the portal are still that application's to send.
   //
   // **THE SHAPE OF A REFUSAL IS RFC 8935 SECTION 2.4's**, `{ err, description
-  // }` with a 400 — the same document `/ssf/receive` answers with and the same
-  // one this service's own transmitter reads back in `pushSet()`. A receiver of
+  // }` with a 400 — the same document `/ssf/receive` answered with until #593
+  // deleted it, and the one this service's own transmitter reads back in
+  // `pushSet()`. A receiver of
   // ours that invented a different error shape would be a receiver this
   // service's transmitter could not report properly on.
   // ---------------------------------------------------------------------------
@@ -855,8 +856,8 @@ class SsfReceivers {
       at: iso(),
       token: token,
       contentType: contentType,
-      // RECORDED AND NOT REFUSED, which is `/ssf/receive`'s decision and is
-      // made again here rather than inherited: a transmitter that sends a SET
+      // RECORDED AND NOT REFUSED, which was `/ssf/receive`'s decision (#593
+      // deleted it) and is made here on its own terms: a transmitter that sends a SET
       // as `application/jwt` is very slightly wrong, the event did arrive, and
       // a receiver that refused it would be testing the transmitter's pedantry.
       // What it must not do is go unsaid, so it is a column on the page.
@@ -870,8 +871,8 @@ class SsfReceivers {
       stream: record.stream_id
     };
     // -------------------------------------------------------------------------
-    // THE AUDIENCE CHECK, AND IT IS THE ONE THING THIS RECEIVER DOES THAT THE
-    // DEBUGGER'S RECEIVER AT /ssf/receive DOES NOT.
+    // THE AUDIENCE CHECK, AND IT WAS THE ONE THING THIS RECEIVER DID THAT
+    // THE DEBUGGER'S RECEIVER AT /ssf/receive (deleted by #593) DID NOT.
     //
     // `ssf_streams.ts`'s header says why `aud` is required and never defaulted:
     // a receiver checks for ITSELF in it, and an audience this transmitter
@@ -1153,7 +1154,7 @@ class SsfReceivers {
 
   // Whether a JOSE header carries SSF's explicit type (section 4.1.1), with
   // or without the `application/` prefix RFC 7515 section 4.1.9 lets a
-  // producer drop. Shared with `/ssf/receive`.
+  // producer drop. It was shared with `/ssf/receive` until #593 deleted it.
   /**
    * Says whether a JOSE header carries SSF's explicit type, `secevent+jwt`,
    * with or without the `application/` prefix.

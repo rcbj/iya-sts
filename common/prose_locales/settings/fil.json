@@ -92,8 +92,8 @@
     "text": "Pagkatiwalaan ang mga forwarded header"
   },
   "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "Paniwalaan ang X-Forwarded-Proto at X-Forwarded-Host — na siyang itinatakda ng isang TLS-terminating reverse proxy para sabihin kung ano ang ginamit ng CLIENT. I-ON ito kapag may nasa harap ng serbisyong ito, kung hindi ay maglalathala ang metadata ng mga http:// URL sa mga client na umabot dito sa https at tatanggihan ang bawat DPoP proof dahil pinangangalanan nito ang tunay na endpoint. Iwanan itong OFF kapag wala: kung walang proxy, ordinaryong header lang ang mga iyon na kayang itakda ng sinumang client, at ang paniniwala sa mga iyon ay hinahayaan ang isang caller na pumili kung ano ang akala ng serbisyong ito na sarili nitong issuer at mga endpoint. Ipinapakita ng GET /tls/forwarded kung ano talaga ang dala ng isang request at kung ano ang pinaniwalaan dito. TANDAAN na hindi kailanman nagbabasa ang serbisyong ito ng client certificate mula sa isang header (X-Client-Cert at mga kamag-anak nito) sa alinmang mode — ang forwarded na certificate ay certificate na kayang pekein ng kahit sino."
+    "en": "4369282d9208f4aa",
+    "text": "Paniwalaan ang X-Forwarded-Proto at X-Forwarded-Host — na siyang itinatakda ng isang TLS-terminating reverse proxy para sabihin kung ano ang ginamit ng CLIENT. I-ON ito kapag may nasa harap ng serbisyong ito, kung hindi ay maglalathala ang metadata ng mga http:// URL sa mga client na umabot dito sa https at tatanggihan ang bawat DPoP proof dahil pinangangalanan nito ang tunay na endpoint. Iwanan itong OFF kapag wala: kung walang proxy, ordinaryong header lang ang mga iyon na kayang itakda ng sinumang client, at ang paniniwala sa mga iyon ay hinahayaan ang isang caller na pumili kung ano ang akala ng serbisyong ito na sarili nitong issuer at mga endpoint. Ipinapakita ng Monitoring → TLS connection kung ano talaga ang dala ng isang request at kung ano ang pinaniwalaan dito. TANDAAN na hindi kailanman nagbabasa ang serbisyong ito ng client certificate mula sa isang header (X-Client-Cert at mga kamag-anak nito) sa alinmang mode — ang forwarded na certificate ay certificate na kayang pekein ng kahit sino."
   },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
@@ -312,8 +312,8 @@
     "text": "Tiwala sa mutual TLS key proof"
   },
   "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "Paano pinagkakatiwalaan ang GNAP key na pinatunayan sa mutual TLS (RFC 9635 section 7.3.2). Hinihingi ng `pki` (section 11.4) na ang TLS client certificate ay naka-chain sa client truststore — ang TLS client authority ng realm na ito, o isang anchor na naka-install sa /tls/trust — at naka-bind sa application entry ng client: na-issue dito ng realm na ito, o may dalang iisang RFC 8705 subject parameter na nire-register ng entry (oauthTlsClientAuthSubjectDn o isang oauthTlsClientAuthSan* attribute). Ang certificate na muling na-issue ng authority ay tatanggapin kung gayon nang walang bagong registration. Tinatanggap ng `pinned` ang certificate na pinangangalanan ng key, kasama ang self-signed, nang walang chain. Tinatanggihan sa pareho ang revoked na certificate (pki.revocationCheck). **Ang `auto` ay pki sa product mode at pinned sa development.** BABALA: isinusuko ng `pinned` ang chain validation at rotation sa certificate authority — ang ninakaw na self-signed key ay mananatiling valid hangga't hindi ine-edit ang entry na nagpi-pin dito. Puwede itong gawing mas mahigpit ng isang application para sa sarili nito (gnapMtlsTrust=pki), hindi kailanman mas maluwag."
+    "en": "7f26fe14380ed8fe",
+    "text": "Paano pinagkakatiwalaan ang GNAP key na pinatunayan sa mutual TLS (RFC 9635 section 7.3.2). Hinihingi ng `pki` (section 11.4) na ang TLS client certificate ay naka-chain sa client truststore — ang TLS client authority ng realm na ito, o isang anchor na naka-install sa pamamagitan ng /admin-api/tls/trust — at naka-bind sa application entry ng client: na-issue dito ng realm na ito, o may dalang iisang RFC 8705 subject parameter na nire-register ng entry (oauthTlsClientAuthSubjectDn o isang oauthTlsClientAuthSan* attribute). Ang certificate na muling na-issue ng authority ay tatanggapin kung gayon nang walang bagong registration. Tinatanggap ng `pinned` ang certificate na pinangangalanan ng key, kasama ang self-signed, nang walang chain. Tinatanggihan sa pareho ang revoked na certificate (pki.revocationCheck). **Ang `auto` ay pki sa product mode at pinned sa development.** BABALA: isinusuko ng `pinned` ang chain validation at rotation sa certificate authority — ang ninakaw na self-signed key ay mananatiling valid hangga't hindi ine-edit ang entry na nagpi-pin dito. Puwede itong gawing mas mahigpit ng isang application para sa sarili nito (gnapMtlsTrust=pki), hindi kailanman mas maluwag."
   },
   "gnap.subIdFormats|label": {
     "en": "43051e9545cde37a",
@@ -546,14 +546,6 @@
   "gnap.accessTokenCertificateHeader|description": {
     "en": "092878a48c170524",
     "text": "Kung pinangangalanan ng GNAP access token sa jwt-signed o jwt-encrypted na format ang certificate chain ng key na pumirma rito — sa JWS sa pareho, hindi kailanman sa JWE na bumabalot sa jwt-encrypted, na naka-encrypt sa key ng isang resource server o sa isang secret. Ang mga macaroon, biscuit at ZCAP-LD capability ay hindi JWS at hindi apektado. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo, leaf ang una at ang service Root ang huli, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman doon, ito ang kailangan ng isang relying party na token lang ang hawak para maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa nasesertipikahan sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC signature, ay walang natatanggap. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang `x5u` fetch: kapag naka-off ang global.https, `http://` ang address at tatanggi ang mahigpit na verifier na sundan ito. Hindi kailanman binibigyan nito ang mga JWE header — walang sertipikadong key ng serbisyong ito ang nag-e-encrypt ng anuman. Maitatakda bawat realm."
-  },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Patakbuhin ang demonstration resource server"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: hinuhusgahan ang ipinakitang token sa alinman sa limang format at sinasagot ang RS-first challenge ng section 9.1. Sa development mode lamang: walang demonstration resource server ang isang product realm (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -1568,8 +1560,8 @@
     "text": "Hinahawakan sa request worker"
   },
   "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "Isang listahang pinaghihiwalay ng kuwit ng kung ano ang napupunta sa request worker sa halip na hawakan sa process na may-ari ng mga socket. Ang isang entry ay isa sa tatlong bagay at sinasabi kung alin ayon sa hugis nito:\n\n- isang **path prefix**, na nagsisimula sa slash — \"/scim/v2,/admin-api\". Itinutugma matapos alisin ang realm segment, kaya ang pagpapangalan sa /scim/v2 ay sumasaklaw sa bawat realm.\n- isang **operation kind**, na hindi nagsisimula sa slash — \"ldap\" para sa bawat directory operation, o \"ldap.search\" para sa isa sa mga ito. Ito ang trabaho sa likod ng mga socket na hindi nagsasalita ng HTTP: pinananatili ng front process ang socket at ang framing (tinatanggap nito ang connection, dine-decode ang BER at isinusulat ang sagot) at ginagawa ng worker ang trabaho. Ang mga family ay \"ldap\" (ang directory sa 389 at 636), \"spiffe\" (ang mga unary na Workload at SPIRE Server API method, at ang FetchJWTSVID ng Broker API kapag na-attest na ang reference nito) at \"krb5\" (bawat message sa TCP at UDP 88 ng KDC).\n- **\"*\"**, na LAHAT ng parehong uri — ang paraan ng pagsasabi ng \"patakbuhin ang serbisyo sa pool\", at ang tanging baybay na hindi maluluma sa susunod na pagdagdag ng isang family.\n\nANG \"*\" ANG DEFAULT (#364): kapag may nagko-coordinate na store, bawat request ay napupunta sa request worker. Sa memory o ldif store at kapag nasa default ang workers.requestCount, walang worker, at walang dina-dispatch. Ang walang laman ay nangangahulugang walang dina-dispatch kahit saan. Hindi kailanman dina-dispatch ang /tls anuman ang sinasabi nito, dahil ang buong laman nito ay ang nakita ng server sa connection na dinatnan ng request.\n\n**Walang dina-dispatch maliban kung nagko-coordinate ang process na ito**: ang entry dito na may store na walang change log ay pumipigil sa serbisyo sa startup, pinangangalanan ang setting na ito, sa halip na hayaang humawak ang bawat worker ng sariling kopya ng directory, ng mga session at ng mga setting. Ang PATH na pinangalanan dito kapag walang worker na naghahain ay TINATANGGIHAN ng 503 sa halip na hawakan dito, dahil ang parehong path na sinasagot ng alinman sa dalawang process na available ay ang mismong pagkabigong iniiwasan ng pool na ito; ang OPERATION ay ginagawa ng caller sa halip, dahil ang pagbigo ng isa ay magpapabagsak sa isang protocol listener para sa bagay na isang performance measure lang."
+    "en": "4b32567593c41988",
+    "text": "Isang listahang pinaghihiwalay ng kuwit ng kung ano ang napupunta sa request worker sa halip na hawakan sa process na may-ari ng mga socket. Ang isang entry ay isa sa tatlong bagay at sinasabi kung alin ayon sa hugis nito:\n\n- isang **path prefix**, na nagsisimula sa slash — \"/scim/v2,/admin-api\". Itinutugma matapos alisin ang realm segment, kaya ang pagpapangalan sa /scim/v2 ay sumasaklaw sa bawat realm.\n- isang **operation kind**, na hindi nagsisimula sa slash — \"ldap\" para sa bawat directory operation, o \"ldap.search\" para sa isa sa mga ito. Ito ang trabaho sa likod ng mga socket na hindi nagsasalita ng HTTP: pinananatili ng front process ang socket at ang framing (tinatanggap nito ang connection, dine-decode ang BER at isinusulat ang sagot) at ginagawa ng worker ang trabaho. Ang mga family ay \"ldap\" (ang directory sa 389 at 636), \"spiffe\" (ang mga unary na Workload at SPIRE Server API method, at ang FetchJWTSVID ng Broker API kapag na-attest na ang reference nito) at \"krb5\" (bawat message sa TCP at UDP 88 ng KDC).\n- **\"*\"**, na LAHAT ng parehong uri — ang paraan ng pagsasabi ng \"patakbuhin ang serbisyo sa pool\", at ang tanging baybay na hindi maluluma sa susunod na pagdagdag ng isang family.\n\nANG \"*\" ANG DEFAULT (#364): kapag may nagko-coordinate na store, bawat request ay napupunta sa request worker. Sa memory o ldif store at kapag nasa default ang workers.requestCount, walang worker, at walang dina-dispatch. Ang walang laman ay nangangahulugang walang dina-dispatch kahit saan. Hindi kailanman dina-dispatch ang /tls at /admin-api/tls-connection anuman ang sinasabi nito, dahil ang sinasagot ng mga ito ay ang nakita ng server sa connection na dinatnan ng request.\n\n**Walang dina-dispatch maliban kung nagko-coordinate ang process na ito**: ang entry dito na may store na walang change log ay pumipigil sa serbisyo sa startup, pinangangalanan ang setting na ito, sa halip na hayaang humawak ang bawat worker ng sariling kopya ng directory, ng mga session at ng mga setting. Ang PATH na pinangalanan dito kapag walang worker na naghahain ay TINATANGGIHAN ng 503 sa halip na hawakan dito, dahil ang parehong path na sinasagot ng alinman sa dalawang process na available ay ang mismong pagkabigong iniiwasan ng pool na ito; ang OPERATION ay ginagawa ng caller sa halip, dahil ang pagbigo ng isa ay magpapabagsak sa isang protocol listener para sa bagay na isang performance measure lang."
   },
   "workers.dispatch|restartReason": {
     "en": "aff662049479560d",
@@ -1980,8 +1972,8 @@
     "text": "Hingin ang DPoP server nonce"
   },
   "oauth2.dpopNonceRequired|description": {
-    "en": "407ed41bf850f8d6",
-    "text": "Hingin na bawat DPoP proof ay may dalang nonce na ibinigay ng server na ito (RFC 9449 sections 8 at 9), na ginagawang 401 o 400 at isang retry ang unang request ng isang session. Ginagawa nitong MAS SARIWA ang mga proof at hindi kailanman ginagawang sapilitan: ang request na walang DPoP header ay Bearer request pa rin (ang mga Require DPoP row sa ibaba ang nagpapasapilitan sa mga ito). BAWAT TRUST REALM mula 2026-09-12 — iisang switch ito para sa buong process dati, kaya ang pag-on ng isang realm ay nag-o-on para sa lahat ng iba. Sa development, isinusulat ng POST /dpop/nonce-mode ang setting na ito para sa realm kung saan ito naabot; sa product, tumatanggi ang endpoint na iyon at ang row na ito — sa pamamagitan ng /admin/oauth2 o POST /admin-api/config/set, parehong nasa likod ng credential — ang tanging paraan para baguhin ito."
+    "en": "4742a4c9d71043fa",
+    "text": "Hingin na bawat DPoP proof ay may dalang nonce na ibinigay ng server na ito (RFC 9449 sections 8 at 9), na ginagawang 401 o 400 at isang retry ang unang request ng isang session. Ginagawa nitong MAS SARIWA ang mga proof at hindi kailanman ginagawang sapilitan: ang request na walang DPoP header ay Bearer request pa rin (ang mga Require DPoP row sa ibaba ang nagpapasapilitan sa mga ito). BAWAT TRUST REALM mula 2026-09-12 — iisang switch ito para sa buong process dati, kaya ang pag-on ng isang realm ay nag-o-on para sa lahat ng iba. Ang row na ito — sa mga DPoP setting ng OAuth 2.0 page o sa pamamagitan ng POST /admin-api/config/set, parehong nasa likod ng credential — ang tanging paraan para baguhin ito, sa alinmang mode."
   },
   "oauth2.dpopIatSkewS|label": {
     "en": "a0b12e9cd8d594ec",
@@ -4492,8 +4484,8 @@
     "text": "Pagkatiwalaan ang mga TLS client certificate na iniisyu sa user portal"
   },
   "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, para ang TLS client certificate na iniisyu ng isang tao para sa sarili nila sa /portal/signing-key ay mag-verify at mag-sign in sa kanila — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain na dumaraan sa Root na iyon ay IDENTITY lang kapag galing ang leaf sa isang TLS client Issuing CA na may clientAuth: bawat ibang key pair na iniisyu ng serbisyong ito ay kumakadena sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /tls/trust at tls.trustAnchorsFile, gaya ng dati; nag-iisyu pa rin ang portal, at sinasabing hindi tatanggapin ng mga listener ang iniisyu nito."
+    "en": "953c8172d6c3e3e6",
+    "text": "Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, para ang TLS client certificate na iniisyu ng isang tao para sa sarili nila sa /portal/signing-key ay mag-verify at mag-sign in sa kanila — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain na dumaraan sa Root na iyon ay IDENTITY lang kapag galing ang leaf sa isang TLS client Issuing CA na may clientAuth: bawat ibang key pair na iniisyu ng serbisyong ito ay kumakadena sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /admin/tls/trust at tls.trustAnchorsFile, gaya ng dati; nag-iisyu pa rin ang portal, at sinasabing hindi tatanggapin ng mga listener ang iniisyu nito."
   },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -4748,8 +4740,8 @@
     "text": "File ng mga trust anchor ng client certificate"
   },
   "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan sa PRODUCT MODE para punuin ang truststore: sumasagot sa sinuman ang POST /tls/trust at /tls/trust/clear sa development at tinatanggihan sa product mode, dahil ang anchor na kayang idagdag ng sinuman ay client certificate na kayang pa-verify-in ng sinuman. Ang walang laman ay nangangahulugang walang laman ang truststore sa simula, na siyang palaging nangyayari."
+    "en": "ed7685645c8ebaaa",
+    "text": "Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan para punuin ang truststore bago may makinig; habang tumatakbo, ginagawa ito ng /admin/tls/trust at POST /admin-api/tls/trust/add sa likod ng credential, sa alinmang mode — walang bukas na pinto, dahil ang anchor na kayang idagdag ng sinuman ay client certificate na kayang pa-verify-in ng sinuman. Ang walang laman ay nangangahulugang walang laman ang truststore sa simula, na siyang palaging nangyayari."
   },
   "tls.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -6208,8 +6200,8 @@
     "text": "Mag-alok ng TLS client certificate"
   },
   "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (tingnan ang /tls), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon; dito, nag-a-authenticate ito ng isang tao na pagkatapos ay maaaring sumulat sa directory."
+    "en": "be5e7d5ccffce8c1",
+    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (/admin/tls/trust), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon; dito, nag-a-authenticate ito ng isang tao na pagkatapos ay maaaring sumulat sa directory."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -6772,8 +6764,8 @@
     "text": "Mga natanggap na event na iniingatan"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Ilang SET ang iniingatan ng POST /ssf/receive para ipakita ng /admin/ssf. Ang endpoint na iyon ay ang serbisyong ito na kumikilos bilang RECEIVER, na siyang pinagpu-push-an ng debugger kapag baligtad ang mga papel; tinatanggal ang pinakaluma kapag lumampas dito."
+    "en": "2c503bd8b26764ea",
+    "text": "Ilang naihatid na SET ang iniingatan sa inbox ng bawat sariling receiver ng serbisyong ito (ang sa console at ang sa portal), bawat realm; tinatanggal ang pinakaluma kapag lumampas dito."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "Ang scope na kailangan para gumawa, mag-update o mag-delete ng stream, magdagdag o mag-alis ng subject, magbago ng status o humingi ng verification event. Hindi sapat ang read scope para sa alinman sa mga iyon, na siyang unang lugar sa serbisyong ito bukod sa SCIM kung saan nagkakaiba ang dalawang scope sa pinapayagan nila."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Tumanggap ng mga ipinush na event"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Kung tumatanggap ang POST /ssf/receive ng Security Event Token na ipinush SA serbisyong ito — baligtad ang mga papel, ang debugger ang transmitter. Vine-verify nito ang pirma kapag nakakahanap ito ng key at iniuulat ang nabasa nito alinman dito, dahil ang receiver na tumanggi sa hindi ma-verify na event ay hindi makakapagpakita sa tao KUNG BAKIT hindi ito ma-verify. Sumasagot ng 501 ang Off. Sa development mode lamang: walang /ssf/receive ang isang product realm (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Mga audience na sinasagot ng POST /ssf/receive"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "Ang mga `aud` value na tinatanggap ng receiver na nakaharap sa debugger sa POST /ssf/receive. Ang SET na hindi naka-address sa alinman sa mga ito ay nire-record at tinatanggihan ng invalid_audience, gaya ng pagtanggi ng tunay na receiver. Ang WALANG LAMAN ay nangangahulugang ang sariling URL ng endpoint sa realm na ito, na siyang pangalang matutuklasan ng transmitter nang hindi sinasabihan."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Mga issuer na tinatanggap ng POST /ssf/receive"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "Ang mga `iss` value na tinatanggap ng POST /ssf/receive (SSF 1.0 section 4.1.6: DAPAT i-check ng receiver ang issuer). Ang SET mula sa ibang issuer ay nire-record at tinatanggihan ng invalid_issuer. Ang WALANG LAMAN ay nangangahulugang ang sariling transmitter issuer ng realm na ito — ang tanging issuer na ang mga SET ay mave-verify ng receiver na ito, dahil wala itong hawak na ibang key."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -10244,8 +10212,8 @@
     "text": "Main port: file ng mga trust anchor ng client certificate"
   },
   "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "Para lang sa listener ng Main port: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan sa PRODUCT MODE para punuin ang truststore: sinasagot ng POST /tls/trust at /tls/trust/clear ang kahit sino sa development at tinatanggihan sa product mode, dahil ang anchor na maidaragdag ng kahit sino ay client certificate na mapapag-verify ng kahit sino. Ang walang laman ay nangangahulugang nagsisimulang walang laman ang truststore, na siyang palagi nitong ginagawa."
+    "en": "be47c3bb57175ce2",
+    "text": "Para lang sa listener ng Main port: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan para punuin ang truststore bago may makinig; habang tumatakbo, ginagawa ito ng /admin/tls/trust at POST /admin-api/tls/trust/add sa likod ng credential, sa alinmang mode — walang bukas na pinto, dahil ang anchor na kayang idagdag ng sinuman ay client certificate na kayang pa-verify-in ng sinuman. Ang walang laman ay nangangahulugang walang laman ang truststore sa simula, na siyang palaging nangyayari."
   },
   "listenerMain.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10256,8 +10224,8 @@
     "text": "LDAPS: file ng mga trust anchor ng client certificate"
   },
   "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "Para lang sa listener ng LDAPS: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan sa PRODUCT MODE para punuin ang truststore: sinasagot ng POST /tls/trust at /tls/trust/clear ang kahit sino sa development at tinatanggihan sa product mode, dahil ang anchor na maidaragdag ng kahit sino ay client certificate na mapapag-verify ng kahit sino. Ang walang laman ay nangangahulugang nagsisimulang walang laman ang truststore, na siyang palagi nitong ginagawa."
+    "en": "c15d167a0e065170",
+    "text": "Para lang sa listener ng LDAPS: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan para punuin ang truststore bago may makinig; habang tumatakbo, ginagawa ito ng /admin/tls/trust at POST /admin-api/tls/trust/add sa likod ng credential, sa alinmang mode — walang bukas na pinto, dahil ang anchor na kayang idagdag ng sinuman ay client certificate na kayang pa-verify-in ng sinuman. Ang walang laman ay nangangahulugang walang laman ang truststore sa simula, na siyang palaging nangyayari."
   },
   "listenerLdaps.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10268,8 +10236,8 @@
     "text": "Protocol debugger: file ng mga trust anchor ng client certificate"
   },
   "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "Para lang sa listener ng Protocol debugger: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan sa PRODUCT MODE para punuin ang truststore: sinasagot ng POST /tls/trust at /tls/trust/clear ang kahit sino sa development at tinatanggihan sa product mode, dahil ang anchor na maidaragdag ng kahit sino ay client certificate na mapapag-verify ng kahit sino. Ang walang laman ay nangangahulugang nagsisimulang walang laman ang truststore, na siyang palagi nitong ginagawa."
+    "en": "111555560d2f6041",
+    "text": "Para lang sa listener ng Protocol debugger: tls.trustAnchorsFile. Ang walang laman, ang default, ay sumusunod sa tls.trustAnchorsFile; ang anumang iba ay nagpapasya para sa listener na ito lang. Isang PEM file ng mga CA certificate na pinagve-verify-an ng mga client certificate sa main port, nilo-load sa startup. Ito ang paraan para punuin ang truststore bago may makinig; habang tumatakbo, ginagawa ito ng /admin/tls/trust at POST /admin-api/tls/trust/add sa likod ng credential, sa alinmang mode — walang bukas na pinto, dahil ang anchor na kayang idagdag ng sinuman ay client certificate na kayang pa-verify-in ng sinuman. Ang walang laman ay nangangahulugang walang laman ang truststore sa simula, na siyang palaging nangyayari."
   },
   "listenerDebugger.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10280,8 +10248,8 @@
     "text": "Main port: pagkatiwalaan ang mga TLS client certificate na iniisyu sa user portal"
   },
   "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "Para lang sa listener ng Main port: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
+    "en": "d36e02de3705d807",
+    "text": "Para lang sa listener ng Main port: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /admin/tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10292,8 +10260,8 @@
     "text": "LDAPS: pagkatiwalaan ang mga TLS client certificate na iniisyu sa user portal"
   },
   "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "Para lang sa listener ng LDAPS: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
+    "en": "8771bad384fa372a",
+    "text": "Para lang sa listener ng LDAPS: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /admin/tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
   },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10304,8 +10272,8 @@
     "text": "Protocol debugger: pagkatiwalaan ang mga TLS client certificate na iniisyu sa user portal"
   },
   "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "Para lang sa listener ng Protocol debugger: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
+    "en": "7d2a9613dbaa95cc",
+    "text": "Para lang sa listener ng Protocol debugger: tls.trustIssuedClientCertificates. Ang inherit, ang default, ay sumusunod sa tls.trustIssuedClientCertificates; ang anumang iba ay nagpapasya para sa listener na ito lang. Kapag naka-on, idinadagdag ang sariling Root CA ng serbisyong ito sa client truststore ng main port, kaya ang TLS client certificate na mismong iniisyu ng isang tao sa /portal/signing-key ay nagve-verify at nagsa-sign in sa kanya — sa realm na ang TLS client Issuing CA ang pumirma rito. Ang chain sa pamamagitan ng Root na iyon ay IDENTITY lang kapag ang leaf ay mula sa isang TLS client Issuing CA na may clientAuth: ang bawat ibang key pair na iniisyu ng serbisyong ito ay nagcha-chain sa parehong Root at tinatanggihan bilang identity (tingnan ang common/tls_client_certificates.js). Kapag naka-off, iniiwan ang truststore sa /admin/tls/trust at tls.trustAnchorsFile, gaya ng dati; patuloy pa ring nag-iisyu ang portal, at sinasabi nitong hindi tatanggapin ng mga listener ang iniisyu nito."
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",

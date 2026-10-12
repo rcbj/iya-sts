@@ -248,8 +248,8 @@
     "text": "Shared Signals"
   },
   "listeners.applications.ssf.what": {
-    "en": "7ae68852bd9347c9",
-    "text": "Shared Signals 傳送者與接收者。"
+    "en": "0755a2e473f064ed",
+    "text": "Shared Signals 傳送者。"
   },
   "listeners.applications.gnap.label": {
     "en": "6bc8ff11f56aea8c",
@@ -316,20 +316,12 @@
     "text": "SPIFFE 組合端點。"
   },
   "listeners.applications.tls.label": {
-    "en": "f0128c74e6e50ff1",
-    "text": "TLS 診斷"
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
   },
   "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "TLS 檢視以及用戶端信任存放區的入口。"
-  },
-  "listeners.applications.devices.label": {
-    "en": "f8fcb8ceb53f6ebf",
-    "text": "裝置註冊"
-  },
-  "listeners.applications.devices.what": {
-    "en": "78a9dc85ad771ffa",
-    "text": "裝置登錄的測試控制項。"
+    "en": "22e07124e7ed4aca",
+    "text": "本服務所出示的伺服器憑證。"
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",

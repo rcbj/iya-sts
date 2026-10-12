@@ -93,6 +93,7 @@ import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
+import TlsConnectionPage = require('../tls/web_tls_connection');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
 import UsedAssertionsPage = require('./web_used_assertions');
@@ -329,6 +330,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/caches': ['caches', 'replay', 'nodes', 'entries'],
   '/admin/worker-pools': ['request', 'surface'],
   '/admin/node-health': ['cpu', 'memory', 'processes', 'ecs', 'machine'],
+  '/admin/tls-connection': ['connection', 'forwarded'],
   '/admin/scheduler': ['leader', 'jobs', 'runs', 'commands', 'settings'],
   '/admin/devices/monitor': ['register', 'activity', 'days'],
   '/admin/risk': ['assessments', 'standings', 'lookup', 'datasets', 'import',
@@ -898,6 +900,9 @@ const PAGES: WebPage[] = [
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },
+  { path: '/admin/tls-connection', title: 'TLS connection',
+    operation: '/admin-api/tls-connection',
+    render: TlsConnectionPage.render },
   { path: '/admin/tls/trust', title: 'Client-certificate truststore',
     operation: '/admin-api/tls/trust',
     render: function (view: Json, ctx?: Json): string {

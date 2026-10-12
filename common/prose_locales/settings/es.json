@@ -92,8 +92,8 @@
     "text": "Confiar en los encabezados reenviados"
   },
   "global.trustProxy|description": {
-    "en": "a724483cb095aaaa",
-    "text": "Creer X-Forwarded-Proto y X-Forwarded-Host — que es lo que define un proxy inverso que termina TLS para indicar lo que usó el CLIENTE. ACTÍVELO cuando haya algo delante de este servicio, o los metadatos publicarán URL http:// a clientes que llegaron por https y se rechazará cada prueba DPoP por nombrar el endpoint real. DÉJELO DESACTIVADO cuando no haya nada: sin proxy, son encabezados corrientes que cualquier cliente puede definir, y creerlos permite a un llamante elegir lo que este servicio cree que son su propio emisor y sus endpoints. GET /tls/forwarded muestra lo que una solicitud llevaba realmente y lo que se creyó de ello. TENGA EN CUENTA que este servicio nunca lee un certificado de cliente de un encabezado (X-Client-Cert y sus parientes) en ningún modo — un certificado reenviado es un certificado que cualquiera puede falsificar."
+    "en": "4369282d9208f4aa",
+    "text": "Creer X-Forwarded-Proto y X-Forwarded-Host — que es lo que define un proxy inverso que termina TLS para indicar lo que usó el CLIENTE. ACTÍVELO cuando haya algo delante de este servicio, o los metadatos publicarán URL http:// a clientes que llegaron por https y se rechazará cada prueba DPoP por nombrar el endpoint real. DÉJELO DESACTIVADO cuando no haya nada: sin proxy, son encabezados corrientes que cualquier cliente puede definir, y creerlos permite a un llamante elegir lo que este servicio cree que son su propio emisor y sus endpoints. Monitorización → Conexión TLS muestra lo que una solicitud llevaba realmente y lo que se creyó de ello. TENGA EN CUENTA que este servicio nunca lee un certificado de cliente de un encabezado (X-Client-Cert y sus parientes) en ningún modo — un certificado reenviado es un certificado que cualquiera puede falsificar."
   },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
@@ -312,8 +312,8 @@
     "text": "Confianza de la prueba de clave por TLS mutuo"
   },
   "gnap.mtlsTrust|description": {
-    "en": "3d526e363433d5bf",
-    "text": "Cómo se confía en una clave GNAP probada por TLS mutuo (RFC 9635 sección 7.3.2). `pki` (sección 11.4) exige que el certificado de cliente TLS encadene al almacén de confianza de clientes — la autoridad de clientes TLS de este dominio, o un ancla instalada en /tls/trust — y que esté vinculado a la entrada de aplicación del cliente: emitido para ella por este dominio, o con el único parámetro de sujeto RFC 8705 que registra la entrada (oauthTlsClientAuthSubjectDn o un atributo oauthTlsClientAuthSan*). Un certificado reemitido por la autoridad se acepta entonces sin un nuevo registro. `pinned` acepta el certificado que nombra la clave, incluidos los autofirmados, sin cadena. Un certificado revocado se rechaza en ambos (pki.revocationCheck). **`auto` es pki en modo producto y pinned en desarrollo.** ADVERTENCIA: `pinned` renuncia a la validación de la cadena y a la rotación en la autoridad de certificación — una clave autofirmada robada sigue siendo válida hasta que se edita la entrada que la fija. Una aplicación puede hacerlo más estricto para sí misma (gnapMtlsTrust=pki), nunca más débil."
+    "en": "7f26fe14380ed8fe",
+    "text": "Cómo se confía en una clave GNAP probada por TLS mutuo (RFC 9635 sección 7.3.2). `pki` (sección 11.4) exige que el certificado de cliente TLS encadene al almacén de confianza de clientes — la autoridad de clientes TLS de este dominio, o un ancla instalada mediante /admin-api/tls/trust — y que esté vinculado a la entrada de aplicación del cliente: emitido para ella por este dominio, o con el único parámetro de sujeto RFC 8705 que registra la entrada (oauthTlsClientAuthSubjectDn o un atributo oauthTlsClientAuthSan*). Un certificado reemitido por la autoridad se acepta entonces sin un nuevo registro. `pinned` acepta el certificado que nombra la clave, incluidos los autofirmados, sin cadena. Un certificado revocado se rechaza en ambos (pki.revocationCheck). **`auto` es pki en modo producto y pinned en desarrollo.** ADVERTENCIA: `pinned` renuncia a la validación de la cadena y a la rotación en la autoridad de certificación — una clave autofirmada robada sigue siendo válida hasta que se edita la entrada que la fija. Una aplicación puede hacerlo más estricto para sí misma (gnapMtlsTrust=pki), nunca más débil."
   },
   "gnap.subIdFormats|label": {
     "en": "43051e9545cde37a",
@@ -546,14 +546,6 @@
   "gnap.accessTokenCertificateHeader|description": {
     "en": "092878a48c170524",
     "text": "Si un token de acceso GNAP en formato jwt-signed o jwt-encrypted nombra la cadena de certificados de la clave que lo firmó — en el JWS en ambos casos, nunca en el JWE que envuelve a jwt-encrypted, que está cifrado para la clave de un servidor de recursos o para un secreto. Los macaroons, los biscuits y las capacidades ZCAP-LD no son JWS y no se ven afectados. `x5u` — el valor predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que necesita una parte que confía que solo tiene el token para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Los encabezados JWE nunca reciben uno — ninguna clave certificada de este servicio cifra nada. Se puede definir por dominio."
-  },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Ejecutar el servidor de recursos de demostración"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: evalúa un token presentado en cualquiera de los cinco formatos y responde al desafío RS-first de la sección 9.1. Solo en modo de desarrollo: un dominio de producto no tiene servidor de recursos de demostración (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -1568,8 +1560,8 @@
     "text": "Atendido en un worker de solicitudes"
   },
   "workers.dispatch|description": {
-    "en": "93f81ee8c169c46e",
-    "text": "Una lista separada por comas de lo que va a un worker de solicitudes en lugar de atenderse en el proceso que posee los sockets. Una entrada es una de tres cosas y su forma indica cuál:\n\n- un **prefijo de ruta**, que empieza por una barra — \"/scim/v2,/admin-api\". Se compara después de quitar el segmento del dominio, así que nombrar /scim/v2 cubre todos los dominios.\n- un **tipo de operación**, que no empieza por barra — \"ldap\" para cada operación de directorio, o \"ldap.search\" para una de ellas. Son el trabajo detrás de los sockets que no hablan HTTP: el proceso principal conserva el socket y el entramado (acepta la conexión, decodifica el BER y escribe la respuesta) y el worker hace el trabajo. Las familias son \"ldap\" (el directorio en 389 y 636), \"spiffe\" (los métodos unarios de la Workload API y la SPIRE Server API, y el FetchJWTSVID de la Broker API una vez atestada su referencia) y \"krb5\" (cada mensaje en el TCP y UDP 88 del KDC).\n- **\"*\"**, que es TODO de ambos tipos — la forma de decir \"ejecutar el servicio en el pool\", y la única grafía que no puede quedar obsoleta la próxima vez que se añada una familia.\n\n\"*\" ES EL VALOR PREDETERMINADO (#364): con un almacén coordinador, cada solicitud va al worker de solicitudes. Con el almacén memory o ldif y workers.requestCount en su valor predeterminado no hay worker, y no se despacha nada. Vacío significa que no se despacha nada en ninguna parte. /tls nunca se despacha diga lo que diga esto, porque todo su contenido es lo que el servidor vio de la conexión por la que llegó la solicitud.\n\n**No se despacha nada salvo que este proceso esté coordinando**: una entrada aquí con un almacén que no tiene registro de cambios detiene el servicio al arrancar, nombrando este ajuste, en lugar de dejar que cada worker tenga una copia privada del directorio, las sesiones y los ajustes. Una RUTA nombrada aquí cuando ningún worker está sirviendo se RECHAZA con 503 en lugar de atenderse aquí, porque la misma ruta respondida por cualquiera de dos procesos que estuviera disponible es el fallo que este pool existe para evitar; una OPERACIÓN la hace en cambio quien llama, porque hacerla fallar tumbaría una escucha de protocolo por lo que es una medida de rendimiento."
+    "en": "4b32567593c41988",
+    "text": "Una lista separada por comas de lo que va a un worker de solicitudes en lugar de atenderse en el proceso que posee los sockets. Una entrada es una de tres cosas y su forma indica cuál:\n\n- un **prefijo de ruta**, que empieza por una barra — \"/scim/v2,/admin-api\". Se compara después de quitar el segmento del dominio, así que nombrar /scim/v2 cubre todos los dominios.\n- un **tipo de operación**, que no empieza por barra — \"ldap\" para cada operación de directorio, o \"ldap.search\" para una de ellas. Son el trabajo detrás de los sockets que no hablan HTTP: el proceso principal conserva el socket y el entramado (acepta la conexión, decodifica el BER y escribe la respuesta) y el worker hace el trabajo. Las familias son \"ldap\" (el directorio en 389 y 636), \"spiffe\" (los métodos unarios de la Workload API y la SPIRE Server API, y el FetchJWTSVID de la Broker API una vez atestada su referencia) y \"krb5\" (cada mensaje en el TCP y UDP 88 del KDC).\n- **\"*\"**, que es TODO de ambos tipos — la forma de decir \"ejecutar el servicio en el pool\", y la única grafía que no puede quedar obsoleta la próxima vez que se añada una familia.\n\n\"*\" ES EL VALOR PREDETERMINADO (#364): con un almacén coordinador, cada solicitud va al worker de solicitudes. Con el almacén memory o ldif y workers.requestCount en su valor predeterminado no hay worker, y no se despacha nada. Vacío significa que no se despacha nada en ninguna parte. /tls y /admin-api/tls-connection nunca se despachan diga lo que diga esto, porque todo su contenido es lo que el servidor vio de la conexión por la que llegó la solicitud.\n\n**No se despacha nada salvo que este proceso esté coordinando**: una entrada aquí con un almacén que no tiene registro de cambios detiene el servicio al arrancar, nombrando este ajuste, en lugar de dejar que cada worker tenga una copia privada del directorio, las sesiones y los ajustes. Una RUTA nombrada aquí cuando ningún worker está sirviendo se RECHAZA con 503 en lugar de atenderse aquí, porque la misma ruta respondida por cualquiera de dos procesos que estuviera disponible es el fallo que este pool existe para evitar; una OPERACIÓN la hace en cambio quien llama, porque hacerla fallar tumbaría una escucha de protocolo por lo que es una medida de rendimiento."
   },
   "workers.dispatch|restartReason": {
     "en": "aff662049479560d",
@@ -1980,8 +1972,8 @@
     "text": "Exigir un nonce DPoP del servidor"
   },
   "oauth2.dpopNonceRequired|description": {
-    "en": "407ed41bf850f8d6",
-    "text": "Exige que cada prueba DPoP lleve un nonce proporcionado por este servidor (RFC 9449 secciones 8 y 9), lo que convierte la primera solicitud de una sesión en un 401 o un 400 y un reintento. Hace las pruebas MÁS RECIENTES y nunca las hace obligatorias: una solicitud sin encabezado DPoP sigue siendo una solicitud Bearer (las filas Exigir DPoP de abajo son las que las hacen obligatorias). POR DOMINIO DE CONFIANZA desde el 2026-09-12 — era un único interruptor para todo el proceso, así que un dominio que lo activaba lo activaba para todos los demás. En desarrollo, POST /dpop/nonce-mode escribe este ajuste para el dominio por el que se llega; en producto ese endpoint se niega y esta fila — mediante /admin/oauth2 o POST /admin-api/config/set, ambos tras una credencial — es la única forma de cambiarlo."
+    "en": "4742a4c9d71043fa",
+    "text": "Exige que cada prueba DPoP lleve un nonce proporcionado por este servidor (RFC 9449 secciones 8 y 9), lo que convierte la primera solicitud de una sesión en un 401 o un 400 y un reintento. Hace las pruebas MÁS RECIENTES y nunca las hace obligatorias: una solicitud sin encabezado DPoP sigue siendo una solicitud Bearer (las filas Exigir DPoP de abajo son las que las hacen obligatorias). POR DOMINIO DE CONFIANZA desde el 2026-09-12 — era un único interruptor para todo el proceso, así que un dominio que lo activaba lo activaba para todos los demás. Esta fila — en los ajustes DPoP de la página OAuth 2.0 o mediante POST /admin-api/config/set, ambos tras una credencial — es la única forma de cambiarlo, en cualquier modo."
   },
   "oauth2.dpopIatSkewS|label": {
     "en": "a0b12e9cd8d594ec",
@@ -4492,8 +4484,8 @@
     "text": "Confiar en los certificados de cliente TLS emitidos en el portal de usuario"
   },
   "tls.trustIssuedClientCertificates|description": {
-    "en": "c46e48de6cd1dd0b",
-    "text": "Activado añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena que pasa por esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: todos los demás pares de claves que emite este servicio encadenan con la misma raíz y se rechazan como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /tls/trust y tls.trustAnchorsFile, como antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
+    "en": "953c8172d6c3e3e6",
+    "text": "Activado añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena que pasa por esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: todos los demás pares de claves que emite este servicio encadenan con la misma raíz y se rechazan como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /admin/tls/trust y tls.trustAnchorsFile, como antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
   },
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -4748,8 +4740,8 @@
     "text": "Archivo de anclas de confianza para certificados de cliente"
   },
   "tls.trustAnchorsFile|description": {
-    "en": "8e6a32b19c9454cd",
-    "text": "Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de MODO PRODUCTO de llenar el almacén de confianza: POST /tls/trust y /tls/trust/clear responden a cualquiera en desarrollo y se rechazan en modo producto, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
+    "en": "ed7685645c8ebaaa",
+    "text": "Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza antes de que algo escuche; en tiempo de ejecución, /admin/tls/trust y POST /admin-api/tls/trust/add lo hacen tras una credencial, en cualquier modo — no hay puerta abierta, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
   },
   "tls.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -6208,8 +6200,8 @@
     "text": "Ofrecer certificados de cliente TLS"
   },
   "scim.authClientCert|description": {
-    "en": "41c02c4d0fa105c8",
-    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (consulte /tls), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación; aquí autentica a alguien que luego puede escribir en el directorio."
+    "en": "be5e7d5ccffce8c1",
+    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (/admin/tls/trust), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación; aquí autentica a alguien que luego puede escribir en el directorio."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -6772,8 +6764,8 @@
     "text": "Eventos recibidos conservados"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Cuántos SET conserva POST /ssf/receive para que los muestre /admin/ssf. Ese endpoint es este servicio actuando como RECEPTOR, que es a donde envía push el depurador cuando los papeles están invertidos; superado este número se descartan los más antiguos."
+    "en": "2c503bd8b26764ea",
+    "text": "Cuántos SET entregados conserva en su bandeja de entrada cada uno de los receptores propios de este servicio (el de la consola y el del portal), por dominio de confianza; superado este número se descartan los más antiguos."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "El ámbito necesario para crear, actualizar o eliminar un flujo, para añadir o quitar un sujeto, para cambiar un estado o para pedir un evento de verificación. Un ámbito de lectura no basta para ninguna de esas acciones, lo que hace de este el primer lugar de este servicio, además de SCIM, en que dos ámbitos difieren en lo que permiten."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Aceptar eventos enviados por push"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Si POST /ssf/receive acepta un Security Event Token enviado por push HACIA este servicio — con los papeles invertidos, siendo el depurador el transmisor. Verifica la firma cuando puede encontrar una clave e informa de lo que leyó en cualquier caso, porque un receptor que rechazara un evento no verificable no podría mostrar a una persona POR QUÉ no era verificable. Desactivado responde 501. Solo en modo de desarrollo: un dominio de producto no tiene /ssf/receive (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Audiencias a las que responde POST /ssf/receive"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "Los valores `aud` que acepta el receptor orientado al depurador en POST /ssf/receive. Un SET dirigido a ninguno de ellos se registra y se rechaza con invalid_audience, como lo rechaza un receptor real. VACÍO significa la propia URL del endpoint en este dominio, que es el nombre que un transmisor puede descubrir sin que se le indique ninguno."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Emisores que acepta POST /ssf/receive"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "Los valores `iss` que acepta POST /ssf/receive (SSF 1.0 sección 4.1.6: un receptor DEBE comprobar el emisor). Un SET de cualquier otro emisor se registra y se rechaza con invalid_issuer. VACÍO significa el emisor de transmisor propio de este dominio — el único emisor cuyos SET puede verificar este receptor, ya que no tiene ninguna otra clave."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",
@@ -10244,8 +10212,8 @@
     "text": "Puerto principal: archivo de anclas de confianza de certificados de cliente"
   },
   "listenerMain.trustAnchorsFile|description": {
-    "en": "4a18a3c227910699",
-    "text": "Solo para la escucha del puerto principal: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza en MODO PRODUCTO: POST /tls/trust y /tls/trust/clear responden a cualquiera en desarrollo y se rechazan en modo producto, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
+    "en": "be47c3bb57175ce2",
+    "text": "Solo para la escucha del puerto principal: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza antes de que algo escuche; en tiempo de ejecución, /admin/tls/trust y POST /admin-api/tls/trust/add lo hacen tras una credencial, en cualquier modo — no hay puerta abierta, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
   },
   "listenerMain.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10256,8 +10224,8 @@
     "text": "LDAPS: archivo de anclas de confianza de certificados de cliente"
   },
   "listenerLdaps.trustAnchorsFile|description": {
-    "en": "f6b936256fef99ad",
-    "text": "Solo para la escucha LDAPS: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza en MODO PRODUCTO: POST /tls/trust y /tls/trust/clear responden a cualquiera en desarrollo y se rechazan en modo producto, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
+    "en": "c15d167a0e065170",
+    "text": "Solo para la escucha LDAPS: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza antes de que algo escuche; en tiempo de ejecución, /admin/tls/trust y POST /admin-api/tls/trust/add lo hacen tras una credencial, en cualquier modo — no hay puerta abierta, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
   },
   "listenerLdaps.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10268,8 +10236,8 @@
     "text": "Depurador de protocolos: archivo de anclas de confianza de certificados de cliente"
   },
   "listenerDebugger.trustAnchorsFile|description": {
-    "en": "fd49ef2c2e5cbcb9",
-    "text": "Solo para la escucha del depurador de protocolos: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza en MODO PRODUCTO: POST /tls/trust y /tls/trust/clear responden a cualquiera en desarrollo y se rechazan en modo producto, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
+    "en": "111555560d2f6041",
+    "text": "Solo para la escucha del depurador de protocolos: tls.trustAnchorsFile. Vacío, el predeterminado, sigue a tls.trustAnchorsFile; cualquier otro valor decide solo para esta escucha. Un archivo PEM de certificados de CA contra los que se verifican los certificados de cliente en el puerto principal, cargado al arrancar. Es la forma de llenar el almacén de confianza antes de que algo escuche; en tiempo de ejecución, /admin/tls/trust y POST /admin-api/tls/trust/add lo hacen tras una credencial, en cualquier modo — no hay puerta abierta, porque un ancla que cualquiera puede añadir es un certificado de cliente que cualquiera puede hacer que se verifique. Vacío significa que el almacén de confianza empieza vacío, que es lo que siempre hizo."
   },
   "listenerDebugger.trustAnchorsFile|restartReason": {
     "en": "e55c19e24ed201cb",
@@ -10280,8 +10248,8 @@
     "text": "Puerto principal: confiar en los certificados de cliente TLS emitidos en el portal de usuario"
   },
   "listenerMain.trustIssuedClientCertificates|description": {
-    "en": "286edc74e95403d5",
-    "text": "Solo para la escucha del puerto principal: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
+    "en": "d36e02de3705d807",
+    "text": "Solo para la escucha del puerto principal: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /admin/tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
   },
   "listenerMain.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10292,8 +10260,8 @@
     "text": "LDAPS: confiar en los certificados de cliente TLS emitidos en el portal de usuario"
   },
   "listenerLdaps.trustIssuedClientCertificates|description": {
-    "en": "32dcdcb70976398a",
-    "text": "Solo para la escucha LDAPS: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
+    "en": "8771bad384fa372a",
+    "text": "Solo para la escucha LDAPS: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /admin/tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
   },
   "listenerLdaps.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
@@ -10304,8 +10272,8 @@
     "text": "Depurador de protocolos: confiar en los certificados de cliente TLS emitidos en el portal de usuario"
   },
   "listenerDebugger.trustIssuedClientCertificates|description": {
-    "en": "341b5b2f390ca26a",
-    "text": "Solo para la escucha del depurador de protocolos: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
+    "en": "7d2a9613dbaa95cc",
+    "text": "Solo para la escucha del depurador de protocolos: tls.trustIssuedClientCertificates. inherit, el predeterminado, sigue a tls.trustIssuedClientCertificates; cualquier otro valor decide solo para esta escucha. Activado, añade la CA raíz propia de este servicio al almacén de confianza de clientes del puerto principal, para que un certificado de cliente TLS que una persona se emite a sí misma en /portal/signing-key se verifique y le inicie sesión — en el dominio cuya CA emisora de clientes TLS lo firmó. Una cadena a través de esa raíz es una IDENTIDAD solo cuando la hoja procede de una CA emisora de clientes TLS con clientAuth: cualquier otro par de claves que emita este servicio encadena a la misma raíz y se rechaza como identidad (consulte common/tls_client_certificates.js). Desactivado deja el almacén de confianza a /admin/tls/trust y tls.trustAnchorsFile, como estaba antes; el portal sigue emitiendo, e indica que las escuchas no aceptarán lo que emite."
   },
   "listenerDebugger.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",

@@ -20,10 +20,6 @@
   "tileMaximum": "上限",
   "fileSet": "<code>tls.trustAnchorsFile</code> 為 <code>{file}</code>，啟動時從中載入了 {n} 個錨點。",
   "fileUnset": "未設定 <code>tls.trustAnchorsFile</code>，因此這裡的每個錨點都是在此程序執行期間新增的。",
-  "controlsBefore": " ",
-  "controlsAfter": " 上的兩個測試控制項 — <code>POST /tls/trust</code> 與 <code>POST /tls/trust/clear</code> — ",
-  "controlsOpen": "在此開發模式程序中對任何人開放。",
-  "controlsRefused": "在產品模式下會被拒絕；此頁面與 <code>/admin-api/tls/trust</code> 是執行時的入口。",
   "anchors": "錨點",
   "thSubject": "主體",
   "thIssuer": "簽發者",
@@ -40,6 +36,5 @@
   "linkJson": "此頁面的 JSON",
   "linkApi": "透過管理 API 取得的相同內容",
   "linkSettings": "TLS 監聽器的設定",
-  "linkEndpoint": "TLS 端點",
   "linkPki": "本服務自己的憑證授權單位"
 }

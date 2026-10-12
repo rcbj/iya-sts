@@ -620,8 +620,8 @@
     "text": "LES CINQ FORMATS DE JETON D’ACCÈS, dont trois ne sont pas des JWT. jwt-signed passe par le même signataire que tous les autres JWT ici, avec l’en-tête `typ` gnap-at+jwt (#157) ; un biscuit est signé avec la clé Ed25519 du domaine (la signature de bloc propre à Biscuit) ; une capacité ZCAP-LD porte une preuve Data Integrity dans la suite que nomme gnap.zcapCryptosuite — eddsa-jcs-2022 par défaut, mldsa44-jcs-2024 ou slhdsa128-jcs-2024 avec la clé post-quantique du domaine, ou Ed25519Signature2020 pour la compatibilité ; un macaroon est une chaîne HMAC-SHA256 sous une clé dérivée par serveur de ressources. Il signe également une réponse HTTP avec la RFC 9421 lorsqu’une instance de client en demande une."
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "CHAQUE REQUÊTE QUE FAIT UNE INSTANCE DE CLIENT, au moyen de la clé qu’elle a présentée : une signature de message HTTP RFC 9421 (le corps étant couvert par un Content-Digest RFC 9530), un certificat TLS mutuel (révocation consultée ; une chaîne vers le magasin de confiance des clients et une liaison à l’entrée d’application avec gnap.mtlsTrust=pki, la valeur par défaut en mode produit), un JWS détaché sur le corps ou un JWS attaché le contenant. Une rotation de clé est vérifiée sous LES DEUX clés. Un serveur de ressources qui appelle l’introspection ou l’enregistrement fait l’objet de la même preuve, et chaque format de jeton est vérifié à l’introspection et au serveur de ressources de démonstration."
+    "en": "0128ae60345397de",
+    "text": "CHAQUE REQUÊTE QUE FAIT UNE INSTANCE DE CLIENT, au moyen de la clé qu’elle a présentée : une signature de message HTTP RFC 9421 (le corps étant couvert par un Content-Digest RFC 9530), un certificat TLS mutuel (révocation consultée ; une chaîne vers le magasin de confiance des clients et une liaison à l’entrée d’application avec gnap.mtlsTrust=pki, la valeur par défaut en mode produit), un JWS détaché sur le corps ou un JWS attaché le contenant. Une rotation de clé est vérifiée sous LES DEUX clés. Un serveur de ressources qui appelle l’introspection ou l’enregistrement fait l’objet de la même preuve, et chaque format de jeton est vérifié à l’introspection."
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "IL N’ACCEPTE PAS DE REQUÊTE SANS PREUVE POUR UN JETON LIÉ, et aucun paramètre ne le permet : une preuve de clé GNAP est le protocole lui-même et non une option de durcissement. Ce qui est facultatif, c’est un jeton AU PORTEUR, que gnap.bearerTokens désactive. Les caveats tierces des macaroons, les blocs tiers de Biscuit et les preuves d’invocation ZCAP ne sont pas implémentés."
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "CHAQUE REQUÊTE QUE FAIT UNE INSTANCE DE CLIENT, au moyen de la clé qu’elle a présentée : une signature de message HTTP RFC 9421 (le corps étant couvert par un Content-Digest RFC 9530), un certificat TLS mutuel (révocation consultée ; une chaîne vers le magasin de confiance des clients et une liaison à l’entrée d’application avec gnap.mtlsTrust=pki, la valeur par défaut en mode produit), un JWS détaché sur le corps ou un JWS attaché le contenant. Une rotation de clé est vérifiée sous LES DEUX clés. Un serveur de ressources qui appelle l’introspection ou l’enregistrement fait l’objet de la même preuve, et chaque format de jeton est vérifié à l’introspection."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1124,8 +1120,8 @@
     "text": "CHAQUE SECURITY EVENT TOKEN, et c’est le document de ce service pour lequel le choix de l’algorithme mérite le plus de réflexion. Un SET consigne que quelque chose S’EST PRODUIT et la RFC 8417 section 4.1.4 lui interdit d’expirer ; il est donc lu longtemps après avoir été écrit — ce qui est précisément le cas visé par l’argument « récolter maintenant, déchiffrer plus tard ». La signature passe par le MÊME signataire que tous les autres JWT ici, de sorte que `ssf.signingAlgorithm` donne accès à toute la table : RS256 par défaut, les familles PS et ES, EdDSA, et les algorithmes post-quantiques — ML-DSA en trois tailles, SLH-DSA en deux, et les six algorithmes composites ML-DSA + traditionnel. Une signature SLH-DSA prend jusqu’à une seconde et s’exécute sur le pool de threads de libuv, de sorte que ce service continue de répondre pendant ce temps et que le récepteur attend."
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "Un Security Event Token poussé VERS ce service à `POST /ssf/receive` — les rôles étant inversés — par rapport à son propre JWKS, qui est la seule clé dont il dispose. Un SET signé par quelqu’un d’autre est signalé comme NON VÉRIFIABLE ICI plutôt que comme invalide, et est tout de même ACCEPTÉ à moins que `ssf.receiveRequireSignature` soit activé : un récepteur qui refuserait ne pourrait montrer à personne ce qui est arrivé ni pourquoi la vérification a échoué, ce qui est justement la question posée. Il vérifie également le jeton d’accès à chaque appel de gestion de flux, par la même vérification que celle qu’utilisent tous les autres points de terminaison protégés ici."
+    "en": "eb64e2686979148b",
+    "text": "Le jeton d’accès à chaque appel de gestion de flux, par la même vérification que celle de tout autre point de terminaison protégé ici, et un SET poussé vers le récepteur propre à la console ou au portail, avec le JWKS de ce service."
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1142,10 +1138,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "IL SIGNE MAL EXPRÈS QUAND ON LE LUI DEMANDE. `ssf.breakSetSignature` modifie UN SEUL CARACTÈRE de la signature après la signature, de sorte qu’un récepteur qui ne vérifie pas accepte un événement que rien n’a signé. Il s’agit délibérément d’un caractère plutôt que d’une troncature : une signature tronquée échoue au décodage base64url et est signalée comme un jeton MAL FORMÉ, ce qui est, pour celui qui est testé, un bogue différent d’un jeton mal signé. Mode développement uniquement : un domaine en mode produit l’ignore et refuse qu’on le définisse (#104)."
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "Le jeton d’accès à chaque appel de gestion de flux, par la même vérification que celle de tout autre point de terminaison protégé ici, et un SET poussé vers le récepteur propre à la console ou au portail, avec le JWKS de ce service. /ssf/receive est un point de terminaison de développement (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

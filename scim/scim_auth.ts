@@ -726,7 +726,8 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'demanded.',
   clientcert: 'Mutual TLS, the first scheme RFC 7644 section 2 names. ' +
     'Available only where this request arrived over TLS with a certificate ' +
-    'that VERIFIED against an anchor somebody POSTed to /tls/trust — so on ' +
+    'that VERIFIED against an anchor in the client truststore ' +
+    '(/admin/tls/trust) — so on ' +
     'the main port only when it is bound as HTTPS (global.https, which ' +
     'oauth2.rfc9700 turns on). The identity is the subject in RFC 4514 ' +
     'form, which is the same string /admin/users and the directory ' +
@@ -2603,7 +2604,7 @@ class ScimAuth {
       ok: true, scheme: 'clientcert', principal: subject, isClient: false,
       scopes: '',
       note:
-        'a client certificate that verified against an anchor from /tls/trust' +
+        'a client certificate that verified against the client truststore' +
             (certificate.fingerprint256 ?
              ' (' + certificate.fingerprint256 + ')' : '')
     };

@@ -408,8 +408,8 @@ const REQUIREMENTS = [
           'disagreed about whether a forwarded header was believable — and ' +
           'the htu one had teeth, because a client that chooses the expected ' +
           'htu can replay a proof captured at another endpoint by naming it. ' +
-          'GET /tls/forwarded shows what a request carried and what was ' +
-          'believed of it.' },
+          'Monitoring → TLS connection (GET /admin-api/tls-connection) shows ' +
+          'what a request carried and what was believed of it.' },
 
   { id: 'no-certificate-header', section: '2.6', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'always',
@@ -423,7 +423,8 @@ const REQUIREMENTS = [
           'read the certificate off the TLS handshake itself. The cost is ' +
           'real and is stated rather than hidden — a proxy terminating mTLS ' +
           'in front of this service cannot pass the certificate through — ' +
-          'and /tls/forwarded lists the ones a request carried so that ' +
+          'and Monitoring → TLS connection lists the ones a request carried ' +
+          'so that ' +
           'ignoring them is visible rather than silent.' },
 
   { id: 'proxy-sanitizes-headers', section: '2.6', level: 'MUST',
@@ -437,7 +438,8 @@ const REQUIREMENTS = [
           'lets any client reach past it. What this service can do about it ' +
           'is not believe those headers unless told to ' +
           '(proxy-headers-not-trusted) and show what arrived ' +
-          '(/tls/forwarded); it cannot make the hop in front of it behave. ' +
+          '(Monitoring → TLS connection); it cannot make the hop in front of ' +
+          'it behave. ' +
           'The same is true of protecting the proxy-to-application ' +
           'connection against eavesdropping, injection and replay — that is ' +
           'a deployment decision about a link this process has no view of.' },
@@ -668,8 +670,8 @@ const REQUIREMENTS = [
           'window a proof is accepted in, and a repeat is refused — so a ' +
           'proof captured off the wire cannot be used a second time even ' +
           'within its own freshness window. Turning on the server-supplied ' +
-          'nonce (/dpop/nonce-mode) narrows that window to one this server ' +
-          'chose. A certificate binding needs no replay defence of its own: ' +
+          'nonce (the per-realm setting oauth2.dpopNonceRequired) narrows ' +
+          'that window to one this server chose. A certificate binding needs no replay defence of its own: ' +
           'the proof is the TLS handshake, which cannot be replayed without ' +
           'the private key.' },
 

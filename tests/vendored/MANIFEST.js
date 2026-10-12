@@ -420,8 +420,9 @@ const JOBS = [
   // code from `gnap/`, and each runs in a throwaway realm it leaves behind.
   //
   // `testPeer: true` (#586): since the demonstration resource server became
-  // development only (#585), the resource server these jobs present tokens
-  // at is the TEST PEER's (tests/peer/), and a run with no peer — an AWS
+  // development only (#585), and was deleted (#593), the resource server
+  // these jobs present tokens at is the TEST PEER's (tests/peer/), and a
+  // run with no peer — an AWS
   // target — reports the job SKIPPED with that reason, as `conformance` and
   // `samlPeer` are.
   { file: 'sts_gnap_core.js',            browser: false, local: true,
@@ -519,9 +520,10 @@ const JOBS = [
   // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
   // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
   // aud, the RFC 9493 names and the final complex subject, the inserted-path
-  // discovery form, verification, status in section 8.1.5's order, and
-  // /ssf/receive's typ, iss and aud checks. `local: true`: this repository's
-  // own transmitter, in a throwaway realm it leaves behind.
+  // discovery form, verification, status in section 8.1.5's order, and a
+  // push to the test peer's receiver (/ssf/receive's own checks went with
+  // it, #593). `local: true`: this repository's own transmitter, in a
+  // throwaway realm it leaves behind.
   { file: 'sts_ssf_conformance.js',      browser: false, local: true },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
@@ -1169,6 +1171,14 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
+  // `/tls/forwarded` and the two open truststore acts unrouted; the console
+  // page and its operation, `GET /admin-api/tls-connection`, describing a
+  // request with no client certificate and its forwarding headers, and one
+  // presenting a certificate whose Root this job added through
+  // `/admin-api/tls/trust/add` (and removes again). `local: true`: this
+  // repository's console and management API.
+  { file: 'sts_tls_connection.js',       browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

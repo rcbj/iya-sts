@@ -4,7 +4,7 @@ title: User-facing pages
 
 # User-facing pages
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/tls` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 These are all the things this service shows a person in a browser, an inbox or
 an authenticator prompt. Everything else it serves is for programs: token,
@@ -268,7 +268,7 @@ translation:
   credential issuer ("Mock University") at `/issuer` and the sample
   verifier ("The Bar Door") at `/oid4vp/verifier`, translated since #582 —
   see *The demonstration issuer and verifier* above.
-- **Operator and diagnostic views**: `/tls` and its sub-pages. The XACML,
+- **Operator and diagnostic views**: the XACML,
   SPIFFE, SCIM, Shared Signals and SAML description pages are translated
   since #584 — see *The protocol families' description pages* above.
 - **Error pages**: "This request could not be completed" and every other

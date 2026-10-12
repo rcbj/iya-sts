@@ -4329,13 +4329,6 @@ const SCHEMAS = {
                      'dispatched service has one per process, and this is ' +
                      'the one that answered.'
       },
-      receivedDetail: {
-        type: 'array',
-        description: 'What POST /ssf/receive has taken, newest first, with ' +
-                     'whether each signature verified and whether the ' +
-                     'application/secevent+jwt media type was used.',
-        items: { type: 'object' }
-      },
       settings: {
         type: 'object',
         description: 'The `SSF` setting group as /admin/ssf draws it, with ' +

@@ -4001,9 +4001,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    there — `seq` is monotonic only within one process, so the sort is by TIME,
    and the cap is per process. **The test to apply to the next `merge: 'own'`
    store is not "is it declared right" but "does everything that REPORTS it
-   fan in"**: three stores in this service still do not, and each is a page
+   fan in"**: two stores in this service still do not, and each is a page
    that under-reports rather than a page that is wrong —
-   `admin_stats.scimCounts`, `admin_stats.users` and `ssf_streams.received`.
+   `admin_stats.scimCounts` and `admin_stats.users` (`ssf_streams.received`
+   was the third, until #593 deleted it with `POST /ssf/receive`).
 
    **`record()` CANNOT THROW.** The whole body is wrapped and a caller must
    never guard it — the fourth place that rule applies (after `audit()`,
@@ -8667,8 +8668,9 @@ decisions, and where each half lives:
   `STS-VC-0100`, `STS-DEVICE-0035`) are RETIRED, kept in the table, never
   reused. `processDemoOnly` is the same mark asking the DEFAULT realm as well,
   for a door to something every realm shares — `/tls/trust` and
-  `/tls/trust/clear`, the process's one truststore — so a development realm
-  inside a product process is not a way in. The protected Kerberos service's
+  `/tls/trust/clear`, the process's one truststore, until #597 deleted both
+  (no route carries it now) — so a development realm inside a product
+  process is not a way in. The protected Kerberos service's
   TCP socket is the process's too: `server.js` does not bind it when the
   default realm is product.
 * **Per realm**, like every predicate here: a development realm in a product
@@ -8686,11 +8688,11 @@ decisions, and where each half lives:
   pages, `/admin/crypto-metadata`'s families, the hosted-applications
   catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
   banner all drop what the realm, or the process, is not served.
-* **Defaults that pointed at one** follow it: the GNAP demonstration resource
-  server is a token's default audience, a registered target and the catalogue
-  type `urn:iya-sts:gnap:demo` only where it is served; `xacml.pepBias`, read
-  only by `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`;
-  `ssf.receiveEnabled` governs a development endpoint.
+* **Defaults that pointed at one** follow it: `xacml.pepBias`, read only by
+  `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`. The GNAP
+  demonstration resource server (a token's default audience, a registered
+  target and the catalogue type `urn:iya-sts:gnap:demo` where it was served)
+  and `ssf.receiveEnabled` went with their endpoints in #593.
 * **What a product operator uses instead**: `/admin-api` (verifications #587,
   the principals, the truststore), the user portal (a credential offer, #589),
   and in the suite the test peer (#586). Spec-defined endpoints a real feature
@@ -11302,8 +11304,8 @@ product, to one definition, this file's:
   that checks an `aud` rather than from a list: the default resource
   indicator of a hosted authorization server
   (`jwt_access_token.isOwnResourceAudience()`), the management API
-  (`mgmt-api/admin_api`'s `namesThisApi()`), and the GNAP demonstration
-  resource server while `gnap.demoResourceServer` is on;
+  (`mgmt-api/admin_api`'s `namesThisApi()`), and the account API (#568) —
+  the GNAP demonstration resource server was the fourth until #593;
 * **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.

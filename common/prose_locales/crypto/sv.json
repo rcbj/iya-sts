@@ -620,8 +620,8 @@
     "text": "DE FEM FORMATEN FÖR ÅTKOMSTTOKEN, varav tre inte är JWT:er. jwt-signed går genom samma signerare som varje annan JWT här, med huvudet `typ` gnap-at+jwt (#157); en biscuit signeras med sfärens Ed25519-nyckel (Biscuits egen blocksignatur); en ZCAP-LD-capability bär ett Data Integrity-bevis i den svit som gnap.zcapCryptosuite namnger — eddsa-jcs-2022 som standard, mldsa44-jcs-2024 eller slhdsa128-jcs-2024 med sfärens postkvantnyckel, eller Ed25519Signature2020 för kompatibilitet; en macaroon är en HMAC-SHA256-kedja under en nyckel som härleds per resursserver. Den signerar också ett HTTP-svar med RFC 9421 när en klientinstans ber om det."
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "VARJE BEGÄRAN SOM EN KLIENTINSTANS GÖR, med den nyckel den uppvisade: en RFC 9421-HTTP-meddelandesignatur (med bodyn täckt av en RFC 9530-Content-Digest), ett ömsesidigt TLS-certifikat (återkallelse kontrolleras; en kedja till klientens förtroendelager och en bindning till applikationsposten under gnap.mtlsTrust=pki, produktlägets standard), en frikopplad JWS över bodyn eller en bifogad JWS som bär den. En nyckelrotation verifieras under BÅDA nycklarna. En resursserver som anropar introspektion eller registrering bevisas på samma sätt, och varje tokenformat verifieras vid introspektion och vid demonstrationsresursservern."
+    "en": "0128ae60345397de",
+    "text": "VARJE BEGÄRAN SOM EN KLIENTINSTANS GÖR, med den nyckel den uppvisade: en RFC 9421-HTTP-meddelandesignatur (med bodyn täckt av en RFC 9530-Content-Digest), ett ömsesidigt TLS-certifikat (återkallelse kontrolleras; en kedja till klientens förtroendelager och en bindning till applikationsposten under gnap.mtlsTrust=pki, produktlägets standard), en frikopplad JWS över bodyn eller en bifogad JWS som bär den. En nyckelrotation verifieras under BÅDA nycklarna. En resursserver som anropar introspektion eller registrering bevisas på samma sätt, och varje tokenformat verifieras vid introspektion."
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "DEN ACCEPTERAR INTE EN BEGÄRAN UTAN BEVIS FÖR EN BUNDEN TOKEN, och det finns ingen inställning som får den att göra det: ett GNAP-nyckelbevis är protokollet snarare än ett härdningsalternativ. Det som är valfritt är en INNEHAVARTOKEN (bearer), som gnap.bearerTokens stänger av. Macaroon-tredjepartsvillkor, Biscuit-tredjepartsblock och ZCAP-anropsbevis är inte implementerade."
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "VARJE BEGÄRAN SOM EN KLIENTINSTANS GÖR, med den nyckel den uppvisade: en RFC 9421-HTTP-meddelandesignatur (med bodyn täckt av en RFC 9530-Content-Digest), ett ömsesidigt TLS-certifikat (återkallelse kontrolleras; en kedja till klientens förtroendelager och en bindning till applikationsposten under gnap.mtlsTrust=pki, produktlägets standard), en frikopplad JWS över bodyn eller en bifogad JWS som bär den. En nyckelrotation verifieras under BÅDA nycklarna. En resursserver som anropar introspektion eller registrering bevisas på samma sätt, och varje tokenformat verifieras vid introspektion."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1124,8 +1120,8 @@
     "text": "VARJE SECURITY EVENT TOKEN, och det är det dokument i den här tjänsten där algoritmen är mest värd att tänka på. En SET registrerar att något HÄNDE och RFC 8417 avsnitt 4.1.4 förbjuder den att gå ut, så den läses långt efter att den skrevs — vilket är just det fall som ett argument om att samla in nu och dekryptera senare egentligen handlar om. Signaturen går genom SAMMA signerare som varje annan JWT här går igenom, så `ssf.signingAlgorithm` når hela tabellen: RS256 som standard, PS- och ES-familjerna, EdDSA och de postkvanta — ML-DSA i tre storlekar, SLH-DSA i två, och de sex sammansatta algoritmerna ML-DSA + traditionell. En SLH-DSA-signatur tar upp till en sekund och körs på libuvs trådpool, så den här tjänsten svarar hela tiden och mottagaren väntar."
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "En Security Event Token som skjuts TILL den här tjänsten vid `POST /ssf/receive` — rollerna omvända — mot dess egen JWKS, som är den enda nyckel den har. En SET signerad av någon annan rapporteras som INTE VERIFIERBAR HÄR snarare än som ogiltig, och ACCEPTERAS ändå om inte `ssf.receiveRequireSignature` är på: en mottagare som avvisade skulle inte kunna visa någon vad som kom fram eller varför det inte verifierades, vilket är frågan som ställs. Den verifierar också åtkomsttoken vid varje anrop för strömhantering, genom samma kontroll som varje annan skyddad slutpunkt här använder."
+    "en": "eb64e2686979148b",
+    "text": "Åtkomsttoken vid varje anrop för strömhantering, genom samma kontroll som varje annan skyddad slutpunkt här använder, och en SET som skickats till konsolens eller portalens egen mottagare mot den här tjänstens JWKS."
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1142,10 +1138,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "DEN SIGNERAR DÅLIGT MED AVSIKT NÄR DEN OMBEDS. `ssf.breakSetSignature` ändrar ETT TECKEN i signaturen efter signeringen, så en mottagare som inte verifierar accepterar en händelse som ingenting signerat. Det är ett tecken snarare än en trunkering med avsikt: en trunkerad signatur misslyckas vid base64url-avkodningen och rapporteras som en MISSBILDAD token, vilket är ett annat fel än en felaktig för den som testas. Enbart utvecklingsläge: en produktsfär ignorerar den och vägrar att den sätts (#104)."
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "Åtkomsttoken vid varje anrop för strömhantering, genom samma kontroll som varje annan skyddad slutpunkt här använder, och en SET som skickats till konsolens eller portalens egen mottagare mot den här tjänstens JWKS. /ssf/receive är en utvecklingsslutpunkt (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

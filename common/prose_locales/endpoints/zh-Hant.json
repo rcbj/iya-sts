@@ -131,14 +131,6 @@
     "en": "6757bf6175282a42",
     "text": "ZCAP 控制者文件"
   },
-  "endpoints.route./gnap/rs/resource.name": {
-    "en": "f4816b24c4f7295e",
-    "text": "示範資源伺服器"
-  },
-  "endpoints.route./gnap/rs/spend.name": {
-    "en": "70a2444f2afabc4c",
-    "text": "示範資源伺服器的花用"
-  },
   "endpoints.route./admin-api/gnap.name": {
     "en": "c34c3f89f048c143",
     "text": "GNAP 主控台頁面，以 JSON 提供"
@@ -271,14 +263,6 @@
     "en": "ac4ccca804188b23",
     "text": "輪詢傳遞（RFC 8936）"
   },
-  "endpoints.route./ssf/receive.name": {
-    "en": "115adfc135af6faf",
-    "text": "推送「至」本服務的 Security Event Token"
-  },
-  "endpoints.route./ssf/received.name": {
-    "en": "7ba22ad915534fad",
-    "text": "已推送至此處的內容"
-  },
   "endpoints.route./scim.name": {
     "en": "56accbf45038167b",
     "text": "SCIM 介面是什麼"
@@ -347,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "註冊 HOBA 公開金鑰"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "TLS 端點是什麼"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "TLS 頁面的指令碼"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "以用戶端憑證登入"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "代理告訴本服務的內容"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "伺服器憑證（PEM）"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "信任用戶端憑證簽發者"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "清空用戶端信任存放區"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1067,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "新增或移除用戶端憑證信任錨點"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "本服務所見到的請求 TLS 連線"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Kerberos PAC 宣告"
@@ -1579,14 +1547,6 @@
     "en": "f60f44154acbc444",
     "text": "權杖端點"
   },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "裝置合規測試控制項（非規格端點）"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "DPoP nonce 開關（非規格端點）"
-  },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "同意畫面"
@@ -1678,10 +1638,6 @@
   "endpoints.route./oauth2/par.name": {
     "en": "59993176c4a0e4a5",
     "text": "推送授權請求端點"
-  },
-  "endpoints.route./oauth2/step-up/resource/:application.name": {
-    "en": "2d9263a1f29be372",
-    "text": "逐步提升驗證的替身資源"
   },
   "endpoints.route./admin-api/oauth2/monitor.name": {
     "en": "21eb6990b9a90996",

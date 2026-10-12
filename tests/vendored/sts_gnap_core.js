@@ -27,7 +27,7 @@
 // `user`).
 //
 // THE RESOURCE SERVER IS THE TEST PEER'S (#586), in every mode: the
-// service's demonstration one is development only since #585. The peer is
+// service's demonstration one was deleted by #593. The peer is
 // registered in the realm as an ordinary GNAP resource server, the rights
 // asked for are of the type it declares, and it judges each presented token
 // by RFC 9767 introspection and the key proof it checks itself

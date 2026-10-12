@@ -248,8 +248,8 @@
     "text": "Shared Signals"
   },
   "listeners.applications.ssf.what": {
-    "en": "7ae68852bd9347c9",
-    "text": "Shared Signals-sändaren och -mottagaren."
+    "en": "0755a2e473f064ed",
+    "text": "Shared Signals-sändaren."
   },
   "listeners.applications.gnap.label": {
     "en": "6bc8ff11f56aea8c",
@@ -316,20 +316,12 @@
     "text": "SPIFFE-slutpunkten för bundles."
   },
   "listeners.applications.tls.label": {
-    "en": "f0128c74e6e50ff1",
-    "text": "TLS-diagnostik"
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
   },
   "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "TLS-vyerna och dörren till klientens förtroendelager."
-  },
-  "listeners.applications.devices.label": {
-    "en": "f8fcb8ceb53f6ebf",
-    "text": "Enhetsregistrering"
-  },
-  "listeners.applications.devices.what": {
-    "en": "78a9dc85ad771ffa",
-    "text": "Enhetsregistrets testkontroller."
+    "en": "22e07124e7ed4aca",
+    "text": "Servercertifikatet som den här tjänsten presenterar."
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",

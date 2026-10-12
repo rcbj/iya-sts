@@ -248,8 +248,8 @@
     "text": "Shared Signals"
   },
   "listeners.applications.ssf.what": {
-    "en": "7ae68852bd9347c9",
-    "text": "Ang Shared Signals transmitter at receiver."
+    "en": "0755a2e473f064ed",
+    "text": "Ang Shared Signals transmitter."
   },
   "listeners.applications.gnap.label": {
     "en": "6bc8ff11f56aea8c",
@@ -316,20 +316,12 @@
     "text": "Ang SPIFFE bundle endpoint."
   },
   "listeners.applications.tls.label": {
-    "en": "f0128c74e6e50ff1",
-    "text": "TLS diagnostics"
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
   },
   "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "Ang mga TLS view at ang pinto ng client truststore."
-  },
-  "listeners.applications.devices.label": {
-    "en": "f8fcb8ceb53f6ebf",
-    "text": "Device registration"
-  },
-  "listeners.applications.devices.what": {
-    "en": "78a9dc85ad771ffa",
-    "text": "Ang mga test control ng device register."
+    "en": "22e07124e7ed4aca",
+    "text": "Ang server certificate na ipinapakita ng serbisyong ito."
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",

@@ -382,7 +382,8 @@ async function mintTheCredential() {
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
-  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and section 3 cannot ask the PDP " +
     "anything at all.");
@@ -395,8 +396,9 @@ async function mintTheCredential() {
   //
   // The launcher posted it once, before this container started, and **the
   // truststore is a Map in the service's process that ANY job can empty**:
-  // `POST /tls/trust/clear` needs no credential, and a job that exercises the
-  // truststore is entitled to use it.
+  // `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+  // job that exercises the truststore through /admin-api/tls/trust is still
+  // entitled to remove what it finds.
   //
   // **NOTHING NOTICED UNTIL THE DAY A CLIENT CERTIFICATE STOPPED BEING A
   // TURNSTILE.** This container's pull, its heartbeat and — since the PIP
@@ -426,7 +428,8 @@ async function mintTheCredential() {
   if (containerAnchor.indexOf("BEGIN CERTIFICATE") >= 0) {
     const back = await credentials.trustAnchor(base, containerAnchor);
     assert.ok(back.ok,
-      "POST /tls/trust should accept the PEP container's Root CA, which the " +
+      "POST /admin-api/tls/trust/add should accept the PEP container's " +
+      "Root CA, which the " +
       "launcher minted and exported as XACML_PEP_CA_PEM; it answered " +
       back.status + ". Every assertion below rests on that container's " +
       "certificate VERIFYING, and an earlier job in this run may have " +
@@ -896,7 +899,8 @@ async function mintTheContainersCredential() {
   const cred = await credentials.mint({ subject: containerSubject() });
   const posted = await credentials.trustAnchor(base, cred.anchorPem);
   assert.ok(posted.ok,
-    "POST /tls/trust should accept the Root CA for the PEP container this " +
+    "POST /admin-api/tls/trust/add should accept the Root CA for the PEP " +
+    "container this " +
     "job is about to start; it answered " + posted.status + ". Without the " +
     "anchor that container's certificate verifies against nothing, it " +
     "registers as an unauthenticated caller, and the PDP refuses it with a " +
@@ -1319,9 +1323,10 @@ async function itRegistersAndPulls() {
       "drives \"" + PEP_NAME + "\"");
     assert.strictEqual(seen.registration.authenticated, true,
       "OVER MUTUAL TLS, BETWEEN TWO CONTAINERS. The launcher minted a client " +
-      "certificate with tests/tools/pep-credential.js, POSTed its Root CA to " +
-      "/tls/trust and mounted the leaf and key into this container; the " +
-      "handshake at /xacml/pep/register carried it. It says " +
+      "certificate with tests/tools/pep-credential.js, added its Root CA " +
+      "through /admin-api/tls/trust/add and mounted the leaf and key into " +
+      "this container; the handshake at /xacml/pep/register carried it. " +
+      "It says " +
       JSON.stringify(seen.registration) + pepLog());
   });
 

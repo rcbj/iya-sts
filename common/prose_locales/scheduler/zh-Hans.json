@@ -92,8 +92,8 @@
     "text": "GNAP：已结束授予的限额"
   },
   "sched.jobs.gnap.spend-purge.describe": {
-    "en": "84f932ae29b1dfb3",
-    "text": "在 GNAP 授予结束、其令牌已无法出示之后，删除演示资源服务器为该授予的限额保留的累计值（#432）。"
+    "en": "71471822b228b1b8",
+    "text": "在 GNAP 授予结束、其令牌已无法出示之后，删除为该授予的限额保留的累计值（#432）。"
   },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",

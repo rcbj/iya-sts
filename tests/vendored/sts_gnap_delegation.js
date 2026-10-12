@@ -196,8 +196,8 @@ async function test() {
   const assertions = {};
   for (const who of [PLAIN, IMP]) {
     // The right is this job's catalogued TYPE, not the harness's default —
-    // the demonstration resource server's type, which a product realm does
-    // not catalogue since #585.
+    // the test peer's type, which no resource server in this realm declares,
+    // so a token for it would name none (STS-GNAP-0904, #593).
     const signedIn = await h.redirectGrant(keys[who], OWNER, {
       access_token: { access: [right([RS.b])] },
       subject: { assertion_formats: ["id_token"] } });
@@ -286,9 +286,11 @@ async function test() {
               act.authorizedBy);
     assert.strictEqual(act.produced.length, 1);
   });
+  // A right naming a registered resource server: one naming none is refused
+  // invalid_request in every mode since #593 (STS-GNAP-0904).
   r = await keys[PLAIN].send("POST", h.GRANT, { json: {
     client: { key: keys[PLAIN].keyObject() },
-    access_token: { access: ["gd-read"] } } });
+    access_token: { access: [right([RS.b])] } } });
   check("I5. the client acting as itself asks nothing and its token names " +
         "nobody", function () {
     assert.strictEqual(r.status, 200, r.text);

@@ -875,13 +875,13 @@ const SETTINGS = [
   //
   // WHAT IT COSTS, because it is not free: there is then NO plain HTTP
   // listener in this process that serves anything but `/pki/`
-  // (`pki.httpPort`), and `POST /tls/trust` and `GET /tls/server-certificate`
-  // were on one deliberately — they are what a caller reaches BEFORE it trusts
-  // anything. The certificate is generated at every start (and certified under
+  // (`pki.httpPort`), and `GET /tls/server-certificate` (and `POST
+  // /tls/trust`, until #597 deleted it) were on one deliberately — they are
+  // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated on /tls rather than left to be
-  // discovered.
+  // ordinary bootstrap for a mock and is stated in docs/tls.md rather than
+  // left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
     // processValue() and not value(): a realm may carry `oauth2.rfc9700`, and
@@ -969,7 +969,8 @@ const SETTINGS = [
                  'when nothing is: with no proxy, those are ordinary headers ' +
                  'any client can set, and believing them lets a caller ' +
                  'choose what this service thinks its own issuer and ' +
-                 'endpoints are. GET /tls/forwarded shows what a request ' +
+                 'endpoints are. Monitoring → TLS connection shows what a ' +
+                 'request ' +
                  'actually carried and what was believed of it. NOTE that ' +
                  'this service never reads a client certificate out of a ' +
                  'header (X-Client-Cert and its relatives) in either mode — ' +
@@ -1380,7 +1381,8 @@ const SETTINGS = [
                  '7.3.2) is trusted. `pki` (section 11.4) requires the TLS ' +
                  'client certificate to chain to the client truststore — ' +
                  'this realm\'s TLS client authority, or an anchor installed ' +
-                 'at /tls/trust — and to be bound to the client\'s ' +
+                 'through /admin-api/tls/trust — and to be bound to the ' +
+                 'client\'s ' +
                  'application entry: issued to it by this realm, or carrying ' +
                  'the one RFC 8705 subject parameter the entry registers ' +
                  '(oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* ' +
@@ -1643,15 +1645,6 @@ const SETTINGS = [
     'both, never on the JWE around jwt-encrypted, which is encrypted to a ' +
     'resource server\'s key or a secret. Macaroons, biscuits and ZCAP-LD ' +
     'capabilities are not JWSs and are not affected.'),
-  { key: 'gnap.demoResourceServer', group: 'GNAP', label: 'Run the ' +
-      'demonstration resource server',
-    path: 'gnap.demoResourceServer', env: 'STS_GNAP_DEMO_RESOURCE_SERVER',
-    type: 'bool', dflt: true,
-    runtime: true,
-    description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
-                 'any of the five formats and answers the RS-first challenge ' +
-                 'of section 9.1. Development mode only: a product realm ' +
-                 'has no demonstration resource server (#585).' },
   { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
       'cache (seconds)',
     path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
@@ -3613,10 +3606,10 @@ const SETTINGS = [
                  'request goes to the request worker. With the memory or ' +
                  'ldif store and workers.requestCount at its default there ' +
                  'is no worker, and nothing is dispatched. Empty means ' +
-                 'nothing is dispatched anywhere. /tls is ' +
-                 'never dispatched whatever this says, because its whole ' +
-                 'content is what the server saw of the connection the ' +
-                 'request arrived on.\n\n**Nothing is dispatched unless this ' +
+                 'nothing is dispatched anywhere. /tls and ' +
+                 '/admin-api/tls-connection are never dispatched whatever ' +
+                 'this says, because what they answer is what the server ' +
+                 'saw of the connection the request arrived on.\n\n**Nothing is dispatched unless this ' +
                  'process is coordinating**: an entry here with a store that ' +
                  'has no change log stops the service at startup, naming ' +
                  'this setting, rather than letting each worker hold a ' +
@@ -4736,11 +4729,10 @@ const SETTINGS = [
                  'Require DPoP rows below are what make them mandatory). PER ' +
                  'TRUST REALM since 2026-09-12 — it was one switch for the ' +
                  'whole process, so a realm turning it on turned it on for ' +
-                 'every other. In development POST /dpop/nonce-mode writes ' +
-                 'this setting for the realm it is reached in; in product ' +
-                 'that endpoint refuses and this row — through /admin/oauth2 ' +
-                 'or POST /admin-api/config/set, both behind a credential — ' +
-                 'is the only way to change it.' },
+                 'every other. This row — on the OAuth 2.0 page\'s DPoP ' +
+                 'settings or through POST /admin-api/config/set, both ' +
+                 'behind a credential — is the only way to change it, in ' +
+                 'either mode.' },
 
   { key: 'oauth2.dpopIatSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof iat window (s)',
@@ -9061,7 +9053,8 @@ const SETTINGS = [
                  'CA with clientAuth: every other key pair this service issues ' +
                  'chains to the same Root and is refused as one (see ' +
                  'common/tls_client_certificates.js). Off leaves the ' +
-                 'truststore to /tls/trust and tls.trustAnchorsFile, as it ' +
+                 'truststore to /admin/tls/trust and tls.trustAnchorsFile, ' +
+                 'as it ' +
                  'was before; the portal still issues, and says the ' +
                  'listeners will not accept what it issues.' },
 
@@ -9524,11 +9517,12 @@ const SETTINGS = [
     restartReason: 'the anchors are read when the listeners are created',
     description: 'A PEM file of CA certificates that client certificates on ' +
                  'the main port are verified against, loaded ' +
-                 'at startup. It is the PRODUCT-MODE way to fill the ' +
-                 'truststore: POST /tls/trust and /tls/trust/clear answer ' +
-                 'anybody in development and are refused in product mode, ' +
-                 'because an anchor anybody can add is a client certificate ' +
-                 'anybody can make verify. Empty means the truststore starts ' +
+                 'at startup. It is the way to fill the truststore before ' +
+                 'anything listens; at runtime /admin/tls/trust and POST ' +
+                 '/admin-api/tls/trust/add do it behind a credential, in ' +
+                 'either mode — there is no open door, because an anchor ' +
+                 'anybody can add is a client certificate anybody can make ' +
+                 'verify. Empty means the truststore starts ' +
                  'empty, which is what it always did.' },
 
   // THE SELF-SIGNED FALLBACK CERTIFICATE'S THREE LITERALS. Used only when
@@ -11632,7 +11626,7 @@ const SETTINGS = [
     description: 'Mutual TLS, the first scheme RFC 7644 section 2 names. It ' +
                  'applies only where the request arrived over TLS with a ' +
                  'certificate that VERIFIED against the client truststore ' +
-                 '(see /tls), so only when global.https is on. It was the ' +
+                 '(/admin/tls/trust), so only when global.https is on. It was the ' +
                  'first place in this service where a client certificate ' +
                  'was a CREDENTIAL rather than an observation; here it ' +
                  'authenticates somebody who may then write to the ' +
@@ -12515,10 +12509,9 @@ const SETTINGS = [
   { key: 'ssf.maxReceivedEvents', group: 'SSF', label: 'Received events kept',
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
-    description: 'How many SETs POST /ssf/receive keeps for /admin/ssf to ' +
-                 'show. That endpoint is this service acting as a RECEIVER, ' +
-                 'which is what the debugger pushes to when the roles are ' +
-                 'the other way round; the oldest are dropped past this.' },
+    description: 'How many delivered SETs each of this service\'s own ' +
+                 'receivers (the console\'s and the portal\'s) keeps in its ' +
+                 'inbox, per realm; the oldest are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -12545,37 +12538,6 @@ const SETTINGS = [
                  'for a verification event. A read scope is not enough for ' +
                  'any of those, which is the first place in this service ' +
                  'besides SCIM where two scopes differ in what they permit.' },
-
-  { key: 'ssf.receiveEnabled', group: 'SSF', label: 'Accept pushed events',
-    env: 'STS_SSF_RECEIVE_ENABLED', type: 'bool', dflt: true, runtime: true,
-    description: 'Whether POST /ssf/receive accepts a Security Event Token ' +
-                 'pushed AT this service — the roles reversed, with the ' +
-                 'debugger as the transmitter. It verifies the signature ' +
-                 'when it can find a key and reports what it read either ' +
-                 'way, because a receiver that refused an unverifiable ' +
-                 'event would be unable to show a person WHY it was ' +
-                 'unverifiable. Off answers 501. Development mode only: a ' +
-                 'product realm has no /ssf/receive (#585).' },
-
-  { key: 'ssf.receiveAudiences', group: 'SSF',
-    label: 'Audiences POST /ssf/receive answers to',
-    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
-    description: 'The `aud` values the debugger-facing receiver at ' +
-                 'POST /ssf/receive accepts. A SET addressed to none of ' +
-                 'them is recorded and refused with invalid_audience, as a ' +
-                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
-                 'URL in this realm, which is the name a transmitter can ' +
-                 'discover without being told one.' },
-
-  { key: 'ssf.receiveIssuers', group: 'SSF',
-    label: 'Issuers POST /ssf/receive accepts',
-    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
-    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
-                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
-                 'from any other issuer is recorded and refused with ' +
-                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
-                 'issuer — the only issuer whose SETs this receiver can ' +
-                 'verify, since it holds no other key.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',

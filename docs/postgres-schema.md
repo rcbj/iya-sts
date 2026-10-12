@@ -243,7 +243,7 @@ tests):
 | Certificate enrollment | `acme.accounts`, `acme.accountKeys`, `acme.orders`, `acme.authorizations`, `acme.certificates`, `acme.renewalInfo`, `acme.usedNonces`, `scep.transactions`, `enrollment_monitor.*` |
 | SPIFFE | `spiffe.authorities`, `spiffe.federatedBundles`, `spiffe.joinTokens`, `spiffe.recordedConnections`, `spiffe.sigstoreTuf` |
 | SCIM | `scim.digestNonces`, `scim.digestCounts`, `scim.hobaChallenges`, `scim.hobaSeen` |
-| Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.received`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
+| Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
 | Attribute sources | `attribute_sources.status` |
 | Devices | `devices.events` |

@@ -15,7 +15,7 @@
 // used by a client at the grant endpoint (a non-authorized signed request), at
 // the continuation and management URIs (a bound token request), by a resource
 // server calling introspection or registration (RFC 9767 section 3.2), and by a
-// client at the demonstration RS. So one verifier, handed a key DESCRIPTOR from
+// client presenting a token (`gnap_rs.ts`). So one verifier, handed a key DESCRIPTOR from
 // `gnap_keys.ts`, and every one of those callers gets the same answer.
 //
 // **THIS IS NOT PERMISSIVE IN ANY MODE, AND THAT IS THE SAME ARGUMENT THIS

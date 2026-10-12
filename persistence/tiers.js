@@ -375,7 +375,7 @@ const CELL_MINTED = [
   'spiffe.recordedConnections', 'spnego.pending',
   'ssf_dead_letter_report.sweeps', 'ssf.relationshipInbox', 'ssf.relationshipLocks',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
-  'ssf_streams.received', 'ssf_streams.streams', 'tls.listenerAnnounced',
+  'ssf_streams.streams', 'tls.listenerAnnounced',
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
   // one cell, and its key never leaves that cell's store.
   'tls.listenerKeys', 'tls.presentedChains',

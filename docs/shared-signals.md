@@ -4,8 +4,6 @@ title: Shared Signals
 
 # Shared Signals (SSF, CAEP and RISC)
 
-> **Development mode only (#585):** `/ssf/receive`, `/ssf/received` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a **Shared Signals transmitter**
 ([OpenID SSF 1.0](https://openid.net/specs/openid-sharedsignals-framework-1_0.html)),
 and a small receiver as well. A receiver agrees a **stream** with it, and it
@@ -198,7 +196,6 @@ metadata and discovers every endpoint from it:
 | `POST /ssf/subjects/add`, `POST /ssf/subjects/remove` | add (an empty 200) or remove (204) a subject, SSF 1.0 sections 8.1.3.2 and 8.1.3.3 |
 | `POST /ssf/verify` | ask for a verification event |
 | `POST /ssf/poll` | RFC 8936 poll delivery and acknowledgement |
-| `POST /ssf/receive`, `GET /ssf/received` | this service as a **receiver** (below) |
 | `GET /ssf` | a description of the family; `?format=json` returns the same as data |
 
 In a trust realm every path is under `/realm/{id}`. A realm's metadata is at
@@ -423,23 +420,20 @@ once per sweep as a summary, never once per SET.
 
 ### This service as a receiver
 
-`POST /ssf/receive` accepts a SET pushed **at** this service, for testing a
-client that acts as the transmitter. It verifies the signature when it can
-find a key. A SET that another party signed is reported as *not verifiable
-here*, not as invalid. `GET /ssf/received` lists what arrived.
-`ssf.receiveRequireSignature` makes it refuse a SET whose signature fails, the
-way a strict receiver would. **Product mode always refuses one**, at this
-endpoint and at the console's and portal's own receivers (#117).
+This service's own receivers are the admin console's and the user portal's,
+which are seeded streams of its transmitter (see *Signals received*). They
+verify each SET's signature, and refuse one that does not verify when
+`ssf.receiveRequireSignature` is on — **product mode always refuses one**
+(#117). They also refuse a SET whose header's `typ` is not `secevent+jwt`
+(section 4.1.1), whose `iss` is not their stream's (section 4.1.6), or whose
+`aud` does not name them. Every SET that arrives is recorded first.
 
-Every SET that arrives is recorded, and it is then refused if its header's
-`typ` is not `secevent+jwt` (section 4.1.1), if its `iss` is not one
-`ssf.receiveIssuers` lists (`invalid_issuer`, section 4.1.6), or if its `aud`
-names nothing `ssf.receiveAudiences` lists (`invalid_audience`). Left empty,
-the first means this realm's own transmitter issuer and the second means the
-endpoint's own URL, for example `https://host/ssf/receive`. The console's and
-portal's receivers make the same `typ` and `iss` checks against their own
-streams. To receive a federation partner's streams, see *Receiving from a
-federation partner*, below.
+`POST /ssf/receive` and `GET /ssf/received`, an endpoint that accepted a SET
+pushed **at** this service so that a client could be tested as a
+transmitter, were removed in
+[#593](https://github.com/rcbj/iya-sts/issues/593). The test suite's peer
+plays that receiver. To receive a federation partner's streams, see
+*Receiving from a federation partner*, below.
 
 ### Receiving from a federation partner
 
@@ -623,16 +617,13 @@ types from what a stream may ask for.
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
 | `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
 | `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
-| `ssf.receiveAudiences` | `STS_SSF_RECEIVE_AUDIENCES` | *(empty)* | yes | The `aud` values `POST /ssf/receive` accepts. Empty means the endpoint's own URL. Anything else is recorded and refused with `invalid_audience`. |
-| `ssf.receiveIssuers` | `STS_SSF_RECEIVE_ISSUERS` | *(empty)* | yes | The `iss` values `POST /ssf/receive` accepts. Empty means this realm's own transmitter issuer. Anything else is recorded and refused with `invalid_issuer`. |
 | `ssf.maxSubjectsPerStream` | `STS_SSF_MAX_SUBJECTS_PER_STREAM` | `100` | yes | How many subjects one stream may name. |
 | `ssf.maxQueuedEvents` | `STS_SSF_MAX_QUEUED_EVENTS` | `200` | yes | How many undelivered SETs one stream holds. The oldest is dropped first. |
 | `ssf.pollMaxEvents` | `STS_SSF_POLL_MAX_EVENTS` | `20` | yes | The most SETs one poll returns, whatever the receiver asks for. |
-| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many SETs `POST /ssf/receive` keeps for display. |
+| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many delivered SETs each of this service's own receivers (the console's and the portal's) keeps, per realm. |
 | `ssf.maxStreamLogEntries` | `STS_SSF_MAX_STREAM_LOG_ENTRIES` | `200` | yes | How many log lines each stream keeps. |
 | `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf:read` | yes | The scope needed to read a stream, its status or the poll queue. |
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf:write` | yes | The scope needed to change anything about a stream. |
-| `ssf.receiveEnabled` | `STS_SSF_RECEIVE_ENABLED` | `true` | yes | Whether `POST /ssf/receive` accepts pushed SETs. When off, it answers 501. Development mode only (#585). |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
 | `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
 | `ssf.legacySubClaim` | `STS_SSF_LEGACY_SUB_CLAIM` | `false` | yes | Deliberate defect, development only: adds the deprecated `sub` claim beside `sub_id`. |
@@ -741,7 +732,7 @@ changed with `POST /admin-api/config/set`.
   every stream this realm's transmitter holds, with its subjects, queue,
   counters, log and dead letters. A dead stream is marked. Each stream has
   controls to change its status, delete it, send it a SET, **Send a
-  verification event**, **Revive** it and **Drop its dead letters**. What `POST /ssf/receive` received is listed too.
+  verification event**, **Revive** it and **Drop its dead letters**.
   There is no control to create a stream (see *Not implemented*).
 * **Protocols → CAEP** (`/admin/caep`): the `caep.*` settings, the catalogue
   of the eight event types and their members, and the form for sending one by
@@ -758,7 +749,7 @@ changed with `POST /admin-api/config/set`.
   not their tokens.
 * **The management API** mirrors all of these: `GET /admin-api/ssf` and
   `POST /admin-api/ssf/{action}` (`status`, `delete`, `transmit`,
-  `clear-received`, `revive`, `clear-dead-letters`, `verify`),
+  `revive`, `clear-dead-letters`, `verify`),
   `GET /admin-api/ssf/dead-letters`, `GET /admin-api/caep`,
   `GET /admin-api/caep/sessions` and `POST /admin-api/caep/{action}` (`emit`,
   `reset-session`, `clear`), `GET /admin-api/risc`,

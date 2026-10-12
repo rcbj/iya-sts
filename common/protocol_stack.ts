@@ -1350,8 +1350,8 @@ class ProtocolStack {
     require('../admin-ui/devices_admin');
     this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
                'DevicesAdmin');
-    this.register(app, require('../admin-ui/devices_admin'),
-                  'admin-ui/devices_admin');
+    // NO register(): its one route, development's compliance test control,
+    // was deleted by #597, and its three pages are the static console's.
     // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
     // library first — a register whose wire step puts the
     // `attribute-sources.refresh` job on the scheduler (built at 18i), and
@@ -1868,8 +1868,8 @@ class ProtocolStack {
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
-    // #432 phase 5: the demonstration resource server's running totals —
-    // a library the route module spends through.
+    // #432 phase 5: a resource server's running totals of a right's
+    // limits — a library (its route caller went with #593).
     this.build('gnap/gnap_spend', require('../gnap/gnap_spend'), 'GnapSpend');
     this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
                'GnapInteract');
