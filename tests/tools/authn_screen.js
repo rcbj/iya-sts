@@ -42,8 +42,11 @@ const log = require('bunyan').createLogger({ name: 'authn_screen',
 function call(o) {
   log.debug("Entering call(). " + o.method);
   return new Promise(function (resolve, reject) {
-    const headers = Object.assign({ 'user-agent': o.userAgent ||
-                                      'authn-screen/1.0' }, o.headers || {});
+    // NO User-Agent of its own: a name like `authn-screen/1.0` is an
+    // automated client to risk scoring (`isbot`), which product refuses —
+    // a test's own browser sends its User-Agent, or none, as before #571.
+    const headers = Object.assign({}, o.userAgent
+      ? { 'user-agent': o.userAgent } : {}, o.headers || {});
     const jar = o.jar || {};
     if (Object.keys(jar).length) {
       headers.cookie = Object.keys(jar).map(function (k) {
