@@ -12079,4 +12079,5 @@ SAML 1.1 refuses on its own page with `STS-SAML-0028`). The relying parties a
 test needs are the test peer's (`tests/peer/peer_saml.js`, #586). The error
 codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
 `STS-WSFED-0016`) are retired. The Provider Commands mock
-(`oauth-oidc/command_mock_rp.ts`) is #591's fifth phase, not this one.
+(`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
+test peer's `peer_commands.js`.
