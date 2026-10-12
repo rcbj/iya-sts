@@ -121,6 +121,8 @@
 // caller without one still has to be able to load this module, so an
 // unresolvable CONFIG_FILE falls back to info rather than throwing — the same
 // arrangement tests/wait_for.js has, and for the same reason.
+// The sign-in screen over `/authn-api` (#571).
+var authnSignin = require("./authn_signin");
 var bunyan = require("bunyan");
 var assert = require("assert");
 var log = bunyan.createLogger({
@@ -1226,43 +1228,25 @@ async function authorizationCode(base, opts) {
     "the authorization request for " + opts.clientId + " should reach the " +
     "sign-in screen; it answered " + first.status + " " + screenAt + " " +
     String(await first.text()).slice(0, 200));
-  var screen = await fetch(absolute(screenAt), { redirect: "manual" });
-  var page = await screen.text();
-  var authnId = (page.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  var csrf = (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  // Posted back to the path the screen was served from — `/realm/<id>/authn/
-  // login` in a trust realm. A root-relative "/authn/login" resolved against
-  // the host posted every realm's sign-in to the DEFAULT realm's screen, which
-  // holds no such sign-in, so a flow in any realm could never complete.
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, at the
+  // base the screen was served under — `/realm/<id>` in a trust realm: a
+  // root-relative path resolved against the host signed every realm's
+  // sign-in in at the DEFAULT realm, which holds no such sign-in.
   var screenUrl = new URL(absolute(screenAt));
-  var signedIn = await fetch(screenUrl.origin + screenUrl.pathname, {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ authn_id: authnId, username: opts.username,
-                                password: opts.password, action: "login",
-                                csrf_token: csrf }).toString()
-  });
-  // EVERY cookie the answer sets, as one Cookie header: a sign-in in a trust
-  // realm can set more than one, and keeping only the first dropped the
-  // session whenever it was not first.
-  var setCookies = typeof signedIn.headers.getSetCookie === "function"
-    ? signedIn.headers.getSetCookie()
-    : [String(signedIn.headers.get("set-cookie") || "")];
-  var cookie = setCookies.map(function (line) {
-    return String(line).split(";")[0];
-  }).filter(function (pair) {
-    return /=./.test(pair);
-  }).join("; ");
+  var signedIn = await authnSignin.submit(screenUrl.origin +
+    screenUrl.pathname.replace(/\/authn\/login$/, ""), screenUrl.toString(),
+    { action: "login", username: opts.username, password: opts.password });
+  // EVERY cookie the walk set, as one Cookie header: the shell's arrival
+  // cookie, upgraded in place by the sign-in, and whatever else it set.
+  var cookie = signedIn.next === "redirect" ? signedIn.cookie : "";
   if (!cookie) {
     // What the screen said, so a refusal names itself: a wrong password, a
     // rate limit, an account that needs something first.
-    var said = String(await signedIn.text()).replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ").slice(0, 400);
     assert.fail("signing " + opts.username + " in should establish a " +
-      "session; the screen answered " + signedIn.status + ": " + said);
+      "session; the screen answered " + signedIn.status + " " +
+      signedIn.next + ": " + JSON.stringify(signedIn.errors));
   }
-  var back = await fetch(absolute(signedIn.headers.get("location") || url),
+  var back = await fetch(signedIn.location || absolute(url),
                          { headers: { Cookie: cookie }, redirect: "manual" });
   var location = back.headers.get("location") || "";
   var settled = await consentScreen.settleAuthorization({

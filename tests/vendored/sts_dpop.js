@@ -29,6 +29,8 @@
 // Needs the STS mock and nothing else — no browser, no Keycloak — so it is
 // skipped only when there is no STS to talk to.
 
+// The sign-in screen over `/authn-api` (#571).
+var authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const registry = require("./sts_applications.js");
@@ -956,7 +958,7 @@ function authorizeUrl(extra) {
 }
 
 // Drives the sign-in screen once, the way a browser would: GET authorize,
-// follow to /authn/login, post the form's own authn_id back. Answers the
+// follow to /authn/login, sign in over /authn-api (#571). Answers the
 // session cookie.
 async function signIn() {
   log.debug("Entering signIn().");
@@ -968,34 +970,18 @@ async function signIn() {
   var screenUrl = sentToService.headers.get("location");
   assert.ok(/\/authn\/login\?authn=/.test(screenUrl),
     "expected the sign-in screen, got " + screenUrl);
-  var form1 = await fetch(screenUrl.indexOf("http") === 0 ? screenUrl
-    : stsBase + screenUrl, { redirect: "manual" });
-  assert.strictEqual(form1.status, 200, "expected the sign-in screen, got " +
-                     form1.status);
-  var page = await form1.text();
-  var authnId = (page.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  var csrf = (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  var loggedIn = await fetch(stsBase + "/authn/login", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ authn_id: authnId, username: USER,
-                                password: USER_PASSWORD, action: "login",
-                                csrf_token: csrf }).toString()
-  });
-  // The sign-in form is a POST and the answer to it is a redirect. WHICH
-  // redirect is the interesting part, and it is asserted the way RFC 9700
-  // section 4.12 states it rather than as one exact code: 303 is what the mock
-  // sends now and what the BCP asks for, 302 is what it sent before and what
-  // most servers send, and **307 is the one that is forbidden** — it replays
-  // the method and the body, which on this request is the username and
-  // password, onto whatever the redirect names.
-  assert.ok(loggedIn.status === 303 || loggedIn.status === 302,
-            "the sign-in form should redirect, got " + loggedIn.status);
-  assert.notStrictEqual(loggedIn.status, 307,
-    "RFC 9700 section 4.12: a credential-bearing POST must not be answered " +
-    "with 307.");
-  var cookie = String(loggedIn.headers.get("set-cookie") || "").split(";")[0];
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper: the
+  // shell, the view and the act. The act's answer names where to go, and
+  // the browser goes there with a GET — what the form's 303 did; RFC 9700
+  // section 4.12's point (never a 307 replaying the credentials) is that
+  // the credentials are not sent again, and a JSON answer sends nothing.
+  var loggedIn = await authnSignin.submit(stsBase, screenUrl,
+    { action: "login", username: USER, password: USER_PASSWORD });
+  assert.strictEqual(loggedIn.next, "redirect",
+    "the sign-in should answer where to go, got " + loggedIn.status + " " +
+    JSON.stringify(loggedIn.json));
+  var cookie = (loggedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) ||
+                [])[1] || "";
   assert.ok(cookie, "signing in should establish a session.");
   log.debug("Leaving signIn().");
   return cookie;

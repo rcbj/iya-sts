@@ -403,7 +403,10 @@ const JOBS = [
   // true`: GNAP exists here and nowhere else. Entries are left standing.
   { file: 'sts_gnap_chain_impersonation.js', browser: false, local: true },
   { file: 'sts_gnap_chain_delegation.js', browser: false, local: true },
-  { file: 'sts_dpop.js',                 browser: false },
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, which
+  // is a static surface over /authn-api since #571, through
+  // `authn_signin.js`; the parent's copy posts the form that is gone.
+  { file: 'sts_dpop.js',                 browser: false, local: true },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
   // copy anywhere to sync from. Three jobs because there are three parties —
@@ -1558,7 +1561,6 @@ const HELPERS = [
   // says a missing helper looks like.
   'page_load.js',
   'random_username.js',
-  'sts_applications.js',
   'wait_for.js',
   'env/local.js'
 ];
@@ -1577,6 +1579,10 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
+  // static surface over /authn-api since #571, through `authn_signin.js`;
+  // it was a copy of the parent's (listed in HELPERS until then).
+  'sts_applications.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.
