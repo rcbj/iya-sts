@@ -4516,7 +4516,9 @@ class AdminConsole {
        'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
        'kerberos-tab-metadata', 'kerberos-tab-settings',
        'kerberos-tab-claims', 'kerberos-tab-principals',
-       'scim-tab-metadata', 'server', 'clients'],
+       'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
+       'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
+       'tab-locale', 'tab-profiles'],
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||

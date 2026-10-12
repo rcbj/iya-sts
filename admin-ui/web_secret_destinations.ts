@@ -219,7 +219,7 @@ class SecretDestinationsPage {
       (json.fileAllowed
         ? kit.warn(t.html('consoleSecretDestinations.body.development'))
         : '') +
-      '<h3 id="destinations">' +
+      '<h3 id="destinations" data-tab="destinations">' +
       t.html('consoleSecretDestinations.body.destinations') +
       '</h3><table><thead><tr>' +
       '<th>' + t.html('consoleSecretDestinations.body.thDestination') +
@@ -236,7 +236,8 @@ class SecretDestinationsPage {
       '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
       '</p>' +
       (c.write
-        ? '<h3 id="add">' + t.html('consoleSecretDestinations.body.add') +
+        ? '<h3 id="add" data-tab="add">' +
+          t.html('consoleSecretDestinations.body.add') +
           '</h3><form method="post" ' +
           'action="' + PAGE + '"><input type="hidden" name="action" ' +
           'value="add-destination"><div class="formrow">' +
@@ -249,7 +250,8 @@ class SecretDestinationsPage {
           t.html('consoleSecretDestinations.body.addButton') + '</button>' +
           '</form>'
         : '') +
-      '<p class="links"><code>GET /admin-api/secret-destinations</code></p>';
+      '<p class="links" data-metadata>' +
+      '<code>GET /admin-api/secret-destinations</code></p>';
   }
 }
 

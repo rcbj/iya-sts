@@ -150,7 +150,10 @@ class GroupsPage {
                t.text('consoleGroups.body.tileValues')) +
       kit.tile(json.dangling, t.text('consoleGroups.body.tileDangling')) +
       kit.tile(json.entryCount, t.text('consoleGroups.body.tileEntries')) +
-      '</div><form method="get" action="/admin/groups"><div ' +
+      // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
+      // warning, the tiles and the notes under the table are Metadata.
+      '</div><h2 data-tab="groups">' + t.html('console.nav.groups') +
+      '</h2><form method="get" action="/admin/groups"><div ' +
       'class="formrow"><label for="q">' + t.html('consoleGroups.body.group') +
       '</label><input type="text" ' +
       'id="q" name="q" value="' + kit.esc(wantedText) + '" ' +
@@ -184,9 +187,10 @@ class GroupsPage {
                       { filtered: wantedText ? 'yes' : 'no' }) +
                '</td></tr>') + '</table>' +
       nav.foot +
+      '<div data-metadata>' +
       kit.note(t.html('consoleGroups.body.whatAGroupIs',
                       { groupsDn: json.groupsDn, usersDn: json.usersDn })) +
-      kit.note(t.html('consoleGroups.body.counts')) +
+      kit.note(t.html('consoleGroups.body.counts')) + '</div>' +
       // THE ONE CONTROL ON THIS LIST (rule 7's mirror is
       // POST /admin-api/groups/create). Below the table rather than above it,
       // because the question this page is usually open to answer is "what is
@@ -194,7 +198,8 @@ class GroupsPage {
       // different one first. A REAL BUTTON AND NO SCRIPT, like every other
       // form on this console.
       (json.canWrite
-        ? '<h2>' + t.html('consoleGroups.body.createHeading') + '</h2>' +
+        ? '<h2 data-tab="create">' +
+          t.html('consoleGroups.body.createHeading') + '</h2>' +
           '<form method="post" action="/admin/groups">' +
           '<input type="hidden" name="action" value="create">' +
           '<input type="hidden" name="back" value="' +

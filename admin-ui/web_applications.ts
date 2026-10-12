@@ -185,7 +185,11 @@ class ApplicationsPage {
                t.text('consoleApplications.a1.tileAuthentications')) +
       kit.tile(json.max === null ? '' : json.max,
                t.text('consoleApplications.a1.tileMax')) +
-      '</div><form method="get" action="/admin/applications"><div ' +
+      // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
+      // tiles, the notes and the caveat are Metadata.
+      '</div><h2 data-tab="applications">' +
+      t.html('console.nav.applications') + '</h2>' +
+      '<form method="get" action="/admin/applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleApplications.a1.filterApplication') +
       '</label><input type="text" ' +
@@ -224,7 +228,8 @@ class ApplicationsPage {
                '</td></tr>') +
       '</table>' +
       nav.foot +
-      '<h2>' + t.html('consoleApplications.a1.addHeading') + '</h2>' +
+      '<h2 data-tab="add">' + t.html('consoleApplications.a1.addHeading') +
+      '</h2>' +
       // ---------------------------------------------------------------------
       // THE DOOR TO THE FULLER FORM IS A BUTTON, AND SINCE 2026-09-06 IT IS THE
       // ONLY WAY TO IT.
@@ -267,14 +272,16 @@ class ApplicationsPage {
       '<a href="/admin/applications/new">' +
       t.html('consoleApplications.a1.newApplication') + '</a>' +
       t.html('consoleApplications.a1.shortRowB')) +
+      '<div data-metadata>' +
       kit.note(t.html('consoleApplications.a1.oneEntry')) +
-      kit.note(t.html('consoleApplications.a1.countsOfChanges')) +
+      kit.note(t.html('consoleApplications.a1.countsOfChanges')) + '</div>' +
       // The two applications.* rows: how many entries this registry remembers,
       // and whether the console and the management API are seeded into it as
       // applications of their own.
       SettingsForms.forms(json.settings, '/admin/applications', undefined,
                           t) +
-      ApplicationsPage.applicationsCaveat(t) + applicationsLinks(t);
+      '<div data-metadata>' + ApplicationsPage.applicationsCaveat(t) +
+      applicationsLinks(t) + '</div>';
 
     return inner;
   }
