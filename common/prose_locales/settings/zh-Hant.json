@@ -8800,10 +8800,22 @@
     "text": "驗證資料庫憑證"
   },
   "persistence.databaseTlsRejectUnauthorized|description": {
-    "en": "f43d1062e91c3dbe",
-    "text": "PostgreSQL 伺服器的憑證是否必須依據此程序持有的信任錨點通過驗證。預設為「關閉」，這是對「堆疊」的陳述，而不是削弱的預設值：該憑證在 postgres 容器首次啟動時於容器內產生，且未經任何人簽署，因此用戶端沒有可據以驗證的依據，開啟此設定會以自我簽署憑證的訊息拒絕每條連線。無論如何，「連線仍然是加密的」——此服務從不以明文撥接其資料庫（#273），資料庫自己的 pg_hba.conf 也要求 TLS，此設定只決定伺服器是否經過「驗證」。當您將其指向憑證鏈結至 NODE_EXTRA_CA_CERTS 所指名之對象的真正資料庫時，請開啟它；此時它會檢查憑證鏈與主機名稱。它只對 sslmode 未設定、為 require 或為 prefer 的連線字串作決定：sslmode=verify-full 會驗證憑證鏈與主機名稱，sslmode=verify-ca 只驗證憑證鏈（依 libpq 的解讀），不論此設定為何。"
+    "en": "349255b3b313fd58",
+    "text": "PostgreSQL 伺服器的憑證是否必須依據此程序持有的信任錨點通過驗證，包括憑證鏈與主機名稱。預設為「開啟」，在每種模式下皆然。設定了 persistence.databaseTlsCaFile 時，信任錨點為該檔案中的憑證，否則為此程序的預設信任存放區（以及 NODE_EXTRA_CA_CERTS）。「警告」：關閉此設定會讓資料庫伺服器「未經驗證身分」——連線仍然是加密的（此服務從不以明文撥接其資料庫，#273），但任何能在資料庫位址上回應的一方都能冒充它，並讀寫本服務保存的每一列資料，包括已密封的金鑰與目錄。只有對於您願意交給任何人的拋棄式資料庫，才可關閉此設定。它只對 sslmode 未設定、為 require 或為 prefer 的連線字串作決定：sslmode=verify-full 會驗證憑證鏈與主機名稱，sslmode=verify-ca 只驗證憑證鏈（依 libpq 的解讀），不論此設定為何。"
   },
   "persistence.databaseTlsRejectUnauthorized|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "連線集區在監聽器繫結之前開啟"
+  },
+  "persistence.databaseTlsCaFile|label": {
+    "en": "cecd97b1da67d416",
+    "text": "資料庫 CA 憑證檔案"
+  },
+  "persistence.databaseTlsCaFile|description": {
+    "en": "a1782a05a9d84547",
+    "text": "一個 PEM CA 憑證檔案，這些憑證「僅」受與資料庫之連線信任，並在這些連線上取代此程序的預設信任存放區；本服務撥接的其他任何對象都不信任它們。也可以改為指名一個目錄，此時會讀取其中的每個 .crt 與 .pem 檔案。空白則使用預設信任存放區（以及 NODE_EXTRA_CA_CERTS）。已指名但無法讀取或不含任何憑證的檔案，會使服務在啟動時停止。compose 堆疊將其設為其 postgres 容器所產生的憑證，以唯讀方式共用，不含私密金鑰。"
+  },
+  "persistence.databaseTlsCaFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "連線集區在監聽器繫結之前開啟"
   },
