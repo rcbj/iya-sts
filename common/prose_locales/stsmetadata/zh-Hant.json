@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "說明 /spnego/protected 存在、其背後是哪個服務主體名稱、接受哪些機制，以及哪些查詢參數會讓協商以某種特定方式失敗。這些都不在協定交換本身之中——用戶端必須從 URL 推導出 SPN，並從自己的設定找到 KDC，這就是為何許多 SPNEGO 失敗在線路上不留任何證據。加上 ?format=json。"
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583)。兩個 SPNEGO 示範頁面的執行環境和轉譯器，打包為由 build-typescript.sh 建構的單一檔案（kerberos/spnego-pages-spa.js），並以預先壓縮的形式提供：它根據每個外殼攜帶的狀態繪製 /spnego，以及 /spnego/protected 給出的每個回應的本文。協商的狀態碼及其 WWW-Authenticate 標頭不在它繪製的內容之列。"
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "對未經驗證的請求回應 401 並附上單純的「WWW-Authenticate: Negotiate」，對有效的請求則回應 200 並在該標頭中附上 AP-REP。Kerberos 檢查是 krb5_service.js 的，未經更動——此端點只加入協商與承載協商的 HTTP，沒有自己的協定程式碼。"
@@ -1082,6 +1086,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "本服務出示的憑證、它據以驗證的用戶端信任存放區，以及此部署如何處理用戶端憑證。主連接埠會向每個連線索取用戶端憑證但不強制要求，因此是否出示由用戶端自行決定。此系列自有的兩個接聽程式——會索取的 8443 與強制要求的 9443——已於 2026-09-16 連同它們提供的連線報告一併刪除。憑證的價值取決於它被「使用」的地方：GET /tls/sign-in 用於工作階段、權杖端點用於 RFC 8705，/xacml 與 /scim/v2 則各有其用途。加上 ?format=json。"
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583)。兩個 TLS 診斷頁面的執行環境和轉譯器，打包為由 build-typescript.sh 建構的單一檔案（tls/tls-pages-spa.js），並以預先壓縮的形式提供：它根據每個外殼攜帶的狀態繪製 /tls 和 /tls/forwarded — 即各自 ?format=json 所傳回、基於請求該頁面的那次請求建構的物件 — 並把 /tls 頁面的兩個動作以 JSON 傳送到 POST /tls/trust 和 POST /tls/trust/clear。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

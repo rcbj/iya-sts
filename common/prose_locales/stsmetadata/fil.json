@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "Sinasabi na umiiral ang /spnego/protected, kung aling service principal name ang nasa likod nito, kung aling mga mechanism ang tinatanggap, at kung aling mga query knob ang nagpapabigo sa negotiation sa isang partikular na paraan. Wala sa mga iyon ang nasa mismong palitan ng protocol — kailangang hanguin ng client ang SPN mula sa URL at hanapin ang KDC mula sa sarili nitong configuration, kaya napakaraming SPNEGO failure ang walang naiiwang ebidensya sa wire. Idagdag ang ?format=json."
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583). Ang runtime at mga renderer ng dalawang demonstration page ng SPNEGO, sa iisang file na binuo ng build-typescript.sh (kerberos/spnego-pages-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /spnego, at ang body ng bawat sagot na ibinibigay ng /spnego/protected, mula sa estadong dala ng bawat shell. Hindi kasama sa iginuguhit nito ang status ng negotiation at ang WWW-Authenticate header nito."
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "Sumasagot ng 401 na may hubad na \"WWW-Authenticate: Negotiate\" sa request na hindi authenticated, at ng 200 na may AP-REP sa header na iyon sa isang valid na request. Ang mga Kerberos check ay sa krb5_service.js, walang binago — idinadagdag lang ng endpoint na ito ang negotiation at ang HTTP na nagdadala nito at walang sariling protocol code."
@@ -1082,6 +1086,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "Ang certificate na ipinapakita ng serbisyong ito, ang client truststore na pinagve-verify-an nito, at kung ano ang ginagawa ng deployment na ito sa client certificate. HUMIHINGI NG ISA ANG MAIN PORT SA BAWAT CONNECTION AT WALANG KINAKAILANGAN, kaya sariling desisyon ng client ang pagpapakita nito. Dalawang sariling listener ng family na ito — 8443, na humihingi, at 9443, na nangangailangan — ang binura noong 2026-09-16 kasama ang connection report na inihahain nila. Kung gaano kahalaga ang isang certificate ay pinagpapasyahan kung saan ito GINAGAMIT: GET /tls/sign-in para sa session, ang token endpoint para sa RFC 8705, /xacml at /scim/v2 para sa kanila. Idagdag ang ?format=json."
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583). Ang runtime at mga renderer ng dalawang diagnostic page ng TLS, sa iisang file na binuo ng build-typescript.sh (tls/tls-pages-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /tls at /tls/forwarded mula sa estadong dala ng bawat shell — ang object na isinasagot ng ?format=json ng bawat isa, na binuo sa kahilingang humingi ng pahina — at ipinapadala ang dalawang aksyon ng pahinang /tls sa POST /tls/trust at POST /tls/trust/clear bilang JSON."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

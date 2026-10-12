@@ -881,6 +881,14 @@ class ProtocolStack {
     // Unlike the two above it starts nothing: it is HTTP all the way down, so
     // requiring it is the whole of its installation.
     require('../kerberos/spnego');
+    // 17-pages. THE SPNEGO DEMONSTRATION PAGES' SCRIPT (#583):
+    // `/spnego/pages.js`, which draws `/spnego` and `/spnego/protected`'s
+    // bodies from the state their shells carry. `spnego.js` reaches this
+    // module lazily, when a page is drawn, so that file's require closure —
+    // the parent project's COPY set — does not grow; its one route collides
+    // with nothing, and sits beside the pages it draws.
+    this.register(app, require('../kerberos/spnego_pages'),
+                  'kerberos/spnego_pages');
     // -------------------------------------------------------------------------
     // AND THE SAME HANDSHAKE AS A SIGN-IN: /authn/spnego, which turns a
     // Kerberos ticket into the browser session every protocol family here

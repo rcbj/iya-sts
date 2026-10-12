@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "说明 /spnego/protected 存在、其背后是哪个服务主体名称、接受哪些机制，以及哪些查询开关会让协商以某种特定方式失败。这些都不在协议交换本身之中——客户端必须从 URL 推导出 SPN，并从自己的配置中找到 KDC，这就是为什么如此多的 SPNEGO 失败在线路上不留任何痕迹。添加 ?format=json。"
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583)。两个 SPNEGO 演示页面的运行时和渲染器，打包为由 build-typescript.sh 构建的单个文件（kerberos/spnego-pages-spa.js），并以预压缩形式提供：它根据每个外壳携带的状态绘制 /spnego，以及 /spnego/protected 给出的每个应答的正文。协商的状态码及其 WWW-Authenticate 响应头不在它绘制的内容之列。"
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "对未经身份验证的请求以 401 和一个单独的 “WWW-Authenticate: Negotiate” 应答，对有效请求以 200 并在该头部中携带 AP-REP 应答。Kerberos 检查由 krb5_service.js 执行，未作改动——此端点只增加了协商和承载协商的 HTTP，没有自己的协议代码。"
@@ -1082,6 +1086,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "本服务出示的证书、它据以验证的客户端信任库，以及本部署如何处理客户端证书。主端口向每个连接请求客户端证书，但不要求任何证书，因此是否出示由客户端自己决定。此系列自己的两个监听器——请求证书的 8443 和要求证书的 9443——已于 2026-09-16 连同它们提供的连接报告一起删除。证书的价值在使用它的地方决定：GET /tls/sign-in 用于会话，令牌端点用于 RFC 8705，/xacml 和 /scim/v2 用于各自的用途。添加 ?format=json。"
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583)。两个 TLS 诊断页面的运行时和渲染器，打包为由 build-typescript.sh 构建的单个文件（tls/tls-pages-spa.js），并以预压缩形式提供：它根据每个外壳携带的状态绘制 /tls 和 /tls/forwarded — 即各自 ?format=json 所返回、基于请求该页面的那次请求构建的对象 — 并把 /tls 页面的两个操作以 JSON 发送到 POST /tls/trust 和 POST /tls/trust/clear。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

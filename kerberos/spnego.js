@@ -188,6 +188,154 @@ function spn() {
   return exchange.SPN;
 }
 
+// ---------------------------------------------------------------------------
+// THE PAGES ARE A STATIC SURFACE'S SHELL IN THIS SERVICE (#583, 2026-10-12).
+//
+// `GET /spnego` and the BODY of every answer `GET /spnego/protected` gives
+// are drawn in the browser by `/spnego/pages.js`, from a view this file builds
+// and `spnego_pages.ts` carries in the shell's `data-sts-state`. What the
+// negotiation answers — the status, `WWW-Authenticate`, the negotiation
+// cookie, `no-store` — is `applyVerdict()`'s, set before the body, and is not
+// touched (#569's rule: RFC 4559 is a specification's).
+//
+// `spnego_pages.ts` IS REACHED LAZILY, AND ITS ABSENCE IS NOT A FAILURE. This
+// file is in the parent project's COPY closure (`kerberos/CLAUDE.md`), and a
+// require at its top would owe the parent the shell, the locale negotiation
+// and the listener map for jobs that read none of them. So the module is
+// asked for when a page is drawn, inside a `try` — `krb5_kdc.js`'s way of
+// reaching `ssf/account_signals.ts` — and where it is not there (the parent's
+// copy) the page below is drawn by the server exactly as it was, which is
+// what the parent's in-process SPNEGO jobs read. In this service it is always
+// there: `common/protocol_stack.ts` registers its script just after this file.
+// ---------------------------------------------------------------------------
+/**
+ * The pages' shell module, or null where this copy has none.
+ *
+ * @returns `spnego_pages.ts`, or null
+ */
+function pagesModule() {
+  log.debug('Entering pagesModule().');
+  let out = null;
+  try {
+    out = require('./spnego_pages');
+  } catch (e) {
+    const missing = e && e.code === 'MODULE_NOT_FOUND' &&
+      /spnego_pages/.test(String(e.message || ''));
+    if (missing) {
+      log.debug('Caught in pagesModule(): ' + ((e && e.message) || e));
+    } else {
+      // Present and broken: the page is drawn by the server below, which
+      // is a page somebody can read, and the failure is said once per draw.
+      log.error(errorCodes.tag('STS-KRB-0209') + 'krb5-spnego: the pages\' ' +
+                'shell module did not load: ' + ((e && e.message) || e));
+    }
+    out = null;
+  }
+  const usable = !!(out && typeof out.send === 'function');
+  log.debug('Leaving pagesModule(). ' + (usable ? 'The shell.' : 'None.'));
+  return usable ? out : null;
+}
+
+// The advertisement, as `GET /spnego?format=json` answers it.
+function advertisement() {
+  log.debug('Entering advertisement().');
+  const principal = spn() + '@' + principals.REALM;
+  log.debug('Leaving advertisement().');
+  return {
+    protectedResource: '/spnego/protected',
+    // THE SECOND DOOR, named here because this page is where somebody comes
+    // to find out what SPNEGO surface this service has and the two are easy
+    // to confuse: the resource above proves a handshake and stops, and this
+    // one turns the same handshake into a session sixteen protocol families
+    // read. Its own availability is a setting, so it is reported rather than
+    // implied.
+    signInResource: '/authn/spnego',
+    signInEnabled: !!config.value('krb5.spnegoAuthentication'),
+    servicePrincipalName: principal,
+    // The SPN a client DERIVES from this URL's host is usually not the
+    // canonical one above — RFC 4559 clients guess `HTTP/<url host>`, so
+    // reaching this mock at localhost or by its compose name produces
+    // HTTP/localhost or HTTP/sts. This service holds a key for any SPN whose
+    // host matches one of these, and the KDC registers it on first sight, so
+    // a client's own guess works. NOTHING IN SPNEGO CARRIES THIS: it is an
+    // affordance of the mock, published so a debugger can show what a real
+    // deployment would make you look up in DNS and in the account's keytab.
+    acceptsAnySpnForHosts: principals.SERVICE_DOMAINS,
+    spnHostRule: 'a host matches when it IS one of acceptsAnySpnForHosts ' +
+      'or ends with a dot and one of them',
+    mechanisms: SUPPORTED_MECHS.map(function (oid) {
+      return { oid: oid, name: spnego.mechName(oid) };
+    }),
+    scheme: 'Negotiate',
+    specifications: ['RFC 4178 (SPNEGO)', 'RFC 4559 (Negotiate over HTTP)',
+                     'RFC 4121 (the Kerberos v5 GSS-API mechanism)'],
+    knobs: {
+      'mic=require': 'answer the first token with request-mic, forcing the ' +
+        'mechListMIC exchange and a second round trip',
+      'mech=none': 'support no mechanism the client offers, so the ' +
+        'negotiation is rejected',
+      'mutual=off': 'accept the ticket but send no AP-REP back'
+    },
+    // The knobs above are THIS page's and the sign-in door takes none of
+    // them, deliberately: a door that mints sessions with a query parameter
+    // that makes it fail in an instructive way is a footgun rather than a
+    // lesson, and the lesson is available here.
+    knobsApplyTo: '/spnego/protected only',
+    lastExchange: exchange.lastExchange()
+  };
+}
+
+// The advertisement's view (#583): the JSON form without the last exchange,
+// which the page never showed, and with the realm, which it did.
+function advertView(advert) {
+  log.debug('Entering advertView().');
+  const out = Object.assign({ kind: 'advert', realm: principals.REALM },
+                            advert);
+  delete out.lastExchange;
+  log.debug('Leaving advertView().');
+  return out;
+}
+
+// A verdict's view (#583): what `acceptedPage()`, `refusalPage()` and
+// `detailFor()` read off the verdict, named, and nothing else — no key, no
+// token, no pending negotiation's id.
+function verdictView(verdict) {
+  log.debug('Entering verdictView(). code=' + verdict.code);
+  const offered = Array.isArray(verdict.offered) ? verdict.offered : [];
+  const out = {
+    kind: 'verdict',
+    code: String(verdict.code || ''),
+    ok: !!verdict.ok,
+    spn: spn(),
+    reason: verdict.reason === undefined ? '' : String(verdict.reason),
+    scheme: verdict.scheme === undefined ? '' : String(verdict.scheme),
+    client: verdict.client ? String(verdict.client) : '',
+    selected: verdict.selected ? String(verdict.selected) : '',
+    selectedName: verdict.selected ? spnego.mechName(verdict.selected) : '',
+    offered: offered.map(String),
+    offeredNames: Array.isArray(verdict.offeredNames)
+      ? verdict.offeredNames.map(String) : [],
+    supported: Array.isArray(verdict.supported)
+      ? verdict.supported.map(String) : [],
+    continuation: !!verdict.continuation,
+    rawKerberos: !!verdict.rawKerberos,
+    micVerified: !!verdict.micVerified,
+    requirementReason: verdict.requirement && verdict.requirement.reason
+      ? String(verdict.requirement.reason) : '',
+    mutual: !!verdict.mutual,
+    mutualOff: !!verdict.mutualOff,
+    micNote: verdict.micNote ? String(verdict.micNote) : '',
+    checks: Array.isArray(verdict.checks)
+      ? verdict.checks.map(function (c) {
+          return { name: String(c.name), ok: !!c.ok,
+                   detail: c.detail == null ? '' : String(c.detail) };
+        })
+      : null
+  };
+  log.debug('Leaving verdictView().');
+  return out;
+}
+
 // A DEMONSTRATION (#585): both pages carry `common/app.js`'s `demoOnly` mark,
 // so a product realm answers as for a path nothing is registered on. The
 // sign-in that turns a ticket into a session is `/authn/spnego`
@@ -197,51 +345,22 @@ function spn() {
 app.get('/spnego', app.demoOnly, function (req, res) {
   log.debug('Entering GET /spnego.');
   const principal = spn() + '@' + principals.REALM;
+  const advert = advertisement();
   if (String(req.query.format || '').toLowerCase() === 'json') {
     log.debug('Leaving GET /spnego. JSON.');
-    return res.status(200).json({
-      protectedResource: '/spnego/protected',
-      // THE SECOND DOOR, named here because this page is where somebody comes
-      // to find out what SPNEGO surface this service has and the two are easy
-      // to confuse: the resource above proves a handshake and stops, and this
-      // one turns the same handshake into a session sixteen protocol families
-      // read. Its own availability is a setting, so it is reported rather than
-      // implied.
-      signInResource: '/authn/spnego',
-      signInEnabled: !!config.value('krb5.spnegoAuthentication'),
-      servicePrincipalName: principal,
-      // The SPN a client DERIVES from this URL's host is usually not the
-      // canonical one above — RFC 4559 clients guess `HTTP/<url host>`, so
-      // reaching this mock at localhost or by its compose name produces
-      // HTTP/localhost or HTTP/sts. This service holds a key for any SPN whose
-      // host matches one of these, and the KDC registers it on first sight, so
-      // a client's own guess works. NOTHING IN SPNEGO CARRIES THIS: it is an
-      // affordance of the mock, published so a debugger can show what a real
-      // deployment would make you look up in DNS and in the account's keytab.
-      acceptsAnySpnForHosts: principals.SERVICE_DOMAINS,
-      spnHostRule: 'a host matches when it IS one of acceptsAnySpnForHosts ' +
-        'or ends with a dot and one of them',
-      mechanisms: SUPPORTED_MECHS.map(function (oid) {
-        return { oid: oid, name: spnego.mechName(oid) };
-      }),
-      scheme: 'Negotiate',
-      specifications: ['RFC 4178 (SPNEGO)', 'RFC 4559 (Negotiate over HTTP)',
-                       'RFC 4121 (the Kerberos v5 GSS-API mechanism)'],
-      knobs: {
-        'mic=require': 'answer the first token with request-mic, forcing the ' +
-          'mechListMIC exchange and a second round trip',
-        'mech=none': 'support no mechanism the client offers, so the ' +
-          'negotiation is rejected',
-        'mutual=off': 'accept the ticket but send no AP-REP back'
-      },
-      // The knobs above are THIS page's and the sign-in door takes none of
-      // them, deliberately: a door that mints sessions with a query parameter
-      // that makes it fail in an instructive way is a footgun rather than a
-      // lesson, and the lesson is available here.
-      knobsApplyTo: '/spnego/protected only',
-      lastExchange: exchange.lastExchange()
-    });
+    return res.status(200).json(advert);
   }
+  // THE SHELL, where this service has it (#583): the advertisement drawn in
+  // the browser, `no-store` as every shell is.
+  const pages = pagesModule();
+  if (pages) {
+    res.status(200).set('Cache-Control', 'no-store');
+    pages.send(req, res, advertView(advert));
+    log.debug('Leaving GET /spnego. The shell.');
+    return;
+  }
+  // A COPY WITHOUT THE SHELL MODULE (the parent project's in-process jobs):
+  // the page as it was drawn before #583, byte for byte.
   const inner = '<h1>A SPNEGO-protected page lives here</h1><p ' +
     'class="sub">Kerberos over HTTP: RFC 4559 carries RFC 4178, which ' +
     'carries RFC 4121, which carries the AP-REQ.</p><p><a ' +
@@ -316,6 +435,12 @@ app.get('/spnego', app.demoOnly, function (req, res) {
 
 // ---------------------------------------------------------------------------
 // THE PROTECTED RESOURCE — a renderer over `negotiate()`'s verdict.
+//
+// SINCE #583 THESE RENDERERS DRAW ONLY FOR A COPY WITHOUT `spnego_pages.ts`
+// (the parent project's, above): in this service the verdict is drawn in the
+// browser by `web_spnego_views.ts`, which is these functions moved, case for
+// case. A change to what a verdict's page says is made there, and here only
+// for the parent's sake.
 //
 // One case per outcome in `spnego_exchange.js`'s OUTCOMES table, and the switch
 // is EXHAUSTIVE on purpose rather than defensive: a new outcome added over
@@ -547,6 +672,14 @@ async function handleProtected(req, res) {
     mutualOff: String(req.query.mutual || '') === 'off'
   });
   exchange.applyVerdict(res, verdict);
+  // THE BODY IS THE SHELL, where this service has it (#583); the status and
+  // the headers `applyVerdict()` set above are the exchange's, untouched.
+  const pages = pagesModule();
+  if (pages) {
+    pages.send(req, res, verdictView(verdict));
+    log.debug('Leaving handleProtected(). ' + verdict.code + ', the shell.');
+    return;
+  }
   const heading = HEADINGS[verdict.code] || REJECTED;
   res.type('html').send(page(heading[0],
     verdict.ok ? acceptedPage(verdict) : refusalPage(verdict)));

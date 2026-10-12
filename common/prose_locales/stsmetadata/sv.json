@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "Talar om att /spnego/protected finns, vilket tjänstehuvudmannanamn som står bakom den, vilka mekanismer som accepteras och vilka frågeparametrar som får förhandlingen att misslyckas på ett specifikt sätt. Inget av detta finns i själva protokollutbytet — en klient måste härleda SPN:et ur URL:en och hitta KDC:n ur sin egen konfiguration, vilket är varför så många SPNEGO-fel inte lämnar några spår på tråden. Lägg till ?format=json."
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583). Körmiljön och renderarna för de två SPNEGO-demonstrationssidorna, i en enda fil som byggs av build-typescript.sh (kerberos/spnego-pages-spa.js) och serveras förkomprimerad: den ritar /spnego, och kroppen i varje svar som /spnego/protected ger, från det tillstånd varje skal bär. Förhandlingens status och dess WWW-Authenticate-huvud hör inte till det den ritar."
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "Svarar 401 med ett naket \"WWW-Authenticate: Negotiate\" på en oautentiserad begäran, och 200 med ett AP-REP i det huvudet på en giltig. Kerberos-kontrollerna är krb5_service.js:s, oförändrade — den här slutpunkten lägger till förhandlingen och den HTTP som bär den och ingen egen protokollkod."
@@ -1082,6 +1086,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "Certifikatet som den här tjänsten visar upp, klientförtroendelagret den verifierar mot och vad den här driftsättningen gör med ett klientcertifikat. HUVUDPORTEN BER VARJE ANSLUTNING OM ETT OCH KRÄVER INGET, så att visa upp det är klientens eget beslut. Två lyssnare som tillhörde den här familjen — 8443, som bad om ett, och 9443, som krävde ett — togs bort 2026-09-16 tillsammans med anslutningsrapporten de serverade. Vad ett certifikat är värt avgörs där det ANVÄNDS: GET /tls/sign-in för en session, tokenslutpunkten för RFC 8705, /xacml och /scim/v2 för sina. Lägg till ?format=json."
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583). Körmiljön och renderarna för de två TLS-diagnostiksidorna, i en enda fil som byggs av build-typescript.sh (tls/tls-pages-spa.js) och serveras förkomprimerad: den ritar /tls och /tls/forwarded från det tillstånd varje skal bär — objektet som respektive sidas ?format=json svarar med, byggt på den begäran som bad om sidan — och skickar /tls-sidans två åtgärder till POST /tls/trust och POST /tls/trust/clear som JSON."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

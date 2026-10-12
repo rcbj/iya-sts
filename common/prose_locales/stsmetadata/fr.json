@@ -723,6 +723,10 @@
     "en": "fcacaf13e1689e84",
     "text": "Indique que /spnego/protected existe, quel nom de principal de service se trouve derrière, quels mécanismes sont acceptés, et quels paramètres de requête font échouer la négociation d’une manière précise. Rien de cela ne figure dans l’échange protocolaire lui-même — un client doit déduire le SPN de l’URL et trouver le KDC à partir de sa propre configuration, ce qui explique pourquoi tant d’échecs SPNEGO ne laissent aucune trace sur le réseau. Ajoutez ?format=json."
   },
+  "stsmetadata.endpoints./spnego/pages.js.what": {
+    "en": "98f0627014fe9965",
+    "text": "NON-SPEC (#583). L’environnement d’exécution et les moteurs de rendu des deux pages de démonstration SPNEGO, en un seul fichier construit par build-typescript.sh (kerberos/spnego-pages-spa.js) et servi précompressé : il dessine /spnego, et le corps de chaque réponse que donne /spnego/protected, à partir de l’état que porte chaque coquille. Le statut de la négociation et son en-tête WWW-Authenticate ne font pas partie de ce qu’il dessine."
+  },
   "stsmetadata.endpoints./spnego/protected.what": {
     "en": "65103e3f5c4a9682",
     "text": "Répond 401 avec un simple \"WWW-Authenticate: Negotiate\" à une requête non authentifiée, et 200 avec un AP-REP dans cet en-tête à une requête valide. Les vérifications Kerberos sont celles de krb5_service.js, inchangées — ce point de terminaison ajoute la négociation et le HTTP qui la transporte, et aucun code protocolaire propre."
@@ -1082,6 +1086,10 @@
   "stsmetadata.endpoints./tls.what": {
     "en": "c2dad05c1712e862",
     "text": "Le certificat que présente ce service, le magasin de confiance des clients par rapport auquel il vérifie, et ce que ce déploiement fait d’un certificat client. LE PORT PRINCIPAL EN DEMANDE UN À CHAQUE CONNEXION ET N’EN EXIGE AUCUN ; le présenter est donc la décision propre du client. Deux écouteurs propres à cette famille — 8443, qui demandait, et 9443, qui exigeait — ont été supprimés le 2026-09-16, ainsi que le rapport de connexion qu’ils servaient. Ce que vaut un certificat se décide là où il est UTILISÉ : GET /tls/sign-in pour une session, le point de terminaison de jeton pour la RFC 8705, /xacml et /scim/v2 pour les leurs. Ajoutez ?format=json."
+  },
+  "stsmetadata.endpoints./tls/pages.js.what": {
+    "en": "013c43e6b2bb4303",
+    "text": "NON-SPEC (#583). L’environnement d’exécution et les moteurs de rendu des deux pages de diagnostic TLS, en un seul fichier construit par build-typescript.sh (tls/tls-pages-spa.js) et servi précompressé : il dessine /tls et /tls/forwarded à partir de l’état que porte chaque coquille — l’objet que répond le ?format=json de chacune, construit sur la requête qui a demandé la page — et envoie les deux actions de la page /tls à POST /tls/trust et POST /tls/trust/clear en JSON."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "7335cf97f459114d",

@@ -115,3 +115,12 @@ common/mock-rp.bundle.js
 common/mock-rp-spa.js
 common/mock-rp-spa.js.br
 common/mock-rp-spa.js.gz
+# The TLS and SPNEGO diagnostic pages' (#583), the same kind of file.
+tls/tls-pages.bundle.js
+tls/tls-pages-spa.js
+tls/tls-pages-spa.js.br
+tls/tls-pages-spa.js.gz
+kerberos/spnego-pages.bundle.js
+kerberos/spnego-pages-spa.js
+kerberos/spnego-pages-spa.js.br
+kerberos/spnego-pages-spa.js.gz

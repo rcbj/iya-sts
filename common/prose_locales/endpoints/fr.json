@@ -11,6 +11,10 @@
     "en": "23bfd6168fa5fd44",
     "text": "Une page protégée par SPNEGO est annoncée ici"
   },
+  "endpoints.route./spnego/pages.js.name": {
+    "en": "f32f6a1508ae1e7b",
+    "text": "Le script des pages SPNEGO"
+  },
   "endpoints.route./spnego/protected.name": {
     "en": "8c763f4b490426dd",
     "text": "La ressource protégée"
@@ -346,6 +350,10 @@
   "endpoints.route./tls.name": {
     "en": "80219fab36a81bcc",
     "text": "Ce qu’est le point de terminaison TLS"
+  },
+  "endpoints.route./tls/pages.js.name": {
+    "en": "02629f4022cc882e",
+    "text": "Le script des pages TLS"
   },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",

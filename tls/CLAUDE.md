@@ -1787,3 +1787,93 @@ listeners they are on*); `docs/listeners.md` is the operator's half.
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 `/tls` and `/tls/forwarded` (per realm), and `/tls/trust` and `/tls/trust/clear` — **the process's**, marked `processDemoOnly`, which asks the default realm too, because the truststore is one array for every listener: a development realm inside a product process is not a way to add an anchor. Their 403 `STS-TLS-0024` is retired; the gated doors are `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}`, and `tests/tools/pep-credential.js` tries the gated one first. The `/tls` page draws the two buttons only where the process serves them. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## THE DIAGNOSTIC PAGES ARE A STATIC SURFACE (#583, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface and **never touches what a specification's endpoint answers**
+(rcbj, 2026-10-12). #583 is this family's diagnostic pages, and its first
+step was this inventory: every response under `/tls`, which kind it is, and
+so whether it is converted.
+
+| Response | Where | Kind | Converted |
+|---|---|---|---|
+| `GET /tls` (HTML) — the certificate, the listeners, the truststore and its two buttons, revocation, what a certificate is worth | `tls_server.js` | a page a person reads (a demonstration, #585) | **yes** |
+| `GET /tls?format=json` | `description()` | the page's JSON form, read by scripts and jobs | no — unchanged |
+| `POST /tls/trust`'s and `POST /tls/trust/clear`'s HTML answers (`Accept: text/html`: "N anchor(s) added", "Nothing was added", "The truststore is empty") | `tls_server.js` | pages a person reads, the outcome of the `/tls` page's two forms | **yes** — the acts answer JSON, and the page draws the outcome |
+| `POST /tls/trust`, `POST /tls/trust/clear` (raw PEM, a form or JSON body; JSON answers) | `tls_server.js` | a test-control API (`processDemoOnly`), what 25 jobs and `tests/tools/pep-credential.js` call | no — the same answers to a script; a browser's act is bound (below) |
+| `GET /tls/forwarded` (HTML) | `tls_server.js` | a page a person reads (a demonstration, #585) | **yes** |
+| `GET /tls/forwarded?format=json` | `tls_server.js` | its JSON form | no — unchanged |
+| `GET /tls/sign-in` | `answerCertificateSignIn()` | a real sign-in, answered as JSON | no — not HTML (#569's inventory) |
+| `GET /tls/server-certificate` | `tls_server.js` | a PEM document | no |
+| the 400 for a bad `?format=` (`STS-TLS-0023`, text/plain) | `tls_server.js` | a refusal in plain text | no |
+
+What the TLS layer DOES is unchanged by all of it: the handshake, the client
+certificate and its verification, the revocation check, the truststore and
+the sighting. Only the page a person reads about them moved.
+
+### Each page is the shell, carrying the object its JSON form answers (`tls_pages.ts`)
+
+**#583's constraint is that `/tls` describes the connection the page arrived
+on**, and `/tls/forwarded` the headers it arrived with — so the view is built
+ON THE REQUEST THAT ASKED FOR THE PAGE and carried in the shell's
+`data-sts-state` (`kerberos/spnego_authn.ts`'s arrangement, #575), never
+fetched afterwards: a `fetch()` from the page is another request, with the
+browser's headers rather than whatever a proxy or a `curl` put on the first,
+and perhaps on another connection. The issue's plan said "JSON views"; the
+views ARE the two `?format=json` objects, unchanged, and the shell carries
+the same object (`/tls`'s beside `https`, which says which port the page is
+on — `mainPortPhrase()`'s job, deleted with the server-drawn page). The
+runtime is `web_tls_surface.ts` over `common/web_embedded_surface.ts`, the
+renderers `web_tls_views.ts`, the table `web_tls_pages.ts`, the words the
+`tlsPages` catalogs' in seven languages; what the SERVER says — a listener's
+`what`, a header's description, the revocation sentence, `what_it_means` —
+is data in the JSON a script reads, and is drawn in English. The bundle is
+`tls/tls-pages-spa.js`, never `tls_pages.js` (`tls_pages.ts` compiled),
+served at `/tls/pages.js` — a path of the `tls` hosted application, so a
+shell on that application's own listener (#472) loads its script from there,
+and a demonstration's like the pages (`app.demoOnly`, #585).
+
+**The status of both pages is the 200 it was; `no-store`; the policy is the
+one header that changed**: `script-src 'self'`, `style-src 'self'`,
+`connect-src 'self'` plus the sign-in service's origin where it is on
+another listener (the language chooser posts to `/authn/language`), through
+`app.contentSecurityPolicy()`.
+
+### The two acts are the API they always were, and a browser's is bound
+
+`Trust these` and `Empty the truststore` are sent by the runtime to `POST
+/tls/trust` and `POST /tls/trust/clear` as JSON, and what they answer is
+drawn in place (`trusted`, `cleared`, or the refusal, English, through
+`common/web_outcome.ts`). **Both routes answer JSON only since #583**: the
+`Accept: text/html` pages they drew for the old form are gone, since nothing
+posts a form to them now. Their mode gate is unchanged (`processDemoOnly`).
+
+**THE BINDING IS ASKED ONLY OF A REQUEST THAT CARRIES AN `Origin`**
+(`TlsPages.bound()`): every browser sends one on a POST, so a request without
+one is a script's — `tests/tools/pep-credential.js`, the 25 jobs that post a
+raw PEM — and cannot be a cross-site request; it is answered exactly as
+before. A browser's must be JSON (`STS-TLS-0049`, 415), from an origin this
+service answers on (`STS-TLS-0050`, 403), with `X-CSRF-Token` the token of the
+page's own cookie (`STS-TLS-0051`, 403) — rcbj's decision 2 on #571, which
+every act of #569's surfaces keeps. **There is no session to bind the token
+to** (these pages have no sign-in), so the `/tls` shell sets `sts_tls_page`, a
+random handle (HttpOnly, SameSite=Strict, Secure over TLS), and the token is
+`websecurity.tokenFor()` of it under a label no session id has. The shell
+carries the token only where the process serves the acts, as the page draws
+its buttons only there.
+
+### Tests
+
+`tests/diagnostic_pages.js` asks both pages for their status, headers, shell
+and state (against `?format=json`), the acts as a script and as a browser —
+every refusal of the binding, and the bound act answered the same JSON —
+draws every kind of view, and drives the runtime: `/tls` drawn in French from
+its shell asking for catalogs only, and "Trust these" sent as JSON with the
+token and its outcome drawn. `tests/web_surfaces.js` holds the bundle to this
+process's drawing for every kind of view (`tests/tools/web_surfaces.js`'s
+row). The 25 `tests/vendored/` jobs that name `/tls` were read one by one:
+every one posts a raw PEM with no `Origin` (through `pep-credential.js`),
+reads `/tls/sign-in` or `/tls/server-certificate`, or probes `GET /tls` in a
+product realm for Express's 404 (`sts_metadata.js`) — none reads either page's
+HTML, so none changed.

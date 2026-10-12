@@ -122,6 +122,13 @@ another node is refused too.
 * The three knobs on `/spnego/protected` only: `mic=require` (force the
   mechListMIC round trip), `mech=none` (reject the negotiation) and
   `mutual=off` (accept the ticket, send no AP-REP).
+* **The pages run as a script in your browser (#583).** `/spnego` and the
+  *body* of every answer `/spnego/protected` gives are a short page that loads
+  `/spnego/pages.js`, which draws what the page carries (the advertisement, or
+  the negotiation's verdict) in the browser's language. The negotiation itself
+  — every status, every `WWW-Authenticate` value, the cookie — is exactly what
+  it was; a client that runs no script reads the verdict in the page's
+  `data-sts-state`, and `/spnego?format=json` is unchanged.
 
 A `request-mic` exchange takes two HTTP requests; between them it is held for
 `krb5.spnegoPendingTtlSeconds` and matched by a cookie

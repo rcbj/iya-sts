@@ -85,7 +85,10 @@ function childMain() {
     '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
     '/vc-demo-api/done',
     '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
-    '/ssf/receive', '/ssf/received'];
+    '/ssf/receive', '/ssf/received',
+    // The two diagnostic surfaces' scripts (#583), demonstrations like the
+    // pages they draw.
+    '/tls/pages.js', '/spnego/pages.js'];
   // A concrete path for a pattern.
   function concrete(p) {
     return p.replace(/:([A-Za-z_]+)/g, 'probe');
