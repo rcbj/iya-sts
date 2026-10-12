@@ -149,7 +149,8 @@ function baseOf(base) {
  * @param {string} base - the service's base, a realm's prefix included
  * @param {string} where - the screen's address or the pending id
  * @param {object} [options] - `cookie`, the request's cookie header;
- *   `page`, `select-idp` or `password-change` for those pages' views
+ *   `headers`, sent on every request; `page`, `select-idp` or
+ *   `password-change` for those pages' views
  * @returns {Promise<object>} `{ status, json, view, csrf, cookie,
  *   setCookies, shellStatus }`
  */
@@ -164,8 +165,11 @@ async function screen(base, where, options) {
       ? "/authn/select-idp?authn=" : "/authn/login?authn=");
   let cookie = String(opts.cookie || "");
   const setCookies = [];
+  const extra = opts.headers || {};
   const shell = await fetch(b.base + shellPath + encodeURIComponent(id),
-    { redirect: "manual", headers: cookie ? { cookie: cookie } : {} });
+    { redirect: "manual", headers: Object.assign({}, extra,
+                                                 cookie ? { cookie: cookie }
+                                                        : {}) });
   setCookiesOf(shell).forEach(function (one) {
     setCookies.push(one);
   });
@@ -176,7 +180,7 @@ async function screen(base, where, options) {
     : "/authn-api/pending/" + encodeURIComponent(id) +
       (page === "select-idp" ? "/partners" : "");
   const res = await fetch(b.base + viewPath, {
-    headers: Object.assign({ accept: "application/json" },
+    headers: Object.assign({ accept: "application/json" }, extra,
                            cookie ? { cookie: cookie } : {}) });
   setCookiesOf(res).forEach(function (one) {
     setCookies.push(one);
@@ -200,8 +204,8 @@ async function screen(base, where, options) {
  * @param {string} path - the operation's path under the base, its id
  *   filled (`/authn-api/pending/<id>/password`)
  * @param {object} body - the act's JSON
- * @param {object} options - `cookie`, `csrf`; `origin` and `contentType` to
- *   send something else (a refusal test)
+ * @param {object} options - `cookie`, `csrf`, `headers`; `origin` and
+ *   `contentType` to send something else (a refusal test)
  * @returns {Promise<object>} the answer, as `submit()` describes it
  */
 async function act(base, path, body, options) {
@@ -211,8 +215,9 @@ async function act(base, path, body, options) {
                                  "/$1/(id)"));
   const opts = options || {};
   const b = baseOf(base);
-  const headers = { accept: "application/json",
-                    "content-type": opts.contentType || "application/json" };
+  const headers = Object.assign({}, opts.headers || {},
+    { accept: "application/json",
+      "content-type": opts.contentType || "application/json" });
   if (opts.origin !== null) {
     headers.origin = opts.origin || b.origin;
   }
@@ -340,8 +345,8 @@ function bodyFor(action, fields) {
  * @param {string} where - the screen's address, or the pending id
  * @param {object} fields - the form's fields, `action` among them
  *   (`login` where left out)
- * @param {object} [options] - `cookie`; `screen`, a `screen()` answer
- *   already in hand
+ * @param {object} [options] - `cookie`; `headers`, sent on every request
+ *   (a User-Agent); `screen`, a `screen()` answer already in hand
  * @returns {Promise<object>} the answer, with the view it was sent from
  */
 async function submit(base, where, fields, options) {
@@ -349,7 +354,8 @@ async function submit(base, where, fields, options) {
   const opts = options || {};
   const action = String((fields && fields.action) || "login");
   const opened = opts.screen || await screen(base, where,
-                                             { cookie: opts.cookie });
+                                             { cookie: opts.cookie,
+                                               headers: opts.headers });
   if (!opened.view) {
     log.debug("Leaving submit(). No view: " + opened.status);
     return Object.assign({ status: opened.status, json: opened.json,
@@ -374,7 +380,7 @@ async function submit(base, where, fields, options) {
   const answer = await act(base, "/authn-api/pending/" +
     encodeURIComponent(opened.id) + "/" + op, bodyFor(action, fields),
     { cookie: opened.cookie, csrf: opened.csrf,
-      setCookies: opened.setCookies });
+      setCookies: opened.setCookies, headers: opts.headers });
   answer.view = opened.view;
   answer.csrf = opened.csrf;
   log.debug("Leaving submit(). " + answer.next);

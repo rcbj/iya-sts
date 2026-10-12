@@ -32,6 +32,8 @@
 // ===========================================================================
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -199,35 +201,23 @@ async function signInAtB(cells) {
       }
       continue;
     }
-    const fields = kit.signInFields(r.text);
-    if (r.status === 200 && fields.authnId && !signedIn) {
+    // THE SCREEN OVER `/authn-api` (#571), through the one helper — the
+    // OFFERED second factor (#246) an administrator with none is shown
+    // ignored there, which finishes the sign-in.
+    if (kit.isSignIn(r) && !signedIn) {
       signedIn = true;
       const screen = new URL(at);
-      const posted = await kit.browse(jar, screen.origin + screen.pathname,
-        { form: { authn_id: fields.authnId, username: ADMIN,
-                  password: PASSWORD, action: "login",
-                  csrf_token: fields.csrf } });
-      hops.push({ url: screen.origin + screen.pathname,
-                  status: posted.status, location: posted.location,
-                  set: posted.set });
-      let next = posted;
-      // THE OFFERED SECOND FACTOR (#246): an administrator with none is
-      // shown the set-up step, and Ignore finishes the sign-in.
-      const setupId = next.status === 200 &&
-        /id="mfa-setup-ignore"/.test(next.text)
-        ? (next.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || ""
-        : "";
-      if (setupId) {
-        next = await kit.browse(jar, screen.origin + "/authn/mfa-setup",
-          { form: { mfa_id: setupId, action: "ignore" } });
-        hops.push({ url: screen.origin + "/authn/mfa-setup",
-                    status: next.status, location: next.location,
-                    set: next.set });
-      }
-      assert.ok(next.status >= 300 && next.status < 400 && next.location,
-        "signing in at cell B answered " + next.status + " " +
-        kit.said(next.text));
-      at = atB(cells, next.location);
+      const answer = await authnSignin.signIn(screen.origin +
+        screen.pathname.replace(/\/authn\/login$/, ""), at,
+        { action: "login", username: ADMIN, password: PASSWORD },
+        { cookie: jar.header() });
+      const set = jar.take({ headers: answer.headers });
+      hops.push({ url: screen.origin + "/authn-api", status: answer.status,
+                  location: answer.location, set: set });
+      assert.ok(answer.next === "redirect" && answer.location,
+        "signing in at cell B answered " + answer.status + " " +
+        answer.next + " " + JSON.stringify(answer.errors));
+      at = atB(cells, answer.location);
       continue;
     }
     log.debug("Leaving signInAtB(). Stopped on " + r.status + ".");
