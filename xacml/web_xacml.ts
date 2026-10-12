@@ -316,9 +316,7 @@ class XacmlPage {
       (row.kind === 'remote'
         ? '<div class="sub">' + t.html('consoleXacml.monitor.reportedByIt') +
         '</div>'
-        : (row.id === 'protected'
-            ? '<div class="sub"><code>xacml.pepBias</code></div>'
-            : '')) +
+        : '') +
       '</td>' +
       '<td class="num">' + row.decisions + '</td>' +
       self.enforcementCells(row, t) +
@@ -344,7 +342,6 @@ class XacmlPage {
       kit.tile(json.policies, t.text('consoleXacml.tile.policies')) +
       kit.tile(json.enabledPolicies, t.text('consoleXacml.tile.enabled')) +
       kit.tile(json.root || '—', t.text('consoleXacml.tile.root')) +
-      kit.tile(json.pepBias, t.text('consoleXacml.tile.pepBias')) +
       kit.tile(json.pipAvailable ? t.text('consoleXacml.yes')
         : t.text('consoleXacml.no'),
                t.text('consoleXacml.tile.pip')) +
@@ -362,7 +359,6 @@ class XacmlPage {
       '<p>' + t.html('consoleXacml.overview.p1') +
       '</p><p>' + t.html('consoleXacml.overview.p2') +
       '</p><p>' + t.html('consoleXacml.overview.p3') +
-      '</p><p>' + t.html('consoleXacml.overview.p4') +
       '</p>',
       t.text('consoleXacml.overview.label'));
     return tiles + rootWarning + what +

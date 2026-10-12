@@ -180,8 +180,8 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // assertion in any of the three therefore spans a console door and a protocol
 // door — a template built on `/admin-api` deciding at `/xacml/pdp`, a policy
 // disabled on the console disappearing from what a remote PEP pulls, a rule
-// built by pressing buttons on `/admin/xacml/editor` changing what
-// `/xacml/protected` allows — and a test with the two halves in two
+// built by pressing buttons on `/admin/xacml/editor` changing what the PDP
+// permits (`/xacml/protected` until #596) — and a test with the two halves in two
 // repositories could not make one of them. **`sts_xacml_remote_pep.js` IS THE
 // THIRD AND IS ALSO THE ONLY JOB HERE THAT STARTS A SECOND PROCESS OF ITS
 // OWN**: it runs `xacml-pep/pep.js` — the real container's program, not a
@@ -1277,9 +1277,12 @@ const JOBS = [
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
   // account commands, the callback, automatic suspend and reactivate, a
-  // resumed tenant stream and a retried delivery, against the mock relying
-  // party. `local: true`.
-  { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // resumed tenant stream and a retried delivery, against the TEST PEER's
+  // relying party since #596 (the service's mock was deleted, #591 P5), so
+  // `testPeer: true`: SKIPPED, with the reason, in a run with no peer.
+  // `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true,
+    testPeer: true },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking

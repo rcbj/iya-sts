@@ -747,10 +747,6 @@
     "en": "606444be2da8fa32",
     "text": "Cada política tal como la ve el PDP, CON LOS DOCUMENTOS INCLUIDOS, junto con los problemas estáticos de comprobación de tipos de cada una. Los documentos se muestran deliberadamente, a diferencia de los secretos que oculta /admin/ldap/*: una política es una regla y no una credencial, y una regla que nadie puede leer es una regla que nadie puede comprobar. QUIÉN PUEDE LEERLA ES UNA PREGUNTA DISTINTA DE SI SE OCULTA, y esto requiere XACML_USER: desde que se integraron los PEP de acceso y de emisión, estos documentos son con los que este servicio decide sus propias admisiones, y entregar a un llamador anónimo las condiciones exactas en las que deja entrar a las personas no es el mismo acto que publicar una política de demostración. El almacén es ou=policies en el directorio integrado: ese contenedor ES el repositorio."
   },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "Un recurso que este servicio protege con su propio PDP. Toma subject, resource y action como parámetros de consulta, pregunta al PDP y APLICA la respuesta: 200 o 403. Es donde se ve xacml.pepBias: el sesgo de denegación y el de permiso coinciden en cada Permit y cada Deny y difieren en Indeterminate y NotApplicable, que es el caso que nadie prueba. Una obligación que no puede cumplir convierte un Permit en un rechazo (sección 7.2), que es la parte que las implementaciones omiten. DOS CONTROLES, SOBRE DOS PERSONAS DISTINTAS: el LLAMADOR necesita XACML_USER para usarlo siquiera, y el SUJETO nombrado en ?subject= es sobre quien el PEP aplica la decisión. Mantenerlos separados es lo que permite a un llamador admitido preguntar por alguien a quien la política rechaza y ver cómo lo rechaza, que es toda la demostración."
-  },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
     "text": "Un Policy Enforcement Point en OTRO PROCESO anuncia que existe, mediante TLS mutuo en este mismo puerto; server.js ya establece requestCert: true, así que esto no necesitó una nueva escucha. EL ÚNICO ENDPOINT DE ESTA FAMILIA QUE PIDE UNA CREDENCIAL, y hace una pregunta distinta de la de /xacml/pdp: no sobre quién trata la decisión, sino QUÉ PEP es este, porque un registro escribe una entrada y aporta una dirección a la que este servicio se conectará más tarde. Es un torniquete como cualquier otro control de aquí (el certificado no necesita encadenar a nada, el argumento de la sección 3 de RFC 8705) y NO es lo que permite a un PEP aplicar decisiones: uno no registrado obtiene las políticas y decide igual de bien. xacml.pepRequireCertificate lo desactiva."
@@ -2774,10 +2770,6 @@
   "stsmetadata.endpoints./oauth2/commands/callback.what": {
     "en": "7573076dce7e186e",
     "text": "Adonde una parte que confía envía por POST el resultado de un comando _async o pide un metadata o audit_tenant reciente, con Bearer el callback_token que llevaba el comando (#151). 204, o los errores de RFC 6750."
-  },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, solo en desarrollo (#151): el command_endpoint de una parte que confía que comprueba un Command Token como pide la sección 9 y responde a cada comando de cuenta y de tenant, incluidos los flujos; GET muestra lo que contiene. 404 en modo producto."
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

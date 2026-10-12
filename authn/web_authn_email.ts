@@ -241,7 +241,7 @@ class WebAuthnEmail {
     const t = ctx.t;
     const v = view || {};
     if (v.state === 'end') {
-      return String(v.title) + ' — mock authentication service';
+      return t.text('emailFactor.shell.title', { title: String(v.title) });
     }
     const key = v.state === 'elsewhere' ? 'emailFactor.elsewhere.title'
       : (v.state === 'open' ? 'emailFactor.open.title'

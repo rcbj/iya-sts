@@ -205,16 +205,16 @@ async function run(t) {
   const table = JSON.parse(fs.readFileSync(
     path.join(PEP_DIR, 'enforcement_cases.json'), 'utf8'));
   const outcomes = {};
-  const wasBias = config.value('xacml.pepBias');
+  // THE BIAS IS AN ARGUMENT since #596, when `xacml.pepBias` went with the
+  // demonstration PEP it governed; the console's what-if passes each.
   ['deny-biased', 'permit-biased'].forEach(function (bias) {
-    config.setOverride('xacml.pepBias', bias);
     outcomes[bias] = table.cases.map(function (one) {
       return xacml.enforce({
         decision: one.decision,
         obligations: one.obligations.map(function (id) {
           return { id: id, assignments: [] };
         })
-      }).allowed;
+      }, bias).allowed;
     });
     t.equal(JSON.stringify(outcomes[bias]),
             JSON.stringify(table.cases.map(function (one) {
@@ -225,7 +225,6 @@ async function run(t) {
             'Permit carrying an obligation neither can discharge, which ' +
             'section 7.2 makes a REFUSAL');
   });
-  config.setOverride('xacml.pepBias', wasBias);
   // AND THE ONE THAT MUST NOT AGREE: without it, two implementations that
   // both said yes unconditionally would pass.
   t.check(JSON.stringify(outcomes['deny-biased']) !==

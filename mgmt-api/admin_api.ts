@@ -14438,12 +14438,7 @@ class AdminApi {
                      'ABOUT SOMEBODY ELSE\'S BOUNDARY. Every other protocol ' +
                      'here authenticates or provisions a person; this one is ' +
                      'handed a subject who was authenticated somewhere else ' +
-                     'and asked whether they may.\n\n`pepBias` is the ' +
-                     'embedded Policy ENFORCEMENT point\'s setting and not ' +
-                     'the PDP\'s. Deny-biased and permit-biased agree on ' +
-                     'every Permit and every Deny and differ ' +
-                     'on Indeterminate and NotApplicable, ' +
-                     'which is exactly the case nobody tests.',
+                     'and asked whether they may.',
         mirrors: 'GET /admin/xacml',
         responseDescription: 'The PDP, its repository and its PIP.',
         responseSchema: { $ref: '#/components/schemas/Xacml' },
@@ -15741,10 +15736,9 @@ class AdminApi {
                          'AND you must also do this", and section 7.2 makes ' +
                          'it ' +
                          'binding: a PEP that cannot discharge one MUST NOT ' +
-                         'grant the access. Both PEPs here implement that — ' +
-                         'the embedded one at /xacml/protected and the ' +
-                         'remote container — and it is the part ' +
-                         'implementations skip.',
+                         'grant the access. The remote PEP container ' +
+                         'implements that, and /admin/xacml/decide shows ' +
+                         'it — and it is the part implementations skip.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

@@ -747,10 +747,6 @@
     "en": "606444be2da8fa32",
     "text": "PDP 所见的每条策略，包括文档在内，以及每条策略的静态类型检查问题。与 /admin/ldap/* 隐藏的秘密不同，这些文档是刻意展示的：策略是规则而不是凭据，而一条没人能读的规则就是一条没人能检查的规则。谁可以读取它，与它是否被遮盖是两个不同的问题，而此端点需要 XACML_USER：自从访问 PEP 和签发 PEP 被嵌入以来，这些文档就是本服务用来决定自身准入的文档，而把放行他人的确切条件交给匿名调用方，与发布一条演示策略并不是同一回事。存储位置是嵌入式目录中的 ou=policies——该容器本身就是存储库。"
   },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "本服务用自己的 PDP 守护的资源。以查询参数接收 subject、resource 和 action，询问 PDP，并执行其应答——200 或 403。xacml.pepBias 的作用在这里可见：拒绝偏向和允许偏向在每个 Permit 和每个 Deny 上都一致，而在 Indeterminate 和 NotApplicable 上不同，而这正是没人测试的情形。无法履行的义务会把 Permit 变成拒绝（第 7.2 节），这正是各实现跳过的部分。两道关卡，针对两个不同的人：调用方需要 XACML_USER 才能驱动它，而 ?subject= 中指定的主体才是 PEP 随后据以执行的对象。把二者分开，才能让被允许的调用方询问一个策略会拒绝的人，并看着它拒绝——这就是整个演示。"
-  },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
     "text": "另一个进程中的策略执行点（PEP）通过同一端口上的双向 TLS 声明自己的存在——server.js 已经设置了 requestCert: true，因此不需要新的监听器。这是此系列中唯一要求凭据的端点，它问的问题与 /xacml/pdp 不同：不是决策针对谁，而是这是哪个 PEP——因为注册会写入一个条目，并提供一个本服务之后会拨号的地址。它与此处其他所有关卡一样是一道闸口（证书无需链接到任何东西，依据 RFC 8705 第 3 节的论证），它并不是让 PEP 能够执行的条件：未注册的 PEP 同样可以拉取并作出决策。xacml.pepRequireCertificate 可将其关闭。"
@@ -2774,10 +2770,6 @@
   "stsmetadata.endpoints./oauth2/commands/callback.what": {
     "en": "7573076dce7e186e",
     "text": "依赖方 POST _async 命令结果或请求新的 metadata 或 audit_tenant 的地方，以命令所携带的 callback_token 作为 Bearer（#151）。返回 204，或 RFC 6750 的错误。"
-  },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC，仅限开发模式（#151）：依赖方的 command_endpoint，按 section 9 的要求检查 Command Token，并应答每个账户命令和租户命令，包括流；GET 显示其所保存的内容。在产品模式下返回 404。"
   },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",

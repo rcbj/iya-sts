@@ -6,7 +6,8 @@
 // File: xacml.ts
 //
 // ---------------------------------------------------------------------------
-// THE XACML SURFACE: A DECISION ENDPOINT, THE REPOSITORY, AND AN EMBEDDED PEP.
+// THE XACML SURFACE: A DECISION ENDPOINT, THE REPOSITORY, AND THE DOORS A
+// REMOTE PEP USES.
 //
 // The engine modules in this directory are libraries with no DOM, no HTTP and
 // no store. This file is the only one that registers a PROTOCOL route
@@ -19,30 +20,29 @@
 //   GET  /xacml            what this surface is, and what it decides against
 //   POST /xacml/pdp        a decision. JSON Profile in, JSON Profile out.
 //   GET  /xacml/policies   the repository, as the PDP sees it
-//   GET  /xacml/protected  THE EMBEDDED PEP — a resource this service guards
-//                          with its own PDP
 //
 // and, in the PHASE FIVE section further down, the three `/xacml/pep/*`
 // endpoints a remote PEP uses and `POST /xacml/pip`.
 //
 // ---------------------------------------------------------------------------
-// THE EMBEDDED PEP IS THE POINT OF THE LAST ONE, AND IT IS NOT A DEMO PAGE.
+// THE DEMONSTRATION PEP IS THE REMOTE ONE'S `GET /protected` (#596).
 //
-// A PDP endpoint answers questions in the abstract; a PEP is where a decision
-// stops being an opinion. `/xacml/protected` builds a request out of the
-// caller — who they are, what they asked for, how they asked for it — asks the
-// PDP, and then ENFORCES the answer, including the part everybody skips: an
-// obligation it cannot discharge turns a Permit into a refusal (section 7.2).
-//
-// It is also where `xacml.pepBias` lives, and that setting is the reason this
-// exists as a real component rather than a canned response. XACML lets a PEP
-// be deny-biased or permit-biased, the two agree on every Permit and every
-// Deny, and they differ on exactly the answer nobody tests: Indeterminate and
-// NotApplicable. Being able to flip it and watch the same policy produce two
-// different outcomes is the thing a debugger is for.
+// `GET /xacml/protected` stood here until #596 (2026-10-12; #591 P5): a
+// resource this service guarded with its own PDP, building a request out of
+// `?subject=`, `?resource=` and `?action=`, enforcing the answer under
+// `xacml.pepBias` and refusing a Permit whose obligation it could not
+// discharge (section 7.2). The runtime ships no demonstration code, and the
+// `xacml-pep` container (`rust/bins/xacml-pep`, `xacml-pep/CLAUDE.md`) already
+// was that PEP — the same builder, the same three parameters, the same bias
+// as a PEP-side option (`PEP_BIAS`) and the same obligation rule — in the
+// place a PEP actually lives: another process, holding pulled policy. Both
+// went, and `xacml.pepBias` with them. `enforce()` below stays, for the
+// console's what-if on `/admin/xacml/decide`, and takes the bias as an
+// argument; `tests/xacml_pep.js` holds it and the remote PEP's
+// `enforce.rs` to one table.
 //
 // ---------------------------------------------------------------------------
-// ALL FOUR REQUIRE A CLIENT CERTIFICATE NOW, AND THIS BLOCK USED TO SAY THE
+// ALL THREE REQUIRE A CLIENT CERTIFICATE NOW, AND THIS BLOCK USED TO SAY THE
 // OPPOSITE.
 //
 // What stood here was an argument for authenticating nobody, and half of it is
@@ -57,7 +57,8 @@
 //
 // **WHAT CHANGED IS THAT "NOT A BOUNDARY" WAS BEING READ AS "NOT WORTH
 // GUARDING", AND THOSE ARE DIFFERENT SENTENCES.** Three of these four endpoints
-// do something an anonymous caller should not get for free:
+// did something an anonymous caller should not get for free (the third,
+// `GET /xacml/protected`, is the remote PEP's since #596):
 //
 //   * `GET /xacml/policies` publishes the repository, and since the access and
 //     issuance PEPs were embedded, the documents in it are the ones this
@@ -65,14 +66,14 @@
 //     policy and publishing the exact conditions under which a service lets
 //     people in are not the same act. `GET /xacml/pep/policies` reached this
 //     conclusion first and its comment carries the long form.
-//   * `GET /xacml/protected` ENFORCES, and it names its own subject from a
-//     query parameter — so unguarded it is an oracle anybody can drive to map
-//     the policy by asking about one subject at a time.
+//   * `GET /xacml/protected` ENFORCED, and it named its own subject from a
+//     query parameter — so unguarded it was an oracle anybody could drive to
+//     map the policy by asking about one subject at a time.
 //   * `POST /xacml/pdp` evaluates an arbitrary document against the repository
 //     on this service's thread, which is the ordinary reason a decision
 //     endpoint asks who is calling.
 //
-// `GET /xacml` is here because it describes the other three, and because a
+// `GET /xacml` is here because it describes the other two, and because a
 // surface with one door left open is a surface whose gate somebody will read as
 // advisory. Its refusal names the group and the setting, so the page's job —
 // telling a caller how this works — survives being refused.
@@ -116,10 +117,6 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 
 // THE DOOR A TRUST ANCHOR GOES IN BY, as this surface's prose names it: the
 // management API's gated operation, in every mode since #597 deleted the
@@ -160,9 +157,6 @@ import json = require('./xacml_json');
 import pdp = require('./xacml_pdp');
 import store = require('./xacml_store');
 import pip = require('./xacml_pip');
-// THE ONE REQUEST BUILDER (#306).
-import xacmlRequest = require('./xacml_request');
-const { AuthorizationRequest } = xacmlRequest;
 // The datatype table, for `POST /xacml/pip` alone: a resolver answers with
 // PARSED values and a caller's engine wants the LEXICAL form its own parser
 // reads. A LEAF (rule 3) that registers nothing and requires nothing that
@@ -385,8 +379,8 @@ const PIP_MAX_DESIGNATORS = 50;
 
 /**
  * The XACML protocol surface: the decision endpoint, the policy
- * repository as the PDP sees it, the embedded PEP at `/xacml/protected`,
- * the remote PEP endpoints and `POST /xacml/pip`.
+ * repository as the PDP sees it, the remote PEP endpoints and
+ * `POST /xacml/pip`.
  *
  * No decision logic lives here; it reads a request, hands it to
  * `xacml_pdp.js` and writes what comes back.
@@ -500,14 +494,14 @@ class XacmlSurface {
   // ===========================================================================
   // MAY THIS CALLER REACH THE XACML SURFACE AT ALL?
   //
-  // The four endpoints above this file's own PHASE FIVE section — `GET /xacml`,
-  // `POST /xacml/pdp`, `GET /xacml/policies` and `GET /xacml/protected` — go
-  // through here. It is `pepAccess()`'s sibling and rests on the SAME four-step
-  // chain, which is described once, below, at MAY THIS CALLER REACH THE
-  // REMOTE-PEP ENDPOINTS AT ALL: a chain built to an anchor in this service's
-  // truststore, a DN resolved to a directory entry, the roles that entry holds,
-  // and a policy decision. Every link is a real check and none of them is
-  // permissive.
+  // The three endpoints above this file's own PHASE FIVE section — `GET
+  // /xacml`, `POST /xacml/pdp` and `GET /xacml/policies` — go through here
+  // (`GET /xacml/protected` did until #596). It is `pepAccess()`'s sibling
+  // and rests on the SAME four-step chain, which is described once, below,
+  // at MAY THIS CALLER REACH THE REMOTE-PEP ENDPOINTS AT ALL: a chain built to
+  // an anchor in this service's truststore, a DN resolved to a directory
+  // entry, the roles that entry holds, and a policy decision. Every link is
+  // a real check and none of them is permissive.
   //
   // **THE ROLE AND THE RESOURCE ARE BOTH DIFFERENT, AND NEITHER IS AN
   // ACCIDENT.** `XACML_USER` rather than `REMOTE_PEPS`, because admitting
@@ -690,21 +684,22 @@ class XacmlSurface {
   //      one it knows about, below — and refuses on any other, loudly.
   // ---------------------------------------------------------------------------
   /**
-   * Applies this service's PEP bias and obligation rule to a decision
-   * (section 7.2).
+   * Applies a PEP bias and the obligation rule to a decision (section 7.2).
    *
-   * `xacml.pepBias` chooses deny-biased (the default) or permit-biased. An
+   * `bias` chooses deny-biased (the default, and every embedded PEP's) or
+   * permit-biased — an ARGUMENT since #596, when `xacml.pepBias` went with
+   * the demonstration PEP it governed; the remote PEP's is `PEP_BIAS`. An
    * obligation this PEP cannot discharge turns an allowed access into a
    * refusal; only `urn:sts:xacml:obligation:log` is dischargeable.
    * @param answer - the PDP's response
+   * @param asked - `permit-biased`, or anything else for deny-biased
    * @returns whether access is allowed, the bias, why, and the obligations
    *   discharged and not dischargeable
    */
-  enforce(answer: any): Enforcement {
-    const { log, config, model } = this.deps;
+  enforce(answer: any, asked?: string): Enforcement {
+    const { log, model } = this.deps;
     log.debug('Entering XacmlSurface.enforce(). decision=' + answer.decision);
-    const bias = config.value('xacml.pepBias') === 'permit-biased'
-      ? 'permit-biased' : 'deny-biased';
+    const bias = asked === 'permit-biased' ? 'permit-biased' : 'deny-biased';
     const discharged = [];
     const undischargeable = [];
     (answer.obligations || []).forEach(function (obligation) {
@@ -1599,17 +1594,11 @@ class XacmlSurface {
         }).length,
         root: root ? root.name : null
       },
-      // The embedded PEP's demonstration, where this realm is served it
-      // (#585): null, and no row below, where it is not.
-      pep: demoOnly.serves()
-        ? { embeddedAt: baseUrlOf(req) + '/xacml/protected',
-            bias: config.value('xacml.pepBias') }
-        : null,
-      // THE EMBEDDED PEP'S BIAS IS NOT REPORTED HERE FOR THE REMOTE ONES, and
-      // the omission is deliberate: `xacml.pepBias` governs the endpoint above
-      // and nothing else. A remote PEP is a separate process with its own
-      // configuration and reports the bias it is actually running with on every
-      // heartbeat, which is what /admin/xacml/peps shows.
+      // NO PEP'S BIAS IS REPORTED HERE (#596: the demonstration PEP and its
+      // `xacml.pepBias` moved to the remote PEP). A remote PEP is a separate
+      // process with its own configuration and reports the bias it is
+      // actually running with on every heartbeat, which is what
+      // /admin/xacml/peps shows.
       remotePeps: {
         enabled: self.remotePepsEnabled(),
         registerAt: baseUrlOf(req) + '/xacml/pep/register',
@@ -1648,10 +1637,6 @@ class XacmlSurface {
         { method: 'GET', path: '/xacml/policies',
           what: 'the repository as the PDP sees it, documents included',
           requires: XACML_USER_ROLE },
-      ].concat(demoOnly.serves() ? [
-        { method: 'GET', path: '/xacml/protected',
-          what: 'the embedded PEP: a resource guarded by this PDP',
-          requires: XACML_USER_ROLE }] : []).concat([
         { method: 'POST', path: '/xacml/pep/register',
           what: 'a remote PEP registers, over mutual TLS',
           requires: REMOTE_PEP_ROLE },
@@ -1669,7 +1654,7 @@ class XacmlSurface {
                 'back in the shape a <Request> carries them. For a remote ' +
                 'PEP, whose engine has no directory of its own',
           requires: REMOTE_PEP_ROLE }
-      ]),
+      ],
       // WHAT A CALLER HAS TO PRESENT, said in the document a caller reads
       // rather than only in the refusal they get for not having it.
       access: {
@@ -1834,122 +1819,6 @@ class XacmlSurface {
          }, null, 2));
       log.debug('Leaving GET /xacml/policies. ' + rows.length +
                 ' policy(ies).');
-    });
-
-    // -------------------------------------------------------------------------
-    // GET /xacml/protected — THE EMBEDDED PEP.
-    //
-    // Builds a request out of the caller, asks the PDP, and enforces the
-    // answer. The three query parameters are what a PEP would ordinarily get
-    // from its own context; here they are supplied so that one endpoint can
-    // exercise a whole policy without a client having to be written.
-    // -------------------------------------------------------------------------
-    app.get('/xacml/protected', demoOnly, function (req, res) {
-      log.debug('Entering GET /xacml/protected.');
-      if (self.offCheck(res)) {
-        log.debug('Leaving GET /xacml/protected. Off.');
-        return;
-      }
-      // ---------------------------------------------------------------------
-      // TWO GATES ON ONE ENDPOINT, AND THEY ARE ABOUT TWO DIFFERENT PEOPLE.
-      //
-      // This one asks whether the CALLER may drive the embedded PEP at all. The
-      // enforcement below asks whether the SUBJECT NAMED IN `?subject=` may
-      // reach the resource — which is the thing this endpoint exists to
-      // demonstrate and is not an authentication of anybody.
-      //
-      // Keeping them apart is what stops the demonstration from being ruined by
-      // the gate: an admitted caller can still ask about `?subject=nobody` and
-      // watch the PEP refuse, because the answer is about the subject and the
-      // admission was about the connection. Conflating them would turn this
-      // into an endpoint that reports what the caller already knows.
-      // ---------------------------------------------------------------------
-      if (!self.xacmlAccess(req, res, accessGate.ACTION.READ,
-                            'an embedded PEP enforcement').allowed) {
-        log.debug('Leaving GET /xacml/protected. The access policy refused.');
-        return;
-      }
-      const subject = String(req.query.subject || '');
-      const resource = String(req.query.resource ||
-                              baseUrlOf(req) + '/xacml/protected');
-      const action = String(req.query.action || 'GET');
-      // THROUGH THE ONE BUILDER (#306), in the four categories and the
-      // order this demonstration always sent — an empty subject category
-      // when `?subject=` names nobody.
-      const built = new AuthorizationRequest({ includeInResult: true });
-      [model.CATEGORY.ACCESS_SUBJECT, model.CATEGORY.RESOURCE,
-       model.CATEGORY.ACTION, model.CATEGORY.ENVIRONMENT]
-        .forEach(function (id) {
-          built.category(id);
-        });
-      if (subject) {
-        built.subject(model.ATTRIBUTE.SUBJECT_ID, [subject]);
-      }
-      const request = built.target(resource, model.TYPE.ANYURI)
-        .requestedAction(action).build();
-      const answer = self.decide(request);
-      const enforcement = self.enforce(answer);
-      // ---------------------------------------------------------------------
-      // COUNTED HERE AND DELIBERATELY NOT INSIDE `enforce()`.
-      //
-      // `enforce()` looks like the obvious funnel and is the wrong one:
-      // `/admin/xacml/decide` calls it too, to show a reader what the embedded
-      // PEP WOULD do with the decision they just asked about. That is a
-      // what-if, not a request anybody guarded — counting it would put a
-      // console page's own experiments into the figure an operator reads to
-      // find out how much traffic authorization is actually seeing, and the
-      // number would grow every time somebody looked at it.
-      //
-      // So the count is at the one place a real request was enforced.
-      // ---------------------------------------------------------------------
-      monitor.record('protected', { decision: answer.decision,
-                                    allowed: enforcement.allowed,
-                                    undischargeable:
-                                      (enforcement.undischargeable ||
-                                       []).length > 0 });
-      audit.audit({
-        action: 'xacml.enforcement',
-        actor: subject,
-        protocol: 'XACML',
-        detail: 'The embedded PEP got ' + answer.decision + ' and ' +
-                (enforcement.allowed ? 'allowed' : 'refused') + ' access to ' +
-                resource + ' (' + enforcement.bias + ').'
-      });
-      const body: Record<string, unknown> = {
-        decision: answer.decision,
-        allowed: enforcement.allowed,
-        bias: enforcement.bias,
-        why: enforcement.why,
-        status: answer.status,
-        obligations: (answer.obligations || []).map(function (one) {
-          return { id: one.id, discharged: enforcement.discharged
-            .indexOf(one.id) >= 0 };
-        }),
-        advice: (answer.advice || []).map(function (one) {
-          return one.id;
-        }),
-        request: { subject: subject || null, resource: resource,
-                   action: action },
-        applicablePolicies: answer.policyIdentifiers || []
-      };
-      if (answer.note) {
-        body.note = answer.note;
-      }
-      if (!enforcement.allowed) {
-        errorCodes.mark(res, (enforcement.undischargeable || []).length &&
-                             answer.decision === model.DECISION.PERMIT
-          ? 'STS-XACML-0015' : 'STS-XACML-0014');
-      }
-      // A fault behind the decision is the more specific condition, and the
-      // last mark wins.
-      if (errorCodes.codeOf(answer)) {
-        errorCodes.mark(res, errorCodes.codeOf(answer));
-      }
-      res.status(enforcement.allowed ? 200 : 403)
-         .type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify(body, null, 2));
-      log.debug('Leaving GET /xacml/protected. ' +
-                (enforcement.allowed ? 'Allowed.' : 'Refused.'));
     });
 
     // -------------------------------------------------------------------------

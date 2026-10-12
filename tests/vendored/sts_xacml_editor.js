@@ -46,10 +46,14 @@
 // THE ASSERTION THIS FILE IS REALLY FOR.
 //
 // **A RULE BUILT BY PRESSING BUTTONS CHANGES WHAT THE PDP DECIDES.** Sections 5
-// and 8 build one out of four form submissions, ask `/xacml/protected` about
-// somebody who was refused before, and get a 200 — then remove the rule on the
-// page and watch the refusal come back. Everything else here is about the
-// editor; that pair is about whether the editor edits the policy the service is
+// and 8 build one out of four form submissions, ask the PDP about somebody
+// who was refused before, and see them allowed — then remove the rule on the
+// page and watch the refusal come back. (They asked `/xacml/protected` until
+// #596 moved the demonstration PEP to the remote PEP container, which decides
+// for ONE realm, the launcher's; this job's realm is its own, so it asks the
+// PDP through the console's what-if, `GET /admin-api/xacml/decide`, whose
+// deny-biased outcome is what that PEP enforced.) Everything else here is
+// about the editor; that pair is about whether the editor edits the policy the service is
 // actually deciding with, which is the one claim the page makes that a person
 // cannot check by looking at it.
 //
@@ -210,11 +214,11 @@ function editorUrl(policy) {
 // A CLIENT CERTIFICATE, FOR THE TWO DOORS THIS FILE OPENS THAT ARE NOT THE
 // CONSOLE (2026-09-06).
 //
-// `/xacml/protected` and `/xacml/policies` went behind the built-in
-// `XACML_USER` role, and this job reads both — the first is what makes an edit
-// on the page mean something, and the second is how it learns which policy
-// became the root. `fetch` cannot present a client certificate, so those two
-// go through `https.request` with a credential minted here.
+// `/xacml/policies` went behind the built-in `XACML_USER` role (and so did
+// `/xacml/protected`, which this job read until #596), and this job reads it
+// — it is how it learns which policy became the root. `fetch` cannot present
+// a client certificate, so it goes through `https.request` with a credential
+// minted here.
 //
 // **IT REQUIRES `tests/tools/pep-credential.js` RATHER THAN BUILDING A CHAIN
 // OF ITS OWN**, which is the rule `sts_xacml_endpoints.js` states: a second
@@ -386,16 +390,27 @@ function pathOfKind(tree, kind, parentPath) {
   return row.path;
 }
 
-// The embedded PEP, asked about somebody. This is the OTHER door — a protocol
-// endpoint rather than the console — and it is what makes an edit on the page
-// mean something.
+// The PDP, asked about somebody, and what a deny-biased PEP does with the
+// answer. This is the OTHER door — the decision rather than the editor — and
+// it is what makes an edit on the page mean something. It was the embedded
+// PEP at `/xacml/protected` until #596; the answer keeps that endpoint's
+// shape (200 or 403, the decision on the body) so the assertions read the
+// same, and the policy here is deny-unless-permit, so a deny-biased PEP's
+// outcome is the decision itself.
 async function enforcementFor(subject, action) {
   log.debug("Entering enforcementFor().");
-  const r = await certJson(realmUrl("/xacml/protected?subject=" +
-                                    encodeURIComponent(subject) + "&action=" +
-                                    encodeURIComponent(action)));
+  const r = await json(api("/xacml/decide?subject=" +
+                           encodeURIComponent(subject) + "&action=" +
+                           encodeURIComponent(action)));
+  assert.ok(r.status === 200 && r.body && r.body.enforcement,
+    "GET /admin-api/xacml/decide answered " + r.status + " " +
+    String(r.text).slice(0, 300));
   log.debug("Leaving enforcementFor().");
-  return r;
+  return { status: r.body.enforcement.allowed ? 200 : 403,
+           body: { decision: r.body.decision,
+                   allowed: r.body.enforcement.allowed,
+                   why: r.body.enforcement.why },
+           text: r.text };
 }
 
 // ---------------------------------------------------------------------------
@@ -1752,9 +1767,10 @@ async function createTheRealm() {
     description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
                  "PLACE on purpose, so that a failed run can be read " +
                  "afterwards. Remove it by hand when you are done with it.",
-    // A DEVELOPMENT REALM IN EVERY MODE (#585): what the editor builds is
-    // asked of /xacml/protected, a demonstration a product realm is not
-    // served.
+    // A DEVELOPMENT REALM IN EVERY MODE (#585). What the editor builds was
+    // asked of /xacml/protected, a demonstration a product realm was not
+    // served; it is asked of the PDP now (#596), which product serves, but
+    // the realm stays as it was so the job's other assumptions do.
     overrides: { "global.mode": "development" }
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,

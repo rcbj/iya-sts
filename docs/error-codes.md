@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4299** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4296** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -2121,7 +2121,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
 | `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
-| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401 or 409 {error} |
+| `STS-OAUTH-0782` *(retired)* | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). Retired 2026-10-12 (#596): the mock relying party was deleted; the test peer plays a Provider Commands relying party | HTTP 400, 401 or 409 {error} |
 | `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
@@ -4156,8 +4156,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0011` | A decision request to POST /xacml/pdp was not a well-formed JSON Profile request. | HTTP 400 invalid_request |
 | `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); GET /xacml/protected may then refuse with 403 |
 | `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); GET /xacml/protected may then refuse with 403 |
-| `STS-XACML-0014` | The embedded demonstration PEP at GET /xacml/protected refused the subject because the decision was not one its bias allows. | HTTP 403 with the PEP's JSON enforcement answer |
-| `STS-XACML-0015` | The embedded demonstration PEP refused a Permit because the decision carried an obligation it cannot discharge (XACML 3.0 section 7.2). | HTTP 403 with the PEP's JSON enforcement answer |
+| `STS-XACML-0014` *(retired)* | The embedded demonstration PEP at GET /xacml/protected refused the subject because the decision was not one its bias allows. Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
+| `STS-XACML-0015` *(retired)* | The embedded demonstration PEP refused a Permit because the decision carried an obligation it cannot discharge (XACML 3.0 section 7.2). Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
 | `STS-XACML-0016` | GET /xacml was asked with a format or bias query parameter outside its allowed values. | HTTP 400 text/plain |
 | `STS-XACML-0017` | A remote PEP registration arrived on a plain HTTP listener, which cannot carry the client certificate xacml.pepRequireCertificate demands. | HTTP 401 invalid_client |
 | `STS-XACML-0018` | A remote PEP registration arrived over TLS with no client certificate while xacml.pepRequireCertificate is on. | HTTP 401 invalid_client |

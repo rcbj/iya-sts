@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "策略存储库"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "嵌入式 PEP"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "远程 PEP 注册"
@@ -1670,10 +1666,6 @@
   "endpoints.route./oauth2/commands/callback.name": {
     "en": "077e67ad034f4945",
     "text": "OpenID Provider Commands 回调端点"
-  },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "模拟依赖方命令端点（非规范端点）"
   },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",

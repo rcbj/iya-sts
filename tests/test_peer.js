@@ -42,6 +42,14 @@
 //      peer resolves at the responder with a request its key signs; a
 //      WS-Federation token for the right realm accepted and one for another
 //      realm refused.
+//   G. THE OPENID PROVIDER COMMANDS RELYING PARTY (#596) over TLS: a
+//      Command Token signed by the realm's key answered per section 6's
+//      table (metadata, activate, incompatible_state), an `_async` result
+//      POSTed to the callback the metadata named with the callback_token as
+//      Bearer, a tenant stream dropped by `?drop=1` and resumed with
+//      Last-Event-ID, a 503 for `?fail=1` once, and the refusals section 9
+//      names — another issuer, another typ, a nonce, a replayed jti, a
+//      signature that does not verify, a symmetric alg.
 //
 // IN PROCESS rather than a protocol job, because none of it is the service:
 // it is a test fixture's own correctness, and a stack is not needed to show
@@ -101,7 +109,8 @@ function fakeRealm(state) {
         res.writeHead(status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(value));
       };
-      if (req.url === '/.well-known/oauth-authorization-server') {
+      if (req.url === '/.well-known/oauth-authorization-server' ||
+          req.url === '/.well-known/openid-configuration') {
         json(200, { issuer: state.base, jwks_uri: state.base + '/jwks' });
       } else if (req.url === '/.well-known/ssf-configuration') {
         json(200, { issuer: state.base, jwks_uri: state.base + '/jwks' });
@@ -116,6 +125,11 @@ function fakeRealm(state) {
         const asked = JSON.parse(body);
         json(200, state.introspection[asked.access_token] ||
                   { active: false });
+      } else if (req.url === '/oauth2/commands/callback') {
+        state.callbacks.push({ authorization: req.headers.authorization,
+                              body: body });
+        res.writeHead(204);
+        res.end();
       } else if (req.url === '/gnap/resource') {
         json(200, { resource_reference: 'ref-peer-1' });
       } else if (req.url === '/saml11/responder') {
@@ -746,6 +760,114 @@ async function wsfedSection(t, state, view) {
   log.debug("Leaving wsfedSection().");
 }
 
+// G. The Provider Commands relying party.
+async function commandsSection(t, state, port, ca, view) {
+  log.debug("Entering commandsSection().");
+  const at = new URL(view.commands.endpoint).pathname;
+  const now = Math.floor(Date.now() / 1000);
+  const token = function (header, claims) {
+    log.debug("Entering token().");
+    log.debug("Leaving token().");
+    return jws(state.key, Object.assign({ alg: 'RS256', kid: 'k1',
+                                          typ: 'command+jwt' }, header),
+               Object.assign({ iss: state.base, aud: 'rp-1',
+                               client_id: 'rp-1', iat: now, exp: now + 60,
+                               jti: 'c' + nodeCrypto.randomBytes(6)
+                                 .toString('hex'),
+                               tenant: 'realm-1' }, claims));
+  };
+  const send = function (compact, query, headers) {
+    log.debug("Entering send().");
+    log.debug("Leaving send().");
+    return overTls(port, ca, 'POST', at + (query || ''), Object.assign({
+      'Content-Type': 'application/x-www-form-urlencoded' }, headers || {}),
+      Buffer.from('command_token=' + encodeURIComponent(compact)), null);
+  };
+  let r = await send(token({}, { command: 'metadata',
+    metadata: { callback_endpoint: state.base +
+                                   '/oauth2/commands/callback' } }),
+                     '?audsub=1');
+  t.check(r.status === 200 &&
+          r.json.commands_supported.indexOf('suspend_async') >= 0 &&
+          r.json.commands_supported.indexOf('audit_tenant') >= 0 &&
+          r.json.aud_sub_required === true && r.json.roles.length === 2,
+          'G. metadata answers what the relying party supports',
+          r.text.slice(0, 300));
+  r = await send(token({}, { command: 'activate', sub: 'alice',
+                             email: 'alice@example.test' }));
+  t.check(r.status === 200 && r.json.account_state === 'active' &&
+          /^rp-/.test(r.json.aud_sub),
+          'G. activate makes the account active, with an aud_sub', r.text);
+  r = await send(token({}, { command: 'activate', sub: 'alice' }));
+  t.check(r.status === 409 && r.json.error === 'incompatible_state' &&
+          r.json.account_state === 'active',
+          'G. activating an active account is incompatible_state', r.text);
+  r = await send(token({}, { command: 'suspend_async', sub: 'alice',
+                             callback_token: 'cb-1' }));
+  t.check(r.status === 202, 'G. an _async command is answered 202',
+          String(r.status));
+  for (let i = 0; i < 40 && !state.callbacks.length; i++) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 50);
+    });
+  }
+  const back = state.callbacks[0] || {};
+  t.check(back.authorization === 'Bearer cb-1' &&
+          JSON.parse(back.body || '{}').account_state === 'suspended' &&
+          JSON.parse(back.body || '{}').sub === 'alice',
+          'G. and its result is POSTed to the metadata\'s callback with ' +
+          'the callback_token', JSON.stringify(back));
+  await send(token({}, { command: 'reactivate', sub: 'alice' }));
+  await send(token({}, { command: 'activate', sub: 'bob' }));
+  r = await send(token({}, { command: 'audit_tenant' }), '?drop=1');
+  t.check(r.status === 200 && /^id: 1\nevent: account-state/.test(r.text) &&
+          !/command-complete/.test(r.text),
+          'G. ?drop=1 closes the tenant stream after one event', r.text);
+  const again = token({}, { command: 'audit_tenant' });
+  r = await send(again, '?drop=1', { 'Last-Event-ID': '1' });
+  t.check(r.status === 200 && /^id: 2\nevent: account-state/.test(r.text) &&
+          /id: 3\nevent: command-complete/.test(r.text),
+          'G. and a resumption with Last-Event-ID completes it', r.text);
+  r = await send(token({}, { command: 'metadata', metadata: {} }),
+                 '?fail=1');
+  const second = await send(token({}, { command: 'metadata',
+                                        metadata: {} }), '?fail=1');
+  t.check(r.status === 503 && second.status === 200,
+          'G. ?fail=1 answers 503 once, then the command', r.status + ' ' +
+          second.status);
+  r = await send(token({}, { command: 'audit', sub: 'alice',
+                             iss: 'https://other.test' }));
+  t.check(r.status === 401 && r.json.error === 'unrecognized_provider',
+          'G. another issuer is unrecognized_provider', r.text);
+  r = await send(token({ typ: 'JWT' }, { command: 'audit', sub: 'alice' }));
+  t.check(r.status === 400 && r.json.error === 'invalid_request',
+          'G. a token not typed command+jwt is refused', r.text);
+  r = await send(token({}, { command: 'audit', sub: 'alice', nonce: 'n' }));
+  t.check(r.status === 400, 'G. a Command Token with a nonce is refused',
+          r.text);
+  const once = token({}, { command: 'audit', sub: 'alice' });
+  await send(once);
+  r = await send(once);
+  t.check(r.status === 400 && /already used/.test(r.json.error_description),
+          'G. a replayed jti is refused', r.text);
+  const tampered = token({}, { command: 'audit', sub: 'alice' }).split('.');
+  tampered[1] = b64u(JSON.stringify({ iss: state.base, command: 'delete' }));
+  r = await send(tampered.join('.'));
+  t.check(r.status === 400 && /does not verify/.test(
+    r.json.error_description),
+          'G. a token whose signature does not verify is refused', r.text);
+  r = await send(token({ alg: 'HS256' }, { command: 'audit',
+                                           sub: 'alice' }));
+  t.check(r.status === 400 && /asymmetric/.test(r.json.error_description),
+          'G. a symmetric alg is refused before any key', r.text);
+  r = await call('http://localhost:' + port + at + '?client_id=rp-1');
+  t.check(r.status === 200 && r.json.accounts.length === 2 &&
+          r.json.accounts.every(function (one) {
+            return one.state === 'active';
+          }), 'G. the accounts it holds are read back', r.text);
+  log.debug("Leaving commandsSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-peer-'));
@@ -754,7 +876,7 @@ async function run(t) {
                   jwk: Object.assign(pair.publicKey.export({ format: 'jwk' }),
                                      { kid: 'k1', alg: 'RS256', use: 'sig' }),
                   introspection: {}, introspections: 0,
-                  saml11Requests: [],
+                  saml11Requests: [], callbacks: [],
                   // Replaced by section F before the responder is asked.
                   saml11Response: function () {
                     log.debug("Entering saml11Response().");
@@ -796,6 +918,7 @@ async function run(t) {
     await samlSection(t, state, peerBase, view);
     await saml11Section(t, state, view);
     await wsfedSection(t, state, view);
+    await commandsSection(t, state, running.port, ca, view);
     let back = await call(peerBase + '/peer/tenants/one/received?role=ssf');
     t.check(back.status === 200 && back.json.events.length >= 7 &&
             back.json.events.every(function (row) {
@@ -825,7 +948,8 @@ async function run(t) {
 module.exports = {
   name: 'test_peer',
   describe: 'the test peer (#586) against a fake realm: the RFC 9470 and ' +
-            'GNAP resource servers, the SSF receiver and the SAML 2.0 ' +
-            'service provider, each refusing what a real party would',
+            'GNAP resource servers, the SSF receiver, the SAML 2.0 ' +
+            'service provider and the Provider Commands relying party, ' +
+            'each refusing what a real party would',
   run: run
 };

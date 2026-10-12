@@ -8689,7 +8689,8 @@ decisions, and where each half lives:
   catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
   banner all drop what the realm, or the process, is not served.
 * **Defaults that pointed at one** follow it: `xacml.pepBias`, read only by
-  `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`. The GNAP
+  `/xacml/protected`, was `onlyWhile: 'servesDemoEndpoints'` until both went
+  to the remote PEP in #596. The GNAP
   demonstration resource server (a token's default audience, a registered
   target and the catalogue type `urn:iya-sts:gnap:demo` where it was served)
   and `ssf.receiveEnabled` went with their endpoints in #593.
@@ -12080,4 +12081,5 @@ SAML 1.1 refuses on its own page with `STS-SAML-0028`). The relying parties a
 test needs are the test peer's (`tests/peer/peer_saml.js`, #586). The error
 codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
 `STS-WSFED-0016`) are retired. The Provider Commands mock
-(`oauth-oidc/command_mock_rp.ts`) is #591's fifth phase, not this one.
+(`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
+test peer's `peer_commands.js`.

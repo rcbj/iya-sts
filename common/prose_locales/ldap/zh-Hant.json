@@ -1784,8 +1784,8 @@
     "text": "若 PEP 有提供，則為 POST 變更通知的位置。「通知絕不是機制本身」——PEP 會依自己的間隔提取，即使沒有通知也會收斂——因此 URL 不存在、被拒絕或無法連線，只會增加延遲，不會造成其他影響。"
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "遠端 PEP 回報其執行時所用的偏向。「由它回報」，絕不從此處設定：xacml.pepBias 管理的是 /xacml/protected 上的「嵌入式」PEP，而看似可設定遠端 PEP 的控制項只會默默地什麼都不做。"
+    "en": "9d0aed2bdeb99a4b",
+    "text": "遠端 PEP 報告其正在使用的偏向。由它報告，絕不在此設定：它是該 PEP 自己的設定（PEP_BIAS），一個看似能設定它的控制項只會悄悄地什麼也不做。"
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",
