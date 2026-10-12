@@ -1,0 +1,14 @@
+{
+  "heading": "Añada una credencial a su cartera",
+  "sub": "Su cartera puede guardar una credencial sobre usted, emitida por este servicio con OpenID for Verifiable Credential Issuance. Elija una y esta página muestra una oferta para que su cartera la escanee. Se crea para usted, sobre el inicio de sesión que usa ahora, y no se puede canjear sin el código que se muestra a su lado.",
+  "modeNow": "En cuanto su cartera la pida",
+  "modeDeferred": "Más tarde: se indica a su cartera que vuelva a por ella (emisión diferida)",
+  "offerHeading": "Escanee esto con su cartera",
+  "offerNow": "Su cartera recibe la credencial en cuanto canjea esta oferta.",
+  "offerDeferred": "Su cartera canjea esta oferta ahora y vuelve a por la credencial un poco más tarde.",
+  "noQr": "Esta oferta es demasiado larga para un código QR. Ábrala en su cartera con el enlace de abajo.",
+  "txCodeSay": "Después, escriba este código de transacción en su cartera:",
+  "openHere": "Abrir en una cartera de este dispositivo",
+  "openWebWallet": "Abrir en la cartera web",
+  "doneOffered": "Su oferta está lista. Escanéela con su cartera y luego escriba el código de transacción."
+}
