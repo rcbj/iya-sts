@@ -8,9 +8,10 @@
 // ---------------------------------------------------------------------------
 // THE SIGN-IN SURFACE'S PAGE TABLE (#571, 2026-10-12).
 //
-// Three rows in `common/web_surface.ts`'s shape — the screen, the federation
-// chooser and the forced password change — each with the `/authn-api`
-// operation its view is the answer of. Each operation names its resource in
+// Rows in `common/web_surface.ts`'s shape — the screen, the federation
+// chooser and the forced password change, each with the `/authn-api`
+// operation its view is the answer of; and the SPNEGO sign-in's bodies
+// (#575), whose view the shell carries instead. Each operation names its resource in
 // the PATH (the pending sign-in's id, the step's id), which the browser
 // reads off the location's query (`?authn=`, `?change=`) — the addresses
 // `beginAuthentication()` and the screen's acts have always sent a browser
@@ -25,6 +26,7 @@
 import WebAuthnLogin = require('./web_authn_login');
 import WebAuthnSelect = require('./web_authn_select');
 import WebAuthnPassword = require('./web_authn_password');
+import WebAuthnSpnego = require('../kerberos/web_authn_spnego');
 
 type Json = any;
 
@@ -65,6 +67,22 @@ const PAGES = [
     },
     title: function (view: Json, ctx: Json): string {
       return WebAuthnPassword.title(view, ctx);
+    } },
+  // THE SPNEGO SIGN-IN'S BODIES (#575). `/authn/spnego` is an RFC 4559
+  // exchange the runtime never drives: the page is EMBEDDED — its view is
+  // the state the shell carried on the response the exchange answered
+  // (`data-sts-state`), not an operation's answer, so it has no operation
+  // and `authn/web_authn.ts` never fetches one for it.
+  { path: '/authn/spnego',
+    embedded: true,
+    operation: function (): string {
+      return '';
+    },
+    render: function (view: Json, ctx: Json): string {
+      return WebAuthnSpnego.render(view, ctx);
+    },
+    title: function (view: Json, ctx: Json): string {
+      return WebAuthnSpnego.title(view, ctx);
     } }
 ];
 
@@ -90,7 +108,9 @@ class AuthnPages {
     if (!ctx || !ctx.view) {
       return body;
     }
-    return '<div class="card">' + body + '</div>';
+    // The SPNEGO sign-in's tables need the wide card (#575).
+    return '<div class="card' + (ctx.view.door === 'spnego' ? ' wide' : '') +
+      '">' + body + '</div>';
   }
 
   /**
