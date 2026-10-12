@@ -273,8 +273,9 @@ const parsedCount = cacheRegistry.register({
 // answers something the moment it starts, and the policy repository follows
 // the same rule for the same reason: a PDP with an empty repository answers
 // NotApplicable to everything, which is indistinguishable from a PDP that is
-// broken. One policy, seeded, makes `GET /xacml/protected?subject=alice`
-// mean something before anybody has authored anything.
+// broken. One policy, seeded, makes `POST /xacml/pdp` about alice — and a
+// remote PEP's `GET /protected?subject=alice` — mean something before
+// anybody has authored anything.
 //
 // IT IS A REAL POLICY AND NOT A PLACEHOLDER. Role-based, in the shape the
 // OASIS RBAC profile takes: a permission is granted to a role, and the role

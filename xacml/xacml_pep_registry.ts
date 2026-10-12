@@ -242,9 +242,9 @@ const SCHEMA = {
             'URL costs latency and nothing else.' },
     { name: 'xacmlPepBias',
       what: 'The bias the remote PEP reports it is running with. REPORTED BY ' +
-            'IT, never set from here: xacml.pepBias governs the EMBEDDED PEP ' +
-            'at /xacml/protected and a control that appeared to set a remote ' +
-            'one would silently do nothing.' },
+            'IT, never set from here: it is the PEP\'s own configuration ' +
+            '(PEP_BIAS), and a control that appeared to set it would ' +
+            'silently do nothing.' },
     { name: 'xacmlPepResource',
       what: 'What the remote PEP says it is guarding. Free text from the ' +
             'PEP, shown as its own claim about itself.' },

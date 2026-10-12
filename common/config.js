@@ -13760,9 +13760,9 @@ const SETTINGS = [
     env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
     runtime: true,
     description: 'The directory group whose members hold the built-in ' +
-                 'XACML_USER role, which is what the four XACML endpoints ' +
-                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
-                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'XACML_USER role, which is what the three XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp and GET ' +
+                 '/xacml/policies. A caller ' +
                  'presenting a client certificate this service VERIFIED is ' +
                  'somebody it can name; membership of this group is what ' +
                  'makes them somebody it lets in, and the two are kept apart ' +
