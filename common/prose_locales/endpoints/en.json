@@ -280,7 +280,7 @@
   "endpoints.route./admin-api/credential-claims/:action.name": "Credential claim actions",
   "endpoints.route./admin-api/verifier-request.name": "Verifier request (the bar door)",
   "endpoints.route./admin-api/verifier-request/:action.name": "Verifier request actions",
-  "endpoints.route./admin-api/verifications/start.name": "Start a verification",
+  "endpoints.route./admin-api/verifications/:action.name": "Start a verification",
   "endpoints.route./admin-api/verifications.name": "A verification's outcome",
   "endpoints.route./sts.name": "Security Token Service",
   "endpoints.route./sts/cert.name": "STS certificate",

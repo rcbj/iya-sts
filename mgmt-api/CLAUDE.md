@@ -2284,6 +2284,10 @@ product-mode job (`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
 `sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`), starts a
 verification here instead.
 
+* **`start` IS AN ACTION OF `/verifications/:action`**, not a literal path
+  (2026-10-12), for `/cells/:action`'s reason: the suite probes every POST
+  resource with an action nobody has heard of and wants a 400 naming the
+  ones there are, and the literal answered Express's 404.
 * **ONE FUNCTION PER QUESTION, AND THE VERIFIER OWNS BOTH.**
   `vcVerifier.startVerification(req, asked, where)` validates what was asked
   against the page's own schema, issues the x509 certificate first where one

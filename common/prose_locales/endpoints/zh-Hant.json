@@ -1123,7 +1123,7 @@
     "en": "6b2d5671c824f225",
     "text": "驗證者請求動作"
   },
-  "endpoints.route./admin-api/verifications/start.name": {
+  "endpoints.route./admin-api/verifications/:action.name": {
     "en": "2eacfd95342c2fd3",
     "text": "開始驗證"
   },

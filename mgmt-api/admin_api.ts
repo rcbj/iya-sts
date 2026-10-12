@@ -11253,91 +11253,29 @@ class AdminApi {
       // page shares it. The require is a cache hit — the Verifier is loaded
       // at 11–14 and registers nothing when required (rule 1).
       // ---------------------------------------------------------------------
-      { method: 'POST', path: BASE + '/verifications/start',
+      // AN ACTION RESOURCE RATHER THAN A BARE POST, for `/cells/:action`'s
+      // reason: `sts_admin_api_operations.js` probes every POST resource
+      // with an action nobody has heard of and requires a 400 naming the
+      // ones that exist, and a literal `/verifications/start` answered
+      // Express's 404. One action today.
+      { method: 'POST', route: BASE + '/verifications/:action',
         tag: 'Verifier request',
-        operationId: 'startVerification',
-        summary: 'Start an OpenID4VP verification: build a request for a ' +
-                 'wallet',
-        description: 'Builds a presentation request exactly as the ' +
-                     'Verifier\'s `/oid4vp/start` does — the same ' +
-                     'function — and answers how a wallet is handed it ' +
-                     'instead of sending a browser there: `walletUrl` (the ' +
-                     'wallet\'s presentation address with the request on ' +
-                     'its query, what a same-device start redirects to), ' +
-                     '`requestUri` (the `openid4vp://` URI, or SIOPv2\'s ' +
-                     '`siopv2://` for an ID Token alone, that a ' +
-                     'cross-device QR code carries), `query` itself, and ' +
-                     '— by reference — the `request_uri` the wallet ' +
-                     'fetches the signed Request Object from. `state` ' +
-                     'names it; `GET /verifications?state=` reads its ' +
-                     'outcome.\n\nThe body names what the page\'s query ' +
-                     'names, every member optional: `format` (a format ' +
-                     'id, `GET /verifier-request` lists them; the ' +
-                     'configured default when absent), `by` (`value` or ' +
-                     '`reference`), `client_id_prefix` (a signed ' +
-                     'request\'s Client Identifier Prefix — naming one ' +
-                     'asks for a request by reference), `response_type`, ' +
-                     '`response_mode`, `mode` (`same-device` or ' +
-                     '`cross-device`, which only says which of the two ' +
-                     'addresses a caller means to use) and `wallet` (held ' +
-                     'to `oid4vp.walletUrl` and `oid4vp.allowedWalletUrls` ' +
-                     'wherever only registered addresses are accepted).' +
-                     '\n\nWhat the request ASKS FOR is the Verifier ' +
-                     'request\'s configuration (`/verifier-request`), ' +
-                     'frozen onto the transaction now. Refused as the page ' +
-                     'refuses: 400 for what the request names wrongly ' +
-                     '(STS-VC-0032) and for a wallet this realm will not ' +
-                     'send a request to (STS-VC-0033), and 500 with the ' +
-                     'builder\'s own code where no request can be built — ' +
-                     'a Verifier Attestation this realm cannot use ' +
-                     '(STS-VC-0092), an x509 Client Identifier with ' +
-                     'nothing to certify (STS-VC-0110 to STS-VC-0113). ' +
-                     'Answered in every mode: this is an administrator ' +
-                     'asking, not the demonstration.',
         mirrors: 'POST /admin/vc#vc-tab-verifier-request',
-        parameters: [],
-        requestBodyRequired: false,
-        requestBody: {
-          type: 'object',
-          properties: {
-            format: { type: 'string',
-                      description: 'A format id: ' +
-                                   vcVerifier.START_VOCABULARY.format
-                                     .join(', ') + '. Not a closed set ' +
-                                   'here, as on `/verifier-request/format`: ' +
-                                   'a form-encoded `+` arrives as a space ' +
-                                   'and is put back, and the Verifier ' +
-                                   'refuses anything else by name.' },
-            by: { type: 'string',
-                  enum: vcVerifier.START_VOCABULARY.by },
-            client_id_prefix: { type: 'string',
-              enum: vcVerifier.START_VOCABULARY.client_id_prefix },
-            response_type: { type: 'string',
-              enum: vcVerifier.START_VOCABULARY.response_type },
-            response_mode: { type: 'string',
-              enum: vcVerifier.START_VOCABULARY.response_mode },
-            mode: { type: 'string',
-                    enum: vcVerifier.START_VOCABULARY.mode },
-            wallet: { type: 'string',
-                      description: 'Where to send the holder, if not ' +
-                                   '`oid4vp.walletUrl`.' }
-          },
-          examples: [{ format: 'dc+sd-jwt', by: 'reference' }],
-          additionalProperties: false
-        },
-        responseDescription: '`state`, `walletUrl`, `requestUri`, `query`, ' +
-                             'the `request_uri` by reference, and what was ' +
-                             'asked.',
-        responseSchema: { type: 'object',
-          description: '`ok`, `message`, `state`, `nonce`, `mode`, ' +
-                       '`format`, `responseType`, `responseMode`, ' +
-                       '`byReference`, `clientId`, `requested`, ' +
-                       '`dcql_query`, `expiresAt`, `wallet`, `walletUrl`, ' +
-                       '`requestUri`, `query` and, by reference, ' +
-                       '`request_uri`.' },
         handler: async function (req, res) {
           log.debug("Entering the management API verification start.");
-          const body = Object.assign({}, parseBody(req));
+          const asked = self.withAction(req, parseBody(req));
+          if (asked.action !== 'start') {
+            // The sentence the suite reads — `/cells/:action`'s shape.
+            errorCodes.mark(res, 'STS-API-0014');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + asked.action + '". The actions here ' +
+              'are: start.'] });
+            log.debug("Leaving the management API verification start. " +
+                      "Unknown action.");
+            return;
+          }
+          const body = Object.assign({}, asked);
+          delete body.action;
           // A form-encoded body decodes `dc+sd-jwt`'s `+` to a space;
           // `vpConfigAction()` puts it back for the same reason.
           if (body.format) {
@@ -11384,7 +11322,93 @@ class AdminApi {
           self.sendJson(res, 200, answer);
           log.debug("Leaving the management API verification start. state=" +
                     record.state);
-        } },
+        },
+        actions: [
+          { action: 'start', operationId: 'startVerification',
+            summary: 'Start an OpenID4VP verification: build a request for a ' +
+                     'wallet',
+            description: 'Builds a presentation request exactly as the ' +
+                         'Verifier\'s `/oid4vp/start` does — the same ' +
+                         'function — and answers how a wallet is handed it ' +
+                         'instead of sending a browser there: `walletUrl` ' +
+                         '(the ' +
+                         'wallet\'s presentation address with the request on ' +
+                         'its query, what a same-device start redirects to), ' +
+                         '`requestUri` (the `openid4vp://` URI, or SIOPv2\'s ' +
+                         '`siopv2://` for an ID Token alone, that a ' +
+                         'cross-device QR code carries), `query` itself, and ' +
+                         '— by reference — the `request_uri` the wallet ' +
+                         'fetches the signed Request Object from. `state` ' +
+                         'names it; `GET /verifications?state=` reads its ' +
+                         'outcome.\n\nThe body names what the page\'s query ' +
+                         'names, every member optional: `format` (a format ' +
+                         'id, `GET /verifier-request` lists them; the ' +
+                         'configured default when absent), `by` (`value` or ' +
+                         '`reference`), `client_id_prefix` (a signed ' +
+                         'request\'s Client Identifier Prefix — naming one ' +
+                         'asks for a request by reference), `response_type`, ' +
+                         '`response_mode`, `mode` (`same-device` or ' +
+                         '`cross-device`, which only says which of the two ' +
+                         'addresses a caller means to use) and `wallet` ' +
+                         '(held ' +
+                         'to `oid4vp.walletUrl` and ' +
+                         '`oid4vp.allowedWalletUrls` ' +
+                         'wherever only registered addresses are accepted).' +
+                         '\n\nWhat the request ASKS FOR is the Verifier ' +
+                         'request\'s configuration (`/verifier-request`), ' +
+                         'frozen onto the transaction now. Refused as the ' +
+                         'page ' +
+                         'refuses: 400 for what the request names wrongly ' +
+                         '(STS-VC-0032) and for a wallet this realm will not ' +
+                         'send a request to (STS-VC-0033), and 500 with the ' +
+                         'builder\'s own code where no request can be ' +
+                         'built — ' +
+                         'a Verifier Attestation this realm cannot use ' +
+                         '(STS-VC-0092), an x509 Client Identifier with ' +
+                         'nothing to certify (STS-VC-0110 to STS-VC-0113). ' +
+                         'Answered in every mode: this is an administrator ' +
+                         'asking, not the demonstration.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object',
+              properties: {
+                format: { type: 'string',
+                          description: 'A format id: ' +
+                                       vcVerifier.START_VOCABULARY.format
+                                         .join(', ') + '. Not a closed set ' +
+                                       'here, as on ' +
+                                       '`/verifier-request/format`: ' +
+                                       'a form-encoded `+` arrives as a ' +
+                                       'space ' +
+                                       'and is put back, and the Verifier ' +
+                                       'refuses anything else by name.' },
+                by: { type: 'string',
+                      enum: vcVerifier.START_VOCABULARY.by },
+                client_id_prefix: { type: 'string',
+                  enum: vcVerifier.START_VOCABULARY.client_id_prefix },
+                response_type: { type: 'string',
+                  enum: vcVerifier.START_VOCABULARY.response_type },
+                response_mode: { type: 'string',
+                  enum: vcVerifier.START_VOCABULARY.response_mode },
+                mode: { type: 'string',
+                        enum: vcVerifier.START_VOCABULARY.mode },
+                wallet: { type: 'string',
+                          description: 'Where to send the holder, if not ' +
+                                       '`oid4vp.walletUrl`.' }
+              },
+              examples: [{ format: 'dc+sd-jwt', by: 'reference' }],
+              additionalProperties: false
+            },
+            responseDescription: '`state`, `walletUrl`, `requestUri`, ' +
+                                 '`query`, the `request_uri` by reference, ' +
+                                 'and what was asked: `ok`, `message`, ' +
+                                 '`state`, `nonce`, `mode`, `format`, ' +
+                                 '`responseType`, `responseMode`, ' +
+                                 '`byReference`, `clientId`, `requested`, ' +
+                                 '`dcql_query`, `expiresAt`, `wallet`, ' +
+                                 '`walletUrl`, `requestUri`, `query` and, ' +
+                                 'by reference, `request_uri`.' }
+        ] },
 
       { method: 'GET', path: BASE + '/verifications',
         tag: 'Verifier request',

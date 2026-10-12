@@ -1123,7 +1123,7 @@
     "en": "6b2d5671c824f225",
     "text": "Actions sur la requête du vérificateur"
   },
-  "endpoints.route./admin-api/verifications/start.name": {
+  "endpoints.route./admin-api/verifications/:action.name": {
     "en": "2eacfd95342c2fd3",
     "text": "Démarrer une vérification"
   },
