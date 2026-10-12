@@ -7288,13 +7288,13 @@ class Authn {
   // sent. A second copy of the sign-in for the API would be two answers to
   // what a sign-in requires, and the second factor is the half a copy forgets.
   //
-  // **THE SECOND-FACTOR PAGES STILL POST FORMS** (#572 converts them), and
-  // they share `refusedSession()` and `returnToCaller()`. For them a refusal
-  // can no longer be "the screen drawn again in answer to the POST", since
-  // the screen is the shell: the sentence goes on the pending record
-  // (`screenError`), which the screen's view answers, and the browser is
-  // sent to the screen with a 303. A next step is a 303 to its page — what a
-  // form expects.
+  // **THE SECOND-FACTOR STEPS ARE THE API'S TOO SINCE #572** (`mfa*Act()`,
+  // below), and a session refused at the end of one is drawn on the SCREEN:
+  // the sentence goes on the pending record (`screenError`), which the
+  // screen's view answers, and the answer names the screen
+  // (`res.locals.authnStep`, `screenRefused()`). A door that is still a FORM
+  // (the wallet's, until #574) gets the same sentence behind a 303 to the
+  // screen, and a next step as a 303 to its page — what a form expects.
   //
   // NO ERROR CODE IS EVER IN AN ANSWER: codes are recorded, never sent.
   // ===========================================================================

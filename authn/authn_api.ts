@@ -13,7 +13,8 @@
 // and `/authn/password-change` answer one shell, and the browser draws each
 // page from this API and sends each act to it. Every protocol's browser
 // sign-in passes through it, and the second-factor, email, wallet and SPNEGO
-// tickets (#572-#575) extend it.
+// tickets (#572-#575) extend it — since #572 and #573 with the steps after
+// the screen, keyed by the step's id (`/authn-api/mfa/{id}`, below).
 //
 // WHAT IT IS, AND WHAT IT IS NOT:
 //
