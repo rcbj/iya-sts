@@ -87,6 +87,13 @@ const ALLOWED = {
     'not periodic: a session-end claim that rejected is asked again, at ' +
     'most three times inside one sign-out (#242) — a retry within one ' +
     'operation' },
+  'authn/web_authn.ts|put|timeout': { permanent:
+    'not the service: the sign-in surface\'s runtime, in a BROWSER — the ' +
+    'mailed link\'s waiting page asking again whether it was opened (#573), ' +
+    'which its <meta> refresh did; cleared whenever a page is drawn' },
+  'authn/web_authn.ts|poll|timeout': { permanent:
+    'not the service: the same browser poll, asking again while the step ' +
+    'still waits (#573)' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
     'retry with back-off within supervising one child' }
