@@ -528,6 +528,10 @@ function checkNothingRequiresItEarly(t) {
                    // list — required LAZILY in the request; the module is
                    // built with the other API modules, after the console.
                    'mgmt-api/secret_destinations_api.ts',
+                   // The partners' Shared Signals operation (#313's sweep,
+                   // 2026-10-12), for `adminViews`' paging only — required
+                   // LAZILY in the request, after the console is built.
+                   'ssf/ssf_transmitters_api.ts',
                    // The composition root (#50, R2), which builds every
                    // converted module's instance — these two layers
                    // included — after the require step that loaded them,
