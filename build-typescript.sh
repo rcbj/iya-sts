@@ -218,6 +218,15 @@ bundle_surface "the front door" home/web_home_pages.ts StsHome \
 bundle_surface "the sign-in screen" authn/web_authn_pages.ts StsAuthn \
   authn/authn.bundle.js authn/web_authn.ts authn/authn-spa.js
 
+# GNAP'S INTERACTION PAGES (#578): `gnap/gnap-interaction.bundle.js`
+# (`StsGnapInteract`, `web_gnap_interact_pages.ts`) and
+# `gnap/gnap-interaction-spa.js` (`web_gnap_interact.ts`), served at
+# `/gnap/interaction.js` — never `gnap_interact.js`, which is
+# `gnap_interact.ts`.
+bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
+  StsGnapInteract gnap/gnap-interaction.bundle.js gnap/web_gnap_interact.ts \
+  gnap/gnap-interaction-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).

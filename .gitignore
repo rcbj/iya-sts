@@ -90,3 +90,8 @@ authn/authn.bundle.js
 authn/authn-spa.js
 authn/authn-spa.js.br
 authn/authn-spa.js.gz
+# GNAP's interaction pages' (#578), the same kind of file.
+gnap/gnap-interaction.bundle.js
+gnap/gnap-interaction-spa.js
+gnap/gnap-interaction-spa.js.br
+gnap/gnap-interaction-spa.js.gz

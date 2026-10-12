@@ -190,3 +190,6 @@ home/home-spa.js*
 # And the sign-in screen's (#571), for the same reason.
 authn/authn.bundle.js
 authn/authn-spa.js*
+# And GNAP's interaction pages' (#578), for the same reason.
+gnap/gnap-interaction.bundle.js
+gnap/gnap-interaction-spa.js*

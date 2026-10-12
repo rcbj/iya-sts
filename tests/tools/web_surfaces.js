@@ -38,6 +38,10 @@
 // state their shell carries; and the wallet's start and wait pages (#574),
 // the QR code and a refusal.
 //
+// GNAP's interaction pages (#578) draw every page from a view alone: the
+// user code page, the approval page in the states its view can name, what
+// is said after a decision, and a refusal.
+//
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
 // ===========================================================================
@@ -431,6 +435,106 @@ function stepCases(en, fr) {
   ];
 }
 
+/**
+ * GNAP's interaction pages' cases (#578): the user code page; the approval
+ * page with everything it can draw — a registered data: logo, a name and a
+ * home page the client declared, a self-declared class, two labelled
+ * tokens one of them a bearer, a registered and an unregistered reference,
+ * a right with every dimension and an identifier, server-drawn limit
+ * controls, what the policy narrowed, the subject asked for, a redirect
+ * finish — in English and in French; a bare approval with a push finish and
+ * none; each thing said after a decision; the request sent to its owner;
+ * and a refusal carrying markup.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function gnapCases(root) {
+  log.debug("Entering gnapCases().");
+  const en = { t: translatorFor(root, 'gnap', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/gnap/approve/h1' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'gnap', ['fr', 'en']) });
+  const approve = {
+    kind: 'approve', id: 'h1<x>', username: 'alice & "co"',
+    client: { identifier: 'gnap-client-<1>', name: 'Acme <App>',
+              nameDeclared: true, uri: 'https://acme.example/?a=1&b="2"',
+              uriDeclared: true,
+              logo: 'data:image/png;base64,iVBORw0KGgo=',
+              proof: 'httpsig', classId: 'urn:class:<x>',
+              classIdDeclared: true },
+    tokens: [
+      { label: 'read <only>', number: 1, bearer: true, heading: true,
+        rights: [
+          { field: 't0r0', limitsHtml: '',
+            right: { reference: 'ref-<1>',
+                     registered: { rs: 'rs.example', access: ['a', 'b&c'] } } },
+          { field: 't0r1', limitsHtml: '',
+            right: { reference: 'ref-2', registered: null } }] },
+      { label: '', number: 2, bearer: false, heading: true,
+        rights: [
+          { field: 't1r0',
+            limitsHtml: '<div class="limits"><span>Limits</span><div>at ' +
+              'most <input name="lim_t1r0_amount" value="50" ' +
+              'inputmode="decimal" size="24"> EUR</div></div>',
+            right: { type: 'payment<x>', identifier: 'acct&1',
+                     dimensions: [
+                       { name: 'actions', values: ['read', 'pay'] },
+                       { name: 'locations', values: ['https://x/<y>'] }] } },
+          { field: 't1r1', limitsHtml: '',
+            right: { type: 'photo', identifier: '', dimensions: [] } }] }],
+    narrowed: [
+      { type: 'payment<x>', changes: [
+        { how: 'removed', dimension: 'actions', values: ['refund', 'void'] },
+        { how: 'limited', dimension: 'locations',
+          values: ['https://x/<y>'] }] },
+      { type: 'other', changes: [] }],
+    subject: { ids: ['email', 'iss_sub'], assertions: [] },
+    finish: { method: 'redirect', uri: 'https://client.example/cb?x=<1>' },
+    grantEndpoint: 'https://sts.example/gnap' };
+  const bare = Object.assign({}, approve, {
+    client: Object.assign({}, approve.client, { nameDeclared: false,
+      uri: '', uriDeclared: false, logo: '', classId: '' }),
+    tokens: [{ label: '', number: 1, bearer: false, heading: false,
+               rights: [] }],
+    narrowed: [], subject: null, finish: null });
+  const pushed = Object.assign({}, bare, {
+    finish: { method: 'push', uri: 'https://client.example/push' } });
+  const done = { kind: 'done', approved: true, pushed: true,
+                 name: 'Acme <App> & co' };
+  log.debug("Leaving gnapCases().");
+  return [
+    { label: 'the user code page, in English', path: '/gnap/code',
+      view: { kind: 'code' }, ctx: Object.assign({}, en,
+        { here: '/gnap/code' }) },
+    { label: 'the user code page, in French', path: '/gnap/code',
+      view: { kind: 'code' }, ctx: Object.assign({}, fr,
+        { here: '/gnap/code' }) },
+    { label: 'the approval page, everything drawn, in English',
+      path: '/gnap/approve/h1', view: approve, ctx: en },
+    { label: 'the approval page, everything drawn, in French',
+      path: '/gnap/approve/h1', view: approve, ctx: fr },
+    { label: 'the approval page, nothing asked and no finish',
+      path: '/gnap/approve/h1', view: bare, ctx: en },
+    { label: 'the approval page, a push finish', path: '/gnap/approve/h1',
+      view: pushed, ctx: en },
+    { label: 'approved, the client told', path: '/gnap/approve/h1',
+      view: done, ctx: en },
+    { label: 'approved, the client not told, in French',
+      path: '/gnap/approve/h1', ctx: fr,
+      view: Object.assign({}, done, { pushed: false }) },
+    { label: 'not approved, return to the client',
+      path: '/gnap/approve/h1', ctx: en,
+      view: Object.assign({}, done, { approved: false, pushed: null }) },
+    { label: 'sent to the person it names', path: '/gnap/approve/h1',
+      view: { kind: 'sent' }, ctx: fr },
+    { label: 'a refused start link', path: '/gnap/interact/h2', ctx: en,
+      view: { kind: 'problem', heading: 'This link is <not> active',
+              detail: 'It may have "expired" & gone.' } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -451,5 +555,9 @@ module.exports = [
       log.debug("Entering the sign-in screen's cases.");
       log.debug("Leaving the sign-in screen's cases.");
       return authnCases(root).concat(walletCases(root));
-    } }
+    } },
+  { name: 'GNAP\'s interaction pages',
+    pages: 'gnap/web_gnap_interact_pages.ts', global: 'StsGnapInteract',
+    bundle: 'gnap/gnap-interaction.bundle.js',
+    runtime: 'gnap/gnap-interaction-spa.js', cases: gnapCases }
 ];
