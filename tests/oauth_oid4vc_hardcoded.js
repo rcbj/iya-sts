@@ -245,7 +245,7 @@ function childMain() {
     r = await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
                       { json: { required: true } });
     note(r.status === 404 &&
-         /Cannot POST \/dpop\/nonce-mode/.test(r.text),
+         /Cannot POST (\/realm\/hcrealm)?\/dpop\/nonce-mode/.test(r.text),
          '3b. development: nor in a development realm — the endpoint is ' +
          'deleted, not hidden',
          r.status + ' ' + r.text.slice(0, 160));

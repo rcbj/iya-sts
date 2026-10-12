@@ -236,8 +236,8 @@ function childMain() {
       .consolePage(ROOT_DIR);
     const drawn = await drawer.draw('/admin/tls-connection', {});
     note(drawn.status === 200 &&
-         /<h2 data-tab="connection">/.test(drawn.html) &&
-         /<h2 data-tab="forwarded">/.test(drawn.html) &&
+         drawn.html.indexOf('#tls-connection-tab-connection') > 0 &&
+         drawn.html.indexOf('#tls-connection-tab-forwarded') > 0 &&
          drawn.html.indexOf('/admin-api/tls-connection') > 0 &&
          drawn.html.indexOf('<script') < 0,
          '4a. the static console draws the page from its operation, two ' +
