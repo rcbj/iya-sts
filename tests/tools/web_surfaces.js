@@ -49,6 +49,8 @@
 // refusal of the login or linking endpoint, and the two pages not there.
 // The OpenID4VC demonstration (#582) draws all five of its pages from views
 // alone, the QR codes among them.
+// The description pages (#584) draw each of the six families' pages from a
+// view alone, in the states that change what is drawn.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -893,6 +895,205 @@ function vcDemoCases(root) {
   ];
 }
 
+/**
+ * The description pages' cases (#584): each of the six families' pages
+ * drawn from a view alone — the view each shell carries, its document
+ * written here with the values that make escaping matter — in English and
+ * in another language, and in the states that change what is drawn: the
+ * demonstrations served (development) and not (product, #585), a family
+ * turned off, XACML's gate enforced and not, SCIM's credential verified
+ * and not, SPIFFE's authority not ready and its socket unattested.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function descriptionCases(root) {
+  log.debug("Entering descriptionCases().");
+  const ctxFor = function (ns, chain, here) {
+    log.debug("Entering ctxFor(). " + ns);
+    log.debug("Leaving ctxFor().");
+    return { t: translatorFor(root, ns, chain), query: {}, prefix: '',
+             origin: 'https://sts.example', here: here };
+  };
+  const saml2 = { kind: 'saml2', idpEntityId: 'https://sts.example/"a"&b',
+    base: 'https://sts.example/realm/<r>',
+    paths: { sso: '/saml2/sso', ars: '/saml2/ars', slo: '/saml2/slo',
+             unsolicited: '/saml2/unsolicited', aa: '/saml2/aa',
+             metadata: '/saml2/metadata', sp: '/saml2/sp' },
+    generic: { sso: 'https://sts.example/saml2/sso?x=<1>',
+               slo: 'https://sts.example/saml2/slo',
+               ars: 'https://sts.example/saml2/ars' } };
+  const saml11 = { kind: 'saml11',
+    paths: { sso: '/saml11/sso', responder: '/saml11/responder',
+             metadata: '/saml11/metadata', rp: '/saml11/rp' },
+    metadata: 'https://sts.example/saml11/metadata?a=1&b="2"' };
+  const xacmlDoc = { enabled: true,
+    repository: { policies: 3, enabledPolicies: 2, root: 'root<"set">' },
+    pep: { embeddedAt: 'https://sts.example/xacml/protected',
+           bias: 'deny-biased' },
+    remotePeps: { enabled: true, registered: 2, syncToken: 'tok&<1>' },
+    endpoints: [
+      { method: 'GET', path: '/xacml', what: 'this document',
+        requires: 'XACML_USER' },
+      { method: 'POST', path: '/xacml/pip',
+        what: 'the PIP: <PIPRequest> in', requires: 'REMOTE_PEPS' }],
+    access: { enforced: true, xacmlUserGroup: 'cn=xacml-users,"x"',
+              remotePepGroup: '' },
+    notYetHere: ['AttributeSelector & <XPath>'] };
+  const ssfDoc = { enabled: false, issuer: 'https://sts.example/"i"',
+    metadataUrl: 'https://sts.example/.well-known/ssf-configuration',
+    signingAlgorithm: 'ML-DSA-65',
+    endpoints: [{ method: 'POST', path: '/ssf/stream',
+                  what: 'Create a stream <with> "quotes"' }],
+    eventTypes: [
+      { name: 'Verification', uri: 'https://schemas.openid.net/x&y',
+        offered: true, what: 'the pipe' },
+      { name: 'Stream updated', uri: 'urn:x', offered: false, what: '' }],
+    subjectFormats: [{ format: 'email', members: ['email'],
+                       what: 'an <address>' }],
+    complexSubjectMembers: [{ name: 'user' }, { name: 'session<1>' }],
+    criticalSubjectMembers: [],
+    authentication: { required: true, note: 'Bearer & <mTLS>',
+      schemes: [{ name: 'OAuth', spec_urn: 'urn:ietf:rfc:6749',
+                  what: 'a token' }] },
+    streams: [{ stream_id: 's<1>', status: 'enabled', delivery: 'urn:push',
+                subjects: 2, queued: 0,
+                counters: { delivered: 5, failed: 1 } }],
+    doesNotDo: ['It sends nothing when TIGHTENED <x>'],
+    reachableNegatives: [{ what: 'POST junk', answer: '400 <bad>' }] };
+  const scimDoc = { enabled: true, baseUrl: 'https://sts.example/scim/v2',
+    store: { what: 'The directory & <more>', users: 'ou=people,dc=x',
+             userCount: 4, groups: 'ou=groups,dc=x', groupCount: 1,
+             entryCount: 9, maxEntries: 5000 },
+    identifiers: { why: 'Because <DN>', example: 'uid=a,ou=people' },
+    authentication: { required: true, realm: 'iya "sts"',
+      discoveryOpen: true, digestAlgorithms: ['SHA-256', 'MD5'],
+      hobaRegistration: '/.well-known/hoba/register',
+      scopes: { read: 'scim:read', write: 'scim:write' },
+      policy: ['Read needs scim:read <or> Basic'],
+      schemes: [
+        { name: 'OAuth Bearer', primary: true, type: 'oauthbearertoken',
+          canonical: true, enabled: true, setting: 'scim.authBearer',
+          scoped: true, spec: 'RFC 6750', description: 'a token & <x>' },
+        { name: 'HOBA', primary: false, type: 'hoba', canonical: false,
+          enabled: false, setting: 'scim.authHoba', scoped: false,
+          spec: 'RFC 7486', description: '' }] },
+    endpoints: [{ method: 'GET', path: '/scim/v2/Users', what: 'list <all>' }],
+    doesNotDo: ['No ETags'],
+    reachableNegatives: [{ what: 'a bad filter', answer: '400 invalidFilter' }],
+    mapping: { user: [{ scim: 'userName', ldap: 'uid', kind: 'direct',
+                        readOnly: true }] } };
+  const spiffeDoc = { enabled: true, trustDomainId: 'spiffe://example.org',
+    workloadAttestation: { nativeModule: false, problem: 'not <built>',
+                           tcp: { state: 'served (development)' } },
+    authentication: { enforced: false, what: 'Who <may>',
+      bootstrapping: 'b', identityNote: 'i', credentialStatusNote: '',
+      adminIds: [], entities: [{ id: 'local', what: 'the socket' }],
+      policy: [{ method: 'ListEntries', allow: ['admin', 'local'] }] },
+    bundle: { url: 'https://sts.example/spiffe/bundle?x=1&y=2', sequence: 7,
+              refreshHint: 300, schemeNote: 'over <HTTPS>' },
+    authorities: { source: 'pki', note: 'from the PKI',
+      x509: [{ id: 'x<1>', keyType: 'EC P-256', active: true,
+               notAfter: '2027-01-01' },
+             { id: 'x2', keyType: 'RSA', active: false,
+               notAfter: '2026-01-01' }],
+      jwt: [{ kid: 'k&1', keyType: 'EC', alg: 'ES256', active: true }],
+      chainSubjects: ['CN=Issuing', 'CN=Intermediate<2>'],
+      trustAnchors: [{ id: 'root', subject: 'CN=Root', notAfter: '2030' }] },
+    workloadApi: { listeners: [{ realm: '', address: '/tmp/x.sock',
+      listening: true, tls: false, authentication: 'none' },
+      { realm: 'a', address: '127.0.0.1:8092', listening: false,
+        error: 'EADDRINUSE <x>', tls: true, authentication: 'mTLS' }],
+      securityHeader: 'workload.spiffe.io', securityHeaderRequired: true,
+      methods: [{ name: 'FetchX509SVID', streaming: true, implemented: true,
+                  what: 'SVIDs' },
+                { name: 'ValidateJWTSVID', streaming: false,
+                  implemented: false, what: '' }] },
+    serverApi: { listeners: [], services: [{ name: 'Entry', what: 'entries',
+      methods: [{ name: 'ListEntries', implemented: true, what: 'list' }] }] },
+    brokerApi: { listeners: [], securityHeader: 'broker.spiffe.io',
+      brokers: [{ id: 'spiffe://example.org/broker', types: ['pid'] },
+                { id: 'x', problem: 'not <a> SPIFFE ID' }] },
+    notChecked: ['no revocation'], refused: ['a <bad> CSR'],
+    registry: { entries: 3, agents: 1, note: 'in the directory' },
+    links: { 'the console': '/admin/spiffe', 'bundle': '/spiffe/bundle' } };
+  const tag = function (ns, chain) {
+    log.debug("Entering tag(). " + ns);
+    log.debug("Leaving tag().");
+    return ctxFor(ns, chain, '/');
+  };
+  log.debug("Leaving descriptionCases().");
+  return [
+    { label: 'SAML 2.0, development, in English', path: '/saml2',
+      view: saml2, ctx: tag('describeSaml2', ['en']) },
+    { label: 'SAML 2.0, product (no mock SP), in French', path: '/saml2',
+      ctx: tag('describeSaml2', ['fr', 'en']),
+      view: Object.assign({}, saml2, { paths: Object.assign({}, saml2.paths,
+                                                             { sp: null }) }) },
+    { label: 'SAML 1.1, development, in English', path: '/saml11',
+      view: saml11, ctx: tag('describeSaml11', ['en']) },
+    { label: 'SAML 1.1, product (no mock RP), in Simplified Chinese',
+      path: '/saml11', ctx: tag('describeSaml11', ['zh-Hans', 'en']),
+      view: Object.assign({}, saml11, { paths: Object.assign({},
+        saml11.paths, { rp: null }) }) },
+    { label: 'XACML, enforced, development, in English', path: '/xacml',
+      ctx: tag('describeXacml', ['en']),
+      view: { kind: 'xacml', document: xacmlDoc,
+              trustAnchorDoor: 'POST /admin-api/tls/trust "x"' } },
+    { label: 'XACML, off, unenforced, no root, product, in Swedish',
+      path: '/xacml', ctx: tag('describeXacml', ['sv', 'en']),
+      view: { kind: 'xacml', trustAnchorDoor: 'door',
+        document: Object.assign({}, xacmlDoc, { enabled: false, pep: null,
+          repository: { policies: 0, enabledPolicies: 0, root: null },
+          remotePeps: { enabled: false },
+          access: { enforced: false } }) } },
+    { label: 'Shared Signals, off, in English', path: '/ssf',
+      ctx: tag('describeSsf', ['en']),
+      view: { kind: 'ssf', document: ssfDoc,
+              deliveryNames: { 'urn:push': 'push <RFC 8935>' } } },
+    { label: 'Shared Signals, on, no streams, in Spanish', path: '/ssf',
+      ctx: tag('describeSsf', ['es', 'en']),
+      view: { kind: 'ssf', deliveryNames: {},
+        document: Object.assign({}, ssfDoc, { enabled: true, streams: [],
+          criticalSubjectMembers: ['user', 'session'],
+          authentication: Object.assign({}, ssfDoc.authentication,
+                                        { required: false }) }) } },
+    { label: 'SCIM, product (verified), in English', path: '/scim',
+      ctx: tag('describeScim', ['en']),
+      view: { kind: 'scim', document: scimDoc, verifiesCredentials: true,
+              base: '/scim/v2' } },
+    { label: 'SCIM, development, off, discovery closed, in Filipino',
+      path: '/scim', ctx: tag('describeScim', ['fil', 'en']),
+      view: { kind: 'scim', verifiesCredentials: false, base: '/scim/v2',
+        document: Object.assign({}, scimDoc, { enabled: false,
+          authentication: Object.assign({}, scimDoc.authentication,
+            { required: false, discoveryOpen: false }) }) } },
+    { label: 'SPIFFE, unattested, authority failed, in English',
+      path: '/spiffe', ctx: tag('describeSpiffe', ['en']),
+      view: { kind: 'spiffe', document: spiffeDoc,
+              authority: { ready: false, error: 'no <key>' },
+              https: false } },
+    { label: 'SPIFFE, attested, enforced, administrators, in Traditional ' +
+      'Chinese', path: '/spiffe', ctx: tag('describeSpiffe',
+                                           ['zh-Hant', 'en']),
+      view: { kind: 'spiffe', authority: { ready: true, error: '' },
+        https: true,
+        document: Object.assign({}, spiffeDoc, { enabled: false,
+          workloadAttestation: { nativeModule: true,
+                                 tcp: { state: 'not served' } },
+          authentication: Object.assign({}, spiffeDoc.authentication,
+            { enforced: true, adminIds: ['spiffe://x/admin', 'a<b>'] }),
+          authorities: Object.assign({}, spiffeDoc.authorities,
+            { source: 'self', chainSubjects: [] }),
+          brokerApi: Object.assign({}, spiffeDoc.brokerApi,
+                                   { brokers: [] }) }) } },
+    { label: 'SPIFFE, authority still being generated', path: '/spiffe',
+      ctx: tag('describeSpiffe', ['en']),
+      view: { kind: 'spiffe', document: spiffeDoc,
+              authority: { ready: false, error: '' }, https: true } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -930,5 +1131,9 @@ module.exports = [
   { name: 'the OpenID4VC demonstration',
     pages: 'oid4vc/web_vc_demo_pages.ts', global: 'StsVcDemo',
     bundle: 'oid4vc/vc-demo.bundle.js', runtime: 'oid4vc/vc-demo-spa.js',
-    cases: vcDemoCases }
+    cases: vcDemoCases },
+  { name: 'the description pages',
+    pages: 'common/web_description_pages.ts', global: 'StsDescriptions',
+    bundle: 'common/description-pages.bundle.js',
+    runtime: 'common/description-pages-spa.js', cases: descriptionCases }
 ];

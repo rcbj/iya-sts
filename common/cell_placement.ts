@@ -282,6 +282,10 @@ const ROWS: Row[] = [
   { prefix: '/saml2/metadata', strategy: 'local',
     why: 'metadata is the global tier\'s' },
   { prefix: '/saml2/autopost.js', strategy: 'local', why: 'a static script' },
+  // THE DESCRIPTION PAGES' SCRIPT (#584): the same file in every cell, on
+  // each of the six families' paths.
+  { prefix: '/saml2/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml2/ars', strategy: 'handler',
     handler: 'saml/saml2_sso.ts',
     why: 'an artifact is resolved by the cell that minted it (D10)' },
@@ -292,6 +296,8 @@ const ROWS: Row[] = [
   { prefix: '/saml11/metadata', strategy: 'local',
     why: 'metadata is the global tier\'s' },
   { prefix: '/saml11/autopost.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/saml11/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/saml11/responder', strategy: 'handler',
     handler: 'saml/saml11_sso.ts',
     why: 'an artifact or attribute query is answered where it belongs' },
@@ -321,6 +327,8 @@ const ROWS: Row[] = [
     why: 'a resource is written where its person is homed; a list answers ' +
          'the serving cell\'s residents (D11); a Group write or a Bulk ' +
          'spanning cells is refused whole' },
+  { prefix: '/scim/description.js', strategy: 'local',
+    why: 'the description pages\' script, the same file in every cell (#584)' },
   { prefix: '/scim/v2/ServiceProviderConfig', strategy: 'local',
     why: 'the same configuration in every cell' },
   { prefix: '/scim/v2/ResourceTypes', strategy: 'local',

@@ -250,6 +250,16 @@ bundle_surface "the federation pages" federation/web_federation_pages.ts \
   StsFederation federation/federation-pages.bundle.js \
   federation/web_federation_surface.ts federation/federation-pages-spa.js
 
+# THE DESCRIPTION PAGES (#584): `common/description-pages.bundle.js`
+# (`StsDescriptions`, `web_description_pages.ts`) and
+# `common/description-pages-spa.js` (`web_description_surface.ts`), ONE file
+# served at `<family>/description.js` on the six families' paths —
+# `common/description_pages.ts` argues the one bundle — and never
+# `description_pages.js`, which is `description_pages.ts`.
+bundle_surface "the description pages" common/web_description_pages.ts \
+  StsDescriptions common/description-pages.bundle.js \
+  common/web_description_surface.ts common/description-pages-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).
