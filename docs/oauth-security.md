@@ -4,7 +4,7 @@ title: OAuth security
 
 # OAuth security
 
-> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/dpop/nonce-mode`, `/tls`, `/tls/forwarded`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/dpop/nonce-mode`, `/tls`, `/tls/forwarded`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 This page covers what makes iya-sts's [authorization server](oauth-oidc.md)
 **strict**. There are two compliance modes:
@@ -526,8 +526,9 @@ default**:
   protected endpoints require `oauth2.stepUpAcrValues` and
   `oauth2.stepUpMaxAgeS`, which require nothing by default. A registered API
   declares its own requirement as `oauthStepUpAcrValues` / `oauthStepUpMaxAge`,
-  and `/oauth2/step-up/resource/{application}` stands in for it. A token that
-  falls short is answered 401 with
+  and the API itself sends the challenge (the stand-in resource that answered
+  for it here was removed in #593). A token that falls short is answered 401
+  with
   `WWW-Authenticate: Bearer error="insufficient_user_authentication"`, plus the
   `acr_values` and `max_age` it needs.
 

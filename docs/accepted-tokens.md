@@ -5,8 +5,6 @@ nav_order: 16
 
 # Accepted tokens
 
-> **Development mode only (#585):** `/ssf/receive` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 Every door on this service that takes a token from a caller, what it must be to
 get through, and what happens in each mode. It is a companion to
 [What is not checked](what-is-not-checked.md), which covers passwords,
@@ -42,7 +40,6 @@ since may not be on it. The live list of endpoints is
 | `/admin-api` | Verified against the default realm's key, or the ambient realm's under a realm prefix, audienced to the API, carrying `admin:read` or `admin:write`. A realm's token is confined to that realm | The same | The same |
 | The embedded debugger's listener | Verified, audienced to `urn:sts:debugger-api:`, carrying the debugger permission, which only a console administrator is issued | The same | The same |
 | The OpenID4VCI credential, deferred credential and notification endpoints | A token this realm issued is verified like any other | **A token this realm cannot verify is read without verifying**, because OpenID4VCI lets the authorization server be somebody else. A credential issued that way can never be used to sign in | Refused, and so is a revoked one (`invalid_token`) |
-| The GNAP resource server (`/gnap/rs/*`) | A token the GNAP authorization server holds a record of and has not revoked or expired, under the scheme its binding needs (`Bearer` for a bearer token, `GNAP` with a key proof otherwise). Nothing is decoded | The same | The same |
 
 Any of the OAuth rows above that is presented with the DPoP scheme also needs
 a proof that verifies against the token's `cnf.jkt`, and a certificate-bound
@@ -67,12 +64,10 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | Door | Token | Development | Product |
 |---|---|---|---|
 | SPIFFE `ValidateJWTSVID` | A JWT-SVID | Verified against the bundle of the trust domain its `sub` names, with the audience the caller gives and no clock leeway. A trust domain with no bundle is refused | The same |
-| `POST /ssf/receive` | A Security Event Token | **Recorded whether or not it verifies**, and shown as unverified. Nothing acts on it | Refused (400 `invalid_key`) — [#117](https://github.com/rcbj/iya-sts/issues/117) |
 | The console's and portal's own SSF receivers | A Security Event Token | The stream's own authorization secret, and this receiver in `aud`. An unverified one is recorded unless `ssf.receiveRequireSignature` is on, and is never acted on. A verified one the `signal-response` policy permits is recorded as what it would have ended, unless `ssf.actOnSignalsInDevelopment` is on | An unverified one is refused (400 `invalid_key`, #117); a verified one the `signal-response` policy permits ends the surface's own sessions for the person named |
 
-## Where the two open issues are
+## Where the open issue is
 
 | Issue | What |
 |---|---|
 | [#116](https://github.com/rcbj/iya-sts/issues/116) | Token exchange in product mode accepts an ID Token as a `subject_token` declared to be an access token |
-| [#117](https://github.com/rcbj/iya-sts/issues/117) | `/ssf/receive` stores Security Event Tokens it cannot verify in product mode as well as development |

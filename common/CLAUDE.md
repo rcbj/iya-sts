@@ -8687,11 +8687,11 @@ decisions, and where each half lives:
   pages, `/admin/crypto-metadata`'s families, the hosted-applications
   catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
   banner all drop what the realm, or the process, is not served.
-* **Defaults that pointed at one** follow it: the GNAP demonstration resource
-  server is a token's default audience, a registered target and the catalogue
-  type `urn:iya-sts:gnap:demo` only where it is served; `xacml.pepBias`, read
-  only by `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`;
-  `ssf.receiveEnabled` governs a development endpoint.
+* **Defaults that pointed at one** follow it: `xacml.pepBias`, read only by
+  `/xacml/protected`, is `onlyWhile: 'servesDemoEndpoints'`. The GNAP
+  demonstration resource server (a token's default audience, a registered
+  target and the catalogue type `urn:iya-sts:gnap:demo` where it was served)
+  and `ssf.receiveEnabled` went with their endpoints in #593.
 * **What a product operator uses instead**: `/admin-api` (verifications #587,
   the principals, the truststore), the user portal (a credential offer, #589),
   and in the suite the test peer (#586). Spec-defined endpoints a real feature
@@ -11303,8 +11303,8 @@ product, to one definition, this file's:
   that checks an `aud` rather than from a list: the default resource
   indicator of a hosted authorization server
   (`jwt_access_token.isOwnResourceAudience()`), the management API
-  (`mgmt-api/admin_api`'s `namesThisApi()`), and the GNAP demonstration
-  resource server while `gnap.demoResourceServer` is on;
+  (`mgmt-api/admin_api`'s `namesThisApi()`), and the account API (#568) —
+  the GNAP demonstration resource server was the fourth until #593;
 * **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.
@@ -12087,10 +12087,10 @@ is what a person reads; "participant" is a protocol peer's door.
 | | `GET /oauth2/commands/mock-rp?client_id=` | a test | a JSON readback | **unchanged**: no page |
 
 **Nothing else in the tree is a relying party run by this service.** The
-other demonstrations are not relying parties, or have no page: the GNAP
+other demonstrations are not relying parties, or have no page (the GNAP
 demonstration resource server, the RFC 9470 step-up stand-in and the Shared
-Signals receiver (`/ssf/receive`, `/ssf/received`) answer JSON; the
-OpenID4VP demonstration verifier is #582's; `/federation/*` is a real
+Signals receiver `/ssf/receive`, which answered JSON, were deleted by #593);
+the OpenID4VP demonstration verifier is #582's; `/federation/*` is a real
 feature's relying-party side (its ACS and front-channel logout target are
 protocol documents, #569's rule). The CIBA notification, back-channel logout
 and Provider Commands receivers the suite needs outside a development realm

@@ -5,7 +5,7 @@ nav_order: 3
 
 # Configuration
 
-> **Development mode only (#585):** `/wsfed/rp`, `/saml2/sp`, `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/xacml/protected`, `/gnap/rs/resource`, `/did/generate`, `/dpop/nonce-mode`, `/tls/trust`, `/tls/trust/clear`, `/ssf/receive` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/wsfed/rp`, `/saml2/sp`, `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/xacml/protected`, `/did/generate`, `/dpop/nonce-mode`, `/tls/trust`, `/tls/trust/clear` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is exactly one place a setting is read**, `common/config.js`, and one
 table inside it. That is not tidiness — it is what makes the next three sentences
@@ -1498,7 +1498,6 @@ The Simple Certificate Enrolment Protocol (RFC 8894), drawn on `/admin/scep`. Ev
 | `scep.attemptsPerAddress` | `STS_SCEP_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in one web-security window before SCEP answers 429. |
 | `scep.challengeLifetimeS` | `STS_SCEP_CHALLENGE_LIFETIME_S` | `3600` | yes | How long a challenge password may wait before it is redeemed. |
 | `scep.raKeyAlgorithm` | `STS_SCEP_RA_KEY_ALGORITHM` | `rsa-2048` | yes | SCEP encrypts the request to the RA with RSA key transport (RFC 8894 section 3.1), so the RA certificate is RSA whatever the SCEP Issuing CA is. |
-| `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | GET/POST /gnap/rs/resource: judges a presented token in any of the five formats and answers the RS-first challenge of section 9.1. Development mode only: a product realm has no demonstration resource server (#585). |
 | `gnap.ownerLookupCacheS` | `STS_GNAP_OWNER_LOOKUP_CACHE_S` | `60` | yes | How long the owner a resource server's gnapOwnerLookupUri named for an identifier is held before it is asked again (#432 phase 5): a grant asks at its request, on its approval page and at issue. A failed lookup is never held. 0 asks every time; a longer one keeps a former owner able to approve for that long after the resource server says otherwise. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | A grant or token revoked sends session-revoked, and a grant modified onto different access sends token-claims-change, to every stream that takes them. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | A Shared Signals stream owned by a GNAP client application with a finish URI carries events only about people who approved a grant to that application. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
@@ -2379,8 +2378,6 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
 | `ssf.verificationEveryS` | `STS_SSF_VERIFICATION_EVERY_S` | `0` | yes | Sends every enabled stream a transmitter-initiated verification event (no `state`) when it has had none for this long. `0` sends none on a schedule. |
 | `ssf.streamMaintenanceSweepS` | `STS_SSF_STREAM_MAINTENANCE_SWEEP_S` | `60` | yes | How often the `ssf.stream-maintenance` scheduler job applies the two settings above. |
-| `ssf.receiveAudiences` | `STS_SSF_RECEIVE_AUDIENCES` | *(empty)* | yes | The `aud` values `POST /ssf/receive` accepts. Empty means the endpoint's own URL. Anything else is recorded and refused with `invalid_audience`. |
-| `ssf.receiveIssuers` | `STS_SSF_RECEIVE_ISSUERS` | *(empty)* | yes | The `iss` values `POST /ssf/receive` accepts. Empty means this realm's own transmitter issuer. Anything else is recorded and refused with `invalid_issuer`. |
 | `caep.eventsPerSession` | `STS_CAEP_EVENTS_PER_SESSION` | `25` | yes | How many recent events a CAEP register row lists; the per-type counts beside it never forget. |
 | `caep.historyPerSession` | `STS_CAEP_HISTORY_PER_SESSION` | `10` | yes | How many credential changes a CAEP row keeps. |
 | `risc.eventsPerAccount` | `STS_RISC_EVENTS_PER_ACCOUNT` | `25` | yes | How many recent events a RISC register row lists. |
