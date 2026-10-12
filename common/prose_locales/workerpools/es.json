@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "Desactivado: {{setting}} es 0, así que /admin y /portal van a donde vaya el resto de workers.dispatch — al pool de solicitudes, o los responde aquí el proceso frontal."
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "Desactivado: {{setting}} tiene su valor predeterminado de {{value}}, que significa ninguno donde el almacén no puede coordinar (persistence.mode no es postgres, o persistence.coordinate está desactivado), así que cada solicitud la responde el propio proceso frontal, en un solo hilo."
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "Desactivado: {{setting}} es 0, así que cada solicitud la responde el propio proceso frontal, en un solo hilo."
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "c712d788359b5516",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos (STS-WORKER-0023). Las superficies alojadas van al pool de solicitudes."
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "a8108cb6c9b9ecb5",
+    "text": "Abandonado: {{failed}} hilo(s) de trabajo no pudieron iniciarse y el pool dejó de iniciarlos (STS-WORKER-0023). Cada solicitud la responde el proceso frontal."
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo de trabajo — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar."
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo de trabajo — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar. {{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "En ejecución, e inactivo por configuración: workers.dispatch no nombra nada, así que no se envía ninguna solicitud a estos hilos de trabajo."
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{ready}} de {{configured}} hilo(s) de trabajo atendiendo."
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "Pool de superficies alojadas (/admin y /portal)"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "Pool de solicitudes"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "Estos son los pools del nodo {{node}}, mantenidos por su proceso frontal, pid {{pid}}. Cada worker es un hilo de ese proceso (#364), nombrado por su id de hilo, con un heap de V8 propio y la memoria y la CPU del proceso. Cada nodo de un clúster tiene pools propios. La firma poscuántica y scrypt no tienen ningún pool de procesos desde #363: se ejecutan en el pool de hilos de libuv, dentro del proceso que los haya pedido."
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "Sobre los {{count}} nodo(s) que no han desaparecido y tienen una instantánea, incluidos los obsoletos, que se marcan."
+  }
+}

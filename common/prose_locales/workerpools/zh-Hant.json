@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "關閉：{{setting}} 為 0，因此 /admin 與 /portal 會跟隨 workers.dispatch 其餘部分的去向——送到請求集區，或在此由前端程序回應。"
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "關閉：{{setting}} 為其預設值 {{value}}，表示在儲存區無法協調時（persistence.mode 不是 postgres，或 persistence.coordinate 已關閉）不啟用任何背景工作，因此每個請求都由前端程序本身在單一執行緒上回應。"
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "關閉：{{setting}} 為 0，因此每個請求都由前端程序本身在單一執行緒上回應。"
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "c712d788359b5516",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們（STS-WORKER-0023）。託管介面改送到請求集區。"
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "a8108cb6c9b9ecb5",
+    "text": "已放棄：{{failed}} 個背景工作執行緒啟動失敗，集區已停止啟動它們（STS-WORKER-0023）。每個請求都由前端程序回應。"
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "未啟動：{{setting}} 為 {{configured}}，而此程序未啟動任何背景工作執行緒——它並非以服務的前端程序身分啟動，或集區在啟動時被設為閒置。"
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "未啟動：{{setting}} 為 {{configured}}，而此程序未啟動任何背景工作執行緒——它並非以服務的前端程序身分啟動，或集區在啟動時被設為閒置。{{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "執行中，但依組態處於閒置：workers.dispatch 未指定任何項目，因此沒有請求會送到這些背景工作執行緒。"
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{configured}} 個背景工作執行緒中有 {{ready}} 個正在服務。"
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "託管介面集區（/admin 與 /portal）"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "請求集區"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "這些是節點 {{node}} 的集區，由其前端程序（pid {{pid}}）持有。每個背景工作都是該程序的一個執行緒（#364），以其執行緒 id 命名，擁有自己的 V8 堆積，並共用該程序的記憶體與 CPU。叢集的每個節點都有自己的集區。自 #363 起，後量子簽署與 scrypt 不再有程序集區：它們在 libuv 的執行緒集區上執行，位於提出要求的那個程序內。"
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "涵蓋尚未消失且有快照的 {{count}} 個節點，包括已過時者（會加以標示）。"
+  }
+}

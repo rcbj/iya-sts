@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "关闭：{{setting}} 为 0，因此 /admin 和 /portal 跟随 workers.dispatch 其余部分的去向——发往请求池，或由前端进程在此应答。"
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "关闭：{{setting}} 为其默认值 {{value}}，即在存储无法协调之处（persistence.mode 不是 postgres，或 persistence.coordinate 已关闭）不启用任何工作线程，因此每个请求都由前端进程自己在单个线程上应答。"
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "关闭：{{setting}} 为 0，因此每个请求都由前端进程自己在单个线程上应答。"
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "c712d788359b5516",
+    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们（STS-WORKER-0023）。托管界面改发往请求池。"
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "a8108cb6c9b9ecb5",
+    "text": "已放弃：{{failed}} 个工作线程启动失败，工作池已停止启动它们（STS-WORKER-0023）。每个请求都由前端进程应答。"
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "未启动：{{setting}} 为 {{configured}}，但此进程没有启动任何工作线程——它不是作为服务的前端进程启动的，或者工作池在启动时被置为空闲。"
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "未启动：{{setting}} 为 {{configured}}，但此进程没有启动任何工作线程——它不是作为服务的前端进程启动的，或者工作池在启动时被置为空闲。{{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "正在运行，但按配置处于空闲：workers.dispatch 未指定任何内容，因此没有请求发送到这些工作线程。"
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{configured}} 个工作线程中有 {{ready}} 个正在服务。"
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "托管界面池（/admin 和 /portal）"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "请求池"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "这些是节点 {{node}} 的工作池，由其前端进程（pid {{pid}}）持有。每个工作者都是该进程的一个线程（#364），以其线程 id 命名，拥有自己的 V8 堆，并共用该进程的内存和 CPU。集群的每个节点都有自己的工作池。自 #363 起，后量子签名和 scrypt 不再有进程池：它们运行在 libuv 的线程池上，位于发出请求的那个进程内。"
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "统计 {{count}} 个未消失且有快照的节点，包括已过时的节点（已标记）。"
+  }
+}

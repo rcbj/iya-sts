@@ -88,6 +88,15 @@ const CACHE_MS = 30000;
 const CACHE_MAX = 2000;
 const lookups: Map<string, { at: number; row: Record<string, string[]> | null }>
   = new Map();
+
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: '{{seconds}} s after the lookup; a change to the source drops ' +
+    'its rows.'
+});
+
 const lookupCount = cacheRegistry.register({
   name: 'attribute-sources.lookups',
   title: 'Attribute source lookups',
@@ -101,9 +110,12 @@ const lookupCount = cacheRegistry.register({
     return CACHE_MAX;
   },
   bound: 'Enforced: ' + CACHE_MAX + ' rows per process, the oldest dropped.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
-    return (CACHE_MS / 1000) + ' s after the lookup; a change to the source ' +
-      'drops its rows.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(CACHE_SENTENCES.lifetime,
+                            { seconds: CACHE_MS / 1000 });
   },
   // ROWS AND NOT A COUNT (#352). This answered `lookups.size`, which
   // `cacheRegistry.report()` maps over, so /admin/caches threw from the

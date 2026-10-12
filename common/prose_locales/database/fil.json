@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "walang iniuulat na metrics function ang bukas na driver, na ang ibig sabihin ay build ng persistence_postgres.js na mas luma sa 2026-09-11."
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Ang mga process laban sa store na ito ay NAGKO-COORDINATE: bawat pagbabago ay isinusulat sa isang monotonic na log sa loob ng transaction na gumawa nito, at inilalapat ng bawat process ang na-commit ng iba. Ginagawa lang itong mabilis ng LISTEN/NOTIFY nudge — ang log ang kontrata, kaya ang hindi natanggap na notification ay nagkakahalaga ng latency at hindi kailanman ng isang pagbabago. Ang HINDI ibinabahagi ay mga socket: ang KDC, ang mga LDAP listener, ang mga TLS port at ang apat ng SPIFFE ay bawat process, at ang mga replay cache ay nagko-converge sa halip na mag-synchronize. Ang MINI-MINT ng serbisyong ito — mga session, token, code, artifact, Kerberos ticket, ang mga counter at ang audit log — ay pini-persist sa PRODUCT mode sa isang postgres store, naka-encrypt sa ilalim ng parehong key-encryption key ng mga signing key, at sa walang ibang configuration: ang development mode ay muling gumagawa ng signing key sa bawat start, kaya ang na-restore na token ay hindi mag-verify laban sa kahit ano."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "Hindi coordination ang persistence sa configuration na ito. Ang dalawang process na nakaturo sa iisang store ay may kani-kaniyang kopya sa memory at hindi makikita ang writes ng isa't isa hanggang mag-restart sila. Itakda ang persistence.coordinate sa isang postgres store para baguhin iyon. Ang MINI-MINT ng serbisyong ito — mga session, token, code, artifact, Kerberos ticket, ang mga counter at ang audit log — ay pini-persist sa PRODUCT mode sa isang postgres store, naka-encrypt sa ilalim ng parehong key-encryption key ng mga signing key, at sa walang ibang configuration: ang development mode ay muling gumagawa ng signing key sa bawat start, kaya ang na-restore na token ay hindi mag-verify laban sa kahit ano."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}}; vine-verify ang server certificate laban sa mga trust anchor ng process na ito."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS, sslmode={{sslmode}}; HINDI vine-verify ang server certificate (naka-off ang persistence.databaseTlsRejectUnauthorized), na siyang tapat na setting para sa self-signed na pares na ginagawa ng compose stack. Naka-encrypt ang connection alinman ang mangyari."
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "HINDI TLS — hindi ito hinihingi ng connection string. TINATANGGIHAN ng database ng compose stack ang plaintext na connection, dahil hostssl ang bawat host rule sa pg_hba.conf nito, kaya hindi makakakonekta roon ang configuration na ito."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "hindi alam — hindi URL ang connection string, kaya hindi mabasa mula rito ang sslmode."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "hindi URL ang connection string; walang ipinapakita tungkol dito, dahil may dala itong password."
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "Aling PostgreSQL ito, BILANG sino nakakonekta ang serbisyong ito, at gaano na katagal tumatakbo ang server."

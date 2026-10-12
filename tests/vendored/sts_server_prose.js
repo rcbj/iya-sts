@@ -25,7 +25,9 @@
 //   g. the module prose of phase 2b (#543): on every console page that
 //      carries it — mode, realms, audit, listeners, the LDAP pages,
 //      federation, SPIFFE, SCIM, PKI, encryption, secrets, database, roles,
-//      the roster, delegation, devices, Kerberos — `fr` changes some strings
+//      the roster, delegation, devices, Kerberos, and (2c, 3) the crypto
+//      report, scheduler, caches, node health, worker pools and the protocol
+//      metadata — `fr` changes some strings
 //      and the answer's SHAPE (its members and array lengths) not at all.
 // ---------------------------------------------------------------------------
 "use strict";
@@ -238,7 +240,9 @@ async function test() {
                  "/ldap/applications", "/federation", "/spiffe", "/scim",
                  "/pki", "/encryption", "/secrets", "/database", "/roles",
                  "/rbac", "/delegation", "/device-registration",
-                 "/kerberos/principals"];
+                 "/kerberos/principals", "/crypto", "/scheduler",
+                 "/caches", "/node-health", "/worker-pools",
+                 "/sts-metadata"];
   for (const page of PAGES) {
     const en = await fetch(api + page, { headers: { Accept:
       "application/json", "Accept-Language": "en" } });

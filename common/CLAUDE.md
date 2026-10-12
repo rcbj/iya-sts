@@ -11877,7 +11877,7 @@ require this one to fill their templates.
   - B and C read `en.json`, which A has just held to the source.
 * **`harvest()` keys a colliding element by its index too.** An audit
   action's shared `category` would otherwise have dropped labels.
-* **Known residuals, English on these pages for now:**
+* **Known residuals at the end of 2b**, most swept in 2c:
   - the SCIM field-mapping notes (`scim/scim_map.ts`);
   - the persistence notes on the LDAP service page;
   - the secret-source labels on the encryption page;
@@ -11885,8 +11885,39 @@ require this one to fill their templates.
     `sts_metadata.ts`'s (phase 3).
   2c ends with a page-by-page sweep for these.
 
+### The registry namespaces and the metadata page (phase 2c and phase 3)
+
+* **2c** added the crypto report, the scheduler, caches, node health and
+  worker pools, and the 2b residuals: SCIM's mapping notes, the persistence
+  notes and the secret store's providers.
+  - **The scheduler and cache namespaces read a REGISTRY.** Their `prose()`
+    is called after the whole stack has loaded, so every job and cache
+    registered at build or wire time is there.
+  - **Lazy registrations stay English.** A job registered only once the
+    process starts or on first use is absent at extraction: the change-log
+    pull and trim, the SAML metadata refresher, the LDAP mirror's
+    maintenance and the CRL directory refresh.
+  - **Caches.** A cache's computed `lifetime` is a template declared beside
+    its registration, under the descriptor's new `sentences` member.
+    `cache_registry.js`'s `literalOnly()` calls a lifetime or bound function
+    only when its source returns nothing but literals.
+* **Phase 3** is `sts_metadata.ts` (`stsmetadata`, about 61k words) and the
+  endpoint names every Protocols page lists (`endpoints`).
+  - **`endpoints` is the one namespace on the `*` route (every route).** So
+    it holds only names that are phrases. A bare product or protocol name,
+    and any name that is a card name, an endpoint group or a spec name (a
+    join key), is left out.
+  - **The cost:** an operator-written value anywhere that exactly equals an
+    endpoint name such as "Token endpoint" is translated too.
+* **A coverage note's first word stays English** (test B, and the
+  translators' validator). That word is `full`, `partial` or `mock`, and
+  `tests/vendored/sts_metadata.js` reads it from the answer, as any consumer
+  may.
+* **Twenty-eight namespaces in all**, every base catalog current.
+
 Phase 1 is the infrastructure and the settings namespace. Phase 2a is phrase
-sources and the policies, and 2b the module namespaces above. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
+sources and the policies, 2b the module namespaces above, 2c the registry
+namespaces, and phase 3 the metadata page. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
 Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
 audit, roles, delegation, devices, GNAP, listeners, the crypto report,
 scheduler jobs, caches, node health), then `sts_metadata.ts`.

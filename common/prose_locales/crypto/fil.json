@@ -1,0 +1,1558 @@
+{
+  "crypto.sentences.oneModule": {
+    "en": "89ae1e6707cdc9ab",
+    "text": "Ang common/crypto.js ang nag-iisang lugar kung saan pumipirma, nagve-verify, nag-e-encrypt at nagde-decrypt ang serbisyong ito. Bago ang 2026-08-27, ginagawa nito ang apat na iyon sa mga dalawampung lugar, kabilang ang anim na XML signer at apat na XML signature verifier."
+  },
+  "crypto.sentences.signingCertificateIssued": {
+    "en": "ccb74c3fcf226008",
+    "text": "in-issue ng JOSE Issuing CA ng realm na ito sa ilalim ng service Root"
+  },
+  "crypto.sentences.signingWhat": {
+    "en": "f7404c1e2d82ed3b",
+    "text": "Ang nag-iisang RSA key ng realm. Pinipirmahan nito ang bawat access token, bawat refresh token, ang default na ID Token, at bawat XML document na ginagawa ng serbisyong ito."
+  },
+  "crypto.sentences.postQuantumWhat": {
+    "en": "d1e5e7645744f3f2",
+    "text": "Ginagawa sa UNANG PAGGAMIT sa halip na sa start — halos dalawang segundo ang isang SLH-DSA keygen, na babayaran ng bawat realm may humingi man o wala ng post-quantum signature. Ang unang JWKS fetch sa isang realm ang nagpapalitaw sa mga ito."
+  },
+  "crypto.sentences.bbsWhat": {
+    "en": "906077034776820c",
+    "text": "Ginagawa sa unang paggamit, gaya ng mga post-quantum key. Inilalathala ito bilang `publicKeyMultibase` sa DID document sa halip na bilang JWK, dahil walang JWK representation ang isang BLS key na mapipilitang pagsiksikan nito."
+  },
+  "crypto.sentences.tlsWhat": {
+    "en": "35681a509d8441ff",
+    "text": "{{summary}}. Ginagawa ang key sa bawat start at sine-certify ng TLS Issuing CA sa ilalim ng process Intermediate saanman may hierarchy — maliban kung `tls.certificateFile` ang nagbibigay ng pares. Ibinabahagi ng LDAPS 636 at — kapag naka-on ang `global.https` — ng main port at ng debugger listener."
+  },
+  "crypto.sentences.listenerSummary": {
+    "en": "2a1315844d834040",
+    "text": "{{key}}, {{issuer}}, valid hanggang {{notAfter}}"
+  },
+  "crypto.sentences.listenerUnreadable": {
+    "en": "724ae89d2a9a816d",
+    "text": "hindi mabasa ng node, valid hanggang {{notAfter}}"
+  },
+  "crypto.sentences.listenerIssuedBy": {
+    "en": "637d641d5f35ce2e",
+    "text": "in-issue ng {{issuer}}"
+  },
+  "crypto.sentences.listenerIssuedByChainOne": {
+    "en": "bc6822b39335d61a",
+    "text": "in-issue ng {{issuer}} (ipinakita kasama ang {{n}} certificate sa itaas nito)"
+  },
+  "crypto.sentences.listenerIssuedByChainMany": {
+    "en": "2f869cd5d1f97c09",
+    "text": "in-issue ng {{issuer}} (ipinakita kasama ang {{n}} na certificate sa itaas nito)"
+  },
+  "crypto.sentences.pkiCertificateBinding": {
+    "en": "2d72d4ec39f7cf95",
+    "text": "{{member}} — SHA-256 sa DER, base64url"
+  },
+  "crypto.sentences.ldapsTransport": {
+    "en": "29459972b5e8fe87",
+    "text": "TLS, sa shared server certificate"
+  },
+  "crypto.sentences.spiffeAuthorityPki": {
+    "en": "c60444730e80e729",
+    "text": "{{keyType}} — ang SPIFFE Issuing CA ng realm na ito, sa ilalim ng service Root"
+  },
+  "crypto.sentences.spiffeAuthoritySelfSigned": {
+    "en": "9ad0068d9cf973fe",
+    "text": "{{keyType}} — self-signed: walang certificate authority ang realm na ito"
+  },
+  "crypto.sentences.spiffeAuthorityNone": {
+    "en": "98ca0d518997f8a4",
+    "text": "wala pa"
+  },
+  "crypto.sentences.webauthnUvChecked": {
+    "en": "a16940eb3be81667",
+    "text": "{{mode}} — hinihingi AT sinusuri laban sa pinirmahang UV flag"
+  },
+  "crypto.sentences.webauthnUvRequested": {
+    "en": "46a9952f4713d986",
+    "text": "{{mode}} — hinihingi lang; walang tinatanggihan dahil dito"
+  },
+  "crypto.sentences.totpInUse": {
+    "en": "491869a05f6f78db",
+    "text": "{{name}} — ang nakukuha ng BAGONG enrolment"
+  },
+  "crypto.sentences.totpSecret": {
+    "en": "bb442c325bb6fe24",
+    "text": "{{bits}}-bit, {{encoding}}"
+  },
+  "crypto.sentences.totpLive": {
+    "en": "87c1e9d28ffb4842",
+    "text": "{{digits}} digit, bawat {{period}} segundo, {{window}} step ng skew na pinapalampas sa magkabilang panig"
+  },
+  "crypto.sentences.codesEntropy": {
+    "en": "c4d0c03046e6da5f",
+    "text": "{{bits}} bit bawat code, {{count}} code na may {{length}} character mula sa alphabet na {{size}}"
+  },
+  "crypto.sentences.codesAlphabet": {
+    "en": "d8a72dc58f835d17",
+    "text": "{{alphabet}} — ang mga base32 character, pinili rito dahil walang pares sa mga ito na napagkakamalan, at HINDI ibinabahagi sa TOTP row sa itaas"
+  },
+  "crypto.sentences.codesLegacyComparison": {
+    "en": "0461fbbf6b72b08d",
+    "text": "Isang set na isinulat bago ang 2026-09-11: {{comparison}}"
+  },
+  "crypto.sentences.emailCode": {
+    "en": "7d9bef7355b70ed9",
+    "text": "anim na decimal digit mula sa crypto.randomInt(), pinapanatili ang mga leading zero"
+  },
+  "crypto.sentences.emailLinkToken": {
+    "en": "4f34264954dc7cc2",
+    "text": "256 bit mula sa crypto.randomBytes(), base64url"
+  },
+  "crypto.sentences.emailAtRest": {
+    "en": "270607a9609c73d2",
+    "text": "scrypt, sa pamamagitan ng crypto.hashSecret(), sa sign-in step"
+  },
+  "crypto.sentences.jweGcmNote": {
+    "en": "738d45485f10fb8b",
+    "text": "AEAD: isang key, isang tag."
+  },
+  "crypto.sentences.jweCbcNote": {
+    "en": "31dbbd47a0e04c86",
+    "text": "Ang CEK ay isang MAC key na sinusundan ng AES key, at ang tag ay HMAC-{{hash}} na pinutol sa kalahati ng haba nito."
+  },
+  "crypto.sentences.tlsDefaults": {
+    "en": "404bc0f7f4f4729a",
+    "text": "Ang mga default ng OpenSSL ng Node, maliban sa protocol floor (`tls.minVersion`, TLS 1.2 bilang default) at sa cipher list (`tls.ciphers`, ang sa node kapag walang laman) sa LDAPS 636 at sa main port. Walang piniling curve ang serbisyong ito — ang iba pang kino-configure nito ay kung aling mga socket ang TLS at kung aling certificate ang sine-serve ng mga ito."
+  },
+  "crypto.sentences.socketMain": {
+    "en": "83b9398392ab48f7",
+    "text": "main port (kapag naka-on ang global.https)"
+  },
+  "crypto.sentences.socketDebugger": {
+    "en": "277abe82f40632d7",
+    "text": "debugger listener (kapag naka-on ang global.https)"
+  },
+  "crypto.param.selfSigned": {
+    "en": "125ce3085aa6bf99",
+    "text": "self-signed"
+  },
+  "crypto.keyEstablishment.jweOutSurface": {
+    "en": "d2aa3e07f69c7123",
+    "text": "JWE na ine-encrypt ng serbisyong ito PARA SA isang client — ID Token, Logout Token, UserInfo, JARM, JWT introspection, OID4VCI Credential Response"
+  },
+  "crypto.keyEstablishment.jweOutOn": {
+    "en": "185d94e3a2bf618d",
+    "text": "Nagre-register ang isang client ng ML-KEM o HPKE-8 hanggang HPKE-16 na `alg` (`id_token_encrypted_response_alg` at ang mga kapatid nito) at naglalathala ng katugmang AKP key — ang HPKE-10-KE ay X-Wing — at bawat isa sa mga ito ay ine-encrypt gamit iyon (naka-on ang `keys.offerKemEncryption`)."
+  },
+  "crypto.keyEstablishment.jweOutOff": {
+    "en": "7277b2789e28697b",
+    "text": "NAKA-OFF bilang default: naka-off ang `keys.offerKemEncryption`, kaya walang ML-KEM o HPKE alg na ina-advertise o tinatanggap sa registration. Tinatanggihan ng OpenID conformance suite at ng ilang client library ang discovery list na nagpapangalan ng mga algorithm na hindi nila kilala."
+  },
+  "crypto.keyEstablishment.jweInSurface": {
+    "en": "c10485c5cccaca78",
+    "text": "JWE na ipinapadala PARA SA realm na ito — mga naka-encrypt na request object, mga RFC 7523 / 7522 assertion, mga OID4VCI Credential Request"
+  },
+  "crypto.keyEstablishment.jweInHeld": {
+    "en": "210505600241cdc0",
+    "text": "May hawak ang realm na ito na mga decryption key para sa {{algs}} (`keys.encryptionKemAlgs`), inilalathala sa JWKS nito at ina-advertise sa mga decryption list."
+  },
+  "crypto.keyEstablishment.jweInOff": {
+    "en": "8d920fdcbb4ea950",
+    "text": "NAKA-OFF, at sadya: walang laman ang `keys.encryptionKemAlgs`, kaya walang AKP key sa JWKS ng realm na ito at walang ML-KEM o HPKE alg na ina-advertise para sa decryption. Ang AKP key ay isang key type na hindi pa pina-parse ng JOSE library ng maraming client, kaya desisyon ng administrator ang paglalathala nito (rcbj, #82)."
+  },
+  "crypto.keyEstablishment.federationSurface": {
+    "en": "3f594dc7fbebb416",
+    "text": "Federation — ang ID Token ng isang OpenID Connect partner na naka-encrypt para sa key ng isang relationship"
+  },
+  "crypto.keyEstablishment.federationHeld": {
+    "en": "358d8a6a9b318fca",
+    "text": "{{relationships}} ay may hawak na x-wing o ml-kem-768 key (fedEncryptionKeyType), inilalathala sa JWKS ng relationship."
+  },
+  "crypto.keyEstablishment.federationNone": {
+    "en": "14fd09aadd8a0fcd",
+    "text": "Bawat relationship: fedEncryptionKeyType x-wing (HPKE-10-KE) o ml-kem-768 sa isang OpenID Connect relationship. Wala pang mayroon nito; hindi puwede sa SAML 2.0 at WS-Federation (XML Encryption)."
+  },
+  "crypto.keyEstablishment.vpSurface": {
+    "en": "6baf471c665ac6b8",
+    "text": "Mga naka-encrypt na OID4VP response (direct_post.jwt, dc_api.jwt)"
+  },
+  "crypto.keyEstablishment.vpOffered": {
+    "en": "849d86b5d19e6d58",
+    "text": "Nag-aalok ang bawat request ng {{algs}} (isang key na ginawa para sa iisang transaksyon) bago o katabi ng P-256 ECDH-ES key na hinihingi ng HAIP, kaya ginagamit ito ng wallet na kayang gumamit nito (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.vpOnly": {
+    "en": "44a7464ddcf375d6",
+    "text": "ECDH-ES lang ang inaalok (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.refreshSurface": {
+    "en": "3f22f83a49b55c9e",
+    "text": "Mga refresh token (naka-seal para sa realm na ito mismo)"
+  },
+  "crypto.keyEstablishment.refreshPq": {
+    "en": "6758fcba4a4a35dd",
+    "text": "Naka-seal gamit ang {{alg}} para sa isang key pair na hinango mula sa refresh-token secret ng realm."
+  },
+  "crypto.keyEstablishment.refreshClassical": {
+    "en": "24e071b986638635",
+    "text": "Naka-seal gamit ang {{alg}}; anumang ML-KEM o HPKE-8 hanggang 16 na alg ay puwedeng piliin sa `oauth2.refreshTokenEncryptionAlg`, na hindi nangangailangan ng key at walang binabago sa nakikita ng client."
+  },
+  "crypto.keyEstablishment.tlsSurface": {
+    "en": "416b130491f7d0f2",
+    "text": "TLS — ang main port, LDAPS at ang listener ng debugger"
+  },
+  "crypto.keyEstablishment.tlsPq": {
+    "en": "b68367c2a8d321c1",
+    "text": "Nauuna sa `tls.groups` ang mga hybrid group (X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024) (#212), at nakikipag-negotiate ang node sa service image — OpenSSL 3.5 — gamit ang mga ito sa anumang client na nag-aalok ng isa."
+  },
+  "crypto.keyEstablishment.tlsNone": {
+    "en": "b032759b3e0d7e2f",
+    "text": "Walang ML-KEM hybrid group na pinangangalanan ang `tls.groups`."
+  },
+  "crypto.keyEstablishment.xmlSurface": {
+    "en": "5eae0076f7a6157c",
+    "text": "XML Encryption — mga SAML assertion, WS-Federation, WS-Trust"
+  },
+  "crypto.keyEstablishment.xmlHow": {
+    "en": "c37ae0c7c030acc0",
+    "text": "RSA-OAEP key transport o ECDH-ES key agreement. Walang KEM at walang post-quantum key transport na dine-define ang XML Encryption 1.1, at walang W3C o IETF document na nagdagdag nito — ang sagot ng CMS, ang KEMRecipientInfo ng RFC 9629, ay walang katapat sa XML. Ito ay puwang sa specification stack, hindi isang setting na naiwang naka-off."
+  },
+  "crypto.keyEstablishment.draftMlKem": {
+    "en": "f6d7c744b504a044",
+    "text": "draft-ietf-jose-pqc-kem-05 — ang huling rebisyon na may JOSE text; ang -06 (2026-07-06) ay COSE lang. Ang AKP `priv` ay ang 64-octet na d||z seed na ipinalit ng -06 sa 32 octet ng -05."
+  },
+  "crypto.keyEstablishment.draftHpke": {
+    "en": "185d1e99a7a7ab4e",
+    "text": "draft-ietf-jose-hpke-encrypt-22 (HPKE-0 hanggang HPKE-7), sa ibabaw ng draft-ietf-hpke-hpke; ang mga KEM ng draft-ietf-hpke-pq-05"
+  },
+  "crypto.keyEstablishment.draftHybrid": {
+    "en": "14ac1097493134f5",
+    "text": "draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 hanggang HPKE-16), isang INDIBIDWAL na draft na nag-expire noong 2026-08-20 at ang tanging dokumentong nagpapangalan ng hybrid na JWE alg"
+  },
+  "crypto.keyEstablishment.what": {
+    "en": "b84af2bfe888da27",
+    "text": "ITO ANG KALAHATING PINAKAMAAGANG MAHALAGA: sinusuri ang isang signature kapag ipinakita ito, kaya ang signature algorithm na babagsak sa 2035 ay problema sa 2035, samantalang ang ciphertext na nakuha ngayon ay puwedeng itago at buksan pagdating ng makina. Ang JWE dito ay may post-quantum at PQ/T hybrid na key establishment — ML-KEM, at HPKE sa ibabaw ng ML-KEM o ng isang hybrid (ang X-Wing ay HPKE-10) — at inuuna ng TLS ang mga hybrid group. Nakalista sa ibaba kasama ang dahilan ang nananatiling classical, at bawat isa sa mga JWE algorithm na ito ay mula sa isang Internet-Draft."
+  },
+  "crypto.keyEstablishment.whatWouldClose": {
+    "en": "ea8450559eeb91ec",
+    "text": "Kailangan ng XML Encryption ng specification bago ito magkaroon ng implementation. Magiging standard ang mga JWE algorithm kapag naging standard ang mga draft nito; hanggang doon, ang administrator ang nagpapasya kung maglalathala ang isang realm ng key para sa mga ito, at ang client ang nagpapasya sa pamamagitan ng pag-register ng isa."
+  },
+  "crypto.standards.jws.coverage": {
+    "en": "a0c6c0c5333f0961",
+    "text": "full para sa mga algorithm na nakalista sa ibaba. Ginagawa at binabasa saanman ang compact serialization; ang FLATTENED JSON serialization ay binabasa ng iisang family lang, ang ACME, dahil hinihingi ito ng RFC 8555 section 6.2 (bawat request ay binubuo muli sa compact na anyo at vine-verify ng parehong function). Ang general JSON serialization ay hindi ginagawa o binabasa; walang humihingi nito rito."
+  },
+  "crypto.standards.jws.what": {
+    "en": "862303371dc5663b",
+    "text": "Ang sobre ng bawat token na ginagawa ng serbisyong ito at bawat assertion na iniaabot dito. ISANG TABLE PARA SA BUONG SERBISYO — ang `JWS_ALGS` ng `common/crypto.js` — dahil dalawa ito noon, at iyon ang dahilan kung bakit tumanggap ang DPoP ng ibang set ng algorithm kaysa sa lahat ng iba nang walang sinumang pumili nito."
+  },
+  "crypto.standards.jwe.coverage": {
+    "en": "251f48e95fd0f14b",
+    "text": "partial: compact serialization, at mas mahaba ang listahang ginagamit nito sa pag-ENCRYPT kaysa sa pag-DECRYPT. Sadya ang asymmetry na iyon — ang natatanggap nito ay naka-encrypt para sa RSA key na inilalathala nito, at wala itong hawak na EC private key na makikipag-agree."
+  },
+  "crypto.standards.jwe.what": {
+    "en": "991c797c32f2038b",
+    "text": "Isang naka-encrypt na UserInfo response, at anumang ipinapadala ng client na naka-encrypt para sa key ng serbisyong ito. Narito ang CBC-HMAC family dahil `A128CBC-HS256` ang nakukuha ng isang OpenID Connect client bilang DEFAULT: i-register ang `userinfo_encrypted_response_alg` nang walang sinasabi tungkol sa `enc`, at pinili na ito para sa iyo ng section 2 ng registration specification."
+  },
+  "crypto.standards.jwk.coverage": {
+    "en": "30637f1756016b71",
+    "text": "full para sa paglalathala. WALANG `alg` member ang inilalathalang JWKS, at sadya ang pagkawala nito: ginagawa itong opsyonal ng RFC 7517 section 4.4 at sinasabing pinangangalanan nito ang NILALAYONG algorithm, at anim sa mga ito ang pinipirmahan ng isang RSA key dito. `RS256` ang sinasabi nito hanggang 2026-08-28 at iyon ay pangakong hindi na tinutupad ng serbisyo — tumatanggi ang Web Crypto na mag-import ng JWK na ang `alg` ay hindi tugma sa operasyong hinihingi rito."
+  },
+  "crypto.standards.jwk.what": {
+    "en": "c0a4c4242da20c76",
+    "text": "Kung paano inilalathala ang bawat public key dito, at kung paano binabasa ang sariling key ng isang client. Ang RFC 7638 thumbprint ang pinagtatalian ng DPoP."
+  },
+  "crypto.standards.jwt.coverage": {
+    "en": "007e59f3363125e7",
+    "text": "full para sa ginagawa nito; `partial` para sa binabasa nito, dahil wala itong vine-verify na access token na hindi nito in-issue maliban sa UserInfo."
+  },
+  "crypto.standards.jwt.what": {
+    "en": "71a4f9ece0aa9a3b",
+    "text": "Ang claim set sa loob ng JWS. Inilalapat ang `oauth2.clockSkewS` saanman binabasa pabalik ng serbisyong ito ang isang token na pinirmahan nito, sa IISANG lugar mula 2026-08-27 — apat sa sampung call site na dating gumagawa nito ang tahimik na tumigil."
+  },
+  "crypto.standards.thumbprint.coverage": {
+    "en": "43bf5a528e56416c",
+    "text": "full para sa RSA, EC, OKP at oct, na siyang bawat key type na dine-define-an ng RFC ng mga member. WALANG THUMBPRINT PARA SA `AKP`, ang post-quantum key type, at iyon ang dahilan kung bakit hindi kasama sa DPoP ang mga PQ algorithm."
+  },
+  "crypto.standards.thumbprint.what": {
+    "en": "3738772040c6c429",
+    "text": "Isang canonicalization, isang SHA-256, isang lugar — dalawa ang implementation nito rito bago ang 2026-08-27."
+  },
+  "crypto.standards.dpop.coverage": {
+    "en": "da82595d1a834c49",
+    "text": "full: lahat ng labindalawang check ng section 4.3, ang `cnf.jkt` binding sa access AT refresh token, `dpop_jkt`, `jti` replay detection at ang nonce handshake sa parehong anyo. HINDI kinakailangan — ginagawang mas sariwa ng nonce mode ang mga proof, hindi sapilitan."
+  },
+  "crypto.standards.dpop.what": {
+    "en": "fd2e6cef9f5dc069",
+    "text": "Ang sender constraint na nagpapawalang-halaga sa isang ninakaw na access token kung wala ang key. Ang listahan ng algorithm nito ay isang FILTER sa ibabaw ng shared JWS table — asymmetric, at hindi post-quantum — sa halip na sariling table."
+  },
+  "crypto.standards.mtls.coverage": {
+    "en": "d10a6eaf8ebf09b2",
+    "text": "partial: ang parehong client authentication method at ang certificate-bound na access token. Ginagawa nitong THUMBPRINT ang isang na-verify na certificate at hindi kailanman login."
+  },
+  "crypto.standards.mtls.what": {
+    "en": "3e588c6d2a0eca04",
+    "text": "Ang `x5t#S256` ay ang base64url SHA-256 ng DER ng certificate — ang DER, hindi ang PEM, na siyang pagkakamaling mukhang tama sa log at walang tinutugmaan."
+  },
+  "crypto.standards.pkce.coverage": {
+    "en": "2727b9104835cdc1",
+    "text": "full para sa `S256` at `plain`. Sa RFC 9700 mode, binabawi ang `plain` at `S256` na lang ang laman ng ina-advertise na listahan."
+  },
+  "crypto.standards.pkce.what": {
+    "en": "71ccd02e8a1c70cf",
+    "text": "SHA-256 sa code verifier. Ang nag-iisang lugar sa serbisyong ito kung saan ang hash ang kabuuan ng isang security property."
+  },
+  "crypto.standards.xmldsig.coverage": {
+    "en": "6ac11d8fcf045168",
+    "text": "partial: RSA-SHA256 lang ang ginagamit ng serbisyong ito sa PAGPIRMA, at nagVE-VERIFY ito ng anuman sa table sa ibaba — RSA, RSASSA-PSS, ECDSA at HMAC sa apat na digest. Enveloped signature lang; wala itong ginagawang detached o enveloping signature maliban sa sa Redirect binding, na ibang mekanismo."
+  },
+  "crypto.standards.xmldsig.what": {
+    "en": "65d7098a43b07f40",
+    "text": "Ang sobre ng bawat XML document na ginagawa ng serbisyong ito. Mula 2026-08-27, ito ang sariling `xmldsig.js` ng parent project, vendored nang byte-identical, na siyang KABILANG DULO ng karamihan sa mga palitang ito — kaya parehong code ang ginagamit ng magkabilang panig sa canonicalization, at hindi maitatago ang hindi pagkakasundo tungkol sa c14n hanggang maging signature itong nagve-verify sa isang panig at hindi sa kabila."
+  },
+  "crypto.standards.xmlenc.coverage": {
+    "en": "dbb840eef5ab3a75",
+    "text": "partial: apat na block cipher at dalawang key transport, isang element ang winawrap sa bawat pagkakataon. Hindi ito ang vendored na implementation at sadyang exception iyon — byte-compatible na ang output ng dalawa, at ang mayroon ito na wala sa isa ay ang DIAGNOSIS."
+  },
+  "crypto.standards.xmlenc.what": {
+    "en": "22b505560ceb8641",
+    "text": "Bawat mensaheng sadyang sinasabi nito nang malakas: HINDI authenticated ang dalawang CBC cipher at sira ang `rsa-1_5` dahil sa Bleichenbacher. Parehong inaalok ang mga ito dahil hinihingi ng mga totoong service provider, at ang mock na nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas."
+  },
+  "crypto.standards.c14n.coverage": {
+    "en": "dcdbea06a9c35da8",
+    "text": "partial: ang parehong algorithm at ang parehong `#WithComments` na kambal. HINDI inaalok ang C14N 1.1 — ang buong pagkakaiba nito ay kung paano minamana ang `xml:base`, `xml:lang` at `xml:space` sa isang detached na subtree, hindi ini-implement ng engine ang pagmamanang iyon, at mas masama ang opsyong nagpapangalan ng paraang hindi nito ginagawa kaysa sa opsyong wala."
+  },
+  "crypto.standards.c14n.what": {
+    "en": "ca991439b4559070",
+    "text": "KRITIKAL ANG EXCLUSIVE AT ITO ANG DEFAULT SAANMAN DITO. Pinipirmahan nang hiwalay ang isang assertion at pagkatapos ay isinisingit sa loob ng isang RSTR, Response o `wresult` na nagdedeklara ng sarili nitong mga prefix, kaya hihilahin ng INCLUSIVE c14n ang mga deklarasyong iyon ng ninuno papasok sa digest sa oras ng verification — at mabibigo ang signature para sa bawat relying party habang perpektong nagve-verify dito, na siyang pinakamasamang uri ng bug na hahabulin."
+  },
+  "crypto.standards.wss.coverage": {
+    "en": "08017a57e61d5832",
+    "text": "mock, at ito ang row na dapat basahin bago humingi ng \"WS-Integrity\" o \"WS-Encryption\" — wala sa dalawa ang dokumentong umiiral. Ang WSS ay iisang specification na ang integrity na kalahati ay XML Signature sa SOAP Body at Timestamp sa loob ng isang `<wsse:Security>` header at ang confidentiality na kalahati ay XML Encryption na inilalapat sa parehong paraan. WALA SA DALAWA ANG GINAGAWA NG SERBISYONG ITO. Wala itong pinipirmahang SOAP envelope, walang ine-encrypt na SOAP body, walang ginagawang Timestamp at walang vine-verify na message-level signature sa isang request."
+  },
+  "crypto.standards.wss.what": {
+    "en": "d6dcd66e6476aa91",
+    "text": "Ang GINAGAWA nito ay ang SAML Token Profile: isang pinirmahang SAML assertion na dala sa loob ng SOAP body, may `<wsse:SecurityTokenReference>` na nagpapangalan dito sa pamamagitan ng `KeyIdentifier`, at isang `<wsse:BinarySecurityToken>` kung saan hiningi ang X.509 token. BINABASA nito ang `<wsse:Security>` header ng requester para sa isang credential at para sa certificate na pag-e-encrypt-an. KAYANG gumawa ng vendored na `xmldsig.js` ng totoong `<wsse:Security>` signature — naroon ang `signSoapMessage()` at ginagamit ito ng debugger — at walang tumatawag dito rito."
+  },
+  "crypto.standards.krb5.coverage": {
+    "en": "33a060bc7143a706",
+    "text": "partial: apat na AES profile at RC4-HMAC ang ginagawa, ang DES at 3DES ay decode lang. Totoo lahat ang simplified profile, key derivation ayon sa key usage, confounder at CTS — inaabot ng mga vector test ang bawat layer nang isa-isa, dahil ang pumapasang end-to-end na encryption ay puwedeng magtago ng dalawang error na nagkakansela sa isa't isa."
+  },
+  "crypto.standards.krb5.what": {
+    "en": "6c3cb428090dfdcf",
+    "text": "ANG TANGING FAMILY DITO NA WALANG PUBLIC-KEY CRYPTOGRAPHY. Parehong nagmumula ang confidentiality at integrity sa iisang long-term na symmetric key, na eksaktong dahilan kung bakit ito ang nag-iisang pinto sa serbisyong ito na tunay na nagve-verify ng credential."
+  },
+  "crypto.standards.gssapi.coverage": {
+    "en": "3955b6b4a25e305e",
+    "text": "partial: ang Kerberos mechanism lang, kasama ang MIC exchange. Walang NTLM, walang mechanism negotiation na karapat-dapat sa pangalan — iisang mechanism lang ang ine-negotiate."
+  },
+  "crypto.standards.gssapi.what": {
+    "en": "4aaf48ef02c4f689",
+    "text": "Ang wrapper na nagdadala ng AP-REQ sa HTTP. Wala itong idinadagdag na sariling cryptography: ang MIC ay isang Kerberos checksum na kinukuwenta gamit ang key ng mechanism."
+  },
+  "crypto.standards.x509.coverage": {
+    "en": "5e34667c87a2bbca",
+    "text": "partial: isang Root para sa serbisyo, isang Intermediate bawat trust realm (at isa para sa process) at isang Issuing CA bawat use case, kaya apat na certificate ang haba ng isang leaf path at lima ang sa isang SVID sa ilalim ng isang SPIFFE downstream CA. Inilalathala bawat CA ang mga RFC 5280 CRL at RFC 6960 OCSP, at sinusuri laban sa mga ito ang isang ipinakitang certificate sa ilalim ng pki.revocationCheck. Itinatago lang sa PRODUCT mode, kung saan persisted ang keystore; sa DEVELOPMENT mode, binubuo muli ang hierarchy sa bawat start. Kung walang hierarchy (naka-off ang pki.autoBuild), pinapanatili ng isang key ang self-signed na certificate na kasama nitong ginawa, at bumabalik sa self-signed ang SPIFFE authority ng isang realm."
+  },
+  "crypto.standards.x509.what": {
+    "en": "0bd1dc7400215c5a",
+    "text": "Ang CA key ay sa hierarchy, pinipili sa /admin/pki (`pki.keyAlgorithm`, RSA 2048 bilang default; mas gusto ng SPIFFE Issuing CA ang EC P-256); RSA 2048 ang signing key, at ang TLS certificate ay anumang hingin ng `tls.certificateAlgorithms`. Ang `spiffe.x509KeyType` ang nagpapasya ng key sa bawat SVID. ANG SUBJECTALTNAME ANG TANGING LUGAR NG MGA PANGALAN sa TLS certificate — sinabi na ng RFC 6125 mula 2011 na binabalewala ang CN."
+  },
+  "crypto.standards.tls.coverage": {
+    "en": "e67c709b3dc8eb62",
+    "text": "mock: ang mga default ng OpenSSL ng node, maliban kung saan pinakikitid ng dalawang setting ang mga ito sa LDAPS 636 at sa main port — `tls.minVersion` (TLS 1.2 bilang default) at `tls.ciphers` (ang listahan ng node kapag walang laman). Walang piniling curve ang serbisyong ito; ang iba pang kino-configure nito ay kung aling mga socket ang TLS at kung aling certificate ang sine-serve ng mga ito."
+  },
+  "crypto.standards.tls.what": {
+    "en": "a3c8abc13508c6c3",
+    "text": "Iisang certificate ang ibinabahagi ng LDAPS 636, ng main port at ng debugger listener. Ang `STS_HTTPS=false` ang suportadong paraan pabalik sa plain HTTP, hindi isang escape hatch."
+  },
+  "crypto.standards.cose.coverage": {
+    "en": "35d0b5526ad54ff2",
+    "text": "partial: COSE_Key parsing at signature verification para sa mga algorithm sa ibaba. Wala itong isinusulat na COSE structure at walang binabasang COSE_Encrypt."
+  },
+  "crypto.standards.cose.what": {
+    "en": "7b6ab5c285065ab0",
+    "text": "Kung paano dumarating ang public key ng isang WebAuthn credential. Sariling gawa ng repository na ito ang CBOR reader at ang COSE mapping at walang code na ibinabahagi sa sa debugger, na siyang nagpapagawa sa dalawa na independiyenteng check sa isa't isa."
+  },
+  "crypto.standards.webauthn.coverage": {
+    "en": "4610e926ac80ab7d",
+    "text": "partial: ang kalahati ng relying party. Tunay na vine-verify ang mga registration at assertion signature, at gayundin ang mga attestation STATEMENT (#105) — lahat ng walong format, ang mga chain nito at ang FIDO Metadata Service — sa ilalim ng webauthn.attestationPolicy."
+  },
+  "crypto.standards.webauthn.what": {
+    "en": "ea84aed02de27496",
+    "text": "Sinasaklaw ng signature ang `authenticatorData || SHA-256(clientDataJSON)` at ang RP ID hash sa loob ng authenticator data na iyon ay ikinukumpara byte por byte laban sa SHA-256 ng domain ng origin."
+  },
+  "crypto.standards.digest.coverage": {
+    "en": "427fc3ecbf538bfc",
+    "text": "partial: `qop=auth` na may SHA-256, SHA-512-256 at MD5 at ang mga `-sess` variant ng mga ito, kasama ang mga nonce count, stale nonce at `Authentication-Info`. Walang `qop=auth-int`."
+  },
+  "crypto.standards.digest.what": {
+    "en": "cf6005726f6143e0",
+    "text": "ISA SA DALAWANG LUGAR SA SERBISYONG ITO KUNG SAAN TUNAY NA SINUSURI ANG PASSWORD, at kailangan talaga: input sa hash ang password, kaya ang server na tumatanggap ng kahit ano ay hindi makakakuwenta ng response na inaasahan ng client."
+  },
+  "crypto.standards.hoba.coverage": {
+    "en": "b17c97ab09503261",
+    "text": "partial: algorithm 0 (RSA-SHA256) lang, at tunay na vine-verify ang signature laban sa naka-register na key."
+  },
+  "crypto.standards.hoba.what": {
+    "en": "519e56806159f70f",
+    "text": "Isang kapalit ng password: may hawak ang client na key pair na saklaw ng iisang origin, nire-register ang public na kalahati, at pinipirmahan ang isang blob ng nonce, algorithm, origin, realm, key id at challenge ng server. KAHIT SINO AY PUWEDENG MAG-REGISTER NG KEY — iyon ang turnstile — pero tinatanggihan ang signature na hindi nagve-verify laban sa key na naka-register sa ilalim ng `kid` na iyon."
+  },
+  "crypto.standards.sdjwt.coverage": {
+    "en": "2d231e5864c82088",
+    "text": "partial: mga `_sd` digest na may `_sd_alg: sha-256`, mga disclosure, at ang `dc+sd-jwt` type. Ang key binding ay sa pamamagitan ng proof of possession ng wallet sa issuance."
+  },
+  "crypto.standards.sdjwt.what": {
+    "en": "2e65e3747a37aeb8",
+    "text": "Selective disclosure sa pamamagitan ng hashing: dala ng credential ang DIGEST ng bawat claim at iniaabot ng holder ang mga piniling ibunyag nito."
+  },
+  "crypto.standards.dataintegrity.coverage": {
+    "en": "a3a1c4d7b9f3d4d4",
+    "text": "partial: mag-issue, mag-verify ng base proof, at mag-verify ng HINANGONG proof. BLS12381-SHA-256 ciphersuite."
+  },
+  "crypto.standards.dataintegrity.what": {
+    "en": "28e302a01c047d5c",
+    "text": "ANG TANGING PAIRING-BASED NA SIGNATURE SA SERBISYONG ITO, at ang tanging selective disclosure dito na hindi hashing. Ang kailangang ibahagi sa kabilang dulo ay ang CANONICAL FORM — pinipirmahan ng bbs-2023 ang mga canonicalized na RDF statement — kaya vendored ang mga JSON-LD context sa halip na fine-fetch."
+  },
+  "crypto.standards.did.coverage": {
+    "en": "c5075ca6beddd229",
+    "text": "partial: `did:web` resolution, isang dokumentong naglalathala ng mga key ng serbisyong ito, at ang domain linkage credential."
+  },
+  "crypto.standards.did.what": {
+    "en": "40ddc5fd877325e6",
+    "text": "Kung paano hinahanap ng wallet ang key na nagve-verify ng credential na ang `iss` ay isang DID. Inilalathala ang BBS key bilang `publicKeyMultibase` dahil wala itong JWK representation na mapipilitang pagsiksikan nito."
+  },
+  "crypto.standards.httpsig.coverage": {
+    "en": "ce26dda6f26f398b",
+    "text": "partial: pagpirma at pag-verify ng request at response gamit ang bawat derived component at component parameter, `;req` na nagtatali ng response sa request nito, maraming signature, bawat JWS algorithm na sinasalita ng serbisyong ito (kasama ang post-quantum) katabi ng anim na naka-register, at Content-Digest na may sha-256 at sha-512. Hindi ini-implement ang Repr-Digest, ang mga Want- field at ang mga trailer."
+  },
+  "crypto.standards.httpsig.what": {
+    "en": "e5ca4ef8dd596c94",
+    "text": "Ang gustong key proof ng GNAP, at ang FAPI 2.0 HTTP Signatures profile sa mga OAuth resource server (pinirmahang request papasok, pinirmahang response palabas). ANG SIGNATURE BASE ANG BAGAY NA DAPAT BUUIN NANG MAGKAPAREHO NG MAGKABILANG DULO, byte por byte, mula sa mensaheng hiwalay na pina-parse ng bawat isa — kaya isinulat nang buo ang structured-field serializer sa `common/structured_fields.ts` sa halip na hiramin, at sinusukat ito sa sariling test vector ng RFC. Ang pagpirma at pag-verify ay nasa section 14 ng `common/crypto.js`."
+  },
+  "crypto.standards.macaroon.coverage": {
+    "en": "cd6de0c7e0abd87e",
+    "text": "partial: mga first-party caveat at attenuation. Walang third-party caveat, kaya walang discharge macaroon."
+  },
+  "crypto.standards.macaroon.what": {
+    "en": "8fd19c5836aec908",
+    "text": "Isang bearer credential na kayang PAKITIRIN ng holder nito nang hindi nagtatanong kaninuman, sa pamamagitan ng pagdagdag ng caveat at pag-re-key ng HMAC chain. Dapat hawak ng verifier ang root key, kaya ang macaroon ang tanging GNAP format na walang public verification material."
+  },
+  "crypto.standards.biscuit.coverage": {
+    "en": "80fb7c8db4101849",
+    "text": "partial: mga Ed25519 root at block signature, mga Datalog fact, check at attenuation block, vine-verify ng isang authorizer na pinapatakbo nang may limit. Walang third-party block."
+  },
+  "crypto.standards.biscuit.what": {
+    "en": "d26de21ef48f4222",
+    "text": "Isang public-key token na kayang i-attenuate ng holder nang OFFLINE, gaya ng macaroon, pero mave-verify ng sinumang may hawak ng root public key. Ang authorization logic nito ay Datalog na dala sa loob ng token, kaya LAGING tumatakbo ang verifier nang may limit sa oras at iteration."
+  },
+  "crypto.standards.cms.coverage": {
+    "en": "abe1a25e47d96baf",
+    "text": "partial: SignedData na may isang signer at signed attributes, vine-verify sa mga attribute byte gaya ng natanggap at isinusulat nang DER-sorted; EnvelopedData na may KeyTransRecipientInfo (RSA PKCS#1 v1.5 at OAEP) at AES-CBC na nilalaman; degenerate na certs-only SignedData na may mga certificate at CRL. Walang KeyAgreeRecipientInfo, walang authenticated o compressed data, walang countersignature."
+  },
+  "crypto.standards.cms.what": {
+    "en": "0f35f026a507dc11",
+    "text": "Ang sobreng binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt para sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt para sa requester."
+  },
+  "crypto.families.pki.signs": {
+    "en": "f1ce79cf624ab6f5",
+    "text": "MGA CERTIFICATE. Pinipirmahan ng Root ang sarili nito nang isang beses para sa serbisyo; pinipirmahan nito ang isang Intermediate bawat trust realm at isa para sa process; pinipirmahan ng bawat Intermediate ang isang Issuing CA bawat use case; at pinipirmahan ng bawat Issuing CA ang mga leaf ng use case nito — ang sariling signing at listener key ng serbisyo, at ang mga key pair na in-issue sa mga application at tao. Ang signature algorithm ay ang piniling para sa hierarchy at nililimitahan ng key family ng ISSUER sa halip na ng subject, na siyang pagkakamaling pinaglalaanan ng isang talata ng sariling header ng `common/vendored/x509.js`: ang pag-import ng key sa ilalim ng isang digest at pagpirma gamit ang iba ay gumagawa ng certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature, at iniuulat ito ng `openssl verify` bilang bad signature nang walang pinapangalanan sa dalawa."
+  },
+  "crypto.families.pki.verifies": {
+    "en": "e27202f2b20a852a",
+    "text": "ISANG CERTIFICATE PATH. Kapag dumating ang isang RFC 7523 assertion na may `x5c` header, sinusuri ang bawat link — ang signature, ang issuer name at ang validity window — at dapat MAGTAPOS SA SERVICE ROOT AT DUMAAN SA SARILING INTERMEDIATE NG REALM NA ITO ang path. Ang ikalawang kalahati ang hangganan ng realm: iisang Root ang ibinabahagi ng bawat realm, kaya ang chain na umaabot lang dito ay walang pinapatunayan kung aling realm ang nag-issue nito — at ang naka-anchor sa ibang lugar ay nagve-verify ng bawat link at walang anumang pinapatunayan dito."
+  },
+  "crypto.families.pki.encrypts": {
+    "en": "15a9d95d58ee2384",
+    "text": "Wala mismo. Sa PRODUCT mode, ang hierarchy na binuo nito ay sine-seal gamit ang AES-256-GCM sa ilalim ng key-encryption key, ng common/keystore.js, sa parehong `sts_keys` row family ng mga signing key — iniaabot ito ng module na ito at hindi ito ang gumagawa ng encryption."
+  },
+  "crypto.families.pki.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.pki.hashes": {
+    "en": "fed52b623a3769f0",
+    "text": "SHA-256 bilang default para sa certificate signature, at SHA-384 o SHA-512 kung saan binuo ang hierarchy gamit ang mga iyon. SHA-256 ulit para sa mga certificate thumbprint at para sa RFC 7638 JWK thumbprint na pinaghahanguan ng in-issue na `kid` — hinahango ang kid mula sa key material saanman sa serbisyong ito, kaya hindi makapaglalathala ang dalawang instance ng iisang pangalan para sa dalawang key. **INAALOK ANG SHA-1 AT MINAMARKAHANG WEAK**: ang \"tinatanggihan ba ng stack ko ang SHA-1 certificate?\" ay tanong na dapat kayang itanong ng isang debugger, at walang naka-default dito."
+  },
+  "crypto.families.user-portal.signs": {
+    "en": "504f3616f5efd7b5",
+    "text": "Wala. Walang ini-issue ang portal na token, assertion o certificate — binabago nito ang mga credential sa halip na gumawa ng mga ito."
+  },
+  "crypto.families.user-portal.verifies": {
+    "en": "6b484951aede8650",
+    "text": "Isang IPINAKITANG PASSWORD, laban sa scrypt hash sa sariling entry ng tao, at isang ACTIVATION TOKEN laban sa scrypt hash ng in-issue. Constant-time ang parehong paghahambing sa pamamagitan ng common/crypto.js — ang byte-by-byte na maagang return sa alinman ay isang timing oracle. Vine-verify din ang isang WebAuthn assertion, pero ng authn/webauthn.js, kung saan naroon ang ceremony."
+  },
+  "crypto.families.user-portal.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.user-portal.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.user-portal.hashes": {
+    "en": "54242a9694c34ec7",
+    "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) para sa password at sa activation token, bawat isa ay may 16 na random byte ng salt, naka-store bilang `$scrypt$N$r$p$salt$hash` para maitaas ang cost sa ibang pagkakataon nang hindi ini-invalidate ang naka-store na. **HINDI digest**: mababa ang entropy ng password at ang mabilis na hash nito ay isang wordlist na lang ang layo mula sa mismong password. SHA-256 sa ilalim ng HMAC para sa CSRF token, na ibang trabaho — authenticity ng isang form, hindi proteksyon ng secret at rest."
+  },
+  "crypto.families.gnap.signs": {
+    "en": "ad4b982edb070f2c",
+    "text": "ANG LIMANG ACCESS TOKEN FORMAT, tatlo sa mga ito ay hindi JWT. Dumadaan ang jwt-signed sa parehong signer ng bawat iba pang JWT dito, ang header nitong `typ` ay gnap-at+jwt (#157); ang biscuit ay pinipirmahan gamit ang Ed25519 key ng realm (ang sariling block signature ng Biscuit); ang isang ZCAP-LD capability ay may dalang Data Integrity proof sa suite na pinangangalanan ng gnap.zcapCryptosuite — eddsa-jcs-2022 bilang default, mldsa44-jcs-2024 o slhdsa128-jcs-2024 gamit ang post-quantum key ng realm, o Ed25519Signature2020 para sa compatibility; ang macaroon ay isang HMAC-SHA256 chain sa ilalim ng key na hinango bawat resource server. Pumipirma rin ito ng HTTP response gamit ang RFC 9421 kapag humingi ang isang client instance."
+  },
+  "crypto.families.gnap.verifies": {
+    "en": "bf54255b814ec628",
+    "text": "BAWAT REQUEST NA GINAGAWA NG ISANG CLIENT INSTANCE, sa pamamagitan ng key na ipinakita nito: isang RFC 9421 HTTP message signature (na sakop ang body ng isang RFC 9530 Content-Digest), isang mutual TLS certificate (kinokonsulta ang revocation; isang chain sa client truststore at isang binding sa application entry sa ilalim ng gnap.mtlsTrust=pki, ang default ng product), isang detached na JWS sa body o isang attached na JWS na nagdadala nito. Vine-verify ang key rotation sa ilalim ng PAREHONG key. Ang resource server na tumatawag sa introspection o registration ay pinapa-proof sa parehong paraan, at bawat token format ay vine-verify sa introspection at sa demonstration resource server."
+  },
+  "crypto.families.gnap.encrypts": {
+    "en": "fd3d73b7072a0617",
+    "text": "jwt-encrypted: isang pinirmahang GNAP JWT sa loob ng JWE — para sa sariling key ng resource server (RSA-OAEP-256 o ECDH-ES+A256KW, gamit ang `gnap.jweEnc`) kapag may dala nito ang application entry nito, kung hindi ay `dir` na may A256GCM sa ilalim ng key na hinango sa realm para ang authorization server lang na ito ang makapagbukas nito."
+  },
+  "crypto.families.gnap.decrypts": {
+    "en": "5a6336f65e8343ba",
+    "text": "Isang jwt-encrypted na token na naka-encrypt sa ilalim ng `dir`, sa introspection. Opaque dito ang token na naka-encrypt para sa key ng resource server, na siyang punto ng pag-encrypt para dito."
+  },
+  "crypto.families.gnap.hashes": {
+    "en": "a478d2fd912623b6",
+    "text": "SHA-256 at SHA-512 para sa Content-Digest; ang section 4.2.3 interaction hash sa anumang Named Information hash method na kayang kuwentahin ng node (SHA-2 at SHA-3, kasama ang mga truncated na anyo); SHA-256 para sa JWK thumbprint, certificate thumbprint at digest ng naaalalang approval; SHA-256 ng access token para sa `ath` sa isang JWS proof."
+  },
+  "crypto.families.gnap.whatItDoesNot": {
+    "en": "a0a7f11d9b8bed02",
+    "text": "HINDI ITO TUMATANGGAP NG REQUEST NA WALANG PROOF PARA SA ISANG BOUND TOKEN, at walang setting na gumagawa nito: ang GNAP key proof ay ang protocol mismo sa halip na isang hardening option. Ang opsyonal ay ang BEARER token, na pinapatay ng gnap.bearerTokens. Hindi ini-implement ang mga third-party caveat ng Macaroon, ang mga third-party block ng Biscuit at ang mga ZCAP invocation proof."
+  },
+  "crypto.families.gnap.algorithms.0.what": {
+    "en": "0acd0a9999d15131",
+    "text": "Mga access token format"
+  },
+  "crypto.families.gnap.algorithms.1.what": {
+    "en": "9b4d9be6956c3850",
+    "text": "Mga key proofing method"
+  },
+  "crypto.families.gnap.algorithms.2.what": {
+    "en": "3017e5b92c8dca35",
+    "text": "Mga key format"
+  },
+  "crypto.families.gnap.algorithms.3.what": {
+    "en": "6b925880a910e023",
+    "text": "Mga HTTP message signature algorithm"
+  },
+  "crypto.families.gnap.algorithms.4.what": {
+    "en": "7d3b20ad8cfcdfc1",
+    "text": "Mga Content-Digest algorithm"
+  },
+  "crypto.families.gnap.algorithms.5.what": {
+    "en": "3d3974ea5d2bc632",
+    "text": "jwt-encrypted na content encryption, sa pamamagitan ng gnap.jweEnc"
+  },
+  "crypto.families.openid-federation.signs": {
+    "en": "deb6cc962655484e",
+    "text": "Bawat federation statement na ginagawa ng isang realm — ang Entity Configuration nito, ang mga Subordinate Statement nito, ang mga Trust Mark na ini-issue nito, at ang mga resolve, Trust Mark Status at Historical Keys response nito — bilang mga typed JWT (RFC 8725 3.11) gamit ang Federation Entity Key ng realm, isang key na nakahiwalay sa bawat protocol key (OpenID Federation 1.1 3.1.1)."
+  },
+  "crypto.families.openid-federation.verifies": {
+    "en": "3d96827548ae76be",
+    "text": "Bawat statement ng isang Trust Chain laban sa mga key na pinangangalanan ng statement sa itaas nito, at ang huli laban sa mga key na NAKA-CONFIGURE para sa Trust Anchor (10.2); isang Entity Configuration laban sa sarili nitong mga key; isang Trust Mark laban sa mga key ng issuer nito gaya ng itinatag sa sariling chain ng issuer (7.3), at ang delegation nito laban sa owner na pinangangalanan ng anchor (7.2.2). Dapat eksaktong isang key ang pinangangalanan ng kid; tinatanggihan ang HMAC at none."
+  },
+  "crypto.families.openid-federation.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.openid-federation.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.openid-federation.hashes": {
+    "en": "de5f85f4b8049f51",
+    "text": "SHA-256 para sa RFC 7638 thumbprint na siyang kid ng bawat key, at para pangalanan ang isang register entry ayon sa entity o mark na tinutukoy nito."
+  },
+  "crypto.families.openid-federation.whatItDoesNot": {
+    "en": "bb73b0a66ac9741b",
+    "text": "Hindi ito nag-a-authenticate ng client sa isang federation endpoint (8.8 — \"none\" ang default at ang tanging paraan dito), at wala itong pinipirmahang federation statement gamit ang protocol key o ang kabaligtaran."
+  },
+  "crypto.families.openid-federation.algorithms.0.what": {
+    "en": "b8a1589c947f6093",
+    "text": "Mga inaalok na Federation Entity Key algorithm"
+  },
+  "crypto.families.openid-federation.algorithms.1.what": {
+    "en": "38bc9028c0d9c2d4",
+    "text": "Ang mga bagong key ng realm na ito, sa pamamagitan ng oidfed.signingAlg"
+  },
+  "crypto.families.openid-federation.algorithms.2.what": {
+    "en": "b0e042f34dd410d1",
+    "text": "Mga signature na vine-verify sa mga federation statement"
+  },
+  "crypto.families.xacml.signs": {
+    "en": "f25654e9962f4f24",
+    "text": "Wala. Hindi token ang isang decision at walang dalang signature."
+  },
+  "crypto.families.xacml.verifies": {
+    "en": "876b7d98bbc03953",
+    "text": "Wala sa decision path. Ang client certificate ng remote PEP ay vine-verify ng TLS layer (tingnan ang TLS / mutual TLS), hindi rito."
+  },
+  "crypto.families.xacml.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.xacml.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.xacml.hashes": {
+    "en": "cb519e6f900e9b51",
+    "text": "ISA, AT HINDI ITO SECURITY. Ang sync token ng remote PEP ay isang SHA-256 sa mga dokumento ng bawat naka-enable na policy at kung alin ang root — isang murang paraan para itanong ng PEP ang \"may nagbago ba\" at makakuha ng 304, at wala nang iba. Wala itong ina-authenticate at hindi ikinukumpara sa anumang ibinibigay ng caller bilang credential, kaya magiging tama pa rin ito bilang CRC."
+  },
+  "crypto.families.xacml.whatItDoesNot": {
+    "en": "6d7c9938306101b5",
+    "text": "Wala itong pinipirmahang decision, kaya ang decision na naglakbay sa pagitan ng dalawang process ay walang sariling integrity at lubos na nakasalalay sa transport. Iyon ang posisyon sa halip na isang puwang: ang pagpirma sa isang decision ay mangangailangan sa PEP na humawak ng key at mag-verify nito, at ang buong premise ng serbisyong ito ay ang policy ang kawili-wiling bahagi sa halip na ang tubero."
+  },
+  "crypto.families.xacml.algorithms.0.what": {
+    "en": "c10d5f9e12000a4e",
+    "text": "Walang pinipirmahan, vine-verify, ine-encrypt o dine-decrypt dito"
+  },
+  "crypto.families.xacml.algorithms.1.what": {
+    "en": "00642c75836a2377",
+    "text": "Ang sync token ng remote PEP, na isang change detector sa halip na security mechanism"
+  },
+  "crypto.families.oauth2-oidc.signs": {
+    "en": "ba9dd042c619d87e",
+    "text": "Bawat access token at refresh token, at ang ID Token, gamit ang RSA key ng realm bilang RS256. Ang client na nagre-register ng `id_token_signed_response_alg` ay nakakakuha ng algorithm na iyon sa halip, para sa ID Token nito at sa back-channel Logout Token nito (section 2.4: ang parehong mga key ng ID Token), mula sa shared JWS table — bawat curve, ang parehong Edwards curve, at ang mga post-quantum at composite. Ang pinirmahang UserInfo response sa parehong paraan, dagdag ang HMAC family (pinirmahan gamit ang sariling `client_secret` ng client na iyon, kaya hindi ito nangangailangan ng inilathalang key) at `none`. **AT ISANG RFC 9701 JWT INTROSPECTION RESPONSE** (2026-09-13), na may type na `token-introspection+jwt`, sa RS256 o sa `introspection_signed_response_alg` na ni-register ng resource server — ang parehong table at ang HMAC family, hindi kailanman `none`. **AT ISANG RESOURCE RESPONSE** (#178): isang RFC 9421 HTTP message signature na naka-tag na `fapi-2-response`, gamit ang realm key na pinangangalanan ng `oauth2.httpSignatureResponseAlg` (ES256 bilang default; inaalok ang ML-DSA), sa response at, sa pamamagitan ng `;req`, sa request na sinasagot nito."
+  },
+  "crypto.families.oauth2-oidc.verifies": {
+    "en": "8f530ebb541fc71d",
+    "text": "ISANG REQUEST OBJECT (RFC 9101, 2026-09-13), na pinirmahan ng client gamit ang key na ni-register nito o ang secret nito, at DINE-DECRYPT ang naka-encrypt para sa inilathalang `use: \"enc\"` RSA o EC key ng realm na ito o para sa secret na iyon. Mga DPoP proof (RFC 9449), mga `private_key_jwt` at `client_secret_jwt` client assertion, at bawat access token na iniaabot dito sa isang protected endpoint — laban sa sarili nitong JWKS, na inilalapat ang `oauth2.clockSkewS`. **AT ISANG XML SIGNATURE**, na siyang tanging bagay sa family na ito na hindi JWS: inilalagay ng RFC 7522 ang isang SAML 2.0 assertion sa parehong dalawang request parameter na pinaglalagyan ng RFC 7523 ng JWT, kaya vine-verify ng token endpoint ang isang enveloped XML Signature sa isang <saml:Assertion> sa pamamagitan ng parehong vendored engine na ginagamit ng `/saml2` sa pagpirma. Sinusuri ito laban sa certificate na NAKA-REGISTER para sa asserting party at hindi kailanman laban sa isang nagcha-chain lang sa CA ng realm na ito — na mas mahigpit kaysa sa `x5c` path na pinapayagan ng RFC 7523, dahil pinapatunayan ng chain na in-issue ng realm ang isang key at walang sinasabi tungkol sa kung aling application ang may hawak nito. **AT ISANG PINIRMAHANG RESOURCE REQUEST** (#178): isang RFC 9421 signature na naka-tag na `fapi-2-request` sa bawat resource server, gamit ang key na pinangangalanan ng keyid nito sa naka-register na jwks o jwks_uri ng client, at ang RFC 9530 Content-Digest ng request."
+  },
+  "crypto.families.oauth2-oidc.encrypts": {
+    "en": "e3a5330c42e05359",
+    "text": "Isang UserInfo response para sa client na nag-register ng `userinfo_encrypted_response_alg`, at isang JWT introspection response para sa nag-register ng `introspection_encrypted_response_alg`: JWE compact, RSA-OAEP o ECDH-ES para sa sariling key ng client, isang Nested JWT kapag pinirmahan. **AT BAWAT REFRESH TOKEN** (2026-09-12): sine-seal ang pinirmahang JWT bilang nested JWT (`cty: JWT`, RFC 7519 section 11.2) para sa sariling mga key ng REALM NA ITO, sa ilalim ng `oauth2.refreshTokenEncryptionAlg` at `…Enc` — anumang key management algorithm na ini-implement ng shared JWE table, para sa RSA key, EC key o sariling secret ng realm. Walang client na kailanman nakakakita o nangangailangan ng mga key na iyon."
+  },
+  "crypto.families.oauth2-oidc.decrypts": {
+    "en": "2b53f4f465776fac",
+    "text": "Isang JWE na naka-encrypt para sa RSA key ng serbisyong ito, RSA-OAEP-256 lang — sadyang mas maikling listahan kaysa sa ginagamit nito sa pag-encrypt, dahil wala itong hawak na EC private key na makikipag-agree. **AT ISANG REFRESH TOKEN**, sa ilalim ng anumang algorithm na pinangangalanan ng sarili nitong header, bago basahin ng refresh grant, introspection, revocation o token exchange ang anuman dito; tinatanggihan ang hindi naka-encrypt na refresh token."
+  },
+  "crypto.families.oauth2-oidc.hashes": {
+    "en": "4e7cfb95ddd04fc5",
+    "text": "Ang `at_hash` at `c_hash` ay ang kaliwang kalahati ng SHA-256 ng token; ang PKCE `S256` ay SHA-256 sa verifier; ang `cnf.jkt` ay isang RFC 7638 JWK Thumbprint (SHA-256) at ang `cnf[\"x5t#S256\"]` ay ang SHA-256 ng DER ng client certificate."
+  },
+  "crypto.families.oauth2-oidc.whatItDoesNot": {
+    "en": "8d259f93358c4bbf",
+    "text": "Wala itong vine-verify na access token na hindi nito in-issue, maliban sa UserInfo. Fine-fetch ang `jwks_uri` ng isang client (#120) sa ilalim lang ng outbound policy, at para lang sa client na hindi nag-register ng inline na `jwks`."
+  },
+  "crypto.families.oauth2-oidc.algorithms.0.what": {
+    "en": "6b88c7f4acfda628",
+    "text": "Mga token na ginagawa ng serbisyong ito bilang default"
+  },
+  "crypto.families.oauth2-oidc.algorithms.1.what": {
+    "en": "4061cd4b31da8060",
+    "text": "Mga resource response signature (RFC 9421, oauth2.httpSignatureResponseAlg)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.2.what": {
+    "en": "56ef2b0cc6f54335",
+    "text": "ID Token, kapag nag-register ang client ng isa"
+  },
+  "crypto.families.oauth2-oidc.algorithms.3.what": {
+    "en": "7f4c7f19d506a5ac",
+    "text": "UserInfo response"
+  },
+  "crypto.families.oauth2-oidc.algorithms.4.what": {
+    "en": "1bd11ab0955e8290",
+    "text": "JWT introspection response (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.5.what": {
+    "en": "f80ef0758c850e59",
+    "text": "Encryption ng JWT introspection response (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.6.what": {
+    "en": "ee79eb44634d7a69",
+    "text": "Signature ng request object (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.7.what": {
+    "en": "bc7822342ad3ba50",
+    "text": "Decryption ng request object (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.8.what": {
+    "en": "4f2f583388edb490",
+    "text": "DPoP proof"
+  },
+  "crypto.families.oauth2-oidc.algorithms.9.what": {
+    "en": "ba753c9e11eb8f43",
+    "text": "Client assertion"
+  },
+  "crypto.families.oauth2-oidc.algorithms.10.what": {
+    "en": "648f1a07777e17bd",
+    "text": "JWE key management (palabas)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.11.what": {
+    "en": "30e457f0295c4b6a",
+    "text": "JWE key management (papasok)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.12.what": {
+    "en": "dce5f5fa4d35a642",
+    "text": "JWE content encryption"
+  },
+  "crypto.families.oauth2-oidc.algorithms.13.what": {
+    "en": "66653d219c100db3",
+    "text": "Encryption ng refresh token (para sa sariling mga key ng realm na ito)"
+  },
+  "crypto.families.federation.signs": {
+    "en": "4db5ac4dfde3c53a",
+    "text": "Ang SAML 2.0 `<AuthnRequest>` na ipinapadala nito sa isang dayuhang identity provider, enveloped, RSA-SHA256 sa exclusive c14n — ang parehong signer na dinadaanan ng bawat iba pang dokumento dito."
+  },
+  "crypto.families.federation.verifies": {
+    "en": "d99d0a0b18dab6e8",
+    "text": "ANG BUONG PUNTO NG FEATURE. Ang SAML Response ng isang partner at ang Assertion sa loob nito, bawat isa ay sinusuri nang HIWALAY at bawat isa ay laban sa certificate na naka-configure sa relationship — hindi kailanman laban sa certificate na dala ng dokumento sa sarili nitong `ds:KeyInfo`, na siyang check na nilalaktawan ng isang walang-muwang na implementation. Ang ID Token ng isang partner bilang ordinaryong JWS laban sa mga inilathalang key ng partner."
+  },
+  "crypto.families.federation.hashes": {
+    "en": "2d3c2fd5b62d8002",
+    "text": "Anumang pinangangalanan ng `DigestMethod` ng partner, mula sa vendored na table sa ibaba."
+  },
+  "crypto.families.federation.whatItDoesNot": {
+    "en": "b16bd8c2a0b0e24a",
+    "text": "Hindi nito dine-decrypt ang assertion na in-encrypt ng isang partner, at hindi ito tumatanggap ng federated sign-out. NASA SIGNER AT SA SUBJECT ANG GATE (#109): lampas sa isang na-verify na signature, ang taong naka-link lang sa subject ng partner ang naisa-sign in. Ito ang tanging surface dito kung saan ang nawawalang check ay isang authentication bypass para sa bawat protocol sa process — tingnan ang federation/CLAUDE.md."
+  },
+  "crypto.families.federation.algorithms.0.what": {
+    "en": "7c3206a1a259cf99",
+    "text": "Signature ng palabas na request"
+  },
+  "crypto.families.federation.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "Papasok na signature, alinman sa"
+  },
+  "crypto.families.federation.algorithms.2.what": {
+    "en": "1a25a971a5ba739e",
+    "text": "Papasok na ID Token"
+  },
+  "crypto.families.saml-2-0.signs": {
+    "en": "cae50b198b378a2b",
+    "text": "Mga Assertion, Response, LogoutRequest at ang metadata bawat service provider — enveloped, RSA-SHA256, EXCLUSIVE canonicalization, na ang `<ds:Signature>` ay kasunod agad ng `<Issuer>` kung saan ito inilalagay ng schema. Iba ang pagpirma sa HTTP Redirect binding at gawa iyon ng specification sa halip na ng serbisyong ito: isa itong DETACHED na signature sa mga octet ng query string, na ang `SigAlg` ang nagpapangalan ng algorithm bilang parameter."
+  },
+  "crypto.families.saml-2-0.verifies": {
+    "en": "4e8292c2dfea891b",
+    "text": "Ang mga AuthnRequest, LogoutRequest at LogoutResponse at ArtifactResolve signature ng isang service provider (mula 2026-09-17) — ang detached na query signature ng Redirect binding, ang sa SimpleSign binding sa mga form value, o isang enveloped — laban sa mga NAKA-REGISTER na certificate ng service provider (RSA, EC, EdDSA, DSA, ML-DSA, SLH-DSA), hindi kailanman ang nasa request; ang sariling signature ng tinanggap na metadata document laban sa certificate ng entry o sa mga trust anchor ng realm; at ang sarili nitong mga artifact. Ang `<EncryptedID>` ng isang service provider ay dine-decrypt sa halip na vine-verify."
+  },
+  "crypto.families.saml-2-0.encrypts": {
+    "en": "fc0f0e879fca3b40",
+    "text": "Ang assertion sa isang Response, bilang `<EncryptedAssertion>`, at ang NameID sa isang LogoutRequest bilang `<EncryptedID>` — bawat application, para sa certificate na hawak sa entry nito. PINIPIRMAHAN MUNA AT SAKA INE-ENCRYPT, na siyang pagkakasunod na inaasahan ng bawat service provider: nasa loob ng ciphertext ang signature at ito ang natitira pagkatapos ng decryption."
+  },
+  "crypto.families.saml-2-0.decrypts": {
+    "en": "428824d407f646cc",
+    "text": "Isang `<EncryptedID>` na ipinapadala ng service provider sa isang LogoutRequest, para sa RSA key ng realm."
+  },
+  "crypto.families.saml-2-0.hashes": {
+    "en": "d825722f0bd1bef5",
+    "text": "SHA-256 para sa Reference digest; SHA-1 sa loob ng RSA-OAEP-MGF1P, dahil iyon ang IBIG SABIHIN ng URI sa halip na isang pagpiling ginawa ng serbisyong ito."
+  },
+  "crypto.families.saml-2-0.whatItDoesNot": {
+    "en": "30efb1054d4e7582",
+    "text": "Hindi ito tumatanggap ng SHA-1 signature maliban kung naka-on ang saml.allowSha1Signatures — hindi kailanman sa product mode, na hindi rin kailanman pumipirma gamit ang rsa-sha1, nagwa-wrap ng key gamit ang rsa-1_5 o nag-a-unwrap nito — ni MD5, MAC o stateful na hash-based na signature. Ang service provider na wala itong hawak na certificate, na naka-on ang encryption, ay nakakakuha ng assertion nang NASA CLEAR, nang malakas, sa development, at tinatanggihan sa product; ang service provider na ang metadata ay naglalathala ng encryption key ay pinag-e-encrypt-an sa pareho."
+  },
+  "crypto.families.saml-2-0.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.saml-2-0.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "Papasok na signature, alinman sa"
+  },
+  "crypto.families.saml-2-0.algorithms.2.what": {
+    "en": "652091f367e363c5",
+    "text": "Block cipher (saml2.encryptionAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.3.what": {
+    "en": "62bf49b6ee453a1e",
+    "text": "Key transport (saml2.keyTransportAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.4.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "Mga inaalok na block cipher"
+  },
+  "crypto.families.saml-2-0.algorithms.5.what": {
+    "en": "b224b153758d7f54",
+    "text": "Mga inaalok na key transport"
+  },
+  "crypto.families.saml-1-1.signs": {
+    "en": "60dc72ccb0685a15",
+    "text": "Mga Assertion at Browser/POST Response, RSA-SHA256 sa exclusive c14n, sa pamamagitan ng parehong signer. Iba ang PAGKAKALAGAY at ang dahilan ay ang grammar sa halip na ang crypto: walang `<Issuer>` na ELEMENT ang isang 1.1 assertion — sa 1.1, ATTRIBUTE ang issuer — kaya ang \"pagkatapos ng issuer\" ay hindi posisyong umiiral at HULI ang signature. Ang Response ay pumipirma NANG UNA, bago ang assertion na dala nito."
+  },
+  "crypto.families.saml-1-1.verifies": {
+    "en": "8398fc2b7e6fdb17",
+    "text": "Ang sarili nitong mga artifact, para sa mock relying party."
+  },
+  "crypto.families.saml-1-1.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 para sa Reference digest."
+  },
+  "crypto.families.saml-1-1.whatItDoesNot": {
+    "en": "035395f48a6d34a3",
+    "text": "Walang anumang encryption ang SAML 1.1 — dumating ang `<EncryptedAssertion>` kasama ng 2.0 — at walang request message na mave-verify-an ng signature. Pinangangalanan ng reference URI ang `AssertionID` o `ResponseID`, na siyang buong dahilan kung bakit nire-resolve ng shared signer ang isang id sa pamamagitan ng PAGHAHANAP dito sa halip na sabihan ng pangalan nito."
+  },
+  "crypto.families.saml-1-1.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-federation.signs": {
+    "en": "038da0701eacf8e7",
+    "text": "Ang SAML assertion sa loob ng `wresult`, sa anumang bersyong hiningi ng relying party, sa pamamagitan ng shared signer."
+  },
+  "crypto.families.ws-federation.verifies": {
+    "en": "35faf906b09d64d8",
+    "text": "Vine-verify ng mock relying party sa `/wsfed/rp` ang assertion na iyon nang check por check, at sinasabihan ito kung ALING element ang ive-verify sa halip na kunin ang unang `<ds:Signature>` sa dokumento — ang depektong dating mayroon ang apat na magkakahiwalay na verifier dito."
+  },
+  "crypto.families.ws-federation.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 para sa Reference digest."
+  },
+  "crypto.families.ws-federation.whatItDoesNot": {
+    "en": "c0aea7549def7066",
+    "text": "Hindi ito nagpapanggap ng `wauth` — ang hinihinging hindi kayang tugunan ng session ay isang step-up, at ang AuthenticationMethod ay kung ano ang ginawa ng session — at hindi nito dine-dereference ang `wreqptr` — ang pag-fetch ng URL na ni-register ng sinuman ay isang server-side request forgery na may kalakip na citation."
+  },
+  "crypto.families.ws-federation.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-trust.signs": {
+    "en": "65b99eb9fa477ac2",
+    "text": "Ang SAML assertion sa RequestSecurityTokenResponse, 1.1 o 2.0, sa pamamagitan ng shared signer."
+  },
+  "crypto.families.ws-trust.verifies": {
+    "en": "74c8911543a69c43",
+    "text": "BINABASA nito ang `<wsse:Security>` credential ng isang requester at ang `<ds:X509Certificate>` sa isang pinirmahang request — ang huli para malaman kung kanino mag-E-ENCRYPT. Wala itong sinusuring password sa likod nito."
+  },
+  "crypto.families.ws-trust.encrypts": {
+    "en": "fa359afa3450379c",
+    "text": "Kapag may `?encrypt=1`, ang in-issue na 2.0 assertion, para sa certificate na nakita sa request signature. Parehong dalawang table ng SAML 2.0, dahil iisang code ito — nire-re-export ito ng `saml/saml2.ts`."
+  },
+  "crypto.families.ws-trust.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 para sa Reference digest."
+  },
+  "crypto.families.ws-trust.whatItDoesNot": {
+    "en": "37c796f7428c337a",
+    "text": "Hindi nito binabantayan ang delegation: sinasagot ang RST na humihingi ng token para sa ibang tao. At wala itong ginagawang sariling pinirmahang SOAP envelope — tingnan ang WS-Security sa ibaba, na siyang row na nagsasabi kung ano ang ginagawa at hindi ginagawa ng serbisyong ito sa specification na iyon."
+  },
+  "crypto.families.ws-trust.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-trust.algorithms.1.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "Mga inaalok na block cipher"
+  },
+  "crypto.families.ws-trust.algorithms.2.what": {
+    "en": "b224b153758d7f54",
+    "text": "Mga inaalok na key transport"
+  },
+  "crypto.families.kerberos.signs": {
+    "en": "d0004d29106d6b55",
+    "text": "Isang PKINIT reply (#179): ang KDCDHKeyInfo, sa isang CMS SignedData na may SHA-256, ng KDC certificate ng realm (ECDSA bilang default). Kung hindi, wala sa public-key na kahulugan. Nagmumula ang integrity sa isang keyed checksum (HMAC-SHA1-96, HMAC-SHA-256-128, HMAC-SHA-384-192 o HMAC-MD5) sa ilalim ng key na hinango mula sa long-term key para sa key usage number ng mensaheng iyon."
+  },
+  "crypto.families.kerberos.verifies": {
+    "en": "fac18bcfa8ced4dd",
+    "text": "Pre-authentication — kasama ang pinirmahang AuthPack ng PKINIT at ang certificate path nito — bawat AP-REQ authenticator, at ang mga checksum sa itaas. ITO ANG NAG-IISANG PINTO SA SERBISYONG ITO NA TUNAY NA NAGVE-VERIFY NG CREDENTIAL, at hindi ito pagpili ng policy: sa Kerberos, ANG PASSWORD ANG KEY, kaya ang KDC na tumatanggap ng kahit ano ay kailangan pa ring pumili ng key na hindi mahuhulaan ng client. Lumipat ang pagiging maluwag sa ACCOUNT POLICY sa halip — iisang shared password, isang account na ginagawa para sa anumang pangalan."
+  },
+  "crypto.families.kerberos.encrypts": {
+    "en": "4f7b84df5e4c1070",
+    "text": "Bawat naka-encrypt na bahagi ng bawat mensahe: ang AS-REP enc-part, ang ticket, ang authenticator, ang TGS-REP. AES sa CTS mode na may confounder, o RC4-HMAC."
+  },
+  "crypto.families.kerberos.decrypts": {
+    "en": "b736df153bccfa13",
+    "text": "Pareho, sa kabilang direksyon, kabilang ang totoong service ticket na ipinakita sa `/authn/spnego`."
+  },
+  "crypto.families.kerberos.hashes": {
+    "en": "6b01eb6b40541434",
+    "text": "PBKDF2-HMAC-SHA1 (RFC 3962) o PBKDF2-HMAC-SHA-256/384 (RFC 8009) para sa string-to-key; MD4 (ang NT hash) para sa RC4-HMAC, na walang salt at kaya mahalaga lang ang salt discovery para sa AES."
+  },
+  "crypto.families.kerberos.whatItDoesNot": {
+    "en": "564dfc55115cbde1",
+    "text": "Walang RSA key transport sa PKINIT (laging pinagkakasunduan ang reply key sa pamamagitan ng Diffie-Hellman), at walang post-quantum PKINIT, na wala pang nag-i-standardize. DECODE LANG ang DES at 3DES — pinangangalanan para tapat na maipakita ang isang capture, hindi kailanman ginagawa."
+  },
+  "crypto.families.kerberos.algorithms.0.what": {
+    "en": "8b12881e65e625c4",
+    "text": "Mga encryption type na ginagawa"
+  },
+  "crypto.families.spnego.signs": {
+    "en": "df250490aa6ca80f",
+    "text": "Walang sarili. Ang MIC sa isang `negTokenResp` ay isang Kerberos checksum sa negotiation, kinukuwenta gamit ang key ng mechanism."
+  },
+  "crypto.families.spnego.verifies": {
+    "en": "d809021f4e9d84a9",
+    "text": "Ang AP-REQ sa loob ng GSS token, sa pamamagitan ng Kerberos acceptor — kasama ang replay cache, na siyang tanging check sa pintong ito na ang pagkawala ay magiging security bug sa halip na fidelity bug."
+  },
+  "crypto.families.spnego.decrypts": {
+    "en": "a46cdba23bd3e592",
+    "text": "Ang AP-REQ authenticator, sa ilalim ng long-term key ng serbisyo."
+  },
+  "crypto.families.spnego.hashes": {
+    "en": "2230ed54174ccefc",
+    "text": "Anumang ginagamit ng checksum ng na-negotiate na encryption type."
+  },
+  "crypto.families.spnego.whatItDoesNot": {
+    "en": "85057be5d17ba628",
+    "text": "Wala itong idinadagdag na sariling check sa ibabaw ng sa acceptor, at wala itong ine-negotiate na mechanism maliban sa Kerberos v5."
+  },
+  "crypto.families.spnego.algorithms.0.what": {
+    "en": "d09ab09f9ee0e400",
+    "text": "Na-negotiate na mechanism"
+  },
+  "crypto.families.spiffe.signs": {
+    "en": "99f5793498f36e41",
+    "text": "Mga X509-SVID, sa ilalim ng SPIFFE Issuing CA ng realm na ito — isang CA sa ilalim ng Intermediate ng realm at ng service Root, kaya inilalathala ng bundle ang Root at dala ng isang SVID ang Issuing CA at ang Intermediate sa chain nito. Ang realm na walang hierarchy ay bumabalik sa self-signed na authority, na siya nang sarili nitong anchor. Ang mga JWT-SVID ay ordinaryong JWS, mula sa isang JWT authority na ginagawa sa bawat start sa alinmang mode. Itinatakda ng bawat key type ang certificate signature algorithm at ang JWS `alg` — ang certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature ay perpektong napa-parse at tinatanggihan nang may mensahe tungkol sa signature, nang walang pinapangalanang hash."
+  },
+  "crypto.families.spiffe.verifies": {
+    "en": "3d9b175cf83a0c70",
+    "text": "Isang X509-SVID sa mutual TLS sa TCP port ng SPIRE Server API, at isang JWT-SVID sa `ValidateJWTSVID`."
+  },
+  "crypto.families.spiffe.hashes": {
+    "en": "3d8ab87bbee0aaf7",
+    "text": "SHA-256 sa DER ng SVID saanman ito itinatala, at ang sariling digest ng certificate signature, na sumusunod sa key type."
+  },
+  "crypto.families.spiffe.whatItDoesNot": {
+    "en": "34749d8581fa8262",
+    "text": "Wala itong ina-attest na Workload API caller sa TCP — ina-attest ang mga caller ng Unix socket at bawat agent, at sinasabi ng specification ng Workload API na HINDI ito DAPAT mag-authenticate. Wala itong itinatalang SVID na ginagawa nito, kaya nare-revoke lang ang isa sa pamamagitan ng manu-manong pagpapangalan ng serial nito; ang pag-revoke sa SPIFFE Issuing CA ng realm sa /admin/pki ang tumatanggi sa bawat SVID sa ilalim nito sa SPIRE Server API. Itinatala ng directory kung sino ang puwede pang PAG-ISSUE-HAN ng isa, na ibang claim. Available ang Ed25519 para sa X509-SVID key (at para sa self-signed na fallback authority) at HINDI para sa JWT authority, na limitasyon ng `jsonwebtoken` at hindi ng specification."
+  },
+  "crypto.families.spiffe.algorithms.0.what": {
+    "en": "ab46510f58c0af97",
+    "text": "Mga inaalok na key type (SVID, fallback authority, JWT authority)"
+  },
+  "crypto.families.spiffe.algorithms.1.what": {
+    "en": "1ab9e59d403cfe7f",
+    "text": "X.509 authority sa realm na ito"
+  },
+  "crypto.families.spiffe.algorithms.2.what": {
+    "en": "bddc2c1047bd1bfb",
+    "text": "X509-SVID key sa realm na ito"
+  },
+  "crypto.families.spiffe.algorithms.3.what": {
+    "en": "e0c4b0f50d03be7d",
+    "text": "JWT authority sa realm na ito"
+  },
+  "crypto.families.scim.signs": {
+    "en": "0f56021e8d3293fb",
+    "text": "Wala. Wala itong GINAGAWANG credential — ito ang tanging family dito na nagsusuri lang ng mga ito."
+  },
+  "crypto.families.scim.verifies": {
+    "en": "db48617a9c3bb0b2",
+    "text": "Isang credential sa alinman sa anim na scheme na pinangangalanan ng RFC 7644 section 2, at DALAWA SA ANIM ANG TUNAY NA VINE-VERIFY: kinukuwenta ng HTTP Digest ang response sa naka-configure na password, at sinusuri ang HOBA signature laban sa public key na ni-register ng client. Turnstile ang apat na iba — pumapasa sa Basic ang anumang password maliban sa isa, at ang mga OAuth ay nangangailangan lang ng token na in-issue ng serbisyong ito na may dalang `scim:read` o `scim:write`."
+  },
+  "crypto.families.scim.hashes": {
+    "en": "8b5fd034b1743a03",
+    "text": "RFC 7616 Digest: SHA-256, SHA-512-256 at MD5, bawat isa ay may `-sess` variant, inaalok mula sa pinakamalakas dahil sinasabi ito ng section 3.7 at dahil kinukuha ng client ang unang naiintindihan nito. Sinusuri ang bawat isa laban sa openssl na aktuwal na mayroon ang process na ito, kaya hindi kailanman nagpapangalan ang challenge ng algorithm na hindi kayang kuwentahin ng server."
+  },
+  "crypto.families.scim.whatItDoesNot": {
+    "en": "9d23420bb1b23ff7",
+    "text": "Wala itong sariling naka-store na password — isang setting ang Digest password. (TALAGANG dine-disable ng `active: false` ang account, mula 2026-09-17.)"
+  },
+  "crypto.families.scim.algorithms.0.what": {
+    "en": "61a2c91673703a02",
+    "text": "Mga authentication scheme"
+  },
+  "crypto.families.scim.algorithms.1.what": {
+    "en": "6e2f80bf9cfaabad",
+    "text": "Digest"
+  },
+  "crypto.families.scim.algorithms.2.what": {
+    "en": "8ffb36406b3f2925",
+    "text": "HOBA"
+  },
+  "crypto.families.shared-signals.signs": {
+    "en": "ad10748a9c91a0d6",
+    "text": "BAWAT SECURITY EVENT TOKEN, at ito ang dokumento sa serbisyong ito na pinakasulit pag-isipan pagdating sa algorithm. Itinatala ng isang SET na may NANGYARI at ipinagbabawal ng RFC 8417 section 4.1.4 na mag-expire ito, kaya binabasa ito nang matagal pagkatapos itong isulat — na siyang kaso na talagang tinutukoy ng argumentong harvest-now-decrypt-later. Dumadaan ang signature sa PAREHONG signer na dinadaanan ng bawat iba pang JWT dito, kaya naaabot ng `ssf.signingAlgorithm` ang buong table: RS256 bilang default, ang mga PS at ES family, EdDSA, at ang mga post-quantum — ML-DSA sa tatlong laki, SLH-DSA sa dalawa, at ang anim na composite na ML-DSA + traditional na algorithm. Ang isang SLH-DSA signature ay inaabot nang hanggang isang segundo at tumatakbo sa thread pool ng libuv, kaya patuloy na sumasagot ang serbisyong ito at naghihintay ang receiver."
+  },
+  "crypto.families.shared-signals.verifies": {
+    "en": "13ecd58a54cbb372",
+    "text": "Isang Security Event Token na ipinush PAPUNTA sa serbisyong ito sa `POST /ssf/receive` — baligtad ang mga role — laban sa sarili nitong JWKS, na siyang tanging key na mayroon ito. Ang SET na pinirmahan ng iba ay iniuulat bilang HINDI MAVE-VERIFY DITO sa halip na invalid, at TINATANGGAP pa rin maliban kung naka-on ang `ssf.receiveRequireSignature`: ang receiver na tumatanggi ay hindi makapagpapakita sa sinuman kung ano ang dumating o kung bakit hindi ito nag-verify, na siyang tanong na itinatanong. Vine-verify din nito ang access token sa bawat stream management call, sa pamamagitan ng parehong check na ginagamit ng bawat iba pang protected endpoint dito."
+  },
+  "crypto.families.shared-signals.encrypts": {
+    "en": "3a0ce36975e5d5a1",
+    "text": "Wala. Walang encrypted-SET profile ang SSF — pinapayagan ng RFC 8417 ang SET na naka-wrap sa JWE at walang naglalabas nito, ang serbisyong ito man o anumang naka-deploy na transmitter, kaya ang nagpoprotekta sa isang event habang nasa transit ay ang TLS sa delivery endpoint, kaya vine-verify ang certificate ng receiver — at, mula #171, vine-verify sa product mode anuman ang sabihin ng `ssf.pushSkipTlsVerification`."
+  },
+  "crypto.families.shared-signals.decrypts": {
+    "en": "58ee378a4cea46f2",
+    "text": "Wala, sa parehong dahilan."
+  },
+  "crypto.families.shared-signals.hashes": {
+    "en": "022790fa40b66490",
+    "text": "Anumang ipinahihiwatig ng piniling signature algorithm, at walang sarili: walang dalang digest ng anuman ang isang SET sa paraang dala ng ID Token ang `at_hash`."
+  },
+  "crypto.families.shared-signals.whatItDoesNot": {
+    "en": "66fb8f17d972a92b",
+    "text": "SADYA ITONG PUMIPIRMA NANG MALI KAPAG HINILING. Binabago ng `ssf.breakSetSignature` ang ISANG CHARACTER ng signature pagkatapos pumirma, kaya ang receiver na hindi nagve-verify ay tumatanggap ng event na walang pumirma. Sadyang character sa halip na truncation: ang pinutol na signature ay bumabagsak sa base64url decode at iniuulat bilang MALFORMED na token, na ibang bug mula sa masamang signature para sa sinumang tine-test. Development mode lang: binabalewala ito ng product realm at tinatanggihan ang pag-set dito (#104)."
+  },
+  "crypto.families.shared-signals.algorithms.0.what": {
+    "en": "e1abd835e83344ac",
+    "text": "Mga Security Event Token, sa ngayon"
+  },
+  "crypto.families.shared-signals.algorithms.1.what": {
+    "en": "0011f3fa76892e63",
+    "text": "Alinman sa, sa pamamagitan ng ssf.signingAlgorithm"
+  },
+  "crypto.families.shared-signals.algorithms.2.what": {
+    "en": "61a2c91673703a02",
+    "text": "Mga authentication scheme"
+  },
+  "crypto.families.ldap.signs": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.ldap.verifies": {
+    "en": "77beffdc6d964fc9",
+    "text": "Ang password ng isang simple bind, sa PRODUCT mode, laban sa scrypt `userPassword` ng entry — pagkatapos tanggihan ang anonymous bind, anumang bind sa plain port 389, walang lamang password at DN o address na lampas na sa failed-bind limit nito. Pagkatapos, ina-authorize doon ang mga write (ang administrator ay kahit ano, ang iba ay ilang attribute ng sarili nilang entry) at nangangailangan ng bind ang isang read. Sa DEVELOPMENT mode, nagtatagumpay ang bawat bind — anumang DN, anumang password, anonymous, sa 389 at sa 636 — at walang ina-authorize. Sa parehong mode, tinatanggihan ang iisang password na binabaybay na `invalid`, para masubukan ang failure path ng isang client."
+  },
+  "crypto.families.ldap.encrypts": {
+    "en": "de2261d41092316b",
+    "text": "TLS ang LDAPS listener sa 636, sa certificate na hawak ng `tls/tls_server.js` — sine-certify sa ilalim ng service Root — na ipinapakita rin ng main port at ng debugger listener. Iisang set ng handler at iisang store ang nasa likod ng parehong directory port."
+  },
+  "crypto.families.ldap.decrypts": {
+    "en": "f009e2342690a9e8",
+    "text": "Ang parehong koneksyon, sa kabilang direksyon."
+  },
+  "crypto.families.ldap.hashes": {
+    "en": "2486a4ede1f05d87",
+    "text": "Naka-store ang `userPassword` bilang scrypt hash sa PAREHONG mode, sa pamamagitan ng crypto.hashSecret(), alinmang pinto ang sumulat nito — kasama ang LDAP add o modify. Tinatanggihan ng product mode ang value na ipinadalang naka-hash na, na hindi masusukat sa password policy; pinapanatili ito ng development gaya ng ibinigay, na siyang paraan ng paglipat ng directory sa pagitan ng dalawang instance."
+  },
+  "crypto.families.ldap.whatItDoesNot": {
+    "en": "b5fd76f7abc4adab",
+    "text": "Wala itong sinasagot na SASL MECHANISM — inaalis ng root DSE ang `supportedSASLMechanisms` sa halip na ilathala itong walang laman, dahil laging may kahit isang value ang isang LDAP attribute at ang walang laman ay hindi mas mahinang claim, malformed ito. Kaya walang GSSAPI bind, walang EXTERNAL bind, at walang StartTLS: TLS ang 636 mula sa unang byte."
+  },
+  "crypto.families.ldap.algorithms.0.what": {
+    "en": "896a443631bae685",
+    "text": "LDAPS transport"
+  },
+  "crypto.families.pki-x-509.signs": {
+    "en": "ece532b86564b74e",
+    "text": "Wala mismo — ang mga certificate na IPINAPAKITA ng serbisyong ito ay in-issue ng `common/pki.js` (ang PKI row sa itaas) sa mga key na ginawa rito. Ang SIGNING certificate ay ang RSA 2048 key ng realm, dalawang beses na sine-certify, ng JOSE at ng XML Issuing CA. Ang TLS SERVER certificate ay in-issue ng TLS Issuing CA sa ilalim ng process Intermediate, sa key na ginagawa sa bawat start, na may subjectAltName na siyang tanging lugar ng mga pangalan, dahil sinabi na ng RFC 6125 mula 2011 na binabalewala ang CN. Ang authority ng SPIFFE ay ang SPIFFE Issuing CA ng realm. Lahat ng ito ay nagcha-chain sa iisang Root, na itinatago ng PRODUCT mode sa keystore at binubuo muli ng DEVELOPMENT mode sa bawat start. Kung walang hierarchy, o kung naka-set ang `tls.certificateFile`, self-signed ang certificate o ang ibinigay."
+  },
+  "crypto.families.pki-x-509.verifies": {
+    "en": "9a6b03049e4c72de",
+    "text": "Isang client certificate na ipinakita sa main port (o sa debugger listener, na humihingi sa parehong paraan), laban sa mga anchor ng truststore (kasama ang service Root sa ilalim ng `tls.trustIssuedClientCertificates`), na sinusuri ang revocation nito sa ilalim ng `pki.revocationCheck` — at pagkatapos ay ginagawa ng `GET /tls/sign-in` ang isang na-verify na certificate na SESSION sa realm ng authority na pumirma nito, habang itinatali ito ng RFC 8705 client authentication sa isang token. Walang hinihinging client certificate ang LDAPS 636."
+  },
+  "crypto.families.pki-x-509.encrypts": {
+    "en": "36e58d75de057d83",
+    "text": "Bawat byte sa LDAPS 636 at, kapag naka-on ang `global.https` (sine-set ito ng bawat appconfig file sa env/, mula 2026-08-30), sa main port at sa debugger listener. Ang key exchange ay ang default ng OpenSSL ng node; sa 636 at sa main port, ang protocol floor ay `tls.minVersion` (TLS 1.2 bilang default) at ang mga suite ay `tls.ciphers` (ang listahan ng node kapag walang laman)."
+  },
+  "crypto.families.pki-x-509.decrypts": {
+    "en": "002a94032db09f02",
+    "text": "Pareho."
+  },
+  "crypto.families.pki-x-509.hashes": {
+    "en": "c6bb4311866e3099",
+    "text": "SHA-256, saanman pinangangalanan ang isang certificate: sa DER para sa `x5t#S256` confirmation ng RFC 8705 at sa fingerprint ng `/tls`, at sa public key para sa SPKI pin na dala ng test suite."
+  },
+  "crypto.families.pki-x-509.whatItDoesNot": {
+    "en": "d82e95d63fdba050",
+    "text": "Hindi mave-verify ang unang fetch ng anchor — wala nang natitirang plain listener na mapagkukunan nito, kaya ginagawa ito nang naka-off ang verification. Sa DEVELOPMENT mode, kailangang gawin muli ang fetch na iyon pagkatapos ng bawat restart, dahil binubuo muli ang Root; sa PRODUCT mode, at kapag may ibinigay na certificate, isang beses lang. Tinatanggihan bilang sign-in ang certificate ng isang application: isa itong RFC 8705 client credential."
+  },
+  "crypto.families.pki-x-509.algorithms.0.what": {
+    "en": "4293457d8bfdfe50",
+    "text": "Server certificate"
+  },
+  "crypto.families.pki-x-509.algorithms.1.what": {
+    "en": "2c65407a378b57b8",
+    "text": "Certificate binding"
+  },
+  "crypto.families.webauthn-ctap.signs": {
+    "en": "4da1e2515e736e7d",
+    "text": "Wala. Ang AUTHENTICATOR ang pumipirma; ang serbisyong ito ang relying party, ang kalahating nagsusuri lang."
+  },
+  "crypto.families.webauthn-ctap.verifies": {
+    "en": "d8daa1e1b9b11704",
+    "text": "Ang registration, ang attestation statement nito (packed, tpm, android-key, android-safetynet, fido-u2f, apple at mga compound signature, COSE ES256/384/512, RS256/384/512, PS256/384/512, EdDSA at ML-DSA-44/65/87), at bawat assertion: ang signature sa `authenticatorData || SHA-256(clientDataJSON)`, laban sa COSE public key na ni-register ng credential."
+  },
+  "crypto.families.webauthn-ctap.hashes": {
+    "en": "2e2a1dacb370539f",
+    "text": "SHA-256 nang dalawang beses — ang client data hash na sinasaklaw ng signature, at ang RP ID hash sa loob ng authenticator data na ikinukumpara byte por byte laban sa SHA-256 ng domain ng origin."
+  },
+  "crypto.families.webauthn-ctap.whatItDoesNot": {
+    "en": "d1ebaf94158094a0",
+    "text": "Mula #105, VINE-VERIFY nito ang attestation statement — lahat ng walong format ng WebAuthn Level 3 section 8, ang chain laban sa mga naka-configure na anchor at sa mga root ng FIDO Metadata Service, revocation, at mga MDS status report — sa ilalim ng `webauthn.attestationPolicy`, na naka-off bilang default sa development lang. Mas kaunti ang algorithm na inaalok ng registration kaysa sa TINATANGGAP ng verifier, at sadya iyon: ang aktuwal na ginagawa ng isang platform authenticator ang ipinunta rito ng tao para makita. Ang tanging ceremony option na SINUSURI rin ng serbisyong ito ay ang `webauthn.userVerification`, dahil nasa loob ng mga byte na pinirmahan ng authenticator ang UV flag."
+  },
+  "crypto.families.webauthn-ctap.algorithms.0.what": {
+    "en": "5fc293ab8b154f42",
+    "text": "Inaalok sa registration"
+  },
+  "crypto.families.webauthn-ctap.algorithms.1.what": {
+    "en": "8931ff19e45887e4",
+    "text": "Tinatanggap sa verification"
+  },
+  "crypto.families.webauthn-ctap.algorithms.2.what": {
+    "en": "4c2c115ca08db2af",
+    "text": "Mga curve"
+  },
+  "crypto.families.webauthn-ctap.algorithms.3.what": {
+    "en": "8b134177fe992d91",
+    "text": "User verification"
+  },
+  "crypto.families.one-time-passwords-totp.signs": {
+    "en": "4d15a52bf511dc2e",
+    "text": "Walang lumalabas sa serbisyong ito. Ang isang HOTP value AY isang pinutol na HMAC — RFC 4226 section 5.3 — kaya kumukuwenta ang family na ito ng keyed MAC at saka ikinukumpara ito, kaya nasa common/crypto.js ang primitive katabi ng bawat iba pang signature dito sa halip na sa module na nagpapasya ng policy."
+  },
+  "crypto.families.one-time-passwords-totp.verifies": {
+    "en": "071552dc11014cdd",
+    "text": "Isang ipinakitang code, sa pamamagitan ng pagkuwenta ng HMAC para sa bawat time step sa skew window at paghahambing nang constant-time. Kinukuwenta ang BAWAT step kahit may tugma na, nang sadya: ang maagang pagbalik ay magpapaasa sa oras na ginugol sa KUNG ALING step ang tumugma, na mas mahusay na oracle kaysa sa paghahambing ng digit na pinag-aabalahang gawing constant-time."
+  },
+  "crypto.families.one-time-passwords-totp.encrypts": {
+    "en": "c18d0d11279cb6c0",
+    "text": "Ang shared secret at rest, sa PRODUCT mode — AES-256-GCM sa ilalim ng parehong key-encryption key na nagpoprotekta sa mga signing key, sa pamamagitan ng common/keystore.js. Sa DEVELOPMENT mode, naka-store ito bilang base32, dahil ginagawa bawat run ang key-encryption key doon at ang pag-seal ay mangangahulugan ng authenticator na tahimik na titigil gumana sa susunod na restart."
+  },
+  "crypto.families.one-time-passwords-totp.decrypts": {
+    "en": "d2cefc498eff5443",
+    "text": "Ang parehong secret, para mag-verify ng code. **ITO ANG NAG-IISANG CREDENTIAL SA SERBISYONG ITO NA MABABASA PABALIK** — ang password ay isang scrypt hash at maihahambing lang, at ang pag-verify ng one-time code ay nangangahulugang KUWENTAHIN ito. Hindi iyon kahinaan ng RFC 6238; iyon ang ibig sabihin ng \"shared secret\", at eksakto iyon ang dahilan kung bakit SECOND factor ang mekanismong ito rito at hindi kailanman magagawang first factor."
+  },
+  "crypto.families.one-time-passwords-totp.hashes": {
+    "en": "decb0b31d14255e5",
+    "text": "SHA-1, SHA-256 o SHA-512, sa loob ng HMAC at wala nang iba."
+  },
+  "crypto.families.one-time-passwords-totp.whatItDoesNot": {
+    "en": "512b47bf629fcfe5",
+    "text": "Hindi nito kailanman sinasabi kaninuman kung ano ang kasalukuyang code, at hindi kailanman nag-e-enrol ng sinuman sa sign-in screen — ang enrolment ay nangangahulugang ipakita ang isang secret, kaya nangyayari ito kung saan naka-authenticate na ang tao o may hawak siyang activation link. Walang counter-based na HOTP bilang authentication mechanism, at walang resynchronisation protocol: ang skew window lang ang inaalok para sa orasang lumilihis."
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.0.what": {
+    "en": "0c410835b8ade404",
+    "text": "HMAC (ang naka-enrol na parameter, hindi ang live)"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.1.what": {
+    "en": "89645198ddad3fa6",
+    "text": "Truncation"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.2.what": {
+    "en": "7f1e853e5a5aa7bf",
+    "text": "Shared secret"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.3.what": {
+    "en": "e08e19def21e22b2",
+    "text": "Mga live setting"
+  },
+  "crypto.families.recovery-codes.signs": {
+    "en": "e07d5c09c87dcaf1",
+    "text": "Wala. Walang MAC at walang signature saanman sa mekanismong ito — ang recovery code ay isang random na string na sinusuri laban sa naka-store na hash nito, na siyang buong pagkakaiba sa TOTP row sa itaas kung saan ang \"code\" ay isang pinutol na HMAC."
+  },
+  "crypto.families.recovery-codes.verifies": {
+    "en": "430daa72e518a39a",
+    "text": "Isang ipinakitang code, laban sa BAWAT entry sa set ng tao — bawat isa ay scrypt hash na sinusuri gamit ang crypto.verifySecret(), nang sabay-sabay sa thread pool ng libuv sa sign-in screen — at sinusuri ang lahat ng ito kahit may tumugma na, kaya hindi nakadepende ang tagal sa KUNG ALING code ang tumugma. Hugis muna ang sinusuri, kaya ang password na na-type sa kahon ay tinatanggihan dahil sa mga character nito at hindi gumagastos ng anumang hashing. Ang entry na isinulat bago ang 2026-09-11 ay ang code mismo at ikinukumpara gamit ang crypto.constantTimeEquals()."
+  },
+  "crypto.families.recovery-codes.decrypts": {
+    "en": "b54e014c105f44df",
+    "text": "Ang set lang na isinulat bago ang 2026-09-11 sa PRODUCT mode, na na-seal sa AES-256-GCM sa ilalim ng key-encryption key at binubuksan sa pamamagitan ng common/keystore.js para suriin ang isang code. Walang naka-encrypt sa anumang isinulat mula noon."
+  },
+  "crypto.families.recovery-codes.hashes": {
+    "en": "8fbdc5e4a28b0f77",
+    "text": "BAWAT CODE, TIG-ISANG SCRYPT HASH, sa pamamagitan ng crypto.hashSecret() — ang parehong function at stored form ng userPassword at stsActivationToken — sa nag-iisang sandali na nasa clear ang mga code: kapag kinumpirma ng tao na naitago na niya ang mga ito. Hindi lihim ang mga hash at nakatago ang mga ito sa clear bilang isang JSON array sa entry ng tao, kasama ang mga bilang sa tabi nito, kaya masasabi ng console na \"7 sa 10 ang hindi pa nagagamit\" nang hindi dinadaanan ang array."
+  },
+  "crypto.families.recovery-codes.whatItDoesNot": {
+    "en": "650840850ca2aba6",
+    "text": "Hindi na nito muling ipinapakita ang nakatagong code — hindi sa console, sa /admin-api o sa taong may-ari nito: ipinapakita ang set nang ISANG BESES, sa response na gumawa nito, at hindi ito itinatago hangga't hindi ito kinukumpirma ng may-ari. Hindi ito kusang gumagawa ng set: ang tao ang gumagawa nito sa /portal/mfa, at ang pag-enroll ng second factor ay nagbibigay lang ng paalala na gawin iyon. Pinapalitan ng pagkumpirma sa bagong set ang luma, at inaalis ng Clear ng operator ang set nang hindi nag-i-issue ng bago. Hindi mina-migrate ang set na isinulat ng mas lumang build. At walang counter-based o derived na scheme dito: mga random string ang mga ito at walang sinasabi ang isang code tungkol sa susunod."
+  },
+  "crypto.families.recovery-codes.algorithms.0.what": {
+    "en": "40536dd8a0e2d0c7",
+    "text": "Paggawa"
+  },
+  "crypto.families.recovery-codes.algorithms.1.what": {
+    "en": "bb846881f6a5075c",
+    "text": "Entropy"
+  },
+  "crypto.families.recovery-codes.algorithms.2.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alpabeto"
+  },
+  "crypto.families.recovery-codes.algorithms.3.what": {
+    "en": "571527339d0e3e34",
+    "text": "Paghahambing"
+  },
+  "crypto.families.recovery-codes.algorithms.4.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "Habang nakatago"
+  },
+  "crypto.families.email-codes-and-links.signs": {
+    "en": "469daea0865e7d80",
+    "text": "Wala. Ang code o link ay random na lihim na sinusuri laban sa nakatagong hash nito; ang mensaheng sinasakyan nito ay sina-sign ng DKIM lang kung naka-configure ang SMTP transport para dito (tingnan ang Mail)."
+  },
+  "crypto.families.email-codes-and-links.verifies": {
+    "en": "3368b2038045996a",
+    "text": "Isang ipinakitang code o link token, laban sa scrypt hash sa sign-in step, gamit ang crypto.verifySecret() sa worker pool; at ang browser binding ng link, bilang SHA-256 ng cookie na itinakda nang ipadala ito."
+  },
+  "crypto.families.email-codes-and-links.hashes": {
+    "en": "f7ea8e1a659a8cce",
+    "text": "Bawat lihim nang ISANG BESES, gamit ang crypto.hashSecret() (scrypt), kapag ito ay mina-mint — hindi kailanman itinatago ang code o token mismo, at itinatapon ng mail channel ang body ng naipadalang mensahe. Ang binding cookie bilang SHA-256."
+  },
+  "crypto.families.email-codes-and-links.whatItDoesNot": {
+    "en": "ce5ddd6002061926",
+    "text": "Hindi ito kailanman ibinibilang bilang phishing-resistant na factor o bilang risk step-up, hindi kailanman nagpapadala ng mail sa address na hindi verified, at hindi kailanman nagtatago ng lihim nang lampas sa sampung minuto o sa ikalawang paggamit."
+  },
+  "crypto.families.email-codes-and-links.algorithms.0.what": {
+    "en": "340f463033e0fd5d",
+    "text": "Code"
+  },
+  "crypto.families.email-codes-and-links.algorithms.1.what": {
+    "en": "d93d75ab47922b92",
+    "text": "Link token"
+  },
+  "crypto.families.email-codes-and-links.algorithms.2.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "Habang nakatago"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
+    "en": "30d11da1c63a38f1",
+    "text": "Ang SD-JWT VC bilang RS256 JWS na may `_sd_alg: sha-256`, at ang W3C `ldp_vc` na may `bbs-2023` Data Integrity proof — BLS12-381-SHA-256, na isang pairing-based na signature at ang nag-iisa sa serbisyong ito. Hindi JWK ang key nito at inilalathala ito bilang `publicKeyMultibase` sa halip na ipilit sa anyong hindi nito kasya."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.verifies": {
+    "en": "c0036a45ed2b60bc",
+    "text": "Ang proof of possession ng wallet sa credential endpoint, na dapat ay ASYMMETRIC na JWS — hindi kailanman MAC at hindi kailanman `none` — at ang presentation sa verifier, kasama ang DERIVED na bbs-2023 proof, na siyang anyo ng selective disclosure kapag hindi ito SD-JWT."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.hashes": {
+    "en": "c5832c6dab4733ea",
+    "text": "SHA-256 para sa bawat SD-JWT disclosure digest, at sa loob ng BBS ciphersuite para sa message mapping."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.whatItDoesNot": {
+    "en": "30ac22a7b1387e83",
+    "text": "Wala itong vine-verify sa mga VALUE ng credential, na inimbento, at ang verified na presentation ay nagsa-sign in lang ng isang tao sa /authn/wallet, para lang sa holder-bound na SD-JWT VC na in-issue ng realm na ito — hindi kailanman sa bar door, at hindi kailanman batay sa signature ng banyagang issuer."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.0.what": {
+    "en": "7bea7584da7de03b",
+    "text": "Pag-sign ng credential"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.1.what": {
+    "en": "5c9c19ca8b4d7044",
+    "text": "Proof of possession ng wallet"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.2.what": {
+    "en": "82a6225da8149a43",
+    "text": "Disclosure digest"
+  },
+  "crypto.families.acme.signs": {
+    "en": "0e2e7b69729b7927",
+    "text": "Bawat certificate na ibinibigay nito, gamit ang ACME Issuing CA key ng realm na ito, sa pamamagitan ng issueEnrolled() ng common/pki.js. Wala nang iba: ang ACME response ay plain JSON sa ibabaw ng TLS, at ang Replay-Nonce ay may dalang HMAC sa halip na signature."
+  },
+  "crypto.families.acme.verifies": {
+    "en": "b6ea5d2aab528d1d",
+    "text": "Ang flattened JWS ng bawat request, gamit ang account key na pinangalanan ng jwk o kid at ang algorithm lang na pinangalanan ng header (sa pamamagitan ng verifyCompactJws ng common/crypto.js); ang inner JWS ng key-change gamit ang bagong key; ang HMAC ng External Account Binding gamit ang key na in-issue sa ilalim ng kid nito, sa constant time at sa bawat mode; at ang proof of possession ng CSR sa common/cert_enrollment.ts."
+  },
+  "crypto.families.acme.encrypts": {
+    "en": "e233f6d30d606df3",
+    "text": "Ang HMAC key ng External Account Binding, na na-seal gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry kung para kanino ito in-issue, saanman mas tumatagal ang key na iyon kaysa sa process."
+  },
+  "crypto.families.acme.decrypts": {
+    "en": "3f1b161b12e519d1",
+    "text": "Ang HMAC key na iyon, para i-verify ang isang binding. Wala sa wire."
+  },
+  "crypto.families.acme.hashes": {
+    "en": "6817583ce52ea878",
+    "text": "SHA-256 para sa thumbprint ng account key (RFC 7638), para sa Replay-Nonce MAC at para sa thumbprint ng bawat certificate sa record ng entry."
+  },
+  "crypto.families.acme.whatItDoesNot": {
+    "en": "61718f6daa70f201",
+    "text": "Walang private key na nakikita kailanman: CSR lang ang ACME. Tinatanggihan ang post-quantum na account key, dahil walang RFC 7638 thumbprint ang key type nito at hinahanap ang account ayon sa key nito. Hindi maaaring i-certify ang KEM key, dahil hindi nito kayang i-sign ang proof of possession. Ang JWS ay ang FLATTENED JSON serialization na hinihingi ng RFC 8555, na dito lang binabasa ng serbisyong ito."
+  },
+  "crypto.families.acme.algorithms.0.what": {
+    "en": "6fd2e09cab511244",
+    "text": "Mga signature ng account key"
+  },
+  "crypto.families.acme.algorithms.1.what": {
+    "en": "ee010a599d2a0404",
+    "text": "Mga MAC ng External Account Binding"
+  },
+  "crypto.families.acme.algorithms.2.what": {
+    "en": "394a5e94275d9df1",
+    "text": "Mga dahilan ng revocation na tinatanggap mula sa subscriber"
+  },
+  "crypto.families.acme.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "Lalagyan ng certificate"
+  },
+  "crypto.families.est.signs": {
+    "en": "e9aa41aa13c5b6e9",
+    "text": "Bawat certificate na ibinibigay nito, gamit ang EST Issuing CA key ng realm na ito, sa pamamagitan ng issueEnrolled() ng common/pki.js — ang parehong encoder na pinagmumulan ng bawat ibang certificate dito. DEGENERATE ang mga certs-only CMS message na ibinabalik nito: SignedData na may mga certificate at walang signer, kaya wala silang sariling signature at pinagkakatiwalaan dahil sa mga certificate sa loob nila."
+  },
+  "crypto.families.est.verifies": {
+    "en": "d40d37c4bd83de49",
+    "text": "Ang PKCS#10 proof of possession — ang signature ng request gamit ang sarili nitong public key, classical at post-quantum, sa common/cert_enrollment.ts — at, para sa certificate authentication, ang path ng client certificate patungo sa Intermediate ng realm na ito at sa service Root, na kinokonsulta ang revocation. Hindi vine-verify ang /serverkeygen template: pinapalitan ang key nito."
+  },
+  "crypto.families.est.encrypts": {
+    "en": "2f48e10a9ad6494d",
+    "text": "Ang private key ng server-generated na key pair, na na-seal gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry, saanman mas tumatagal ang key na iyon kaysa sa process. HINDI ito naka-encrypt para sa client (RFC 7030 section 4.4.1.2): tinatanggihan ang request na humihingi niyon, at sa loob lang ng TLS naglalakbay ang key."
+  },
+  "crypto.families.est.decrypts": {
+    "en": "8d5c676935439726",
+    "text": "Wala sa wire."
+  },
+  "crypto.families.est.hashes": {
+    "en": "78ff84df2eb09c64",
+    "text": "SHA-256 para sa thumbprint ng bawat certificate sa record ng entry."
+  },
+  "crypto.families.est.whatItDoesNot": {
+    "en": "0fbae781db5fb46b",
+    "text": "Buong CMC, tls-unique channel binding (wala nito ang TLS 1.3) at naka-encrypt na server-generated key. Hindi maaaring i-enroll ang KEM key gamit ang /simpleenroll, dahil hindi nito kayang i-sign ang proof of possession."
+  },
+  "crypto.families.est.algorithms.0.what": {
+    "en": "42710d1e9ca4dc7a",
+    "text": "Mga CSR signature algorithm na ina-advertise ng /csrattrs"
+  },
+  "crypto.families.est.algorithms.1.what": {
+    "en": "0d5abf11fe24b9c0",
+    "text": "Mga algorithm ng server-generated na key"
+  },
+  "crypto.families.est.algorithms.2.what": {
+    "en": "c62bb06b4e213c58",
+    "text": "Lalagyan ng private key"
+  },
+  "crypto.families.est.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "Lalagyan ng certificate"
+  },
+  "crypto.families.scep.signs": {
+    "en": "9cbcb1a72f470540",
+    "text": "Bawat certificate na ini-issue nito, gamit ang SCEP Issuing CA key ng realm na ito sa pamamagitan ng issueEnrolled() ng common/pki.js; at bawat CertRep, gamit ang RA key — CMS SignedData sa ibabaw ng DER-sorted na signed attributes, sha256WithRSAEncryption (SHA-384/512 kapag ginamit ng request ang mga iyon)."
+  },
+  "crypto.families.scep.verifies": {
+    "en": "cf05562a26d80aaf",
+    "text": "Ang SignedData signature ng requester sa ibabaw ng signed attributes nito at ang messageDigest ng content (SHA-256, SHA-384, SHA-512; vine-verify ang RSA o ECDSA na signer, at tinatanggihan pagkatapos ang ECDSA dahil walang reply na maaaring i-encrypt para dito); ang PKCS#10 proof of possession; para sa RenewalReq, GetCert at GetCRL, ang path ng signer certificate patungo sa Intermediate ng realm na ito na kinokonsulta ang revocation; at ang challenge password, bilang constant-time na paghahambing ng SHA-256."
+  },
+  "crypto.families.scep.encrypts": {
+    "en": "e41a0442f653089f",
+    "text": "Ang certs-only na content ng SUCCESS na CertRep, para sa signer certificate ng requester: RSAES-PKCS1-v1_5 key transport at ang laki ng AES-CBC key na ginamit ng request."
+  },
+  "crypto.families.scep.decrypts": {
+    "en": "902b7d23d39fba20",
+    "text": "Ang pkcsPKIEnvelope gamit ang private key ng RA: RSAES-PKCS1-v1_5 (sa pamamagitan ng node-forge, dahil tumatanggi ang node sa PKCS#1 v1.5 private decryption) o RSAES-OAEP, pagkatapos ay AES-128/192/256-CBC. Ang nabigong unwrap ay pinapalitan ng random na key bytes kaya iisang sagot ang padding error at maling key."
+  },
+  "crypto.families.scep.hashes": {
+    "en": "47b332491bb2a39b",
+    "text": "SHA-256 ng challenge secret, ng CSR at ng signer key para sa transaction idempotence; ang mga message digest algorithm sa itaas."
+  },
+  "crypto.families.scep.whatItDoesNot": {
+    "en": "4a19c5629d38be11",
+    "text": "Mga signature na SHA-1 o MD5, content encryption na DES o 3DES (tinatanggihan nang badAlg), non-RSA na key ng requester, KeyAgreeRecipientInfo, GetNextCACert at PENDING."
+  },
+  "crypto.families.scep.algorithms.0.what": {
+    "en": "19e34a0379a1db34",
+    "text": "Mga request digest na tinatanggap"
+  },
+  "crypto.families.scep.algorithms.1.what": {
+    "en": "96ce29f429f2a103",
+    "text": "Mga request signature na vine-verify"
+  },
+  "crypto.families.scep.algorithms.2.what": {
+    "en": "3ada8d30fb7fbaa7",
+    "text": "Mga content cipher na tinatanggap"
+  },
+  "crypto.families.scep.algorithms.3.what": {
+    "en": "ce3dfd4aca5eb72b",
+    "text": "Mga key transport na tinatanggap"
+  },
+  "crypto.families.scep.algorithms.4.what": {
+    "en": "ce72ec23c64b378f",
+    "text": "Mga tinatanggihang digest"
+  },
+  "crypto.families.scep.algorithms.5.what": {
+    "en": "2a3243f281f3be54",
+    "text": "Mga tinatanggihang cipher"
+  },
+  "crypto.families.scep.algorithms.6.what": {
+    "en": "88868db59d8a7d1e",
+    "text": "Signature ng CertRep"
+  },
+  "crypto.families.scep.algorithms.7.what": {
+    "en": "b8d71b508570c5bd",
+    "text": "Key transport ng CertRep"
+  },
+  "crypto.hashing.fixed.0.what": {
+    "en": "572fc67678eccd94",
+    "text": "Ang canonical JWK, na na-hash. Ito ang pinagbi-bind ng `cnf.jkt` sa isang DPoP-bound na token, at ito ang dahilan kung bakit hindi magagamit ang mga post-quantum algorithm para sa DPoP — tinutukoy ng RFC 7638 ang mga kinakailangang member para sa RSA, EC, OKP at oct, at wala ang `AKP` sa alinman sa mga listahang iyon."
+  },
+  "crypto.hashing.fixed.1.what": {
+    "en": "789f03952b2a25a9",
+    "text": "Sa ibabaw ng DER ng certificate, base64url. Ang DER at hindi ang PEM, na siyang pagkakamaling mukhang tama sa log at walang tinutugma."
+  },
+  "crypto.hashing.fixed.2.what": {
+    "en": "8b86d10dedfeb4c0",
+    "text": "Sa ibabaw ng code verifier. Sa RFC 9700 mode, binabawi ang `plain` at ito na lang ang method na ina-advertise."
+  },
+  "crypto.hashing.fixed.3.what": {
+    "en": "af8ddc4be27e9471",
+    "text": "Section 3.1.3.6: ang pinakakaliwang kalahati ng digest ng ASCII token, base64url. Ang kalahati ang bahaging kinakaligtaan ng mga tao."
+  },
+  "crypto.hashing.fixed.4.what": {
+    "en": "f40f7e4f1dcfa612",
+    "text": "Bawat disclosure digest sa isang SD-JWT VC."
+  },
+  "crypto.hashing.fixed.5.what": {
+    "en": "2181a5f9381ac153",
+    "text": "Sinasaklaw ng signature ang `authenticatorData || SHA-256(clientDataJSON)`, at ang RP ID hash sa loob ng authenticator data na iyon ay SHA-256 ng domain ng origin, na ikinukumpara byte por byte."
+  },
+  "crypto.hashing.fixed.5.where": {
+    "en": "5b03dda25987cfe3",
+    "text": "WebAuthn client data hash"
+  },
+  "crypto.hashing.fixed.6.what": {
+    "en": "5b899812c1a1ae4a",
+    "text": "Sa ibabaw ng DER ng SVID, saanman nire-record ang isang issuance laban sa isang directory entry."
+  },
+  "crypto.hashing.fixed.6.where": {
+    "en": "f28d649163220153",
+    "text": "Pagkakakilanlan ng SPIFFE SVID"
+  },
+  "crypto.hashing.fixed.7.what": {
+    "en": "4109d5d9978212ae",
+    "text": "Ang `kid` ay nagpapangalan ng KEY at samakatuwid ay DERIVED mula sa sariling public material ng key. Constant ito noon, kaya dalawang instance ng mock na ito ang naglathala ng iisang pangalan para sa dalawang magkaibang key — eksaktong tinutugma ng verifier ang kid, sinusubukan ang key na iyon, at nag-uulat ng masamang signature."
+  },
+  "crypto.hashing.fixed.7.where": {
+    "en": "5a3cb59275a8e560",
+    "text": "Mga key identifier (`kid`)"
+  },
+  "crypto.hashing.fixed.8.what": {
+    "en": "8274ca190e064807",
+    "text": "RFC 3962 para sa mga AES-SHA1 profile at RFC 8009 para sa mga AES-SHA2. Ang iteration count at ang salt ay kinukuha mula sa ETYPE-INFO2 ng KDC."
+  },
+  "crypto.hashing.fixed.8.where": {
+    "en": "cb8714e609cbe20f",
+    "text": "Kerberos string-to-key"
+  },
+  "crypto.hashing.weak.0.why": {
+    "en": "212d04701d52594e",
+    "text": "Ang mga XMLDSIG spelling ay ang orihinal na rekomendasyon noong 2000 at siyang ipinapadala pa rin ng napakaraming naka-deploy na relying party. Ang `rsa-oaep-mgf1p` AY SHA-1 ayon sa depinisyon — iyon ang ibig sabihin ng URI — at ang mas bagong `rsa-oaep` ay nagdadala ng digest nito sa isang child element at iniaalok mula #168 na may SHA-256 at MGF1-SHA-256, na siyang inilalathala at hinihingi ng isang federation relationship. Ang HMAC-SHA1-96 sa RFC 3962 ay isang MAC sa halip na claim ng collision resistance at siyang ginagamit ng Active Directory hanggang ngayon."
+  },
+  "crypto.hashing.weak.0.where": {
+    "en": "13f9c1ea5d995805",
+    "text": "XMLDSIG `#sha1` at `rsa-sha1`; RSA-OAEP-MGF1P; HMAC-SHA1-96 ng Kerberos etypes 17 at 18"
+  },
+  "crypto.hashing.weak.1.why": {
+    "en": "04261c070ac406f5",
+    "text": "Ang RC4-HMAC ang binabalikan ng karamihan sa naka-install na base ng mga Kerberos client, at ang MD5 Digest ang sinasalita ng karamihan sa naka-install na base ng mga Digest client. Pareho silang iniaalok nang HULI at wala sa kanila ang rekomendasyon."
+  },
+  "crypto.hashing.weak.1.where": {
+    "en": "5a60ff8915455c4c",
+    "text": "Kerberos RC4-HMAC (etype 23); HTTP Digest"
+  },
+  "crypto.hashing.weak.2.why": {
+    "en": "21b7cc730abd3500",
+    "text": "Iyon talaga ang etype. Wala itong salt, kaya mahalaga lang ang salt discovery para sa AES."
+  },
+  "crypto.hashing.weak.2.where": {
+    "en": "cf9bbd71941b23b8",
+    "text": "Ang NT hash, sa loob ng string-to-key ng RC4-HMAC"
+  },
+  "crypto.signatures.other.0.what": {
+    "en": "cccbf692b80811e7",
+    "text": "BLS12-381 G2 na may SHA-256 ciphersuite, bilang W3C Data Integrity proof. Ang nag-iisang pairing-based na signature dito, at ang nag-iisang selective disclosure na hindi hashing."
+  },
+  "crypto.signatures.other.1.what": {
+    "en": "183b0aafb0db82b8",
+    "text": "RFC 7486. Sa ibabaw ng isang blob ng nonce, algorithm, origin, realm, key id at challenge ng server, laban sa public key na inirehistro ng client."
+  },
+  "crypto.signatures.other.1.label": {
+    "en": "c99c992832df60da",
+    "text": "HOBA algorithm 0 (RSA-SHA256)"
+  },
+  "crypto.signatures.other.2.what": {
+    "en": "080c17e1422d21ee",
+    "text": "HMAC-SHA1-96 (etypes 17, 18), HMAC-SHA-256-128 (19), HMAC-SHA-384-192 (20) at HMAC-MD5 (23), bawat isa sa ilalim ng key na derived mula sa long-term key para sa KEY USAGE NUMBER ng mensaheng iyon. Ang mga usage number ang nagkakamali: ang mali ay nagdudulot ng checksum mismatch at wala nang ibang sintomas."
+  },
+  "crypto.signatures.other.2.label": {
+    "en": "4a4b2ce0b267e0cb",
+    "text": "Mga keyed checksum ng Kerberos"
+  },
+  "crypto.signatures.other.3.what": {
+    "en": "9b34ad7078774fa9",
+    "text": "SHA-256 with RSA para sa mga signing at TLS certificate; anuman ang ipinahihiwatig ng `spiffe.x509KeyType` para sa isang SVID."
+  },
+  "crypto.signatures.other.3.label": {
+    "en": "fe859f25e5d2fbae",
+    "text": "Mga signature ng X.509 certificate"
+  },
+  "crypto.pq.algorithms.what": {
+    "en": "86c7af6a76fda4b9",
+    "text": "Ang ML-DSA ay FIPS 204 at ang SLH-DSA ay FIPS 205 — isang lattice signature at isang hash-based, na magkaibang taya at kapwa narito dahil doon. Ang anim na COMPOSITE ay draft-ietf-jose-pq-composite-sigs: isang ML-DSA signature at isang tradisyonal na signature sa ibabaw ng parehong mensahe, na kapwa dapat mag-verify, kaya hindi mas mahina ang pares kaysa sa mas malakas nitong kalahati. Bawat isa ay nagdadala ng DOMAIN SEPARATOR sa composite message at sa ML-DSA context string, na siyang pumipigil na ang signature na ginawa para sa isang composite ay ma-replay bilang iba."
+  },
+  "crypto.pq.algorithms.independence": {
+    "en": "3cdf2b7a57681a4e",
+    "text": "Ang lattice PRIMITIVE ay ang OpenSSL 3.5 ng node (#363), samantalang @noble/post-quantum ang ginagamit ng debugger, kaya kinu-cross-check ang ML-DSA mismo sa pagitan ng dalawang implementasyon. ANG LAHAT NG NASA PALIGID NITO ay isinulat dito mula sa mga specification, at ang tradisyonal na kalahati ng bawat composite ay tumatakbo sa OpenSSL ng node sa halip na sa curve library na ginagamit ng kabilang dulo. Doon may halaga ang cross-check: ang magkaparehong maling pagkaunawa sa framing ay perpektong sasang-ayon sa sarili nito at hindi makikipag-interoperate sa kahit ano."
+  },
+  "crypto.pq.signatures.0.surface": {
+    "en": "43b13a17ca0ec49f",
+    "text": "ID Token"
+  },
+  "crypto.pq.signatures.0.how": {
+    "en": "529fa3a0343d70ce",
+    "text": "Nagrerehistro ang client ng `id_token_signed_response_alg`, at ang listahang ina-advertise AY ang shared JWS table — kaya mapipili ang bawat ML-DSA, SLH-DSA at composite na algorithm."
+  },
+  "crypto.pq.signatures.1.surface": {
+    "en": "fe8507eede42f0e1",
+    "text": "Signed na UserInfo response"
+  },
+  "crypto.pq.signatures.1.how": {
+    "en": "c088631501cab27c",
+    "text": "Kinukuha ang mga post-quantum na entry mula sa shared table sa pamamagitan ng filter sa halip na ilista, kaya hindi mahuhuli ang listahang ito rito."
+  },
+  "crypto.pq.signatures.2.surface": {
+    "en": "cf12c2348883a409",
+    "text": "Paglalathala ng JWKS"
+  },
+  "crypto.pq.signatures.2.how": {
+    "en": "6278d02404536b1e",
+    "text": "Inilalathala ang bawat post-quantum key bilang `AKP` JWK na may sariling `kid`, kaya talagang maaaring i-VERIFY ng client ang isa sa halip na iaalok lang ito. Ginagawa ang mga ito sa UNANG PAGGAMIT, kaya mabagal ang unang JWKS fetch sa isang realm."
+  },
+  "crypto.pq.signatures.3.surface": {
+    "en": "627636b4e140b9ec",
+    "text": "Mga access token at refresh token"
+  },
+  "crypto.pq.signatures.3.how": {
+    "en": "b1af7e79ec3085c8",
+    "text": "RS256, palagi. Ang `signJwt()` ang nag-iisang daan na nagre-record ng token sa mga counter ng console at nagsa-sign ito gamit ang RSA key ng realm."
+  },
+  "crypto.pq.signatures.4.surface": {
+    "en": "9199abebcef8fe6e",
+    "text": "Mga DPoP proof"
+  },
+  "crypto.pq.signatures.4.how": {
+    "en": "0b0a7888ad6cfa27",
+    "text": "SINASADYA, at ito ang pinakakawili-wiling hindi isinama dito. Ang DPoP proof ay naka-bind sa pamamagitan ng `cnf.jkt`, ang RFC 7638 JWK Thumbprint — at tinutukoy lang ng RFC 7638 ang mga kinakailangang member para sa RSA, EC, OKP at oct. Ang ML-DSA key ay `kty: \"AKP\"`, kung saan walang nakarehistrong thumbprint, kaya ang proof na sina-sign gamit ito ay perpektong mag-verify at magbi-bind sa WALA. Nasa binding ang puwang, hindi sa signature."
+  },
+  "crypto.pq.signatures.5.surface": {
+    "en": "85f00831d63f0dfa",
+    "text": "Bawat XML signature — SAML 2.0, SAML 1.1, WS-Federation, WS-Trust, federation"
+  },
+  "crypto.pq.signatures.5.how": {
+    "en": "2835531d7d7db342",
+    "text": "RSA-SHA256. Walang nakarehistrong post-quantum SignatureMethod ang XMLDSIG, kaya walang mapipili: puwang ito sa specification stack sa halip na sa serbisyong ito."
+  },
+  "crypto.pq.signatures.6.surface": {
+    "en": "fa5f732d88799b31",
+    "text": "Mga X.509 certificate at SPIFFE SVID"
+  },
+  "crypto.pq.signatures.6.how": {
+    "en": "eb2d0cae1421130c",
+    "text": "RSA 2048 o isang elliptic curve. Ang mga SPIFFE authority key type ay EC P-256/384/521, RSA 2048/4096 at Ed25519 — lahat ay nasisira ng Shor."
+  },
+  "crypto.pq.signatures.7.surface": {
+    "en": "3ed217bd349c451a",
+    "text": "Mga verifiable credential"
+  },
+  "crypto.pq.signatures.7.how": {
+    "en": "197a934d4f2a9aa9",
+    "text": "RS256 para sa SD-JWT VC, at `bbs-2023` para sa `ldp_vc` — isang pairing-based na signature, na kung tutuusin ay MAS nakalantad pa kaysa sa simpleng ECDSA."
+  },
+  "crypto.pq.signatures.8.surface": {
+    "en": "03f7f9d91f479718",
+    "text": "Mga WebAuthn assertion"
+  },
+  "crypto.pq.signatures.8.how": {
+    "en": "d2274d309abdae8b",
+    "text": "ES256, RS256 o EdDSA, at hindi ito pagpili ng serbisyong ito: ang AUTHENTICATOR ang nagsa-sign, at walang nirerehistro ang COSE na post-quantum algorithm na ginagawa ng isang platform authenticator."
+  },
+  "crypto.pq.symmetric.what": {
+    "en": "657d0ce4c2df4646",
+    "text": "Ang algorithm ni Grover ay nagkakahalaga ng square root sa halip na tuluyang sirain ang mga ito, kaya ang sagot ay haba ng key. Hindi apektado ang AES-256 at SHA-384 sa anumang praktikal na kahulugan; ang AES-128 at SHA-256 ay may nabawasang margin na itinuturing pa ring sapat. KAYA ANG KERBEROS ANG FAMILY DITO NA PINAKAKAUNTING APEKTADO NG LAHAT NG ITO — ito lang ang walang anumang public-key cryptography — na kabaligtaran ng ipinahihiwatig ng reputasyon nito. Walang kinalaman sa mga quantum computer ang mali sa RC4-HMAC, MD5 at MD4."
+  },
+  "crypto.pq.symmetric.strongest": {
+    "en": "d169ec1de3f8e13c",
+    "text": "aes256-cts-hmac-sha384-192 (etype 20), AES-256-GCM para sa XML Encryption, A256GCM para sa JWE."
+  },
+  "crypto.codes.source": {
+    "en": "cfde0ca5c8d97444",
+    "text": "crypto.randomInt() bawat character — rejection-sampled sa loob ng node, kaya hindi nakadepende ang uniformity sa kung nahahati ng laki ng alpabeto ang 256."
+  },
+  "crypto.codes.atRest": {
+    "en": "c12e485fcef80c57",
+    "text": "Isang scrypt HASH ng bawat code, sa pamamagitan ng crypto.hashSecret() — ang parehong function at parehong stored form ng userPassword — kaya kayang suriin ng serbisyong ito ang isang code at hindi na kailanman maipapakita ito muli, kahit sa may-ari nito. Ang set na isinulat ng build bago ang 2026-09-11 ay naglalaman ng mga code mismo at tinatanggap pa rin, code por code, hanggang gumawa ang may-ari nito ng bago."
+  },
+  "crypto.codes.comparisonOfAHash": {
+    "en": "44128280e8823464",
+    "text": "crypto.verifySecret() sa constant time laban sa bawat nakatagong hash nang sunud-sunod, sa thread pool ng libuv kung saan asynchronous ang pinto."
+  },
+  "crypto.param.codes.comparison": {
+    "en": "0862bafae6ad7324",
+    "text": "crypto.constantTimeEquals(), matapos gawing uppercase at alisin ang mga space at gitling na ipinapakita mismo ng serbisyong ito."
+  },
+  "crypto.param.totp.encoding": {
+    "en": "d9613131364834bc",
+    "text": "RFC 4648 base32, walang padding, gaya ng inaasahan ng otpauth Key Uri Format."
+  }
+}

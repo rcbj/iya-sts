@@ -103,6 +103,21 @@ interface BoundedLruOptions<K> {
   onEvict?: (key: K, value: unknown) => void;
 }
 
+// WHAT A CACHE THAT SAYS NOTHING OF ITSELF IS SAID TO BE (#543): one copy,
+// which `descriptor()` reads and `prose()` hands to the translators, so the
+// registry's harvest can hold each of these once rather than once per cache.
+// The default TITLE is the cache's name, an identifier, and is not here.
+const DEFAULTS = Object.freeze({
+  description: 'A bounded cache in least-recently-used order.',
+  bound: 'Enforced: an insert past the bound evicts the least recently ' +
+    'used unpinned entries.',
+  hitMeaning: 'a read answered from the cache without going to the store',
+  lifetime: 'Until evicted by the bound or dropped by its owner.'
+});
+
+// The routes whose answers carry those defaults: Monitoring → Caches.
+const PROSE_ROUTES = ['/admin-api/caches'];
+
 // What `stats()` reports.
 interface BoundedLruStats {
   name: string;
@@ -129,6 +144,35 @@ class BoundedLru<K, V> {
   private hits = 0;
   private misses = 0;
   private evictions = 0;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * See the module's `DEFAULTS`.
+   */
+  static readonly DEFAULTS = DEFAULTS;
+
+  /**
+   * Extracts this module's part of the caches namespace (#543 phase 2c):
+   * the description, bound, hit meaning and lifetime a cache is given when
+   * it names none of its own.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    log.debug("Entering BoundedLru.prose().");
+    // Lazily: a cache is built by modules loaded long before what
+    // `server_prose.ts` requires.
+    const serverProse = require('./server_prose');
+    const out: Record<string, string> =
+      serverProse.harvest('caches.lru.default', DEFAULTS,
+                          Object.keys(DEFAULTS));
+    log.debug("Leaving BoundedLru.prose(). " + Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds the cache and, when a registry is given, describes it there.
@@ -427,21 +471,18 @@ class BoundedLru<K, V> {
     return {
       name: o.name,
       title: o.title || o.name,
-      description: o.description ||
-        'A bounded cache in least-recently-used order.',
+      description: o.description || DEFAULTS.description,
       owner: o.owner || 'common/bounded_lru.ts',
       scope: o.scope || 'process',
       kind: 'cache',
       settings: Array.isArray(o.settings) ? o.settings.slice() : [],
-      bound: o.bound || 'Enforced: an insert past the bound evicts the ' +
-        'least recently used unpinned entries.',
-      hitMeaning: 'a read answered from the cache without going to the ' +
-        'store',
+      bound: o.bound || DEFAULTS.bound,
+      hitMeaning: DEFAULTS.hitMeaning,
       maxEntries: () => this.limit(),
       lifetime: typeof o.lifetime === 'function'
         ? o.lifetime
         : function () {
-          return 'Until evicted by the bound or dropped by its owner.';
+          return DEFAULTS.lifetime;
         },
       entries: () => {
         const rows: Array<Record<string, unknown>> = [];

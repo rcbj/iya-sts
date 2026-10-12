@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "Désactivé : {{setting}} vaut 0, de sorte que /admin et /portal vont là où va le reste de workers.dispatch — au pool de requêtes, ou traités ici par le processus frontal."
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "Désactivé : {{setting}} est à sa valeur par défaut {{value}}, ce qui signifie aucun worker là où le magasin ne peut pas coordonner (persistence.mode n’est pas postgres, ou persistence.coordinate est désactivé) ; chaque requête est donc traitée par le processus frontal lui-même, sur un seul thread."
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "Désactivé : {{setting}} vaut 0, de sorte que chaque requête est traitée par le processus frontal lui-même, sur un seul thread."
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "c712d788359b5516",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer (STS-WORKER-0023). Les surfaces hébergées vont au pool de requêtes."
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "a8108cb6c9b9ecb5",
+    "text": "Abandonné : {{failed}} thread(s) worker n’ont pas pu démarrer et le pool a cessé d’en démarrer (STS-WORKER-0023). Chaque requête est traitée par le processus frontal."
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "Non démarré : {{setting}} vaut {{configured}}, et ce processus n’a démarré aucun thread worker — il n’a pas été démarré en tant que processus frontal d’un service, ou le pool a été mis au repos au démarrage."
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "Non démarré : {{setting}} vaut {{configured}}, et ce processus n’a démarré aucun thread worker — il n’a pas été démarré en tant que processus frontal d’un service, ou le pool a été mis au repos au démarrage. {{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "En cours d’exécution, et inactif par configuration : workers.dispatch ne nomme rien, de sorte qu’aucune requête n’est envoyée à ces threads worker."
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{ready}} thread(s) worker sur {{configured}} en service."
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "Pool des surfaces hébergées (/admin et /portal)"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "Pool de requêtes"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "Voici les pools du nœud {{node}}, détenus par son processus frontal, pid {{pid}}. Chaque worker est un thread de ce processus (#364), désigné par son identifiant de thread, avec son propre tas V8 et la mémoire et le CPU du processus. Chaque nœud d’un cluster possède ses propres pools. La signature post-quantique et scrypt n’ont plus de pool de processus depuis #363 : ils s’exécutent sur le pool de threads de libuv, à l’intérieur du processus qui en a fait la demande."
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "Sur les {{count}} nœud(s) qui n’ont pas disparu et disposent d’un instantané, y compris les instantanés périmés, qui sont signalés."
+  }
+}

@@ -79,6 +79,9 @@ import cacheRegistry = require('../common/cache_registry');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import version = require('../common/version');
+// The prose templates' filler (#543). Safe at the top: this module is built
+// at 18g, long after what server_prose.ts requires.
+import serverProse = require('../common/server_prose');
 import cluster = require('../cluster/cluster');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -114,6 +117,30 @@ const NOT_LISTED = [
          'once per report; it is gone when the report is drawn, and ' +
          'nothing holds it between requests' }
 ];
+
+// HOW LONG AN ENTRY IS STILL GOOD, as `remainingText()` says it (#543 phase
+// 2c): the computed sentences as templates, filled there, so that
+// `common/server_prose.ts` can refill an answer to `GET /admin-api/caches`
+// in a console reader's language. Each is the sentence written inline until
+// #543, byte for byte. Three things stay English, and why:
+//   * the duration itself ("4 min 10 s", `span()`): units, not a sentence,
+//     and a template of a bare `{{n}} s` would match far more than a span;
+//   * 'no expiry', because it is also a row's `basis` VALUE, in the same
+//     answer, and a message is matched wherever its text appears;
+//   * a `basis` that is already a sentence ("until rotated or adopted"),
+//     which is the owner's text and passed through as it came.
+// The `basis` in the last two is the owner's word ("directory version") and
+// is carried over as it is.
+const REMAINING = Object.freeze({
+  expiredAgo: 'expired {{span}} ago',
+  noExpiryByContent: 'no expiry (keyed by content)',
+  stale: 'stale',
+  untilChanges: 'until the {{basis}} changes',
+  staleChanged: 'stale: the {{basis}} has changed'
+});
+
+// The routes whose answers carry this module's prose (#543).
+const PROSE_ROUTES = ['/admin-api/caches'];
 
 // THE VERSION STAMP, described from here (2026-09-18). `common/version.js`
 // keeps the record it read from version.json for the life of the process —
@@ -167,6 +194,34 @@ class CachesAdmin {
    * See the module's `NOT_LISTED`.
    */
   static readonly NOT_LISTED = NOT_LISTED;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's part of the caches namespace (#543 phase 2c):
+   * what is deliberately not listed and why, and the templates of how long
+   * an entry is still good. An unlisted thing's `where` is a path and is not
+   * harvested. Every registered store's own prose — the version stamp this
+   * file registers among them — is `common/cache_registry.js`'s `prose()`.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering CachesAdmin.prose().");
+    const harvest = serverProse.harvest;
+    // Keyed by position: an unlisted thing has no id but its path.
+    const out: Record<string, string> = Object.assign({},
+      harvest('caches.notListed', NOT_LISTED.map(function (one) {
+        return { what: one.what, why: one.why };
+      }), ['what', 'why']),
+      harvest('caches.remaining', REMAINING, Object.keys(REMAINING)));
+    helpers.log.debug("Leaving CachesAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -247,21 +302,24 @@ class CachesAdmin {
   remainingText(row: Json, at: number): string {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.remainingText().");
+    const fill = serverProse.fill;
     let text: string;
     if (row.validUntil !== null) {
       text = row.validUntil > at
         ? this.span(row.validUntil - at)
-        : 'expired ' + this.span(at - row.validUntil) + ' ago';
+        : fill(REMAINING.expiredAgo,
+               { span: this.span(at - row.validUntil) });
     } else if (row.basis === 'no expiry' || row.basis === 'content-keyed') {
+      // 'no expiry' stays English: it is also the row's `basis` value.
       text = row.basis === 'content-keyed'
-        ? 'no expiry (keyed by content)' : 'no expiry';
+        ? REMAINING.noExpiryByContent : 'no expiry';
     } else if (/^(until|held) /.test(row.basis)) {
       // A basis that is already a sentence ("until rotated or adopted").
-      text = row.valid ? row.basis : 'stale';
+      text = row.valid ? row.basis : REMAINING.stale;
     } else {
       text = row.valid
-        ? 'until the ' + row.basis + ' changes'
-        : 'stale: the ' + row.basis + ' has changed';
+        ? fill(REMAINING.untilChanges, { basis: row.basis })
+        : fill(REMAINING.staleChanged, { basis: row.basis });
     }
     log.debug("Leaving CachesAdmin.remainingText().");
     return text;
@@ -545,5 +603,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts` (rule 7): the page's own JSON.
   cachesView: slot.forward('cachesView'),
-  NOT_LISTED: NOT_LISTED
+  NOT_LISTED: NOT_LISTED,
+  // The caches namespace (#543): its routes and its English.
+  PROSE_ROUTES: CachesAdmin.PROSE_ROUTES,
+  prose: CachesAdmin.prose
 };

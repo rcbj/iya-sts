@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "den öppna drivrutinen rapporterar ingen metrikfunktion, vilket betyder ett bygge av persistence_postgres.js som är äldre än 2026-09-11."
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Processer mot det här lagret SAMORDNAR: varje ändring skrivs till en monoton logg inom transaktionen som gjorde den, och varje process tillämpar det som de andra har checkat in. LISTEN/NOTIFY-knuffen gör bara det snabbt — loggen är kontraktet, så en missad notifiering kostar latens och aldrig en ändring. Det som INTE delas är socketar: KDC:n, LDAP-lyssnarna, TLS-portarna och SPIFFE:s fyra är per process, och replay-cacharna konvergerar snarare än synkroniseras. Det som den här tjänsten SKAPAR — sessioner, token, koder, artefakter, Kerberos-biljetter, räknarna och granskningsloggen — sparas i PRODUKTläge på ett postgres-lager, krypterat under samma nyckelkrypteringsnyckel som signeringsnycklarna, och i ingen annan konfiguration: utvecklingsläget genererar om signeringsnyckeln vid varje start, så en återställd token skulle inte verifieras mot någonting."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "Beständighet är inte samordning i den här konfigurationen. Två processer som pekar på ett lager håller var sin kopia i minnet och ser inte varandras skrivningar förrän de startas om. Sätt persistence.coordinate på ett postgres-lager för att ändra det. Det som den här tjänsten SKAPAR — sessioner, token, koder, artefakter, Kerberos-biljetter, räknarna och granskningsloggen — sparas i PRODUKTläge på ett postgres-lager, krypterat under samma nyckelkrypteringsnyckel som signeringsnycklarna, och i ingen annan konfiguration: utvecklingsläget genererar om signeringsnyckeln vid varje start, så en återställd token skulle inte verifieras mot någonting."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}}; servercertifikatet verifieras mot den här processens förtroendeankare."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS, sslmode={{sslmode}}; servercertifikatet verifieras INTE (persistence.databaseTlsRejectUnauthorized är avstängd), vilket är den ärliga inställningen för det självsignerade paret som compose-stacken genererar. Anslutningen är krypterad i båda fallen."
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "INTE TLS — anslutningssträngen begär det inte. Compose-stackens databas VÄGRAR en okrypterad anslutning, eftersom varje värdregel i dess pg_hba.conf är hostssl, så den här konfigurationen kommer inte att kunna ansluta dit."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "okänt — anslutningssträngen är inte en URL, så sslmode kan inte läsas ut ur den."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "anslutningssträngen är inte en URL; ingenting om den visas, eftersom den innehåller ett lösenord."
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "Vilken PostgreSQL det här är, vem den här tjänsten är ansluten SOM och hur länge servern har varit igång."

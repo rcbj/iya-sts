@@ -3121,6 +3121,15 @@ function releaseIndexTtlMs() {
   return Number(config.value('federation.releaseIndexTtlMs'));
 }
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const RELEASE_INDEX_SENTENCES = Object.freeze({
+  lifetime: 'federation.releaseIndexTtlMs ({{ms}} ms) after it was built, ' +
+    'or at once when a federation relationship is written through this ' +
+    'service.'
+});
+
 // Described to `/admin/caches` (#74, rule 3ap): one row per realm holding an
 // index, which is the whole cache for that realm.
 const releaseIndexCount = cacheRegistry.register({
@@ -3137,10 +3146,12 @@ const releaseIndexCount = cacheRegistry.register({
   },
   bound: 'Structural: one index per realm, holding one entry per ' +
     'application with a release list.',
+  sentences: RELEASE_INDEX_SENTENCES,
   lifetime: function () {
-    return 'federation.releaseIndexTtlMs (' + releaseIndexTtlMs() +
-      ' ms) after it was built, or at once when a federation ' +
-      'relationship is written through this service.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(RELEASE_INDEX_SENTENCES.lifetime,
+                            { ms: releaseIndexTtlMs() });
   },
   // A realm's index past its lifetime, which `releaseIndexNow()` would
   // rebuild: dropped, and rebuilt at the next use (#49 P5).

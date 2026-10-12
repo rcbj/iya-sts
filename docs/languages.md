@@ -25,11 +25,10 @@ whether each is translated yet.
 > every second-factor step, the emailed and wallet sign-ins, consent, the
 > hand-off pages, sign-out, the front door, the realm chooser and the GNAP
 > pages, the user portal (with a language field on the person's own
-> account), the built-in mail and the admin console. On console pages, the
-> text the server writes into a page's data is being translated in phases
-> (#543): every setting's label, description and restart reason is
-> translated; policy rule sentences and other module text are still
-> English. See [Text the server writes](#text-the-server-writes).
+> account), the built-in mail and the admin console — including the text the
+> server writes into a console page's data (#543): setting descriptions,
+> policy rules, each page's notes and the protocol metadata. See [Text the
+> server writes](#text-the-server-writes).
 
 > **Every catalog except English was machine-written and has not been
 > reviewed by a native speaker.** Each catalog's status is in
@@ -172,8 +171,9 @@ right-to-left language is drawn with `dir="rtl"` without further change.
 ## Text the server writes
 
 Some of what a console page shows is written by the server into the page's
-data rather than by the console. Setting labels, descriptions and restart
-reasons are the largest part. The management API translates that text, but
+data rather than by the console. Examples are setting labels and
+descriptions, policy rules, the notes on the Mode, Encryption, PKI, SCIM and
+LDAP pages, scheduler jobs, caches and the protocol metadata. The management API translates that text, but
 only when the request names a language in `Accept-Language`:
 
 - **The console** always sends the language it chose for you, so its pages
@@ -185,7 +185,12 @@ only when the request names a language in `Accept-Language`:
 - **The OpenAPI documents** (`/admin-api/openapi.json` and the console's own)
   are always English.
 
-Values are never translated, only the server's own sentences.
+Values are never translated, only the server's own sentences. Error messages
+stay English. A coverage note keeps its first word (`full`, `partial` or
+`mock`) in English, because software reads it. A few sentences remain
+English: scheduler jobs a node registers only after it starts, a cache whose
+lifetime text is computed in a module that has no template for it, and
+text written by another node running an older build.
 
 A sentence that has changed since it was translated is shown in English until
 its translation is updated. An out-of-date translation is never shown. These

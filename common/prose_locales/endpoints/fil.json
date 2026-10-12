@@ -1,0 +1,1950 @@
+{
+  "endpoints.route./krb5/principals.name": {
+    "en": "533f66256ae25c27",
+    "text": "Ang alam ng KDC"
+  },
+  "endpoints.route./krb5/service.name": {
+    "en": "591e0168bdd0f251",
+    "text": "Ang protektadong serbisyo"
+  },
+  "endpoints.route./spnego.name": {
+    "en": "23bfd6168fa5fd44",
+    "text": "Dito ina-advertise ang isang pahinang protektado ng SPNEGO"
+  },
+  "endpoints.route./spnego/protected.name": {
+    "en": "8c763f4b490426dd",
+    "text": "Ang protektadong resource"
+  },
+  "endpoints.route./xacml.name": {
+    "en": "1184e17250970dab",
+    "text": "Kung ano ang XACML surface"
+  },
+  "endpoints.route./xacml/pdp.name": {
+    "en": "a372155e5808a3ef",
+    "text": "Isang desisyon"
+  },
+  "endpoints.route./xacml/policies.name": {
+    "en": "beb8ca12489eec05",
+    "text": "Ang policy repository"
+  },
+  "endpoints.route./xacml/protected.name": {
+    "en": "f400e014a6fec063",
+    "text": "Ang embedded PEP"
+  },
+  "endpoints.route./xacml/pep/register.name": {
+    "en": "042b865d703aee20",
+    "text": "Nagpaparehistro ang isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/policies.name": {
+    "en": "d7b1a01d26f2cc80",
+    "text": "Ang repository, para I-LOAD ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/heartbeat.name": {
+    "en": "9570c5ba15aef084",
+    "text": "Ang ipinatupad ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pip.name": {
+    "en": "b0b1791a44311248",
+    "text": "Ang Policy Information Point, sa HTTP"
+  },
+  "endpoints.route./gnap.name": {
+    "en": "33b8b1fd38b28a51",
+    "text": "Ang grant endpoint"
+  },
+  "endpoints.route./:as/gnap.name": {
+    "en": "4e8b789cccef4597",
+    "text": "Ang grant endpoint ng isang pinangalanang authorization server"
+  },
+  "endpoints.route./gnap/continue/:grant.name": {
+    "en": "db55ac21174c6f99",
+    "text": "Pagpapatuloy ng grant"
+  },
+  "endpoints.route./gnap/token/:handle.name": {
+    "en": "741af09dc62e9a62",
+    "text": "Pamamahala ng token"
+  },
+  "endpoints.route./gnap/interact/:id.name": {
+    "en": "94671ff4687a0e0b",
+    "text": "Ang simula ng redirect interaction"
+  },
+  "endpoints.route./gnap/app/:id.name": {
+    "en": "271e2b3bb99d4e34",
+    "text": "Ang simula ng app interaction"
+  },
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "Paglalagay ng user code"
+  },
+  "endpoints.route./gnap/approve/:id.name": {
+    "en": "7224d2fd77b49df7",
+    "text": "Pag-apruba ng resource owner"
+  },
+  "endpoints.route./.well-known/gnap-as-rs.name": {
+    "en": "0fd056c79efdd3a0",
+    "text": "Discovery ng resource server"
+  },
+  "endpoints.route./.well-known/gnap-as-rs/:as.name": {
+    "en": "6df94c58d2c4986a",
+    "text": "Discovery ng resource server para sa isang pinangalanang authorization server"
+  },
+  "endpoints.route./gnap/introspect.name": {
+    "en": "7e194fb9c34129c7",
+    "text": "Token introspection"
+  },
+  "endpoints.route./gnap/resource.name": {
+    "en": "541dc030fa6fb91c",
+    "text": "Pagpaparehistro ng resource set"
+  },
+  "endpoints.route./gnap/keys.name": {
+    "en": "c0d78f3392b95c6b",
+    "text": "Verification material para sa mga token format"
+  },
+  "endpoints.route./gnap/biscuit/revocations.name": {
+    "en": "337581d2c9bece04",
+    "text": "Mga binawing biscuit"
+  },
+  "endpoints.route./gnap/zcap/controller.name": {
+    "en": "6757bf6175282a42",
+    "text": "Ang ZCAP controller document"
+  },
+  "endpoints.route./gnap/rs/resource.name": {
+    "en": "f4816b24c4f7295e",
+    "text": "Ang demonstration resource server"
+  },
+  "endpoints.route./gnap/rs/spend.name": {
+    "en": "70a2444f2afabc4c",
+    "text": "Ang spend ng demonstration resource server"
+  },
+  "endpoints.route./admin-api/gnap.name": {
+    "en": "c34c3f89f048c143",
+    "text": "Ang GNAP console page sa JSON"
+  },
+  "endpoints.route./admin-api/gnap/monitor.name": {
+    "en": "369d3bf3a6c7b46f",
+    "text": "Mga GNAP grant sa JSON"
+  },
+  "endpoints.route./admin-api/gnap/:action.name": {
+    "en": "812de4df596c12ef",
+    "text": "Bawiin ang isang grant o burahin ang isang resource set"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "Ang certificate revocation list ng isang authority"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca.name": {
+    "en": "26e09611c77104e2",
+    "text": "Ang OCSP responder ng isang authority (POST)"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca/*.name": {
+    "en": "78daac5586a16467",
+    "text": "Ang OCSP responder ng isang authority (GET)"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "Ang sariling certificate ng isang certificate authority"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "Ang certificate chain na pinangangalanan ng x5u ng isang signed token"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "Ang crypto metadata document, ayon sa Accept"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "Ang crypto metadata document, bilang JSON"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "Ang crypto metadata document, bilang XML"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "Ang crypto metadata document, naka-sign bilang JWS"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "Ang crypto metadata document, bilang signed XML"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "Ang XML Schema ng crypto metadata document"
+  },
+  "endpoints.route./pki/revocation.name": {
+    "en": "f399711ce1261bf4",
+    "text": "Bawat CRL at OCSP responder na inilalathala ng serbisyong ito"
+  },
+  "endpoints.route./admin-api/xacml.name": {
+    "en": "d3b1d402a612012c",
+    "text": "Ang XACML console page sa JSON"
+  },
+  "endpoints.route./admin-api/xacml/policies.name": {
+    "en": "8e1fec42df374e4c",
+    "text": "Ang policy repository sa JSON"
+  },
+  "endpoints.route./admin-api/xacml/editor.name": {
+    "en": "97c8bc015f73b3f1",
+    "text": "Isang policy bilang tree na puwedeng i-edit"
+  },
+  "endpoints.route./admin-api/xacml/decide.name": {
+    "en": "17f8129044f6440e",
+    "text": "Magtanong sa PDP sa JSON"
+  },
+  "endpoints.route./admin-api/xacml/peps.name": {
+    "en": "7f8ea0c37cf4776c",
+    "text": "Ang mga remote enforcement point sa JSON"
+  },
+  "endpoints.route./admin-api/xacml/monitor.name": {
+    "en": "c31e79f61be7e43b",
+    "text": "Ang ginagawa ng authorization, sa JSON"
+  },
+  "endpoints.route./admin-api/xacml/:action.name": {
+    "en": "264e6d022675cd79",
+    "text": "Baguhin ang isang policy, ang repository o ang isang remote PEP"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "Transmitter configuration metadata"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "Transmitter configuration metadata, anyong inserted-path"
+  },
+  "endpoints.route./ssf.name": {
+    "en": "29eb248f16235183",
+    "text": "Kung ano ang Shared Signals surface"
+  },
+  "endpoints.route./ssf/stream.name": {
+    "en": "b0a8d86b9e533735",
+    "text": "Ang stream management API"
+  },
+  "endpoints.route./ssf/status.name": {
+    "en": "60416f189a3afec0",
+    "text": "Ang status ng isang stream"
+  },
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "Magdagdag ng subject sa isang stream"
+  },
+  "endpoints.route./ssf/subjects/remove.name": {
+    "en": "e963dffef9e3d06b",
+    "text": "Mag-alis ng subject sa isang stream"
+  },
+  "endpoints.route./ssf/verify.name": {
+    "en": "9394a228c5271a2d",
+    "text": "Humingi ng verification event"
+  },
+  "endpoints.route./federation/signals/:id.name": {
+    "en": "b041f89b9c1dbd10",
+    "text": "Push endpoint para sa Shared Signals ng isang federation partner (RFC 8935)"
+  },
+  "endpoints.route./ssf/poll.name": {
+    "en": "ac4ccca804188b23",
+    "text": "Poll delivery (RFC 8936)"
+  },
+  "endpoints.route./ssf/receive.name": {
+    "en": "115adfc135af6faf",
+    "text": "Isang Security Event Token na ipinush SA serbisyong ito"
+  },
+  "endpoints.route./ssf/received.name": {
+    "en": "7ba22ad915534fad",
+    "text": "Ang mga naipush dito"
+  },
+  "endpoints.route./scim.name": {
+    "en": "56accbf45038167b",
+    "text": "Kung ano ang SCIM surface"
+  },
+  "endpoints.route./scim/v2/ServiceProviderConfig.name": {
+    "en": "e7267904e2f73e0c",
+    "text": "Ang sinusuportahan ng SCIM server na ito"
+  },
+  "endpoints.route./scim/v2/ResourceTypes.name": {
+    "en": "c4842dd1549d02ce",
+    "text": "Ang mga resource type"
+  },
+  "endpoints.route./scim/v2/ResourceTypes/:id.name": {
+    "en": "f50850744e5d0035",
+    "text": "Isang resource type"
+  },
+  "endpoints.route./scim/v2/Schemas.name": {
+    "en": "b290eec1709feb6f",
+    "text": "Ang mga schema"
+  },
+  "endpoints.route./scim/v2/Schemas/:id.name": {
+    "en": "5034a0e2cbb7b12b",
+    "text": "Isang schema"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "Users: ilista at gumawa"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "Users: maghanap sa pamamagitan ng POST"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "Isang user: basahin, palitan, baguhin, burahin"
+  },
+  "endpoints.route./scim/v2/Groups.name": {
+    "en": "365b6120828199b6",
+    "text": "Groups: ilista at gumawa"
+  },
+  "endpoints.route./scim/v2/Groups/.search.name": {
+    "en": "c0618941d836a76f",
+    "text": "Groups: maghanap sa pamamagitan ng POST"
+  },
+  "endpoints.route./scim/v2/Groups/:id.name": {
+    "en": "31e2cc7e078de787",
+    "text": "Isang group: basahin, palitan, baguhin, burahin"
+  },
+  "endpoints.route./scim/v2/.search.name": {
+    "en": "ad4bb06fc5614a1c",
+    "text": "Maghanap sa parehong resource type"
+  },
+  "endpoints.route./scim/v2/*.name": {
+    "en": "09fc8d6021972a82",
+    "text": "Anumang ibang path sa ilalim ng base"
+  },
+  "endpoints.route./scim/v2/Me.name": {
+    "en": "bfb6c6f542c0607b",
+    "text": "/Me, ang authenticated na subject"
+  },
+  "endpoints.route./.well-known/hoba/register.name": {
+    "en": "b95adde7badbdef3",
+    "text": "Magparehistro ng HOBA public key"
+  },
+  "endpoints.route./tls.name": {
+    "en": "80219fab36a81bcc",
+    "text": "Kung ano ang TLS endpoint"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "Mag-sign in gamit ang client certificate"
+  },
+  "endpoints.route./tls/forwarded.name": {
+    "en": "d077fbd8d5da171e",
+    "text": "Ang sinabi ng isang proxy sa serbisyong ito"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "Ang server certificate (PEM)"
+  },
+  "endpoints.route./tls/trust.name": {
+    "en": "32502f26135e90a0",
+    "text": "Pagkatiwalaan ang isang issuer ng client certificate"
+  },
+  "endpoints.route./tls/trust/clear.name": {
+    "en": "de8fc06fa11fa918",
+    "text": "Alisan ng laman ang client truststore"
+  },
+  "endpoints.route./.name": {
+    "en": "a064be014d290217",
+    "text": "Ang front page"
+  },
+  "endpoints.route./logo.png.name": {
+    "en": "5d9164ce79341469",
+    "text": "Ang logo sa front page"
+  },
+  "endpoints.route./realms.name": {
+    "en": "3bc74315dcf2fb5e",
+    "text": "Ang directory ng mga trust realm"
+  },
+  "endpoints.route./healthcheck.name": {
+    "en": "14290e1d06812977",
+    "text": "Health check"
+  },
+  "endpoints.route./docs.name": {
+    "en": "a7091d45b01e0e30",
+    "text": "Dokumentasyon ng serbisyo"
+  },
+  "endpoints.route./policy.name": {
+    "en": "c134e729e1cc3153",
+    "text": "Policy ng operator"
+  },
+  "endpoints.route./tos.name": {
+    "en": "e69e06144877d81c",
+    "text": "Mga tuntunin ng serbisyo"
+  },
+  "endpoints.route.*.name": {
+    "en": "4898865b52c1132a",
+    "text": "CORS preflight"
+  },
+  "endpoints.route./spiffe.name": {
+    "en": "04302eb70b6b3d39",
+    "text": "Kung ano ang mga SPIFFE surface"
+  },
+  "endpoints.route./spiffe/bundle.name": {
+    "en": "dfc63f78fe42ef9e",
+    "text": "Ang trust bundle"
+  },
+  "endpoints.route./spiffe/federated/:trustDomain.name": {
+    "en": "9f481b0436f86e81",
+    "text": "Ang bundle ng isang federated trust domain, ayon sa hawak"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "Script ng API explorer"
+  },
+  "endpoints.route./admin.name": {
+    "en": "ddf870cabeb295ab",
+    "text": "Admin console"
+  },
+  "endpoints.route./admin/*.name": {
+    "en": "e146f5e15e76dfe5",
+    "text": "Bawat pahina ng console"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "Ang script ng console"
+  },
+  "endpoints.route./admin/console.css.name": {
+    "en": "cd6aeb9c9e8ebf8a",
+    "text": "Ang stylesheet ng console"
+  },
+  "endpoints.route./portal.name": {
+    "en": "5212610fe0e7c89a",
+    "text": "Ang sariling account ng isang tao"
+  },
+  "endpoints.route./portal/*.name": {
+    "en": "5b81a7e12cca9cd3",
+    "text": "Bawat pahina ng portal"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "Ang script ng portal"
+  },
+  "endpoints.route./portal/portal.css.name": {
+    "en": "3b05a0008cdc0eb1",
+    "text": "Ang stylesheet ng portal"
+  },
+  "endpoints.route./portal/signals/receive.name": {
+    "en": "657c84b412c86001",
+    "text": "Ang Shared Signals receive endpoint ng portal"
+  },
+  "endpoints.route./portal/claim-sources/callback.name": {
+    "en": "152919279ecea855",
+    "text": "Mga nakakonektang claim source — ang sagot ng provider"
+  },
+  "endpoints.route./admin-api.name": {
+    "en": "eb75193bc8755faa",
+    "text": "Index ng management API"
+  },
+  "endpoints.route./admin-api/logout.name": {
+    "en": "b068dc8553d2b4f2",
+    "text": "Mga live session, at ang pagtatapos sa mga ito"
+  },
+  "endpoints.route./admin-api/logout/:action.name": {
+    "en": "6c2dc375eee8253d",
+    "text": "Mga live session: tapusin ang mga ito"
+  },
+  "endpoints.route./admin-api/openapi.json.name": {
+    "en": "ef18228535f6e74f",
+    "text": "OpenAPI document"
+  },
+  "endpoints.route./admin-api/account-api.name": {
+    "en": "1ae155ffa9680b4a",
+    "text": "Ang OpenAPI document ng account API"
+  },
+  "endpoints.route./admin-api/console/language.name": {
+    "en": "40be2295e7d1766a",
+    "text": "Ang wika ng console, para sa iyong sarili"
+  },
+  "endpoints.route./admin-api/console/api-explorer.name": {
+    "en": "dc472022273007e2",
+    "text": "Ang binabasa ng explorer ng console"
+  },
+  "endpoints.route./admin-api/console/delegation/map.name": {
+    "en": "58e1aa37ecc8aa2b",
+    "text": "Ang larawan ng delegation"
+  },
+  "endpoints.route./admin-api/console/delegation/chain.name": {
+    "en": "2f4c2883e0a7367a",
+    "text": "Isang delegation relationship, iginuhit"
+  },
+  "endpoints.route./admin-api/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "Ang mga delegation ng isang application, iginuhit"
+  },
+  "endpoints.route./admin-api/console/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "Ang mga delegation ng isang application, iginuhit"
+  },
+  "endpoints.route./admin-api/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Lahat ng ginawa sa pangalan ng isang tao, iginuhit"
+  },
+  "endpoints.route./admin-api/console/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Lahat ng ginawa sa pangalan ng isang tao, iginuhit"
+  },
+  "endpoints.route./admin-api/console/delegation/allowed.name": {
+    "en": "8ae675640fa7d934",
+    "text": "Ang mga naka-configure na delegated permission, iginuhit"
+  },
+  "endpoints.route./admin-api/console/delegation/cluster.name": {
+    "en": "ad732f8760d744ba",
+    "text": "Isang grupo ng mga application na pinagdugtong ng mga permission, iginuhit"
+  },
+  "endpoints.route./admin-api/console/delegation-settings.name": {
+    "en": "502fcd0e4edaea72",
+    "text": "Ang naka-configure na permissions register, gaya ng ipinapakita ng pahina nito"
+  },
+  "endpoints.route./admin-api/tokens/credential.name": {
+    "en": "f45c68ae09f2d7fc",
+    "text": "Isang credential at bawat generation sa likod nito"
+  },
+  "endpoints.route./admin-api/console/federation/map.name": {
+    "en": "99866b83425ba5c7",
+    "text": "Ang mga federation relationship ng realm na ito, iginuhit"
+  },
+  "endpoints.route./admin-api/console.name": {
+    "en": "f166c0c9b6ef8c18",
+    "text": "Ang iginuguhit ng console sa paligid ng bawat pahina"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "Ang certificate chain ng isang signing key"
+  },
+  "endpoints.route./admin-api/sts-metadata.name": {
+    "en": "88b4c8d5056bd368",
+    "text": "Bawat protocol, endpoint at specification na inihahain nito"
+  },
+  "endpoints.route./admin-api/me.name": {
+    "en": "548b8ddef38a8823",
+    "text": "Ang caller"
+  },
+  "endpoints.route./admin-api/status.name": {
+    "en": "cce5eda33f91d11c",
+    "text": "Status ng serbisyo"
+  },
+  "endpoints.route./admin-api/console/dashboard.name": {
+    "en": "9b5ccd90b2944d73",
+    "text": "Ang front page ng console"
+  },
+  "endpoints.route./admin-api/console/operations.name": {
+    "en": "09b6da5088de6afb",
+    "text": "Bawat operation, para sa mga form ng console"
+  },
+  "endpoints.route./admin-api/console/openapi.json.name": {
+    "en": "c5b582c6e41c78dd",
+    "text": "Ang OpenAPI document ng mga console operation"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "Ang mga helper ng certificate form"
+  },
+  "endpoints.route./admin-api/console/applications/:action.name": {
+    "en": "18ea7bf0d0fcc0d4",
+    "text": "Ang helper ng form ng bagong application"
+  },
+  "endpoints.route./admin-api/console/applications/new.name": {
+    "en": "226595ce0d487761",
+    "text": "Form ng bagong application, gaya ng pagkakaayos ng console"
+  },
+  "endpoints.route./admin-api/keys.name": {
+    "en": "b50a1f343114c6fa",
+    "text": "Mga key pair"
+  },
+  "endpoints.route./admin-api/keys/history.name": {
+    "en": "13b97697b4e1e2b0",
+    "text": "Ang kasaysayan ng signing key"
+  },
+  "endpoints.route./admin-api/keys/:action.name": {
+    "en": "02bd417f55c9790f",
+    "text": "Mag-export ng key pair, o i-rotate ang mga signing key"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "Ang certificate authority na hawak ng realm na ito"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "Bumuo ng hierarchy, mag-issue ng key pair, gumawa ng certificate"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "Bawat certificate na hawak ng realm na ito, o isa sa mga ito nang buo"
+  },
+  "endpoints.route./admin-api/secrets.name": {
+    "en": "d13ef7e84b6dc8bb",
+    "text": "Ang secret store, at kung bumasa mula rito ang process na ito"
+  },
+  "endpoints.route./admin-api/debugger.name": {
+    "en": "542e5e1c1841299c",
+    "text": "Ang listener at api process ng embedded protocol debugger"
+  },
+  "endpoints.route./admin-api/database.name": {
+    "en": "30f6100d283f4d80",
+    "text": "Mga metric ng PostgreSQL at istatistika ng schema"
+  },
+  "endpoints.route./admin-api/risk/metrics.name": {
+    "en": "740320b44f69683c",
+    "text": "Mga metric ng risk scoring"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "Pag-upload ng risk dataset"
+  },
+  "endpoints.route./admin-api/risk/:action.name": {
+    "en": "caad559e549e3108",
+    "text": "Mga risk action"
+  },
+  "endpoints.route./admin-api/vc-status.name": {
+    "en": "ced60a751fc82211",
+    "text": "Credential status"
+  },
+  "endpoints.route./admin-api/vc-status/:action.name": {
+    "en": "be2f7ebc85c75b68",
+    "text": "Mga action sa credential status"
+  },
+  "endpoints.route./admin-api/scheduler/:action.name": {
+    "en": "3483d9e9aab04915",
+    "text": "Mga action ng scheduler"
+  },
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "Mga action sa mail"
+  },
+  "endpoints.route./admin-api/mail/outbox.name": {
+    "en": "d40abea9379f4e22",
+    "text": "Mail outbox"
+  },
+  "endpoints.route./admin-api/mail/outbox/:action.name": {
+    "en": "0311fbdb2c996481",
+    "text": "Mga action sa mail outbox"
+  },
+  "endpoints.route./admin-api/worker-pools.name": {
+    "en": "8bf5d84f5ee5dd08",
+    "text": "Mga worker pool"
+  },
+  "endpoints.route./admin-api/node-health.name": {
+    "en": "6a14636c8aef5de3",
+    "text": "Kalusugan ng node"
+  },
+  "endpoints.route./admin-api/encryption.name": {
+    "en": "eb626f73d72649aa",
+    "text": "Encryption at rest"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "Ang apat na act ng mga data encryption key"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "Mga action sa user"
+  },
+  "endpoints.route./admin-api/groups.name": {
+    "en": "c1524c47a0c5db15",
+    "text": "Mga directory group"
+  },
+  "endpoints.route./admin-api/groups/:action.name": {
+    "en": "aa987cf14daa872f",
+    "text": "Mga action sa group"
+  },
+  "endpoints.route./admin-api/backup-codes.name": {
+    "en": "58306d7221d1bf72",
+    "text": "Mga setting ng recovery code"
+  },
+  "endpoints.route./admin-api/totp.name": {
+    "en": "947a66c0238e7e56",
+    "text": "Mga setting ng TOTP MFA"
+  },
+  "endpoints.route./admin-api/webauthn.name": {
+    "en": "dcc6aecb3740fef3",
+    "text": "Mga setting ng WebAuthn"
+  },
+  "endpoints.route./admin-api/mfa.name": {
+    "en": "63fc7f058d95883b",
+    "text": "Sino ang may second factor"
+  },
+  "endpoints.route./admin-api/mfa/:action.name": {
+    "en": "725b36f8b92fded4",
+    "text": "Burahin ang isang second factor"
+  },
+  "endpoints.route./admin-api/rbac.name": {
+    "en": "85d2e32f951ee980",
+    "text": "Mga role ng admin console"
+  },
+  "endpoints.route./admin-api/rbac/:action.name": {
+    "en": "de7f185fcea232a6",
+    "text": "Mga action sa admin role"
+  },
+  "endpoints.route./admin-api/sessions.name": {
+    "en": "366487a11e4c5380",
+    "text": "Mga live session"
+  },
+  "endpoints.route./admin-api/sessions/:action.name": {
+    "en": "f1fa288cb9378ffc",
+    "text": "Mga live session: tapusin ang isa"
+  },
+  "endpoints.route./admin-api/tokens.name": {
+    "en": "7d8ad8a77751253f",
+    "text": "Mga inissue na token, assertion at ticket, pinangkat ayon sa issuance"
+  },
+  "endpoints.route./admin-api/tokens/set.name": {
+    "en": "8db1ad0da0eb0cd8",
+    "text": "Isang issuance, at bawat credential na dinala nito"
+  },
+  "endpoints.route./admin-api/tokens/:action.name": {
+    "en": "70ffb2afdb826704",
+    "text": "Mga action sa token"
+  },
+  "endpoints.route./admin-api/applications/:action.name": {
+    "en": "f78d20689fac7101",
+    "text": "Mga action sa application"
+  },
+  "endpoints.route./admin-api/users/app-passwords.name": {
+    "en": "dbce87b518a55c12",
+    "text": "Ang mga app password ng isang tao"
+  },
+  "endpoints.route./admin-api/users/devices.name": {
+    "en": "cbd7e46575f64db6",
+    "text": "Ang mga device ng isang tao"
+  },
+  "endpoints.route./admin-api/devices.name": {
+    "en": "2785787c7598b5f2",
+    "text": "Ang device register"
+  },
+  "endpoints.route./admin-api/devices/:action.name": {
+    "en": "82d6c528e12bbe02",
+    "text": "Mga action sa device register"
+  },
+  "endpoints.route./admin-api/device-compliance.name": {
+    "en": "1b28ca2ff0e0999f",
+    "text": "Ang device compliance feed (MDM / posture)"
+  },
+  "endpoints.route./admin-api/device-registration.name": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "Device registration"
+  },
+  "endpoints.route./admin-api/service-accounts.name": {
+    "en": "330b2e1630d653b8",
+    "text": "Mga service account at ang rotation nila"
+  },
+  "endpoints.route./admin-api/devices/monitor.name": {
+    "en": "8a3269dd4401ce60",
+    "text": "Ang device register, binilang"
+  },
+  "endpoints.route./admin-api/users/self-issued-subjects.name": {
+    "en": "ec5770a23a0c10c0",
+    "text": "Ang mga self-issued (SIOPv2) subject ng isang tao"
+  },
+  "endpoints.route./admin-api/users/verifications.name": {
+    "en": "aa12d03c659af2a0",
+    "text": "Ang mga identity verification ng isang tao"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "Form ng bagong user"
+  },
+  "endpoints.route./admin-api/applications/new.name": {
+    "en": "46a0fea8394de3a4",
+    "text": "Form ng bagong application"
+  },
+  "endpoints.route./admin-api/authorization-servers.name": {
+    "en": "7c36031d3ab3bdc8",
+    "text": "Mga authorization server"
+  },
+  "endpoints.route./admin-api/authorization-servers/:action.name": {
+    "en": "2bab6ab3f36adca7",
+    "text": "Mga action sa authorization server"
+  },
+  "endpoints.route./admin-api/risc/accounts.name": {
+    "en": "ac79739f3e78bebc",
+    "text": "Mga RISC account"
+  },
+  "endpoints.route./admin-api/risc/:action.name": {
+    "en": "31d09cc1241351d4",
+    "text": "Mag-emit ng RISC event, o i-reset ang RISC state ng isang account"
+  },
+  "endpoints.route./admin-api/scim/monitor.name": {
+    "en": "6d0d6f35a18900e9",
+    "text": "SCIM traffic"
+  },
+  "endpoints.route./admin-api/ssf/transmitters.name": {
+    "en": "bc790602233f8949",
+    "text": "Mga signal mula sa mga partner"
+  },
+  "endpoints.route./admin-api/deliveries.name": {
+    "en": "2175d3f98d233447",
+    "text": "Mga outbound delivery"
+  },
+  "endpoints.route./admin-api/deliveries/:action.name": {
+    "en": "870b99f43bcd07a3",
+    "text": "Ulitin ang isang outbound delivery"
+  },
+  "endpoints.route./admin-api/ssf/dead-letters.name": {
+    "en": "3f2fb3008f53f3c8",
+    "text": "Mga dead letter"
+  },
+  "endpoints.route./admin-api/signals.name": {
+    "en": "5a70784a76f04344",
+    "text": "Mga natanggap na signal"
+  },
+  "endpoints.route./admin-api/signals/:action.name": {
+    "en": "abf5e7e60e98fa56",
+    "text": "Alisan ng laman ang Shared Signals inbox ng console"
+  },
+  "endpoints.route./admin-api/caep/sessions.name": {
+    "en": "646dc38ef308df94",
+    "text": "Mga CAEP session"
+  },
+  "endpoints.route./admin-api/caep/:action.name": {
+    "en": "ba2a3add441f2808",
+    "text": "Mag-emit ng CAEP event, o i-reset ang CAEP state ng isang session"
+  },
+  "endpoints.route./admin-api/ssf/:action.name": {
+    "en": "d83510d002423a7b",
+    "text": "Baguhin ang isang stream, o mag-transmit ng event"
+  },
+  "endpoints.route./admin-api/spiffe.name": {
+    "en": "dbcb7b6226a620be",
+    "text": "Ang SPIFFE trust domain"
+  },
+  "endpoints.route./admin-api/spiffe/:action.name": {
+    "en": "e59d04e51fdc2e77",
+    "text": "I-rotate ang isang authority, o magtakda ng federated bundle"
+  },
+  "endpoints.route./admin-api/spiffe/entries.name": {
+    "en": "3bf5e6f5489f682c",
+    "text": "Ang mga registration entry"
+  },
+  "endpoints.route./admin-api/spiffe/entries/:action.name": {
+    "en": "74d79cc22326e3cd",
+    "text": "Gumawa, baguhin o burahin ang isang registration entry"
+  },
+  "endpoints.route./admin-api/spiffe/agents.name": {
+    "en": "d5576daf0ffe1c68",
+    "text": "Ang mga na-attest na agent"
+  },
+  "endpoints.route./admin-api/spiffe/agents/:action.name": {
+    "en": "109f2fc8119d9c06",
+    "text": "I-ban, i-unban o kalimutan ang isang agent"
+  },
+  "endpoints.route./admin-api/spiffe/brokers.name": {
+    "en": "3afd6d3f274707ff",
+    "text": "Ang mga broker ng SPIFFE Broker API"
+  },
+  "endpoints.route./admin-api/spiffe/brokers/:action.name": {
+    "en": "6c08f9dc74c0d0b9",
+    "text": "Pahintulutan o alisin ang isang SPIFFE broker"
+  },
+  "endpoints.route./admin-api/delegation/policy.name": {
+    "en": "f062ac9572a07d80",
+    "text": "Delegation policy (WS-Trust at token exchange)"
+  },
+  "endpoints.route./admin-api/permissions.name": {
+    "en": "cce5e2f6b790b802",
+    "text": "Mga delegated permission"
+  },
+  "endpoints.route./admin-api/permissions/groups.name": {
+    "en": "c20e5fba08d328a5",
+    "text": "Aling mga application ang pinagdugtong sa isa't isa"
+  },
+  "endpoints.route./admin-api/permissions/:action.name": {
+    "en": "d6d712ed91d38438",
+    "text": "Magtakda at magbigay ng mga delegated permission"
+  },
+  "endpoints.route./admin-api/attribute-sources.name": {
+    "en": "c5a898cd54934862",
+    "text": "Mga attribute source"
+  },
+  "endpoints.route./admin-api/attribute-sources/:action.name": {
+    "en": "df8c7ea77b91b6af",
+    "text": "Baguhin ang mga attribute source"
+  },
+  "endpoints.route./admin-api/secret-destinations.name": {
+    "en": "4daa34966ee9102d",
+    "text": "Mga destinasyon ng secret push"
+  },
+  "endpoints.route./admin-api/secret-destinations/:action.name": {
+    "en": "f8f3c83e76dc9f4c",
+    "text": "Baguhin ang mga destinasyon ng secret push"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "Mga outbound SCIM client"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "Baguhin ang mga outbound SCIM client"
+  },
+  "endpoints.route./admin-api/roles/preview.name": {
+    "en": "c2e62734c4466542",
+    "text": "Ii-issue kaya ito?"
+  },
+  "endpoints.route./admin-api/roles/:action.name": {
+    "en": "1baadaaa0e1df852",
+    "text": "Gumawa at baguhin ang mga role"
+  },
+  "endpoints.route./admin-api/policies/:action.name": {
+    "en": "a5461fc6541725a3",
+    "text": "Baguhin ang isang policy"
+  },
+  "endpoints.route./admin-api/consent/:action.name": {
+    "en": "a7acd63ff9b05a72",
+    "text": "Magbigay at bawiin ang consent"
+  },
+  "endpoints.route./admin-api/used-assertions.name": {
+    "en": "73611edaf06c6db9",
+    "text": "Mga nagamit nang assertion"
+  },
+  "endpoints.route./admin-api/error-codes.name": {
+    "en": "b485a2ff39ac01b5",
+    "text": "Mga error code"
+  },
+  "endpoints.route./admin-api/audit.name": {
+    "en": "e4d36f9a4e22d3a2",
+    "text": "Audit log"
+  },
+  "endpoints.route./admin-api/realms.name": {
+    "en": "6dd313699a1bc23c",
+    "text": "Mga trust realm"
+  },
+  "endpoints.route./admin-api/realms/:action.name": {
+    "en": "2e89e91f0984a5ce",
+    "text": "Mga action sa trust realm"
+  },
+  "endpoints.route./admin-api/cells/:action.name": {
+    "en": "e801f925c59521a5",
+    "text": "Ilipat ang home ng isang tao"
+  },
+  "endpoints.route./admin-api/cells/people.name": {
+    "en": "3487e884b7bb0884",
+    "text": "Mga residente ng cell"
+  },
+  "endpoints.route./admin-api/listeners/:action.name": {
+    "en": "f35429cc1bbc09a8",
+    "text": "Magtakda ng mga custom listener, o i-map ang mga application sa mga ito"
+  },
+  "endpoints.route./admin-api/config/:action.name": {
+    "en": "7e8873a02dca9738",
+    "text": "Mga action sa configuration"
+  },
+  "endpoints.route./admin-api/oauth2.name": {
+    "en": "e39e74c6a9c77af0",
+    "text": "Mga setting ng OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./admin-api/oid4vci-settings.name": {
+    "en": "82c9b9b35fc23789",
+    "text": "Mga setting ng OpenID4VCI"
+  },
+  "endpoints.route./admin-api/oid4vp-settings.name": {
+    "en": "87b67f1b979a04d8",
+    "text": "Mga setting ng OpenID4VP"
+  },
+  "endpoints.route./admin-api/kerberos.name": {
+    "en": "288b1e0163e753a9",
+    "text": "Mga setting ng Kerberos"
+  },
+  "endpoints.route./admin-api/ldap.name": {
+    "en": "b4b5794e4fe30cc2",
+    "text": "Mga setting ng LDAP / LDAPS"
+  },
+  "endpoints.route./admin-api/ldap/directory.name": {
+    "en": "f02a3e57dc2e468e",
+    "text": "Bawat entry sa directory"
+  },
+  "endpoints.route./admin-api/ldap/applications.name": {
+    "en": "47e8fc7f73cf7414",
+    "text": "Ang application registry ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/federations.name": {
+    "en": "834988ab8b5b6754",
+    "text": "Ang federation register ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/spiffe.name": {
+    "en": "6d82cdc8d7fb4c53",
+    "text": "Ang mga SPIFFE container ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/roles.name": {
+    "en": "b0619c49a1d25fe7",
+    "text": "Ang mga role entry ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/policies.name": {
+    "en": "05f1b17e20b06c12",
+    "text": "Ang policy repository ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/devices.name": {
+    "en": "69b995f018f2f463",
+    "text": "Ang device register ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/peps.name": {
+    "en": "c36d4e8180e7ccbf",
+    "text": "Ang mga nakarehistrong remote PEP ayon sa hawak ng directory"
+  },
+  "endpoints.route./admin-api/ldap/service.name": {
+    "en": "f6c749e9d414c44e",
+    "text": "Kung ano ANG directory, sa ngayon"
+  },
+  "endpoints.route./admin-api/wstrust.name": {
+    "en": "9f6a673422101370",
+    "text": "Mga setting ng WS-Trust"
+  },
+  "endpoints.route./admin-api/wsfed.name": {
+    "en": "87ba4432c64fb34a",
+    "text": "Mga setting ng WS-Federation"
+  },
+  "endpoints.route./admin-api/tls.name": {
+    "en": "96b20b887882a558",
+    "text": "Mga setting ng TLS / mutual TLS"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "Client-certificate truststore"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "Magdagdag o mag-alis ng client-certificate trust anchor"
+  },
+  "endpoints.route./admin-api/kerberos/claims.name": {
+    "en": "5033ca8bef02346f",
+    "text": "Mga Kerberos PAC claim"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "Magdagdag, mag-alis, mag-clear o magpalit ng Kerberos PAC claim"
+  },
+  "endpoints.route./admin-api/kerberos/principals.name": {
+    "en": "2832cf5b58397e32",
+    "text": "Mga Kerberos principal"
+  },
+  "endpoints.route./admin-api/kerberos/principals/:action.name": {
+    "en": "e3b666e9c2cf04a5",
+    "text": "Gumawa, i-rotate o burahin ang isang service principal, burahin ang mga key ng isang tao, alisin ang mga dating key version, o i-rotate ang krbtgt key"
+  },
+  "endpoints.route./admin-api/token-lifetimes.name": {
+    "en": "ddad2319f680d9f9",
+    "text": "Mga lifetime ng token"
+  },
+  "endpoints.route./admin-api/token-lifetimes/:action.name": {
+    "en": "b4ceed5378a53501",
+    "text": "Mga action sa token lifetime"
+  },
+  "endpoints.route./admin-api/saml-assertions.name": {
+    "en": "baa38758f2ab7660",
+    "text": "Mga SAML assertion"
+  },
+  "endpoints.route./admin-api/saml-assertions/:action.name": {
+    "en": "37942134597c5c23",
+    "text": "Mga action sa SAML assertion"
+  },
+  "endpoints.route./admin-api/claims.name": {
+    "en": "65b9df09c075b30c",
+    "text": "Mga custom claim"
+  },
+  "endpoints.route./admin-api/claims/:action.name": {
+    "en": "cff4a3fe8d0b0994",
+    "text": "Mga action sa custom claim"
+  },
+  "endpoints.route./admin-api/userinfo-claims.name": {
+    "en": "ba426b442708b016",
+    "text": "Mga UserInfo claim"
+  },
+  "endpoints.route./admin-api/userinfo-claims/:action.name": {
+    "en": "a538bc346df5c3ee",
+    "text": "Mga action sa UserInfo claim"
+  },
+  "endpoints.route./admin-api/federation.name": {
+    "en": "ec49c08ccb8dd325",
+    "text": "Mga federation relationship"
+  },
+  "endpoints.route./admin-api/federation/:action.name": {
+    "en": "ae7246fdf8a72fad",
+    "text": "I-configure ang isang federation relationship"
+  },
+  "endpoints.route./admin-api/saml2.name": {
+    "en": "fad22d219a6fe6f3",
+    "text": "SAML 2.0 identity provider"
+  },
+  "endpoints.route./admin-api/saml2/:action.name": {
+    "en": "81efebabec383a15",
+    "text": "Mga action sa SAML 2.0 service provider"
+  },
+  "endpoints.route./admin-api/saml11.name": {
+    "en": "cb7331a7d83104ee",
+    "text": "SAML 1.1 identity provider"
+  },
+  "endpoints.route./admin-api/saml11/:action.name": {
+    "en": "f507cdd5e7327df3",
+    "text": "Mga action sa SAML 1.1 relying party"
+  },
+  "endpoints.route./admin-api/saml-attributes.name": {
+    "en": "e9808df4bc485128",
+    "text": "Mga custom SAML attribute"
+  },
+  "endpoints.route./admin-api/saml-attributes/:action.name": {
+    "en": "98f2c7dbe4c6c89c",
+    "text": "Mga action sa custom SAML attribute"
+  },
+  "endpoints.route./admin-api/credential-claims.name": {
+    "en": "b3466196455ff65d",
+    "text": "Mga credential claim"
+  },
+  "endpoints.route./admin-api/credential-claims/:action.name": {
+    "en": "c6f0e9281179a739",
+    "text": "Mga action sa credential claim"
+  },
+  "endpoints.route./admin-api/verifier-request.name": {
+    "en": "41b747157d916a8b",
+    "text": "Verifier request (ang bar door)"
+  },
+  "endpoints.route./admin-api/verifier-request/:action.name": {
+    "en": "6b2d5671c824f225",
+    "text": "Mga action sa verifier request"
+  },
+  "endpoints.route./admin-api/verifications/start.name": {
+    "en": "2eacfd95342c2fd3",
+    "text": "Magsimula ng verification"
+  },
+  "endpoints.route./admin-api/verifications.name": {
+    "en": "1a34e870e6381c91",
+    "text": "Ang resulta ng isang verification"
+  },
+  "endpoints.route./sts.name": {
+    "en": "974efec49bd38548",
+    "text": "Security Token Service"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "STS certificate"
+  },
+  "endpoints.route./wsfed.name": {
+    "en": "174e4d79e29b5d71",
+    "text": "Passive requestor endpoint"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "Auto-post script ng sign-in response"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "Federation metadata"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "Federation metadata para sa IISANG relying party"
+  },
+  "endpoints.route./wsfed/rp.name": {
+    "en": "1f62bc9e9246c363",
+    "text": "Mock relying party (hindi spec endpoint)"
+  },
+  "endpoints.route./saml2.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Kung ano ang profile"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Identity provider metadata"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "Identity provider metadata para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/sso.name": {
+    "en": "e16a38fa8fbc04a0",
+    "text": "Single Sign-On service"
+  },
+  "endpoints.route./saml2/sso/:sp.name": {
+    "en": "004995b3099eff0b",
+    "text": "Single Sign-On service para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/unsolicited.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Sign-in na sinimulan ng identity provider"
+  },
+  "endpoints.route./saml2/unsolicited/:sp.name": {
+    "en": "2a237a561e4bdb89",
+    "text": "Sign-in na sinimulan ng identity provider para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/aa.name": {
+    "en": "162f9d403c0bae47",
+    "text": "Attribute authority"
+  },
+  "endpoints.route./saml2/aa/:sp.name": {
+    "en": "fddab449328f6e63",
+    "text": "Attribute authority para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/ars.name": {
+    "en": "46cbd4aa352d2c6d",
+    "text": "Artifact Resolution Service"
+  },
+  "endpoints.route./saml2/ars/:sp.name": {
+    "en": "4ef0f8d60c58078a",
+    "text": "Artifact Resolution Service para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/slo.name": {
+    "en": "4edb185d6016b03e",
+    "text": "Single Logout service"
+  },
+  "endpoints.route./saml2/slo/:sp.name": {
+    "en": "98b9e34fbd53cb3f",
+    "text": "Single Logout service para sa IISANG service provider"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "Auto-post script ng HTTP POST binding"
+  },
+  "endpoints.route./saml2/sp.name": {
+    "en": "a09df9ed92de4454",
+    "text": "Mock service provider (hindi spec endpoint)"
+  },
+  "endpoints.route./saml11.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Kung ano ang profile"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Identity provider metadata"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "Identity provider metadata para sa IISANG relying party"
+  },
+  "endpoints.route./saml11/sso.name": {
+    "en": "bf8583daf48f7e2b",
+    "text": "Inter-site transfer service"
+  },
+  "endpoints.route./saml11/sso/:rp.name": {
+    "en": "9fe980e24e7a8dfd",
+    "text": "Inter-site transfer service para sa IISANG relying party"
+  },
+  "endpoints.route./saml11/responder.name": {
+    "en": "4c0c301abdc81459",
+    "text": "SAML responder (SOAP)"
+  },
+  "endpoints.route./saml11/responder/:rp.name": {
+    "en": "fff6a87d7e14a3a4",
+    "text": "SAML responder para sa IISANG relying party"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "Auto-post script ng Browser/POST profile"
+  },
+  "endpoints.route./saml11/rp.name": {
+    "en": "1f62bc9e9246c363",
+    "text": "Mock relying party (hindi spec endpoint)"
+  },
+  "endpoints.route./federation.name": {
+    "en": "c025c7c05450031b",
+    "text": "Kung ano ang federation dito"
+  },
+  "endpoints.route./federation/login/:id.name": {
+    "en": "561e36f4539a01de",
+    "text": "Magsimula ng federated sign-in"
+  },
+  "endpoints.route./federation/acs/:id.name": {
+    "en": "fff6118cbd019f5e",
+    "text": "Assertion consumer service / wreply / redirect_uri"
+  },
+  "endpoints.route./federation/link/:handle.name": {
+    "en": "b1f3d17607ed42ee",
+    "text": "I-link ang subject ng isang partner sa unang sign-in"
+  },
+  "endpoints.route./federation/slo/:id.name": {
+    "en": "4974c5129575d272",
+    "text": "Ang sign-out ng isang partner, sa browser (#167)"
+  },
+  "endpoints.route./federation/backchannel-logout/:id.name": {
+    "en": "27265e6379adee8c",
+    "text": "OpenID Connect Back-Channel Logout, bilang relying party (#167)"
+  },
+  "endpoints.route./federation/frontchannel-logout/:id.name": {
+    "en": "f0ccc33fe373786e",
+    "text": "OpenID Connect Front-Channel Logout, bilang relying party (#167)"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "Ang SARILING SAML metadata ng serbisyong ito, bawat partner"
+  },
+  "endpoints.route./federation/jwks/:id.name": {
+    "en": "56f010e78f399989",
+    "text": "Ang encryption key ng isang OpenID Connect relationship (#168)"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "Authorization Server Metadata"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "Authorization Server Metadata (issuer na may path)"
+  },
+  "endpoints.route./.well-known/webfinger.name": {
+    "en": "4ee1f8cf469f5a7d",
+    "text": "WebFinger issuer discovery"
+  },
+  "endpoints.route./.well-known/openid-configuration.name": {
+    "en": "4f19360f1fe5690d",
+    "text": "OpenID Provider Configuration"
+  },
+  "endpoints.route./.well-known/openid-configuration/*.name": {
+    "en": "34de55b655967e89",
+    "text": "OpenID Provider Configuration (anyong inserted-path ng RFC 8414)"
+  },
+  "endpoints.route./*/.well-known/openid-configuration.name": {
+    "en": "4cd225c57c9e9ff5",
+    "text": "OpenID Provider Configuration (issuer na may path)"
+  },
+  "endpoints.route./oauth2/authorize.name": {
+    "en": "91ef8dd96110c183",
+    "text": "Authorization endpoint"
+  },
+  "endpoints.route./logout.name": {
+    "en": "1228edbd8a552e3b",
+    "text": "Mag-sign out sa lahat"
+  },
+  "endpoints.route./authn/login.name": {
+    "en": "cff20aed466d99d5",
+    "text": "Screen ng sign-in"
+  },
+  "endpoints.route./authn/select-idp.name": {
+    "en": "afae7eb3e60fb142",
+    "text": "Pagpili ng federation partner"
+  },
+  "endpoints.route./authn/spnego.name": {
+    "en": "0a014fa4b2685cd7",
+    "text": "Mag-sign in gamit ang Kerberos ticket"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "Mag-sign in gamit ang wallet"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "Wallet sign-in: maghintay, at tapusin"
+  },
+  "endpoints.route./authn/wallet/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "Wallet sign-in: ang sagot ng Digital Credentials API"
+  },
+  "endpoints.route./authn/wallet.js.name": {
+    "en": "61ec0700cb9645d2",
+    "text": "Script ng wallet sign-in"
+  },
+  "endpoints.route./authn/password-factor.name": {
+    "en": "153eb47c253809aa",
+    "text": "Password bilang second factor"
+  },
+  "endpoints.route./authn/webauthn.name": {
+    "en": "5bebca79ee720f59",
+    "text": "Hakbang ng WebAuthn security key"
+  },
+  "endpoints.route./authn/backup-code.name": {
+    "en": "305d816e110db5e1",
+    "text": "Hakbang ng recovery code bilang second factor"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "Hakbang ng code na ipinadala sa email"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "Sign-in link na ipinadala sa email: ang pahinang naghihintay"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "Sign-in link na ipinadala sa email: kung saan ito dumarating"
+  },
+  "endpoints.route./authn/language.name": {
+    "en": "33466e5d338f55b0",
+    "text": "Pagpili ng wika"
+  },
+  "endpoints.route./authn/password-change.name": {
+    "en": "7e99dc1a87faaf46",
+    "text": "Hakbang ng sapilitang pagpapalit ng password"
+  },
+  "endpoints.route./authn/mfa-setup.name": {
+    "en": "48e0b4bbb949a879",
+    "text": "Hakbang ng pag-set up ng kinakailangang second factor"
+  },
+  "endpoints.route./authn/totp.name": {
+    "en": "a89de574ee2c21ab",
+    "text": "Hakbang ng one-time code bilang second factor"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "Script ng browser fingerprint (opsyonal)"
+  },
+  "endpoints.route./authn/webauthn.js.name": {
+    "en": "b82dcc38e2ea2cd9",
+    "text": "Script ng WebAuthn ceremony"
+  },
+  "endpoints.route./oauth2/check_session.name": {
+    "en": "267337fd3ad0ab7f",
+    "text": "OP iframe (check_session_iframe)"
+  },
+  "endpoints.route./oauth2/check_session.js.name": {
+    "en": "d9f2d9b37bfe6db9",
+    "text": "Script ng OP iframe"
+  },
+  "endpoints.route./oauth2/logout.name": {
+    "en": "9901e3b8fd763f16",
+    "text": "Pagtatapos ng session (end_session_endpoint)"
+  },
+  "endpoints.route./oauth2/token.name": {
+    "en": "f60f44154acbc444",
+    "text": "Token endpoint"
+  },
+  "endpoints.route./devices/test/compliance.name": {
+    "en": "8bf03cfce0422802",
+    "text": "Test control ng device compliance (hindi spec endpoint)"
+  },
+  "endpoints.route./dpop/nonce-mode.name": {
+    "en": "ea5ac586b3661176",
+    "text": "Switch ng DPoP nonce (hindi spec endpoint)"
+  },
+  "endpoints.route./oauth2/consent.name": {
+    "en": "f38b4a6b64fec408",
+    "text": "Screen ng consent"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "Ang script ng form-post response"
+  },
+  "endpoints.route./:as/oauth2/authorize.name": {
+    "en": "35a6a7905bcfc924",
+    "text": "Authorization endpoint (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/token.name": {
+    "en": "eff543132d567c86",
+    "text": "Token endpoint (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/userinfo.name": {
+    "en": "448a4f61fc7b0310",
+    "text": "UserInfo endpoint (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/introspect.name": {
+    "en": "d1e650a8a10a9e1f",
+    "text": "Introspection (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/par.name": {
+    "en": "1540774db9722dee",
+    "text": "Pushed authorization requests (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/revoke.name": {
+    "en": "5f15734899e15325",
+    "text": "Revocation (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/register.name": {
+    "en": "20e51292a909bb24",
+    "text": "Registration (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "Pamamahala ng nakarehistrong client (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/logout.name": {
+    "en": "9f3e0399c82bb2d2",
+    "text": "Pagtatapos ng session (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./:as/oauth2/jwks.name": {
+    "en": "da3c9537b549c3a3",
+    "text": "JWKS (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./oauth2/rfc9700.name": {
+    "en": "d1dfc6ccb5d6f5ab",
+    "text": "Ulat ng RFC 9700 mode (hindi spec endpoint)"
+  },
+  "endpoints.route./oauth2/fapi.name": {
+    "en": "c0f8666df47dcdde",
+    "text": "Ulat ng FAPI profile (hindi spec endpoint)"
+  },
+  "endpoints.route./:as/oauth2/fapi.name": {
+    "en": "2db6a31fbce294e3",
+    "text": "Ulat ng FAPI profile (isang pinangalanang authorization server)"
+  },
+  "endpoints.route./oauth2/oauth21.name": {
+    "en": "632451480bda3aec",
+    "text": "Ulat ng OAuth 2.1 mode (hindi spec endpoint)"
+  },
+  "endpoints.route./oauth2/userinfo.name": {
+    "en": "aebc2aa96e6b1b70",
+    "text": "UserInfo endpoint"
+  },
+  "endpoints.route./oauth2/introspect.name": {
+    "en": "328dfd36fb81f446",
+    "text": "Introspection endpoint"
+  },
+  "endpoints.route./status-lists/access-tokens.name": {
+    "en": "f059bd82cb3acaac",
+    "text": "Access-token status list"
+  },
+  "endpoints.route./status-lists.name": {
+    "en": "187ac505c7e39fc8",
+    "text": "Access-token Status List Aggregation"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "Client attestation challenge endpoint"
+  },
+  "endpoints.route./oauth2/par.name": {
+    "en": "59993176c4a0e4a5",
+    "text": "Pushed authorization request endpoint"
+  },
+  "endpoints.route./oauth2/step-up/resource/:application.name": {
+    "en": "2d9263a1f29be372",
+    "text": "Pansamantalang resource para sa step-up"
+  },
+  "endpoints.route./admin-api/oauth2/monitor.name": {
+    "en": "21eb6990b9a90996",
+    "text": "Aktibidad ng OAuth 2.0 / OIDC sa JSON"
+  },
+  "endpoints.route./admin-api/oauth2/monitor/:action.name": {
+    "en": "b9d72b1b82f53e0d",
+    "text": "Ang monitoring action ng OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./oauth2/grants/:grantId.name": {
+    "en": "c949ed02f1ba90a5",
+    "text": "Grant Management API"
+  },
+  "endpoints.route./admin-api/grants.name": {
+    "en": "b0eb5b67d86e7f62",
+    "text": "Ang Grants console page sa JSON"
+  },
+  "endpoints.route./admin-api/grants/:action.name": {
+    "en": "d78e7d6c27003500",
+    "text": "Bawiin ang isang grant"
+  },
+  "endpoints.route./admin-api/commands.name": {
+    "en": "88006178bfa3632d",
+    "text": "Ang OpenID Provider Commands console page sa JSON"
+  },
+  "endpoints.route./admin-api/commands/:action.name": {
+    "en": "b784156dac51ba48",
+    "text": "Magpadala ng command, o ulitin ang isa"
+  },
+  "endpoints.route./oauth2/commands/callback.name": {
+    "en": "077e67ad034f4945",
+    "text": "Callback endpoint ng OpenID Provider Commands"
+  },
+  "endpoints.route./oauth2/commands/mock-rp.name": {
+    "en": "bd13343933f0af89",
+    "text": "Command endpoint ng mock relying party (hindi spec endpoint)"
+  },
+  "endpoints.route./admin-api/claim-providers.name": {
+    "en": "263c769f55b58ee3",
+    "text": "Ang Claims Providers console page sa JSON"
+  },
+  "endpoints.route./admin-api/claim-providers/:action.name": {
+    "en": "51791ee150e7550c",
+    "text": "Baguhin ang Claims Provider register"
+  },
+  "endpoints.route./oauth2/device_authorization.name": {
+    "en": "17f9953de35f59f9",
+    "text": "Device Authorization Endpoint"
+  },
+  "endpoints.route./oauth2/bc-authorize.name": {
+    "en": "8abae32691ff0227",
+    "text": "Backchannel Authentication Endpoint (CIBA)"
+  },
+  "endpoints.route./oauth2/revoke.name": {
+    "en": "9033948292614d8a",
+    "text": "Revocation endpoint"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "Dynamic client registration"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "Pamamahala ng nakarehistrong client"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "Credential Issuer Metadata"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "Credential Issuer Metadata (issuer na may path)"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "JWT VC Issuer Metadata"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "JWT VC Issuer Metadata (issuer na may path)"
+  },
+  "endpoints.route./oid4vci/nonce.name": {
+    "en": "64d7b165db23d809",
+    "text": "Nonce endpoint"
+  },
+  "endpoints.route./oid4vci/credential.name": {
+    "en": "f1a74c0c1d1a9142",
+    "text": "Credential endpoint"
+  },
+  "endpoints.route./oid4vci/status-lists/1.name": {
+    "en": "6bc2372d3bb214c3",
+    "text": "Token Status List"
+  },
+  "endpoints.route./oid4vci/status-lists.name": {
+    "en": "b7c39aa8efc43f99",
+    "text": "Status List Aggregation"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
+    "en": "69e5a2172fd0dff1",
+    "text": "Bitstring Status List credential"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
+    "en": "843ce39d261d74ad",
+    "text": "Maglathala ng status list (VC-API, test control)"
+  },
+  "endpoints.route./oid4vci/deferred_credential.name": {
+    "en": "b64bd315376ba1ef",
+    "text": "Deferred credential endpoint"
+  },
+  "endpoints.route./oid4vci/notification.name": {
+    "en": "e1a25561e414b22c",
+    "text": "Notification endpoint"
+  },
+  "endpoints.route./oid4vci/notification/:id.name": {
+    "en": "deea622c6c4f613a",
+    "text": "Pagbasa pabalik ng notification (hindi spec endpoint)"
+  },
+  "endpoints.route./oid4vci/last_request.name": {
+    "en": "401134042ffcd533",
+    "text": "Huling Credential Request (hindi spec endpoint)"
+  },
+  "endpoints.route./oid4vci/credential-offer/:id.name": {
+    "en": "357ca7bdfcc31665",
+    "text": "Credential Offer sa pamamagitan ng reference"
+  },
+  "endpoints.route./issuer.name": {
+    "en": "8c387c4af4624cf3",
+    "text": "Web page ng issuer"
+  },
+  "endpoints.route./issuer/offer.name": {
+    "en": "8c1458927d4601d8",
+    "text": "Bumuo ng Credential Offer"
+  },
+  "endpoints.route./bbs/keys/:id.name": {
+    "en": "58347a1730d54e91",
+    "text": "BBS public key"
+  },
+  "endpoints.route./vc-api/issuers.name": {
+    "en": "02093df3defa8360",
+    "text": "Ang mga VC-API issuer (test control)"
+  },
+  "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
+    "en": "413cb2bffe95b83f",
+    "text": "Mag-issue ng credential (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/credentials/verify.name": {
+    "en": "f4d98610242a61f2",
+    "text": "I-verify ang isang credential (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/presentations/verify.name": {
+    "en": "8653b56b034f4dff",
+    "text": "I-verify ang isang presentation (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
+    "en": "71a4cace2f394f23",
+    "text": "Patunayan ang isang presentation (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/credentials/derive.name": {
+    "en": "25c9160867a02407",
+    "text": "Kumuha ng selective disclosure (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/credentials/status.name": {
+    "en": "bc88654c0b540225",
+    "text": "Baguhin ang status ng isang credential (VC-API, test control)"
+  },
+  "endpoints.route./vc-api/resolve.name": {
+    "en": "24b89e8d97970744",
+    "text": "I-resolve ang isang DID (test control)"
+  },
+  "endpoints.route./vc-api/dereference.name": {
+    "en": "94ef1efe3d8eb38f",
+    "text": "I-dereference ang isang DID URL (test control)"
+  },
+  "endpoints.route./.well-known/did.json.name": {
+    "en": "9400b0ba526646db",
+    "text": "DID document (did:web)"
+  },
+  "endpoints.route./did.json.name": {
+    "en": "64a6ef9ae9a20c82",
+    "text": "DID document sa isang did:web path (mga trust realm)"
+  },
+  "endpoints.route./applications/:application/did.json.name": {
+    "en": "7d0bcaaf2c946cba",
+    "text": "Ang DID document ng isang application"
+  },
+  "endpoints.route./did/generate.name": {
+    "en": "a1c060c730eef358",
+    "text": "Gumawa ng verifiable DID (hindi spec endpoint)"
+  },
+  "endpoints.route./.well-known/did-configuration.json.name": {
+    "en": "ea3b5de3683521ad",
+    "text": "Domain Linkage Credential"
+  },
+  "endpoints.route./oid4vp/verifier.name": {
+    "en": "d4002638665322b1",
+    "text": "Web page ng verifier"
+  },
+  "endpoints.route./oid4vp/start.name": {
+    "en": "316fa1e4051e38a7",
+    "text": "Bumuo ng Authorization Request"
+  },
+  "endpoints.route./oid4vp/verifier-certificate.name": {
+    "en": "9e006ca613ebe851",
+    "text": "Ang x509 identity ng Verifier"
+  },
+  "endpoints.route./oid4vp/request/:id.name": {
+    "en": "72816b085ee822bd",
+    "text": "Request Object"
+  },
+  "endpoints.route./oid4vp/response.name": {
+    "en": "041dda1707b526b4",
+    "text": "Response URI"
+  },
+  "endpoints.route./oid4vp/result/:state.name": {
+    "en": "14e2c5c0b3aca8de",
+    "text": "Hatol ng verification (hindi spec endpoint)"
+  },
+  "endpoints.route./oid4vp/done.name": {
+    "en": "f324991aa3adb3d3",
+    "text": "Pahina ng tapos na presentation"
+  },
+  "endpoints.route./enroll/acme/directory.name": {
+    "en": "104ffd34f6a0e8e7",
+    "text": "Ang ACME directory"
+  },
+  "endpoints.route./enroll/acme/new-nonce.name": {
+    "en": "58500cdad5cfc4d8",
+    "text": "Isang bagong Replay-Nonce"
+  },
+  "endpoints.route./enroll/acme/new-account.name": {
+    "en": "19f7ad85f8039402",
+    "text": "Gumawa o maghanap ng account"
+  },
+  "endpoints.route./enroll/acme/account/:id.name": {
+    "en": "d8e1731e5f342c53",
+    "text": "Isang account"
+  },
+  "endpoints.route./enroll/acme/account/:id/orders.name": {
+    "en": "d2c2d051de5a7992",
+    "text": "Ang mga order ng isang account"
+  },
+  "endpoints.route./enroll/acme/new-order.name": {
+    "en": "18adf271f8844b21",
+    "text": "Gumawa ng order"
+  },
+  "endpoints.route./enroll/acme/order/:id.name": {
+    "en": "8040f78fc2b0df03",
+    "text": "Isang order"
+  },
+  "endpoints.route./enroll/acme/order/:id/finalize.name": {
+    "en": "b6644906e260eb21",
+    "text": "I-finalize ang isang order"
+  },
+  "endpoints.route./enroll/acme/authz/:id.name": {
+    "en": "56c0850aaa4bcf14",
+    "text": "Isang authorization"
+  },
+  "endpoints.route./enroll/acme/challenge/:id.name": {
+    "en": "cecfa83a474620dc",
+    "text": "Isang challenge"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "Mag-download ng certificate"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "Bawiin ang isang certificate"
+  },
+  "endpoints.route./enroll/acme/key-change.name": {
+    "en": "e5e400a69df90c45",
+    "text": "Ilipat ang isang account sa bagong key"
+  },
+  "endpoints.route./enroll/acme/renewal-info/:id.name": {
+    "en": "3baccc984057446f",
+    "text": "Impormasyon sa renewal"
+  },
+  "endpoints.route./admin-api/acme.name": {
+    "en": "ccdc212d6fcfff07",
+    "text": "Ang ACME console page sa JSON"
+  },
+  "endpoints.route./admin-api/acme/monitor.name": {
+    "en": "96d92e1bcdcc2d27",
+    "text": "Mga ACME enrollment sa JSON"
+  },
+  "endpoints.route./admin-api/acme/:action.name": {
+    "en": "aa09fbaeffaec922",
+    "text": "Ang mga ACME console action"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "Mga CA certificate"
+  },
+  "endpoints.route./.well-known/est/simpleenroll.name": {
+    "en": "1ffad68b1154847d",
+    "text": "Simple enrollment"
+  },
+  "endpoints.route./.well-known/est/simplereenroll.name": {
+    "en": "cd138debc7dcace9",
+    "text": "Simple re-enrollment"
+  },
+  "endpoints.route./.well-known/est/serverkeygen.name": {
+    "en": "beb605660186e4e5",
+    "text": "Server-side key generation"
+  },
+  "endpoints.route./.well-known/est/csrattrs.name": {
+    "en": "fa0a2c47c0b1dfba",
+    "text": "Mga CSR attribute"
+  },
+  "endpoints.route./.well-known/est/fullcmc.name": {
+    "en": "d8a28887e3416c39",
+    "text": "Full CMC"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "Mga CA certificate (may label)"
+  },
+  "endpoints.route./.well-known/est/:label/simpleenroll.name": {
+    "en": "cd563ee6554e6733",
+    "text": "Simple enrollment (may label)"
+  },
+  "endpoints.route./.well-known/est/:label/simplereenroll.name": {
+    "en": "cf34b617dc30eb0d",
+    "text": "Simple re-enrollment (may label)"
+  },
+  "endpoints.route./.well-known/est/:label/serverkeygen.name": {
+    "en": "698e0b99518ef7a0",
+    "text": "Server-side key generation (may label)"
+  },
+  "endpoints.route./.well-known/est/:label/csrattrs.name": {
+    "en": "a99bf6e38057e196",
+    "text": "Mga CSR attribute (may label)"
+  },
+  "endpoints.route./.well-known/est/:label/fullcmc.name": {
+    "en": "9342cd6960af927d",
+    "text": "Full CMC (may label)"
+  },
+  "endpoints.route./.well-known/est/nonce.name": {
+    "en": "fac4d513cd37ea55",
+    "text": "Nonce para sa freshness ng attestation"
+  },
+  "endpoints.route./.well-known/est/:label/nonce.name": {
+    "en": "228380fc44850d1a",
+    "text": "Nonce para sa freshness ng attestation (may label)"
+  },
+  "endpoints.route./admin-api/est.name": {
+    "en": "d52ede6acd0f288e",
+    "text": "Ang EST console page sa JSON"
+  },
+  "endpoints.route./admin-api/est/monitor.name": {
+    "en": "d92f192b9774f4df",
+    "text": "Mga EST enrollment sa JSON"
+  },
+  "endpoints.route./admin-api/est/:action.name": {
+    "en": "560ee5483e3bac3e",
+    "text": "Mag-issue gamit ang server key, bawiin, o baguhin ang mga host name"
+  },
+  "endpoints.route./.well-known/openid-federation.name": {
+    "en": "d1df780ba25b939c",
+    "text": "Ang Entity Configuration"
+  },
+  "endpoints.route./oidfed/fetch.name": {
+    "en": "f5422a3881454156",
+    "text": "Kumuha ng Subordinate Statement"
+  },
+  "endpoints.route./oidfed/list.name": {
+    "en": "ce37f0ea513eb35f",
+    "text": "Subordinate Listing"
+  },
+  "endpoints.route./oidfed/resolve.name": {
+    "en": "7adde00f12c465ff",
+    "text": "I-resolve ang isang entity"
+  },
+  "endpoints.route./oidfed/trust-mark.name": {
+    "en": "77987668f6339bf8",
+    "text": "Ang Trust Mark endpoint"
+  },
+  "endpoints.route./oidfed/extended-list.name": {
+    "en": "b14e63c94c9083ed",
+    "text": "Extended Subordinate Listing"
+  },
+  "endpoints.route./oidfed/collection.name": {
+    "en": "fdaa144094945599",
+    "text": "Entity Collection"
+  },
+  "endpoints.route./oidfed/subordinate-events.name": {
+    "en": "7a12871efa2aa1bc",
+    "text": "Subordinate Events"
+  },
+  "endpoints.route./oidfed/trust-mark-status.name": {
+    "en": "5721566a90e07bbb",
+    "text": "Trust Mark Status"
+  },
+  "endpoints.route./oidfed/trust-mark-list.name": {
+    "en": "b0d733b58ace3f80",
+    "text": "Trust Marked Entities Listing"
+  },
+  "endpoints.route./oidfed/historical-keys.name": {
+    "en": "186db2a5169ec661",
+    "text": "Federation Historical Keys"
+  },
+  "endpoints.route./oidfed/register.name": {
+    "en": "d04d3abbbcd68dca",
+    "text": "Explicit Registration"
+  },
+  "endpoints.route./admin-api/oidfed.name": {
+    "en": "1cf7cd853d6d692e",
+    "text": "Ang OpenID Federation console page sa JSON"
+  },
+  "endpoints.route./admin-api/oidfed/:action.name": {
+    "en": "68da5fb8efee3487",
+    "text": "Mga subordinate, anchor, Trust Mark, resolution at key"
+  },
+  "endpoints.route./enroll/scep.name": {
+    "en": "7bfb8a0c73122b01",
+    "text": "Ang SCEP server"
+  },
+  "endpoints.route./enroll/scep/pkiclient.exe.name": {
+    "en": "8bb99181dc5c31e3",
+    "text": "Ang SCEP server (pangalang CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile/pkiclient.exe.name": {
+    "en": "b857590b45832439",
+    "text": "Ang SCEP server para sa isang profile (pangalang CGI)"
+  },
+  "endpoints.route./enroll/scep/:profile.name": {
+    "en": "db710be736714314",
+    "text": "Ang SCEP server para sa isang profile"
+  },
+  "endpoints.route./admin-api/scep.name": {
+    "en": "27aaa89dfa182129",
+    "text": "Ang SCEP console page sa JSON"
+  },
+  "endpoints.route./admin-api/scep/monitor.name": {
+    "en": "d1775471cb421bca",
+    "text": "Mga SCEP enrollment sa JSON"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "Mga challenge, ang RA certificate, revocation at mga host name"
+  },
+  "endpoints.socket.kdc": {
+    "en": "a07cb128332c46ff",
+    "text": "Key Distribution Center"
+  },
+  "endpoints.socket.kdcRealm": {
+    "en": "bf03c3bc314da5cf",
+    "text": "Key Distribution Center (realm {{realm}})"
+  },
+  "endpoints.socket.krb5Service": {
+    "en": "a510f49fab5cf00e",
+    "text": "Ang protektadong Kerberos service (AP-REQ)"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "Mga client certificate sa main port"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
+  }
+}

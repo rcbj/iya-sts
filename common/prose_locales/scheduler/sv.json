@@ -1,0 +1,546 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "Attributkällor: schemalagd uppdatering"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "Läser nästa sida av sfärens personer från varje attributkälla vars schemalagda intervall har förfallit, in på deras poster (#94). attributeSources.refreshBatch personer per källa och körning."
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "Sessionsutgång"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "ca99d997bdb0c403",
+    "text": "Avslutar varje inloggningssession vars livslängd eller inaktivitetstidsgräns har passerats, i varje sfär: en granskningsrad, CAEP session-revoked och back-channel-Logout Tokens, en gång för hela klustret."
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "Utrensning av utgångna cacheposter"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "Tar bort, i den här processen, varje post i cacher och replay-lager vars livslängd har passerats — enbart städning: varje lager vägrar fortfarande en utgången post där det läser den."
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "Rensning av utgångna anspråk"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "Tar bort de engångsanspråk vars livslängd har passerats från tabellen som alla noder delar."
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "Ögonblicksbild av nod"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "Skriver den här nodens vyer Övervakning → Arbetarpooler och → Nodhälsa till det delade lagret, en rad per nodnamn, så att varje nod ritar varje nod på de sidorna (#332)."
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "Rensning av nodögonblicksbilder"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "Tar bort ögonblicksbilden för Arbetarpooler och Nodhälsa för en nod som inte längre är en levande klustermedlem när den är äldre än cluster.nodeSnapshotRetentionHours; aldrig en levande medlems, och ingenting medan medlemskapet inte kan läsas (#332)."
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "Rensning av avslutade hastighetsbegränsningsfönster"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "Tar bort de hastighetsbegränsningsfönster som har passerats från tabellen som alla noder delar."
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Omkontroll av Android-attestering"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "f918ea71421d9df1",
+    "text": "Frågar den aktiva statuslistan för Android-attestering om varje lagrad Android-kedja — enhetsnycklar och WebAuthn-autentiseringsuppgifter, i varje sfär — och nedgraderar de som den återkallar eller spärrar: självdeklarerade, granskade, CAEP credential-change. Körs när en lista aktiveras, och dagligen."
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Nedladdning av statuslistan för Android-attestering"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "Laddar ned Googles statuslista för Android-nyckelattestering från devices.androidStatusUrl och läser in den som riskdatamängden android.attestation-status: vilka attesteringscertifikat som är återkallade eller spärrade. Dagligen (devices.androidStatusRefreshS); en lista som är identisk med den aktiva läser inte in något."
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "Pensionering av federationskrypteringsnycklar"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "Tar bort från varje federationsrelation den krypteringsnyckel som en rotation ersatte, när federation.encryptionKeyGraceS har passerats. Nyckeln slutade dekryptera redan i det ögonblicket; detta tar bort den från posten."
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP: utgångna beviljanden"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "d5ae13ff9e6e4b50",
+    "text": "Slutför varje GNAP-beviljande vars interaktions- eller beviljandelivslängd (gnap.grantLifetimeS) har tagit slut och som ingen begäran har rört sedan dess, och registrerar varför (#432)."
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP: gränser för avslutade beviljanden"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "84f932ae29b1dfb3",
+    "text": "Tar bort de löpande summor som demonstrationsresursservern håller för varje GNAP-beviljandes gränser när beviljandet har tagit slut, då ingen av dess token längre kan visas upp (#432)."
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "Antal värden per datakrypteringsnyckel"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "Räknar värdena som är förseglade under varje datakrypteringsnyckel, i ett genomlöp av lagret, och sparar varje antal på sin nyckel för /admin/encryption."
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "Omkryptering av data och destruktion av nycklar"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "Förseglar om varje värde som fortfarande är förseglat under en ersatt datakrypteringsnyckel under den aktuella, och förstör en ersatt nyckel när ingenting längre är förseglat under den och den har varit ersatt i keys.dataKeyRetireAfterDays."
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "Rotation av datakrypteringsnycklar"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "Ger varje datakrypteringsnyckel som har förseglat nya värden i keys.dataKeyRotationDays en efterträdare, publicerad keys.dataKeyActivationLeadSeconds innan något förseglas under den; omkrypteringsjobbet förseglar sedan om det som den gamla nyckeln förseglade."
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "Rotation av datakrypteringsnycklar, manuellt"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "Roterar varje lagrad datakrypteringsnyckel nu — eller en sfärs, eller en klass; nycklarna de ersätter fortsätter att öppna det de förseglade tills det har förseglats om."
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "Rotation av nyckelkrypteringsnyckeln, manuellt"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "Skapar en ny version av nyckelkrypteringsnyckeln i dess nyckelhanteringstjänst och omsluter om varje datakrypteringsnyckel under den. Endast för en nyckel i en KMS."
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "Rotation av krbtgt-nyckeln"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "Ersätter varje sfärs krbtgt-nyckel — nyckeln som varje TGT förseglas under — med en ny slumpmässig nyckel på nästa kvno när den är krb5.krbtgtRotationIntervalDays gammal, behåller den ersatta så länge som en TGT under den längst kan leva, och aldrig medan den version som den senaste rotationen behöll fortfarande är inom sitt fönster. Ger en produktsfär utan nyckel sin första nyckel. Varje körnings resultat anger kvno, den senaste rotationen och när nästa förfaller."
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "Rotation av krbtgt-nyckeln, manuellt"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "Roterar sfärens krbtgt-nyckel nu. Med invalidate behålls ingen tidigare version: varje TGT som utfärdats före den avvisas och en Shared Signals-händelse meddelar det."
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "Leverans från e-postutkorgen"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "Skickar varje köat meddelande som har förfallit — ett nytt försök vars backoff har passerats, ett lån som har löpt ut, en rad som återställts efter en omstart — flyttar till döda brev alla som fortfarande väntar efter mail.retentionS, och tar bort avslutade rader efter den tiden."
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "Genomsökning för back-channel-utloggning"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "Skickar varje leverans av Logout Token som har förfallit — ett nytt försök vars backoff har passerats, ett lån som har löpt ut, en rad som återställts efter en omstart — och flyttar till döda brev alla som fortfarande väntar efter oauth2.backchannelLogoutRetentionS."
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "CIBA-genomsökning"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "Försöker varje CIBA-ping och -push som har förfallit, flyttar till döda brev en som fortfarande väntar efter oauth2.cibaNotifyRetentionS, låter backchannel-autentiseringsbegäranden som ingen besvarade i tid löpa ut, och kastar det som avslutades för mer än en timme sedan."
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "Claims Providers: uppdatera länkade token"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "Uppdaterar varje persons token hos en Claims Provider som hen länkat innan den går ut, och kastar länkbegäranden som ingen slutförde (#147)."
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "Utgång av klienthemligheter"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "Kontrollerar varje klienthemlighet för varje applikation: en granskningsrad för en applikation som har en som går ut inom oauth2.clientSecretExpiryWarningDays, och för en vars samtliga hemligheter har gått ut; och tar bort de utgångna hemligheter som en applikation har vid sidan av en giltig — aldrig dess sista, som blir kvar och avvisas i produktläge."
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "Genomsökning för OpenID Provider Commands"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "Skickar varje leverans av Command Token som har förfallit — ett nytt försök vars backoff har passerats, ett lån som har löpt ut, en rad som återställts efter en omstart — flyttar till döda brev alla som fortfarande väntar efter oauth2.commandRetentionS, och kastar utgångna återanropstoken och avslutade klientorganisationskörningar."
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "Enhetsauktorisering: utgångna koder"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "Låter RFC 8628-enhetskoder som ingen godkände i tid löpa ut, och tar bort dem som avslutades för mer än en timme sedan (#150)."
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "Efemära subjekt: utgångna mappningar"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "Tar bort varje efemär subjektidentifierare vars token och session inte längre kan vara i bruk (#149)."
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "Rensning av utgångna spårade token"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "Tar bort tokenposterna som har passerat sin utgång och oauth2.expiredTokenRetentionS, och återkallelserna av token som har gått ut."
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management: utgångna beviljanden"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "Tar bort varje OAuth-beviljande vars sista token har gått ut, och posten för varje token som skapats under ett beviljande när den går ut (#142)."
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "Rensning av utgångna använda intyganden"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "Tar bort de RFC 7523- och RFC 7522-intyganden vars livslängd har passerats från den historik över engångsanvändning som alla noder delar."
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "Genomsökning av OpenID Federation Entity Collection"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "Går igenom varje entitet under sfären — var och en upplöst till sfären innan dess egen lista hämtas — och sparar det den hittar för samlingsslutpunkten (#136)."
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "Nyckelrotation för OpenID Federation"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "Håller varje sfärs Federation Entity Keys en rotation före — en nästa nyckel publicerad innan den signerar — och roterar när den aktuella nyckeln är äldre än oidfed.keyRotationDays och nästa har varit publicerad under hela oidfed.keyOverlapDays."
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "Nyckelrotation för OpenID Federation, manuellt"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "Roterar sfärens Federation Entity Key nu — eller, i en nödsituation, återkallar den aktuella och nästa nyckel som komprometterade och ersätter dem."
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "OpenID Federation-registreringar som har upphört"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "Tar bort varje klient som registrerats genom en OpenID Federation Trust Chain vars registrering har upphört (12.3). Varje slutpunkt besvarar redan en sådan klient som okänd; detta hindrar bara posten från att ligga kvar."
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "Rensning av utgångna skapade rader"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51010ce2ada820cd",
+    "text": "Tar bort från det delade lagret, i omgångar om 5000 och högst 20 omgångar av varje slag per körning, de skapade rader som ingen start kommer att läsa igen: de som passerat sin egen utgång, de som tillhör en sfär som inte längre är definierad (skrivna för mer än en timme sedan), och ett kortlivat lagers rader utan utgång som är äldre än persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "Rensning av utgångna gravstenar"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "d5b8faad6c0c24c4",
+    "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från det delade lagret."
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "Minnesrapport"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "4f2c054a1405a843",
+    "text": "Loggar, i den här processen, en rad med dess roll och dess minne: residenta storlek, använd och total heap, heapgränsen, externt minne och array buffers (#341)."
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "RISC-avregistreringar som träder i kraft"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "Skickar RISC opt-out-effective för varje konto vars innehavare avregistrerade sig på /portal/signals för minst risc.optOutDelayHours sedan och inte ångrade sig (RISC 1.0 avsnitt 2.8), vilket flyttar kontot till avregistrerat tillstånd."
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "Import från katalogen för riskdatamängder"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "Importerar varje datamängd som en operatör lagt i risk.datasetsDirectory, enligt dess manifest, och verifierar och aktiverar den; en version som redan är registrerad läses inte in igen."
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "Nedladdning av FIDO-metadata"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "Laddar ned FIDO MDS3 BLOB från risk.mdsUrl och importerar den när dess serienummer är nyare än den aktivas — verifierad mot FIDO-roten, med kedjans återkallelse kontrollerad, under ett registrerat godkännande av villkoren för fido-mds3. Dagligen (risk.mdsRefreshS), varje timme när den aktiva BLOB:en har passerat sin egen nextUpdate."
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "Riskomkontroll av levande sessioner"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "Kontrollerar om varje levande inloggningssession mot de aktiva datamängderna och felhistoriken, och höjer risken för en som har blivit mer riskfylld — en adress som nu står på en Tor- eller spärrlista, ett lösenord som gissas — så att varje token på den avgörs utifrån den nya risken, och en person som passerar in i HIGH besvaras av riskresponspolicyn."
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "Kvarhållning av riskdata"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "Tar bort raderna för datamängdsversioner som ersattes för mer än risk.supersededRetentionDays sedan och för avvisade versioner, felen som är äldre än risk.failureRetentionDays, samt bedömningarna och modellens historik efter risk.assessmentRetentionDays och risk.historyRetentionDays."
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "Fastnade riskimporter"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "Markerar som avvisad (STS-RISK-0035) varje datamängdsversion som lämnats under inläsning utan framsteg i risk.importStallMinutes — en import vars process stannade halvvägs — och kastar de rader den hade skrivit."
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "Städning av riskuppladdningar"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "I varje process: håller färska de uppladdningar av datamängder som den här processen importerar, och tar bort från risk.uploadDirectory en uppladdning som ingen levande process har rört i risk.importStallMinutes — det som en process som stannade mitt i en import lämnade efter sig."
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "Schemaläggarens körhistorik"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "Behåller, per jobb, dess senaste scheduler.runHistoryCount körningar eller dess senaste scheduler.runHistoryHours, vilket som är mest, och alltid dess senaste körning; tar bort resten — och varje rad som anger en sfär som har tagits bort — i omgångar om 2000, högst 25 per körning."
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "Utgående SCIM-leveranser"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "Skickar varje utgående SCIM-klients förfallna leveranser — nya ändringar och nya försök likaså — till dess tjänsteleverantör, scimClient.concurrency åt gången, hoppar över en klient medan den är pausad av sin backoff, och håller köerna inom sin kvarhållning (#552)."
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "Utgående SCIM-avstämningar"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "Stämmer av varje utgående SCIM-klient vars scimClientReconcileMinutes har infallit: varje person och grupp inom dess omfång skickas, och det som dess tjänsteleverantör har under ett externalId från den här sfären och som inte längre är inom omfånget avprovisioneras (#552)."
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "Städning av tjänstekontons tidigare lösenord"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "Rensar ett roterat tjänstekontos tidigare lösenord när dess överlappning har tagit slut. Överlappningen kontrolleras där lösenordet läses, så detta är städning."
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "Lösenordsrotation för tjänstekonton"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "Ger varje tjänstekonto som anger ett push-mål ett nytt lösenord när dess intervall har passerats (tjänstekontopolicyn): skickat till målet först, bekräftat först efter att push lyckats, det tidigare lösenordet godtaget under överlappningen. En misslyckad push ändrar ingenting."
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "Lösenordsrotation för tjänstekonton, manuellt"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "Roterar ett tjänstekontos lösenord nu, som timjobbet skulle göra: push först, sedan bekräftelse."
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "Städning av pensionerade signeringsnycklar"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "Kastar varje pensionerad signeringsnyckel vars respittid har passerats och markerar dess certifikat som ersatt på listan hos dess Issuing CA."
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "Rotation av signeringsnycklar"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "Ger varje signeringsenhet i sfären en nästa nyckel, publicerad innan den signerar något, och befordrar varje nästa nyckel när den har varit publicerad under ett helt intervall (signing.rotationIntervalDays); nyckeln den ersätter fortsätter att verifiera under sin respittid."
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "Rotation av signeringsnycklar, manuellt"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "Roterar sfärens namngivna signeringsenheter — eller samtliga — nu: varje nästa nyckel blir aktuell och nyckeln den ersätter pensioneras och verifierar under sin respittid."
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "Rotation av SPIFFE-utfärdare"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "Roterar sfärens SPIFFE X.509-utfärdare när den har passerat halva sin livslängd och dess JWT-utfärdare när den är äldre än halva spiffe.caTtl; de gamla förblir publicerade (spiffe.retainedAuthorities)."
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "Uppdatering av sigstore TUF"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "Hämtar sigstores förtroenderot (Fulcio-CA:er, Rekor- och CT-loggnycklar) genom TUF för docker-arbetsbelastningsattestorns kontroller av avbildssignaturer; en uppdatering som misslyckas behåller den senast verifierade uppsättningen."
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Genomsökning av döda brev för Shared Signals"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "Tar bort den här processens utgångna döda brev, provar döda strömmar som har förfallit (endast en nod) och loggar sammanfattningen av vad som flyttats till döda brev sedan den senaste genomsökningen."
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "Avfrågning av federationspartners Shared Signals"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "Avfrågar varje federationsrelation vars partners Shared Signals-ström är en pollningsström (RFC 8936): de Security Event Tokens den håller verifieras, åtgärdas och kvitteras."
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Underhåll av Shared Signals-strömmar"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "Pausar, inaktiverar eller tar bort en ström vars mottagare har varit inaktiv i ssf.inactivityTimeoutS (SSF 1.0 avsnitt 8.1.1), och meddelar en paus eller inaktivering med en stream-updated-händelse först, och skickar en verifieringshändelse till varje aktiverad ström som inte har fått någon från den här sändaren på ssf.verificationEveryS (avsnitt 8.1.4)."
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "Rotation av TLS-sessionsbiljettnyckeln"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "Ersätter sessionsbiljettnyckeln som varje nods TLS-lyssnare delar i ett aktivt-aktivt kluster, så att en biljett som en nod utfärdat kan återupptas på en annan. Nyckeln den ersätter tas bort, vilket begränsar hur länge en återupptagen sessions hemligheter kan återvinnas ur en biljett."
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "endast på begäran"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}} (UTC)"
+  },
+  "sched.sentence.every": {
+    "en": "05f22fb4833ac391",
+    "text": "var {{span}}"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "3893802ebe2b3ab1",
+    "text": "var {{span}}, från {{setting}}"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "inget intervall (0)"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "inget intervall (0), från {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "ledaren tickar; en tidigare körning kan fortfarande pågå, eller så har dess anspråk inte löpt ut"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "ingen ledare har tickat sedan {{since}}"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled är avstängd"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "angiven i scheduler.disabledJobs"
+  },
+  "sched.sentence.offZero": {
+    "en": "e9453e79cc9c7d92",
+    "text": "{{setting}} är 0"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "den här processen"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "databasen"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "den här tjänsten startade"
+  },
+  "sched.param.interval": {
+    "en": "668b489f6de0a264",
+    "text": "dess intervall"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "Schemaläggarens ledare ombads att avgå. Den gör det vid sitt nästa tick, och en annan nod tar över ledningen vid sitt nästa hjärtslag."
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "En körning av {{job}} är köad. Schemaläggarens ledare startar den vid sitt nästa tick."
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "En körning av {{job}} är köad (en var redan köad; det är den). Schemaläggarens ledare startar den vid sitt nästa tick."
+  }
+}

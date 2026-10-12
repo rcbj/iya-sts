@@ -1,0 +1,1346 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "從快取回應的查詢"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "該查詢位於本儲存庫不編輯的檔案中"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "ACME nonce"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "已向 ACME 伺服器出示過的 Replay-Nonce 值（RFC 8555 section 6.5），使每個值只被接受一次。"
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "強制：每個領域 acme.maxSpentNonces 個已使用的 nonce。過期者在達到上限時清除；記錄仍滿時會「拒絕」下一次使用（回應 badNonce），而不是忘記仍有效的 nonce。"
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "直到 nonce 過期為止；過期者在達到上限時清除。"
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "已使用過的 nonce，因此請求被拒絕"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "應用程式登錄庫清單"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "領域中每個已剖析的應用程式項目，並依 client_id、audience、AppliesTo 與權限各有一個查詢——讓頁面或權杖請求不必為每個問題剖析整個登錄庫。"
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "結構性：每個領域一份清單，大小等於 ou=applications（其本身受 applications.max 限制）。"
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新剖析。"
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Shared Signals 接收端權限"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "哪個應用程式擁有 Shared Signals 串流、它可以接收哪些事件，依主體區分，使工作階段事件不必逐一走訪每個已註冊的應用程式。"
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "強制：每個領域 4096 個答案，最舊者被捨棄，下次需要時再重新查詢。"
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "直到領域的 ou=applications 下有任何變更；下次查詢時會清空該領域的答案。"
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "屬性來源查詢"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "屬性來源針對某人的鍵所傳回的列，短暫保留，使一波登入只需一次查詢（#94）。"
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "強制：每個程序 2000 列，捨棄最舊者。"
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "以幾秒前的查詢結果回應的登入"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "查詢後 {{seconds}} 秒；來源有變更時會捨棄其列。"
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "已剖析的憑證資訊"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "憑證清單所顯示的主體、簽發者與 notAfter，以及憑證是否帶有後量子金鑰，每張憑證只為 /admin/pki 與 GET /admin-api/certificates 剖析一次。以憑證本身的 SHA-256 為鍵。"
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "強制：4,096 張憑證，最舊者被捨棄，下次顯示時再重新剖析。"
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "不會過期：以憑證內容為鍵，其資訊永不改變。滿時最舊者先移除。"
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "驗證器秘密判定"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "此程序被詢問過的每個密封驗證器（TOTP）秘密，是否能以其金鑰加密金鑰開啟（#352），讓使用者清單與第二因素名冊不必在每次請求時解封，就能回報某個註冊是否可讀。以密封文字為鍵；值為是或否，絕不是秘密本身。"
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "強制：20000 個判定；滿時捨棄最舊者，該秘密在下次被詢問時重新開啟。"
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "直到金鑰加密金鑰變更，或為騰出空間而被捨棄。新的註冊是新的密封文字，會重新詢問。"
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "判定已知的密封秘密，因此未開啟它"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "內嵌偵錯工具靜態檔案"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "已代入本服務位址的內嵌偵錯工具用戶端檔案，依檔案版本與位址保存，使偵錯工具接聽程式不必在每次請求時改寫檔案。"
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "強制：400 個檔案，最舊者被捨棄，下次提供時再重新讀取。"
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "直到磁碟上的檔案變更（新的修改時間即為新項目）；滿時最舊者先移除。"
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "裝置註冊挑戰"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "/portal/devices 為金鑰證明、App Attest 陳述或 WebAuthn 連結所簽發的挑戰，以及 EST /nonce 為 TPM 金鑰證明所簽發的新鮮度 nonce，每個都繫結至其簽發對象的工作階段（或 EST Cookie），且只回應一次。"
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "強制：每個領域 devices.maxChallenges 個，插入時捨棄最舊者；每個工作階段與用途各一個。"
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "此領域簽發的挑戰，因此已檢查證明"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "裝置登錄事件"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "此領域中每個建立、移除或因達到個人上限而被逐出的裝置各一列——即 Monitoring → Devices 隨時間繪製的內容。絕不包含金鑰、秘密或擁有者的名稱。"
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "強制：每個領域 devices.eventsKept 個，插入時捨棄最舊的事件。"
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "直到 devices.eventsKept 個較新的事件將其擠出。"
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "DPoP nonce"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "伺服器簽發的 DPoP nonce（RFC 9449 section 8），使帶有 nonce 的證明可以與已發出的值核對。"
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "強制：每個領域 oauth2.dpopNonceCacheSize 個；捨棄最舊的 nonce，出示它的用戶端會收到新的 nonce。"
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "確認為有效的 nonce，因此接受證明"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "DPoP 證明 ID"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "每個已接受 DPoP 證明的 jti，使一個證明只能用於一次請求（RFC 9449 section 11.1）。"
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "強制：每個領域 oauth2.dpopReplayCacheSize 個有效 ID。記錄已滿時會「拒絕」下一個證明（STS-OAUTH-0554），而不是忘記仍有效的 ID，否則會重新開啟其重送的可能。"
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "已使用過的證明，因此請求被拒絕"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "聯盟屬性釋出索引"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "哪個夥伴的釋出清單適用於哪個應用程式，由 ou=federations 建立，使簽發權杖時不必走訪登錄庫。每個領域一個索引。"
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "結構性：每個領域一個索引，每個具有釋出清單的應用程式一個項目。"
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "建立後 federation.releaseIndexTtlMs（{{ms}} 毫秒），或透過本服務寫入聯盟關係時立即失效。"
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "受信任的代理範圍"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "剖析為 BlockList 的 global.trustedProxies，使請求不必重新剖析此設定來決定要相信誰轉送的位址。"
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "結構性：此設定的一份剖析副本。"
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "直到 global.trustedProxies 的文字變更。"
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "已撤銷的 biscuit"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "每個已撤銷 biscuit 存取權杖的撤銷識別碼，發布於 /gnap/biscuit/revocations，供自行驗證 biscuit 的資源伺服器使用。"
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "強制：每個領域 oauth2.maxRevokedJtis 個——即撤銷登錄本身的上限，針對相同權杖做出相同的承諾。達到上限時先移除已過期的列；否則會忘記「最舊」的撤銷（STS-GNAP-0752），而只檢查此清單的資源伺服器會再次接受該 biscuit，直到其過期。"
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "直到被撤銷權杖本身的 exp。"
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "已讀取發布的清單"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "已查詢的資源擁有者"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "資源伺服器的 gnapOwnerLookupUri 為某識別碼指名的擁有者，使授權的請求、核准頁面與簽發只需詢問資源伺服器一次（#432 phase 5）。"
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "強制：每個領域 1024 個擁有者，最舊者被捨棄，下次需要時再重新查詢。"
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "GNAP 簽章"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "每個已接受的已簽署 GNAP 請求（HTTP 訊息簽章以及附加或分離的 JWS），使被擷取的請求無法再次傳送。"
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "強制：每個領域 gnap.replayCacheSize 個有效簽章。記錄已滿時會「拒絕」下一個已簽署請求（STS-GNAP-0718），而不是忘記仍有效的簽章，否則會重新開啟其重送的可能。"
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "看到後 gnap.signatureMaxAgeS 的兩倍時間。"
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "已看過的簽章，因此請求被拒絕"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "RFC 9278 金鑰識別碼"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "在 keys.kidFormat=jwk-thumbprint-uri 下作為 kid 發布的 JWK Thumbprint URI，以內部 kid 為鍵，使權杖簽章不必從憑證中重新讀取金鑰。"
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "強制：512 個金鑰 ID，最舊者被捨棄，下次被要求時再重新推導。"
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "不會過期：內部 kid 由金鑰推導而來，因此其答案永不改變。滿時最舊者先移除。"
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "終止於 Root 之下的憑證鏈"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "登錄列所儲存的憑證鏈是否終止於目前的服務 Root 之下，這決定是否將 Root 附加到 x5c 標頭。以該列的指紋與 Root 的指紋為鍵。"
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "強制：512 個答案，最舊者被捨棄，下次被要求時再重新計算。"
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "不會過期：以憑證指紋與 kid 為鍵，其答案永不改變。滿時最舊者先移除。"
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "憑證與簽署金鑰的相符結果"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "憑證登錄列是否持有簽署金鑰，在將 x5c 或 x5t#S256 標頭放上權杖之前詢問。以該列的指紋與金鑰的 kid 為鍵。"
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "強制：512 個答案，最舊者被捨棄，下次被要求時再重新計算。"
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "不會過期：以憑證指紋與 kid 為鍵，其答案永不改變。滿時最舊者先移除。"
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "憑證授權單位"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "每個範圍的憑證授權單位階層——服務 Root、領域的 Intermediate 及其 Issuing CA——以解密狀態保存以供簽署，於啟動時從存放區讀取或從其他程序採用。"
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "結構性：每個範圍一個階層（服務 Root、程序分支，以及每個領域一個），以取代而非累加的方式更新。"
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "不會過期：階層在此處或其他節點上變更時被取代，並隨其領域一併捨棄。"
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "已解密的簽署金鑰"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "領域的簽署金鑰資料，以金鑰加密金鑰從持久化存放區解密，並在一段閒置時間內保存，使持續的簽署不必每次都付出解密成本。僅限產品模式；開發模式的金鑰從不以加密形式儲存。"
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "結構性：每個領域一份該領域的金鑰資料，無論保留原則為何；原則只決定保存多久。"
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "後量子金鑰組"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "每個領域的 ML-DSA 與 SLH-DSA 金鑰，在第一次有需要時產生（或從已儲存的金鑰組讀取），之後與領域的金鑰組一起保存。"
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "結構性：每個領域一組後量子金鑰，與領域的金鑰組一起保存。"
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "與領域的金鑰組相同：不會過期，在領域被移除或其金鑰被取代時捨棄。"
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "簽署金鑰組"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "每個信任領域的簽署金鑰（RSA、EC，以及被要求時的後量子金鑰組），在第一次使用時建立或從金鑰存放區讀取，並保存供之後的每次簽章使用。"
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "結構性：每個領域一組金鑰，隨領域一併捨棄，或在其金鑰輪替或被採用時取代。"
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "不會過期：在領域被移除、其金鑰輪替，或採用其他程序所儲存的金鑰時捨棄。每個曾簽署過的領域一個項目。"
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Kerberos 驗證器"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "受保護服務所接受的每個驗證器，使被擷取的 AP-REQ 無法出示兩次。依信任領域區分：即簽發該票證的 Kerberos 領域所屬的領域。"
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "強制：每個領域 krb5.replayCacheMaxEntries 個。快取已滿時會「拒絕」下一個驗證器，而不是忘記仍有效的驗證器，否則會重新開啟其重送的可能。"
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "已看過的驗證器，因此請求被拒絕"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Kerberos 長期金鑰"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "每個已註冊主體的長期金鑰，以 string-to-key 從其密碼推導（或從金鑰來源讀取），每種加密類型一次，並保存供之後的每張票證使用。"
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "強制：同時最多 4096 個主體持有金鑰，每種加密類型一列；最久未使用者的金鑰會被清除，並在其下一張票證時重新推導或讀取。"
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "不會過期：隨主體一併捨棄、在其記錄被取代時（密碼變更或還原）捨棄，或在超過上限時作為最久未使用者被捨棄；從不持久保存。"
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "目錄裝置索引"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "每個裝置項目的 id、金鑰指紋與 Native SSO 秘密雜湊，對應到其在 ou=devices 下的項目，使在權杖端點辨識裝置時不必複製登錄庫（#164）。"
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "直到 ou=devices 下有寫入且查詢未命中為止；命中目前項目時不必等待重建。每個領域一個索引。"
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "目錄 entryUUID 索引"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "每個項目的 entryUUID（及其別名）對應到其 DN，主體識別碼與 SCIM id 即藉此找到人員。"
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "直到目錄變更且查詢未命中為止；命中目前項目時不必等待重建。每個領域一個索引。"
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "目錄群組索引"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "依成員與依群組 DN 整理的群組成員資格，使 groups 宣告與每次角色檢查不必走訪 ou=groups。"
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "直到目錄以索引無法併入的方式被寫入；下次查詢時會重建。每個領域一個索引。"
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "memberOf 宣告，依群組"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "對每個群組，列出自身 memberOf 指名該群組的項目，使群組與名冊頁面不必為每個群組走訪一次領域（#352）。"
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "結構性：每個領域一個索引，每個 memberOf 值一列。"
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "直到目錄下一次在任何位置被寫入。"
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "人員，作為已排序的鍵"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "每個人正規化後的 DN 與使用者名稱，依 allPersons() 列出的順序排列，使人員頁面不必在每次請求時走訪、正規化並排序整個領域（#352）。"
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "結構性：每個領域一份清單，大小等於 ou=users。"
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "直到領域的 ou=users 下有任何寫入。"
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "目錄容器清單"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "容器（應用程式、聯盟、原則等）下的項目，保存至該容器下有寫入為止。"
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "強制：每個領域 64 份容器清單，最舊者被捨棄，下次被要求時再重新走訪。"
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "直到容器下的項目被新增、移除，或在未指明位置的情況下被寫入；每個列出的容器一個項目。"
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "目錄使用者名稱索引"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "某人所回應的每個名稱（uid 與 RDN），對應到其在 ou=users 下的項目，使登入不必走訪目錄。"
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "直到目錄以索引無法併入的方式被寫入；下次查詢時會重建。每個領域一個索引。"
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "郵件寄件匣"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "本服務傳送的每封郵件各一列：收件者、狀態、嘗試次數、下次到期時間——以及在待處理、失效或被擷取期間的郵件內文，寄出後則絕不保留。這是 mail.deliver 工作所清掃的持久佇列。"
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "強制：每個領域 mail.maxRows 列，先捨棄最舊的「已完成」郵件；待處理的郵件絕不會為了騰出空間而被捨棄。"
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "直到排入佇列後 mail.retentionS 為止，超過每個領域 mail.maxRows 時最舊的已完成郵件先移除。"
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "在 mail.dedupWindowS 內因與同一動作已排入佇列的郵件重複而被抑制的郵件"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "存取權杖狀態項目"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "每個有效存取權杖在此領域存取權杖狀態清單中的索引——OAuth RFC 9068 權杖以及 GNAP 的兩種 JWT 格式——連同其 jti，使該位元可從撤銷登錄計算而得。"
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "04bb104bc7ab1ff8",
+    "text": "強制：清單在每個領域保存 1048576 個索引；沒有可用索引的清單會「拒絕」產生存取權杖（STS-OAUTH-0817），而不是重複使用仍有效的索引。"
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "與其所描述的存取權杖存續時間相同；之後其索引再次可用。"
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "在此找到權杖的狀態"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "已簽署的存取權杖狀態清單"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "此程序為每個領域最後簽署的存取權杖 Status List Token，在清單未變更期間重複使用。"
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "強制：整個程序 1024 份已簽署清單，最舊者被捨棄，下次被要求時再重新簽署。"
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "直到清單變更，或 oauth2.accessTokenStatusListTtlS 的一半。"
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "未重新簽署即提供清單"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "用戶端證明挑戰"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "為 OAuth 2.0 Attestation-Based Client Authentication（draft-ietf-oauth-attestation-based-client-auth-11 section 6）發出的挑戰，使帶有挑戰的 Client Attestation PoP 可以與所簽發的值核對。"
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "強制：每個領域 oauth2.clientAttestationChallengeCacheSize 個；捨棄最舊的挑戰，出示它的用戶端會透過 use_attestation_challenge 收到新的挑戰。"
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "確認為有效的挑戰，因此接受 PoP"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "簽發後 oauth2.clientAttestationChallengeTtlS（{{seconds}} 秒）。"
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "已剖析的 authorization_details 類型"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "在資源應用程式上宣告的 RFC 9396 類型定義，每個不同的定義文字只剖析一次並編譯其 JSON Schema。由所有領域共用，因為文字即是鍵。"
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "強制：512 個已剖析的定義，最舊者被捨棄，下次使用時再重新剖析。"
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "不會過期：以定義文字為鍵，因此編輯過的定義是新項目。滿時最舊者先移除。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "Back-channel Logout 傳遞"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "每個被告知工作階段已結束的信賴方各一列（OpenID Connect Back-Channel Logout 1.0）：狀態、嘗試次數、下次到期時間與已簽署的 Logout Token。這是每個程序都會清掃的持久佇列；失效信件會保留到被重試或被保留期移除為止。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "強制：每個領域 oauth2.backchannelLogoutMaxRows 列，先捨棄最舊的「已完成」傳遞；待處理的傳遞絕不會為了騰出空間而被捨棄。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "直到排入佇列後 oauth2.backchannelLogoutRetentionS 為止（無論是否完成），超過每個領域 oauth2.backchannelLogoutMaxRows 時最舊的已完成傳遞先移除。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "已為該工作階段與用戶端排入佇列的傳遞，因此結束同一工作階段的第二個程序未排入任何內容"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "已擷取的用戶端金鑰組"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "用戶端已註冊的 jwks_uri 所回應的 JSON Web Key Set，使其用戶端斷言、請求物件與加密回應不必每次請求都擷取就能找到其金鑰（#120）。"
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "強制：每個領域 256 個金鑰組，最舊者被捨棄，下次需要時再重新擷取。"
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "已兌換的授權碼"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "每個已在權杖端點交換過的授權碼，使第二次交換被辨識為重送（RFC 9700 section 4.5、RFC 6749 section 4.1.2）。"
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "強制：每個領域 oauth2.redeemedCodeCacheSize 個；最舊的兌換記錄會被遺忘。授權碼本身在兌換時即已移除，因此重複出示已被遺忘的授權碼仍會被拒絕，視為未知的授權碼。"
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "授權碼原本到期後再加一個授權碼存續期。"
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "已兌換的授權碼再次被出示"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "已擷取的請求物件"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "已註冊之 RFC 9101 request_uri 的內容，予以保存，使再次傳送相同 URI 的用戶端不會被再次擷取（OpenID Connect Core section 6.2）。除非設定 oauth2.requestUriCacheS，否則為關閉。"
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "強制：每個領域 256 個已擷取的請求物件，最舊者被捨棄，下次使用時再重新擷取。"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "擷取後 oauth2.requestUriCacheS（{{seconds}} 秒），依領域區分；滿時最舊者先移除。"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "關閉：oauth2.requestUriCacheS 為 0，因此不保存任何內容。"
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "已簽署的授權伺服器中繼資料"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "RFC 8414 signed_metadata JWT，在其建立所依據的中繼資料與簽署設定未變更期間重複使用，使繁忙的探索端點不必每次擷取都簽署。"
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "強制：每個領域 oauth2.maxSignedMetadataEntries 個，最舊者被捨棄，下次被要求時再重新簽署。"
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "已使用的斷言"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "每個為授權或用戶端驗證而接受的 RFC 7523 JWT 與 RFC 7522 SAML 斷言，使每個斷言永遠只被接受一次。"
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "強制：每個領域 oauth2.assertionReplayCacheSize 個。記錄已滿時會「拒絕」下一個斷言，而不是忘記仍有效的斷言，否則會重新開啟其重送的可能。"
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "直到斷言本身過期。滿時拒絕新斷言，而不是遺忘其中一個。在資料庫存放區上，這些列位於資料庫中，此處不列出任何一列。"
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "已使用過的斷言，因此請求被拒絕"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "OID4VCI nonce"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "交給錢包的 c_nonce 值，使憑證請求的證明指名此簽發者所簽發的 nonce，並只使用一次。"
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "強制：每個領域 oid4vci.cNonceCacheSize 個；捨棄最舊的 nonce，引用它的證明會收到 invalid_nonce 回應。"
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "簽發後 oid4vci.cNonceTtlS，或在被使用時。"
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "此簽發者發出的 nonce，因此已檢查證明"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "憑證狀態項目"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "每個已簽發憑證在此領域狀態清單中的索引，以及管理員或登出為其設定的狀態。"
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "強制：狀態清單在每個領域保存 131072 個索引；沒有可用索引的清單會「拒絕」簽發憑證（STS-VC-0075），而不是重複使用仍有效的索引。"
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "與其所描述的憑證存續時間相同；之後其索引再次可用。"
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "在此找到憑證的狀態"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "已簽署的狀態清單"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "此程序為每個領域最後簽署的 Status List Token 與 Bitstring Status List 憑證，在清單未變更期間重複使用。"
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "強制：整個程序 1024 份已簽署文件，最舊者被捨棄，下次被要求時再重新簽署。"
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "直到清單變更，或 oid4vci.statusListTtlS 的一半。"
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "未重新簽署即提供清單"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "錢包登入登錄"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "此領域根據其已驗證的存取權杖為某人簽發的憑證，這些是錢包唯一可用來登入的憑證——以簽發者簽署之 JWT 的摘要為鍵，若為 ldp_vc 則以持有者金鑰與該人為鍵。"
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "強制：每個領域 oid4vp.signInRegisterMaxEntries 個；捨棄最先簽發的列。這會以「封閉」方式失敗——沒有對應列的憑證不會讓任何人登入。"
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "直到該列上最後一個憑證過期；被否認的列也會保留到那時，以便持續拒絕。"
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "此領域記錄為可讓其本人登入的已出示憑證"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "已擷取的狀態清單"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "受信任的外部簽發者所發布的 Status List Token 與 Bitstring Status List 憑證，在其某個憑證被出示給 Verifier 時擷取。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "強制：整個程序 256 份已擷取清單，最舊者被捨棄，下次需要時再重新擷取。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "清單本身的 ttl（且絕不超過其 exp），最多 oid4vp.statusListMaxCacheS；擷取失敗時為 30 秒。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "未經擷取即回答已出示憑證的狀態"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "OpenID4VP 交易"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "此 Verifier 正在等待的每個出示請求——酒吧門口的請求與錢包登入的請求，後者帶有 Digital Credentials API 請求、其回應模式以及其答覆加密所用的金鑰。"
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "強制：每個領域 oid4vp.maxTransactions 個；捨棄最舊的等待中請求（federation.maxContexts 的規則），因為拒絕會讓任何人都能為所有人癱瘓請求端點。"
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS，登入則為 oid4vp.signInTtlS；在建立下一個請求時清掃。"
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "錢包的答覆找到了其所對應的請求"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "程序內產生的 OpenID Federation 集合"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "此程序在不擷取任何內容的情況下產生的 Entity Collection——本服務自己的領域，以及已解析的下屬——在未保存任何爬取結果時使用，使匿名請求不必各自為每個領域簽署陳述（#136）。"
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "強制：每個領域 8 個（領域可透過的每個主機各一個），最舊者先逐出。"
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS。"
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "OpenID Federation 解析結果"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "此領域所解析的 Trust Chain——由管理員的動作觸發，或在程序內為其自己的領域解析——連同解析後的中繼資料與已驗證的 Trust Mark，使解析端點不必為未經驗證的呼叫端走訪聯盟即可回答（18.1）。"
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "強制：每個領域 oidfed.resolveCacheMax 個，最舊者先逐出。"
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "直到憑證鏈過期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "外洩密碼範圍"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Pwned Passwords 範圍查詢的答案，依所詢問的五字元 SHA-1 前綴區分（#62 P6）：其下哪些密碼摘要已知曾外洩，以及外洩次數。"
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "強制：risk.breachCacheSize 個前綴；滿時捨棄最舊者，下次需要時再重新詢問。"
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "擷取後 risk.breachCacheMinutes。"
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "已詢問過的前綴，因此未發出請求"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "外洩密碼判定"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "某個入口剛篩檢的密碼是否曾外洩，供同步密碼規則在同一請求中讀取（#62 P6）。以密碼的摘要為鍵，絕不是密碼本身。"
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "強制：1000 個判定；滿時捨棄最舊者。"
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "密碼篩檢後五分鐘。"
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "為正在設定的密碼找到的判定"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "觀察型存放區宣告"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "每個持久化存放區是否被宣告為觀察型（讀取屏障不會等待的計數），每個存放區控制代碼只讀取一次，因為此檢查位於每次存放區寫入的路徑上。"
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "結構性：此組建所宣告的每個持久化存放區一個旗標。"
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "在程序的整個存續期間：宣告在執行期間無法變更。"
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "未變更寫入的影子副本"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "此程序寫入持久化存放區的每個目錄項目與領域記錄的最後一份副本，使清空寫入時只寫入有變更的內容。"
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "結構性：每個已寫入的目錄項目一列，加上領域記錄一列，因此一個領域中最多 ldap.maxEntries + 1 列。"
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "不會過期：每次清空寫入時更新，每個已寫入的目錄項目與領域各一個項目。在記憶體模式下為空。"
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "已擷取的簽發者憑證"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "從 Authority Information Access caIssuers URL 或 LDAP cACertificate 屬性擷取的憑證，用於為撤銷檢查建立路徑。絕不因為被擷取而受信任。"
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "強制：pki.revocationCrlCacheEntries 個，最舊的寫入被捨棄，下次需要時再重新擷取。"
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "憑證撤銷清單"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "為檢查所出示的憑證而擷取的 CRL，經剖析與驗證，以發布點 URL 及用來驗證它們的簽署者指紋為鍵。"
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "強制：pki.revocationCrlCacheEntries 個，最舊的寫入被捨棄，下次需要時再重新擷取。"
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "失敗的撤銷擷取"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "負面快取：失敗的 CRL、OCSP 或憑證擷取在其重試時段過去之前不會再次嘗試，在此期間記住的失敗即為答案。命中表示重複使用一次失敗。"
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "強制：pki.revocationCrlCacheEntries 個，捨棄最舊者；被捨棄的失敗只代表該位址可能更早被再次詢問。"
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "OCSP 回應"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "每個關於單一憑證的 OCSP 答案，以回應程式 URL、簽發者指紋與序號為鍵。"
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "強制：pki.revocationCrlCacheEntries 個，最舊的寫入被捨棄，下次需要時再重新詢問。"
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "已剖析的信任錨點憑證"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "本服務自己的 CA 憑證，每個 PEM 只為撤銷登錄走訪剖析一次。以 PEM 本身為鍵；被取代的 CA 有不同的 PEM 與新的項目。"
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "強制：8192 次剖析；滿時清空整個備忘錄，並在使用時重建。"
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "不會過期：以內容為鍵。滿時一次清空整個備忘錄。"
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "從磁碟讀取的信任檔案"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "撤銷設定所指名的 PEM 檔案，讀取一次並保存至檔案的修改時間變更為止。"
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "結構性：每個指名檔案的設定一個項目（pki.revocationCrlIssuersFile、pki.revocationLdapCaFile）。"
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "直到所指名的檔案在磁碟上變更，或設定改指名其他檔案。每個設定一個項目。"
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "用戶端憑證鏈，供恢復的工作階段使用"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "已驗證的用戶端憑證在完整 TLS 交握時建立的路徑，以末端憑證為鍵，在該工作階段被「恢復」時交回——node 只給恢復的工作階段末端憑證本身，若沒有此快取，撤銷走訪會拒絕一張已驗證過的憑證。"
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "強制：1024 張末端憑證；最舊者先被遺忘。"
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "由每個節點共用並複寫（#406）：一小時，若主連接埠的工作階段存續期較長則為該存續期加一分鐘，並在末端憑證下次完整交握時續期；滿時捨棄最舊者。"
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "風險資料集查詢"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "使用中的地理位置、ASN 與 IP 清單資料集對某個位址的說法，依領域區分。任何節點啟用資料集版本時即清除。"
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "強制：10000 次查詢，最舊者先捨棄。"
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "直到資料集版本被啟用，或因上限而被捨棄。"
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "風險狀況"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "每個人最後一次評估的風險（等級、分數、訊號），供沒有工作階段可讀取的簽發使用——Kerberos 票證、WS-Trust 權杖（#62 P3）。"
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "強制：每個程序 risk.standingCacheSize 人；滿時捨棄最舊者，該人下次無工作階段的簽發將只依角色決定。"
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "其所記錄的評估後 risk.standingValidMinutes。"
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "保存中且仍有效的風險狀況，因此簽發依其決定"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "SAML 1.1 斷言"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "已簽發的 SAML 1.1 斷言，予以保存，使以 AssertionIDReference 指名某斷言的屬性授權單位請求可以得到回答。"
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "強制：每個領域 saml11.assertionCacheMax 個，捨棄最舊者；指名已捨棄斷言的成品會被回應為未知。"
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "4397e5b8b411e7a8",
+    "text": "不會過期：超過 saml11.assertionCacheMax 時捨棄最舊者。"
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "已回答的 AssertionIDReference"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "SCIM Digest nonce 計數"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "每個 Digest nonce 下已接受的 nonce-count（nc）值，使同一回應無法傳送兩次。"
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "強制：每個領域 scim.maxDigestNonces 個 nonce，捨棄最舊者（該 nonce 隨即失效，用戶端會收到新的 nonce）；且每個 nonce 1024 個計數，超過後該 nonce 以相同方式退役。"
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "隨其 nonce 一併遺忘。會持久保存，因此重新啟動的程序仍會拒絕已接受過的計數；在運作中的節點之間，判定重送的是使用時所做的宣告。"
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "已使用過的 nonce 計數，因此請求被拒絕"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "SCIM Digest nonce"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "/scim/v2 發出的 HTTP Digest 挑戰（RFC 7616），使回應指名本服務所簽發的挑戰。"
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "強制：每個領域 scim.maxDigestNonces 個，捨棄最舊者；使用它的用戶端會收到 stale=true 的回應以及新的 nonce。"
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "本服務簽發的 nonce，因此已檢查回應"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "SCIM HOBA 挑戰"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "/scim/v2 發出的 HOBA 挑戰（RFC 7486），使簽章指名本服務所簽發的挑戰。"
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "強制：每個領域 scim.maxHobaChallenges 個，捨棄最舊者；使用它的用戶端會收到新的挑戰。"
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "本服務簽發的挑戰，因此已檢查簽章"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "SCIM HOBA 簽章"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "HOBA 簽章所附帶的每組（kid、挑戰、nonce），使被複製的憑證遭到拒絕。"
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "強制：每個領域 scim.maxHobaSeen 個，最舊者與其所對應的挑戰一併捨棄，因此無法針對仍有效的挑戰重送。"
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "直到其挑戰過期；超過上限時，最舊者與其挑戰一併移除。"
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "已看過的簽章，因此請求被拒絕"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "已解開的 SPIFFE X.509 授權單位"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "每個領域已儲存的 X.509 授權單位，從儲存形式轉換為憑證一次，供每個簽署的 SVID 與每個提供的套組使用。"
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "結構性：每個領域一份已解開的授權單位清單，在已儲存的清單變更時取代。"
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "直到領域的授權單位被輪替或還原，這會取代該項目所解開的已儲存清單。"
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Shared Signals 失效信件計數"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "每個串流失效信件數量的估計值，予以保存，使新的失效信件可以與每串流上限核對而不必計算整個佇列。其他程序寫入的信件要到下次清掃才會計入。"
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "結構性：每個串流一個計數，而一個領域最多保存 ssf.maxStreams 個串流。"
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "不會過期：每次失效信件清掃時重新計數，每個串流一個項目。"
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "用戶端憑證身分"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "已驗證的 TLS 用戶端憑證被對應到的對象——某領域中的人員或應用程式，或是拒絕——以末端憑證的摘要及走訪時所持有的授權單位為鍵。"
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "強制：256 個答案；滿時清空整個備忘錄，並在使用時重建。"
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "不會過期：被取代的 Issuing CA 會改變鍵。滿時一次清空整個備忘錄。"
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "具有狀態的 VC-API 憑證"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "a8b5945c11b02533",
+    "text": "VC-API 測試轉接器以狀態項目簽發的每個憑證，以及其所佔用的狀態清單索引，使狀態變更可以找到它。"
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "強制：每個領域 4096 個憑證，最舊者先被遺忘（其狀態之後就無法在此變更；清單項目本身屬於 vc_status.ts 並會保留）。"
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "憑證的 validUntil，或一年。"
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "狀態變更找到了憑證"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "版本戳記"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "從 version.json 讀取一次的組建記錄（M.N.O、提交、組建時刻），每個顯示版本的介面都讀取它。"
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "結構性：一筆記錄。"
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "在程序的整個存續期間：組建在執行期間無法變更。"
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js 也在遠端 PEP 容器中執行，不得引用登錄庫"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "請求背景工作親和性"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "瀏覽器工作階段、憑證或流程被固定在哪個請求背景工作上，每個集區（協定與介面）一份對應，使多步驟流程留在持有它的背景工作上。"
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "強制：每個集區 5000 個，捨棄最舊者；被捨棄的固定只會重新路由。"
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "不會過期：在其背景工作結束時遺忘；集區保存 {{max}} 個時最舊者先移除。僅限前端程序。"
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "已剖析的 XACML 原則"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "來自 ou=policies 的原則與原則集，每個文件文字只剖析並靜態驗證一次，以該文字的 SHA-256 為鍵，因此透過任何入口的變更都是新項目。"
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "強制：1024 次剖析，捨棄最久未使用者；被捨棄的原則在下次被要求時重新剖析。"
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "不會過期：以內容為鍵，因此編輯過的原則是新項目，其舊的剖析結果在成為最久未使用者時移除。"
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "依最近最少使用順序排列的有上限快取。"
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "強制：超過上限的插入會逐出最久未使用且未固定的項目。"
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "未存取存放區即從快取回應的讀取"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "直到因上限被逐出或被其擁有者捨棄。"
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "SAML 服務提供者中繼資料"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "依收到的內容儲存在應用程式項目上，不保存在記憶體中；從應用程式的頁面重新整理"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "遠端 PEP 的原則"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "由遠端 PEP 容器保存，而非此程序"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "秘密存放區登入"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "單一 /admin/secrets 報告的區域變數，因此每份報告只登入存放區一次；報告繪製完成後即消失，請求之間沒有任何東西保存它"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "{{span}}前已過期"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "不會過期（以內容為鍵）"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "已失效"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "直到 {{basis}} 變更"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "已失效：{{basis}} 已變更"
+  }
+}

@@ -15,6 +15,34 @@
     "en": "719bf77536a6fc4a",
     "text": "打开的驱动程序没有报告 metrics 函数，这意味着 persistence_postgres.js 的构建早于 2026-09-11。"
   },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "使用此存储的各进程相互协调：每个更改都在做出它的事务中写入一个单调递增的日志，每个进程应用其他进程已提交的内容。LISTEN/NOTIFY 提醒只是让这一过程更及时——日志才是契约，因此错过一次通知只会增加延迟，绝不会丢失更改。不共享的是套接字：KDC、LDAP 监听器、TLS 端口以及 SPIFFE 的四个套接字都是每个进程各自的，重放缓存是逐渐收敛而非同步。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 票据、计数器和审计日志——在产品模式下持久化到 postgres 存储中，在与签名密钥相同的密钥加密密钥下加密，在其他任何配置下都不持久化：开发模式每次启动都会重新生成签名密钥，因此恢复的令牌将无法通过任何验证。"
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "在此配置下，持久化并不等于协调。指向同一存储的两个进程各自在内存中保存自己的副本，在重启之前看不到对方的写入。在 postgres 存储上设置 persistence.coordinate 可改变这一点。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 票据、计数器和审计日志——在产品模式下持久化到 postgres 存储中，在与签名密钥相同的密钥加密密钥下加密，在其他任何配置下都不持久化：开发模式每次启动都会重新生成签名密钥，因此恢复的令牌将无法通过任何验证。"
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS，sslmode={{sslmode}}；服务器证书依据此进程的信任锚进行验证。"
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS，sslmode={{sslmode}}；服务器证书未经验证（persistence.databaseTlsRejectUnauthorized 已关闭），对于 compose 栈生成的自签名密钥对，这是如实的设置。无论哪种情况，连接都是加密的。"
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "未使用 TLS——连接字符串没有要求它。compose 栈的数据库拒绝明文连接，因为其 pg_hba.conf 中的每条主机规则都是 hostssl，所以此配置无法连接到那里。"
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7638b0543b0b19a9",
+    "text": "未知——连接字符串不是 URL，因此无法从中读出 sslmode。"
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "连接字符串不是 URL；由于其中带有密码，不显示其任何内容。"
+  },
   "postgres.probes.server.what": {
     "en": "5f2f23d3ae4629e6",
     "text": "这是哪个 PostgreSQL、本服务以什么身份连接，以及服务器已运行了多久。"
