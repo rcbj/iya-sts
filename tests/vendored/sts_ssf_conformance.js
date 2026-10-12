@@ -31,12 +31,12 @@
 //      txn.
 //   6. STATUS (section 8.1.5): a paused poll stream hands out its
 //      stream-updated event and holds a RISC event until it is enabled.
-//   7. WHAT A RECEIVER CHECKS: the service's own `/ssf/receive` refusing a
-//      wrong typ, iss and aud — in a development realm, since it is
-//      development only (#585) — and, in every mode, a real RFC 8935 PUSH
-//      to the test peer's receiver (#586), which verifies what arrived the
-//      way any receiver must and is read back by this job. With no peer (an
-//      AWS target) that half skips, saying so.
+//   7. WHAT A RECEIVER CHECKS: in every mode, a real RFC 8935 PUSH to the
+//      test peer's receiver (#586), which verifies what arrived the way any
+//      receiver must and is read back by this job. With no peer (an AWS
+//      target) it skips, saying so. (7a asserted the service's own
+//      `/ssf/receive` refusing a wrong typ, iss and aud; #593 deleted that
+//      endpoint, and the section with it.)
 //
 // OWNED HERE (local: true): this repository's transmitter, in a THROWAWAY
 // TRUST REALM that is left behind.
@@ -230,77 +230,6 @@ function typeOf(set) {
   log.debug("Entering typeOf().");
   log.debug("Leaving typeOf().");
   return Object.keys(set.claims.events || {})[0];
-}
-
-// A SET nobody signed: `/ssf/receive` accepts one it cannot verify unless
-// ssf.receiveRequireSignature is on, which is what lets typ, iss and aud be
-// asserted on their own (section 7a, development only).
-function unsignedSet(header, claims) {
-  log.debug("Entering unsignedSet().");
-  const part = function (value) {
-    log.debug("Entering part().");
-    log.debug("Leaving part().");
-    return Buffer.from(JSON.stringify(value)).toString("base64url");
-  };
-  log.debug("Leaving unsignedSet().");
-  return part(header) + "." + part(claims) + "." +
-         Buffer.from("not a signature").toString("base64url");
-}
-
-// ---------------------------------------------------------------------------
-// 7a. `/ssf/receive` CHECKS typ, iss AND aud — the service's own receiver,
-// in a DEVELOPMENT realm (it is development only, #585). The SETs are
-// UNSIGNED: development accepts one it cannot verify unless
-// ssf.receiveRequireSignature is on, which is what lets the type, issuer and
-// audience checks be asserted on their own. Answers how many checks ran.
-// ---------------------------------------------------------------------------
-async function theServicesOwnReceiver(issuer) {
-  log.debug("Entering theServicesOwnReceiver().");
-  log.info("=== 7a. /ssf/receive checks typ, iss and aud ===");
-  const now = Math.floor(Date.now() / 1000);
-  const receiveUrl = issuer + "/ssf/receive";
-  const claims = function (iss, aud) {
-    log.debug("Entering claims().");
-    const out = {
-      jti: "conf-" + nodeCrypto.randomBytes(8).toString("hex"),
-      iss: iss, aud: aud, iat: now,
-      sub_id: { format: "opaque", id: "x" }, events: {} };
-    out.events[VERIFICATION] = {};
-    log.debug("Leaving claims().");
-    return out;
-  };
-  const push = function (header, body) {
-    log.debug("Entering push().");
-    log.debug("Leaving push().");
-    return call("POST", realmBase + "/ssf/receive", unsignedSet(header, body),
-                { "Content-Type": "application/secevent+jwt" });
-  };
-  const typed = { alg: "RS256", typ: "secevent+jwt", kid: "conformance" };
-  let r = await push(typed, claims(issuer, receiveUrl));
-  check("a SET from this realm's issuer, addressed to the endpoint's own " +
-        "URL, is accepted (202)", function () {
-    assert.strictEqual(r.status, 202, r.text);
-  });
-  r = await push(typed, claims("https://other.example", receiveUrl));
-  check("ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
-        "4.1.6)", function () {
-    assert.strictEqual(r.status, 400, r.text);
-    assert.strictEqual(r.json.err, "invalid_issuer");
-  });
-  r = await push(typed, claims(issuer, "somebody-else"));
-  check("one addressed to somebody else is refused with invalid_audience",
-        function () {
-    assert.strictEqual(r.status, 400, r.text);
-    assert.strictEqual(r.json.err, "invalid_audience");
-  });
-  r = await push({ alg: "RS256", typ: "JWT" }, claims(issuer, receiveUrl));
-  check("and one that is not explicitly typed secevent+jwt is refused " +
-        "(section 4.1.1)", function () {
-    assert.strictEqual(r.status, 400, r.text);
-    assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
-  });
-  log.debug("Leaving theServicesOwnReceiver().");
-  return 4;
 }
 
 // ---------------------------------------------------------------------------
@@ -652,24 +581,9 @@ async function test() {
         });
 
   // =========================================================================
-  // 7. WHAT A RECEIVER CHECKS — at the service's own receiver in a
-  // development realm, and at the TEST PEER's in every mode (#586).
+  // 7. WHAT A RECEIVER CHECKS — at the TEST PEER's, in every mode (#586).
+  // The service's own `/ssf/receive` (7a) was deleted by #593.
   // =========================================================================
-  const modeReport = await call("GET", realmApi + "/mode");
-  const product = !!(modeReport.json && modeReport.json.mode === "product");
-  log.info("section 7 runs in " + (product ? "product" : "development") +
-           " mode (" + modeReport.status + ")");
-  let receiverChecks = 0;
-  if (product) {
-    // `/ssf/receive` is the service's own receiver "for the debugger's
-    // benefit", and development only since #585: in a product realm it
-    // answers as an unrouted path does. Its checks are development's to
-    // show, and 7b's push to the test peer is what product asserts.
-    log.info("7a. SKIPPED in product: /ssf/receive is development only " +
-             "(#585)");
-  } else {
-    receiverChecks = await theServicesOwnReceiver(issuer);
-  }
   const pushChecks = await pushToTheTestPeer(issuer);
 
   r = await alice.send("DELETE", "/ssf/stream" + q);
@@ -677,9 +591,9 @@ async function test() {
     assert.strictEqual(r.status, 204, r.text);
   });
 
-  // The floor: the 29 checks every run makes, and whatever section 7's two
-  // halves said they made — 7a only in development, 7b only with a peer.
-  const floor = 29 + receiverChecks + pushChecks;
+  // The floor: the 29 checks every run makes, and whatever section 7 said it
+  // made — 7b only with a peer.
+  const floor = 29 + pushChecks;
   assert.ok(checks >= floor, "only " + checks + " of " + floor + " checks " +
                              "ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
@@ -693,8 +607,8 @@ program
   .description("SSF 1.0 final over the wire (#144): stream ownership, a " +
     "Transmitter-Supplied aud, the RFC 9493 names and the final complex " +
     "subject, the inserted-path discovery form, verification, status in " +
-    "section 8.1.5's order, /ssf/receive's typ, iss and aud checks in " +
-    "development, and a push to the test peer's receiver (#586).")
+    "section 8.1.5's order, and a push to the test peer's receiver " +
+    "(#586).")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

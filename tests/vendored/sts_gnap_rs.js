@@ -51,7 +51,7 @@
 // hex — before it is looked for on /gnap/biscuit/revocations.
 //
 // **THE RESOURCE SERVER A TOKEN IS PRESENTED AT IS THE TEST PEER'S (#586)**,
-// in every mode — the demonstration one is development only since #585. It
+// in every mode — the demonstration one was deleted by #593. It
 // is registered in the realm as an ordinary GNAP resource server
 // (`gnap_flow.js`, `peer: true`), judges every token by RFC 9767
 // introspection and checks the key proof itself; section 6's mutual-TLS

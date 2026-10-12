@@ -7,8 +7,7 @@
 //
 // ===========================================================================
 // AN RFC 9470 RESOURCE SERVER (#586), in place of the service's stand-in at
-// `/oauth2/step-up/resource/{application}`, which is development only
-// (#585).
+// `/oauth2/step-up/resource/{application}`, which #593 deleted.
 //
 // `GET|POST /t/{tenant}/step-up/{resource}`. A resource is configured on the
 // tenant by the job — its audience and what it requires of the

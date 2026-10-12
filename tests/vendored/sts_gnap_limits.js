@@ -16,14 +16,14 @@
 //      person who is not in the group reaches the approval page and is
 //      REFUSED there, a member approves, and the RS's introspection of the
 //      token returns the right with its limits and the `grant_id`.
-//   2. A LOWERED LIMIT: a grant for the demonstration type asking to spend
+//   2. A LOWERED LIMIT: a grant for the peer's type asking to spend
 //      at most 100 EUR in 5 operations; the person lowers the amount to 30
 //      on the approval page; the token says 30 — read by this job's OWN
 //      decoding of the jwt-signed token, with the grant it counts against —
 //      and a raised amount posted to the page is refused.
-//   3. THE RESOURCE SERVER SPENDS — the TEST PEER's (#586), in every mode,
-//      since the demonstration one (`POST /gnap/rs/spend`) is development
-//      only (#585): 20, then 20 refused (403 insufficient_scope), a failing
+//   3. THE RESOURCE SERVER SPENDS — the TEST PEER's (#586), in every mode;
+//      the service's demonstration one (`POST /gnap/rs/spend`) was deleted
+//      by #593: 20, then 20 refused (403 insufficient_scope), a failing
 //      operation refunded (502), 10 more to exactly 30, and one more
 //      refused; another currency refused. The peer keeps the totals per
 //      grant, as rcbj's decision 2 on #432 has a resource server do, from

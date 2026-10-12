@@ -32,7 +32,7 @@
 // client's application entry deleted each end the grant — CAEP
 // session-revoked naming it, with `admin` as the initiating entity — and its
 // token stops working at the resource server — the TEST PEER's since #586
-// (the demonstration one is development only, #585), registered in the
+// (the demonstration one was deleted by #593), registered in the
 // realm as an ordinary GNAP resource server (`gnap_flow.js`, `peer: true`).
 // A run with no peer — an AWS target — reports this job SKIPPED (`testPeer`
 // in MANIFEST.js).

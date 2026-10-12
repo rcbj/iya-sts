@@ -7,7 +7,7 @@
 //
 // ===========================================================================
 // AN SSF 1.0 RECEIVER'S PUSH ENDPOINT (RFC 8935) (#586), in place of the
-// service's own `/ssf/receive`, which is development only (#585).
+// service's own `/ssf/receive`, which #593 deleted.
 //
 // `POST /t/{tenant}/ssf/push`, reached over the peer's TLS listener: product
 // mode pushes only over https with the receiver's certificate verified
