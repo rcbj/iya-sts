@@ -9,8 +9,10 @@
 // oid4vc/vc_api.ts is a TEST CONTROL that signs what it is handed with a
 // realm's key, so what matters most is who reaches it. Claims:
 //
-//   A. THE GATE: with test controls closed (a product realm) every route is
-//      a 404 marked STS-VC-0100, the token never asked for; without a
+//   A. THE GATE: every route carries `common/app.js`'s demonstration mark,
+//      so a product realm is passed on to Express's own 404 before the
+//      token is asked for (#585; it was a 404 of this module's own,
+//      STS-VC-0100, retired); without a
 //      token the shared check answers 401; a verified token without the
 //      scope is 403, and one whose client no longer declares the scope, or
 //      that was revoked, is 401 — each marked STS-VC-0101 — and a good one
@@ -98,19 +100,19 @@ async function run(t) {
                  scope: 'vc-api:issue vc-api:verify' };
 
   t.log.info('=== A. the gate ===');
-  let asked = false;
-  const closed = build({ opensTestControls: function () {
-    return false;
-  }, presentedAccessToken: function () {
-    asked = true;
-    return null;
-  } });
-  const r404 = fakeRes();
-  t.check(!closed.admitted({}, r404, 'vc-api:issue') &&
-          r404.statusCode === 404 && !asked &&
-          errorCodes.codeOf(r404) === 'STS-VC-0100',
-          'A1. closed test controls: 404 STS-VC-0100, no token asked for',
-          r404.statusCode + ' ' + errorCodes.codeOf(r404));
+  const app = require('../common/app');
+  const registered = [];
+  const record = function (p) {
+    registered.push({ path: p, first: arguments[1] });
+  };
+  build().registerRoutes({ get: record, post: record });
+  t.check(registered.length === 11 && registered.every(function (one) {
+    return one.first === app.demoOnly;
+  }), 'A1. every VC-API route, and the publish hook, carries the ' +
+          'demonstration mark first, so a product realm never reaches the ' +
+          'token check', registered.map(function (one) {
+            return one.path + (one.first === app.demoOnly ? '' : ' UNMARKED');
+          }).join(', '));
   const cases = [
     ['a token without the scope', token(Object.assign({}, good,
       { scope: 'vc-api:verify' })), {}, 403],

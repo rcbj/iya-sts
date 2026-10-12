@@ -926,9 +926,13 @@ async function test() {
                                      value: "development" },
              "put this realm back in development mode");
   }
-  check("product refuses the test control", function () {
-    assert.strictEqual(productControl.status, 403,
+  // NOT A REFUSAL SINCE #585: a product realm has no such route, and
+  // answers as for a path nothing is registered on — Express's own 404.
+  check("a product realm has no test control", function () {
+    assert.strictEqual(productControl.status, 404,
                        productControl.text.slice(0, 300));
+    assert.ok(/Cannot POST /.test(productControl.text),
+              productControl.text.slice(0, 300));
   });
 
   log.info("=== 13. a compromised device ===");

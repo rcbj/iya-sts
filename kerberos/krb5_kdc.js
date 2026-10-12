@@ -5485,5 +5485,9 @@ module.exports = {
     log.debug("Leaving REALM().");
     return ourRealm();
   },
-  clockSkewSeconds: clockSkewSeconds
+  clockSkewSeconds: clockSkewSeconds,
+  // The offset the KDC's clock runs at, as the mode lets `krb5.clockOffset`
+  // be: what `/krb5/principals` publishes, for a reader in a realm that is
+  // not served that demonstration (#585).
+  clockOffsetSeconds: clockOffsetSeconds
 };
