@@ -2,7 +2,6 @@
   "none": "inga",
   "kindPerson": "person",
   "kindApplication": "applikation",
-  "hEndpoints": "Slutpunkter",
   "capsAnswers": "Svar på GetCACaps",
   "messagesAnswered": "Meddelanden som besvaras",
   "subject": "Subjekt",

@@ -132,8 +132,10 @@ import app = require('../common/app');
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
 // THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
-// and the hosted surfaces' table for the console's own client id. Libraries.
+// and the hosted surfaces' table for the console's own client id — and the
+// prose a view carries, in the caller's language (#543). Libraries.
 import i18n = require('../common/i18n');
+import serverProse = require('../common/server_prose');
 import PageLocale = require('../common/page_locale');
 import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
@@ -1061,9 +1063,40 @@ class AdminApi {
         delete body[name];
       });
     }
+    // THE PROSE THE SERVER WROTE INTO THE VIEW, IN THE CALLER'S LANGUAGE
+    // (#543): only when the request names one in `Accept-Language` — the
+    // console sends the locale it negotiated — and never in an OpenAPI
+    // document, which stays English (rcbj's answers 1 and 2). A caller that
+    // names no language reads exactly what it read before.
+    if (status >= 200 && status < 300 && this.translatesAnswer(res.req)) {
+      body = serverProse.translateView(body, serverProse.translatorFor(
+        res.req.headers['accept-language']));
+    }
+    // ADDED TO, never set: CORS may already have said `Vary: Origin`. A
+    // response a test builds by hand has no `vary()`, and needs none.
+    if (typeof res.vary === 'function') {
+      res.vary('Accept-Language');
+    }
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AdminApi.sendJson().");
+  }
+
+  /**
+   * Says whether an answer's server-written prose is translated (#543):
+   * every answer to a request that names a language, except the OpenAPI
+   * documents, which are an integrator's reference and stay English.
+   *
+   * @param req - the request
+   * @returns true when the answer is translated
+   */
+  translatesAnswer(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.translatesAnswer().");
+    const named = !!(req && req.headers && req.headers['accept-language']);
+    const out = named && !/\/openapi\.json$/.test(String(req.path || ''));
+    log.debug("Leaving AdminApi.translatesAnswer(). " + out);
+    return out;
   }
 
   // The action a POST names, from the path rather than the body. It is forced
@@ -21541,7 +21574,7 @@ class AdminApi {
                      'key is in this reply. The authority ' +
                      'CERTIFICATE is published, as GET ' +
                      '/tls/server-certificate publishes that one.',
-        mirrors: 'GET /admin/spiffe',
+        mirrors: 'GET /admin/cert-issuance',
         responseDescription: 'The trust domain, its authorities, its ' +
                              'federated bundles and its listeners.',
         responseSchema: { type: 'object',
@@ -21731,7 +21764,7 @@ class AdminApi {
                      'SPIRE Server API\'s GetAuthorizedEntries — and the ' +
                      'Workload API hands every caller every identity, ' +
                      'because nothing in this service attests a workload.',
-        mirrors: 'GET /admin/spiffe/entries',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'entry', in: 'query', required: false,
             schema: { type: 'string' },
@@ -21956,7 +21989,7 @@ class AdminApi {
                      'authorizes nothing. `listeners` is where the endpoint ' +
                      'is bound in this realm, and `port` its ' +
                      '`spiffe.brokerPort`.',
-        mirrors: 'GET /admin/spiffe/brokers',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
             description: 'Substring of a broker\'s SPIFFE ID or reference ' +
@@ -22055,7 +22088,7 @@ class AdminApi {
                      '(spiffe.nodeAttestors) and an attestor verified, and ' +
                      'its selectors are the ones that attestor derived ' +
                      '(#40, 2026-09-21).',
-        mirrors: 'GET /admin/spiffe/agents',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'agent', in: 'query', required: false,
             schema: { type: 'string' },

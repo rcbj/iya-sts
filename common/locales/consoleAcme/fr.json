@@ -56,8 +56,6 @@
   "intro": "<strong>ACME (RFC 8555), un serveur par domaine de confiance.</strong> Un client enregistre un compte avec un External Account Binding émis pour une personne ou une application, commande des certificats pour des identifiants que possède cette entrée, et finalise avec une CSR. L’annuaire est",
   "turnedOff": "<strong>ACME est désactivé dans ce domaine.</strong>",
   "noDialOut": "<strong>Aucun défi n’appelle vers l’extérieur.</strong> Une autorisation est créée valide, avec un défi <code>{challenge}</code>, pour un identifiant que possède l’entrée liée — un nom d’hôte enregistré, l’adresse électronique de la personne, l’entrée elle-même — et un identifiant qu’elle ne possède pas est refusé à newOrder avec rejectedIdentifier. Les MAC EAB sont vérifiés dans tous les modes.",
-  "hDirectory": "Annuaire",
-  "hEndpoints": "Points de terminaison",
   "hIssuingCa": "AC émettrice ACME",
   "hProfiles": "Profils",
   "hEab": "Clés External Account Binding",

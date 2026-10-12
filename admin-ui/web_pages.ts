@@ -124,6 +124,12 @@ interface WebPage {
   // its inputs; otherwise the operation is part of every view.
   compose?: Record<string, string>;
   composeWhen?: Record<string, string[]>;
+  // THE MEMBER'S OWN NAMES (2026-10-12): where two tabs' lists share a
+  // parameter's name, the page carries each under a name of its own
+  // (`composeWhen` lists the page's), and the member's operation is asked
+  // with the name it reads — `estCertificatesPage` is EST's
+  // `certificatesPage`. `composeRequests()` is the one reading of it.
+  composeParams?: Record<string, Record<string, string>>;
   // Members listed here are always composed, even when `composeWhen` names
   // query parameters that are absent. Those parameters are still forwarded.
   composeAlways?: string[];
@@ -149,9 +155,94 @@ interface WebPage {
   render: (view: Json, ctx?: Json) => string;
 }
 
+// PROTOCOLS → CERT ISSUANCE, ONE PAGE OF TABS (rcbj, 2026-10-12). ACME, EST,
+// SCEP and SPIFFE's four pages were seven console pages; they are one, each
+// a tab drawn by its own family's renderer from its own operation, SPIFFE's
+// four as sub-tabs of one tab.
+//
+// ONE ADDRESS CARRIES THE WHOLE PAGE'S STATE, AND THE SEVEN SHARED NAMES.
+// ACME, EST and SCEP all page a list on `certificatesPage`; ACME and SCEP
+// one on `credentialsPage`; the three SPIFFE lists all search `q` and page
+// on `page`. So on this page each tab's names carry the tab's prefix
+// (`estCertificatesPage`, `entriesQ`): its operation is asked with its own
+// names (`composeParams`), its renderer is handed them
+// (`certContext()`), and what it draws is given the page's names back
+// (`certTabLinks()`). `per` is shared, as on every page holding more than
+// one list; `entry` and `agent`, the two drill-downs, are one tab's each.
+const CERT_PANELS: Json = {
+  acme: { path: '/admin/acme', operation: '/admin-api/acme',
+          tab: 'cert-tab-acme', prefix: 'acme', routes: '/enroll/acme',
+          names: ['certificatesPage', 'credentialsPage', 'accountsPage',
+                  'hostNamesPage'] },
+  est: { path: '/admin/est', operation: '/admin-api/est',
+         tab: 'cert-tab-est', prefix: 'est', routes: '/.well-known/est',
+         names: ['certificatesPage'] },
+  scep: { path: '/admin/scep', operation: '/admin-api/scep',
+          tab: 'cert-tab-scep', prefix: 'scep', routes: '/enroll/scep',
+          names: ['certificatesPage', 'credentialsPage'] },
+  spiffe: { path: '/admin/spiffe', operation: '/admin-api/spiffe',
+            tab: 'cert-spiffe-overview', prefix: 'spiffe', routes: '/spiffe',
+            names: [] },
+  spiffeEntries: { path: '/admin/spiffe/entries',
+                   operation: '/admin-api/spiffe/entries',
+                   tab: 'cert-spiffe-entries', prefix: 'entries',
+                   names: ['q', 'origin', 'page'], drill: 'entry' },
+  spiffeAgents: { path: '/admin/spiffe/agents',
+                  operation: '/admin-api/spiffe/agents',
+                  tab: 'cert-spiffe-agents', prefix: 'agents',
+                  names: ['q', 'page'], drill: 'agent' },
+  spiffeBrokers: { path: '/admin/spiffe/brokers',
+                   operation: '/admin-api/spiffe/brokers',
+                   tab: 'cert-spiffe-brokers', prefix: 'brokers',
+                   names: ['q', 'page'] }
+};
+const CERT_PAGE = '/admin/cert-issuance';
+
+/**
+ * A tab's name for one of its own parameters on the combined page.
+ *
+ * @param key - the tab's key in `CERT_PANELS`
+ * @param name - the parameter as the tab's operation reads it
+ * @returns the page's name, such as `estCertificatesPage`
+ */
+function certName(key: string, name: string): string {
+  const panel = CERT_PANELS[key];
+  return panel.prefix + name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The combined page's row members for every tab but the SPIFFE trust
+ * domain's, whose operation is the page's own (it reads no parameter, so
+ * no tab's names are the page's): what each is asked with, under which
+ * names.
+ *
+ * @returns `{ compose, composeWhen, composeParams, composeAlways }`
+ */
+function certComposition(): Json {
+  const out: Json = { compose: {}, composeWhen: {}, composeParams: {},
+                      composeAlways: [] };
+  Object.keys(CERT_PANELS).filter(function (key) {
+    return key !== 'spiffe';
+  }).forEach(function (key) {
+    const panel = CERT_PANELS[key];
+    const names: Json = { per: 'per' };
+    panel.names.forEach(function (name: string) {
+      names[certName(key, name)] = name;
+    });
+    if (panel.drill) {
+      names[panel.drill] = panel.drill;
+    }
+    out.compose[key] = panel.operation;
+    out.composeWhen[key] = Object.keys(names);
+    out.composeParams[key] = names;
+    out.composeAlways.push(key);
+  });
+  return out;
+}
+
+const CERT_COMPOSITION = certComposition();
+
 const PAGES: WebPage[] = [
-  { path: '/admin/acme', title: 'ACME', operation: '/admin-api/acme',
-    render: AcmePage.render },
   { path: '/admin/acme/monitor', title: 'ACME enrollments',
     operation: '/admin-api/acme/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -198,6 +289,28 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
+  { path: CERT_PAGE, title: 'Cert issuance',
+    operation: CERT_PANELS.spiffe.operation,
+    compose: CERT_COMPOSITION.compose,
+    composeWhen: CERT_COMPOSITION.composeWhen,
+    composeParams: CERT_COMPOSITION.composeParams,
+    composeAlways: CERT_COMPOSITION.composeAlways,
+    // A registration entry is drawn in place of the tabs (`?entry=`), and
+    // so is an agent (`?agent=`, in `certIssuance()`); the entry is the
+    // drill the runtime's trail and the bundle's check know.
+    drill: {
+      param: 'entry',
+      sample: function (view: Json): string | null {
+        const rows = (view.spiffeEntries && view.spiffeEntries.entries) || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return WebPages.certIssuance(view, ctx || WebKit.context());
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return WebPages.certIssuance(view, ctx || WebKit.context());
+    } },
   { path: '/admin/audit', title: 'Audit log',
     operation: '/admin-api/audit',
     render: function (view: Json, ctx?: Json): string {
@@ -348,8 +461,6 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ErrorCodesPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/est', title: 'EST', operation: '/admin-api/est',
-    render: EstPage.render },
   { path: '/admin/est/monitor', title: 'EST enrollments',
     operation: '/admin-api/est/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -564,8 +675,6 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SamlPage.saml2Body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/scep', title: 'SCEP', operation: '/admin-api/scep',
-    render: ScepPage.render },
   { path: '/admin/scep/monitor', title: 'SCEP enrollments',
     operation: '/admin-api/scep/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -615,45 +724,6 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/signals',
     render: function (view: Json, ctx?: Json): string {
       return SignalsPage.body(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe', title: 'SPIFFE', operation: '/admin-api/spiffe',
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.overview(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/agents', title: 'SPIFFE agents',
-    operation: '/admin-api/spiffe/agents',
-    drill: {
-      param: 'agent',
-      sample: function (list: Json): string | null {
-        const rows = list.agents || [];
-        return rows[0] ? rows[0].id : null;
-      },
-      render: function (view: Json, ctx?: Json): string {
-        return SpiffePage.agent(ctx || WebKit.context(), view);
-      }
-    },
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.agents(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/brokers', title: 'SPIFFE brokers',
-    operation: '/admin-api/spiffe/brokers',
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.brokers(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/entries', title: 'SPIFFE entries',
-    operation: '/admin-api/spiffe/entries',
-    drill: {
-      param: 'entry',
-      sample: function (list: Json): string | null {
-        const rows = list.entries || [];
-        return rows[0] ? rows[0].id : null;
-      },
-      render: function (view: Json, ctx?: Json): string {
-        return SpiffePage.entry(ctx || WebKit.context(), view);
-      }
-    },
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.entries(ctx || WebKit.context(), view);
     } },
   { path: '/admin/ssf', title: 'SSF',
     operation: '/admin-api/ssf',
@@ -911,6 +981,287 @@ class WebPages {
       out[name] = page.fixed[name];
     });
     return out;
+  }
+
+  /**
+   * What a page's composed members are asked: each member its query sets
+   * off, with the parameters its `composeWhen` names, under the names its
+   * `composeParams` gives. The runtime and the jobs that draw a page as the
+   * console does all ask this, so there is one reading of the row.
+   *
+   * @param page - the page's row
+   * @param query - the page's query
+   * @returns `{ member, operation, params }` per member asked
+   */
+  static composeRequests(page: WebPage, query: Json):
+      Array<{ member: string; operation: string;
+              params: Record<string, string> }> {
+    const asked = query || {};
+    const has = function (name: string): boolean {
+      return Object.prototype.hasOwnProperty.call(asked, name);
+    };
+    return Object.keys((page && page.compose) || {}).filter(
+      function (member) {
+        const when = (page.composeWhen || {})[member];
+        return !when || (page.composeAlways || []).indexOf(member) >= 0 ||
+          when.some(has);
+      }).map(function (member) {
+      const names = (page.composeParams || {})[member] || {};
+      const params: Record<string, string> = {};
+      ((page.composeWhen || {})[member] || []).forEach(function (name) {
+        if (has(name)) {
+          params[names[name] || name] = asked[name];
+        }
+      });
+      return { member: member, operation: page.compose[member],
+               params: params };
+    });
+  }
+
+  /**
+   * Draws Protocols → Cert issuance: Metadata, a tab each for ACME, EST and
+   * SCEP, and one for SPIFFE whose four former pages are sub-tabs — or, with
+   * `entry` or `agent` in the query, that one registration entry or agent.
+   *
+   * @param view - the SPIFFE trust domain's answer, the other six tabs'
+   *   composed in
+   * @param context - the render context
+   * @returns the page as HTML
+   */
+  static certIssuance(view: Json, context: Json): string {
+    const missing = Object.keys(CERT_COMPOSITION.compose).filter(
+      function (member) {
+        return !view[member];
+      });
+    if (missing.length) {
+      throw new Error('The Cert issuance page is missing a tab view: ' +
+                      missing.join(', ') + '.');
+    }
+    const t = context.t;
+    const query = context.query || {};
+    const draw = function (key: string, html: string): string {
+      return WebPages.certTabLinks(html, key);
+    };
+    const ctxOf = function (key: string): Json {
+      return WebPages.certContext(context, key);
+    };
+    if (query.entry) {
+      return draw('spiffeEntries', SpiffePage.entry(ctxOf('spiffeEntries'),
+                                                    view.spiffeEntries));
+    }
+    if (query.agent) {
+      return draw('spiffeAgents', SpiffePage.agent(ctxOf('spiffeAgents'),
+                                                   view.spiffeAgents));
+    }
+    // Every tab's endpoints, once each, on Metadata alone: the seven
+    // operations mirror this one page, so each answers the whole list.
+    // They are drawn by protocol (`certMetadata()`).
+    const endpoints: Json[] = [];
+    const seen: Json = {};
+    [view].concat(Object.keys(CERT_COMPOSITION.compose).map(
+      function (member) {
+        return view[member];
+      })).forEach(function (answer: Json) {
+      (Array.isArray(answer.protocolEndpoints)
+        ? answer.protocolEndpoints : []).forEach(function (row: Json) {
+        const key = String(row.name) + '\n' + String(row.url);
+        if (!seen[key]) {
+          seen[key] = true;
+          endpoints.push(row);
+        }
+      });
+    });
+    const spiffe = WebKit.subTabbedPanels(t.text('console.nav.spiffe'), [
+      { id: CERT_PANELS.spiffe.tab,
+        label: t.text('console.nav.spiffe-trust-domain'),
+        html: draw('spiffe', SpiffePage.overview(ctxOf('spiffe'), view)) },
+      { id: CERT_PANELS.spiffeEntries.tab,
+        label: t.text('console.nav.spiffe-entries'),
+        html: draw('spiffeEntries', SpiffePage.entries(
+          ctxOf('spiffeEntries'), view.spiffeEntries)) },
+      { id: CERT_PANELS.spiffeAgents.tab,
+        label: t.text('console.nav.spiffe-agents'),
+        html: draw('spiffeAgents', SpiffePage.agents(ctxOf('spiffeAgents'),
+                                                     view.spiffeAgents)) },
+      { id: CERT_PANELS.spiffeBrokers.tab,
+        label: t.text('console.nav.spiffe-brokers'),
+        html: draw('spiffeBrokers', SpiffePage.brokers(
+          ctxOf('spiffeBrokers'), view.spiffeBrokers)) }
+    ]);
+    return WebKit.tabbedPanels('cert-pages', [
+      { id: 'cert-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: WebPages.certMetadata(view, endpoints, t) },
+      { id: CERT_PANELS.acme.tab, label: t.text('console.nav.acme'),
+        html: draw('acme', AcmePage.render(view.acme, ctxOf('acme'))) },
+      { id: CERT_PANELS.est.tab, label: t.text('console.nav.est'),
+        html: draw('est', EstPage.render(view.est, ctxOf('est'))) },
+      { id: CERT_PANELS.scep.tab, label: t.text('console.nav.scep'),
+        html: draw('scep', ScepPage.render(view.scep, ctxOf('scep'))) },
+      { id: 'cert-tab-spiffe', label: t.text('console.nav.spiffe'),
+        html: spiffe }
+    ]);
+  }
+
+  // METADATA, ONE SECTION PER PROTOCOL (rcbj, 2026-10-12): forty-odd rows
+  // in one table did not say which protocol a row was, so each family's
+  // HTTP endpoints are a table of their own under its name — chosen by
+  // the route's prefix (`CERT_PANELS`' `routes`) — with what its tab used to
+  // say about them: EST's label form, what SCEP answers, and SPIFFE's gRPC
+  // listeners, which are the sockets the endpoint list would otherwise name
+  // with less. The four tabs list no endpoint.
+  /**
+   * Draws Cert issuance's Metadata tab: each protocol's endpoints under its
+   * name.
+   *
+   * @param view - the page's composed view
+   * @param endpoints - every row of the page's endpoint list, once each
+   * @param t - the page's translator
+   * @returns the tab as HTML
+   */
+  static certMetadata(view: Json, endpoints: Json[], t: Json): string {
+    const families = ['acme', 'est', 'scep', 'spiffe'];
+    const familyOf = function (row: Json): string | null {
+      const route = String(row.route || '');
+      return families.filter(function (key) {
+        const prefix = CERT_PANELS[key].routes;
+        return route === prefix || route.indexOf(prefix + '/') === 0;
+      })[0] || null;
+    };
+    const extras: Json = {
+      acme: '',
+      est: EstPage.labelFormNote(view.est, t),
+      scep: ScepPage.sectionCapabilities(view.scep, t),
+      spiffe: SpiffePage.listenersSection(t, view)
+    };
+    const sections = families.map(function (key) {
+      const rows = endpoints.filter(function (row) {
+        return familyOf(row) === key;
+      });
+      // The heading is the tab's own label; the key is built in a variable
+      // for `titleOf()`'s reason.
+      const label = 'console.nav.' + key;
+      return '<h2 id="cert-metadata-' + key + '">' +
+        WebKit.esc(t.text(label)) + '</h2>' +
+        WebPages.endpointTable(rows, t) + extras[key];
+    });
+    // A row no family's prefix claims is still listed, under the section
+    // every Protocols page has.
+    const other = endpoints.filter(function (row) {
+      return row.route && !familyOf(row);
+    });
+    return sections.join('') + (other.length
+      ? WebPages.withEndpoints('', { protocolEndpoints: other }, t) : '');
+  }
+
+  /**
+   * One tab's render context: the page's query with the tab's own names
+   * given back as its renderer reads them, the other tabs' left as they are.
+   *
+   * @param context - the page's render context
+   * @param key - the tab's key in `CERT_PANELS`
+   * @returns the tab's render context
+   */
+  static certContext(context: Json, key: string): Json {
+    const query = Object.assign({}, context.query || {});
+    CERT_PANELS[key].names.forEach(function (name: string) {
+      const own = certName(key, name);
+      delete query[name];
+      if (Object.prototype.hasOwnProperty.call(query, own)) {
+        query[name] = query[own];
+      }
+      delete query[own];
+    });
+    return Object.assign({}, context, { query: query });
+  }
+
+  /**
+   * Keeps one Cert issuance tab's links on the page: a link to one of the
+   * four families' former pages opens its tab, with the tab's own names
+   * given the page's; a link to a former page's document is to its
+   * operation's; and a filter form's action, names and ids are the tab's,
+   * so two tabs' forms are not one control. A POST form is left to post
+   * where it did — the operation that mirrors it is unchanged.
+   *
+   * @param html - one tab's rendered HTML
+   * @param key - the tab's key in `CERT_PANELS`
+   * @returns the HTML with the page's links
+   */
+  static certTabLinks(html: string, key: string): string {
+    const panel = CERT_PANELS[key];
+    const own = function (name: string): string {
+      return panel.names.indexOf(name) >= 0 ? certName(key, name) : name;
+    };
+    const keyOf = function (path: string): string {
+      return Object.keys(CERT_PANELS).filter(function (one) {
+        return CERT_PANELS[one].path === path;
+      })[0];
+    };
+    // A query as drawn — escaped, so `&amp;` — with this tab's names renamed
+    // and every value as it was.
+    const renamed = function (search: string, target: string): string {
+      if (!search) {
+        return '';
+      }
+      return '?' + search.slice(1).split(/(&amp;|&)/).map(function (part,
+                                                                    n) {
+        if (n % 2 === 1 || target !== key) {
+          return part;
+        }
+        const at = part.indexOf('=');
+        const name = at < 0 ? part : part.slice(0, at);
+        let plain = name;
+        try {
+          plain = decodeURIComponent(name);
+        } catch (e) {
+          return part;
+        }
+        return own(plain) === plain ? part
+          : encodeURIComponent(own(plain)) + (at < 0 ? '' : part.slice(at));
+      }).join('');
+    };
+    const routes = '/admin/(?:acme|est|scep|spiffe(?:/entries|/agents|' +
+                   '/brokers)?)';
+    html = String(html || '').replace(new RegExp('href="(' + routes +
+      ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
+    function (_match: string, path: string, search: string,
+              fragment: string): string {
+      const target = keyOf(path);
+      // The page as a document is its operation's answer: the console
+      // cannot draw a former page in another shape.
+      if (/[?&;]format=/.test(search || '')) {
+        const kept = (search || '').slice(1).split(/&amp;|&/)
+          .filter(function (part) {
+            return part && !/^format=/.test(part);
+          });
+        return 'href="' + CERT_PANELS[target].operation +
+          (kept.length ? '?' + kept.join('&amp;') : '') + '"';
+      }
+      const list = /^#list-(.+)$/.exec(fragment || '');
+      const goes = list && target === key ? '#list-' + own(list[1])
+        : fragment || '#' + CERT_PANELS[target].tab;
+      return 'href="' + CERT_PAGE + renamed(search || '', target) + goes +
+        '"';
+    });
+    // A pager's anchor, and the table it heads, named for this tab's list.
+    html = html.replace(/\bid="list-([A-Za-z]+)"/g,
+      function (_match: string, name: string): string {
+        return 'id="list-' + own(name) + '"';
+      });
+    return html.replace(/<form\b[^>]*\bmethod="get"[^>]*>[\s\S]*?<\/form>/gi,
+      function (form: string): string {
+        return form.replace(new RegExp('\\baction="(' + routes +
+          ')(?:\\?[^"#]*)?(#[^"]*)?"'),
+        function (_match: string, path: string, fragment: string): string {
+          return 'action="' + CERT_PAGE +
+            (fragment || '#' + CERT_PANELS[keyOf(path)].tab) + '"';
+        }).replace(/\b(name|id|for)="([^"]+)"/g,
+        function (_match: string, attr: string, value: string): string {
+          return attr === 'name' ? 'name="' + own(value) + '"'
+                                 : attr + '="' + panel.prefix + '-' + value +
+                                   '"';
+        });
+      });
   }
 
   static render(path: string, view: Json, ctx?: Json): string | null {
@@ -1188,6 +1539,9 @@ class WebPages {
     }
     if (page.path === '/admin/ssf') {
       return page.render(view, context);
+    }
+    if (page.path === CERT_PAGE) {
+      return WebPages.certIssuance(view, context);
     }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
@@ -1479,6 +1833,25 @@ class WebPages {
       return html;
     }
     t = t || WebKit.context().t;
+    const section = '<h2>' + t.html('consolePages.endpoints') + '</h2>' +
+                    WebPages.endpointTable(rows, t);
+    const text = String(html || '');
+    const at = text.indexOf('<h2');
+    return at < 0 ? text + section
+                  : text.slice(0, at) + section + text.slice(at);
+  }
+
+  /**
+   * Draws endpoint rows as the table every Protocols page's Endpoints
+   * section is: each URL with its Copy button, its methods or transport, and
+   * whether it is registered and listening.
+   *
+   * @param rows - `protocolEndpoints` rows
+   * @param t - optional; the translator, the default when left out
+   * @returns the table as HTML
+   */
+  static endpointTable(rows: Json[], t?: Json): string {
+    t = t || WebKit.context().t;
     const esc = WebKit.esc;
     const body = rows.length ? rows.map(function (row: Json): string {
       const methods = Array.isArray(row.methods) ? row.methods : [];
@@ -1497,12 +1870,7 @@ class WebPages {
           : '') + '</td></tr>';
     }).join('') : '<tr><td class="sub">' +
                   t.html('consolePages.endpoints.none') + '</td></tr>';
-    const section = '<h2>' + t.html('consolePages.endpoints') +
-                    '</h2><table class="kv">' + body + '</table>';
-    const text = String(html || '');
-    const at = text.indexOf('<h2');
-    return at < 0 ? text + section
-                  : text.slice(0, at) + section + text.slice(at);
+    return '<table class="kv">' + body + '</table>';
   }
 }
 

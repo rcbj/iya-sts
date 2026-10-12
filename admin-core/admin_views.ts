@@ -899,13 +899,15 @@ class AdminViews {
    * settings answers it.
    *
    * @param path - the page's path
+   * @param only - optional; the group names to include, for a tab of a page
+   *   that draws several families' groups (`/admin/cert-issuance`)
    * @returns the block, or null before the console has filled the slot
    */
-  settingsBlockOf(path) {
+  settingsBlockOf(path, only?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.settingsBlockOf(). path=" + path);
     log.debug("Leaving AdminViews.settingsBlockOf().");
-    return configSettingsJson ? configSettingsJson(path) : null;
+    return configSettingsJson ? configSettingsJson(path, only) : null;
   }
 
   /**
@@ -7135,7 +7137,8 @@ class AdminViews {
       })
     };
     extra.serverApiAuthenticated = spiffeAuth.authRequired();
-    extra.settingsForms = configSettingsJson('/admin/spiffe');
+    extra.settingsForms = configSettingsJson('/admin/cert-issuance',
+                                             ['SPIFFE']);
     log.debug("Leaving AdminViews.spiffeJson(). ready=" + json.ready);
     return json;
   }

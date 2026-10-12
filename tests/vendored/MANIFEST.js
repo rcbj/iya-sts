@@ -1376,6 +1376,10 @@ const JOBS = [
   // once, the 303 to a local return only, the cookie, ui_locales first, and
   // discovery's ui_locales_supported.
   { file: 'sts_language_chooser.js',     browser: false, local: true },
+  // The prose the server writes into a view (#543): /admin-api translates
+  // a setting's label and description only for a request naming a language,
+  // changes nothing else, and never the OpenAPI document.
+  { file: 'sts_server_prose.js',         browser: false, local: true },
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },

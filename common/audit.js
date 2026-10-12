@@ -1700,9 +1700,18 @@ function record(event) {
     // something nobody sent.
     address: trimmed(info.address ? addressText(info.address)
       : ambientAddress(), 64),
+    // A DETAIL GIVEN AS A SENTENCE IS THE SUMMARY (2026-10-12). Several
+    // callers pass `detail: '<what happened>'`, and detailOf() reads its
+    // argument's keys — so a string became {"0":"a","1":"d",…} and the row's
+    // summary was empty. Without a summary of its own the sentence IS the
+    // summary; beside one it is kept as `note`.
     summary: trimmed((errorCode ? errorCodes.tag(errorCode) : '') +
-                     (info.summary || ''), MAX_SUMMARY_LENGTH),
-    detail: detailOf(info.detail)
+                     (info.summary ||
+                      (typeof info.detail === 'string' ? info.detail : '')),
+                     MAX_SUMMARY_LENGTH),
+    detail: typeof info.detail === 'string'
+      ? (info.summary ? detailOf({ note: info.detail }) : {})
+      : detailOf(info.detail)
   };
   events.push(row);
   trimToCap();

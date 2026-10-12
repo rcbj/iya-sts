@@ -1,0 +1,217 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: server_prose_catalogs.js
+//
+// ===========================================================================
+// THE PROSE CATALOGS FOLLOW THE SOURCE, AND A VIEW IS TRANSLATED ONLY WHERE
+// IT CARRIES THE SOURCE'S OWN ENGLISH (#543, 2026-10-12).
+//
+// `common/server_prose.ts` translates the sentences the server writes into
+// a console view. Its English stays in the source and its translations each
+// record the hash of the English they were made from (rcbj's answer 3), so:
+//
+//   A. Every namespace's `en.json` is exactly what the source says now.
+//      Stale, it fails, with the command that rewrites it.
+//   B. Every translation file is a catalog `common/locales/catalogs.json`
+//      lists, every entry carries a sixteen-digit hash and a text, and a
+//      CURRENT translation keeps every `code span` of its English verbatim —
+//      a setting key, a path or a value translated is a sentence that now
+//      names something that does not exist.
+//   C. Every catalog is CURRENT (rcbj, 2026-10-12): a base catalog holds a
+//      translation of every English message, made from the English the
+//      source says NOW; an overlay holds only current translations; and no
+//      catalog holds a key the English no longer has. A new setting, or a
+//      changed sentence, fails here until it is translated — in the suite and
+//      in the coverage run, which runs this file too. The reader would get
+//      the English meanwhile (D), but rcbj asked for the pages in these
+//      languages, not partly in them. `node tests/tools/prose-catalogs.js
+//      --untranslated=<ns> --tag=<tag>` lists what is owed, and `--merge`
+//      takes it back.
+//   D. Behaviour: no `Accept-Language`, or one only English answers, means
+//      no translation; a described setting is translated member by member;
+//      a member that is not the row's English (a stored value) is left; a
+//      stale entry serves the new English; a regional overlay wins over its
+//      base; the view given is not modified.
+// ===========================================================================
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const prose = require('../common/server_prose');
+const i18n = require('../common/i18n');
+
+const log = require('bunyan').createLogger({ name: 'server_prose_catalogs',
+  level: process.env.LOG_LEVEL || 'info' });
+
+const ROOT = path.join(__dirname, '..');
+const DIRECTORY = path.join(ROOT, 'common', 'prose_locales');
+
+// The `code spans` of a text, sorted, as one string.
+function spansOf(text) {
+  log.debug("Entering spansOf().");
+  const out = (String(text).match(/`[^`]+`/g) || []).sort().join('\n');
+  log.debug("Leaving spansOf().");
+  return out;
+}
+
+async function run(t) {
+  log.debug("Entering run().");
+  const catalogs = i18n.catalogs();
+  const tags = catalogs.map(function (c) {
+    return c.tag;
+  });
+
+  // A.
+  prose.namespaces().forEach(function (ns) {
+    const file = path.join(DIRECTORY, ns, 'en.json');
+    const want = JSON.stringify(prose.extract(ns), null, 2) + '\n';
+    const have = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    let first = '';
+    if (want !== have) {
+      const a = want.split('\n');
+      const b = have.split('\n');
+      for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        if (a[i] !== b[i]) {
+          first = 'line ' + (i + 1) + ': source says ' +
+                  JSON.stringify(a[i]) + ', file says ' +
+                  JSON.stringify(b[i]);
+          break;
+        }
+      }
+    }
+    t.check(want === have, 'A. ' + ns + '/en.json is what the source says',
+            want === have ? '' : first + '. Rewrite it with `node ' +
+            'tests/tools/prose-catalogs.js --print=' + ns + '` in the tests ' +
+            'image (its header shows how)');
+  });
+
+  // B and C.
+  prose.namespaces().forEach(function (ns) {
+    const english = prose.extract(ns);
+    fs.readdirSync(path.join(DIRECTORY, ns)).forEach(function (name) {
+      const tag = name.replace(/\.json$/, '');
+      t.check(tags.indexOf(tag) >= 0, 'B. ' + ns + '/' + name +
+              ' is a catalog catalogs.json lists', tags.join(' '));
+    });
+    tags.filter(function (tag) {
+      return tag !== prose.SOURCE;
+    }).forEach(function (tag) {
+      const entries = prose.entriesOf(ns, tag);
+      const malformed = [];
+      const altered = [];
+      Object.keys(entries).forEach(function (key) {
+        const one = entries[key];
+        if (!/^[0-9a-f]{16}$/.test(one.en) || !one.text.trim()) {
+          malformed.push(key);
+        } else if (key in english &&
+                   one.en === prose.hashOf(english[key]) &&
+                   spansOf(one.text) !== spansOf(english[key])) {
+          altered.push(key);
+        }
+      });
+      t.check(malformed.length === 0, 'B. every ' + ns + '/' + tag +
+              ' entry has a hash and a text', malformed.slice(0, 5)
+              .join(', '));
+      t.check(altered.length === 0, 'B. every current ' + ns + '/' + tag +
+              ' translation keeps its English code spans verbatim',
+              altered.slice(0, 5).map(function (key) {
+                return key + ': ' + spansOf(entries[key].text)
+                  .replace(/\n/g, ' ') + ' against ' +
+                  spansOf(english[key]).replace(/\n/g, ' ');
+              }).join('; '));
+      const c = prose.coverage(ns, tag);
+      const info = catalogs.filter(function (x) {
+        return x.tag === tag;
+      })[0];
+      const owed = (info.base ? [] : c.missing).concat(c.stale);
+      t.check(owed.length === 0 && c.orphans.length === 0,
+              'C. ' + ns + '/' + tag + (info.base ? ' (an overlay on ' +
+              info.base + ')' : '') + ' is current: ' + c.current + ' of ' +
+              c.total + ' translated from the English the source says now',
+              (info.base ? '' : c.missing.length + ' missing (' +
+                c.missing.slice(0, 3).join(', ') + '), ') +
+              c.stale.length + ' stale (' + c.stale.slice(0, 3).join(', ') +
+              '), ' + c.orphans.length + ' orphaned (' +
+              c.orphans.slice(0, 3).join(', ') + '). List what is owed with ' +
+              '`node tests/tools/prose-catalogs.js --untranslated=' + ns +
+              ' --tag=' + tag + '` and merge it back with `--merge`');
+    });
+  });
+
+  // D.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'server-prose-'));
+  try {
+    const english = prose.extract('settings');
+    const key = 'global.port';
+    const label = english[key + '|label'];
+    const description = english[key + '|description'];
+    fs.mkdirSync(path.join(tmp, 'settings'));
+    fs.writeFileSync(path.join(tmp, 'settings', 'fr.json'), JSON.stringify({
+      'global.port|label': { en: prose.hashOf(label), text: 'FR label' },
+      // Made from an older English: never served.
+      'global.port|description': { en: prose.hashOf('older'),
+                                   text: 'FR stale' }
+    }));
+    fs.writeFileSync(path.join(tmp, 'settings', 'fr-CA.json'),
+                     JSON.stringify({
+                       'global.port|label': { en: prose.hashOf(label),
+                                              text: 'CA label' }
+                     }));
+    const one = new prose.ServerProse(Object.assign(
+      prose.ServerProse.defaultDeps(), { directory: tmp }));
+    t.check(one.translatorFor(undefined) === null &&
+            one.translatorFor('') === null &&
+            one.translatorFor('en-GB') === null &&
+            one.translatorFor('de') === null,
+            'D. no language named, or only English answering, translates ' +
+            'nothing');
+    const fr = one.translatorFor('fr-FR, en;q=0.5');
+    t.check(!!fr && fr.chain.join(' ') === 'fr', 'D. fr-FR reads fr',
+            fr && fr.chain.join(' '));
+    const view = { groups: [{ group: 'x', settings: [
+      { key: key, label: label, description: description, value: 8081 },
+      { key: key, label: 'something an operator wrote' },
+      { key: 'no.such.setting', label: label }
+    ] }], when: new Date(0) };
+    const before = JSON.stringify(view);
+    const out = one.translateView(view, fr);
+    const rows = out.groups[0].settings;
+    t.equal(rows[0].label, 'FR label',
+            'D. a described setting\'s label is translated');
+    t.equal(rows[0].description, description,
+            'D. a translation of an older English serves the new English');
+    t.equal(rows[0].value, 8081, 'D. the value is left as it was');
+    t.equal(rows[1].label, 'something an operator wrote',
+            'D. a member that is not the row\'s English is left');
+    t.equal(rows[2].label, label, 'D. an object no setting owns is left');
+    t.check(out.when instanceof Date, 'D. a Date is left for JSON');
+    t.equal(JSON.stringify(view), before, 'D. the view given is unchanged');
+    const ca = one.translatorFor('fr-CA');
+    t.equal(one.translateView(view, ca).groups[0].settings[0].label,
+            'CA label', 'D. the fr-CA overlay wins over fr');
+    t.equal(one.translateView(view, null), view,
+            'D. no translator answers the view itself');
+    const c = one.coverage('settings', 'fr');
+    t.check(c.current === 1 && c.stale.length === 1 &&
+            c.stale[0] === 'global.port|description' &&
+            c.missing.length === c.total - 2,
+            'D. coverage counts current, stale and missing',
+            JSON.stringify({ current: c.current, stale: c.stale.length,
+                             missing: c.missing.length, total: c.total }));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  log.debug("Leaving run().");
+}
+
+module.exports = {
+  name: 'server_prose_catalogs',
+  describe: 'the prose catalogs follow the source, every base catalog ' +
+            'translates all of it from the current English, every ' +
+            'translation keeps its code spans, and a view is translated ' +
+            'only where it carries the source\'s own English (#543)',
+  run: run
+};

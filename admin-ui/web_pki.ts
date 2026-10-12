@@ -1277,7 +1277,8 @@ class PkiPage {
       t.html('consolePki.coverageEvery') + '<p>' +
       t.html('consolePki.coverageOutside') + '</p><p>' +
       t.html('consolePki.coverageSpiffe') +
-      ' <a href="/admin/spiffe">' + t.html('consolePki.spiffePage') + '</a> ' +
+      ' <a href="/admin/cert-issuance#cert-spiffe-overview">' +
+      t.html('consolePki.spiffePage') + '</a> ' +
       t.html('consolePki.coverageSpiffeAfter') + '</p>',
       t.html('consolePki.coverageTitle'));
   }

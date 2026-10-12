@@ -118,6 +118,8 @@
   "nav.spiffe-entries": "Entrées d’enregistrement",
   "nav.spiffe-agents": "Agents",
   "nav.spiffe-brokers": "Courtiers",
+  "nav.cert-issuance": "Émission de certificats",
+  "nav.spiffe-trust-domain": "Domaine de confiance",
   "nav.tls": "TLS / TLS mutuel",
   "nav.tls-trust": "Magasin de confiance des certificats clients",
   "nav.users": "Utilisateurs",

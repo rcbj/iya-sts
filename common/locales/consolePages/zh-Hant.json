@@ -10,6 +10,7 @@
   "title.attribute-sources": "屬性來源",
   "title.authorization-servers": "授權伺服器",
   "title.caches": "快取",
+  "title.cert-issuance": "憑證簽發",
   "title.audit": "稽核記錄",
   "title.caep": "CAEP",
   "title.caep-sessions-session": "CAEP 工作階段——單一工作階段",

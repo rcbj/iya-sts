@@ -174,30 +174,19 @@ function childMain() {
       }
       const view = JSON.parse(JSON.stringify(answer.body));
       if (page.compose) {
-        const members = Object.keys(page.compose).filter(function (member) {
-          const when = (page.composeWhen || {})[member];
-          return !when ||
-            (page.composeAlways || []).indexOf(member) >= 0 ||
-            when.some(function (name) {
-              return Object.prototype.hasOwnProperty.call(query || {}, name);
-            });
-        });
-        const answers = await Promise.all(members.map(function (member) {
-          const params = {};
-          ((page.composeWhen || {})[member] || []).forEach(function (name) {
-            if (Object.prototype.hasOwnProperty.call(query || {}, name)) {
-              params[name] = query[name];
-            }
-          });
-          return apiAnswer(page.compose[member], params);
+        // The members as the runtime asks them (`composeRequests()`), each
+        // under the names its own operation reads.
+        const asked = WebPages.composeRequests(page, query || {});
+        const answers = await Promise.all(asked.map(function (one) {
+          return apiAnswer(one.operation, one.params);
         }));
         answers.forEach(function (one, index) {
           if (one.status !== 200 || !one.body ||
               typeof one.body !== 'object') {
-            throw new Error(page.compose[members[index]] + ' answered ' +
+            throw new Error(asked[index].operation + ' answered ' +
                             one.status);
           }
-          view[members[index]] = JSON.parse(JSON.stringify(one.body));
+          view[asked[index].member] = JSON.parse(JSON.stringify(one.body));
         });
       }
       return view;
@@ -1642,6 +1631,149 @@ function childMain() {
              '/admin-api/kerberos/principals/rotate-krbtgt',
          'D-Kerberos-actions. each data tab resolves through its API operation');
 
+    // PROTOCOLS → CERT ISSUANCE (2026-10-12): ACME, EST, SCEP and SPIFFE's
+    // four pages as one page of tabs, Metadata first, SPIFFE's as sub-tabs.
+    const certPage = WebPages.pageFor('/admin/cert-issuance');
+    const certView = certPage ? await viewOf(certPage, {}) : null;
+    const certHtml = certView
+      ? WebPages.render('/admin/cert-issuance', certView,
+                        WebKit.context({}, true))
+      : '';
+    const certTabIds = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+                        'cert-tab-scep', 'cert-tab-spiffe'];
+    const certSubIds = ['cert-spiffe-overview', 'cert-spiffe-entries',
+                        'cert-spiffe-agents', 'cert-spiffe-brokers'];
+    const certTabs = {};
+    certTabIds.forEach(function (id) {
+      certTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(certHtml);
+    });
+    const spiffeTab = certTabs['cert-tab-spiffe']
+      ? certTabs['cert-tab-spiffe'][1] : '';
+    note(certTabIds.every(function (id) {
+      return !!certTabs[id];
+    }) && /<section class="tabpanel first" id="cert-tab-metadata">/.test(
+           certHtml) &&
+         certSubIds.every(function (id) {
+           return new RegExp('<div class="subpanel(?: first)?" id="' + id +
+                             '">').test(spiffeTab);
+         }),
+         'D-Cert-tabs. Metadata, ACME, EST, SCEP and SPIFFE are tabs on one ' +
+         'page, Metadata first, and SPIFFE\'s four pages are its sub-tabs',
+         certTabIds.concat(certSubIds).filter(function (id) {
+           return certHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', '));
+    const certEndpoints = certView ? certView.protocolEndpoints || [] : [];
+    note(certEndpoints.length > 0 &&
+         ['/enroll/acme/directory', '/.well-known/est/cacerts',
+          '/enroll/scep', '/spiffe/bundle'].every(function (route) {
+           return certEndpoints.some(function (row) {
+             return row.route === route;
+           });
+         }) &&
+         certEndpoints.every(function (row) {
+           return certTabs['cert-tab-metadata'] &&
+             certTabs['cert-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         certTabIds.slice(1).every(function (id) {
+           return certEndpoints.every(function (row) {
+             return !certTabs[id] || certTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-Cert-metadata. all four families\' endpoints are on Metadata, ' +
+         'and only there', 'endpoints=' + certEndpoints.length);
+    // ONE SECTION PER PROTOCOL (2026-10-12): each family's routes under
+    // its own heading, and none of the four tabs listing its endpoints.
+    const certMeta = certTabs['cert-tab-metadata']
+      ? certTabs['cert-tab-metadata'][1] : '';
+    const metaSection = function (key) {
+      const at = certMeta.indexOf('<h2 id="cert-metadata-' + key + '">');
+      const next = certMeta.indexOf('<h2', at + 4);
+      return at < 0 ? '' : certMeta.slice(at, next < 0 ? undefined : next);
+    };
+    const certFamilies = { acme: '/enroll/acme', est: '/.well-known/est',
+                           scep: '/enroll/scep', spiffe: '/spiffe' };
+    const misfiled = certEndpoints.filter(function (row) {
+      const key = Object.keys(certFamilies).filter(function (one) {
+        const prefix = certFamilies[one];
+        return row.route === prefix || String(row.route || '')
+          .indexOf(prefix + '/') === 0;
+      })[0];
+      return row.route && (!key || metaSection(key).indexOf(
+        'data-copy="' + WebKit.esc(row.url) + '"') < 0);
+    });
+    note(Object.keys(certFamilies).every(function (key) {
+           return metaSection(key) !== '';
+         }) && misfiled.length === 0 &&
+         // An endpoint drawn is a URL in a <code>; a setting's description
+         // naming a path is not one.
+         ['/enroll/acme/new-nonce</code>',
+          '/.well-known/est/simpleenroll</code>',
+          '/enroll/scep/pkiclient.exe</code>'].every(function (path) {
+           return ['cert-tab-acme', 'cert-tab-est', 'cert-tab-scep']
+             .every(function (id) {
+               return certTabs[id] && certTabs[id][1].indexOf(path) < 0;
+             });
+         }) && spiffeTab.indexOf('>The gRPC listeners</h') < 0 &&
+         metaSection('spiffe').indexOf('>The gRPC listeners</h3>') >= 0,
+         'D-Cert-sections. Metadata draws each protocol\'s endpoints under ' +
+         'its own heading, and the ACME, EST, SCEP and SPIFFE tabs list none',
+         misfiled.map(function (row) { return row.route; }).join(', '));
+    // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
+    // and the three SPIFFE lists search `q`, so on one page each carries
+    // its prefix — in its links, its pager's anchor and its filter form.
+    const estLinks = WebPages.certTabLinks(
+      '<a href="/admin/est?per=5&amp;certificatesPage=2#list-' +
+      'certificatesPage">2</a><div class="pagenav" id="list-' +
+      'certificatesPage"></div><a href="/admin/est?format=json">JSON</a>',
+      'est');
+    const entryLinks = WebPages.certTabLinks(
+      '<a href="/admin/spiffe/entries?entry=x">x</a>' +
+      '<form method="get" action="/admin/spiffe/entries"><label for="q">' +
+      '</label><input id="q" name="q"><select name="per"></select></form>' +
+      '<form method="post" action="/admin/spiffe/entries"></form>',
+      'spiffeEntries');
+    note(estLinks.indexOf('href="/admin/cert-issuance?per=5&amp;' +
+           'estCertificatesPage=2#list-estCertificatesPage"') >= 0 &&
+         estLinks.indexOf('id="list-estCertificatesPage"') >= 0 &&
+         estLinks.indexOf('href="/admin-api/est"') >= 0 &&
+         entryLinks.indexOf('href="/admin/cert-issuance?entry=x#' +
+           'cert-spiffe-entries"') >= 0 &&
+         entryLinks.indexOf('action="/admin/cert-issuance#' +
+           'cert-spiffe-entries"') >= 0 &&
+         entryLinks.indexOf('name="entriesQ"') >= 0 &&
+         entryLinks.indexOf('id="entries-q"') >= 0 &&
+         entryLinks.indexOf('for="entries-q"') >= 0 &&
+         entryLinks.indexOf('name="per"') >= 0 &&
+         entryLinks.indexOf('method="post" action="/admin/spiffe/entries"') >=
+           0,
+         'D-Cert-names. a tab\'s links, pager and filter form carry its own ' +
+         'names, a document link is its operation, and a POST form posts ' +
+         'where its operation mirrors it', estLinks + ' ' + entryLinks);
+    const certAsked = WebPages.composeRequests(certPage, {
+      per: '5', estCertificatesPage: '2', scepCredentialsPage: '3',
+      entriesQ: 'web', agent: 'a1'
+    });
+    const certAskedOf = function (member) {
+      return (certAsked.filter(function (one) {
+        return one.member === member;
+      })[0] || {}).params || null;
+    };
+    note(JSON.stringify(certAskedOf('est')) ===
+           JSON.stringify({ per: '5', certificatesPage: '2' }) &&
+         JSON.stringify(certAskedOf('scep')) ===
+           JSON.stringify({ per: '5', credentialsPage: '3' }) &&
+         JSON.stringify(certAskedOf('acme')) === JSON.stringify({ per: '5' }) &&
+         JSON.stringify(certAskedOf('spiffeEntries')) ===
+           JSON.stringify({ per: '5', q: 'web' }) &&
+         JSON.stringify(certAskedOf('spiffeAgents')) ===
+           JSON.stringify({ per: '5', agent: 'a1' }),
+         'D-Cert-compose. each tab\'s operation is asked with its own names',
+         JSON.stringify(certAsked));
+
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -1791,6 +1923,25 @@ function childMain() {
          consolePages.filter(function (page) {
            return page === '/admin/kerberos' ||
              kerberosChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const certChildren = [
+      '/admin/acme', '/admin/est', '/admin/scep', '/admin/spiffe',
+      '/admin/spiffe/entries', '/admin/spiffe/agents', '/admin/spiffe/brokers'
+    ];
+    note(consolePages.indexOf('/admin/cert-issuance') >= 0 &&
+         certChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }) &&
+         ['/admin/acme/monitor', '/admin/est/monitor', '/admin/scep/monitor']
+           .every(function (page) {
+             return consolePages.indexOf(page) >= 0;
+           }),
+         'E-Cert. the sidebar has one Cert issuance destination, not its ' +
+         'seven former pages, and keeps the three monitors',
+         consolePages.filter(function (page) {
+           return page === '/admin/cert-issuance' ||
+             certChildren.indexOf(page) >= 0;
          }).join(', '));
     const samlChildren = [
       '/admin/saml11', '/admin/saml-assertions', '/admin/saml-attributes'

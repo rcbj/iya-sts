@@ -56,8 +56,6 @@
   "intro": "<strong>ACME (RFC 8555), en server per förtroendesfär.</strong> En klient registrerar ett konto med en External Account Binding utfärdad för en person eller applikation, beställer certifikat för identifierare som posten äger och slutför med en CSR. Katalogen är",
   "turnedOff": "<strong>ACME är avstängt i den här sfären.</strong>",
   "noDialOut": "<strong>Ingen utmaning ringer ut.</strong> En auktorisering skapas giltig, med en <code>{challenge}</code>-utmaning, för en identifierare som den bundna posten äger — ett registrerat värdnamn, personens e-post, posten själv — och en identifierare den inte äger avvisas vid newOrder med rejectedIdentifier. EAB-MAC:ar verifieras i alla lägen.",
-  "hDirectory": "Katalog",
-  "hEndpoints": "Slutpunkter",
   "hIssuingCa": "Utfärdande CA för ACME",
   "hProfiles": "Profiler",
   "hEab": "External Account Binding-nycklar",

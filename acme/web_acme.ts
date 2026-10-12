@@ -105,20 +105,6 @@ class AcmePage {
   // THE SECTIONS OF /admin/acme.
   // ---------------------------------------------------------------------------
   /**
-   * Draws the realm's ACME endpoints.
-   *
-   * @param json - the view model's answer
-   * @returns the markup
-   */
-  static endpointsHtml(json) {
-    return '<table class="kv">' + Object.keys(json.endpoints).map(
-      function (name) {
-        return '<tr><th>' + esc(name) + '</th><td><code>' +
-               esc(json.endpoints[name]) + '</code></td></tr>';
-      }).join('') + '</table>';
-  }
-
-  /**
    * Draws the ACME Issuing CA.
    *
    * @param json - the view model's answer
@@ -413,10 +399,6 @@ class AcmePage {
         (json.enabled ? '' : ' ' + t.html('consoleAcme.turnedOff'))) +
       kit.warn(t.html('consoleAcme.noDialOut',
                       { challenge: json.challengeType })) +
-      '<h2>' + t.html('consoleAcme.hDirectory') + '</h2><p><code>' +
-      esc(json.directory) + '</code></p>' +
-      '<h2>' + t.html('consoleAcme.hEndpoints') + '</h2>' +
-      self.endpointsHtml(json) +
       '<h2>' + t.html('consoleAcme.hIssuingCa') + '</h2>' +
       self.authorityHtml(json, t) +
       '<h2>' + t.html('consoleAcme.hProfiles') + '</h2>' +
@@ -437,7 +419,9 @@ class AcmePage {
         'class="sub">' + t.html('consoleAcme.product') + ' ' +
         esc(json.mode.product) + '</div>') +
       '<h2>' + t.html('consoleAcme.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings, '/admin/acme', undefined, t) +
+      SettingsForms.forms(json.settings,
+                          '/admin/cert-issuance#cert-tab-acme', undefined,
+                          t) +
       '<p class="links"><a href="/admin/acme?format=json">JSON</a> · ' +
       '<code>GET /admin-api/acme</code> · <a ' +
       'href="/admin/acme/monitor">' + t.html('consoleAcme.linkMonitor') +

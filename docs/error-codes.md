@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4305** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4306** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 10
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 11
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 351
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 26
@@ -3653,6 +3653,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
 | `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
 | `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
+| `STS-I18N-0011` | A prose catalog under common/prose_locales — the translations of the sentences the server writes into a console view, such as a setting's description — could not be read or parsed; that prose falls back along its chain to English (#543). | none — an error in the log |
 
 ## STS-GNAP
 
