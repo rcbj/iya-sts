@@ -1485,14 +1485,51 @@ than four lines of openssl in an image that already ships it.
 
 ### ENCRYPTION AND AUTHENTICATION ARE TWO ANSWERS
 
-`persistence.databaseTlsRejectUnauthorized` is **off by default**, and that is
-a statement about the stack rather than a weakened default: the certificate is
-generated in the container and signed by nobody, so there is no anchor to
-verify it against and turning it on would refuse every connection with a
-message about a self-signed certificate. **The connection is encrypted either
-way.** `/admin/persistence` draws them as one *Transport* row saying both,
-because "encrypted" and "authenticated" are different facts and a single tick
-would have to round one of them.
+`/admin/persistence` draws them as one *Transport* row saying both, because
+"encrypted" and "authenticated" are different facts and a single tick would
+have to round one of them.
+
+**AUTHENTICATION IS ON BY DEFAULT, IN EVERY MODE (rcbj, 2026-10-12).**
+`persistence.databaseTlsRejectUnauthorized` defaults to `true`. It was off,
+argued as "a statement about the stack rather than a weakened default": the
+compose certificate is self-signed, so there was nothing to verify it
+against. That argued from one stack to the default every deployment gets,
+and an unauthenticated database is one anything at its address can
+impersonate, reading and writing every row — so the stack was changed
+instead of the default:
+
+* **`persistence.databaseTlsCaFile` — the database's own trust anchor.** A
+  PEM file, or a directory whose `.crt` and `.pem` files are all read,
+  trusted for the database connections ONLY: `databaseTlsCa()` reads and
+  checks it, and `dialOptions(url, verifyTls, ca)` puts it on the `ssl`
+  option as `ca`, which REPLACES node's default store for that connection
+  and no other. `NODE_EXTRA_CA_CERTS` would have worked and was refused for
+  the stack: it trusts the anchor for every outbound connection this process
+  makes. Every dialler gets it — both tiers' pools and LISTEN clients and
+  the read pool (`create()`'s `tlsCa`), the directory bridge's thread (PEM
+  text crosses; `bridgeConnection()` keeps `ca` when it rewrites verify-ca
+  as data, and `common/sync_query_thread.ts` keeps it when it puts the hook
+  back), and the two processes that are not the service through
+  `databaseConnection()` / `globalDatabaseConnection()` (the risk loader,
+  `cell_convert`). **A file named and unusable is FATAL**, `STS-STORE-0079`,
+  read inside `openStore()`'s `try`: falling back to the default store would
+  dial with a trust anchor nobody chose and then fail with "self-signed
+  certificate", pointing at the wrong thing. The status report catches it
+  and says the store is not dialled rather than throwing.
+* **The compose stacks share the certificate, never the key.**
+  `postgres/generate-tls.sh` copies `server.crt` to
+  `${POSTGRES_TLS_PUBLIC_DIR}/<CN>.crt` on every start (`postgres/CLAUDE.md`);
+  `sts` mounts that volume read-only, names it in `STS_DATABASE_TLS_CA_FILE`
+  and dials `sslmode=verify-full`. The test stack names the DIRECTORY, so
+  the cells layer's two cells trust `postgres-global.crt` and their own
+  database's from one setting — the reason a directory is accepted at all.
+* **Turning it off is loud.** `create()` logs a WARNING rather than an info
+  line, the status prose for an unverified connection begins `WARNING` and
+  says what it costs, Monitoring → Database draws it as a warning box and
+  `/admin/persistence`'s *Transport* row in red.
+
+**The connection is encrypted either way** (#273, above); this decides only
+whether the server is believed.
 
 **`sslmode=verify-ca` AND `verify-full` VERIFY, WHATEVER THE FLAG SAYS (rcbj,
 #543 round 2, 2026-10-12).** Until then `dialOptions()` stripped the
@@ -1514,8 +1551,8 @@ do not, and refuse a server they accept. `dialOptions()` answers
 `verifyChain` and `verifyHostname`, and `describeDatabase()` reports from
 those, so the *Transport* row says what the driver checks.
 
-The flag is READ in `persistence.js` and PASSED IN to the driver, rather than
-read there: that module takes its url and its logger as options and reaches for
+The flag and the CA are READ in `persistence.js` and PASSED IN to the driver,
+rather than read there: that module takes its url and its logger as options and reaches for
 nothing, which is what lets a test construct one against any database without
 this file's settings existing.
 
@@ -1787,10 +1824,10 @@ would be ignoring the configuration that exists to keep it out of the URL.
 the Password row on `/admin/persistence`.
 
 **A PROCESS THAT IS NOT THE SERVICE DIALS THE SAME WAY (#213, 2026-09-26).**
-`databaseConnection()` answers `{ url, verifyTls }` — `resolveDatabaseUrl()`
-and `verifiesDatabaseTls()`, the one reading of
+`databaseConnection()` answers `{ url, verifyTls, tlsCa }` —
+`resolveDatabaseUrl()`, `verifiesDatabaseTls()`, the one reading of
 `persistence.databaseTlsRejectUnauthorized` that `openStore()` and
-`describeDatabase()` now use too — for an out-of-process tool to hand
+`describeDatabase()` now use too, and `databaseTlsCa()` (2026-10-12) — for an out-of-process tool to hand
 `persistence_postgres.create()`. Its first caller is the install-time risk
 loader (`risk/risk_install.ts`), which dialled `STS_DATABASE_URL` alone and so
 could not sign in to any shipped stack. **A tool that dials the database
