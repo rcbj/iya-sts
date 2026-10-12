@@ -270,6 +270,27 @@ the end, the redacted audit row); the round trip's step cases in
 and `ignoreOffer()` over HTTP; the conformance suite's person presses an
 offered set-up step's Ignore (`conformance_browser.js`).
 
+## AND THE SIGN-OUT'S TWO OPERATIONS (#577, 2026-10-12)
+
+**`/logout` is a static surface whose API is this one**, because signing
+out is the other end of what it does — the same session, the same
+`sts_session` cookie, the same binding — and `/logout` is this application
+in `hosted_applications.js`. The logic is `logout/logout.ts`'s
+(`signOutView()`, `signOutAct()`), required when an operation arrives:
+that module is second to last and reads `ldap_server.js`, a JavaScript
+route module. `logout/CLAUDE.md` argues the page.
+
+| Operation | What |
+|---|---|
+| `GET /authn-api/logout` | the inventory of the person the cookie names (or `?username=`, where naming is open), `csrf`, their `preferredLanguage`; 403 a name that may not be used, 401 nobody |
+| `POST /authn-api/logout` | the act (`scope`, `select`, `username`, closed), bound as every act here: the result's `view`, or the signed-out document's `form` where the browser has something to fan out |
+
+Access `session`; placement `affinity` (`/authn-api/logout`, as `/logout`).
+A body refused is `STS-LOGOUT-0003`. **`/logout` is on `ARRIVAL_PATHS`** so a
+browser holding no cookie that names somebody (a development test control)
+is given one to bind the act to; **`/logout/signed-out` is on
+`NOT_ARRIVAL_PATHS`**, since the browser it signed out is not arriving.
+
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
 **It is this module's session: an internal, protocol-independent record, and
