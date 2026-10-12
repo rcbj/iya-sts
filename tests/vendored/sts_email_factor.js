@@ -327,8 +327,7 @@ async function toSignIn(b) {
 async function screenAct(b, screen, fields) {
   log.debug("Entering screenAct(). " + fields.action);
   const r = await authnSignin.signInWithJar(realmBase(), screen.url, fields,
-                                            b.jar,
-                                            { headers: { "User-Agent": AGENT } });
+    b.jar, { headers: { "User-Agent": AGENT } });
   if (r.answer.next === "mfa") {
     log.debug("Leaving screenAct(). The step's page.");
     return b.go("GET", r.location);
@@ -452,7 +451,8 @@ async function aCodeAsTheSecondFactor(fields) {
   // Opted in from the portal, signed in on a password alone the first time.
   const b = browser(who);
   let r = await toSignIn(b);
-  r = await screenAct(b, r, { action: "login", username: who, password: PASSWORD });
+  r = await screenAct(b, r,
+    { action: "login", username: who, password: PASSWORD });
   r = await finish(b, r);
   // THE PORTAL'S OWN TOKEN, through the sign-on session just set (#568).
   const p = await portal.signInToThePortal(realmBase(), who, null,
@@ -473,7 +473,8 @@ async function aCodeAsTheSecondFactor(fields) {
   });
   const c = browser(who + "-2");
   r = await toSignIn(c);
-  r = await screenAct(c, r, { action: "login", username: who, password: PASSWORD });
+  r = await screenAct(c, r,
+    { action: "login", username: who, password: PASSWORD });
   const mfaId = hiddenValue(r.text, "mfa_id");
   check("1. the next sign-in mails a code and asks for it", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
