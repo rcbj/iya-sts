@@ -50,6 +50,16 @@
 // revocation identifier is computed here — the authority block's signature,
 // hex — before it is looked for on /gnap/biscuit/revocations.
 //
+// **THE RESOURCE SERVER A TOKEN IS PRESENTED AT IS THE TEST PEER'S (#586)**,
+// in every mode — the demonstration one is development only since #585. It
+// is registered in the realm as an ordinary GNAP resource server
+// (`gnap_flow.js`, `peer: true`), judges every token by RFC 9767
+// introspection and checks the key proof itself; section 6's mutual-TLS
+// calls go to its TLS listener. What it made of each presentation is read
+// back from it where it matters (the jwt-encrypted token it was handed).
+// A run with no peer — an AWS target — reports this job SKIPPED
+// (`testPeer` in MANIFEST.js).
+//
 // Everything runs in a THROWAWAY TRUST REALM that is left behind.
 //
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
@@ -61,6 +71,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -86,7 +97,9 @@ const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnaprs").replace(/[^a-z0-9-]/g, "").slice(0, 30),
   password: "gnap-rs-Passw0rd!-" + String(Date.now()).slice(-6),
-  log: log
+  log: log,
+  // The resource server tokens are presented at is the test peer's (#586).
+  peer: true
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-rs-owner");
@@ -476,6 +489,8 @@ async function test() {
   log.info("=== 0. the realm and a registered resource server ===");
   await h.createRealm("GNAP resource servers");
   await h.setting("gnap.continueWaitS", 0);
+  // The resource server sections 2, 2b and 6 present tokens at (#586).
+  await h.usePeer();
   await h.ensurePerson(OWNER);
   const rsKey = new gnap.Client({ key: gnap.newKey("ES256") });
   const rsJwe = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -745,7 +760,7 @@ async function test() {
     }
     r = await client.send("GET", h.RS, { token: token.value });
     check(format + ": a token issued for one resource server is refused at " +
-                   "another (the demonstration RS)",
+                   "another (the test peer's)",
           function () {
             assert.strictEqual(r.status, 401, r.text);
           });
@@ -756,12 +771,14 @@ async function test() {
   //
   // Section 2 proves each format is minted correctly; it presents four of the
   // five only where they are REFUSED. So each format is also ACCEPTED here, by
-  // the demonstration resource server — whose format-specific check (audience,
-  // key binding, access) runs only on this path — then narrowed, rotated,
-  // revoked and allowed to expire, because rotation and modification RE-MINT in
-  // the token's own format. A token asked for with no resource server named is
-  // audienced to the demonstration RS, and `jwt-encrypted` is then encrypted to
-  // this authorization server (dir), which is its other mode.
+  // a resource server that is not this service — the test peer's (#586),
+  // which judges each by introspection and checks the key proof itself —
+  // then narrowed, rotated, revoked and allowed to expire, because rotation
+  // and modification RE-MINT in the token's own format. The rights asked for
+  // are of the type the peer declares, so the token is audienced to it; the
+  // peer registered no gnapJweKey, so `jwt-encrypted` is encrypted to this
+  // authorization server (dir), which is its other mode — and the peer,
+  // which cannot open it, is asked what it was handed.
   // =========================================================================
   log.info("=== 2b. each format accepted, narrowed, rotated, revoked and " +
            "expired ===");
@@ -770,8 +787,9 @@ async function test() {
     await h.setting("gnap.accessTokenFormat", format);
     const life = await h.redirectGrant(client, OWNER);
     const first = life.released.access_token;
+    const seenFrom = await testPeer.mark(h.peer.tenant);
     r = await client.send("GET", h.RS, { token: first.value });
-    check(format + ": the demonstration RS ACCEPTS it for read, and says " +
+    check(format + ": the resource server ACCEPTS it for read, and says " +
                    "which format it judged", function () {
       assert.strictEqual(r.status, 200, r.text);
       assert.strictEqual(r.json.format, format);
@@ -787,6 +805,19 @@ async function test() {
                                               .toString("utf8"));
               assert.strictEqual(header.alg, "dir", JSON.stringify(header));
             });
+      const seen = await testPeer.received(h.peer.tenant, "gnap", seenFrom);
+      check("jwt-encrypted: what the peer was handed is that token, which it " +
+            "cannot open, and introspection told it the format and that it " +
+            "is active for it", function () {
+        const accepted = seen.events.filter(function (one) {
+          return one.ok === true && one.action === "read";
+        });
+        assert.strictEqual(accepted.length, 1, JSON.stringify(seen.events));
+        assert.strictEqual(accepted[0].format, "jwt-encrypted",
+                           JSON.stringify(accepted[0]));
+        assert.strictEqual(accepted[0].method, "httpsig",
+                           JSON.stringify(accepted[0]));
+      });
     }
     r = await client.send("POST", h.RS,
                           { token: first.value, json: { write: format } });
@@ -1205,16 +1236,19 @@ async function test() {
     tls: { cert: certPem, key: keyPem, certDer: certDer,
            rejectUnauthorized: false } });
   const mtlsFlow = await h.redirectGrant(mtlsClient, OWNER);
-  r = await mtlsClient.send("GET", h.RS,
+  // AT THE PEER'S TLS LISTENER (#586): the proof is the client certificate
+  // on the connection, so the resource is its https address, verified
+  // against the peer's CA where this job makes the connection itself.
+  r = await mtlsClient.send("GET", h.RS_TLS,
                             { token: mtlsFlow.released.access_token.value });
   check("a certificate key proved by mutual TLS obtains a token and presents " +
         "it at the RS", function () {
     assert.strictEqual(r.status, 200, r.text);
     assert.strictEqual(r.json.method, "mtls");
   });
-  r = await gnap.rawRequest("GET", h.RS,
-                            { Authorization: "GNAP " +
-                                             mtlsFlow.released.access_token.value });
+  r = await gnap.rawRequest("GET", h.RS_TLS,
+    { Authorization: "GNAP " + mtlsFlow.released.access_token.value },
+    null, { ca: h.peerCaPem });
   check("the same token on a connection with no client certificate is refused",
         function () {
     assert.strictEqual(r.status, 401, r.text);
@@ -1228,11 +1262,11 @@ async function test() {
   otherCert.setSubject([{ name: "commonName", value: "gnap-mtls-thief" }]);
   otherCert.setIssuer([{ name: "commonName", value: "gnap-mtls-thief" }]);
   otherCert.sign(otherPair.privateKey, forge.md.sha256.create());
-  r = await gnap.rawRequest("GET", h.RS,
+  r = await gnap.rawRequest("GET", h.RS_TLS,
     { Authorization: "GNAP " + mtlsFlow.released.access_token.value },
     null, { cert: forge.pki.certificateToPem(otherCert),
             key: forge.pki.privateKeyToPem(otherPair.privateKey),
-            rejectUnauthorized: false });
+            ca: h.peerCaPem });
   check("…and on a connection presenting a DIFFERENT certificate", function () {
     assert.strictEqual(r.status, 401, r.text);
   });

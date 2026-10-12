@@ -31,7 +31,12 @@
 //      txn.
 //   6. STATUS (section 8.1.5): a paused poll stream hands out its
 //      stream-updated event and holds a RISC event until it is enabled.
-//   7. /ssf/receive CHECKS typ, iss AND aud, recording and refusing each.
+//   7. WHAT A RECEIVER CHECKS: the service's own `/ssf/receive` refusing a
+//      wrong typ, iss and aud — in a development realm, since it is
+//      development only (#585) — and, in every mode, a real RFC 8935 PUSH
+//      to the test peer's receiver (#586), which verifies what arrived the
+//      way any receiver must and is read back by this job. With no peer (an
+//      AWS target) that half skips, saying so.
 //
 // OWNED HERE (local: true): this repository's transmitter, in a THROWAWAY
 // TRUST REALM that is left behind.
@@ -39,7 +44,9 @@
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
+const nodeCrypto = require("crypto");
 const { usernameFor } = require("./random_username.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -70,6 +77,7 @@ const SSF = "https://schemas.openid.net/secevent/ssf/event-type/";
 const VERIFICATION = SSF + "verification";
 const UPDATED = SSF + "stream-updated";
 const POLL = "urn:ietf:rfc:8936";
+const PUSH = "urn:ietf:rfc:8935";
 const SECRET = "ssf-conf-" + String(Date.now()).slice(-8);
 const ALICE = "ssf-conf-a-" + REALM;
 const BOB = "ssf-conf-b-" + REALM;
@@ -226,7 +234,7 @@ function typeOf(set) {
 
 // A SET nobody signed: `/ssf/receive` accepts one it cannot verify unless
 // ssf.receiveRequireSignature is on, which is what lets typ, iss and aud be
-// asserted on their own.
+// asserted on their own (section 7a, development only).
 function unsignedSet(header, claims) {
   log.debug("Entering unsignedSet().");
   const part = function (value) {
@@ -237,6 +245,151 @@ function unsignedSet(header, claims) {
   log.debug("Leaving unsignedSet().");
   return part(header) + "." + part(claims) + "." +
          Buffer.from("not a signature").toString("base64url");
+}
+
+// ---------------------------------------------------------------------------
+// 7a. `/ssf/receive` CHECKS typ, iss AND aud — the service's own receiver,
+// in a DEVELOPMENT realm (it is development only, #585). The SETs are
+// UNSIGNED: development accepts one it cannot verify unless
+// ssf.receiveRequireSignature is on, which is what lets the type, issuer and
+// audience checks be asserted on their own. Answers how many checks ran.
+// ---------------------------------------------------------------------------
+async function theServicesOwnReceiver(issuer) {
+  log.debug("Entering theServicesOwnReceiver().");
+  log.info("=== 7a. /ssf/receive checks typ, iss and aud ===");
+  const now = Math.floor(Date.now() / 1000);
+  const receiveUrl = issuer + "/ssf/receive";
+  const claims = function (iss, aud) {
+    log.debug("Entering claims().");
+    const out = {
+      jti: "conf-" + nodeCrypto.randomBytes(8).toString("hex"),
+      iss: iss, aud: aud, iat: now,
+      sub_id: { format: "opaque", id: "x" }, events: {} };
+    out.events[VERIFICATION] = {};
+    log.debug("Leaving claims().");
+    return out;
+  };
+  const push = function (header, body) {
+    log.debug("Entering push().");
+    log.debug("Leaving push().");
+    return call("POST", realmBase + "/ssf/receive", unsignedSet(header, body),
+                { "Content-Type": "application/secevent+jwt" });
+  };
+  const typed = { alg: "RS256", typ: "secevent+jwt", kid: "conformance" };
+  let r = await push(typed, claims(issuer, receiveUrl));
+  check("a SET from this realm's issuer, addressed to the endpoint's own " +
+        "URL, is accepted (202)", function () {
+    assert.strictEqual(r.status, 202, r.text);
+  });
+  r = await push(typed, claims("https://other.example", receiveUrl));
+  check("ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
+        "4.1.6)", function () {
+    assert.strictEqual(r.status, 400, r.text);
+    assert.strictEqual(r.json.err, "invalid_issuer");
+  });
+  r = await push(typed, claims(issuer, "somebody-else"));
+  check("one addressed to somebody else is refused with invalid_audience",
+        function () {
+    assert.strictEqual(r.status, 400, r.text);
+    assert.strictEqual(r.json.err, "invalid_audience");
+  });
+  r = await push({ alg: "RS256", typ: "JWT" }, claims(issuer, receiveUrl));
+  check("and one that is not explicitly typed secevent+jwt is refused " +
+        "(section 4.1.1)", function () {
+    assert.strictEqual(r.status, 400, r.text);
+    assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
+  });
+  log.debug("Leaving theServicesOwnReceiver().");
+  return 4;
+}
+
+// ---------------------------------------------------------------------------
+// 7b. A PUSH TO A RECEIVER THAT IS NOT THIS SERVICE (#586): the test peer's
+// SSF receiver (tests/peer/peer_ssf.js), in every mode. A third receiver
+// application asks for an RFC 8935 push stream to the peer's TLS listener
+// with an authorization_header of its own; the realm trusts the peer's CA
+// through `ssf.pushCaFile` — product mode verifies every push's certificate
+// (#171) — and a verification request makes the transmitter push. What the
+// peer received is read back from it: explicitly typed, signed by a key at
+// the realm's jwks_uri (the peer fetched it and checked), from the realm's
+// issuer, addressed to the stream's aud, with the state and a txn — and the
+// header the receiver asked for, which the peer refuses a push without.
+// Answers how many checks ran; none, saying so, in a run with no peer.
+// ---------------------------------------------------------------------------
+async function pushToTheTestPeer(issuer) {
+  log.debug("Entering pushToTheTestPeer().");
+  log.info("=== 7b. a push to the test peer's receiver ===");
+  if (!testPeer.available()) {
+    log.info(testPeer.skipReason("7b, the push to a receiver that is not " +
+                                 "this service"));
+    log.debug("Leaving pushToTheTestPeer(). No peer.");
+    return 0;
+  }
+  const CAROL = "ssf-conf-c-" + REALM;
+  const header = "Bearer push-" + nodeCrypto.randomBytes(12).toString("hex");
+  await ok(realmApi + "/applications/create", application(CAROL),
+           "created carol's application");
+  const carol = receiver(await tokenFor(CAROL));
+  const view = await testPeer.tenant(testPeer.tenantId("ssf-" + REALM),
+                                     realmBase, base,
+                                     { ssf: { authorizationHeader: header,
+                                              audience: CAROL } });
+  const caFile = process.env.TEST_PEER_CA_FILE || view.caFile;
+  await ok(realmApi + "/config/set", { key: "ssf.pushCaFile",
+                                       value: caFile },
+           "named the test peer's CA in ssf.pushCaFile");
+  let r = await carol.send("POST", "/ssf/stream", {
+    delivery: { method: PUSH, endpoint_url: view.ssf.pushUrl,
+                authorization_header: header },
+    events_requested: [VERIFICATION, ACCOUNT_DISABLED] });
+  const stream = r.json && r.json.stream_id;
+  check("7b. a push stream to the test peer's https endpoint is created, " +
+        "addressed to the receiver", function () {
+    assert.ok(r.status === 200 || r.status === 201, r.text.slice(0, 300));
+    assert.strictEqual(r.json.delivery.method, PUSH, r.text.slice(0, 300));
+    assert.strictEqual(r.json.aud, CAROL, r.text.slice(0, 300));
+  });
+  const since = await testPeer.mark(view.tenant);
+  r = await carol.send("POST", "/ssf/verify", { stream_id: stream,
+                                                state: "push-state" });
+  check("7b. a verification request answers 204", function () {
+    assert.strictEqual(r.status, 204, r.text);
+  });
+  const seen = {};
+  const arrived = await testPeer.waitFor(view.tenant, "ssf", since,
+    function (one) {
+      return (one.eventTypes || []).indexOf(VERIFICATION) >= 0;
+    }, 15000, seen);
+  check("7b. THE TRANSMITTER PUSHED IT to the peer over TLS it verified " +
+        "against ssf.pushCaFile, with the receiver's authorization_header, " +
+        "and the peer accepted it (202)", function () {
+    assert.ok(arrived, "nothing reached the peer; it saw " +
+              JSON.stringify(seen.seen || []).slice(0, 600));
+    assert.strictEqual(arrived.ok, true, JSON.stringify(arrived));
+    assert.strictEqual(arrived.status, 202, JSON.stringify(arrived));
+  });
+  check("7b. what arrived is explicitly typed secevent+jwt, signed by a key " +
+        "at the realm's jwks_uri, from the realm's issuer, to the stream's " +
+        "aud, echoing the state and carrying a txn", function () {
+    assert.strictEqual(arrived.header.typ, "secevent+jwt");
+    assert.strictEqual(arrived.signatureValid, true);
+    assert.strictEqual(arrived.claims.iss, issuer);
+    assert.deepStrictEqual([].concat(arrived.claims.aud), [CAROL]);
+    assert.strictEqual(arrived.claims.events[VERIFICATION].state,
+                       "push-state");
+    assert.ok(arrived.claims.txn, JSON.stringify(arrived.claims));
+  });
+  r = await carol.send("DELETE", "/ssf/stream?stream_id=" +
+                                 encodeURIComponent(stream));
+  check("7b. carol deletes her push stream", function () {
+    assert.strictEqual(r.status, 204, r.text);
+  });
+  // RESTORED WITH `reset` (tests/CLAUDE.md), though the realm is this
+  // job's own: a setting left overridden is another job's starting state.
+  await ok(realmApi + "/config/reset", { key: "ssf.pushCaFile" },
+           "reset ssf.pushCaFile");
+  log.debug("Leaving pushToTheTestPeer().");
+  return 5;
 }
 
 async function test() {
@@ -498,88 +651,37 @@ async function test() {
                     JSON.stringify(types));
         });
 
-  log.info("=== 7. /ssf/receive checks typ, iss and aud ===");
-  const now = Math.floor(Date.now() / 1000);
-  const receiveUrl = issuer + "/ssf/receive";
-  const claims = function (iss, aud) {
-    log.debug("Entering claims().");
-    const out = {
-      jti: "conf-" + require('crypto').randomBytes(8).toString('hex'),
-      iss: iss, aud: aud, iat: now,
-      sub_id: { format: "opaque", id: "x" }, events: {} };
-    out.events[VERIFICATION] = {};
-    log.debug("Leaving claims().");
-    return out;
-  };
-  const push = function (header, body) {
-    log.debug("Entering push().");
-    log.debug("Leaving push().");
-    return call("POST", realmBase + "/ssf/receive", unsignedSet(header, body),
-                { "Content-Type": "application/secevent+jwt" });
-  };
-  // THE SETS HERE ARE UNSIGNED, which only development accepts: since #117
-  // product mode refuses any SET it cannot verify, and it asks that FIRST, so
-  // every push below is `invalid_key` there and the type, issuer and audience
-  // checks behind it are development's to show. The realm's mode is asked
-  // rather than assumed, because the suite runs this job in both.
+  // =========================================================================
+  // 7. WHAT A RECEIVER CHECKS — at the service's own receiver in a
+  // development realm, and at the TEST PEER's in every mode (#586).
+  // =========================================================================
   const modeReport = await call("GET", realmApi + "/mode");
   const product = !!(modeReport.json && modeReport.json.mode === "product");
   log.info("section 7 runs in " + (product ? "product" : "development") +
            " mode (" + modeReport.status + ")");
-  const refusedUnverified = function (what) {
-    log.debug("Entering refusedUnverified().");
-    log.debug("Leaving refusedUnverified().");
-    return function () {
-      assert.strictEqual(r.status, 400, r.text);
-      assert.strictEqual(r.json.err, "invalid_key", what + ": " + r.text);
-    };
-  };
-  const typed = { alg: "RS256", typ: "secevent+jwt", kid: "conformance" };
-  r = await push(typed, claims(issuer, receiveUrl));
-  check(product
-    ? "PRODUCT: an unsigned SET from this realm's issuer, addressed to the " +
-      "endpoint's own URL, is refused invalid_key — nothing unverified is " +
-      "accepted (#117)"
-    : "a SET from this realm's issuer, addressed to the endpoint's own " +
-      "URL, is accepted (202)",
-    product ? refusedUnverified("the well-formed SET") : function () {
-      assert.strictEqual(r.status, 202, r.text);
-    });
-  r = await push(typed, claims("https://other.example", receiveUrl));
-  check(product
-    ? "PRODUCT: one from another issuer is refused before its issuer is " +
-      "read, invalid_key"
-    : "ONE FROM ANOTHER ISSUER IS REFUSED with invalid_issuer (section " +
-      "4.1.6)",
-    product ? refusedUnverified("another issuer") : function () {
-      assert.strictEqual(r.status, 400, r.text);
-      assert.strictEqual(r.json.err, "invalid_issuer");
-    });
-  r = await push(typed, claims(issuer, "somebody-else"));
-  check(product
-    ? "PRODUCT: one addressed to somebody else is refused invalid_key"
-    : "one addressed to somebody else is refused with invalid_audience",
-    product ? refusedUnverified("another audience") : function () {
-      assert.strictEqual(r.status, 400, r.text);
-      assert.strictEqual(r.json.err, "invalid_audience");
-    });
-  r = await push({ alg: "RS256", typ: "JWT" }, claims(issuer, receiveUrl));
-  check(product
-    ? "PRODUCT: one not typed secevent+jwt is refused invalid_key"
-    : "and one that is not explicitly typed secevent+jwt is refused " +
-      "(section 4.1.1)",
-    product ? refusedUnverified("an untyped SET") : function () {
-      assert.strictEqual(r.status, 400, r.text);
-      assert.ok(/secevent\+jwt/.test(r.json.description), r.text);
-    });
+  let receiverChecks = 0;
+  if (product) {
+    // `/ssf/receive` is the service's own receiver "for the debugger's
+    // benefit", and development only since #585: in a product realm it
+    // answers as an unrouted path does. Its checks are development's to
+    // show, and 7b's push to the test peer is what product asserts.
+    log.info("7a. SKIPPED in product: /ssf/receive is development only " +
+             "(#585)");
+  } else {
+    receiverChecks = await theServicesOwnReceiver(issuer);
+  }
+  const pushChecks = await pushToTheTestPeer(issuer);
 
   r = await alice.send("DELETE", "/ssf/stream" + q);
   check("alice deletes her own stream", function () {
     assert.strictEqual(r.status, 204, r.text);
   });
 
-  assert.ok(checks >= 30, "only " + checks + " checks ran; a section has " +
-                                             "stopped being called.");
+  // The floor: the 29 checks every run makes, and whatever section 7's two
+  // halves said they made — 7a only in development, 7b only with a peer.
+  const floor = 29 + receiverChecks + pushChecks;
+  assert.ok(checks >= floor, "only " + checks + " of " + floor + " checks " +
+                             "ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -591,7 +693,8 @@ program
   .description("SSF 1.0 final over the wire (#144): stream ownership, a " +
     "Transmitter-Supplied aud, the RFC 9493 names and the final complex " +
     "subject, the inserted-path discovery form, verification, status in " +
-    "section 8.1.5's order, and /ssf/receive's typ, iss and aud checks.")
+    "section 8.1.5's order, /ssf/receive's typ, iss and aud checks in " +
+    "development, and a push to the test peer's receiver (#586).")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);
