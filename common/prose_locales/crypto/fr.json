@@ -552,12 +552,12 @@
     "text": "Où résident les clés privées des CA"
   },
   "crypto.families.user-portal.signs": {
-    "en": "504f3616f5efd7b5",
-    "text": "Rien. Le portail n’émet aucun jeton, aucune assertion et aucun certificat — il modifie des justificatifs d’authentification plutôt que d’en frapper."
+    "en": "9febb36f585ca159",
+    "text": "Rien de ce qu’il émet. Le portail ne frappe aucun jeton, aucune assertion et aucun certificat — il modifie des justificatifs d’authentification plutôt que d’en frapper. Son environnement d’exécution, dans le navigateur, signe une seule chose : une preuve DPoP RFC 9449 (ES256) à chaque appel à `/account-api` et au point de terminaison de jeton, avec une clé P-256 que WebCrypto a générée non extractible pour ce chargement de page."
   },
   "crypto.families.user-portal.verifies": {
-    "en": "6b484951aede8650",
-    "text": "UN MOT DE PASSE PRÉSENTÉ, par rapport au hachage scrypt figurant sur la propre entrée de la personne, et un JETON D’ACTIVATION par rapport au hachage scrypt de celui qui a été émis. Les deux comparaisons s’effectuent en temps constant via common/crypto.js — un retour anticipé octet par octet sur l’une ou l’autre constitue un oracle temporel. Une assertion WebAuthn est également vérifiée, mais par authn/webauthn.js, où se trouve la cérémonie."
+    "en": "8a095d27cbed0ab1",
+    "text": "CHAQUE APPEL À `/account-api`, à sa barrière (account-api/account_api.ts) : le jeton d’accès est un `at+jwt` RFC 9068 vérifié sous la clé de signature de CE domaine (toute génération), son émetteur et son audience sont contrôlés, et sa liaison DPoP est rapprochée d’une preuve que la barrière vérifie — jamais accepté en tant que Bearer. La personne qu’il nomme est le seul compte sur lequel il agit. À côté de cela, un MOT DE PASSE PRÉSENTÉ (une modification prouve à nouveau le mot de passe actuel), par rapport au hachage scrypt figurant sur la propre entrée de la personne, et le jeton d’un lien d’ACTIVATION ou de RÉINITIALISATION DU MOT DE PASSE par rapport au hachage scrypt de celui qui a été émis, chacun comparé en temps constant via common/crypto.js. L’environnement d’exécution vérifie une réponse d’autorisation JARM par rapport au JWKS du domaine lorsque le domaine en envoie une. Une assertion WebAuthn est vérifiée par authn/webauthn.js ; l’environnement d’exécution ne fait que mener la cérémonie."
   },
   "crypto.families.user-portal.encrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -568,20 +568,20 @@
     "text": "Rien."
   },
   "crypto.families.user-portal.hashes": {
-    "en": "54242a9694c34ec7",
-    "text": "SCRYPT (RFC 7914, N=2^15, r=8, p=1) pour le mot de passe comme pour le jeton d’activation, chacun avec 16 octets aléatoires de sel, stockés sous la forme `$scrypt$N$r$p$salt$hash` afin que le coût puisse être augmenté plus tard sans invalider ce qui est déjà stocké. **PAS un condensé** : un mot de passe est de faible entropie, et un hachage rapide sur un mot de passe n’est qu’à une liste de mots du mot de passe lui-même. SHA-256 sous un HMAC pour le jeton CSRF, ce qui est une tâche différente — l’authenticité d’un formulaire, et non la protection d’un secret au repos."
+    "en": "2955567f83fe0eee",
+    "text": "SCRYPT (RFC 7914) pour le mot de passe et pour le jeton d’un lien d’activation ou de réinitialisation, chacun avec 16 octets aléatoires de sel, au coût que nomment security.passwordHashLogN, passwordHashR et passwordHashP (N=2^15, r=8, p=1 par défaut), stockés sous la forme `$scrypt$N$r$p$salt$hash` afin que le coût puisse être augmenté plus tard sans invalider ce qui est déjà stocké. **PAS un condensé** : un mot de passe est de faible entropie, et un hachage rapide sur un mot de passe n’est qu’à une liste de mots du mot de passe lui-même. SHA-256 dans le navigateur pour le défi PKCE S256 et le `ath` de la preuve DPoP, ce qui est une tâche différente — lier une requête à une connexion et une preuve à un jeton, et non protéger un secret au repos."
   },
   "crypto.families.user-portal.keys": {
-    "en": "b1cf1ce0bb050d19",
-    "text": "Aucune qui lui soit propre. Le jeton CSRF est un HMAC-SHA256 sous une clé générée par processus et délibérément NON persistée — un jeton CSRF n’a de sens que pendant la durée d’une session, une session ne survit pas à un redémarrage, et une clé qui y survivrait ne protégerait donc rien tout en étant un secret de plus au repos."
+    "en": "7a356445be1d2a7b",
+    "text": "Aucune sur le serveur. La paire de clés DPoP vit dans le navigateur : P-256, générée par WebCrypto avec sa moitié privée non extractible, conservée en mémoire et disparue avec la page, et chaque jeton émis au portail est lié à son empreinte. Les jetons eux-mêmes sont signés par le serveur d’autorisation du domaine (la ligne OAuth2 / OIDC). Il n’y a plus de clé CSRF : la clé HMAC par processus est partie avec le jeton CSRF et le cookie de session qu’il protégeait (#568)."
   },
   "crypto.families.user-portal.algorithms.0.what": {
-    "en": "20e9dc8c3361fe3e",
-    "text": "Mot de passe et jeton d’activation au repos"
+    "en": "2e88a42ac4b1c9fa",
+    "text": "Mot de passe et jeton de lien au repos"
   },
   "crypto.families.user-portal.algorithms.0.how": {
-    "en": "7e9dc006d728159d",
-    "text": "scrypt, N=32768, r=8, p=1, clé de 32 octets, sel aléatoire de 16 octets"
+    "en": "51254f21a3bc3036",
+    "text": "scrypt, N=32768, r=8, p=1 par défaut (security.passwordHash*), clé de 32 octets, sel aléatoire de 16 octets"
   },
   "crypto.families.user-portal.algorithms.1.what": {
     "en": "8117839e71d9cf2c",
@@ -592,12 +592,28 @@
     "text": "égalité en temps constant"
   },
   "crypto.families.user-portal.algorithms.2.what": {
-    "en": "03f3221c7fc527a5",
-    "text": "Jeton CSRF"
+    "en": "e9ec660a650f5513",
+    "text": "Jeton d’accès sur /account-api"
   },
   "crypto.families.user-portal.algorithms.2.how": {
-    "en": "3829178c0011f20f",
-    "text": "HMAC-SHA256 sur l’identifiant de session sous une clé par processus"
+    "en": "87be1920112e9844",
+    "text": "at+jwt RFC 9068, vérifié sous la clé de signature de ce domaine, lié par DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "Preuve DPoP (navigateur)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 avec une clé P-256 WebCrypto non extractible par chargement de page"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1088,8 +1104,8 @@
     "text": "Rien. Il ne FRAPPE aucun justificatif — c’est la seule famille ici qui se contente toujours de les vérifier."
   },
   "crypto.families.scim.verifies": {
-    "en": "db48617a9c3bb0b2",
-    "text": "Un justificatif dans l’un des six schémas que nomme la RFC 7644 section 2, et DEUX DES SIX SONT RÉELLEMENT VÉRIFIÉS : HTTP Digest calcule la réponse à partir du mot de passe configuré, et une signature HOBA est vérifiée par rapport à la clé publique que le client a enregistrée. Les quatre autres sont des tourniquets — n’importe quel mot de passe sauf un passe Basic, et ceux d’OAuth exigent seulement un jeton émis par ce service portant `scim:read` ou `scim:write`."
+    "en": "90704e4d59344987",
+    "text": "Un justificatif dans l’un des six schémas que nomme la RFC 7644 section 2. Ceux d’OAuth exigent un jeton émis par ce service portant `scim:read` ou `scim:write`, et une signature HOBA est vérifiée par rapport à la clé publique que le client a enregistrée. En mode DÉVELOPPEMENT, HTTP Digest calcule la réponse à partir du seul mot de passe configuré et n’importe quel mot de passe sauf un passe Basic ; en mode PRODUIT, Basic vérifie le mot de passe par rapport au `userPassword` haché de la personne et Digest n’est pas proposé."
   },
   "crypto.families.scim.hashes": {
     "en": "8b5fd034b1743a03",

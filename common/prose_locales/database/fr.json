@@ -47,6 +47,14 @@
     "en": "8c3bb76819b4a57f",
     "text": "TLS, sslmode=prefer — contactée via TLS uniquement : avec prefer, libpq se rabattrait sur une connexion en clair, ce que ce service ne fait jamais ; le certificat du serveur n’est PAS vérifié (persistence.databaseTlsRejectUnauthorized est désactivé). La connexion est chiffrée dans les deux cas."
   },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS, sslmode=verify-full ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus et son nom d’hôte est contrôlé, comme le demande le sslmode, quoi qu’indique persistence.databaseTlsRejectUnauthorized."
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS, sslmode=verify-ca ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus, comme le demande le sslmode, quoi qu’indique persistence.databaseTlsRejectUnauthorized — mais son nom d’hôte n’est PAS contrôlé : verify-ca, tel que libpq le lit, fait confiance à tout certificat qu’une autorité de confiance a émis. Utilisez verify-full pour contrôler aussi le nom."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "NON CONTACTÉE — sslmode={{sslmode}} demande une connexion en clair, que ce service n’ouvre jamais ; il ne démarre donc pas avec cette chaîne de connexion."

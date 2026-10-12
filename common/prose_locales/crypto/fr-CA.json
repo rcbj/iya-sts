@@ -1,4 +1,8 @@
 {
+  "crypto.families.user-portal.keys": {
+    "en": "7a356445be1d2a7b",
+    "text": "Aucune sur le serveur. La paire de clés DPoP vit dans le navigateur : P-256, générée par WebCrypto avec sa moitié privée non extractible, conservée en mémoire et disparue avec la page, et chaque jeton émis au portail est lié à son empreinte. Les jetons eux-mêmes sont signés par le serveur d’autorisation du domaine (la ligne OAuth2 / OIDC). Il n’y a plus de clé CSRF : la clé HMAC par processus est partie avec le jeton CSRF et le témoin de session qu’il protégeait (#568)."
+  },
   "crypto.families.email-codes-and-links.signs": {
     "en": "469daea0865e7d80",
     "text": "Rien. Un code ou un lien est un secret aléatoire vérifié par rapport à un hachage stocké de celui-ci ; le message qui le transporte n’est signé par DKIM que lorsque le transport SMTP est configuré pour cela (voir Courriel)."

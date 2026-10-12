@@ -3,6 +3,10 @@
     "en": "ff24480e5b0e0e15",
     "text": "chaque bind réussit — n’importe quel DN, n’importe quel mot de passe, y compris un bind anonyme — sauf avec le mot de passe littéral \"invalid\", auquel il est répondu LDAP_INVALID_CREDENTIALS (49) afin qu’un test négatif ait de quoi échouer"
   },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "seule une personne se lie, uniquement sur LDAPS 636, et le mot de passe est vérifié par rapport au userPassword haché de son entrée. Un bind anonyme (48), tout bind sur 389 (13), un mot de passe vide (53), un DN qui n’est pas une personne (49) et un DN ou une adresse ayant dépassé sa limite de binds échoués (53) sont refusés avant qu’un mot de passe soit lu ; un mauvais mot de passe, ainsi que le mot de passe littéral \"invalid\", donnent LDAP_INVALID_CREDENTIALS (49)"
+  },
   "ldap.service.schema": {
     "en": "0aabcadd26b32a63",
     "text": "aucun. Aucune objectClass n’est imposée et aucun attribut n’est vérifié par rapport à une syntaxe ; une entrée peut donc porter tous les attributs qu’envoie un client. Un véritable annuaire en refuserait la plupart."
@@ -1212,8 +1216,8 @@
     "text": "LE NOM QU’UN PARTENAIRE DE FÉDÉRATION SE DONNE — l’entityID d’un fournisseur d’identité étranger, ou son identifiant d’émetteur lorsque la relation parle OpenID Connect. LA RELATION N’EST PAS ICI : les points de terminaison, le certificat et le mappage d’attributs se trouvent sous ou=federations et sont ce contre quoi /federation/acs/{id} vérifie réellement (voir federation/CLAUDE.md). Cette entrée est le partenaire en tant que PARTIE, et cet attribut est le nom sous lequel il est connu — une valeur ici ne fédère donc avec personne, et c’est le seul endroit de ce service où cette phrase a du mordant."
   },
   "applications.schema.attributes.ldapBindDn.what": {
-    "en": "edb579c7a9932c00",
-    "text": "LE DN SOUS LEQUEL UN CLIENT D’ANNUAIRE SE LIE sur 389 ou LDAPS 636. TOUTE LIAISON ICI RÉUSSIT — n’importe quel DN, n’importe quel mot de passe, anonyme — si bien que rien n’écrira jamais ceci et que rien ne le lira jamais ; c’est l’endroit où un opérateur consigne l’identifiant qu’une application est censée utiliser, à côté du reste de ce qu’est cette application."
+    "en": "f1e68cbe5820e3d4",
+    "text": "LE DN SOUS LEQUEL UN CLIENT D’ANNUAIRE SE LIE sur 389 ou LDAPS 636. Rien n’écrira jamais ceci et rien ne le lira jamais : en mode développement, TOUTE LIAISON RÉUSSIT — n’importe quel DN, n’importe quel mot de passe, anonyme — et en mode produit seule une personne se lie, si bien qu’une application lit plutôt l’annuaire via SCIM. C’est l’endroit où un opérateur consigne l’identifiant qu’une application est censée utiliser, à côté du reste de ce qu’est cette application."
   },
   "applications.schema.attributes.scimClientId.what": {
     "en": "9fa8008ba9df8d03",
