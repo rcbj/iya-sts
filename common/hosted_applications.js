@@ -142,7 +142,7 @@ const APPLICATIONS = [
   // like everything under `/issuer`, a demonstration.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
-    demoPrefixes: ['/issuer', '/did', '/vc-api', '/vc-demo-api'],
+    demoPrefixes: ['/issuer', '/did', '/vc-demo-api'],
     prefixes: ['/oid4vci', '/oid4vp', '/issuer', '/did', '/applications',
                '/bbs', '/vc-api', '/vc-demo-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',

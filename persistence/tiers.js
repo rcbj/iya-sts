@@ -301,6 +301,12 @@ const GLOBAL_MINTED = {
   // One list per realm, published by every cell: a credential issued in one
   // cell and revoked in another must show revoked everywhere.
   'vc_status.entries': 'the status list bits every cell publishes',
+  // The W3C VC API's credential-to-index map (#598), for its reason: a
+  // status change may reach any cell, and the index it names is in the list
+  // above. A row is a credential id the caller chose and an index — nobody's
+  // data.
+  'vc_api.issued': 'the status index of each credential the W3C VC API ' +
+    'issued',
   // The same argument for access tokens (#432): one list per realm, and a
   // token revoked in one cell must read INVALID in every cell's copy. A row
   // is an index, a jti and an expiry — nobody's data.
@@ -379,7 +385,7 @@ const CELL_MINTED = [
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
   // one cell, and its key never leaves that cell's store.
   'tls.listenerKeys', 'tls.presentedChains',
-  'tls.sessionTicketKey', 'vc_api.issued', 'vc_issued.credentials',
+  'tls.sessionTicketKey', 'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',
   'vc_issuer.vciNonces', 'vc_offers.credentialOffers',
   'vc_offers.deferredAccessTokens', 'vc_offers.deferredTransactions',
