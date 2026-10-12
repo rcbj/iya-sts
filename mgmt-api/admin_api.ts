@@ -3415,7 +3415,35 @@ class AdminApi {
             },
             responseDescription: 'The index and its new status.'
           };
-        })
+        }).concat([{
+          // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
+          // test hook `POST /oid4vci/status-lists/bitstring/{purpose}/
+          // publish` when the VC API became a product surface: an
+          // operator's act, Admin Write, beside the Credential status tab's
+          // control. `admin-ui/vc_status_admin.ts` argues it.
+          action: 'publish',
+          operationId: 'publishStatusList',
+          summary: 'Publish one Bitstring Status List',
+          description: 'The W3C test suites\' "publish the list now", for ' +
+                       'the `revocation` or `suspension` Bitstring Status ' +
+                       'List. A list here is computed on every read from ' +
+                       'the statuses set so far, so it is current already: ' +
+                       'the answer says so, and the next fetch serves every ' +
+                       'status, signed afresh. A purpose that is neither is ' +
+                       '400 with `errors`.',
+          requestBodyRequired: true,
+          requestBody: {
+            type: 'object',
+            properties: {
+              purpose: { type: 'string', enum: ['revocation', 'suspension'],
+                         description: 'Which list.' }
+            },
+            required: ['purpose'],
+            examples: [{ purpose: 'revocation' }],
+            additionalProperties: false
+          },
+          responseDescription: 'The purpose, and that the list is current.'
+        }])
       },
 
       // ---------------------------------------------------------------------
