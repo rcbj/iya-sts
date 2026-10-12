@@ -1822,7 +1822,8 @@ function childMain() {
         }
       });
     note(protocolProblems.length === 0 && protocolDrawn.length >= 14,
-         'D-Protocol-tabs. every Protocols page in the table is drawn as ' +
+         'D-Protocol-tabs. every Protocols and Directory page in the table is ' +
+         'drawn as ' +
          'tabs, Metadata first, its endpoints there, and draws only tabs ' +
          'the table lists', protocolProblems.join('; ') + ' (drew ' +
          protocolDrawn.length + ')');

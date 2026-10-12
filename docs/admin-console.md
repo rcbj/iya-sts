@@ -177,6 +177,9 @@ The navigation is a grouped list down the left. Its five sections:
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
+  A page with more than one section is drawn as tabs, Metadata first (its
+  tiles, notes and the container's schema), then the list, its forms and its
+  settings.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,

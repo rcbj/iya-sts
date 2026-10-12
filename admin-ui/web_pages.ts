@@ -242,8 +242,9 @@ function certComposition(): Json {
 
 const CERT_COMPOSITION = certComposition();
 
-// EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (rcbj, 2026-10-12). The pages
-// under Protocols that were drawn as one long column of sections are cut
+// EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (rcbj, 2026-10-12), AND THE
+// DIRECTORY PAGES WITH MORE THAN ONE SECTION. The pages that were drawn as
+// one long column of sections are cut
 // into tabs by `protocolTabs()`: a section whose heading carries
 // `data-tab="<name>"` is that tab, and everything else — the lead notes, the
 // endpoints, what explains the protocol or reports its state — is the
@@ -272,7 +273,24 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
                  'people', 'revocation', 'workbench', 'settings'],
   '/admin/tls': [],
-  '/admin/tls/trust': ['anchors', 'add']
+  '/admin/tls/trust': ['anchors', 'add'],
+  // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
+  // page with one (Users, Every entry, The directory service) is left as
+  // it is; Policies draws tabs of its own, Metadata first.
+  '/admin/groups': ['groups', 'create', 'settings'],
+  '/admin/roles': ['roles', 'create', 'member', 'authorizes', 'requiring',
+                   'preview', 'settings'],
+  '/admin/applications': ['applications', 'add', 'settings'],
+  '/admin/devices': ['devices', 'register'],
+  '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
+  '/admin/secret-destinations': ['destinations', 'add'],
+  '/admin/ldap/applications': ['entries'],
+  '/admin/ldap/federations': ['entries'],
+  '/admin/ldap/roles': ['entries'],
+  '/admin/ldap/policies': ['entries'],
+  '/admin/ldap/peps': ['entries'],
+  '/admin/ldap/spiffe': ['entries', 'agents'],
+  '/admin/ldap/devices': ['entries']
 };
 
 /**
@@ -1178,7 +1196,8 @@ class WebPages {
   // can hold half an element. An `<h2>` starts a section; an `<h3>` starts
   // one only where no `<h2>` section is open (PKI, Provider Commands and
   // Claims Providers head their sections with `<h3>`; elsewhere an `<h3>`
-  // is a heading inside its `<h2>`'s section). A section is a tab when its
+  // is a heading inside its `<h2>`'s section), or where it is marked as a
+  // tab (Roles' sections are `<h3>`s under one `<h2>`). A section is a tab when its
   // heading carries `data-tab`, which the tab's label then replaces; two
   // sections naming one tab are one tab. A block marked `data-metadata`
   // (a page's closing links) returns to Metadata. The rest, in page order,
@@ -1235,7 +1254,7 @@ class WebPages {
         }
         depth += m[1] ? -1 : (m[3] ? 0 : 1);
       } else if (!m[1] && depth === 0 && (name === 'h2' || name === 'h3') &&
-                 (name === 'h2' ||
+                 (name === 'h2' || /\bdata-tab="/.test(m[0]) ||
                   sections[sections.length - 1].level !== 2)) {
         const close = text.indexOf('</' + name + '>', m.index);
         const end = close < 0 ? m.index + m[0].length

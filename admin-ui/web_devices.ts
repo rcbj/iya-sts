@@ -173,7 +173,8 @@ class DevicesPage {
     }).join('');
     const canWrite = ctx.write;
     const create = canWrite
-      ? '<h2>' + t.html('consoleDevices.listHtml.registerHeading') + '</h2>' +
+      ? '<h2 data-tab="register">' +
+      t.html('consoleDevices.listHtml.registerHeading') + '</h2>' +
       kit.note(t.html('consoleDevices.listHtml.registerNote')) +
       '<form method="post" action="' + LIST + '">' +
       '<input type="hidden" name="action" value="create">' +
@@ -235,6 +236,9 @@ class DevicesPage {
                  t.html('consoleDevices.listHtml.leadRegistration') + '</a>' +
                  t.html('consoleDevices.listHtml.leadArrives'),
                t.text('consoleDevices.listHtml.whatThisIs')) +
+      // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
+      // tiles and the lead are Metadata.
+      '<h2 data-tab="devices">' + t.html('console.nav.devices') + '</h2>' +
       filters + nav.head + '<table class="grid"><thead><tr><th>' +
       t.html('consoleDevices.listHtml.thDevice') + '</th>' +
       '<th>' + t.html('consoleDevices.listHtml.thOwner') + '</th><th>' +

@@ -4935,6 +4935,15 @@ then Server, its settings, then Clients).
   **A new Protocols page owes a row there**, or tabs of its own.
 * `SettingsForms`' heading carries `data-tab="settings"`, so every page's
   settings are a Settings tab; on a page not drawn as tabs it is inert.
+* **THE DIRECTORY PAGES WITH MORE THAN ONE SECTION FOLLOWED (rcbj, same
+  day)**: Groups, Roles, Applications, Devices, Attribute sources, Secret
+  destinations and the seven container views under *As the directory holds
+  it*. A page whose list had no heading gained one, labelled with the page's
+  own sidebar name (`console.nav.*`), so no catalog key was added; notes drawn
+  after a list are wrapped in a `data-metadata` block. Policies draws its own
+  tabs and gained a Metadata tab first. Users, Every entry and The directory
+  service are one section each and were left alone. A marked `<h3>` starts a
+  tab even inside an `<h2>` section (Roles).
 
 ## The directory group grew to EIGHT pages (2026-09-05)
 
