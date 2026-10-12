@@ -288,7 +288,7 @@ function parseRedirect(location) {
 //
 //   GET  /oauth2/authorize   -> 302 to /authn/login?authn=...
 //   GET  /authn/login        -> the screen (a static page since #571)
-//   /authn-api               -> back to /oauth2/authorize, with a session cookie
+//   /authn-api               -> back to /oauth2/authorize, with a session
 //   GET  /oauth2/authorize   -> the authorization response
 //
 // options.username  who to sign in as (their name ends up in the tokens)
