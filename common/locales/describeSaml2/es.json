@@ -1,0 +1,19 @@
+{
+  "title": "SAML 2.0 — Web Browser SSO",
+  "heading": "SAML 2.0 — Web Browser SSO, los cuatro bindings",
+  "sub": "Proveedor de identidad <code>{entityId}</code> en <code>{base}</code>",
+  "lead": "Un proveedor de identidad SAML 2.0 completo: HTTP Redirect, HTTP POST y HTTP POST SimpleSign para la solicitud, y HTTP POST, HTTP Redirect, HTTP POST SimpleSign o HTTP Artifact para la respuesta, con un servicio SOAP de resolución de artefactos detrás del último. En modo de desarrollo acepta CUALQUIER entityID: no hace falta aprovisionar un proveedor de servicios aquí antes de apuntarlo a este servicio, y el primer AuthnRequest válido de un entityID crea su entrada de aplicación en el directorio integrado. En modo de producto solo se atiende a un proveedor de servicios REGISTRADO (#496).",
+  "endpoints": "Los endpoints",
+  "endpoint": "Endpoint",
+  "what": "Qué es",
+  "sso": "Single Sign-On. <code>{scoped}</code> es el mismo servicio acotado a un proveedor de servicios.",
+  "ars": "Artifact Resolution, SOAP sobre HTTP. Un navegador nunca lo toca: el proveedor de servicios lo llama directamente, que es justamente la razón de ser del perfil de artefactos.",
+  "slo": "Single Logout, en ambas direcciones.",
+  "unsolicited": "Inicio de sesión iniciado por el proveedor de identidad: una Response no solicitada al proveedor de servicios que nombra <code>providerId</code> (<code>saml2.unsolicitedSso</code>).",
+  "aa": "La autoridad de atributos: un <code>{element}</code> SOAP, el perfil Assertion Query and Request.",
+  "metadata": "Los metadatos firmados del proveedor de identidad. <code>{scoped}</code> es un documento PROPIO para ese proveedor de servicios —un entityID distinto y endpoints distintos— y se genera para cualquier {sp} que se pida.",
+  "sp": "Un proveedor de servicios simulado. NON-SPEC, el servicio consumidor de aserciones predeterminado, y el lugar donde una respuesta puede verificarse comprobación por comprobación sin un segundo servicio.",
+  "perSp": "Metadatos por proveedor de servicios",
+  "perSpLead": "Cada proveedor de servicios obtiene sus propios endpoints bajo su propia ruta, con el único entityID de este proveedor de identidad, el emisor OAuth del realm. Pida <code>{path}</code> y se genera; el entityID puede ser una URL codificada con porcentajes o un nombre simple:",
+  "generic": "Los endpoints genéricos son <code>{sso}</code>, <code>{slo}</code> y <code>{ars}</code>. Se comportan de forma idéntica: el ámbito en la ruta decide qué proveedor de identidad se nombra a sí mismo en la respuesta, y el propio Issuer del AuthnRequest decide para quién es la aserción en cualquier caso."
+}

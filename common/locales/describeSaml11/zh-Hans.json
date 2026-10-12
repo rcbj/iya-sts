@@ -1,0 +1,20 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "两个浏览器配置文件，以及其中一个背后的 SAML 应答器",
+  "lead": "本服务通过三个入口签发 SAML 1.1 断言，这是其中最新的一个：<strong>浏览器配置文件</strong>，即用户登录后断言到达依赖方。另外两个是 {wsfed}，它把同一断言包装在 <code>wresult</code> 中，以及 {wstrust}，它在 <code>RSTR</code> 中返回断言。三者调用同一个构建器，因此在 <code>/admin/saml-attributes</code> 上配置的属性会同时出现在三者中。",
+  "endpoints": "端点",
+  "endpoint": "端点",
+  "what": "说明",
+  "sso": "站点间传输服务——SAML 1.1 对 SAML 2.0 中单点登录服务的称呼",
+  "responder": "SAML 应答器，基于 SOAP。解析工件，按 AssertionID 返回断言，并应答 AttributeQuery 和 AuthenticationQuery——SAML 1.1 中属性权威的那一半",
+  "metadata": "签名的元数据。一个描述 SAML 1.1 身份提供方的 SAML 2.0 元数据文档，这正是每个依赖方实际使用的",
+  "rp": "一个模拟依赖方，用于演练两个配置文件并查看各项检查",
+  "different": "它与 SAML 2.0 的不同之处",
+  "noRequest": "<strong>没有请求消息。</strong>没有 AuthnRequest，因此依赖方从不表明自身身份，从不请求绑定、NameID 格式或认证上下文，也从不收到错误——没有什么需要应答。",
+  "noSlo": "<strong>没有单点注销。</strong>它随 SAML 2.0 才出现。",
+  "spellings": "<strong>处处拼写不同。</strong>是 <code>AssertionID</code> 而不是 <code>ID</code>，<code>Issuer</code> 是属性而不是元素，状态码是 QName 而不是 URI，是 <code>AudienceRestrictionCondition</code> 而不是 <code>AudienceRestriction</code>，签名在断言中位于【最后】，在应答中位于【最前】。",
+  "artifact": "<strong>42 字节的工件</strong>，类型 0x0001，而 SAML 2.0 的是 44 字节、类型 0x0004。",
+  "tryIt": "在模拟依赖方上试用",
+  "theMetadata": "元数据"
+}

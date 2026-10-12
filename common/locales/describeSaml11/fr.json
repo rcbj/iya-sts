@@ -1,0 +1,20 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "Les deux profils navigateur, et le répondeur SAML derrière l'un d'eux",
+  "lead": "Ce service émet des assertions SAML 1.1 par trois portes, et celle-ci est la plus récente : les <strong>profils navigateur</strong>, où une personne se connecte et une assertion parvient à une partie de confiance. Les deux autres sont {wsfed}, qui enveloppe la même assertion dans un <code>wresult</code>, et {wstrust}, qui en renvoie une dans un <code>RSTR</code>. Les trois appellent un seul constructeur, de sorte qu'un attribut configuré sur <code>/admin/saml-attributes</code> apparaît dans les trois.",
+  "endpoints": "Les points de terminaison",
+  "endpoint": "Point de terminaison",
+  "what": "Ce que c'est",
+  "sso": "le service de transfert inter-sites — le nom donné par SAML 1.1 à ce que SAML 2.0 appelle le service d'authentification unique (Single Sign-On)",
+  "responder": "le répondeur SAML, sur SOAP. Résout les artefacts, renvoie les assertions par AssertionID, et répond à AttributeQuery et AuthenticationQuery — la moitié autorité d'attributs de SAML 1.1",
+  "metadata": "métadonnées signées. Un document de métadonnées SAML 2.0 décrivant un fournisseur d'identité SAML 1.1, ce que consomme en pratique toute partie de confiance",
+  "rp": "une partie de confiance fictive, pour exercer les deux profils et voir les contrôles",
+  "different": "Ce qui le distingue de SAML 2.0",
+  "noRequest": "<strong>Pas de message de requête.</strong> Pas d'AuthnRequest, de sorte que la partie de confiance ne s'identifie jamais, ne demande jamais de liaison, de format de NameID ni de contexte d'authentification, et ne reçoit jamais d'erreur — il n'y a rien à quoi répondre.",
+  "noSlo": "<strong>Pas de déconnexion unique (Single Logout).</strong> Elle est arrivée avec SAML 2.0.",
+  "spellings": "<strong>Des graphies différentes partout.</strong> <code>AssertionID</code> et non <code>ID</code>, un attribut <code>Issuer</code> et non un élément, un code de statut qui est un QName et non une URI, <code>AudienceRestrictionCondition</code> et non <code>AudienceRestriction</code>, et une signature placée en DERNIER dans une assertion et en PREMIER dans une réponse.",
+  "artifact": "<strong>Un artefact de 42 octets</strong>, de type 0x0001, là où celui de SAML 2.0 fait 44 octets et est de type 0x0004.",
+  "tryIt": "Essayez-le avec la partie de confiance fictive",
+  "theMetadata": "Les métadonnées"
+}

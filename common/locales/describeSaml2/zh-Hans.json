@@ -1,0 +1,19 @@
+{
+  "title": "SAML 2.0 — Web 浏览器单点登录",
+  "heading": "SAML 2.0 — Web 浏览器单点登录，全部四种绑定",
+  "sub": "位于 <code>{base}</code> 的身份提供方 <code>{entityId}</code>",
+  "lead": "一个完整的 SAML 2.0 身份提供方：请求可使用 HTTP Redirect、HTTP POST 和 HTTP POST SimpleSign，应答可使用 HTTP POST、HTTP Redirect、HTTP POST SimpleSign 或 HTTP Artifact，最后一种背后有一个 SOAP 工件解析服务。在开发模式下它接受【任意】entityID——服务提供方不必先在此预配即可指向本服务，来自某个 entityID 的第一个有效 AuthnRequest 会在嵌入式目录中创建其应用条目。在产品模式下只为【已注册】的服务提供方提供服务 (#496)。",
+  "endpoints": "端点",
+  "endpoint": "端点",
+  "what": "说明",
+  "sso": "单点登录。<code>{scoped}</code> 是限定于某一个服务提供方的同一服务。",
+  "ars": "工件解析，基于 HTTP 的 SOAP。浏览器从不接触它——由服务提供方直接调用，这正是工件配置文件的全部意义。",
+  "slo": "单点注销，双向。",
+  "unsolicited": "身份提供方发起的登录：向 <code>providerId</code> 指定的服务提供方发送一个未经请求的 Response（<code>saml2.unsolicitedSso</code>）。",
+  "aa": "属性权威：一个 SOAP <code>{element}</code>，即断言查询与请求配置文件。",
+  "metadata": "签名的身份提供方元数据。<code>{scoped}</code> 是该服务提供方【专属】的文档——不同的 entityID 和不同的端点——并且会为请求的任何 {sp} 生成。",
+  "sp": "一个模拟服务提供方。NON-SPEC，默认的断言使用者服务，无需第二个服务即可逐项检查验证应答之处。",
+  "perSp": "按服务提供方的元数据",
+  "perSpLead": "每个服务提供方在自己的路径下获得自己的端点，使用本身份提供方唯一的 entityID，即该领域的 OAuth 签发者。请求 <code>{path}</code> 即会生成——entityID 可以是百分号编码的 URL 或普通名称：",
+  "generic": "通用端点是 <code>{sso}</code>、<code>{slo}</code> 和 <code>{ars}</code>。它们的行为完全相同——路径中的范围决定由哪个身份提供方在应答中署名，而无论哪种情况，断言的接收方都由 AuthnRequest 自身的 Issuer 决定。"
+}

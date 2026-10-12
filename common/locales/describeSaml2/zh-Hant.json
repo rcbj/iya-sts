@@ -1,0 +1,19 @@
+{
+  "title": "SAML 2.0 — Web 瀏覽器 SSO",
+  "heading": "SAML 2.0 — Web 瀏覽器 SSO，全部四種繫結",
+  "sub": "身分識別提供者 <code>{entityId}</code>，位於 <code>{base}</code>",
+  "lead": "完整的 SAML 2.0 身分識別提供者：要求可使用 HTTP Redirect、HTTP POST 與 HTTP POST SimpleSign，回應可使用 HTTP POST、HTTP Redirect、HTTP POST SimpleSign 或 HTTP Artifact，最後一種背後還有一個 SOAP 構件解析服務。在開發模式下，它接受「任何」entityID——服務提供者不必先在此佈建即可指向本服務，來自某個 entityID 的第一個有效 AuthnRequest 會在內嵌目錄中建立其應用程式項目。在產品模式下，只為「已註冊」的服務提供者提供服務 (#496)。",
+  "endpoints": "端點",
+  "endpoint": "端點",
+  "what": "說明",
+  "sso": "單一登入。<code>{scoped}</code> 是限定於單一服務提供者的相同服務。",
+  "ars": "構件解析，透過 HTTP 傳送 SOAP。瀏覽器從不接觸它——由服務提供者直接呼叫，這正是構件設定檔的全部意義。",
+  "slo": "單一登出，雙向。",
+  "unsolicited": "由身分識別提供者發起的登入：向 <code>providerId</code> 所指名的服務提供者傳送未經要求的 Response（<code>saml2.unsolicitedSso</code>）。",
+  "aa": "屬性授權單位：SOAP <code>{element}</code>，即 Assertion Query and Request 設定檔。",
+  "metadata": "已簽署的身分識別提供者中繼資料。<code>{scoped}</code> 是該服務提供者「專屬」的文件——不同的 entityID 與不同的端點——並會為所要求的任何 {sp} 即時產生。",
+  "sp": "模擬服務提供者。NON-SPEC，預設的判斷提示取用者服務，也是無須第二個服務即可逐項驗證回應的地方。",
+  "perSp": "各服務提供者的中繼資料",
+  "perSpLead": "每個服務提供者在自己的路徑下都有自己的端點，使用此身分識別提供者唯一的 entityID，即該領域的 OAuth 簽發者。要求 <code>{path}</code> 即會即時產生——entityID 可以是百分比編碼的 URL 或一般名稱：",
+  "generic": "通用端點為 <code>{sso}</code>、<code>{slo}</code> 與 <code>{ars}</code>。它們的行為完全相同——路徑中的範圍決定由哪個身分識別提供者在回答中自稱，而無論如何，判斷提示是給誰的都由 AuthnRequest 本身的 Issuer 決定。"
+}

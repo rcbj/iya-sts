@@ -1,0 +1,19 @@
+{
+  "title": "SAML 2.0 — Web Browser SSO",
+  "heading": "SAML 2.0 — Web Browser SSO, les quatre liaisons",
+  "sub": "Fournisseur d'identité <code>{entityId}</code> à <code>{base}</code>",
+  "lead": "Un fournisseur d'identité SAML 2.0 complet : HTTP Redirect, HTTP POST et HTTP POST SimpleSign pour la requête, et HTTP POST, HTTP Redirect, HTTP POST SimpleSign ou HTTP Artifact pour la réponse, avec un service SOAP de résolution d'artefacts derrière cette dernière. En mode développement, il accepte N'IMPORTE QUEL entityID — un fournisseur de services n'a pas besoin d'être provisionné ici avant de pouvoir être dirigé vers ce service, et la première AuthnRequest valide provenant d'un entityID crée son entrée d'application dans l'annuaire embarqué. En mode produit, seul un fournisseur de services ENREGISTRÉ est servi (#496).",
+  "endpoints": "Les points de terminaison",
+  "endpoint": "Point de terminaison",
+  "what": "Ce que c'est",
+  "sso": "Authentification unique (Single Sign-On). <code>{scoped}</code> est le même service, restreint à un seul fournisseur de services.",
+  "ars": "Résolution d'artefacts, SOAP sur HTTP. Un navigateur n'y accède jamais — le fournisseur de services l'appelle directement, ce qui est tout l'intérêt du profil artefact.",
+  "slo": "Déconnexion unique (Single Logout), dans les deux sens.",
+  "unsolicited": "Connexion initiée par le fournisseur d'identité : une Response non sollicitée envoyée au fournisseur de services que nomme <code>providerId</code> (<code>saml2.unsolicitedSso</code>).",
+  "aa": "L'autorité d'attributs : un <code>{element}</code> SOAP, le profil Assertion Query and Request.",
+  "metadata": "Les métadonnées signées du fournisseur d'identité. <code>{scoped}</code> est un document PROPRE à ce fournisseur de services — un entityID différent et des points de terminaison différents — et il est émis pour tout {sp} demandé.",
+  "sp": "Un fournisseur de services fictif. NON-SPEC, le service consommateur d'assertions par défaut, et l'endroit où une réponse peut être vérifiée contrôle par contrôle sans second service.",
+  "perSp": "Métadonnées par fournisseur de services",
+  "perSpLead": "Chaque fournisseur de services obtient ses propres points de terminaison sous son propre chemin, avec l'unique entityID de ce fournisseur d'identité, l'émetteur OAuth du domaine de confiance. Demandez <code>{path}</code> et il est émis — l'entityID peut être une URL encodée en pourcentage ou un simple nom :",
+  "generic": "Les points de terminaison génériques sont <code>{sso}</code>, <code>{slo}</code> et <code>{ars}</code>. Ils se comportent de manière identique — la portée dans le chemin décide quel fournisseur d'identité se nomme dans la réponse, et l'Issuer de l'AuthnRequest elle-même décide dans tous les cas à qui l'assertion est destinée."
+}

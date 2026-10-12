@@ -1,0 +1,19 @@
+{
+  "title": "SAML 2.0 — Web Browser SSO",
+  "heading": "SAML 2.0 — Web Browser SSO, alla fyra bindningar",
+  "sub": "Identitetsleverantören <code>{entityId}</code> på <code>{base}</code>",
+  "lead": "En fullständig SAML 2.0-identitetsleverantör: HTTP Redirect, HTTP POST och HTTP POST SimpleSign för begäran, och HTTP POST, HTTP Redirect, HTTP POST SimpleSign eller HTTP Artifact för svaret, med en SOAP-tjänst för artefaktupplösning bakom den sista. I utvecklingsläge godtar den VILKET entityID som helst — en tjänsteleverantör behöver inte etableras här innan den kan riktas mot den här tjänsten, och den första giltiga AuthnRequest från ett entityID skapar dess applikationspost i den inbyggda katalogen. I produktläge betjänas bara en REGISTRERAD tjänsteleverantör (#496).",
+  "endpoints": "Slutpunkterna",
+  "endpoint": "Slutpunkt",
+  "what": "Vad den är",
+  "sso": "Single Sign-On. <code>{scoped}</code> är samma tjänst avgränsad till en tjänsteleverantör.",
+  "ars": "Artefaktupplösning, SOAP över HTTP. En webbläsare rör den aldrig — tjänsteleverantören anropar den direkt, vilket är hela poängen med artefaktprofilen.",
+  "slo": "Single Logout, i båda riktningarna.",
+  "unsolicited": "Inloggning initierad av identitetsleverantören: ett oombett Response till den tjänsteleverantör som <code>providerId</code> namnger (<code>saml2.unsolicitedSso</code>).",
+  "aa": "Attributauktoriteten: ett SOAP-<code>{element}</code>, profilen Assertion Query and Request.",
+  "metadata": "Identitetsleverantörens signerade metadata. <code>{scoped}</code> är ett EGET dokument för den tjänsteleverantören — ett annat entityID och andra slutpunkter — och det skapas för vilken {sp} som helst som efterfrågas.",
+  "sp": "En låtsastjänsteleverantör. NON-SPEC, standardtjänsten för assertion consumer service, och platsen där ett svar kan verifieras kontroll för kontroll utan en andra tjänst.",
+  "perSp": "Metadata per tjänsteleverantör",
+  "perSpLead": "Varje tjänsteleverantör får egna slutpunkter under sin egen sökväg, med den här identitetsleverantörens enda entityID, realmens OAuth-utfärdare. Begär <code>{path}</code> så skapas den — entityID kan vara en procentkodad URL eller ett vanligt namn:",
+  "generic": "De generiska slutpunkterna är <code>{sso}</code>, <code>{slo}</code> och <code>{ars}</code>. De beter sig identiskt — avgränsningen i sökvägen avgör vilken identitetsleverantör som namnger sig själv i svaret, och AuthnRequest:ens egen Issuer avgör vem assertionen är till i båda fallen."
+}
