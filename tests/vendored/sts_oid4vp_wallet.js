@@ -104,6 +104,8 @@ const consentScreen = require("./consent_screen.js");
 // THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
 // page's view, the collection — bound as the pages bind them.
 const walletSignin = require("./wallet_signin.js");
+// The demonstration Verifier's pages over `/vc-demo-api` (#582).
+const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -1218,14 +1220,16 @@ async function barDoor(sd, sdKey, product) {
   log.debug("Entering barDoor(). product=" + !!product);
   log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
   const visitor = jar();
-  // `viaPage` starts it at the demonstration's `/oid4vp/start`, whose
-  // redirect is the wallet URL; otherwise the operation answers the wallet
-  // URL as `walletUrl`, which is the same address.
+  // `viaPage` starts it at the demonstration's `/oid4vp/start` — since
+  // #582 a static surface's page, whose act at `POST /vc-demo-api/start`
+  // answers the wallet URL the page's redirect named (`vc_demo.js`, read
+  // as that 302); otherwise the operation answers the wallet URL as
+  // `walletUrl`, which is the same address.
   async function begin(viaPage) {
     log.debug("Entering begin(). viaPage=" + !!viaPage);
     const started = viaPage
-      ? await hop(visitor, "GET", base + "/oid4vp/start?by=reference&" +
-                  "format=" + encodeURIComponent("dc+sd-jwt"))
+      ? await vcDemo.start(visitor.cookies, base,
+                           { by: "reference", format: "dc+sd-jwt" })
       : await hop(null, "POST", api + "/verifications/start",
                   { json: { by: "reference", format: "dc+sd-jwt" } });
     const address = viaPage ? started.location
@@ -1276,9 +1280,16 @@ async function barDoor(sd, sdKey, product) {
           assert.ok(!setsSession(r));
         });
   r = await hop(visitor, "GET", r.json.redirect_uri);
+  // The thank-you page is a static surface's since #582: the shell, and
+  // the verdict in the view it is drawn from (`/vc-demo-api/done`).
+  const thanks = r.status === 200
+    ? await vcDemo.done(visitor.cookies, base, one.ro.state) : null;
   check("and its thank-you page signs nobody in either", function () {
     assert.strictEqual(r.status, 200);
-    assert.ok(/id="verdict"/.test(r.text));
+    assert.ok(thanks && thanks.status === 200 && thanks.view &&
+              thanks.view.received === true &&
+              thanks.view.accepted === true, JSON.stringify(thanks &&
+                                                            thanks.view));
     assert.ok(!setsSession(r) && !visitor.cookies.sts_session);
   });
   const two = await begin();

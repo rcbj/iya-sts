@@ -479,6 +479,10 @@ the validity window — and checks that its own `RelayState` came back unaltered
 (remembered for `saml2.mockSpContextTtlMin`). It is not part of any
 specification.
 
+Its page is drawn in your browser (#581) and needs script: the start page
+from `GET /saml2/sp/api/start`, and the verdict from the page the response was
+posted to. What it sends and how it receives a response are unchanged.
+
 ### The assertion settings every application inherits
 
 The **Assertions** tab under **Protocols → SAML** holds the defaults for what

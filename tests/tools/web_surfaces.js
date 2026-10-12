@@ -47,6 +47,10 @@
 // The federation pages (#580) draw every page from a view alone, as each
 // shell carries it: the landing page, the linking step's outcome, a
 // refusal of the login or linking endpoint, and the two pages not there.
+// The mock relying parties (#581) draw every page from a view alone: each
+// family's start page and its verdicts, and the two spent artifacts.
+// The OpenID4VC demonstration (#582) draws all five of its pages from views
+// alone, the QR codes among them.
 // The TLS diagnostic pages and the SPNEGO demonstration pages (#583) draw
 // every page from a view alone, as each shell carries it, and the TLS
 // page's acts' outcomes from what the acts answered.
@@ -809,6 +813,214 @@ function federationCases(root) {
 }
 
 /**
+ * The mock relying parties' cases (#581): each family's start page and its
+ * verdicts — every check passing and some failing, with and without claims
+ * or attributes, on every binding and profile — the artifact that did not
+ * resolve and the spent one, in English and in French, every value one a
+ * page must escape.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function mockRpCases(root) {
+  log.debug("Entering mockRpCases().");
+  const at = function (here, chain) {
+    log.debug("Entering at().");
+    log.debug("Leaving at().");
+    return { t: translatorFor(root, 'mockRp', chain), query: {}, prefix: '',
+             origin: 'https://sts.example', here: here };
+  };
+  const checks = [
+    { name: 'the assertion signature verifies', ok: true,
+      detail: 'rsa-sha256 over <exc-c14n> & "co"' },
+    { name: 'wctx came back unaltered', ok: false,
+      detail: 'this relying party did not mint "x<y>"' }];
+  const wsfedStart = { kind: 'start', family: 'wsfed',
+    realm: 'https://sts.example/wsfed/rp?a=1&b="2"', wctx: 'rp-<abc>',
+    requests: ['saml11', 'saml2', 'trust13', 'wfresh', 'multifactor',
+               'hardware'].map(function (id) {
+      return { id: id, href: '/wsfed?wa=wsignin1.0&wtrealm=x&id=' + id +
+                              '&q="<>"' };
+    }),
+    signOut: '/wsfed?wa=wsignout1.0&wreply=https%3A%2F%2Fsts.example',
+    metadata: '/FederationMetadata/2007-06/FederationMetadata.xml' };
+  const wsfedResult = { kind: 'result', family: 'wsfed',
+    realm: 'https://sts.example/wsfed/rp', ok: true,
+    assertionVersion: 'SAML 1.1', subject: 'alice <a> & "co"',
+    checks: [checks[0]],
+    claims: [{ uri: 'http://schemas.example/claims/<name>',
+               value: 'Alice & co' }],
+    document: '<trust:RequestSecurityTokenResponse a="1">&amp;' +
+              '</trust:RequestSecurityTokenResponse>',
+    signOut: '/wsfed?wa=wsignout1.0&wreply=x' };
+  const saml2Start = { kind: 'start', family: 'saml2',
+    entityId: 'https://sts.example/saml2/sp',
+    requests: [
+      { binding: 'post', signed: true, href: '/saml2/sso?SAMLRequest=a&x=<' },
+      { binding: 'redirect', signed: true, href: '/saml2/sso?SAMLRequest=b' },
+      { binding: 'artifact', signed: true, href: '/saml2/sso?SAMLRequest=c' },
+      { binding: 'post', signed: false, href: '/saml2/sso?SAMLRequest=d' }],
+    requiresSigned: false, singleLogout: '/saml2/slo',
+    metadata: '/saml2/metadata/https%3A%2F%2Fsts.example' };
+  const saml2Result = { kind: 'result', family: 'saml2',
+    entityId: 'https://sts.example/saml2/sp', arrived: 'post', ok: false,
+    subject: 'bob <b>', checks: checks,
+    attributes: [{ name: 'urn:oid:<1>', nameFormat: 'uri & "x"',
+                   values: ['one', 'two & <three>'] }],
+    document: '<samlp:Response ID="_1"/>', singleLogout: '/saml2/slo',
+    artifactResolution: '/saml2/ars' };
+  const saml11Result = { kind: 'result', family: 'saml11', profile: 'post',
+    ok: true, passed: 9, total: 9, subject: 'carol & "co"',
+    target: 'https://sts.example/saml11/rp?done=1&x=<y>', checks: [
+      { name: 'the single-use policy matches the profile', ok: true,
+        detail: 'a <DoNotCacheCondition> is present' }],
+    attributes: [{ namespace: 'urn:mace:<ns>', name: 'mail',
+                   values: ['c@example.com', 'd & e'] }],
+    document: '<samlp:Response MajorVersion="1"/>' };
+  const en = function (here) {
+    log.debug("Entering en().");
+    log.debug("Leaving en().");
+    return at(here, ['en']);
+  };
+  const fr = function (here) {
+    log.debug("Entering fr().");
+    log.debug("Leaving fr().");
+    return at(here, ['fr', 'en']);
+  };
+  log.debug("Leaving mockRpCases().");
+  return [
+    { label: 'WS-Federation\'s start page, in English', path: '/wsfed/rp',
+      view: wsfedStart, ctx: en('/wsfed/rp') },
+    { label: 'WS-Federation\'s start page, in French', path: '/wsfed/rp',
+      view: wsfedStart, ctx: fr('/wsfed/rp') },
+    { label: 'WS-Federation\'s verdict, every check passed', ctx:
+      en('/wsfed/rp'), path: '/wsfed/rp', view: wsfedResult },
+    { label: 'WS-Federation\'s verdict, a check failed, no claims, no ' +
+      'document, in French', path: '/wsfed/rp', ctx: fr('/wsfed/rp'),
+      view: Object.assign({}, wsfedResult, { ok: false, checks: checks,
+                                             claims: [], document: '' }) },
+    { label: 'SAML 2.0\'s start page, unsigned answered', path: '/saml2/sp',
+      view: saml2Start, ctx: en('/saml2/sp') },
+    { label: 'SAML 2.0\'s start page, unsigned refused, in French',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({}, saml2Start, { requiresSigned: true }) },
+    { label: 'SAML 2.0\'s verdict on the POST binding, a check failed',
+      path: '/saml2/sp', view: saml2Result, ctx: en('/saml2/sp') },
+    { label: 'SAML 2.0\'s verdict on the Redirect binding, every check',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({}, saml2Result, { arrived: 'redirect', ok: true,
+                                             attributes: [] }) },
+    { label: 'SAML 2.0\'s verdict on an artifact', path: '/saml2/sp',
+      ctx: en('/saml2/sp'),
+      view: Object.assign({}, saml2Result, { arrived: 'artifact' }) },
+    { label: 'SAML 2.0\'s artifact that did not resolve', path: '/saml2/sp',
+      ctx: en('/saml2/sp'), view: { kind: 'unresolved', family: 'saml2',
+        why: 'that artifact does not <resolve> & is "spent"' } },
+    { label: 'SAML 1.1\'s start page, in French', path: '/saml11/rp',
+      ctx: fr('/saml11/rp'), view: { kind: 'start', family: 'saml11',
+        providerId: 'https://sts.example/saml11/rp?a=<b>',
+        post: '/saml11/sso?providerId=x&profile=post',
+        artifact: '/saml11/sso?providerId=x&profile=artifact',
+        transfer: '/saml11/sso' } },
+    { label: 'SAML 1.1\'s Browser/POST verdict', path: '/saml11/rp',
+      view: saml11Result, ctx: en('/saml11/rp') },
+    { label: 'SAML 1.1\'s Browser/Artifact verdict, no subject, no TARGET',
+      path: '/saml11/rp', ctx: fr('/saml11/rp'),
+      view: Object.assign({}, saml11Result, { profile: 'artifact',
+        ok: false, subject: '', target: null, attributes: [],
+        artifact: 'AAEz<x>', again: '/saml11/rp?SAMLart=AAEz%3C&TARGET=x' }) },
+    { label: 'SAML 1.1\'s spent artifact', path: '/saml11/rp',
+      ctx: en('/saml11/rp'), view: { kind: 'spent', family: 'saml11' } }
+  ];
+}
+
+/**
+ * The OpenID4VC demonstration's cases (#582): the issuer's page, the offer
+ * page while the offer is made and its QR page for H.2 and H.3, the bar
+ * door asking for claims and for the whole credential (an ldp_vc request
+ * leaving claims out), the start page, the request's QR page, and the
+ * closing page accepted, refused and with nothing presented — in English
+ * and in French.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function vcDemoCases(root) {
+  log.debug("Entering vcDemoCases().");
+  const en = { t: translatorFor(root, 'vcDemo', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example', here: '/issuer' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'vcDemo', ['fr', 'en']) });
+  const offer = { mode: 'cross-device', txCode: '4821<7>',
+    offerUri: 'openid-credential-offer://?credential_offer=' +
+      encodeURIComponent(JSON.stringify({
+        credential_issuer: 'https://sts.example',
+        credential_configuration_ids: ['IdentityCredential'],
+        grants: { 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
+          'pre-authorized_code': 'abc"<code>', tx_code: { input_mode:
+            'numeric', length: 6 } } } })),
+    walletUrl: 'https://wallet.example/vc-issuance?credential_offer=x&y=<1>',
+    kind: 'offer' };
+  const verifier = { kind: 'verifier', format: 'dc+sd-jwt',
+    askingFor: 'dc+sd-jwt', askingType: 'urn:idptools:sd-jwt-vc:<identity>',
+    claims: ['given_name', 'birthdate & "co"'], ldpOmitted: [],
+    responseUri: 'https://sts.example/oid4vp/response',
+    wallet: 'https://wallet.example' };
+  const request = { kind: 'request', state: 'st<1>&2', pollSeconds: 4,
+    requestUri: 'openid4vp://?client_id=redirect_uri%3Ahttps%3A%2F%2Fsts.' +
+      'example&request_uri=https%3A%2F%2Fsts.example%2Foid4vp%2Frequest%2F' +
+      'abc',
+    walletUrl: 'https://wallet.example/vp?client_id=a&request_uri=b' };
+  const done = { kind: 'done', received: true, accepted: true,
+    claims: [{ name: 'given_name', value: 'Ada <L>' },
+             { name: 'address', value: '{"country":"US & co"}' }],
+    requested: ['given_name', 'address'] };
+  log.debug("Leaving vcDemoCases().");
+  return [
+    { label: 'the issuer\'s page, in English', path: '/issuer', ctx: en,
+      view: { kind: 'issuer', configurationId: 'Identity<Credential>',
+              wallet: 'https://wallet.example/?a=1&b=2',
+              issuer: 'https://sts.example/realm/"x"' } },
+    { label: 'the issuer\'s page, in French', path: '/issuer', ctx: fr,
+      view: { kind: 'issuer', configurationId: 'IdentityCredential',
+              wallet: 'https://wallet.example', issuer: 'https://sts.e' } },
+    { label: 'the offer page while the offer is made', ctx: en,
+      path: '/issuer/offer', view: { kind: 'offerStart',
+                                     mode: 'cross-device' } },
+    { label: 'the offer for another device (H.2), in English',
+      path: '/issuer/offer', view: offer, ctx: en },
+    { label: 'a deferred offer (H.3), in French', path: '/issuer/offer',
+      view: Object.assign({}, offer, { mode: 'deferred' }), ctx: fr },
+    { label: 'the bar door asking for two claims', path: '/oid4vp/verifier',
+      view: verifier, ctx: en },
+    { label: 'the bar door asking for the whole credential, no format named',
+      path: '/oid4vp/verifier', ctx: fr,
+      view: Object.assign({}, verifier, { format: '', claims: [] }) },
+    { label: 'an ldp_vc request leaving one claim out',
+      path: '/oid4vp/verifier', ctx: en,
+      view: Object.assign({}, verifier, { format: 'ldp_vc',
+        askingFor: 'ldp_vc', ldpOmitted: ['picture'] }) },
+    { label: 'an ldp_vc request leaving two claims out, in French',
+      path: '/oid4vp/verifier', ctx: fr,
+      view: Object.assign({}, verifier, { format: 'ldp_vc',
+        askingFor: 'ldp_vc', ldpOmitted: ['picture', 'age_over_21'] }) },
+    { label: 'the start page while the request is built',
+      path: '/oid4vp/start', ctx: en,
+      view: { kind: 'presentStart', mode: 'same-device' } },
+    { label: 'the request for another device', path: '/oid4vp/start',
+      view: request, ctx: en },
+    { label: 'the request for another device, in French',
+      path: '/oid4vp/start', view: request, ctx: fr },
+    { label: 'accepted', path: '/oid4vp/done', view: done, ctx: en },
+    { label: 'refused, in French', path: '/oid4vp/done', ctx: fr,
+      view: Object.assign({}, done, { accepted: false, claims: [] }) },
+    { label: 'nothing presented yet', path: '/oid4vp/done', ctx: en,
+      view: { kind: 'done', received: false, accepted: false, claims: [],
+              requested: [] } }
+  ];
+}
+
+/**
  * The TLS diagnostic pages' cases (#583): `/tls` with the truststore
  * holding anchors and empty, on the HTTPS and the plain port, with and
  * without its two acts and with a listener that did not bind, in English
@@ -1042,6 +1254,14 @@ module.exports = [
     pages: 'federation/web_federation_pages.ts', global: 'StsFederation',
     bundle: 'federation/federation-pages.bundle.js',
     runtime: 'federation/federation-pages-spa.js', cases: federationCases },
+  { name: 'the mock relying parties',
+    pages: 'common/web_mock_rp_pages.ts', global: 'StsMockRp',
+    bundle: 'common/mock-rp.bundle.js', runtime: 'common/mock-rp-spa.js',
+    cases: mockRpCases },
+  { name: 'the OpenID4VC demonstration',
+    pages: 'oid4vc/web_vc_demo_pages.ts', global: 'StsVcDemo',
+    bundle: 'oid4vc/vc-demo.bundle.js', runtime: 'oid4vc/vc-demo-spa.js',
+    cases: vcDemoCases },
   { name: 'the TLS diagnostic pages',
     pages: 'tls/web_tls_pages.ts', global: 'StsTlsPages',
     bundle: 'tls/tls-pages.bundle.js', runtime: 'tls/tls-pages-spa.js',

@@ -2131,6 +2131,14 @@
     "en": "e2444ef9ff08a2dd",
     "text": "签发一个 wctx，并为该端点能颁发的每种形式提供完整的登录请求"
   },
+  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
+    "en": "4325ff2b647da291",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /wsfed/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+  },
+  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
+    "en": "6722e133f11cee61",
+    "text": "非规范内容（#581）。生成一个 wctx，并以事实形式答复模拟依赖方提供的登录请求——即起始页面的视图。与语言无关；no-store。"
+  },
   "stsmetadata.endpoints./saml2.what": {
     "en": "fcb0805ad1b51f0a",
     "text": "说明页面：各端点、四种绑定，以及按服务提供方划分的元数据如何运作。GET /sts 和 GET /wsfed 出于同样的原因以同样的方式应答——对一个只想知道它是什么的人返回 400 的端点，会给人留下糟糕的第一印象。"
@@ -2219,6 +2227,14 @@
     "en": "36f5856187bd32d6",
     "text": "签发一个 RelayState，并提供完整的 AuthnRequest，分别要求以 HTTP POST、HTTP Redirect 和 HTTP Artifact 返回响应"
   },
+  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
+    "en": "cc6135e219301e01",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml2/sp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+  },
+  "stsmetadata.endpoints./saml2/sp/api/start.what": {
+    "en": "3b1ad0edc68af287",
+    "text": "非规范内容（#581）。为模拟服务提供方提供的四个 AuthnRequest 各生成一个 RelayState，用本服务的密钥签名其中三个，并以事实形式答复——即起始页面的视图。与语言无关；no-store。"
+  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "f780240aad5a76cd",
     "text": "说明页面：各端点、两种浏览器配置文件，以及 SAML 1.1 与 2.0 拼写不同之处的列表——正是这些使它成为一个独立的实现而不是一个标志。GET /saml2、GET /sts 和 GET /wsfed 以同样的方式应答。"
@@ -2266,6 +2282,14 @@
   "stsmetadata.endpoints./saml11/rp.effect": {
     "en": "e9c534c324579c92",
     "text": "在任一浏览器配置文件上启动完整流程，并验证返回的内容"
+  },
+  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
+    "en": "009fb29a917a7653",
+    "text": "非规范内容（#581）。三个模拟依赖方页面的运行时和渲染器合为一个文件，由 build-typescript.sh 构建（common/mock-rp-spa.js），并以预压缩形式在每个协议族自己的路径下提供：它根据 /saml11/rp/api/start 绘制起始页面，并绘制接收方答复的外壳所携带的结论。"
+  },
+  "stsmetadata.endpoints./saml11/rp/api/start.what": {
+    "en": "fbb7dc323454a57d",
+    "text": "非规范内容（#581）。以事实形式答复模拟依赖方提供的、在站点间传输服务处启动两种浏览器配置文件的入口——即起始页面的视图。与语言无关；no-store。"
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -2920,16 +2944,32 @@
     "text": "提供通过 credential_offer_uri 获取的凭证要约。"
   },
   "stsmetadata.endpoints./issuer.what": {
-    "en": "a51abaf63e905bfe",
-    "text": "Appendix H.1：终端用户发起颁发者发起流程的地方。"
+    "en": "948a7409a3fb1a86",
+    "text": "附录 H.1：最终用户开始由签发方发起的流程之处。自 #582 起为演示静态界面的一个页面，从 /vc-demo-api/issuer 绘制。"
   },
   "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "54db90cddbc71442",
-    "text": "构建一个要约，然后将浏览器送往钱包或渲染二维码。?mode=cross-device（H.2）和 ?mode=deferred（H.3）选择带交易代码的预授权码授权。"
+    "en": "47aafb085693f976",
+    "text": "构建要约并将浏览器发送到钱包或将其显示为二维码的页面。?mode=cross-device (H.2) 和 ?mode=deferred (H.3) 选择带交易码的预授权码授权。自 #582 起为演示静态界面的一个页面：GET 不创建任何内容，其脚本在 POST /vc-demo-api/offer 处创建要约。"
   },
-  "stsmetadata.endpoints./issuer/offer.effect": {
-    "en": "b41a89e5a430ee71",
-    "text": "签发一个要约并将浏览器重定向到钱包"
+  "stsmetadata.endpoints./issuer/demo.js.what": {
+    "en": "873440e0c0834837",
+    "text": "NON-SPEC (#582)。演示签发方和验证方页面的运行时与渲染器，合为一个文件，由 build-typescript.sh 构建（oid4vc/vc-demo-spa.js）并以预压缩形式提供：它从 /vc-demo-api 绘制 /issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start 和 /oid4vp/done，在那里创建它们的要约和请求，并绘制二维码。"
+  },
+  "stsmetadata.endpoints./vc-demo-api.what": {
+    "en": "f0d867a593ea76ea",
+    "text": "NON-SPEC (#582)。OpenID4VC 演示 API 的操作，每项都附有其作为入口的页面或控件（mirrors）。与语言无关。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
+    "en": "68d3f0eed386add2",
+    "text": "NON-SPEC (#582)。/issuer 的绘制来源：所提供的凭证配置、钱包和签发方。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.what": {
+    "en": "17204bdcd2333d91",
+    "text": "NON-SPEC，OpenID4VCI 第 4 节和附录 H 的入口（#582）。GET 返回要约页面的视图及其 CSRF 令牌，查询已检查且未签发任何内容；POST 创建要约——JSON、本服务的 Origin 以及绑定到 sts_session Cookie 的 X-CSRF-Token——通过门户所用的同一个 makeOffer()，并返回要前往的钱包（location）或二维码页面的视图：openid-credential-offer URI、钱包链接和交易码。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
+    "en": "2f295f0c5407473c",
+    "text": "POST 签发一个要约"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -3000,16 +3040,28 @@
     "text": "证明此源与此 DID 是同一实体。对于 did:web，这是唯一不循环的证明：解析 did:web:host 就意味着获取 host。"
   },
   "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "e4582cdb9e2f5e16",
-    "text": "出示开始的地方：验证方提问，钱包作答。"
+    "en": "179e4cfdad61673b",
+    "text": "出示开始之处：验证方提出请求，钱包作出应答。自 #582 起为演示静态界面的一个页面，从 /vc-demo-api/verifier 绘制。"
   },
   "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "9093d8d40abcd66d",
-    "text": "带 DCQL 查询、新 nonce 和 response_mode=direct_post 的 response_type=vp_token，按值或按引用传递，并提供用于跨设备的二维码界面。`client_id_prefix` 指定本请求的客户端标识符前缀（section 5.9），并使其被签名；x509 前缀会先为验证方签发证书（#230）。"
+    "en": "2fce28c03d8db666",
+    "text": "开始出示的页面：response_type=vp_token，附带 DCQL 查询、新的 nonce 和 response_mode=direct_post，按值或按引用传递，并为跨设备提供二维码页面。`client_id_prefix` 指定此请求的客户端标识符前缀（第 5.9 节）并使其签名；x509 前缀会先为验证方签发证书（#230）。自 #582 起为演示静态界面的一个页面：GET 不创建任何内容，其脚本在 POST /vc-demo-api/start 处开始请求。"
   },
-  "stsmetadata.endpoints./oid4vp/start.effect": {
-    "en": "7e366edc28b49ffb",
-    "text": "构建请求并将浏览器重定向到钱包"
+  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
+    "en": "905f6536ecad196e",
+    "text": "NON-SPEC (#582)。/oid4vp/verifier 的绘制来源：验证方请求的声明、凭证类型、格式、ldp_vc 请求省略的内容，以及钱包的提交地址。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.what": {
+    "en": "e4075c708b0e75f9",
+    "text": "NON-SPEC，OpenID4VP 的入口（#582）。GET 返回开始页面的视图及其 CSRF 令牌，查询已检查且未构建任何内容；POST 开始请求——与每个操作一样受绑定——通过 POST /admin-api/verifications/start 所用的同一个 startVerification()，并返回要前往的钱包（location）或二维码页面的视图：openid4vp URI、钱包链接以及页面轮询的状态。"
+  },
+  "stsmetadata.endpoints./vc-demo-api/start.effect": {
+    "en": "722eefdf9a57521a",
+    "text": "POST 构建一个请求"
+  },
+  "stsmetadata.endpoints./vc-demo-api/done.what": {
+    "en": "662a67fbe8c42ffe",
+    "text": "NON-SPEC (#582)。/oid4vp/done 针对 ?state= 的绘制来源：是否收到出示并被接受、其声明以及请求了什么；二维码页面会轮询它。钱包登录的事务不予应答。"
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3028,8 +3080,8 @@
     "text": "NON-SPEC，供钱包的第 3 步和测试使用：对某个出示逐项检查的结论。"
   },
   "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "bfb887aebc76b016",
-    "text": "跨设备出示之后终端用户落到的地方。"
+    "en": "32b182a1f19bad6a",
+    "text": "跨设备出示后最终用户到达之处。自 #582 起为演示静态界面的一个页面，从 /vc-demo-api/done 绘制。"
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

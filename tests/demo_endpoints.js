@@ -63,6 +63,10 @@ function childMain() {
   const PROCESS_MARKED = ['/tls/trust', '/tls/trust/clear'];
   const REALM_MARKED = [
     '/wsfed/rp', '/saml2/sp', '/saml11/rp', '/oauth2/commands/mock-rp',
+    // The mock relying parties' static surface (#581): each one's script
+    // and start view, under its own path.
+    '/wsfed/rp/mock-rp.js', '/wsfed/rp/api/start', '/saml2/sp/mock-rp.js',
+    '/saml2/sp/api/start', '/saml11/rp/mock-rp.js', '/saml11/rp/api/start',
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
@@ -75,6 +79,11 @@ function childMain() {
     '/vc-api/resolve', '/vc-api/dereference',
     '/oid4vci/status-lists/bitstring/:purpose/publish',
     '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
+    // The demonstration issuer's and verifier's static surface (#582): its
+    // script and the API its five pages are drawn from.
+    '/issuer/demo.js', '/vc-demo-api', '/vc-demo-api/issuer',
+    '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
+    '/vc-demo-api/done',
     '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
     '/ssf/receive', '/ssf/received',
     // The two diagnostic surfaces' scripts (#583), demonstrations like the
@@ -325,7 +334,8 @@ function childMain() {
           offered.push('devices');
         }
         one.prefixes.forEach(function (prefix) {
-          if (['/vc-api', '/issuer', '/did', '/dpop', '/spnego']
+          if (['/vc-api', '/issuer', '/did', '/dpop', '/spnego',
+               '/vc-demo-api']
               .indexOf(prefix) >= 0) {
             offered.push(prefix);
           }

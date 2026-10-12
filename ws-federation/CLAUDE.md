@@ -274,3 +274,15 @@ realm. Both were valid on the first run.
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 `/wsfed/rp`, the mock relying party; `/wsfed`'s description page and its refusal hint drop it in a product realm, and the startup banner names it only in a development process. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## The mock relying party's pages are a static surface (#581, 2026-10-12)
+
+`/wsfed/rp`'s start page and its verdict are drawn in the browser, one
+surface with SAML's two mocks: `common/CLAUDE.md` 3cm holds the inventory,
+the modules and the reasons. What stays here is the relying party itself:
+`mockRpStartView()` mints the `wctx` and builds the six sign-in requests that
+the page used to draw, and `POST /wsfed/rp` verifies exactly as it did —
+`200` whatever the verdict, `STS-WSFED-0016` on a failed check — and answers
+the shell carrying the verdict. The cleanup request
+(`wa=wsignoutcleanup1.0`) is fetched as an image by the sign-out documents,
+so it is still the server-drawn page it was.

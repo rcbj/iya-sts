@@ -379,6 +379,10 @@ function childMain() {
     note(r.status === 404 && /Cannot GET \/issuer\/offer/.test(r.text),
          '6a. PRODUCT: the offer page is not there (#585), and mints nothing',
          r.status + ' ' + r.text.slice(0, 120));
+    r = await request(port, 'GET', '/vc-demo-api/offer?mode=cross-device');
+    note(r.status === 404 && /Cannot GET \/vc-demo-api\/offer/.test(r.text),
+         '6a-ii. PRODUCT: nor is the API it is drawn from (#582)',
+         r.status + ' ' + r.text.slice(0, 120));
     // THE WALLET ALLOWLIST is still product's, for the doors that remain
     // (the portal's offer, `/admin-api/verifications/start`), so it is asked
     // of the function those doors call.
@@ -401,17 +405,24 @@ function childMain() {
          '6d. PRODUCT: the Verifier refuses an unregistered wallet URL too',
          JSON.stringify(vpChosen).slice(0, 160));
     config.clearOverride('global.mode');
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
+    // The offer page's act is `POST /vc-demo-api/offer` since #582: its
+    // `location` is the address the page's 302 named, and the page for
+    // another device is a view the browser draws (its Transaction Code).
+    const vcDemo = require(ROOT + '/tests/tools/vc_demo');
+    r = await vcDemo.offer({ port: port, jar: {},
+                             query: { wallet: 'https://evil.hc.example' } });
     note(r.status === 302 &&
-         /^https:\/\/evil\.hc\.example\//.test(String(r.headers.location)),
+         /^https:\/\/evil\.hc\.example\//.test(String(r.location)),
          '6e. development: any wallet URL is still accepted', r.status + ' ' +
-             r.headers.location);
-    r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 200 && /tx_code/.test(r.text),
+             r.location);
+    r = await vcDemo.offer({ port: port, jar: {},
+                             query: { mode: 'cross-device' } });
+    note(r.status === 200 && r.view && r.view.kind === 'offer' &&
+         /^\d+$/.test(String(r.view.txCode)) &&
+         /^openid-credential-offer:\/\/\?credential_offer=/.test(
+           String(r.view.offerUri)),
          '6f. development: the cross-device offer page still needs no sign-in',
-         r.status);
+         r.status + ' ' + JSON.stringify(r.view).slice(0, 200));
 
     // ======================================================================
     // 6g-6m. THE OpenID4VCI ENDPOINTS ACCEPT ONLY A TOKEN THIS REALM CAN

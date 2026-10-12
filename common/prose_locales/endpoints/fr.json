@@ -1183,6 +1183,14 @@
     "en": "1f62bc9e9246c363",
     "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
   },
+  "endpoints.route./wsfed/rp/mock-rp.js.name": {
+    "en": "88afe93636f1cffa",
+    "text": "Le script de la partie de confiance fictive"
+  },
+  "endpoints.route./wsfed/rp/api/start.name": {
+    "en": "e4478ae2c9c051a7",
+    "text": "La vue de départ de la partie de confiance fictive"
+  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Ce qu’est le profil"
@@ -1243,6 +1251,14 @@
     "en": "a09df9ed92de4454",
     "text": "Fournisseur de services fictif (pas un point de terminaison de la spécification)"
   },
+  "endpoints.route./saml2/sp/mock-rp.js.name": {
+    "en": "9f26130381002d3a",
+    "text": "Le script du fournisseur de services fictif"
+  },
+  "endpoints.route./saml2/sp/api/start.name": {
+    "en": "7e3ea418703ad450",
+    "text": "La vue de départ du fournisseur de services fictif"
+  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Ce qu’est le profil"
@@ -1278,6 +1294,14 @@
   "endpoints.route./saml11/rp.name": {
     "en": "1f62bc9e9246c363",
     "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
+  },
+  "endpoints.route./saml11/rp/mock-rp.js.name": {
+    "en": "88afe93636f1cffa",
+    "text": "Le script de la partie de confiance fictive"
+  },
+  "endpoints.route./saml11/rp/api/start.name": {
+    "en": "e4478ae2c9c051a7",
+    "text": "La vue de départ de la partie de confiance fictive"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",
@@ -1803,6 +1827,22 @@
     "en": "8c1458927d4601d8",
     "text": "Construire une Credential Offer"
   },
+  "endpoints.route./issuer/demo.js.name": {
+    "en": "1f0b6574385bc78a",
+    "text": "Le script des pages de démonstration"
+  },
+  "endpoints.route./vc-demo-api.name": {
+    "en": "2b22cd669050aa08",
+    "text": "L’index de l’API de démonstration"
+  },
+  "endpoints.route./vc-demo-api/issuer.name": {
+    "en": "b84b2e59bd5d0c1a",
+    "text": "La page de l’émetteur de démonstration"
+  },
+  "endpoints.route./vc-demo-api/offer.name": {
+    "en": "f43ad9bc295e1e95",
+    "text": "Faire une offre d’attestation de démonstration"
+  },
   "endpoints.route./bbs/keys/:id.name": {
     "en": "58347a1730d54e91",
     "text": "Clé publique BBS"
@@ -1870,6 +1910,18 @@
   "endpoints.route./oid4vp/start.name": {
     "en": "316fa1e4051e38a7",
     "text": "Construire une Authorization Request"
+  },
+  "endpoints.route./vc-demo-api/verifier.name": {
+    "en": "fe6ec994860492a6",
+    "text": "La page du vérificateur de démonstration"
+  },
+  "endpoints.route./vc-demo-api/start.name": {
+    "en": "897fe21b25f7d1c4",
+    "text": "Lancer une présentation de démonstration"
+  },
+  "endpoints.route./vc-demo-api/done.name": {
+    "en": "a423dc9b8b3cf4b6",
+    "text": "Le verdict du vérificateur de démonstration"
   },
   "endpoints.route./oid4vp/verifier-certificate.name": {
     "en": "9e006ca613ebe851",

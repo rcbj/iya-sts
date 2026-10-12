@@ -220,6 +220,10 @@ its own `wctx` came back unaltered (remembered for `wsfed.mockRpContextTtlMin`).
 There is one per trust realm, and a `wctx` minted in one realm is not recognised
 in another.
 
+Its page is drawn in your browser (#581) and needs script: the start page
+from `GET /wsfed/rp/api/start`, and the verdict from the page the response was
+posted to. What it sends and how it receives a response are unchanged.
+
 ### Not implemented
 
 `wresultptr` (the response is always by value), the attribute and pseudonym

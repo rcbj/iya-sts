@@ -12013,7 +12013,7 @@ specification's endpoint is never converted**.
 | `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
 | `web_embedded_surface.ts` (`WebEmbeddedSurface extends WebSurface`) | The runtime of a surface whose every page is the SHELL'S (#583): the view read off `data-sts-state` and never fetched, a link left to the browser, the page drawn again from the view in hand when a language is chosen, `drawInPlace(view)` for what an act answered, and every form refused unless the subclass's `submit()` says how. `match(pages, path)` reads a row's `/:id`. It is `federation/web_federation_surface.ts`'s runtime (#580) with the federation taken out; the TLS diagnostic pages and the SPNEGO demonstration pages stand on it, and the three older embedded runtimes (the sign-in screen's embedded pages, GNAP's refusals, the federation pages) may move onto it. |
 | `web_qr.ts` (`WebQr`) | A QR code drawn in the browser as inline SVG, ISO/IEC 18004 byte mode (#589) — the portal's Credential Offer, and since #572 the set-up step's authenticator app (`otpauth:`); moved here from `portal/` by #572. |
-| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code. `DIAG_CSS` (#583), last, is what the TLS and SPNEGO diagnostic pages drew in their own server-drawn shells: a verdict's band, the PEM box, a list's indent, scoped to `.diag`, and the TLS page's wider card to `.tls`. |
+| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code.`VC_DEMO_CSS` (#582), scoped to `.vcdemo`, is the OpenID4VC demonstration's: the wider card, the links drawn as buttons, the QR pages' column, the Transaction Code and the URI's box. `DIAG_CSS` (#583), last, is what the TLS and SPNEGO diagnostic pages drew in their own server-drawn shells: a verdict's band, the PEM box, a list's indent, scoped to `.diag`, and the TLS page's wider card to `.tls`. |
 | `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
 | `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
 
@@ -12052,3 +12052,83 @@ attributes a translated surface's shell carries — `data-sts-version`,
 5. **The docs**: its row in the root `CLAUDE.md`'s static-surface table, and
    the server-drawn rows it replaces taken out.
 
+
+## 3cm. THE MOCK RELYING PARTIES AS ONE STATIC SURFACE (#581, 2026-10-12)
+
+The three mock relying parties are development-only demonstrations (#585:
+each route carries `common/app.js`'s `demoOnly` mark, so a product realm
+answers as an unrouted path). rcbj decided on #581 to CONVERT them, not
+delete them. What converts is only what a PERSON reads; what each does as a
+protocol participant — the requests it sends this service, and what it
+accepts at its assertion consumer — is untouched (#569's rule, and rcbj's
+comment on #581: "how they receive and process the binding … is
+unchanged").
+
+### The inventory (taken before converting)
+
+Every mock relying party in the tree, and every route each answers. "Page"
+is what a person reads; "participant" is a protocol peer's door.
+
+| Family | Route | Called by | Kind | After #581 |
+|---|---|---|---|---|
+| WS-Federation (`ws-federation/wsfed.ts`) | `GET /wsfed/rp` | a person | page: its realm, a fresh `wctx`, the six sign-in requests (SAML 1.1, SAML 2.0, the 200512 RSTR Collection, `wfresh=0`, the two `wauth` demands), the sign-out, the metadata | the shell; the view is `GET /wsfed/rp/api/start`'s, which mints the `wctx` |
+| | `GET /wsfed/rp?wa=wsignoutcleanup1.0` | `/wsfed`'s and `/logout`'s sign-out documents, as a one-pixel image (front-channel cleanup) | participant | **unchanged, server-drawn**: an image fetch, not a page anybody reads |
+| | `POST /wsfed/rp` (`wa`, `wresult`, `wctx`) | the browser, auto-posted by `/wsfed`'s sign-in response (section 13.2.3) | participant, and the page that shows its verdict | the RECEIVING is unchanged — the same fields read, the same verification, `200` whatever the verdict, `STS-WSFED-0016` on a failed check; the answer is the shell with the verdict in `data-sts-state`, drawn in the browser |
+| SAML 2.0 (`saml/saml2_sso.ts`) | `GET /saml2/sp` | a person | page: its entityID, four AuthnRequests on the Redirect binding (three signed with this service's key, asking for the response on POST, Redirect and Artifact; one unsigned), Single Logout, its metadata | the shell; the view is `GET /saml2/sp/api/start`'s, which mints the four `RelayState`s and signs the requests |
+| | `GET /saml2/sp?SAMLResponse=…` | the browser, on the HTTP Redirect binding | participant + verdict | as `POST /wsfed/rp`: verified as before, `200`, `STS-SAML-0022` on a failed check, the verdict in the shell's state |
+| | `GET /saml2/sp?SAMLart=…` | the browser, on the HTTP Artifact binding; resolved IN PROCESS, once | participant + verdict | the same; an artifact that does not resolve is still `200` with `STS-SAML-0021` |
+| | `POST /saml2/sp` | the browser, on the HTTP POST and POST-SimpleSign bindings | participant + verdict | as above |
+| SAML 1.1 (`saml/saml11_sso.ts`) | `GET /saml11/rp` | a person | page: its providerId and the two profiles' starts at the inter-site transfer service | the shell; the view is `GET /saml11/rp/api/start`'s |
+| | `POST /saml11/rp` (`SAMLResponse`, `TARGET`) | the browser, Browser/POST (section 4.2) | participant + verdict | `200`, `STS-SAML-0043` on a failed check, the verdict in the shell's state |
+| | `GET /saml11/rp?SAMLart=…&TARGET=…` | the browser, Browser/Artifact (section 4.1); resolved in process, once | participant + verdict | the same; a spent artifact is still `400` with `STS-SAML-0042` |
+| OpenID Provider Commands (`oauth-oidc/command_mock_rp.ts`) | `POST /oauth2/commands/mock-rp` | this realm's provider, as a client's `command_endpoint` | participant | **unchanged**: JSON and event streams, no page |
+| | `GET /oauth2/commands/mock-rp?client_id=` | a test | a JSON readback | **unchanged**: no page |
+
+**Nothing else in the tree is a relying party run by this service.** The
+other demonstrations are not relying parties, or have no page: the GNAP
+demonstration resource server, the RFC 9470 step-up stand-in and the Shared
+Signals receiver (`/ssf/receive`, `/ssf/received`) answer JSON; the
+OpenID4VP demonstration verifier is #582's; `/federation/*` is a real
+feature's relying-party side (its ACS and front-channel logout target are
+protocol documents, #569's rule). The CIBA notification, back-channel logout
+and Provider Commands receivers the suite needs outside a development realm
+are the test peer's (`tests/peer/`, #586), not this service's.
+
+### What converted, and how
+
+| Module | What it is |
+|---|---|
+| `mock_rp_surface.ts` (`MockRpSurface`, server, a static utility class) | `FAMILIES` (the three bases), `shell(req, family, view)` and `sendShell(req, res, status, family, view)` — the shell through `ShellDocument.document()`, `data-sts-mock-rp` naming the family and `data-sts-state` carrying a verdict, sent with the status its CALLER decided (the receiving door's own, so a spent SAML 1.1 artifact is still 400) after the caller marked its error code; `registerRoutes(app, family, start)` — `<base>/mock-rp.js` and `GET <base>/api/start` (JSON, `no-store`), both `demoOnly`. |
+| `web_mock_rp_pages.ts` (`StsMockRp`) | One page row per family (`/wsfed/rp`, `/saml2/sp`, `/saml11/rp`), each drawing whichever view it is handed by its `kind` — `start`, `result`, SAML 2.0's `unresolved`, SAML 1.1's `spent` — in the `mockRp` catalogs' words. A check's name and detail, a claim, an attribute, a refusal's reason and the document as it arrived are the model's English, escaped. |
+| `web_mock_rp.ts` (`common/mock-rp-spa.js`) | `WebSurface` with the base the shell names; draws the shell's verdict and fetches nothing, or asks the start view; leaves EVERY link to the browser (a sign-in request, a sign-out and the artifact loaded again are protocol messages, and Start another sign-in loads the page afresh because the start view mints); redraws from the view in hand on a language change. |
+| `web_card_css.ts`'s `MOCK_RP_CSS` | The wide card, the checks, the tables, the document, SAML 1.1's two starts as buttons — scoped to `.mockrp`. |
+
+**One surface for the three, not one per family**: the pages are one page in
+three dialects — a list of sign-in requests to follow, then a relying
+party's checks, what arrived and the document — and one set of renderers
+keeps them from drifting apart. #472 is kept by WHERE each is served, not by
+how many bundles there are: each family's script and start view are under
+its own base, inside its family's hosted application's prefix, so a mapped
+family loads both from its own listener and `common/hosted_applications.js`
+gains nothing.
+
+**THE VERDICT TRAVELS IN THE SHELL, NOT UNDER A REFERENCE (a departure from
+#581's plan, step 1).** The plan was: the receiving endpoint keeps the result
+under a short-lived reference and answers a 303 to the page. It was built
+the other way, for three reasons. (1) The receiving door is an assertion
+consumer, and #569's rule — and the brief for #581 — keeps a protocol
+endpoint's status and headers as they were; a 303 changes them. (2) A view
+that exists only on one response is what `data-sts-state` is for
+(`kerberos/spnego_authn.ts`, #575; GNAP, #578). (3) A reference would be a
+bearer URL to a person's assertion, held in a store the cluster replicates,
+for a page that never needed one. What the shell carries is exactly what the
+server-drawn page showed, to the same browser.
+
+**What did not convert, and why**: the WS-Federation cleanup request (an
+image the identity provider's sign-out documents fetch); every request the
+mocks send (the start views' links are the same URLs, minted the same way);
+the Provider Commands mock (JSON); the verification itself
+(`verifySignInResponse()`, `verifyResponse()`), which the shell's view only
+reports. SAML 1.1's check details were drawn unescaped until #581 — a detail
+naming `<DoNotCacheCondition>` lost the name in the browser — and are text
+now.

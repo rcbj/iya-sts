@@ -540,6 +540,38 @@ async function boot() {
                                       json: body });
   }
 
+  // THE OPENID4VC DEMONSTRATION'S START PAGES (#582): `GET /oid4vp/start`
+  // (and `/issuer/offer`) made the request and answered a 302 to the
+  // wallet; since #582 the shell creates nothing, its view answers the CSRF
+  // token, and the act is `POST /vc-demo-api/start` (`/offer`). This runs
+  // the three as the page's runtime does, and reads the answer as the 302
+  // it replaced: `headers.location` the wallet's address, the same bytes.
+  async function demoStart(urlPath, opts) {
+    const o = opts || {};
+    const who = o.browser || browser();
+    const at = new URL(urlPath, base);
+    const page = /^(.*?)\/(issuer\/offer|oid4vp\/start)$/.exec(at.pathname);
+    const p = page ? page[1] : '';
+    const op = p + (page && page[2] === 'issuer/offer'
+      ? '/vc-demo-api/offer' : '/vc-demo-api/start');
+    const shell = await request('GET', urlPath, { browser: who });
+    const opened = await request('GET', op + at.search, { browser: who });
+    if (opened.status !== 200 || !opened.json || !opened.json.ok) {
+      return Object.assign({}, opened, { answer: opened, shell: shell });
+    }
+    const body = {};
+    at.searchParams.forEach(function (value, name) {
+      body[name] = value;
+    });
+    const r = await act(who, op, body, { csrf: opened.json.csrf });
+    const j = r.json || {};
+    if (r.status === 200 && j.ok && j.location) {
+      return Object.assign({}, r, { status: 302, answer: r, shell: shell,
+        headers: Object.assign({}, r.headers, { location: j.location }) });
+    }
+    return Object.assign({}, r, { answer: r, shell: shell });
+  }
+
   // The start, as the start page runs it: its shell (the arrival cookie),
   // its view (the CSRF token), and `POST /authn-api/wallet`; then the wait
   // page's view. `o.mfa` starts it as a second factor; `o.query` adds
@@ -716,6 +748,7 @@ async function boot() {
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
     presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
     start: start, collect: collect, act: act, formLike: formLike,
+    demoStart: demoStart,
     refreshCsrf: refreshCsrf,
     responseCodeOf: responseCodeOf, idsOf: idsOf,
     vpToken: vpToken, respond: respond,

@@ -6965,6 +6965,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
           'direction that message is really defined for.',
     demo: true },
+  { path: '/wsfed/rp/mock-rp.js', group: 'WS-Federation',
+    name: 'The mock relying party\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /wsfed/rp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/wsfed/rp/api/start', group: 'WS-Federation',
+    name: 'The mock relying party\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Mints a wctx and answers, as facts, the sign-in ' +
+          'requests the mock relying party offers — the start page\'s ' +
+          'view. Language-free; no-store.',
+    demo: true },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -7140,6 +7155,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'an artifact, in process rather than by this service making a SOAP ' +
           'call to itself.',
     demo: true },
+  { path: '/saml2/sp/mock-rp.js', group: 'SAML 2.0',
+    name: 'The mock service provider\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /saml2/sp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/saml2/sp/api/start', group: 'SAML 2.0',
+    name: 'The mock service provider\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Mints a RelayState for each of the four ' +
+          'AuthnRequests the mock service provider offers, signs three with ' +
+          'this service\'s key, and answers them as facts — the start ' +
+          'page\'s view. Language-free; no-store.',
+    demo: true },
 
   // --- SAML 1.1 ---
   { path: '/saml11', group: 'SAML 1.1', name: 'What the profile is',
@@ -7253,6 +7284,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'profile does not. It resolves an artifact IN PROCESS rather than ' +
           'by this service making a SOAP call to itself, and reloading the ' +
           'result page demonstrates the one-shot rule rather than erroring.',
+    demo: true },
+  { path: '/saml11/rp/mock-rp.js', group: 'SAML 1.1',
+    name: 'The mock relying party\'s script', specs: [],
+    what: 'NON-SPEC (#581). The runtime and renderers of the three mock ' +
+          'relying parties\' pages in one file, built by ' +
+          'build-typescript.sh (common/mock-rp-spa.js) and served ' +
+          'precompressed under each family\'s own path: it draws the start ' +
+          'page from /saml11/rp/api/start and the verdict the receiving ' +
+          'answer\'s shell carries.',
+    demo: true },
+  { path: '/saml11/rp/api/start', group: 'SAML 1.1',
+    name: 'The mock relying party\'s start view', specs: [],
+    what: 'NON-SPEC (#581). Answers, as facts, the two browser profiles\' ' +
+          'starts at the inter-site transfer service that the mock relying ' +
+          'party offers — the start page\'s view. Language-free; no-store.',
     demo: true },
 
   // --- Federation ---
@@ -8711,15 +8757,51 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Serves an offer fetched via credential_offer_uri.' },
   { path: '/issuer', group: 'VC Issuance (OID4VCI)', name: 'Issuer web page',
     specs: ['oid4vci'], what: 'Appendix H.1: where an End-User starts an ' +
-                              'issuer-initiated flow.',
+                              'issuer-initiated flow. A page of the ' +
+                              'demonstration\'s static surface since #582, ' +
+                              'drawn from /vc-demo-api/issuer.',
     demo: true },
   { path: '/issuer/offer', group: 'VC Issuance (OID4VCI)', name: 'Build a ' +
       'Credential Offer',
-    specs: ['oid4vci'], effect: 'mints an offer and redirects the browser to ' +
-                                'the wallet',
-    what: 'Builds an offer and either sends the browser to the wallet or ' +
-          'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
-          '(H.3) select the pre-authorized code grant with a Transaction ' +
+    specs: ['oid4vci'],
+    what: 'The page that builds an offer and either sends the browser to ' +
+          'the wallet or shows it as a QR code. ?mode=cross-device (H.2) and ' +
+          '?mode=deferred (H.3) select the pre-authorized code grant with a ' +
+          'Transaction Code. A page of the demonstration\'s static surface ' +
+          'since #582: the GET creates nothing, and its script makes the ' +
+          'offer at POST /vc-demo-api/offer.',
+    demo: true },
+  { path: '/issuer/demo.js', group: 'VC Issuance (OID4VCI)',
+    name: 'The demonstration pages\' script', specs: [],
+    what: 'NON-SPEC (#582). The runtime and renderers of the demonstration ' +
+          'issuer\'s and verifier\'s pages in one file, built by ' +
+          'build-typescript.sh (oid4vc/vc-demo-spa.js) and served ' +
+          'precompressed: it draws /issuer, /issuer/offer, ' +
+          '/oid4vp/verifier, /oid4vp/start and /oid4vp/done from ' +
+          '/vc-demo-api, makes their offers and requests there, and draws ' +
+          'the QR codes.',
+    demo: true },
+  { path: '/vc-demo-api', group: 'VC Issuance (OID4VCI)',
+    name: 'The demonstration API index', specs: [],
+    what: 'NON-SPEC (#582). The operations of the OpenID4VC ' +
+          'demonstration\'s API, each with the page or control it is the ' +
+          'door of (mirrors). Language-free.',
+    demo: true },
+  { path: '/vc-demo-api/issuer', group: 'VC Issuance (OID4VCI)',
+    name: 'The demonstration issuer\'s page', specs: [],
+    what: 'NON-SPEC (#582). What /issuer is drawn from: the credential ' +
+          'configuration on offer, the wallet and the issuer.',
+    demo: true },
+  { path: '/vc-demo-api/offer', group: 'VC Issuance (OID4VCI)',
+    name: 'Make a demonstration Credential Offer', specs: [],
+    effect: 'POST mints an offer',
+    what: 'NON-SPEC door to OpenID4VCI section 4 and Appendix H (#582). GET ' +
+          'answers the offer page\'s view and CSRF token, its query checked ' +
+          'and nothing minted; POST makes the offer — JSON, an Origin of ' +
+          'this service and X-CSRF-Token bound to the sts_session cookie — ' +
+          'through the same makeOffer() the portal uses, and answers the ' +
+          'wallet to go to (location) or the QR page\'s view: the ' +
+          'openid-credential-offer URI, the wallet link and the Transaction ' +
           'Code.',
     demo: true },
   { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
@@ -8869,17 +8951,45 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Verifier ' +
       'web page',
     specs: ['oid4vp'], what: 'Where a presentation starts: the verifier ' +
-                             'asks, the wallet answers.',
+                             'asks, the wallet answers. A page of the ' +
+                             'demonstration\'s static surface since #582, ' +
+                             'drawn from /vc-demo-api/verifier.',
     demo: true },
   { path: '/oid4vp/start', group: 'VC Presentation (OID4VP)', name: 'Build ' +
       'an Authorization Request',
-    specs: ['oid4vp'], effect: 'builds a request and redirects the browser ' +
-                               'to the wallet',
-    what: 'response_type=vp_token with a DCQL query, a fresh nonce and ' +
-          'response_mode=direct_post, passed by value or by reference, with ' +
-          'a QR screen for cross-device. `client_id_prefix` names the ' +
-          'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
-          'it signed; an x509 prefix certifies the Verifier first (#230).',
+    specs: ['oid4vp'],
+    what: 'The page that starts a presentation: response_type=vp_token with ' +
+          'a DCQL query, a fresh nonce and response_mode=direct_post, passed ' +
+          'by value or by reference, with a QR screen for cross-device. ' +
+          '`client_id_prefix` names the Client Identifier Prefix of THIS ' +
+          'request (section 5.9) and makes it signed; an x509 prefix ' +
+          'certifies the Verifier first (#230). A page of the ' +
+          'demonstration\'s static surface since #582: the GET creates ' +
+          'nothing, and its script starts the request at POST ' +
+          '/vc-demo-api/start.',
+    demo: true },
+  { path: '/vc-demo-api/verifier', group: 'VC Presentation (OID4VP)',
+    name: 'The demonstration Verifier\'s page', specs: [],
+    what: 'NON-SPEC (#582). What /oid4vp/verifier is drawn from: the claims ' +
+          'the Verifier asks for, the credential type, the format, what an ' +
+          'ldp_vc request leaves out, and where the wallet posts.',
+    demo: true },
+  { path: '/vc-demo-api/start', group: 'VC Presentation (OID4VP)',
+    name: 'Start a demonstration presentation', specs: [],
+    effect: 'POST builds a request',
+    what: 'NON-SPEC door to OpenID4VP (#582). GET answers the start page\'s ' +
+          'view and CSRF token, its query checked and nothing built; POST ' +
+          'starts the request — bound as every act is — through the same ' +
+          'startVerification() POST /admin-api/verifications/start uses, and ' +
+          'answers the wallet to go to (location) or the QR page\'s view: ' +
+          'the openid4vp URI, the wallet link and the state the page polls.',
+    demo: true },
+  { path: '/vc-demo-api/done', group: 'VC Presentation (OID4VP)',
+    name: 'The demonstration Verifier\'s verdict', specs: [],
+    what: 'NON-SPEC (#582). What /oid4vp/done is drawn from for ?state=: ' +
+          'whether a presentation arrived and was accepted, its claims and ' +
+          'what was asked for; the QR page polls it. A wallet sign-in\'s ' +
+          'transaction is not answered.',
     demo: true },
   { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
     name: 'The Verifier\'s x509 identity',
@@ -8925,7 +9035,9 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Presentation ' +
       'complete page',
     specs: ['oid4vp'], what: 'Where the End-User lands after a cross-device ' +
-                             'presentation.',
+                             'presentation. A page of the demonstration\'s ' +
+                             'static surface since #582, drawn from ' +
+                             '/vc-demo-api/done.',
     demo: true },
   // ===== ACME endpoints (acme/) =====
   { path: '/enroll/acme/directory', group: 'ACME', name: 'The ACME directory',

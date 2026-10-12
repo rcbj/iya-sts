@@ -42,6 +42,8 @@ const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const portal = require("./portal_signin.js");
+// The demonstration issuer's offer page over `/vc-demo-api` (#582).
+const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -253,20 +255,25 @@ async function idTokenOf(b) {
 }
 
 // A cross-device offer from the realm's offer page in browser `b`: its
-// pre-authorized code, and the Transaction Code the page shows the person
-// (`oid4vc/vc_offers.ts`, renderOfferQrPage()).
+// pre-authorized code, and the Transaction Code the page shows the person.
+// The page is a static surface's since #582: its act, `POST
+// /vc-demo-api/offer`, answers the QR page's view — the offer URI and the
+// wallet link the page draws, and the Transaction Code (`vc_demo.js`).
 async function crossDeviceOffer(b) {
   log.debug("Entering crossDeviceOffer().");
-  const page = await follow(b, R + "/issuer/offer?mode=cross-device");
+  const page = await vcDemo.offer(b.jar, base, { mode: "cross-device" });
   assert.strictEqual(page.status, 200, "the offer page: " + page.status +
-                     " " + page.location + " " + page.text.slice(0, 300));
-  const decoded = page.text.replace(/&amp;/g, "&");
-  const link = (decoded.match(/id="open_in_wallet" href="([^"]+)"/) ||
-                [])[1] || "";
-  const txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
+                     " " + page.location + " " + String(page.text || "")
+                       .slice(0, 300));
+  const view = page.view || {};
+  const link = String(view.walletUrl || "");
+  const txCode = String(view.txCode || "");
   const carried = /[?&]credential_offer=([^&]+)/.exec(link);
   assert.ok(carried, "the offer page links the offer by value: " +
             link.slice(0, 300));
+  assert.strictEqual(String(view.offerUri), "openid-credential-offer://?" +
+                     link.slice(link.indexOf("?") + 1), "the QR code and " +
+                     "the wallet link carry the same offer");
   const offer = JSON.parse(decodeURIComponent(carried[1]));
   const grant = (offer.grants || {})[PRE_AUTH] || {};
   assert.ok(grant["pre-authorized_code"], "the offer carries a " +

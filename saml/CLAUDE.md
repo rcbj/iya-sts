@@ -1554,3 +1554,17 @@ by `tests/cell_saml_federation.js`.
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 `/saml2/sp` and `/saml11/rp`, the mock service provider and relying party. The pages that pointed at them (`/saml2`, `/saml11`, the refusal hints, the console's SAML pages through the view's `mockServiceProvider` / `mockRelyingParty`) drop them in a product realm, and **the mock SP's implicit trust anchor** (`implicitCertificatesFor()`) applies only where it is served. The product jobs' SP is the test peer (#586). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## The mock relying parties' pages are a static surface (#581, 2026-10-12)
+
+`/saml2/sp`'s and `/saml11/rp`'s start pages and verdicts are drawn in the
+browser, one surface with WS-Federation's mock: `common/CLAUDE.md` 3cm holds
+the inventory, the modules and the reasons. What stays here is each relying
+party itself: `mockSpStartView()` mints the four RelayStates and signs three
+AuthnRequests, `mockRpStartView()` builds SAML 1.1's two starts, and the
+receiving doors resolve, verify, spend and mark as they did —
+`STS-SAML-0021` and `0022` at `200`, a spent SAML 1.1 artifact's `400` and
+`STS-SAML-0042`, `STS-SAML-0043` — and answer the shell carrying the
+verdict. SAML 1.1's Reload link is the request it arrived on, rebuilt from
+`SAMLart` and `TARGET` rather than `req.originalUrl`, whose realm prefix the
+browser adds itself.

@@ -6,11 +6,14 @@ DID Core with DIF domain linkage.
 | File | What it is |
 |---|---|
 | `vc_configs.ts` | The credential configurations. Exists to break a require cycle. |
-| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. |
+| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. Since #582 its two pages answer the demonstration's shell, and it answers their views and the act (`issuerView()`, `offerChecked()`, `offerAct()`). |
 | `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
-| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
+| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. Since #582 the bar door's three pages answer the demonstration's shell, and it answers their views and the act (`verifierView()`, `startChecked()`, `startAct()`, `doneView()`). |
+| `vc_demo_shell.ts` | The demonstration issuer's and verifier's ONE shell (#582) and their script, `/issuer/demo.js`. A library over libraries, so `vc_offers.ts` and `vc_verifier.ts` can send it where their routes always were. |
+| `vc_demo_api.ts` | `/vc-demo-api` (#582): the index, the five pages' views, and the two acts — the offer and the start — bound as `/authn-api`'s are. *The demonstration's pages are a static surface* below. |
+| `web_vc_demo_views.ts`, `web_vc_demo_pages.ts`, `web_vc_demo.ts` | The demonstration's pages drawn in the browser (#582): the renderers (the QR codes by `common/web_qr.ts`), the page table (the bundle `vc-demo.bundle.js`, `StsVcDemo`) and the runtime (`vc-demo-spa.js`, served at `/issuer/demo.js`), whose request QR page polls with `web_vc_signin.ts`'s `WalletFlow`. `web_` modules. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
 | `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
 | `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`common/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
@@ -1088,8 +1091,9 @@ read the SAME thing:
   the wallet a caller NAMED as an argument now, because a body has no
   `req.query.wallet`. It returns `{ ok, record, query, wallet, walletUrl,
   requestUri, mode }` or `{ ok: false, status, code, error }` and sends
-  nothing; the page redirects to `walletUrl` or draws the QR page around
-  `requestUri`, and the operation answers JSON.
+  nothing; the page's act (`POST /vc-demo-api/start` since #582, through
+  `startAct()`) answers `walletUrl` as its `location` or the QR page's view
+  around `requestUri`, and the operation answers JSON.
 * **`verificationOutcome(state)`** is the result page's object, read straight
   from the store as the page always read it (not `transactionFor()`, which
   removes an expired transaction: "what did it decide" outlives "may it still
@@ -1109,4 +1113,80 @@ so it is not left untested.
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-`/issuer`, `/issuer/offer`, `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/{state}`, the readbacks `/oid4vci/last_request` and `/oid4vci/notification/{id}`, `/did/generate` and the VC-API test endpoints with the status-list publish hook. **Not** `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`, which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`) uses and #569's rule keeps unchanged. The verifier-request tab links the demonstration page (`verifierPage`) only where it is served. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+`/issuer`, `/issuer/offer`, `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, the demonstration's script `/issuer/demo.js` and its API `/vc-demo-api` (#582), `/oid4vp/result/{state}`, the readbacks `/oid4vci/last_request` and `/oid4vci/notification/{id}`, `/did/generate` and the VC-API test endpoints with the status-list publish hook. **Not** `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`, which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`) uses and #569's rule keeps unchanged. The verifier-request tab links the demonstration page (`verifierPage`) only where it is served. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## The demonstration's pages are a static surface (#582, 2026-10-12)
+
+**The five pages a person reads in this family's demonstration — the
+issuer's page `/issuer`, the offer `/issuer/offer`, the bar door
+`/oid4vp/verifier`, its start `/oid4vp/start` and its closing page
+`/oid4vp/done` — are drawn in the browser since #582** (#569;
+`common/CLAUDE.md` 3cl). `docs/user-facing-pages.md` holds the inventory
+taken before the change. What a WALLET is handed did not change, and that is
+the first thing to keep: every protocol endpoint (the issuer metadata, the
+credential, nonce, deferred and notification endpoints, the token
+endpoint's pre-authorized grant, `/oid4vci/credential-offer/{id}`, the
+request object, the response endpoint and its `redirect_uri`, the DC API,
+the status lists) answers as before, and the `openid-credential-offer://`
+and `openid4vp://` links and QR contents are `makeOffer()`'s and
+`startVerification()`'s, to the byte (`tests/vc_demo_api.js` 4 and 5,
+`tests/admin_api_verifications.js` 1d).
+
+* **ONE SHELL** (`vc_demo_shell.ts`) for the five paths, sent by the routes
+  where they always were — `vc_offers.ts` registers `/issuer` and
+  `/issuer/offer` just before `oauth2.ts`'s routes (rule 2), `vc_verifier.ts`
+  the bar door's three — so the route order did not move. It loads
+  `/issuer/demo.js` and `/web/card.css` (`WebCardCss.VC_DEMO_CSS`, scoped to
+  `.vcdemo`): `script-src 'self'`, `style-src 'self'`, `connect-src 'self'`
+  and the sign-in service's origin where it is elsewhere (the language
+  chooser), through `app.contentSecurityPolicy()`.
+* **ITS OWN SURFACE, NOT ROUTES OF ANOTHER**: these paths are the `oid4vc`
+  hosted application's (#472), which may be on a listener of its own, so the
+  script is under `/issuer` and the API `/vc-demo-api` is in that
+  application's prefixes (and its `demoPrefixes`). One surface for both
+  halves, because the issuer and the bar door are one demonstration; the
+  verifier's pages load a script under `/issuer` because `/oid4vp` holds the
+  protocol's own endpoints, which a product realm keeps.
+* **A GET CREATES NOTHING; THE START PAGES ACT ONCE THEY ARE DRAWN.** `GET
+  /issuer/offer` and `GET /oid4vp/start` minted an offer or a request and
+  answered a 302 or a QR page. Their views now check the query
+  (`STS-VC-0025`, `0026`, `0032`) and mint nothing — #574's rule, since a
+  prefetcher follows a GET — and the runtime sends `POST /vc-demo-api/offer`
+  or `/start` once per navigation, with the page's query as its body. A
+  `location` (the wallet on this device, the address the 302 named)
+  REPLACES the page in the history, so Back does not make a second; a `view`
+  (the QR page for another device) is drawn in place. A deep link still
+  works: the address is the page's, and its query is what the act is asked.
+* **EVERY ACT IS BOUND AS `/authn-api`'S ARE** (#571): a JSON body
+  (`STS-VC-0116`), an Origin of this service (`0117`), and the X-CSRF-Token
+  of the browser's `sts_session` cookie (`0118`), asked before anything is
+  minted; `/issuer/offer` and `/oid4vp/start` are arrival paths
+  (`authn.ts`), so a browser arriving without the cookie is given one. A
+  throw is `0119`. `STS-VC-0028` and `0034` (a QR code the server could not
+  render) are retired: the browser draws the codes from the URIs with
+  `common/web_qr.ts`, and a URI too long for any code says so above the
+  links that still carry it.
+* **THE REQUEST'S QR PAGE POLLS** `GET /vc-demo-api/done?state=` every
+  `oid4vp.signInPollS` with the wallet sign-in's `WalletFlow` (#574) — its
+  fields `protected` since #582 so `web_vc_demo.ts`'s `DemoPoll` overrides
+  what a page starts and what the poll asks, and the one timer stays where
+  `tests/no_periodic_timers.js` records it — and moves on to the closing page
+  once the wallet on the other device has answered. The server-drawn page
+  had no poll; the person had nothing to look at but the QR code. The
+  issuer's QR page does not poll: an issuer is not told when a wallet
+  redeems.
+* **THE CLOSING PAGE'S VIEW** (`doneView()`) is the verdict, the claims as
+  text and what was asked for, for the state in the query, as the page drew
+  it — but **never a wallet sign-in's transaction**, which names a person
+  and whose wallet is never sent here (`recentVerifications()`'s rule). The
+  server-drawn page showed whatever state it was handed.
+* **THE WORDS** are the `vcDemo` catalogs in every language; the
+  identifiers, URIs and claims are drawn as they are; refusals are English.
+  The renderers are held to the bundle by `tests/web_surfaces.js`'s round
+  trip (`tests/tools/web_surfaces.js`, `vcDemoCases`).
+
+A test or a job that drove the old GETs drives the three steps instead:
+`tests/tools/vc_demo.js` in process, `tests/wallet_kit.js`'s `demoStart()`,
+and `tests/vendored/vc_demo.js` for the local jobs
+(`sts_oid4vci_preauth_subject`, `sts_oid4vci_conformance`,
+`sts_oid4vp_wallet`). `tests/vc_demo_api.js` holds the surface.
