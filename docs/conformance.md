@@ -129,8 +129,8 @@ check.
 ## W3C Verifiable Credentials and DID suites
 
 The Working Groups' own mocha and jest suites run unmodified, at pinned
-commits, against the [VC-API test endpoints](vc-api.md) of a throwaway
-development realm. A local wrapper answers the JSON-LD contexts from the
+commits, against the [W3C VC API](vc-api.md) of a throwaway
+development realm that turns it on. A local wrapper answers the JSON-LD contexts from the
 hashed copies the service ships, so a run never depends on w3.org.
 
 | Suite | Result |
