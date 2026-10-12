@@ -248,8 +248,8 @@
     "text": "partial: HTTP Redirect (avsnitt 3.4) med DEFLATE-kodningen och den fristående frågesträngssignaturen i 3.4.4.1, HTTP POST (3.5), HTTP Artifact (3.6) med artefakttypen 0x0004 och engångsregeln i 3.6.4.1, och SOAP över HTTP (3.2.3) för bakkanalen för artefaktupplösning, vars anropare är AUTENTISERAD (en signerad ArtifactResolve eller dess registrerade certifikat som TLS-klientcertifikat) och måste vara den tjänsteleverantör som artefakten utfärdades till; och HTTP-POST-SimpleSign (OASIS SimpleSign-bindningen) i båda riktningarna, publicerad i metadata. INTE här: PAOS (3.3), som nekas uttryckligen i stället för att tyst besvaras över POST, och URI-bindningen (3.7). En tjänsteleverantörs förfrågningssignatur — frågesignaturen enligt 3.4.4.1 över parametrarna så som de mottogs, SimpleSign-signaturen över formulärvärdena, eller en inbäddad signatur på POST — VERIFIERAS mot dess REGISTRERADE certifikat (aldrig dess KeyInfo), i varje läge, i varje familj som common/crypto.js verifierar (RSA, RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), med valfri kanonisering; SHA-1 endast med saml.allowSha1Signatures, aldrig i produktläge; en osignerad nekas där saml2.requireSignedAuthnRequests (på i produktläge) eller dess metadata kräver en signatur."
   },
   "stsmetadata.specs.saml2-profiles.coverage": {
-    "en": "88da2e5ac2494e2e",
-    "text": "partial: Web Browser SSO-profilen (avsnitt 4.1), initierad av tjänsteleverantören och initierad av identitetsleverantören (#189), över alla fyra bindningar, med den bearer-SubjectConfirmationData som 4.1.4.2 kräver, där varje intyg SIGNERAS i produktläge oavsett bindning (4.1.3.5 och 4.1.4.5 kräver det över POST; saml2.signAssertion av hör till utvecklingsläge, #181); och Single Logout (4.4), båda riktningarna, UTAN utspridning via främre kanalen — en utloggning initierad av identitetsleverantören NAMNGER de andra tjänsteleverantörerna och bygger en LogoutRequest för var och en i stället för att skjuta iväg dem i ramar den inte kan observera, och avslutar den session som en cookielös LogoutRequest (via bakkanalen) namnger med sin SessionIndex (#192); SSO initierad av identitetsleverantören med ett oombett Response (4.1.5, /saml2/unsolicited, #189); och attributfrågan i Assertion Query and Request-profilen (6, /saml2/aa, #189) om ett subjekt som den frågande tjänsteleverantören har en aktiv session för. INTE här: ECP-profilen (4.2), Name Identifier Management (4.5), och profilens AuthnQuery och AuthzDecisionQuery. Som TJÄNSTELEVERANTÖR till en federationspartner (#167), Single Logout i båda riktningarna på /federation/slo/{id}: partnerns signerade LogoutRequest avslutar de sessioner som dess NameID och SessionIndex namnger och besvaras med ett signerat LogoutResponse, och en utloggning här skickar en signerad LogoutRequest till den vars LogoutResponse matchas via InResponseTo; partnerns SessionNotOnOrAfter begränsar sessionen. AssertionConsumerServiceURL accepteras som den skickas i utvecklingsläge och måste vara registrerad på tjänsteleverantörens post i PRODUKTläge (2026-09-12), utan reserv till den låtsade tjänsteleverantören — och, när dess metadata väl har lästs in, måste vara en av de slutpunkter den registrerat i VARJE läge, med AssertionConsumerServiceIndex och standardslutpunkten respekterade. En LogoutRequest från en tjänsteleverantör autentiseras via sin signatur (4.4.3.1) under samma policy som en AuthnRequest."
+    "en": "4271dad1ec658292",
+    "text": "partial: Web Browser SSO-profilen (avsnitt 4.1), initierad av tjänsteleverantören och initierad av identitetsleverantören (#189), över alla fyra bindningar, med den bearer-SubjectConfirmationData som 4.1.4.2 kräver, där varje intyg SIGNERAS i produktläge oavsett bindning (4.1.3.5 och 4.1.4.5 kräver det över POST; saml2.signAssertion av hör till utvecklingsläge, #181); och Single Logout (4.4), båda riktningarna, UTAN utspridning via främre kanalen — en utloggning initierad av identitetsleverantören NAMNGER de andra tjänsteleverantörerna och bygger en LogoutRequest för var och en i stället för att skjuta iväg dem i ramar den inte kan observera, och avslutar den session som en cookielös LogoutRequest (via bakkanalen) namnger med sin SessionIndex (#192); SSO initierad av identitetsleverantören med ett oombett Response (4.1.5, /saml2/unsolicited, #189); och attributfrågan i Assertion Query and Request-profilen (6, /saml2/aa, #189) om ett subjekt som den frågande tjänsteleverantören har en aktiv session för. INTE här: ECP-profilen (4.2), Name Identifier Management (4.5), och profilens AuthnQuery och AuthzDecisionQuery. Som TJÄNSTELEVERANTÖR till en federationspartner (#167), Single Logout i båda riktningarna på /federation/slo/{id}: partnerns signerade LogoutRequest avslutar de sessioner som dess NameID och SessionIndex namnger och besvaras med ett signerat LogoutResponse, och en utloggning här skickar en signerad LogoutRequest till den vars LogoutResponse matchas via InResponseTo; partnerns SessionNotOnOrAfter begränsar sessionen. AssertionConsumerServiceURL accepteras som den skickas i utvecklingsläge och måste vara registrerad på tjänsteleverantörens post i PRODUKTläge (2026-09-12) — och, när dess metadata väl har lästs in, måste vara en av de slutpunkter den registrerat i VARJE läge, med AssertionConsumerServiceIndex och standardslutpunkten respekterade. En LogoutRequest från en tjänsteleverantör autentiseras via sin signatur (4.4.3.1) under samma policy som en AuthnRequest."
   },
   "stsmetadata.specs.saml2-metadata.coverage": {
     "en": "44eed676882b5ecc",
@@ -268,8 +268,8 @@
     "text": "partial: BÅDA webbläsarprofilerna — Browser/Artifact (avsnitt 4.1) och Browser/POST (4.2) — var och en med den bekräftelsemetod som dess avsnitt kräver, vilka är olika värden och inte utbytbara. DET FINNS INGET FÖRFRÅGNINGSMEDDELANDE I SAML 1.1, så båda initieras av identitetsleverantören: ett flöde börjar när en webbläsare anländer med ett TARGET, den förlitande parten identifierar sig aldrig i protokollet, och ett misslyckande är en SIDA snarare än ett Response eftersom det inte finns något att svara på. Shibboleths icke-standardiserade AuthnRequest-profil (urn:mace:shibboleth:1.0:profiles:AuthnRequest) accepteras och annonseras, eftersom det är vad varje riktig SAML 1.1-tjänsteleverantör skickar. `shire` används som den skickas i utvecklingsläge och måste vara registrerad på den förlitande partens post i PRODUKTläge (2026-09-12). Browser/POST-svaret signeras som avsnitt 4.1.2.4 kräver, med sitt intyg; att stänga av någon av signaturerna är ett testfall för utvecklingsläge som produktläge ignorerar (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "b8e3addc28819b6c",
-    "text": "partial: Web (Passive) Requestor Profile i avsnitt 13 — wsignin1.0 med wtrealm, wreply, wctx, wct, wfresh, wauth, whr och wreq, inloggningssvaret som en formulär-POST, och wsignout1.0/wsignoutcleanup1.0 med rensningsförfrågningar via främre kanalen; som förlitande part i en federation (#167) avslutar en partners rensning, osignerad enligt specifikationen, sessionen först efter att personen bekräftat den på en sida med en riktig knapp, och en utloggning här skickar wsignout1.0 till partnern. Signerad federationsmetadata (avsnitt 3.1) på AD FS-sökvägen. INTE implementerat, och vart och ett namnges i stället för att förtigas: den aktiva (SOAP-)begärarprofilen utöver det som /sts redan besvarar, wresultptr, attributtjänsten (wattr1.0) och pseudonymtjänsten (wpseudo1.0) som båda svarar 501, wreqptr (nekas — att avreferera en URL från en frågeparameter är en server-side request forgery), tokenkryptering i den här profilen (en passiv förfrågan bär inget mottagarcertifikat), och all tillämpning av auktorisering eller policy. wreply används som det skickas i utvecklingsläge och måste vara en registrerad wsfedReplyUrl i PRODUKTläge (2026-09-12), utan reserv till den låtsade förlitande parten."
+    "en": "2abb20f4fd0f6ab0",
+    "text": "partial: Web (Passive) Requestor Profile i avsnitt 13 — wsignin1.0 med wtrealm, wreply, wctx, wct, wfresh, wauth, whr och wreq, inloggningssvaret som en formulär-POST, och wsignout1.0/wsignoutcleanup1.0 med rensningsförfrågningar via främre kanalen; som förlitande part i en federation (#167) avslutar en partners rensning, osignerad enligt specifikationen, sessionen först efter att personen bekräftat den på en sida med en riktig knapp, och en utloggning här skickar wsignout1.0 till partnern. Signerad federationsmetadata (avsnitt 3.1) på AD FS-sökvägen. INTE implementerat, och vart och ett namnges i stället för att förtigas: den aktiva (SOAP-)begärarprofilen utöver det som /sts redan besvarar, wresultptr, attributtjänsten (wattr1.0) och pseudonymtjänsten (wpseudo1.0) som båda svarar 501, wreqptr (nekas — att avreferera en URL från en frågeparameter är en server-side request forgery), tokenkryptering i den här profilen (en passiv förfrågan bär inget mottagarcertifikat), och all tillämpning av auktorisering eller policy. wreply används som det skickas i utvecklingsläge och måste vara en registrerad wsfedReplyUrl i PRODUKTläge (2026-09-12)."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2120,8 +2120,8 @@
     "text": "PEM-certifikatet vars nyckel signerar intygen, så att en förlitande part kan verifiera dem."
   },
   "stsmetadata.endpoints./wsfed.what": {
-    "en": "77576b9ee16c01d5",
-    "text": "GET eller POST, fördelat på wa: wsignin1.0 loggar in och POSTar ett RSTR till wreply (avsnitt 13.2.2 — en formulär-POST, aldrig en omdirigering, så token är inte längdbegränsad och når aldrig en URL eller ett Referer-huvud); wsignout1.0 avslutar sessionen och skickar en rensningsbegäran till varje förlitande part den loggade in till; wsignoutcleanup1.0 avslutar den utan att sprida vidare. Läser wtrealm (obligatorisk, och målgruppen), wreply (valfri — standard är /wsfed/rp), wctx (återges byte för byte), wct, wfresh (MINUTER), wauth (ett krav på hårdvara eller flerfaktor som sessionen inte uppfyller blir en step-up genom inloggningen, vägrat endast om den misslyckas), whr och ett wreq RST som värde. Token är ett SAML 1.1-intyg som standard eftersom det är vad AD FS utfärdar; ?tokenType=saml2 och ?trust=1.3 är NON-SPEC-växlar för den andra tokentypen och ws-sx RSTR Collection-omslaget. wattr1.0 och wpseudo1.0 svarar 501; wreqptr vägras."
+    "en": "f41d3cfeabae9e59",
+    "text": "GET eller POST, fördelat på wa: wsignin1.0 loggar in och POSTar ett RSTR till wreply (avsnitt 13.2.2 — en formulär-POST, aldrig en omdirigering, så token är inte längdbegränsad och når aldrig en URL eller ett Referer-huvud); wsignout1.0 avslutar sessionen och skickar en rensningsbegäran till varje förlitande part den loggade in till; wsignoutcleanup1.0 avslutar den utan att sprida vidare. Läser wtrealm (obligatorisk, och målgruppen), wreply (valfri — standard är den registrerade wsfedReplyUrl), wctx (återges byte för byte), wct, wfresh (MINUTER), wauth (ett krav på hårdvara eller flerfaktor som sessionen inte uppfyller blir en step-up genom inloggningen, vägrat endast om den misslyckas), whr och ett wreq RST som värde. Token är ett SAML 1.1-intyg som standard eftersom det är vad AD FS utfärdar; ?tokenType=saml2 och ?trust=1.3 är NON-SPEC-växlar för den andra tokentypen och ws-sx RSTR Collection-omslaget. wattr1.0 och wpseudo1.0 svarar 501; wreqptr vägras."
   },
   "stsmetadata.endpoints./wsfed.effect": {
     "en": "2f3e6657377dc4cb",
@@ -2138,22 +2138,6 @@
   "stsmetadata.endpoints./wsfed/metadata/:rp.what": {
     "en": "604e81aecab74125",
     "text": "SAMMA DOKUMENT, PER APPLIKATION (#494): dess entityID är sfärens enda utfärdare, dess OAuth-utfärdare, som överallt (#523). Segmentet är applikationens identifierare (dess wtrealm) eller dess slug. Ett segment som inte namnger någon REGISTRERAD applikation ger 404 i båda lägena (STS-WSFED-0019). no-store."
-  },
-  "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-wreply, och eftersom den VERIFIERAR inloggningssvaret kontroll för kontroll: intygssignaturen mot /sts/cert, utfärdaren, målgruppen mot sin egen realm, giltighetsfönstret och wctx-rundturen (en identitetsleverantör som kodade om den ger samma symptom som en förlorad session). Svarar också på wa=wsignoutcleanup1.0, vilket är den riktning det meddelandet egentligen är definierat för."
-  },
-  "stsmetadata.endpoints./wsfed/rp.effect": {
-    "en": "e2444ef9ff08a2dd",
-    "text": "skapar en wctx och erbjuder en fullständig inloggningsbegäran för varje form som slutpunkten kan utfärda"
-  },
-  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /wsfed/rp/api/start och utfallet som det mottagande svarets skal bär."
-  },
-  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
-    "en": "6722e133f11cee61",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en wctx och svarar, som fakta, med de inloggningsbegäranden den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2239,22 +2223,6 @@
     "en": "c76db63cae4e6994",
     "text": "Den FEMTE skriptade sidan i den här tjänsten, och argumentet förs på nytt i saml2_sso.js snarare än genom analogi: HTTP POST-bindningen ÄR ett formulär som skickar sig självt, så det finns ingen version av den utan skript. script-src lättas till 'self' och namnger just den här resursen, aldrig 'unsafe-inline', och sidan har en RIKTIG SKICKA-KNAPP — med skript avstängda är knappen hela mekanismen."
   },
-  "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC — en tjänsteleverantör är inte en del av en identitetsleverantör. Den finns här eftersom den är standard-AssertionConsumerServiceURL, och eftersom den VERIFIERAR svaret kontroll för kontroll: båda signaturerna, utfärdaren, målgruppen, giltighetsfönstret, den bearer-SubjectConfirmationData som avsnitt 4.1.4.2 kräver, och RelayState-rundturen. Den löser också upp en artefakt, inom processen snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv."
-  },
-  "stsmetadata.endpoints./saml2/sp.effect": {
-    "en": "36f5856187bd32d6",
-    "text": "skapar en RelayState och erbjuder en fullständig AuthnRequest som ber om svaret på HTTP POST, HTTP Redirect och HTTP Artifact"
-  },
-  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml2/sp/api/start och utfallet som det mottagande svarets skal bär."
-  },
-  "stsmetadata.endpoints./saml2/sp/api/start.what": {
-    "en": "3b1ad0edc68af287",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Skapar en RelayState för var och en av de fyra AuthnRequest-begäranden den låtsade tjänsteleverantören erbjuder, signerar tre med tjänstens nyckel och svarar med dem som fakta — startsidans vy. Språkoberoende; no-store."
-  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "En beskrivningssida: slutpunkterna, de två webbläsarprofilerna och listan över vad SAML 1.1 stavar annorlunda än 2.0 — vilket är det mesta av det som gör detta till en separat implementation snarare än en flagga. GET /saml2, GET /sts och GET /wsfed svarar på samma sätt. Ritas i webbläsaren sedan #584; ?format=json, eller en Accept som föredrar JSON, svarar med dess vy som data."
@@ -2298,22 +2266,6 @@
   "stsmetadata.endpoints./saml11/autopost.js.what": {
     "en": "e23713a2ecba90f0",
     "text": "Den SJÄTTE skriptade sidan i den här tjänsten, och argumentet förs på nytt i saml11_sso.js snarare än genom analogi — vilket spelar roll här just eftersom den femte var /saml2/autopost.js och \"samma som grannen\" är det minst användbara som kunde sägas. Browser/POST-profilen ÄR ett formulär som skickar sig självt i sin egen äldre specifikation, framkommet oberoende. script-src lättas till 'self' och namnger just den här resursen, aldrig 'unsafe-inline', och sidan har en RIKTIG SKICKA-KNAPP — med skript avstängda är knappen hela mekanismen."
-  },
-  "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC — en förlitande part är inte en del av en identitetsleverantör. Den finns här eftersom den är standardmottagaren av intyg, och eftersom den VERIFIERAR kontroll för kontroll: båda signaturerna via de id-attribut som SAML 1.1 faktiskt använder, statusens QName, Recipient, FRÅNVARON av InResponseTo i en profil utan begäran, att bekräftelsemetoden matchar profilen, och den DoNotCacheCondition som Browser/POST bär och artefaktprofilen inte gör. Den löser upp en artefakt INOM PROCESSEN snarare än genom att den här tjänsten gör ett SOAP-anrop till sig själv, och att ladda om resultatsidan demonstrerar engångsregeln snarare än att ge fel."
-  },
-  "stsmetadata.endpoints./saml11/rp.effect": {
-    "en": "e9c534c324579c92",
-    "text": "startar ett fullständigt flöde på någon av webbläsarprofilerna och verifierar det som kommer tillbaka"
-  },
-  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Körmiljön och renderarna för de tre låtsade förlitande parternas sidor i en fil, byggd av build-typescript.sh (common/mock-rp-spa.js) och serverad förkomprimerad under varje familjs egen sökväg: den ritar startsidan från /saml11/rp/api/start och utfallet som det mottagande svarets skal bär."
-  },
-  "stsmetadata.endpoints./saml11/rp/api/start.what": {
-    "en": "fbb7dc323454a57d",
-    "text": "UTANFÖR SPECIFIKATIONEN (#581). Svarar, som fakta, med de två webbläsarprofilernas starter vid överföringstjänsten mellan webbplatser som den låtsade förlitande parten erbjuder — startsidans vy. Språkoberoende; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -3444,10 +3396,6 @@
     "text": "Bärs också i ett WS-Federation wresult och i ett WS-Trust RSTR, vilket är dit varje SAML 1.1-intyg här gick innan den här profilen fanns."
   },
   "stsmetadata.protocols.WS-Federation.what": {
-    "en": "707fbb63d49a43b8",
-    "text": "1.2 Web (Passive) Requestor Profile: /wsfed som fördelar på wa, inloggningsskärmen, signerad federationsmetadata på AD FS sökväg, wsignout1.0, och en mock-förlitande part som visar vad som skickades till den."
-  },
-  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
     "en": "7ddf36d0c593e38b",
     "text": "1.2 Web (Passive) Requestor Profile: /wsfed som fördelar efter wa, inloggningsskärmen, signerad federationsmetadata på AD FS-sökvägen och wsignout1.0."
   },

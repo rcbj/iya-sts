@@ -940,8 +940,8 @@
     "text": "断言和 Browser/POST Response，以 RSA-SHA256 基于排他性 c14n 签名，经过同一个签名器。不同的是位置，原因在于语法而非密码学：1.1 断言没有 `<Issuer>` 元素——在 1.1 中颁发者是一个属性——所以“在颁发者之后”这个位置并不存在，签名放在最后。Response 的签名放在最前，位于其携带的断言之前。"
   },
   "crypto.families.saml-1-1.verifies": {
-    "en": "8398fc2b7e6fdb17",
-    "text": "它自己的工件，供模拟依赖方使用。"
+    "en": "f11251a4b826b873",
+    "text": "无：SAML 1.1 没有可供验证签名的请求消息。"
   },
   "crypto.families.saml-1-1.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -950,10 +950,6 @@
   "crypto.families.saml-1-1.whatItDoesNot": {
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 根本没有加密——`<EncryptedAssertion>` 随 2.0 才出现——也没有可供验证签名的请求消息。引用 URI 指明的是 `AssertionID` 或 `ResponseID`，这正是共享签名器通过搜索来解析 id、而不是被告知其名称的全部原因。"
-  },
-  "crypto.families.saml-1-1.verifiesWithoutDemos": {
-    "en": "f11251a4b826b873",
-    "text": "无：SAML 1.1 没有可供验证签名的请求消息。"
   },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -964,8 +960,8 @@
     "text": "`wresult` 中的 SAML 断言，采用依赖方所要求的版本，经过共享签名器。"
   },
   "crypto.families.ws-federation.verifies": {
-    "en": "35faf906b09d64d8",
-    "text": "位于 `/wsfed/rp` 的模拟依赖方逐项检查该断言，并且会被告知要验证哪个元素，而不是取文档中的第一个 `<ds:Signature>`——这里曾有四个独立的验证器存在这一缺陷。"
+    "en": "02c1a08782ac0629",
+    "text": "无：登录请求不带签名。"
   },
   "crypto.families.ws-federation.hashes": {
     "en": "4c6a8bf52c842baa",
@@ -974,10 +970,6 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "它不伪造 `wauth`——会话无法满足的要求会触发升级认证，而 AuthenticationMethod 记录的是会话实际完成的操作——也不解引用 `wreqptr`——获取别人登记的 URL，就是附带了引用出处的服务端请求伪造。"
-  },
-  "crypto.families.ws-federation.verifiesWithoutDemos": {
-    "en": "02c1a08782ac0629",
-    "text": "无：登录请求不带签名。"
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",

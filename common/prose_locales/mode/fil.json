@@ -724,8 +724,8 @@
     "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "fedcc0409581e879",
-    "text": "Inihahain at inililista: ang mga mock relying party at service provider (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear, at /ssf/receive at /ssf/received."
+    "en": "d0550f46d30b1f3f",
+    "text": "Inihahain at inililista: ang mock relying party ng mga command (/oauth2/commands/mock-rp), ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga OpenID4VCI readback, /did/generate, ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected, /xacml/protected, ang step-up stand-in resource, ang GNAP demonstration resource server, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust at /tls/trust/clear, at /ssf/receive at /ssf/received."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "0ca09045a89e11d0",

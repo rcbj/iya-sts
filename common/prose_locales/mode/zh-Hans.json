@@ -724,8 +724,8 @@
     "text": "演示、模拟和测试控制端点存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "fedcc0409581e879",
-    "text": "提供并列出：模拟依赖方和服务提供方（/wsfed/rp、/saml2/sp、/saml11/rp、/oauth2/commands/mock-rp），演示颁发方和验证方页面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回读端点，/did/generate，VC-API 测试端点，受保护的 Kerberos 服务（/krb5/service 及其 TCP 套接字），/krb5/principals，/spnego 和 /spnego/protected，/xacml/protected，升级认证替身资源，GNAP 演示资源服务器，/dpop/nonce-mode，/devices/test/compliance，/tls、/tls/forwarded、/tls/trust 和 /tls/trust/clear，以及 /ssf/receive 和 /ssf/received。"
+    "en": "d0550f46d30b1f3f",
+    "text": "提供并列出：命令模拟依赖方（/oauth2/commands/mock-rp），演示颁发方和验证方页面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回读端点，/did/generate，VC-API 测试端点，受保护的 Kerberos 服务（/krb5/service 及其 TCP 套接字），/krb5/principals，/spnego 和 /spnego/protected，/xacml/protected，升级认证替身资源，GNAP 演示资源服务器，/dpop/nonce-mode，/devices/test/compliance，/tls、/tls/forwarded、/tls/trust 和 /tls/trust/clear，以及 /ssf/receive 和 /ssf/received。"
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "0ca09045a89e11d0",

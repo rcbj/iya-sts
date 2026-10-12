@@ -248,8 +248,8 @@
     "text": "partial: HTTP Redirect (section 3.4) na may DEFLATE encoding at ang detached query-string signature ng 3.4.4.1, HTTP POST (3.5), HTTP Artifact (3.6) na may type 0x0004 artifact at ang one-shot rule ng 3.6.4.1, at SOAP over HTTP (3.2.3) para sa artifact resolution back channel, na ang caller ay NA-AUTHENTICATE (isang signed ArtifactResolve o ang nakarehistrong certificate nito bilang TLS client certificate) at dapat ang service provider na pinag-issue-han ng artifact; at HTTP-POST-SimpleSign (ang OASIS SimpleSign binding) sa magkabilang direksyon, inilalathala sa metadata. WALA RITO: PAOS (3.3), na tinatanggihan ayon sa pangalan sa halip na tahimik na sagutin sa POST, at ang URI binding (3.7). Ang request signature ng isang service provider — ang query signature ng 3.4.4.1 sa mga parameter gaya ng pagkatanggap, ang SimpleSign signature sa mga form value, o isang enveloped sa POST — AY VINE-VERIFY laban sa NAKAREHISTRONG certificate nito (hindi kailanman ang KeyInfo nito), sa bawat mode, sa bawat family na vine-verify ng common/crypto.js (RSA, RSASSA-PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA), sa alinmang canonicalization; SHA-1 lang kapag may saml.allowSha1Signatures, hindi kailanman sa product mode; ang unsigned ay tinatanggihan kung saan nangangailangan ng signature ang saml2.requireSignedAuthnRequests (naka-on sa product) o ang metadata nito."
   },
   "stsmetadata.specs.saml2-profiles.coverage": {
-    "en": "88da2e5ac2494e2e",
-    "text": "partial: ang Web Browser SSO profile (section 4.1), sinimulan ng service provider at sinimulan ng identity provider (#189), sa lahat ng apat na binding, na may bearer SubjectConfirmationData na kinakailangan ng 4.1.4.2, at bawat assertion ay NAKA-SIGN sa product mode anuman ang binding (kinakailangan ito ng 4.1.3.5 at 4.1.4.5 sa POST; sa development ang saml2.signAssertion na naka-off, #181); at Single Logout (4.4), sa magkabilang direksyon, NANG WALANG front-channel fan-out — ang logout na sinimulan ng identity provider ay NAGPAPANGALAN sa ibang mga service provider at bumubuo ng LogoutRequest para sa bawat isa sa halip na ipadala sila sa mga frame na hindi nito mamamasdan, at tinatapos ang session na pinangangalanan ng isang cookie-less (back-channel) na LogoutRequest ayon sa SessionIndex nito (#192); SSO na sinimulan ng identity provider na may unsolicited Response (4.1.5, /saml2/unsolicited, #189); at ang attribute query ng Assertion Query and Request profile (6, /saml2/aa, #189) tungkol sa subject na may live session sa nagtatanong na service provider. WALA RITO: ang ECP profile (4.2), Name Identifier Management (4.5), at ang AuthnQuery at AuthzDecisionQuery ng profile. Bilang SERVICE PROVIDER ng isang federation partner (#167), Single Logout sa magkabilang direksyon sa /federation/slo/{id}: tinatapos ng signed LogoutRequest ng partner ang mga session na pinangangalanan ng NameID at SessionIndex nito at sinasagot ng signed LogoutResponse, at ang sign-out dito ay nagpapadala rito ng signed LogoutRequest na ang LogoutResponse ay itinutugma ayon sa InResponseTo; nililimitahan ng SessionNotOnOrAfter ng partner ang session. Tinatanggap ang AssertionConsumerServiceURL gaya ng pagkapadala sa development mode at dapat nakarehistro sa entry ng service provider sa PRODUCT mode (2026-09-12), nang walang fallback sa mock service provider — at, kapag nakonsumo na ang metadata nito, dapat isa sa mga endpoint na inirehistro nito sa BAWAT mode, na kinikilala ang AssertionConsumerServiceIndex at ang default endpoint. Ang LogoutRequest mula sa isang service provider ay ina-authenticate ng signature nito (4.4.3.1) sa ilalim ng parehong policy ng isang AuthnRequest."
+    "en": "4271dad1ec658292",
+    "text": "partial: ang Web Browser SSO profile (section 4.1), sinimulan ng service provider at sinimulan ng identity provider (#189), sa lahat ng apat na binding, na may bearer SubjectConfirmationData na kinakailangan ng 4.1.4.2, at bawat assertion ay NAKA-SIGN sa product mode anuman ang binding (kinakailangan ito ng 4.1.3.5 at 4.1.4.5 sa POST; sa development ang saml2.signAssertion na naka-off, #181); at Single Logout (4.4), sa magkabilang direksyon, NANG WALANG front-channel fan-out — ang logout na sinimulan ng identity provider ay NAGPAPANGALAN sa ibang mga service provider at bumubuo ng LogoutRequest para sa bawat isa sa halip na ipadala sila sa mga frame na hindi nito mamamasdan, at tinatapos ang session na pinangangalanan ng isang cookie-less (back-channel) na LogoutRequest ayon sa SessionIndex nito (#192); SSO na sinimulan ng identity provider na may unsolicited Response (4.1.5, /saml2/unsolicited, #189); at ang attribute query ng Assertion Query and Request profile (6, /saml2/aa, #189) tungkol sa subject na may live session sa nagtatanong na service provider. WALA RITO: ang ECP profile (4.2), Name Identifier Management (4.5), at ang AuthnQuery at AuthzDecisionQuery ng profile. Bilang SERVICE PROVIDER ng isang federation partner (#167), Single Logout sa magkabilang direksyon sa /federation/slo/{id}: tinatapos ng signed LogoutRequest ng partner ang mga session na pinangangalanan ng NameID at SessionIndex nito at sinasagot ng signed LogoutResponse, at ang sign-out dito ay nagpapadala rito ng signed LogoutRequest na ang LogoutResponse ay itinutugma ayon sa InResponseTo; nililimitahan ng SessionNotOnOrAfter ng partner ang session. Tinatanggap ang AssertionConsumerServiceURL gaya ng pagkapadala sa development mode at dapat nakarehistro sa entry ng service provider sa PRODUCT mode (2026-09-12) — at, kapag nakonsumo na ang metadata nito, dapat isa sa mga endpoint na inirehistro nito sa BAWAT mode, na kinikilala ang AssertionConsumerServiceIndex at ang default endpoint. Ang LogoutRequest mula sa isang service provider ay ina-authenticate ng signature nito (4.4.3.1) sa ilalim ng parehong policy ng isang AuthnRequest."
   },
   "stsmetadata.specs.saml2-metadata.coverage": {
     "en": "44eed676882b5ecc",
@@ -268,8 +268,8 @@
     "text": "partial: PAREHONG browser profile — Browser/Artifact (section 4.1) at Browser/POST (4.2) — bawat isa ay may confirmation method na kinakailangan ng section nito, na magkaibang halaga at hindi mapagpapalit. WALANG REQUEST MESSAGE SA SAML 1.1, kaya parehong sinimulan ng identity provider: nagsisimula ang isang flow kapag dumating ang browser na may dalang TARGET, hindi kailanman nagpapakilala ang relying party sa protocol, at ang pagkabigo ay isang PAHINA sa halip na Response dahil walang sasagutin. Tinatanggap at ina-advertise ang hindi standard na AuthnRequest profile ng Shibboleth (urn:mace:shibboleth:1.0:profiles:AuthnRequest), dahil ito ang ipinapadala ng bawat tunay na SAML 1.1 service provider. Ginagamit ang `shire` gaya ng pagkapadala sa development mode at dapat nakarehistro sa entry ng relying party sa PRODUCT mode (2026-09-12). Naka-sign ang Browser/POST Response gaya ng kinakailangan ng section 4.1.2.4, kasama ang assertion nito; ang pag-off ng alinmang signature ay development test case na binabalewala ng product mode (#181)."
   },
   "stsmetadata.specs.ws-federation.coverage": {
-    "en": "b8e3addc28819b6c",
-    "text": "partial: ang Web (Passive) Requestor Profile ng section 13 — wsignin1.0 na may wtrealm, wreply, wctx, wct, wfresh, wauth, whr at wreq, ang sign-in response bilang form POST, at wsignout1.0/wsignoutcleanup1.0 na may mga front-channel cleanup request; bilang federation relying party (#167), tinatapos lang ng cleanup ng isang partner, na unsigned ayon sa specification, ang session matapos itong kumpirmahin ng tao sa isang pahinang may tunay na button, at ang sign-out dito ay nagpapadala sa partner ng wsignout1.0. Signed federation metadata (section 3.1) sa path ng AD FS. HINDI naipatupad, at bawat isa ay pinangangalanan sa halip na manahimik: ang active (SOAP) requestor profile lampas sa sinasagot na ng /sts, wresultptr, ang attribute service (wattr1.0) at ang pseudonym service (wpseudo1.0) na parehong sumasagot ng 501, wreqptr (tinatanggihan — ang pag-dereference ng URL mula sa isang query parameter ay server-side request forgery), token encryption sa profile na ito (walang dalang recipient certificate ang passive request), at anumang pagpapatupad ng authorization o policy. Ginagamit ang wreply gaya ng pagkapadala sa development mode at dapat isang nakarehistrong wsfedReplyUrl sa PRODUCT mode (2026-09-12), nang walang fallback sa mock relying party."
+    "en": "2abb20f4fd0f6ab0",
+    "text": "partial: ang Web (Passive) Requestor Profile ng section 13 — wsignin1.0 na may wtrealm, wreply, wctx, wct, wfresh, wauth, whr at wreq, ang sign-in response bilang form POST, at wsignout1.0/wsignoutcleanup1.0 na may mga front-channel cleanup request; bilang federation relying party (#167), tinatapos lang ng cleanup ng isang partner, na unsigned ayon sa specification, ang session matapos itong kumpirmahin ng tao sa isang pahinang may tunay na button, at ang sign-out dito ay nagpapadala sa partner ng wsignout1.0. Signed federation metadata (section 3.1) sa path ng AD FS. HINDI naipatupad, at bawat isa ay pinangangalanan sa halip na manahimik: ang active (SOAP) requestor profile lampas sa sinasagot na ng /sts, wresultptr, ang attribute service (wattr1.0) at ang pseudonym service (wpseudo1.0) na parehong sumasagot ng 501, wreqptr (tinatanggihan — ang pag-dereference ng URL mula sa isang query parameter ay server-side request forgery), token encryption sa profile na ito (walang dalang recipient certificate ang passive request), at anumang pagpapatupad ng authorization o policy. Ginagamit ang wreply gaya ng pagkapadala sa development mode at dapat isang nakarehistrong wsfedReplyUrl sa PRODUCT mode (2026-09-12)."
   },
   "stsmetadata.specs.xmldsig.coverage": {
     "en": "668af5821905c8e5",
@@ -2120,8 +2120,8 @@
     "text": "Ang PEM certificate na ang key ay pumipirma sa mga assertion, para ma-verify ng relying party ang mga ito."
   },
   "stsmetadata.endpoints./wsfed.what": {
-    "en": "77576b9ee16c01d5",
-    "text": "GET o POST, nagdi-dispatch ayon sa wa: ang wsignin1.0 ay nagsa-sign in at nagpo-POST ng RSTR sa wreply (section 13.2.2 — isang form POST, hindi kailanman redirect, kaya walang limit sa haba ang token at hindi ito kailanman umaabot sa URL o sa Referer header); tinatapos ng wsignout1.0 ang session at nagpapadala ng cleanup request sa bawat relying party na pinag-sign in-an nito; tinatapos ito ng wsignoutcleanup1.0 nang hindi kumakalat. Binabasa ang wtrealm (kailangan, at ang audience), wreply (opsyonal — default sa /wsfed/rp), wctx (ibinabalik nang byte por byte), wct, wfresh (MINUTO), wauth (ang hardware o multi-factor na hinihingi na hindi natutugunan ng session ay isang step-up sa pamamagitan ng sign-in, tinatanggihan lamang kung mabigo iyon), whr at isang wreq RST by value. SAML 1.1 assertion ang token bilang default dahil iyon ang iniisyu ng AD FS; ang ?tokenType=saml2 at ?trust=1.3 ay mga NON-SPEC na switch para sa kabilang token type at sa ws-sx RSTR Collection wrapper. Sumasagot ng 501 ang wattr1.0 at wpseudo1.0; tinatanggihan ang wreqptr."
+    "en": "f41d3cfeabae9e59",
+    "text": "GET o POST, nagdi-dispatch ayon sa wa: ang wsignin1.0 ay nagsa-sign in at nagpo-POST ng RSTR sa wreply (section 13.2.2 — isang form POST, hindi kailanman redirect, kaya walang limit sa haba ang token at hindi ito kailanman umaabot sa URL o sa Referer header); tinatapos ng wsignout1.0 ang session at nagpapadala ng cleanup request sa bawat relying party na pinag-sign in-an nito; tinatapos ito ng wsignoutcleanup1.0 nang hindi kumakalat. Binabasa ang wtrealm (kailangan, at ang audience), wreply (opsyonal — default sa nakarehistrong wsfedReplyUrl), wctx (ibinabalik nang byte por byte), wct, wfresh (MINUTO), wauth (ang hardware o multi-factor na hinihingi na hindi natutugunan ng session ay isang step-up sa pamamagitan ng sign-in, tinatanggihan lamang kung mabigo iyon), whr at isang wreq RST by value. SAML 1.1 assertion ang token bilang default dahil iyon ang iniisyu ng AD FS; ang ?tokenType=saml2 at ?trust=1.3 ay mga NON-SPEC na switch para sa kabilang token type at sa ws-sx RSTR Collection wrapper. Sumasagot ng 501 ang wattr1.0 at wpseudo1.0; tinatanggihan ang wreqptr."
   },
   "stsmetadata.endpoints./wsfed.effect": {
     "en": "2f3e6657377dc4cb",
@@ -2138,22 +2138,6 @@
   "stsmetadata.endpoints./wsfed/metadata/:rp.what": {
     "en": "604e81aecab74125",
     "text": "ANG PAREHONG DOKUMENTO, BAWAT APPLICATION (#494): ang entityID nito ay ang nag-iisang issuer ng realm, ang OAuth issuer nito, gaya ng saanman (#523). Ang segment ay ang identifier ng application (ang wtrealm nito) o ang slug nito. Ang segment na hindi nagpapangalan ng REHISTRADONG application ay 404 sa parehong mode (STS-WSFED-0019). no-store."
-  },
-  "stsmetadata.endpoints./wsfed/rp.what": {
-    "en": "845a149bb0c9372a",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na wreply, at dahil VINE-VERIFY nito ang sign-in response nang check por check: ang assertion signature laban sa /sts/cert, ang issuer, ang audience laban sa sarili nitong realm, ang validity window, at ang wctx round trip (ang identity provider na muling nag-encode nito ay nagdudulot ng parehong sintomas ng nawalang session). Sinasagot din ang wa=wsignoutcleanup1.0, na siyang direksyong talagang pinagtukuyan ng mensaheng iyon."
-  },
-  "stsmetadata.endpoints./wsfed/rp.effect": {
-    "en": "e2444ef9ff08a2dd",
-    "text": "nagmi-mint ng wctx at nag-aalok ng kumpletong sign-in request para sa bawat hugis na kayang ibigay ng endpoint"
-  },
-  "stsmetadata.endpoints./wsfed/rp/mock-rp.js.what": {
-    "en": "4325ff2b647da291",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /wsfed/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
-  },
-  "stsmetadata.endpoints./wsfed/rp/api/start.what": {
-    "en": "6722e133f11cee61",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng wctx at sumasagot, bilang mga katotohanan, ng mga hiling na mag-sign in na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
   },
   "stsmetadata.endpoints./saml2.what": {
     "en": "525652beb87f8922",
@@ -2239,22 +2223,6 @@
     "en": "c76db63cae4e6994",
     "text": "Ang IKALIMANG scripted page sa serbisyong ito, at muling ginagawa ang argumento sa saml2_sso.js sa halip na sa pamamagitan ng analohiya: ang HTTP POST binding AY isang self-submitting form, kaya walang bersyon nito na walang script. Niluluwagan ang script-src sa 'self' na nagpapangalan sa iisang resource na ito, hindi kailanman 'unsafe-inline', at may dalang TUNAY NA SUBMIT BUTTON ang page — kapag naka-off ang scripting, ang button ang buong mekanismo."
   },
-  "stsmetadata.endpoints./saml2/sp.what": {
-    "en": "d4ed2d959823c468",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang service provider. Narito ito dahil ito ang default na AssertionConsumerServiceURL, at dahil VINE-VERIFY nito ang response nang check por check: ang dalawang signature, ang issuer, ang audience, ang validity window, ang bearer SubjectConfirmationData na hinihingi ng section 4.1.4.2, at ang RelayState round trip. Nire-resolve din nito ang artifact, sa loob ng process sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito."
-  },
-  "stsmetadata.endpoints./saml2/sp.effect": {
-    "en": "36f5856187bd32d6",
-    "text": "nagmi-mint ng RelayState at nag-aalok ng kumpletong AuthnRequest na humihingi ng response sa HTTP POST, HTTP Redirect at HTTP Artifact"
-  },
-  "stsmetadata.endpoints./saml2/sp/mock-rp.js.what": {
-    "en": "cc6135e219301e01",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml2/sp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
-  },
-  "stsmetadata.endpoints./saml2/sp/api/start.what": {
-    "en": "3b1ad0edc68af287",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Gumagawa ng RelayState para sa bawat isa sa apat na AuthnRequest na iniaalok ng mock service provider, nilalagdaan ang tatlo gamit ang key ng serbisyong ito, at sinasagot ang mga ito bilang mga katotohanan — ang view ng panimulang pahina. Walang wika; no-store."
-  },
   "stsmetadata.endpoints./saml11.what": {
     "en": "0958618bfca15378",
     "text": "Isang description page: ang mga endpoint, ang dalawang browser profile, at ang listahan ng mga bagay na iba ang baybay sa SAML 1.1 kumpara sa 2.0 — na siyang karamihan sa dahilan kung bakit hiwalay itong implementasyon sa halip na flag. Ganito rin sumasagot ang GET /saml2, GET /sts at GET /wsfed. Iginuguhit sa browser mula #584; ang ?format=json, o isang Accept na mas gusto ang JSON, ay sumasagot ng view nito bilang data."
@@ -2298,22 +2266,6 @@
   "stsmetadata.endpoints./saml11/autopost.js.what": {
     "en": "e23713a2ecba90f0",
     "text": "Ang IKAANIM na scripted page sa serbisyong ito, at muling ginagawa ang argumento sa saml11_sso.js sa halip na sa pamamagitan ng analohiya — na mahalaga rito mismo dahil ang ikalima ay /saml2/autopost.js at ang \"kapareho ng katabi\" ang pinakawalang-silbing masasabi. Ang Browser/POST profile AY isang self-submitting form sa sarili nitong mas lumang specification, na narating nang hiwalay. Niluluwagan ang script-src sa 'self' na nagpapangalan sa iisang resource na ito, hindi kailanman 'unsafe-inline', at may dalang TUNAY NA SUBMIT BUTTON ang page — kapag naka-off ang scripting, ang button ang buong mekanismo."
-  },
-  "stsmetadata.endpoints./saml11/rp.what": {
-    "en": "4c7e5015984db42f",
-    "text": "NON-SPEC — hindi bahagi ng identity provider ang relying party. Narito ito dahil ito ang default na assertion consumer, at dahil VINE-VERIFY nito nang check por check: ang dalawang signature sa pamamagitan ng mga id attribute na talagang ginagamit ng SAML 1.1, ang status QName, ang Recipient, ang KAWALAN ng InResponseTo sa profile na walang request, ang confirmation method na tumutugma sa profile, at ang DoNotCacheCondition na dala ng Browser/POST at hindi ng artifact profile. Nire-resolve nito ang artifact SA LOOB NG PROCESS sa halip na tumawag ang serbisyong ito ng SOAP sa sarili nito, at ang pag-reload ng result page ay nagpapakita ng one-shot rule sa halip na mag-error."
-  },
-  "stsmetadata.endpoints./saml11/rp.effect": {
-    "en": "e9c534c324579c92",
-    "text": "nagsisimula ng kumpletong flow sa alinmang browser profile at vine-verify ang bumabalik"
-  },
-  "stsmetadata.endpoints./saml11/rp/mock-rp.js.what": {
-    "en": "009fb29a917a7653",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Ang runtime at mga renderer ng mga pahina ng tatlong mock relying party sa iisang file, binuo ng build-typescript.sh (common/mock-rp-spa.js) at inihahain nang naka-precompress sa ilalim ng sariling path ng bawat pamilya: iginuguhit nito ang panimulang pahina mula sa /saml11/rp/api/start at ang hatol na dala ng shell ng tumatanggap na sagot."
-  },
-  "stsmetadata.endpoints./saml11/rp/api/start.what": {
-    "en": "fbb7dc323454a57d",
-    "text": "HINDI BAHAGI NG ESPESIPIKASYON (#581). Sumasagot, bilang mga katotohanan, ng mga simula ng dalawang browser profile sa inter-site transfer service na iniaalok ng mock relying party — ang view ng panimulang pahina. Walang wika; no-store."
   },
   "stsmetadata.endpoints./federation.what": {
     "en": "890f59f522646882",
@@ -3444,10 +3396,6 @@
     "text": "Dinadala rin sa WS-Federation wresult at sa WS-Trust RSTR, na siyang pinupuntahan ng bawat SAML 1.1 assertion dito bago umiral ang profile na ito."
   },
   "stsmetadata.protocols.WS-Federation.what": {
-    "en": "707fbb63d49a43b8",
-    "text": "Ang 1.2 Web (Passive) Requestor Profile: ang /wsfed na nagdi-dispatch ayon sa wa, ang sign-in screen, signed na federation metadata sa path ng AD FS, wsignout1.0, at isang mock na relying party na nagpapakita kung ano ang ipinadala rito."
-  },
-  "stsmetadata.protocols.WS-Federation.whatWithoutDemos": {
     "en": "7ddf36d0c593e38b",
     "text": "Ang 1.2 Web (Passive) Requestor Profile: /wsfed na nagdi-dispatch ayon sa wa, ang sign-in screen, signed federation metadata sa AD FS path, at wsignout1.0."
   },

@@ -1195,18 +1195,6 @@
     "en": "17543ed2ad8f5b73",
     "text": "Métadonnées de fédération pour UNE partie de confiance"
   },
-  "endpoints.route./wsfed/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
-  },
-  "endpoints.route./wsfed/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "Le script de la partie de confiance fictive"
-  },
-  "endpoints.route./wsfed/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "La vue de départ de la partie de confiance fictive"
-  },
   "endpoints.route./saml2.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Ce qu’est le profil"
@@ -1267,18 +1255,6 @@
     "en": "3046cc7181c4dedb",
     "text": "Script d’envoi automatique du binding HTTP POST"
   },
-  "endpoints.route./saml2/sp.name": {
-    "en": "a09df9ed92de4454",
-    "text": "Fournisseur de services fictif (pas un point de terminaison de la spécification)"
-  },
-  "endpoints.route./saml2/sp/mock-rp.js.name": {
-    "en": "9f26130381002d3a",
-    "text": "Le script du fournisseur de services fictif"
-  },
-  "endpoints.route./saml2/sp/api/start.name": {
-    "en": "7e3ea418703ad450",
-    "text": "La vue de départ du fournisseur de services fictif"
-  },
   "endpoints.route./saml11.name": {
     "en": "35f88743c0a1f5d7",
     "text": "Ce qu’est le profil"
@@ -1314,18 +1290,6 @@
   "endpoints.route./saml11/autopost.js.name": {
     "en": "1c2c5f913f3bd033",
     "text": "Script d’envoi automatique du profil Browser/POST"
-  },
-  "endpoints.route./saml11/rp.name": {
-    "en": "1f62bc9e9246c363",
-    "text": "Partie de confiance fictive (pas un point de terminaison de la spécification)"
-  },
-  "endpoints.route./saml11/rp/mock-rp.js.name": {
-    "en": "88afe93636f1cffa",
-    "text": "Le script de la partie de confiance fictive"
-  },
-  "endpoints.route./saml11/rp/api/start.name": {
-    "en": "e4478ae2c9c051a7",
-    "text": "La vue de départ de la partie de confiance fictive"
   },
   "endpoints.route./federation.name": {
     "en": "c025c7c05450031b",
