@@ -12091,3 +12091,42 @@ feature's relying-party side (its ACS and front-channel logout target are
 protocol documents, #569's rule). The CIBA notification, back-channel logout
 and Provider Commands receivers the suite needs outside a development realm
 are the test peer's (`tests/peer/`, #586), not this service's.
+
+### What converted, and how
+
+| Module | What it is |
+|---|---|
+| `mock_rp_surface.ts` (`MockRpSurface`, server, a static utility class) | `FAMILIES` (the three bases), `shell(req, family, view)` and `sendShell(req, res, status, family, view)` — the shell through `ShellDocument.document()`, `data-sts-mock-rp` naming the family and `data-sts-state` carrying a verdict, sent with the status its CALLER decided (the receiving door's own, so a spent SAML 1.1 artifact is still 400) after the caller marked its error code; `registerRoutes(app, family, start)` — `<base>/mock-rp.js` and `GET <base>/api/start` (JSON, `no-store`), both `demoOnly`. |
+| `web_mock_rp_pages.ts` (`StsMockRp`) | One page row per family (`/wsfed/rp`, `/saml2/sp`, `/saml11/rp`), each drawing whichever view it is handed by its `kind` — `start`, `result`, SAML 2.0's `unresolved`, SAML 1.1's `spent` — in the `mockRp` catalogs' words. A check's name and detail, a claim, an attribute, a refusal's reason and the document as it arrived are the model's English, escaped. |
+| `web_mock_rp.ts` (`common/mock-rp-spa.js`) | `WebSurface` with the base the shell names; draws the shell's verdict and fetches nothing, or asks the start view; leaves EVERY link to the browser (a sign-in request, a sign-out and the artifact loaded again are protocol messages, and Start another sign-in loads the page afresh because the start view mints); redraws from the view in hand on a language change. |
+| `web_card_css.ts`'s `MOCK_RP_CSS` | The wide card, the checks, the tables, the document, SAML 1.1's two starts as buttons — scoped to `.mockrp`. |
+
+**One surface for the three, not one per family**: the pages are one page in
+three dialects — a list of sign-in requests to follow, then a relying
+party's checks, what arrived and the document — and one set of renderers
+keeps them from drifting apart. #472 is kept by WHERE each is served, not by
+how many bundles there are: each family's script and start view are under
+its own base, inside its family's hosted application's prefix, so a mapped
+family loads both from its own listener and `common/hosted_applications.js`
+gains nothing.
+
+**THE VERDICT TRAVELS IN THE SHELL, NOT UNDER A REFERENCE (a departure from
+#581's plan, step 1).** The plan was: the receiving endpoint keeps the result
+under a short-lived reference and answers a 303 to the page. It was built
+the other way, for three reasons. (1) The receiving door is an assertion
+consumer, and #569's rule — and the brief for #581 — keeps a protocol
+endpoint's status and headers as they were; a 303 changes them. (2) A view
+that exists only on one response is what `data-sts-state` is for
+(`kerberos/spnego_authn.ts`, #575; GNAP, #578). (3) A reference would be a
+bearer URL to a person's assertion, held in a store the cluster replicates,
+for a page that never needed one. What the shell carries is exactly what the
+server-drawn page showed, to the same browser.
+
+**What did not convert, and why**: the WS-Federation cleanup request (an
+image the identity provider's sign-out documents fetch); every request the
+mocks send (the start views' links are the same URLs, minted the same way);
+the Provider Commands mock (JSON); the verification itself
+(`verifySignInResponse()`, `verifyResponse()`), which the shell's view only
+reports. SAML 1.1's check details were drawn unescaped until #581 — a detail
+naming `<DoNotCacheCondition>` lost the name in the browser — and are text
+now.
