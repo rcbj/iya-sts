@@ -89,6 +89,7 @@ endpoint. It is now the last of four layers, and each adds exactly one thing.
 | `krb5_service.js` | the AP-REQ. Every Kerberos check, over any transport. | `/krb5/service` |
 | `spnego_exchange.js` | RFC 4178 and the RFC 4559 header. No Kerberos code, no HTML, no session. **A LIBRARY** — rule 3, so its position is not a position. | nothing |
 | `spnego.js` | a page that explains what happened. | `/spnego`, `/spnego/protected` |
+| `spnego_pages.ts` | since #583, the shell those two pages answer in this service, and their script — reached lazily by `spnego.js` (below). | `/spnego/pages.js` |
 | `spnego_authn.ts` | **a session, and the identity that goes in it.** | `/authn/spnego` |
 
 **The split was forced by the second door and it is not tidiness.**
@@ -298,6 +299,51 @@ only, #585), and its first step was this inventory:
 
 `/authn/spnego` is #575's and is not touched here; `/krb5/service` and
 `/krb5/principals` are not in #583.
+
+**Each page is the SPNEGO pages' shell** (`spnego_pages.ts`), carrying its
+view in `data-sts-state`: the advertisement (`?format=json`'s object without
+the last exchange, which the page never drew, and with the realm, which it
+did), or the negotiation's verdict — `verdictView()` names what
+`acceptedPage()`, `refusalPage()` and `detailFor()` read off it and nothing
+else, so no key, token or pending id reaches the page. `/spnego/pages.js`
+(`web_spnego_surface.ts` over `common/web_embedded_surface.ts`, the renderers
+`web_spnego_views.ts` — those three functions moved, case for case — and the
+`spnegoPages` catalogs in seven languages) draws it; a verdict's reason, the
+section 5 requirement and the checks table are English, a diagnostic as the
+sign-in's is (#575). NOT `web_authn_spnego.ts`, which is the sign-in's.
+
+**THE EXCHANGE IS NOT TOUCHED** (#569's rule): `applyVerdict()` sets the
+status, `WWW-Authenticate`, the negotiation cookie and `no-store` before the
+body, and `SpnegoPages.send()` sets only the content type (the `text/html` it
+always was) and the policy (`script-src 'self'`, `style-src 'self'`, through
+`app.contentSecurityPolicy()`). `/spnego`'s 200 gained `no-store`, as every
+shell has. The 500 (`STS-KRB-0096`) stays server-drawn, as #575 kept the
+sign-in's.
+
+**`spnego.js` REACHES `spnego_pages.ts` LAZILY, AND THAT IS WHY THE PARENT IS
+OWED NOTHING.** `spnego.js` is in the parent's COPY closure (*The parent
+project loads these modules in-process*, below), and the shell module reaches
+the shell writer, the locale negotiation and the listener map. So
+`pagesModule()` asks for it when a page is drawn, inside a `try` —
+`krb5_kdc.js`'s way of reaching `ssf/account_signals.ts` — and **a copy
+without it, the parent's, draws the server-drawn page it always drew, byte
+for byte**: the parent's `krb5_spnego_http.js` reads that body ("protected
+content", the client's name, "verified"). In this service the module is
+always there: `common/protocol_stack.ts` registers its script route at
+17-pages, just after `spnego.js`. A module that is present and fails to load
+is logged under `STS-KRB-0209` and the page is drawn server-side. **So the
+old renderers in `spnego.js` are now the parent's**: a change to what a
+verdict's page says is made in `web_spnego_views.ts`, and in `spnego.js` only
+for the parent's sake.
+
+`tests/diagnostic_pages.js` uses exactly that to snapshot the exchange: every
+`/spnego/protected` answer — the bare challenge, a wrong scheme, a token that
+is not SPNEGO, the accepted 200 with its final token, `request-mic` with its
+cookie — is asked with the shell module and with it taken away (the pre-#583
+page), and the status and headers must be equal while only the body differs.
+`tests/web_surfaces.js` holds the bundle to this process's drawing for every
+outcome. No `tests/vendored/` job reads either page's body: the Kerberos jobs
+use `/authn/spnego`.
 
 ---
 
@@ -666,6 +712,11 @@ nothing and says so at debug.
 `spnego_authn.ts`, which is outside it, changed, and `spnego.js` still draws
 the continuation and terminal-refusal 401s with `page()` and `checksTable()`
 as before.
+
+**#583 (2026-10-12) ADDED A LAZY ONE, AND OWES NOTHING**: `spnego.js` asks
+for `./spnego_pages` inside a `try` when it draws `/spnego` or
+`/spnego/protected`, and a copy without the file draws the page it always
+drew — see *The diagnostic pages `/spnego` and `/spnego/protected`*, above.
 
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
