@@ -7682,7 +7682,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'for a person who holds no authenticator app or security key: ' +
           'their password, checked as the sign-in screen checks one and ' +
           'rate limited on the same bucket. The session records amr ' +
-          '["pop","pwd"] and acr "mfa". No script.' },
+          '["pop","pwd"] and acr "mfa". A page of the sign-in surface ' +
+          'since #572: the password goes to ' +
+          '/authn-api/mfa/{id}/password.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -7716,7 +7718,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'additionally flags that entry mfaAuthenticated TRUE. The RP ID is ' +
           'this origin\'s host and is not configurable: WebAuthn binds a ' +
           'ceremony to the calling origin, and that is the whole of its ' +
-          'phishing resistance.' },
+          'phishing resistance. A page of the sign-in surface since #572: ' +
+          'its script runs the ceremony, armed by ' +
+          '/authn-api/mfa/{id}/webauthn/options and answered to ' +
+          '/authn-api/mfa/{id}/webauthn.' },
   { path: '/authn/backup-code', group: 'Authentication',
     name: 'Recovery code second-factor step',
     specs: [],
@@ -7732,7 +7737,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'DRAWS THE PAGE FOR A STEP THAT ALREADY EXISTS and refuses one for ' +
           'somebody who holds no unspent code — a screen asking for a ' +
           'credential that cannot exist reads as a service that has lost it. ' +
-          'THE POST CHECKS THE CODE FOR REAL IN BOTH MODES and SPENDS it: a ' +
+          'THE CODE IS CHECKED FOR REAL IN BOTH MODES and SPENT ' +
+          '(/authn-api/mfa/{id}/backup-code since #572): a ' +
           'failed spend REFUSES the sign-in, which is the opposite of what ' +
           '/authn/totp does with its counter and is argued in ' +
           'common/credentials.ts — a one-time code that cannot be counted is ' +
@@ -7743,9 +7749,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying party can look up. Rate limited by identity AND by ' +
           'address, through the same buckets as the code step. **IT ISSUES ' +
           'NOTHING AND ENROLS NOBODY** — a set is created by the ACT of ' +
-          'enrolling a second factor, once, in common/credentials.ts. This ' +
-          'page has NO SCRIPT: a person reads a string off paper and types ' +
-          'it.' },
+          'enrolling a second factor, once, in common/credentials.ts. A ' +
+          'page of the sign-in surface since #572.' },
   // #64: the emailed code and the emailed sign-in link.
   { path: '/authn/email-code', group: 'Authentication',
     name: 'Emailed code step',
@@ -7756,33 +7761,37 @@ const ENDPOINTS: EndpointEntry[] = [
           'sign-in code") or a second (opted into on /portal/mfa), where the ' +
           'authentication policy allows it — OFF by default, because NIST SP ' +
           '800-63B-4 section 3.1.3.1 does not count email as an ' +
-          'authenticator. The GET draws the page for a step that exists and ' +
-          'sends nothing; the POST sends (action=send) or checks one. Kept ' +
+          'authenticator. The page sends nothing when it is drawn; ' +
+          '/authn-api/mfa/{id}/email/send sends a code and ' +
+          '/authn-api/mfa/{id}/email/code checks one (#573). Kept ' +
           'only as a scrypt hash on the step, valid for at most ten minutes, ' +
           'once for the cluster, a bounded number of wrong codes per step, ' +
           'rate limited as the one-time code step is. As a first factor the ' +
           'page is the same whether or not the account exists or has a ' +
           'verified address. amr ["otp"] and acr "1" alone, the first ' +
           'factor\'s amr plus "otp" and acr "mfa" as a second; it never ' +
-          'meets a risk step-up. No script.' },
+          'meets a risk step-up. A page of the sign-in surface since #573.' },
   { path: '/authn/email-link', group: 'Authentication',
     name: 'Emailed sign-in link: the waiting page',
     specs: ['rfc8176', 'nist-800-63b'],
     what: 'NON-SPEC (#64). The page a person waits on after an emailed ' +
-          'sign-in link is sent (POST, action=send), refreshed by a <meta> ' +
-          'tag. The link completes the sign-in ONLY in the browser that ' +
-          'started it — the step keeps the hash of a cookie set when it was ' +
-          'sent — so the sign-in continues in the tab the link opens, and ' +
-          'this page then says so. No script.' },
+          'sign-in link is sent (/authn-api/mfa/{id}/email/send), asking ' +
+          'again every few seconds. The link completes the sign-in ONLY in ' +
+          'the browser that started it — the step keeps the hash of a ' +
+          'cookie set when it was sent — so the sign-in continues in the ' +
+          'tab the link opens, and this page then says so. A page of the ' +
+          'sign-in surface since #573.' },
   { path: '/authn/email-link/open', group: 'Authentication',
     name: 'Emailed sign-in link: where it lands',
     specs: ['rfc8176', 'nist-800-63b'],
     effect: 'establishes the sign-on session once the link verifies',
     what: 'NON-SPEC (#64). The GET spends nothing — a mail scanner fetches ' +
-          'every link in a message — and draws a Continue button; the POST ' +
-          'checks the browser binding, the token\'s scrypt hash, the expiry ' +
-          'and the single-use claim, and signs in. Opened in another browser ' +
-          'it spends nothing and says where to open it.' },
+          'every link in a message — and draws a Continue button, which ' +
+          'sends the token to /authn-api/mfa/{id}/email-link/open (#573): ' +
+          'the browser binding, the token\'s scrypt hash, the expiry and ' +
+          'the single-use claim are checked there, and the person signed ' +
+          'in. Opened in another browser it spends nothing and says where ' +
+          'to open it.' },
   { path: '/authn/language', group: 'Authentication',
     name: 'Language chooser',
     specs: ['bcp47', 'oidc'],
@@ -7828,8 +7837,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'who ' +
           'holds neither an authenticator app nor an mfa-role security key ' +
           'lands here instead of being signed in. They choose one: an ' +
-          'authenticator app is enrolled on this page (a QR code this server ' +
-          'draws and a code typed back, confirmed through ' +
+          'authenticator app is enrolled on this page (a QR code the browser ' +
+          'draws from the otpauth: URI and a code typed back, confirmed ' +
+          'through ' +
           'credentials.confirmTotpEnrolment(), session amr ["pwd","otp"], ' +
           'acr ' +
           '"mfa"), and a security key goes to the ordinary /authn/webauthn ' +
@@ -7837,7 +7847,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'factor, because enrolling a second one at a sign-in is the bypass ' +
           'the security-key box is reserved against. Needs an ?mfa= id ' +
           'minted ' +
-          'by the password step, so following it bare answers 400. No script.'
+          'by the password step, so following it bare answers 400. A page ' +
+          'of the sign-in surface since #572.'
   },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
@@ -7861,16 +7872,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'no enrolment. **IT ENROLS NOBODY**, which is the whole difference ' +
           'from /authn/webauthn beside it: enrolling means being shown a ' +
           'shared secret, so it happens at /portal/mfa or while an ' +
-          'activation link is spent, and never at a sign-in screen. This ' +
-          'page has NO SCRIPT and is served under the service-wide ' +
-          'script-src \'none\' — a person reads digits and types them, so ' +
-          'the exception the security-key page needs does not apply here.' },
+          'activation link is spent, and never at a sign-in screen. A page ' +
+          'of the sign-in surface since #572: the code goes to ' +
+          '/authn-api/mfa/{id}/totp.' },
   { path: '/authn/signin.js', group: 'Authentication',
     name: 'The sign-in screen\'s script', specs: [],
     what: 'NON-SPEC (#571). The sign-in surface\'s runtime and renderers in ' +
           'one file, built by build-typescript.sh (authn/authn-spa.js) and ' +
-          'served precompressed: it draws /authn/login, /authn/select-idp ' +
-          'and /authn/password-change from /authn-api and sends their acts ' +
+          'served precompressed: it draws /authn/login, /authn/select-idp, ' +
+          '/authn/password-change and, since #572 and #573, every step ' +
+          'after them from /authn-api and sends their acts ' +
           'there. Public: nothing in it is secret.' },
   { path: '/authn-api', group: 'Authentication',
     name: 'The sign-in API index', specs: [],
@@ -7917,6 +7928,62 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'A forced password change', specs: [],
     what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
           'stores the new one and continues the sign-in.' },
+  // #572, #573: the steps after the screen.
+  { path: '/authn-api/mfa/:id', group: 'Authentication',
+    name: 'What a sign-in step\'s page shows', specs: [],
+    what: 'NON-SPEC (#572, #573). The view of a second-factor or emailed ' +
+          'factor step\'s page (?page=), as facts and no words, and the ' +
+          'CSRF token its acts carry; refused where the page could never ' +
+          'be drawn for the step. The id is a bearer capability and is ' +
+          'never logged.' },
+  { path: '/authn-api/mfa/:id/totp', group: 'Authentication',
+    name: 'Check a one-time code', specs: ['rfc6238'],
+    what: 'NON-SPEC (#572). A code from an authenticator app, checked in ' +
+          'every mode and rate limited; a wrong one keeps the step.' },
+  { path: '/authn-api/mfa/:id/backup-code', group: 'Authentication',
+    name: 'Spend a recovery code', specs: [],
+    what: 'NON-SPEC (#572). Checked and spent; a code that cannot be ' +
+          'marked spent is refused.' },
+  { path: '/authn-api/mfa/:id/password', group: 'Authentication',
+    name: 'Check a password as the second factor', specs: [],
+    what: 'NON-SPEC (#572). After a wallet, rate limited on the sign-in ' +
+          'bucket.' },
+  { path: '/authn-api/mfa/:id/webauthn/options', group: 'Authentication',
+    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn'],
+    what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
+          'and the passkey policy\'s options.' },
+  { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
+    name: 'Finish a passkey step', specs: ['webauthn'],
+    what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
+          'registration where the step enrols a key, an assertion ' +
+          'otherwise — decided by the step.' },
+  { path: '/authn-api/mfa/:id/setup/totp', group: 'Authentication',
+    name: 'Begin setting up an authenticator app', specs: [],
+    what: 'NON-SPEC (#572). At the set-up step; its secret is drawn next.' },
+  { path: '/authn-api/mfa/:id/setup/confirm', group: 'Authentication',
+    name: 'Confirm an authenticator app', specs: ['rfc6238'],
+    what: 'NON-SPEC (#572). Its first code, rate limited; a session of two ' +
+          'factors where it is right.' },
+  { path: '/authn-api/mfa/:id/setup/webauthn', group: 'Authentication',
+    name: 'Choose a passkey at the set-up step', specs: [],
+    what: 'NON-SPEC (#572). The next step is the passkey page\'s ' +
+          'registration.' },
+  { path: '/authn-api/mfa/:id/skip', group: 'Authentication',
+    name: 'Ignore an offered second factor', specs: [],
+    what: 'NON-SPEC (#572, #246). Only where the step was offered: the ' +
+          'sign-in finishes on the password.' },
+  { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
+    name: 'Mail a sign-in code or link', specs: [],
+    what: 'NON-SPEC (#573). To the verified address only; a resend ' +
+          'replaces the last.' },
+  { path: '/authn-api/mfa/:id/email/code', group: 'Authentication',
+    name: 'Check an emailed code', specs: [],
+    what: 'NON-SPEC (#573). Once for the cluster, a bounded number of ' +
+          'wrong codes per step.' },
+  { path: '/authn-api/mfa/:id/email-link/open', group: 'Authentication',
+    name: 'Spend a mailed sign-in link', specs: [],
+    what: 'NON-SPEC (#573). The Continue button of the page the link ' +
+          'lands on, only in the browser that asked for it.' },
   { path: '/authn/fingerprint.js', group: 'Authentication',
     name: 'Browser fingerprint script (optional)',
     specs: [],
@@ -7929,17 +7996,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'sign-in works without it. Off by default: it is personal data, and ' +
           'turning it on is the operator\'s decision, after the privacy ' +
           'impact assessment the risk-scoring page describes.' },
-  { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
-      'ceremony script',
-    specs: ['webauthn'],
-    what: 'The script the security-key page runs, in both of its roles — the ' +
-          'ceremony a second factor performs and the one a passwordless ' +
-          'sign-in performs are the same bytes. It is a separate resource ' +
-          'rather than an inline script because this service sets script-src ' +
-          '\'none\' on every response by default; that one page relaxes it ' +
-          'to \'self\', which is the smallest exception that works. An ' +
-          'inline script there would simply not run, with the button doing ' +
-          'nothing and no error anywhere.' },
   { path: '/oauth2/check_session', group: 'OAuth 2.0 / OIDC',
     name: 'OP iframe (check_session_iframe)', specs: ['oidc-session'],
     what: 'Session Management section 3.2 (#121), while ' +
