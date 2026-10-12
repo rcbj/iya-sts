@@ -3399,6 +3399,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'which is why so many SPNEGO failures leave no evidence on the ' +
           'wire. Add ?format=json.',
     demo: true },
+  { path: '/spnego/pages.js', group: 'Kerberos',
+    name: 'The SPNEGO pages\' script', specs: [],
+    what: 'NON-SPEC (#583). The runtime and renderers of the two SPNEGO ' +
+          'demonstration pages, in one file built by build-typescript.sh ' +
+          '(kerberos/spnego-pages-spa.js) and served precompressed: it ' +
+          'draws /spnego, and the body of every answer /spnego/protected ' +
+          'gives, from the state each shell carries. The negotiation\'s ' +
+          'status and WWW-Authenticate header are not among what it draws.',
+    demo: true },
   { path: '/spnego/protected', group: 'Kerberos',
     name: 'The protected resource',
     // rfc3961 is linked because the AP-REQ inside the mechToken, its
@@ -4366,6 +4375,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'decided where it is USED: GET /tls/sign-in for a session, the ' +
           'token endpoint for RFC 8705, /xacml and /scim/v2 for theirs. Add ' +
           '?format=json.',
+    demo: true },
+  { path: '/tls/pages.js', group: 'TLS',
+    name: 'The TLS pages\' script', specs: [],
+    what: 'NON-SPEC (#583). The runtime and renderers of the two TLS ' +
+          'diagnostic pages, in one file built by build-typescript.sh ' +
+          '(tls/tls-pages-spa.js) and served precompressed: it draws /tls ' +
+          'and /tls/forwarded from the state each shell carries — the ' +
+          'object each one\'s ?format=json answers, built on the request ' +
+          'that asked for the page — and sends the /tls page\'s two acts ' +
+          'to POST /tls/trust and POST /tls/trust/clear as JSON.',
     demo: true },
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',

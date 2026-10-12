@@ -242,6 +242,20 @@ bundle_surface "the federation pages" federation/web_federation_pages.ts \
   StsFederation federation/federation-pages.bundle.js \
   federation/web_federation_surface.ts federation/federation-pages-spa.js
 
+# THE TLS DIAGNOSTIC PAGES (#583): `tls/tls-pages.bundle.js` (`StsTlsPages`,
+# `web_tls_pages.ts`) and `tls/tls-pages-spa.js` (`web_tls_surface.ts`),
+# served at `/tls/pages.js` — never `tls_pages.js`, which is `tls_pages.ts`.
+bundle_surface "the TLS diagnostic pages" tls/web_tls_pages.ts StsTlsPages \
+  tls/tls-pages.bundle.js tls/web_tls_surface.ts tls/tls-pages-spa.js
+
+# THE SPNEGO DEMONSTRATION PAGES (#583): `kerberos/spnego-pages.bundle.js`
+# (`StsSpnegoPages`, `web_spnego_pages.ts`) and `kerberos/spnego-pages-spa.js`
+# (`web_spnego_surface.ts`), served at `/spnego/pages.js` — never
+# `spnego_pages.js`, which is `spnego_pages.ts`.
+bundle_surface "the SPNEGO demonstration pages" kerberos/web_spnego_pages.ts \
+  StsSpnegoPages kerberos/spnego-pages.bundle.js \
+  kerberos/web_spnego_surface.ts kerberos/spnego-pages-spa.js
+
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public
 # surfaces*).

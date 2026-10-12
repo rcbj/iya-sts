@@ -199,3 +199,8 @@ logout/signout-spa.js*
 # And the federation pages' (#580), for the same reason.
 federation/federation-pages.bundle.js
 federation/federation-pages-spa.js*
+# And the TLS and SPNEGO diagnostic pages' (#583), for the same reason.
+tls/tls-pages.bundle.js
+tls/tls-pages-spa.js*
+kerberos/spnego-pages.bundle.js
+kerberos/spnego-pages-spa.js*

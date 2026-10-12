@@ -105,3 +105,12 @@ federation/federation-pages.bundle.js
 federation/federation-pages-spa.js
 federation/federation-pages-spa.js.br
 federation/federation-pages-spa.js.gz
+# The TLS and SPNEGO diagnostic pages' (#583), the same kind of file.
+tls/tls-pages.bundle.js
+tls/tls-pages-spa.js
+tls/tls-pages-spa.js.br
+tls/tls-pages-spa.js.gz
+kerberos/spnego-pages.bundle.js
+kerberos/spnego-pages-spa.js
+kerberos/spnego-pages-spa.js.br
+kerberos/spnego-pages-spa.js.gz

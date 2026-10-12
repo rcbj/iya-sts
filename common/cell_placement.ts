@@ -159,6 +159,9 @@ const ROWS: Row[] = [
          'placed: kerberos/CLAUDE.md)' },
   { prefix: '/spnego', strategy: 'affinity', browser: true,
     why: 'a browser flow, served where the browser is pinned' },
+  // THE SPNEGO PAGES' SCRIPT (#583): the same file in every cell.
+  { prefix: '/spnego/pages.js', strategy: 'local',
+    why: 'the SPNEGO pages\' script, the same file in every cell (#583)' },
   // --- the sign-in service and the browser flows ---
   { prefix: '/authn', strategy: 'affinity', browser: true,
     why: 'the sign-in screen is where D9\'s restart at home happens; a ' +

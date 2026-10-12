@@ -122,6 +122,21 @@ class WebCardCss {
     '95em}';
 
   /**
+   * The DIAGNOSTIC pages (#583): the TLS pages and the SPNEGO demonstration
+   * pages, which carried these in the `<style>` of their own server-drawn
+   * shells (`tls_server.js`'s `pageShell()`, `spnego.js`'s `page()`) until
+   * they became static surfaces — a verdict's band, the truststore's PEM
+   * box, a list's indent — scoped to `.diag`, the class their card carries,
+   * and the TLS page's wider card to `.tls`, so no other page changes.
+   */
+  static readonly DIAG_CSS =
+    '.card.tls{max-width:60rem}.diag p.verdict{background:#f0f0f8;border-l' +
+    'eft:4px solid #12107c;padding:.6rem .8rem;margin:.6rem 0}.diag textar' +
+    'ea{width:100%;box-sizing:border-box;font-family:ui-monospace,monospac' +
+    'e;font-size:.8em}.diag ul{margin:.3em 0;padding-left:1.2em}.diag li{m' +
+    'argin:.2em 0}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -159,9 +174,11 @@ class WebCardCss {
     WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
     WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS +
-    // GNAP's last (#578): scoped to its own card, and after the steps'
+    // GNAP's (#578): scoped to its own card, and after the steps'
     // code field, which its own replaces.
-    WebCardCss.GNAP_CSS;
+    WebCardCss.GNAP_CSS +
+    // The diagnostic pages' last (#583), scoped to `.diag` and `.tls`.
+    WebCardCss.DIAG_CSS;
 }
 
 export = WebCardCss;
