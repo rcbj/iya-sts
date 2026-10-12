@@ -460,7 +460,8 @@ function childMain() {
          'clears pwdReset', r.status + ' ' + r.headers.location);
     // A spent step has no view to draw (STS-AUTHN-0144), so its page has no
     // token to send a change with either.
-    const spent = await screen.open({ port: port, jar: {}, at: changeLocation });
+    const spent = await screen.open({ port: port, jar: {},
+                                      at: changeLocation });
     note(spent.status === 400 && !spent.view, '7e. the step is spent',
          spent.status);
 
