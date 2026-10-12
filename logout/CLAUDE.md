@@ -215,6 +215,17 @@ touched** (#569's rule), and nothing they answer changed.
   session. Under `/authn-api` rather than an API of its own because it is
   the same session, the same cookie and the same binding, and `/logout` is
   the authentication service's application.
+* **THE INVENTORY IS TWO TABS (rcbj, 2026-10-12)**, through the console's
+  `WebKit.tabbedPanels()` and tab rules in `LOGOUT_CSS`, with no script of
+  their own. **Sign out** opens by default: the global sign-out, then every
+  live session in ONE list (`sessionList()`: a checkbox where it can be
+  ended, a dash with the reason as its tooltip where it cannot, what it is,
+  its protocol family, since and until) and the ticked-items button.
+  **Details** holds everything else: the live count, each family's label,
+  protocol and specification, what a sign-out does to it, its rows' details
+  and refusal reasons (`familyDetails()`, read-only), the rows not listed,
+  and who may be named here. The JSON is unchanged; the browser jobs press
+  Global logout, which is on the first tab.
 * **THE RESULT IS TWO KINDS OF PAGE, by rcbj's plan on #577.** Where the
   act leaves the browser something to do — `fanOutOf()`'s iframes, cleanup
   images, LogoutRequest links and back-channel table, or a partner's
