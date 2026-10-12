@@ -9891,5 +9891,7 @@ export = {
   PROTOCOLS: PROTOCOLS,
   ENDPOINTS: ENDPOINTS,
   registeredRoutes: slot.forward('registeredRoutes'),
+  // The account API's rows, from its own table (#568).
+  accountApiEndpoints: slot.forward('accountApiEndpoints'),
   describeEndpoints: slot.forward('describeEndpoints')
 };

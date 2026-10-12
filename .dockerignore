@@ -178,3 +178,9 @@ tests/vectors
 # Cargo's build output for the Rust conversion (#444): gigabytes, and never
 # what an image is built from — an image builds its own.
 rust/target
+
+# THE PORTAL'S BUNDLES (#568), when a worktree holds a copy built by hand for
+# a protocol job's `draw()`: the image builds its own, and a hand-built one in
+# the source copy fails tests/typecheck.js's marker check.
+portal/portal.bundle.js
+portal/portal-spa.js*

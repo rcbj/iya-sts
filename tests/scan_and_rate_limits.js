@@ -134,7 +134,7 @@ function run(t) {
 
   // -----------------------------------------------------------------------
   t.log.info('=== 3. the applications page\'s cap ===');
-  t.check(/const limit = (?:self\.)?scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
+  t.check(/const limit = (?:self\.|this\.)?scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
             .test(portalSource) &&
           /config\.value\('portal\.applicationScanLimit'\)/.test(portalSource),
           'the portal slices the registry at portal.applicationScanLimit — ' +

@@ -531,6 +531,13 @@ class ProtocolEndpoints {
       metadata.ENDPOINTS.forEach(function (row) {
         names.set(row.path, row.name);
       });
+      // AND THE ACCOUNT API'S (#568), which `sts_metadata.ts` reads off that
+      // API's own table rather than keeping a second copy in `ENDPOINTS`.
+      if (typeof metadata.accountApiEndpoints === 'function') {
+        metadata.accountApiEndpoints().forEach(function (row) {
+          names.set(row.path, row.name);
+        });
+      }
       metadata.registeredRoutes().forEach(function (row) {
         methods.set(row.path, row.methods);
       });

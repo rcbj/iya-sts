@@ -524,9 +524,9 @@ class AccountApi {
     const { log } = this.deps;
     log.debug("Entering AccountApi.unauthorized(). " + code);
     res.set('WWW-Authenticate', 'DPoP realm="' + BASE + '"' +
-            // error-code: none — the code is the caller's, passed in `code`.
             (error ? ', error="' + error + '"' : '') +
             ', scope="' + SCOPE + '", algs="ES256 PS256 RS256 EdDSA"');
+    // error-code: none — the code is the caller's, passed in `code`.
     this.refuse(res, 401, code, why, { error: error || 'unauthorized' });
     log.debug("Leaving AccountApi.unauthorized().");
     return null;
