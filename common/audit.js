@@ -2039,8 +2039,11 @@ function recordHttp(req, res, detail) {
 // AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
 // sign-in's id and a forced password change's step id, each a bearer
 // capability over that sign-in, and the operation's path carries it. The row
-// keeps the operation and drops the id.
-const REDACTED_PATHS = /(\/authn-api\/(?:pending|password-change)\/)[^/?#]+/g;
+// keeps the operation and drops the id. And a second-factor or emailed-factor
+// step's id since #572 and #573 (`/authn-api/mfa/{id}`), the same capability
+// `?mfa=` always was.
+const REDACTED_PATHS =
+  /(\/authn-api\/(?:pending|password-change|mfa)\/)[^/?#]+/g;
 
 /**
  * A request path with any capability it carries replaced by `(redacted)`.

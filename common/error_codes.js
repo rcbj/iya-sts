@@ -6103,6 +6103,17 @@ const CODES = [
     summary: 'An operation of the sign-in API (/authn-api, #571) threw; the ' +
       'browser is told the sign-in could not continue.',
     spec: 'HTTP 500, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0329',
+    summary: 'The passkey step\'s ceremony was asked to be armed (POST ' +
+      '/authn-api/mfa/{id}/webauthn/options, #572) while the person had ' +
+      'still to choose one of several passkeys (the passkey policy offers ' +
+      'them one by one, #534).',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0330',
+    summary: 'An act on a second-factor or emailed-factor step of the ' +
+      'sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the ' +
+      'operation does not take, or a page that is not one.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
