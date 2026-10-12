@@ -622,9 +622,26 @@ async function theSurfaceDescribesItself() {
       "GET /xacml answered " + html.status);
     assert.ok(/text\/html/.test(html.type),
       "GET /xacml should be HTML for a person; it is " + html.type);
-    assert.ok(html.text.indexOf("Policy Decision Point") > 0,
-      "the page should say what this service is; it says " +
+    // SINCE #584 THE PAGE IS DRAWN IN THE BROWSER: the shell loads the
+    // description pages' script from this family's own path and carries
+    // the document in data-sts-state, so what it says is asserted there.
+    assert.ok(html.text.indexOf('<script src="/xacml/description.js"') > 0,
+      "GET /xacml should be the description pages' shell; it is " +
       html.text.slice(0, 200));
+    const m = /data-sts-state="([^"]*)"/.exec(html.text);
+    const state = m ? JSON.parse(m[1].replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")) : null;
+    assert.ok(state && state.view && state.view.kind === "xacml" &&
+              state.view.document &&
+              /XACML 3\.0/.test(state.view.document.specification),
+      "the shell should carry the XACML description; it carries " +
+      JSON.stringify(state).slice(0, 200));
+  });
+  const script = await xGet("/xacml/description.js");
+  check("its script answers a caller the page admits", function () {
+    assert.strictEqual(script.status, 200,
+      "GET /xacml/description.js answered " + script.status);
   });
 
   const doc = await xGet("/xacml?format=json");

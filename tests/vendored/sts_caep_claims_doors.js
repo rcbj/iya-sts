@@ -581,7 +581,8 @@ async function test() {
     });
 
   log.info("=== f. GET /ssf states the tightened-policy limitation ===");
-  const page = await send(realmBase + "/ssf", {});
+  // The description document, which the page has drawn from since #584.
+  const page = await send(realmBase + "/ssf?format=json", {});
   check("GET /ssf says a tightened authentication policy sends nothing",
     function () {
       assert.strictEqual(page.status, 200, page.raw.slice(0, 300));

@@ -294,8 +294,13 @@ function childMain() {
             'and GET /spiffe says it is served, on the declaration',
             tcpOf(doc));
       const page = await spiffeDocument(true);
-      check(/served \(product, source declared authenticated\)/.test(
-              page.html || ''),
+      // The page is drawn in the browser since #584, from the view its
+      // shell carries: the state is read there.
+      const shellState = /data-sts-state="([^"]*)"/.exec(page.html || '');
+      check(!!shellState &&
+            /served \(product, source declared authenticated\)/.test(
+              shellState[1]) &&
+            /\/spiffe\/description\.js/.test(page.html || ''),
             'and so does the page a person reads');
       let answer = await fetchJwt(id('/probe/from-loopback'));
       check(answer.ok && answer.ids.length === 1 &&
