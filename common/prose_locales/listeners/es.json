@@ -316,20 +316,12 @@
     "text": "El endpoint del paquete SPIFFE."
   },
   "listeners.applications.tls.label": {
-    "en": "f0128c74e6e50ff1",
-    "text": "Diagnóstico TLS"
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
   },
   "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "Las vistas TLS y la puerta del almacén de confianza de clientes."
-  },
-  "listeners.applications.devices.label": {
-    "en": "f8fcb8ceb53f6ebf",
-    "text": "Registro de dispositivos"
-  },
-  "listeners.applications.devices.what": {
-    "en": "78a9dc85ad771ffa",
-    "text": "Los controles de prueba del registro de dispositivos."
+    "en": "22e07124e7ed4aca",
+    "text": "El certificado de servidor que presenta este servicio."
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",

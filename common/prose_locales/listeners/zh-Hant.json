@@ -316,20 +316,12 @@
     "text": "SPIFFE 組合端點。"
   },
   "listeners.applications.tls.label": {
-    "en": "f0128c74e6e50ff1",
-    "text": "TLS 診斷"
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
   },
   "listeners.applications.tls.what": {
-    "en": "63c2c90904d43ff2",
-    "text": "TLS 檢視以及用戶端信任存放區的入口。"
-  },
-  "listeners.applications.devices.label": {
-    "en": "f8fcb8ceb53f6ebf",
-    "text": "裝置註冊"
-  },
-  "listeners.applications.devices.what": {
-    "en": "78a9dc85ad771ffa",
-    "text": "裝置登錄的測試控制項。"
+    "en": "22e07124e7ed4aca",
+    "text": "本服務所出示的伺服器憑證。"
   },
   "listeners.map.sentences.rpIdNotCommon": {
     "en": "629aac67a80b3ff9",

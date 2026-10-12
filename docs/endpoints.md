@@ -5,7 +5,7 @@ nav_order: 4
 
 # Endpoints
 
-> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/krb5/service`, `/krb5/principals`, `/tls`, `/tls/forwarded` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is no list of endpoints in this documentation, and that is deliberate.**
 There are 264 of them, they change, and a list written here would be wrong within
@@ -112,8 +112,10 @@ looked as though they belonged on the main listener, while `/admin/sts-metadata`
 — walking that listener's router — could not see them; their rows there were the
 plain-HTTP views only and the listeners were described in the text. Both have
 been deleted. Everything that family answers is now a route on the
-router the page walks: `/tls`, `/tls/sign-in`, `/tls/server-certificate`,
-`/tls/forwarded` and the two truststore controls.
+router the page walks: `/tls/sign-in` and `/tls/server-certificate` (`/tls`,
+`/tls/forwarded` and the two open truststore controls were deleted by #597;
+what the first two showed is Monitoring → TLS connection, over
+`GET /admin-api/tls-connection`).
 
 ## The index of its own cryptography
 
@@ -181,7 +183,7 @@ them can drift from what the service does:
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
 | `GET /admin/ldap/federations` | The federation register as the directory holds it, with its schema — and the one container here where an `ldapmodify` is a security change |
-| `GET /tls` | The certificate the main port presents, the client certificate it asks for, and what a verified one does and does not mean (`GET /tls/sign-in` turns one into a session) |
+| `GET /admin/tls-connection` | Monitoring → TLS connection: the TLS version and cipher of the console's own request, the client certificate its connection presented (verified or not, the identity gate's answer, revocation), and every forwarding header with what was believed of it. Admin Read in both modes; `GET /admin-api/tls-connection` is its management-API twin (#597) |
 | `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. An anchor added at runtime is persisted in the default realm's `ou=trustAnchors`; one from the file comes back at every start |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
 | `GET /krb5/principals` | The principal database, passwords included in development mode for the reason that page gives; in product mode the passwords are withheld and the page says why. A directory person keyed from their own password is listed with `directoryKeys: true` and never with a key |

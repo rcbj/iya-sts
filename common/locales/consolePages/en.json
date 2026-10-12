@@ -104,6 +104,7 @@
   "title.ssf": "Shared Signals",
   "title.ssf-dead-letters": "Dead letters",
   "title.ssf-transmitters": "Signals from partners",
+  "title.tls-connection": "TLS connection",
   "title.tls-trust": "Client-certificate truststore",
   "title.token-lifetimes": "Token lifetimes",
   "title.tokens-credential": "Tokens — one credential",

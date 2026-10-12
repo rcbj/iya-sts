@@ -652,16 +652,6 @@ class DevicesPage {
         path: json.mdmFeed.path, scope: json.mdmFeed.scope,
         max: String(json.mdmFeed.maxReports),
         by: json.mdmFeed.identifiedBy.join(', ') }) + '</td></tr>' +
-      // The test control's row only where this realm is served it (#585):
-      // a product realm has no such door to list.
-      (json.testControl && json.testControl.open
-        ? '<tr><td>' + t.html('consoleDevices.registrationHtml.doorTest') +
-          '</td><td><span class="state-valid">' +
-          t.html('consoleDevices.registrationHtml.testOpen') +
-          '</span></td><td>' +
-          t.html('consoleDevices.registrationHtml.testHow',
-                 { path: json.testControl.path }) + '</td></tr>'
-        : '') +
       '<tr><td>' + t.html('consoleDevices.registrationHtml.doorCaep') +
       '</td><td>' +
       state(true) + '</td><td>' +

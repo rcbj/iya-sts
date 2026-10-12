@@ -1810,8 +1810,15 @@ function poolFor(url) {
 // **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
 // every process of the node, and only the front process knows the workers and
 // can ask them. A worker drawing it would list itself alone.
+//
+// **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
+// argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:
+// what the SERVER saw of the connection the request arrived on. Answered
+// by a worker it would describe the unix socket from the front process.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
+                          '/admin/tls-connection',
+                          '/admin-api/tls-connection',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers',

@@ -275,8 +275,8 @@ function checkDispatchEverything(t) {
             'proxied it would describe the unix socket between the front ' +
             'process and a worker — which is not a fact about the caller',
             String(pool.dispatched('/tls')));
-    t.check(pool.dispatched('/tls/trust') === false,
-            'nor anything under it', String(pool.dispatched('/tls/trust')));
+    t.check(pool.dispatched('/tls/sign-in') === false,
+            'nor anything under it', String(pool.dispatched('/tls/sign-in')));
 
     // ---------------------------------------------------------------------
     // AND SPIFFE **IS** DISPATCHED, which is an assertion about a fix rather

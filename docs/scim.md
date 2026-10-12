@@ -4,8 +4,6 @@ title: SCIM
 
 # SCIM
 
-> **Development mode only (#585):** `/tls/trust` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a **SCIM 2.0 service provider** at `/scim/v2`
 ([RFC 7642](https://www.rfc-editor.org/rfc/rfc7642),
 [RFC 7643](https://www.rfc-editor.org/rfc/rfc7643),
@@ -229,8 +227,7 @@ is spent once across every node.
 
 HOBA's signature is RSA with SHA-256 over RFC 7486 section 5's length-prefixed
 blob. The key is registered at `POST /.well-known/hoba/register` — in
-development unauthenticated, for the reason `POST /tls/trust` is: it is how a
-caller **gets** a credential — and it lands on the person's own directory entry
+development unauthenticated: it is how a caller **gets** a credential — and it lands on the person's own directory entry
 as `hobaPublicKey`, so an `ldapsearch` and `/admin/users` show it. A HOBA
 credential names its key by id alone, which is why a key id already registered
 to another account is refused in every mode. In development the shared Digest

@@ -284,8 +284,8 @@
     "text": "Den webbläsarsession för inloggning som den här tjänsten redan har — den som /authn/login upprättar och WS-Federation delar — erbjuden här eftersom avsnitt 2 namnger den: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Det är vad som gör att ett SCIM-anrop från en sida på den här tjänsten fungerar utan en andra autentiseringsuppgift. Det finns ingen utmaning för den: en server kan inte be om en cookie i WWW-Authenticate, så den används när den finns där och krävs aldrig."
   },
   "auth.schemes.clientcert": {
-    "en": "9241c3d8b86de17f",
-    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 namnger. Tillgängligt endast där den här begäran kom över TLS med ett certifikat som VERIFIERADES mot ett ankare som någon skickat med POST till /tls/trust — så på huvudporten endast när den är bunden som HTTPS (global.https, som oauth2.rfc9700 slår på). Identiteten är subjektet i RFC 4514-form, vilket är samma sträng som /admin/users och katalogen redan arkiverar ett certifikat under. Det registreras inte igen här: tls_server.js registrerar avsiktligt ett certifikat en gång per ANSLUTNING, och att räkna det per begäran skulle göra det ogjort från andra hållet."
+    "en": "2d55447d0d4792ee",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 namnger. Tillgängligt endast där den här begäran kom över TLS med ett certifikat som VERIFIERADES mot ett ankare i klientens förtroendelager (/admin/tls/trust) — så på huvudporten endast när den är bunden som HTTPS (global.https, som oauth2.rfc9700 slår på). Identiteten är subjektet i RFC 4514-form, vilket är samma sträng som /admin/users och katalogen redan arkiverar ett certifikat under. Det registreras inte igen här: tls_server.js registrerar avsiktligt ett certifikat en gång per ANSLUTNING, och att räkna det per begäran skulle göra det ogjort från andra hållet."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",

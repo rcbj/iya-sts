@@ -197,7 +197,7 @@ so must `admin-ui/admin.ts`.
    let a third function make this decision a third way.
 
    **NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER.** `X-Client-Cert` and its
-   dozen vendor spellings are listed on `/tls/forwarded` and read by nothing:
+   dozen vendor spellings are listed on Monitoring → TLS connection and read by nothing:
    a certificate in a header is one anybody can forge, so RFC 8705 binding and
    mTLS client authentication both take it off the TLS handshake. The cost —
    a proxy terminating mTLS cannot pass the certificate through — is stated
@@ -797,7 +797,7 @@ so must `admin-ui/admin.ts`.
    8705 section 3 binds to the CERTIFICATE and permits a self-signed one
    explicitly — the proof is that the same key completed this handshake, not
    that a CA vouched for it. Requiring verification would make the feature
-   unreachable, since `/tls/trust` starts empty by design.
+   unreachable, since the client truststore starts empty by design.
 
    **A REVOKED certificate is NOT verified, since 2026-09-12**, and it still
    binds. `peerVerified()` reads `req.certificateRevocation` — which
@@ -3830,6 +3830,15 @@ through `/admin/oauth2` and `/admin-api/config/set` behind a credential — the
 endpoint writes it in development and `mode.opensTestControls()` refuses it in
 product. Writing the value the setting would have anyway CLEARS the override,
 so a test that turns nonces on and off leaves no `source: override` row behind.
+**AND SINCE #597 (2026-10-12) THE ENDPOINT IS GONE**, both methods, with
+`dpop.setNonceMode()` and `dpop.forgetProofs()` that only it called
+(`STS-OAUTH-0179` and `0180` retired). The setting is the one door in both
+modes — its home is `/admin/oauth2` (the `OAuth 2.0 / OIDC` group in
+`SETTING_HOMES`) and `POST /admin-api/config/set`; a test restores it with
+`clearOverride()`. The replay-cache flush the POST did is not replaced: a
+change of nonce policy leaves remembered proofs alone, which is what every
+other setting change does. `tests/oauth_oid4vc_hardcoded.js` section 3 writes
+it through the management API in a realm and reads it back per realm.
 
 **RFC 7591 REGISTRATION IS CLOSED IN PRODUCT** unless `oauth2.openRegistration`
 is on, and `registrationOpen()` is read by the endpoint AND the metadata so that
@@ -5465,3 +5474,5 @@ as a person's at mint (the subject kind is read off the grant), and the
 `/oauth2/commands/mock-rp` (both methods; its product 404 of its own is gone) and `/dpop/nonce-mode` — **both halves**: the write's 403 `STS-OAUTH-0178` is retired, and the read went with it, because RFC 9449 section 8's `use_dpop_nonce` already tells a client the policy. In product `oauth2.dpopNonceRequired` is set on `/admin/oauth2` or with `POST /admin-api/config/set`. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
 
 The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an.
+
+**`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).

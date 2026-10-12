@@ -2020,10 +2020,10 @@ do
 
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
-    # The truststore is a Map in the service's process that ANY job can empty:
-    # `POST /tls/trust/clear` needs no credential in development mode (every
-    # mode but `product`, which refuses it), and a job exercising the truststore is entitled
-    # to use it. Nothing noticed until 2026-09-06, when
+    # The truststore is a Map in the service's process that ANY job can change:
+    # `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+    # job exercising the truststore through /admin-api/tls/trust is entitled
+    # to remove what it finds. Nothing noticed until 2026-09-06, when
     # a client certificate stopped being a turnstile — this container's pull,
     # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
     # one such job left it authenticating as nobody for the rest of the run,

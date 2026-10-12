@@ -1171,6 +1171,14 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
+  // `/tls/forwarded` and the two open truststore acts unrouted; the console
+  // page and its operation, `GET /admin-api/tls-connection`, describing a
+  // request with no client certificate and its forwarding headers, and one
+  // presenting a certificate whose Root this job added through
+  // `/admin-api/tls/trust/add` (and removes again). `local: true`: this
+  // repository's console and management API.
+  { file: 'sts_tls_connection.js',       browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

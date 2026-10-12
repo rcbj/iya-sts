@@ -104,6 +104,7 @@
   "title.ssf": "Shared Signals",
   "title.ssf-dead-letters": "無法投遞的訊息",
   "title.ssf-transmitters": "來自夥伴的訊號",
+  "title.tls-connection": "TLS 連線",
   "title.tls-trust": "用戶端憑證信任存放區",
   "title.token-lifetimes": "權杖有效期",
   "title.tokens-credential": "權杖——單一憑證",

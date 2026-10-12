@@ -331,33 +331,13 @@
     "en": "b95adde7badbdef3",
     "text": "Registrera en publik HOBA-nyckel"
   },
-  "endpoints.route./tls.name": {
-    "en": "80219fab36a81bcc",
-    "text": "Vad TLS-slutpunkten är"
-  },
-  "endpoints.route./tls/pages.js.name": {
-    "en": "02629f4022cc882e",
-    "text": "TLS-sidornas skript"
-  },
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "Logga in med ett klientcertifikat"
   },
-  "endpoints.route./tls/forwarded.name": {
-    "en": "d077fbd8d5da171e",
-    "text": "Vad en proxy berättade för den här tjänsten"
-  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "Servercertifikatet (PEM)"
-  },
-  "endpoints.route./tls/trust.name": {
-    "en": "32502f26135e90a0",
-    "text": "Lita på en utfärdare av klientcertifikat"
-  },
-  "endpoints.route./tls/trust/clear.name": {
-    "en": "de8fc06fa11fa918",
-    "text": "Töm förtroendelagret för klientcertifikat"
   },
   "endpoints.route./.name": {
     "en": "a064be014d290217",
@@ -1051,6 +1031,10 @@
     "en": "a1951930186f3dee",
     "text": "Lägg till eller ta bort ett förtroendeankare för klientcertifikat"
   },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "Vad tjänsten såg av en begärans TLS-anslutning"
+  },
   "endpoints.route./admin-api/kerberos/claims.name": {
     "en": "5033ca8bef02346f",
     "text": "Kerberos PAC-anspråk"
@@ -1562,14 +1546,6 @@
   "endpoints.route./oauth2/token.name": {
     "en": "f60f44154acbc444",
     "text": "Tokenslutpunkt"
-  },
-  "endpoints.route./devices/test/compliance.name": {
-    "en": "8bf03cfce0422802",
-    "text": "Testkontroll för enhetsefterlevnad (inte en specifikationsslutpunkt)"
-  },
-  "endpoints.route./dpop/nonce-mode.name": {
-    "en": "ea5ac586b3661176",
-    "text": "Brytare för DPoP-nonce (inte en specifikationsslutpunkt)"
   },
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",

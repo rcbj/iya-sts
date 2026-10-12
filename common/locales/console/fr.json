@@ -121,6 +121,7 @@
   "nav.cert-issuance": "Émission de certificats",
   "nav.spiffe-trust-domain": "Domaine de confiance",
   "nav.tls": "TLS / TLS mutuel",
+  "nav.tls-connection": "Connexion TLS",
   "nav.tls-trust": "Magasin de confiance des certificats clients",
   "nav.users": "Utilisateurs",
   "nav.groups": "Groupes",

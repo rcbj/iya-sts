@@ -113,11 +113,10 @@ const APPLICATIONS = [
   { id: 'oauth-oidc', label: 'OAuth 2.0 / OpenID Connect', session: true,
     what: 'The authorization server and OpenID provider, their discovery ' +
           'documents and the access-token status list.',
-    prefixes: ['/oauth2', '/authn-api/consent', '/status-lists', '/dpop',
+    prefixes: ['/oauth2', '/authn-api/consent', '/status-lists',
                '/.well-known/openid-configuration',
                '/.well-known/oauth-authorization-server',
                '/.well-known/webfinger'],
-    demoPrefixes: ['/dpop'],
     exact: [] },
   { id: 'saml2', label: 'SAML 2.0', session: true,
     what: 'The SAML 2.0 identity provider.',
@@ -183,12 +182,9 @@ const APPLICATIONS = [
   { id: 'spiffe', label: 'SPIFFE',
     what: 'The SPIFFE bundle endpoint.',
     prefixes: ['/spiffe'], exact: [] },
-  { id: 'tls', label: 'TLS diagnostics',
-    what: 'The TLS views and the client truststore\'s door.',
-    prefixes: ['/tls'], exact: [] },
-  { id: 'devices', label: 'Device registration', demo: true,
-    what: 'The device register\'s test controls.',
-    prefixes: ['/devices'], exact: [] }
+  { id: 'tls', label: 'TLS',
+    what: 'The server certificate this service presents.',
+    prefixes: ['/tls'], exact: [] }
 ];
 
 const byId = {};

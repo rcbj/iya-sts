@@ -121,6 +121,7 @@
   "nav.cert-issuance": "憑證簽發",
   "nav.spiffe-trust-domain": "信任網域",
   "nav.tls": "TLS / 雙向 TLS",
+  "nav.tls-connection": "TLS 連線",
   "nav.tls-trust": "用戶端憑證信任存放區",
   "nav.users": "使用者",
   "nav.groups": "群組",

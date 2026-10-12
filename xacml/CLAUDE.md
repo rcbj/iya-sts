@@ -2135,7 +2135,7 @@ ADMIN_READ alone, both, and an empty required-all.
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-`GET /xacml/protected`, the embedded PEP's demonstration; `GET /xacml` lists it (and `pep`) only where served, and names the trust-anchor door it is (`POST /tls/trust` in a development process, `POST /admin-api/tls/trust/add` otherwise). `xacml.pepBias`, which only it reads, is `onlyWhile: 'servesDemoEndpoints'`. `sts_xacml_endpoints.js` and `sts_xacml_editor.js` create their throwaway realm in development in every mode. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+`GET /xacml/protected`, the embedded PEP's demonstration; `GET /xacml` lists it (and `pep`) only where served, and names the trust-anchor door, `POST /admin-api/tls/trust/add` (the open `POST /tls/trust` was deleted by #597). `xacml.pepBias`, which only it reads, is `onlyWhile: 'servesDemoEndpoints'`. `sts_xacml_endpoints.js` and `sts_xacml_editor.js` create their throwaway realm in development in every mode. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
 
 ## The description page is a static surface's shell (#584, 2026-10-12)
 

@@ -724,12 +724,12 @@
     "text": "示範、模擬與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "95c0a71b7859de3e",
-    "text": "提供並列出：命令模擬依賴方（/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，/xacml/protected，/dpop/nonce-mode，/devices/test/compliance，/tls、/tls/forwarded、/tls/trust 與 /tls/trust/clear。"
+    "en": "f576a305a27eb0c9",
+    "text": "提供並列出：命令模擬依賴方（/oauth2/commands/mock-rp），示範簽發者與驗證者頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected，以及 /xacml/protected。"
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們，但信任存放區的入口與受保護服務的通訊端除外，兩者屬於處理程序。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
+    "en": "b82d8439b897527e",
+    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們，但受保護服務的通訊端除外，它屬於處理程序。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

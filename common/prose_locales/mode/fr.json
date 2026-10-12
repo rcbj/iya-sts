@@ -724,12 +724,12 @@
     "text": "Les points de terminaison de démonstration, simulés et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "95c0a71b7859de3e",
-    "text": "Servis et listés : la partie de confiance simulée des commandes (/oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, /xacml/protected, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust et /tls/trust/clear."
+    "en": "f576a305a27eb0c9",
+    "text": "Servis et listés : la partie de confiance simulée des commandes (/oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, et /xacml/protected."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "0ca09045a89e11d0",
-    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve, sauf la porte du magasin de confiance et le socket du service protégé, qui appartiennent au processus. Les portes d’administration restent : /admin-api démarre une vérification, lit les principaux et modifie le magasin de confiance, et le portail utilisateur fait une offre de justificatif."
+    "en": "b82d8439b897527e",
+    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve, sauf le socket du service protégé, qui appartient au processus. Les portes d’administration restent : /admin-api démarre une vérification et lit les principaux, et le portail utilisateur fait une offre de justificatif."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

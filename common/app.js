@@ -1344,8 +1344,9 @@ app.get('/healthcheck', function (req, res) {
 // process keeps its demonstrations (that is how the suite's throwaway
 // `{"global.mode":"development"}` realms reach them). `processDemoOnly` asks
 // the DEFAULT realm, for a door that changes something every realm shares —
-// the client-certificate truststore at `/tls/trust` — where a development
-// realm in a product process must not be a way in.
+// the protected Kerberos service's socket since #597 deleted the open
+// truststore doors, `/tls/trust` and `/tls/trust/clear`, which carried it —
+// where a development realm in a product process must not be a way in.
 // ---------------------------------------------------------------------------
 /**
  * Passes a request on to a demonstration route's handler where the ambient

@@ -9,8 +9,8 @@
 #
 # What ./run-tests.sh's mintThePepCredential() does, for the task in
 # environment/runner.tf: wait for the load balancer, mint a Root, an Issuing
-# CA and a TLS client leaf with tests/tools/pep-credential.js (which POSTs the
-# Root to /tls/trust), and leave them on the task's shared volume at
+# CA and a TLS client leaf with tests/tools/pep-credential.js (which adds the
+# Root through POST /admin-api/tls/trust/add), and leave them on the task's shared volume at
 # /shared/pep, with server/ made for the listener pair the job writes later.
 #
 # A FAILURE IS NOT THE RUN'S: the PEP starts without a certificate, every
@@ -45,7 +45,8 @@ done
 
 # A PRODUCT-MODE SERVICE ACCEPTS AN ANCHOR ONLY THROUGH /admin-api
 # (2026-09-18), so the credential step mints the management API's token when
-# the task hands it the client secret; pep-credential.js tries that door first.
+# the task hands it the client secret; since #597 it is pep-credential.js's
+# only door, so without the secret there is no credential.
 if [ -n "${STS_ADMIN_API_CLIENT_SECRET:-}" ];
 then
   STS_ADMIN_API_TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || \

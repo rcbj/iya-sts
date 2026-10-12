@@ -1424,6 +1424,25 @@ the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
 
 
+## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
+
+Rule 7's twin of `/admin/tls-connection`, which replaced the development
+pages `/tls` and `/tls/forwarded` (rcbj's decision 3 on #591): what this
+service saw of THE REQUEST THAT CALLED IT — its TLS connection, the client
+certificate on it, and its forwarding headers with what was believed. Admin
+Read, in both modes; it changes nothing. The view is `tls/tls_server.js`'s
+`connectionView()`, required LAZILY in the handler (that module is at 20,
+after this one, and its routes are registered at its require). Pinned to the
+front process with the page (`common/request_pool.js`'s `NEVER_DISPATCHED`),
+because a worker's socket is the unix socket from the front process. Not a
+service operation: a realm administrator may call it. `tls/CLAUDE.md` argues
+the rest; `tests/tls_connection_page.js` and
+`tests/vendored/sts_tls_connection.js` hold it.
+
+**AND THIS IS NOW THE TRUSTSTORE'S ONLY RUNTIME DOOR BESIDE THE CONSOLE'S**
+(#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
+`tests/tools/pep-credential.js` has no fallback.
+
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
 `GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST
@@ -2146,8 +2165,9 @@ deliberate:
 `admin_api_spec.ts`'s `scopeForMethod()` states the same exception, and
 `tests/admin_api_document_security.js` compares the two and reads the
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
-is the handler, shared with development's test control at
-`/devices/test/compliance` (`mode.opensTestControls()`).
+is the handler. It was shared with development's test control at
+`/devices/test/compliance` until #597 deleted that route; the feed is the one
+door in both modes.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 
