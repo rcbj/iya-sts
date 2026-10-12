@@ -55,6 +55,39 @@ const BASES: Record<string, string> = {
   saml11: '/saml11/rp'
 };
 
+// THE KEYS A VIEW'S VALUE CHOOSES, written out whole so that every key
+// this module draws is named in it (`tests/i18n_catalogs.js` E reads them).
+const WSFED_REQUESTS: Array<[string, string, string]> = [
+  ['saml11', 'mockRp.wsfed.request.saml11', 'mockRp.wsfed.request.saml11Note'],
+  ['saml2', 'mockRp.wsfed.request.saml2', ''],
+  ['trust13', 'mockRp.wsfed.request.trust13',
+   'mockRp.wsfed.request.trust13Note'],
+  ['wfresh', 'mockRp.wsfed.request.wfresh', 'mockRp.wsfed.request.wfreshNote'],
+  ['multifactor', 'mockRp.wsfed.request.multifactor',
+   'mockRp.wsfed.request.multifactorNote'],
+  ['hardware', 'mockRp.wsfed.request.hardware',
+   'mockRp.wsfed.request.hardwareNote']
+];
+const SAML2_BINDINGS: Record<string, string> = {
+  post: 'mockRp.saml2.binding.post',
+  redirect: 'mockRp.saml2.binding.redirect',
+  artifact: 'mockRp.saml2.binding.artifact'
+};
+const SAML2_ARRIVED: Record<string, string> = {
+  post: 'mockRp.saml2.result.sub.post',
+  redirect: 'mockRp.saml2.result.sub.redirect',
+  artifact: 'mockRp.saml2.result.sub.artifact'
+};
+const TITLES: Record<string, string> = {
+  'wsfed start': 'mockRp.wsfed.title.start',
+  'wsfed result': 'mockRp.wsfed.title.result',
+  'saml2 start': 'mockRp.saml2.title.start',
+  'saml2 result': 'mockRp.saml2.title.result',
+  'saml2 unresolved': 'mockRp.saml2.title.unresolved',
+  'saml11 start': 'mockRp.saml11.title.start',
+  'saml11 spent': 'mockRp.saml11.title.spent'
+};
+
 /**
  * The mock relying parties' pages. A static utility class.
  */
@@ -117,18 +150,15 @@ class MockRpPages {
     (view.requests || []).forEach(function (one: Json) {
       href[one.id] = one.href;
     });
-    const request = function (id: string, note: boolean): string {
-      return MockRpPages.item(href[id] || '',
-        t.html('mockRp.wsfed.request.' + id),
-        note ? t.html('mockRp.wsfed.request.' + id + 'Note') : '');
-    };
+    const requests = WSFED_REQUESTS.map(function (row) {
+      return MockRpPages.item(href[row[0]] || '', t.html(row[1]),
+                              row[2] ? t.html(row[2]) : '');
+    }).join('');
     return '<h1>' + t.html('mockRp.wsfed.heading') + '</h1>' +
       '<p class="sub">' + t.html('mockRp.wsfed.sub') + '</p>' +
       '<p>' + t.html('mockRp.wsfed.realm', { realm: view.realm }) + '</p>' +
       '<h2>' + t.html('mockRp.start.heading') + '</h2><ul>' +
-      request('saml11', true) + request('saml2', false) +
-      request('trust13', true) + request('wfresh', true) +
-      request('multifactor', true) + request('hardware', true) + '</ul>' +
+      requests + '</ul>' +
       '<h2>' + t.html('mockRp.then.heading') + '</h2><ul>' +
       MockRpPages.item(view.signOut, t.html('mockRp.wsfed.signOut'),
                        t.html('mockRp.wsfed.signOutNote')) +
@@ -183,7 +213,8 @@ class MockRpPages {
    */
   static saml2Start(view: Json, t: Json): string {
     const items = (view.requests || []).map(function (one: Json) {
-      const binding = t.text('mockRp.saml2.binding.' + one.binding);
+      const binding = t.text(SAML2_BINDINGS[one.binding] ||
+                             SAML2_BINDINGS.post);
       const label = t.html(one.signed ? 'mockRp.saml2.request'
                                       : 'mockRp.saml2.requestUnsigned',
                            { binding: binding });
@@ -219,10 +250,9 @@ class MockRpPages {
    */
   static saml2Result(view: Json, t: Json): string {
     const attributes = view.attributes || [];
-    const arrived = ['post', 'redirect', 'artifact']
-      .indexOf(view.arrived) >= 0 ? view.arrived : 'post';
+    const arrived = SAML2_ARRIVED[view.arrived] ? view.arrived : 'post';
     return '<h1>' + t.html('mockRp.saml2.result.heading') + '</h1>' +
-      '<p class="sub">' + t.html('mockRp.saml2.result.sub.' + arrived,
+      '<p class="sub">' + t.html(SAML2_ARRIVED[arrived],
                                  { entityId: view.entityId }) + '</p>' +
       (view.ok
         ? '<div class="ok">' + t.html('mockRp.saml2.result.ok',
@@ -402,8 +432,8 @@ class MockRpPages {
       return ctx.t.text(view.profile === 'artifact'
         ? 'mockRp.saml11.result.artifact' : 'mockRp.saml11.result.post');
     }
-    return ctx.t.text('mockRp.' + family + '.title.' +
-      (kind === 'start' ? 'start' : kind));
+    return ctx.t.text(TITLES[family + ' ' + kind] ||
+                      TITLES[family + ' start'] || TITLES['wsfed start']);
   }
 
   /**
