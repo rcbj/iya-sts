@@ -34,5 +34,6 @@
   "tab.signOut": "Sign out",
   "tab.details": "Details",
   "list.colProtocol": "Protocol",
-  "inventory.listNote": "Tick them in the list above. Nothing ticked ends nothing."
+  "inventory.listNote": "Tick them in the list above. Nothing ticked ends nothing.",
+  "inventory.detailsNote": "Tick tokens and credentials in the tables above. Nothing ticked ends nothing."
 }

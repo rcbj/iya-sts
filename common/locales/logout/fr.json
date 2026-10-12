@@ -34,5 +34,6 @@
   "tab.signOut": "Se déconnecter",
   "tab.details": "Détails",
   "list.colProtocol": "Protocole",
-  "inventory.listNote": "Cochez-les dans la liste ci-dessus. Rien de coché ne termine rien."
+  "inventory.listNote": "Cochez-les dans la liste ci-dessus. Rien de coché ne termine rien.",
+  "inventory.detailsNote": "Cochez les jetons et les identifiants dans les tableaux ci-dessus. Rien de coché ne termine rien."
 }

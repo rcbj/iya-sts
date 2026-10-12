@@ -34,5 +34,6 @@
   "tab.signOut": "Logga ut",
   "tab.details": "Detaljer",
   "list.colProtocol": "Protokoll",
-  "inventory.listNote": "Markera dem i listan ovan. Inget markerat avslutar ingenting."
+  "inventory.listNote": "Markera dem i listan ovan. Inget markerat avslutar ingenting.",
+  "inventory.detailsNote": "Markera token och autentiseringsuppgifter i tabellerna ovan. Inget markerat avslutar ingenting."
 }
