@@ -470,7 +470,7 @@ class ProtocolEndpoints {
       ].map(route),
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
-        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
+        '/oauth2/commands/callback'
       ].map(route)
     };
   }

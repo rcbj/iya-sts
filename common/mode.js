@@ -3060,14 +3060,13 @@ const REQUIREMENTS = [
   // endpoint.
   { id: 'demo-endpoints',
     what: 'The demonstration, mock and test-control endpoints exist',
-    development: 'Served and listed: the commands mock relying party ' +
-                 '(/oauth2/commands/mock-rp), the demonstration issuer and ' +
+    development: 'Served and listed: the demonstration issuer and ' +
                  'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
                  '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
                  'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
                  'endpoints, the protected Kerberos service (/krb5/service ' +
                  'and its TCP socket), /krb5/principals, /spnego and ' +
-                 '/spnego/protected, /xacml/protected, ' +
+                 '/spnego/protected, ' +
                  '/dpop/nonce-mode, /devices/test/compliance, /tls, ' +
                  '/tls/forwarded, /tls/trust and /tls/trust/clear.',
     product: 'None of them is served or listed. Each answers exactly as a ' +

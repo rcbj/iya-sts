@@ -8478,14 +8478,6 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where a relying party POSTs an _async command\'s result or asks ' +
           'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
           'the command carried (#151). 204, or RFC 6750\'s errors.' },
-  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
-    name: 'Mock relying party command endpoint (not a spec endpoint)',
-    specs: ['oidc-provider-commands'],
-    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
-          'command_endpoint that checks a Command Token as section 9 asks ' +
-          'and answers every account and tenant command, streams included; ' +
-          'GET shows what it holds. 404 in product mode.',
-    demo: true },
   { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page over JSON',
     specs: ['oidc-claims-aggregation'],

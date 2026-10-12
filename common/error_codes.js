@@ -9168,8 +9168,10 @@ const CODES = [
   { code: 'STS-OAUTH-0782',
     summary: 'The mock relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
-      'would (#151).',
-    spec: 'HTTP 400, 401 or 409 {error}' },
+      'would (#151). ' +
+      'Retired 2026-10-12 (#596): the mock relying party was deleted; the ' +
+      'test peer plays a Provider Commands relying party',
+    spec: 'HTTP 400, 401 or 409 {error}', retired: true },
   { code: 'STS-OAUTH-0783',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
