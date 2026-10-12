@@ -184,13 +184,23 @@ reaches it: an OAuth authorization request, a SAML `AuthnRequest`, a
 continues. The door needs a pending sign-in; `/authn/wallet` reached with
 nothing pending is refused (`STS-VC-0053`).
 
+Both pages are part of the sign-in screen's application: the browser loads
+the page, and its script calls the sign-in API. Scripts are required.
+
 ```
-GET  /authn/wallet?authn={id}          Set-Cookie: sts_wallet_binding=…
-  303 -> /authn/wallet/wait?…          the Digital Credentials API page
-       browser: navigator.credentials.get({ digital: … })
-POST /authn/wallet/dc-api              the answer, verified; session started
-  303 -> the original request
+GET  /authn/wallet?authn={id}                 the page
+     page: GET  /authn-api/wallet?authn={id}  what is being started
+     page: POST /authn-api/wallet             Set-Cookie: sts_wallet_binding=…
+           -> /authn/wallet/wait?…            the Digital Credentials API page
+     page: GET  /authn-api/wallet/{state}     the request, the links
+     browser: navigator.credentials.get({ digital: … })
+     page: POST /authn-api/wallet/{state}/dc-api
+           the answer, verified; Set-Cookie: sts_session=…
+  -> the original request
 ```
+
+Every `POST` to `/authn-api` is JSON, from this service's own origin, with the
+`X-CSRF-Token` the page was given for the browser's session.
 
 **Whom it signs in.** Only a **credential this realm issued, recorded in the
 issued-credentials register**, and only as **the directory entry it was issued
@@ -234,39 +244,40 @@ back through the page, encrypted by default (`dc_api.jwt`, ECDH-ES to a P-256
 key made for this one sign-in; `oid4vp.signInDcApiResponseMode` can ask for
 `dc_api` in the clear). For this path the audience is `origin:<origin>`, so a
 presentation made for another path does not sign in here.
-`/authn/wallet/dc-api` also requires the `Origin` header to be this service's
-own (`STS-VC-0074`). A wallet on another device is reached by the platform over
+The answer's `Origin` header must be this service's own (`STS-VC-0074`). A wallet on another device is reached by the platform over
 a transport that proves it is near that browser, which is what a relayed QR
 code cannot be.
 
-**The page has one script**, `/authn/wallet.js`, because no markup can make a
-browser ask a wallet. The form has a real submit button. With the script
-blocked, the answer is a page saying the API did not run, with a same-device
-link.
+**The page needs its script**, because no markup can make a browser ask a
+wallet. In a browser without the Digital Credentials API the page says so, and
+the same-device link (**Open your wallet on this device**) is the way on.
 
 **A plain QR code for a wallet on another device is off by default**
 (`oid4vp.signInCrossDevice`). The QR code is the one path that can be relayed:
 an attacker shows their own code to a victim, the victim scans it, and the
 attacker's browser is signed in. Where it is turned on, the page says so, and
-the QR page has no script and polls with a `<meta>` refresh every
-`oid4vp.signInPollS` seconds:
+the QR page (`?qr=1`) draws the code in the browser and asks the sign-in API
+every `oid4vp.signInPollS` seconds:
 
 ```
-GET  /authn/wallet?authn={id}                Set-Cookie: sts_wallet_binding=…
-  303 -> /authn/wallet/wait?authn={id}&state=…
-GET  /authn/wallet/wait?…                    "Open your wallet" + QR code,
-                                             <meta http-equiv="refresh">
+GET  /authn/wallet?authn={id}                the page; it starts the sign-in
+     page: POST /authn-api/wallet            Set-Cookie: sts_wallet_binding=…
+GET  /authn/wallet/wait?authn={id}&state=…&qr=1
+                                             "Open your wallet" + QR code
      wallet: GET /oid4vp/request/{id}        the signed request, by reference
      wallet: POST /oid4vp/response           verified; whom it signs in decided
-GET  /authn/wallet/wait?…[&response_code=…]  Set-Cookie: sts_session=…
-  303 -> the original request
+     page: POST /authn-api/wallet/{state}/status
+                                             every oid4vp.signInPollS seconds;
+                                             once answered, Set-Cookie:
+                                             sts_session=…
+  -> the original request
 ```
 
 **The session goes to the browser that started it.** An `sts_wallet_binding`
 cookie (HttpOnly, SameSite=Lax) is bound to the transaction and compared in
 constant time (`STS-VC-0055`). A same-device wallet is also given a one-time
-`response_code` (OpenID4VP section 8.2), which it must bring back
-(`STS-VC-0065`). A transaction lives `oid4vp.signInTtlS` seconds and is
+`response_code` (OpenID4VP section 8.2), which it brings back to the wait page,
+and the page sends with its collection (`STS-VC-0065`). A transaction lives `oid4vp.signInTtlS` seconds and is
 answered once and finished once, across the cluster.
 
 ### What the session says

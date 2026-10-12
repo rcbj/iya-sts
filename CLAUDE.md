@@ -818,6 +818,7 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 | `/portal` and every `/portal/*` path — **the user portal, a static application since #568 (2026-10-12)** | `/portal/portal.js` — the portal's runtime: it signs in (PKCE, a DPoP key WebCrypto will not export), draws every page from its `/account-api` operation, sends every form there, runs the WebAuthn ceremonies of `/portal/keys`, `/portal/activate` and `/portal/devices` itself (the markup `/authn/webauthn.js` read, `web_portal_webauthn.ts`), and reveals the Copy buttons. **No submit button stands in for it**, for the console's reason; the shell's `<noscript>` says so. `connect-src 'self'` and `img-src 'self' data:` (a QR code) beside `script-src 'self'` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
 | `/` — **the front door, the first public surface, since #579 (2026-10-12)** | `/home.js` — drawn from `/home-api/front` in the browser's language, `/home.css` over `/web/card.css`; `style-src 'self'`, `connect-src 'self'` plus the sign-in service's origin where it is elsewhere | `home/CLAUDE.md` |
 | `/authn/login`, `/authn/select-idp`, `/authn/password-change` — **the sign-in screen, since #571 (2026-10-12)** | `/authn/signin.js` — drawn from `/authn-api`'s views in the browser's language, its acts sent there as JSON bound to the `sts_session` cookie (a CSRF token, an Origin of this service), the next step followed; it runs the usernameless passkey and its autofill and loads `/authn/fingerprint.js` where the realm asks. `style-src 'self'`, `connect-src 'self'` | `authn/CLAUDE.md` |
+| `/authn/wallet` and `/authn/wallet/wait` — **the wallet sign-in, routes of the sign-in surface since #574 (2026-10-12)** | `/authn/signin.js`, the sign-in surface's runtime: the start, the poll (`?qr=1`'s QR code drawn in the browser), and the Digital Credentials API call `/authn/wallet.js` made, over `/authn-api/wallet` | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | each public surface #569 converts (the front door first, #579) | its own bundle over `common/web_surface.ts`, with `/web/card.css` and the catalogs under `/web/locales/`. **Not an OAuth client and holding no token**: the sign-on session is the `sts_session` cookie (#569's decision 3) | `common/CLAUDE.md` (3cl) |
 
 **A SERVER-DRAWN PAGE WITH ONE NAMED SCRIPT** is the older exception, and each
@@ -833,7 +834,6 @@ surface is converted; the protocol documents never do.
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/authn/wallet/wait` (2026-09-17) | `/authn/wallet.js` — the W3C Digital Credentials API call, which no markup can make | `oid4vc/CLAUDE.md`, `authn/CLAUDE.md` |
 | `/oauth2/check_session` (#121, 2026-09-23, off by default) | `/oauth2/check_session.js` — it answers a relying party's `postMessage`, which no markup can; so it is the one page here with **NO submit button**, and with script off a relying party's question simply goes unanswered | `oauth-oidc/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on
@@ -851,10 +851,8 @@ own file:
 | the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
 | the one-time code screen `/authn/totp` | typing six digits needs none, and the QR code is a server-rendered SVG | `authn/CLAUDE.md` |
-| the wallet sign-in's wait page `/authn/wallet/wait` | a `<meta>` refresh is the poll, and its QR code is a server-rendered SVG | `oid4vc/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |
-| the wallet sign-in's QR page (`?qr=1`) | a `<meta>` refresh is the poll and the code is a server-drawn SVG — the page next to it argued its own script from scratch | `oid4vc/CLAUDE.md` |
 
 **A new scripted server-drawn page needs the argument made again from scratch,
 and "the same as the page next door" is not one** — while a new static surface

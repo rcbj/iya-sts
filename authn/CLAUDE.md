@@ -21,13 +21,22 @@ session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
 exactly that AND close a cycle, since that module needs `startSession()`.
 
-**AND A FOURTH, FIFTH, SIXTH AND SEVENTH (2026-09-17, #38 and its follow-ups):
-`/authn/wallet`, `/authn/wallet/wait`, `/authn/wallet/dc-api` and
-`/authn/wallet.js`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s, for
-the same kind of reason: what they drive is the OpenID4VP Verifier, which is
-required at 11–14, and this module requires nothing of that family. This module
-declares all four paths (`WALLET_PATH`, `WALLET_WAIT_PATH`,
-`WALLET_DCAPI_PATH`, `WALLET_SCRIPT_PATH`), draws the button
+**AND A FOURTH AND FIFTH (2026-09-17, #38 and its follow-ups):
+`/authn/wallet` and `/authn/wallet/wait`** — sign in with a wallet — are
+`oid4vc/vc_signin.ts`'s, for the same kind of reason: what they drive is the
+OpenID4VP Verifier, which is required at 11–14, and this module requires
+nothing of that family. **Since #574 both are routes of the sign-in surface**:
+each answers `signInShell()` (exported for it, with `locationOf()`), both are
+`ARRIVAL_PATHS`, the acts are the `/authn-api/wallet` operations
+`authn_api.ts` binds and hands to `vc_signin.ts` (requiring it when an
+operation arrives, never at load), and `/authn/wallet/dc-api` and
+`/authn/wallet.js` are gone — their constants with them. A wallet's poll
+answered with a second factor is answered by `beginSecondFactorAfterWallet()`
+and `enrolAfterProof()` as the screen's acts are, `stepAnswer()` naming the
+step's page (a WebAuthn step minted there carries `atSignIn`, so `GET
+/authn/webauthn` draws the ceremony this function drew in place until then).
+This module declares both paths (`WALLET_PATH`, `WALLET_WAIT_PATH`), draws
+the button
 (`walletOptionHtml()`, gone when `oid4vp.signIn` is off — **no longer withheld
 under `forceMfa`**), and that door uses `pendingFor()` and
 `completeAuthentication()` exactly as the Kerberos door does. See *The wallet door* below; the design is argued in

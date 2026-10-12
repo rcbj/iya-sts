@@ -111,7 +111,7 @@ that can start a session without being counted, audited and reported:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — no screen | `Kerberos v5 (SPNEGO)` |
-| A wallet's presentation of a credential this service issued — collected at `/authn/wallet/wait` by the browser that started it, or answered to that page through the Digital Credentials API at `/authn/wallet/dc-api` | `OpenID4VP (a wallet)` |
+| A wallet's presentation of a credential this service issued — collected by the wait page at `/authn/wallet/wait` in the browser that started it, or answered to that page through the Digital Credentials API (`/authn-api/wallet/{state}/dc-api`) | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person authenticated somewhere else entirely | `Federation (SAML 2.0)`, and the same for the other federation protocols |
 
 **No password is checked at any of them** in development mode. The Kerberos

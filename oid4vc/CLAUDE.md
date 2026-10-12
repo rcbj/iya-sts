@@ -12,7 +12,8 @@ DID Core with DIF domain linkage.
 | `vc_issuer.ts` | The three credential endpoints. |
 | `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
-| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
+| `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
+| `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`portal/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
@@ -261,12 +262,15 @@ signs nobody in is recorded at the response endpoint exactly as before.
 ### The browser it belongs to
 
 The wallet's `direct_post` is the wallet's request, so the session is minted on
-the browser's next request to `/authn/wallet/wait`, and only in the browser that
-started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
+the browser's next collection — `POST /authn-api/wallet/{state}/status`, the
+wait page's poll since #574 — and only in the browser that started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
 browser, reused) is hashed onto the transaction and compared in constant time
 (`STS-VC-0055`). A same-device wallet is answered with a `redirect_uri`
-carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept),
-and a wait request carrying one must carry the right one (`STS-VC-0065`). The
+carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept)
+— the wait page, whose runtime collects with it at once — and a collection
+carrying one must carry the right one (`STS-VC-0065`). The `redirect_uri`
+names a second-factor step's `mfa` too since #574, which the wait page must
+name to be admitted. The
 transaction lives `oid4vp.signInTtlS` — enforced at the response endpoint too,
 for a sign-in only (`STS-VC-0056`; the bar door's late answers are still
 verified as before) — and is answered once and finished once (above).
@@ -280,32 +284,53 @@ by cannot be relayed. *The Digital Credentials API* below is the argument.
 `startSession()`'s `sameIdentity()` decides, as for every door
 (`tests/oid4vp_sign_in.js` 5b).
 
-### The page has a script now, and it is the root `CLAUDE.md`'s exception
+### The pages are routes of the sign-in surface (#574, 2026-10-12)
 
-The wait page had none and argued that it needed none: a `<meta>` refresh was
-the poll, and the answer was a page this server drew. **What changed is the
-Digital Credentials API**, which is a browser API call
-(`navigator.credentials.get({ digital: … })`) and cannot be made by markup, a
-form or a link: nothing but a script can ask a wallet that way, and the answer
-arrives in the page and nowhere else. So the page CANNOT offer the one path
-that resists the relay without one, which is the test the root file sets, and
-the exception takes the same shape as every other:
+The wait page had no script, and argued that it needed none: a `<meta>`
+refresh was the poll, and the answer was a page this server drew. **The
+Digital Credentials API changed that** — a browser API call
+(`navigator.credentials.get({ digital: … })`) that no markup, form or link
+can make — and it got one script, `/authn/wallet.js`, as the root
+`CLAUDE.md`'s exception, with a real submit button for a browser without it
+and the `<meta>` refresh moved to a QR page of its own (`?qr=1`), because a
+reload throws the browser's credential dialog away.
 
-* `script-src 'self'` through `app.contentSecurityPolicy()`, so
-  `frame-ancestors` and `base-uri` cannot be lost; never `'unsafe-inline'`;
-* ONE static resource, `/authn/wallet.js`, which carries no transaction and is
-  the same bytes for everybody — everything it needs is a `data-request`
-  attribute on the form;
-* a REAL SUBMIT BUTTON. The form posts to `/authn/wallet/dc-api` whether the
-  script ran or not; with it blocked, that endpoint answers a page saying the
-  API did not run (`STS-VC-0081`) and offers the same-device link, which is a
-  plain `<a>`.
+**Since #574 both pages are routes of the static sign-in surface** (#569:
+script is required, and no server-drawn fallback is kept), and the argument
+above is the surface's rule rather than an exception:
 
-**THE `<meta>` REFRESH MOVED TO THE QR PAGE** (`?qr=1`, drawn only where the QR
-code is on): a reload while the browser's credential dialog is open throws the
-dialog away. That page has no script, polls exactly as the wait page used to,
-and is the second half of the refused-script table's row — a polling page still
-does not need a script, which is why it did not get one.
+* **`/authn/wallet` and `/authn/wallet/wait` answer the surface's shell**
+  (`authn.signInShell()`, for the pending sign-in's application), and both are
+  `ARRIVAL_PATHS`, so a browser arriving there — a second factor's *Use your
+  wallet instead*, the portal's *Enrol a wallet*, a same-device wallet's
+  return — holds the `sts_session` cookie every act is bound to.
+* **The acts are `/authn-api/wallet`'s** (`authn/authn_api.ts` binds them —
+  JSON, an Origin of this service, the X-CSRF-Token — and hands each to
+  `vc_signin.ts`): `GET /authn-api/wallet` (the start page's view, which
+  creates NOTHING: a GET is followed by prefetchers), `POST /authn-api/wallet`
+  (the start: the transaction, the binding cookie, `go` to the wait page),
+  `GET /authn-api/wallet/{state}` (the wait view, for the browser that started
+  it; the record, step and enrolment are the transaction's), `POST
+  …/{state}/status` (the collection) and `POST …/{state}/dc-api`.
+* **The drawing is `web_vc_signin.ts`'s**: the start page (which starts at
+  once and REPLACES itself in the history, so Back does not start a second),
+  the wait page, the QR code — drawn in the browser by `portal/web_qr.ts`,
+  the portal's encoder, from the request's text — and a refusal, whose `view`
+  of kind `refused` carries the heading, the presentation's checks and the
+  ways on, under its English sentence.
+* **The poll is the runtime's**: on the QR page every `pollSeconds`, where
+  the `<meta>` refresh was (a browser timer, `tests/no_periodic_timers.js`'s
+  recorded exception); once at once on a same-device return with its
+  `response_code`; and on *Check now*. **The plain wait page does not poll by
+  itself**, as it never did: a same-device wallet that comes back opens the
+  wait page in its own tab, and a poll in the tab left behind would collect
+  the sign-in first and leave the returning tab to say it was already used.
+  The poll pauses while the browser's credential dialog is open, so it never
+  races the API's answer to finish one sign-in.
+* **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
+  English, no code), and the codes are the ones the pages were marked with.
+  `STS-VC-0081` is now an answer sent with nothing in it — the form posted
+  without the script is gone.
 
 ### The Digital Credentials API (rcbj's decision for the relay)
 
@@ -341,9 +366,13 @@ transaction — one nonce, one DCQL query, answered once:
   Client Identifier. A presentation made for the `direct_post` path therefore
   signs nobody in here, which `tests/oid4vp_dc_api.js` holds.
 
-`/authn/wallet/dc-api` takes what the page posts. It is admitted exactly as the
-wait page is — the binding cookie, the transaction, the pending record — and
-then: the `Origin` header must be this service's own (`STS-VC-0074`); the
+`POST /authn-api/wallet/{state}/dc-api` takes what the page sends (it was the
+form POST `/authn/wallet/dc-api` until #574). It is bound as every act on
+`/authn-api` is — JSON, an Origin this service answers on, the X-CSRF-Token —
+and admitted exactly as the collection is — the binding cookie, the
+transaction, the pending record — and then: the `Origin` header must be THE
+origin the request named, this service's own (`STS-VC-0074`; another site's
+is refused at the door first, `STS-AUTHN-0326`); the
 answer must be a `DigitalCredential` in the protocol the request named
 (`STS-VC-0073`); an encrypted one is opened with that transaction's key; and
 the sign-in is finished IN THAT REQUEST, because it is the browser's own — no
