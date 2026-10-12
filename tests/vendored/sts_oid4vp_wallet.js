@@ -1281,15 +1281,24 @@ async function barDoor(sd, sdKey, product) {
         });
   r = await hop(visitor, "GET", r.json.redirect_uri);
   // The thank-you page is a static surface's since #582: the shell, and
-  // the verdict in the view it is drawn from (`/vc-demo-api/done`).
-  const thanks = r.status === 200
+  // the verdict in the view it is drawn from (`/vc-demo-api/done`). It is
+  // the demonstration's own page, so a product realm does not serve it
+  // (#585): there it answers as an unrouted path, and signs nobody in
+  // either.
+  const thanks = r.status === 200 && !product
     ? await vcDemo.done(visitor.cookies, base, one.ro.state) : null;
-  check("and its thank-you page signs nobody in either", function () {
-    assert.strictEqual(r.status, 200);
-    assert.ok(thanks && thanks.status === 200 && thanks.view &&
-              thanks.view.received === true &&
-              thanks.view.accepted === true, JSON.stringify(thanks &&
-                                                            thanks.view));
+  check("and its thank-you page signs nobody in either" +
+        (product ? " (a product realm serves no demonstration page: 404)"
+                 : ""), function () {
+    if (product) {
+      assert.strictEqual(r.status, 404, r.text.slice(0, 200));
+    } else {
+      assert.strictEqual(r.status, 200);
+      assert.ok(thanks && thanks.status === 200 && thanks.view &&
+                thanks.view.received === true &&
+                thanks.view.accepted === true, JSON.stringify(thanks &&
+                                                              thanks.view));
+    }
     assert.ok(!setsSession(r) && !visitor.cookies.sts_session);
   });
   const two = await begin();
