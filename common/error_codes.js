@@ -4844,22 +4844,25 @@ const CODES = [
       'does not exist.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0020',
-    summary: 'The WebAuthn ceremony POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    summary: 'The WebAuthn ceremony POST (the passkey step\'s act on ' +
+      '/authn-api since #572) failed input validation.',
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0021',
     summary: 'The WebAuthn ceremony result posted by the browser was not ' +
       'JSON.',
-    spec: 'HTTP 200 security-key page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0022',
     summary: 'The browser reported that the WebAuthn ceremony failed ' +
       '(declined, timed out, no authenticator), or sent no credential ' +
       'at all.',
-    spec: 'HTTP 200 security-key page, redrawn with the reason; on the ' +
-      'portal, its own refusal' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' + '; on the portal, its own refusal' },
   { code: 'STS-AUTHN-0023',
     summary: 'In product mode the configured webauthn.rpId does not fit the ' +
       'host the request arrived on, so the ceremony is refused.',
-    spec: 'HTTP 200 security-key page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0024',
     summary: 'Product mode refused to enrol a credential (security key or ' +
       'authenticator app) for a person who has no directory entry, ' +
@@ -4873,13 +4876,14 @@ const CODES = [
   { code: 'STS-AUTHN-0026',
     summary: 'A WebAuthn assertion named a credential that is not one of the ' +
       'security keys enrolled for this person in this role.',
-    spec: 'HTTP 200 security-key page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0027',
     summary: 'The WebAuthn registration or assertion could not be parsed or ' +
       'checked (malformed CBOR, authenticator data or ' +
       'clientDataJSON).',
-    spec: 'HTTP 200 security-key page with the reason; on the portal, its ' +
-      'own refusal' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' + '; on the portal, its own refusal' },
   { code: 'STS-AUTHN-0028',
     summary: 'WebAuthn verification failed: clientDataJSON\'s type is not ' +
       'the ceremony\'s (webauthn.create / webauthn.get).',
@@ -4931,22 +4935,25 @@ const CODES = [
     spec: '' },
   { code: 'STS-AUTHN-0039',
     summary: 'The one-time code form POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0040',
     summary: 'Too many one-time code attempts for this identity or address; ' +
       'the code was not checked (rate limiter lockout).',
-    spec: 'HTTP 200 one-time code page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0041',
     summary: 'The recovery code form POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0042',
     summary: 'Too many recovery code attempts for this identity or address; ' +
       'the code was not checked (rate limiter lockout).',
-    spec: 'HTTP 200 recovery code page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0043',
     summary: 'Checking a recovery code threw (the worker pool or the store ' +
       'failed part way).',
-    spec: 'HTTP 200 recovery code page asking to try again' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0044',
     summary: 'Security keys are switched off in this realm ' +
       '(webauthn.enabled), so no new key may be enrolled.',
@@ -5148,7 +5155,8 @@ const CODES = [
     spec: 'HTTP 200 recovery code page with the reason' },
   { code: 'STS-AUTHN-0092',
     summary: 'A presented recovery code is not one of the person\'s codes.',
-    spec: 'HTTP 200 recovery code page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0093',
     summary: 'A recovery code verified but could not be marked spent, so it ' +
       'was refused: a code that cannot be spent works for ever.',
@@ -5200,8 +5208,8 @@ const CODES = [
   { code: 'STS-AUTHN-0105',
     summary: 'A presented one-time code matched no time step in the allowed ' +
       'window: wrong, or expired.',
-    spec: 'HTTP 200 one-time code page with the reason; action result at ' +
-      'enrolment' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' + '; action result at enrolment' },
   { code: 'STS-AUTHN-0106',
     summary: 'A presented one-time code was already used (RFC 6238 section ' +
       '5.2): its time step is at or below the last one accepted.',
@@ -5438,19 +5446,23 @@ const CODES = [
   { code: 'STS-AUTHN-0174',
     summary: 'A request to the second-factor set-up step was malformed, or ' +
       'asked to confirm a code before an authenticator app was chosen.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0175',
     summary: 'A second-factor set-up choice was refused: the mechanism is ' +
       'switched off in the realm, or the person holds a second factor ' +
       'already.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0176',
     summary: 'An authenticator app enrolment at sign-in could not be started.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0177',
     summary: 'The code confirming an authenticator app enrolled at sign-in ' +
       'was refused; the same secret is drawn again.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0180',
     summary: 'A signed-in session was refused because the directory holds ' +
       'no entry for the person, so there is no subject to give it ' +
@@ -5521,7 +5533,8 @@ const CODES = [
   { code: 'STS-AUTHN-0196',
     summary: 'A password presented as the second factor after a wallet ' +
       'sign-in was refused.',
-    spec: 'HTTP 200 page at /authn/password-factor, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0200',
     summary: 'A password was presented for an account that is disabled ' +
       '(pwdAccountLockedTime on its entry), and it was refused before it ' +
@@ -5819,15 +5832,18 @@ const CODES = [
   { code: 'STS-AUTHN-0257',
     summary: 'No more emailed codes or links may be sent for one sign-in ' +
       'step (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0258',
     summary: 'Another emailed code or link was asked for sooner than the ' +
       'policy\'s resend interval (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0259',
     summary: 'An emailed code or link could not be queued by the mail ' +
       'channel; the line names the channel\'s refusal (#64).',
-    spec: 'the page offers the other factors' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0260',
     summary: 'An emailed code or link was asked for as a first factor where ' +
       'this realm does not offer one, or where a key or a password is ' +
@@ -5841,25 +5857,30 @@ const CODES = [
   { code: 'STS-AUTHN-0262',
     summary: 'An emailed code or link was presented after it had already ' +
       'been used (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0263',
     summary: 'Whether an emailed code or link had been used could not be ' +
       'asked of the store, so it was not accepted (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0264',
     summary: 'A wrong emailed code or link was presented (#64).',
-    spec: 'the page, with the attempts left' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0265',
     summary: 'An emailed code or link was presented after it expired (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0266',
     summary: 'An emailed sign-in link was opened in a browser other than the ' +
       'one that started the sign-in (#64, D3).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0267',
     summary: 'The emailed code or link door failed unexpectedly; the line ' +
       'carries the stack (#64).',
-    spec: 'an error page' },
+    spec: 'HTTP 500 { ok: false, errors } from /authn-api (#573)' },
   { code: 'STS-AUTHN-0268',
     summary: 'A session was refused: this realm\'s authentication policy ' +
              'does ' +
@@ -5878,7 +5899,8 @@ const CODES = [
     summary: 'Ignore was posted on a second-factor set-up step that was ' +
       'REQUIRED rather than offered (#246): only an administrator the ' +
       'authentication policy OFFERS a second factor may decline it.',
-    spec: 'HTTP 400, the set-up page again' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0290',
     summary: 'A session was ended by a caller that did not say who ' +
       'initiated it (#242): CAEP session-revoked says `system`, and the ' +

@@ -222,6 +222,10 @@ interface Operation {
   body?: Json;
   // The answer's shape, documented.
   answer?: Json;
+  // The code a body this operation does not take is recorded under, where
+  // its form had one of its own (#572: the one-time code's, the
+  // ceremony's, the recovery code's).
+  bodyCode?: string;
   handler: string;
 }
 
@@ -367,6 +371,7 @@ const OPERATIONS: Operation[] = [
   { method: 'POST', path: API + '/mfa/:id/totp', operationId: 'checkCode',
     access: 'mfa', mirrors: 'POST /authn/totp', action: 'totp',
     handler: 'mfaAct', body: CODE_BODY, answer: NEXT_ANSWER,
+    bodyCode: 'STS-AUTHN-0039',
     summary: 'Checks a one-time code from an authenticator app',
     description: 'RFC 6238, checked in every mode and rate limited by ' +
       'identity and address; a refused code keeps the step.' },
@@ -374,6 +379,7 @@ const OPERATIONS: Operation[] = [
     operationId: 'spendRecoveryCode', access: 'mfa',
     mirrors: 'POST /authn/backup-code', action: 'backup-code',
     handler: 'mfaAct', body: BACKUP_CODE_BODY, answer: NEXT_ANSWER,
+    bodyCode: 'STS-AUTHN-0041',
     summary: 'Checks and spends a recovery code',
     description: 'In place of the second factor; a code that cannot be ' +
       'marked spent is refused.' },
@@ -396,6 +402,7 @@ const OPERATIONS: Operation[] = [
     operationId: 'finishPasskeyStep', access: 'mfa',
     mirrors: 'POST /authn/webauthn', action: 'webauthn',
     handler: 'mfaAct', body: CREDENTIAL_BODY, answer: NEXT_ANSWER,
+    bodyCode: 'STS-AUTHN-0020',
     summary: 'Verifies the passkey step\'s ceremony and finishes the step',
     description: 'A registration where the step enrols a key, an ' +
       'assertion otherwise — decided by the step, not the body.' },
@@ -634,8 +641,9 @@ class AuthnApi {
     const posted = validation.checkParsed(helpers.parseBody(req) || {},
                                           'body', op.body || EMPTY_BODY);
     if (!posted.ok) {
-      errorCodes.mark(res, op.access === 'step' ? 'STS-AUTHN-0145'
-        : (op.access === 'mfa' ? 'STS-AUTHN-0330' : 'STS-AUTHN-0002'));
+      errorCodes.mark(res, op.bodyCode || (op.access === 'step'
+        ? 'STS-AUTHN-0145'
+        : (op.access === 'mfa' ? 'STS-AUTHN-0330' : 'STS-AUTHN-0002')));
       this.refuse(res, 400, String(posted.detail || 'The body is refused.'));
       log.debug("Leaving AuthnApi.bodyOf(). Refused.");
       return null;
@@ -952,6 +960,7 @@ class AuthnApi {
     const seen = authn.mfaView(req, page, id, String(asked.value.key || ''));
     if (seen.problem) {
       errorCodes.mark(res, seen.problem.code);
+      // error-code: none — marked on the line above, stepProblem()'s code
       this.refuse(res, 400, String(seen.problem.why));
       log.debug("Leaving AuthnApi.mfaStep(). Refused.");
       return;
@@ -1153,7 +1162,7 @@ class AuthnApi {
           .catch(function (e: Json) {
             log.debug("Caught in AuthnApi route: " +
                       ((e && e.message) || e));
-            self.failed(res, e);
+            self.failed(res, e, op);
           });
         log.debug('Leaving ' + op.method + ' ' + op.path + '.');
       });
@@ -1163,13 +1172,18 @@ class AuthnApi {
 
   // Every handler writes an answer; one that threw would leave a browser
   // waiting on a request nothing answers.
-  private failed(res: Json, e: Json): void {
+  // AN EMAILED FACTOR'S OPERATION (#573) keeps the code its door's own
+  // failures were recorded under.
+  private failed(res: Json, e: Json, op?: Operation): void {
     const { log, errorCodes, authn } = this.deps;
     log.debug("Entering AuthnApi.failed().");
-    log.error(errorCodes.tag('STS-AUTHN-0328') + 'authn: a sign-in API ' +
-              'operation failed: ' + ((e && (e.stack || e.message)) || e));
+    const email = !!op && /^\/authn-api\/mfa\/:id\/(email|email-link)\//
+      .test(op.path);
+    log.error(errorCodes.tag(email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328') +
+              'authn: a sign-in API operation failed: ' +
+              ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
-      errorCodes.mark(res, 'STS-AUTHN-0328');
+      errorCodes.mark(res, email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328');
       authn.answerJson(res, 500, { ok: false,
         errors: ['Something went wrong; this sign-in could not continue.'] });
     }

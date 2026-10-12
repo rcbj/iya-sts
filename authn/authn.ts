@@ -10259,14 +10259,15 @@ class Authn {
     const offered = this.enrolmentOfferedFor(allowed);
     if (!offered.totp && !offered.webauthn) {
       // The realm switched both off since the step was minted.
-      errorCodes.mark(res, 'STS-AUTHN-0306');
       log.debug('Leaving Authn.enrolAfterProof(). Nothing to enrol now.');
       const why = 'This application accepts a second factor you have not ' +
         'set up, and none that it accepts can be set up here. Ask an ' +
         'administrator.';
+      errorCodes.mark(res, 'STS-AUTHN-0306');
       if (this.answersJson(res)) {
         this.stepRefused(res, why, 400);
       } else {
+        errorCodes.mark(res, 'STS-AUTHN-0306');
         oauthError(res, 400, 'access_denied', why);
       }
       return;
@@ -13352,6 +13353,7 @@ class Authn {
         if (found.problem) {
           errorCodes.mark(res, found.problem.code);
           log.debug('Leaving the ' + page + ' step\'s shell. Refused.');
+          // error-code: none — marked above, stepProblem()'s code
           return oauthError(res, 400, 'invalid_request', found.problem.why);
         }
         // In product mode an RP ID that does not fit is RECORDED here, as
