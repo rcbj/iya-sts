@@ -373,7 +373,7 @@
   "tls.p12Again": "La misma contraseña otra vez",
   "tls.p12Note": "Esta contraseña protege la clave privada dentro del archivo mientras está en su disco; su navegador la pide una vez, al importar el archivo. No es la contraseña de su cuenta, y este servicio no la guarda.",
   "tls.generate": "Generar y descargar mi certificado de cliente TLS",
-  "tls.revokingIs": "<strong>Revocar es una revocación de verdad.</strong> El certificado pasa a la lista de revocación de certificados de este dominio, su servicio OCSP responde <code>revoked</code> y los listeners TLS lo rechazan a partir de ese momento. No se puede deshacer; en su lugar, genere uno nuevo.",
+  "tls.revokingIs": "<strong>Revocar es una revocación de verdad.</strong> El certificado pasa a la lista de revocación de certificados de este dominio, su servicio OCSP responde <code>revoked</code> y las escuchas TLS lo rechazan a partir de ese momento. No se puede deshacer; en su lugar, genere uno nuevo.",
   "tlsFresh.heading": "Guarde su certificado de cliente TLS",
   "tlsFresh.onlyTime": "<strong>Esta es la única vez que se pueden descargar estos archivos.</strong> Este servicio no guarda la clave privada: ni en esta página ni un administrador. Si pierde los archivos, revoque este certificado abajo y genere uno nuevo.",
   "tlsFresh.download": "Descargar {file}",

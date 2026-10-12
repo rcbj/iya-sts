@@ -59,7 +59,7 @@
   "optDefault": "(el valor predeterminado del Verifier)",
   "startButton": "Iniciar",
   "hOpen": "Verificaciones abiertas",
-  "noOpen": "No hay ninguna verificación abierta en este realm. Un inicio de sesión con cartera nunca aparece aquí.",
+  "noOpen": "No hay ninguna verificación abierta en este dominio. Un inicio de sesión con cartera nunca aparece aquí.",
   "openCount": "{shown} de {total}, las más recientes primero. Un inicio de sesión con cartera nunca aparece aquí; un resultado completo es <code>GET /admin-api/verifications?state=</code>.",
   "thState": "State",
   "thAsked": "Solicitado",
