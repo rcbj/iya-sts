@@ -67,6 +67,9 @@ function childMain() {
     // and start view, under its own path.
     '/wsfed/rp/mock-rp.js', '/wsfed/rp/api/start', '/saml2/sp/mock-rp.js',
     '/saml2/sp/api/start', '/saml11/rp/mock-rp.js', '/saml11/rp/api/start',
+    // And each one's own session and sign-out (#590).
+    '/wsfed/rp/api/session', '/wsfed/rp/sign-out', '/saml2/sp/api/session',
+    '/saml2/sp/sign-out', '/saml11/rp/api/session', '/saml11/rp/sign-out',
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',

@@ -48,7 +48,10 @@
 // shell carries it: the landing page, the linking step's outcome, a
 // refusal of the login or linking endpoint, and the two pages not there.
 // The mock relying parties (#581) draw every page from a view alone: each
-// family's start page and its verdicts, and the two spent artifacts.
+// family's start page and its verdicts, and the two spent artifacts — and
+// since #590 each verdict with what the session view said beside it (signed
+// in with its own Sign out, a refusal while still signed in, a refusal with
+// no session) and SAML 2.0's sign-out outcome.
 // The OpenID4VC demonstration (#582) draws all five of its pages from views
 // alone, the QR codes among them.
 // The description pages (#584) draw each of the six families' pages from a
@@ -855,6 +858,16 @@ function mockRpCases(root) {
     document: '<trust:RequestSecurityTokenResponse a="1">&amp;' +
               '</trust:RequestSecurityTokenResponse>',
     signOut: '/wsfed?wa=wsignout1.0&wreply=x' };
+  // WHAT THE SESSION VIEW SAYS BESIDE A VERDICT (#590).
+  const signedIn = function (family) {
+    log.debug("Entering signedIn().");
+    log.debug("Leaving signedIn().");
+    return { session: { signedIn: true, subject: 'alice <a> & "co"',
+                        expires: '2026-10-12T21:00:00.000Z',
+                        signOut: '/' + family + '/sign-out' } };
+  };
+  const notSignedIn = { session: { signedIn: false, subject: '',
+                                   expires: '2026-10-12T21:00:00.000Z' } };
   const saml2Start = { kind: 'start', family: 'saml2',
     entityId: 'https://sts.example/saml2/sp',
     requests: [
@@ -932,7 +945,40 @@ function mockRpCases(root) {
         ok: false, subject: '', target: null, attributes: [],
         artifact: 'AAEz<x>', again: '/saml11/rp?SAMLart=AAEz%3C&TARGET=x' }) },
     { label: 'SAML 1.1\'s spent artifact', path: '/saml11/rp',
-      ctx: en('/saml11/rp'), view: { kind: 'spent', family: 'saml11' } }
+      ctx: en('/saml11/rp'), view: { kind: 'spent', family: 'saml11' } },
+    { label: 'WS-Federation\'s verdict in its own session, signed in',
+      path: '/wsfed/rp', ctx: en('/wsfed/rp'),
+      view: Object.assign({}, wsfedResult, signedIn('wsfed/rp')) },
+    { label: 'WS-Federation\'s refusal while still signed in, in French',
+      path: '/wsfed/rp', ctx: fr('/wsfed/rp'),
+      view: Object.assign({}, wsfedResult, { ok: false, checks: checks },
+                          signedIn('wsfed/rp')) },
+    { label: 'WS-Federation\'s refusal with no session', path: '/wsfed/rp',
+      ctx: en('/wsfed/rp'),
+      view: Object.assign({}, wsfedResult, { ok: false, checks: checks },
+                          notSignedIn) },
+    { label: 'SAML 2.0\'s verdict in its own session, signed in, in French',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({}, saml2Result, { ok: true },
+                          signedIn('saml2/sp')) },
+    { label: 'SAML 2.0\'s sign-out, the LogoutResponse checked',
+      path: '/saml2/sp', ctx: en('/saml2/sp'),
+      view: Object.assign({ kind: 'signedOut', family: 'saml2',
+        entityId: 'https://sts.example/saml2/sp?x=<y>', ok: true,
+        checks: [checks[0]], document: '<samlp:LogoutResponse ID="_1"/>' },
+        notSignedIn) },
+    { label: 'SAML 2.0\'s sign-out, a check failed, in French',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({ kind: 'signedOut', family: 'saml2',
+        entityId: 'https://sts.example/saml2/sp', ok: false, checks: checks,
+        document: '' }, notSignedIn) },
+    { label: 'SAML 1.1\'s verdict in its own session, signed in',
+      path: '/saml11/rp', ctx: en('/saml11/rp'),
+      view: Object.assign({}, saml11Result, signedIn('saml11/rp')) },
+    { label: 'SAML 1.1\'s spent artifact while still signed in, in French',
+      path: '/saml11/rp', ctx: fr('/saml11/rp'),
+      view: Object.assign({ kind: 'spent', family: 'saml11' },
+                          signedIn('saml11/rp')) }
   ];
 }
 
