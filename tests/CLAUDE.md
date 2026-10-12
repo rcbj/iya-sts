@@ -1954,11 +1954,11 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   person with a password, two clients registered with EC keys made at run time
   (no key material in git), certificates from the realm's CA for the mTLS
   plans, the protected Grant Management scopes declared by an administrator
-  (#110), and the plan's configuration: the discovery URL, the `browser`
-  commands that sign in on `/authn/login` and allow the consent screen, and
-  per-module `override`s — Cancel for user-rejects-authentication, and a first
-  visit that only loads the sign-in page for the reused-request_uri module.
-  FAPI-CIBA's `automated_ciba_approval_url` is an HTTP listener in the job
+  (#110), and the plan's configuration: the discovery URL and the clients,
+  and NO `browser` commands since #571 — the person who signs in is played
+  in Chrome (*THE PERSON IN FRONT OF THE SUITE*, below), with Cancel for
+  user-rejects-authentication and a first visit that only loads the sign-in
+  page for the reused-request_uri module. FAPI-CIBA's `automated_ciba_approval_url` is an HTTP listener in the job
   that answers through `/admin-api/users/answer-ciba-request` with the `acr`
   the request asked for.
 * **A module has five minutes** (`CONFORMANCE_MODULE_SECONDS`); one still
@@ -1971,6 +1971,53 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
 * **WARNING is not a failure, and every module has one**: the realm's JWKS
   carries post-quantum keys the suite cannot parse. `oauth-oidc/CLAUDE.md` 3bg
   lists what the first runs found in the service and the warnings that stay.
+
+### THE PERSON IN FRONT OF THE SUITE (#571, 2026-10-12)
+
+**The suite's own browser cannot sign anybody in here any more.** It is
+HtmlUnit 4.17 on the suite's Rhino fork (release-v5.3.1): no `class`, no
+`async function`, no array spread, no `fetch` — measured, `/authn/signin.js`
+stops at "identifier is a reserved word: class" and the form is never
+drawn. Since #571 the sign-in screen is a static surface drawn by its
+script, and rcbj's decision is that script is required, so nothing
+server-drawn stands in for it. **rcbj chose to play the person in a real
+browser** rather than lower the bundle for Rhino (esbuild stops at es2015 and
+TypeScript 7 removed ES5) or keep a script-free page for the suite.
+
+* **The drivers hand the suite no `browser` commands** (`sts_oidcc_`,
+  `sts_fapi_`, `sts_oidfed_` and `sts_oid4vci_conformance.js`). With no
+  match the suite does what it does for a human tester: it lists each
+  address the module wants visited (`GET /api/runner/{id}` →
+  `browser.urls`, `urlsWithMethod`), and waits.
+* **`tests/vendored/conformance_browser.js` (LOCAL_HELPERS) is that
+  person**, called from the drivers' `onWaiting`: headless Chrome from the
+  tests image, trusted by SPKI pin for the service and for the suite's
+  certificate in ONE flag (`browser_flags.js`: Chrome keeps the last). It
+  opens each address, marks it visited
+  (`POST /api/runner/browser/{id}/visit?url=`), signs in on the real
+  screen, allows consent, and leaves the suite's callback once its page
+  says `submission_complete`. Per-module actions: `cancel`
+  (user-rejects-authentication), `load-only` (the reused request_uri's first
+  visit), `photograph` (prompt=login, max_age: the second sign-in screen
+  is the evidence, then the sign-in) and `photograph-only` (the
+  registration logo, policy and terms).
+* **Evidence is uploaded as a person uploads it.** A page of this service
+  that stays — an error page shown rather than redirecting, the end-session
+  page — is screenshotted and posted to the module's first unfilled image
+  placeholder (`POST /api/log/{id}/images/{placeholder}`, a `data:` URL as
+  text/plain); the module ends REVIEW, as it did when HtmlUnit photographed
+  it. The end-session confirmation is then pressed.
+* **The logout and Session Management pages are visited in Chrome too**,
+  although server-drawn, because the session they end or check is a cookie
+  in that browser; the suite's would hold none.
+* **ONE Chrome per job, one page at a time** (no pooled browsers): visits
+  are serialised by a lock however many plans run side by side, and since
+  the suite gives each module a fresh browser, the cookies are kept PER
+  MODULE — saved after a visit, put back before the next of that module,
+  the jar cleared in between. The four jobs are `browser: true` in
+  MANIFEST.js and stay in their conformance lanes.
+* **Not changed**: SSF's job signs its person in itself and gives the suite
+  no browser; OpenID4VP's plan sends no person to this service.
 
 ### THE OTHER PLANS (#187, 2026-09-24)
 
