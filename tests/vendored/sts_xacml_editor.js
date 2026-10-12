@@ -754,10 +754,19 @@ async function pressOn(driver, path, action, values, carrying) {
              .join("|"));
       })).slice(0, 1200));
   const wanted = Object.assign({}, values || {});
+  // BY ITS INDEX, NOT ITS POSITION (2026-10-12). `index` counts every form in
+  // the document — it is what submitForm() presses — and `before.forms` holds
+  // the editor panel's alone, so `before.forms[index]` was some other form:
+  // an edit form with a hidden `action`, which made an Add menu look like one
+  // and left it at its first option. The press then SUCCEEDED and added a
+  // Target clause where a Condition was asked for.
+  const pressed = before.forms.filter(function (f) {
+    return f.index === index;
+  })[0];
   // An Add menu carries the action as a `<select>`; an edit form carries it as
   // a hidden field and must not be "set".
-  if (before.forms[index].named.action === undefined ||
-      before.forms[index].controls.some(function (c) {
+  if (pressed.named.action === undefined ||
+      pressed.controls.some(function (c) {
         return c.name === "action" && c.options;
       })) {
     wanted.action = action;
@@ -1184,14 +1193,20 @@ async function aConditionMayBeAddedOnce(driver) {
   const rule = pathOfKind(await treeOf(POLICY), "rule");
   await open(driver, editorUrl(POLICY));
   const after = await pressOn(driver, rule, "add-condition", {});
+  const stored = await treeOf(POLICY);
 
   check("the condition was added and the page says so", function () {
     assert.strictEqual(outcomeOf(after.url, "error"), "",
       "adding a condition was refused: " + outcomeOf(after.url, "error"));
-    assert.ok(after.rows.some(function (row) {
-      return row.element.indexOf("Condition") >= 0;
-    }), "no row on the redrawn page mentions a Condition; the rows are " +
-        JSON.stringify(after.rows.map(function (r) { return r.kind; })));
+    // THE STORED TREE, NOT THE PAGE'S WORDS (2026-10-12). Every rule row's
+    // help text mentions a Condition, so "a row mentions Condition" held
+    // while the edit that ran was a Target clause.
+    assert.ok(stored.some(function (row) {
+      return row.path === rule + ".condition";
+    }), "the stored policy has no condition at " + rule + ".condition; its " +
+        "paths are " + JSON.stringify(stored.map(function (r) {
+          return r.kind + "@" + r.path;
+        })));
   });
 
   check("and the rule's menu no longer offers a second one", function () {
