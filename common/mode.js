@@ -2130,7 +2130,10 @@ const REQUIREMENTS = [
              'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
              'authenticates nobody, records nothing; the console\'s and ' +
              'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+             'it on their inbox marked refused.',
+    // ssf_transmitters.ts asks the same predicate of a federation partner's
+    // Shared Signals (#373, #374), which the sentences above do not name.
+    where: 'ssf/ssf.ts, ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2142,7 +2145,11 @@ const REQUIREMENTS = [
              'session-revoked, credential-change, a RISC account or ' +
              'credential event, a risk-level-change to HIGH, by default — ' +
              'ends the receiving surface\'s own sessions for the person it ' +
-             'names. An unverified event is never acted on in either mode.' },
+             'names. An unverified event is never acted on in either mode.',
+    // The policy is xacml_signal_pep.ts's; ssf_transmitters.ts asks the
+    // same predicate before a federation partner's signal is acted on.
+    where: 'ssf/ssf_receivers.ts, xacml/xacml_signal_pep.ts, ' +
+           'ssf/ssf_transmitters.ts' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
