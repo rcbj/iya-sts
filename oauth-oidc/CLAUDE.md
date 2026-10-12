@@ -5189,9 +5189,15 @@ other client are untouched, and the API explorer's unbound token still works.
   `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
   *the hosted surfaces conforming*: the portal still does.
 
-**THE PORTAL IS IN NEITHER LIST.** It keeps its backend-for-frontend.
-`tests/sender_constraints.js` and `tests/fapi2_units.js` hold both lists to
-"the admin console, nothing else".
+**THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
+it the console's pattern — a static application, the public client
+`sts-user-portal`, every token DPoP-bound and audienced to `/account-api` —
+where it had kept #444's backend-for-frontend. Same two rules, same
+condition (its id AND its declared method `none`), and the same honesty: in a
+realm with a confidential-only FAPI profile the portal does not conform
+either, and the requirement rows say so. `tests/sender_constraints.js` and
+`tests/fapi2_units.js` hold both lists to "the console and the portal,
+nothing else".
 
 **THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
 `issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
