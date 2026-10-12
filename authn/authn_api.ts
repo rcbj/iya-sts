@@ -351,6 +351,7 @@ class AuthnApi {
   // members), with `ok: false` and `errors` beside them so the runtime reads
   // it as every API answer. The code was marked on the response by the
   // caller; it is never in the body.
+  // error-code: none — the definition of this helper; every call site marks its own code first
   private refuse(res: Json, status: number, why: string): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.refuse(). " + status);

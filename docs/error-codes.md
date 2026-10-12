@@ -1443,11 +1443,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0322` | A passkey was refused by a rule of the realm's own issuance policy (#536) that named no error code of its own and gave a reason the built-in passkey rules do not give. | the ceremony's page or the sign-in screen, with the reason |
 | `STS-AUTHN-0323` | No issuance policy, not even the built-in one, gave a verdict on a passkey question (#536); the passkey rules read from the facts answered instead. A defect: the built-in document should always answer. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
 | `STS-AUTHN-0325` | An act on the sign-in API (/authn-api, #571) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
 | `STS-AUTHN-0326` | An act on the sign-in API (/authn-api, #571) carried no Origin header, or one this service does not answer on: it was not sent by a page of this service. | HTTP 403, { ok: false, errors } |
 | `STS-AUTHN-0327` | An act on the sign-in API (/authn-api, #571) carried no X-CSRF-Token, or one that is not the token of the session its sts_session cookie names, or the browser holds no session at all. | HTTP 403, { ok: false, errors } |
 | `STS-AUTHN-0328` | An operation of the sign-in API (/authn-api, #571) threw; the browser is told the sign-in could not continue. | HTTP 500, { ok: false, errors } |
-| `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
 
 ## STS-OAUTH
 

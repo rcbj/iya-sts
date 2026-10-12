@@ -6079,6 +6079,11 @@ const CODES = [
       'answered instead. A defect: the built-in document should always ' +
       'answer.',
     spec: 'none: the passkey is decided by the same rules' },
+  { code: 'STS-AUTHN-0324',
+    summary: 'The engine could not be loaded to ask the built-in issuance ' +
+      'policy a passkey question (#536); the passkey rules read from the ' +
+      'facts decided instead.',
+    spec: 'none: the passkey is decided by the same rules' },
   { code: 'STS-AUTHN-0325',
     summary: 'An act on the sign-in API (/authn-api, #571) did not carry a ' +
       'JSON body (Content-Type: application/json), which a cross-site form ' +
@@ -6098,11 +6103,6 @@ const CODES = [
     summary: 'An operation of the sign-in API (/authn-api, #571) threw; the ' +
       'browser is told the sign-in could not continue.',
     spec: 'HTTP 500, { ok: false, errors }' },
-  { code: 'STS-AUTHN-0324',
-    summary: 'The engine could not be loaded to ask the built-in issuance ' +
-      'policy a passkey question (#536); the passkey rules read from the ' +
-      'facts decided instead.',
-    spec: 'none: the passkey is decided by the same rules' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
