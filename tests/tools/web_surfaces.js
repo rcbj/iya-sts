@@ -44,6 +44,8 @@
 // is said after a decision, and a refusal.
 // The sign-out (#577) draws its one page from views alone: the inventory,
 // the result drawn in place, and the two refusals' pages.
+// The mock relying parties (#581) draw every page from a view alone: each
+// family's start page and its verdicts, and the two spent artifacts.
 //
 // A NEW SURFACE ADDS ITS ROW HERE in the same commit that adds its
 // `bundle_surface` line (`common/CLAUDE.md`, *Static public surfaces*).
@@ -716,6 +718,128 @@ function signoutCases(root) {
   ];
 }
 
+/**
+ * The mock relying parties' cases (#581): each family's start page and its
+ * verdicts — every check passing and some failing, with and without claims
+ * or attributes, on every binding and profile — the artifact that did not
+ * resolve and the spent one, in English and in French, every value one a
+ * page must escape.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function mockRpCases(root) {
+  log.debug("Entering mockRpCases().");
+  const at = function (here, chain) {
+    log.debug("Entering at().");
+    log.debug("Leaving at().");
+    return { t: translatorFor(root, 'mockRp', chain), query: {}, prefix: '',
+             origin: 'https://sts.example', here: here };
+  };
+  const checks = [
+    { name: 'the assertion signature verifies', ok: true,
+      detail: 'rsa-sha256 over <exc-c14n> & "co"' },
+    { name: 'wctx came back unaltered', ok: false,
+      detail: 'this relying party did not mint "x<y>"' }];
+  const wsfedStart = { kind: 'start', family: 'wsfed',
+    realm: 'https://sts.example/wsfed/rp?a=1&b="2"', wctx: 'rp-<abc>',
+    requests: ['saml11', 'saml2', 'trust13', 'wfresh', 'multifactor',
+               'hardware'].map(function (id) {
+      return { id: id, href: '/wsfed?wa=wsignin1.0&wtrealm=x&id=' + id +
+                              '&q="<>"' };
+    }),
+    signOut: '/wsfed?wa=wsignout1.0&wreply=https%3A%2F%2Fsts.example',
+    metadata: '/FederationMetadata/2007-06/FederationMetadata.xml' };
+  const wsfedResult = { kind: 'result', family: 'wsfed',
+    realm: 'https://sts.example/wsfed/rp', ok: true,
+    assertionVersion: 'SAML 1.1', subject: 'alice <a> & "co"',
+    checks: [checks[0]],
+    claims: [{ uri: 'http://schemas.example/claims/<name>',
+               value: 'Alice & co' }],
+    document: '<trust:RequestSecurityTokenResponse a="1">&amp;' +
+              '</trust:RequestSecurityTokenResponse>',
+    signOut: '/wsfed?wa=wsignout1.0&wreply=x' };
+  const saml2Start = { kind: 'start', family: 'saml2',
+    entityId: 'https://sts.example/saml2/sp',
+    requests: [
+      { binding: 'post', signed: true, href: '/saml2/sso?SAMLRequest=a&x=<' },
+      { binding: 'redirect', signed: true, href: '/saml2/sso?SAMLRequest=b' },
+      { binding: 'artifact', signed: true, href: '/saml2/sso?SAMLRequest=c' },
+      { binding: 'post', signed: false, href: '/saml2/sso?SAMLRequest=d' }],
+    requiresSigned: false, singleLogout: '/saml2/slo',
+    metadata: '/saml2/metadata/https%3A%2F%2Fsts.example' };
+  const saml2Result = { kind: 'result', family: 'saml2',
+    entityId: 'https://sts.example/saml2/sp', arrived: 'post', ok: false,
+    subject: 'bob <b>', checks: checks,
+    attributes: [{ name: 'urn:oid:<1>', nameFormat: 'uri & "x"',
+                   values: ['one', 'two & <three>'] }],
+    document: '<samlp:Response ID="_1"/>', singleLogout: '/saml2/slo',
+    artifactResolution: '/saml2/ars' };
+  const saml11Result = { kind: 'result', family: 'saml11', profile: 'post',
+    ok: true, passed: 9, total: 9, subject: 'carol & "co"',
+    target: 'https://sts.example/saml11/rp?done=1&x=<y>', checks: [
+      { name: 'the single-use policy matches the profile', ok: true,
+        detail: 'a <DoNotCacheCondition> is present' }],
+    attributes: [{ namespace: 'urn:mace:<ns>', name: 'mail',
+                   values: ['c@example.com', 'd & e'] }],
+    document: '<samlp:Response MajorVersion="1"/>' };
+  const en = function (here) {
+    log.debug("Entering en().");
+    log.debug("Leaving en().");
+    return at(here, ['en']);
+  };
+  const fr = function (here) {
+    log.debug("Entering fr().");
+    log.debug("Leaving fr().");
+    return at(here, ['fr', 'en']);
+  };
+  log.debug("Leaving mockRpCases().");
+  return [
+    { label: 'WS-Federation\'s start page, in English', path: '/wsfed/rp',
+      view: wsfedStart, ctx: en('/wsfed/rp') },
+    { label: 'WS-Federation\'s start page, in French', path: '/wsfed/rp',
+      view: wsfedStart, ctx: fr('/wsfed/rp') },
+    { label: 'WS-Federation\'s verdict, every check passed', ctx:
+      en('/wsfed/rp'), path: '/wsfed/rp', view: wsfedResult },
+    { label: 'WS-Federation\'s verdict, a check failed, no claims, no ' +
+      'document, in French', path: '/wsfed/rp', ctx: fr('/wsfed/rp'),
+      view: Object.assign({}, wsfedResult, { ok: false, checks: checks,
+                                             claims: [], document: '' }) },
+    { label: 'SAML 2.0\'s start page, unsigned answered', path: '/saml2/sp',
+      view: saml2Start, ctx: en('/saml2/sp') },
+    { label: 'SAML 2.0\'s start page, unsigned refused, in French',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({}, saml2Start, { requiresSigned: true }) },
+    { label: 'SAML 2.0\'s verdict on the POST binding, a check failed',
+      path: '/saml2/sp', view: saml2Result, ctx: en('/saml2/sp') },
+    { label: 'SAML 2.0\'s verdict on the Redirect binding, every check',
+      path: '/saml2/sp', ctx: fr('/saml2/sp'),
+      view: Object.assign({}, saml2Result, { arrived: 'redirect', ok: true,
+                                             attributes: [] }) },
+    { label: 'SAML 2.0\'s verdict on an artifact', path: '/saml2/sp',
+      ctx: en('/saml2/sp'),
+      view: Object.assign({}, saml2Result, { arrived: 'artifact' }) },
+    { label: 'SAML 2.0\'s artifact that did not resolve', path: '/saml2/sp',
+      ctx: en('/saml2/sp'), view: { kind: 'unresolved', family: 'saml2',
+        why: 'that artifact does not <resolve> & is "spent"' } },
+    { label: 'SAML 1.1\'s start page, in French', path: '/saml11/rp',
+      ctx: fr('/saml11/rp'), view: { kind: 'start', family: 'saml11',
+        providerId: 'https://sts.example/saml11/rp?a=<b>',
+        post: '/saml11/sso?providerId=x&profile=post',
+        artifact: '/saml11/sso?providerId=x&profile=artifact',
+        transfer: '/saml11/sso' } },
+    { label: 'SAML 1.1\'s Browser/POST verdict', path: '/saml11/rp',
+      view: saml11Result, ctx: en('/saml11/rp') },
+    { label: 'SAML 1.1\'s Browser/Artifact verdict, no subject, no TARGET',
+      path: '/saml11/rp', ctx: fr('/saml11/rp'),
+      view: Object.assign({}, saml11Result, { profile: 'artifact',
+        ok: false, subject: '', target: null, attributes: [],
+        artifact: 'AAEz<x>', again: '/saml11/rp?SAMLart=AAEz%3C&TARGET=x' }) },
+    { label: 'SAML 1.1\'s spent artifact', path: '/saml11/rp',
+      ctx: en('/saml11/rp'), view: { kind: 'spent', family: 'saml11' } }
+  ];
+}
+
 module.exports = [
   { name: 'the admin console',
     pages: 'admin-ui/web_pages.ts', global: 'StsConsole',
@@ -745,5 +869,9 @@ module.exports = [
   { name: 'the sign-out',
     pages: 'logout/web_signout_pages.ts', global: 'StsSignout',
     bundle: 'logout/signout.bundle.js', runtime: 'logout/signout-spa.js',
-    cases: signoutCases }
+    cases: signoutCases },
+  { name: 'the mock relying parties',
+    pages: 'common/web_mock_rp_pages.ts', global: 'StsMockRp',
+    bundle: 'common/mock-rp.bundle.js', runtime: 'common/mock-rp-spa.js',
+    cases: mockRpCases }
 ];

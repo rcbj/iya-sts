@@ -63,6 +63,10 @@ function childMain() {
   const PROCESS_MARKED = ['/tls/trust', '/tls/trust/clear'];
   const REALM_MARKED = [
     '/wsfed/rp', '/saml2/sp', '/saml11/rp', '/oauth2/commands/mock-rp',
+    // The mock relying parties' static surface (#581): each one's script
+    // and start view, under its own path.
+    '/wsfed/rp/mock-rp.js', '/wsfed/rp/api/start', '/saml2/sp/mock-rp.js',
+    '/saml2/sp/api/start', '/saml11/rp/mock-rp.js', '/saml11/rp/api/start',
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
