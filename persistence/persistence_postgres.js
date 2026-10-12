@@ -1549,7 +1549,8 @@ function dialOptions(url, verifyTls) {
  *
  * A connection pool, a transaction per flush, the change log that several
  * processes coordinate through, and the minted, key, cluster and risk tables.
- * TLS is used when the connection string's `sslmode` asks for it.
+ * Every connection is TLS; a string whose `sslmode` would dial in the clear
+ * is refused (`dialOptions()`, #273).
  * @param options - `url`, the connection string; `log`, the logger;
  * `verifyTls`, whether the server certificate is verified; and `poolMax`, the
  * pool size

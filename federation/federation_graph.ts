@@ -146,7 +146,9 @@ const STS_ID = 'sts';
 // ---------------------------------------------------------------------------
 const SENTENCES = Object.freeze({
   thisService: 'This service',
-  noMechanism: 'The sign-in screen, which checks no password',
+  // No claim about checking the password: product mode verifies it and
+  // development does not, and this label is drawn in both (#543 follow-up).
+  noMechanism: 'The sign-in screen (username and password)',
   unknownMechanism: '{{mechanism}} — not a mechanism this service has'
 });
 
