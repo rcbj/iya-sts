@@ -1787,3 +1787,27 @@ listeners they are on*); `docs/listeners.md` is the operator's half.
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 `/tls` and `/tls/forwarded` (per realm), and `/tls/trust` and `/tls/trust/clear` — **the process's**, marked `processDemoOnly`, which asks the default realm too, because the truststore is one array for every listener: a development realm inside a product process is not a way to add an anchor. Their 403 `STS-TLS-0024` is retired; the gated doors are `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}`, and `tests/tools/pep-credential.js` tries the gated one first. The `/tls` page draws the two buttons only where the process serves them. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## THE DIAGNOSTIC PAGES ARE A STATIC SURFACE (#583, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface and **never touches what a specification's endpoint answers**
+(rcbj, 2026-10-12). #583 is this family's diagnostic pages, and its first
+step was this inventory: every response under `/tls`, which kind it is, and
+so whether it is converted.
+
+| Response | Where | Kind | Converted |
+|---|---|---|---|
+| `GET /tls` (HTML) — the certificate, the listeners, the truststore and its two buttons, revocation, what a certificate is worth | `tls_server.js` | a page a person reads (a demonstration, #585) | **yes** |
+| `GET /tls?format=json` | `description()` | the page's JSON form, read by scripts and jobs | no — unchanged |
+| `POST /tls/trust`'s and `POST /tls/trust/clear`'s HTML answers (`Accept: text/html`: "N anchor(s) added", "Nothing was added", "The truststore is empty") | `tls_server.js` | pages a person reads, the outcome of the `/tls` page's two forms | **yes** — the acts answer JSON, and the page draws the outcome |
+| `POST /tls/trust`, `POST /tls/trust/clear` (raw PEM, a form or JSON body; JSON answers) | `tls_server.js` | a test-control API (`processDemoOnly`), what 25 jobs and `tests/tools/pep-credential.js` call | no — the same answers to a script; a browser's act is bound (below) |
+| `GET /tls/forwarded` (HTML) | `tls_server.js` | a page a person reads (a demonstration, #585) | **yes** |
+| `GET /tls/forwarded?format=json` | `tls_server.js` | its JSON form | no — unchanged |
+| `GET /tls/sign-in` | `answerCertificateSignIn()` | a real sign-in, answered as JSON | no — not HTML (#569's inventory) |
+| `GET /tls/server-certificate` | `tls_server.js` | a PEM document | no |
+| the 400 for a bad `?format=` (`STS-TLS-0023`, text/plain) | `tls_server.js` | a refusal in plain text | no |
+
+What the TLS layer DOES is unchanged by all of it: the handshake, the client
+certificate and its verification, the revocation check, the truststore and
+the sighting. Only the page a person reads about them moved.

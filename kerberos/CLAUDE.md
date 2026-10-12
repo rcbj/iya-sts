@@ -282,6 +282,25 @@ jobs (`sts_kerberos_spnego.js`, `sts_kerberos_heimdal.js`,
 
 ---
 
+## The diagnostic pages `/spnego` and `/spnego/protected` (#583, 2026-10-12)
+
+#575 converted the bodies of the SPNEGO SIGN-IN (`/authn/spnego`). #583 is
+the other two, the demonstration pages `spnego.js` draws (development realms
+only, #585), and its first step was this inventory:
+
+| Response | Kind | Converted |
+|---|---|---|
+| `GET /spnego` (HTML) — what is protected, the SPN, the realm, the mechanisms, the knobs, the sign-in door beside it | a page a person reads | **yes** |
+| `GET /spnego?format=json` | its JSON form, which the parent project's debugger api reads | no — unchanged |
+| `GET /spnego/protected` — STATUS, `WWW-Authenticate: Negotiate` (the bare challenge, `request-mic`'s token, a reject's, the final AP-REP), the `sts_spnego_negotiation` cookie | **the RFC 4559 exchange** | **no** — byte for byte |
+| `GET /spnego/protected` — the BODY of each of those answers (the 401 pages, the reject pages, the 200 "you are in") | a page a person reads, over the verdict | **yes** — the body only |
+| `GET /spnego/protected`'s 500 (`STS-KRB-0096`) | a failure of this service, not a verdict | no — server-drawn, as #575 kept the sign-in's |
+
+`/authn/spnego` is #575's and is not touched here; `/krb5/service` and
+`/krb5/principals` are not in #583.
+
+---
+
 ## The KDC's listeners start from `listen()`, not at require time
 
 See the root `CLAUDE.md` for the rule; the reason it applies here is that
