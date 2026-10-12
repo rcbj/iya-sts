@@ -1263,6 +1263,8 @@ const ACTIONS = [
     label: 'A signing key form was refused for its CSRF token' },
   { action: 'portal.siop.remove', category: 'authentication',
     label: 'A person removed a self-issued subject' },
+  { action: 'portal.vc.offer', category: 'protocol',
+    label: 'A person made a Credential Offer for their own wallet' },
   { action: 'risk.feedback', category: 'authentication',
     label: 'Feedback on a risk assessment was recorded' },
   { action: 'risk.response', category: 'authentication',

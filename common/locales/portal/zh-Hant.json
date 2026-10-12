@@ -35,6 +35,8 @@
   "nav.delegate.heading": "誰可以代表您",
   "nav.self-issued.label": "自行簽發的 ID",
   "nav.self-issued.heading": "您自行簽發的 ID",
+  "nav.wallet.label": "新增到錢包",
+  "nav.wallet.heading": "將憑證新增到您的錢包",
   "nav.devices.label": "裝置",
   "nav.devices.heading": "您的裝置",
   "nav.ciba.label": "登入要求",

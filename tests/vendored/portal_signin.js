@@ -188,8 +188,10 @@ async function nobody(base, method, path, body) {
 // `user` the name to sign in as; `log2` optional; `options.password` the
 // password of an account that exists, `options.cookie` a sign-on session
 // already held (no password typed: single sign-on answers the flow), and
-// `options.acrValues` / `options.prompt` for a step-up, and
-// `options.consent: false` to stop at a consent screen rather than allow.
+// `options.acrValues` / `options.prompt` for a step-up,
+// `options.consent: false` to stop at a consent screen rather than allow, and
+// `options.scope` for a token that asks for something other than the
+// portal's own `openid account:manage` (a test of the gate's scope check).
 async function signInToThePortal(base, user, log2, options) {
   log.debug("Entering signInToThePortal().");
   const say = (log2 && log2.info) ? log2.info.bind(log2) : function () {};
@@ -238,7 +240,7 @@ async function signInToThePortal(base, user, log2, options) {
   const resource = base + "/account-api";
   const params = {
     response_type: "code", client_id: "sts-user-portal",
-    redirect_uri: redirectUri, scope: "openid account:manage",
+    redirect_uri: redirectUri, scope: opts.scope || "openid account:manage",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
     code_challenge_method: "S256", resource: resource };

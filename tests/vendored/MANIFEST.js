@@ -606,8 +606,9 @@ const JOBS = [
   // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
   // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),
   // /admin-api/tokens (admin), a CIBA approval and its tokens on the
-  // approving session, and in product the OpenID4VCI offer. `local: true`:
-  // this repository's own transmitter.
+  // approving session, and the OpenID4VCI offer a person makes on
+  // /portal/wallet (#589). `local: true`: this repository's own
+  // transmitter.
   { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
   // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
   // cross-device offer redeemed by an anonymous wallet gives an access token

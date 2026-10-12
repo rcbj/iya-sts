@@ -314,6 +314,7 @@
   "audit.actions.portal.signing-key.removed.label": "A person took their signing key pair off",
   "audit.actions.portal.signing-key.csrf.label": "A signing key form was refused for its CSRF token",
   "audit.actions.portal.siop.remove.label": "A person removed a self-issued subject",
+  "audit.actions.portal.vc.offer.label": "A person made a Credential Offer for their own wallet",
   "audit.actions.risk.feedback.label": "Feedback on a risk assessment was recorded",
   "audit.actions.risk.response.label": "A risk response was carried out",
   "audit.actions.risk.terms.accept.label": "A risk dataset provider's terms were accepted",

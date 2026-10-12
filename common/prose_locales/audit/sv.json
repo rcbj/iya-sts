@@ -1259,6 +1259,10 @@
     "en": "b6f77328c0b99b89",
     "text": "En person tog bort ett självutfärdat subjekt"
   },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "En person skapade ett erbjudande om en legitimation till sin egen plånbok"
+  },
   "audit.actions.risk.feedback.label": {
     "en": "e244d70b4d5a8c39",
     "text": "Återkoppling på en riskbedömning registrerades"

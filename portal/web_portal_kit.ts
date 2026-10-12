@@ -228,6 +228,16 @@ const STYLE =
   'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
   'text-decoration:none;border-radius:6px;padding:9px 14px;' +
   'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
+  // /portal/wallet's offer (#589): the Transaction Code a person reads off
+  // the screen into a wallet, large and spaced, and the offer URI, which
+  // breaks anywhere rather than running off the card.
+  '.txcode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
+  'font-size:2em;letter-spacing:.28em;font-weight:700;color:#12107c;' +
+  'background:#f0f0fa;border-radius:8px;padding:10px 6px;margin:6px 0;' +
+  'text-align:center}.offer-uri{word-break:break-all;font-family:' +
+  'ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75em;' +
+  'color:#555;background:#fafafa;border:1px solid #eee;border-radius:6px;' +
+  'padding:8px}' +
   'ol.steps{margin:6px 0 0 1.2em;padding:0;font-size:.9em}' +
   'ol.steps li{margin:0 0 4px}' +
   '.state-valid{color:#1b7a3a;font-weight:600}' +
@@ -348,6 +358,12 @@ const NAV = [
       // `portal_self_issued.ts`.
       { path: BASE + '/self-issued', label: 'Self-issued IDs',
         heading: 'Your self-issued IDs' },
+      // ADD A CREDENTIAL TO YOUR WALLET (#589, 2026-10-12), beside the
+      // wallet keys above and in this section for the signing keys' reason:
+      // what it hands over is a credential about this person, made on their
+      // own sign-in, for their own wallet. Drawn by `portal_wallet.ts`.
+      { path: BASE + '/wallet', label: 'Add to your wallet',
+        heading: 'Add a credential to your wallet' },
       // DEVICES (#130, 2026-09-23), in this section for the signing keys'
       // reason: each device holds a credential — a Native SSO secret — that
       // signs this person's apps in. Drawn by `portal_devices.ts`.

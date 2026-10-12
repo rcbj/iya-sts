@@ -36,6 +36,7 @@ import AppPasswordsPages = require('./web_app_passwords');
 import KerberosPages = require('./web_kerberos');
 import DelegatePages = require('./web_delegate');
 import SelfIssuedPages = require('./web_self_issued');
+import WalletPages = require('./web_wallet');
 import DevicesPages = require('./web_devices');
 import CibaPages = require('./web_ciba');
 import DevicePages = require('./web_device');
@@ -65,6 +66,7 @@ const PAGES: PortalPage[] = [].concat(
   KerberosPages.PAGES,
   DelegatePages.PAGES,
   SelfIssuedPages.PAGES,
+  WalletPages.PAGES,
   DevicesPages.PAGES,
   CibaPages.PAGES,
   DevicePages.PAGES,

@@ -35,6 +35,8 @@
   "nav.delegate.heading": "Vem som får agera åt dig",
   "nav.self-issued.label": "Självutfärdade ID",
   "nav.self-issued.heading": "Dina självutfärdade ID",
+  "nav.wallet.label": "Lägg till i din plånbok",
+  "nav.wallet.heading": "Lägg till ett intyg i din plånbok",
   "nav.devices.label": "Enheter",
   "nav.devices.heading": "Dina enheter",
   "nav.ciba.label": "Inloggningsbegäranden",
