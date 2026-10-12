@@ -9596,8 +9596,10 @@ const SETTINGS = [
   { key: 'oid4vci.offerUsername', group: 'OID4VCI', label: 'Offer username',
     env: 'OID4VCI_OFFER_USERNAME', type: 'string', dflt: 'diploma.student',
     runtime: true,
-    description: 'Whose credential the issuer-initiated offer pages build. ' +
-                 'The claims come from that person\'s directory entry.' },
+    description: 'Whom a pre-authorized offer names when whoever makes it ' +
+                 'names nobody. No door does since the demonstration ' +
+                 'issuer left the service (#594): the portal\'s offer names ' +
+                 'the person signed in.' },
 
   { key: 'oid4vci.requestEncryptionRequired', group: 'OID4VCI',
     label: 'Require encrypted credential requests',

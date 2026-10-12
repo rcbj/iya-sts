@@ -5,7 +5,7 @@ nav_order: 16
 
 # Token samples
 
-> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/spnego/protected` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/spnego/protected` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 One real example of every kind of token, assertion and certificate this
 service issues, decoded. They were captured from a running
@@ -2406,8 +2406,8 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6InZjK2p3dCIsImtpZCI6InN0cy1mNzA0…MndHy4ilnGEWuBI8a
 This service's verifier asks a wallet for a presentation with a signed
 request object, passed by reference
 ([OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
-RFC 9101). `GET /oid4vp/start?by=reference` sends the browser to the wallet
-with `request_uri`, and the wallet fetches the object from
+RFC 9101). A verification started with `POST /admin-api/verifications/start`
+and `"by": "reference"` hands the wallet a `request_uri`, and the wallet fetches the object from
 `/oid4vp/request/{id}`. The query is DCQL. The long algorithm lists in
 `client_metadata` are shortened here.
 
@@ -2568,11 +2568,11 @@ eyJhbGciOiJSUzI1NiIsImtpZCI6ImRpZDp3ZWI6MTI3LjAuMC4xJTNBMzgw…M2-thfMMaiN-NA01b
 
 *From the second start of the service (see the note at the top), so its keys differ from the samples above.*
 
-`GET /issuer/offer?mode=cross-device` draws a QR code for
-a Credential Offer that carries a **pre-authorized code**, plus a
-Transaction Code (`tx_code`) shown on the page to type into the wallet.
-In development mode the offer is for `oid4vci.offerUsername`
-(`diploma.student`), for anybody who asks. The QR code holds:
+A cross-device offer — made by a signed-in person on `/portal/wallet`
+(`POST /account-api/credentials/offers`; `GET /issuer/offer?mode=cross-device`
+when this sample was taken) — draws a QR code for a Credential Offer that
+carries a **pre-authorized code**, plus a Transaction Code (`tx_code`) shown on
+the page to type into the wallet. The QR code holds:
 
 ```text
 openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22https%3A%2F%2F…rval%22%3A5%7D%7D%7D

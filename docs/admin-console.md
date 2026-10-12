@@ -4,8 +4,6 @@ title: Admin console
 
 # Admin console
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/result/…` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 `GET /admin` is an operator's view of the running service. The pages under it
 exist for something the protocol endpoints cannot do: the interesting behaviour
 of a client is what it does when something changes *underneath* it. A client
@@ -1434,14 +1432,13 @@ credential and stops there.
 
 The other end of the Credential claims tab, and deliberately a separate
 setting. `/admin/vc`
-decides what an issued credential *carries*; this decides what the Verifier at
-`/oid4vp/verifier` — *The Bar Door* — **asks for**, as the `dcql_query` of the
-next OID4VP request, and what the presentation is checked against. Keeping them
+decides what an issued credential *carries*; this decides what the Verifier
+**asks for**, as the `dcql_query` of the next OID4VP request, and what the presentation is checked against. Keeping them
 apart makes the interesting state reachable: a Verifier asking for a claim the
 issuer does not mint exercises a wallet's "I cannot satisfy this request" path.
 The page also chooses which of the three **credential formats** an unqualified
 request asks for, since a presentation cannot convert between them.
-[OpenID4VP](oid4vp.md#what-the-bar-door-asks-for) covers the Verifier.
+[OpenID4VP](oid4vp.md#what-the-verifier-asks-for) covers the Verifier.
 
 **Its table is of claims, grouped by what the credential can disclose.** An
 SD-JWT VC makes one Disclosure per *top-level* claim, so `address` is one unit
@@ -1459,22 +1456,26 @@ is configured to mint.
   for `address`). A claim the context has no term for is dropped from an
   `ldp_vc` query and named on the page.
 * **What a request asks for is frozen onto it**, so the verdict at
-  `/oid4vp/result/:state` records that exchange rather than the console's
+  `GET /admin-api/verifications?state=` records that exchange rather than the console's
   current state.
-* **Start a verification** (#587) builds the next request as the Verifier's
-  own `/oid4vp/start` link does — a format, by value or by reference, a
+* **Start a verification** (#587) builds the next request — a format, by value or by reference, a
   Client Identifier Prefix, a response type and mode, and same-device or
   cross-device, each left on the Verifier's default unless chosen — and the
   notice names its `state`, the wallet URL to send the holder to and the
   `openid4vp://` URI a QR code would carry. It is
-  `POST /admin-api/verifications/start`.
+  `POST /admin-api/verifications/start`, which also takes a `redirect_uri`:
+  the starter's own page the wallet is sent to once it has answered (in
+  product mode, one of the calling client's registered redirect URIs). With
+  none, the wallet is sent nowhere. The development
+  [companion](docker-compose.md#the-companion-development-only) starts its
+  verifications this way.
 * **Open verifications** lists the requests still waiting or decided in this
   realm, newest first: what each asked for, when it expires, and whether the
   wallet's answer was accepted or refused, with the disclosed claims' names
   and any failed checks — never a value. One whole verdict is
   `GET /admin-api/verifications?state=`. A wallet sign-in is not listed.
 
-**This page admits nobody.** A presentation at the bar door starts no session
+**This page admits nobody.** A presentation to the Verifier starts no session
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
 a credential this realm issued with a request of its own and is not configured
 here ([OpenID4VP](oid4vp.md#signing-in-with-a-wallet)).

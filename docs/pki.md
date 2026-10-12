@@ -5,7 +5,7 @@ nav_order: 7
 
 # A certificate authority, at `/admin/pki`
 
-> **Development mode only (#585):** `/krb5/principals`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/principals` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
 the trust realm it is reached in, and issues **signing key pairs** from the
@@ -900,8 +900,7 @@ It does not apply to:
 * **an HMAC signature**, which carries no `kid` at all;
 * **the SPIFFE JWT-SVID**, whose authority is a separate key published in
   the SPIFFE bundle;
-* **the DIF Domain Linkage Credential and the credential `/did/generate`
-  returns**, whose `kid` names a DID verification method (`did:…#sts-…`), and
+* **the DIF Domain Linkage Credential**, whose `kid` names a DID verification method (`did:…#sts-…`), and
   the DID document's verification methods themselves.
 
 **While it is on, `/oauth2/jwks` lists every signing key twice**: once under its

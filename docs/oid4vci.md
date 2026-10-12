@@ -4,8 +4,6 @@ title: OpenID4VCI
 
 # OpenID for Verifiable Credential Issuance
 
-> **Development mode only (#585):** `/issuer`, `/issuer/offer`, `/oid4vci/last_request`, `/oid4vci/notification/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a **Credential Issuer** for
 [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html),
 and its own authorization server is the one the issuer metadata names by
@@ -97,32 +95,23 @@ means the whole configured set.
   configuration's scope or for `authorization_details` of type
   `openid_credential`. This is the flow described on
   [OAuth 2.0 and OpenID Connect](oauth-oidc.md).
-* **Credential Offers** (section 4, Appendix H). `GET /issuer` is a mock
-  issuer web page. `GET /issuer/offer` builds an offer and sends the browser to
-  the wallet (`oid4vci.walletUrl` plus `oid4vci.walletIssuancePath`):
-  * `mode=same-device` (the default, H.1): an `authorization_code` grant
-    carrying an `issuer_state`, by value, or by reference with `by=reference`,
-    served at `/oid4vci/credential-offer/{id}`;
-  * `mode=cross-device` (H.2): a QR code and a **pre-authorized code** with a
-    **Transaction Code** (`tx_code`) shown on the issuer's screen;
-  * `mode=deferred` (H.3): the same, for a credential that takes time to
-    produce.
+* **Credential Offers** (section 4, Appendix H). The service draws no issuer
+  page of its own; an issuer's web site makes the offer and hands it to the
+  wallet:
+  * same-device (H.1): an `authorization_code` grant; the wallet signs the
+    person in at this service's authorization server;
+  * cross-device (H.2): a **pre-authorized code** with a **Transaction Code**
+    (`tx_code`), which a person makes for their own wallet on `/portal/wallet`
+    (below). The offer is passed by value or by reference, served at
+    `/oid4vci/credential-offer/{id}`;
+  * deferred (H.3): the same, for a credential that takes time to produce.
 
-  In product mode `/issuer` and `/issuer/offer` are not there at all — a
-  realm in product mode answers them as unregistered paths. A person makes a
-  pre-authorized offer for their own wallet on `/portal/wallet` instead.
-
-  **Since #582 both pages are drawn in the browser** from `/vc-demo-api`, in
-  the browser's own language, so they need JavaScript. Loading
-  `/issuer/offer` makes nothing by itself: the page's script asks `POST
-  /vc-demo-api/offer` with the page's query (as JSON, from this service's
-  origin, with the page's CSRF token) and is answered either the wallet
-  address the page used to redirect to — the browser goes there — or, for
-  another device, the offer's `openid-credential-offer://` URI, the
-  same-device link and the Transaction Code, from which the page draws the
-  QR code. The offer, its URI and the offer served by reference are exactly
-  what they were. `GET /vc-demo-api/issuer` and `GET /vc-demo-api/offer` are
-  the two pages' facts; the second checks the query and makes nothing.
+  In development, the
+  [companion](docker-compose.md#the-companion-development-only) is a
+  click-through issuer page: it reads `/.well-known/openid-credential-issuer`,
+  makes a same-device offer itself (no `issuer_state`), and links the person to
+  `/portal/wallet` for a pre-authorized one. Until #594 the service drew that
+  page at `/issuer` and `/issuer/offer`.
 * **A credential about yourself, into your own wallet** (`/portal/wallet`,
   #589). A person signed in to the [user portal](user-facing-pages.md#the-user-portal)
   chooses a credential configuration and *now* (H.2) or *later* (H.3,
@@ -191,9 +180,13 @@ means the whole configured set.
   `oid4vci.deferredReadyMs` have passed, with the `interval` set by
   `oid4vci.deferredIntervalS`.
 * **Notifications.** `POST /oid4vci/notification` takes the wallet's
-  `notification_id` events. `GET /oid4vci/notification/{id}` and
-  `GET /oid4vci/last_request` are non-standard read-backs for tests: what the
-  issuer was told, and how the last credential request arrived.
+  `notification_id` events. Two Admin Read operations read them back:
+  `GET /admin-api/oid4vci/notifications?id=<notification_id>` answers the
+  `event`, `event_description` and `notified_at` the wallet sent (404 for an
+  unknown id), and `GET /admin-api/oid4vci/last-request` how the last
+  credential request arrived — its media type, and for an encrypted one the
+  JWE's `kid`, `alg` and `enc`, never the request itself (`seen: false` before
+  any).
 
 ### Status lists
 
@@ -242,8 +235,8 @@ issued on any other token is still issued, but it signs nobody in.
 
 ### The issuer named by a DID
 
-Two configurations name the issuer by `did:web`. The DID document, the DIF
-domain linkage and `/did/generate` are on the [OpenID4VP](oid4vp.md#did-core-and-domain-linkage)
+Two configurations name the issuer by `did:web`. The DID document and the DIF
+domain linkage are on the [OpenID4VP](oid4vp.md#did-core-and-domain-linkage)
 page. `oid4vci.sdJwtIssuerDid` and `oid4vci.ldpVcIssuerDid` move the **plain**
 configurations to the DID as well — what a deployment that had gone to DIDs
 throughout would look like. Both are off: SD-JWT VC defines no DID-based
@@ -313,10 +306,8 @@ unverifiable, not invalid: it is somebody else's conforming document.
 |---|---|---|
 | Access token at the credential, deferred and notification endpoints | Any token is accepted and its claims read unverified, because OpenID4VCI lets the authorization server be somebody else | A token that does not verify against this realm's key, or that this realm revoked, is refused `invalid_token` (401) |
 | Claim values | What the entry lacks is invented from the username, deterministically, in fictional ranges | Nothing is invented; an attribute the entry does not hold is absent |
-| `/issuer/offer` for a cross-device or deferred offer | Mints a pre-authorized code for `oid4vci.offerUsername`, for anybody | Not there: the issuer's pages are development only (#585); a signed-in person makes an offer for their own wallet on `/portal/wallet` (#589) |
 | `/portal/wallet` (`POST /account-api/credentials/offers`) | A pre-authorized offer for the signed-in person, on their sign-on session | The same |
 | Wrong Transaction Codes | Not counted | Counted across the cluster; the `oid4vci.txCodeMaxAttempts`th spends the code |
-| The `wallet` query parameter | Any URL | Only `oid4vci.walletUrl` or one in `oid4vci.allowedWalletUrls`; anything else is an open redirect and refused |
 | The credential signing keys | Regenerated on every start; nothing is rotated | Kept in the store and rotated on a schedule — the BBS key and a credential-only JWS key on `signing.credentialRotationIntervalDays` |
 
 A credential issued in development on an unverified token cannot sign anybody
@@ -326,11 +317,10 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | `http://localhost:3000` | yes | Where the wallet lives, as a URL the browser can use; the offer pages send the End-User there. |
+| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | `http://localhost:3000` | yes | Where the wallet lives, as a URL the browser can use; a portal offer's wallet link goes there. |
 | `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | `/vc-issuance-1.html` | yes | The page under the wallet URL an offer is handed to. |
-| `oid4vci.allowedWalletUrls` | `OID4VCI_ALLOWED_WALLET_URLS` | *(empty)* | yes | In product mode, the other wallet URLs the `wallet` parameter on `/issuer/offer` may name. |
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
-| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whose credential the issuer-initiated offer pages build (development). |
+| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whom a pre-authorized offer is for when none is named (development). |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
@@ -343,7 +333,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for responses. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists, the Domain Linkage Credential and `/did/generate`. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5u` | yes | Whether a credential names its signing key's chain: `x5u`, `x5c`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |
@@ -355,7 +345,6 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
 | `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The metadata's `display.name`. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential says it is valid. |
-| `oid4vci.generatedDidCredentialLifetimeS` | `OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S` | `3600` | yes | How long the SD-JWT VC `/did/generate` signs is valid. |
 | `oid4vci.sdJwtIssuerDid` | `OID4VCI_SD_JWT_ISSUER_DID` | `false` | restart | Name the plain `dc+sd-jwt` configuration's issuer by `did:web`. |
 | `oid4vci.ldpVcIssuerDid` | `OID4VCI_LDP_VC_ISSUER_DID` | `false` | restart | The same for the plain `ldp_vc` configuration. |
 | `signing.credentialRotationIntervalDays` | `STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS` | `365` | yes | In product mode, how long the credential signing key works before its successor is promoted, when that key signs no tokens; `0` turns rotation off. |
@@ -418,7 +407,7 @@ See [Configuration](configuration.md) for how a value is resolved. Every
 
 * **Protocols → Verifiable Credentials** (`/admin/vc`) is one tabbed page.
   The **Metadata** tab lists the issuer and verifier endpoints. The
-  **OpenID4VCI** tab holds the issuer's settings, including which wallet the offer pages use,
+  **OpenID4VCI** tab holds the issuer's settings, including which wallet an offer links to,
   which authorization server is advertised, the batch size, deferred timings,
   encryption, and the DID choices. API: `GET /admin-api/oid4vci-settings`.
 * Its **Credential claims** tab selects which claims an issued credential

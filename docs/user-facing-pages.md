@@ -4,8 +4,6 @@ title: User-facing pages
 
 # User-facing pages
 
-> **Development mode only (#585):** `/oid4vp/verifier` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 These are all the things this service shows a person in a browser, an inbox or
 an authenticator prompt. Everything else it serves is for programs: token,
 metadata and discovery endpoints, the management API, SCIM, Kerberos and LDAP.
@@ -179,44 +177,31 @@ translated too. A reason somebody typed is sent as written. See
 
 ## The demonstration issuer and verifier (development only)
 
-A sample credential issuer ("Mock University") and a sample verifier ("The
-Bar Door"), for trying a wallet against this service. A realm in product
-mode does not serve them, and answers each path as one nothing is registered
-on (`Cannot GET …`, 404). Issue #582 inventoried them on 2026-10-12, before
-turning them into static pages:
+The service draws no sample issuer or verifier page. A sample credential
+issuer ("Mock University") and a sample verifier ("The Bar Door"), for trying
+a wallet against this service, are the development
+[companion](docker-compose.md#the-companion-development-only), a separate
+container in front of the service. Until #594 the service drew them itself at
+`/issuer`, `/issuer/offer`, `/oid4vp/verifier`, `/oid4vp/start` and
+`/oid4vp/done`; those paths are gone in every mode.
 
-| Page | Path | What a person sees, and what it does | Drawn by, before #582 |
-|---|---|---|---|
-| The issuer's page | `/issuer` | The credential on offer and four links: to the wallet on this device by value or by reference, or a QR code for another device, now (H.2) or later (H.3) | `oid4vc/vc_offers.ts`, `GET /issuer` |
-| The offer | `/issuer/offer?mode=…&by=…&wallet=…&credential_configuration_ids=…` | **Makes** a Credential Offer. On this device the browser goes straight to the wallet with the `openid-credential-offer://` query; for another device the page shows the offer as a QR code, the Transaction Code and the offer URI, and a link that opens it in a wallet here | `vc_offers.ts`, `GET /issuer/offer` and `renderOfferQrPage()` (a server-drawn PNG) |
-| The verifier's page | `/oid4vp/verifier?format=…` | What the door asks for (the claims, the credential type, what an `ldp_vc` request leaves out) and links that start a presentation by value, by reference, by QR code, or in another format | `oid4vc/vc_verifier.ts`, `GET /oid4vp/verifier` |
-| The start | `/oid4vp/start?format=…&by=…&mode=…&client_id_prefix=…&response_type=…&response_mode=…&wallet=…` | **Makes** an Authorization Request. On this device the browser goes straight to the wallet with the `openid4vp://` query; for another device the page shows the request as a QR code and its URI, and a link that opens it in a wallet here | `vc_verifier.ts`, `GET /oid4vp/start` and `renderVpQrPage()` (a server-drawn PNG) |
-| The outcome | `/oid4vp/done?state=…` | Whether the presentation was accepted, the claims it disclosed and what was asked for — where the wallet sends the person once it has answered | `vc_verifier.ts`, `GET /oid4vp/done` |
+The companion uses only the service's own doors:
 
-A refusal on any of them (a malformed query, a wallet this realm will not
-send to, a request that cannot be built) was a line of plain text with its
-status.
+* **Its issuer page** reads the issuer metadata and makes a same-device
+  Credential Offer itself (the authorization code grant). A person's
+  pre-authorized offer into their own wallet is the portal's
+  (`/portal/wallet`, #589).
+* **Its verifier page** starts a verification at
+  `POST /admin-api/verifications/start`, naming its own completion page as
+  the `redirect_uri`, and reads the verdict at
+  `GET /admin-api/verifications?state=` (#587).
 
-**What is not a page here, and is unchanged by #582**, because it is the
-protocol's or a program's: the offer served by reference
-(`/oid4vci/credential-offer/{id}`), the request object
+What a wallet sees is the protocol's and lives in the service: the offer
+served by reference (`/oid4vci/credential-offer/{id}`), the request object
 (`/oid4vp/request/{id}`), the response endpoint (`/oid4vp/response`), the
-Verifier's certificate, the outcome as JSON (`/oid4vp/result/{state}`), the
-issuer metadata, the credential, nonce, deferred and notification endpoints,
-the token endpoint's pre-authorized grant and the status lists. The
-`openid-credential-offer://` and `openid4vp://` links a wallet is handed, and
-the `redirect_uri` the response endpoint names (`/oid4vp/done?state=…`), are
-the same bytes as before. A person's own offer into their own wallet is the
-portal's (`/portal/wallet`, #589), and an administrator starts and reads a
-verification at `/admin-api/verifications` (#587).
-
-**Since #582 the five pages are static pages**, drawn in the browser's own
-language from `/vc-demo-api`, so they need JavaScript; with scripts blocked
-they say so. Opening the offer or the start no longer makes anything by
-itself: the page's script makes the offer or the request once the page is
-drawn, then sends the browser to the wallet, or draws the QR code from the
-offer's or the request's URI. The request's QR page checks every few seconds
-whether the wallet has answered, and moves on to the outcome.
+Verifier's certificate, the issuer metadata, the credential, nonce, deferred
+and notification endpoints, the token endpoint's pre-authorized grant and the
+status lists.
 
 ## The protocol families' description pages
 
@@ -264,10 +249,9 @@ translation:
 
 - **The embedded protocol debugger**, on its own listener (`debugger.port`). It
   is a separate application from the parent project.
-- **Demonstration pages** that exist only in development mode: the sample
-  credential issuer ("Mock University") at `/issuer` and the sample
-  verifier ("The Bar Door") at `/oid4vp/verifier`, translated since #582 —
-  see *The demonstration issuer and verifier* above.
+- **Demonstration pages**: the sample credential issuer ("Mock University")
+  and the sample verifier ("The Bar Door") are the development companion's,
+  not the service's — see *The demonstration issuer and verifier* above.
 - **Operator and diagnostic views**: the XACML,
   SPIFFE, SCIM, Shared Signals and SAML description pages are translated
   since #584 — see *The protocol families' description pages* above.

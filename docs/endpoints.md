@@ -5,7 +5,7 @@ nav_order: 4
 
 # Endpoints
 
-> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is no list of endpoints in this documentation, and that is deliberate.**
 There are 264 of them, they change, and a list written here would be wrong within
@@ -52,7 +52,7 @@ Express's own `Cannot GET /oauth2/token`, and a route pattern with a
 `:parameter` or a `*` is not the address of anything. Those are listed unlinked
 with the reason shown — "POST only", "takes :id", "wildcard". The followable
 endpoints that *do* something when clicked (`/oauth2/authorize`,
-`/oauth2/logout`, `/oauth2/userinfo`, `/issuer/offer`, `/oid4vp/start`) carry an
+`/oauth2/logout`, `/oauth2/userinfo`) carry an
 `effect` note: the first answers **400** when followed bare, since it needs
 `client_id` and `redirect_uri`, and UserInfo answers **401**, being a protected
 resource. Links are root-relative, so they follow whichever host the page was

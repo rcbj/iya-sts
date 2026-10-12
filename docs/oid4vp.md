@@ -4,8 +4,6 @@ title: OpenID4VP
 
 # OpenID for Verifiable Presentations, wallet sign-in and DIDs
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
 using DCQL queries. It verifies what a wallet presents, check by check, in all
@@ -26,62 +24,46 @@ DID and settings.
 There are two ways into the Verifier, and they differ in what a presentation
 that verifies leads to.
 
-* **The bar door** at `/oid4vp/verifier` is a mock relying party's web page. A
-  presentation there is verified, the verdict is shown, and nobody is signed
-  in, because nobody there asked to be. The holder is still recorded on
-  `/admin/users`, as every accepted credential is.
+* **A verification** started through the management API is a relying
+  party's presentation request. A presentation there is verified, the verdict
+  is recorded, and nobody is signed in, because nobody there asked to be. The
+  holder is still recorded on `/admin/users`, as every accepted credential is.
 * **The wallet sign-in** at `/authn/wallet` builds its request through the same
   Verifier and starts a session when the presentation passes its extra rules
   (see *Signing in with a wallet*).
 
-The bar door's endpoints:
+The Verifier's endpoints:
 
 | Path | What it is |
 |---|---|
-| `GET /oid4vp/verifier` | the Verifier's page, where a presentation starts |
-| `GET /oid4vp/start` | the page that builds an Authorization Request and sends the browser to the wallet (same device) or draws a QR code (`mode=cross-device`) |
 | `GET /oid4vp/request/{id}` | the signed Request Object, fetched by reference (`request_uri`) |
 | `GET /oid4vp/verifier-certificate` | the Verifier's `x509_san_dns` and `x509_hash` Client Identifiers, its certificate chain and the trust anchor (see *The x509 prefixes*) |
-| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start page is given `?response_mode=direct_post.jwt`: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
-| `GET /oid4vp/result/{state}` | non-standard: the verdict, so a wallet page or a test can read it |
-| `GET /oid4vp/done` | the Verifier's closing page |
+| `POST /oid4vp/response` | the Response URI (`response_mode` `direct_post`, or `direct_post.jwt` when the start asks for it: the request then carries an ephemeral ECDH-ES key in `client_metadata.jwks` and the wallet posts one encrypted `response`), where the `vp_token` arrives and is verified. The request's `client_metadata` carries only what OpenID4VP 1.0 section 5.1 lists (`vp_formats_supported`, and `jwks` with `encrypted_response_enc_values_supported` for an encrypted response) |
 
-**Since #582 the three pages are drawn in the browser** from
-`/vc-demo-api`, in the browser's own language, so they need JavaScript; with
-scripts blocked they say so. Loading `/oid4vp/start` builds nothing by
-itself: the page's script asks `POST /vc-demo-api/start` with the page's
-query, as JSON, from this service's origin and with the page's CSRF token,
-and is answered either the wallet address the page used to redirect to (the
-browser goes there, and Back does not start a second request) or the QR
-page's facts — the `openid4vp://` URI, the same-device link and the state.
-The QR code is drawn from that URI in the browser, and the page asks every
-few seconds whether the wallet on the other device has answered, then moves
-on to the closing page. The request, its URI, the Request Object and the
-response endpoint's answers, its `redirect_uri` included, are exactly what
-they were.
+**A verification is started through the management API** (#587), in every
+mode: `POST /admin-api/verifications/start` (Admin Write) takes `format`,
+`by`, `client_id_prefix`, `response_type`, `response_mode`, `mode`, `wallet`
+and `redirect_uri`, all optional, and answers JSON: the `state`, the
+`walletUrl` a same-device start sends the holder to, the `requestUri`
+(`openid4vp://`, or `siopv2://` for an ID Token alone) a cross-device QR code
+carries, the `request_uri` of a request by reference, and the `redirectUri`
+it was given. `GET /admin-api/verifications?state=` (Admin Read) answers the
+verdict, with `found: true`, and 404 for a state with no record; without
+`state` it lists the realm's open verifications, newest first, each with what
+it asked and what it decided (claim names, never a value). A wallet sign-in is
+not listed there. The console's twin is the *Start a verification* form and
+the *Open verifications* list on the Verifiable Credentials page's Verifier
+request tab.
 
-| Path | What it is |
-|---|---|
-| `GET /vc-demo-api/verifier` | the bar door's facts: the claims asked for, the credential type and format, what an `ldp_vc` request leaves out |
-| `GET /vc-demo-api/start` | the start page's facts and its CSRF token; the query is checked and nothing is built |
-| `POST /vc-demo-api/start` | starts the request: `{ "location": … }` or `{ "view": { "requestUri", "walletUrl", "state", "pollSeconds" } }` |
-| `GET /vc-demo-api/done?state=` | what was decided: `received`, `accepted`, the claims and what was asked for |
-
-**An administrator starts one through the management API** (#587), in every
-mode: `POST /admin-api/verifications/start` (Admin Write) takes what
-`/oid4vp/start`'s query takes — `format`, `by`, `client_id_prefix`,
-`response_type`, `response_mode`, `mode` and `wallet`, all optional — builds
-the request with the same function, and answers JSON instead of a redirect:
-the `state`, the `walletUrl` a same-device start sends the holder to, the
-`requestUri` (`openid4vp://`, or `siopv2://` for an ID Token alone) a
-cross-device QR code carries, and the `request_uri` of a request by
-reference. `GET /admin-api/verifications?state=` (Admin Read) answers what
-`/oid4vp/result/{state}` answers, with `found: true`, and 404 for a state with
-no record; without `state` it lists the realm's open verifications, newest
-first, each with what it asked and what it decided (claim names, never a
-value). A wallet sign-in is not listed there. The console's twin is the
-*Start a verification* form and the *Open verifications* list on the
-Verifiable Credentials page's Verifier request tab.
+**`redirect_uri` is the starter's own page** that the Response Endpoint sends
+the wallet to once it has answered (OpenID4VP 1.0 section 8.2). Where only
+registered addresses are accepted (product mode), it must be one of the
+calling client's registered redirect URIs, matched whole; otherwise any
+absolute `http` or `https` URL without a fragment. Anything else is refused
+400 (`STS-VC-0120`). When a start names none, `POST /oid4vp/response` answers
+`{}`, with no `redirect_uri`, and a SIOPv2 `form_post` response gets a 200
+`text/plain` message saying it was received instead of a 303. Until #594 the
+service always named its own `/oid4vp/done?state=…` page.
 
 ```bash
 curl -s -X POST "$STS/admin-api/verifications/start" \
@@ -91,8 +73,11 @@ curl -s "$STS/admin-api/verifications?state=$STATE" \
      -H "Authorization: Bearer $TOKEN"
 ```
 
-The demonstration pages above are being made development-only (#585); these
-two operations are what a product deployment, and its tests, use instead.
+The service draws no verifier page of its own. In development, the
+[companion](docker-compose.md#the-companion-development-only)'s bar door is a
+click-through verifier: it starts a verification with these two operations,
+naming its own completion page as the `redirect_uri`. Until #594 the service
+drew that page at `/oid4vp/verifier`, `/oid4vp/start` and `/oid4vp/done`.
 
 A request **by value** uses the `redirect_uri:` client identifier prefix. A
 request **by reference** uses the configured `oid4vp.clientId` and a Request
@@ -173,15 +158,15 @@ The exemption covers a missing reference only: a credential that does name a
 status is still checked against it.
 
 An `ldp_vc` is a bbs-2023 derived proof, which discloses only what the holder
-chooses. The bar door's DCQL query therefore asks for `credentialStatus`, and
+chooses. The Verifier's DCQL query therefore asks for `credentialStatus`, and
 a presentation that does not disclose it is refused (`STS-VC-0089`): every
 `ldp_vc` this realm issues carries it, so its absence means it was withheld. A
 wallet sign-in asks for it too, and reads that credential's status from the
 sign-in register whether or not it was disclosed.
 
-### What the bar door asks for
+### What the Verifier asks for
 
-What the bar door asks for, and in which format, is configuration, set on the
+What the Verifier asks for, and in which format, is configuration, set on the
 Verifier request tab at `/admin/vc#vc-tab-verifier-request`. Two properties of
 it matter:
 
@@ -343,13 +328,14 @@ had already been disowned is never put in the register.
 | `GET /.well-known/did.json` | the issuer's `did:web` document (DID Core 1.0) |
 | `GET /did.json` | the same for a DID with a path, which is what a trust realm's DID is: `did:web:host%3A8081:realm:acme` resolves at `/realm/acme/did.json` |
 | `GET /.well-known/did-configuration.json` | the DIF Well Known DID Configuration: a Domain Linkage Credential, in the JWT form, signed by the DID and naming this origin |
-| `GET /did/generate?method=jwk\|web` | a test helper: a fresh `did:jwk` (or this realm's own `did:web`) and an SD-JWT VC signed under it |
 
 The DID is derived from the address the service was reached at, and honours
 `global.publicBaseUrl`. The document publishes the credential signing key and
 every live generation of the BBS key. Both documents are served
 `Cache-Control: no-store`, because in development the keys behind them are new
-on every start. `did:key` is not generated here.
+on every start. `did:key` is not generated here, and neither is a holder's
+`did:jwk`: a wallet or a test makes its own (`did:jwk:` followed by the
+base64url of the public JWK).
 
 ### Self-issued ID Tokens (SIOPv2)
 
@@ -381,9 +367,9 @@ never the Self-Issued OP itself.
   every fetch here obeys.
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
-* **The bar door** takes `?response_type=id_token` (or `vp_token id_token`)
-  and `?response_mode=form_post` on `/oid4vp/start`, to exercise a Self-Issued
-  OP without signing anybody in.
+* **A verification start** takes `response_type` `id_token` (or `vp_token
+  id_token`) and `response_mode` `form_post`, to exercise a Self-Issued OP
+  without signing anybody in.
 
 Not offered: the `fragment` response mode (a Verifier chooses its response
 mode, and reading a fragment would need a script on a page here), and dynamic
@@ -393,8 +379,8 @@ is assumed.
 ### How a signed request names its Verifier
 
 `oid4vp.clientIdPrefix` chooses the Client Identifier of a signed request
-(OpenID4VP section 5.9); `/oid4vp/start?client_id_prefix=<value>` chooses it
-for one request, and makes that request signed. An unsigned request always
+(OpenID4VP section 5.9); a verification start's `client_id_prefix` chooses
+it for one request, and makes that request signed. An unsigned request always
 uses `redirect_uri:`.
 
 | Value | Client Identifier | How the wallet finds the key |
@@ -448,7 +434,8 @@ wallet is configured with.
 
 | | Development | Product |
 |---|---|---|
-| The `wallet` parameter on the bar door's start page | Any URL | Only `oid4vp.walletUrl` or one in `oid4vp.allowedWalletUrls`; anything else is an open redirect and refused |
+| The `wallet` a verification start names | Any URL | Only `oid4vp.walletUrl` or one in `oid4vp.allowedWalletUrls`; anything else is an open redirect and refused |
+| The `redirect_uri` a verification start names | Any absolute `http` or `https` URL without a fragment | Only one of the calling client's registered redirect URIs, matched whole (`STS-VC-0120`) |
 | The `x509_san_dns` name, when neither `oid4vp.x509DnsName` nor `global.publicBaseUrl` names one | The host the request arrived at, one certificate per host, sixteen at most per realm | Refused |
 | The password offered as a second factor after a wallet | Not checked, like every password in development | Verified |
 | Which credentials can sign in | Only those in the register, so only ones issued on a token this realm verified | The same; and since a pre-authorized offer in product is made only on `/portal/wallet`, for the person signed in, the token belongs to someone who already signed in |
@@ -464,10 +451,10 @@ check are the same in both modes. See
 | `oid4vp.clientId` | `OID4VP_CLIENT_ID` | `sts-verifier` | yes | The `client_id` the Verifier presents, and the `aud` a Key Binding JWT must name. |
 | `oid4vp.walletUrl` | `OID4VP_WALLET_URL` | *(`oid4vci.walletUrl`)* | yes | Where the Verifier sends a holder to present; falls back to the OID4VCI wallet URL. |
 | `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | `/vc-presentation-1.html` | yes | The page under the wallet URL a presentation request is handed to. |
-| `oid4vp.allowedWalletUrls` | `OID4VP_ALLOWED_WALLET_URLS` | *(empty)* | yes | In product mode, the other wallet URLs the start page's `wallet` parameter may name. |
+| `oid4vp.allowedWalletUrls` | `OID4VP_ALLOWED_WALLET_URLS` | *(empty)* | yes | In product mode, the other wallet URLs a verification start's `wallet` may name. |
 | `oid4vp.requestObjectCertificateHeader` | `OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER` | `x5u` | yes | Whether the signed Request Object names its key's chain: `x5u`, `x5c`, `both` or `none`. |
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be. |
-| `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The bar door's starting request, and what its Reset returns to. |
+| `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The Verifier's starting request, and what its Reset returns to. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request page lets a request name. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | *(empty)* | yes | PEM certificates of other issuers whose signatures are accepted. |
@@ -502,8 +489,8 @@ see [OpenID4VCI](oid4vci.md#configuration). See
   accepted anything would leave a wallet author nothing to test against. It
   also verifies from first principles and does not ask the issuer's code what
   it produced, so the two cannot share a mistake.
-* **The bar door signs nobody in.** A session started because a bar door was
-  shown a credential would be one nobody asked for. Recording the holder, which
+* **A verification signs nobody in.** A session started because a relying
+  party was shown a credential would be one nobody asked for. Recording the holder, which
   it does, is a different claim.
 * **Whom a presentation signs in is decided by the issuance register, never by
   the credential.** In development the credential endpoint accepts tokens it
@@ -529,7 +516,7 @@ see [OpenID4VCI](oid4vci.md#configuration). See
 * **`ldp_vc` needed a presentation around its proof.** A `bbs-2023` derived
   proof binds the nonce and nothing about who derived it, and anyone holding the
   base credential can derive one. The sign-in therefore requires a Data
-  Integrity proof by the holder's `did:jwk`. The bar door still accepts a bare
+  Integrity proof by the holder's `did:jwk`. A verification still accepts a bare
   derived proof and says so in its query
   (`require_cryptographic_holder_binding: false`).
 * **An unknown status is a refusal.** If a status list cannot be fetched or
@@ -554,7 +541,7 @@ see [OpenID4VCI](oid4vci.md#configuration). See
   holds the Verifier's settings — client identifier, wallet address, Key
   Binding age, default claims — and the wallet sign-in settings. API:
   `GET /admin-api/oid4vp-settings`.
-* Its **Verifier request** tab holds what the bar door asks for and in which
+* Its **Verifier request** tab holds what the Verifier asks for and in which
   format, as the `dcql_query` of the next Authorization Request, with each
   catalogue row showing whether the issuer mints that claim. API:
   `GET /admin-api/verifier-request` and

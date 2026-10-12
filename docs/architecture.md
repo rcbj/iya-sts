@@ -220,8 +220,8 @@ disagree about which handler wins.
 **Some modules exist to break require cycles, not to group code.**
 `oid4vc/vc_configs.ts` holds the credential configurations, which both the
 issuer and the authorization server read. `oid4vc/vc_offers.ts` holds the
-Credential Offer's pre-authorized codes, which are *minted* by the offer pages
-and *redeemed at the token endpoint*, so that state cannot live in either
+Credential Offer's pre-authorized codes, which are *minted* by the portal's
+offer and *redeemed at the token endpoint*, so that state cannot live in either
 OID4VCI or OAuth 2.0 without the two requiring each other. A require cycle in
 node does not fail loudly: it hands back a half-initialised module whose exports
 are `undefined`, and the symptom arrives later as something that is not a
