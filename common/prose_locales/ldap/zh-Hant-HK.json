@@ -1,0 +1,786 @@
+{
+  "ldap.service.schema": {
+    "en": "0aabcadd26b32a63",
+    "text": "無。不強制任何 objectClass，也不依語法檢查任何屬性，因此項目可攜帶客戶端送來的任何屬性。真正的目錄會拒絕其中大部分。"
+  },
+  "ldap.service.authenticationFacts": {
+    "en": "50b11d2cbd23b36a",
+    "text": "當接受憑證的協定說明了它「如何」被出示時——目前只有登入畫面會這樣做，因為 amr 是 OIDC 的詞彙——項目還會攜帶 authnMethod（此人在此用過的每種 RFC 8176 方法，累積記錄）、mfaAuthenticated（「最近一次」身分驗證為 TRUE 或 FALSE，每次覆寫）與 mfaLastAuthTime（上次進行多因素驗證的時間，從不清除）。這些是本服務自己的名稱，不是結構描述。在密碼之後進行的 WebAuthn 儀式會寫入 TRUE；同一儀式以無密碼方式使用時，會寫入 authnMethod hwk 而旁邊沒有 pwd，mfaAuthenticated 為 FALSE，因為一個因素就是一個因素，無論它多麼能抵抗網絡釣魚。這裡沒有任何東西會「讀取」它們：沒有權杖攜帶它們，也沒有端點依據它們做任何決定，就像這裡的群組不授予任何東西一樣——除了決定誰可以使用管理主控台的兩個群組，這是此目錄中唯一的例外，且僅限於該主控台。"
+  },
+  "ldap.service.enforcedRules.4": {
+    "en": "a41fc8c3be6cf1bc",
+    "text": "在 ou=users 下新增用戶名稱已存在的項目會得到 LDAP_ENTRY_ALREADY_EXISTS (68)，並指名持有它的項目。每人一個項目：用戶名稱是項目命名 RDN 的值以及它攜帶的任何 uid，因此 uid=rcbj 與 cn=rcbj 是同一個人，只能有其中一個存在。這與主控台和 POST /admin-api/users/create 給出的拒絕相同，也與此處每個協定在驗證某人身分時所歸併的規則相同"
+  },
+  "ldap.service.sentences.clientCertificates": {
+    "en": "18c68f9d37420f1c",
+    "text": "從不要求。此接聽程式只向客戶端證明「伺服器」，別無其他；向它提供的客戶端證書不會被要求，即使被要求也不會成為登入。主連接埠（{{port}}）才是要求並讀取客戶端證書的地方。"
+  },
+  "ldap.service.sentences.certificateSource": {
+    "en": "a969a038097605ed",
+    "text": "與主連接埠（{{port}}）提供的證書與金鑰相同。它是{{provenance}}：GET /tls/server-certificate 會以 PEM 提供它。兩個通訊端只需一個錨點，這就是它們共用它的原因。"
+  },
+  "ldap.service.sentences.autoCreateRule": {
+    "en": "23f1b072b3557932",
+    "text": "項目 uid=<name>,{{usersDn}} 會在 <name> 第一次透過「任何」協定向本服務驗證身分時出現。LDAP 繫結不會植入項目（它出示的是 DN，而不是用戶名稱），OAuth 客戶端也不會。經驗證的 TLS「客戶端憑證」是唯一本身已經是 DN 的身分：其項目保留主體自己的葉 RDN——CN=alice,O=Example 對應 cn=alice,{{usersDn}}——若整個主體已位於 {{baseDn}} 之下則保留整個主體，而完整的主體、簽發者、序號與有效期間以 x509* 屬性存放在項目上，這些是本服務自己的名稱，不是結構描述。「去中心化識別碼」是第三種形式，既不是名稱也不是 DN：簽發憑證的 did:jwk 主體、向 OID4VP Verifier 出示的任何 DID、/did/generate 產生的 DID。其項目位於 uid=did-<DID 之 SHA-256 的 12 個十六進位字元>,{{usersDn}}——完整寫出的 did:jwk 是長達數百個字元的 DN，大部分是金鑰數據——識別碼本身則完整保存在項目上的 didSubject 中，其方法則保存在 didMethod 中。請以 didSubject 而非 uid 搜尋該人：在這些項目上 uid 是摘要，didSubject 才是身分。"
+  },
+  "ldap.peps.sourceOfTruth": {
+    "en": "b8fc2f8f4bf8c58b",
+    "text": "這裡幾乎每個屬性都是本服務在 PEP 註冊、拉取或回報時寫下的「記錄」。例外的兩個是 xacmlPepEnabled（由管理員設定，重新連線的 PEP 不會清除它）以及 xacmlPepNotifyUrl（本服務會撥接的三個地址之一）。"
+  },
+  "applications.kinds.oauth2-client.label": {
+    "en": "70d50cab8908ac09",
+    "text": "OAuth 2.0 客戶端"
+  },
+  "applications.kinds.oidc-relying-party.what": {
+    "en": "af403fd2e4478e84",
+    "text": "請求要求了 openid 範圍時的同一個 client_id——依賴方是也想要 ID Token 的 OAuth 客戶端，因此一筆記錄通常同時帶有兩種類型。"
+  },
+  "applications.kinds.federation-identity-provider.what": {
+    "en": "0d2adcc59a7c1995",
+    "text": "此實例以服務提供者身分與之聯盟的「外部」身分服務——它向本服務驗證人員的身分，而不是向本服務要求任何東西，這使它成為此處唯一不是客戶端的類型。它仍然在此登錄中，因為此容器存在所要回答的問題是「本服務與哪些當事方打過交道？」，而聯盟夥伴是其中影響最重大的：它是本服務「相信」其簽章的當事方。請參閱 federation/CLAUDE.md。關係本身——端點、證書、屬性對應——存放在 ou=federations 下而不是這裡；這筆記錄是作為當事方的夥伴，而那一筆是與它之間的安排。"
+  },
+  "applications.kinds.gnap-client.label": {
+    "en": "ea237766411168ed",
+    "text": "GNAP 客戶端實例"
+  },
+  "applications.kinds.gnap-client.what": {
+    "en": "42cf02b486bd48ab",
+    "text": "提出 GNAP 授權請求的金鑰（或實例識別碼）。"
+  },
+  "applications.protocols.oidc.what": {
+    "en": "1ce7cc23cb0f3a91",
+    "text": "要求 openid 範圍、因而要求 ID Token 的同一個 client_id。依賴方「就是」OAuth 客戶端，因此這兩者通常會一起剔選；只剔選這一項是合法的，表示此項目用於 OIDC 流程。"
+  },
+  "applications.protocols.saml11.what": {
+    "en": "0f0b81ee62d1009e",
+    "text": "/saml11 上兩種瀏覽器設定檔的依賴方——也是 WS-Federation 應用程式預設會收到的，這就是為什麼這兩者通常一起剔選。"
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "從簽發者領取可驗證憑證的錢包。在該流程中錢包不出示自己的應用程式識別碼——它以 OAuth 客戶端身分驗證並被記錄為 OAuth 客戶端——因此此家族沒有類型，也永遠不會有任何東西將它標記為已見。"
+  },
+  "applications.protocols.federation.what": {
+    "en": "51f9dc86ae390cb9",
+    "text": "位於聯盟關係另一端的「外部」身分服務。它是此登錄中唯一不是本服務客戶端的東西——它向本服務驗證人員的身分。它的「出現記錄」會記在該關係所使用的協定下，因此此類項目上的協定標籤與一般客戶端無法區分，唯一能區分它們的是「類型」——這正是此表格依類型比對的全部原因。關係本身存放在 ou=federations 下；請參閱 federation/CLAUDE.md。"
+  },
+  "applications.protocols.ldap.what": {
+    "en": "9e2b2e44593ddedf",
+    "text": "在 389 或 LDAPS 636 上繫結的目錄客戶端。此處每次繫結都會成功，而且沒有任何繫結指名應用程式，因此永遠不會有任何東西為此家族記錄出現記錄——剔選它只說明此項目的用途，別無其他。"
+  },
+  "applications.protocols.scim.what": {
+    "en": "ce2bae136c7ecd7f",
+    "text": "/scim/v2 上的佈建客戶端。該介面驗證的是其「呼叫者」——以 RFC 7644 section 2 所列六種方案中的任何一種——而不是應用程式識別碼，因此與 LDAP 一樣，沒有任何東西會將此家族寫入 appProtocol。"
+  },
+  "applications.protocols.mtls.what": {
+    "en": "eb9407b59ae6b377",
+    "text": "依 RFC 8705 向權杖端點驗證身分的客戶端。從應用程式的憑證區段簽發給它的 TLS 客戶端憑證，無需註冊任何東西即可在 tls_client_auth 下驗證它；來自其他授權單位的憑證需要五個主體參數中的「一個」（oauthTlsClientAuthSubjectDn 與四個 oauthTlsClientAuthSan* 屬性），而 self_signed_tls_client_auth 讀取 jwks x5c 或 oauthTlsClientCertificateThumbprint——因此剔選此方塊只是給自己的備註，那些才是組態。"
+  },
+  "applications.protocols.gnap.what": {
+    "en": "86edbf0cbc0fcbab",
+    "text": "GNAP 客戶端實例、GNAP 資源伺服器，或兩者皆是：向 /gnap（RFC 9635）或面向 RS 的 API（RFC 9767）證明持有金鑰的當事方。其金鑰為 gnapKey（公開金鑰物件），或搭配密封 gnapSymmetricKey 的 gnapKeyReference；其完成 URI 與其他任何返回地址一樣；資源伺服器攜帶其負責回應的位置，並在註冊資源集後攜帶其用來驗證的 macaroon 根金鑰。"
+  },
+  "applications.protocols.acme.what": {
+    "en": "a497ff001f194be7",
+    "text": "在 /enroll/acme 透過 ACME（RFC 8555）進行的證書註冊：以 External Account Binding 金鑰繫結至此應用程式的 ACME 帳戶。其證書指名 urn:sts:application:<id>，並保存在此項目上。"
+  },
+  "applications.protocols.est.what": {
+    "en": "cc7e6d70b3c9a590",
+    "text": "在 /.well-known/est 透過 EST（RFC 7030）進行的證書註冊：此應用程式以其客戶端 ID 與秘密，或以此領域簽發給它的證書進行驗證。"
+  },
+  "applications.protocols.scep.what": {
+    "en": "3aa1a8167ba7b6a1",
+    "text": "在 /enroll/scep 透過 SCEP（RFC 8894）進行的證書註冊：為此應用程式建立的單次使用挑戰密碼。"
+  },
+  "applications.protocols.scim-client.label": {
+    "en": "9be47ed83dd2d7b2",
+    "text": "SCIM 客戶端（外送佈建）"
+  },
+  "applications.protocols.scim-client.what": {
+    "en": "b4c33bcec8578230",
+    "text": "本服務將用戶與群組「推送」到的遠端 SCIM 2.0 服務提供者（#552）：透過 RFC 7644 傳送 RFC 7643 資源，隨目錄變更而建立、取代或修補、停用或刪除，並依需求或依排程進行對帳。它以 HTTP Basic、OAuth 2.0 client_credentials 權杖或 TLS 客戶端憑證驗證；每個憑證都密封在此項目上，從不顯示。在 Protocols → SCIM → Clients 上設定。此家族不簽發任何東西。"
+  },
+  "applications.schema.objectClasses.stsApplication.what": {
+    "en": "1687dbb8042b2835",
+    "text": "「自創的」，因為沒有任何已註冊的 LDAP 結構描述包含 client_id、一組重新導向 URI、entityID 或服務主體名稱。每個儲存 OAuth 客戶端的產品都將它們保存在自己的資料庫而不是目錄中，因此沒有可借用的東西。這些是本服務自己的名稱，就像 x509subject 與 didSubject 一樣。"
+  },
+  "applications.schema.attributes.appHomePageUrl.what": {
+    "en": "bb7f9df5947fbef1",
+    "text": "「應用程式自己的首頁」：人員要到達它所前往的地方，因此也是登入它的起點。/portal/applications 將每一列連結到這裡，沒有此值的項目在那裡會以無連結的方式繪製，而不是使用猜測的地址。由「宣告」而來，從不衍生——旁邊的重新導向 URI 是回呼而不是正門，因此沒有任何東西會從它們計算出此值。僅限 http 或 https，因為它會成為 href。"
+  },
+  "applications.schema.attributes.appCorsOrigin.what": {
+    "en": "03bcebb131e7b340",
+    "text": "「瀏覽器頁面可代表此應用程式呼叫本服務的來源」——`https://app.example.com`，每個值一個確切來源，不含路徑也不含萬用字元。將此應用程式指名為其客戶端的請求（client_id、Basic 認證、客戶端斷言，或簽發給它的存取權杖），只有在其 Origin 列於此處時才會以 Access-Control-Allow-Origin 回應；完全未指名客戶端的請求——探索、JWKS、DID 文件、CORS 預檢——則對列在領域中「任何」應用程式上的來源回應。「空白表示不允許任何第三方來源」，在兩種模式下皆然。本服務自己的來源（其接聽程式、global.publicBaseUrl、內嵌偵錯工具與 global.corsOrigins）永遠不需要列出。寫入時會正規化：配置與主機轉為小寫，預設連接埠會被移除。"
+  },
+  "applications.schema.attributes.appKind.what": {
+    "en": "33629ff0f1ba7b81",
+    "text": "此應用程式「是」什麼，它被看見時扮演的每種角色各一個值。多個值是一般情況，也正是重點：要求 openid 範圍的 OAuth 客戶端同時也是依賴方。"
+  },
+  "applications.schema.attributes.appAllowedProtocol.what": {
+    "en": "45439186294a129f",
+    "text": "「此應用程式所宣告的協定家族」，每個家族一個值，取自 PROTOCOLS 發布的封閉表格。它是上方 appProtocol 的「宣告」版本，兩者不能視為同一件事：那個屬性是已發生的事且無法編輯，這個是某人說明應用程式用途的內容，在它連線之前就在 /admin/applications/new 上剔選。它不授予任何東西。在「產品」模式下，簽發原則會拒絕透過其未指名之家族進行的簽發——只宣告 SAML 2.0 的應用程式會被拒絕簽發存取權杖（STS-XACML-0084）；在開發模式下它不拒絕任何東西。未宣告任何家族時，兩種模式都不會拒絕任何東西。"
+  },
+  "applications.schema.attributes.appAuthorizationServer.what": {
+    "en": "c825e716fe988b04",
+    "text": "此客戶端使用過「哪些授權伺服器」，以其路徑中的名稱表示——它被看見的每個伺服器各一個值。此程序發布數個授權伺服器，每個都有自己的功能與位於 /{id}/oauth2/… 下的端點，而且「每個客戶端都可以使用每一個」：這裡沒有任何東西將客戶端限制在某個伺服器上，因此這記錄的是它「去過」哪裡，而不是它可以去哪裡。累積記錄，因為與其中兩個交談的客戶端是一個有兩個值的客戶端，而不是兩個客戶端。"
+  },
+  "applications.schema.attributes.appLastUser.what": {
+    "en": "a33e3ab766bdbaf9",
+    "text": "最近的身分，理由相同，限制也相同：它計算的是用戶的「變更」而不是不同用戶的集合，這對一般情況是正確的，對於在兩個應用程式之間交替的人則會少算。在 seen() 中做出此取捨之處有所說明。"
+  },
+  "applications.schema.attributes.appRegistered.what": {
+    "en": "1ee5893663bda0e9",
+    "text": "當此應用程式在此經過動態客戶端註冊時為 TRUE，只是出現了一個 client_id 時為 FALSE。它記錄的是應用程式「如何」來到這裡，而不是什麼才算數：只要項目持有 oauthRedirectUri，RFC 9700 模式就會依其判斷客戶端，無論它是如何來的；只有在沒有時才依 oauth2.redirectUris 設定判斷——而 OAuth 2.1 模式在這種情況下會直接拒絕。省略 token_endpoint_auth_method 對已註冊的客戶端表示 client_secret_basic，對手動建立的客戶端則表示沒有。"
+  },
+  "applications.schema.attributes.appRegisteredBy.what": {
+    "en": "7472cd23e6e908b3",
+    "text": "此應用程式若經過註冊，是如何註冊的：\"administrator\"（在 /admin/applications/new 上或透過管理 API 建立）、\"rfc7591\"（POST /oauth2/register）、\"ldap:<bound DN>\"（在 ou=applications 下的 LDAP 新增，#504；未繫結者為 \"ldap\"）或 \"startup\"（本服務自己植入的客戶端之一）。只是出現的應用程式上沒有此屬性。由此登錄以及 LDAP 新增寫入，後者會保留其作者給定的值；LDAP 修改從不蓋印它。「在產品模式下，它決定了應用程式是否受服務」（#496）：沒有它的項目——開發模式下出現記錄所歸檔的項目——在每個協定入口都會被視為沒有應用程式。"
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "1e1a912a88773d34",
+    "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。在未宣告任何 OAuth 家族的項目上不存在。"
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "b498dbc0da8ba7a9",
+    "text": "「此應用程式所回應的對象」——指向它的存取權杖所攜帶的 `aud`，也是客戶端交換權杖以到達此應用程式時，放在 RFC 8693 section 2.1 之 `audience`（或 `resource`）中的值。它是 OAuth 對一項事實的拼寫，而此處其他三個家族已以各自的名稱記錄同一事實：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一件事，`samlEntityId` 是斷言之 AudienceRestriction 中的同一件事，若由一個屬性保存三者，就會是一個必須代表最後詢問之協定的字串。\n\n它由「宣告」而來——沒有人會把對象當作自己的名稱出示，因此這裡沒有任何東西會寫入它，也無法衍生它——而且它是 URI 而不是 client_id，因為對象本來就是如此：是資源，而不是呼叫它的客戶端。多個值是一般情況（依環境區分的主機名稱），這就是它採累積的原因。\n\n**它會被讀取，這使它成為例外**，有別於旁邊的其他宣告屬性。權杖交換會在此「查詢」`audience`——forAudience()——因此為 `https://esb1.example.com` 記錄的委派，在 /admin/delegation 及其圖中會指名應用程式 `esb1`，而不是為登錄中其他地方都未提及的 URL 畫一個方框。它是「查詢」而不是權限：沒有人註冊的對象仍會照舊被交換，並原樣記錄，因為會拒絕的模擬環境只會減少測試案例，而不是增加。"
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "「本服務產生或被給予的秘密」。只要程序持有持久的金鑰加密金鑰（自 2026-10-01 起），每個值都會以它「密封」，因此目錄讀取、數據庫列與備份中保存的都是密文；沒有持久金鑰時（開發模式）則為明文。主控台與 /admin-api 在憑證保護之後會顯示開啟後的內容。絕不會寫入稽核記錄。\n\n「自 2026-10-01 起可有多個，每個都是一筆記錄」：{\"id\",\"secret\",\"created\",\"expires\",\"description\"}，兩個時間以自 epoch 起的秒數表示，`expires` 為 0 表示永不到期。每個未到期的秘密都可通過驗證；「最新」的未到期秘密是本服務用來簽署與加密的秘密，也是 RFC 7591 與 7592 傳回的 client_secret。裸值（ldapmodify、set）是沒有到期時間的秘密；set 會「取代」所有秘密，而憑證區段則一次新增、移除與輪替一個，最多 oauth2.clientSecretsMax 個。"
+  },
+  "applications.schema.attributes.appRedirectUriObserved.what": {
+    "en": "8ef752a64a9931a4",
+    "text": "在本服務已回應的授權請求中看到的 redirect_uri。與 oauthRedirectUri 分開保存，因為「已註冊」與「已使用」是不同的事實，而 RFC 9700 section 2.1 談的正是不要混淆兩者：完全比對檢查讀取的是已註冊清單，而這個是客戶端實際行為的證據。"
+  },
+  "applications.schema.attributes.appReturnAddressObserved.what": {
+    "en": "c0072e90e57245a4",
+    "text": "「此項目上哪些返回地址從未被任何人註冊過」。每個值為 `<attribute> <address>`——例如 `samlAssertionConsumerService https://sp.example.com/acs`——標記的是「開發」模式請求所指名的地址，開發模式會將它寫入項目，因為它相信每個地址。「產品」模式將已標記的地址視為「未」註冊，並如同拒絕完全不在項目上的地址一樣拒絕它，因此從開發切換到產品的領域不會悄悄信任開發模式學到的東西。營運者可以「確認」一個地址（標記移除，地址保留）、「捨棄」一個地址（兩者都移除），或明確寫入該地址，這也等同確認。在此屬性存在「之前」記錄的地址不帶標記，無法與已註冊的地址區分——請手動審查那些地址。"
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutUri.what": {
+    "en": "8c640a5c7d635f32",
+    "text": "「通知此客戶端用戶已登出的位置」——OpenID Connect Front-Channel Logout 1.0 section 2 的 frontchannel_logout_uri。登出頁面會在隱藏的 iframe 中載入它，若客戶端有要求，查詢字串中會帶有 iss 與 sid。它是「單一」值，因為規格為每個客戶端定義一個 URI，這與旁邊的重新導向 URI 不同；未註冊任何 URI 的客戶端完全不會被通知，並會在 /logout 上如此列出，而不是被悄悄略過。"
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutSessionRequired.what": {
+    "en": "501fcc040a4dd31f",
+    "text": "若此客戶端要求上述通知帶有 `iss` 與 `sid` 則為 TRUE——Front-Channel Logout 1.0 section 2 的 frontchannel_logout_session_required。這很重要，因為在一個瀏覽器中有多個工作階段的 RP，沒有 sid 就無法分辨是哪一個結束了，而 RFC 7591 section 2 將省略的布林值視為 FALSE 而非未知——因此此處沒有值表示客戶端沒有要求，這與客戶端未註冊是不同的事實。"
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutUri.what": {
+    "en": "3b143ba0baa349f2",
+    "text": "「用戶登出時本服務 POST Logout Token 的位置」——OpenID Connect Back-Channel Logout 1.0 section 2.2 的 backchannel_logout_uri。此客戶端曾在其上獲簽發授權回應的工作階段每次登出，都會在登出回應之後，以伺服器對伺服器的方式透過外送原則傳送一個（https 並驗證證書；在產品模式下不得為內部地址）。與前端通道 URI 一樣是「單一」值：規格為每個客戶端定義一個。https 且不含片段；http 只適用於機密客戶端，且只在外送原則允許透過 http 傳送時（federation.outboundAllowHttp、開發模式；section 2.2，#123）。"
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutSessionRequired.what": {
+    "en": "ceb948059d9c1807",
+    "text": "若此客戶端要求 Logout Token 中帶有 `sid` 則為 TRUE——Back-Channel Logout 1.0 section 2.2 的 backchannel_logout_session_required。本服務在其傳送的每個 Logout Token 中都會放入 `sid` 與 `sub`，因此這個旗標一律會被遵循；之所以記錄它，是因為「false」與「未說明」是關於客戶端的不同事實，與前端通道旗標相同。"
+  },
+  "applications.schema.attributes.oauthGrantType.what": {
+    "en": "0b1c949fd4f2f952",
+    "text": "此客戶端可使用的授權類型——RFC 7591 section 2 的 grant_types，來自註冊或由管理員寫入。權杖端點在每種模式下都會拒絕其他任何授權（unauthorized_client）；空清單不限制任何東西。客戶端實際使用過的是 oauthGrantTypeObserved。"
+  },
+  "applications.schema.attributes.oauthResponseType.what": {
+    "en": "6be9c178253c7d2c",
+    "text": "此客戶端可要求的 response_type 值——RFC 7591 section 2 的 response_types，來自註冊或由管理員寫入，每個值一種回應類型（\"code\"、\"code id_token\"）。授權端點在每種模式下都會拒絕其他任何值（unauthorized_client）；空清單不限制任何東西。客戶端實際要求過的是 oauthResponseTypeObserved。"
+  },
+  "applications.schema.attributes.oauthGrantTypeObserved.what": {
+    "en": "377bd68db76fa783",
+    "text": "看到此客戶端在權杖端點使用過的授權類型。這是記錄而不是權限：oauthGrantType 才是它可以使用的。"
+  },
+  "applications.schema.attributes.oauthResponseTypeObserved.what": {
+    "en": "4f06a60676c6cdb9",
+    "text": "看到此客戶端在授權端點要求過的 response_type。這是記錄而不是權限：oauthResponseType 才是它可以要求的。"
+  },
+  "applications.schema.attributes.oauthAllowedScope.what": {
+    "en": "318365370d864543",
+    "text": "「此客戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「客戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的客戶端，而每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是客戶端要求過的內容。"
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "「此應用程式定義之每個權限所依附的基礎 URI」，也是讓權限名稱在此全域唯一的東西。權限由此值加上其名稱識別——基礎 `https://example.com/` 加名稱 `write` 即為權限 `https://example.com/write`——這是客戶端放在 `scope` 中的值，存取權杖也隨之以它為「對象」。Entra ID 稱之為 Application ID URI，拼寫為 `api://<guid>`；形式相同，而此處並不要求該配置。\n\n透過此模組寫入時，「它會被正規化為以分隔符號結尾」——結尾沒有 `/`、`#` 或 `:` 時會加上 `/`——因為基礎 + 名稱是單純的串接，否則 `https://example.com` + `write` 會產生 `https://example.comwrite`。`ldapmodify` 與其他屬性一樣可寫入此屬性且不會正規化，因此手動寫入的基礎就完全照字面意思。\n\n「單一值」，它是這一組中唯一無法在不做出決定的情況下擴充的屬性：兩個基礎意味著項目上的每個權限都有兩個識別碼，而將範圍轉為對象的查詢必須挑一個放進 `aud`。"
+  },
+  "applications.schema.attributes.oauthPermission.what": {
+    "en": "0c47fe049bbc6c7b",
+    "text": "「此應用程式公開的一個權限」，每個權限一個值。值是權限的「名稱」——`read`、`write`、`Widgets.ReadWrite.All`——可選擇性地接著 `|` 與描述：`write|Change widgets on somebody's behalf`。「第一個」`|` 是分隔符號，之後的每個都屬於描述，因此描述可包含該字元，名稱則不可。\n\n名稱必須是合法的 OAuth 範圍權杖（RFC 6749 section 3.3——不含空格、雙引號或反斜線），因為這是客戶端會放在 `scope` 參數中、並會出現在權杖 `scope` 宣告中的內容。以 `ldapmodify` 寫入時不會強制檢查；此模組與兩個主控台會檢查。\n\n「權限必須先存在，才能授予任何東西該權限」，這是此功能唯一的順序規則，在 updateApplication() 中檢查，讓主控台表單與管理 API 不會對此產生分歧。它是在「授予」時檢查，而不是在這裡：此屬性是定義，而尚未被任何人使用的定義是正常的第一步，而不是錯誤。"
+  },
+  "applications.schema.attributes.oauthRoleGatedPermission.what": {
+    "en": "fa1c86d8fb8ce2fb",
+    "text": "「此應用程式定義、只簽發給持有授權它之角色的主體的權限」。每個一個值，為 `oauthPermission` 中所給的權限「名稱」（`write`，而不是完整識別碼）。要求受管制權限的人員或應用程式，只有在持有其 `rolePermission` 指名完整識別碼（基礎 + 名稱）的角色時才會獲簽發該權限；否則它會從權杖中省略（RFC 6749 section 3.3），而只要求此權限的請求會以 `invalid_scope` 被拒絕。未列於此處的權限照舊簽發，這讓所有現有客戶端在有人選擇加入之前都能繼續運作。\n\n透過此模組寫入時，名稱必須是此項目自己的權限之一；`ldapmodify` 不會檢查，而未指名任何已定義權限的值不管制任何東西，因為沒有請求能指名它。"
+  },
+  "applications.schema.attributes.oauthResourceMetadata.what": {
+    "en": "46f443d9a9272cd3",
+    "text": "「此應用程式據以設定的受保護資源元數據文件（RFC 9728）」，以精簡 JSON 表示。其 `resource` 是由它建立之項目的預設名稱、`oauthPermissionBaseUri` 與 `oauthAudience`，其 `scopes_supported` 是權限；其他每個成員——`authorization_servers`、`jwks_uri`、`bearer_methods_supported`、DPoP 成員——只記錄在這裡，別處沒有。\n\n它「僅為宣告」：沒有任何東西會把它讀回，沒有任何東西會重新擷取它，變更它也不會改變它所填入的任何屬性。透過此模組寫入的值必須是帶有 `resource` 的 JSON 物件；`ldapmodify` 不會檢查。"
+  },
+  "applications.schema.attributes.oauthResourceMetadataUrl.what": {
+    "en": "0e8c5a19327706e7",
+    "text": "「受保護資源元數據文件的擷取來源」，在它是擷取而非貼上或上傳時。只會記錄，從不再次撥接：擷取是管理員在 /admin/applications/new 或 POST /admin-api/applications/load-resource-metadata 上的動作，沒有任何東西會重新整理它。"
+  },
+  "applications.schema.attributes.oauthDelegatedPermission.what": {
+    "en": "78e514ee83d20e97",
+    "text": "「此應用程式在另一個應用程式上獲授予的權限」——完整的權限識別碼，基礎 URI 與名稱合在一起：`https://example.com/write`。它是「委派關係」，而它保存在「客戶端」而非資源上，理由與 Entra 相同，外加一個：客戶端是會在 `scope` 中指名它的一方，因此回答「此請求能否被接受」的項目，就是請求所識別的項目。\n\n**它會被讀取，而且是在決定權杖內容的那一個地方被讀取。**符合已定義權限的 `scope` 值會成為存取權杖的 `aud`（基礎 URI）及其 `scope`（名稱）——請參閱 oauth2.js 的 audienceScopes()。在「產品模式」下，未授予的權限在授權與權杖端點一律以 `invalid_scope` 拒絕。在開發模式下，它會被回報，但除非 `oauth2.delegatedPermissionsEnforced` 開啟（預設為關閉），否則「不拒絕」任何東西：測試中的客戶端會兩種答案都經歷到。\n\n「解析不到任何已定義權限的值不是錯誤，也不會被隱藏。」資源的項目可能已被刪除，或權限已從其底下移除；`/admin/delegation` 會將這類授予顯示為「懸空」，這與此主控台其他部分對無法解析之名稱所採取的三態誠實原則相同。"
+  },
+  "applications.schema.attributes.oauthGlobalConsent.what": {
+    "en": "7e0e74028e48880c",
+    "text": "「登入此應用程式時不會詢問任何人的範圍」。每個範圍一個值，寫法與客戶端放在 `scope` 參數中的完全相同——`openid`、`profile`，或完整的委派權限識別碼，例如 `https://example.com/write`。\n\n**它是「覆寫」而不是記錄。**當 `oauth2.consentRequired` 開啟（預設值）時，授權端點會針對此人尚未為此應用程式同意的任何範圍繪製 /oauth2/consent；此處指名的範圍會對「每個人」略過，而且不會寫入任何人的項目。因此移除一個值會再次詢問每個人——包括本來會同意的人——而移除某人自己的 `oauthConsent` 只會詢問那個人。\n\n**它以配對為鍵，而不是只以範圍為鍵。**在此同意 `read`，是為「此」應用程式同意它；五分鐘後註冊、拼寫相同字詞的應用程式仍會被詢問。\n\n未指名任何應用程式所定義之權限的值不是錯誤，也不會被隱藏——大多數範圍都不是權限。它必須是合法的 RFC 6749 section 3.3 範圍權杖，因為含有空格的值永遠無法比對到單一範圍；`ldapmodify` 與其他屬性一樣可寫入此屬性且不會被檢查，而 /admin/consent 會顯示它放了什麼。"
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthMethod.what": {
+    "en": "3e1fd60dfab74200",
+    "text": "它如何驗證身分——它在權杖端點可使用的每種方法，請求可出示其中任何一種。`none`（公開客戶端）不能與其他任何方法同時持有。RFC 7591 section 2 規定註冊省略此值時預設為 client_secret_basic，這就是省略表示「機密」而非未知的原因。"
+  },
+  "applications.schema.attributes.oauthNativeSso.what": {
+    "en": "582a2cbef470da1a",
+    "text": "TRUE 允許此客戶端要求 device_sso 範圍——因而獲得 device_secret——並以第一個或第二個應用程式的身分參與 Native SSO 權杖交換。其他任何值（預設）兩者皆拒絕。交換中的兩個應用程式都必須持有它，「並且」共用 oauthNativeSsoGroup。註冊只能透過受信任的軟件聲明來設定它，因為群組就是邊界，客戶端不得自行選擇。"
+  },
+  "applications.schema.attributes.oauthNativeSsoGroup.what": {
+    "en": "78d42281463c5a94",
+    "text": "Native SSO 群組：可共用一個裝置工作階段的應用程式——實務上是同一供應商的應用程式。除非收到 ID Token 的應用程式與提出要求的應用程式共用它，否則權杖交換會被拒絕。1 到 64 個字母、數字及 . _ : -；空白或格式錯誤的值會讓客戶端退出 Native SSO。"
+  },
+  "applications.schema.attributes.oauthBackchannelTokenDeliveryMode.what": {
+    "en": "ebaef707274ab832",
+    "text": "CIBA `backchannel_token_delivery_mode`：poll、ping 或 push。沒有此值的客戶端完全不得使用 Backchannel Authentication Endpoint。"
+  },
+  "applications.schema.attributes.oauthCommandEndpoint.what": {
+    "en": "849117c9b5e7b475",
+    "text": "OpenID Provider Commands `command_endpoint`（#151）：在外送原則下，Command Token 以 POST 送往的 https URL。沒有此值的客戶端不會收到任何命令。"
+  },
+  "applications.schema.attributes.oauthBackchannelAuthenticationRequestSigningAlg.what": {
+    "en": "cdfc398e17d181c0",
+    "text": "CIBA `backchannel_authentication_request_signing_alg`：設定後，此客戶端的每個身分驗證請求都必須是以此演算法簽署的請求物件（section 7.1.1）。"
+  },
+  "applications.schema.attributes.oauthBackchannelUserCodeParameter.what": {
+    "en": "6c0f2095e873b568",
+    "text": "TRUE：此客戶端的每個身分驗證請求都攜帶該人的 `user_code`（CIBA section 7.1），這是該人在 /portal/ciba 上設定的秘密，可阻止只知道名稱的客戶端向他們傳送請求。"
+  },
+  "applications.schema.attributes.oauthSubjectType.what": {
+    "en": "cf054cc8fd5f57e3",
+    "text": "OIDC Core section 8 `subject_type`：`public`（預設，也是空白值的含義）讓每個客戶端得到相同的 `sub`；`pairwise` 為此客戶端提供專屬的值，由人員、區段與每個節點共用的秘密衍生，因此不同區段的兩個客戶端無法關聯同一個人；`ephemeral`（#149）為每次身分驗證提供一個隨機值，該次身分驗證簽發的所有內容都相同，之後永不再用。"
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
+    "en": "c3cee680e93f74e1",
+    "text": "OIDC Core section 9 / RFC 7591 `token_endpoint_auth_signing_alg`：此客戶端的驗證斷言必須使用的「唯一」JWS 演算法。以其他任何演算法簽署的斷言在每種模式下都會被拒絕。空白：方法所允許的任何演算法。"
+  },
+  "applications.schema.attributes.oauthJwks.what": {
+    "en": "ecb31a10d74a0998",
+    "text": "「客戶端的公開金鑰」，以 JWKS 文件表示——private_key_jwt 據以驗證的內容（RFC 7591 `jwks`）。這是 RFC 9700 section 2.5「建議」的非對稱憑證，也是此處唯一「不是」秘密的憑證屬性：它是公開金鑰數據，對任何讀取它的人都毫無價值，這正是偏好它勝過共用秘密的全部理由。"
+  },
+  "applications.schema.attributes.oauthJwksUri.what": {
+    "en": "99f551bf8039ea17",
+    "text": "RFC 7591 `jwks_uri`，https。自 #120 起，在需要金鑰時依 federation/federation_http.ts 的外送原則「擷取」（https、不重新導向、大小上限、在產品模式下拒絕內部地址），快取 oauth2.clientJwksCacheS，對未知的 kid 最多每 oauth2.clientJwksRefetchS 重新擷取一次。絕不與 `oauthJwks` 並存：RFC 7591 section 2 只允許兩者之一。"
+  },
+  "applications.schema.attributes.oauthRequestUri.what": {
+    "en": "5aed34e258774de3",
+    "text": "OpenID Connect Registration `request_uris`：此客戶端可傳送的 request_uri 值（RFC 9101 section 5.2），每行一個。「授權端點只會擷取屬於這些值之一的 request_uri」，在移除任何 #fragment 後進行完全比對——沒有人註冊的 request_uri 會以 invalid_request_uri 拒絕且從不撥接，這正是讓擷取不至於成為伺服器端請求偽造的原因。https，或僅限開發模式的 http。"
+  },
+  "applications.schema.attributes.oauthRequestObjectSigningAlg.what": {
+    "en": "0f2db9e8b6d6472a",
+    "text": "OpenID Connect Registration `request_object_signing_alg`：此客戶端的請求物件被接受時「唯一」可用的 JWS 演算法。「空白表示」request_object_signing_alg_values_supported 中的「任何」演算法。只有在根本接受未簽署請求物件的地方才能註冊 `none`——開發模式，且不要求已簽署的請求物件。"
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionAlg.what": {
+    "en": "32ae3a1152bab999",
+    "text": "OpenID Connect Registration `request_object_encryption_alg`：設定時，來自此客戶端的請求物件「必須」以此 JWE 金鑰管理演算法加密（RFC 9101 第 6.1 節）——RSA-OAEP 與 ECDH-ES 加密至此領域發布於 /oauth2/jwks（use: enc）的請求物件金鑰，對稱演算法系列則加密至此客戶端自己的 client_secret。空白「表示」加密為選用。"
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionEnc.what": {
+    "en": "fb477df5cfbc6756",
+    "text": "OpenID Connect Registration `request_object_encryption_enc`：來自此客戶端的請求物件必須使用的 JWE 內容加密。設定 `oauthRequestObjectEncryptionAlg` 後，空白「表示」A128CBC-HS256；未設定該屬性時不得設定此項。"
+  },
+  "applications.schema.attributes.oauthRequireSignedRequestObject.what": {
+    "en": "c9c63effbd13dd2a",
+    "text": "RFC 9101 第 10.5 節 `require_signed_request_object`，僅適用於此客戶端：TRUE 會以 invalid_request 拒絕來自它、未攜帶 `request` 或 `request_uri` 的授權請求，以及以 `none` 簽署的請求物件。FALSE 或空白則依循 oauth2.requireSignedRequestObject。"
+  },
+  "applications.schema.attributes.oauthRequirePushedAuthorizationRequests.what": {
+    "en": "09a53af1a788654f",
+    "text": "RFC 9126 第 6 節 `require_pushed_authorization_requests`，僅適用於此客戶端：TRUE 會以 invalid_request 拒絕來自它、未攜帶於 /oauth2/par 簽發之 request_uri 的授權請求。FALSE 或空白則依循 oauth2.requirePushedAuthorizationRequests。"
+  },
+  "applications.schema.attributes.oauthHttpSignedRequests.what": {
+    "en": "e5c1786e8608f23a",
+    "text": "FAPI 2.0 HTTP Signatures，僅適用於此客戶端：TRUE 會以 401 拒絕帶著此客戶端存取權杖、送往資源伺服器，但未攜帶由其 jwks 或 jwks_uri 中金鑰所做之有效 \"fapi-2-request\" 簽章（RFC 9421）的請求。FALSE 或空白則依循 oauth2.httpSignatures。"
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsType.what": {
+    "en": "103312425b7a3ae9",
+    "text": "此應用程式作為資源伺服器所擁有的一種「存取類型」——每個值一種，RFC 9396 authorization_details 與 GNAP 存取權限都會讀取。可為單純的類型名稱，或一個 JSON 物件 {\"type\", \"description\", \"locations\", \"schema\", \"actions\", \"datatypes\", \"privileges\", \"required\", \"interaction\", \"consentActions\", \"bearer\", \"maxLifetimeS\", \"acr\", \"derivableFrom\", \"introspectionClaims\", \"limits\"}：`locations` 是此類型的權限可指名的地址（權限基礎 URI 與 oauthAudience 一律計入），`schema` 是此類型每項權限都必須符合的 JSON Schema，`actions`、`datatypes` 與 `privileges` 是它可指名的值，`required` 是它必須攜帶的成員，`bearer: false` 表示攜帶它的權杖受傳送者約束，`maxLifetimeS` 是此類權杖的最長存續時間，`derivableFrom` 是它可由之衍生的類型（RFC 9767 第 4 節），`introspectionClaims` 是內省時告知此資源伺服器的該人資訊，`limits` 則是權限之 limits 必須符合的 JSON Schema（子集）。`interaction`（always、default、never）、`consentActions` 與 `acr` 對 GNAP 決定是否詢問資源擁有者，以及需要多強的登入（#432 第 6 階段）。未宣告的類型在每種模式下都會被 RFC 9396 以 invalid_authorization_details 拒絕，在產品模式下也會被 GNAP 拒絕。"
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
+    "en": "5a0acf9625882942",
+    "text": "RFC 9396 第 10 節 `authorization_details_types`：此客戶端「唯一」可使用的 authorization_details 類型，每個值一種。空白「表示」此授權伺服器支援的任何類型。"
+  },
+  "applications.schema.attributes.oauthIdTokenSignedResponseAlg.what": {
+    "en": "8a855d8855d28896",
+    "text": "OpenID Connect Registration `id_token_signed_response_alg`：此客戶端的 ID Token——以及其 back-channel Logout Token 與 Command Token——所用的 JWS 簽章演算法。空白「表示」RS256（在 FAPI 1.0 Advanced 下為 PS256）。可為 id_token_signing_alg_values_supported 中的任何演算法；HMAC 演算法以客戶端密碼作為金鑰。`none` 會被拒絕。"
+  },
+  "applications.schema.attributes.oauthUserinfoSignedResponseAlg.what": {
+    "en": "ef48efadfd32f3ee",
+    "text": "OpenID Connect Registration `userinfo_signed_response_alg`：給此客戶端的 UserInfo 回應所用的 JWS 簽章演算法，使回應成為攜帶 `iss` 與 `aud` 的 `application/jwt`。空白（或 `none`）「表示」純 JSON，除非回應有加密。"
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseAlg.what": {
+    "en": "76a0ae0574f3ef25",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_alg`：UserInfo 回應加密給此客戶端所用的 JWE 金鑰管理演算法（有簽署時於簽署之後）。空白「表示不加密」。須為非對稱演算法，加密至 `oauthJwks` 或 `oauthJwksUri`。"
+  },
+  "applications.schema.attributes.oauthAuthorizationSignedResponseAlg.what": {
+    "en": "1287c2f4ab72e7da",
+    "text": "JARM 第 3 節 `authorization_signed_response_alg`：此客戶端以 JWT 保護之授權回應（`response_mode` `jwt`、`query.jwt` 等）的 JWS 演算法。空白「表示」RS256（在 FAPI 1.0 Advanced 下為 PS256）。`none` 會被拒絕（JARM 第 3 節）。"
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseAlg.what": {
+    "en": "9c508446b117e1da",
+    "text": "JARM 第 3 節 `authorization_encrypted_response_alg`：以 JWT 保護之授權回應加密給此客戶端所用的 JWE 金鑰管理演算法。空白「表示不加密」。須為非對稱演算法，加密至 `oauthJwks` 或 `oauthJwksUri`。"
+  },
+  "applications.schema.attributes.oauthDefaultAcrValues.what": {
+    "en": "2420d2fb6289e439",
+    "text": "OpenID Connect Registration `default_acr_values`：當請求既未指名 `acr_values`、也未指名必要的 acr 宣告時，為此客戶端請求的 acr 值——以空格分隔，最偏好者在前。空白則不請求任何東西。"
+  },
+  "applications.schema.attributes.oauthDefaultMaxAge.what": {
+    "en": "4aab318613c37bad",
+    "text": "OpenID Connect Registration `default_max_age`：當請求未指名 `max_age` 時，此客戶端接受的最舊登入，以整數秒計——更舊的登入會讓該人重新登入。0 表示這一秒內的登入。空白則不要求任何東西。"
+  },
+  "applications.schema.attributes.oauthAssertionIssuer.what": {
+    "en": "f927674d2d7a1f5f",
+    "text": "此應用程式可在 RFC 7523 第 2.1 節授權許可中出示的 `iss` 值，而且這是此處少數會被「讀取」的「宣告式」屬性之一。JWT bearer 斷言「就是」整個授權——該許可中沒有瀏覽器、沒有密碼，也沒有同意步驟——因此接受任何人的斷言，就意味著任何能連到此連接埠的人都能以任何人的身分取得存取權杖。所以這是本服務中除聯合之外，第二個沒有寬鬆選項可用的功能，而 `oauth2.jwtBearerRequireRegisteredIssuer` 預設為開啟。\n\n客戶端「關於自己」所簽發的斷言，會以自己的 client_id 作為 `iss`，此處不需要任何值：該查詢已經透過 oauthClientId 成功，而要求營運者把 client_id 寫兩次，只是一個不含任何決定的設定步驟。此屬性可累積，因為一個應用程式可合理地以各環境不同的簽發者名稱提出斷言。"
+  },
+  "applications.schema.attributes.oauthAssertionJwks.what": {
+    "en": "3abc3d2dd9035aef",
+    "text": "本服務簽發給此應用程式的公開金鑰，為 JWKS 文件，每把金鑰都攜帶 `x5c`（其證書鏈）與 `x5t#S256`。由 /admin/pki 上的「簽發」控制項以及 POST /admin-api/pki/issue 寫入。\n\n這是與 `oauthJwks` 並列的「第二個」屬性，絕不覆寫它。一個自行註冊金鑰、之後又被營運者簽發一組金鑰對的客戶端，有兩種簽署方式，兩者都是有人刻意安排的——覆寫第一種，會在有人按下關於第二種的按鈕那一刻默默終結它。client_auth.js 與 assertion_grant.js 會讀取兩者，以 OR 合併。這是公開金鑰材料，因此與 oauthJwks 一樣，對讀取此目錄的人毫無價值。"
+  },
+  "applications.schema.attributes.oauthAssertionCertificate.what": {
+    "en": "b4cbd65aec258415",
+    "text": "葉證書，PEM 格式，其主體是此應用程式，簽發者是該領域的 Issuing CA。與上述第一個 `x5c` 成員位元組相同，但採用可以貼進 `openssl x509 -text` 的形式。"
+  },
+  "applications.schema.attributes.oauthAssertionCertificateChain.what": {
+    "en": "b7a32cc9139e6bd2",
+    "text": "Issuing CA 與 Intermediate CA，PEM 格式，依此順序——即葉證書隨附的內容。刻意不包含「根」證書：根證書是信任錨點，而依賴方若因根證書出現在鏈中就接受它，等於接受一張為自己背書的證書。"
+  },
+  "applications.schema.attributes.oauthAssertionPrivateKey.what": {
+    "en": "8b668a69fa54d2c9",
+    "text": "私密金鑰，PEM 格式。**只要金鑰加密金鑰的存續比程序更久，靜態時即予密封**——透過 common/keystore.js 以 AES-256-GCM 密封，與密封本服務自身簽章金鑰、common/pki.js 的三組 CA 金鑰對以及驗證器共用秘密的機制和金鑰相同。因此，在每次繫結都成功的 TCP 389 上執行 ldapsearch、一個 ldif 檔、一筆數據庫列以及兩者的備份，所保存的都是 `$aesgcm$…` 而不是可用的金鑰。經由此模組的介面——/admin/applications 與 GET /admin-api/applications，兩者都需要認證——會拿到 PEM，因為密封保護的是「儲存區」，而不是營運者領取所簽發認證的主控台；SEALED_FIELDS 論證了這種劃分。在「開發」模式下它以明文寫入，這是旁邊驗證器秘密所遵循的規則，理由也相同：那裡的金鑰加密金鑰是暫時的，因此以一把不會在重新啟動後留存的金鑰，去密封一個會留存的項目，會讓私密的一半永遠成為垃圾，而憑證卻回來了。它絕不寫入稽核記錄，本服務也「不保留第二份副本」——common/pki.js 只在簽發時交出一次，然後就忘掉它。"
+  },
+  "applications.schema.attributes.oauthAssertionExpiresAt.what": {
+    "en": "bf8bf93da43a7bf7",
+    "text": "所簽發證書的到期時間，為 GeneralizedTime。這是關於「證書」的事實，而不是原則：此處沒有任何東西會因為過了這個日期而拒絕斷言——拒絕斷言的是證書無法建立路徑，而這是在檢查證書鏈之處檢查的。繪製於 /admin/pki 上，讓營運者能看到什麼即將停止運作。"
+  },
+  "applications.schema.attributes.oauthAssertionKeySource.what": {
+    "en": "9763e439aef61fa1",
+    "text": "上述 RFC 7523 金鑰對的來源，因此也表示誰持有其私密的一半。`issued`——在此產生並由此領域的 Issuing CA 簽署，私密金鑰在 `oauthAssertionPrivateKey` 上。`uploaded-realm-ca`——由此領域自己的核證機關所簽發、上傳以取代產生之金鑰對的證書。`uploaded-external-ca`——來自其他授權單位的證書，連同其完整證書鏈直到自我簽署的根證書一併上傳，每一環都經過驗證。兩種上傳值的私密金鑰都由「應用程式」持有，本服務從未持有。\n\n這是關於所做之事的事實，而不是原則：沒有任何驗證者讀取它，而在它出現之前寫入的項目沒有此屬性——主控台在那種情況下會把密封的私密金鑰視為 `issued`，因為那是唯一可能把私密金鑰放到項目上的方式。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionSigningCertificate.what": {
+    "en": "2f3d2c8cf3ae0cc7",
+    "text": "此方簽署其 RFC 7522 斷言所用的證書，PEM 格式，以值註冊。這是 `oauthJwks` 在一個以 XML Signature 而非 JWS 簽章之設定檔中的對應物——SAML 中沒有 JWKS，一方所註冊的「就是」證書。\n\n一個值中可以有多個 PEM 區塊，因為正在輪替證書的一方，在舊證書簽署的斷言仍在傳遞期間會持有兩張。這是公開金鑰材料，因此與 `oauthJwks` 一樣，對讀取此目錄的人毫無價值。\n\n**斷言自身 `<ds:KeyInfo>` 中附帶的證書不能取代此屬性。**它只用來在此處已註冊的證書之間做選擇，絕不會本身被當作金鑰使用，這正是此設定檔比 RFC 7523 更嚴格之處：鏈結至此領域根證書只能證明是「領域」簽發了一把金鑰，卻無法說明是「哪個」應用程式持有它，因此接受它會讓應用程式的 RFC 7523 葉證書得以簽署 SAML 斷言。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificate.what": {
+    "en": "d1e47484136de9b4",
+    "text": "本服務為 RFC 7522「簽發」給此應用程式的葉證書，PEM 格式，其主體是該應用程式，簽發者是該領域的 Issuing CA。由 /admin/pki 上選擇 SAML 2.0 用途的「簽發」控制項寫入，以及由帶有 `purpose: \"saml\"` 的 POST /admin-api/pki/issue 寫入。它是與旁邊的 `oauthAssertionCertificate` 「不同」的證書，基於「不同」的金鑰對，其 subjectAltName 攜帶 RFC 7522 設定檔 URI，使脫離上下文讀取的證書也能說明它是為哪個設定檔簽發的。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
+    "en": "49df2430d4c7cf4c",
+    "text": "Issuing CA 與 Intermediate CA，PEM 格式，依此順序——即上述葉證書隨附的內容。刻意不包含「根」證書，理由如 JWT 證書鏈一列所述：依賴方若因根證書出現在鏈中就接受它，等於接受一張為自己背書的證書。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionThumbprint.what": {
+    "en": "7788d86bee182127",
+    "text": "所簽發證書的 SHA-256 指紋，base64url 格式。它對 SAML 設定檔的意義，就如同 `oauthAssertionKid` 對 JWT 設定檔，而拼法不同，是因為兩種格式攜帶不同的識別方式：JWS 標頭指名一個 `kid`，XML Signature 則攜帶證書本身，因此讓出示的 <ds:KeyInfo> 與已註冊內容相符的是指紋。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionExpiresAt.what": {
+    "en": "21956043d5d0e1df",
+    "text": "所簽發 RFC 7522 證書的到期時間，為 GeneralizedTime。這是關於「證書」的事實，而不是原則，與 `oauthAssertionExpiresAt` 完全一樣：此處沒有任何東西會因為過了這個日期而拒絕斷言。繪製於 /admin/pki 上，讓營運者能看到什麼即將停止運作。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionKeySource.what": {
+    "en": "885b1731802e4f71",
+    "text": "上述 RFC 7522 金鑰對的來源，使用 `oauthAssertionKeySource` 的用語，理由也相同：`issued`、`uploaded-realm-ca` 或 `uploaded-external-ca`。它是與 JWT 屬性「分開」的屬性，因為兩組金鑰對是分開的——其中一組可能在此簽發，另一組則是別人的證書。"
+  },
+  "applications.schema.attributes.oauthSoftwareStatementIssuer.what": {
+    "en": "c6834fb57ae3ff4c",
+    "text": "此應用程式在 POST /oauth2/register（RFC 7591 第 2.3 節）為其軟件聲明背書的 `iss` 值——此應用程式是軟件「發行者」，指名這些簽發者之一的聲明，會以其 `jwks`、其來自 /admin/pki 的 RFC 7523 金鑰對，或此領域簽發給它的 x5c 加以驗證。此屬性會被「讀取」：當 `oauth2.softwareStatementRequireTrustedIssuer` 開啟時，來自無人宣告之簽發者的聲明會以 unapproved_software_statement 拒絕，而受信任的聲明會固定已註冊的元數據，並可開啟已關閉的註冊端點。\n\n這是與 `oauthAssertionIssuer` 「分開」的屬性：被信任以說明某人身分的一方，並不因此被信任以說明哪些軟件可以註冊為何者。此領域自己簽發的聲明不需要宣告。此屬性可累積，理由與斷言簽發者相同。"
+  },
+  "applications.schema.attributes.oauthIssuedSoftwareStatement.what": {
+    "en": "6e1666963d910326",
+    "text": "此領域最近一次為此應用程式簽發的軟件聲明，為精簡 JWS，類型為 `software-statement+jwt`，其 `sub` 指名此應用程式。在 POST /oauth2/register 出示它的客戶端，會以它所固定的成員註冊。「不是秘密」——RFC 7591 第 2.3 節預期聲明會隨軟件的每一份副本一起發布——也不是每次簽發之聲明的紀錄：再次簽發會取代此值，而較早的聲明在到期或領域的簽章金鑰變更之前仍可通過驗證。"
+  },
+  "applications.schema.attributes.appSoftwareStatementIssuer.what": {
+    "en": "4bd7d529acd9f5fc",
+    "text": "此客戶端「註冊」時所附軟件聲明的 `iss`，未出示聲明時則不存在。不攜帶聲明的 RFC 7592 更新以及刪除註冊都會清除它。"
+  },
+  "applications.schema.attributes.appSoftwareStatementTrusted.what": {
+    "en": "b995b37e9b9438b5",
+    "text": "當該聲明已針對此領域信任的簽發者通過驗證時為 TRUE；當它因 `oauth2.softwareStatementRequireTrustedIssuer` 關閉而在未驗證的情況下被接受時為 FALSE。在原本關閉的端點上憑 TRUE 聲明註冊的客戶端，每次更新都必須出示來自同一簽發者的受信任聲明。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSubjectDn.what": {
+    "en": "5e4d2971c2881d13",
+    "text": "RFC 8705 第 2.1.2 節 `tls_client_auth_subject_dn`：此客戶端用以驗證之 PKI 證書的主體 DN，採 RFC 4514 形式。自 2026-09-13 起以「名稱」方式比較（common/certificate_subject.js：屬性類型不分大小寫、值採 caseIgnoreMatch、多值 RDN 的 AVA 不計順序），且只與證書鏈「已通過驗證」的證書比較。它是「五個」主體參數之一，客戶端最多註冊一個——第二個會被拒絕（STS-REG-0131、STS-REG-0135）。一個都沒有時，tls_client_auth 仍會驗證此領域簽發給「此」應用程式的證書。它「也是 `mtls` 系列的識別碼屬性」，而且在此處其他每個識別碼都可累積時它卻是單值的，因為 RFC 8705 說證書須符合「the single expected subject」。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanDns.what": {
+    "en": "112f46fd50b192e5",
+    "text": "RFC 8705 第 2.1.2 節 `tls_client_auth_san_dns`：此客戶端用以驗證之證書必須攜帶的 dNSName，比較時不分大小寫、不計結尾的點，且絕不當作萬用字元。五個主體參數之一；請參閱 oauthTlsClientAuthSubjectDn。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanUri.what": {
+    "en": "1d73c827b1f6f2f1",
+    "text": "RFC 8705 第 2.1.2 節 `tls_client_auth_san_uri`：證書必須攜帶的 uniformResourceIdentifier，完全比對。五個主體參數之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanIp.what": {
+    "en": "bdaffe89241efe64",
+    "text": "RFC 8705 第 2.1.2 節 `tls_client_auth_san_ip`：證書必須攜帶的 iPAddress，IPv4 或 IPv6，以地址而非其寫法比較。五個主體參數之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanEmail.what": {
+    "en": "fde7039fac656aab",
+    "text": "RFC 8705 第 2.1.2 節 `tls_client_auth_san_email`：證書必須攜帶的 rfc822Name，網域部分不分大小寫比較，本地部分則完全比對（RFC 5280 第 7.5 節）。五個主體參數之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateBoundAccessTokens.what": {
+    "en": "0f2ad8a5c3044e38",
+    "text": "RFC 8705 第 3.4 節 `tls_client_certificate_bound_access_tokens`，TRUE 或 FALSE。TRUE 表示此客戶端「宣告」其權杖與證書繫結，且在「每種」模式下都會要求它遵守：它經由未出示客戶端證書之連線發出的權杖請求會被拒絕（STS-OAUTH-0487），而不是以未繫結的權杖回應——第 3.4 節將此留給授權伺服器決定。FALSE 或不存在則不改變任何事——出示證書的客戶端仍會取得繫結的權杖。"
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateThumbprint.what": {
+    "en": "1aad4795617491a1",
+    "text": "用於 RFC 8705 第 2.2 節 self_signed_tls_client_auth：此客戶端用以驗證之證書 DER 的 base64url SHA-256。這是「本服務自己的名稱」，與 RFC 所命名者並存：自 2026-09-13 起，當證書是其所註冊 jwks 中某把金鑰的 x5c[0] 時，該證書也能驗證此客戶端（第 2.2.2 節）。可用 GET /tls/sign-in 取得證書的指紋，或自行計算：openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url。"
+  },
+  "applications.schema.attributes.samlAssertionConsumerService.what": {
+    "en": "fd890662f96f022c",
+    "text": "斷言取用者服務 URL——SAML 回應回傳的位置，也是兩個 SAML 系列的重新導向 URI。在 2026-08-25 之前它也保存 WS-Federation 的 `wreply`；那已移至 wsfedReplyUrl，因為 SAML 頁面會為 Single Logout 的後備讀取此屬性，而出現在其中的 wreply 會讓 WS-Federation 應用程式看起來像是指名了一個 SAML ACS。「僅在產品模式下檢查」：開發模式會將回應送到請求所要求的任何地方，並將地址記錄在此；產品模式只遞送到已在此清單上的地址，且在那裡看到的地址絕不會被加入。開發模式在此「記錄」的內容會標記於 appReturnAddressObserved，產品模式在營運者確認之前會拒絕已標記的地址——因此從開發模式切換到產品模式的領域，不會信任開發模式學到的東西。在該標記出現之前記錄的值沒有標記，仍需審查。"
+  },
+  "applications.schema.attributes.samlSingleLogoutService.what": {
+    "en": "afe0a7928da789d7",
+    "text": "此服務提供者的 <samlp:LogoutResponse> 傳送位置，以及此身分識別提供者發起登出時 LogoutRequest 的去處。是「宣告的」，而非觀察到的：LogoutRequest 不攜帶回傳地址，因此只有 SP 元數據或營運者才能說明。取用元數據時會將其 SingleLogoutService 位置寫入此處（並將每個端點的繫結與 ResponseLocation 寫入 samlSloEndpoint，它會優先被讀取）。沒有任何紀錄時，後備依序是 saml2.defaultSingleLogoutService，然後是上述的斷言取用者服務 URL，這是本服務公開表明而非默默做出的猜測。"
+  },
+  "applications.schema.attributes.samlSigningCertificate.what": {
+    "en": "a2ead784b1dff911",
+    "text": "服務提供者已註冊的簽章證書，base64 DER，每個值一張。來自此服務提供者的已簽署 AuthnRequest、LogoutRequest 或 LogoutResponse 會以這些證書「驗證」——在每種模式下皆然——無法以任何一張驗證時即被拒絕。由取用其元數據（每個 use=\"signing\" 或未指定 use 的 KeyDescriptor）、SAML 2.0 主控台頁面、POST /admin-api/saml2/set-signing-certificate、確認下方觀察到的證書，或手動寫入。其金鑰必須能產生本服務可驗證的 XML 簽章——RSA、EC、EdDSA、DSA、ML-DSA 或 SLH-DSA（STS-REG-0160）。它「絕不」從請求寫入：請求在其 ds:KeyInfo 中攜帶的證書會寫入 samlObservedSigningCertificate。在 2026-09-17 之前寫入的值是從請求擷取的，沒有來源紀錄——信任之前請先審查。這是公開金鑰材料，因此與 oauthClientSecret 不同，對讀取此目錄的人毫無價值。"
+  },
+  "applications.schema.attributes.samlObservedSigningCertificate.what": {
+    "en": "91dce6d63a1aaa80",
+    "text": "最近一個已簽署請求在其 ds:KeyInfo 中攜帶的證書，base64 DER，且它不是已註冊的 samlSigningCertificate 值之一。「觀察到的，不受信任」：請求自行附帶的金鑰無法證明是誰傳送了請求，因此在兩種模式下都不驗證任何東西。當項目沒有其他證書時，開發模式仍會將斷言加密給它；產品模式則不會。營運者可在 SAML 2.0 頁面上，或以 POST /admin-api/saml2/confirm-signing-certificate 與 /discard-signing-certificate「確認」它（移至 samlSigningCertificate）或「捨棄」它。只有「一個」值——最近的那個——因此一連串攜帶捏造金鑰的請求無法讓項目膨脹。"
+  },
+  "applications.schema.attributes.samlAuthnRequestVerification.what": {
+    "en": "6acc91b675eb6f89",
+    "text": "檢查最近請求之簽章的結果：`verified`、`failed`、`unsigned` 或 `no-certificate`（已簽署，但沒有已註冊的證書可供檢查），接著是繫結與演算法。與旁邊的 samlAuthnRequestSigned 一樣是指派的。"
+  },
+  "applications.schema.attributes.samlSpMetadataUrl.what": {
+    "en": "4de7dca3c5546c56",
+    "text": "此服務提供者的元數據發布位置。由應用程式頁面上的「重新整理元數據」動作以及 POST /admin-api/applications/refresh-metadata 擷取，「絕不」在流程執行期間擷取——若簽發斷言必須等候別人的網頁伺服器，每次登入的可靠度就只會與那台伺服器相同。擷取所寫入的，就是取用該文件所寫入的一切——請參閱下方的 samlSpMetadata。\n\n這是本服務中「第二個」對外請求介面；聯合是第一個，也是唯一的另一個。它遵循相同的拒絕規則——URL 必須是此項目所攜帶的、配置必須是 http 或 https，且請求會逾時。"
+  },
+  "applications.schema.attributes.samlSpMetadata.what": {
+    "en": "f94a9d0c56e1e3f0",
+    "text": "服務提供者的元數據文件，原樣快取。它是重新整理動作所儲存的內容，也是在 SAML 2.0 頁面上傳（或以 POST /admin-api/saml2/upload-metadata 上傳）時，為本服務無法連到其元數據之服務提供者所儲存的內容。「取用」它（2026-09-17）會將其 AssertionConsumerService 與 SingleLogoutService 端點寫入為「已註冊」的回傳地址（samlAssertionConsumerService、samlAcsEndpoint、samlSingleLogoutService、samlSloEndpoint），並寫入其簽章證書（samlSigningCertificate）、加密證書（samlEncryptionCertificate）、NameIDFormat、AuthnRequestsSigned 與 WantAssertionsSigned，以及其 validUntil 與 cacheDuration。手動設定此屬性只會儲存文件而「不取用任何內容」——請使用上傳功能。\n\n「除了擷取結果之外也保留它」，讓讀者可以看到實際取用了什麼。沒有文件佐證的證書，是無人能檢查的值。"
+  },
+  "applications.schema.attributes.samlEncryptionCertificate.what": {
+    "en": "9105bb16521de17b",
+    "text": "斷言加密給它的證書，base64 DER 或 PEM。由擷取元數據時從 <md:KeyDescriptor use=\"encryption\"> 寫入——退而求其次則採用未限定的 KeyDescriptor，規格說它兼具兩種用途——對於完全沒有元數據的服務提供者，也可以手動設定。\n\n它決定送出什麼。此處沒有時，使用已註冊的 samlSigningCertificate，然後——僅限開發模式——使用觀察到的證書；全都沒有時，斷言會以明文送出（開發模式）或被拒絕（產品模式），頁面上也會如此說明。"
+  },
+  "applications.schema.attributes.samlAcsEndpoint.what": {
+    "en": "3bc462623206e5a8",
+    "text": "取用之元數據中的一個 <md:AssertionConsumerService>，形式為 `<index> <isDefault> <binding> <location>`——isDefault 為 `true`、`false`，未說明時為 `-`。指名 AssertionConsumerServiceIndex 的 SAML 2.0 AuthnRequest 會在該端點、以其繫結回應；指名 AssertionConsumerServiceURL 的請求必須指名其中之一（一旦取用過元數據，在「每種」模式下皆然）；兩者都未指名的請求則送往預設端點（saml-metadata-2.0-os 第 2.2.3 節）。未明確要求設定檔時，SAML 1.1 會使用已註冊的繫結與位置來選擇 Browser/POST 或 Browser/Artifact。"
+  },
+  "applications.schema.attributes.samlSloEndpoint.what": {
+    "en": "50fc4269807fa1f6",
+    "text": "取用之元數據中的一個 <md:SingleLogoutService>，形式為 `<binding> <location>` 或 `<binding> <location> <responseLocation>`。LogoutResponse 在有 ResponseLocation 時送往該處；若服務提供者有發布 LogoutRequest 抵達時所用的繫結，則以該繫結送出。"
+  },
+  "applications.schema.attributes.samlSpNameIdFormat.what": {
+    "en": "5c24c66a2d887053",
+    "text": "服務提供者元數據所宣告的 <md:NameIDFormat> 值。與 samlNameIdFormat（它曾「要求」的格式）不同，這些值具有「限制」作用：指名其他格式的 NameIDPolicy 會以 InvalidNameIDPolicy 回應（saml-core-2.0-os 第 3.4.1.1 節），預設格式也從其中選出。"
+  },
+  "applications.schema.attributes.samlSpAuthnRequestsSigned.what": {
+    "en": "9859c664a8b4172e",
+    "text": "當元數據指出 AuthnRequestsSigned=\"true\" 時為 TRUE：此時無論 saml2.requireSignedAuthnRequests 如何設定，來自此服務提供者的未簽署請求都會被拒絕，而此身分識別提供者提供給它的元數據會指出 WantAuthnRequestsSigned=\"true\"。"
+  },
+  "applications.schema.attributes.samlSpWantAssertionsSigned.what": {
+    "en": "e0f4d22138fd10d6",
+    "text": "當元數據指出 WantAssertionsSigned=\"true\" 時為 TRUE：即使 saml2.signAssertion（或 saml2SignAssertion）關閉，斷言仍會簽署——在產品模式下；開發模式則依循該設定（這是一種測試案例），並記錄服務提供者的要求與此不同。"
+  },
+  "applications.schema.attributes.samlSpWantAssertionsEncrypted.what": {
+    "en": "0435ae5ea89e68d9",
+    "text": "當取用的元數據發布標記為 use=\"encryption\" 的 KeyDescriptor 時為 TRUE——表示服務提供者有用於加密斷言的金鑰，而 SAML 2.0 元數據本身沒有表達這一點的屬性（互通性設定檔將該金鑰視為請求）。此時無論 saml2.encryptAssertion 如何設定，斷言在每種模式下都會「加密」給該金鑰。"
+  },
+  "applications.schema.attributes.samlSpMetadataSigningCertificate.what": {
+    "en": "cdb98da69d5f24ce",
+    "text": "此服務提供者的元數據必須以之簽署的證書，base64 DER。設定它之後，未簽署或簽章無法以它驗證的文件會被「拒絕」，且項目上不會有任何變更。未設定時，已簽署的文件會被取用並記錄為 signed-not-verified：此時信任行為就是營運者對 URL（或文件）的選擇，也就是明確的重新整理或上傳。"
+  },
+  "applications.schema.attributes.oauthAccessTokenTtlS.what": {
+    "en": "a97604c8265b331c",
+    "text": "簽發給此客戶端之存取權杖的存續時間，以秒計，僅為它覆寫 oauth2.accessTokenTtlS。它會成為權杖的 `exp`，因此在簽署時即寫入，此處的任何設定都無法縮短已簽發的權杖。在某個客戶端上設為 30，即可觀察該客戶端重新整理，而其他所有客戶端照常運作。"
+  },
+  "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
+    "en": "37eeca0107443e0c",
+    "text": "「僅限 RFC 9700 模式」：重新整理鏈在被切斷前可閒置未用的時間，為此客戶端覆寫 oauth2.refreshIdleSeconds。它是從「鏈」中任何權杖最後一次被兌換的時間起算，而非從簽發時起算，因此忙碌的客戶端會保有授權，閒置的則不會。在 RFC 9700 模式之外沒有任何東西讀取它，這是該設定的特性，而非此屬性的特性。"
+  },
+  "applications.schema.attributes.oauthClaimsAccessToken.what": {
+    "en": "e284080e7c1bb9a6",
+    "text": "此應用程式自己的存取權杖宣告，為 JSON 陣列，各列格式與領域的「自訂宣告」頁面相同。對簽發給此客戶端的權杖，會加入領域的存取權杖宣告中，且應用程式的列會取代領域中同名的列。"
+  },
+  "applications.schema.attributes.oauthClaimsIdToken.what": {
+    "en": "bf6d6d58355a3d7d",
+    "text": "此應用程式自己的 ID Token 宣告，為 JSON 陣列，各列格式與領域的「自訂宣告」頁面相同。對此客戶端會加入領域的 ID Token 宣告中，同名時以此為準。"
+  },
+  "applications.schema.attributes.oauthClaimsUserinfo.what": {
+    "en": "45d44e8df029c130",
+    "text": "此應用程式自己的 UserInfo 宣告，為 JSON 陣列，各列格式與領域的「UserInfo 宣告」頁面相同。會加入回應給此客戶端的領域 UserInfo 宣告中，同名時以此為準。"
+  },
+  "applications.schema.attributes.oauthClaimAttributesAccessToken.what": {
+    "en": "0bb51f4496678312",
+    "text": "此應用程式自己為其存取權杖「選取」的目錄屬性，為取自領域「自訂宣告」目錄之屬性名稱的 JSON 陣列。存在時，對簽發給此客戶端的權杖會「取代」領域的選取；不存在時使用領域的選取。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineAccessToken.what": {
+    "en": "0fdd9c637c2aed07",
+    "text": "領域的存取權杖宣告與此應用程式自己的宣告如何合併（#395），輸入的列與剔選的目錄屬性皆同：application（只用此應用程式自己的）、union（領域的與自己的）、intersection（只用兩者都有的）或 realm（只用領域的）。未設定時，其列會加入領域的列且同名時以其為準，其選取則取代領域的選取。自身沒有任何內容的應用程式，無論此處如何設定，都會取得領域的內容。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineIdToken.what": {
+    "en": "5712c8d8fec06866",
+    "text": "領域的 ID Token 宣告與此應用程式自己的宣告如何合併（#395），輸入的列與剔選的目錄屬性皆同：application（只用此應用程式自己的）、union（領域的與自己的）、intersection（只用兩者都有的）或 realm（只用領域的）。未設定時，其列會加入領域的列且同名時以其為準，其選取則取代領域的選取。自身沒有任何內容的應用程式，無論此處如何設定，都會取得領域的內容。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineUserinfo.what": {
+    "en": "114411a8522be187",
+    "text": "領域的 UserInfo 宣告與此應用程式自己的宣告如何合併（#395），輸入的列與剔選的目錄屬性皆同：application（只用此應用程式自己的）、union（領域的與自己的）、intersection（只用兩者都有的）或 realm（只用領域的）。未設定時，其列會加入領域的列且同名時以其為準，其選取則取代領域的選取。自身沒有任何內容的應用程式，無論此處如何設定，都會取得領域的內容。"
+  },
+  "applications.schema.attributes.oauthPermissionClaims.what": {
+    "en": "81cd9d9de131a21b",
+    "text": "此資源伺服器的每項權限所攜帶的宣告，為 JSON 物件，從權限名稱（其 oauthPermission 值之一）對應到取自領域宣告目錄的屬性名稱清單。發給此應用程式、且已「授予」某項權限的存取權杖，會以目錄的宣告名稱攜帶該人在該權限屬性上的值；授予權限即是授予這些宣告，標準的 OpenID Connect 宣告也包括在內。依 oauthAccessTokenClaimsCombine 的設定與客戶端的宣告合併。"
+  },
+  "applications.schema.attributes.oauthAccessTokenClaimsCombine.what": {
+    "en": "bf5a0b995021c02e",
+    "text": "在發給它的權杖上，客戶端的存取權杖宣告與此資源伺服器宣告的宣告（oauthAccessTokenClaim）如何合併：'union'（預設）、'intersection'（只用兩者都攜帶的宣告）、'client'（只用客戶端的）或 'resource'（只用宣告的）。意見不一致的多個資源伺服器以交集合併。無論選擇哪一種，授權未涵蓋的內容都不會釋出。"
+  },
+  "applications.schema.attributes.oauthRevokeRefreshOnLogout.what": {
+    "en": "4a6e20c0380356cf",
+    "text": "TRUE 或 FALSE：登出是否撤銷此客戶端的重新整理權杖，覆寫 oauth2.revokeRefreshOnLogout。FALSE 才是值得關注的情況，也是此項值得按客戶端設定的原因——登出後還能藉由重新整理回來的客戶端，是實際部署中真實存在的缺陷，而這讓它能在「一個」客戶端上重現，其餘客戶端則照常運作。"
+  },
+  "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
+    "en": "25b5b04c83819b5b",
+    "text": "此客戶端執行的 RFC 8693 權杖交換，是否在交換所得的存取權杖之外再取得一個 `refresh_token`，僅為它覆寫 oauth2.tokenExchangeRefreshToken。為三個詞之一：`never`、`when-requested`（全服務預設值——客戶端以 RFC 8693 第 2.1 節的 `requested_token_type` 提出要求，只有要求了才會取得）或 `always`。\n\n「它是在執行交換的客戶端上讀取」，而不是在對象上讀取，因為重新整理權杖是交給客戶端的：它是該方要持有、撤銷並最終兌換的認證。在值得關注的情況下，交換所「關於」的主體在此登錄中根本沒有項目，因為交換的重點就在於來自別處的 subject_token。\n\n**它適用於 OAuth 2.0 與 OpenID Connect 系列，不適用於其他系列，而且與此處其他每個屬性不同，這一點是「強制執行」的。**未宣告用於任一系列的項目，會被主控台的兩個入口以及管理 API 拒絕，並指出要先剔選的系列——因為此處的值是關於權杖端點的原則，而一個任何權杖請求都無法指名的項目若攜帶它，看起來就像它正在生效。此列上方的區塊論證了這一點。`ldapmodify` 和對待其他屬性一樣可以修改此屬性，且不會受到檢查。\n\n「不屬於三個詞之一的值，在寫入時不算錯誤，但也不會無聲無息」：settingFor() 會發出警告，指出項目、屬性及其內容，並由全服務的設定決定——與此項目上其他每個覆寫一樣，具有相同的三態誠實性。"
+  },
+  "applications.schema.attributes.appDelegationSemantics.what": {
+    "en": "9faf00ab16755dec",
+    "text": "此應用程式允許的「語意」：`delegation`、`impersonation` 或兩者皆是。作為「行為者」——權杖交換的客戶端、WS-Trust OnBehalfOf / ActAs 的請求者、Kerberos S4U 請求的服務——它說明此應用程式可以「做」什麼；空白表示僅限委派，因此冒充某人需要在此設定 `impersonation`（Kerberos 的 TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION）。作為「主體」，它說明可以「以它的身分」做什麼；空白表示兩者皆可。由簽發原則決定；這是它的事實之一。"
+  },
+  "applications.schema.attributes.appGroupsClaim.what": {
+    "en": "01129d11979c9b3d",
+    "text": "TRUE 或 FALSE：簽發給此應用程式的任何東西是否攜帶 groups 宣告，覆寫 groups.claim。在某個應用程式上設為 FALSE，就能測試遇到非預期宣告就會出錯的客戶端，而不必把宣告從其他所有地方拿掉。"
+  },
+  "applications.schema.attributes.saml2ClaimsCombine.what": {
+    "en": "d0a05b0063187eff",
+    "text": "領域的 SAML 2.0 屬性與此應用程式自己的屬性如何合併（#395），輸入的列與剔選的目錄屬性皆同：application（只用此應用程式自己的）、union（領域的與自己的）、intersection（只用兩者都有的）或 realm（只用領域的）。未設定時，其列會加入領域的列且同名時以其為準，其選取則取代領域的選取。自身沒有任何內容的應用程式，無論此處如何設定，都會取得領域的內容。"
+  },
+  "applications.schema.attributes.saml11ClaimsCombine.what": {
+    "en": "a19640f716396460",
+    "text": "領域的 SAML 1.1 屬性與此應用程式自己的屬性如何合併（#395），輸入的列與剔選的目錄屬性皆同：application（只用此應用程式自己的）、union（領域的與自己的）、intersection（只用兩者都有的）或 realm（只用領域的）。未設定時，其列會加入領域的列且同名時以其為準，其選取則取代領域的選取。自身沒有任何內容的應用程式，無論此處如何設定，都會取得領域的內容。"
+  },
+  "applications.schema.attributes.vcCredentialClaimAttributes.what": {
+    "en": "5df9a1b2f23cb7e9",
+    "text": "此客戶端自己「選取」的、可驗證憑證所攜帶的目錄屬性，為目錄屬性名稱的 JSON 陣列。存在時，對以此客戶端之存取權杖簽發的憑證，會「取代」領域的「憑證宣告」選取；簽發者元數據仍公告領域的選取。"
+  },
+  "applications.schema.attributes.wsfedReplyUrl.what": {
+    "en": "b68a4bfe89fb7da0",
+    "text": "此應用程式之登入回應回傳的位置：第 13.2.1 節的 `wreply`，即 WS-Federation 的重新導向 URI。在 2026-08-25 之前它被寫入 samlAssertionConsumerService，使 wreply 出現在 SAML 頁面為斷言取用者服務與 Single Logout 後備所讀取的屬性中——一個屬性保存兩種協定的回傳地址，導致 WS-Federation 應用程式看起來擁有一個從未指名的 SAML ACS。兩項事實，兩個屬性。與旁邊的 SAML 屬性一樣，它「僅在產品模式下檢查」：開發模式不拒絕任何 wreply，因為會拒絕的模擬服務只會移除測試案例而不是增加；產品模式只回傳至此清單上的地址，且看到的地址絕不會被加入。開發模式記錄的 wreply 會標記於 appReturnAddressObserved，產品模式在確認前會拒絕它；在該標記出現之前記錄的值沒有標記，在領域切換為產品模式前仍需審查。"
+  },
+  "applications.schema.attributes.wstrustAppliesTo.what": {
+    "en": "9a8d1ca262be725c",
+    "text": "RequestSecurityToken 中的 APPLIESTO 地址——權杖「為之」簽發的服務，也是 WS-Trust 的識別碼屬性。可累積。\n\n**它會被讀取**，這在 2026-08-27 之前並非如此，它是 `oauthAudience` 的例外透過第二種協定出現：要求取得權杖以存取 `https://esb.example.com` 的 OnBehalfOf 或 ActAs，會在 /admin/delegation 上記錄於註冊該地址的「應用程式」名下，因此一連串的委派跳轉會畫成一張圖，而不是以圖中其他地方都未提及的 URL 命名的方框。在開發模式下這是「查詢」而非權限——無人註冊的 AppliesTo 會照樣簽發並原樣記錄；在產品模式下則會被拒絕（#496）。請參閱 forAppliesTo()，它先詢問此屬性，其次是 `samlEntityId`。"
+  },
+  "applications.schema.attributes.wstrustJwtScope.what": {
+    "en": "86ac83dbe366a17b",
+    "text": "此應用程式的 WS-TRUST JWT 所攜帶的 OAUTH 2.0 範圍，每個值一個範圍（#485）。WS-Trust 以此應用程式為 AppliesTo 簽發的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）會在其 `scope` 宣告中攜帶它們，以空格分隔（RFC 9068 第 2.2.3 節）；未設定時則不攜帶 `scope`。SAML 權杖不受影響。\n\n**每個範圍都以 OAuth 存取權杖的範圍方式判斷**，以此應用程式作為客戶端：`oauthAllowedScope` 宣告它可以獲簽發什麼（在產品模式下；本服務的受保護範圍則在每種模式下），並由簽發原則的逐範圍問題決定。被原則丟棄的值會從權杖中「略去」並記錄稽核（STS-OAUTH-0579），絕不簽發。指名未宣告範圍的寫入在此會被接受，因為宣告可能變更，且開發模式會授予未宣告的範圍：也請在 oauthAllowedScope 上宣告它。會被原則丟棄的值，會在設定它的地方發出「警告」（#488）：在此欄位旁、在儲存回覆中，以及在 /admin-api 寫入回覆與應用程式檢視中的 `warnings`。"
+  },
+  "applications.schema.attributes.krb5TrustedForDelegation.what": {
+    "en": "3b66e9eeaaad2290",
+    "text": "TRUE 或 FALSE，預設為 FALSE：此 Kerberos 服務「受信任可進行委派」——不受限制的委派（Active Directory 的 TRUSTED_FOR_DELEGATION）。其服務票證攜帶 ok-as-delegate，告訴客戶端可以將其 TGT 轉送到此處；持有轉送之 TGT 的人可以在任何地方以該人身分行事。受保護人員的 TGT 永遠不可轉送，因此無論此處如何設定都絕不會被轉送。受限制的委派（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是較安全的替代方案。"
+  },
+  "applications.schema.attributes.appEnrolledCertificate.what": {
+    "en": "8aa24cf06f1d004f",
+    "text": "透過註冊協定簽發給此應用程式的每張證書一筆 JSON 紀錄：序號、協定、設定檔、主體、名稱、效期、申請者、金鑰是否在此產生、證書及其簽發鏈，以及撤銷標記。公開數據。僅由 common/cert_enrollment.ts 寫入。"
+  },
+  "applications.schema.attributes.appEnrolledPrivateKey.what": {
+    "en": "68a37a841eb0e1f0",
+    "text": "「本服務」為上述某張證書產生的私密金鑰（EST 伺服器端金鑰產生，或主控台的伺服器產生金鑰對），形式為 `<serial>:<PEM>`，只要金鑰加密金鑰的存續比程序更久即予密封。在每個頁面與 /admin-api 回覆中都被「隱藏」；只在簽發時交出一次。"
+  },
+  "applications.schema.attributes.appCertificateHostName.what": {
+    "en": "1ed851c949c198fb",
+    "text": "此應用程式可透過 ACME、EST 或 SCEP 獲簽發證書的 DNS 名稱或 IP 地址。註冊它就是控制權的全部證明：本服務絕不會連線至某個名稱來驗證它。由管理員設定；由 common/cert_enrollment.ts 讀取。"
+  },
+  "applications.schema.attributes.appRegistrationJson.what": {
+    "en": "5766d34ddf2a5c0b",
+    "text": "原樣保存的 RFC 7591 註冊內容，以 JSON 存放在一個屬性中。它之所以在此，是因為 RFC 7591 允許客戶端註冊任意元數據，而 RFC 7592 的讀取必須交回所註冊的內容——這是任何固定的 LDAP 屬性集都無法表示的。重建紀錄時它是「起點」而非最終定論：每個在上方也有屬性的成員，接著都會「從」該屬性覆寫，因此 RFC 9700 模式所強制執行的是 oauthRedirectUri 的 ldapmodify。只有要變更沒有自己屬性的成員時才編輯此項。"
+  },
+  "applications.schema.attributes.appRegistrationAccessToken.what": {
+    "en": "c7a3a95ccee6d6fb",
+    "text": "RFC 7592 註冊存取權杖，它保護此客戶端的讀取、更新與刪除操作。只要程序持有持久的金鑰加密金鑰，就與 oauthClientSecret 一樣密封（自 2026-10-01 起），且絕不寫入稽核記錄。"
+  },
+  "applications.schema.attributes.federationPartnerId.what": {
+    "en": "6b7f63d65cdd8229",
+    "text": "聯合夥伴對自己的稱呼——外部身分識別提供者的 entityID，或在關係使用 OpenID Connect 時其簽發者識別碼。「關係不在這裡」：端點、證書與屬性對應位於 ou=federations 之下，那才是 /federation/acs/{id} 實際驗證所依據的（請參閱 federation/CLAUDE.md）。此項目是作為「當事方」的夥伴，此屬性是它使用的名稱——因此此處的值不會與任何人建立聯合，這是本服務中這句話真正具有約束力的唯一地方。"
+  },
+  "applications.schema.attributes.ldapBindDn.what": {
+    "en": "edb579c7a9932c00",
+    "text": "目錄客戶端在 389 或 LDAPS 636 上繫結所用的 DN。「此處每次繫結都會成功」——任何 DN、任何密碼、匿名皆然——因此沒有任何東西會寫入它，也沒有任何東西會讀取它；它是營運者記錄應用程式預期使用哪個認證的地方，與該應用程式的其他資訊放在一起。"
+  },
+  "applications.schema.attributes.scimClientId.what": {
+    "en": "9fa8008ba9df8d03",
+    "text": "/scim/v2 上佈建客戶端的名稱——它出示之權杖所屬的 OAuth client_id，或它在 Basic 中傳送的用戶名稱。該介面以 RFC 7644 第 2 節所列六種配置中的任一種驗證其「呼叫者」，而非應用程式識別碼，因此不會在此寫入任何內容；此值是一項宣告，而是否要求認證由 SCIM 閘道決定。"
+  },
+  "applications.schema.attributes.acmeCertificateLifetimeDays.what": {
+    "en": "32178dcf7b3e4ef3",
+    "text": "此應用程式透過 ACME 獲簽發之證書的有效期，以天計，覆寫 acme.certificateLifetimeDays（可更長或更短）。任何證書的效期都不會超過其 Issuing CA。"
+  },
+  "applications.schema.attributes.estCertificateLifetimeDays.what": {
+    "en": "ea0b1720d4a2f466",
+    "text": "此應用程式透過 EST 獲簽發之證書的有效期，以天計，覆寫 est.certificateLifetimeDays（可更長或更短）。任何證書的效期都不會超過其 Issuing CA。"
+  },
+  "applications.schema.attributes.scepCertificateLifetimeDays.what": {
+    "en": "0c245cd0b371079a",
+    "text": "此應用程式透過 SCEP 獲簽發之證書的有效期，以天計，覆寫 scep.certificateLifetimeDays（可更長或更短）。任何證書的效期都不會超過其 Issuing CA。"
+  },
+  "applications.schema.attributes.estBasicAuthentication.what": {
+    "en": "d46cf350842998c4",
+    "text": "EST 是否接受此應用程式的客戶端 ID 與密碼（HTTP Basic，RFC 7030 第 3.2.3 節），覆寫 est.basicAuthentication：TRUE 接受、FALSE 拒絕，不論領域如何設定；未設定則由領域決定。"
+  },
+  "applications.schema.attributes.estCertificateAuthentication.what": {
+    "en": "a50d58c25992eab8",
+    "text": "EST 是否接受此領域簽發給此應用程式的證書（TLS 客戶端驗證，RFC 7030 第 3.3.2 節），覆寫 est.certificateAuthentication：TRUE 接受、FALSE 拒絕；未設定則由領域決定。"
+  },
+  "applications.schema.attributes.enrollMaxCertificates.what": {
+    "en": "4f16c3693e154521",
+    "text": "此應用程式可持有的未過期註冊證書數量（ACME、EST 與 SCEP 合計），覆寫 pki.enrollmentMaxCertificatesPerEntry（可更高或更低）。"
+  },
+  "applications.schema.attributes.secretDestEndpoint.what": {
+    "en": "42bf9494550ebc2f",
+    "text": "azure：保存庫 URL（https://<name>.vault.azure.net）。vault：Vault 或 OpenBao 地址（https://vault.example.com:8200）。僅限 https——寫入認證與密碼都會經過它。"
+  },
+  "applications.schema.attributes.secretDestCaCertificates.what": {
+    "en": "2ddb41551cc111c9",
+    "text": "vault：Vault 接聽程式所鏈結之 CA 的 PEM 證書，與公開根證書一併受信任。證書是公開的；證書一律會被驗證。"
+  },
+  "applications.schema.attributes.secretDestCredential.what": {
+    "en": "0e3e22596dd9d73c",
+    "text": "目的地的寫入認證，它可以寫入具名秘密的版本，且不應能做其他任何事：aws 為 JSON {\"accessKeyId\", \"secretAccessKey\"[, \"sessionToken\"]}；gcp 為服務帳戶金鑰檔的 JSON；azure 為 JSON {\"tenantId\", \"clientId\", \"clientSecret\"}；vault 為權杖。與本服務用以讀取自身金鑰加密金鑰與數據庫密碼的唯讀認證分開。金鑰持久保存時以金鑰加密金鑰密封，在每個頁面、/admin-api 回覆與目錄讀取中都被「隱藏」，且絕不記錄。"
+  },
+  "applications.schema.attributes.scimClientBaseUrl.what": {
+    "en": "8576dcce5d9aa880",
+    "text": "遠端 SCIM 基礎 URI（RFC 7644 第 1.3 節），服務提供者有使用 /v2 區段時也包含在內：https://idp.example.com/scim/v2。僅限 https（第 7.2 節）；不得有查詢、片段或用戶資訊（第 7.1 節）。"
+  },
+  "applications.schema.attributes.scimClientAuthMethod.what": {
+    "en": "fe00a32026bba611",
+    "text": "請求的驗證方式（RFC 7644 第 2 節）：basic（以 scimClientUsername 與 scimClientPassword 進行 HTTP Basic）、oauth2（從 scimClientTokenEndpoint 取得 client_credentials 權杖，以 Bearer 權杖傳送）或 none（僅使用 TLS 客戶端憑證，若有設定）。"
+  },
+  "applications.schema.attributes.scimClientUsername.what": {
+    "en": "46d34680b8229ade",
+    "text": "basic：服務提供者用以識別此客戶端的用戶名稱。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientId.what": {
+    "en": "7db4d9638e6d19a4",
+    "text": "oauth2：此客戶端在該處註冊的 client_id。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientSecret.what": {
+    "en": "532cf20542b7031b",
+    "text": "oauth2：客戶端密碼。予以密封、隱藏，且絕不記錄。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientAuth.what": {
+    "en": "ede4e8f4cfdb1611",
+    "text": "oauth2：客戶端在權杖端點的驗證方式——client_secret_basic（預設）或 client_secret_post（RFC 6749 第 2.3.1 節）。"
+  },
+  "applications.schema.attributes.scimClientTlsSource.what": {
+    "en": "59a022632ff98966",
+    "text": "出示給服務提供者的 TLS 客戶端證書：none（預設）、issued（由此領域的 CA 從其 tls-client Issuing CA 簽發，可在 /admin/pki 上撤銷）或 uploaded（scimClientTlsCertificate 與 scimClientTlsPrivateKey）。無論 scimClientAuthMethod 如何設定都會出示。"
+  },
+  "applications.schema.attributes.scimClientTlsCertificate.what": {
+    "en": "b666cc747004775b",
+    "text": "客戶端證書，PEM 格式，其證書鏈接在後面。公開數據。"
+  },
+  "applications.schema.attributes.scimClientTlsPrivateKey.what": {
+    "en": "93b05dbd701d0139",
+    "text": "客戶端證書的私密金鑰，PEM 格式。予以密封、隱藏，且絕不記錄。"
+  },
+  "applications.schema.attributes.scimClientCaCertificates.what": {
+    "en": "cd2239779722a5f1",
+    "text": "服務提供者之 TLS 證書所鏈結之 CA 的 PEM 證書，與公開根證書一併受信任。證書及其主機名稱一律會被驗證。"
+  },
+  "applications.schema.attributes.gnapInstanceId.what": {
+    "en": "5bf2a9c4ae9566c8",
+    "text": "「靜態」實例識別碼（RFC 9635 第 2.3.1 節）：客戶端以 `client` 傳送、用以取代其金鑰的字串。接著它必須證明的金鑰，是此項目上的 gnapKey 或 gnapKeyReference。授權伺服器發出的動態識別碼（第 3.5 節）不會寫入此處。"
+  },
+  "applications.schema.attributes.gnapKey.what": {
+    "en": "f0520a38e076cf8b",
+    "text": "客戶端實例或資源伺服器的「公開」金鑰，為 RFC 9635 第 7.1 節的 JSON 金鑰物件：一種證明方法，以及 jwk、cert 或 cert#S256 三者中恰好一個。以值傳送的請求就是透過金鑰指紋與此項目比對。"
+  },
+  "applications.schema.attributes.gnapKeyIdentity.what": {
+    "en": "e1ed7ac7ee02a735",
+    "text": "gnapKey 的指紋身分（JWK 為 jkt:...，證書為 x5t:...），在 GNAP 建立項目時寫入，讓金鑰無須重新讀取即可找到。"
+  },
+  "applications.schema.attributes.gnapKeyReference.what": {
+    "en": "d8aec54850661b34",
+    "text": "「金鑰參照」（RFC 9635 第 7.1.1 節）：客戶端以 `key` 傳送的不透明字串。設定了 gnapSymmetricKey 時解析為它，否則解析為 gnapKey。"
+  },
+  "applications.schema.attributes.gnapMtlsTrust.what": {
+    "en": "c51b28815693cab2",
+    "text": "此客戶端以相互 TLS 證明之金鑰的信任方式，僅適用於此客戶端（#107）：`pki` 或 `pinned`，與領域的 gnap.mtlsTrust 相同。它只能讓領域更「嚴格」——在領域為 pinned 時設為 `pki`——而在領域為 pki 時 `pinned` 會被拒絕（STS-REG-0196），若之後領域改為 pki 則會被忽略。空白則依循領域。在 pki 下，證書必須鏈結至客戶端信任存放區，且由此領域簽發給此項目，或攜帶它所註冊的那一個 RFC 8705 主體參數（oauthTlsClientAuthSubjectDn 或某個 oauthTlsClientAuthSan* 屬性）。"
+  },
+  "applications.schema.attributes.gnapSymmetricKey.what": {
+    "en": "ded5d8a8476372b4",
+    "text": "金鑰參照的「共用秘密」，base64url，至少 32 位元組——這是 GNAP 唯一允許對稱金鑰的情況，因為它從不經過網絡傳輸（第 7.1.2 節）。金鑰持久保存時以金鑰加密金鑰密封，在產品模式下對 LDAP 讀取者隱藏。"
+  },
+  "applications.schema.attributes.gnapClassId.what": {
+    "en": "cf0254b61fae8a9c",
+    "text": "客戶端軟件的 class_id（第 2.3 節）。已註冊的值優先於請求所攜帶的值。"
+  },
+  "applications.schema.attributes.gnapDisplayUri.what": {
+    "en": "2eac54c277b83c17",
+    "text": "客戶端的 display.uri，顯示於核准頁面上（第 2.3.2 節）。"
+  },
+  "applications.schema.attributes.gnapLogoUri.what": {
+    "en": "15cc8de2d5eecf88",
+    "text": "客戶端的 display.logo_uri。只有 data: 圖片會被繪製；其他任何 URI 都以連結顯示（第 11.16 節）。"
+  },
+  "applications.schema.attributes.gnapFinishUri.what": {
+    "en": "5a8f71c45d66489d",
+    "text": "此客戶端可被送回或推送至的「互動完成 URI」（第 2.5.2 節）。這是回傳地址：在產品模式下，未列於此處的完成 URI 會被拒絕。"
+  },
+  "applications.schema.attributes.gnapInteractionStartModes.what": {
+    "en": "764406fc42ad4c3c",
+    "text": "此客戶端可使用的互動開始模式（redirect、app、user_code、user_code_uri）。空白表示授權伺服器提供的每種模式。"
+  },
+  "applications.schema.attributes.gnapAllowedAccess.what": {
+    "en": "a9291497eb549cb6",
+    "text": "此客戶端可要求、或此資源伺服器可註冊的存取類型與參照字串。空白表示任何。"
+  },
+  "applications.schema.attributes.gnapBearerTokens.what": {
+    "en": "7b779b458f033217",
+    "text": "FALSE 會以 invalid_flag 拒絕此客戶端的 bearer 旗標。"
+  },
+  "applications.schema.attributes.gnapSkipInteraction.what": {
+    "en": "83695731fd2cce04",
+    "text": "TRUE 使此客戶端成為「受信任」的客戶端實例（第 2.3.3 節）：不要求主體資訊的授權會在沒有資源擁有者、沒有互動的情況下核准，而攜帶已驗證用戶斷言的授權會為該人核准。僅對已註冊的項目生效，絕不適用於 GNAP 當場建立的項目。"
+  },
+  "applications.schema.attributes.gnapAccessTokenFormat.what": {
+    "en": "453628f81688d935",
+    "text": "簽發給此客戶端、或用於此資源伺服器之權杖的 RFC 9767 權杖格式：jwt-signed、jwt-encrypted、macaroon、biscuit 或 zcap。"
+  },
+  "applications.schema.attributes.gnapAccessTokenLifetimeS.what": {
+    "en": "fc21e3ffa049e1a6",
+    "text": "簽發給此客戶端之存取權杖的存續時間，以秒計。"
+  },
+  "applications.schema.attributes.appFederationRelationship.what": {
+    "en": "2353119c3b8b44f3",
+    "text": "此應用程式之用戶經由其驗證的聯合關係——每個值是「此」信任領域中 ou=federations 之下某個項目的 `fedId`，且該項目的 `fedRole` 為 service-provider。這兩點都是在讀取時而非寫入時檢查：身分識別提供者端的關係方向相反（本服務向該夥伴提出斷言，因此沒有可以登入的對象），而登錄是按領域區分的，因此指名另一個領域中關係的 id，在此不指名任何東西。\n\n「它保存一份清單」，這正是讓應用程式能夠提供多個身分識別提供者的原因。開啟自動重新導向時只有「一個」可用值，是新增此屬性時針對的情況，且維持不變：瀏覽器直接前往該夥伴。「多個」可用值會繪製 /authn/select-idp，讓該人選擇其中之一——主領域探索被縮小到此應用程式的夥伴，而不是針對本服務擁有的每個關係進行。它們不必使用相同的協定：一個 SAML 2.0 夥伴與一個 OpenID Connect 夥伴，在此是兩個值，在那裡是兩個按鈕，因為清單所指名的是一個人可以在哪裡被驗證，而不是如何被驗證。\n\n指名本服務無法使用之關係的值，會在畫面上「回報」而不是被丟棄，每個值一行：中間那個已停用的三項清單，絕不能看起來像兩項清單。\n\n它「不由任何人寫入」。沒有協定出示它，也沒有觀察能推導出它——應用程式的主身分識別提供者是某人所做的安排，不是本服務能觀察到的——因此它可編輯，初始為空白。"
+  },
+  "applications.schema.attributes.appAuthnMechanism.what": {
+    "en": "7d4ba95b80f7683e",
+    "text": "此應用程式的人員可用以登入的機制，取自 fedAuthnMechanism 所用的封閉清單：password、password-mfa、webauthn、spnego、wallet、federation。「全未剔選則允許每一種」。\n\n在每次以瀏覽器登入此應用程式時，於兩種模式下都會「強制執行」：工作階段並非基於任何所列機制的人，會被送去以所列機制重新登入，而以未列出之機制完成的登入會被拒絕。非瀏覽器入口（密碼授權、WS-Trust、LDAP 繫結）不在涵蓋範圍內。\n\n只列一個時，它也決定登入的去處：`spnego` 將該人送往 /authn/spnego，以其電腦持有的 Kerberos 票證登入；`wallet` 送往 /authn/wallet；`federation` 送往 appFederationRelationship 中指名的關係；`password`、`password-mfa` 與 `webauthn` 是登入畫面的三種樣式。列出多個時，會繪製只提供這些機制的畫面。\n\n本服務已關閉的機制——krb5.spnegoAuthentication 關閉時的 `spnego`、oid4vp.signIn 關閉時的 `wallet`——會在畫面上回報，且無法提供。\n\n它「不由任何人寫入」：沒有協定出示它，因此它可編輯，初始為空白。"
+  },
+  "applications.schema.attributes.appMfaMechanism.what": {
+    "en": "0cc6b4ecec8af7ad",
+    "text": "此應用程式的人員可使用的第二因素：password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet。「全未剔選則維持領域的驗證原則不變」。\n\n它只會「縮小」該原則（目錄 > 原則）：領域已關閉的第二因素在此仍維持關閉，而在領域無法寄送郵件時，以電郵傳送的因素仍絕不會提供。它說明的是「哪些」第二因素，而不是「是否」需要第二因素——那仍由領域、帳戶與風險決定。\n\n登入畫面只要求此處所列的第二因素。沒有持有其中任何一種的人，會被提供一種來設定（若有列出，則為安全金鑰或驗證器應用程式）——如果他們持有某種第二因素，則在提供該第二因素之後。\n\n在每次以瀏覽器登入此應用程式時，於兩種模式下都會「強制執行」：工作階段提供了未列於此處之第二因素的人，會被送去重新登入。非瀏覽器入口（密碼授權、WS-Trust、LDAP 繫結）不在涵蓋範圍內。\n\n它「不由任何人寫入」：沒有協定出示它，因此它可編輯，初始為空白。"
+  },
+  "devices.schema.attributes.stsDeviceKey.what": {
+    "en": "500fcea967956d89",
+    "text": "每把金鑰一個 JSON 值：id、kind（x509、jwk、webauthn）、thumbprint、label、added、addedBy、proof、attestation 以及公開數據。絕不含秘密。"
+  },
+  "xacmlPeps.schema.objectClasses.xacmlPep.what": {
+    "en": "2b063c0577e29981",
+    "text": "已向此 Policy Decision Point 註冊的一個遠端 Policy Enforcement Point。「此列是紀錄而不是權限」——從未註冊的 PEP 仍可提取存放庫並執行強制。一列所換得的，是主控台上的一個位置，以及變更通知的地址。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepIdentity.what": {
+    "en": "aa1e6b32f2237675",
+    "text": "certificatePlan() 用以命名此證書身分的 DN。註冊「不會在那裡建立項目」——重複使用的是命名規則，而不是項目建立，因為 PEP 是元件，而 ou=users 計算的是人。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepCertificateSubject.what": {
+    "en": "a7bb93a757915e8c",
+    "text": "註冊所經連線之客戶端證書的完整主體。在 DN 旁完整保存，因為 DN 是「葉」，而這是實際出示的內容。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepThumbprint.what": {
+    "en": "caeb8d9bfef75798",
+    "text": "該證書的 RFC 8705 x5t#S256——其 DER 的 SHA-256，base64url。與權杖端點繫結證書繫結存取權杖的計算相同，透過同一個函數，因此兩種寫法不會出現偏差。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAuthenticated.what": {
+    "en": "0d3cc605fa81dd70",
+    "text": "註冊經由攜帶客戶端證書的連線抵達時為 \"TRUE\"；當 xacml.pepRequireCertificate 關閉且沒有證書時為 \"FALSE\"。「不隱藏也不混淆」：未經驗證的註冊是一列什麼都沒證明的紀錄，主控台會在該列上說明，而不是放在註腳中。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepUndischargeable.what": {
+    "en": "a252138a66875fb2",
+    "text": "這些拒絕中有多少是 Permit 上無法履行的義務。單獨計算，因為這是從客戶端看來像錯誤、實際上卻是規格正常運作的唯一強制結果。"
+  }
+}

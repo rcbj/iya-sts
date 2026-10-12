@@ -1,0 +1,58 @@
+{
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode 為「{{mode}}」，因此本服務沒有可報告的數據庫。`memory` 完全不寫入任何內容，`ldif` 則寫入 RFC 2849 檔案——兩者都沒有連線、集區或目錄。請將 persistence.mode 設為 `postgres`（它只在重新啟動時生效：存放區在接聽程式繫結之前開啟）。"
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "開啟的驅動程式未提供任何指標函數，這表示 persistence_postgres.js 的組建早於 2026-09-11。"
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS，sslmode={{sslmode}}；伺服器證書會以此程序的信任錨點驗證。"
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "6e2726560995b06c",
+    "text": "TLS，sslmode={{sslmode}}；伺服器證書「不」驗證（persistence.databaseTlsRejectUnauthorized 已關閉），對於 compose 堆疊所產生的自我簽署證書組而言，這是如實的設定。無論如何連線都是加密的。"
+  },
+  "persistence.status.noTls": {
+    "en": "0988b4be0ef4d8b2",
+    "text": "非 TLS——連線字串沒有要求它。compose 堆疊的數據庫會「拒絕」明文連線，因為其 pg_hba.conf 中的每一條主機規則都是 hostssl，因此此組態在那裡將無法連線。"
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "此數據庫佔用多少磁碟空間。"
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "PostgreSQL 為此數據庫保留的每個計數器：提交與復原、讀取的區塊相對於在快取中找到的區塊、各方向的數據列、死結、暫存檔，以及伺服器有收集時的 I/O 與工作階段計時。"
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "此數據庫有多少個後端，相對於伺服器的上限。"
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "此數據庫上每個後端一列。屬於其他角色的後端會顯示為一列，其狀態與查詢被隱藏，這就是非監控角色所看到的內容。"
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "PostgreSQL 為每個數據表保留的每個計數器：循序與索引掃描、各方向的數據列、存活與無效的列，以及每個數據表上次清理與分析的時間。"
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "每個數據表的區塊 I/O：有多少來自緩衝區快取、有多少來自磁碟，分別針對堆積、其索引以及其 TOAST。"
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "每個數據表佔用多少磁碟空間，分為堆積、其索引與其 TOAST，並附上規劃器的列數估計。"
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "本服務擁有之每個數據表的每個欄位，含其類型、是否可為 null，以及其預設值。"
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "此數據庫中已安裝的擴充功能。"
+  }
+}
