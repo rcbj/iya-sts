@@ -835,12 +835,6 @@ var config = {
     statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
   },
 
-  // --- W3C VC API ------------------------------------------------------
-  vcApi: {
-    enabled: false,     // Serve the W3C VC API
-    maxPerWindow: 600   // VC API calls one client may make per rate-limit window
-  },
-
   // --- OpenID Federation -----------------------------------------------
   oidfed: {
     signingAlg: "ES256",                           // Federation Entity Key algorithm
@@ -871,6 +865,12 @@ var config = {
     collectionMaxFetches: 100,                     // Lists fetched per crawl
     collectionMaxAgeS: 86400,                      // Crawl kept for (s)
     collectionCacheS: 300                          // In-process collection kept for (s)
+  },
+
+  // --- W3C VC API ------------------------------------------------------
+  vcApi: {
+    enabled: false,    // Serve the W3C VC API
+    maxPerWindow: 600  // VC API calls one client may make per rate-limit window
   },
 
   // --- Kerberos --------------------------------------------------------
