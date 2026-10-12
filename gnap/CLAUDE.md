@@ -1270,9 +1270,11 @@ with it:
   catalogued type) was audienced to the demonstration resource server, so a
   client could present it somewhere at all. There is no default now, and
   such a request is REFUSED — `noResourceServerRefusal()`, asked in
-  `judgeRequested()` right after the locations, so at creation, modification
-  and derivation alike, before anybody is asked to approve, **in every
-  mode** (the decision named none). A token for nobody is a token for
+  `judgeRequested()` after the issuance policy's questions and of the rights
+  it left (so a right the policy refuses, an uncatalogued type in product
+  among them, keeps its own refusal), at creation, modification and
+  derivation alike, before anybody is asked to approve, **in every mode**
+  (the decision named none). A token for nobody is a token for
   whoever holds it, which is the confused deputy RFC 9767's audience exists
   to prevent, and in development it had been a token the one resource
   server here accepted.

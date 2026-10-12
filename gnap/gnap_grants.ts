@@ -1305,9 +1305,11 @@ class GnapGrants {
   // is to be used. It is the code a location naming no registered resource
   // server already gets (STS-GNAP-0903), for the same reason; section 3.6's
   // `request_denied` is a refusal by policy or by the resource owner, and
-  // neither was asked. Asked at the request stage, after the locations, so
-  // at creation, modification and derivation alike and before anybody is
-  // asked to approve; a request for no access token is not asked at all.
+  // neither was asked. Asked at the request stage, AFTER the issuance
+  // policy's questions (so a right the policy refuses keeps its own, more
+  // specific refusal) and of what the policy left, at creation, modification
+  // and derivation alike and before anybody is asked to approve; a request
+  // for no access token is not asked at all.
   // ---------------------------------------------------------------------------
   private noResourceServerRefusal(tokens) {
     const { log, config } = this.deps;
@@ -1368,18 +1370,24 @@ class GnapGrants {
                 "location.");
       return unregistered;
     }
-    // #593: in every mode, a token whose access names no resource server.
-    const nobody = this.noResourceServerRefusal(tokens);
-    if (nobody) {
-      log.debug("Leaving GnapGrants.judgeRequested(). No resource server.");
-      return nobody;
-    }
     const ctx = this.rightsContext(req, grantish, app, approval);
     // The owner lookups first (#432 phase 5): the question is synchronous.
     ctx.owners = await rights.owners(tokens, ctx);
     const judged = rights.judge(tokens, ctx, rights.STAGES.REQUEST);
-    log.debug("Leaving GnapGrants.judgeRequested(). " +
-              (judged.ok ? 'Judged.' : 'Refused.'));
+    if (!judged.ok) {
+      log.debug("Leaving GnapGrants.judgeRequested(). Refused.");
+      return judged;
+    }
+    // #593: in every mode, a token whose access names no resource server —
+    // asked of what the policy left, and AFTER it, so a right the policy
+    // refuses (an uncatalogued type in product, STS-GNAP-0810) keeps its
+    // own, more specific refusal.
+    const nobody = this.noResourceServerRefusal(judged.tokens || tokens);
+    if (nobody) {
+      log.debug("Leaving GnapGrants.judgeRequested(). No resource server.");
+      return nobody;
+    }
+    log.debug("Leaving GnapGrants.judgeRequested(). Judged.");
     return judged;
   }
 

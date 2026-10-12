@@ -286,9 +286,11 @@ async function test() {
               act.authorizedBy);
     assert.strictEqual(act.produced.length, 1);
   });
+  // A right naming a registered resource server: one naming none is refused
+  // invalid_request in every mode since #593 (STS-GNAP-0904).
   r = await keys[PLAIN].send("POST", h.GRANT, { json: {
     client: { key: keys[PLAIN].keyObject() },
-    access_token: { access: ["gd-read"] } } });
+    access_token: { access: [right([RS.b])] } } });
   check("I5. the client acting as itself asks nothing and its token names " +
         "nobody", function () {
     assert.strictEqual(r.status, 200, r.text);
