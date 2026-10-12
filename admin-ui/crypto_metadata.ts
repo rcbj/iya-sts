@@ -398,8 +398,14 @@ const STANDARDS = [
     specs: ['RFC 9449'],
     coverage: 'full: all twelve of section 4.3\'s checks, the `cnf.jkt` ' +
               'binding on access AND refresh tokens, `dpop_jkt`, `jti` ' +
-              'replay detection and the nonce handshake in both shapes. NOT ' +
-              'required — nonce mode makes proofs fresher, not mandatory.',
+              'replay detection and the nonce handshake in both shapes. Not ' +
+              'required by default — nonce mode makes proofs fresher, not ' +
+              'mandatory — but a realm can require it: ' +
+              '`oauth2.accessTokenRequireDpop` at every resource and ' +
+              '`oauth2.refreshTokenRequireDpop` at the token endpoint, both ' +
+              'off by default. A FAPI profile requires a sender constraint, ' +
+              'DPoP or mutual TLS, and the admin console\'s and the user ' +
+              'portal\'s public clients are always DPoP-bound.',
     what: 'The sender constraint that makes a stolen access token worthless ' +
           'without the key. Its algorithm list is a FILTER over the shared ' +
           'JWS table — asymmetric, and not post-quantum — rather than a ' +
@@ -967,6 +973,7 @@ interface CryptoMetadataDeps {
   loadEstCodec: () => any;
   loadEstKeyMaterial: () => any;
   loadScepCms: () => any;
+  loadFederation: () => any;
 }
 
 // ---------------------------------------------------------------------------
@@ -1208,6 +1215,9 @@ class CryptoMetadata {
       },
       loadScepCms: function () {
         return require('../scep/scep_cms');
+      },
+      loadFederation: function () {
+        return require('../federation/federation');
       }
     };
   }
@@ -1303,9 +1313,9 @@ class CryptoMetadata {
   //
   // An empty string for a verb means this service does not do it in that
   // family, and every one of those is a documented non-goal rather than an
-  // oversight — `federation/CLAUDE.md` on decrypting a partner's assertion
-  // (`saml/CLAUDE.md` on verifying an AuthnRequest signature was the other,
-  // until #37 reversed it on 2026-09-17). The page prints
+  // oversight (federation's decrypting a partner's assertion was one until
+  // #168 reversed it on 2026-09-23, and SAML 2.0's verifying an AuthnRequest
+  // signature until #37 on 2026-09-17). The page prints
   // them as "—" and the `whatItDoesNot` line beside them says which.
   // ---------------------------------------------------------------------------
   private buildFamilies(): Family[] {
@@ -1314,7 +1324,7 @@ class CryptoMetadata {
             applicationRegistry, tlsServer, xmldsig, scimAuth, ssfEvents,
             ssfAuth, pki, loadRevocationStatus, loadGnapKeys,
             loadGnapTokens, loadAcmeJws, loadEstCodec, loadEstKeyMaterial,
-            loadScepCms } = this.deps;
+            loadScepCms, loadFederation } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.buildFamilies().");
     log.debug("Leaving CryptoMetadata.buildFamilies().");
@@ -1894,29 +1904,71 @@ class CryptoMetadata {
       { name: 'Federation',
         signs: 'The SAML 2.0 `<AuthnRequest>` it sends a foreign identity ' +
                'provider, enveloped, RSA-SHA256 over exclusive c14n — the ' +
-               'same signer every other document here goes through.',
+               'same signer every other document here goes through — and ' +
+               'the `<LogoutRequest>` that tells a partner of a sign-out ' +
+               'here, enveloped or as the Redirect binding\'s detached ' +
+               'query signature.',
         verifies: 'THE WHOLE POINT OF THE FEATURE. A partner\'s SAML ' +
                   'Response and the Assertion inside it, each checked ' +
                   'SEPARATELY and each against the certificate configured on ' +
                   'the relationship — never against a certificate the ' +
                   'document carries in its own `ds:KeyInfo`, which is the ' +
                   'check a naive implementation skips. A partner\'s ID Token ' +
-                  'as an ordinary JWS against the partner\'s published keys.',
+                  'as an ordinary JWS against the partner\'s published keys. ' +
+                  'A partner\'s SIGN-OUT — a SAML `<LogoutRequest>` or a ' +
+                  'Back-Channel Logout Token — against the same configured ' +
+                  'keys, and refused unsigned unless the relationship turns ' +
+                  '`fedRequireSignedLogout` off, which only development ' +
+                  'allows.',
         encrypts: '',
-        decrypts: '',
+        // Reversed by #168 (2026-09-23): this was empty, and the row said
+        // the feature decrypted nothing a partner sent.
+        decrypts: 'What a partner encrypts to the relationship\'s own ' +
+                  'key: an `<EncryptedAssertion>`, an `<EncryptedID>` or ' +
+                  '`<EncryptedAttribute>` inside a verified assertion or a ' +
+                  '`<LogoutRequest>`, a WS-Federation token, and a JWE ID ' +
+                  'Token or Logout Token — under exactly the one ' +
+                  'key-management and one content-encryption algorithm the ' +
+                  'relationship accepts. The assertion\'s signature is ' +
+                  'verified on its plaintext and the Response\'s on the ' +
+                  'ciphertext as it arrived; a JWE must hold a signed JWT. ' +
+                  'Every decryption failure is one answer, so the ACS is no ' +
+                  'oracle.',
         hashes: 'Whatever the partner\'s `DigestMethod` names, out of the ' +
                 'vendored table below.',
-        whatItDoesNot: 'It does not decrypt an assertion a partner ' +
-                       'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+        keys: 'One encryption key pair per SAML 2.0, WS-Federation or ' +
+              'OpenID Connect relationship, made when the relationship is ' +
+              'created: RSA 3072 or EC P-256 under the realm\'s ' +
+              'Intermediate, or for OpenID Connect X-Wing or ML-KEM-768, ' +
+              'which carry no certificate. Its private half is sealed under ' +
+              'the key-encryption key wherever keys persist; a rotation ' +
+              'keeps the one it replaced for ' +
+              '`federation.encryptionKeyGraceS`, and only the current key ' +
+              'is published. What it signs, it signs with the realm\'s ' +
+              'signing key.',
+        // #167 and #168 (2026-09-23) reversed both halves of what this line
+        // said — that the feature decrypted no assertion and consumed no
+        // sign-out.
+        whatItDoesNot: 'It encrypts nothing it sends, and it polls no ' +
+                       'partner about a session: what reaches a session ' +
+                       'after sign-in is the partner\'s sign-out, which ' +
+                       'ends it, and the SAML `SessionNotOnOrAfter` it ' +
+                       'sent at sign-in, which bounds it. In product mode ' +
+                       'it refuses a plaintext assertion that crosses the ' +
+                       'browser unless the relationship sets ' +
+                       '`fedAllowUnencrypted`; AES-CBC and RSA PKCS #1 ' +
+                       'v1.5 are refused in every mode. ' +
+                       'THE GATE IS ON THE SIGNER AND ON THE ' +
                        'SUBJECT (#109): past a verified signature only the ' +
                        'person the partner\'s subject is linked to is ' +
                        'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
-        envelopes: ['xmldsig', 'c14n', 'jws'],
+        envelopes: ['xmldsig', 'xmlenc', 'c14n', 'jws', 'jwe'],
         algorithms: function () {
           log.debug("Entering algorithms().");
+          // Read from the register that enforces them, like every row here.
+          const federation = loadFederation();
           log.debug("Leaving algorithms().");
           return [
             ['Outbound request signature',
@@ -1926,7 +1978,16 @@ class CryptoMetadata {
                function (row) {
                  return row.uri;
                })],
-            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS]
+            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS],
+            ['Encryption key types', federation.ENCRYPTION_KEY_TYPES],
+            ['XML Encryption key management, one of',
+             federation.XML_KEY_MANAGEMENT],
+            ['XML Encryption content encryption, one of',
+             federation.XML_CONTENT_ENCRYPTION],
+            ['JWE key management, one of', federation.JOSE_KEY_MANAGEMENT],
+            ['JWE content encryption, one of',
+             federation.JOSE_CONTENT_ENCRYPTION],
+            ['Refused in every mode', federation.REFUSED_ALGORITHMS]
           ];
         } },
 
@@ -2056,16 +2117,26 @@ class CryptoMetadata {
                'or 2.0, through the shared signer.',
         verifies: 'It READS a requester\'s `<wsse:Security>` credential and ' +
                   'the `<ds:X509Certificate>` in a signed request — the ' +
-                  'latter to find out who to ENCRYPT to. It checks no ' +
-                  'password behind it.',
+                  'latter to find out who to ENCRYPT to. In product mode a ' +
+                  'UsernameToken\'s password is verified against the ' +
+                  'person\'s `userPassword`, or an application\'s client ' +
+                  'secrets; development believes it, except the reserved ' +
+                  '`invalid`.',
         encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
                   'certificate found in the request signature. Same two ' +
                   'tables as SAML 2.0, because it is the same code — ' +
                   '`saml/saml2.ts` re-exports it.',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
-        whatItDoesNot: 'It polices no delegation: an RST asking for a token ' +
-                       'for somebody else is answered. And it produces no ' +
+        // "It polices no delegation" until #543's review: #108 and #186 put
+        // `OnBehalfOf` and `ActAs` under the delegation policy.
+        whatItDoesNot: 'It does not answer every request for a token for ' +
+                       'somebody else: `OnBehalfOf` (impersonation) and ' +
+                       '`ActAs` (delegation) are decided by the issuance ' +
+                       'policy over the delegation controls on the ' +
+                       'requester\'s and the subject\'s entries — refused ' +
+                       'in product, recorded as what would have been ' +
+                       'refused in development. And it produces no ' +
                        'signed SOAP envelope of its own — see WS-Security ' +
                        'below, which is the row that says what this service ' +
                        'does and does not do with that specification.',
