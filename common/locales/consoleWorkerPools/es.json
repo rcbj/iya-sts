@@ -1,7 +1,7 @@
 {
   "cluster": "Clúster",
   "thPool": "Pool",
-  "thWorkerThreads": "Hilos de trabajo",
+  "thWorkerThreads": "Hilos worker",
   "thBusy": "Ocupados",
   "thFree": "Libres",
   "thStarted": "Iniciados",
@@ -14,7 +14,7 @@
   "thisNode": "(este nodo)",
   "nodeNamed": "Nodo {name}",
   "currentWorkers": "Workers actuales",
-  "currentWorkersWhy": "hilos de trabajo iniciados ahora, {ready} de ellos listos",
+  "currentWorkersWhy": "hilos worker iniciados ahora, {ready} de ellos listos",
   "busy": "Ocupados",
   "busyWhy": "con una solicitud en curso",
   "free": "Libres",

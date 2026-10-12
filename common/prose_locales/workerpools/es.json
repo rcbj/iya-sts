@@ -21,15 +21,15 @@
   },
   "workerpools.s.notStarted": {
     "en": "62c83c1852ddfcd4",
-    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo de trabajo — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar."
+    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo worker — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar."
   },
   "workerpools.s.notStartedWhy": {
     "en": "21c3b07178851dd0",
-    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo de trabajo — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar. {{why}}"
+    "text": "No iniciado: {{setting}} es {{configured}}, y este proceso no inició ningún hilo worker — no se inició como el proceso frontal de un servicio, o el pool quedó inactivo al iniciar. {{why}}"
   },
   "workerpools.s.notDispatching": {
     "en": "93ee662a7d76b08e",
-    "text": "En ejecución, e inactivo por configuración: workers.dispatch no nombra nada, así que no se envía ninguna solicitud a estos hilos de trabajo."
+    "text": "En ejecución, e inactivo por configuración: workers.dispatch no nombra nada, así que no se envía ninguna solicitud a estos hilos worker."
   },
   "workerpools.s.running": {
     "en": "742f55125a4f9bfa",
