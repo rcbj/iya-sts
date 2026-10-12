@@ -14557,10 +14557,12 @@ const CODES = [
       'List publish hook) was called in a realm whose test controls are ' +
       'closed — a product realm — and answered as though it did not exist ' +
       '(#194). Retired by #585: a product realm\'s request is passed on ' +
-      'past the route to Express\'s own 404, which records no code.',
+      'past the route to Express\'s own 404, which records no code. Since ' +
+      '#598 the VC API is a product surface, off by default ' +
+      '(STS-VC-0120).',
     spec: '', retired: true },
   { code: 'STS-VC-0101',
-    summary: 'A VC-API test endpoint was presented an access token it ' +
+    summary: 'A W3C VC API endpoint was presented an access token it ' +
       'refused: not issued by this realm, not an access token, revoked, ' +
       'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
       'to a client that no longer declares that scope (#194).',
@@ -14671,6 +14673,21 @@ const CODES = [
     summary: 'An operation of the OpenID4VC demonstration\'s API ' +
       '(/vc-demo-api, #582) failed with an unexpected error.',
     spec: 'HTTP 500, { ok: false, errors }' },
+  { code: 'STS-VC-0120',
+    summary: 'A W3C VC API endpoint (/vc-api/*) was called in a realm that ' +
+      'does not serve it: vcApi.enabled is off, which is the default ' +
+      '(#598).',
+    spec: 'HTTP 501 {errors}' },
+  { code: 'STS-VC-0121',
+    summary: 'A W3C VC API client, or an address, made more calls than ' +
+      'vcApi.maxPerWindow allows in one security.rateLimitWindowS window ' +
+      '(#598).',
+    spec: 'HTTP 429 {errors} with Retry-After' },
+  { code: 'STS-VC-0122',
+    summary: 'A W3C VC API request carried an option the endpoint does not ' +
+      'understand, or an option value of the wrong shape — refused as VCALM ' +
+      'requires (#598).',
+    spec: 'HTTP 400 {errors}' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
