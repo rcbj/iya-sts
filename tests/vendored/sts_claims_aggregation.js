@@ -246,11 +246,17 @@ async function follow(who, first) {
             location: answer.location };
       continue;
     }
-    if (r.status === 200 && /id="consent-allow"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.action = "allow";
-      at = realmBaseOf(at) + "/oauth2/consent";
-      r = await hop(who, "POST", at, { form: fields });
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+    // answered over `/authn-api/consent` through the one helper, this jar
+    // kept, and read as the 303 the form was answered with.
+    if ((r.status === 302 || r.status === 303) &&
+        authnSignin.isConsent(r.location)) {
+      at = r.location;
+      const answer = await authnSignin.consentFor(at, who.header(at));
+      who.take({ headers: answer.headers }, at);
+      r = { status: authnSignin.responseLike(answer).status,
+            text: answer.text || "", json: answer.json,
+            location: answer.location };
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||

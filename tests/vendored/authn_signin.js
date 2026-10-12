@@ -765,7 +765,8 @@ async function asFormAnswer(answer, go) {
 //        -> { ok: false, next: 'refused', errors }
 //
 // `consentPage()` opens it as its page does and `answerConsent()` answers
-// it; `consentWithJar()` does both for a job whose browser keeps its
+// it; `consentFor()` does both with a cookie header, and `consentWithJar()`
+// does both for a job whose browser keeps its
 // cookies in a plain object, answered in that browser's shape — a 303 to
 // the authorization request, as the form was answered.
 // ---------------------------------------------------------------------------
@@ -859,6 +860,46 @@ async function answerConsent(opened, decision, options) {
 }
 
 /**
+ * Opens and answers the consent screen in one, with a cookie header: the
+ * answer is `answerConsent()`'s — `headers` a `get()`/`getSetCookie()`
+ * pair a job's own jar `take()`s, `responseLike()` reading it as the 303
+ * the form was answered with — or, where the page drew no view (an expired
+ * consent, another person's session), `next: 'no-view'` at the status the
+ * page answered.
+ *
+ * @param {string} where - the screen's address, absolute
+ * @param {string} cookie - the cookie header the browser sends there
+ * @param {object} [options] - `decision`; `limits`; `headers`
+ * @returns {Promise<object>} the answer
+ */
+async function consentFor(where, cookie, options) {
+  log.debug("Entering consentFor().");
+  const opts = options || {};
+  const opened = await consentPage(where, { cookie: cookie,
+                                            headers: opts.headers });
+  if (!opened.view) {
+    log.debug("Leaving consentFor(). No view: " + opened.status);
+    const shown = opened.shellStatus === 200;
+    return { status: shown ? opened.status : opened.shellStatus,
+      json: opened.json, text: shown ? opened.text : opened.shellText,
+      ok: false, next: "no-view", location: "", errors:
+        (opened.json && opened.json.errors) || [], view: null,
+      cookie: opened.cookie, setCookies: opened.setCookies, opened: opened,
+      headers: {
+        get: function () {
+          return null;
+        },
+        getSetCookie: function () {
+          return opened.setCookies.slice();
+        }
+      } };
+  }
+  const answer = await answerConsent(opened, opts.decision, opts);
+  log.debug("Leaving consentFor(). " + answer.next);
+  return answer;
+}
+
+/**
  * Opens and answers the consent screen in one, for a job with a browser
  * of its own: its jar's cookies are sent (a plain object, name to value,
  * written back in place) and the answer comes back as the form's was — a
@@ -915,6 +956,7 @@ module.exports = {
   isConsent: isConsent,
   consentPage: consentPage,
   answerConsent: answerConsent,
+  consentFor: consentFor,
   consentWithJar: consentWithJar,
   pendingIdOf: pendingIdOf,
   foldCookies: foldCookies,
