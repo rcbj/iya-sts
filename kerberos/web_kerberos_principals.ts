@@ -337,10 +337,10 @@ class KerberosPrincipalsPage {
                        json.peoplePaging.perPage) +
       '<h2>' + t.html('consoleKerberosPrincipals.hNoButton') + '</h2>' +
       kit.note(t.html('consoleKerberosPrincipals.noButton')) +
-      kit.note('<a href="/admin/kerberos/principals?format=json">' +
-                t.html('consoleKerberosPrincipals.linkJson') +
-                '</a> &middot; <a ' +
-                'href="/admin-api/kerberos/principals">' +
+      // No "this page as JSON" link: on the tab, /admin/kerberos?format=json
+      // is the whole Kerberos page's operation, not the principals', so the
+      // management API's own operation below is this tab's JSON.
+      kit.note('<a href="/admin-api/kerberos/principals">' +
                 t.html('consoleKerberosPrincipals.linkApi') +
                 '</a> &middot; <a href="/admin/kerberos">' +
                 t.html('consoleKerberosPrincipals.linkSettings') +

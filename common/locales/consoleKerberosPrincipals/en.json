@@ -82,7 +82,6 @@
   "thMatches": "Matches the password",
   "hNoButton": "What there is deliberately no button for",
   "noButton": "<strong>Downloading a keytab again.</strong> A stored key is never read back out: a service principal's keytab is handed over by the create or rotate that made it, and a lost one is replaced by rotating. A PERSON's keytab (#59) is derived from a password in hand: <strong>Reset password and download keytab</strong> on their page under Directory &rarr; Users, or their own password on <code>/portal/kerberos</code>. <strong>Setting a person's keys.</strong> They come from the person's password and from nothing else; clearing them is the one control, and the next verified sign-in derives them again.",
-  "linkJson": "this page as JSON",
   "linkApi": "the same over the management API",
   "linkSettings": "the Kerberos settings",
   "linkDb": "the principal database"

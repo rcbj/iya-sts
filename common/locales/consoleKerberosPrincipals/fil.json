@@ -82,7 +82,6 @@
   "thMatches": "Tugma sa password",
   "hNoButton": "Kung para saan sinadyang walang button",
   "noButton": "<strong>Pag-download muli ng keytab.</strong> Hindi kailanman binabasa pabalik ang naka-store na key: ang keytab ng service principal ay ibinibigay ng create o rotate na gumawa nito, at pinapalitan ang nawalang keytab sa pamamagitan ng pag-rotate. Ang keytab ng isang TAO (#59) ay hinango mula sa password na hawak: <strong>I-reset ang password at i-download ang keytab</strong> sa kanyang pahina sa ilalim ng Directory &rarr; Users, o ang sarili niyang password sa <code>/portal/kerberos</code>. <strong>Pag-set ng mga key ng isang tao.</strong> Galing ang mga ito sa password ng tao at sa wala nang iba; ang pag-clear sa mga ito ang tanging kontrol, at hahanguin muli ang mga ito ng susunod na na-verify na pag-sign in.",
-  "linkJson": "ang pahinang ito bilang JSON",
   "linkApi": "pareho sa pamamagitan ng management API",
   "linkSettings": "ang mga setting ng Kerberos",
   "linkDb": "ang database ng principal"

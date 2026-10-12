@@ -82,7 +82,6 @@
   "thMatches": "與密碼相符",
   "hNoButton": "刻意沒有提供按鈕的操作",
   "noButton": "<strong>再次下載 keytab。</strong>已儲存的金鑰永遠不會被讀出：服務主體的 keytab 由產生它的建立或輪替操作交付，遺失後透過輪替來替換。個人的 keytab（#59）由已知的密碼衍生：在「目錄 &rarr; 使用者」下其頁面上的<strong>重設密碼並下載 keytab</strong>，或其本人在 <code>/portal/kerberos</code> 上的密碼。<strong>設定個人的金鑰。</strong>金鑰只來自此人的密碼，別無其他來源；清除是唯一的控制操作，下一次經驗證的登入會重新衍生它們。",
-  "linkJson": "此頁面的 JSON 形式",
   "linkApi": "透過管理 API 取得相同內容",
   "linkSettings": "Kerberos 設定",
   "linkDb": "主體資料庫"

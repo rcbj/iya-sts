@@ -82,7 +82,6 @@
   "thMatches": "Stämmer med lösenordet",
   "hNoButton": "Vad det avsiktligt inte finns någon knapp för",
   "noButton": "<strong>Att ladda ner en keytab igen.</strong> En lagrad nyckel läses aldrig ut igen: en tjänsteprincipals keytab lämnas ut av den skapelse eller rotation som gjorde den, och en förlorad ersätts genom att rotera. En PERSONS keytab (#59) härleds från ett känt lösenord: <strong>Återställ lösenord och ladda ner keytab</strong> på personens sida under Katalog &rarr; Användare, eller personens eget lösenord på <code>/portal/kerberos</code>. <strong>Att sätta en persons nycklar.</strong> De kommer från personens lösenord och från inget annat; att rensa dem är den enda kontrollen, och nästa verifierade inloggning härleder dem igen.",
-  "linkJson": "den här sidan som JSON",
   "linkApi": "samma sak via hanterings-API:t",
   "linkSettings": "Kerberos-inställningarna",
   "linkDb": "principaldatabasen"
