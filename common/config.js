@@ -1643,15 +1643,6 @@ const SETTINGS = [
     'both, never on the JWE around jwt-encrypted, which is encrypted to a ' +
     'resource server\'s key or a secret. Macaroons, biscuits and ZCAP-LD ' +
     'capabilities are not JWSs and are not affected.'),
-  { key: 'gnap.demoResourceServer', group: 'GNAP', label: 'Run the ' +
-      'demonstration resource server',
-    path: 'gnap.demoResourceServer', env: 'STS_GNAP_DEMO_RESOURCE_SERVER',
-    type: 'bool', dflt: true,
-    runtime: true,
-    description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
-                 'any of the five formats and answers the RS-first challenge ' +
-                 'of section 9.1. Development mode only: a product realm ' +
-                 'has no demonstration resource server (#585).' },
   { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
       'cache (seconds)',
     path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',

@@ -454,9 +454,6 @@ const ROWS: Row[] = [
     why: 'a registration carries no token: the resource set is the global ' +
          'tier\'s, and a resource server naming itself by an instance ' +
          'identifier is served where that instance is held' },
-  { prefix: '/gnap/rs', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
-    why: 'the token\'s cell: a jwt-signed token\'s jti carries the tag, ' +
-         'and the four formats that hide it are asked of the other cells' },
   // --- certificate enrollment ---
   { prefix: '/enroll', strategy: 'handler', handler: 'acme/acme.ts',
     why: 'an ACME request names its account by its kid, a new account its ' +

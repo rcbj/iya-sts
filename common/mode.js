@@ -3012,14 +3012,15 @@ const REQUIREMENTS = [
                  'authorization, PAR and token endpoints and becomes the ' +
                  'token\'s aud; a GNAP location that names no resource ' +
                  'server is left out of the token\'s audience and the ' +
-                 'right is granted.',
+                 'right is granted, while something else in the token ' +
+                 'names one — a token whose access names none is refused ' +
+                 'invalid_request in every mode (STS-GNAP-0904).',
     product: 'A resource (outside a token exchange, whose targets are the ' +
              'policy\'s unregistered-target) and every location of a GNAP ' +
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; the GNAP demonstration resource server ' +
-             'where it is served) ' +
+             'accept; /admin-api; /account-api) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +

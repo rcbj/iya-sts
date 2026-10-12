@@ -3748,29 +3748,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'Identifiers v1.0 document under the JCS suites, an ' +
           'Ed25519VerificationKey2020 under Ed25519Signature2020. Served ' +
           'no-store.' },
-  { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration ' +
-                                                    'resource server',
-    specs: ['rfc9635', 'rfc9767', 'macaroons'],
-    what: 'A protected resource on this service, for a client instance to ' +
-          'spend a token against: with no token it answers 401 with the ' +
-          'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
-          'with one it checks the format, the audience, the key binding and ' +
-          'the access rights the way a resource server would. ' +
-          'gnap.demoResourceServer turns it off.',
-    demo: true },
-  { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
-                                                 'resource server\'s spend',
-    specs: ['rfc9635', 'rfc9767'],
-    what: 'An operation that SPENDS against a right\'s limits (#432 phase ' +
-          '5): POST with an amount, currency and receiver, under a token ' +
-          'granting spend on the demonstration type. The resource server ' +
-          'keeps the running totals per grant — atomically across the ' +
-          'cluster, reset at each boundary of the limits\' repeating ' +
-          'interval, refunded when the operation fails — and refuses an ' +
-          'over-limit operation with 403 insufficient_scope. The reference ' +
-          'for what a resource server does with a limit. ' +
-          'gnap.demoResourceServer turns it off.',
-    demo: true },
   { path: '/admin-api/gnap', group: 'GNAP', name: 'The GNAP console page ' +
                                                   'over JSON',
     specs: ['rfc9635', 'rfc9767'],

@@ -64,8 +64,6 @@
 // ---------------------------------------------------------------------------
 
 import config = require('../common/config');
-// Whether this realm is served the demonstration resource server (#585).
-import mode = require('../common/mode');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -481,12 +479,7 @@ class GnapConsole {
         accessTokenStatusList: helpers.rebaseTo(base, 'oauth-oidc') +
                                '/status-lists/access-tokens',
         biscuitRevocations: helpers.rebaseTo(base, 'gnap') +
-                            '/gnap/biscuit/revocations',
-        demonstrationResourceServer: helpers.rebaseTo(base, 'gnap') +
-                                     '/gnap/rs/resource',
-        // #432 phase 5: the demonstration operation that spends a right's
-        // limits, the reference for a resource server keeping the totals.
-        demonstrationSpend: helpers.rebaseTo(base, 'gnap') + '/gnap/rs/spend'
+                            '/gnap/biscuit/revocations'
       } as Record<string, string>,
       capabilities: grants.capabilities(req, null),
       authorizationServers: profiles,
@@ -511,13 +504,6 @@ class GnapConsole {
       actions: GNAP_ACTIONS,
       settings: this.settingsJson()
     };
-    // THE DEMONSTRATION RESOURCE SERVER, only where this realm is served it
-    // (#585): a product realm's page lists no endpoint that is not there.
-    if (!mode.servesDemoEndpoints() ||
-        config.value('gnap.demoResourceServer') === false) {
-      delete json.endpoints.demonstrationResourceServer;
-      delete json.endpoints.demonstrationSpend;
-    }
     log.debug("Leaving GnapConsole.gnapView(). " + allGrants.length +
               " grant(s).");
     return json;

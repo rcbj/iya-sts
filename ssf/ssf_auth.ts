@@ -564,7 +564,7 @@ class SsfAuth {
   // GNAP token is judged against this authorization server's record of it —
   // issued here, live, presented under the scheme RFC 9635 section 7.2
   // requires, and accompanied by a proof by the key it is bound to. It is the
-  // synchronous half of what the demonstration resource server asks; the
+  // synchronous half of `gnap_rs.ts`'s `authenticate()`; the
   // format's own verification is left out because this process holds the
   // record the format would re-derive, and this gate is synchronous across
   // every SSF endpoint.

@@ -16944,23 +16944,33 @@ const CODES = [
       'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0550',
     summary: 'The GNAP demonstration resource server was reached while it ' +
-      'is turned off (gnap.demoResourceServer).',
-    spec: 'HTTP 404 GNAP invalid_request' },
+      'is turned off (gnap.demoResourceServer). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 404 GNAP invalid_request', retired: true },
   { code: 'STS-GNAP-0551',
     summary: 'The GNAP demonstration resource server was called with no ' +
       'access token; it answered with the RS-first challenge of RFC 9635 ' +
-      'section 9.1.',
+      'section 9.1. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
     spec: 'HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, ' +
-      'access, referrer' },
+      'access, referrer', retired: true },
   { code: 'STS-GNAP-0552',
     summary: 'The GNAP demonstration resource server refused a presented ' +
-      'token whose refusal carried no more specific code.',
-    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)' },
+      'token whose refusal carried no more specific code. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0553',
     summary: 'A GNAP access token presented at the demonstration resource ' +
       'server does not grant the action (read or write) on its resource ' +
-      'type.',
-    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)' },
+      'type. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0600',
     summary: 'A GNAP push interaction finish was not sent because ' +
       'gnap.pushFinish is off; the client learns the outcome when it ' +
@@ -17390,8 +17400,10 @@ const CODES = [
   { code: 'STS-GNAP-0876',
     summary: 'The demonstration operation failed after its spend was ' +
       'counted (asked to, with simulateFailure); the spend was refunded ' +
-      '(#432 phase 5).',
-    spec: 'HTTP 502' },
+      '(#432 phase 5). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 502', retired: true },
   { code: 'STS-GNAP-0877',
     summary: 'A demonstration spend could not be refunded: a new period ' +
       'had begun, or the store could not be asked (#432 phase 5).',
@@ -17472,6 +17484,16 @@ const CODES = [
       'or identifier, and not at or under a registered GNAP resource ' +
       'server\'s gnapResourceServerUri — so the request was refused ' +
       'rather than the right dropped (#505).',
+    spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
+  { code: 'STS-GNAP-0904',
+    summary: 'A GNAP access token request\'s access named no resource ' +
+      'server — no registered reference, no location at or under a ' +
+      'registered resource server\'s gnapResourceServerUri, no type a ' +
+      'registered resource server declares, and not this service\'s own ' +
+      'Shared Signals transmitter — so the token would have been for nobody ' +
+      'in particular and the request was refused, in every mode. The ' +
+      'default audience (the demonstration resource server) went with it ' +
+      '(#593).',
     spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
