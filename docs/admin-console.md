@@ -4,6 +4,8 @@ title: Admin console
 
 # Admin console
 
+> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/result/…` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 `GET /admin` is an operator's view of the running service. The pages under it
 exist for something the protocol endpoints cannot do: the interesting behaviour
 of a client is what it does when something changes *underneath* it. A client

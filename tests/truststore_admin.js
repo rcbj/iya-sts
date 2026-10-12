@@ -485,8 +485,7 @@ function theRoutingPin(t) {
 // ---------------------------------------------------------------------------
 function theProductRefusal(t) {
   log.debug("Entering theProductRefusal().");
-  t.log.info('=== 5. product mode refuses /tls/trust and names the gated ' +
-             'doors ===');
+  t.log.info('=== 5. product mode has no /tls/trust (#585) ===');
   const script =
     'delete process.env.CONFIG_FILE;' +
     'const app = require(' + JSON.stringify(path.join(ROOT, 'common', 'app')) +
@@ -522,24 +521,14 @@ function theProductRefusal(t) {
     // Unparseable — reported as the check failing below, with the output.
     report = null;
   }
-  // THE SENTENCE, not the whole body: the JSON reply also carries `console` and
-  // `api` members naming the two paths, and a check over the body passed with
-  // the paths taken out of the sentence a person actually reads.
-  let body = '';
-  try {
-    body = report ? (JSON.parse(report.body).errors || []).join(' ') : '';
-  } catch (e) {
-    log.debug("Caught in theProductRefusal(): " + ((e && e.message) || e));
-    // Not JSON — the check below fails on the empty sentence and prints the
-    // reply.
-    body = '';
-  }
-  t.check(!!report && report.status === 403 &&
-          body.indexOf('/admin/tls/trust') >= 0 &&
-          body.indexOf('POST /admin-api/tls/trust/add') >= 0 &&
-          /tls\.trustAnchorsFile/.test(body),
-          'a product service refuses POST /tls/trust with a 403 naming the ' +
-          'console page, the management-API operation AND tls.trustAnchorsFile',
+  // NOT A REFUSAL SINCE #585: a product process has no POST /tls/trust at
+  // all, and answers as for a path nothing is registered on — Express's own
+  // 404. The gated doors (the console page and /admin-api/tls/trust) are
+  // the only ones, and sections 1 to 4 drive them.
+  t.check(!!report && report.status === 404 &&
+          /Cannot POST \/tls\/trust/.test(String(report.body || '')),
+          'a product service has no POST /tls/trust: it answers as an ' +
+          'unrouted path',
           report ? JSON.stringify(report).slice(0, 500)
                  : String(result.stderr || result.stdout || '').slice(-500));
   log.debug("Leaving theProductRefusal().");

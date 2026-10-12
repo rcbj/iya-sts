@@ -116,6 +116,25 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
+
+// THE DOOR A TRUST ANCHOR GOES IN BY, as this surface's prose names it
+// (#585): the open `POST /tls/trust` only where the process serves that
+// demonstration, and the management API's gated operation otherwise.
+/**
+ * Names the door a client certificate's issuing CA is added by.
+ *
+ * @returns `POST /tls/trust` where it is served, else the API operation
+ */
+function trustAnchorDoor(): string {
+  helpers.log.debug("Entering trustAnchorDoor().");
+  helpers.log.debug("Leaving trustAnchorDoor().");
+  return app.processDemoOnly.serves() ? 'POST /tls/trust'
+    : 'POST /admin-api/tls/trust/add';
+}
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -220,8 +239,8 @@ type Handler = (req: Req, res: Res) => unknown;
 
 // The routes' own table of what an express app offers.
 interface RouteTable {
-  get(path: string, handler: Handler): unknown;
-  post(path: string, handler: Handler): unknown;
+  get(path: string, ...handlers: Handler[]): unknown;
+  post(path: string, ...handlers: Handler[]): unknown;
 }
 
 // What `callerIdentity()` answers: what the connection carried, never a
@@ -559,7 +578,8 @@ class XacmlSurface {
     self.fail(res, 403, 'access_denied',
       'The access policy refused this request. ' + policy.why +
       ' The XACML endpoints are reached by presenting a client certificate ' +
-      'this service VERIFIES — the issuing CA goes in with POST /tls/trust — ' +
+      'this service VERIFIES — the issuing CA goes in with ' +
+      trustAnchorDoor() + ' — ' +
       'whose subject resolves to a directory entry that is a member of the ' +
       'group named by roles.xacmlUserGroup ("' +
       String(config.value('roles.xacmlUserGroup') || '') +
@@ -990,7 +1010,8 @@ class XacmlSurface {
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
       'presenting a client certificate this service VERIFIES — the issuing ' +
-      'CA goes in with POST /tls/trust — whose subject resolves to a ' +
+      'CA goes in with ' + trustAnchorDoor() + ' — whose subject resolves ' +
+      'to a ' +
       'directory entry that is a member of the group named by ' +
       'roles.remotePepGroup ("' +
       String(config.value('roles.remotePepGroup') || '') +
@@ -1577,8 +1598,12 @@ class XacmlSurface {
         }).length,
         root: root ? root.name : null
       },
-      pep: { embeddedAt: baseUrlOf(req) + '/xacml/protected',
-             bias: config.value('xacml.pepBias') },
+      // The embedded PEP's demonstration, where this realm is served it
+      // (#585): null, and no row below, where it is not.
+      pep: demoOnly.serves()
+        ? { embeddedAt: baseUrlOf(req) + '/xacml/protected',
+            bias: config.value('xacml.pepBias') }
+        : null,
       // THE EMBEDDED PEP'S BIAS IS NOT REPORTED HERE FOR THE REMOTE ONES, and
       // the omission is deliberate: `xacml.pepBias` governs the endpoint above
       // and nothing else. A remote PEP is a separate process with its own
@@ -1622,9 +1647,10 @@ class XacmlSurface {
         { method: 'GET', path: '/xacml/policies',
           what: 'the repository as the PDP sees it, documents included',
           requires: XACML_USER_ROLE },
+      ].concat(demoOnly.serves() ? [
         { method: 'GET', path: '/xacml/protected',
           what: 'the embedded PEP: a resource guarded by this PDP',
-          requires: XACML_USER_ROLE },
+          requires: XACML_USER_ROLE }] : []).concat([
         { method: 'POST', path: '/xacml/pep/register',
           what: 'a remote PEP registers, over mutual TLS',
           requires: REMOTE_PEP_ROLE },
@@ -1642,13 +1668,13 @@ class XacmlSurface {
                 'back in the shape a <Request> carries them. For a remote ' +
                 'PEP, whose engine has no directory of its own',
           requires: REMOTE_PEP_ROLE }
-      ],
+      ]),
       // WHAT A CALLER HAS TO PRESENT, said in the document a caller reads
       // rather than only in the refusal they get for not having it.
       access: {
         mechanism: 'a client certificate this service verifies against an ' +
-                   'anchor in its own truststore (POST /tls/trust), whose ' +
-                   'subject DN resolves to a directory entry',
+                   'anchor in its own truststore (' + trustAnchorDoor() +
+                   '), whose subject DN resolves to a directory entry',
         xacmlUserGroup: String(config.value('roles.xacmlUserGroup') || ''),
         remotePepGroup: String(config.value('roles.remotePepGroup') || ''),
         enforced: config.value('xacml.enforceAccess') !== false,
@@ -1817,7 +1843,7 @@ class XacmlSurface {
     // from its own context; here they are supplied so that one endpoint can
     // exercise a whole policy without a client having to be written.
     // -------------------------------------------------------------------------
-    app.get('/xacml/protected', function (req, res) {
+    app.get('/xacml/protected', demoOnly, function (req, res) {
       log.debug('Entering GET /xacml/protected.');
       if (self.offCheck(res)) {
         log.debug('Leaving GET /xacml/protected. Off.');
@@ -2693,7 +2719,8 @@ class XacmlSurface {
         '<p>' + (info.access.enforced
           ? 'Every endpoint above requires a <strong>client ' +
             'certificate</strong> this service verifies against an anchor ' +
-            'in its own truststore (<code>POST /tls/trust</code>). The ' +
+            'in its own truststore (<code>' +
+            xmlEscape(trustAnchorDoor()) + '</code>). The ' +
             'subject DN is resolved to a directory entry, and that ' +
             'entry&rsquo;s group membership is what grants the role in the ' +
             'last column: <code>' +
@@ -2710,7 +2737,8 @@ class XacmlSurface {
             '(<code>xacml.enforceAccess</code>), so every endpoint above ' +
             'answers without a credential. The roles in the last column ' +
             'are what would be required with it on.') + '</p>' +
-        '<h2>The embedded PEP</h2>' +
+        // The demonstration only where this realm is served it (#585).
+        (info.pep ? '<h2>The embedded PEP</h2>' +
         '<p><code>GET /xacml/protected?subject=&hellip;&amp;resource=&hellip;' +
         '&amp;action=&hellip;</code> asks this PDP and then ' +
         '<em>enforces</em> the answer. It is <code>' +
@@ -2719,7 +2747,7 @@ class XacmlSurface {
         'Indeterminate and NotApplicable, which is the case worth looking ' +
         'at. An obligation it cannot discharge turns a Permit into a ' +
         'refusal, which is section 7.2 and is the part implementations ' +
-        'skip.</p>' +
+        'skip.</p>' : '') +
         '<h2>Remote enforcement points</h2>' +
         '<p>' + (info.remotePeps.enabled
           ? 'A Policy Enforcement Point in another process registers at ' +

@@ -7715,3 +7715,7 @@ furniture (`perPageForm`, `perPageOptions`, `sectionSearchForm`), `upTo`
 and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
 the settings block are done. **A page that draws a settings block has it as
 `view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+From the console's side: `POST /devices/test/compliance` (its 403 `STS-DEVICE-0035` retired; the device registration page lists it only where served), and **every protocol settings page's `links`** go through `app.demoPathHidden()`, so a link to a demonstration a realm is not served is not drawn. The view members the renderers read for this are `mockServiceProvider`, `mockRelyingParty`, `verifierPage`, `principalsDocument`, `standInResource` and `testControl` (null in a product realm). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

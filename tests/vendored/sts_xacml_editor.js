@@ -1745,7 +1745,11 @@ async function createTheRealm() {
     id: REALM, domain: REALM + ".example.net", name: "XACML editor test realm",
     description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
                  "PLACE on purpose, so that a failed run can be read " +
-                 "afterwards. Remove it by hand when you are done with it."
+                 "afterwards. Remove it by hand when you are done with it.",
+    // A DEVELOPMENT REALM IN EVERY MODE (#585): what the editor builds is
+    // asked of /xacml/protected, a demonstration a product realm is not
+    // served.
+    overrides: { "global.mode": "development" }
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the throwaway realm " + REALM + " answered " + r.status + " " +

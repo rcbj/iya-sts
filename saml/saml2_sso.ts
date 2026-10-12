@@ -167,6 +167,10 @@ import xmldom = require('@xmldom/xmldom');
 // code the debugger uses to check it.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // The input validator. A LEAF (rule 3): it registers no route and closes no
@@ -683,12 +687,15 @@ class Saml2Sso {
                '<code>' + METADATA_PATH + '/{sp}</code> ' +
                'is a document of its OWN for that service provider — a ' +
                'different entityID and different endpoints — and it is ' +
-               'minted for any {sp} asked for.</td></tr><tr><td><a ' +
+               'minted for any {sp} asked for.</td></tr>' +
+               // The mock SP only where this realm is served it (#585).
+               (demoOnly.serves() ? '<tr><td><a ' +
                'href="' + SP_PATH + '">' + SP_PATH + '</a></td><td>A mock ' +
                'service provider. NON-SPEC, the default assertion consumer ' +
                'service, and where a response can be verified check by check ' +
                'without a second ' +
-               'service.</td></tr></tbody></table><h2>Per-service-provider ' +
+               'service.</td></tr>' : '') +
+               '</tbody></table><h2>Per-service-provider ' +
                'metadata</h2><p>Every service provider gets its own ' +
                'endpoints under its own path, with this identity provider\'s ' +
                'one entityID, the realm\'s OAuth issuer. Ask for <code>' +
@@ -777,7 +784,7 @@ class Saml2Sso {
     app.post(SLO_PATH, singleLogout);
     app.post(SLO_PATH + '/:sp', singleLogout);
 
-    app.get(SP_PATH, function (req, res) {
+    app.get(SP_PATH, demoOnly, function (req, res) {
       log.debug("Entering the mock service provider (GET).");
       const base = baseUrlOf(req);
       const spEntityId = base + SP_PATH;
@@ -872,7 +879,7 @@ class Saml2Sso {
       log.debug("Leaving the mock service provider (GET).");
     });
 
-    app.post(SP_PATH, function (req, res) {
+    app.post(SP_PATH, demoOnly, function (req, res) {
       log.debug("Entering the mock service provider (POST).");
       const base = baseUrlOf(req);
       self.receiveAtMockSp(req, res, self.paramsOf(req), base, base + SP_PATH,
@@ -1141,7 +1148,9 @@ class Saml2Sso {
   private implicitCertificatesFor(base, spEntityId): string[] {
     const { STS, log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.implicitCertificatesFor().");
-    const mine = String(spEntityId) === base + SP_PATH;
+    // Only where the mock SP is SERVED (#585): a product realm has none, so
+    // its entityID is a name like any other there.
+    const mine = demoOnly.serves() && String(spEntityId) === base + SP_PATH;
     log.debug("Leaving Saml2Sso.implicitCertificatesFor(). mock SP=" + mine);
     // The XML key's certificate, in EVERY live generation (#42): the mock
     // SP signs with the current one, and a request signed a moment before a
@@ -3018,8 +3027,12 @@ class Saml2Sso {
         'from, and it becomes the assertion\'s audience restriction. An ' +
         'assertion with no audience is one any service provider would be ' +
         'entitled to accept.',
-        '<p>There is a mock service provider here that sends a complete ' +
-        'request: <a href="' + SP_PATH + '">' + SP_PATH + '</a>.</p>');
+        // The mock SP only where this realm is served it (#585).
+        demoOnly.serves()
+          ? '<p>There is a mock service provider here that sends a ' +
+            'complete request: <a href="' + SP_PATH + '">' + SP_PATH +
+            '</a>.</p>'
+          : '');
     }
     const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
@@ -5578,12 +5591,15 @@ class Saml2Sso {
         : 'This realm is in development mode, so it checks no password: ' +
           'the username typed at the sign-in screen becomes the subject of ' +
           'the assertion.') +
-      '</p><h2>Try it</h2><ul><li><a ' +
+      '</p><h2>Try it</h2><ul>' +
+      // The mock SP only where this realm is served it (#585).
+      (demoOnly.serves() ? '<li><a ' +
       'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
       'provider here that sends a complete AuthnRequest asking for the ' +
       'response on HTTP POST, HTTP Redirect and HTTP Artifact, and then ' +
       'verifies the response check by ' +
-      'check.</li><li><a href="' + xmlEscape(where.metadata) + '">' +
+      'check.</li>' : '') + '<li><a href="' + xmlEscape(where.metadata) +
+      '">' +
         xmlEscape(where.metadata) +
       '</a> ' +
       '— the signed identity provider metadata, which is what a service ' +

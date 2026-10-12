@@ -511,6 +511,10 @@
     "en": "a0a7f11d9b8bed02",
     "text": "它不接受未經證明的繫結權杖請求，也沒有任何設定可以讓它接受：GNAP 金鑰證明就是協定本身，而不是一個強化選項。可選的是「持有人」權杖，可由 gnap.bearerTokens 關閉。未實作 Macaroon 第三方附註、Biscuit 第三方區塊與 ZCAP 調用證明。"
   },
+  "crypto.families.gnap.verifiesWithoutDemos": {
+    "en": "0128ae60345397de",
+    "text": "用戶端執行個體發出的每個請求，依其出示的金鑰驗證：RFC 9421 HTTP 訊息簽章（本文由 RFC 9530 Content-Digest 涵蓋）、相互 TLS 憑證（會查詢撤銷狀態；在 gnap.mtlsTrust=pki——產品模式的預設——下，須有通往用戶端信任庫的憑證鏈並繫結到應用程式項目）、對本文的分離式 JWS，或攜帶本文的附加式 JWS。金鑰輪替會在「兩把」金鑰下驗證。呼叫內省或註冊的資源伺服器以相同方式證明，而每種權杖格式都會在內省時驗證。"
+  },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
     "text": "存取權杖格式"
@@ -775,6 +779,10 @@
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 完全沒有加密——`<EncryptedAssertion>` 是隨 2.0 才出現的——也沒有可供驗證簽章的請求訊息。參照 URI 指名 `AssertionID` 或 `ResponseID`，這正是共用簽署器以「搜尋」來解析 ID、而不是被告知其名稱的全部原因。"
   },
+  "crypto.families.saml-1-1.verifiesWithoutDemos": {
+    "en": "f11251a4b826b873",
+    "text": "無：SAML 1.1 沒有可供驗證簽章的請求訊息。"
+  },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "簽章"
@@ -794,6 +802,10 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "它不偽造 `wauth`——工作階段無法滿足的要求會觸發升級驗證，而 AuthenticationMethod 是工作階段實際做過的事——也不解參照 `wreqptr`——擷取某人註冊的 URL，就是附帶引用出處的伺服器端請求偽造。"
+  },
+  "crypto.families.ws-federation.verifiesWithoutDemos": {
+    "en": "02c1a08782ac0629",
+    "text": "無：登入請求不帶簽章。"
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -966,6 +978,10 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "被要求時，它會刻意做出錯誤的簽章。`ssf.breakSetSignature` 會在簽署後變更簽章中的「一個字元」，使不驗證的接收端接受一個沒有任何人簽署的事件。刻意改一個字元而非截斷：截斷的簽章會在 base64url 解碼時失敗，並被回報為「格式錯誤」的權杖，對受測者而言，這是與錯誤簽章不同的錯誤。僅限開發模式：產品模式的領域會忽略它，並拒絕設定它（#104）。"
+  },
+  "crypto.families.shared-signals.verifiesWithoutDemos": {
+    "en": "09b792e4c0821046",
+    "text": "每次串流管理呼叫中的存取權杖（透過此處所有其他受保護端點使用的同一檢查），以及推送至主控台或入口網站自身接收者的 SET（對照本服務的 JWKS）。/ssf/receive 是開發端點（#585）。"
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

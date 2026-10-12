@@ -270,3 +270,7 @@ SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
 `tests/vendored/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`/wsfed/rp`, the mock relying party; `/wsfed`'s description page and its refusal hint drop it in a product realm, and the startup banner names it only in a development process. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

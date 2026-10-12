@@ -5403,7 +5403,11 @@ app.post('/KdcProxy', function (req, res) {
 // demand shares. Neither is a secret to keep there — each is the same for
 // everybody, the README states it, and it is a fact about this KDC a client
 // cannot learn from the protocol. Product mode withholds both (see below).
-app.get('/krb5/principals', function (req, res) {
+//
+// A DEMONSTRATION SINCE #585 (2026-10-12): `demoOnly`, so a product realm
+// answers as for a path nothing is registered on. What a product operator
+// reads is `GET /admin-api/kerberos/principals` (#587), behind its token.
+app.get('/krb5/principals', app.demoOnly, function (req, res) {
   log.debug('Entering GET /krb5/principals.');
   const list = principals.all().map(function (p) {
     return {
@@ -5623,5 +5627,9 @@ module.exports = {
     log.debug("Leaving REALM().");
     return ourRealm();
   },
-  clockSkewSeconds: clockSkewSeconds
+  clockSkewSeconds: clockSkewSeconds,
+  // The offset the KDC's clock runs at, as the mode lets `krb5.clockOffset`
+  // be: what `/krb5/principals` publishes, for a reader in a realm that is
+  // not served that demonstration (#585).
+  clockOffsetSeconds: clockOffsetSeconds
 };

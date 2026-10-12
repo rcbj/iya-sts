@@ -202,7 +202,10 @@ export = class RegisteredTargets {
                 "account API.");
       return 'the account API (/account-api)';
     }
-    if (config.value('gnap.demoResourceServer') !== false &&
+    // Only where it is SERVED (#585): a product realm has no demonstration
+    // RS, so naming it there is naming nothing.
+    if (mode.servesDemoEndpoints() &&
+        config.value('gnap.demoResourceServer') !== false &&
         wanted === base + GNAP_DEMO_RESOURCE_PATH) {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The GNAP " +
                 "demonstration resource server.");

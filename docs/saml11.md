@@ -4,6 +4,8 @@ title: SAML 1.1 browser profiles
 
 # SAML 1.1 browser profiles
 
+> **Development mode only (#585):** `/saml11/rp` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a **SAML 1.1 identity provider**: the Browser/POST and
 Browser/Artifact profiles of the OASIS SAML 1.1 profiles and bindings
 specifications ([OASIS Security Services TC](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=security)),

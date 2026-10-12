@@ -243,7 +243,11 @@ async function signInToThePortal(base, user, log2, options) {
     redirect_uri: redirectUri, scope: opts.scope || "openid account:manage",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
-    code_challenge_method: "S256", resource: resource };
+    code_challenge_method: "S256", resource: resource,
+    // OpenID Connect's nonce, derived from the verifier as the runtime
+    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+      .digest("base64url") };
   if (opts.prompt) {
     params.prompt = opts.prompt;
   }

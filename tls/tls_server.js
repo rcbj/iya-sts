@@ -247,23 +247,6 @@ const cells = require('../common/cells');
 const cellPlacement = require('../common/cell_placement');
 
 // ---------------------------------------------------------------------------
-// THE TRUSTSTORE IS THE PROCESS'S, SO THE MODE THAT GUARDS IT IS TOO.
-//
-// `global.mode` is per trust realm, and `/realm/<id>/tls/trust` reaches this
-// module's routes like any other path. The anchors are one array for every
-// listener in the process, so a realm left in development inside a product
-// process must not be a way to add one — asked in the DEFAULT realm, which is
-// where a process-wide setting lives, the answer is the process's.
-// ---------------------------------------------------------------------------
-function truststoreOpenToAnybody() {
-  log.debug("Entering truststoreOpenToAnybody().");
-  log.debug("Leaving truststoreOpenToAnybody().");
-  return realms.run(realms.get(realms.DEFAULT_ID), function () {
-    return serviceMode.opensTestControls();
-  });
-}
-
-// ---------------------------------------------------------------------------
 // THE PROTOCOL FLOOR AND THE CIPHER LIST, FOR EVERY TLS SOCKET THIS PROCESS
 // OWNS (2026-09-12).
 //
@@ -5340,7 +5323,8 @@ function description(req) {
     // carried as well as signing its holder in — and the two documents.
     paths: {
       signIn: '/tls/sign-in',
-      trust: '/tls/trust',
+      // Only where the process serves it (#585).
+      trust: app.processDemoOnly.serves() ? '/tls/trust' : null,
       serverCertificate: '/tls/server-certificate'
     },
     serverCertificate: {
@@ -5358,16 +5342,18 @@ function description(req) {
       fingerprints: anchors.map(function (anchor) {
         return anchor.fingerprint256;
       }),
-      addUrl: '/tls/trust',
-      clearUrl: '/tls/trust/clear',
+      // The two open doors, where they are served (#585): a test control
+      // the PROCESS must be in development for, `app.processDemoOnly`.
+      addUrl: app.processDemoOnly.serves() ? '/tls/trust' : null,
+      clearUrl: app.processDemoOnly.serves() ? '/tls/trust/clear' : null,
       // The GATED doors, which answer in both modes (2026-09-12): the console
       // page lists every anchor with where it came from, and the management
       // API adds and removes one at a time.
       consoleUrl: '/admin/tls/trust',
       apiUrl: '/admin-api/tls/trust',
-      // Whether those two answer anybody (development) or refuse (product), and
-      // the file product mode reads instead.
-      changeableOverHttp: truststoreOpenToAnybody(),
+      // Whether those two are there at all (development) or not (product),
+      // and the file product mode reads instead.
+      changeableOverHttp: app.processDemoOnly.serves(),
       anchorsFile: anchorsFileReport.file || null,
       anchorsFromFile: anchorsFileReport.loaded
     },
@@ -5444,7 +5430,7 @@ const TLS_QUERY = validation.z.looseObject({
     'must be "json" or "html"'))
 });
 
-app.get('/tls', function (req, res) {
+app.get('/tls', app.demoOnly, function (req, res) {
   log.debug('Entering GET /tls.');
   const info = description(req);
   const askedFormat = validation.check(req, 'query', TLS_QUERY);
@@ -5507,13 +5493,20 @@ app.get('/tls', function (req, res) {
     'else. Paste its certificate here — the root, or the whole chain above ' +
     'the ' +
     'leaf.</p><table><tr><th>Anchor</th><th>SHA-256</th></tr>' + anchorRows +
-    '</table><form method="post" action="/tls/trust"><textarea ' +
-    'name="certificates" rows="6" placeholder="-----BEGIN ' +
-    'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
-    'these</button></p></form><form method="post" ' +
-    'action="/tls/trust/clear"><button type="submit">Empty the ' +
-    'truststore</button></form><p class="sub">Both buttons are test controls ' +
-    'and product mode refuses them. The gated doors answer in every mode: <a ' +
+    '</table>' +
+    // The two open doors only where the PROCESS serves them (#585): a
+    // development realm inside a product process draws this page and must
+    // not draw buttons posting to routes that are not there.
+    (app.processDemoOnly.serves()
+      ? '<form method="post" action="/tls/trust"><textarea ' +
+        'name="certificates" rows="6" placeholder="-----BEGIN ' +
+        'CERTIFICATE-----"></textarea><p><button type="submit">Trust ' +
+        'these</button></p></form><form method="post" ' +
+        'action="/tls/trust/clear"><button type="submit">Empty the ' +
+        'truststore</button></form>'
+      : '') +
+    '<p class="sub">The two buttons are test controls, and a product ' +
+    'process does not have them. The gated doors answer in every mode: <a ' +
     'href="/admin/tls/trust">the truststore page in the admin console</a>, ' +
     'which also says where each anchor came from, and <code>POST ' +
     '/admin-api/tls/trust/add</code> / ' +
@@ -5796,7 +5789,7 @@ app.get('/tls/server-certificate', function (req, res) {
 });
 
 // ---------------------------------------------------------------------------
-// A TEST CONTROL, AND PRODUCT MODE REFUSES IT (2026-09-12).
+// A TEST CONTROL, AND PRODUCT MODE DOES NOT HAVE IT (2026-09-12; #585).
 //
 // Adding an anchor decides whose client certificates VERIFY on the main port
 // — and since 2026-09-06 a verified certificate is an identity:
@@ -5820,40 +5813,17 @@ app.get('/tls/server-certificate', function (req, res) {
 // `/admin/tls/trust` behind the console's session and roles, and
 // `POST /admin-api/tls/trust/{add,remove}` behind that API's access token —
 // both through `truststore` below, handed to the console through
-// `admin.setTruststore()`. So these two routes stay exactly as they were in
-// both modes, and the refusal now names the gated doors as well as the file.
+// `admin.setTruststore()`.
+//
+// **SINCE #585 (2026-10-12) THE TWO ROUTES ARE NOT THERE IN PRODUCT AT ALL.**
+// They answered 403 with a message naming those gated doors (`STS-TLS-0024`,
+// retired); now each carries `common/app.js`'s `processDemoOnly` mark and a
+// product process answers as for a path nothing is registered on. The mark is
+// the PROCESS's one — asked in the default realm as well as the ambient one —
+// because the anchors are one array for every listener in the process, so a
+// realm left in development inside a product process must not be a way to
+// add one.
 // ---------------------------------------------------------------------------
-function refuseTruststoreChange(req, res, route) {
-  log.debug('Entering refuseTruststoreChange(). route=' + route);
-  const message = route + ' changes whose client certificates this service ' +
-    'verifies, and in product mode it is not open to whoever can reach the ' +
-    'port. At runtime, use the gated doors: the console page ' +
-    '/admin/tls/trust (Admin Write) or POST /admin-api/tls/trust/add and ' +
-    'POST /admin-api/tls/trust/remove (an access token carrying ' +
-    'admin:write). Neither persists what it adds; for anchors that must ' +
-    'survive a restart, put the CA certificates in a PEM file and set ' +
-    'tls.trustAnchorsFile (STS_TLS_TRUST_ANCHORS_FILE), which is read at ' +
-    'startup. ' + anchors.length +
-    ' anchor(s) are in force now.';
-  log.info('tls: refused ' + route + ' — product mode.');
-  errorCodes.mark(res, 'STS-TLS-0024');
-  if (/html/i.test(String(req.headers.accept || ''))) {
-    log.debug('Leaving refuseTruststoreChange(). HTML.');
-    return res.status(403).type('html').send(pageShell('Truststore',
-      '<h1>The truststore is not changed from here</h1><p>' +
-      xmlEscape(message) +
-      '</p><p class="sub"><a href="/admin/tls/trust">the truststore page in ' +
-      'the admin console</a> &middot; <a href="/tls">back to the TLS ' +
-      'endpoint</a></p>'));
-  }
-  log.debug('Leaving refuseTruststoreChange(). JSON.');
-  errorCodes.mark(res, 'STS-TLS-0024');
-  log.debug("Leaving refuseTruststoreChange().");
-  return res.status(403).json({ error: 'forbidden', errors: [message],
-                                anchors: anchors.length,
-                                console: '/admin/tls/trust',
-                                api: '/admin-api/tls/trust' });
-}
 
 // ---------------------------------------------------------------------------
 // THE TRUSTSTORE AS THE GATED DOORS SEE IT (2026-09-12).
@@ -5902,12 +5872,8 @@ const truststore = {
 // looking for the PEM header rather than by the content type, because a raw PEM
 // posted as text/plain would otherwise be run through URLSearchParams and come
 // out as a set of nonsense keys — a silent mangling rather than a refusal.
-app.post('/tls/trust', function (req, res) {
+app.post('/tls/trust', app.processDemoOnly, function (req, res) {
   log.debug('Entering POST /tls/trust.');
-  if (!truststoreOpenToAnybody()) {
-    log.debug('Leaving POST /tls/trust. Product mode.');
-    return refuseTruststoreChange(req, res, 'POST /tls/trust');
-  }
   const raw = typeof req.body === 'string' ? req.body : '';
   const looksLikePem = /-----BEGIN CERTIFICATE-----/.test(raw) &&
       !/^certificates=/.test(raw.trim());
@@ -5950,12 +5916,8 @@ app.post('/tls/trust', function (req, res) {
   log.debug('Leaving POST /tls/trust. added=' + result.added);
 });
 
-app.post('/tls/trust/clear', function (req, res) {
+app.post('/tls/trust/clear', app.processDemoOnly, function (req, res) {
   log.debug('Entering POST /tls/trust/clear.');
-  if (!truststoreOpenToAnybody()) {
-    log.debug('Leaving POST /tls/trust/clear. Product mode.');
-    return refuseTruststoreChange(req, res, 'POST /tls/trust/clear');
-  }
   const result = clearAnchors();
   if (/html/i.test(String(req.headers.accept || ''))) {
     log.debug('Leaving POST /tls/trust/clear. HTML.');
@@ -6038,7 +6000,7 @@ const SENSITIVE_HEADERS = [
                                           'balancer spells it.' }
 ];
 
-app.get('/tls/forwarded', function (req, res) {
+app.get('/tls/forwarded', app.demoOnly, function (req, res) {
   log.debug('Entering GET /tls/forwarded.');
   const trusted = !!config.value('global.trustProxy');
   const seen = function (rows) {

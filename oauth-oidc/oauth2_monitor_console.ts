@@ -66,6 +66,8 @@ import adminViews = require('../admin-core/admin_views');
 import par = require('./par');
 import monitor = require('./oauth2_monitor');
 import stepUp = require('./step_up');
+// Whether this realm is served the step-up stand-in resource (#585).
+import mode = require('../common/mode');
 import OAuth2MonitorPage = require('./web_oauth2_monitor');
 
 type Req = any;
@@ -389,6 +391,11 @@ class OAuth2MonitorConsole {
       max_age: own.maxAge
     };
     view.acrValuesSupported = stepUp.SUPPORTED.slice();
+    // The stand-in resource that enforces a registered API's requirement
+    // here, where this realm is served it (#585): null in a product realm,
+    // where the API itself answers the RFC 9470 challenge.
+    view.standInResource = mode.servesDemoEndpoints()
+      ? '/oauth2/step-up/resource/{application}' : null;
     log.debug("Leaving OAuth2MonitorConsole.stepUpSectionView().");
     return view;
   }

@@ -117,6 +117,10 @@ const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -899,8 +903,11 @@ class WsFederation {
         '13.2.1). The realm becomes the assertion\'s audience restriction, ' +
         'and an assertion with no audience is one any relying party would be ' +
         'entitled to accept.',
-        '<p>There is a mock relying party here that sends a complete ' +
-        'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
+        // The mock RP only where this realm is served it (#585).
+        demoOnly.serves()
+          ? '<p>There is a mock relying party here that sends a complete ' +
+            'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>'
+          : '');
     }
 
     // A RELYING PARTY NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496).
@@ -1745,11 +1752,13 @@ class WsFederation {
       'POST, and signs a browser in to a relying party by POSTing it a token ' +
       '(section 13.2.2). It authenticates nobody: the username typed at the ' +
       'screen becomes the subject of the assertion.</p><h2>Try ' +
-      'it</h2><ul><li><a ' +
+      'it</h2><ul>' +
+      // The mock RP only where this realm is served it (#585).
+      (demoOnly.serves() ? '<li><a ' +
       'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying party ' +
       'here ' +
       'that sends a complete sign-in request and then verifies the response ' +
-      'check by check.</li><li><a ' +
+      'check by check.</li>' : '') + '<li><a ' +
       'href="/FederationMetadata/2007-06/FederationMetadata.xml">' +
       '/FederationMetadata/2007-06/FederationMetadata.xml</a> — the signed ' +
       'federation metadata, which is what a relying party should be ' +
@@ -2312,7 +2321,7 @@ class WsFederation {
                 "endpoint.");
     });
 
-    app.get(RP_PATH, (req, res) => {
+    app.get(RP_PATH, demoOnly, (req, res) => {
       log.debug("Entering the mock relying party (GET).");
       const base = baseUrlOf(req);
       const realm = base + RP_PATH;
@@ -2405,7 +2414,7 @@ class WsFederation {
       log.debug("Leaving the mock relying party (GET).");
     });
 
-    app.post(RP_PATH, (req, res) => {
+    app.post(RP_PATH, demoOnly, (req, res) => {
       log.debug("Entering the mock relying party (POST).");
       const base = baseUrlOf(req);
       const realm = base + RP_PATH;

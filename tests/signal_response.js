@@ -25,8 +25,9 @@
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
-//      receiver and at /ssf/receive, whatever ssf.receiveRequireSignature
-//      says; development still accepts one at /ssf/receive and records it.
+//      receiver, whatever ssf.receiveRequireSignature says, and has no
+//      /ssf/receive at all (#585, Express's own 404); development still
+//      accepts one at /ssf/receive and records it.
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -350,9 +351,11 @@ function childMain() {
     note(prodInternal.status === 400 &&
          prodInternal.body.err === 'invalid_key' &&
          prodInternal.entry.reactions.length === 0 &&
-         prodReceive.status === 400 && /invalid_key/.test(prodReceive.text),
-         'F2. product refuses one at the console\'s receiver and at ' +
-         '/ssf/receive with invalid_key, the setting off (#117)',
+         prodReceive.status === 404 &&
+         /Cannot POST \/ssf\/receive/.test(prodReceive.text),
+         'F2. product refuses one at the console\'s receiver with ' +
+         'invalid_key, the setting off (#117), and has no /ssf/receive ' +
+         '(#585)',
          JSON.stringify([prodInternal.status, prodReceive.status,
                          prodReceive.text.slice(0, 200)]));
 

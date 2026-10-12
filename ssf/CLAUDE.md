@@ -2628,3 +2628,7 @@ instead.
 on `ssf_streams.ts`'s three filters, so the real emitters build each event);
 `tests/vendored/sts_application_signals.js` subscribes a receiver to an
 application and rotates its secret over the wire.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+`POST /ssf/receive` and `GET /ssf/received`, the receiver "for the debugger's benefit"; `ssf.receiveEnabled` now governs a development endpoint. The console's and portal's own receivers are not demonstrations and are unchanged; the product job's receiver is the test peer (#586). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.

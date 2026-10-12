@@ -260,6 +260,12 @@ class ConsoleRuntime extends SpaClient {
                'The token endpoint answered ' + answer.status + '.'));
       return;
     }
+    if (!await this.nonceMatches(answer.json.id_token, saved.verifier)) {
+      this.drawProblem('Signing in failed',
+        'The ID Token does not carry the nonce this sign-in sent. Open the ' +
+        'console again to sign in.');
+      return;
+    }
     this.keepTokens(answer.json);
     const to = String(saved.returnTo || '/admin');
     this.env.history.replaceState(null, '', this.prefix + to);
@@ -418,7 +424,9 @@ class ConsoleRuntime extends SpaClient {
       response_type: 'code', client_id: CLIENT_ID,
       redirect_uri: this.url('/admin/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
-      code_challenge_method: 'S256', resource: this.resource()
+      code_challenge_method: 'S256', resource: this.resource(),
+      // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
+      nonce: await this.nonceFor(verifier)
     });
   }
 
@@ -550,6 +558,12 @@ class ConsoleRuntime extends SpaClient {
         String(answer.json.error_description || answer.json.error ||
                'the token endpoint answered ' + answer.status) +
         '. Try again.');
+      return;
+    }
+    if (!await this.nonceMatches(answer.json.id_token, r.verifier)) {
+      await this.prepareReauth();
+      this.drawReauthBar('Signing in failed: the ID Token does not carry ' +
+        'the nonce this sign-in sent. Try again.');
       return;
     }
     const before = this.subject;

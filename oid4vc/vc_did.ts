@@ -38,6 +38,10 @@ import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
@@ -1056,7 +1060,7 @@ class VcDid {
       log.debug("Leaving the DID Configuration endpoint.");
     });
 
-    app.get('/did/generate', async function (req, res) {
+    app.get('/did/generate', demoOnly, async function (req, res) {
       log.debug("Entering the DID generator endpoint.");
       const method = String(req.query.method || 'jwk').toLowerCase();
       if (method !== 'jwk' && method !== 'web') {

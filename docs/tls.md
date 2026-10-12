@@ -4,6 +4,8 @@ title: TLS and mutual TLS
 
 # TLS and mutual TLS
 
+> **Development mode only (#585):** `/tls`, `/tls/forwarded`, `/tls/trust`, `/tls/trust/clear` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts serves its **main port over TLS**
 ([RFC 8446](https://www.rfc-editor.org/rfc/rfc8446), TLS 1.2 and 1.3) with a
 certificate issued by its own certificate authority, and **asks every connection
@@ -492,7 +494,7 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 | | Development | Product |
 |---|---|---|
-| `POST /tls/trust`, `POST /tls/trust/clear` | answer anybody | **403**, naming `tls.trustAnchorsFile`; use the file or the gated doors |
+| `POST /tls/trust`, `POST /tls/trust/clear` | answer anybody | **not there** (#585): a product process answers them as unregistered paths; use `tls.trustAnchorsFile` or the gated doors |
 | Revocation (`pki.revocationCheck=auto`) | **soft-fail**: revoked is refused, an undeterminable status is accepted and reported | **hard-fail**: an undeterminable status is refused too |
 | Which realm's mode decides the truststore | the **default** realm's, because the anchors are one list for the whole process | the same |
 

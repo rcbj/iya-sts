@@ -4,6 +4,8 @@ title: LDAP
 
 # LDAP
 
+> **Development mode only (#585):** `/oid4vp/verifier`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts runs an **embedded LDAP v3 directory**
 ([RFC 4511](https://www.rfc-editor.org/rfc/rfc4511)) on two raw sockets: TCP
 389 in the clear and TCP 636 over TLS (LDAPS). It is not a side feature. The

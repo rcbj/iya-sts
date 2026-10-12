@@ -52,9 +52,16 @@ class VcVerifierConfigPage {
     const requested = json.requested;
     const query = json.dcqlQuery;
 
-    const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') + '<a ' +
-      'href="/oid4vp/verifier">/oid4vp/verifier</a>' +
-      t.html('consoleVcVerifierConfig.intro2')) +
+    // The demonstration verifier page is linked only where this realm is
+    // served it (#585); a product realm's verifications start from this tab
+    // or `POST /admin-api/verifications/start` (#587), which the sentence
+    // names in its place.
+    const verifierAt = json.verifierPage
+      ? '<a href="' + kit.esc(json.verifierPage) + '">' +
+        kit.esc(json.verifierPage) + '</a>'
+      : '<code>POST /admin-api/verifications/start</code>';
+    const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') +
+      verifierAt + t.html('consoleVcVerifierConfig.intro2')) +
 
       kit.note(t.html('consoleVcVerifierConfig.catalogue1') + '<a ' +
       'href="/admin/vc">/admin/vc</a>' +
@@ -265,6 +272,7 @@ class VcVerifierConfigPage {
    */
   static vpFormatsSection(json, t) {
     const format = json.format;
+    const verifierPage = json.verifierPage;
     const rows = json.formats.map(function (item) {
       const configs = item.configurations.map(function (id) {
         return '<code>' + kit.esc(id) + '</code>';
@@ -280,9 +288,11 @@ class VcVerifierConfigPage {
         '<td>' + kit.esc(item.selectiveDisclosure) + '</td>' +
         '<td>' + kit.esc(item.holderBinding) + '</td>' +
         '<td>' + configs + '</td>' +
-        '<td><a href="' + kit.esc('/oid4vp/verifier?format=' +
-                                   encodeURIComponent(item.id)) +
-        '">' + t.html('consoleVcVerifierConfig.presentOne') + '</a></td></tr>';
+        '<td>' + (verifierPage
+          ? '<a href="' + kit.esc(verifierPage + '?format=' +
+                                  encodeURIComponent(item.id)) +
+            '">' + t.html('consoleVcVerifierConfig.presentOne') + '</a>'
+          : '') + '</td></tr>';
     }).join('');
     return '<form method="post" action="/admin/vc-verifier-config"><input ' +
       'type="hidden" name="action" ' +

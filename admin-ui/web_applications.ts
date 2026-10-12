@@ -2341,7 +2341,7 @@ class ApplicationsPage {
       '<h4>' + t.html('consoleApplications.a2.otherAuthorityHeading') +
       '</h4>' +
       kit.note(t.html('consoleApplications.a2.explicitA') + '<a ' +
-      'href="/tls/trust">/tls/trust</a>' +
+      'href="/admin/tls/trust">/admin/tls/trust</a>' +
       t.html('consoleApplications.a2.explicitB') +
       (state.selfSignedThumbprint ? ' (<code>' +
         kit.esc(state.selfSignedThumbprint) + '</code>)'

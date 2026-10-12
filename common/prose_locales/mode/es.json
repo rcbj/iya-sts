@@ -44,8 +44,8 @@
     "text": "POST /ssf/receive y los receptores propios de la consola y del portal lo aceptan, lo registran y dicen por qué no se verificó — la postura del depurador —, salvo que ssf.receiveRequireSignature esté activado. Nada actúa en consecuencia."
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "550da4b67dda6fd9",
-    "text": "Todos los receptores responden 400 invalid_key, diga lo que diga ssf.receiveRequireSignature (#117): /ssf/receive, que no autentica a nadie, no registra nada; los receptores de la consola y del portal, detrás del propio secreto de su flujo, lo conservan en su bandeja de entrada marcado como rechazado."
+    "en": "4f092f14fe13b4a7",
+    "text": "Los receptores de la consola y del portal responden 400 invalid_key, diga lo que diga ssf.receiveRequireSignature (#117), y lo conservan en su bandeja de entrada marcado como rechazado. /ssf/receive es un endpoint de desarrollo y no está (#585)."
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -692,8 +692,8 @@
     "text": "Cualquier URI absoluto se acepta como resource en los endpoints de autorización, PAR y token y se convierte en el aud del token; una location de GNAP que no nombra ningún servidor de recursos queda fuera de la audiencia del token y el derecho se concede."
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "b69c19d5b722a369",
-    "text": "Un resource (fuera de un intercambio de tokens, cuyos destinos son el unregistered-target de la política) y cada location de un derecho de acceso GNAP deben nombrar un destino registrado: uno de los servidores de recursos propios de este servicio (el indicador de recurso predeterminado que aceptan UserInfo, SCIM, Shared Signals y OpenID4VCI; /admin-api; el servidor de recursos de demostración de GNAP) o una aplicación registrada por adelantado (appRegisteredBy definido — una observación no es un registro), por su oauthAudience, URI base de permisos, client_id o identificador — la api del depurador integrado es una, sembrada como registrada. Una location de GNAP en o bajo el gnapResourceServerUri de un servidor de recursos registrado también lo nombra. De lo contrario invalid_target: redirigido desde el endpoint de autorización y 400 en PAR (STS-OAUTH-0950), 400 en el endpoint de token antes de gastar nada (STS-OAUTH-0951); para GNAP la solicitud se rechaza con invalid_request (STS-GNAP-0903), no se descarta el derecho."
+    "en": "a5fd26a9d49203a6",
+    "text": "Un resource (fuera de un intercambio de tokens, cuyos destinos son el unregistered-target de la política) y cada location de un derecho de acceso GNAP deben nombrar un destino registrado: uno de los servidores de recursos propios de este servicio (el indicador de recurso predeterminado que aceptan UserInfo, SCIM, Shared Signals y OpenID4VCI; /admin-api; el servidor de recursos de demostración de GNAP donde se sirve) o una aplicación registrada por adelantado (appRegisteredBy definido — una observación no es un registro), por su oauthAudience, URI base de permisos, client_id o identificador — la api del depurador integrado es una, sembrada como registrada. Una location de GNAP en o bajo el gnapResourceServerUri de un servidor de recursos registrado también lo nombra. De lo contrario invalid_target: redirigido desde el endpoint de autorización y 400 en PAR (STS-OAUTH-0950), 400 en el endpoint de token antes de gastar nada (STS-OAUTH-0951); para GNAP la solicitud se rechaza con invalid_request (STS-GNAP-0903), no se descarta el derecho."
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -707,13 +707,25 @@
     "en": "c9aeb6e9c45812da",
     "text": "Solo una dirección registrada en la propia entrada de la aplicación — y una observación nunca añade ninguna. Una dirección todavía marcada como observada NO está registrada: la puso ahí el modo de desarrollo y se rechaza hasta que un operador la confirma en la página de la aplicación o con POST /admin-api/applications/confirm-address (STS-REG-0049). Las direcciones registradas antes de que se marcaran las observaciones no llevan marca y aún deben revisarse antes de cambiar un dominio de modo. Los callbacks propios de la consola y del portal no se aprenden del encabezado Host de una solicitud (defina global.publicBaseUrl), y un RP ID de WebAuthn que no corresponde al host rechaza la ceremonia en lugar de recurrir a él."
   },
+  "mode.requirements.demo-endpoints.what": {
+    "en": "b3d5164c887fa785",
+    "text": "Existen los endpoints de demostración, simulados y de control de pruebas"
+  },
+  "mode.requirements.demo-endpoints.development": {
+    "en": "fedcc0409581e879",
+    "text": "Se sirven y se listan: las partes de confianza y el proveedor de servicios simulados (/wsfed/rp, /saml2/sp, /saml11/rp, /oauth2/commands/mock-rp), las páginas de demostración del emisor y del verificador (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), las lecturas de comprobación de OpenID4VCI, /did/generate, los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected, /xacml/protected, el recurso sustituto de step-up, el servidor de recursos de demostración de GNAP, /dpop/nonce-mode, /devices/test/compliance, /tls, /tls/forwarded, /tls/trust y /tls/trust/clear, y /ssf/receive y /ssf/received."
+  },
+  "mode.requirements.demo-endpoints.product": {
+    "en": "0ca09045a89e11d0",
+    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un reino de desarrollo dentro de un proceso de producto los conserva, salvo la puerta del almacén de confianza y el socket del servicio protegido, que pertenecen al proceso. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
+  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Los controles de prueba están abiertos"
   },
   "mode.requirements.test-controls.development": {
-    "en": "a8f1387d5a4a2093",
-    "text": "POST /tls/trust y /tls/trust/clear, POST /dpop/nonce-mode, POST /devices/test/compliance (el cumplimiento de un dispositivo, sin el ámbito device:compliance, #164), las contraseñas en /krb5/principals, cerrar la sesión de otra persona con ?username=, el registro dinámico abierto de clientes, la autoridad de atributos SAML 1.1 y el registro de claves HOBA responden a cualquiera, un desafío SCIM Digest rechazado muestra la contraseña compartida, y el restore-kerberos de la consola borra el instante de cierre de sesión Kerberos."
+    "en": "fd65d2d3c735e23e",
+    "text": "Cerrar la sesión de otra persona con ?username=, el registro dinámico abierto de clientes, la autoridad de atributos SAML 1.1 y el registro de claves HOBA responden a cualquiera, un desafío SCIM Digest rechazado muestra la contraseña compartida, y el restore-kerberos de la consola borra el instante de cierre de sesión Kerberos."
   },
   "mode.requirements.test-controls.product": {
     "en": "eac9684b6453a72e",
@@ -1010,6 +1022,10 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "la especificación SPIFFE Workload Endpoint (sección 3) dice que una llamada sin el encabezado workload.spiffe.io DEBE rechazarse."
+  },
+  "mode.why.servesDemoEndpoints": {
+    "en": "ea60854b2569441d",
+    "text": "configura un endpoint de demostración, y el producto no sirve ninguno. Pruébelo en un reino de desarrollo."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

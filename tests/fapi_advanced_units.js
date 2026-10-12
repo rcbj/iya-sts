@@ -169,7 +169,9 @@ function childMain() {
         request_object_encryption_alg_values_supported: ['RSA1_5',
                                                          'RSA-OAEP'],
         token_endpoint_auth_methods_supported: ['client_secret_jwt',
-          'private_key_jwt', 'tls_client_auth', 'none'] });
+          'private_key_jwt', 'tls_client_auth', 'none'],
+        response_modes_supported: ['query', 'fragment', 'form_post', 'jwt',
+                                   'query.jwt'] });
     });
     eq(JSON.stringify(meta.response_types_supported),
        '["code","code id_token"]', 'A. the metadata\'s response types');
@@ -181,6 +183,9 @@ function childMain() {
        '["private_key_jwt","tls_client_auth"]', 'A. its client methods');
     eq(meta.require_signed_request_object, true,
        'A. and a signed request object is required');
+    eq(JSON.stringify(meta.response_modes_supported),
+       '["fragment","form_post","jwt","query.jwt"]',
+       'A. no plain query mode: code needs JARM, code id_token a fragment');
     const now = Math.floor(Date.now() / 1000);
     const iss = 'https://as.example';
     const obj = function (claims) {
@@ -213,6 +218,22 @@ function childMain() {
     eq(adv(function () {
       return codeOf(fapi.senderConstraintRefusal({ mtls: true }));
     }), null, 'A. where a client certificate does');
+    eq(adv(function () {
+      return codeOf(fapi.senderConstraintRefusal({ dpop: true },
+                                                 'sts-user-portal', 'none'));
+    }), null, 'A. the portal, a public client, by DPoP alone (#568)');
+    eq(adv(function () {
+      return codeOf(fapi.senderConstraintRefusal({ dpop: true },
+                                                 'sts-admin-console', 'none'));
+    }), null, 'A. the console, a public client, by DPoP alone (#446)');
+    eq(adv(function () {
+      return codeOf(fapi.senderConstraintRefusal({},
+                                                 'sts-user-portal', 'none'));
+    }), 'STS-OAUTH-0583', 'A. but never unbound');
+    eq(adv(function () {
+      return codeOf(fapi.senderConstraintRefusal({ dpop: true },
+                                                 'other-client', 'none'));
+    }), 'STS-OAUTH-0583', 'A. and no other public client');
     config.setOverride('oauth2.fapiRequireMtls', 'false');
     eq(fapi.defaultSigningAlg(), '', 'A. no default algorithm with no profile');
     eq(adv(function () {

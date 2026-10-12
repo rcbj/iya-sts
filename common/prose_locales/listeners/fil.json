@@ -232,8 +232,8 @@
     "text": "Mga verifiable credential"
   },
   "listeners.applications.oid4vc.what": {
-    "en": "a1d8ad40056dfc8f",
-    "text": "OpenID4VCI, OpenID4VP, mga DID, ang mga status list at ang mga VC-API test endpoint."
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, mga DID at ang mga status list."
   },
   "listeners.applications.scim.label": {
     "en": "98fe74b2a48a690f",
@@ -304,8 +304,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "ce095930c49505f7",
-    "text": "MS-KKDCP, ang SPNEGO negotiation page at ang mga principal."
+    "en": "49ef797d2558967c",
+    "text": "MS-KKDCP at ang mga Kerberos HTTP view."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",
