@@ -2958,10 +2958,16 @@ class CryptoMetadata {
       // otherwise render as a dead cross-reference.
       envelopes: []
     };
+    // The dedupe compares the ENTRY it pushes. It compared the bare key
+    // against entries of the form 'family → key', which never matched, so
+    // a family listing one unknown envelope twice was reported twice. Two
+    // families citing the same unknown key are still two entries: each is
+    // a row to fix.
     self.families.forEach(function (row) {
       (row.envelopes || []).forEach(function (key) {
-        if (known.indexOf(key) < 0 && report.envelopes.indexOf(key) < 0) {
-          report.envelopes.push(row.name + ' → ' + key);
+        const entry = row.name + ' → ' + key;
+        if (known.indexOf(key) < 0 && report.envelopes.indexOf(entry) < 0) {
+          report.envelopes.push(entry);
         }
       });
     });
