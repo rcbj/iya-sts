@@ -1278,7 +1278,8 @@ var config = {
     databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
     databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
     databasePasswordToken: "",                             // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                  // Verify the database certificate; restart to apply
+    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
+    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
     globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
     globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
     globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
