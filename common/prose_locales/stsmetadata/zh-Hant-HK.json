@@ -1064,8 +1064,8 @@
     "text": "一個「已簽署」的 EntityDescriptor，帶有 fed:SecurityTokenServiceType 角色：簽署證書、fed:TokenTypesOffered（SAML 1.1 與 2.0）、fed:ClaimTypesOffered，以及 PassiveRequestorEndpoint 與 SecurityTokenServiceEndpoint 兩者。它位於 AD FS 的路徑，因為 WS-Federation 沒有指名任何路徑，而信賴方會在那裡尋找。簽章是 EntityDescriptor 的「第一個」子元素，這是 SAML 元數據綱要所要求的位置。自 #524 起，它是領域唯一實體的 WS-Federation「檢視」：SAML IDPSSODescriptor 與 AttributeAuthorityDescriptor（SAML 2.0 與 1.1）與 WS-Federation 角色並列。/saml2/metadata 與 /saml11/metadata 提供相同的文件但不含該角色，因為僅支援 SAML 的驗證器無法解析其 xsi:type。"
   },
   "stsmetadata.endpoints./saml2.what": {
-    "en": "fcb0805ad1b51f0a",
-    "text": "說明頁面：端點、四種繫結，以及各服務提供者元數據的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。"
+    "en": "525652beb87f8922",
+    "text": "說明頁面：端點、四種繫結，以及各服務提供者元數據的運作方式。GET /sts 與 GET /wsfed 基於相同理由以相同方式回應——對一個只想知道它是什麼的人回傳 400 的端點，會留下糟糕的第一印象。自 #584 起在瀏覽器中繪製；?format=json，或偏好 JSON 的 Accept，以資料形式回傳其檢視。"
   },
   "stsmetadata.endpoints./saml2/metadata.what": {
     "en": "1211c5feaace5986",
