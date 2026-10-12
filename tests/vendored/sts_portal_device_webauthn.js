@@ -841,6 +841,15 @@ async function theBrowserLogIsClean(driver) {
     // #568, where it was `/portal/devices`.
     return !(/\/(portal|account-api)\/devices/.test(message) &&
              /status of 400/.test(message));
+  }).filter(function (message) {
+    // And the autofill's (`signIn()`, THE SCREEN SETTLES FIRST): with
+    // usernameless sign-in on, the screen arms a conditional passkey
+    // request, the virtual authenticator answers it with nobody choosing,
+    // and a key that is only a second factor is refused. Since #571 that
+    // refusal is the API's `refused` answer, a 400 from
+    // `/authn-api/pending/{id}/passkey`, where the form answered a page.
+    return !(/\/authn-api\/pending\/[^/]+\/passkey\b/.test(message) &&
+             /status of 400/.test(message));
   });
   check("the browser logged nothing severe — no policy violation, no " +
         "failed load", function () {
