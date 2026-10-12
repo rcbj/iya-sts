@@ -96,9 +96,11 @@ const ROOT = path.join(__dirname, '..');
 //                                  repository whose files are not this one's
 //                                  (2026-09-16; .dockerignore says the same)
 // ---------------------------------------------------------------------------
+// `companion` (#594): a second container, not the service, whose refusals
+// are its own pages and owe no code in this table.
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos',
-                   '.claude'];
+                   '.claude', 'companion'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
                     'debugger/embedded', 'rust/target'];

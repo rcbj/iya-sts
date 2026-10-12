@@ -350,9 +350,13 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # from a workstation or CI and never by the service.
 # `rust/` (#444, 2026-10-05) is the Rust conversion: its own images build it,
 # and this Node service runs none of it.
+# `companion/` (#594, 2026-10-12) is the development-only companion, a second
+# container built from its own directory: the click-through demonstrations
+# the service ships none of. It is in the context because that directory is
+# in the repository, and nothing of it may reach this image.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh ./rust
+           ./build-typescript.sh ./rust ./companion
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory

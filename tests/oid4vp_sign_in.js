@@ -38,7 +38,9 @@
 //      signed on an access token it did NOT verify (STS-VC-0059); a trusted
 //      foreign issuer's (STS-VC-0058); a deleted entry's (STS-VC-0060); and a
 //      person the issuance policy refuses (STS-VC-0064);
-//   7. the bar door at /oid4vp/verifier still signs nobody in;
+//   7. a verification an administrator starts (POST /admin-api/
+//      verifications/start's function) still signs nobody in, and the
+//      Response Endpoint names the starter's page, or none (#594);
 //   8. a DISOWNED credential signs nobody in (STS-VC-0071): a global sign-out
 //      through `logout.terminate()` and through POST /logout, an
 //      administrator's revocation on the issued register, and a suspended
@@ -775,10 +777,12 @@ function childMain() {
       const one = await start(b, pendingSignIn());
       const answered = await respond(one, typeof presentation === 'function' ?
         presentation(one.requestObject) : presentation);
-      const verdict = await request(port, 'GET', '/oid4vp/result/' +
-                                    encodeURIComponent(one.state));
-      const verified = !!(verdict.json && verdict.json.verdict &&
-                          verdict.json.verdict.ok);
+      // What the Verifier decided — `GET /admin-api/verifications?state=`'s
+      // object (#594: the demonstration's `/oid4vp/result/:state` is gone).
+      const outcome = await realms.run(DEFAULT, function () {
+        return verifier.verificationOutcome(one.state);
+      });
+      const verified = !!(outcome && outcome.verdict && outcome.verdict.ok);
       const page = await collect(b, one);
       note(verified === expectVerified &&
            answered.status === (expectVerified ? 200 : 400) &&
@@ -1165,11 +1169,21 @@ function childMain() {
     // status check working.
     const barKey = holderKey();
     const barCred = await issue('wsi-alice', barKey);
-    // The bar door's start page: its act is `POST /vc-demo-api/start` since
-    // #582, whose `location` is the address the page's 302 named.
-    const barStart = await require(ROOT + '/tests/tools/vc_demo').start({
-      port: port, jar: barBrowser.cookies, query: { by: 'reference' } });
-    const barUrl = barStart.location ? new URL(barStart.location) : null;
+    // A VERIFICATION, STARTED AS `POST /admin-api/verifications/start`
+    // STARTS ONE (#594), naming the starter's own page for the wallet to be
+    // sent to afterwards — any absolute URL in development.
+    const BAR_DONE = 'https://bar.example/verified';
+    const barStart = await realms.run(DEFAULT, function () {
+      return verifier.startVerification(
+        { protocol: 'http', originalUrl: '/',
+          headers: { host: '127.0.0.1:' + port },
+          get: function (n) {
+            return String(n).toLowerCase() === 'host'
+              ? '127.0.0.1:' + port : undefined;
+          } },
+        { by: 'reference' }, 'body', { completionUri: BAR_DONE });
+    });
+    const barUrl = barStart.ok ? new URL(barStart.walletUrl) : null;
     let barRo = null;
     if (barUrl) {
       const got = await request(port, 'GET',
@@ -1198,24 +1212,42 @@ function childMain() {
       config.clearOverride('oid4vp.claims');
     });
     note(barRo && r.status === 200 && r.json &&
-         /\/oid4vp\/done\?/.test(r.json.redirect_uri || '') &&
-         !sessionCookie(r),
-         '7a. a presentation at the bar door verifies, is sent to its ' +
-         'thank-you page, and sets no session', r.status + ' ' + r.text);
+         r.json.redirect_uri === BAR_DONE && !sessionCookie(r) &&
+         !signedInSession(barBrowser),
+         '7a. a presentation to a verification an administrator started ' +
+         'verifies, names the starter\'s page as its redirect_uri (#594), ' +
+         'and sets no session', r.status + ' ' + r.text);
     if (barRo) {
-      const done = await request(port, 'GET',
-        pathOf(r.json.redirect_uri), { browser: barBrowser });
-      note(done.status === 200 && !sessionCookie(done) &&
-           !signedInSession(barBrowser),
-           '7b. and its thank-you page signs nobody in either', done.status);
-      // The thank-you page is drawn from `/vc-demo-api/done` since #582.
-      const said = await require(ROOT + '/tests/tools/vc_demo').done({
-        port: port, jar: barBrowser.cookies, state: barRo.state });
-      note(said.status === 200 && said.view && said.view.received === true &&
-           said.view.accepted === true && !signedInSession(barBrowser),
-           '7c. and the view it is drawn from says the presentation was ' +
-           'accepted', said.status + ' ' + JSON.stringify(said.view));
+      const decided = await realms.run(DEFAULT, function () {
+        return verifier.verificationOutcome(barRo.state);
+      });
+      note(decided && decided.received === true && decided.verdict &&
+           decided.verdict.ok === true,
+           '7b. and the outcome the start\'s twin reads says it was ' +
+           'accepted', JSON.stringify(decided && decided.verdict &&
+                                      decided.verdict.ok));
     }
+    // A START THAT NAMED NO PAGE (#594): the Response Endpoint answers an
+    // empty object — OpenID4VP 1.0 section 8.2's MAY — where it named the
+    // service's own demonstration page until then.
+    const quiet = await realms.run(DEFAULT, function () {
+      return verifier.startVerification(
+        { protocol: 'http', originalUrl: '/',
+          headers: { host: '127.0.0.1:' + port },
+          get: function (n) {
+            return String(n).toLowerCase() === 'host'
+              ? '127.0.0.1:' + port : undefined;
+          } },
+        {}, 'body');
+    });
+    const declined = quiet.ok ? await request(port, 'POST',
+      '/oid4vp/response', { form: { state: quiet.record.state,
+                                    error: 'access_denied' } }) : null;
+    note(declined && declined.status === 200 && declined.json &&
+         Object.keys(declined.json).length === 0,
+         '7c. a verification started with no completion page is answered ' +
+         'with no redirect_uri', declined && (declined.status + ' ' +
+                                             declined.text));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

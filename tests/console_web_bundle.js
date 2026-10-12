@@ -1322,15 +1322,15 @@ function childMain() {
     note(vcTabs['vc-tab-metadata'][1].indexOf(
            'The credential issuer at') >= 0 &&
          vcTabs['vc-tab-metadata'][1].indexOf(
-           'The mock Verifier at') >= 0 &&
+           'The OpenID4VP Verifier, whose') >= 0 &&
          vcTabs['vc-tab-metadata'][1].indexOf(
-           'href="/issuer/offer"') >= 0 &&
+           'href="/.well-known/openid-credential-issuer"') >= 0 &&
          vcTabs['vc-tab-metadata'][1].indexOf(
-           'href="/oid4vp/verifier"') >= 0 &&
+           'href="/issuer/offer"') < 0 &&
          vcTabs['vc-tab-oid4vci'][1].indexOf(
            'The credential issuer at') < 0 &&
          vcTabs['vc-tab-oid4vp'][1].indexOf(
-           'The mock Verifier at') < 0,
+           'The OpenID4VP Verifier, whose') < 0,
          'D-VC-metadata. issuer and verifier guidance and endpoint links are ' +
          'preserved on Metadata, not repeated in settings tabs');
     const issuerFold = vcTabs['vc-tab-metadata'][1].match(
@@ -1341,7 +1341,7 @@ function childMain() {
          !/<details[^>]*\bopen\b/.test(issuerFold[0]) &&
          !/<details[^>]*\bopen\b/.test(verifierFold[0]) &&
          issuerFold[0].indexOf('The credential issuer at') >= 0 &&
-         verifierFold[0].indexOf('The mock Verifier at') >= 0,
+         verifierFold[0].indexOf('The OpenID4VP Verifier, whose') >= 0,
          'D-VC-metadata-folds. issuer and verifier guidance is collapsed by ' +
          'default in native disclosure sections',
          'issuer=' + !!issuerFold + '; verifier=' + !!verifierFold);

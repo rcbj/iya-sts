@@ -683,7 +683,7 @@ function childMain() {
     const lastDefault = issuer.lastCredentialRequest();
     note(lastA.seen === true && lastA.encrypted === true &&
          lastA.kid === pubA.kid,
-         '/oid4vci/last_request in realm A reports the encrypted request it ' +
+         'GET /admin-api/oid4vci/last-request in realm A reports the encrypted request it ' +
          'received',
          JSON.stringify(lastA));
     note(lastB.seen === false && lastDefault.seen === false,

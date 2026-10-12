@@ -26,8 +26,8 @@
 //
 // The ENDPOINT half cannot be: the password grant, the ID Token and UserInfo
 // claims, `/admin-api/config/set`'s DPoP nonce setting, `/oauth2/register`,
-// the Transaction Code attempt limit, `/issuer/offer` sending a
-// pre-authorized offer to the portal and `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
+// the Transaction Code attempt limit, the demonstration's routes being gone
+// (#594) and `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
 // whole protocol stack into `run.js`'s one process would register every route
 // on the shared app ahead of every later file — a test whose side effects land on somebody else's file,
 // which tests/CLAUDE.md records happening twice. So a child loads
@@ -389,59 +389,39 @@ function childMain() {
     config.clearOverride('oid4vci.txCodeMaxAttempts');
 
     // ======================================================================
-    // 6. /issuer/offer
+    // 6. THE DEMONSTRATION ISSUER LEFT THE SERVICE (#594)
     // ======================================================================
     // #589: a pre-authorized offer is the person's own, made on the user
-    // portal; and since #585 the issuer's offer page is a demonstration a
-    // product realm is not served at all, so it answers as an unrouted path.
-    r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 404 && /Cannot GET \/issuer\/offer/.test(r.text),
-         '6a. PRODUCT: the offer page is not there (#585), and mints nothing',
-         r.status + ' ' + r.text.slice(0, 120));
-    r = await request(port, 'GET', '/vc-demo-api/offer?mode=cross-device');
-    note(r.status === 404 && /Cannot GET \/vc-demo-api\/offer/.test(r.text),
-         '6a-ii. PRODUCT: nor is the API it is drawn from (#582)',
-         r.status + ' ' + r.text.slice(0, 120));
-    // THE WALLET ALLOWLIST is still product's, for the doors that remain
-    // (the portal's offer, `/admin-api/verifications/start`), so it is asked
-    // of the function those doors call.
+    // portal; #594 moved the demonstration issuer's pages to the development
+    // companion and deleted the issuer's non-spec readbacks and
+    // /did/generate, so none of them is a route in any mode.
+    const gone = [];
+    for (const where of ['/issuer', '/issuer/offer?mode=cross-device',
+                         '/vc-demo-api/offer', '/oid4vci/last_request',
+                         '/oid4vci/notification/x', '/did/generate',
+                         '/oid4vp/start', '/oid4vp/result/x']) {
+      r = await request(port, 'GET', where);
+      if (!(r.status === 404 && /Cannot GET/.test(r.text))) {
+        gone.push(where + ' ' + r.status);
+      }
+    }
+    note(gone.length === 0,
+         '6a. PRODUCT: the demonstration\'s pages and readbacks are not ' +
+         'routes (#594)', gone.join(', ') || 'all unrouted');
+    // THE WALLET ALLOWLIST is still product's, for the verification start
+    // (`/admin-api/verifications/start`), so it is asked of the function
+    // that door calls.
     const evil = { query: { wallet: 'https://evil.hc.example' } };
-    let chosen = offers.walletFor(evil);
-    note(!!chosen.error && /oid4vci\.allowedWalletUrls/.test(chosen.error),
-         '6b. PRODUCT: an unregistered wallet URL is refused as an open ' +
-         'redirect', JSON.stringify(chosen).slice(0, 160));
-    config.setOverride('oid4vci.allowedWalletUrls', 'https://evil.hc.example');
-    chosen = offers.walletFor(evil);
-    config.clearOverride('oid4vci.allowedWalletUrls');
-    note(!chosen.error &&
-         /^https:\/\/evil\.hc\.example\/vc-issuance-1\.html$/.test(
-             String(chosen.url)),
-         '6c. PRODUCT: a wallet URL listed in oid4vci.allowedWalletUrls is ' +
-         'accepted', JSON.stringify(chosen));
     const vpChosen = require(ROOT + '/oid4vc/vc_verifier').vpWalletFor(evil);
     note(!!(vpChosen && vpChosen.error) &&
          /oid4vp\.allowedWalletUrls/.test(vpChosen.error),
-         '6d. PRODUCT: the Verifier refuses an unregistered wallet URL too',
+         '6d. PRODUCT: the Verifier refuses an unregistered wallet URL',
          JSON.stringify(vpChosen).slice(0, 160));
     config.clearOverride('global.mode');
-    // The offer page's act is `POST /vc-demo-api/offer` since #582: its
-    // `location` is the address the page's 302 named, and the page for
-    // another device is a view the browser draws (its Transaction Code).
-    const vcDemo = require(ROOT + '/tests/tools/vc_demo');
-    r = await vcDemo.offer({ port: port, jar: {},
-                             query: { wallet: 'https://evil.hc.example' } });
-    note(r.status === 302 &&
-         /^https:\/\/evil\.hc\.example\//.test(String(r.location)),
-         '6e. development: any wallet URL is still accepted', r.status + ' ' +
-             r.location);
-    r = await vcDemo.offer({ port: port, jar: {},
-                             query: { mode: 'cross-device' } });
-    note(r.status === 200 && r.view && r.view.kind === 'offer' &&
-         /^\d+$/.test(String(r.view.txCode)) &&
-         /^openid-credential-offer:\/\/\?credential_offer=/.test(
-           String(r.view.offerUri)),
-         '6f. development: the cross-device offer page still needs no sign-in',
-         r.status + ' ' + JSON.stringify(r.view).slice(0, 200));
+    r = await request(port, 'GET', '/issuer/offer');
+    note(r.status === 404 && /Cannot GET/.test(r.text),
+         '6e. development: nor is the offer page a route (#594)',
+         r.status + ' ' + r.text.slice(0, 120));
 
     // ======================================================================
     // 6g-6m. THE OpenID4VCI ENDPOINTS ACCEPT ONLY A TOKEN THIS REALM CAN

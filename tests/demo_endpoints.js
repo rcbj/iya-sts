@@ -69,8 +69,10 @@ function childMain() {
   const REALM_MARKED = [
     // The SAML and WS-Federation mock relying parties were deleted (#592).
     '/oauth2/commands/mock-rp',
-    '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
-    '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
+    // The OpenID4VC demonstration (its pages, `/issuer/demo.js`,
+    // `/vc-demo-api`, `/oid4vp/result/:state`), the issuer's two readbacks
+    // and `/did/generate` left with #594.
+    '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
     '/vc-api/issuers',
     '/vc-api/issuers/:issuer/credentials/issue', '/vc-api/credentials/verify',
@@ -79,12 +81,6 @@ function childMain() {
     '/vc-api/credentials/derive', '/vc-api/credentials/status',
     '/vc-api/resolve', '/vc-api/dereference',
     '/oid4vci/status-lists/bitstring/:purpose/publish',
-    '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
-    // The demonstration issuer's and verifier's static surface (#582): its
-    // script and the API its five pages are drawn from.
-    '/issuer/demo.js', '/vc-demo-api', '/vc-demo-api/issuer',
-    '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
-    '/vc-demo-api/done',
     // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
     // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
     // (Monitoring → TLS connection) left with #597.

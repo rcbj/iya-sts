@@ -49,7 +49,7 @@ const log = require('bunyan').createLogger({ name: 'no_periodic_timers',
 // What is not the service's own source.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
                         'common/vendored|node-ldapjs|deploy|xacml-pep|docs|' +
-                        '\\.claude|types)(/|$)');
+                        '\\.claude|types|companion)(/|$)');
 
 // The scheduler itself is the one place a repeating timer belongs.
 const THE_SCHEDULER = 'cluster/scheduler.ts';
