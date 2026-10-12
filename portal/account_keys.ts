@@ -352,6 +352,7 @@ class AccountKeys {
                                      why: string): unknown {
       log.debug("Entering refused().");
       log.debug("Leaving refused().");
+      // error-code: none — the code is the caller's, passed in `code`.
       return ctx.refuse(res, status, code, why,
                         { view: self.view(caller, base) });
     };

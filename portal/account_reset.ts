@@ -193,6 +193,7 @@ class AccountReset {
     const { log } = this.deps;
     log.debug("Entering AccountReset.refuseLink(). " + code);
     log.debug("Leaving AccountReset.refuseLink().");
+    // error-code: none — the code is the caller's, passed in `code`.
     return ctx.refuse(res, status, code, sentence,
                       { view: { refused: sentence,
                                 tooMany: status === 429 } });

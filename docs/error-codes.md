@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4306** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4297** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -4601,14 +4601,14 @@ Raised from: portal/.
 | `STS-PORTAL-0007` | An activation chose no way to sign in: no password, and no security key used instead of one. | HTTP 400 page |
 | `STS-PORTAL-0008` | A new password set from the portal (at activation or on the password page) was refused by the password policy or could not be written. | HTTP 400 page |
 | `STS-PORTAL-0009` | An authenticator app was asked for during an activation and its enrolment could not be started; the activation finished without it. | — |
-| `STS-PORTAL-0010` | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
-| `STS-PORTAL-0011` | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
-| `STS-PORTAL-0012` | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
-| `STS-PORTAL-0013` | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
+| `STS-PORTAL-0010` *(retired)* | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
+| `STS-PORTAL-0011` *(retired)* | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
+| `STS-PORTAL-0012` *(retired)* | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
+| `STS-PORTAL-0013` *(retired)* | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
 | `STS-PORTAL-0014` | The portal's directory slot was offered a filler without personEntry() and was not installed; the Overview falls back to what the session carries. | — |
 | `STS-PORTAL-0015` | Reading the signed-in person's directory entry for the Overview threw; the page fell back to what the session carries. | — |
 | `STS-PORTAL-0016` | The QR code for an authenticator app enrolment could not be rendered; the secret is offered for typing only. | — |
-| `STS-PORTAL-0017` | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0017` *(retired)* | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0018` | Confirming an authenticator app code was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0019` | A password change was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0020` | Self-service signing key generation was tried too often and the rate limiter refused it. | HTTP 429 page |
@@ -4652,7 +4652,7 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
-| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0083` *(retired)* | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 | `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
@@ -4666,9 +4666,9 @@ Raised from: portal/.
 | `STS-PORTAL-0094` | An unlink on /portal/claim-sources named a Claims Provider the person has no link to (#147). | none (a portal page, HTTP 400) |
 | `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
 | `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
-| `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
-| `STS-PORTAL-0098` | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
-| `STS-PORTAL-0099` | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0097` *(retired)* | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0098` *(retired)* | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0099` *(retired)* | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
 | `STS-PORTAL-0100` | A security key was chosen during an activation beside a password and its enrolment could not be started; the activation went on without it. | — |
 | `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
 | `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |

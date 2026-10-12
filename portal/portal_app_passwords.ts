@@ -192,6 +192,7 @@ class PortalAppPasswords {
     const action = String(body.action || '');
     const refuse = function (status: number, code: string,
                              why: string): unknown {
+      // error-code: none — the code is the caller's, passed in `code`.
       return ctx.refuse(res, status, code, why,
                         { view: self.view(who, null) });
     };

@@ -19714,20 +19714,20 @@ const CODES = [
   { code: 'STS-PORTAL-0010',
     summary: 'The access policy refused a signed-in person a portal page or ' +
       'action.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0011',
     summary: 'The portal could not start its OpenID Connect sign-in: the ' +
       'sts-user-portal client entry is missing or has no secret, or ' +
       'in product mode the portal was reached at an address not ' +
       'registered as a redirect URI.',
-    spec: 'HTTP 503 page' },
+    spec: 'HTTP 503 page', retired: true },
   { code: 'STS-PORTAL-0012',
     summary: 'The portal\'s OpenID Connect callback could not complete a ' +
       'sign-in (a state, code, token or ID Token step failed).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-PORTAL-0013',
     summary: 'The portal\'s OpenID Connect callback threw unexpectedly.',
-    spec: 'HTTP 500 page' },
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-PORTAL-0014',
     summary: 'The portal\'s directory slot was offered a filler without ' +
       'personEntry() and was not installed; the Overview falls back ' +
@@ -19745,7 +19745,7 @@ const CODES = [
   { code: 'STS-PORTAL-0017',
     summary: 'A portal form post was refused because its CSRF token was ' +
       'missing or did not match the session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0018',
     summary: 'Confirming an authenticator app code was tried too often and ' +
       'the rate limiter refused the attempt.',
@@ -19929,7 +19929,7 @@ const CODES = [
   { code: 'STS-PORTAL-0083',
     summary: 'A POST to /portal/sign-ins was refused: its CSRF token did not ' +
       'match the session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0084',
     summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
       'person\'s own, is too old, or has already been answered (#62 P6).',
@@ -19989,18 +19989,18 @@ const CODES = [
   { code: 'STS-PORTAL-0097',
     summary: 'Answering a device sign-in on /portal/device failed ' +
       'unexpectedly (#150).',
-    spec: 'none (a portal page, HTTP 500)' },
+    spec: 'none (a portal page, HTTP 500)', retired: true },
   { code: 'STS-PORTAL-0098',
     summary: 'A live admin console session in the same browser was not ' +
       'adopted by /portal — it names nobody, the realm it was signed in ' +
       'through is no longer defined, its tokens ran out beyond renewal, or ' +
       'its person is homed in another cell — so the portal signs in the ' +
       'ordinary way.',
-    spec: 'none (the portal runs its own sign-in)' },
+    spec: 'none (the portal runs its own sign-in)', retired: true },
   { code: 'STS-PORTAL-0099',
     summary: 'Adopting a live admin console session on /portal threw; the ' +
       'portal signs in the ordinary way.',
-    spec: 'none (the portal runs its own sign-in)' },
+    spec: 'none (the portal runs its own sign-in)', retired: true },
   { code: 'STS-PORTAL-0100',
     summary: 'A security key was chosen during an activation beside a ' +
       'password and its enrolment could not be started; the activation ' +

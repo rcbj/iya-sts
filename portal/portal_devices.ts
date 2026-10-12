@@ -322,6 +322,7 @@ class PortalDevices {
     const { log } = this.deps;
     log.debug("Entering PortalDevices.refused().");
     log.debug("Leaving PortalDevices.refused().");
+    // error-code: none — the code is the caller's, passed in `code`.
     return ctx.refuse(res, Number(result.status) || 400,
                       ctx.errorCodes.codeOf(result) || fallback,
                       (result.errors || [result.error])[0] ||
@@ -499,6 +500,7 @@ class PortalDevices {
     const { log } = this.deps;
     log.debug("Entering PortalDevices.doorRefusal(). " + code);
     log.debug("Leaving PortalDevices.doorRefusal().");
+    // error-code: none — the code is the caller's, passed in `code`.
     return ctx.refuse(res, status, code, description,
                       { error: 'invalid_request',
                         error_description: description });

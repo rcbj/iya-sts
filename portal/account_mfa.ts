@@ -312,6 +312,7 @@ class AccountMfa {
     const refuse = async function (status: number, code: string,
                                    why: string, fresh?: Json):
         Promise<unknown> {
+      // error-code: none — the code is the caller's, passed in `code`.
       return ctx.refuse(res, status, code, why,
                         { view: await self.view(ctx, caller, base, fresh) });
     };

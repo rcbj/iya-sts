@@ -692,6 +692,7 @@ class AccountActivation {
                                                why: string): unknown {
       log.debug("Entering setupRefused().");
       log.debug("Leaving setupRefused().");
+      // error-code: none — the code is the caller's, passed in `code`.
       return ctx.refuse(res, 400, code, why,
                         { view: self.setupView(base, username, token) });
     };

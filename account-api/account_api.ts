@@ -267,6 +267,7 @@ class AccountApi {
       },
       refuse: function (res: Json, status: number, code: string,
                         errors: string | string[], extra?: Json): unknown {
+        // error-code: none — the code is the caller's, passed in `code`.
         return self.refuse(res, status, code, errors, extra);
       }
     };
@@ -322,6 +323,7 @@ class AccountApi {
    * @param extra - anything else the answer carries (a `view`, a `stepUp`)
    * @returns nothing
    */
+  // error-code: none — the code is the caller's, passed in `code`.
   refuse(res: Json, status: number, code: string, errors: string | string[],
          extra?: Json): unknown {
     const { log, errorCodes } = this.deps;
@@ -522,6 +524,7 @@ class AccountApi {
     const { log } = this.deps;
     log.debug("Entering AccountApi.unauthorized(). " + code);
     res.set('WWW-Authenticate', 'DPoP realm="' + BASE + '"' +
+            // error-code: none — the code is the caller's, passed in `code`.
             (error ? ', error="' + error + '"' : '') +
             ', scope="' + SCOPE + '", algs="ES256 PS256 RS256 EdDSA"');
     this.refuse(res, 401, code, why, { error: error || 'unauthorized' });
