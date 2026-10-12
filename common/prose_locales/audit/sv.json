@@ -191,6 +191,10 @@
     "en": "9f66bf08890386c9",
     "text": "Någon konfigurerade en obligatorisk andra faktor vid inloggningen"
   },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "Någon lämnade ett inloggningssteg och började om inloggningen"
+  },
   "audit.actions.portal.mfa.started.label": {
     "en": "d51f6daad15168fd",
     "text": "Någon visades en ny hemlighet för en autentiseringsapp"

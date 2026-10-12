@@ -2555,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC（#571）。GET 回應誰的密碼必須變更；POST 儲存新密碼並繼續登入。"
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12)。強制變更密碼的「重新開始」：不做任何變更，並將其承載的待處理登入放回登入畫面。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC（#572、#573）。第二要素或電子郵件要素步驟頁面（?page=）的檢視，只有事實而沒有文字，以及其動作所攜帶的 CSRF 權杖；在頁面永遠無法為該步驟繪製時拒絕。該 id 是一種持有者能力，絕不會記錄到日誌。"
@@ -2606,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC（#573）。連結所抵達頁面上的「繼續」按鈕，僅在要求該連結的瀏覽器中有效。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12)。每個步驟頁面的「重新開始」：結束該步驟及其持有的一切，不啟動工作階段，並將其承載的待處理登入放回登入畫面，因此原始請求仍會完成。"
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",

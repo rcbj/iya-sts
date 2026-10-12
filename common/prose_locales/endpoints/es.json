@@ -1471,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "Un cambio de contraseña obligatorio"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Reiniciar un inicio de sesión desde el cambio de contraseña"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Lo que muestra la página de un paso de inicio de sesión"
@@ -1522,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Gastar un enlace de inicio de sesión enviado por correo"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Reiniciar un inicio de sesión desde un paso"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",

@@ -1471,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "强制更改密码"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "从密码更改处重新开始登录"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "登录步骤页面显示的内容"
@@ -1522,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "用掉通过电子邮件发送的登录链接"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "从某个步骤重新开始登录"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",

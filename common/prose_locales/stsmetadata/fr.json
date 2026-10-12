@@ -2555,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET répond quel est le compte dont le mot de passe doit changer ; POST enregistre le nouveau et poursuit la connexion."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Le bouton Recommencer du changement de mot de passe imposé : rien n’est modifié, et la connexion en attente qu’il porte est rendue à l’écran de connexion."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). La vue de la page d’une étape de second facteur ou de facteur par e-mail (?page=), sous forme de faits et sans aucun texte, et le jeton CSRF que portent ses actions ; refusée là où la page ne pourrait jamais être affichée pour l’étape. L’identifiant est une capacité au porteur et n’est jamais journalisé."
@@ -2606,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Le bouton Continuer de la page sur laquelle arrive le lien, uniquement dans le navigateur qui l’a demandé."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Le bouton Recommencer de chaque page d’étape : l’étape est terminée avec tout ce qu’elle contenait, aucune session n’est ouverte, et la connexion en attente qu’elle porte est rendue à l’écran de connexion, de sorte que la demande d’origine aboutit toujours."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",

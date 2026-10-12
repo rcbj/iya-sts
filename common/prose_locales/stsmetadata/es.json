@@ -2555,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET responde de quién es la contraseña que debe cambiar; POST guarda la nueva y continúa el inicio de sesión."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). El botón Empezar de nuevo del cambio de contraseña obligatorio: no se cambia nada y el inicio de sesión pendiente que lleva se devuelve a la pantalla de inicio de sesión."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). La vista de la página de un paso de segundo factor o de factor por correo (?page=), como hechos y sin palabras, y el token CSRF que llevan sus acciones; rechazada donde la página nunca podría dibujarse para el paso. El id es una capacidad al portador y nunca se registra."
@@ -2606,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). El botón Continuar de la página a la que lleva el enlace, solo en el navegador que lo pidió."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). El botón Empezar de nuevo de cada página de un paso: el paso termina con todo lo que contenía, no se inicia ninguna sesión y el inicio de sesión pendiente que lleva se devuelve a la pantalla de inicio de sesión, de modo que la solicitud original aún se completa."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
